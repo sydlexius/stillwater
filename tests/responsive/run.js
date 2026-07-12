@@ -38,7 +38,15 @@
 // /next/* UX) requires the target server to be running with SW_UX=dual or
 // SW_UX=next -- the default SW_UX=stable dev config 404s every /next/*
 // route. 'legacy' probes the pre-existing stable-UX equivalents, for use
-// against a server not booted that way.
+// against a server not booted that way. The two sets are kept apples-to-
+// apples (same page `name`s wherever a legacy equivalent exists) so a
+// next-vs-legacy comparison never flatters one side by omitting a page.
+//
+// The artist-detail page is added to whichever set is selected at runtime,
+// using the first artist id returned by GET /api/v1/artists against the
+// target server -- never a hardcoded id, so this stays portable across
+// databases. If the target database has no artists (or the lookup fails),
+// the harness logs a warning and skips that probe rather than erroring out.
 //
 // FIREFOX CAVEAT: Playwright's Firefox engine does not support device/touch
 // emulation (`isMobile` / `hasTouch` context options are Chromium-only --
@@ -60,7 +68,7 @@ import { VIEWPORTS, THEMES, TAP_TARGET_MIN_PX } from './lib/constants.js';
 import { installProbeHelpers } from './lib/probe-helpers.js';
 import { runLayoutProbe, runTapTargetProbe, runOffscreenProbe, runAxeProbe } from './lib/probes.js';
 import { setTheme, applyTheme } from './lib/theme.js';
-import { authenticateOnce } from './lib/auth.js';
+import { authenticateOnce, resolveFirstArtistId } from './lib/auth.js';
 
 const DIRNAME = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,10 +81,39 @@ const DIRNAME = path.dirname(fileURLToPath(import.meta.url));
 // pre-existing stable-UX equivalents, for sample-running this harness (or
 // probing a legacy screen on purpose) against a server that wasn't booted
 // with SW_UX=dual.
+// PAGE_SETS.next and PAGE_SETS.legacy are kept apples-to-apples on purpose:
+// every entry with a real legacy equivalent appears in both sets under the
+// same `name`, so a next-vs-legacy comparison never flatters one side by
+// omission (#2386 fix-round-2 -- an earlier version of this file had
+// /next/settings missing entirely while legacy/settings was present, which
+// made /next look better than legacy purely because the harness never
+// visited /next's worst offender). Verify a route actually serves (curl it
+// against a live SW_UX=dual instance) before adding it here -- do not add a
+// route on the assumption it exists.
+//
+// TODO(#2382): once the More sheet lands, add an open-state probe for it
+// here (same shape as prefs-drawer-open below) -- an interactive
+// open/collapsed surface is the one thing this harness cannot exercise via
+// a bare page load, and the More sheet is exactly that kind of surface.
 const PAGE_SETS = {
   next: [
     { name: 'dashboard', path: '/next/' },
     { name: 'artists-grid', path: '/next/artists?view=grid' },
+    { name: 'settings', path: '/next/settings' },
+    { name: 'reports', path: '/next/reports' },
+    { name: 'reports-duplicates', path: '/next/reports/duplicates' },
+    { name: 'reports-foreign-files', path: '/next/reports/foreign-files' },
+    // /next/reports/compliance is NOT included: it 302-redirects to the
+    // legacy /reports?tab=compliance page (verified live) -- that page has
+    // not actually been ported to /next yet, so probing it would silently
+    // measure the legacy page under a "next" label.
+    { name: 'activity', path: '/next/activity' },
+    { name: 'logs', path: '/next/logs' },
+    { name: 'preferences', path: '/next/preferences' },
+    // 'artist-detail' is appended at runtime in main() once a real artist id
+    // is resolved from the target database (see resolveFirstArtistId in
+    // lib/auth.js) -- never hardcode an id here, it would only be valid for
+    // one particular database snapshot.
     {
       // Real markup (verified live against a SW_UX=dual instance, #2386
       // dogfooding): the sidebar renders TWO [data-sw-prefs-trigger]
@@ -84,7 +121,8 @@ const PAGE_SETS = {
       // .sw-prefs-btn/[data-sw-prefs-open] classes tests/a11y's prefs-drawer
       // test falls back through -- that test only runs at desktop width, so
       // the gap never surfaced there. This selector was corrected against
-      // the live DOM rather than left as a copy-pasted guess.
+      // the live DOM rather than left as a copy-pasted guess. No legacy
+      // equivalent exists for this entry (the prefs drawer is next-only UI).
       name: 'prefs-drawer-open',
       path: '/next/',
       open: {
@@ -97,7 +135,21 @@ const PAGE_SETS = {
     { name: 'dashboard', path: '/dashboard' },
     { name: 'artists', path: '/artists' },
     { name: 'settings', path: '/settings' },
+    { name: 'reports', path: '/reports' },
+    { name: 'reports-duplicates', path: '/reports?tab=duplicates' },
+    { name: 'reports-foreign-files', path: '/reports?tab=foreign-files' },
+    { name: 'activity', path: '/activity' },
+    { name: 'logs', path: '/logs' },
+    { name: 'preferences', path: '/preferences' },
+    // 'artist-detail' is appended at runtime in main(), mirroring the next set.
   ],
+};
+
+// ARTIST_DETAIL_PATH returns each page set's route template for the
+// runtime-resolved artist-detail probe (see main()).
+const ARTIST_DETAIL_PATH = {
+  next: id => `/next/artists/${id}`,
+  legacy: id => `/artists/${id}`,
 };
 
 const ENGINES = { chromium, firefox };
@@ -196,17 +248,6 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   fs.mkdirSync(path.join(opts.out, 'screenshots'), { recursive: true });
 
-  let pageSet = PAGE_SETS[opts.pages];
-  if (opts.only) {
-    pageSet = pageSet.filter(p => p.name === opts.only);
-    if (pageSet.length === 0) {
-      throw new Error(
-        `--only "${opts.only}" matched no page in --pages ${opts.pages} `
-        + `(available: ${PAGE_SETS[opts.pages].map(p => p.name).join(', ')})`
-      );
-    }
-  }
-
   // Authenticate EXACTLY ONCE for the whole run (see lib/auth.js) -- the
   // login endpoint is rate-limited and a per-context login blows through
   // that budget within a couple of viewport iterations.
@@ -215,6 +256,30 @@ async function main() {
     adminUser: process.env.STILLWATER_ADMIN_USER,
     adminPass: process.env.STILLWATER_ADMIN_PASSWORD,
   });
+
+  let pageSet = PAGE_SETS[opts.pages].slice();
+
+  // Resolve a real artist id from the target database rather than hardcode
+  // one (see resolveFirstArtistId doc comment) -- this keeps the harness
+  // portable across whatever database a given server instance is running.
+  const artistId = await resolveFirstArtistId({ baseURL: opts.url, storageState });
+  if (artistId) {
+    pageSet.push({ name: 'artist-detail', path: ARTIST_DETAIL_PATH[opts.pages](artistId) });
+  } else {
+    console.warn(
+      'No artist found in the target database (or the lookup failed) -- '
+      + 'skipping the artist-detail probe. See resolveFirstArtistId in lib/auth.js.'
+    );
+  }
+
+  if (opts.only) {
+    pageSet = pageSet.filter(p => p.name === opts.only);
+    if (pageSet.length === 0) {
+      const available = [...PAGE_SETS[opts.pages].map(p => p.name), artistId ? 'artist-detail' : null]
+        .filter(Boolean);
+      throw new Error(`--only "${opts.only}" matched no page in --pages ${opts.pages} (available: ${available.join(', ')})`);
+    }
+  }
 
   const results = [];
 

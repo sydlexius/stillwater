@@ -31,3 +31,25 @@ export async function authenticateOnce({ baseURL, adminUser, adminPass } = {}) {
     await ctx.dispose();
   }
 }
+
+// resolveFirstArtistId looks up a real artist id from the target database via
+// GET /api/v1/artists?page_size=1, so the artist-detail probe (run.js) never
+// hardcodes an id that would only exist in one particular database snapshot.
+// Returns null (never throws) if the request fails or the database has no
+// artists -- callers should treat that as "skip the artist-detail probe",
+// not a harness error.
+export async function resolveFirstArtistId({ baseURL, storageState } = {}) {
+  const { request } = await import('playwright');
+  const ctx = await request.newContext({ baseURL, storageState });
+  try {
+    const res = await ctx.get('/api/v1/artists?page=1&page_size=1');
+    if (!res.ok()) return null;
+    const body = await res.json();
+    const first = Array.isArray(body.artists) ? body.artists[0] : null;
+    return first && first.id ? first.id : null;
+  } catch {
+    return null;
+  } finally {
+    await ctx.dispose();
+  }
+}
