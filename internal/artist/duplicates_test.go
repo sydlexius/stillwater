@@ -33,8 +33,8 @@ func TestDetectDuplicates(t *testing.T) {
 
 	// --- Pair 1: apostrophe U+0027 vs U+2019 (the observed live case) ---
 	curlyApostrophe := string([]rune{0x2019})
-	id1a := insert("Caedmon's Call", "/music/Caedmon's Call", "")             // U+0027
-	id1b := insert("Caedmon"+curlyApostrophe+"s Call", "/music/Caedmon2", "") // U+2019
+	id1a := insert("Larkfield's Reach", "/music/Larkfield's Reach", "")            // U+0027
+	id1b := insert("Larkfield"+curlyApostrophe+"s Reach", "/music/Larkfield2", "") // U+2019
 
 	// --- Pair 2: "The Cure" vs "Cure, The" (article variants) ---
 	id2a := insert("The Cure", "/music/The Cure", "")
@@ -96,12 +96,12 @@ func TestDetectDuplicates(t *testing.T) {
 		return nil
 	}
 
-	// --- Assert pair 1 (Caedmon) found ---
+	// --- Assert pair 1 (apostrophe variants) found ---
 	g1 := findGroup(byMembers(id1a, id1b))
 	if g1 == nil {
-		t.Errorf("Caedmon apostrophe pair not found in groups (ids %s / %s)", id1a, id1b)
+		t.Errorf("apostrophe pair not found in groups (ids %s / %s)", id1a, id1b)
 	} else if g1.reason != "name_key" {
-		t.Errorf("Caedmon pair reason = %q, want name_key", g1.reason)
+		t.Errorf("apostrophe pair reason = %q, want name_key", g1.reason)
 	}
 
 	// --- Assert pair 2 (The Cure / Cure, The) found ---

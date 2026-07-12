@@ -405,9 +405,9 @@ func TestCollapseDuplicatesByMBID(t *testing.T) {
 	seedLibrary(t, db, "lib-emby", "import", "conn-emby")
 
 	// Filesystem row is older + filesystem-source -> wins canonical.
-	seedArtistWithLibrary(t, db, "a-fs", "12 Stones", "lib-fs", "2026-01-01T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-fs", "12 Pebbles", "lib-fs", "2026-01-01T00:00:00Z")
 	// Emby row is the would-be loser.
-	seedArtistWithLibrary(t, db, "a-emby", "12 Stones", "lib-emby", "2026-01-02T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-emby", "12 Pebbles", "lib-emby", "2026-01-02T00:00:00Z")
 
 	// Both rows carry the same MBID via artist_provider_ids.
 	const mbid = "abcd-1234"
@@ -421,7 +421,7 @@ func TestCollapseDuplicatesByMBID(t *testing.T) {
 	}
 	// Loser also has an alias the canonical doesn't.
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO artist_aliases (id, artist_id, alias, source) VALUES ('al-1', 'a-emby', 'Twelve Stones', 'emby')
+		INSERT INTO artist_aliases (id, artist_id, alias, source) VALUES ('al-1', 'a-emby', 'Twelve Pebbles', 'emby')
 	`); err != nil {
 		t.Fatalf("seeding alias: %v", err)
 	}
@@ -555,13 +555,13 @@ func TestCollapseDuplicatesPreservesPlatformMappings(t *testing.T) {
 	seedLibrary(t, db, "lib-emby", "import", "conn-emby")
 	seedLibrary(t, db, "lib-jelly", "import", "conn-jelly")
 
-	seedArtistWithLibrary(t, db, "a-fs", "12 Stones", "lib-fs", "2026-01-01T00:00:00Z")
-	seedArtistWithLibrary(t, db, "a-emby", "12 Stones", "lib-emby", "2026-01-02T00:00:00Z")
-	seedArtistWithLibrary(t, db, "a-jelly", "12 Stones", "lib-jelly", "2026-01-03T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-fs", "12 Pebbles", "lib-fs", "2026-01-01T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-emby", "12 Pebbles", "lib-emby", "2026-01-02T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-jelly", "12 Pebbles", "lib-jelly", "2026-01-03T00:00:00Z")
 	for _, aid := range []string{"a-fs", "a-emby", "a-jelly"} {
 		if _, err := db.ExecContext(ctx, `
 			INSERT INTO artist_provider_ids (artist_id, provider, provider_id, fetched_at)
-			VALUES (?, 'musicbrainz', 'mbid-12-stones', datetime('now'))
+			VALUES (?, 'musicbrainz', 'mbid-12-pebbles', datetime('now'))
 		`, aid); err != nil {
 			t.Fatalf("seed mbid for %s: %v", aid, err)
 		}

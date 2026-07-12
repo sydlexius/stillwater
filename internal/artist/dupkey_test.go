@@ -69,7 +69,7 @@ func TestNormalizeIdentityKey(t *testing.T) {
 
 		// --- Step 3: explicit punctuation fold ---
 
-		// Apostrophe family tests are in TestNormalizeIdentityKey_CaedmonPair and
+		// Apostrophe family tests are in TestNormalizeIdentityKey_ApostrophePair and
 		// TestNormalizeIdentityKey_ApostropheKey below; removing from table to avoid
 		// curly-quote confusion in string literals.
 		{
@@ -187,7 +187,7 @@ func TestNormalizeIdentityKey(t *testing.T) {
 			want:  "ac dc",
 		},
 
-		// The Caedmon pair is tested in TestNormalizeIdentityKey_CaedmonPair.
+		// The apostrophe pair is tested in TestNormalizeIdentityKey_ApostrophePair.
 		{
 			name:  "Motley Crue NFC form",
 			input: "Mötley Crüe", // precomposed o-umlaut and u-umlaut
@@ -234,11 +234,11 @@ func TestNormalizeIdentityKey_SoftHyphen(t *testing.T) {
 // variant programmatically so the Go source does not contain a curly apostrophe
 // that could be confused with a Go string delimiter.
 func TestNormalizeIdentityKey_ApostropheKey(t *testing.T) {
-	// "Caedmon's Call" with U+0027 (straight ASCII apostrophe)
-	straight := "Caedmon's Call"
-	// "Caedmon's Call" with U+2019 (RIGHT SINGLE QUOTATION MARK)
+	// "Larkfield's Reach" with U+0027 (straight ASCII apostrophe)
+	straight := "Larkfield's Reach"
+	// "Larkfield's Reach" with U+2019 (RIGHT SINGLE QUOTATION MARK)
 	curlyRune := string([]rune{0x2019})
-	curly := "Caedmon" + curlyRune + "s Call"
+	curly := "Larkfield" + curlyRune + "s Reach"
 
 	kStraight := NormalizeIdentityKey(straight)
 	kCurly := NormalizeIdentityKey(curly)
@@ -288,12 +288,12 @@ func TestNormalizeIdentityKey_BOM(t *testing.T) {
 	}
 }
 
-// TestNormalizeIdentityKey_CaedmonPair is the canonical near-duplicate case
+// TestNormalizeIdentityKey_ApostrophePair is the canonical near-duplicate case
 // from the issue report: two directories differing only by apostrophe codepoint
 // must produce the same key.
-func TestNormalizeIdentityKey_CaedmonPair(t *testing.T) {
-	straight := NormalizeIdentityKey("Caedmon's Call") // U+0027
-	curly := NormalizeIdentityKey("Caedmon’s Call")    // U+2019
+func TestNormalizeIdentityKey_ApostrophePair(t *testing.T) {
+	straight := NormalizeIdentityKey("Larkfield's Reach") // U+0027
+	curly := NormalizeIdentityKey("Larkfield’s Reach")    // U+2019
 
 	if straight != curly {
 		t.Errorf("apostrophe pair does not produce equal keys: U+0027 key=%q  U+2019 key=%q", straight, curly)

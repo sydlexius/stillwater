@@ -1842,7 +1842,7 @@ func TestPushMetadata_LockSortName_Ignored(t *testing.T) {
 				t.Errorf("Fields query = %q, want to include LockedFields", fields)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-numeric-1","Name":"12 Stones","LockedFields":["Tags"]}]}`))
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-numeric-1","Name":"12 Pebbles","LockedFields":["Tags"]}]}`))
 			return
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/Items/jf-numeric-1" {
@@ -1862,15 +1862,15 @@ func TestPushMetadata_LockSortName_Ignored(t *testing.T) {
 
 	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	data := connection.ArtistPushData{
-		Name:         "12 Stones",
-		SortName:     "0000000012 Stones",
+		Name:         "12 Pebbles",
+		SortName:     "0000000012 Pebbles",
 		LockSortName: true,
 	}
 	if err := c.PushMetadata(context.Background(), "jf-numeric-1", data); err != nil {
 		t.Fatalf("PushMetadata: %v", err)
 	}
 	got := <-bodyCh
-	if fs, _ := got["ForcedSortName"].(string); fs != "0000000012 Stones" {
+	if fs, _ := got["ForcedSortName"].(string); fs != "0000000012 Pebbles" {
 		t.Errorf("ForcedSortName = %q, want zero-padded derived value", fs)
 	}
 	locks := stringSliceFromAny(got["LockedFields"])

@@ -3627,14 +3627,14 @@ func TestScanFromLidarr_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 // populates second and absorbs into the existing row.
 func TestPopulate_EmbyAndJellyfin_CollapsesIntoOneArtist(t *testing.T) {
 	t.Parallel()
-	const mbid = "mbid-12-stones"
+	const mbid = "mbid-12-pebbles"
 
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"Items":[{
-				"Name":"12 Stones","SortName":"12 Stones",
-				"Id":"emby-12-stones",
+				"Name":"12 Pebbles","SortName":"12 Pebbles",
+				"Id":"emby-12-pebbles",
 				"Path":"","Overview":"American rock band.",
 				"Genres":["Rock"],"Tags":[],
 				"PremiereDate":"","EndDate":"",
@@ -3650,9 +3650,9 @@ func TestPopulate_EmbyAndJellyfin_CollapsesIntoOneArtist(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"Items":[{
-				"Name":"12 Stones","SortName":"12 Stones",
-				"Id":"jelly-12-stones",
-				"Path":"/music/12 Stones","Overview":"American rock band.",
+				"Name":"12 Pebbles","SortName":"12 Pebbles",
+				"Id":"jelly-12-pebbles",
+				"Path":"/music/12 Pebbles","Overview":"American rock band.",
 				"Genres":["Rock"],"Tags":[],
 				"PremiereDate":"","EndDate":"",
 				"ProviderIds":{"MusicBrainzArtist":"` + mbid + `"},
@@ -3708,7 +3708,7 @@ func TestPopulate_EmbyAndJellyfin_CollapsesIntoOneArtist(t *testing.T) {
 		t.Errorf("jellyfin created = %d, want 0 (must dedupe to existing artist)", rJF.Created)
 	}
 
-	// Exactly one 12 Stones row exists end-to-end.
+	// Exactly one 12 Pebbles row exists end-to-end.
 	a, err := router.artistService.GetByMBID(ctx, mbid)
 	if err != nil || a == nil {
 		t.Fatalf("GetByMBID after both populates: a=%v err=%v", a, err)
@@ -3719,15 +3719,15 @@ func TestPopulate_EmbyAndJellyfin_CollapsesIntoOneArtist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPlatformID emby: %v", err)
 	}
-	if embyPID != "emby-12-stones" {
-		t.Errorf("emby platform id = %q, want emby-12-stones", embyPID)
+	if embyPID != "emby-12-pebbles" {
+		t.Errorf("emby platform id = %q, want emby-12-pebbles", embyPID)
 	}
 	jfPID, err := router.artistService.GetPlatformID(ctx, a.ID, "conn-jelly")
 	if err != nil {
 		t.Fatalf("GetPlatformID jellyfin: %v", err)
 	}
-	if jfPID != "jelly-12-stones" {
-		t.Errorf("jellyfin platform id = %q, want jelly-12-stones", jfPID)
+	if jfPID != "jelly-12-pebbles" {
+		t.Errorf("jellyfin platform id = %q, want jelly-12-pebbles", jfPID)
 	}
 
 	// Both library memberships live on the canonical row.

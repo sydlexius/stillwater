@@ -20,7 +20,7 @@ import (
 //
 // SortName fallback (#1083): when the artist has no SortName from
 // MusicBrainz and the Name begins with an ASCII digit run, the push code
-// derives a zero-padded sort key ("12 Stones" -> "0000000012 Stones") so
+// derives a zero-padded sort key ("12 Pebbles" -> "0000000012 Pebbles") so
 // numeric-prefix artists sort numerically rather than lexically in Emby
 // and Jellyfin library views. The derivation also sets LockSortName, which
 // the Emby push consumes to add "SortName" to the platform's LockedFields

@@ -14,9 +14,10 @@ package artist
 //   - Punctuation-replaced filesystem characters: "AC/DC" -> "AC_DC" vs "ACDC".
 //
 // Unicode normalization ALONE is not sufficient: NFKC does not map U+2019
-// (RIGHT SINGLE QUOTATION MARK) to U+0027 (APOSTROPHE), so the observed
-// Caedmon's Call split is NOT caught by normalization.  The explicit
-// punctuation fold at step 3 is therefore load-bearing.
+// (RIGHT SINGLE QUOTATION MARK) to U+0027 (APOSTROPHE), so an artist name
+// like Larkfield's Reach can split into two records depending on which
+// apostrophe form a given tool emits.  This is NOT caught by normalization
+// alone.  The explicit punctuation fold at step 3 is therefore load-bearing.
 
 import (
 	"strings"
@@ -58,7 +59,7 @@ var commonArticles = []string{"the ", "a ", "an "}
 //     U+2019 (RIGHT SINGLE QUOTATION MARK) -> U+0027 (APOSTROPHE)
 //     U+2010..U+2015 (various dashes) -> U+002D (HYPHEN-MINUS)
 //     U+201C/U+201D (curly double quotes) -> U+0022 (QUOTATION MARK)
-//     These are the characters that cause the observed "Caedmon's Call" split.
+//     These are the characters that cause the "Larkfield's Reach" split above.
 //     We fold the whole family in each class to a single ASCII representative.
 //
 //  4. Whitespace collapse -- replace every run of Unicode whitespace (including

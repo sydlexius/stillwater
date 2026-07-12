@@ -382,22 +382,19 @@ echo ""
 # validation, NFO write-back, and event bus all behave identically to a
 # user-initiated edit. Each call is its own injection-free request.
 #
-# IDs below all reference the canonical UAT artist "12 Stones" (a real,
-# stable, public band) so the smoke harness's fixture artist is shaped like
-# a realistic post-identify record. Sources:
-#   MBID:    https://musicbrainz.org/artist/6f81a7dc-be31-4498-ae95-6d994ffec614
-#   Discogs: https://www.discogs.com/artist/901359  (from MB url-rels)
-#   Wikidata: https://www.wikidata.org/wiki/Q175044 (from MB url-rels)
-#   AudioDB: https://www.theaudiodb.com/api/v1/json/2/search.php?s=12+Stones (idArtist=113824)
-#   Deezer:  https://api.deezer.com/search/artist?q=12+Stones (id=5269)
+# IDs below are synthetic but format-valid (UUID for MBID, numeric for
+# Discogs/AudioDB/Deezer, Q-number for Wikidata) so the smoke harness's
+# fixture artist is shaped like a realistic post-identify record (#1697).
+# They do not resolve to any real provider entry -- the seeding path below
+# only exercises local field validation and storage, never a live lookup.
 echo "--- Seed provider IDs (#1697) ---"
 echo ""
 
-SEED_MBID="6f81a7dc-be31-4498-ae95-6d994ffec614"
-SEED_DISCOGS_ID="901359"
-SEED_WIKIDATA_ID="Q175044"
-SEED_AUDIODB_ID="113824"
-SEED_DEEZER_ID="5269"
+SEED_MBID="a0000000-0000-4000-8000-000000000012"
+SEED_DISCOGS_ID="900001"
+SEED_WIKIDATA_ID="Q9000001"
+SEED_AUDIODB_ID="110001"
+SEED_DEEZER_ID="500001"
 
 seed_field() {
   local field="$1"

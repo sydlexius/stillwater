@@ -99,7 +99,7 @@ func TestMirrorServerType(t *testing.T) {
 	}{
 		{"nil mirror is official", nil, "official"},
 		{"beta URL is beta", &provider.MirrorConfig{BaseURL: betaMirrorURL, RateLimit: 1}, "beta"},
-		{"custom URL is custom", &provider.MirrorConfig{BaseURL: "http://192.168.1.126:5000/ws/2", RateLimit: 10}, "custom"},
+		{"custom URL is custom", &provider.MirrorConfig{BaseURL: "http://192.0.2.10:5000/ws/2", RateLimit: 10}, "custom"},
 		{"official URL in config is official", &provider.MirrorConfig{BaseURL: "https://musicbrainz.org/ws/2", RateLimit: 1}, "official"},
 	}
 	for _, tt := range tests {

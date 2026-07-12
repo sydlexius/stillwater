@@ -54,8 +54,8 @@ func seedTwoDistinctPairs(t *testing.T, db *sql.DB) {
 	}
 	curly := string([]rune{0x2019})
 	// Pair 1: apostrophe variant.
-	mustInsert("Caedmon's Call", "/music/Caedmon's Call")
-	mustInsert("Caedmon"+curly+"s Call", "/music/Caedmon2")
+	mustInsert("Larkfield's Reach", "/music/Larkfield's Reach")
+	mustInsert("Larkfield"+curly+"s Reach", "/music/Larkfield2")
 	// Pair 2: article variant ("The Cure" vs "Cure, The" both normalize equal).
 	mustInsert("The Cure", "/music/The Cure")
 	mustInsert("Cure, The", "/music/Cure, The")
