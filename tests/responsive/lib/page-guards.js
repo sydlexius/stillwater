@@ -22,6 +22,25 @@
 //
 // Hence: assert the page's IDENTITY and its AUTHENTICATED state, per record,
 // and fail the record LOUDLY when either does not hold.
+//
+// WHAT THESE GUARDS CANNOT DO -- read this before trusting them with a claim.
+// assertPageIdentity works from goto()'s HTTP Response. It therefore catches a
+// SERVER REDIRECT (a 3xx landing on a different path, the compliance case above)
+// and a non-200 status. It CANNOT detect a server that re-dispatches INTERNALLY:
+// /next/X is handled by nextFallback (internal/api/handlers.go), which rewrites
+// the path in-process and serves the stable handler's response at HTTP 200 under
+// the ORIGINAL URL. Over HTTP that is indistinguishable from /next/X having its
+// own handler, and no status/URL check can tell them apart -- only a markup
+// assertion could, and these guards do not attempt one.
+//
+// This matters because it is exactly the claim it would be tempting to make.
+// After M55 #1757 there are no per-screen next/ handlers left at all, so an
+// earlier version of this comment saying the guard would catch the server
+// "silently serving the legacy page" was WRONG: for a re-dispatch it would catch
+// nothing, because there is nothing at the HTTP layer to catch. The harness now
+// probes the canonical paths (run.js PAGES) instead, which removes the question.
+// These are a redirect/status guard, an auth guard, and a scroll-origin guard.
+// Real, and worth keeping. Nothing more than that.
 
 import { AUTHED_BODY_CLASS, LOGIN_TITLE_PREFIX } from './constants.js';
 
@@ -130,6 +149,52 @@ export async function assertAuthenticated(page, { requestedPath }) {
     );
   }
   return state;
+}
+
+// resetScrollToOrigin: put the page back at (0, 0) before ANY probe runs.
+//
+// THE BUG THIS FIXES. Every geometry probe compares a VIEWPORT-relative rect
+// (getBoundingClientRect) against a DOCUMENT-absolute extent
+// (documentElement.scrollHeight). Those share an origin only at scroll (0, 0).
+// The harness asserted that in a COMMENT -- "the harness never scrolls before
+// probing" -- and the comment was wrong: openAffordance() calls trigger.click(),
+// and Playwright AUTO-SCROLLS a click target into view. At scrollY > 0 the
+// off-screen probe's `above` test (rect.bottom < -1) is true for every element
+// the page has scrolled PAST, so the report fills up with fabricated
+// "unreachable" offenders that are in fact perfectly reachable.
+//
+// Normalising the scroll position (rather than offsetting every rect by scrollY)
+// is the genuinely correct fix: it also makes the numbers REPRODUCIBLE. Playwright
+// scrolls by however far that particular trigger happened to need, so an
+// offset-based harness would measure sticky/lazy geometry from a different origin
+// on every run.
+//
+// An invariant is only an invariant if something enforces it. This throws a
+// PageGuardError when the page will not return to the origin (e.g. a future
+// scroll-locked overlay), and window.__swAssertUnscrolled() throws inside each
+// probe as the backstop -- neither path can silently fabricate offenders.
+export async function resetScrollToOrigin(page, { requestedPath } = {}) {
+  const scroll = await page.evaluate(() => new Promise(resolve => {
+    // 'instant' defeats any `scroll-behavior: smooth`, which would otherwise
+    // still be animating when the probes read geometry.
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      resolve({ scrollX: window.scrollX, scrollY: window.scrollY });
+    }));
+  }));
+
+  if (Math.abs(scroll.scrollX) > 0.5 || Math.abs(scroll.scrollY) > 0.5) {
+    throw new PageGuardError(
+      'scroll-origin',
+      `${requestedPath} would not return to the scroll origin `
+      + `(still at ${scroll.scrollX}, ${scroll.scrollY} after scrollTo(0, 0)). `
+      + 'Every probe measures a viewport-relative rect against a document-absolute '
+      + 'extent, which is only valid at (0, 0); measuring here would report elements '
+      + 'scrolled PAST as unreachable. Refusing to measure.',
+      scroll,
+    );
+  }
+  return scroll;
 }
 
 // waitForQuiescence: let the page STOP MOVING before probing it.

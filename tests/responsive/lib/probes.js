@@ -36,6 +36,7 @@ export async function runLayoutProbe(page) {
   return page.evaluate((cap) => {
     const TOLERANCE = 1; // px, avoid subpixel false positives
     const m = window.__swMetrics();
+    window.__swAssertUnscrolled();
     const viewportWidth = m.viewportWidth;
     const docOverflowPx = m.scrollWidth - viewportWidth;
 
@@ -108,6 +109,7 @@ export async function runLayoutProbe(page) {
 export async function runTapTargetProbe(page, { minPx = TAP_TARGET_MIN_PX } = {}) {
   return page.evaluate(({ minPx, cap, selector }) => {
     const m = window.__swMetrics();
+    window.__swAssertUnscrolled();
     const offenders = [];
     const excluded = {
       notVisible: 0,
@@ -190,20 +192,27 @@ export async function runTapTargetProbe(page, { minPx = TAP_TARGET_MIN_PX } = {}
 //      its 46 findings on settings were exactly that -- including a 1x1 tooltip
 //      anchor at top:3495. Below the fold is SCROLLABLE-TO, not clipped.
 //
-// The only genuinely unreachable conditions are:
-//   horizontal: left < 0 || right > viewportWidth  (nothing scrolls you left of
-//               the origin; on the right it is reachable only via the very
-//               horizontal overflow the layout probe already reports as a bug)
-//   vertical:   bottom < 0 || top > document.scrollHeight  (outside the
-//               scrollable document entirely)
+// The only genuinely unreachable conditions are the ones swClassifyOffscreen
+// (lib/probe-helpers.js) tests -- that predicate is the single definition,
+// exercised by unit tests and installed into the page from the same source.
+//
+// SCROLL ORIGIN. The predicate compares a VIEWPORT-relative rect against a
+// DOCUMENT-absolute scrollHeight, which is only valid at scrollY = 0. That used
+// to be an assumption written in a comment ("the harness never scrolls before
+// probing") and it was false -- openAffordance() clicks a trigger and Playwright
+// auto-scrolls it into view, after which `above` fires for every element
+// scrolled past, fabricating unreachable offenders. run.js now normalises the
+// scroll position before probing (resetScrollToOrigin) and __swAssertUnscrolled
+// THROWS here if it somehow did not.
 //
 // Visually-hidden skip links are exempt: parked off-canvas on purpose, revealed
 // on focus.
 // ---------------------------------------------------------------------------
 export async function runOffscreenProbe(page) {
   return page.evaluate(({ cap, selector }) => {
-    const TOLERANCE = 1;
     const m = window.__swMetrics();
+    window.__swAssertUnscrolled();
+    const TOLERANCE = window.__swTol;
     const offenders = [];
 
     document.querySelectorAll(selector).forEach(el => {
@@ -212,15 +221,8 @@ export async function runOffscreenProbe(page) {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
 
-      const offscreen = {
-        left: rect.left < -TOLERANCE,
-        right: rect.right > m.viewportWidth + TOLERANCE,
-        // Viewport-relative rect vs page-absolute document height: at scrollY=0
-        // these share an origin, and the harness never scrolls before probing.
-        above: rect.bottom < -TOLERANCE,
-        belowDocument: rect.top > m.scrollHeight + TOLERANCE,
-      };
-      if (offscreen.left || offscreen.right || offscreen.above || offscreen.belowDocument) {
+      const offscreen = window.__swClassifyOffscreen(rect, m, TOLERANCE);
+      if (window.__swIsOffscreen(offscreen)) {
         offenders.push({
           selector: window.__swDescribeSelector(el),
           position: getComputedStyle(el).position,

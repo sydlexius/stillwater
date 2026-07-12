@@ -129,15 +129,39 @@ export async function resolveFirstArtistId({ baseURL, storageState } = {}) {
 
 // readThemePreference / writeThemePreference bracket the run so it can put the
 // account's theme back the way it found it (see the mutation warning at the top
-// of this file). Both return null / false rather than throwing: failing to
-// restore a preference must not sink a completed measurement run, but run.js
-// reports the failure rather than swallowing it.
+// of this file). Neither throws -- failing to restore a preference must not sink
+// a completed measurement run -- but BOTH failures are REPORTED by run.js rather
+// than swallowed.
+//
+// readThemePreference returns { theme, reason }, never a bare null. The pre-fix
+// version returned null on a failed read, which run.js tested with a bare
+// `if (originalTheme)` -- so a 401/500 on GET /api/v1/preferences skipped the
+// restore SILENTLY and left the account on whatever theme ran last (light). The
+// WRITE failure was already loud; a read failure has exactly the same
+// consequence for the operator and must be too. `reason` distinguishes "could
+// not read it" (loud) from "the account genuinely has no theme set" (nothing to
+// restore, not a failure).
 export async function readThemePreference({ baseURL, storageState } = {}) {
   return withApi({ baseURL, storageState }, async ctx => {
-    const res = await ctx.get('/api/v1/preferences');
-    if (!res.ok()) return null;
-    const body = await res.json();
-    return body.theme ?? null;
+    let res;
+    try {
+      res = await ctx.get('/api/v1/preferences');
+    } catch (err) {
+      return { theme: null, reason: `GET /api/v1/preferences threw: ${err.message}` };
+    }
+    if (!res.ok()) {
+      return { theme: null, reason: `GET /api/v1/preferences returned HTTP ${res.status()}` };
+    }
+    let body;
+    try {
+      body = await res.json();
+    } catch (err) {
+      return { theme: null, reason: `GET /api/v1/preferences returned non-JSON: ${err.message}` };
+    }
+    if (body.theme == null) {
+      return { theme: null, reason: null }; // no theme set on the account: nothing to restore
+    }
+    return { theme: body.theme, reason: null };
   });
 }
 

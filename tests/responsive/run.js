@@ -28,8 +28,7 @@
 // Usage:
 //   STILLWATER_ADMIN_USER=... STILLWATER_ADMIN_PASSWORD=... \
 //   node tests/responsive/run.js --url http://127.0.0.1:1974 \
-//     [--browsers chromium,firefox] [--pages next|legacy] \
-//     [--out tests/responsive/report] \
+//     [--browsers chromium,firefox] [--out tests/responsive/report] \
 //     [--headed] [--slow-mo <ms>] [--only <page-name>]
 //
 // Both credential env vars are MANDATORY (see lib/auth.js): the harness will
@@ -47,15 +46,13 @@
 // --slow-mo <ms> adds Playwright's slowMo delay between actions (default 0).
 // Only meaningful paired with --headed.
 //
-// --only <page-name> restricts the run to a single page from the selected
-// --pages set (matched against that page's `name`, e.g. "dashboard").
+// --only <page-name> restricts the run to a single page (matched against that
+// page's `name`, e.g. "dashboard").
 //
-// --pages selects which route set to probe: 'next' (default, canonical /next/*
-// UX) requires the target server to be running with SW_UX=dual or SW_UX=next --
-// the default SW_UX=stable dev config 404s every /next/* route. 'legacy' probes
-// the pre-existing stable-UX equivalents. The two sets are kept apples-to-apples
-// (same page `name`s wherever a legacy equivalent exists) so a next-vs-legacy
-// comparison never flatters one side by omitting a page.
+// EXIT CODE: 0 only when the matrix actually measured something. A run in which
+// every record guard-failed (or errored) exits 1 -- see runFailureReasons. A
+// measurement harness whose entire job is to catch "reports success while doing
+// nothing" must not commit that sin itself.
 //
 // FIREFOX CAVEAT: Playwright's Firefox engine does not support device/touch
 // emulation (`isMobile` / `hasTouch` are Chromium-only). On Firefox, "mobile"
@@ -80,7 +77,9 @@ import { VIEWPORTS, THEMES, TAP_TARGET_MIN_PX } from './lib/constants.js';
 import { installProbeHelpers } from './lib/probe-helpers.js';
 import { runLayoutProbe, runTapTargetProbe, runOffscreenProbe, runAxeProbe } from './lib/probes.js';
 import { setTheme, applyTheme } from './lib/theme.js';
-import { assertPageIdentity, assertAuthenticated, waitForQuiescence, PageGuardError } from './lib/page-guards.js';
+import {
+  assertPageIdentity, assertAuthenticated, waitForQuiescence, resetScrollToOrigin, PageGuardError,
+} from './lib/page-guards.js';
 import { openAffordance } from './lib/open-state.js';
 import {
   authenticateOnce, resolveFirstArtistId, describeTarget,
@@ -89,75 +88,79 @@ import {
 
 const DIRNAME = path.dirname(fileURLToPath(import.meta.url));
 
-// Page sets: /next/* is the CANONICAL UX (project memory
-// project-next-ux-is-canonical) -- real mobile/UI issues should run against it
-// and 'next' is the default here. 'legacy' is a fallback pointed at the
-// pre-existing stable-UX equivalents.
+// THE PAGES. One list, at the CANONICAL paths.
 //
-// PAGE_SETS.next and PAGE_SETS.legacy are kept apples-to-apples on purpose:
-// every entry with a real legacy equivalent appears in both sets under the same
-// `name`, so a next-vs-legacy comparison never flatters one side by omission.
+// THERE IS NO next-vs-legacy SPLIT, because there is nothing left to split.
+// This harness used to ship two page sets (`--pages next|legacy`) and claim they
+// gave an "apples-to-apples next-vs-legacy comparison". That claim was FICTION,
+// and the two sets measured the same bytes:
 //
-// Verify a route actually serves before adding it here -- and note that "serves"
-// is now ENFORCED rather than assumed: assertPageIdentity (lib/page-guards.js)
-// hard-fails any record whose final URL is not the requested one. A route that
-// silently 302s to its legacy equivalent (as /next/reports/compliance does) can
-// no longer be measured under a "next" label by accident. That guard, not the
-// comment below, is what keeps this honest.
+//   * M55 #1757 promoted every next/ screen to its canonical path. No dedicated
+//     /next/* screen handler remains (internal/api/router.go).
+//   * /next/X is now served by nextFallback (internal/api/handlers.go), which
+//     re-dispatches INTERNALLY through the mux to the stable handler:
+//     `fwd.URL.Path = target; mux.ServeHTTP(w, fwd)`. HTTP 200, same URL, no
+//     redirect. The ONLY markup delta is an hx-headers attribute on <main>
+//     (web/templates/layout.templ) -- which none of the four probes can see.
+//     "next vs legacy" was therefore a tautology: identical DOM on both sides.
+//   * The `legacy` set was additionally STALE. There is no `GET /dashboard` page
+//     route at all (only the /dashboard/actions + /dashboard/activity HTMX
+//     fragments), so its first entry would have 404'd; duplicates and
+//     foreign-files have their own canonical routes now, not `?tab=` params.
+//
+// Probing the canonical paths also drops the harness's SW_UX dependency
+// entirely: /next/* needs SW_UX=dual|next and 404s under the dev default of
+// SW_UX=stable, which is exactly the "every record guard-failed" run that used
+// to exit 0 (see runFailureReasons).
+//
+// Verify a route actually serves before adding one here -- and "serves" is
+// ENFORCED, not assumed: assertPageIdentity (lib/page-guards.js) hard-fails any
+// record the SERVER did not serve at the requested path.
+//
+// WHAT THE GUARD CAN AND CANNOT CATCH -- do not overstate it. It reads
+// goto()'s Response, so it catches a SERVER REDIRECT (3xx to a different path)
+// and a non-200 status. It CANNOT catch an internal re-dispatch: nextFallback
+// rewrites the path server-side and returns 200 at the original URL, which is
+// indistinguishable, over HTTP, from that URL having its own handler. Nothing
+// short of a markup assertion could tell those apart, and the guard does not
+// attempt one. It is a redirect/status guard -- a real one, worth keeping -- and
+// nothing more.
 //
 // TODO(#2382): once the More sheet lands, add an open-state probe for it here
 // (same shape as prefs-drawer-open below) -- an interactive open/collapsed
 // surface is the one thing this harness cannot exercise via a bare page load.
-const PAGE_SETS = {
-  next: [
-    { name: 'dashboard', path: '/next/' },
-    { name: 'artists-grid', path: '/next/artists?view=grid' },
-    { name: 'settings', path: '/next/settings' },
-    { name: 'reports', path: '/next/reports' },
-    { name: 'reports-duplicates', path: '/next/reports/duplicates' },
-    { name: 'reports-foreign-files', path: '/next/reports/foreign-files' },
-    // /next/reports/compliance is NOT included: it redirects to the legacy
-    // /reports?tab=compliance page, which has not actually been ported to
-    // /next. assertPageIdentity would now hard-fail it rather than silently
-    // measure legacy under a "next" label.
-    { name: 'activity', path: '/next/activity' },
-    { name: 'logs', path: '/next/logs' },
-    { name: 'preferences', path: '/next/preferences' },
-    // 'artist-detail' is appended at runtime in main() once a real artist id is
-    // resolved from the target database -- never hardcode an id here, it would
-    // only be valid for one particular database snapshot.
-    {
-      // Real markup (verified live against a SW_UX=dual instance): the sidebar
-      // renders TWO [data-sw-prefs-trigger] elements (nav link + user-menu
-      // link). No legacy equivalent exists (the prefs drawer is next-only UI).
-      name: 'prefs-drawer-open',
-      path: '/next/',
-      open: {
-        trigger: '[data-sw-prefs-trigger]',
-        waitFor: '.sw-prefs-drawer:not([aria-hidden="true"])',
-      },
+//
+// TODO: /reports/compliance is a real canonical route (handleCompliancePage) and
+// is a candidate to add. It was excluded because the OLD /next/reports/compliance
+// 302'd to the legacy page; that reason is gone with the next/ lane. Confirm it
+// serves 200 at /reports/compliance before adding it, per the rule above.
+export const PAGES = [
+  { name: 'dashboard', path: '/' },
+  { name: 'artists-grid', path: '/artists?view=grid' },
+  { name: 'settings', path: '/settings' },
+  { name: 'reports', path: '/reports' },
+  { name: 'reports-duplicates', path: '/reports/duplicates' },
+  { name: 'reports-foreign-files', path: '/reports/foreign-files' },
+  { name: 'activity', path: '/activity' },
+  { name: 'logs', path: '/logs' },
+  { name: 'preferences', path: '/preferences' },
+  // 'artist-detail' is appended at runtime in main() once a real artist id is
+  // resolved from the target database -- never hardcode an id here, it would
+  // only be valid for one particular database snapshot.
+  {
+    // Real markup: the sidebar renders TWO [data-sw-prefs-trigger] elements
+    // (nav link + user-menu link).
+    name: 'prefs-drawer-open',
+    path: '/',
+    open: {
+      trigger: '[data-sw-prefs-trigger]',
+      waitFor: '.sw-prefs-drawer:not([aria-hidden="true"])',
     },
-  ],
-  legacy: [
-    { name: 'dashboard', path: '/dashboard' },
-    { name: 'artists', path: '/artists' },
-    { name: 'settings', path: '/settings' },
-    { name: 'reports', path: '/reports' },
-    { name: 'reports-duplicates', path: '/reports?tab=duplicates' },
-    { name: 'reports-foreign-files', path: '/reports?tab=foreign-files' },
-    { name: 'activity', path: '/activity' },
-    { name: 'logs', path: '/logs' },
-    { name: 'preferences', path: '/preferences' },
-    // 'artist-detail' is appended at runtime in main(), mirroring the next set.
-  ],
-};
+  },
+];
 
-// ARTIST_DETAIL_PATH returns each page set's route template for the
-// runtime-resolved artist-detail probe (see main()).
-const ARTIST_DETAIL_PATH = {
-  next: id => `/next/artists/${id}`,
-  legacy: id => `/artists/${id}`,
-};
+// The runtime-resolved artist-detail probe's route (see main()).
+const artistDetailPath = id => `/artists/${id}`;
 
 const ENGINES = { chromium, firefox };
 
@@ -169,12 +172,11 @@ const ENGINES = { chromium, firefox };
 // did `opts.browsers = argv[++i].split(',')`, which threw a bare TypeError on a
 // trailing `--browsers`, and `opts.url = argv[++i]`, which silently set url to
 // undefined on a trailing `--url`.
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const opts = {
     url: null,
     browsers: ['chromium', 'firefox'],
     out: path.join(DIRNAME, 'report'),
-    pages: 'next',
     headed: false,
     slowMo: 0,
     only: null,
@@ -191,10 +193,21 @@ function parseArgs(argv) {
     if (a === '--url') opts.url = value(++i, '--url');
     else if (a === '--browsers') opts.browsers = value(++i, '--browsers').split(',').map(s => s.trim()).filter(Boolean);
     else if (a === '--out') opts.out = path.resolve(value(++i, '--out'));
-    else if (a === '--pages') opts.pages = value(++i, '--pages');
     else if (a === '--headed') opts.headed = true;
     else if (a === '--slow-mo') opts.slowMo = Number(value(++i, '--slow-mo'));
     else if (a === '--only') opts.only = value(++i, '--only');
+    // --pages is REMOVED, not silently ignored: a caller passing it believes it
+    // is selecting a route set, and would otherwise get the canonical pages back
+    // while thinking it had asked for something else.
+    else if (a === '--pages') {
+      throw new Error(
+        '--pages has been removed. It selected between a "next" and a "legacy" route '
+        + 'set that measured the SAME rendered page: after M55 #1757 every screen was '
+        + 'promoted to its canonical path, and /next/* is now served by an internal '
+        + 're-dispatch to the stable handler (HTTP 200, same URL, identical DOM). The '
+        + 'harness probes the canonical paths -- see PAGES in this file.'
+      );
+    }
     else throw new Error(`unknown argument "${a}"`);
   }
 
@@ -212,9 +225,6 @@ function parseArgs(argv) {
     new URL(opts.url);
   } catch {
     throw new Error(`--url is not a valid URL: "${opts.url}"`);
-  }
-  if (!PAGE_SETS[opts.pages]) {
-    throw new Error(`--pages must be one of: ${Object.keys(PAGE_SETS).join(', ')} (got "${opts.pages}")`);
   }
   if (!opts.browsers.length) throw new Error('--browsers must name at least one engine');
   for (const b of opts.browsers) {
@@ -254,14 +264,16 @@ function gitDescribe() {
 // diffed. `target` carries the database-dependent context (library/connection/
 // artist counts, the artist id used) that settings' and artist-detail's numbers
 // are only reproducible against.
-function buildMetadata({ opts, runId, startedAt, browserVersions, target, artist, pageSet }) {
+// There is no `pageSet` key: it used to record 'next' | 'legacy', a distinction
+// that no longer exists in the app (see PAGES). `pages` -- the actual paths
+// probed -- is the honest, and sufficient, record.
+function buildMetadata({ opts, runId, startedAt, browserVersions, target, artist, pages }) {
   return {
     runId,
     startedAt: new Date(startedAt).toISOString(),
     harnessIssue: 2386,
     baseURL: opts.url,
-    pageSet: opts.pages,
-    pages: pageSet.map(p => ({ name: p.name, path: p.path })),
+    pages: pages.map(p => ({ name: p.name, path: p.path })),
     viewports: VIEWPORTS,
     themes: THEMES,
     tapTargetMinPx: TAP_TARGET_MIN_PX,
@@ -320,6 +332,14 @@ async function runOnePage(context, browserName, pageDef, viewport, theme, ctx) {
       await openAffordance(page, pageDef.open, record);
     }
 
+    // GUARD 3 -- scroll origin. Every probe compares a viewport-relative rect
+    // against a document-absolute extent, which is only valid at (0, 0). The
+    // harness used to merely ASSERT that in a comment while openAffordance's
+    // trigger.click() had Playwright auto-scrolling the page underneath it --
+    // at which point the off-screen probe reports everything scrolled past as
+    // "unreachable". Normalise, and fail loudly if we cannot.
+    record.scroll = await resetScrollToOrigin(page, { requestedPath: pageDef.path });
+
     record.layout = await runLayoutProbe(page);
     record.tapTargets = await runTapTargetProbe(page, { minPx: TAP_TARGET_MIN_PX });
     record.offscreen = await runOffscreenProbe(page);
@@ -362,7 +382,7 @@ async function main() {
   console.log(`Target: ${opts.url}  --  THIS RUN WILL WRITE TO THIS SERVER`);
   console.log('  (admin setup + onboarding flag + ~130 theme-preference writes;');
   console.log('   the account\'s original theme is restored at the end of the run)');
-  console.log(`Pages: ${opts.pages}   Browsers: ${opts.browsers.join(', ')}   Run: ${runId}\n`);
+  console.log(`Browsers: ${opts.browsers.join(', ')}   Run: ${runId}\n`);
 
   fs.mkdirSync(path.join(opts.out, 'screenshots', runId), { recursive: true });
 
@@ -378,20 +398,20 @@ async function main() {
   const target = await describeTarget({ baseURL: opts.url, storageState });
   const originalTheme = await readThemePreference({ baseURL: opts.url, storageState });
 
-  let pageSet = PAGE_SETS[opts.pages].slice();
+  let pages = PAGES.slice();
 
   // Resolve a real artist id from the target database rather than hardcode one.
   const artist = await resolveFirstArtistId({ baseURL: opts.url, storageState });
   if (artist.id) {
-    pageSet.push({ name: 'artist-detail', path: ARTIST_DETAIL_PATH[opts.pages](artist.id) });
+    pages.push({ name: 'artist-detail', path: artistDetailPath(artist.id) });
   }
 
   if (opts.only) {
-    pageSet = pageSet.filter(p => p.name === opts.only);
-    if (pageSet.length === 0) {
-      const available = [...PAGE_SETS[opts.pages].map(p => p.name), artist.id ? 'artist-detail' : null]
+    pages = pages.filter(p => p.name === opts.only);
+    if (pages.length === 0) {
+      const available = [...PAGES.map(p => p.name), artist.id ? 'artist-detail' : null]
         .filter(Boolean);
-      throw new Error(`--only "${opts.only}" matched no page in --pages ${opts.pages} (available: ${available.join(', ')})`);
+      throw new Error(`--only "${opts.only}" matched no page (available: ${available.join(', ')})`);
     }
   }
 
@@ -428,7 +448,7 @@ async function main() {
         const context = await browser.newContext(contextOpts);
         try {
           for (const theme of THEMES) {
-            for (const pageDef of pageSet) {
+            for (const pageDef of pages) {
               const record = await runOnePage(
                 context, browserName, pageDef, viewport, theme,
                 { runId, outDir: opts.out },
@@ -446,28 +466,52 @@ async function main() {
     }
   }
 
-  // Put the account's theme back the way we found it (see lib/auth.js). A
+  // Put the account's theme back the way we found it (see lib/auth.js). EVERY
   // failure here is REPORTED, not swallowed -- the operator needs to know their
   // account was left on the wrong theme.
-  if (originalTheme) {
-    const restored = await writeThemePreference({ baseURL: opts.url, storageState, theme: originalTheme });
+  //
+  // Note the READ failure branch. It used to be `if (originalTheme)` against a
+  // bare null, so a failed GET /api/v1/preferences skipped the restore in total
+  // silence and left the account on light. A read we could not perform and a
+  // write we could not perform have the SAME consequence, so they get the same
+  // volume.
+  const lastTheme = THEMES[THEMES.length - 1];
+  if (originalTheme.reason) {
+    console.error(
+      `\nWARNING: could not READ the account's original theme preference `
+      + `(${originalTheme.reason}), so it was NOT restored. The account is left at `
+      + `"${lastTheme}" -- the last theme this run applied.`
+    );
+  } else if (originalTheme.theme) {
+    const restored = await writeThemePreference({ baseURL: opts.url, storageState, theme: originalTheme.theme });
     if (restored) {
-      console.log(`\nRestored the account's original theme preference: ${originalTheme}`);
+      console.log(`\nRestored the account's original theme preference: ${originalTheme.theme}`);
     } else {
       console.error(
-        `\nWARNING: failed to restore the account's original theme preference `
-        + `("${originalTheme}"). It is currently left at "${THEMES[THEMES.length - 1]}".`
+        `\nWARNING: failed to WRITE the account's original theme preference `
+        + `("${originalTheme.theme}"). It is currently left at "${lastTheme}".`
       );
     }
   }
 
-  const metadata = buildMetadata({ opts, runId, startedAt, browserVersions, target, artist, pageSet });
+  const metadata = buildMetadata({ opts, runId, startedAt, browserVersions, target, artist, pages });
   const reportPath = path.join(opts.out, `responsive-report-${runId}.json`);
   fs.writeFileSync(reportPath, JSON.stringify({ metadata, results }, null, 2));
 
   printSummary(results);
   console.log(`\nFull JSON report: ${reportPath}`);
   console.log(`Screenshots:      ${path.join(opts.out, 'screenshots', runId)}`);
+
+  // THE HARNESS MUST NOT COMMIT THE SIN IT EXISTS TO CATCH. A run in which every
+  // record guard-failed used to write a full report, print its failures, and
+  // exit 0 -- indistinguishable, to any caller checking the exit code, from a
+  // clean pass.
+  const reasons = runFailureReasons(results);
+  if (reasons.length) {
+    console.error('\n=== RUN FAILED ===');
+    for (const r of reasons) console.error(`  ${r}`);
+    process.exitCode = 1;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -490,6 +534,60 @@ function summarizeRecord(r) {
   return bits.join(' ');
 }
 
+// classifyResults: the ONE partition of a result set, shared by the summary and
+// the exit-code decision so the two can never disagree about what happened.
+//
+// A run whose open-state never materialised measured the CLOSED page. Its
+// numbers are real, but they are not the numbers that record CLAIMS to be, so
+// `suspect` is tallied separately and never mixed into the offender totals.
+export function classifyResults(results) {
+  return {
+    skipped: results.filter(r => r.skipped),
+    guardFailed: results.filter(r => r.guardFailed),
+    errored: results.filter(r => r.error),
+    suspect: results.filter(r => !r.error && !r.guardFailed && !r.skipped && (r.openFailed || r.openUnsettled)),
+    ok: results.filter(r => !r.error && !r.guardFailed && !r.skipped && !r.openFailed && !r.openUnsettled),
+  };
+}
+
+// runFailureReasons: why this run must exit NON-ZERO, in words. Empty = exit 0.
+//
+// THE BUG THIS FIXES. The only `process.exitCode = 1` in this file was on a
+// top-level throw. So a run that measured NOTHING -- wrong SW_UX and every
+// /next/* 404, or a logged-out session, i.e. every single record guard-failed --
+// wrote a full report, printed its failures, and exited 0. Any caller gating on
+// the exit code (CI, a script, an agent) read that as a pass. This harness exists
+// to catch operations that report success while doing nothing; it does not get to
+// be one.
+//
+// Named causes, not a bare code: an operator who sees "exit 1" and no reason
+// tends to re-run it.
+export function runFailureReasons(results) {
+  const { ok, guardFailed, errored } = classifyResults(results);
+  const reasons = [];
+
+  if (ok.length === 0) {
+    reasons.push(
+      `MEASURED NOTHING: 0 of ${results.length} record(s) produced a usable measurement. `
+      + 'Nothing in this report is evidence of anything. Common causes: the target server '
+      + 'is not the one you think it is, or the session is logged out (see the GUARD '
+      + 'FAILURES above).'
+    );
+  }
+  if (guardFailed.length) {
+    const kinds = [...new Set(guardFailed.map(r => r.guardFailed.kind))].sort();
+    reasons.push(
+      `${guardFailed.length} record(s) GUARD-FAILED [${kinds.join(', ')}] -- the harness `
+      + 'refused to measure them (wrong page, not logged in, or the page would not return '
+      + 'to the scroll origin).'
+    );
+  }
+  if (errored.length) {
+    reasons.push(`${errored.length} record(s) ERRORED while probing.`);
+  }
+  return reasons;
+}
+
 // The pre-fix summary printed RUN COUNTS only ("Horizontal overflow: 6 run(s)"),
 // which tells you nothing about whether that is a 5px subpixel seam or a 514px
 // blowout. It also folded openFailed runs into the offender tallies alongside
@@ -498,14 +596,7 @@ function summarizeRecord(r) {
 function printSummary(results) {
   console.log('\n=== Responsive UAT Harness Summary ===');
 
-  const skipped = results.filter(r => r.skipped);
-  const guardFailed = results.filter(r => r.guardFailed);
-  const errored = results.filter(r => r.error);
-  // A run whose open-state never materialised measured the CLOSED page. Its
-  // numbers are real, but they are not the numbers this record claims to be, so
-  // they are tallied separately and never mixed into the totals below.
-  const suspect = results.filter(r => !r.error && !r.guardFailed && !r.skipped && (r.openFailed || r.openUnsettled));
-  const ok = results.filter(r => !r.error && !r.guardFailed && !r.skipped && !r.openFailed && !r.openUnsettled);
+  const { skipped, guardFailed, errored, suspect, ok } = classifyResults(results);
 
   console.log(`Runs: ${results.length} (${ok.length} clean, ${suspect.length} open-state suspect, `
     + `${guardFailed.length} guard-failed, ${errored.length} errored, ${skipped.length} skipped)`);
@@ -565,7 +656,16 @@ function printSummary(results) {
   }
 }
 
-main().catch(err => {
-  console.error(`\n${err.message || err}\n`);
-  process.exitCode = 1;
-});
+// Run only when executed as a script, never on import. The unit tests
+// (tests/unit/responsive-harness.test.js) import parseArgs / classifyResults /
+// runFailureReasons / PAGES from this file; a bare `main()` at module scope would
+// launch browsers and mutate a server the moment they did.
+const isMain = process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isMain) {
+  main().catch(err => {
+    console.error(`\n${err.message || err}\n`);
+    process.exitCode = 1;
+  });
+}
