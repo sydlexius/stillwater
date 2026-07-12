@@ -13,12 +13,26 @@
 // Usage:
 //   node tests/responsive/run.js [--url http://127.0.0.1:1973] \
 //     [--browsers chromium,firefox] [--pages next|legacy] \
-//     [--out tests/responsive/report]
+//     [--out tests/responsive/report] \
+//     [--headed] [--slow-mo <ms>] [--only <page-name>]
 //
 // Requires a running Stillwater server (this harness does NOT boot one --
 // point --url at whatever instance you already have up, e.g. the dev
 // server on :1973). It authenticates itself (tests/a11y/helpers/bootstrap.js)
 // so no manual login is needed.
+//
+// --headed launches a visible browser window instead of the default
+// headless run. This is specifically for MAINTAINER TANDEM-UAT (watching a
+// run live alongside the agent); solo/pre-UAT passes stay headless. Default
+// is unchanged (headless: true) when --headed is absent.
+//
+// --slow-mo <ms> adds Playwright's slowMo delay between actions (default 0).
+// Only meaningful paired with --headed -- a headed run at full speed flashes
+// past too fast to watch.
+//
+// --only <page-name> restricts the run to a single page from the selected
+// --pages set (matched against that page's `name`, e.g. "dashboard"), so a
+// tandem-UAT session can focus on one screen instead of the whole matrix.
 //
 // --pages selects which route set to probe: 'next' (default, canonical
 // /next/* UX) requires the target server to be running with SW_UX=dual or
@@ -94,6 +108,9 @@ function parseArgs(argv) {
     browsers: ['chromium', 'firefox'],
     out: path.join(DIRNAME, 'report'),
     pages: 'next',
+    headed: false,
+    slowMo: 0,
+    only: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -101,9 +118,15 @@ function parseArgs(argv) {
     else if (a === '--browsers') opts.browsers = argv[++i].split(',').map(s => s.trim());
     else if (a === '--out') opts.out = path.resolve(argv[++i]);
     else if (a === '--pages') opts.pages = argv[++i];
+    else if (a === '--headed') opts.headed = true;
+    else if (a === '--slow-mo') opts.slowMo = Number(argv[++i]);
+    else if (a === '--only') opts.only = argv[++i];
   }
   if (!PAGE_SETS[opts.pages]) {
     throw new Error(`--pages must be one of: ${Object.keys(PAGE_SETS).join(', ')} (got "${opts.pages}")`);
+  }
+  if (!Number.isFinite(opts.slowMo) || opts.slowMo < 0) {
+    throw new Error(`--slow-mo must be a non-negative number (got "${opts.slowMo}")`);
   }
   return opts;
 }
@@ -173,6 +196,17 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   fs.mkdirSync(path.join(opts.out, 'screenshots'), { recursive: true });
 
+  let pageSet = PAGE_SETS[opts.pages];
+  if (opts.only) {
+    pageSet = pageSet.filter(p => p.name === opts.only);
+    if (pageSet.length === 0) {
+      throw new Error(
+        `--only "${opts.only}" matched no page in --pages ${opts.pages} `
+        + `(available: ${PAGE_SETS[opts.pages].map(p => p.name).join(', ')})`
+      );
+    }
+  }
+
   // Authenticate EXACTLY ONCE for the whole run (see lib/auth.js) -- the
   // login endpoint is rate-limited and a per-context login blows through
   // that budget within a couple of viewport iterations.
@@ -191,7 +225,7 @@ async function main() {
       process.exitCode = 1;
       continue;
     }
-    const browser = await engine.launch({ headless: true });
+    const browser = await engine.launch({ headless: !opts.headed, slowMo: opts.slowMo });
     try {
       for (const viewport of VIEWPORTS) {
         // isMobile/hasTouch are Chromium-only; Firefox throws if set. On
@@ -210,7 +244,7 @@ async function main() {
         const context = await browser.newContext(contextOpts);
         try {
           for (const theme of THEMES) {
-            for (const pageDef of PAGE_SETS[opts.pages]) {
+            for (const pageDef of pageSet) {
               const record = await runOnePage(context, browserName, pageDef, viewport, theme, opts.out);
               results.push(record);
               const status = record.error ? `ERROR: ${record.error.split('\n')[0]}` : summarizeRecord(record);
