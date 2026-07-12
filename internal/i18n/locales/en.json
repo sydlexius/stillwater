@@ -2698,6 +2698,8 @@
   "prefs.density.label": "Layout Density",
   "prefs.density.description": "Controls vertical spacing in lists and grids. Compact fits more content; Spacious adds breathing room.",
   "prefs.density.help": "Vertical breathing room in lists and cards. Compact fits more on screen; Spacious adds padding.",
+  "prefs.touch_friendly.label": "Touch Friendly Controls",
+  "prefs.touch_friendly.help": "Makes buttons bigger and easier to tap. Turns on by itself on phones and tablets. Switch it on here if you use a touchscreen on a laptop.",
   "prefs.density.compact": "Compact",
   "prefs.density.comfortable": "Comfortable",
   "prefs.density.spacious": "Spacious",

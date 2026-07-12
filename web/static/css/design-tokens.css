@@ -101,12 +101,266 @@
   font-display: swap;
 }
 
+/* ========================================================================= *
+ * SEED-AND-DERIVE TOKEN LAYER (M55 #2377)
+ *
+ * A theme declares SEEDS ONLY (the --swd-* ramp below). Every decorator --
+ * halo, focus ring, selection, hover, disabled -- is DERIVED from those seeds
+ * exactly ONCE, in the "DERIVED DECORATORS" block further down, OUTSIDE any
+ * theme block.
+ *
+ * Why: before this, every theme restated every decorator, so a theme could
+ * silently forget one and inherit a wrong value from the cascade. That is
+ * precisely how --sw-danger came to be referenced (input.css .sw-rep-rate-pct)
+ * but never declared, surviving only on a var() fallback. Under seed-and-derive
+ * a theme CANNOT forget a decorator, because a theme never writes one.
+ *
+ * A new theme therefore implements ~10 values and gets the whole decorator
+ * system for free. Add a theme by declaring the seeds; never by restating a
+ * derived token.
+ *
+ * These --swd-* seeds previously lived in input.css scoped to the .sw-next-*
+ * wrappers. They are hoisted here (#2377) because input.css CONSUMES tokens and
+ * must never DECLARE them: the stylelint gate (#2402) points importFrom at this
+ * single file, so a token declared in input.css would be flagged unknown.
+ * ========================================================================= */
+
+:root {
+  /* -- SEEDS: light theme (default) --------------------------------------- */
+  /* Accent. The one hue the product leans on. NOTE: this is the seed the halo
+     and every selection decorator derive from -- rebinding --sw-halo-hue (see
+     .sw-btn-destructive) is how destructive gets a red halo for free. */
+  --swd-accent: #3b82f6;
+
+  /* Ink ramp: primary / secondary / tertiary text. */
+  --swd-ink: #0f172a;           /* slate-900 */
+  --swd-ink-2: #334155;         /* slate-700 */
+  --swd-ink-3: #64748b;         /* slate-500 -- AA body on white */
+
+  /* Backgrounds. */
+  --swd-bg-base: #f1f5f9;       /* slate-100 -- faint base behind cards */
+  --swd-bg-raised: #ffffff;     /* card */
+
+  /* Hairline. */
+  --swd-line: rgba(15, 23, 42, 0.10);
+
+  /* Severity seeds. Ink values, AA on their own soft tint. */
+  --swd-err: #b91c1c;
+  --swd-warn: #b45309;
+  --swd-ok: #15803d;
+
+  /* -- Supporting ramp (light) -------------------------------------------- */
+  /* Not seeds (a new theme may inherit these), but tokens, so they live here
+     rather than in input.css. Migrated verbatim from input.css (#2377). */
+  --swd-bg-elev: #f8fafc;       /* row hover / popover */
+  /* Opacity-aware surface fills. The Background Opacity preference drives
+     --sw-glass-bg (set inline on :root by preferences.js), exactly as the
+     app-global .sw-card consumes it. Resting card/bubble/row/toolbar fills
+     source from that same var so the pref governs their translucency.
+     --swd-surface-elev keeps the higher-opacity elevated look for hover/popover
+     surfaces that must stay legible. */
+  --swd-surface: var(--sw-glass-bg);
+  --swd-surface-elev: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-elev) 45%);
+  /* #1784 contrast floor: the theme raised-card color pinned to ~0.92 effective
+     alpha (8% backdrop bleed). Because it derives from --swd-bg-raised -- which
+     the .dark block theme-flips (#ffffff -> #111a2e) -- ONE declaration covers
+     both themes: a floored surface reads white@0.92 in light, slate@0.92 in
+     dark. Legibility-critical surfaces override --swd-surface (and its -elev
+     hover pair) to this token so they never track the opacity pref below the AA
+     floor. */
+  --swd-surface-floor: color-mix(in srgb, var(--swd-bg-raised) 92%, transparent);
+  --swd-line-strong: rgba(15, 23, 42, 0.16);
+  --swd-blue-ink: #2563eb;      /* blue-600 -- link/accent ink, AA on white */
+  --swd-r-2: 10px;
+  --swd-r-3: 14px;
+  --swd-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --swd-shadow-2: 0 8px 24px rgba(15, 23, 42, 0.18);
+  /* Severity soft tints + the info severity (not a seed: info is reporting-only
+     and never a control, so it has no halo/decorator to derive). */
+  --swd-err-soft: rgba(248, 113, 113, 0.16);
+  --swd-warn-soft: rgba(251, 191, 36, 0.18);
+  --swd-info: #4338ca;
+  --swd-info-soft: rgba(129, 140, 248, 0.16);
+  --swd-ok-soft: rgba(74, 222, 128, 0.18);
+  /* Category left-accent (image/nfo/metadata), AA-saturated for light. */
+  --swd-cat-image: #ef4444;
+  --swd-cat-nfo: #6366f1;
+  --swd-cat-meta: #d97706;
+}
+
+/* -- SEEDS: dark theme (the product default) ------------------------------ */
+/* A theme declares SEEDS and the supporting ramp. It declares NO decorators. */
+.dark {
+  --swd-accent: #3b82f6;
+  --swd-ink: #e6edf7;
+  --swd-ink-2: #b6c2d4;
+  --swd-ink-3: #7d8aa1;
+  --swd-bg-base: #0b1220;
+  --swd-bg-raised: #111a2e;
+  --swd-line: rgba(148, 163, 184, 0.14);
+  --swd-err: #f87171;
+  --swd-warn: #fbbf24;
+  --swd-ok: #4ade80;
+
+  /* Supporting ramp (dark). */
+  --swd-bg-elev: #1a253f;
+  --swd-line-strong: rgba(148, 163, 184, 0.28);
+  --swd-blue-ink: #93c5fd;
+  --swd-shadow-1: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 1px 2px rgba(0, 0, 0, 0.25);
+  --swd-shadow-2: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --swd-err-soft: rgba(248, 113, 113, 0.14);
+  --swd-warn-soft: rgba(251, 191, 36, 0.14);
+  --swd-info: #818cf8;
+  --swd-info-soft: rgba(129, 140, 248, 0.14);
+  --swd-ok-soft: rgba(74, 222, 128, 0.14);
+  --swd-cat-image: #f87171;
+  --swd-cat-nfo: #818cf8;
+  --swd-cat-meta: #fbbf24;
+}
+
+/* ========================================================================= *
+ * DERIVED DECORATORS -- declared ONCE, outside any theme block.
+ *
+ * Nothing below may be restated in a theme. Every value resolves from the seeds
+ * above, so adding a theme = adding seeds, and the decorators follow.
+ * ========================================================================= */
+:root {
+  /* The hue every accent decorator keys off. Declared here so it INHERITS, and
+     rebound on a component to retheme that component's decorators wholesale --
+     see .sw-btn-destructive, which rebinds this one property and nothing else. */
+  --sw-halo-hue: var(--swd-accent);
+}
+
+/* THE HUE-DERIVED DECORATORS MUST BE DECLARED ON A UNIVERSAL SELECTOR, NOT ON
+ * :root. This is not a style preference -- it is the difference between the
+ * destructive halo being red and being blue, and it was caught only by reading
+ * the LIVE computed value off a rendered element.
+ *
+ * WHY: a custom property is substituted at COMPUTED-VALUE TIME on the element
+ * where it is DECLARED. Declared at :root, `--sw-halo: ... var(--sw-halo-hue)`
+ * resolves its var() against :ROOT's hue (blue) once, and every descendant then
+ * inherits that ALREADY-RESOLVED BLUE STRING. A descendant rebinding
+ * --sw-halo-hue: red cannot retroactively change it -- the substitution already
+ * happened. Measured on a live .sw-btn-destructive with :root-declared tokens:
+ *
+ *     --sw-halo-hue  ->  #f87171   (red, correctly rebound)
+ *     painted shadow ->  rgb(59, 130, 246)   (BLUE -- the rebind did nothing)
+ *
+ * Declaring them on `*` instead makes EVERY element re-derive them from the hue
+ * IT inherits, so the rebind lands. This is exactly the pattern Tailwind v4 uses
+ * for its own --tw-shadow/--tw-ring-* on `*, ::before, ::after, ::backdrop`, so
+ * it is neither novel machinery nor a new performance shape for this codebase.
+ *
+ * Only the HUE-DERIVED decorators belong here. Everything derived from a seed no
+ * component rebinds (hover from ink, disabled, severity) stays on :root below,
+ * where a single computation is correct and cheaper. */
+*,
+::before,
+::after,
+::backdrop {
+  /* ONE halo geometry, parameterized by hue. Rebinding --sw-halo-hue on a
+     component (see .sw-btn-destructive) is the ENTIRE diff for a red halo, so
+     destructive is not a CSS special case and a future theme gets a correct
+     red halo for free. */
+  --sw-halo:
+    0 0 0 2px var(--sw-halo-hue),
+    0 0 0 5px color-mix(in srgb, var(--sw-halo-hue) 22%, transparent);
+
+  /* The focus ring is the transient form of the same ring -- one geometry, so a
+     focused control and a selected control read as the same language. */
+  --sw-focus-ring: var(--sw-halo);
+
+  /* Selection. The accent may appear as a TRANSLUCENT tint (22%), a BORDER, or
+     INK -- never as an opaque fill (see the no-solid-fill rule in
+     docs/ux-design-spec.md). 22% keeps the frosted surface reading through.
+     These key off the same hue, so a destructive scope gets a red selection
+     without a second set of tokens. */
+  --sw-selected-border: var(--sw-halo-hue);
+  --sw-selected-bg: color-mix(in srgb, var(--sw-halo-hue) 22%, transparent);
+  --sw-selected-ink: var(--sw-halo-hue);
+}
+
+:root {
+  /* Hover derives from INK, never from the accent: hover must never be mistaken
+     for selection. This is the whole reason the two are separate derivations.
+     Not hue-derived, so :root is correct (and cheaper) for these. */
+  --sw-hover-bg: color-mix(in srgb, var(--swd-ink-2) 8%, transparent);
+  --sw-hover-border: color-mix(in srgb, var(--swd-ink-2) 30%, var(--swd-line));
+
+  /* Disabled. Previously had NO token at all. */
+  --sw-disabled-opacity: 0.42;
+  --sw-disabled-ink: var(--swd-ink-3);
+
+  /* Severity decorators. --sw-danger and --sw-warning were REFERENCED by
+     input.css (.sw-rep-rate-pct) but NEVER DECLARED -- they survived only on a
+     var() fallback, which is the exact bug seed-and-derive exists to prevent.
+     Declaring them here is what they were pretending to be.
+     RED SEMANTICS (see docs/ux-design-spec.md): if the red thing is CLICKABLE it
+     is destructive; if it is REPORTING it is an error; warning is NEVER red. */
+  --sw-danger: var(--swd-err);
+  --sw-warning: var(--swd-warn);
+
+  /* Two MORE tokens with the same defect, found by the structural test in
+     web/static/design_tokens_test.go rather than by eye:
+
+     --sw-surface-overlay was consumed by the icon-only sidebar's CSS tooltip
+     (#sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-link::after) with
+     NO fallback, so `background: var(--sw-surface-overlay)` was invalid at
+     computed-value time and the tooltip rendered with NO BACKGROUND at all --
+     label text floating over whatever sat behind it. It is the elevated surface
+     it always meant to be. A tooltip must stay legible, so this is the solid
+     elevated ramp, not the opacity-tracking glass.
+
+     --sw-accent-primary-hover was consumed by .sw-context-help-link:hover as
+     var(--sw-accent-primary-hover, var(--sw-accent-primary)) -- the fallback was
+     doing all the work. Declared here at the value it actually rendered, so the
+     crutch can go without changing a single pixel. Giving hover a genuinely
+     distinct accent is a design decision, not a cleanup, so it is deliberately
+     NOT invented here. */
+  --sw-surface-overlay: var(--swd-bg-elev);
+  --sw-accent-primary-hover: var(--swd-accent);
+}
+
+/* ========================================================================= *
+ * TOUCH FLOOR -- a CLAMP, not a scale. Keyed to INPUT DEVICE, not screen width.
+ *
+ * A tablet with a trackpad correctly stays dense; a tablet being touched
+ * correctly does not. Density (below) scales SPACING and may NEVER scale
+ * --sw-tap-min: before #2377 nothing stopped [data-density="compact"] shrinking
+ * a control below usability, because no tap token existed at all.
+ *
+ * Two tokens, not one, because the floor and the hit area are DIFFERENT NUMBERS
+ * on a fine pointer -- a single token cannot be 32 and 44 at once:
+ *   FINE pointer  -- the box stays 32px and .sw-icon-btn::after projects a 44px
+ *                    hit area past it at zero layout cost. 32px already clears
+ *                    WCAG 2.2 AA SC 2.5.8 (24x24); 44px is SC 2.5.5 AAA. Growing
+ *                    desktop targets would cost rows per screen and return
+ *                    nothing on a conformance report. Do not do it.
+ *   COARSE pointer -- the VISUAL BOX becomes 44px, so an automated
+ *                    getBoundingClientRect() check measures real geometry rather
+ *                    than a 32px box wearing a bigger hit area.
+ * ========================================================================= */
+:root {
+  --sw-tap-min: 32px;    /* FLOOR: the smallest a control's box may be */
+  --sw-tap-touch: 44px;  /* TOUCH target: constant, never varies */
+}
+@media (pointer: coarse) {
+  :root { --sw-tap-min: var(--sw-tap-touch); }
+}
+/* Touch Friendly Controls preference. A touchscreen laptop reports
+   pointer: fine (its primary input is the trackpad), so no media query can
+   detect a finger reaching for that screen -- only the user knows. Default off,
+   because real touch devices are already detected by the query above. */
+:root[data-touch-friendly="on"] {
+  --sw-tap-min: var(--sw-tap-touch);
+}
+
 :root {
   /* -- Sidebar ------------------------------------------------------------ */
   --sw-sidebar-bg: #0f172a;
   --sw-sidebar-text: #94a3b8;
   --sw-sidebar-text-hover: #cbd5e1;
-  --sw-sidebar-active-bg: rgba(59, 130, 246, 0.15);
+  --sw-sidebar-active-bg: color-mix(in srgb, var(--swd-accent) 15%, transparent);
   /* a11y: blue-300 (was blue-400) lifts the active nav label to WCAG AA over the
      translucent active-bg at the 85% default Background-Opacity. */
   --sw-sidebar-active-text: #93c5fd;
@@ -130,8 +384,10 @@
   --sw-glass-blur: blur(32px) saturate(150%);
 
   /* -- Accents ------------------------------------------------------------ */
-  --sw-accent-primary: #3b82f6;
-  --sw-accent-primary-glow: rgba(59, 130, 246, 0.3);
+  /* Legacy accent aliases. These now DERIVE from the --swd-accent seed rather
+     than restating the hex, so a theme that reseeds the accent moves them too. */
+  --sw-accent-primary: var(--swd-accent);
+  --sw-accent-primary-glow: color-mix(in srgb, var(--swd-accent) 30%, transparent);
   --sw-severity-error: #f87171;
   --sw-severity-error-bg: rgba(248, 113, 113, 0.12);
   --sw-severity-warning: #fbbf24;
@@ -188,7 +444,7 @@
   --sw-sidebar-bg: #0f172a;
   --sw-sidebar-text: #94a3b8;
   --sw-sidebar-text-hover: #cbd5e1;
-  --sw-sidebar-active-bg: rgba(59, 130, 246, 0.15);
+  --sw-sidebar-active-bg: color-mix(in srgb, var(--swd-accent) 15%, transparent);
   /* a11y: blue-300 (was blue-400) for WCAG AA on the active nav label. */
   --sw-sidebar-active-text: #93c5fd;
   --sw-sidebar-glass-bg: rgba(15, 23, 42, 0.96);
@@ -202,7 +458,7 @@
   --sw-sidebar-bg: #ffffff;
   --sw-sidebar-text: #475569;
   --sw-sidebar-text-hover: #1e293b;
-  --sw-sidebar-active-bg: rgba(59, 130, 246, 0.1);
+  --sw-sidebar-active-bg: color-mix(in srgb, var(--swd-accent) 10%, transparent);
   /* a11y: blue-800 (was blue-600) for WCAG AA on the active nav label in light. */
   --sw-sidebar-active-text: #1e40af;
   --sw-sidebar-glass-bg: rgba(255, 255, 255, 0.78);
@@ -340,4 +596,54 @@ body { font-family: var(--sw-font-family); }
 [data-motion="on"] *::after {
   animation-duration: 0.01ms !important;
   transition-duration: 0.01ms !important;
+}
+
+/* ========================================================================= *
+ * TAILWIND THEME EXPOSURE (#2377)
+ *
+ * Tailwind v4 is CSS-first (@import "tailwindcss"), so @theme is the v4 form of
+ * v3's `theme.extend`. Publishing the seeds and decorators here means a utility
+ * class can reach for a TOKEN (border-swd-line, text-swd-err, shadow-sw-halo)
+ * instead of an arbitrary value (border-[#3b82f6]) -- i.e. utilities cannot
+ * reintroduce the literals this PR just removed.
+ *
+ * Deliberately NOT published as a --color-* (which would mint bg-* utilities):
+ * --swd-accent, and --swd-err / --swd-warn / --swd-ok alongside it. A
+ * `bg-swd-accent` utility would be an OPAQUE ACCENT FILL, the one thing the
+ * design rule forbids -- and the severity tokens are bound by the identical
+ * "never a fill" rule for destructive/error (spec SS1: destructive = never a
+ * fill; error = never a control, never a fill). Tailwind v4's --color-*
+ * namespace mints the full bg-*/text-*/border-* utility set per variable with
+ * no way to publish a partial subset, so the only way to keep the fill
+ * utility from existing is to keep these out of --color-* entirely, same as
+ * the accent. All current consumption is `var(--swd-err)` / `var(--swd-warn)`
+ * / `var(--swd-ok)` directly (input.css, artist_detail.templ) -- nothing
+ * reaches these as a Tailwind utility today, so nothing is lost by excluding
+ * them. The accent is reachable as a border, as ink, as the 22% tint, and as
+ * the halo -- and that is the complete list.
+ * ========================================================================= */
+@theme {
+  /* Ink / surface / line -- safe as color utilities. Severity (err/warn/ok)
+     is deliberately excluded above; reach it via var(--swd-err) etc. directly. */
+  --color-swd-ink: var(--swd-ink);
+  --color-swd-ink-2: var(--swd-ink-2);
+  --color-swd-ink-3: var(--swd-ink-3);
+  --color-swd-bg-base: var(--swd-bg-base);
+  --color-swd-bg-raised: var(--swd-bg-raised);
+  --color-swd-line: var(--swd-line);
+
+  /* Accent, exposed ONLY in its sanctioned expressions. */
+  --color-sw-selected-border: var(--sw-selected-border);
+  --color-sw-selected-bg: var(--sw-selected-bg);
+  --color-sw-selected-ink: var(--sw-selected-ink);
+  --color-sw-hover-bg: var(--sw-hover-bg);
+  --color-sw-disabled-ink: var(--sw-disabled-ink);
+
+  /* The halo, as a shadow utility (shadow-sw-halo) -- so emphasis is reachable
+     from a utility without anyone retyping the geometry. */
+  --shadow-sw-halo: var(--sw-halo);
+
+  /* Touch floor, as size utilities (size-sw-tap-min / min-w-sw-tap-min). */
+  --spacing-sw-tap-min: var(--sw-tap-min);
+  --spacing-sw-tap-touch: var(--sw-tap-touch);
 }

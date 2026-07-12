@@ -7533,6 +7533,17 @@ paths:
                       Keyboard shortcut hint visibility (M55 #1774). Controls
                       whether keyboard hints render via data-kbd on the page
                       root.
+                  touch_friendly:
+                    type: string
+                    enum: [off, on]
+                    description: >
+                      Touch-target floor (M55 #2377). When "on", every
+                      icon-only control is lifted to the 44px touch target via
+                      data-touch-friendly on the page root. Defaults to "off"
+                      because coarse-pointer devices (phones, tablets) already
+                      get the larger target from a (pointer: coarse) media
+                      query. The preference exists for a touchscreen laptop,
+                      which reports pointer: fine and so cannot be detected.
                   saved_views:
                     type: string
                     description: >
@@ -7560,6 +7571,7 @@ paths:
                   - density
                   - mono_font
                   - kbd_hints
+                  - touch_friendly
                   - saved_views
         "401":
           description: Not authenticated
