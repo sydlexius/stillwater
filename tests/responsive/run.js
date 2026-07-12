@@ -428,49 +428,102 @@ async function main() {
 
   const browserVersions = {};
 
-  for (const browserName of opts.browsers) {
-    const browser = await ENGINES[browserName].launch({ headless: !opts.headed, slowMo: opts.slowMo });
-    browserVersions[browserName] = browser.version();
-    try {
-      for (const viewport of VIEWPORTS) {
-        // isMobile/hasTouch are Chromium-only; Firefox throws if set. On
-        // Firefox, mobile viewports are viewport-size-only (see header caveat).
-        const contextOpts = {
-          baseURL: opts.url,
-          storageState,
-          viewport: { width: viewport.width, height: viewport.height },
-        };
-        if (browserName === 'chromium' && viewport.width < 768) {
-          contextOpts.isMobile = true;
-          contextOpts.hasTouch = true;
-        }
+  // lastAppliedTheme is LOAD-BEARING, not bookkeeping. restoreTheme reports the
+  // theme the account was left on, and it used to derive that as
+  // THEMES[THEMES.length - 1] -- sound ONLY because it was reached exclusively
+  // after a COMPLETE matrix. The moment the probing loop can abort partway
+  // through (below), that constant becomes a LIE: abort during the dark pass and
+  // it would tell the operator the account is on light. A harness whose whole
+  // purpose is to catch operations that report success while doing nothing does
+  // not get to report a theme it did not apply. So: track what was ACTUALLY
+  // applied last, and let null mean "this run never applied a theme".
+  let lastAppliedTheme = null;
 
-        const context = await browser.newContext(contextOpts);
-        try {
-          for (const theme of THEMES) {
-            for (const pageDef of pages) {
-              const record = await runOnePage(
-                context, browserName, pageDef, viewport, theme,
-                { runId, outDir: opts.out },
-              );
-              results.push(record);
-              console.log(`[${browserName}/${viewport.name}/${theme}] ${pageDef.name}: ${summarizeRecord(record)}`);
-            }
+  // probingError captures an abort from OUTSIDE runOnePage's own try/catch --
+  // ENGINES[x].launch(), browser.newContext(), context.newPage(). Those three
+  // used to escape main() to main().catch(), which skips the report write, the
+  // summary, AND runFailureReasons: the account was left on a mutated theme with
+  // restoration never even ATTEMPTED, and the operator got a bare stack trace
+  // with no named reason. Capture it, break out, restore the theme anyway, write
+  // the report, and fail the run BY NAME.
+  let probingError = null;
+
+  try {
+    for (const browserName of opts.browsers) {
+      const browser = await ENGINES[browserName].launch({ headless: !opts.headed, slowMo: opts.slowMo });
+      browserVersions[browserName] = browser.version();
+      try {
+        for (const viewport of VIEWPORTS) {
+          // isMobile/hasTouch are Chromium-only; Firefox throws if set. On
+          // Firefox, mobile viewports are viewport-size-only (see header caveat).
+          const contextOpts = {
+            baseURL: opts.url,
+            storageState,
+            viewport: { width: viewport.width, height: viewport.height },
+          };
+          if (browserName === 'chromium' && viewport.width < 768) {
+            contextOpts.isMobile = true;
+            contextOpts.hasTouch = true;
           }
-        } finally {
-          await context.close();
+
+          const context = await browser.newContext(contextOpts);
+          try {
+            for (const theme of THEMES) {
+              for (const pageDef of pages) {
+                const record = await runOnePage(
+                  context, browserName, pageDef, viewport, theme,
+                  { runId, outDir: opts.out },
+                );
+                // AFTER, not before: runOnePage applies the theme inside itself
+                // (applyTheme), and the one way it throws rather than recording
+                // -- context.newPage() -- happens BEFORE any theme is written. So
+                // a returned record is proof this theme was actually applied,
+                // which is exactly what leftAt must mean.
+                lastAppliedTheme = theme;
+                results.push(record);
+                console.log(`[${browserName}/${viewport.name}/${theme}] ${pageDef.name}: ${summarizeRecord(record)}`);
+              }
+            }
+          } finally {
+            await context.close();
+          }
         }
+      } finally {
+        await browser.close();
       }
-    } finally {
-      await browser.close();
     }
+  } catch (err) {
+    // Do NOT rethrow. Everything below -- restore, report, summary, named exit
+    // reason -- is exactly what a caller needs MOST when probing died partway,
+    // and a rethrow is what used to skip all four.
+    probingError = err;
+    console.error(`\n=== PROBING ABORTED ===\n${err && err.stack || err}`);
   }
 
-  const themeRestore = await restoreTheme({ opts, storageState, originalTheme });
+  const themeRestore = await restoreTheme({
+    opts, storageState, originalTheme, leftAt: lastAppliedTheme,
+  });
 
   const metadata = buildMetadata({ opts, runId, startedAt, browserVersions, target, artist, pages });
   const reportPath = path.join(opts.out, `responsive-report-${runId}.json`);
-  fs.writeFileSync(reportPath, JSON.stringify({ metadata, results, themeRestore }, null, 2));
+  const report = {
+    metadata,
+    results,
+    themeRestore,
+    // Present in the MACHINE-READABLE report too, not just on stderr: a consumer
+    // diffing baselines must be able to tell a short report that aborted from a
+    // short report that legitimately had less to measure.
+    probingAborted: probingError ? { message: String(probingError.message || probingError) } : null,
+  };
+
+  // tmp-then-rename. A crash partway through writeFileSync leaves a TRUNCATED
+  // file at the report path -- and truncated JSON that still parses (an object
+  // closed early) is a report that lies. rename(2) is atomic within a
+  // filesystem, so the report path only ever holds a COMPLETE report or nothing.
+  // (Go's internal/filesystem does this for the app's own writes; it is
+  // unreachable from a Node harness, so the pattern is reused, not the package.)
+  fs.writeFileSync(`${reportPath}.tmp`, JSON.stringify(report, null, 2));
+  fs.renameSync(`${reportPath}.tmp`, reportPath);
 
   printSummary(results);
   console.log(`\nFull JSON report: ${reportPath}`);
@@ -479,8 +532,9 @@ async function main() {
   // THE HARNESS MUST NOT COMMIT THE SIN IT EXISTS TO CATCH. A run in which every
   // record guard-failed used to write a full report, print its failures, and
   // exit 0 -- indistinguishable, to any caller checking the exit code, from a
-  // clean pass. The same applies to a theme it mutated and could not put back.
-  const reasons = runFailureReasons(results, themeRestore);
+  // clean pass. The same applies to a theme it mutated and could not put back,
+  // and to probing that aborted before it finished.
+  const reasons = runFailureReasons(results, themeRestore, probingError);
   if (reasons.length) {
     console.error('\n=== RUN FAILED ===');
     for (const r of reasons) console.error(`  ${r}`);
@@ -501,8 +555,22 @@ async function main() {
 //   * the WRITE failed -- we knew, and could not put it back
 // A read that succeeds and reports NO theme set is not a failure: there is
 // genuinely nothing to restore.
-async function restoreTheme({ opts, storageState, originalTheme }) {
-  const leftAt = THEMES[THEMES.length - 1];
+//
+// `leftAt` is the theme the run ACTUALLY applied last (main's lastAppliedTheme),
+// passed in rather than derived. It used to be computed here as
+// THEMES[THEMES.length - 1], which was only ever true because this function was
+// reached exclusively after a COMPLETE matrix. Now that probing can abort partway
+// (see main), that constant would report a theme the run may never have reached
+// -- the harness lying about a mutation it made, which is the exact bug class it
+// exists to catch. null means the run never applied a theme at all.
+async function restoreTheme({ opts, storageState, originalTheme, leftAt = null }) {
+  // Nothing was ever applied, so nothing was mutated, so nothing is owed. This
+  // is not a swallow: if probing aborted before the first theme write, THAT is
+  // reported by its own named reason (see runFailureReasons); it is not this
+  // function's failure to invent.
+  if (leftAt == null) {
+    return { ok: true, reason: 'this run never applied a theme; nothing to restore' };
+  }
 
   if (originalTheme.reason) {
     console.error(
@@ -620,10 +688,25 @@ export function classifyResults(results) {
 // agent) never reads stderr, so a silent exit 0 tells it everything went fine
 // while the maintainer's account sits mutated on the wrong theme. The harness
 // mutates a real server; failing to undo that is a failure of the run.
-export function runFailureReasons(results, themeRestore = { ok: true }) {
+//
+// `probingError` is set when the browser loop ABORTED -- a launch(), newContext()
+// or newPage() that threw, i.e. the three calls that sit outside runOnePage's own
+// try/catch. Those used to escape main() entirely, so the run died on a bare
+// stack trace with no report, no summary, and no named reason -- and, worse, with
+// the account's theme never even ATTEMPTED to be restored. An aborted run is a
+// FAILED run even if every record it managed to collect looks clean: the matrix
+// it claims to have measured is not the matrix it measured.
+export function runFailureReasons(results, themeRestore = { ok: true }, probingError = null) {
   const { ok, guardFailed, errored, openFailure } = classifyResults(results);
   const reasons = [];
 
+  if (probingError) {
+    reasons.push(
+      `PROBING ABORTED before completion: ${probingError.message || probingError}. `
+      + `Only ${results.length} record(s) were collected, and the matrix this report `
+      + 'describes is NOT the matrix it measured. Nothing here is a baseline.'
+    );
+  }
   if (ok.length === 0) {
     reasons.push(
       `MEASURED NOTHING: 0 of ${results.length} record(s) produced a usable measurement. `

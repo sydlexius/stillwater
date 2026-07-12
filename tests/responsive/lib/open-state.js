@@ -78,7 +78,11 @@ async function waitForStableRect(page, selector, { frames = 3, timeout = 3_000 }
       if (!el) return resolve({ stable: false, reason: 'element vanished while settling' });
       const r = el.getBoundingClientRect();
       const key = `${r.left},${r.top},${r.width},${r.height}`;
-      stable = key === last ? stable + 1 : 0;
+      // Count THIS observation, not just the matches after it: a fresh key is
+      // one identical frame (itself), not zero. Resetting to 0 demanded
+      // `frames + 1` identical frames where the contract above promises
+      // `frames` -- harmless (it only ever waited one extra frame) but a lie.
+      stable = key === last ? stable + 1 : 1;
       last = key;
       if (stable >= frames) return resolve({ stable: true, waitedMs: Date.now() - started });
       if (Date.now() - started > timeout) {

@@ -15,6 +15,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseArgs, classifyResults, runFailureReasons, PAGES } from '../responsive/run.js';
+import { putThemePreference } from '../responsive/lib/auth.js';
 import { swAssertUnscrolled, swClassifyOffscreen, TOL } from '../responsive/lib/probe-helpers.js';
 
 // A record shaped like the ones runOnePage produces.
@@ -119,6 +120,89 @@ describe('runFailureReasons -- a theme this run could not put back fails the run
 
   test('defaults to ok when no restore outcome is supplied', () => {
     assert.deepEqual(runFailureReasons([okRecord()]), []);
+  });
+});
+
+// NF1b. Probing that ABORTED partway is a failed run even if every record it
+// managed to collect looks clean. browser.launch() / newContext() / newPage()
+// sit outside runOnePage's try/catch, so a throw from any of them used to escape
+// main() to main().catch() -- skipping the report, the summary, runFailureReasons
+// AND the theme restore, leaving the maintainer's account mutated and the caller
+// staring at a bare stack trace with no named reason.
+describe('runFailureReasons -- probing that aborted partway fails the run', () => {
+  test('an abort fails a run whose collected records are all clean', () => {
+    const reasons = runFailureReasons(
+      [okRecord(), okRecord('settings')],
+      { ok: true, restoredTo: 'dark' },
+      new Error('browserType.launch: Executable does not exist'),
+    );
+    assert.equal(reasons.length, 1, 'a clean-looking partial run must still fail');
+    assert.match(reasons[0], /PROBING ABORTED before completion/);
+    assert.match(reasons[0], /Executable does not exist/);
+    assert.match(reasons[0], /2 record\(s\)/);
+  });
+
+  test('an abort is reported ALONGSIDE a theme it could not put back', () => {
+    const reasons = runFailureReasons(
+      [okRecord()],
+      { ok: false, reason: 'PUT /api/v1/preferences/theme failed', leftAt: 'dark' },
+      new Error('newContext failed'),
+    );
+    assert.equal(reasons.length, 2);
+    assert.match(reasons[0], /PROBING ABORTED/);
+    assert.match(reasons[1], /THEME NOT RESTORED/);
+    // leftAt must name the theme ACTUALLY applied last, not THEMES[last].
+    assert.match(reasons[1], /left on "dark"/);
+  });
+
+  test('an abort with nothing measured reports BOTH causes, not just one', () => {
+    const reasons = runFailureReasons([], { ok: true }, new Error('boom'));
+    assert.equal(reasons.length, 2);
+    assert.match(reasons[0], /PROBING ABORTED/);
+    assert.match(reasons[1], /MEASURED NOTHING/);
+  });
+
+  test('no abort is not a failure', () => {
+    assert.deepEqual(runFailureReasons([okRecord()], { ok: true }, null), []);
+  });
+});
+
+// NF1c. writeThemePreference's PUT had no try/catch while its sibling
+// readThemePreference guarded all three of its arms -- and the shared comment
+// above them both claims "Neither throws". A transport-level rejection
+// (connection refused, DNS, timeout) escaped restoreTheme -> main() ->
+// main().catch(), skipping the report, the summary and runFailureReasons: the
+// harness would die on a bare stack trace precisely when it had mutated the
+// account's theme and could not put it back.
+//
+// Returning false does not SWALLOW that: restoreTheme prints the WARNING and
+// returns { ok: false, reason, leftAt }, which runFailureReasons turns into a
+// NAMED non-zero exit. These assert the guard exists at all.
+describe('putThemePreference -- a PUT that THROWS must not escape the harness', () => {
+  const storageState = { cookies: [{ name: 'csrf_token', value: 't' }] };
+
+  test('a transport-level rejection returns false rather than throwing', async () => {
+    const ctx = { put: async () => { throw new Error('connect ECONNREFUSED'); } };
+    assert.equal(await putThemePreference(ctx, { storageState, theme: 'dark' }), false);
+  });
+
+  test('a non-ok response returns false', async () => {
+    const ctx = { put: async () => ({ ok: () => false, status: () => 500 }) };
+    assert.equal(await putThemePreference(ctx, { storageState, theme: 'dark' }), false);
+  });
+
+  test('a successful write returns true', async () => {
+    const ctx = { put: async () => ({ ok: () => true, status: () => 204 }) };
+    assert.equal(await putThemePreference(ctx, { storageState, theme: 'dark' }), true);
+  });
+
+  test('the CSRF token and the theme actually reach the request', async () => {
+    let seen = null;
+    const ctx = { put: async (url, o) => { seen = { url, o }; return { ok: () => true }; } };
+    await putThemePreference(ctx, { storageState, theme: 'light' });
+    assert.equal(seen.url, '/api/v1/preferences/theme');
+    assert.equal(seen.o.headers['X-CSRF-Token'], 't');
+    assert.deepEqual(JSON.parse(seen.o.data), { value: 'light' });
   });
 });
 

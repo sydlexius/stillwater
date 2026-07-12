@@ -165,8 +165,24 @@ export async function readThemePreference({ baseURL, storageState } = {}) {
   });
 }
 
-export async function writeThemePreference({ baseURL, storageState, theme } = {}) {
-  return withApi({ baseURL, storageState }, async ctx => {
+// The try/catch is NOT a swallow. The comment above says "neither throws", and
+// before this guard that was false of THIS half: a transport-level rejection
+// from ctx.put (connection refused, DNS, timeout) escaped restoreTheme, escaped
+// main(), and was caught only by main().catch() at the bottom of run.js -- which
+// skips the report write, the summary, AND runFailureReasons. A run that mutated
+// the account's theme and could not put it back would die with a bare stack
+// trace and no named reason, which is precisely the failure mode this harness
+// exists to prosecute.
+//
+// Returning false hands the failure to restoreTheme(), which PRINTS the warning
+// and returns { ok: false, reason, leftAt } -- and runFailureReasons turns that
+// into a NAMED non-zero exit. The failure gets LOUDER here, not quieter.
+// Exported for its own sake so the guard above is UNIT-TESTABLE against a fake
+// `ctx` -- withApi imports playwright at call time, which a unit test cannot
+// reach. This is the real code path, not a re-typed copy of it: writeThemePreference
+// is nothing but withApi + this.
+export async function putThemePreference(ctx, { storageState, theme }) {
+  try {
     const res = await ctx.put('/api/v1/preferences/theme', {
       headers: {
         'Content-Type': 'application/json',
@@ -175,7 +191,16 @@ export async function writeThemePreference({ baseURL, storageState, theme } = {}
       data: JSON.stringify({ value: theme }),
     });
     return res.ok();
-  });
+  } catch (err) {
+    // Name the transport cause on the way past: the boolean tells the caller
+    // WHETHER it failed, and only this line tells the operator WHY.
+    console.error(`PUT /api/v1/preferences/theme threw: ${err.message}`);
+    return false;
+  }
+}
+
+export async function writeThemePreference({ baseURL, storageState, theme } = {}) {
+  return withApi({ baseURL, storageState }, ctx => putThemePreference(ctx, { storageState, theme }));
 }
 
 // describeTarget captures the DATABASE-DEPENDENT context that a baseline number
