@@ -16,7 +16,7 @@ import (
 
 // WriteNFOAtomic serializes n to XML and writes it to path using the atomic
 // tmp/bak/rename pattern from filesystem.WriteFileAtomic. Unlike
-// WriteBackArtistNFOWithFieldMap it operates directly on an ArtistNFO value --
+// WriteBackArtistNFOWithFieldMap, it operates directly on an ArtistNFO value --
 // the caller owns all mutation (e.g. merging albums) before passing the final
 // struct in. No snapshot is taken; call WriteBackArtistNFOWithFieldMap when
 // snapshot tracking is needed.
