@@ -142,6 +142,13 @@ templ PrefsDrawer(assets AssetPaths, prefs PreferencesData) {
 						},
 						prefs.Density,
 					)
+					// M55 #2377: sits next to Density because the two are read together --
+					// Density scales SPACING, this sets the tap-target FLOOR that spacing
+					// may never shrink past.
+					// shortDesc is intentionally empty: the design of record specifies exactly
+					// one label and one help string for this control, and inventing a third
+					// line of UI copy is not this PR's call to make.
+					@prefsToggleRow("pref-d-touch-friendly", "touch_friendly", t(ctx, "prefs.touch_friendly.label"), "", t(ctx, "prefs.touch_friendly.help"), "on", "off", prefs.TouchFriendly == "on")
 					@prefsPageSizeRow(prefs.PageSize)
 				}
 				<!-- Typography group -->

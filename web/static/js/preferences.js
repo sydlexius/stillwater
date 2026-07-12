@@ -41,7 +41,11 @@
     // M55 #1774: preferences flyout drawer defaults.
     density: 'comfortable',
     mono_font: 'jetbrains',
-    kbd_hints: 'show'
+    kbd_hints: 'show',
+    // M55 #2377: touch floor. Off by default -- phones/tablets already get the
+    // 44px target from the (pointer: coarse) media query. This preference is for
+    // the touchscreen laptop, which reports pointer: fine.
+    touch_friendly: 'off'
   };
 
   // Mapping from preference key to the data attribute name set on <html>.
@@ -59,7 +63,10 @@
     // M55 #1774: preferences flyout drawer keys.
     density: 'data-density',
     mono_font: 'data-mono',
-    kbd_hints: 'data-kbd'
+    kbd_hints: 'data-kbd',
+    // M55 #2377: rides this existing map -- no bespoke script. The attribute
+    // rebinds --sw-tap-min in design-tokens.css; CSS does the rest.
+    touch_friendly: 'data-touch-friendly'
   };
 
   // --- sessionStorage helpers ---

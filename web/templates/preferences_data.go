@@ -23,6 +23,11 @@ type PreferencesData struct {
 	MonoFont            string // "system" | "jetbrains" | "cascadia"
 	KbdHints            string // "show" | "hide"
 	NotificationEnabled string // "true" | "false"
+	// M55 #2377: touch floor. "on" lifts every icon-only control to the 44px
+	// touch target. Off by default: coarse-pointer devices already get it from
+	// the (pointer: coarse) media query. This is for the touchscreen LAPTOP,
+	// which reports pointer: fine and therefore cannot be detected.
+	TouchFriendly string // "off" | "on"
 	// M55 #2060: per-user debug tab toggle (migrated from global app setting).
 	ShowPlatformDebug string // "true" | "false"
 	// Artist detail layout (written via PATCH; nil = server default).

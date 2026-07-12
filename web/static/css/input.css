@@ -913,7 +913,7 @@
 .sw-context-help-btn:focus-visible {
   color: var(--sw-accent-primary);
   border-color: var(--sw-accent-primary);
-  background: rgba(59, 130, 246, 0.08);
+  background: color-mix(in srgb, var(--swd-accent) 8%, transparent);
   outline: none;
 }
 
@@ -970,7 +970,7 @@
 
 .sw-context-help-link:hover,
 .sw-context-help-link:focus-visible {
-  color: var(--sw-accent-primary-hover, var(--sw-accent-primary));
+  color: var(--sw-accent-primary-hover);
 }
 
 /* Explicit focus ring so keyboard users can find the link inside the
@@ -1660,9 +1660,9 @@ input:-webkit-autofill:focus {
   border-radius: var(--sw-radius-sm);
   font-size: 13px;
   font-weight: 600;
-  background: rgba(59, 130, 246, 0.16);
+  background: color-mix(in srgb, var(--swd-accent) 16%, transparent);
   color: #1d4ed8; /* blue-700, AA on the light flyout surface */
-  border: 1px solid rgba(59, 130, 246, 0.5);
+  border: 1px solid color-mix(in srgb, var(--swd-accent) 50%, transparent);
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
@@ -1672,7 +1672,7 @@ input:-webkit-autofill:focus {
 }
 
 .sw-filter-btn-primary:hover {
-  background: rgba(59, 130, 246, 0.26);
+  background: color-mix(in srgb, var(--swd-accent) 26%, transparent);
 }
 
 .sw-filter-btn-ghost {
@@ -1752,9 +1752,9 @@ input:-webkit-autofill:focus {
  * AA-compliant and not a solid fill. */
 .sw-filter-item[data-filter-state="include"],
 .sw-filter-item.include {
-  background: rgba(59, 130, 246, 0.22);
+  background: color-mix(in srgb, var(--swd-accent) 22%, transparent);
   color: #1d4ed8; /* blue-700 for light mode */
-  border-color: rgba(59, 130, 246, 0.45);
+  border-color: color-mix(in srgb, var(--swd-accent) 45%, transparent);
 }
 
 :where(.dark, .dark *) .sw-filter-item[data-filter-state="include"],
@@ -1764,7 +1764,7 @@ input:-webkit-autofill:focus {
 
 .sw-filter-item[data-filter-state="include"]:hover,
 .sw-filter-item.include:hover {
-  background: rgba(59, 130, 246, 0.32);
+  background: color-mix(in srgb, var(--swd-accent) 32%, transparent);
 }
 
 /* exclude state: red/amber filled */
@@ -1837,12 +1837,16 @@ input:-webkit-autofill:focus {
   --flyout-ink-3: #64748b;
   --flyout-border: rgba(255, 255, 255, 0.1);
   --flyout-row-hover: rgba(255, 255, 255, 0.05);
-  --flyout-accent: #3b82f6;
-  --flyout-accent-glow: rgba(59, 130, 246, 0.3);
+  --flyout-accent: var(--swd-accent);
+  --flyout-accent-glow: color-mix(in srgb, var(--swd-accent) 30%, transparent);
   --flyout-tile-bg: rgba(255, 255, 255, 0.07);
   --flyout-tile-border: rgba(255, 255, 255, 0.12);
   --flyout-toggle-off: rgba(255, 255, 255, 0.18);
-  --flyout-toggle-on: #3b82f6;
+  /* NO OPAQUE ACCENT FILL (#2377): the ON track was a solid var(--swd-accent)
+   * fill, which is exactly the blue-filled toggle track the maintainer's
+   * standing principle forbids. It is now the translucent 22% selection tint;
+   * the accent ring + glow arrive via --sw-halo on the checked rule below. */
+  --flyout-toggle-on: var(--sw-selected-bg);
   --sw-type-section: 0.875rem;
   --sw-type-value: 0.875rem;
   --sw-type-label: 0.75rem;
@@ -2028,7 +2032,7 @@ html[data-motion="on"] main {
   width: 32px;
   height: 32px;
   border-radius: 9px;
-  background: rgba(59, 130, 246, 0.14);
+  background: color-mix(in srgb, var(--swd-accent) 14%, transparent);
   color: var(--flyout-accent);
   flex-shrink: 0;
 }
@@ -2228,11 +2232,16 @@ html[data-motion="on"] main {
   outline-offset: 2px;
 }
 
-/* Selected = blue halo only; no checkmark; no solid fill. */
+/* Selected = halo only; NO checkmark; NO solid fill. The checkmark exception is
+ * deliberate and must not be "harmonized" with checkboxes: a preference tile is
+ * a large, isolated target where a halo reads clearly, whereas a column of
+ * checkboxes is scanned at row density, where a halo alone does not survive.
+ * Different control, different affordance (docs/ux-design-spec.md).
+ * #2377: the bespoke 3px glow is now the ONE shared halo geometry. */
 .sw-prefs-tile[aria-checked="true"] {
   color: var(--flyout-ink);
-  border-color: var(--flyout-accent);
-  box-shadow: 0 0 0 3px var(--flyout-accent-glow);
+  border-color: var(--sw-selected-border);
+  box-shadow: var(--sw-halo);
   background: var(--flyout-tile-bg);
 }
 
@@ -2340,9 +2349,13 @@ html[data-motion="on"] main {
   outline-offset: 2px;
 }
 
+/* Toggle ON: translucent tint + the halo. The halo's inner ring (2px solid
+ * --sw-halo-hue) IS the accent border, so the locked "tint + accent border +
+ * halo" reads as two declarations and the track geometry never changes between
+ * states (no border is added/removed under the absolutely-positioned knob). */
 .sw-prefs-toggle[aria-checked="true"] {
   background: var(--flyout-toggle-on);
-  box-shadow: 0 0 0 2px var(--flyout-accent-glow);
+  box-shadow: var(--sw-halo);
 }
 
 .sw-prefs-toggle-knob {
@@ -2767,7 +2780,7 @@ html[data-motion="on"] main {
   font-weight: 600 !important;
   padding: 6px 16px !important;
   cursor: pointer !important;
-  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 5px rgba(59, 130, 246, 0.22) !important;
+  box-shadow: var(--sw-halo) !important;
 }
 
 .sw-tour-popover button.driver-popover-next-btn:hover {
@@ -2876,11 +2889,11 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   line-height: 1.2;
   padding: 1px 5px;
   border-radius: 9999px;
-  background: rgba(59, 130, 246, 0.18);
+  background: color-mix(in srgb, var(--swd-accent) 18%, transparent);
   /* Darker blue for light mode where the badge sits on a near-white tab
    * background; light-blue fails WCAG AA contrast there. */
   color: #1d4ed8;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  border: 1px solid color-mix(in srgb, var(--swd-accent) 30%, transparent);
   vertical-align: middle;
 }
 .dark .sw-settings-tab[data-match-count]::after {
@@ -2893,7 +2906,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * cleared. The outline uses the project accent colour to match focus rings
  * elsewhere in the UI. */
 .sw-settings [data-search-match] {
-  outline: 2px solid rgba(59, 130, 246, 0.45);
+  outline: 2px solid color-mix(in srgb, var(--swd-accent) 45%, transparent);
   outline-offset: 4px;
   border-radius: 4px;
   transition: outline 200ms ease;
@@ -2902,9 +2915,9 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 /* Flash animation: a brief pulse applied when clicking a search match badge
  * navigates to the control. Removed by JS after the animation completes. */
 @keyframes sw-search-flash {
-  0%   { outline-color: rgba(59, 130, 246, 0.9); }
-  60%  { outline-color: rgba(59, 130, 246, 0.9); }
-  100% { outline-color: rgba(59, 130, 246, 0.45); }
+  0%   { outline-color: color-mix(in srgb, var(--swd-accent) 90%, transparent); }
+  60%  { outline-color: color-mix(in srgb, var(--swd-accent) 90%, transparent); }
+  100% { outline-color: color-mix(in srgb, var(--swd-accent) 45%, transparent); }
 }
 .sw-settings [data-search-flash] {
   animation: sw-search-flash 600ms ease forwards;
@@ -3222,7 +3235,7 @@ html[data-density="spacious"] .sw-next-reports .sw-rep-rate-item {
   background-color: #1e293b; /* slate-800 -- tinted, not white */
 }
 .sw-next-artists input[type="checkbox"]:hover {
-  border-color: #3b82f6; /* blue-500 */
+  border-color: var(--swd-accent); /* blue-500 */
 }
 .sw-next-artists input[type="checkbox"]:checked,
 .sw-next-artists input[type="checkbox"]:indeterminate {
@@ -3245,7 +3258,7 @@ html[data-density="spacious"] .sw-next-reports .sw-rep-rate-item {
   border-radius: 1px;
 }
 .sw-next-artists input[type="checkbox"]:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--swd-accent);
   outline-offset: 2px;
 }
 
@@ -3289,7 +3302,7 @@ html[data-density="spacious"] .sw-next-reports .sw-rep-rate-item {
  * so give the roving item an explicit visible outline for keyboard-only nav. */
 .sw-next-artists [data-sw-roving-item]:focus-visible,
 .sw-next-dashboard [data-sw-roving-item]:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--swd-accent);
   outline-offset: -2px;
   border-radius: 4px;
 }
@@ -3416,7 +3429,7 @@ html[data-density="spacious"] .sw-next-reports .sw-rep-rate-item {
   --flyout-ink: #e2e8f0;
   --flyout-ink-2: #94a3b8;
   --flyout-row-hover: rgba(255, 255, 255, 0.05);
-  --flyout-accent: #3b82f6;
+  --flyout-accent: var(--swd-accent);
 }
 :root:not(.dark) .sw-cheat-sheet-modal {
   --flyout-ink: #1e293b;
@@ -3684,98 +3697,27 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
   filter: brightness(0.7) saturate(1.4) !important;
 }
 
-.sw-next-dashboard,
-.sw-next-artist-detail,
-.sw-next-foreign-files,
-.sw-next-artists,
-.sw-next-activity,
-.sw-next-logs,
-.sw-next-settings {
-  /* Light-theme token ramp (default). Shared by the dashboard, the next/
-   * .sw-next-settings added for #1339 so its glass buttons + the solid-blue
-   * neutralizing override resolve --swd-line / --swd-ink-2 (glassButton).
-   * artist-detail screen (M55 #1336), the next/ foreign-files screen
-   * (M55 #1773), and the next/ artists screen (M55 #1890) so they all consume
-   * the same prototype card token system. Without this scope the --swd-* vars
-   * are undefined and the cards/glass buttons render transparent/un-themed
-   * (the 4A UAT fidelity miss). The artists screen was added for #1890: its
-   * glass/outline toolbar + bulk buttons reference --swd-line / --swd-ink-2
-   * (helpers.go glassButton), but .sw-next-artists is NOT a descendant of the
-   * dashboard/artist-detail scopes, so without listing it here those tokens
-   * were undefined and the buttons fell back to a currentColor border +
-   * inherited text instead of the faint slate glass line. */
-  --swd-bg-base: #f1f5f9;       /* slate-100 -- faint base behind cards */
-  --swd-bg-raised: #ffffff;     /* card */
-  --swd-bg-elev: #f8fafc;       /* row hover / popover */
-  /* Opacity-aware surface fills. The maintainer's Background Opacity
-   * preference drives --sw-glass-bg (set inline on :root by preferences.js),
-   * exactly as the app-global .sw-card consumes it. The dashboard's resting
-   * card/bubble/row/toolbar fills source from that same var so the pref
-   * governs their translucency: dialed up they read like the solid prototype
-   * raised surface, dialed down the photo backdrop bleeds through. The raised
-   * INK/BORDER/SHADOW tokens stay solid (above); only these fills track the
-   * pref. --swd-surface-elev keeps the higher-opacity elevated look for
-   * hover/popover surfaces that must stay legible. */
-  --swd-surface: var(--sw-glass-bg);
-  --swd-surface-elev: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-elev) 45%);
-  /* #1784 contrast floor: the theme raised-card colour pinned to ~0.92 effective
-   * alpha (8% backdrop bleed). Because it derives from --swd-bg-raised -- which
-   * the .dark block below theme-flips (#ffffff -> #111a2e) -- ONE declaration
-   * covers both themes: a floored surface reads white@0.92 in light, slate@0.92
-   * in dark. Legibility-critical next/ surfaces override --swd-surface (and its
-   * -elev hover pair) to this token so they never track the opacity pref below
-   * the AA floor. See the #1784 contrast-floor header at the top of the
-   * .sw-next-artists section. */
-  --swd-surface-floor: color-mix(in srgb, var(--swd-bg-raised) 92%, transparent);
-  --swd-line: rgba(15, 23, 42, 0.10);
-  --swd-line-strong: rgba(15, 23, 42, 0.16);
-  --swd-ink: #0f172a;           /* slate-900 */
-  --swd-ink-2: #334155;         /* slate-700 */
-  --swd-ink-3: #64748b;         /* slate-500 -- AA body on white */
-  --swd-blue-ink: #2563eb;      /* blue-600 -- link/accent ink, AA on white */
-  --swd-r-2: 10px;
-  --swd-r-3: 14px;
-  --swd-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --swd-shadow-2: 0 8px 24px rgba(15, 23, 42, 0.18);
-  /* Severity: text ink (AA on its tint) + soft tint background. */
-  --swd-err: #b91c1c;           --swd-err-soft: rgba(248, 113, 113, 0.16);
-  --swd-warn: #b45309;          --swd-warn-soft: rgba(251, 191, 36, 0.18);
-  --swd-info: #4338ca;          --swd-info-soft: rgba(129, 140, 248, 0.16);
-  --swd-ok: #15803d;            --swd-ok-soft: rgba(74, 222, 128, 0.18);
-  /* Category left-accent (image/nfo/metadata), AA-saturated for light. */
-  --swd-cat-image: #ef4444;
-  --swd-cat-nfo: #6366f1;
-  --swd-cat-meta: #d97706;
-}
-.dark .sw-next-dashboard,
-.dark .sw-next-artist-detail,
-.dark .sw-next-foreign-files,
-.dark .sw-next-artists,
-.dark .sw-next-activity,
-.dark .sw-next-logs,
-.dark .sw-next-settings {
-  /* Prototype dark token ramp (design/tokens.css verbatim). .sw-next-artists
-   * added for #1890 so its glass buttons resolve --swd-line / --swd-ink-2 in
-   * dark mode too (see the light-theme block above). */
-  --swd-bg-base: #0b1220;
-  --swd-bg-raised: #111a2e;
-  --swd-bg-elev: #1a253f;
-  --swd-line: rgba(148, 163, 184, 0.14);
-  --swd-line-strong: rgba(148, 163, 184, 0.28);
-  --swd-ink: #e6edf7;
-  --swd-ink-2: #b6c2d4;
-  --swd-ink-3: #7d8aa1;
-  --swd-blue-ink: #93c5fd;
-  --swd-shadow-1: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 1px 2px rgba(0, 0, 0, 0.25);
-  --swd-shadow-2: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
-  --swd-err: #f87171;           --swd-err-soft: rgba(248, 113, 113, 0.14);
-  --swd-warn: #fbbf24;          --swd-warn-soft: rgba(251, 191, 36, 0.14);
-  --swd-info: #818cf8;          --swd-info-soft: rgba(129, 140, 248, 0.14);
-  --swd-ok: #4ade80;            --swd-ok-soft: rgba(74, 222, 128, 0.14);
-  --swd-cat-image: #f87171;
-  --swd-cat-nfo: #818cf8;
-  --swd-cat-meta: #fbbf24;
-}
+/* The --swd-* token ramp (light + dark) MOVED to web/static/css/design-tokens.css
+ * in #2377. It now seeds :root / .dark GLOBALLY instead of the .sw-next-* wrapper
+ * list that used to live here.
+ *
+ * Two reasons, both structural:
+ *  1. input.css CONSUMES tokens; it must never DECLARE them. The stylelint gate
+ *     (#2402) points importFrom at design-tokens.css alone, so a token declared
+ *     here would be flagged unknown. This file had 27 :root blocks against
+ *     design-tokens.css's 5 -- that sprawl is what #2377 ends.
+ *  2. The DERIVED decorators (--sw-halo, --sw-selected-*, --sw-hover-*) resolve
+ *     from these seeds and are consumed by GLOBAL chrome (sidebar, prefs drawer,
+ *     command palette) that is NOT inside a .sw-next-* wrapper. Seeds scoped to
+ *     next/ could not have fed them.
+ *
+ * Rendering is unchanged for next/: the seeds carry the same values, and :root
+ * covers the wrappers that the old selector list enumerated. The two rules that
+ * consumed --swd-line / --swd-ink-2 from OUTSIDE any wrapper
+ * (.sw-artwork-kind-tab, the manage-artwork modal kind switcher) previously fell
+ * back to a currentColor border + inherited ink -- exactly the un-themed miss the
+ * old comment here described. They now resolve the slate glass line they always
+ * intended. */
 
 /* Pref-aware type-scale tokens (M55 #1853, dashboard half): one rem-based ramp
  * the dashboard consumes in place of its hard-coded px font-sizes (stat bubbles,
@@ -4006,7 +3948,7 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
 }
 .sw-next-artist-detail .sw-section-collapse-btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 5px rgba(59, 130, 246, 0.22);
+  box-shadow: var(--sw-halo);
 }
 .sw-next-artist-detail .sw-section-chevron {
   flex: 0 0 auto;
@@ -4643,8 +4585,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
 .sw-artwork-kind-tab[aria-pressed="true"],
 .sw-next-artist-detail [data-sw-edit-all][aria-pressed="true"] {
   box-shadow:
-    0 0 0 2px #3b82f6,
-    0 0 0 5px rgba(59, 130, 246, 0.22);
+    var(--sw-halo);
 }
 
 /* No solid-blue FILL buttons in next/ (maintainer standing principle): blue
@@ -4767,8 +4708,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   outline: 2px solid transparent;
   outline-offset: 2px;
   box-shadow:
-    0 0 0 2px #3b82f6,
-    0 0 0 5px rgba(59, 130, 246, 0.22);
+    var(--sw-halo);
 }
 
 /* The Manage-artwork modal surface honors the ~88% legibility floor (text never
@@ -5053,8 +4993,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   border-color: var(--swd-line);
   background: transparent;
   box-shadow:
-    0 0 0 2px #3b82f6,
-    0 0 0 5px rgba(59, 130, 246, 0.22);
+    var(--sw-halo);
 }
 .sw-next-artist-detail .sw-ff-pop-dismiss {
   color: var(--swd-ink-2);
@@ -5770,8 +5709,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   outline: 2px solid transparent;
   outline-offset: 2px;
   box-shadow:
-    0 0 0 2px #3b82f6,
-    0 0 0 5px rgba(59, 130, 246, 0.22);
+    var(--sw-halo);
 }
 
 /* M55 #1773 (B6): the shared next/ pager (NextPagination, web/templates/next/
@@ -5810,8 +5748,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   outline: 2px solid transparent;
   outline-offset: 2px;
   box-shadow:
-    0 0 0 2px #3b82f6,
-    0 0 0 5px rgba(59, 130, 246, 0.22);
+    var(--sw-halo);
 }
 
 /* ── M55 #1337: next/ Reports workspace ───────────────────────────────────── *
@@ -5886,7 +5823,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 
 .sw-rep-rail-filter-input:focus {
   border-color: var(--sw-accent-primary);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--swd-accent) 20%, transparent);
 }
 
 .sw-rep-list-wrap {
@@ -6133,7 +6070,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 
 .sw-rep-search-input:focus {
   border-color: var(--sw-accent-primary);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--swd-accent) 20%, transparent);
 }
 
 .sw-rep-toolbar-actions {
@@ -6343,15 +6280,15 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 
 .sw-rep-rate-pct.is-good {
-  color: var(--sw-success, #22c55e);
+  color: var(--sw-success);
 }
 
 .sw-rep-rate-pct.is-warn {
-  color: var(--sw-warning, #eab308);
+  color: var(--sw-warning);
 }
 
 .sw-rep-rate-pct.is-bad {
-  color: var(--sw-danger, #ef4444);
+  color: var(--sw-danger);
 }
 
 /* Column-toggle checkboxes inside the reports workspace. The shared ColumnToggle
@@ -6560,8 +6497,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   outline: 2px solid transparent;
   outline-offset: 2px;
   box-shadow:
-    0 0 0 2px #3b82f6,
-    0 0 0 5px rgba(59, 130, 246, 0.22);
+    var(--sw-halo);
 }
 
 /* M55 #1339: next/ channel Settings rail.
@@ -6639,7 +6575,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
    * rule), #2120 -> #2121. The rail (.sw-next-settings-rail) is a scroll
    * container, so its padding (set symmetric below) gives this 3px spread
    * clearance instead of clipping it. */
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--swd-accent) 35%, transparent);
 }
 .dark .sw-next-settings-filter-input {
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
@@ -6957,7 +6893,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 .sw-next-settings [role="switch"].bg-blue-600,
 .sw-next-settings .sw-next-toggle-on {
   background-color: rgb(229 231 235) !important;
-  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 5px rgba(59, 130, 246, 0.22) !important;
+  box-shadow: var(--sw-halo) !important;
 }
 .dark .sw-next-settings [role="switch"].bg-blue-600,
 .dark .sw-next-settings .sw-next-toggle-on {
@@ -6998,7 +6934,7 @@ html[data-density="spacious"] .sw-next-pane-section:not(:last-child) {
  * (.sw-toggle-input:checked + .sw-toggle-track .sw-toggle-knob) is untouched. */
 .sw-next-settings .sw-toggle-input:checked + .sw-toggle-track {
   background-color: rgb(229 231 235) !important;
-  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 5px rgba(59, 130, 246, 0.22) !important;
+  box-shadow: var(--sw-halo) !important;
 }
 .dark .sw-next-settings .sw-toggle-input:checked + .sw-toggle-track {
   background-color: rgb(75 85 99) !important;
@@ -7009,7 +6945,7 @@ html[data-density="spacious"] .sw-next-pane-section:not(:last-child) {
  * after: knob (peer-checked:after:translate-x-full) is untouched. */
 .sw-next-settings .peer:checked ~ .peer-checked\:bg-blue-600 {
   background-color: rgb(229 231 235) !important;
-  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 5px rgba(59, 130, 246, 0.22) !important;
+  box-shadow: var(--sw-halo) !important;
 }
 .dark .sw-next-settings .peer:checked ~ .peer-checked\:bg-blue-600 {
   background-color: rgb(75 85 99) !important;
@@ -7103,7 +7039,7 @@ html[data-density="spacious"] .sw-next-pane-section:not(:last-child) {
 .sw-next-settings .sw-segment--active:hover {
   background-color: var(--swd-surface-elev) !important;
   color: var(--swd-ink) !important;
-  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 5px rgba(59, 130, 246, 0.22) !important;
+  box-shadow: var(--sw-halo) !important;
 }
 /* (b) White-on-green ("Import" / "Apply Update", 3.22:1) and white-on-amber
  *     ("Vacuum", 3.20:1) action buttons. Keep the semantic hue, darken the FILL
@@ -7273,13 +7209,24 @@ html[data-density="spacious"] .sw-next-rail-item {
  * tint, not a solid fill) and is targeted by its stable data-id (the JS emits
  * data-id unconditionally on every row; no JS change needed for this hook).
  */
+/* SELECTION TOKENS (#2377). The generalized selection language is --sw-selected-*
+ * (design-tokens.css). --flyout-active-* is KEPT as the palette's alias so no
+ * consumer in this PR has to change; removing the alias is tracked separately.
+ *
+ * DELIBERATE DIVERGENCE, do not "harmonize" it away: --flyout-active-bg stays a
+ * NEUTRAL glass tint and is NOT repointed at --sw-selected-bg (the accent 22%
+ * tint). Repointing it would put a blue wash back on the palette's active row,
+ * reversing the binding #1773 de-blue decision stated directly above. The active
+ * ROW is scanned at row density in a keyboard-driven list, where an accent tint
+ * reads as a fill; the accent survives here as the BORDER, which is what
+ * generalizes cleanly onto --sw-selected-border. */
 .sw-cmdk {
   --flyout-ink: #e2e8f0;
   --flyout-ink-2: #94a3b8;
   --flyout-ink-3: #64748b;
   --flyout-row-hover: rgba(255, 255, 255, 0.05);
   --flyout-active-bg: rgba(255, 255, 255, 0.08);
-  --flyout-active-border: rgba(59, 130, 246, 0.35);
+  --flyout-active-border: color-mix(in srgb, var(--sw-selected-border) 35%, transparent);
   --flyout-danger-ink: #fca5a5;
   --flyout-danger-bg: rgba(239, 68, 68, 0.12);
   --flyout-danger-border: rgba(239, 68, 68, 0.3);
@@ -7584,7 +7531,7 @@ html[data-density="spacious"] .sw-cmdk-row {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  background: rgba(59, 130, 246, 0.15);
+  background: color-mix(in srgb, var(--swd-accent) 15%, transparent);
   color: var(--sw-sidebar-active-text);
 }
 
@@ -7623,4 +7570,131 @@ html[data-density="spacious"] .sw-cmdk-row {
 }
 #merge-modal .sw-merge-row-survivor .sw-merge-include-toggle {
   cursor: default;
+}
+
+/* ========================================================================= *
+ * THE COMPLIANT ICON BUTTON + THE TOUCH FLOOR (M55 #2377)
+ *
+ * .sw-icon-btn is the canonical icon-only control: a GHOST button (no fill,
+ * ever), whose emphasis is the halo rather than a background. Its box is
+ * CLAMPED at --sw-tap-min and its padding SCALES with density -- so density can
+ * tune spacing but can never shrink the control below usability. Before #2377
+ * there was no tap token at all, which is why [data-density="compact"] had no
+ * floor beneath it and why the sidebar chrome buttons below shipped at 28px.
+ *
+ * Hit area, by input device (see the touch-floor block in design-tokens.css):
+ *   FINE   -- box stays 32px; ::after projects a 44px hit area at ZERO layout
+ *             cost. Desktop density is untouched by design: 32px already clears
+ *             WCAG 2.2 AA SC 2.5.8 (24x24), and 44px is AAA (SC 2.5.5).
+ *   COARSE -- the VISUAL BOX becomes 44px, so an automated
+ *             getBoundingClientRect() check measures real geometry rather than a
+ *             32px box wearing a bigger hit area.
+ * ========================================================================= */
+.sw-icon-btn {
+  position: relative;                 /* anchors the ::after hit area */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--sw-tap-min);       /* CLAMP: density may not shrink past this */
+  min-height: var(--sw-tap-min);
+  padding: var(--sw-density-row-py);  /* SCALES with density */
+  border: 1px solid var(--swd-line);
+  border-radius: var(--swd-r-2);
+  background: transparent;            /* ghost: the accent is never a fill */
+  color: var(--swd-ink-2);
+  cursor: pointer;
+}
+
+/* Hover derives from INK, never the accent, so hover can never be misread as
+ * selection. That is the whole reason the two derive from different seeds. */
+.sw-icon-btn:hover {
+  background: var(--sw-hover-bg);
+  border-color: var(--sw-hover-border);
+  color: var(--swd-ink);
+}
+
+.sw-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--sw-focus-ring);   /* the transient form of the same ring */
+}
+
+/* Selected / active: translucent tint + accent border + halo. No opaque fill. */
+.sw-icon-btn[aria-pressed="true"] {
+  background: var(--sw-selected-bg);
+  border-color: var(--sw-selected-border);
+  color: var(--sw-selected-ink);
+  box-shadow: var(--sw-halo);
+}
+
+.sw-icon-btn:disabled {
+  opacity: var(--sw-disabled-opacity);
+  color: var(--sw-disabled-ink);
+  cursor: not-allowed;
+}
+
+/* DESTRUCTIVE is not a CSS special case: it is the SAME halo with the hue
+ * rebound, so a future theme gets a correct red halo for free by reseeding
+ * --swd-err alone. Rebinding --sw-halo-hue is the ENTIRE diff.
+ *
+ * RED SEMANTICS: if the red thing is CLICKABLE it is destructive; if it is
+ * REPORTING it is an error; warning is NEVER red (it is amber, --swd-warn).
+ * A confirm dialog puts the error treatment on the ICON and destructive on the
+ * BUTTON, so the two reds never occupy the same element. */
+.sw-btn-destructive {
+  --sw-halo-hue: var(--swd-err);
+  border-color: color-mix(in srgb, var(--swd-err) 45%, transparent);
+  color: var(--swd-err);
+  background: transparent;
+}
+.sw-btn-destructive:hover,
+.sw-btn-destructive:focus-visible {
+  box-shadow: var(--sw-halo);         /* resolves RED here via the rebound hue */
+}
+
+/* THE TOUCH FLOOR, applied to the icon-only chrome buttons that shipped BELOW
+ * it. These three declare width/height: 28px; min-width/min-height win over
+ * width/height, so the clamp lifts them to the 32px floor on a fine pointer and
+ * to 44px on a coarse one, with no template change. .sw-prefs-drawer-close is
+ * already 32px and is listed so it grows on touch like the rest.
+ *
+ * Their existing ghost styling (transparent, borderless, sidebar ink) is left
+ * ALONE -- this is a CLAMP, not a restyle. */
+.sw-sidebar-collapse-btn,
+.sw-sidebar-logout-btn,
+.sw-filter-flyout-close,
+.sw-prefs-drawer-close {
+  position: relative;
+  min-width: var(--sw-tap-min);
+  min-height: var(--sw-tap-min);
+}
+
+/* FINE pointer: project the 44px touch target past the visual box. Zero layout
+ * cost -- the pseudo-element is absolutely positioned, so it never reserves
+ * space and never grows desktop density. */
+.sw-icon-btn::after,
+.sw-sidebar-collapse-btn::after,
+.sw-sidebar-logout-btn::after,
+.sw-filter-flyout-close::after,
+.sw-prefs-drawer-close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--sw-tap-touch);
+  height: var(--sw-tap-touch);
+}
+
+/* COARSE pointer: the box IS the target. Pinning width/height (not just the
+ * min-*) means getBoundingClientRect() reports 44, so the Playwright tap-target
+ * check measures real geometry and cannot be satisfied by a hit-area trick. */
+@media (pointer: coarse) {
+  .sw-icon-btn,
+  .sw-sidebar-collapse-btn,
+  .sw-sidebar-logout-btn,
+  .sw-filter-flyout-close,
+  .sw-prefs-drawer-close {
+    width: var(--sw-tap-min);
+    height: var(--sw-tap-min);
+  }
 }

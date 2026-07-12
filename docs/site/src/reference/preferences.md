@@ -36,6 +36,7 @@ The table is generated from the Go preference registry (`internal/api.Preference
 | <a id="pref-sidebar_state"></a>`sidebar_state` | Sidebar Default State | `full` | `full`, `icon-only`, `hidden` | The sidebar holds the primary navigation and can be collapsed to icons-only or expanded to show labels. This setting picks which state you land on every time you load Stillwater; you can still toggle it during a session. |
 | <a id="pref-theme"></a>`theme` | Theme | `dark` | `dark`, `light`, `system` | The theme is the overall color scheme: background, panel, and accent colors all derive from it. Light, Dark, and System (follow the operating system) are the available choices. |
 | <a id="pref-thumbnail_size"></a>`thumbnail_size` | Thumbnail Size | `medium` | `small`, `medium`, `large` | Size of artist artwork in lists and the action queue. Shown here at the actual pixel sizes. |
+| <a id="pref-touch_friendly"></a>`touch_friendly` | Touch Friendly Controls | `off` | `off`, `on` | Makes buttons bigger and easier to tap. Turns on by itself on phones and tablets. Switch it on here if you use a touchscreen on a laptop. |
 <!-- END GENERATED: prefs-reference -->
 
 ## See also

@@ -121,12 +121,56 @@ There is a **second, next/-specific token layer** (`--swd-*`, defined in a scope
 
 ### Accent
 
-| Token | Value | Where it's allowed |
-|---|---|---|
-| `--sw-accent-primary` | `#3b82f6` (blue-500) | Sidebar active-link background (`rgba(59,130,246,0.15)` dark / `.1` light) and active-link text (`#93c5fd` dark / `#1e40af` light, tuned specifically for WCAG AA over the translucent bg - see design-tokens.css:110,180,194). Also used for focus rings and the one restyled-checkbox `:checked` fill (`.sw-next-artists input[type=checkbox]`, see §5). |
-| `--sw-accent-primary-glow` | `rgba(59, 130, 246, 0.3)` | Glow/shadow accents (e.g. toggle focus) |
+The accent is seeded once as `--swd-accent` (`#3b82f6`, blue-500) and every accent
+expression derives from it (see §15). `--sw-accent-primary` and
+`--sw-accent-primary-glow` remain as aliases and now derive from the seed rather
+than restating the hex.
 
-**Rendered confirmation (#1894):** sidebar active link is the *one clear place blue/accent shows up* on the artist-detail and dashboard pages - `bg: rgba(59,130,246,0.15)`, `color: rgb(147,197,253)`. No primary-CTA button exists to contrast against it (see §1.2).
+#### THE RULE: no OPAQUE accent fill (binding)
+
+Stated precisely, because the imprecise version ("no accent anywhere") contradicts
+the sanctioned toggle design below. The accent may appear in exactly four forms.
+**This is the complete list:**
+
+| Form | Token | Example |
+|---|---|---|
+| **Translucent tint** (22%, so the frosted surface still reads through) | `--sw-selected-bg` | Toggle ON track, checked checkbox box, selected icon button |
+| **Border** | `--sw-selected-border` | Selected control outline, active palette row |
+| **Ink** | `--sw-selected-ink` | Selected label text |
+| **Halo** | `--sw-halo` | Focus, and the *only* form emphasis takes |
+
+Anything else is a violation. **Blue-filled buttons, blue-filled checkboxes and
+blue-filled toggle tracks are not acceptable.** Every button is a ghost button;
+**emphasis is the halo, not a fill.** This is a standing maintainer principle,
+already written into the CSS (`input.css`: *"never a solid blue fill; blue only as
+the active-toggle halo"*) and re-affirmed by the #1773 de-blue post-mortem.
+
+`#2377` found and removed a live violation of this rule: the preferences toggle
+track's ON state was a solid `--swd-accent` fill. It is now the 22% tint plus the
+halo.
+
+#### The halo is ONE geometry
+
+There is one halo, parameterized by a hue:
+
+```css
+--sw-halo-hue: var(--swd-accent);
+--sw-halo:
+  0 0 0 2px var(--sw-halo-hue),
+  0 0 0 5px color-mix(in srgb, var(--sw-halo-hue) 22%, transparent);
+```
+
+Focus (`--sw-focus-ring`) is the transient form of the same ring, so a focused
+control and a selected control read as one language. Before #2377 this geometry
+was retyped as a literal (`0 0 0 2px #3b82f6, 0 0 0 5px rgba(59,130,246,0.22)`) at
+**twelve** call sites, which is how it drifted. **Never retype it.** A grep for
+`rgba(59, 130, 246` across the stylesheets must return nothing, and
+`web/static/design_tokens_test.go` fails the build if it does.
+
+**Rendered confirmation (#1894):** sidebar active link is the *one clear place
+blue/accent shows up* on the artist-detail and dashboard pages -
+`bg: rgba(59,130,246,0.15)`, `color: rgb(147,197,253)`. No primary-CTA button
+exists to contrast against it (see §1.2).
 
 ### Severity / status colors (semantic, not decorative)
 
@@ -139,19 +183,51 @@ There is a **second, next/-specific token layer** (`--swd-*`, defined in a scope
 
 Pattern: **ink-on-tinted-background pill**, never a solid fill, for all inline semantic status (see `SeverityBadge`, `LockBadge`, `SyncBadge` in `web/components/badge.templ`). Deliberately avoided for one specific case: the sidebar's update-count pill is "a neutral blue rather than red" by design because it is *not* a danger/alarm state (`input.css:485` comment) - i.e. color choice encodes semantic urgency, not just "a badge exists here."
 
-### Danger / destructive color (irreversible operations)
+### Red semantics: destructive vs error vs warning (binding, #2377)
 
-Two values are in live use and they **disagree** - flag this as a real inconsistency to resolve, not a menu to pick from freely:
+Red carries two different meanings and they must never be told apart by *hue*.
+Nobody can distinguish two near-identical reds in situ, so the disambiguation
+rides on **surface and form**:
 
-| Value | Where | Notes |
+> **If the red thing is CLICKABLE it is destructive. If the red thing is REPORTING
+> it is an error. Warning is NEVER red.**
+
+| Meaning | Where it may appear | Treatment |
 |---|---|---|
-| `oklch(0.577 0.245 27.325)` | Merge-modal **Confirm merge** button (rendered, `artist_duplicates.templ`) | A saturated red, `border-radius: 4px`, white text, 14px/weight 500 |
-| `bg-red-600` / `hover:bg-red-700` (Tailwind, ≈ `#dc2626`/`#b91c1c`) | `ConfirmModal` component's default Confirm button (`web/components/confirm_modal.templ:51`), bulk-delete buttons (`artist_duplicates.templ:117,475`) | `border-radius` unspecified → Tailwind default (4px via `rounded`) |
-| `--sw-danger` (custom property, referenced with a `#ef4444` fallback) | `input.css:6343` | A named danger token exists but is only referenced once in the file grepped - not the dominant pattern yet |
-| `--flyout-danger-ink` / `--flyout-danger-bg` / `--flyout-danger-border` | Rule-engine "fix-all" row (`rgba(239,68,68,...)` family, red-500) | Explicitly "muted danger tone (never a solid red/blue fill)" per the code comment - a *different* visual language (subtle tint) from the modal buttons' solid fill |
-| Cancel button (paired with the above) | `oklch(0.872 0.01 258.338)` text / `#a1a1aa`-ish (Tailwind `text-gray-700`/`dark:text-gray-300`) on transparent | Consistent across both modal variants |
+| **Destructive** | Controls only: buttons, menu items, sheet rows | Ghost button, `--swd-err` border + ink, **the same halo with the hue rebound**. Never a fill. |
+| **Error** | Status surfaces only: chips, row stripes, toasts, log lines | Ink-on-tint pill (§ severity). **Always carries the error glyph**, so it never depends on color alone. Never a control, never a fill. |
+| **Warning** | Reversible, needs a look, nothing has failed | **Amber** (`--swd-warn`). Never red. |
 
-**Recommendation to record as the target rule, not yet fully true today:** destructive/irreversible confirm actions get a solid red fill (`bg-red-600` Tailwind family is the more common of the two, and is a named, greppable Tailwind color rather than an ad-hoc `oklch()` literal - prefer standardizing on it); non-blocking/inline danger *state* (e.g. a flagged row, a fix-all rule count) gets the muted tint pattern (`--flyout-danger-*` style), never a solid fill. **Known debt:** the merge modal's `oklch(...)` literal should be reconciled to the same red family as `ConfirmModal`'s `bg-red-600` rather than left as a second, slightly different red.
+In a confirm dialog the dialog **icon** takes the error treatment and the confirm
+**button** takes destructive. They never occupy the same element, so the two reds
+never need telling apart.
+
+#### Destructive is not a CSS special case
+
+It is the halo with a different seed. Rebinding one variable is the entire diff:
+
+```css
+.sw-btn-destructive {
+  --sw-halo-hue: var(--swd-err);   /* the whole thing */
+  border-color: color-mix(in srgb, var(--swd-err) 45%, transparent);
+  color: var(--swd-err);
+}
+.sw-btn-destructive:hover { box-shadow: var(--sw-halo); }   /* resolves RED here */
+```
+
+Because the halo derives from the hue rather than hard-coding a red, **a future
+theme gets a correct red halo for free** by reseeding `--swd-err` alone.
+
+**This supersedes the previous "solid red fill" recommendation.** That guidance
+predated the no-opaque-fill rule (§ Accent) and contradicted it: a solid red
+confirm button is a fill. Destructive confirm buttons are ghost buttons with the
+red halo.
+
+**Known debt (unchanged, still open):** the merge modal's `oklch(0.577 ...)`
+literal and `ConfirmModal`'s Tailwind `bg-red-600` are two different reds *and*
+two solid fills. Both should migrate to `.sw-btn-destructive`. The migration is
+tracked separately (#2379-class control work); #2377 lands the token and the
+primitive, not the call-site sweep.
 
 ### Modal button radius mismatch (debt)
 
@@ -217,6 +293,75 @@ User-controlled via `[data-density]` = `compact` / `comfortable` (default) / `sp
 | **Links** | plain text, no border, secondary-ink color (`rgb(182,194,212)` dark), `hover:underline` | Inline navigation (e.g. "Findings" link on artist-detail) | 12px in the observed instance. |
 | **Cards** | `.sw-dash-card` - see §4 | Dashboard tiles, artist-detail sections | Do not use the true-blur `.sw-glass`/`.sw-card` classes for in-page content cards; reserve those for chrome. |
 | **Modals** | Structural pattern seen in `ConfirmModal`: fixed-position wrapper (`role="alertdialog"`, `aria-modal="true"`, `aria-labelledby`/`aria-describedby`), separate backdrop div (`bg-black/50`), centered content panel (`rounded-xl`, `shadow-2xl`, `ring-1`), footer button row (`flex justify-end gap-2`, top hairline border) | Any confirm/blocking dialog | The merge modal's outer-frame-transparent structure (§4) deviates from this - worth reconciling so every modal's outer wrapper carries the same surface treatment as `ConfirmModal`'s content panel, not just its inner content. |
+| **Icon button (compliant)** | `.sw-icon-btn` - see below | Any icon-only control | Ghost; box clamped at `--sw-tap-min`; padding scales with density. |
+
+### The control rule: toggle vs checkbox vs radio (binding, #2377)
+
+The old rule of thumb - *"toggles for immediate effect, checkboxes for deferred"* -
+was **pressure-tested and rejected**. It breaks on the first Settings page with a
+Save button: under that rule every on/off setting there becomes a checkbox, which
+is wrong. **Commit timing is a property of the FORM, not of the CONTROL.**
+
+Decide from what the control **represents**, not from when it commits:
+
+- **TOGGLE** when the control is the on/off state of **one thing**. It has no
+  siblings. Reads aloud as *"X is on."*
+- **CHECKBOX** when the control is **membership of an item in a set**. It has
+  siblings, it is meaningless alone, and something downstream consumes the whole
+  selection. Reads aloud as *"X is one of the ones I picked."*
+- **Commit timing is handled separately.** A toggle inside a deferred form is
+  allowed, but it must **not** look identical to an immediate one: it carries an
+  unsaved marker (amber dot + "Not saved yet. Applies when you save.") and the form
+  owns Save and Discard. *A toggle that silently defers while looking immediate is
+  the actual bug the old rule was groping toward.*
+
+**Radio cull:**
+
+| Situation | Control |
+|---|---|
+| Two options that are really on and off | **Toggle.** "Enabled / Disabled" is a state, not a choice. |
+| Two to five short peer options | **Segmented control.** All options visible, one tab stop. |
+| More than five options, or long labels | **Select.** A radio stack that scrolls is a select with extra steps. |
+| Three to six exclusive options, each needing its own explanatory line, choice is consequential | **Radio** - the one surviving case (e.g. update channel: Stable / Beta / Nightly). Keep radios here and **nowhere else**. |
+
+The call-site migrations are tracked separately (#2379); #2377 records the rule.
+
+**Checkmark exception (looks like a conflict, is not):** a checked **checkbox**
+keeps its checkmark, while `.sw-prefs-tile` selected is *"halo only, no
+checkmark."* Both are correct. A preference tile is a large, isolated target where
+a halo reads clearly; a column of checkboxes is scanned at row density, where a
+halo alone does not survive. **Different control, different affordance - do not
+harmonize these by stripping the checkmark.**
+
+### The compliant icon button (`.sw-icon-btn`)
+
+A ghost button whose emphasis is the halo, never a fill. Its box is **clamped** at
+`--sw-tap-min` and its padding **scales** with density, so density can tune spacing
+but can never shrink the control below usability (see §15).
+
+```css
+.sw-icon-btn {
+  position: relative;
+  min-width:  var(--sw-tap-min);        /* CLAMP: density may not shrink past this */
+  min-height: var(--sw-tap-min);
+  padding: var(--sw-density-row-py);    /* SCALES with density */
+  border: 1px solid var(--swd-line);
+  background: transparent;              /* ghost: the accent is never a fill */
+  color: var(--swd-ink-2);
+}
+.sw-icon-btn:hover        { background: var(--sw-hover-bg); }      /* INK-derived */
+.sw-icon-btn:focus-visible{ box-shadow: var(--sw-focus-ring); }
+.sw-icon-btn[aria-pressed="true"] {                                /* selected */
+  background: var(--sw-selected-bg);
+  border-color: var(--sw-selected-border);
+  box-shadow: var(--sw-halo);
+}
+.sw-icon-btn:disabled     { opacity: var(--sw-disabled-opacity); }
+```
+
+**Hover derives from INK, never from the accent** (`--sw-hover-bg`), so hover can
+never be mistaken for selection. That is the entire reason the two derive from
+different seeds.
 
 ---
 
@@ -247,6 +392,30 @@ This is exactly how the merge-modal checkbox bug (§5) was actually found and pr
 - Assert `getComputedStyle()` values for the specific properties the change targets (not a full diff - targeted assertions tied to the change).
 - Run a real accessibility scanner (axe-core) against the rendered page, not a hand-rolled contrast check - the repo's existing convention is "real axe-core on the live page," full-page, both themes.
 - Do not treat "the source diff looks right" as a passing signal by itself.
+
+**The deterministic half of the gate (stylelint, #2402).** Rendered evidence catches
+what the cascade *does*; it cannot cheaply catch a token that resolves to nothing or
+a literal that escaped the system. Those are statically decidable and belong in a
+linter, so the cheap check runs first and the browser only confirms cascade and
+contrast. Coverage map - know what each tool can and cannot see:
+
+| Violation | Caught by | Where |
+|---|---|---|
+| Undeclared custom property (**the `--sw-danger` bug**) | `csstools/value-no-unknown-custom-properties` | stylelint |
+| Literal where a token is required (a new halo literal) | `scale-unlimited/declaration-strict-value` | stylelint |
+| Solid accent fill | `declaration-property-value-disallowed-list` | stylelint |
+| Sub-floor tap target | Playwright at 390px, measuring `getBoundingClientRect()` | Playwright |
+| Orphaned nav destination | Go test over `nav.Items()` | `go test` |
+
+Two notes that matter:
+
+- **axe's `target-size` rule is OFF by default** (it lives in the `wcag22aa` tag) and
+  checks **24px**, not 44px. It does **not** substitute for the Playwright check.
+- The last row is the one that caused the original nav bug and **no vendor tool can
+  see it.** It must be hand-written.
+
+Until #2402 lands, `web/static/design_tokens_test.go` holds the first three
+invariants in the normal `go test` path. It is what found `--sw-surface-overlay`.
 
 ---
 
@@ -456,4 +625,141 @@ Every pattern surveyed in §9-§12 backs this up structurally: server-rendered H
 These are direction, not current state - the design-review gate should nudge new UX toward them so retrofitting is cheaper later.
 
 - **Full internationalization.** Current: `en.json` with `fr`/`ja` falling back to `en`. Target: full i18n coverage. Design implications the gate enforces today (§6 + design-review check 7): NO hardcoded user-facing strings (all via i18n keys), and layouts resilient to translation-length expansion (German/Japanese run longer - no fixed-width text containers that clip). Forward-looking: prefer CSS **logical properties** (`margin-inline`, `padding-block`, `inset-inline-start`) over physical `left`/`right` so a future **RTL** locale mirrors without markup churn. RTL is a note, not a current requirement.
-- **Flexible theming.** The one-token-per-role architecture (§3, the `--sw-*` layer) is the intended theming seam. Target: user-selectable themes beyond dark/light. Design implications the gate enforces (checks 1 + 8): all color routes through tokens, never hardcoded hex/oklch/rgb; avoid values that bake in the current palette (hardcoded shadows/tints). **Prerequisite debt:** collapse the duplicate `--sw-*` (canonical) and `--swd-*` (next-scoped alias) token layers into one - two seams make a clean theme swap ambiguous.
+- **Flexible theming.** The one-token-per-role architecture (§3, the `--sw-*` layer) is the intended theming seam. Target: user-selectable themes beyond dark/light. Design implications the gate enforces (checks 1 + 8): all color routes through tokens, never hardcoded hex/oklch/rgb; avoid values that bake in the current palette (hardcoded shadows/tints). ~~**Prerequisite debt:** collapse the duplicate `--sw-*` (canonical) and `--swd-*` (next-scoped alias) token layers into one - two seams make a clean theme swap ambiguous.~~ **Addressed in #2377:** `--swd-*` is no longer a next-scoped alias layer. It is now the **seed** layer, declared globally at `:root`/`.dark`, and `--sw-*` decorators DERIVE from it (§15). A new theme declares ~10 seeds and inherits every decorator. What remains of the old sprawl is the per-screen type ramp (`--sw-type-*`, `--sw-ad-*`), still declared in `input.css` because #1853 is rolling it out component-by-component - that is a separate axis and a separate consolidation.
+
+---
+
+## 15. Decorator Token Catalog (seeds vs derived) + the Touch Floor
+
+Added in #2377. This is the structural answer to a class of bug, not a palette.
+
+### The problem it solves
+
+Before #2377, **every theme restated every token**. A theme could therefore
+silently *forget* one and inherit a wrong value from the cascade. That is exactly
+how `--sw-danger` came to be referenced but never declared: it survived on a
+`var()` fallback, nothing failed, and the wrong color shipped. The same defect was
+found in three more properties once it was looked for systematically -
+`--sw-warning`, `--sw-accent-primary-hover`, and `--sw-surface-overlay` (which had
+**no** fallback, so the icon-only sidebar's tooltip was rendering with no
+background at all).
+
+### The rule
+
+> **A theme declares SEEDS ONLY. Every decorator is DERIVED from them, exactly
+> once, outside any theme block.**
+
+Under seed-and-derive **a theme cannot forget a decorator, because a theme never
+writes one.** A new theme implements ~10 values and inherits the whole decorator
+system.
+
+### Seeds (what a new theme declares)
+
+All in `web/static/css/design-tokens.css`, at `:root` (light) and `.dark`:
+
+| Seed | Role |
+|---|---|
+| `--swd-accent` | The one accent hue |
+| `--swd-ink`, `--swd-ink-2`, `--swd-ink-3` | Text ramp: primary / secondary / tertiary |
+| `--swd-bg-base`, `--swd-bg-raised` | Backgrounds |
+| `--swd-line` | Hairline |
+| `--swd-err`, `--swd-warn`, `--swd-ok` | Severity |
+
+### Derived (declared ONCE, never per theme)
+
+| Token | Derivation | Notes |
+|---|---|---|
+| `--sw-halo-hue` | `var(--swd-accent)` | **Rebind this** to retheme a halo (destructive does exactly that). Declared on `:root` so it *inherits*. |
+| `--sw-halo` | 2px ring + 5px 22% glow of `--sw-halo-hue` | The ONE halo geometry |
+| `--sw-focus-ring` | `var(--sw-halo)` | The transient form of the same ring |
+| `--sw-selected-border` / `-bg` / `-ink` | accent border / accent @22% / accent ink | The generalized selection language |
+| `--sw-hover-bg` / `-border` | **`--swd-ink-2`** @8% / @30% | **From INK, never the accent** - hover must never read as selection |
+| `--sw-disabled-opacity` / `-ink` | `0.42` / `--swd-ink-3` | Previously had no token at all |
+| `--sw-danger` / `--sw-warning` | `--swd-err` / `--swd-warn` | The two that were referenced but never declared |
+
+#### The hue-derived decorators are declared on `*`, and that is load-bearing
+
+**Do not "tidy" them onto `:root`.** It looks equivalent. It is not, and the
+difference is whether the destructive halo is red or blue.
+
+A custom property is substituted at **computed-value time on the element where it
+is declared.** Declared at `:root`, `--sw-halo: ... var(--sw-halo-hue)` resolves its
+`var()` against **root's** hue (blue) exactly once, and every descendant inherits
+that *already-resolved blue string*. A descendant rebinding `--sw-halo-hue: red`
+cannot retroactively change it - the substitution already happened. Measured on a
+live `.sw-btn-destructive` while the tokens were on `:root`:
+
+```
+--sw-halo-hue   ->  #f87171             (red, correctly rebound)
+painted shadow  ->  rgb(59, 130, 246)   (BLUE - the rebind did nothing)
+```
+
+Declaring `--sw-halo`, `--sw-focus-ring` and `--sw-selected-*` on
+`*, ::before, ::after, ::backdrop` makes each element re-derive them from the hue
+**it** inherits, so the rebind lands. This is the same pattern Tailwind v4 uses for
+its own `--tw-shadow` / `--tw-ring-*`, so it is not new machinery here. Decorators
+derived from a seed that no component rebinds (hover-from-ink, disabled, severity)
+stay on `:root`, where one computation is correct and cheaper.
+
+*This was caught by reading the live computed value off a rendered element, not
+from the source - which is the §7 evidence standard doing its job.*
+
+**Where tokens live:** `design-tokens.css` **declares**; `input.css` **consumes**.
+A component-scoped *rebind* of an already-declared token stays legal (that is
+`--sw-halo-hue` on `.sw-btn-destructive`); minting a new token in `input.css` does
+not. `web/static/design_tokens_test.go` enforces both, plus the no-accent-literal
+rule, in the normal `go test` path.
+
+`--flyout-active-*` is kept as an alias of the selection layer for one release so
+no consumer had to change in #2377. **One deliberate divergence:**
+`--flyout-active-bg` stays a *neutral* glass tint and is **not** repointed at
+`--sw-selected-bg`. Repointing it would put a blue wash back on the command
+palette's active row, reversing the binding #1773 de-blue decision. The accent
+survives there as the **border**, which is what generalizes cleanly.
+
+### The touch floor: a CLAMP, keyed to input device
+
+```css
+--sw-tap-min:   32px;   /* FLOOR: the smallest a control's box may be */
+--sw-tap-touch: 44px;   /* TOUCH target: constant, never varies */
+
+@media (pointer: coarse)        { :root { --sw-tap-min: var(--sw-tap-touch); } }
+:root[data-touch-friendly="on"] {         --sw-tap-min: var(--sw-tap-touch);   }
+```
+
+Keyed to **input device, not screen width**: a tablet with a trackpad correctly
+stays dense; a tablet being *touched* correctly does not.
+
+- **Coarse pointer** - the icon button's **visual box** becomes 44px. This matters
+  for enforceability: an automated check reads `getBoundingClientRect()`, so the
+  box must genuinely *be* 44, not a 32px box wearing a bigger hit area.
+- **Fine pointer** - the box stays 32px and a zero-layout `::after` projects a 44px
+  hit area past it. **Desktop targets are deliberately not grown.** 32px already
+  clears WCAG 2.2 **AA** (SC 2.5.8, Target Size Minimum, 24×24 CSS px); 44px is SC
+  2.5.5 **AAA** and exists because a fingertip is imprecise - a mouse cursor is not.
+  Growing desktop targets would cost roughly four artist rows per screen and return
+  nothing on a conformance report.
+
+**Two tokens, not one,** because the floor and the hit area are different numbers
+on a fine pointer; a single token cannot be 32 and 44 at once.
+
+**THE FLOOR IS A CLAMP, NOT A SCALE.** Density (`[data-density]`: compact /
+comfortable / spacious) scales **spacing** - `--sw-density-row-py`, `-gap`,
+`-card-py`. It **may never scale `--sw-tap-min`.** Before #2377 nothing stopped
+Compact shrinking a control below a usable size, because no tap token existed at
+all; three chrome buttons had already shipped at 28px. The test file asserts no
+`[data-density]` block declares `--sw-tap-min`.
+
+### The Touch Friendly Controls preference
+
+One new preference, default **off**. A touchscreen *laptop* reports
+`pointer: fine`, because its primary input is the trackpad - so no media query can
+detect a finger reaching for that screen. Only the user knows.
+
+It is **not new JavaScript**: it rides the existing preferences `data-*` map in
+`preferences.js` (alongside `[data-density]`, `[data-lite]`, `[data-motion]`), which
+stamps `data-touch-friendly` on `<html>`, and CSS does the rest.
+
+- Label: **Touch Friendly Controls**
+- Help: *Makes buttons bigger and easier to tap. Turns on by itself on phones and
+  tablets. Switch it on here if you use a touchscreen on a laptop.*

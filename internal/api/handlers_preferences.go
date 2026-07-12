@@ -46,6 +46,14 @@ const (
 	PrefMonoFont = "mono_font"
 	PrefKbdHints = "kbd_hints"
 
+	// M55 #2377: touch_friendly lifts every icon-only control to the 44px touch
+	// target. Phones and tablets already get this automatically via the
+	// (pointer: coarse) media query, so the default is off. The preference
+	// exists for the one case no media query can detect: a touchscreen LAPTOP
+	// reports pointer: fine, because its primary input is the trackpad. Only the
+	// user knows a finger is reaching for that screen.
+	PrefTouchFriendly = "touch_friendly"
+
 	// PrefArtistDetailSectionOrder, PrefArtistDetailHiddenSections, and
 	// PrefArtistDetailCollapsedSections are the per-user artist-detail layout
 	// preferences (M55 #1336/#1339/#2065). Each stores a JSON array of section
@@ -102,9 +110,11 @@ var preferenceDefaults = map[string]preferenceDef{
 	PrefNotificationEnabled: {defaultValue: "true", allowedValues: []string{"true", "false"}},
 	PrefAutoFetchImages:     {defaultValue: "false", allowedValues: []string{"true", "false"}},
 	// M55 #1774: preferences flyout drawer keys.
-	PrefDensity:                  {defaultValue: "comfortable", allowedValues: []string{"compact", "comfortable", "spacious"}},
-	PrefMonoFont:                 {defaultValue: "jetbrains", allowedValues: []string{"system", "jetbrains", "cascadia"}},
-	PrefKbdHints:                 {defaultValue: "show", allowedValues: []string{"show", "hide"}},
+	PrefDensity:  {defaultValue: "comfortable", allowedValues: []string{"compact", "comfortable", "spacious"}},
+	PrefMonoFont: {defaultValue: "jetbrains", allowedValues: []string{"system", "jetbrains", "cascadia"}},
+	PrefKbdHints: {defaultValue: "show", allowedValues: []string{"show", "hide"}},
+	// M55 #2377: off by default -- coarse-pointer devices are already detected.
+	PrefTouchFriendly:            {defaultValue: "off", allowedValues: []string{"off", "on"}},
 	PrefMetadataNameRomanization: {defaultValue: "true", allowedValues: []string{"true", "false"}},
 	// M55 #2060: per-user debug tab toggle migrated from the global app setting.
 	PrefShowPlatformDebug: {defaultValue: "false", allowedValues: []string{"true", "false"}},
@@ -1110,6 +1120,7 @@ func (r *Router) loadUserPrefsData(w http.ResponseWriter, req *http.Request, use
 		Density:                       pref(PrefDensity),
 		MonoFont:                      pref(PrefMonoFont),
 		KbdHints:                      pref(PrefKbdHints),
+		TouchFriendly:                 pref(PrefTouchFriendly),
 		NotificationEnabled:           notifEnabled,
 		ShowPlatformDebug:             showPlatformDebug,
 		ArtistDetailSectionOrder:      parseSectionList(stored[PrefArtistDetailSectionOrder]),
