@@ -16,10 +16,10 @@ import (
 
 // WriteNFOAtomic serializes n to XML and writes it to path using the atomic
 // tmp/bak/rename pattern from filesystem.WriteFileAtomic. Unlike
-// WriteBackArtistNFO it operates directly on an ArtistNFO value -- the caller
-// owns all mutation (e.g. merging albums) before passing the final struct in.
-// No snapshot is taken; call WriteBackArtistNFO when snapshot tracking is
-// needed.
+// WriteBackArtistNFOWithFieldMap, it operates directly on an ArtistNFO value --
+// the caller owns all mutation (e.g. merging albums) before passing the final
+// struct in. No snapshot is taken; call WriteBackArtistNFOWithFieldMap when
+// snapshot tracking is needed.
 func WriteNFOAtomic(path string, n *ArtistNFO) error {
 	if path == "" {
 		return fmt.Errorf("write nfo: path is empty")
@@ -35,25 +35,6 @@ func WriteNFOAtomic(path string, n *ArtistNFO) error {
 		return fmt.Errorf("writing nfo file: %w", err)
 	}
 	return nil
-}
-
-// WriteBackArtistNFO writes the artist's current metadata to an artist.nfo file
-// using the default (Kodi-compatible) field mapping. If ss is non-nil and an
-// existing NFO file is present, a snapshot of the old content is saved before
-// overwriting (best effort -- snapshot failure does not prevent the write). The
-// write uses the atomic tmp/bak/rename pattern via filesystem.WriteFileAtomic.
-//
-// LockData defaults to false: the resulting NFO does NOT carry
-// <lockdata>true</lockdata>, so Emby/Jellyfin metadata refreshes will not be
-// blocked. Callers that want to opt into the lock semantic must use
-// WriteBackArtistNFOWithFieldMap with lockNFO=true (issue #1264).
-//
-// The returned error is non-nil only when the NFO file itself could not be
-// written. Snapshot errors are logged at Warn level when a logger is provided
-// but never prevent the write. When logger is nil, snapshot errors are
-// swallowed silently.
-func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotService, logger *slog.Logger) error {
-	return WriteBackArtistNFOWithFieldMap(ctx, a, ss, logger, DefaultFieldMap(), false)
 }
 
 // WriteBackArtistNFOWithFieldMap writes the artist's current metadata to an

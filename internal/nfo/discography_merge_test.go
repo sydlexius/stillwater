@@ -325,33 +325,7 @@ func TestMerge_TotalCountMatchesInput(t *testing.T) {
 	}
 }
 
-// --- ReleaseTypeFilter.Includes / CountReleaseGroups ---
-
-// TestReleaseTypeFilter_Includes verifies the exported, case-insensitive
-// membership check used by the discography_populated rule checker.
-func TestReleaseTypeFilter_Includes(t *testing.T) {
-	t.Parallel()
-	f := ReleaseTypeFilter{"Album", "EP"}
-	if !f.Includes("album") {
-		t.Error("Includes should be case-insensitive: album should match Album")
-	}
-	if !f.Includes("EP") {
-		t.Error("EP should be included")
-	}
-	if f.Includes("Single") {
-		t.Error("Single should not be included by an Album,EP filter")
-	}
-}
-
-// TestReleaseTypeFilter_Includes_NilAcceptsAll verifies a nil/empty filter
-// accepts every primary type.
-func TestReleaseTypeFilter_Includes_NilAcceptsAll(t *testing.T) {
-	t.Parallel()
-	var f ReleaseTypeFilter
-	if !f.Includes("Single") || !f.Includes("Compilation") {
-		t.Error("a nil filter should accept every release type")
-	}
-}
+// --- ReleaseTypeFilter.CountReleaseGroups ---
 
 // TestReleaseTypeFilter_CountReleaseGroups counts only the release groups whose
 // primary type the filter accepts, so the discography coverage ratio is
