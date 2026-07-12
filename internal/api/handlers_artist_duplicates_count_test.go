@@ -56,8 +56,8 @@ func seedTwoDuplicates(t *testing.T, db *sql.DB) {
 			t.Fatalf("seeding artist %q: %v", name, err)
 		}
 	}
-	mustInsert("Caedmon's Call", "/music/Caedmon's Call")
-	mustInsert("Caedmon"+curly+"s Call", "/music/Caedmon2")
+	mustInsert("Larkfield's Reach", "/music/Larkfield's Reach")
+	mustInsert("Larkfield"+curly+"s Reach", "/music/Larkfield2")
 }
 
 // adminCountReq builds a GET request with an admin auth context attached.

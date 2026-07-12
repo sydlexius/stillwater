@@ -1838,15 +1838,15 @@ func TestPushMetadata_LockSortName_AppendsToExistingLocks(t *testing.T) {
 
 	c := NewWithHTTPClient(srv.URL, "key", "u-1", srv.Client(), testLogger())
 	data := connection.ArtistPushData{
-		Name:         "12 Stones",
-		SortName:     "0000000012 Stones",
+		Name:         "12 Pebbles",
+		SortName:     "0000000012 Pebbles",
 		LockSortName: true,
 	}
 	if err := c.PushMetadata(context.Background(), "emby-numeric-1", data); err != nil {
 		t.Fatalf("PushMetadata: %v", err)
 	}
 	got := <-bodyCh
-	if got.ForcedSortName != "0000000012 Stones" {
+	if got.ForcedSortName != "0000000012 Pebbles" {
 		t.Errorf("ForcedSortName = %q, want zero-padded derived value", got.ForcedSortName)
 	}
 	if !containsString(got.LockedFields, "SortName") {

@@ -707,7 +707,7 @@ func TestApplyProviderIDsAndURLs_MergesIDsURLsAliases(t *testing.T) {
 			"wikidata": "https://www.wikidata.org/wiki/Q175044",
 			"deezer":   "https://www.deezer.com/artist/5269",
 		},
-		Aliases: []string{"12 Stones", "Twelve Stones"},
+		Aliases: []string{"12 Pebbles", "Twelve Pebbles"},
 	}
 
 	applyProviderIDsAndURLs(result, meta)

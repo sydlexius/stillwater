@@ -405,7 +405,7 @@ Jellyfin library list.
 
 | Name | Derived ForcedSortName |
 |------|------------------------|
-| `12 Stones` | `0000000012 Stones` |
+| `12 Pebbles` | `0000000012 Pebbles` |
 | `3 Doors Down` | `0000000003 Doors Down` |
 | `311` | `0000000311` |
 | `38 Special` | `0000000038 Special` |

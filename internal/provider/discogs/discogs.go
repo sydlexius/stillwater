@@ -397,8 +397,8 @@ func (a *Adapter) GetReleaseGroups(ctx context.Context, artistID string) ([]prov
 //
 // This is intentionally broader than GetReleaseGroups (masters only): Discogs
 // catalogs some albums only as a release, never promoting them to a master, so a
-// master-only set undercounts the album match (e.g. "12 Stones" / "Beneath the
-// Scars", which exists only as a release -- #1831). Titles are deduplicated by
+// master-only set undercounts the album match (e.g. "12 Pebbles" / "Beneath the
+// Gravel", which exists only as a release -- #1831). Titles are deduplicated by
 // the same normalization artist.CompareAlbums uses, so a master and one-or-more
 // same-title releases count once. Over-inclusion is safe: a remote title only
 // raises the match score when it equals a local album title.

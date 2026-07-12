@@ -33,7 +33,7 @@ type ArtistPushData struct {
 
 	// LockSortName signals that Stillwater itself derived the SortName
 	// value (currently: zero-padded numeric prefix for artists like
-	// "12 Stones" whose canonical SortName from MusicBrainz was empty).
+	// "12 Pebbles" whose canonical SortName from MusicBrainz was empty).
 	// The flag is NOT set when the SortName came verbatim from upstream
 	// metadata; locking those would override a user's manual unlock on
 	// the platform side.

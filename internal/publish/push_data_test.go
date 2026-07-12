@@ -30,8 +30,8 @@ func TestDeriveSortNameFallback(t *testing.T) {
 			desc: "MB-provided 'Cure, The' wins over name-prefix derivation",
 		},
 		{
-			name: "12 Stones", mbSort: "",
-			wantSort: "0000000012 Stones", wantLocked: true,
+			name: "12 Pebbles", mbSort: "",
+			wantSort: "0000000012 Pebbles", wantLocked: true,
 			desc: "two-digit prefix zero-padded to 10",
 		},
 		{
@@ -108,10 +108,10 @@ func TestDeriveSortNameFallback(t *testing.T) {
 // next metadata refresh would clear the derived value (#1083).
 func TestBuildArtistPushData_SortNameDerivation_Propagation(t *testing.T) {
 	t.Run("numeric prefix + empty SortName: derived + locked", func(t *testing.T) {
-		a := &artist.Artist{Name: "12 Stones", SortName: "", Type: "group"}
+		a := &artist.Artist{Name: "12 Pebbles", SortName: "", Type: "group"}
 		got := BuildArtistPushData(a, nil)
-		if got.SortName != "0000000012 Stones" {
-			t.Errorf("SortName = %q, want %q", got.SortName, "0000000012 Stones")
+		if got.SortName != "0000000012 Pebbles" {
+			t.Errorf("SortName = %q, want %q", got.SortName, "0000000012 Pebbles")
 		}
 		if !got.LockSortName {
 			t.Errorf("LockSortName = false, want true for derived numeric prefix")
@@ -143,10 +143,10 @@ func TestBuildArtistPushData_SortNameDerivation_Propagation(t *testing.T) {
 	t.Run("MB SortName wins even on numeric-prefix name", func(t *testing.T) {
 		// User has explicitly set Cure-The-style sort name on a numeric artist;
 		// derivation must NOT override.
-		a := &artist.Artist{Name: "12 Stones", SortName: "Stones, 12", Type: "group"}
+		a := &artist.Artist{Name: "12 Pebbles", SortName: "Pebbles, 12", Type: "group"}
 		got := BuildArtistPushData(a, nil)
-		if got.SortName != "Stones, 12" {
-			t.Errorf("SortName = %q, want %q (MB/user wins)", got.SortName, "Stones, 12")
+		if got.SortName != "Pebbles, 12" {
+			t.Errorf("SortName = %q, want %q (MB/user wins)", got.SortName, "Pebbles, 12")
 		}
 		if got.LockSortName {
 			t.Errorf("LockSortName = true, want false when user/MB SortName wins")

@@ -250,7 +250,7 @@ func TestHandleArtistRuleResults_ReturnsEnabledOnly(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	seedArtistRow(t, r, "abc-123", "Twelve Stones")
+	seedArtistRow(t, r, "abc-123", "Twelve Pebbles")
 	seedRuleRow(t, r, "rule-on", "Enabled Rule")
 	seedRuleRow(t, r, "rule-off", "Disabled Rule")
 	if _, err := r.db.ExecContext(ctx, `UPDATE rules SET enabled = 0 WHERE id = ?`, "rule-off"); err != nil {
