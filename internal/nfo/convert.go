@@ -2,57 +2,6 @@ package nfo
 
 import "github.com/sydlexius/stillwater/internal/artist"
 
-// ToArtist converts an ArtistNFO to a domain Artist model.
-// The caller is responsible for setting ID, Path, LibraryID, and other
-// non-NFO fields (image flags, health score, timestamps, etc.).
-// Gender is cleared for non-individual types (group, orchestra, choir).
-func ToArtist(n *ArtistNFO) *artist.Artist {
-	gender := n.Gender
-	if n.Type != "" && !artist.IsIndividualType(n.Type) {
-		gender = ""
-	}
-	return &artist.Artist{
-		Name:           n.Name,
-		SortName:       n.SortName,
-		Type:           n.Type,
-		Gender:         gender,
-		Disambiguation: n.Disambiguation,
-		MusicBrainzID:  n.MusicBrainzArtistID,
-		AudioDBID:      n.AudioDBArtistID,
-		DiscogsID:      n.DiscogsArtistID,
-		WikidataID:     n.WikidataID,
-		DeezerID:       n.DeezerArtistID,
-		SpotifyID:      n.SpotifyArtistID,
-		Genres:         n.Genres,
-		Styles:         n.Styles,
-		Moods:          n.Moods,
-		YearsActive:    n.YearsActive,
-		Born:           n.Born,
-		Formed:         n.Formed,
-		Died:           n.Died,
-		Disbanded:      n.Disbanded,
-		Biography:      n.Biography,
-		Discography:    toArtistDiscography(n.Albums),
-	}
-}
-
-// toArtistDiscography converts parsed NFO album entries into the artist
-// domain's DiscographyAlbum slice, preserving order.
-func toArtistDiscography(albums []DiscographyAlbum) []artist.DiscographyAlbum {
-	if len(albums) == 0 {
-		return nil
-	}
-	out := make([]artist.DiscographyAlbum, 0, len(albums))
-	for _, a := range albums {
-		out = append(out, artist.DiscographyAlbum{
-			Title:                     a.Title,
-			Year:                      a.Year,
-			MusicBrainzReleaseGroupID: a.MusicBrainzReleaseGroupID,
-		})
-	}
-	return out
-}
-
 // fromArtistDiscography converts artist-domain discography entries back to
 // the NFO album slice for serialization.
 func fromArtistDiscography(albums []artist.DiscographyAlbum) []DiscographyAlbum {
@@ -101,17 +50,6 @@ func ToMetadataUpdate(n *ArtistNFO) *artist.MetadataUpdate {
 		Died:           n.Died,
 		Disbanded:      n.Disbanded,
 	}
-}
-
-// ApplyNFOToArtist maps ArtistNFO fields onto an existing Artist,
-// preserving non-NFO fields (ID, Path, LibraryID, image flags, timestamps, etc.).
-// Uses SnapshotRestore strategy (unconditional overwrite of all metadata fields).
-func ApplyNFOToArtist(n *ArtistNFO, a *artist.Artist) {
-	u := ToMetadataUpdate(n)
-	artist.ApplyMetadata(a, u, artist.SnapshotRestore, artist.MergeOptions{})
-	// Discography is a transient field not covered by ApplyMetadata; copy it
-	// across explicitly so the artist reflects the NFO's album entries.
-	a.Discography = toArtistDiscography(n.Albums)
 }
 
 // isIndividualType delegates to artist.IsIndividualType. Kept as a local

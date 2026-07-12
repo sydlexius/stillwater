@@ -26,8 +26,8 @@ func TestWriteBackArtistNFO_Success(t *testing.T) {
 		Path:          dir,
 	}
 
-	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 	}
 
 	// Read back and verify round-trip
@@ -73,8 +73,8 @@ func TestWriteBackArtistNFO_SnapshotsExisting(t *testing.T) {
 		Path:     dir,
 	}
 
-	if err := WriteBackArtistNFO(ctx, a, ss, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(ctx, a, ss, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 	}
 
 	// Verify snapshot was saved with old content
@@ -113,8 +113,8 @@ func TestWriteBackArtistNFO_NilSnapshotService(t *testing.T) {
 	}
 
 	// Must not panic with nil SnapshotService
-	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO with nil ss: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap with nil ss: %v", err)
 	}
 
 	// Verify file was still written
@@ -138,8 +138,8 @@ func TestWriteBackArtistNFO_NoExistingFile(t *testing.T) {
 		Path:     dir,
 	}
 
-	if err := WriteBackArtistNFO(ctx, a, ss, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(ctx, a, ss, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 	}
 
 	// No snapshot should have been saved (nothing to snapshot)
@@ -166,7 +166,7 @@ func TestWriteBackArtistNFO_NoExistingFile(t *testing.T) {
 }
 
 // TestWriteBackArtistNFO_LockDataDefaultOff verifies the post-#1264 default:
-// the no-args WriteBackArtistNFO does NOT stamp <lockdata>true</lockdata>.
+// WriteBackArtistNFOWithFieldMap with lockNFO=false does NOT stamp <lockdata>true</lockdata>.
 // Lock semantics are opt-in per library via WriteBackArtistNFOWithFieldMap.
 func TestWriteBackArtistNFO_LockDataDefaultOff(t *testing.T) {
 	dir := t.TempDir()
@@ -177,8 +177,8 @@ func TestWriteBackArtistNFO_LockDataDefaultOff(t *testing.T) {
 		Path:     dir,
 	}
 
-	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
@@ -192,7 +192,7 @@ func TestWriteBackArtistNFO_LockDataDefaultOff(t *testing.T) {
 	}
 
 	if parsed.LockData {
-		t.Error("default WriteBackArtistNFO must not set LockData (issue #1264)")
+		t.Error("default WriteBackArtistNFOWithFieldMap must not set LockData (issue #1264)")
 	}
 
 	output := string(data)
@@ -256,7 +256,7 @@ func TestWriteBackArtistNFOWithFieldMap_LockNFOOptIn(t *testing.T) {
 }
 
 func TestWriteBackArtistNFO_NilArtist(t *testing.T) {
-	err := WriteBackArtistNFO(context.Background(), nil, nil, nil)
+	err := WriteBackArtistNFOWithFieldMap(context.Background(), nil, nil, nil, DefaultFieldMap(), false)
 	if err == nil {
 		t.Fatal("expected error for nil artist, got nil")
 	}
@@ -267,7 +267,7 @@ func TestWriteBackArtistNFO_NilArtist(t *testing.T) {
 
 func TestWriteBackArtistNFO_EmptyPath(t *testing.T) {
 	a := &artist.Artist{ID: "art-empty", Name: "Empty Path"}
-	err := WriteBackArtistNFO(context.Background(), a, nil, nil)
+	err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false)
 	if err == nil {
 		t.Fatal("expected error for empty path, got nil")
 	}
@@ -284,8 +284,8 @@ func TestWriteBackArtistNFO_IncludesStillwater(t *testing.T) {
 		Path: dir,
 	}
 
-	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
@@ -391,7 +391,7 @@ func TestWriteBackArtistNFOWithFieldMap_MoodsAsStyles(t *testing.T) {
 
 // TestWriteBackArtistNFO_Discography covers the data-loss regression where
 // <album> entries on an Artist's Discography were dropped during write-back.
-// Empty, single, and multi-entry cases all round-trip through WriteBackArtistNFO
+// Empty, single, and multi-entry cases all round-trip through WriteBackArtistNFOWithFieldMap
 // and reload from disk without losing fields.
 func TestWriteBackArtistNFO_Discography(t *testing.T) {
 	cases := []struct {
@@ -433,8 +433,8 @@ func TestWriteBackArtistNFO_Discography(t *testing.T) {
 				Path:           dir,
 				Discography:    tc.albums,
 			}
-			if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-				t.Fatalf("WriteBackArtistNFO: %v", err)
+			if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+				t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 			}
 
 			data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
@@ -497,8 +497,8 @@ func TestWriteBackArtistNFO_PreservesOnDiskDiscography(t *testing.T) {
 		// Discography intentionally left nil.
 	}
 
-	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
@@ -548,8 +548,8 @@ func TestWriteBackArtistNFO_NoDiscographyToPreserve(t *testing.T) {
 		Path:     dir,
 	}
 
-	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
@@ -586,8 +586,8 @@ func TestWriteBackArtistNFO_UnparsableExistingNFO(t *testing.T) {
 	}
 
 	// The write-back must not fail despite the unparsable existing file.
-	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO over unparsable NFO: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap over unparsable NFO: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
@@ -635,8 +635,8 @@ func TestWriteBackArtistNFO_ArtistDiscographyWinsOverOnDisk(t *testing.T) {
 		},
 	}
 
-	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
@@ -752,8 +752,8 @@ func TestWriteBackArtistNFO_UnreadableExistingNFO(t *testing.T) {
 		Path:     dir,
 	}
 
-	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
-		t.Fatalf("WriteBackArtistNFO over an unreadable NFO path: %v", err)
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap over an unreadable NFO path: %v", err)
 	}
 
 	// The path is now a regular NFO file carrying the artist metadata.
