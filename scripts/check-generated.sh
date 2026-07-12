@@ -47,6 +47,49 @@ if [ -n "$dirty_templ" ]; then
   exit 1
 fi
 
+# Verify Tailwind CSS output is in sync with input.css. Mirrors the
+# "Regenerate Tailwind CSS" step in .github/workflows/gate.yml's Generated
+# Files job -- styles.css is committed (see .gitignore) so it must be
+# regenerated and diffed the same way templ output is above. Requires the
+# `tailwindcss` standalone binary on PATH (see .github/actions/setup-tailwind
+# for the pinned version/SHA CI installs); skip with a warning if it is not
+# installed locally rather than failing, since CI's Generated Files job is
+# the authoritative enforcement point either way.
+if command -v tailwindcss >/dev/null 2>&1; then
+  if ! tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify 2>/tmp/check-generated-tailwind.log; then
+    echo "ERROR: 'tailwindcss' build failed:"
+    cat /tmp/check-generated-tailwind.log
+    exit 1
+  fi
+  dirty_css=$(git diff --name-only -- web/static/css/styles.css || true)
+  if [ -n "$dirty_css" ]; then
+    echo "ERROR: web/static/css/styles.css is stale. Run: make tailwind && git add web/static/css/styles.css"
+    exit 1
+  fi
+else
+  echo "WARNING: tailwindcss not found on PATH; skipping Tailwind CSS freshness check locally (CI's Generated Files job in gate.yml enforces this unconditionally)."
+fi
+
+# Wholesale dirty-check: the two targeted diffs above (`git diff --name-only
+# -- <path>`) only surface changes to already-TRACKED files. They miss a
+# brand-new generated file that regeneration just created but git has never
+# seen -- e.g. a freshly added *.templ file whose *_templ.go counterpart is
+# untracked, not merely modified. `git diff` does not report untracked paths
+# at all. Mirror gate.yml's Generated Files job here: mark the regenerated
+# surfaces intent-to-add (-N) so an untracked new file shows up as a diff
+# too, then fail on anything remaining. Scoped to the surfaces this script
+# actually regenerates (templ + Tailwind CSS) so an unrelated dirty working
+# tree does not produce a false positive.
+git add -A -N -- '*_templ.go' web/static/css/styles.css
+wholesale_dirty=$(git diff --name-only -- '*_templ.go' web/static/css/styles.css || true)
+if [ -n "$wholesale_dirty" ]; then
+  echo "ERROR: generated files are stale or newly untracked after regeneration."
+  echo "Run: go tool templ generate && make tailwind, then git add the results."
+  echo "Dirty/untracked files:"
+  echo "$wholesale_dirty" | sed 's/^/  /'
+  exit 1
+fi
+
 # Verify the docs provider matrix is in sync with the live registry. The
 # generator runs in -check mode and exits non-zero if regeneration is needed.
 # Skip silently if the docs file is absent (e.g., a docs-stripped checkout).
