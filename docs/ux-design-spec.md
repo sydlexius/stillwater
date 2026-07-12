@@ -117,7 +117,7 @@ There is a **second, next/-specific token layer** (`--swd-*`, defined in a scope
 | `--swd-ink-2` | `#334155` | Secondary ink |
 | `--swd-ink-3` | `#64748b` | Quiet meta/label ink - AA on white only, flagged as borderline (~4.8:1) |
 
-**Portability note:** for Canticle, `--swd-*` can likely be dropped and everything routed through the single `--sw-*` layer - the two-layer split is Stillwater-specific historical accretion (the `--swd-surface: var(--sw-glass-bg)` alias comment literally says it exists to let older "prototype card" CSS consume the shared token transparently). Don't port the duplication; port the single-source-of-truth intent.
+**Portability note:** as of #2377, `--swd-*` is no longer a next-scoped alias layer describing card-CSS interop; it is the **seed** layer (`--swd-accent` etc.), declared once and DERIVED into every `--sw-*` decorator via `color-mix()` (see §15). For Canticle, port the seed-and-derive split itself, not two layers that alias each other - a new theme should declare ~10 seeds and inherit every decorator, the same architecture Stillwater now uses.
 
 ### Accent
 
@@ -442,7 +442,7 @@ invariants in the normal `go test` path. It is what found `--sw-surface-overlay`
 **Debt not to inherit (fix-before-port or port-as-fixed):**
 - The off-scale fractional font sizes (§2) - port the intended 13/14/16/18/20 scale, not the `.576/.712/.864` drift.
 - The two disagreeing danger-red values and the 4px-vs-6px button radius split (§3) - pick one of each for Canticle from day one.
-- The `--sw-*` / `--swd-*` duplicate token layer (§3) - Canticle should have one token layer, not two that alias each other.
+- ~~The `--sw-*` / `--swd-*` duplicate token layer (§3) - Canticle should have one token layer, not two that alias each other.~~ **Addressed in #2377** (§3, §15): `--swd-*` is now the seed layer and `--sw-*` decorators derive from it via `color-mix()` - one architecture, not two aliasing layers. Port the seed-and-derive split, not a collapse to a single flat layer.
 - The merge-modal's checkboxes are resolved under #1894 F2 (the neutral de-blue treatment, §5) - port that fix, not the pre-fix native/blue states. The survivor radio's blue fill and the transparent outer-modal-frame (§4) remain open reconciliation items at capture.
 
 ---

@@ -43,12 +43,22 @@ var (
 	useRE = regexp.MustCompile(`var\(\s*(--sw[a-z0-9-]*)`)
 	// Comments, stripped before scanning so prose never counts as code.
 	commentRE = regexp.MustCompile(`(?s)/\*.*?\*/`)
-	// The accent literal the halo replaced.
+	// The accent literal the halo replaced. Matches only the rgba() form,
+	// deliberately NOT the hex form (#3b82f6): widening this now would turn a
+	// green branch red against pre-existing, in-scope-for-#2379 debt (measured
+	// at #2377 time: 0 hex-literal `#3b82f6` occurrences outside comments in
+	// input.css -- the two textual occurrences are both inside `/* */` prose,
+	// not code -- but other blue-family hex values used for AA-contrast splits
+	// remain, and #2379 is where consumer call sites, hex included, get
+	// migrated). Widen this regex there, not here.
 	accentLiteralRE = regexp.MustCompile(`rgba\(\s*59\s*,\s*130\s*,\s*246`)
 )
 
-// readCSS returns the file with comments stripped, so a token named in prose is
-// never mistaken for a declaration or a usage.
+// readCSS returns the file with CSS block comments (/* ... */) stripped, so a
+// token named in a CSS comment is never mistaken for a declaration or a usage.
+// It does not strip HTML comments (<!-- ... -->) or line comments (//); those
+// forms do not appear in the CSS/templ sources this scans in a way that would
+// produce a false match.
 func readCSS(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -190,14 +200,17 @@ func TestNoAccentLiteralOutsideSeed(t *testing.T) {
 	paths := []string{inputCSSPath, tokensCSSPath}
 
 	for _, dir := range []string{"../components", "../templates"} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("read dir %s: %v", dir, err)
-		}
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".templ") {
-				paths = append(paths, filepath.Join(dir, e.Name()))
+		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
 			}
+			if !d.IsDir() && strings.HasSuffix(d.Name(), ".templ") {
+				paths = append(paths, path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk dir %s: %v", dir, err)
 		}
 	}
 

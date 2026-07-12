@@ -7571,6 +7571,7 @@ paths:
                   - density
                   - mono_font
                   - kbd_hints
+                  - touch_friendly
                   - saved_views
         "401":
           description: Not authenticated

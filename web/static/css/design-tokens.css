@@ -608,21 +608,29 @@ body { font-family: var(--sw-font-family); }
  * reintroduce the literals this PR just removed.
  *
  * Deliberately NOT published as a --color-* (which would mint bg-* utilities):
- * --swd-accent. An `bg-swd-accent` utility would be an OPAQUE ACCENT FILL, the
- * one thing the design rule forbids. The accent is reachable as a border, as
- * ink, as the 22% tint, and as the halo -- and that is the complete list.
+ * --swd-accent, and --swd-err / --swd-warn / --swd-ok alongside it. A
+ * `bg-swd-accent` utility would be an OPAQUE ACCENT FILL, the one thing the
+ * design rule forbids -- and the severity tokens are bound by the identical
+ * "never a fill" rule for destructive/error (spec SS1: destructive = never a
+ * fill; error = never a control, never a fill). Tailwind v4's --color-*
+ * namespace mints the full bg-*/text-*/border-* utility set per variable with
+ * no way to publish a partial subset, so the only way to keep the fill
+ * utility from existing is to keep these out of --color-* entirely, same as
+ * the accent. All current consumption is `var(--swd-err)` / `var(--swd-warn)`
+ * / `var(--swd-ok)` directly (input.css, artist_detail.templ) -- nothing
+ * reaches these as a Tailwind utility today, so nothing is lost by excluding
+ * them. The accent is reachable as a border, as ink, as the 22% tint, and as
+ * the halo -- and that is the complete list.
  * ========================================================================= */
 @theme {
-  /* Ink / surface / line / severity -- safe as color utilities. */
+  /* Ink / surface / line -- safe as color utilities. Severity (err/warn/ok)
+     is deliberately excluded above; reach it via var(--swd-err) etc. directly. */
   --color-swd-ink: var(--swd-ink);
   --color-swd-ink-2: var(--swd-ink-2);
   --color-swd-ink-3: var(--swd-ink-3);
   --color-swd-bg-base: var(--swd-bg-base);
   --color-swd-bg-raised: var(--swd-bg-raised);
   --color-swd-line: var(--swd-line);
-  --color-swd-err: var(--swd-err);
-  --color-swd-warn: var(--swd-warn);
-  --color-swd-ok: var(--swd-ok);
 
   /* Accent, exposed ONLY in its sanctioned expressions. */
   --color-sw-selected-border: var(--sw-selected-border);
