@@ -34,7 +34,11 @@ const OFFENDER_CAP = 25;
 // ---------------------------------------------------------------------------
 export async function runLayoutProbe(page) {
   return page.evaluate((cap) => {
-    const TOLERANCE = 1; // px, avoid subpixel false positives
+    // ONE tolerance, from ONE place (TOL in probe-helpers.js, injected as
+    // window.__swTol). This probe used to re-declare its own `const TOLERANCE = 1`
+    // -- a second source of truth for the subpixel threshold, which is exactly
+    // the drift this harness keeps getting bitten by.
+    const TOLERANCE = window.__swTol;
     const m = window.__swMetrics();
     window.__swAssertUnscrolled();
     const viewportWidth = m.viewportWidth;

@@ -114,7 +114,11 @@ export function swIsOffscreen(offscreen) {
 // definitions (see SINGLE SOURCE OF TRUTH). Anything referenced in here must be
 // self-contained: this runs in the browser, where module scope does not exist.
 function pageScript() {
-  const TOL = 1;
+  // NOTE: no local tolerance constant. The subpixel threshold has exactly ONE
+  // source -- TOL, exported above and injected as window.__swTol by
+  // installProbeHelpers -- and the helpers below read it at CALL time (both init
+  // scripts have long since run by then). A `const TOL = 1` here would be a
+  // second source that silently diverges the moment the exported one is retuned.
 
   // The single source of truth for "the box the user can actually see", plus
   // the scroll offset the origin invariant is asserted against.
@@ -169,6 +173,7 @@ function pageScript() {
   // off-screen probe: 45 of its 46 findings on settings were `clipped.bottom`
   // on a page that scrolls.
   window.__swOutsideViewportX = function swOutsideViewportX(rect) {
+    const TOL = window.__swTol;
     const { viewportWidth } = window.__swMetrics();
     return rect.right <= TOL || rect.left >= viewportWidth - TOL;
   };
@@ -179,6 +184,7 @@ function pageScript() {
   // offenders when a handful of containers explain all of them is not
   // actionable evidence, it is a haystack. `entries` is [{ el, right, ... }].
   window.__swRootCauses = function swRootCauses(entries) {
+    const TOL = window.__swTol;
     const byEl = new Map(entries.map(e => [e.el, e]));
     return entries.filter(entry => {
       for (let p = entry.el.parentElement; p; p = p.parentElement) {

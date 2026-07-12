@@ -74,18 +74,106 @@ describe('runFailureReasons -- the harness must not report success while doing n
       guardFailedRecord(),
       { page: 'logs', error: 'boom' },
       { page: 'artist-detail', skipped: 'no artists' },
-      { ...okRecord('prefs-drawer-open'), openFailed: 'trigger not actionable' },
+      { ...okRecord('prefs-drawer-open'), openBlocked: 'trigger 0x0' },
+      { ...okRecord('prefs-drawer-open'), openFailed: 'clicked, never opened' },
     ];
     const c = classifyResults(results);
     assert.equal(c.ok.length, 1);
     assert.equal(c.guardFailed.length, 1);
     assert.equal(c.errored.length, 1);
     assert.equal(c.skipped.length, 1);
-    assert.equal(c.suspect.length, 1);
+    assert.equal(c.openBlocked.length, 1);
+    assert.equal(c.openFailure.length, 1);
     assert.equal(
-      c.ok.length + c.guardFailed.length + c.errored.length + c.skipped.length + c.suspect.length,
+      c.ok.length + c.guardFailed.length + c.errored.length + c.skipped.length
+        + c.openBlocked.length + c.openFailure.length,
       results.length,
     );
+  });
+});
+
+// NF1. The theme-restore failure was loud on stderr and invisible to the exit
+// code -- the weaker half of the very lesson runFailureReasons exists to teach.
+// A caller gating on the exit code (CI, an agent) never reads stderr, and the
+// consequence is the maintainer's account left mutated on the wrong theme.
+describe('runFailureReasons -- a theme this run could not put back fails the run', () => {
+  test('a failed restore fails an otherwise-clean run', () => {
+    const reasons = runFailureReasons(
+      [okRecord(), okRecord('settings')],
+      { ok: false, reason: 'PUT /api/v1/preferences/theme failed', leftAt: 'light' },
+    );
+    assert.equal(reasons.length, 1);
+    assert.match(reasons[0], /THEME NOT RESTORED/);
+    assert.match(reasons[0], /left on "light"/);
+  });
+
+  test('a successful restore does not fail the run', () => {
+    assert.deepEqual(runFailureReasons([okRecord()], { ok: true, restoredTo: 'dark' }), []);
+  });
+
+  // A read that succeeded and found no theme set is not a failure to restore:
+  // there was genuinely nothing to put back.
+  test('an account with no theme set is not a restore failure', () => {
+    assert.deepEqual(runFailureReasons([okRecord()], { ok: true, reason: 'nothing to restore' }), []);
+  });
+
+  test('defaults to ok when no restore outcome is supplied', () => {
+    assert.deepEqual(runFailureReasons([okRecord()]), []);
+  });
+});
+
+// NF2. The two ways an affordance fails to open are NOT the same kind of thing,
+// and collapsing them was hiding a real failure behind a known app bug.
+describe('open-state -- an app finding is not a harness failure, and vice versa', () => {
+  const drawer = over => ({ ...okRecord('prefs-drawer-open'), ...over });
+
+  // The trigger is 0x0 at all three viewports TODAY -- that is app bug #2382,
+  // and it is what this harness is FOR. A harness that exits 1 on every run
+  // until #2382 lands is a harness whose exit code everyone learns to ignore.
+  test('a blocked (unactionable) trigger is recorded and does NOT fail the run', () => {
+    const results = [okRecord(), drawer({ openBlocked: 'trigger present but not actionable (0x0)' })];
+    assert.deepEqual(runFailureReasons(results), [],
+      'the 0x0 trigger is an APP finding (#2382); failing the run on it would make the '
+      + 'harness permanently red for a bug it is supposed to merely report');
+
+    const c = classifyResults(results);
+    assert.equal(c.openBlocked.length, 1);
+    assert.equal(c.ok.length, 1, 'a blocked open-state record is never counted clean either');
+  });
+
+  test('a trigger missing from the DOM is likewise recorded, not a run failure', () => {
+    assert.deepEqual(runFailureReasons([okRecord(), drawer({ openSkipped: 'trigger not in the DOM' })]), []);
+  });
+
+  // THE REGRESSION THIS GUARDS. Once #2382 makes the trigger clickable, a drawer
+  // that still never opens must NOT go green. Under the old single `openFailed`
+  // marker it would have: every open-state record was excluded from `ok` and
+  // added no failure reason, so the run exited 0 with the one interactive probe
+  // never having opened.
+  test('a click that LANDED and still never opened FAILS the run', () => {
+    const reasons = runFailureReasons([
+      okRecord(),
+      drawer({ openFailed: 'trigger WAS actionable and the click landed, but the drawer never opened' }),
+    ]);
+    assert.equal(reasons.length, 1);
+    assert.match(reasons[0], /FAILED TO OPEN/);
+    assert.match(reasons[0], /actionable/);
+  });
+
+  test('an open state that never settled FAILS the run (probes ran mid-animation)', () => {
+    const reasons = runFailureReasons([okRecord(), drawer({ openUnsettled: 'geometry still changing' })]);
+    assert.match(reasons.join('\n'), /FAILED TO OPEN/);
+  });
+
+  // The two must not be confusable: a blocked trigger alongside a real failure
+  // still fails, and the reason names the real one.
+  test('a real open failure is not masked by a blocked one', () => {
+    const reasons = runFailureReasons([
+      okRecord(),
+      drawer({ openBlocked: 'trigger 0x0' }),
+      drawer({ openFailed: 'click landed, never opened' }),
+    ]);
+    assert.match(reasons.join('\n'), /1 record\(s\) FAILED TO OPEN/);
   });
 });
 

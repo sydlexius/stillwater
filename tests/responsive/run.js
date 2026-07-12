@@ -466,37 +466,11 @@ async function main() {
     }
   }
 
-  // Put the account's theme back the way we found it (see lib/auth.js). EVERY
-  // failure here is REPORTED, not swallowed -- the operator needs to know their
-  // account was left on the wrong theme.
-  //
-  // Note the READ failure branch. It used to be `if (originalTheme)` against a
-  // bare null, so a failed GET /api/v1/preferences skipped the restore in total
-  // silence and left the account on light. A read we could not perform and a
-  // write we could not perform have the SAME consequence, so they get the same
-  // volume.
-  const lastTheme = THEMES[THEMES.length - 1];
-  if (originalTheme.reason) {
-    console.error(
-      `\nWARNING: could not READ the account's original theme preference `
-      + `(${originalTheme.reason}), so it was NOT restored. The account is left at `
-      + `"${lastTheme}" -- the last theme this run applied.`
-    );
-  } else if (originalTheme.theme) {
-    const restored = await writeThemePreference({ baseURL: opts.url, storageState, theme: originalTheme.theme });
-    if (restored) {
-      console.log(`\nRestored the account's original theme preference: ${originalTheme.theme}`);
-    } else {
-      console.error(
-        `\nWARNING: failed to WRITE the account's original theme preference `
-        + `("${originalTheme.theme}"). It is currently left at "${lastTheme}".`
-      );
-    }
-  }
+  const themeRestore = await restoreTheme({ opts, storageState, originalTheme });
 
   const metadata = buildMetadata({ opts, runId, startedAt, browserVersions, target, artist, pages });
   const reportPath = path.join(opts.out, `responsive-report-${runId}.json`);
-  fs.writeFileSync(reportPath, JSON.stringify({ metadata, results }, null, 2));
+  fs.writeFileSync(reportPath, JSON.stringify({ metadata, results, themeRestore }, null, 2));
 
   printSummary(results);
   console.log(`\nFull JSON report: ${reportPath}`);
@@ -505,13 +479,59 @@ async function main() {
   // THE HARNESS MUST NOT COMMIT THE SIN IT EXISTS TO CATCH. A run in which every
   // record guard-failed used to write a full report, print its failures, and
   // exit 0 -- indistinguishable, to any caller checking the exit code, from a
-  // clean pass.
-  const reasons = runFailureReasons(results);
+  // clean pass. The same applies to a theme it mutated and could not put back.
+  const reasons = runFailureReasons(results, themeRestore);
   if (reasons.length) {
     console.error('\n=== RUN FAILED ===');
     for (const r of reasons) console.error(`  ${r}`);
     process.exitCode = 1;
   }
+}
+
+// restoreTheme: put the account's theme back the way we found it (see lib/auth.js).
+//
+// Returns the OUTCOME -- { ok: true } | { ok: false, reason, leftAt } -- rather
+// than only printing it, so runFailureReasons can fail the run on it. Printing
+// alone was not enough: stderr is invisible to anything gating on the exit code,
+// which is the entire failure mode this harness exists to prosecute.
+//
+// Both halves count as a failure to restore, because they have the SAME
+// consequence for the operator: the account is left on whatever theme ran last.
+//   * the READ failed -- we never learned what to restore TO
+//   * the WRITE failed -- we knew, and could not put it back
+// A read that succeeds and reports NO theme set is not a failure: there is
+// genuinely nothing to restore.
+async function restoreTheme({ opts, storageState, originalTheme }) {
+  const leftAt = THEMES[THEMES.length - 1];
+
+  if (originalTheme.reason) {
+    console.error(
+      `\nWARNING: could not READ the account's original theme preference `
+      + `(${originalTheme.reason}), so it was NOT restored. The account is left at `
+      + `"${leftAt}" -- the last theme this run applied.`
+    );
+    return { ok: false, reason: `could not read the original theme: ${originalTheme.reason}`, leftAt };
+  }
+
+  if (!originalTheme.theme) {
+    return { ok: true, reason: 'the account had no theme preference set; nothing to restore' };
+  }
+
+  const restored = await writeThemePreference({ baseURL: opts.url, storageState, theme: originalTheme.theme });
+  if (!restored) {
+    console.error(
+      `\nWARNING: failed to WRITE the account's original theme preference `
+      + `("${originalTheme.theme}"). It is currently left at "${leftAt}".`
+    );
+    return {
+      ok: false,
+      reason: `PUT /api/v1/preferences/theme failed while restoring "${originalTheme.theme}"`,
+      leftAt,
+    };
+  }
+
+  console.log(`\nRestored the account's original theme preference: ${originalTheme.theme}`);
+  return { ok: true, restoredTo: originalTheme.theme };
 }
 
 // ---------------------------------------------------------------------------
@@ -524,8 +544,10 @@ function summarizeRecord(r) {
   if (r.error) return `ERROR: ${r.error.split('\n')[0]}`;
   const bits = [];
   if (r.openFailed) bits.push('OPEN-FAILED');
-  if (r.openSkipped) bits.push('open-skipped');
   if (r.openUnsettled) bits.push('OPEN-UNSETTLED');
+  // Lower-case: app findings, not run failures (see classifyResults).
+  if (r.openSkipped) bits.push('open-skipped');
+  if (r.openBlocked) bits.push('open-blocked(app)');
   if (r.unsettled) bits.push('unsettled');
   bits.push(`overflow=${r.layout.hasHorizontalOverflow ? `YES(${r.layout.overflowPx}px, ${r.layout.offenderCount} root cause(s))` : 'no'}`);
   bits.push(`tap<${r.tapTargets.minPx}px=${r.tapTargets.offenderCount}/${r.tapTargets.totalInteractive}`);
@@ -539,14 +561,42 @@ function summarizeRecord(r) {
 //
 // A run whose open-state never materialised measured the CLOSED page. Its
 // numbers are real, but they are not the numbers that record CLAIMS to be, so
-// `suspect` is tallied separately and never mixed into the offender totals.
+// Open-state records are tallied separately and never mixed into the offender
+// totals: their numbers are real, but they are not the numbers the record CLAIMS.
+// OPEN-STATE OUTCOMES SPLIT IN TWO, DELIBERATELY (see lib/open-state.js):
+//
+//   openBlocked / openSkipped -- the trigger was not actionable, or not there at
+//     all. That is a finding ABOUT THE APP -- today it is bug #2382, a 0x0
+//     [data-sw-prefs-trigger] at all three viewports. It is recorded and it does
+//     NOT fail the run. A measurement tool must not go red because it FOUND the
+//     defect it was pointed at; a harness that exits 1 on every run until #2382
+//     lands is a harness whose exit code everyone learns to ignore.
+//
+//   openFailed / openUnsettled -- the click LANDED and the drawer still never
+//     opened (or never stopped moving). The app's 0x0-trigger bug does not
+//     explain that, and the record would claim to hold open-state numbers while
+//     holding closed-state ones. REAL failure: it fails the run.
+//
+// This is the line that keeps the harness honest once #2382 is fixed. Under the
+// old single `openFailed` marker, the moment the trigger became clickable every
+// open-state record would have gone green -- even if the drawer never opened.
+//
+// None of the four are `ok`: in every one of them the probes measured the CLOSED
+// (or mid-animation) page, so their numbers are not the numbers the record claims.
 export function classifyResults(results) {
+  const isOpenBlocked = r => r.openBlocked || r.openSkipped;
+  const isOpenFailure = r => r.openFailed || r.openUnsettled;
+  const measured = r => !r.error && !r.guardFailed && !r.skipped;
+
   return {
     skipped: results.filter(r => r.skipped),
     guardFailed: results.filter(r => r.guardFailed),
     errored: results.filter(r => r.error),
-    suspect: results.filter(r => !r.error && !r.guardFailed && !r.skipped && (r.openFailed || r.openUnsettled)),
-    ok: results.filter(r => !r.error && !r.guardFailed && !r.skipped && !r.openFailed && !r.openUnsettled),
+    // Recorded app findings. Not clean measurements, but not our failure either.
+    openBlocked: results.filter(r => measured(r) && isOpenBlocked(r) && !isOpenFailure(r)),
+    // Genuine open-state failures. These fail the run.
+    openFailure: results.filter(r => measured(r) && isOpenFailure(r)),
+    ok: results.filter(r => measured(r) && !isOpenBlocked(r) && !isOpenFailure(r)),
   };
 }
 
@@ -562,8 +612,16 @@ export function classifyResults(results) {
 //
 // Named causes, not a bare code: an operator who sees "exit 1" and no reason
 // tends to re-run it.
-export function runFailureReasons(results) {
-  const { ok, guardFailed, errored } = classifyResults(results);
+//
+// `themeRestore` is the outcome of putting the account's theme back:
+// { ok: true } | { ok: false, reason, leftAt }. It is a RUN FAILURE, not just a
+// stderr warning. The warning was the weaker half of the same lesson the rest of
+// this function encodes: a caller gating on the exit code (CI, a script, an
+// agent) never reads stderr, so a silent exit 0 tells it everything went fine
+// while the maintainer's account sits mutated on the wrong theme. The harness
+// mutates a real server; failing to undo that is a failure of the run.
+export function runFailureReasons(results, themeRestore = { ok: true }) {
+  const { ok, guardFailed, errored, openFailure } = classifyResults(results);
   const reasons = [];
 
   if (ok.length === 0) {
@@ -585,6 +643,25 @@ export function runFailureReasons(results) {
   if (errored.length) {
     reasons.push(`${errored.length} record(s) ERRORED while probing.`);
   }
+  // NOT openBlocked/openSkipped -- those are app findings and stay green. See
+  // classifyResults for why that line is where it is.
+  if (openFailure.length) {
+    reasons.push(
+      `${openFailure.length} record(s) FAILED TO OPEN an affordance whose trigger WAS `
+      + 'actionable (the click landed and the open state never arrived, or never settled). '
+      + 'Those records hold CLOSED-state numbers under an open-state label. This is not the '
+      + 'app\'s 0x0-trigger bug -- that is recorded separately and does not fail the run.'
+    );
+  }
+  if (!themeRestore.ok) {
+    reasons.push(
+      `THEME NOT RESTORED: the account this run authenticated as is left on `
+      + `"${themeRestore.leftAt}" instead of its original theme (${themeRestore.reason}). `
+      + 'This harness MUTATES the server it is pointed at and owes it a clean restore; a '
+      + 'caller gating on the exit code would otherwise never learn the account was left '
+      + 'dirty.'
+    );
+  }
   return reasons;
 }
 
@@ -596,9 +673,10 @@ export function runFailureReasons(results) {
 function printSummary(results) {
   console.log('\n=== Responsive UAT Harness Summary ===');
 
-  const { skipped, guardFailed, errored, suspect, ok } = classifyResults(results);
+  const { skipped, guardFailed, errored, openBlocked, openFailure, ok } = classifyResults(results);
 
-  console.log(`Runs: ${results.length} (${ok.length} clean, ${suspect.length} open-state suspect, `
+  console.log(`Runs: ${results.length} (${ok.length} clean, ${openFailure.length} open-state FAILED, `
+    + `${openBlocked.length} open-state blocked (app finding), `
     + `${guardFailed.length} guard-failed, ${errored.length} errored, ${skipped.length} skipped)`);
 
   const label = r => `[${r.browser}/${r.viewport}/${r.theme}] ${r.page}`;
@@ -612,8 +690,17 @@ function printSummary(results) {
   section('GUARD FAILURES (refused to measure -- wrong page or not logged in)',
     guardFailed.map(r => `${label(r)}: [${r.guardFailed.kind}] ${r.guardFailed.message}`));
   section('ERRORED', errored.map(r => `${label(r)}: ${r.error.split('\n')[0]}`));
-  section('OPEN-STATE SUSPECT (probes ran against the closed/mid-animation page)',
-    suspect.map(r => `${label(r)}: ${r.openFailed || r.openUnsettled}`));
+  // These FAIL the run: the trigger was actionable and it still did not open.
+  section('OPEN-STATE FAILURES (the click landed and the affordance still never opened)',
+    openFailure.map(r => `${label(r)}: ${r.openFailed || r.openUnsettled}`));
+  // These do NOT fail the run: the trigger could not be tapped, which is the app
+  // bug this harness is here to FIND (#2382 today). See classifyResults.
+  section('OPEN-STATE BLOCKED -- APP FINDING, not a harness failure (probes ran against the closed page)',
+    openBlocked.map(r => {
+      const rect = r.openBlockedRect;
+      const geom = rect && rect.width !== undefined ? ` [trigger ${rect.width}x${rect.height} at (${rect.left}, ${rect.top})]` : '';
+      return `${label(r)}: ${r.openBlocked || r.openSkipped}${geom}`;
+    }));
 
   const overflowing = ok.filter(r => r.layout.hasHorizontalOverflow);
   const tapOffenders = ok.filter(r => r.tapTargets.offenderCount > 0);

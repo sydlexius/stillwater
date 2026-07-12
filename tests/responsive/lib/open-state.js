@@ -19,6 +19,41 @@
 // So: every failure path here sets an explicit marker on the record. There is
 // no silent branch.
 //
+// TWO KINDS OF "IT DIDN'T OPEN", AND THEY ARE NOT THE SAME KIND (#2386
+// fix-round-5). Both used to set the SAME marker (`openFailed`), which collapsed
+// a finding ABOUT THE APP into a failure OF THE HARNESS:
+//
+//   * The trigger is present but NOT ACTIONABLE -- 0x0, covered, unclickable.
+//     That is the app being broken, and it is precisely what this harness exists
+//     to FIND. It is REPORTED (openBlocked) and does NOT fail the run. Right now
+//     [data-sw-prefs-trigger] is a 0x0 element at all three pinned viewports --
+//     that IS app bug #2382. Failing the run on it would mean every run exits 1
+//     until #2382 lands, i.e. a permanently red harness, which trains everyone to
+//     ignore the exit code. A measurement tool does not fail because it found the
+//     thing it was pointed at.
+//
+//   * The trigger WAS actionable -- the click landed -- and the open state still
+//     never arrived, or arrived and never stopped moving. Nothing in the app
+//     explains that away: either the affordance is broken in a way the harness
+//     cannot characterise, or this selector is stale. Either way the record CLAIMS
+//     to be open-state numbers and is not. That is a REAL failure (openFailed /
+//     openUnsettled) and it FAILS the run.
+//
+// The distinction is deliberate, not an accident of which branch happened to be
+// hit first. It is what keeps the harness honest once #2382 fixes the trigger:
+// today's blanket openFailed would go green the moment the click starts landing,
+// even if the drawer never opened.
+//
+// Markers, all of which mean "the numbers below are NOT open-state numbers":
+//   record.openSkipped   -- the trigger is not in the DOM at all (app/selector
+//                           finding; recorded, does not fail the run)
+//   record.openBlocked   -- the trigger is present but not actionable
+//                           (APP finding, e.g. #2382; recorded, does not fail)
+//   record.openFailed    -- the click LANDED and the open state never arrived
+//                           (REAL failure; fails the run)
+//   record.openUnsettled -- it opened but its geometry never stopped moving, so
+//                           the probes ran mid-animation (REAL failure)
+//
 // THE SECOND BUG. Even a genuine open was being probed MID-ANIMATION.
 // web/static/js/prefs-drawer.js sets aria-hidden=false at the START of a 0.25s
 // slide-in transition (web/static/css/input.css), and `waitFor` matches on
@@ -59,12 +94,8 @@ async function waitForStableRect(page, selector, { frames = 3, timeout = 3_000 }
 // for the resulting element to stop moving. It never throws: every outcome is
 // written onto `record` as an explicit marker, because the caller (run.js) must
 // keep measuring the rest of the matrix even when one affordance misbehaves.
-//
-// Markers, all of which mean "the numbers below are NOT open-state numbers":
-//   record.openSkipped -- the trigger is not in the DOM at all
-//   record.openFailed  -- the trigger exists but the open state never arrived
-//   record.openUnsettled -- it opened, but its geometry never stopped moving
-//                           (the probes ran mid-animation; treat with suspicion)
+// See the marker table above -- and note which markers fail the run and which
+// are app findings that do not.
 export async function openAffordance(page, openDef, record) {
   const closedName = record.page.replace(/-open$/, '');
   const trigger = page.locator(openDef.trigger).first();
@@ -81,24 +112,36 @@ export async function openAffordance(page, openDef, record) {
   // trigger is a 0x0 element at all three pinned viewports on /next/, and an
   // uncaught click timeout took down the entire browser context, silently
   // losing every later page/theme combination in that context's loop.
+  // THE APP-FINDING BRANCH. Playwright's click() only throws here after
+  // exhausting its actionability checks (visible, stable, receives events,
+  // enabled), so this is precisely "the user could not have tapped this either".
+  // That is a finding ABOUT THE APP -- the thing we came to measure -- not a
+  // malfunction of the harness, so it is recorded and does NOT fail the run.
+  // openBlocked, not openFailed: see the marker table at the top of this file.
+  // Also, geometry, so the report says WHY rather than just "unclickable".
   try {
     await trigger.click({ timeout: 5_000 });
   } catch (err) {
-    record.openFailed = `trigger "${openDef.trigger}" present but not actionable `
+    record.openBlocked = `trigger "${openDef.trigger}" present but not actionable `
       + `(zero-size/covered/unclickable: ${firstLine(err)}) -- the probes below ran `
       + `against the CLOSED-state page, not the open ${closedName}`;
+    record.openBlockedRect = await triggerRect(trigger);
     return;
   }
 
-  // The click landed. If the open state does not follow, that is a REAL BUG in
-  // the app (or in this selector) and it gets a marker. It does not get a
-  // `.catch(() => {})`.
+  // THE REAL-FAILURE BRANCH. The click LANDED -- the trigger was actionable, so
+  // "the app is broken in the way we are here to find" does not explain this. The
+  // open state simply never arrived: the affordance is broken in a way the harness
+  // cannot characterise, or this selector is stale. Either way the record would
+  // CLAIM to be open-state numbers while holding closed-state ones. That fails the
+  // run (runFailureReasons in run.js). It does not get a `.catch(() => {})`.
   try {
     await page.waitForSelector(openDef.waitFor, { timeout: 8_000 });
   } catch (err) {
-    record.openFailed = `trigger "${openDef.trigger}" clicked successfully but the open `
-      + `state "${openDef.waitFor}" never appeared within 8s (${firstLine(err)}) -- the `
-      + `probes below ran against the CLOSED-state page, not the open ${closedName}`;
+    record.openFailed = `trigger "${openDef.trigger}" WAS actionable and the click landed, `
+      + `but the open state "${openDef.waitFor}" never appeared within 8s `
+      + `(${firstLine(err)}) -- the probes below ran against the CLOSED-state page, not `
+      + `the open ${closedName}. This is not the app's 0x0-trigger bug; something else is wrong.`;
     return;
   }
 
@@ -113,4 +156,24 @@ export async function openAffordance(page, openDef, record) {
 
 function firstLine(err) {
   return String(err && err.message || err).split('\n')[0];
+}
+
+// triggerRect records WHY a blocked trigger was unactionable, in numbers. "0x0 at
+// (0, 0)" is an actionable app finding (#2382); "44x44 but covered" is a different
+// bug entirely, and the message alone cannot tell them apart. Best-effort: a
+// failure to measure the trigger must not sink the record.
+async function triggerRect(trigger) {
+  try {
+    return await trigger.evaluate(el => {
+      const r = el.getBoundingClientRect();
+      return {
+        width: Math.round(r.width * 100) / 100,
+        height: Math.round(r.height * 100) / 100,
+        left: Math.round(r.left),
+        top: Math.round(r.top),
+      };
+    });
+  } catch (err) {
+    return { unavailable: firstLine(err) };
+  }
 }
