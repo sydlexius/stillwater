@@ -26,7 +26,7 @@
 //   * The trigger is present but NOT ACTIONABLE -- 0x0, covered, unclickable.
 //     That is the app being broken, and it is precisely what this harness exists
 //     to FIND. It is REPORTED (openBlocked) and does NOT fail the run. Right now
-//     [data-sw-prefs-trigger] is a 0x0 element at all three pinned viewports --
+//     [data-sw-prefs-trigger] is a 0x0 element at every pinned viewport --
 //     that IS app bug #2382. Failing the run on it would mean every run exits 1
 //     until #2382 lands, i.e. a permanently red harness, which trains everyone to
 //     ignore the exit code. A measurement tool does not fail because it found the
@@ -109,7 +109,7 @@ export async function openAffordance(page, openDef, record) {
   // itself a real finding worth keeping -- NOT a reason to let the whole
   // viewport/theme run crash. Bound the click well under Playwright's 30s
   // action-timeout default: discovered live (#2386 dogfooding) that this exact
-  // trigger is a 0x0 element at all three pinned viewports on /next/, and an
+  // trigger is a 0x0 element at every pinned viewport on /next/, and an
   // uncaught click timeout took down the entire browser context, silently
   // losing every later page/theme combination in that context's loop.
   // THE APP-FINDING BRANCH. Playwright's click() only throws here after

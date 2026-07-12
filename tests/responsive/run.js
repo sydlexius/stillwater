@@ -2,9 +2,9 @@
 // run.js - responsive UAT harness CLI (issue #2386).
 //
 // Runs the four rendered-evidence probes (layout overflow, tap-target size,
-// off-screen affordances, axe-core a11y) across the milestone's three pinned
-// viewports (360x740, 390x844, 768x1024), both themes (dark + light), against a
-// live Stillwater server. This is the harness every mobile/UI issue in the M55
+// off-screen affordances, axe-core a11y) across the milestone's pinned
+// viewports (see VIEWPORTS in lib/constants.js), both themes (dark + light),
+// against a live Stillwater server. This is the harness every mobile/UI issue in the M55
 // family owes its rendered evidence to -- it measures; it does not itself define
 // pass/fail thresholds (those belong to the issue consuming a given page's
 // report, e.g. "0 sub-44px targets on page X").
@@ -567,7 +567,7 @@ function summarizeRecord(r) {
 //
 //   openBlocked / openSkipped -- the trigger was not actionable, or not there at
 //     all. That is a finding ABOUT THE APP -- today it is bug #2382, a 0x0
-//     [data-sw-prefs-trigger] at all three viewports. It is recorded and it does
+//     [data-sw-prefs-trigger] at every pinned viewport. It is recorded and it does
 //     NOT fail the run. A measurement tool must not go red because it FOUND the
 //     defect it was pointed at; a harness that exits 1 on every run until #2382
 //     lands is a harness whose exit code everyone learns to ignore.

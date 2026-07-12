@@ -1,7 +1,7 @@
 // constants.js - shared tokens for the responsive UAT harness (issue #2386).
 //
-// VIEWPORTS: the three breakpoints every mobile/UI issue in this milestone
-// family measures against (small phone, large phone, tablet).
+// VIEWPORTS: the six breakpoints every mobile/UI issue in this milestone
+// family measures against (smallest realistic phone through tablet).
 //
 // TAP_TARGET_MIN_PX: minimum interactive hit-target size in CSS px. This is a
 // PLACEHOLDER pending issue #2377, which is pinning the real value as a design
@@ -13,8 +13,11 @@ export const TAP_TARGET_MIN_PX = 44;
 
 // width/height are CSS px (Playwright viewport size, not device pixels).
 export const VIEWPORTS = [
+  { name: 'mobile-320', width: 320, height: 568 },
   { name: 'mobile-360', width: 360, height: 740 },
   { name: 'mobile-390', width: 390, height: 844 },
+  { name: 'mobile-414', width: 414, height: 896 },
+  { name: 'mobile-430', width: 430, height: 932 },
   { name: 'tablet-768', width: 768, height: 1024 },
 ];
 

@@ -127,7 +127,7 @@ describe('runFailureReasons -- a theme this run could not put back fails the run
 describe('open-state -- an app finding is not a harness failure, and vice versa', () => {
   const drawer = over => ({ ...okRecord('prefs-drawer-open'), ...over });
 
-  // The trigger is 0x0 at all three viewports TODAY -- that is app bug #2382,
+  // The trigger is 0x0 at every pinned viewport TODAY -- that is app bug #2382,
   // and it is what this harness is FOR. A harness that exits 1 on every run
   // until #2382 lands is a harness whose exit code everyone learns to ignore.
   test('a blocked (unactionable) trigger is recorded and does NOT fail the run', () => {
