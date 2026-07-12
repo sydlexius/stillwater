@@ -5,6 +5,34 @@
 **Purpose:** Determine how Emby, Jellyfin, and Lidarr write NFO files and images to
 shared filesystems, informing the evidence-based shared filesystem detection design.
 
+> ## Retest, 2026-07-12 (Jellyfin 10.11.10, Emby 4.9.5.0) -- one finding below no longer reproduces
+>
+> The original run concluded that **Jellyfin ignores `MetadataSavers=[]`** and keeps
+> writing NFO files, and that `<lockdata>true</lockdata>` was therefore the only
+> reliable protection. **That does not reproduce on Jellyfin 10.11.10.** Clearing the
+> saver list stops the writes. The claim had hardened into a code comment and a
+> hardcoded `NeedsLockdata = true`, which is why the Stillwater-managed toggle never
+> cleared the savers and the peers went on writing into a "managed" library (#2420).
+>
+> Measured two ways, both with `SaveLocalMetadata=false`:
+>
+> | Test | `MetadataSavers: ["Nfo"]` | `MetadataSavers: []` |
+> |------|---------------------------|----------------------|
+> | Forced `FullRefresh` + `ReplaceAllMetadata` on an artist with an existing NFO | NFO rewritten | **nothing written** |
+> | Rename an artist directory, then rescan | directory **re-created** with a fresh `artist.nfo`; scanner re-imports it as a **duplicate artist** | directory stays gone; **no duplicate** |
+>
+> Artwork follows the same lever: with the savers cleared, a forced image refresh
+> (`ReplaceAllImages=true`) writes **nothing** to disk. Jellyfin still *fetches* the
+> art for its own UI (it holds Logo and Backdrop for the item) -- it just no longer
+> saves it into the library. No separate image-saver lever is needed.
+>
+> The Emby findings below still hold as written (`MetadataSavers=[]` stops writes).
+>
+> The original Jellyfin rows are left in place below, struck through, rather than
+> deleted: the version that produced them is not known, and a future Jellyfin could
+> regress. **Re-measure before trusting either result** -- the lesson of #2420 is that
+> a written-down claim about peer behavior outlives the measurement that produced it.
+
 ## Test Environment
 
 - Emby: localhost:8096, Music library at /music and /classical
@@ -24,9 +52,9 @@ shared filesystems, informing the evidence-based shared filesystem detection des
 | Preserves `<biography>` | No (blanked) | Yes | n/a |
 | Preserves `<genre>` | No (changed) | No (changed) | n/a |
 | Creates NFO if missing | Not tested | Not tested | No |
-| MetadataSavers=[] stops writes | Yes | **No** | n/a |
+| MetadataSavers=[] stops writes | Yes | ~~No~~ -> **Yes** (retested 10.11.10) | n/a |
 | SaveLocalMetadata=false stops writes | No | **No** | n/a |
-| Combined (both disabled) stops writes | Yes (MetadataSavers=[]) | **No (still writes!)** | n/a |
+| Combined (both disabled) stops writes | Yes (MetadataSavers=[]) | ~~No (still writes!)~~ -> **Yes** (retested 10.11.10) | n/a |
 | `<lockdata>true</lockdata>` in NFO stops writes | **Yes** | **Yes** | n/a (doesn't rewrite) |
 
 ### Image Write Behavior
@@ -45,9 +73,9 @@ shared filesystems, informing the evidence-based shared filesystem detection des
 | Setting | Emby | Jellyfin |
 |---------|------|----------|
 | `MetadataSavers: ['Nfo']` | Writes NFO on every refresh | Writes NFO on every refresh |
-| `MetadataSavers: []` | **Stops NFO writes** | Does NOT stop NFO writes |
+| `MetadataSavers: []` | **Stops NFO writes** | ~~Does NOT stop NFO writes~~ -> **Stops NFO writes** (retested 10.11.10) |
 | `SaveLocalMetadata: false` | Does NOT stop NFO writes alone | Does NOT stop NFO writes |
-| Both disabled | **Stops NFO writes** | **Does NOT stop NFO writes** |
+| Both disabled | **Stops NFO writes** | ~~Does NOT stop NFO writes~~ -> **Stops NFO writes** (retested 10.11.10) |
 | `ImageFetchers: []` | Stops image downloads | Stops image downloads |
 | `ImageFetchers: ['TheAudioDB']` | Downloads missing images | Downloads images (can replace all) |
 
@@ -102,10 +130,18 @@ shared filesystems, informing the evidence-based shared filesystem detection des
 - Adds `<lockdata>`, `<dateadded>`, `<runtime>`, `<outline>`, `<studio>`, `<art>`,
   `<album>` elements
 - Preserves `<stillwater>` element when MetadataSavers includes 'Nfo'
-- **CRITICAL: With MetadataSavers=[] AND SaveLocalMetadata=false, Jellyfin
+- ~~**CRITICAL: With MetadataSavers=[] AND SaveLocalMetadata=false, Jellyfin
   STILL writes the NFO AND strips the `<stillwater>` element.** The resulting
   NFO is minimal (name, MBID, empty biography/outline only). This is MORE
-  destructive than with savers enabled.
+  destructive than with savers enabled.~~
+  **SUPERSEDED -- does not reproduce on Jellyfin 10.11.10 (retested 2026-07-12, #2420).**
+  With `MetadataSavers=[]`, a forced `FullRefresh` + `ReplaceAllMetadata` against an
+  artist with an existing NFO wrote NOTHING: the NFO was not rewritten, the
+  `<stillwater>` element was not stripped, and no images were written. Clearing the
+  saver list is the lever. This struck-through claim is what hardened into a code
+  comment and a hardcoded `NeedsLockdata = true`, which is why the Stillwater-managed
+  toggle never cleared the savers -- so the peers kept writing into a library
+  Stillwater reported as managed. Re-measure before trusting either result.
 - Changes encoding to UTF-8 with BOM
 
 **Image behavior:**
@@ -119,7 +155,7 @@ shared filesystems, informing the evidence-based shared filesystem detection des
 - Does not re-encode or strip EXIF from existing images during normal refresh
 
 **API settings keys:**
-- `LibraryOptions.MetadataSavers` -- array, but removing 'Nfo' does NOT stop writes
+- `LibraryOptions.MetadataSavers` -- array; ~~removing 'Nfo' does NOT stop writes~~ -> removing 'Nfo' DOES stop writes (retested 10.11.10, #2420)
 - `LibraryOptions.EnableInternetProviders` -- boolean, controls fetcher activation
 - `LibraryOptions.TypeOptions[MusicArtist].ImageFetchers` -- array of provider names
 
