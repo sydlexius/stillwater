@@ -75,13 +75,19 @@ fi
 # brand-new generated file that regeneration just created but git has never
 # seen -- e.g. a freshly added *.templ file whose *_templ.go counterpart is
 # untracked, not merely modified. `git diff` does not report untracked paths
-# at all. Mirror gate.yml's Generated Files job here: mark the regenerated
-# surfaces intent-to-add (-N) so an untracked new file shows up as a diff
-# too, then fail on anything remaining. Scoped to the surfaces this script
-# actually regenerates (templ + Tailwind CSS) so an unrelated dirty working
-# tree does not produce a false positive.
-git add -A -N -- '*_templ.go' web/static/css/styles.css
-wholesale_dirty=$(git diff --name-only -- '*_templ.go' web/static/css/styles.css || true)
+# at all, so union it with `git ls-files --others --exclude-standard`, which
+# lists untracked-but-present files (the --exclude-standard keeps gitignored
+# paths out, avoiding false positives). This is a read-only check running
+# from the pre-push hook, so it must not mutate the developer's index (an
+# earlier version used `git add -N` for this, which did). Scoped to the
+# surfaces this script actually regenerates (templ + Tailwind CSS) so an
+# unrelated dirty working tree does not produce a false positive.
+wholesale_dirty=$(
+  {
+    git diff --name-only -- '*_templ.go' web/static/css/styles.css
+    git ls-files --others --exclude-standard -- '*_templ.go' web/static/css/styles.css
+  } | sort -u
+)
 if [ -n "$wholesale_dirty" ]; then
   echo "ERROR: generated files are stale or newly untracked after regeneration."
   echo "Run: go tool templ generate && make tailwind, then git add the results."
