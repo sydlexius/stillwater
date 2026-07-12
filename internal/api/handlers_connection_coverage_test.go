@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -1605,5 +1606,78 @@ func TestHandleTestConnection_Jellyfin(t *testing.T) {
 	}
 	if resp["status"] != "ok" {
 		t.Errorf("status = %v, want ok", resp["status"])
+	}
+}
+
+// newConnectionStubJellyfinLibrariesServer serves /Library/VirtualFolders with a
+// caller-supplied MetadataSavers list, so a test can drive the platform summary
+// with the NFO saver armed or disarmed.
+func newConnectionStubJellyfinLibrariesServer(t *testing.T, savers string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Library/VirtualFolders" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `[{"Name":"Music","CollectionType":"music","ItemId":"lib-1",
+				"LibraryOptions":{"MetadataSavers":%s,"EnableInternetProviders":false,"TypeOptions":[]}}]`, savers)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestHandleGetPlatformSummary_Jellyfin_NeedsLockdata pins the #2420 contract on the
+// API surface: needs_lockdata is DERIVED from whether a library still has an armed
+// NFO saver. It was hardcoded true, on the false claim that Jellyfin ignores
+// MetadataSavers=[] and lockdata injection was the only NFO protection. Reporting
+// lockdata as required on a library Stillwater has already disarmed sends operators
+// to work around a problem that no longer exists.
+func TestHandleGetPlatformSummary_Jellyfin_NeedsLockdata(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		savers string
+		want   bool
+	}{
+		{"saver armed -> lockdata still needed", `["Nfo"]`, true},
+		{"saver disarmed -> lockdata not needed", `[]`, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newConnectionTestRouter(t)
+			srv := newConnectionStubJellyfinLibrariesServer(t, tc.savers)
+
+			c := &connection.Connection{
+				Name: "SumJf" + tc.name, Type: connection.TypeJellyfin,
+				URL: srv.URL, APIKey: "k", Enabled: true,
+			}
+			newConnectionTestConn(t, r, c)
+
+			req := httptest.NewRequest(http.MethodGet,
+				"/api/v1/connections/"+c.ID+"/platform-summary", nil)
+			req.SetPathValue("id", c.ID)
+
+			w := serveValidated(t, http.HandlerFunc(r.handleGetPlatformSummary), req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+			}
+			var resp map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			got, ok := resp["needs_lockdata"].(bool)
+			if !ok {
+				t.Fatalf("needs_lockdata missing or not a bool: %v", resp)
+			}
+			if got != tc.want {
+				t.Errorf("needs_lockdata = %v, want %v (MetadataSavers=%s). "+
+					"It must be derived from the saver list, not hardcoded (#2420)",
+					got, tc.want, tc.savers)
+			}
+		})
 	}
 }
