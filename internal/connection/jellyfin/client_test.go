@@ -1653,13 +1653,53 @@ func TestGetLibrarySettings(t *testing.T) {
 	if !settings[0].HasConflicts {
 		t.Error("expected first library to have conflicts")
 	}
-	if !settings[0].NeedsLockdata {
-		t.Error("expected NeedsLockdata to be true for Jellyfin")
+	// This library's MetadataSavers is EMPTY, so no lockdata is needed. The
+	// assertion here used to be an unconditional "NeedsLockdata must be true for
+	// Jellyfin", on the claim that Jellyfin ignores MetadataSavers=[] and lockdata
+	// injection is the only NFO protection. That claim is false (#2420): clearing
+	// the saver list is what stops the writes. Lockdata is only still needed where
+	// a saver remains ARMED -- see TestGetLibrarySettings_NeedsLockdataOnlyWhenSaverArmed.
+	if settings[0].NeedsLockdata {
+		t.Errorf("NeedsLockdata = true for a library whose MetadataSavers is empty (%v); "+
+			"an empty saver list needs no lockdata workaround", settings[0].MetadataSavers)
 	}
 
 	// Second library has internet providers disabled, so no conflicts despite having fetchers.
 	if settings[1].HasConflicts {
 		t.Error("expected second library to have no conflicts (internet providers disabled)")
+	}
+}
+
+// TestGetLibrarySettings_NeedsLockdataOnlyWhenSaverArmed pins the real contract:
+// lockdata is a workaround for an ARMED NFO saver, not a permanent fact of life on
+// Jellyfin. NeedsLockdata was hardcoded true on the claim that Jellyfin ignores
+// MetadataSavers=[]; that is false on 10.11.10 (#2420), and reporting lockdata as
+// required on a library we have already disarmed tells operators to go work around
+// a problem that no longer exists.
+func TestGetLibrarySettings_NeedsLockdataOnlyWhenSaverArmed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[
+			{"Name":"Armed","CollectionType":"music","ItemId":"lib-armed",
+			 "LibraryOptions":{"MetadataSavers":["Nfo"],"EnableInternetProviders":false,"TypeOptions":[]}},
+			{"Name":"Disarmed","CollectionType":"music","ItemId":"lib-disarmed",
+			 "LibraryOptions":{"MetadataSavers":[],"EnableInternetProviders":false,"TypeOptions":[]}}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	settings, err := c.GetLibrarySettings(context.Background())
+	if err != nil {
+		t.Fatalf("GetLibrarySettings: %v", err)
+	}
+	if len(settings) != 2 {
+		t.Fatalf("got %d libraries, want 2", len(settings))
+	}
+	if !settings[0].NeedsLockdata {
+		t.Error("a library with an ARMED Nfo saver still needs lockdata; got NeedsLockdata=false")
+	}
+	if settings[1].NeedsLockdata {
+		t.Error("a library with NO savers does not need lockdata; got NeedsLockdata=true")
 	}
 }
 

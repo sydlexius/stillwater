@@ -369,8 +369,9 @@ func AuthenticateByName(ctx context.Context, baseURL, username, password string,
 
 // GetLibrarySettings reads the fetcher/saver/downloader configuration for all music libraries.
 // Each library entry describes which image fetchers, metadata fetchers, and metadata savers
-// are active for MusicArtist content. The NeedsLockdata field indicates whether NFO lockdata
-// injection is required because Jellyfin ignores MetadataSavers=[] for NFO writes.
+// are active for MusicArtist content. NeedsLockdata reports whether the library still
+// has an ARMED NFO saver, in which case lockdata injection is the only protection left;
+// once the saver list is cleared it is not needed (see the loop below and #2420).
 func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatus, error) {
 	libs, err := c.GetMusicLibraries(ctx)
 	if err != nil {
@@ -403,9 +404,15 @@ func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatu
 		if status.MetadataSavers == nil {
 			status.MetadataSavers = []string{}
 		}
-		// Jellyfin MetadataSavers=[] does NOT stop NFO writes. The only reliable
-		// method is <lockdata>true</lockdata> in the NFO file itself.
-		status.NeedsLockdata = true
+		// Lockdata is needed only while the NFO saver is still ARMED. This used to
+		// be hardcoded true, on the claim that "Jellyfin MetadataSavers=[] does NOT
+		// stop NFO writes". That claim is false on Jellyfin 10.11.10 and was measured
+		// to be false (#2420): with the saver armed a rename let Jellyfin re-create
+		// the renamed-away directory; with MetadataSavers=[] it did not. An empty
+		// saver list IS the reliable lever, so a library whose savers we have
+		// disarmed does not need lockdata -- and reporting that it does told
+		// operators to go work around a problem that no longer exists.
+		status.NeedsLockdata = len(status.MetadataSavers) > 0
 		// A library has conflicts if fetchers are active (when internet providers are enabled).
 		status.HasConflicts = status.EnableInternetProviders &&
 			(len(status.ImageFetchers) > 0 || len(status.MetadataFetchers) > 0)
@@ -415,9 +422,20 @@ func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatu
 }
 
 // DisableConflictingSettings clears image fetchers and metadata fetchers for
-// MusicArtist content in the specified library via the Jellyfin API.
-// Note: this does NOT disable NFO writes because Jellyfin ignores MetadataSavers=[];
-// NFO protection requires lockdata injection (handled separately by the NFO writer).
+// MusicArtist content in the specified library via the Jellyfin API. It does not
+// touch the saver list; disarming the savers is DisableFileWriteBack's job, and
+// that is what the Stillwater-managed toggle drives.
+//
+// This comment used to claim "Jellyfin ignores MetadataSavers=[]". That is FALSE
+// on Jellyfin 10.11.10 and was measured to be false: with the saver armed, a
+// rename let Jellyfin re-create the renamed-away directory and resurrect a
+// duplicate artist; with MetadataSavers=[] the directory stayed gone. Clearing
+// the saver list also stops Jellyfin writing artwork into the library (it still
+// FETCHES images for its own UI -- verified with a forced full image refresh --
+// it just no longer saves them to disk). See #2420.
+//
+// Do not restore the old claim, and do not "fix" NFO writes here by injecting
+// lockdata: the saver list is the lever, and DisableFileWriteBack pulls it.
 func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID string) error {
 	libs, err := c.GetMusicLibraries(ctx)
 	if err != nil {

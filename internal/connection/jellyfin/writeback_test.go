@@ -156,17 +156,19 @@ func TestJellyfinSnapshotAndDisable(t *testing.T) {
 	if !ok {
 		t.Fatalf("DisableFileWriteBack did not POST LibraryOptions for m1")
 	}
-	// SaveLocalMetadata=false is the master kill switch; MetadataSavers is
-	// intentionally left alone (see client for rationale). Pin both halves
-	// of that contract so a regression that "tidies up" by clearing the
-	// saver list trips this test.
+	// BOTH keys must be cleared. SaveLocalMetadata is not a master kill switch:
+	// with it false and an Nfo saver still armed, the peer goes on writing.
 	if got.SaveLocalMetadata {
 		t.Errorf("SaveLocalMetadata not cleared: %+v", got)
 	}
-	// wantSavers is declared above for the snapshot assertion; reuse it
-	// here to pin the post-disable preservation contract.
-	if !reflect.DeepEqual(got.MetadataSavers, wantSavers) {
-		t.Errorf("MetadataSavers should be preserved unchanged, got %v want %v", got.MetadataSavers, wantSavers)
+	// The savers must be CLEARED. This used to pin the opposite ("preserved
+	// unchanged"), on the claim that Jellyfin ignores MetadataSavers=[]. It does
+	// not: measured on Jellyfin 10.11.10, an armed saver let a rename re-create
+	// the renamed-away directory and resurrect a duplicate artist, and clearing
+	// the saver list stopped it (#2420). wantSavers above still pins what the
+	// SNAPSHOT captured, which is what restore replays on the way out.
+	if len(got.MetadataSavers) != 0 {
+		t.Errorf("MetadataSavers = %v, want empty -- an armed saver still writes to disk (#2420)", got.MetadataSavers)
 	}
 }
 

@@ -124,7 +124,11 @@ components:
                 description: Whether conflicting plugin settings were detected.
               needs_lockdata:
                 type: boolean
-                description: Jellyfin only. Indicates NFO lockdata injection is required.
+                description: >-
+                  Jellyfin only. True while a music library still has an armed NFO
+                  metadata saver, in which case lockdata injection is the remaining
+                  protection. False once the savers are disarmed, which is what
+                  actually stops the writes.
               enable_internet_providers:
                 type: boolean
                 description: Jellyfin only. Whether internet providers are enabled for this library.
