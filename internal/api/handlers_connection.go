@@ -1344,16 +1344,27 @@ func (r *Router) handleGetPlatformSummary(w http.ResponseWriter, req *http.Reque
 		}
 		total := len(settings)
 		managed := 0
+		// needs_lockdata was hardcoded true, on the claim that Jellyfin ignores
+		// MetadataSavers=[] so lockdata injection was the only NFO protection.
+		// That claim is false (#2420): clearing the saver list does stop the
+		// writes. Lockdata is only still needed where a saver remains ARMED, so
+		// derive it per library instead of asserting it unconditionally --
+		// telling an operator to work around a problem we have already fixed is
+		// its own kind of lie.
+		needsLockdata := false
 		for _, s := range settings {
 			if !s.HasConflicts {
 				managed++
+			}
+			if s.NeedsLockdata {
+				needsLockdata = true
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"total_libraries":   total,
 			"managed_libraries": managed,
 			"has_conflicts":     managed < total,
-			"needs_lockdata":    true,
+			"needs_lockdata":    needsLockdata,
 		})
 
 	case connection.TypeLidarr:

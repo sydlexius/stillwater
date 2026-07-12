@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -154,17 +153,20 @@ func TestDisableFileWriteBack_ClearsSaverAndMetadata(t *testing.T) {
 	if !ok {
 		t.Fatal("no POST recorded")
 	}
-	// SaveLocalMetadata=false alone is the master switch; we intentionally
-	// leave MetadataSavers untouched because mutating it alongside the flag
-	// triggered a peer NullReferenceException on real Emby builds. Pin both
-	// halves of that contract so a regression that "tidies up" by clearing
-	// the saver list trips this test.
+	// BOTH SaveLocalMetadata and MetadataSavers must be cleared.
+	//
+	// This test used to pin the opposite contract -- "MetadataSavers should be
+	// preserved unchanged" -- on the belief that SaveLocalMetadata was a master
+	// switch and that clearing the saver list NullReferenceException'd real Emby
+	// builds. Both halves were false, and pinning them is how #2420 shipped:
+	// live Emby 4.9.5.0 with SaveLocalMetadata=false and an armed Nfo saver goes
+	// right on writing NFO files into the library. Clearing the savers stops it,
+	// returns 204, reads back empty, and leaves the server healthy.
 	if got.SaveLocalMetadata {
 		t.Errorf("want SaveLocalMetadata cleared, got %+v", got)
 	}
-	wantSavers := []string{"Nfo"}
-	if !reflect.DeepEqual(got.MetadataSavers, wantSavers) {
-		t.Errorf("MetadataSavers should be preserved unchanged, got %v want %v", got.MetadataSavers, wantSavers)
+	if len(got.MetadataSavers) != 0 {
+		t.Errorf("MetadataSavers = %v, want empty -- an armed saver still writes to disk (#2420)", got.MetadataSavers)
 	}
 }
 

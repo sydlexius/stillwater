@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -226,13 +227,20 @@ func TestDisableFileWriteBack_PostsSaveLocalMetadataFalsePerLibrary(t *testing.T
 		if wrapper.LibraryOptions["SaveLocalMetadata"] != false {
 			t.Errorf("post %d: SaveLocalMetadata = %v, want false", i, wrapper.LibraryOptions["SaveLocalMetadata"])
 		}
-		// MetadataSavers must be left alone -- mutating it alongside the
-		// kill switch crashes some peer builds with NRE.
-		if i == 0 {
-			savers, _ := wrapper.LibraryOptions["MetadataSavers"].([]any)
-			if len(savers) != 1 || savers[0] != "Nfo" {
-				t.Errorf("post %d: MetadataSavers should be preserved as [Nfo], got %v", i, savers)
-			}
+		// MetadataSavers must be CLEARED, not preserved. This assertion used
+		// to demand the opposite ("preserved as [Nfo]"), which is what let
+		// #2420 ship: SaveLocalMetadata=false does not stop the peer's NFO
+		// saver, so leaving the saver armed left the peer writing into a
+		// library Stillwater claims to manage. Verified against live Emby
+		// 4.9.5.0 and Jellyfin 10.11.10.
+		savers, ok := wrapper.LibraryOptions["MetadataSavers"].([]any)
+		if !ok {
+			t.Errorf("post %d: MetadataSavers = %#v, want an empty JSON array (a null list is a shape the peer rejects)",
+				i, wrapper.LibraryOptions["MetadataSavers"])
+			continue
+		}
+		if len(savers) != 0 {
+			t.Errorf("post %d: MetadataSavers = %v, want empty -- an armed saver still writes to disk", i, savers)
 		}
 	}
 }
@@ -374,5 +382,190 @@ func TestRestoreLibraryOptions_NilSaversBecomeEmptySlice(t *testing.T) {
 	}
 	if len(gotSavers) != 0 {
 		t.Errorf("nil savers should serialize as empty array, got %v", gotSavers)
+	}
+}
+
+// statefulPeer models the one behavior that matters for #2420: the peer STORES
+// its library options, applies a POST as a full REPLACE of LibraryOptions (which
+// is what the real endpoint does), and -- crucially -- decides whether it would
+// write an NFO to disk from the SAVER LIST, not from SaveLocalMetadata.
+//
+// That last part is the whole defect. The shipped code set
+// SaveLocalMetadata=false and left MetadataSavers=["Nfo"], and both live peers
+// (Emby 4.9.5.0, Jellyfin 10.11.10) went on writing artist.nfo into the library.
+// A fake that only records POST bodies cannot express that, which is exactly why
+// the old test passed while the peer kept writing: it asserted what Stillwater
+// SENT, never what the peer would DO.
+type statefulPeer struct {
+	libs map[string]map[string]any
+}
+
+func newStatefulPeer(libs map[string]map[string]any) *statefulPeer {
+	return &statefulPeer{libs: libs}
+}
+
+func (p *statefulPeer) Get(_ context.Context, path string, result any) error {
+	if path != "/Library/VirtualFolders" {
+		return fmt.Errorf("unexpected GET %s", path)
+	}
+	folders := make([]map[string]any, 0, len(p.libs))
+	for id, opts := range p.libs {
+		folders = append(folders, map[string]any{
+			"ItemId": id, "Name": id, "CollectionType": "music", "LibraryOptions": opts,
+		})
+	}
+	sort.Slice(folders, func(i, j int) bool {
+		return folders[i]["ItemId"].(string) < folders[j]["ItemId"].(string)
+	})
+	buf, err := json.Marshal(folders)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(buf, result)
+}
+
+func (p *statefulPeer) PostJSON(_ context.Context, _ string, body io.Reader, _ any) error {
+	var wrapper struct {
+		ID             string         `json:"Id"`
+		LibraryOptions map[string]any `json:"LibraryOptions"`
+	}
+	buf, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(buf, &wrapper); err != nil {
+		return err
+	}
+	if _, ok := p.libs[wrapper.ID]; !ok {
+		return fmt.Errorf("unknown library %q", wrapper.ID)
+	}
+	// The real endpoint REPLACES LibraryOptions wholesale.
+	p.libs[wrapper.ID] = wrapper.LibraryOptions
+	return nil
+}
+
+// wouldWriteNFO reports whether this peer would still write an NFO into the
+// library. Keyed on the saver list, because that is what the real servers do.
+func (p *statefulPeer) wouldWriteNFO(libID string) bool {
+	savers, _ := p.libs[libID]["MetadataSavers"].([]any)
+	return len(savers) > 0
+}
+
+// TestDisableFileWriteBack_PeerCanNoLongerWriteNFO is the #2420 guard. It asks
+// the only question that matters: after Stillwater says it manages this
+// library, would the peer still write to it?
+// EVERY music library must be disarmed, not just the first: a peer commonly has
+// several (Music, Audiobooks, a classical root), and one still-armed library is
+// enough to re-create a directory and resurrect a duplicate.
+func TestDisableFileWriteBack_PeerCanNoLongerWriteNFO(t *testing.T) {
+	peer := newStatefulPeer(map[string]map[string]any{
+		"m1": {"SaveLocalMetadata": true, "MetadataSavers": []any{"Nfo"}},
+		"m2": {"SaveLocalMetadata": true, "MetadataSavers": []any{"Nfo"}},
+	})
+
+	// Precondition: assert the fake actually models a peer that writes. Without
+	// this the test could pass vacuously against a peer that never wrote at all.
+	for _, id := range []string{"m1", "m2"} {
+		if !peer.wouldWriteNFO(id) {
+			t.Fatalf("precondition: library %q must start out able to write NFOs, or this test proves nothing", id)
+		}
+	}
+
+	if err := DisableFileWriteBack(context.Background(), peer, testLogger(), "emby"); err != nil {
+		t.Fatalf("DisableFileWriteBack: %v", err)
+	}
+
+	// THE ASSERTION THE OLD TEST COULD NOT MAKE. Not "did we send the flag?"
+	// but "can the peer still write?"
+	for _, id := range []string{"m1", "m2"} {
+		if peer.wouldWriteNFO(id) {
+			t.Errorf("library %q would STILL write an NFO after DisableFileWriteBack: MetadataSavers=%v. "+
+				"SaveLocalMetadata=false does not disarm the saver; leaving it armed is #2420, and it is "+
+				"what re-creates a renamed-away directory and resurrects a duplicate artist (#2380)",
+				id, peer.libs[id]["MetadataSavers"])
+		}
+		if peer.libs[id]["SaveLocalMetadata"] != false {
+			t.Errorf("library %q: SaveLocalMetadata = %v, want false", id, peer.libs[id]["SaveLocalMetadata"])
+		}
+	}
+}
+
+// TestDisableFileWriteBack_PreservesUnmodeledFields guards the round-trip: the
+// peer's options carry fields Stillwater does not model, and dropping them makes
+// the real server crash. Only the two write-back keys may change.
+func TestDisableFileWriteBack_PreservesUnmodeledFields(t *testing.T) {
+	peer := newStatefulPeer(map[string]map[string]any{
+		"m1": {
+			"SaveLocalMetadata":            true,
+			"MetadataSavers":               []any{"Nfo"},
+			"EnableRealtimeMonitor":        true,
+			"PathInfos":                    []any{map[string]any{"Path": "/music"}},
+			"TypeOptions":                  []any{map[string]any{"Type": "MusicArtist"}},
+			"AutomaticRefreshIntervalDays": float64(30),
+		},
+	})
+
+	if err := DisableFileWriteBack(context.Background(), peer, testLogger(), "jellyfin"); err != nil {
+		t.Fatalf("DisableFileWriteBack: %v", err)
+	}
+
+	got := peer.libs["m1"]
+	for _, k := range []string{"EnableRealtimeMonitor", "PathInfos", "TypeOptions", "AutomaticRefreshIntervalDays"} {
+		if _, ok := got[k]; !ok {
+			t.Errorf("unmodeled field %q was DROPPED; the peer 500s when options come back incomplete", k)
+		}
+	}
+}
+
+// TestDisableThenRestore_ReArmsTheSaver proves the clear is reversible: turning
+// the toggle off must give the user their saver list back, or we have silently
+// reconfigured their server.
+func TestDisableThenRestore_ReArmsTheSaver(t *testing.T) {
+	peer := newStatefulPeer(map[string]map[string]any{
+		"m1": {"SaveLocalMetadata": true, "MetadataSavers": []any{"Nfo"}},
+	})
+
+	// Build the snapshot the way the caller does (Router.snapshotLibraryOptions).
+	libs, err := GetMusicLibrariesRaw(context.Background(), peer, testLogger(), "emby")
+	if err != nil {
+		t.Fatalf("GetMusicLibrariesRaw: %v", err)
+	}
+	entries := make([]LibrarySaverSnapshotEntry, 0, len(libs))
+	for _, lib := range libs {
+		savers := []string{}
+		if raw, ok := lib.Options["MetadataSavers"].([]any); ok {
+			for _, s := range raw {
+				if str, ok := s.(string); ok {
+					savers = append(savers, str)
+				}
+			}
+		}
+		slm, _ := lib.Options["SaveLocalMetadata"].(bool)
+		entries = append(entries, LibrarySaverSnapshotEntry{
+			LibraryID: lib.ID, LibraryName: lib.Name, SaveLocalMetadata: slm, MetadataSavers: savers,
+		})
+	}
+	snapshot, err := BuildSnapshot(entries)
+	if err != nil {
+		t.Fatalf("BuildSnapshot: %v", err)
+	}
+
+	if err := DisableFileWriteBack(context.Background(), peer, testLogger(), "emby"); err != nil {
+		t.Fatalf("DisableFileWriteBack: %v", err)
+	}
+	if peer.wouldWriteNFO("m1") {
+		t.Fatal("saver still armed after disable")
+	}
+
+	if err := RestoreLibraryOptions(context.Background(), peer, testLogger(), "emby", snapshot); err != nil {
+		t.Fatalf("RestoreLibraryOptions: %v", err)
+	}
+	if !peer.wouldWriteNFO("m1") {
+		t.Errorf("restore did NOT re-arm the user's saver list: MetadataSavers=%v, want [Nfo]. "+
+			"Disabling the toggle must hand the server back as we found it",
+			peer.libs["m1"]["MetadataSavers"])
+	}
+	if peer.libs["m1"]["SaveLocalMetadata"] != true {
+		t.Errorf("SaveLocalMetadata = %v, want true restored", peer.libs["m1"]["SaveLocalMetadata"])
 	}
 }

@@ -174,19 +174,49 @@ func PostLibraryOptionsRaw(ctx context.Context, t Transport, logger *slog.Logger
 	return t.PostJSON(ctx, path, bytes.NewReader(body), nil)
 }
 
-// DisableFileWriteBack clears SaveLocalMetadata on every music library
-// via a lossless raw-JSON round-trip. The peer's LibraryOptions response
-// carries many fields our Go struct doesn't model; PATCHing only the
-// modeled subset drops the rest and makes the server crash. So we GET
-// each library's full options as a raw JSON map, mutate only the
-// SaveLocalMetadata key, and POST the merged map back.
+// DisableFileWriteBack disarms a peer's local-metadata writers on every
+// music library via a lossless raw-JSON round-trip. The peer's
+// LibraryOptions response carries many fields our Go struct doesn't model;
+// PATCHing only the modeled subset drops the rest and makes the server
+// crash. So we GET each library's full options as a raw JSON map, mutate
+// only the two keys below, and POST the merged map back.
 //
-// SaveLocalMetadata=false is the master switch: when off, the server
-// will neither save artwork nor invoke any MetadataSaver, so we
-// deliberately leave MetadataSavers untouched. Mutating it alongside
-// the flag crashed the peer with a NullReferenceException on some
-// library shapes -- the server appears to expect the saver list to
-// stay consistent with SaveLocalMetadata.
+// BOTH keys are load-bearing. SaveLocalMetadata=false is NOT a master
+// switch, despite what this comment used to claim:
+//
+//	Emby 4.9.5.0 and Jellyfin 10.11.10, SaveLocalMetadata=false and
+//	MetadataSavers=["Nfo"]  ->  the peer STILL writes artist.nfo into the
+//	library. Clearing MetadataSavers is what actually stops it.
+//
+// That was not a theory. With the saver left armed, renaming an artist
+// directory let the peer RE-CREATE the directory it had just been renamed
+// away from (writing a lone artist.nfo into it), the scanner re-imported
+// it, and a duplicate artist appeared -- the #2380 resurrection, whose
+// engine this is. Clearing MetadataSavers stopped it, on the same fixture,
+// same binary (#2420).
+//
+// The old comment also warned that mutating MetadataSavers crashed the
+// peer with a NullReferenceException. That predates the raw round-trip
+// this function now performs: the crash came from POSTing a modeled
+// subset and dropping fields the server needed (see the paragraph above),
+// which SanitizeLibraryOptions + the full-map POST already fixed.
+// Re-verified against both live peers: POSTing MetadataSavers=[] returns
+// 204, reads back empty, and leaves the server healthy.
+//
+// The saver list is restored from the snapshot on the way out
+// (RestoreLibraryOptions), so clearing it here is reversible ON THE HAPPY PATH.
+// Two pre-existing holes in the surrounding toggle mean that is not an absolute
+// guarantee, and clearing a LIST rather than a bool raises their stakes -- a
+// user can re-tick a checkbox they lost, but cannot recover a saver list they
+// never knew they had:
+//
+//   - Re-enabling after a failed disable re-snapshots the peer in its ALREADY
+//     CLEARED state, overwriting the good snapshot (#2422).
+//   - RestoreLibraryOptions only replays libraries present in the snapshot, so a
+//     music library ADDED while the toggle was on gets disarmed and never
+//     restored (#2423).
+//
+// Both are tracked; neither is introduced here.
 func DisableFileWriteBack(ctx context.Context, t Transport, logger *slog.Logger, platform string) error {
 	libs, err := GetMusicLibrariesRaw(ctx, t, logger, platform)
 	if err != nil {
@@ -196,6 +226,9 @@ func DisableFileWriteBack(ctx context.Context, t Transport, logger *slog.Logger,
 	for _, lib := range libs {
 		opts := SanitizeLibraryOptions(lib.Options)
 		opts["SaveLocalMetadata"] = false
+		// Marshals to [] rather than null. A null saver list is one of the
+		// shapes the peer rejects.
+		opts["MetadataSavers"] = []string{}
 		if err := PostLibraryOptionsRaw(ctx, t, logger, platform, lib.ID, opts); err != nil {
 			if firstErr == nil {
 				firstErr = err
