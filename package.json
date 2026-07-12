@@ -1,7 +1,8 @@
 {
   "type": "module",
   "scripts": {
-    "test": "node --test tests/unit/*.test.js"
+    "test": "node --test tests/unit/*.test.js",
+    "test:responsive": "node tests/responsive/run.js"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",
