@@ -64,10 +64,17 @@ const PAGE_SETS = {
     { name: 'dashboard', path: '/next/' },
     { name: 'artists-grid', path: '/next/artists?view=grid' },
     {
+      // Real markup (verified live against a SW_UX=dual instance, #2386
+      // dogfooding): the sidebar renders TWO [data-sw-prefs-trigger]
+      // elements (nav link + user-menu link), not the guessed
+      // .sw-prefs-btn/[data-sw-prefs-open] classes tests/a11y's prefs-drawer
+      // test falls back through -- that test only runs at desktop width, so
+      // the gap never surfaced there. This selector was corrected against
+      // the live DOM rather than left as a copy-pasted guess.
       name: 'prefs-drawer-open',
       path: '/next/',
       open: {
-        trigger: '.sw-prefs-btn, [data-sw-prefs-open], [aria-label*="ref"]',
+        trigger: '[data-sw-prefs-trigger]',
         waitFor: '.sw-prefs-drawer:not([aria-hidden="true"])',
       },
     },
@@ -124,8 +131,22 @@ async function runOnePage(context, browserName, pageDef, viewport, theme, outDir
     if (pageDef.open) {
       const trigger = page.locator(pageDef.open.trigger).first();
       if (await trigger.count() > 0) {
-        await trigger.click();
-        await page.waitForSelector(pageDef.open.waitFor, { timeout: 8_000 }).catch(() => {});
+        // A present-but-not-actionable trigger (zero-size, covered, or
+        // otherwise unclickable) is itself a real finding worth keeping --
+        // NOT a reason to let the whole viewport/theme run crash. Bound the
+        // click well under Playwright's 30s action-timeout default and
+        // catch: discovered live (#2386 dogfooding) that this exact trigger
+        // is a 0x0 element at every one of this harness's three pinned
+        // viewports on /next/, and an uncaught click timeout here took down
+        // the entire browser context, silently losing every later
+        // page/theme combination in that context's loop.
+        try {
+          await trigger.click({ timeout: 5_000 });
+          await page.waitForSelector(pageDef.open.waitFor, { timeout: 8_000 }).catch(() => {});
+        } catch {
+          record.openFailed = 'trigger present but not actionable (zero-size/covered/unclickable) '
+            + `-- probes below ran against the CLOSED-state page, not the open ${pageDef.name.replace('-open', '')}`;
+        }
       } else {
         record.openSkipped = 'trigger not found';
       }
@@ -214,6 +235,8 @@ async function main() {
 
 function summarizeRecord(r) {
   const bits = [];
+  if (r.openFailed) bits.push('OPEN-FAILED');
+  if (r.openSkipped) bits.push('open-skipped');
   bits.push(`overflow=${r.layout.hasHorizontalOverflow ? `YES(${r.layout.overflowPx}px, ${r.layout.offenderCount} els)` : 'no'}`);
   bits.push(`tap<${r.tapTargets.minPx}px=${r.tapTargets.offenderCount}/${r.tapTargets.totalInteractive}`);
   bits.push(`offscreen=${r.offscreen.offenderCount}`);
@@ -235,11 +258,18 @@ function printSummary(results) {
   const tapOffenders = ok.filter(r => r.tapTargets.offenderCount > 0);
   const offscreenOffenders = ok.filter(r => r.offscreen.offenderCount > 0);
   const axeOffenders = ok.filter(r => r.axe.violationCount > 0);
+  const openFailed = ok.filter(r => r.openFailed);
   console.log(`Runs: ${results.length} (${ok.length} completed, ${errored.length} errored)`);
   console.log(`Horizontal overflow: ${overflowing.length} run(s)`);
   console.log(`Sub-${TAP_TARGET_MIN_PX}px tap targets: ${tapOffenders.length} run(s)`);
   console.log(`Off-screen/clipped affordances: ${offscreenOffenders.length} run(s)`);
   console.log(`axe-core violations: ${axeOffenders.length} run(s)`);
+  if (openFailed.length) {
+    console.log(`\nOPEN-STATE FAILURES (trigger present but not actionable): ${openFailed.length} run(s):`);
+    for (const r of openFailed) {
+      console.log(`  [${r.browser}/${r.viewport}/${r.theme}] ${r.page}: ${r.openFailed}`);
+    }
+  }
 }
 
 main().catch(err => {
