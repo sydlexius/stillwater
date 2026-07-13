@@ -364,6 +364,7 @@ how-to/fetch-and-crop-images#see-also
 how-to/fetch-and-crop-images#skip-rule-violations-during-a-fetch
 how-to/fetch-and-crop-images#upload-from-your-computer
 how-to/fetch-and-crop-images#what-happens-after-a-successful-fetch
+how-to/fetch-and-crop-images#when-cropping-is-required-not-optional
 how-to/fetch-and-crop-images#why-a-fetch-returned-no-images
 how-to/fetch-discography#before-you-start
 how-to/fetch-discography#concurrent-fetch-protection
