@@ -558,7 +558,7 @@ jobs:
       # SHA verified via: gh api repos/reviewdog/action-shellcheck/git/ref/tags/v1.32.0 --jq '.object.sha'
       - name: Run shellcheck (same-repo PR / push)
         if: steps.filter.outputs.scripts == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: reviewdog/action-shellcheck@853366d6a4afe65985b8f9ba43924a4afc0a45c9 # v1.32.0
+        uses: reviewdog/action-shellcheck@4c07458293ac342d477251099501a718ae5ef86e # v1.32.0
         with:
           # github-check (not github-pr-check): this job runs on both
           # pull_request AND push (to main); github-pr-check assumes PR

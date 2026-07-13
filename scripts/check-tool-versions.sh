@@ -61,6 +61,16 @@ fix_dockerfile_tailwind() {
     && mv "$tmp" "$file"
 }
 
+# Mirror the CI-declared bundled markdownlint-cli2 version into the local hook's
+# pin. The CI side (the action pin + its `# bundles:` declaration) is canonical:
+# it is what actually gates a PR, so the hook follows it, never the reverse.
+fix_hook_markdownlint() {
+  local newver="$1" file=".githooks/pre-commit" tmp
+  tmp="$(mktemp)"
+  sed -E "s/MARKDOWNLINT_CLI2_VERSION=\"[0-9.]+\"/MARKDOWNLINT_CLI2_VERSION=\"${newver}\"/" "$file" >"$tmp" \
+    && mv "$tmp" "$file" && chmod +x "$file"
+}
+
 # require <label> <a> <b> <a-source> <b-source> [fixer-fn [fixer-args...]]
 # `a`/`asrc` is the canonical (CI/source) side; `b`/`bsrc` is the derived pin.
 # In --fix mode a drift is repaired by calling: <fixer-fn> [fixer-args...] <a>
@@ -117,11 +127,33 @@ tw_docker=$(grep -oE 'TAILWIND_VERSION=v[0-9.]+' build/docker/Dockerfile \
 require "tailwind" "$tw_action" "$tw_docker" ".github/actions/setup-tailwind" "build/docker/Dockerfile" \
   fix_dockerfile_tailwind
 
+# markdownlint-cli2: CI runs DavidAnson/markdownlint-cli2-action, whose ACTION
+# version (v24.x) is a DIFFERENT numbering scheme from the markdownlint-cli2 CLI
+# it bundles (0.23.x). The local pre-commit hook pins the CLI by its npm version,
+# so the two sides cannot be compared textually -- the action's bundled version
+# is only visible inside its package.json.
+#
+# The `# bundles: markdownlint-cli2 X.Y.Z` comment beside the action pin in
+# docs.yml is the anchor that relates them, and this check asserts the hook's pin
+# matches it. Dependabot bumps the action's SHA but NOT that comment, so a
+# CI-only bump lands as drift HERE and fails closed, forcing both sides to move
+# together. Without this, CI silently runs a different linter major than the hook
+# and the hook passes while CI fails on the same tree (#2500).
+mdl_ci=$(grep -oE '^[[:space:]]*#[[:space:]]*bundles:[[:space:]]*markdownlint-cli2[[:space:]]+[0-9.]+' \
+  .github/workflows/docs.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+mdl_hook=$(grep -oE 'MARKDOWNLINT_CLI2_VERSION="[0-9.]+"' .githooks/pre-commit \
+  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+require "markdownlint-cli2" "$mdl_ci" "$mdl_hook" \
+  ".github/workflows/docs.yml (bundles: comment)" ".githooks/pre-commit" \
+  fix_hook_markdownlint
+
 if [ "$errors" -gt 0 ]; then
   echo "" >&2
   echo "$errors tool-version drift error(s)." >&2
-  echo "Run 'make sync-tool-versions' to mirror the CI-side Tailwind version into" >&2
-  echo "the Dockerfile pin, then commit the result." >&2
+  echo "Run 'make sync-tool-versions' to mirror each canonical CI-side version into" >&2
+  echo "its derived pin (Tailwind -> the Dockerfile; markdownlint-cli2 -> the" >&2
+  echo "pre-commit hook), then commit the result. The 'go' pin has no auto-fixer:" >&2
+  echo "bump go.mod and the Dockerfile tag together, then re-pin the digest." >&2
   exit 1
 fi
 if [ "$fixed" -gt 0 ]; then
