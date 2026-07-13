@@ -276,9 +276,22 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 		//      ran after the status flip could still be mid-flight at that moment
 		//      and have its context canceled out from under its HTTP calls.
 		// The hook is best-effort: it never fails the scan, and its own timeouts
-		// bound how long completion can be delayed.
+		// bound how long completion can be delayed. It runs in this defer, which
+		// executes AFTER the recover() defer below (deferred functions run LIFO,
+		// and that recover defer is registered later in this function), so a
+		// panic here would NOT be caught by that recover -- it needs its own.
 		if hook := s.postScanHook; hook != nil {
-			hook(ctx)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						s.logger.Error("post-scan hook panicked",
+							"panic", r,
+							"stack", string(debug.Stack()),
+						)
+					}
+				}()
+				hook(ctx)
+			}()
 		}
 
 		s.mu.Lock()
