@@ -65,11 +65,16 @@ jobs:
   # unions every input the eleven generators + templ + tailwind read: all Go
   # source (struct tags the generators reflect over), .templ files, the
   # generators' own source and the Makefile they and gen-make-reference
-  # parse, the i18n locale JSON gen-settings-reference reads, the docs tree
-  # gen-doc-anchors walks, and the CSS gen-tailwind builds. This workflow only
-  # triggers on push/pull_request (no schedule/workflow_dispatch), both of
-  # which dorny/paths-filter can always diff, so there is no ambiguous-trigger
-  # case to fail closed on here.
+  # parse, the i18n locale JSON gen-settings-reference reads, the SQL
+  # migration gen-platform-profiles reads, ci.yml (gen-ci-reference's input),
+  # the docs tree gen-doc-anchors walks, the setup-tailwind composite action
+  # (pins the version gen-tailwind builds against), and the CSS gen-tailwind
+  # builds. A filter entry must be the generator's actual input path, not the
+  # workflow file the check happens to live in (#2445 -- see BLOCKING-1/3 in
+  # the review that caught this). This workflow only triggers on
+  # push/pull_request (no schedule/workflow_dispatch), both of which
+  # dorny/paths-filter can always diff, so there is no ambiguous-trigger case
+  # to fail closed on here.
   # ---------------------------------------------------------------------------
   generated-files:
     name: Generated Files
@@ -92,9 +97,12 @@ jobs:
               - 'go.sum'
               - 'Makefile'
               - 'internal/i18n/locales/**'
+              - 'internal/database/migrations/**'
               - 'docs/site/src/**'
               - 'web/static/css/**'
               - '.github/workflows/gate.yml'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-tailwind/**'
 
       # SHA verified against live tag via:
       #   gh api repos/actions/setup-go/git/ref/tags/v6 --jq '.object.sha'
