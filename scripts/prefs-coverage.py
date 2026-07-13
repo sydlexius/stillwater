@@ -12,7 +12,8 @@ getComputedStyle assertion (Layer 2, tracked separately).
 Reads `.prefs.toml` at the repo root (schema:
 skills/orchestrate/templates/prefs.toml.md). For each `[[pref]]`, this checks
 the DIRECTLY-CHANGED surfaces (`git diff BASE..HEAD`, BASE resolved like
-patch-coverage.sh) that match the pref's `surface` glob. It is
+the orchestrate plugin's patch-coverage.sh helper) that match the pref's
+`surface` glob. It is
 REGRESSION-ONLY: a matching changed file is flagged MISSING only when its
 BASE-revision content matched the pref's `verify` regex and its HEAD-revision
 content no longer does -- a surface that used to honor the pref and stopped.
@@ -70,8 +71,9 @@ def sh(args, timeout=120):
 
 
 def resolve_base():
-    # Honor an explicit BASE override first, same env var patch-coverage.sh
-    # reads. pre-push-gate.sh forwards its own already-validated $BASE (the
+    # Honor an explicit BASE override first, same env var the orchestrate
+    # plugin's patch-coverage.sh helper reads. pre-push-gate.sh forwards its
+    # own already-validated $BASE (the
     # merge-base SHA it computed and rev-parse-verified) so that in a
     # shallow-clone / CI context where `origin/main` is not fetched, the gate
     # and this script agree on the diff base instead of this script's ladder
@@ -85,10 +87,11 @@ def resolve_base():
         # to paper over by silently falling through to origin/main (which could
         # widen or narrow the diff without the caller knowing). Fail CLOSED.
         raise GitError(f"explicit BASE {env_base!r} does not resolve to a git object")
-    # Mirror patch-coverage.sh's BASE fallback chain. If NONE of these refs exist
-    # (fresh / unrelated history), returns None -> changed_files falls back to
-    # `git diff HEAD` (working-tree only), so the gate fails OPEN rather than
-    # treating the whole tree as changed. Intentional, matching patch-coverage.sh.
+    # Mirror the orchestrate plugin's patch-coverage.sh helper's BASE fallback
+    # chain. If NONE of these refs exist (fresh / unrelated history), returns
+    # None -> changed_files falls back to `git diff HEAD` (working-tree
+    # only), so the gate fails OPEN rather than treating the whole tree as
+    # changed. Intentional, matching that helper.
     for ref in ("origin/main", "main", "origin/master", "master"):
         if sh(["git", "rev-parse", "--verify", "-q", ref]).returncode == 0:
             return ref

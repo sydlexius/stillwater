@@ -4,16 +4,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 	"github.com/sydlexius/stillwater/internal/encryption"
 )
 
@@ -608,12 +613,15 @@ func TestSetStillwaterManaged_DisableReturns502OnPeerRestoreFailure(t *testing.T
 	}
 }
 
-// TestSetStillwaterManaged_RollbackRestoreFailureLogged covers the rollback
-// path's logging branch: when applyStillwaterManaged fails AND the rollback
-// restoreLibraryOptions also fails (peer is fully broken), the handler must
-// still surface the original 502 to the caller and the snapshot row must
-// still be cleared. The rollback restore error is logged but not returned.
-func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
+// TestSetStillwaterManaged_RollbackRestoreFailurePreservesSnapshot covers
+// the rollback path's data-loss guard: when applyStillwaterManaged fails AND
+// the rollback restoreLibraryOptions also fails (peer is fully broken), the
+// handler must still surface the original 502 to the caller, and the
+// snapshot row must NOT be cleared -- the peer is left in its
+// Stillwater-managed (savers disabled) state, so the snapshot is the only
+// way a retry can ever recover the user's original config. The rollback
+// restore error is logged but not returned.
+func TestSetStillwaterManaged_RollbackRestoreFailurePreservesSnapshot(t *testing.T) {
 	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
 
@@ -623,7 +631,7 @@ func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 	// a second POST to restore the original config (which also 500s,
 	// driving the restoreLibraryOptions error branch). A regression that
 	// silently skips the restore call would leave postCount at 1, but the
-	// outer effects (502 + cleared snapshot) would still match. Without
+	// outer effects (502 + preserved snapshot) would still match. Without
 	// this counter the test cannot distinguish "rollback ran and failed"
 	// from "rollback was never attempted".
 	var (
@@ -663,6 +671,21 @@ func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
+	// The disable/rollback-restore path below never succeeds against the
+	// peer, so the library options observed by a fresh snapshot call here
+	// (before the handler mutates anything) match exactly what
+	// applyStillwaterManaged captures and persists as PreStillwaterConfigJSON,
+	// modulo the snapshotted_at timestamp -- this is the baseline the
+	// surviving snapshot's library data is checked against below.
+	wantSnapshotJSON, err := r.snapshotLibraryOptions(ctx, conn)
+	if err != nil {
+		t.Fatalf("capturing expected snapshot: %v", err)
+	}
+	var wantSnapshot mediabrowser.LibraryWriteBackSnapshot
+	if err := json.Unmarshal([]byte(wantSnapshotJSON), &wantSnapshot); err != nil {
+		t.Fatalf("decoding expected snapshot: %v", err)
+	}
+
 	body := bytes.NewReader([]byte(`{"enabled":true}`))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+conn.ID+"/stillwater-managed", body)
 	req.SetPathValue("id", conn.ID)
@@ -684,8 +707,15 @@ func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if updated.PreStillwaterConfigJSON != "" {
-		t.Errorf("snapshot should be cleared even when rollback restore fails, got %q", updated.PreStillwaterConfigJSON)
+	if updated.PreStillwaterConfigJSON == "" {
+		t.Fatal("snapshot should survive a failed rollback restore -- clearing it here would strand the user with disabled savers and no snapshot to retry from (the #2422 data-loss variant)")
+	}
+	var gotSnapshot mediabrowser.LibraryWriteBackSnapshot
+	if err := json.Unmarshal([]byte(updated.PreStillwaterConfigJSON), &gotSnapshot); err != nil {
+		t.Fatalf("decoding surviving snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(gotSnapshot.Libraries, wantSnapshot.Libraries) {
+		t.Errorf("surviving snapshot libraries = %+v, want byte-identical to the pre-rollback original %+v", gotSnapshot.Libraries, wantSnapshot.Libraries)
 	}
 }
 
@@ -1042,5 +1072,560 @@ func TestSetStillwaterManaged_ConcurrentEnableSerializes(t *testing.T) {
 	// snake_case via the snapshot's JSON tags, not Emby's CamelCase.)
 	if !bytes.Contains([]byte(final.PreStillwaterConfigJSON), []byte(`"save_local_metadata":true`)) {
 		t.Errorf("snapshot looks post-managed; concurrent enables clobbered it: %s", final.PreStillwaterConfigJSON)
+	}
+}
+
+// TestSetStillwaterManaged_ReEnableAfterFailedDisablePreservesSnapshot
+// reproduces the #2422 / #1190 data-loss scenario: enable succeeds and
+// captures a genuine pre-Stillwater snapshot; disable flips the DB flag off
+// but the peer rejects the restore PATCH, so clearStillwaterManaged returns
+// before it clears pre_stillwater_config_json and the snapshot survives on
+// disk with managed=false; the peer is left with its savers cleared. A
+// second enable must reuse that surviving snapshot rather than re-capturing
+// the peer's now-cleared state -- re-capturing here would persist
+// save_local_metadata:false as if it were the user's real config, and
+// opt-out could never restore the original savers again.
+//
+// The fake peer tracks both GET (/Library/VirtualFolders) and POST
+// (.../LibraryOptions) calls. A regression that skips the write-once check
+// would issue an extra SnapshotLibraryOptions GET on the second enable and
+// persist a different (post-managed) snapshot; this test's GET-count and
+// byte-identical assertions both catch that.
+func TestSetStillwaterManaged_ReEnableAfterFailedDisablePreservesSnapshot(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+
+	var (
+		mu        sync.Mutex
+		getCount  int
+		postCount int
+		cleared   bool
+	)
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/Library/VirtualFolders":
+			mu.Lock()
+			getCount++
+			isCleared := cleared
+			mu.Unlock()
+			savers := []string{"Nfo"}
+			saveLocal := true
+			if isCleared {
+				savers = []string{}
+				saveLocal = false
+			}
+			lib := map[string]any{
+				"Name":           "Music",
+				"CollectionType": "music",
+				"ItemId":         "lib1",
+				"LibraryOptions": map[string]any{
+					"SaveLocalMetadata": saveLocal,
+					"MetadataSavers":    savers,
+				},
+			}
+			_ = json.NewEncoder(w).Encode([]any{lib})
+		case "/Library/VirtualFolders/LibraryOptions":
+			mu.Lock()
+			postCount++
+			n := postCount
+			mu.Unlock()
+			// POST #1: first enable's disable-savers call. Succeeds and
+			// clears the peer's savers.
+			// POST #2: the disable's restore-savers call. Fails, so the
+			// peer stays cleared and clearStillwaterManaged returns before
+			// wiping the persisted snapshot.
+			// POST #3: second enable's disable-savers call. The peer is
+			// already cleared (idempotent), so this succeeds.
+			if n == 2 {
+				http.Error(w, "peer restore failed", http.StatusInternalServerError)
+				return
+			}
+			mu.Lock()
+			cleared = true
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer fake.Close()
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	doToggle := func(enabled bool) *httptest.ResponseRecorder {
+		body := []byte(`{"enabled":false}`)
+		if enabled {
+			body = []byte(`{"enabled":true}`)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+conn.ID+"/stillwater-managed", bytes.NewReader(body))
+		req.SetPathValue("id", conn.ID)
+		w := httptest.NewRecorder()
+		r.handleSetStillwaterManaged(w, req)
+		return w
+	}
+
+	// 1. Enable: captures the genuine snapshot (save_local_metadata:true,
+	// savers ["Nfo"]).
+	enableW := doToggle(true)
+	if enableW.Code != http.StatusOK {
+		t.Fatalf("first enable status = %d body=%s", enableW.Code, enableW.Body.String())
+	}
+	assertSetManagedResponse(t, enableW, conn.ID, true)
+
+	afterEnable, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after enable: %v", err)
+	}
+	originalSnapshot := afterEnable.PreStillwaterConfigJSON
+	if originalSnapshot == "" {
+		t.Fatal("snapshot must be populated after enable")
+	}
+	if !bytes.Contains([]byte(originalSnapshot), []byte(`"save_local_metadata":true`)) {
+		t.Fatalf("original snapshot missing save_local_metadata:true: %s", originalSnapshot)
+	}
+	if !bytes.Contains([]byte(originalSnapshot), []byte(`"Nfo"`)) {
+		t.Fatalf("original snapshot missing Nfo saver: %s", originalSnapshot)
+	}
+
+	// 2. Disable: peer restore PATCH fails -> 502. DB ends managed=false
+	// with the snapshot retained (clearStillwaterManaged never reaches the
+	// SetPreStillwaterConfig("") clear because restoreLibraryOptions errors
+	// first).
+	disableW := doToggle(false)
+	if disableW.Code != http.StatusBadGateway {
+		t.Fatalf("disable status = %d body=%s, want 502", disableW.Code, disableW.Body.String())
+	}
+
+	afterDisable, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after failed disable: %v", err)
+	}
+	if afterDisable.FeatureManageServerFiles {
+		t.Fatal("FeatureManageServerFiles should be false after failed disable")
+	}
+	if afterDisable.PreStillwaterConfigJSON != originalSnapshot {
+		t.Fatalf("snapshot mutated by failed disable: got %q, want unchanged %q", afterDisable.PreStillwaterConfigJSON, originalSnapshot)
+	}
+
+	mu.Lock()
+	getCountBeforeReEnable := getCount
+	mu.Unlock()
+
+	// 3. Re-enable: the peer still reports cleared savers. The write-once
+	// guard must reuse the surviving snapshot instead of re-capturing this
+	// cleared state.
+	reEnableW := doToggle(true)
+	if reEnableW.Code != http.StatusOK {
+		t.Fatalf("re-enable status = %d body=%s", reEnableW.Code, reEnableW.Body.String())
+	}
+	assertSetManagedResponse(t, reEnableW, conn.ID, true)
+
+	final, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after re-enable: %v", err)
+	}
+	if final.PreStillwaterConfigJSON != originalSnapshot {
+		t.Errorf("re-enable did not preserve the original snapshot: got %q, want byte-identical %q", final.PreStillwaterConfigJSON, originalSnapshot)
+	}
+	if !final.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should be true after re-enable")
+	}
+
+	// The re-enable's only peer GET should come from disableFileWriteBack's
+	// own idempotent clear, not from a second SnapshotLibraryOptions call.
+	mu.Lock()
+	getCountAfterReEnable := getCount
+	mu.Unlock()
+	if got := getCountAfterReEnable - getCountBeforeReEnable; got != 1 {
+		t.Errorf("re-enable issued %d peer GETs, want exactly 1 (disableFileWriteBack only, no re-snapshot GET)", got)
+	}
+}
+
+// TestSetStillwaterManaged_ReEnableRollbackPreservesReusedSnapshot covers
+// the not-owned branch of rollbackStillwaterManaged: when a re-enable
+// reuses a surviving snapshot (from a prior successful enable) and then
+// itself fails, rollback must NOT clear the reused snapshot. Only the call
+// that freshly captured a snapshot may clear it on rollback; a reused
+// snapshot was not authored by this call and clearing it here would
+// destroy the only copy of the user's original config -- the same #2422
+// data-loss failure mode, reached via a second failure instead of a
+// straight re-enable success.
+func TestSetStillwaterManaged_ReEnableRollbackPreservesReusedSnapshot(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+
+	var (
+		mu        sync.Mutex
+		postCount int
+	)
+	initial := map[string]any{
+		"Name":           "Music",
+		"CollectionType": "music",
+		"ItemId":         "lib1",
+		"LibraryOptions": map[string]any{
+			"SaveLocalMetadata": true,
+			"MetadataSavers":    []string{"Nfo"},
+		},
+	}
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/Library/VirtualFolders":
+			_ = json.NewEncoder(w).Encode([]any{initial})
+		case "/Library/VirtualFolders/LibraryOptions":
+			mu.Lock()
+			postCount++
+			n := postCount
+			mu.Unlock()
+			// POST #1: first enable's disable-savers call. Succeeds and
+			// captures a fresh, owned snapshot.
+			// POST #2: the disable's restore-savers call. Fails, so the
+			// snapshot survives with managed=false (setup identical to the
+			// sibling write-once test).
+			// POST #3: the re-enable's disable-savers call. Fails too, so
+			// applyStillwaterManaged rolls back a REUSED (not-owned)
+			// snapshot -- the branch this test targets.
+			if n == 1 {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			http.Error(w, "peer rejected", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer fake.Close()
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	doToggle := func(enabled bool) *httptest.ResponseRecorder {
+		body := []byte(`{"enabled":false}`)
+		if enabled {
+			body = []byte(`{"enabled":true}`)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+conn.ID+"/stillwater-managed", bytes.NewReader(body))
+		req.SetPathValue("id", conn.ID)
+		w := httptest.NewRecorder()
+		r.handleSetStillwaterManaged(w, req)
+		return w
+	}
+
+	if w := doToggle(true); w.Code != http.StatusOK {
+		t.Fatalf("first enable status = %d body=%s", w.Code, w.Body.String())
+	}
+	afterEnable, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after enable: %v", err)
+	}
+	originalSnapshot := afterEnable.PreStillwaterConfigJSON
+	if originalSnapshot == "" {
+		t.Fatal("snapshot must be populated after enable")
+	}
+
+	if w := doToggle(false); w.Code != http.StatusBadGateway {
+		t.Fatalf("disable status = %d body=%s, want 502", w.Code, w.Body.String())
+	}
+	afterDisable, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after failed disable: %v", err)
+	}
+	if afterDisable.PreStillwaterConfigJSON != originalSnapshot {
+		t.Fatalf("snapshot mutated by failed disable: got %q, want unchanged %q", afterDisable.PreStillwaterConfigJSON, originalSnapshot)
+	}
+
+	// Re-enable reuses the surviving snapshot, then itself fails at the
+	// peer-disable step, driving rollbackStillwaterManaged with owned=false.
+	reEnableW := doToggle(true)
+	if reEnableW.Code != http.StatusBadGateway {
+		t.Fatalf("re-enable status = %d body=%s, want 502", reEnableW.Code, reEnableW.Body.String())
+	}
+
+	final, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after failed re-enable: %v", err)
+	}
+	if final.PreStillwaterConfigJSON != originalSnapshot {
+		t.Errorf("rollback cleared a reused (not-owned) snapshot: got %q, want unchanged %q", final.PreStillwaterConfigJSON, originalSnapshot)
+	}
+	if final.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should be false after the re-enable's rollback")
+	}
+}
+
+// TestApplyStillwaterManaged_SnapshotErrorNoRollback drives
+// applyStillwaterManaged's very first failure branch: the peer rejects the
+// snapshot GET before Stillwater has mutated anything. This must surface
+// ErrConflictPeerRejected and must NOT attempt a rollback POST -- there is
+// nothing to roll back yet, and a regression that rolled back here would
+// send a spurious restore call to a peer library GET already failed to
+// enumerate.
+func TestApplyStillwaterManaged_SnapshotErrorNoRollback(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+	var logBuf bytes.Buffer
+	r.logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	var postCount int32
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/Library/VirtualFolders":
+			http.Error(w, "peer enumerate failed", http.StatusInternalServerError)
+		case "/Library/VirtualFolders/LibraryOptions":
+			atomic.AddInt32(&postCount, 1)
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer fake.Close()
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	err := r.applyStillwaterManaged(ctx, conn)
+	if err == nil {
+		t.Fatal("applyStillwaterManaged should fail when the peer rejects the snapshot GET")
+	}
+	if !errors.Is(err, ErrConflictPeerRejected) {
+		t.Errorf("error = %v, want wrapping ErrConflictPeerRejected", err)
+	}
+	if !strings.Contains(err.Error(), "snapshotting peer config") {
+		t.Errorf("error = %v, want mention of snapshotting peer config", err)
+	}
+	if got := atomic.LoadInt32(&postCount); got != 0 {
+		t.Errorf("POST count = %d, want 0 (no rollback attempted before any mutation)", got)
+	}
+	if strings.Contains(logBuf.String(), "rollback") {
+		t.Errorf("no rollback should have been attempted, but logger saw a rollback message: %s", logBuf.String())
+	}
+
+	reloaded, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.PreStillwaterConfigJSON != "" {
+		t.Errorf("snapshot should remain unpersisted, got %q", reloaded.PreStillwaterConfigJSON)
+	}
+	if reloaded.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should remain false")
+	}
+}
+
+// TestApplyStillwaterManaged_PersistSnapshotErrorNoRollback drives the
+// SetPreStillwaterConfig persist-error branch: the peer snapshot GET
+// succeeds but writing it to the DB fails (simulated by deleting the
+// connection row out from under the in-memory conn struct, so the UPDATE
+// affects zero rows). This must surface ErrConflictLocalPersist and must
+// NOT call disableFileWriteBack -- the snapshot was never durably saved, so
+// mutating the peer here would leave it disabled with no way to recover the
+// original settings.
+func TestApplyStillwaterManaged_PersistSnapshotErrorNoRollback(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+	fake, _ := startFakeEmby(t)
+	defer fake.Close()
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Delete the row so SetPreStillwaterConfig's UPDATE affects zero rows
+	// and returns "connection not found", forcing a real local-persist
+	// failure. conn (in memory) still carries a valid URL/APIKey so the
+	// peer-facing snapshot GET succeeds normally.
+	if err := svc.Delete(ctx, conn.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	err := r.applyStillwaterManaged(ctx, conn)
+	if err == nil {
+		t.Fatal("applyStillwaterManaged should fail when persisting the snapshot fails")
+	}
+	if !errors.Is(err, ErrConflictLocalPersist) {
+		t.Errorf("error = %v, want wrapping ErrConflictLocalPersist", err)
+	}
+	if !strings.Contains(err.Error(), "persisting snapshot") {
+		t.Errorf("error = %v, want mention of persisting snapshot", err)
+	}
+}
+
+// TestApplyStillwaterManaged_SetManagedFlagErrorRollsBack drives the final
+// applyStillwaterManaged failure branch: the peer disable succeeds but
+// SetManageServerFiles fails to persist. This must surface
+// ErrConflictLocalPersist AND roll back the peer (restore the snapshotted
+// savers) so the peer is not left disabled while Stillwater's own DB still
+// thinks it is unmanaged. Uses a reused (owned=false) snapshot so this also
+// exercises rollbackStillwaterManaged's not-owned path via a distinct
+// failure branch from TestSetStillwaterManaged_ReEnableRollbackPreservesReusedSnapshot
+// (that test fails at disableFileWriteBack; this one fails one step later,
+// at SetManageServerFiles).
+func TestApplyStillwaterManaged_SetManagedFlagErrorRollsBack(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+
+	var (
+		mu    sync.Mutex
+		posts []embyLibraryOptionsShape
+	)
+	initial := map[string]any{
+		"Name":           "Music",
+		"CollectionType": "music",
+		"ItemId":         "lib1",
+		"LibraryOptions": map[string]any{
+			"SaveLocalMetadata": true,
+			"MetadataSavers":    []string{"Nfo"},
+		},
+	}
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/Library/VirtualFolders":
+			_ = json.NewEncoder(w).Encode([]any{initial})
+		case "/Library/VirtualFolders/LibraryOptions":
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Errorf("fake: read body err = %v", err)
+				http.Error(w, "read body failed", http.StatusBadRequest)
+				return
+			}
+			var wrapper struct {
+				ID             string          `json:"Id"`
+				LibraryOptions json.RawMessage `json:"LibraryOptions"`
+			}
+			if err := json.Unmarshal(body, &wrapper); err != nil {
+				t.Errorf("fake: decode wrapper err = %v body=%s", err, body)
+				http.Error(w, "decode wrapper failed", http.StatusBadRequest)
+				return
+			}
+			var got embyLibraryOptionsShape
+			if err := json.Unmarshal(wrapper.LibraryOptions, &got); err != nil {
+				t.Errorf("fake: decode library options err = %v body=%s", err, wrapper.LibraryOptions)
+				http.Error(w, "decode library options failed", http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			posts = append(posts, got)
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer fake.Close()
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Simulate a reused snapshot from a prior successful enable (owned=false)
+	// entirely in memory -- applyStillwaterManaged only reads this field, it
+	// never re-fetches conn from the DB. Capture a real, correctly versioned
+	// snapshot from the fake peer rather than hand-authoring JSON, since
+	// RestoreLibraryOptions rejects an unrecognized snapshot version.
+	reusedSnapshot, err := r.snapshotLibraryOptions(ctx, conn)
+	if err != nil {
+		t.Fatalf("capturing reused snapshot: %v", err)
+	}
+	conn.PreStillwaterConfigJSON = reusedSnapshot
+
+	mu.Lock()
+	posts = nil
+	mu.Unlock()
+
+	// Delete the row so SetManageServerFiles's UPDATE affects zero rows and
+	// fails after the peer disable already succeeded, driving the rollback.
+	if err := svc.Delete(ctx, conn.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	err = r.applyStillwaterManaged(ctx, conn)
+	if err == nil {
+		t.Fatal("applyStillwaterManaged should fail when persisting the managed flag fails")
+	}
+	if !errors.Is(err, ErrConflictLocalPersist) {
+		t.Errorf("error = %v, want wrapping ErrConflictLocalPersist", err)
+	}
+	if !strings.Contains(err.Error(), "setting managed flag") {
+		t.Errorf("error = %v, want mention of setting managed flag", err)
+	}
+
+	mu.Lock()
+	gotPosts := append([]embyLibraryOptionsShape(nil), posts...)
+	mu.Unlock()
+	if len(gotPosts) != 2 {
+		t.Fatalf("post count = %d, want 2 (disable + rollback restore)", len(gotPosts))
+	}
+	if gotPosts[0].SaveLocalMetadata {
+		t.Errorf("first POST (disable) should send SaveLocalMetadata=false, got %+v", gotPosts[0])
+	}
+	if !gotPosts[1].SaveLocalMetadata || len(gotPosts[1].MetadataSavers) != 1 {
+		t.Errorf("second POST (rollback restore) should reinstate the reused snapshot, got %+v", gotPosts[1])
+	}
+}
+
+// TestRollbackStillwaterManaged_ClearFailureLogged drives the last
+// unexercised rollback branch: restoreLibraryOptions succeeds but the
+// owned=true SetPreStillwaterConfig("") clear fails to persist. Per the
+// doc comment on rollbackStillwaterManaged this failure is logged, not
+// returned (the function has no return value), so the only observable
+// outcome is the log line -- this test captures the logger output instead
+// of asserting DB state.
+func TestRollbackStillwaterManaged_ClearFailureLogged(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+	fake, received := startFakeEmby(t)
+	defer fake.Close()
+
+	var logBuf bytes.Buffer
+	r.logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Capture a real, correctly versioned snapshot from the fake peer --
+	// RestoreLibraryOptions rejects an unrecognized snapshot version, so a
+	// hand-authored JSON blob would fail restore before reaching the clear.
+	snapshot, err := r.snapshotLibraryOptions(ctx, conn)
+	if err != nil {
+		t.Fatalf("capturing snapshot: %v", err)
+	}
+
+	// Delete the row so the owned=true clear (SetPreStillwaterConfig(ctx,
+	// id, "")) fails after the peer restore already succeeded.
+	if err := svc.Delete(ctx, conn.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	r.rollbackStillwaterManaged(ctx, conn, snapshot, true, "test-stage")
+
+	if _, ok := received.Load("lib1"); !ok {
+		t.Fatal("rollback should have POSTed the restore to the peer before the clear failure")
+	}
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, "rollback SetPreStillwaterConfig clear failed") {
+		t.Errorf("log output missing clear-failure message, got: %s", logged)
+	}
+	if !strings.Contains(logged, "test-stage") {
+		t.Errorf("log output missing stage, got: %s", logged)
+	}
+	if !strings.Contains(logged, conn.ID) {
+		t.Errorf("log output missing connection_id, got: %s", logged)
 	}
 }

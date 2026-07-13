@@ -364,37 +364,63 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 // restore can still roll back the accepted library. Better a partial
 // rollback than an orphaned mutation.
 //
-// Once SetPreStillwaterConfig has persisted the snapshot, any subsequent
-// failure must roll back: a second enable attempt would resnap the
-// already-mutated peer state and overwrite the real pre-Stillwater config,
-// so opt-out could no longer restore the original saver settings.
+// The snapshot is write-once: if conn.PreStillwaterConfigJSON already holds a
+// non-empty value (a prior successful enable that survived a later failed
+// disable -- see #2422), that snapshot is reused instead of re-captured. The
+// peer may have already had its savers cleared by the failed disable
+// attempt, so re-snapshotting here would persist the post-managed state as
+// if it were the user's original config, destroying the one copy of the
+// real settings. Once SetPreStillwaterConfig has persisted a freshly
+// captured snapshot, any subsequent failure must roll back: a second enable
+// attempt would resnap the already-mutated peer state and overwrite the
+// real pre-Stillwater config, so opt-out could no longer restore the
+// original saver settings.
 func (r *Router) applyStillwaterManaged(ctx context.Context, conn *connection.Connection) error {
-	snapshot, err := r.snapshotLibraryOptions(ctx, conn)
-	if err != nil {
-		return fmt.Errorf("%w: snapshotting peer config: %w", ErrConflictPeerRejected, err)
-	}
-	if err := r.connectionService.SetPreStillwaterConfig(ctx, conn.ID, snapshot); err != nil {
-		return fmt.Errorf("%w: persisting snapshot: %w", ErrConflictLocalPersist, err)
+	snapshot := conn.PreStillwaterConfigJSON
+	owned := snapshot == ""
+	if owned {
+		captured, err := r.snapshotLibraryOptions(ctx, conn)
+		if err != nil {
+			return fmt.Errorf("%w: snapshotting peer config: %w", ErrConflictPeerRejected, err)
+		}
+		snapshot = captured
+		if err := r.connectionService.SetPreStillwaterConfig(ctx, conn.ID, snapshot); err != nil {
+			return fmt.Errorf("%w: persisting snapshot: %w", ErrConflictLocalPersist, err)
+		}
 	}
 	if err := r.disableFileWriteBack(ctx, conn); err != nil {
-		r.rollbackStillwaterManaged(ctx, conn, snapshot, "disable peer savers")
+		r.rollbackStillwaterManaged(ctx, conn, snapshot, owned, "disable peer savers")
 		return fmt.Errorf("%w: disabling peer savers: %w", ErrConflictPeerRejected, err)
 	}
 	if err := r.connectionService.SetManageServerFiles(ctx, conn.ID, true); err != nil {
-		r.rollbackStillwaterManaged(ctx, conn, snapshot, "set managed flag")
+		r.rollbackStillwaterManaged(ctx, conn, snapshot, owned, "set managed flag")
 		return fmt.Errorf("%w: setting managed flag: %w", ErrConflictLocalPersist, err)
 	}
 	return nil
 }
 
 // rollbackStillwaterManaged best-effort restores the peer to the snapshotted
-// state and clears the pre-Stillwater config row when applyStillwaterManaged
-// fails after persisting the snapshot. Rollback failures are logged but not
-// returned: the caller surfaces the original failure so the user sees the
-// proximate cause rather than a derived rollback error.
-func (r *Router) rollbackStillwaterManaged(ctx context.Context, conn *connection.Connection, snapshot, stage string) {
-	if err := r.restoreLibraryOptions(ctx, conn, snapshot); err != nil {
-		r.logger.Error("rollback restoreLibraryOptions failed", "connection_id", conn.ID, "stage", stage, "error", err)
+// state when applyStillwaterManaged fails after the snapshot was available.
+// It clears the persisted pre-Stillwater config row only when owned is true
+// -- i.e. this call captured the snapshot itself -- AND the peer restore
+// above actually succeeded. When the snapshot was reused from a prior
+// successful enable (owned=false), it must survive this rollback: clearing
+// it here would destroy the only copy of the user's original config, the
+// exact #2422 data-loss scenario. The same is true when the restore fails:
+// the peer is left in its Stillwater-managed (savers disabled) state, so the
+// snapshot is the only way a retry can ever recover the original config --
+// clearing it then would strand the user with disabled savers and nothing
+// to restore from. The snapshot is only cleared once the peer is known to
+// be restored. Rollback failures are logged but not returned: the caller
+// surfaces the original failure so the user sees the proximate cause rather
+// than a derived rollback error.
+func (r *Router) rollbackStillwaterManaged(ctx context.Context, conn *connection.Connection, snapshot string, owned bool, stage string) {
+	restoreErr := r.restoreLibraryOptions(ctx, conn, snapshot)
+	if restoreErr != nil {
+		r.logger.Error("rollback restoreLibraryOptions failed", "connection_id", conn.ID, "stage", stage, "error", restoreErr)
+	}
+	if !owned || restoreErr != nil {
+		return
 	}
 	if err := r.connectionService.SetPreStillwaterConfig(ctx, conn.ID, ""); err != nil {
 		r.logger.Error("rollback SetPreStillwaterConfig clear failed", "connection_id", conn.ID, "stage", stage, "error", err)
