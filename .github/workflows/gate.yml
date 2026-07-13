@@ -59,8 +59,17 @@ jobs:
   #     reference, or doc-anchors file after source changes
   #   - stale styles.css after input.css changes
   #
-  # Always runs (no paths-filter guard) so the check is unconditionally
-  # present on every PR and cannot be silently absent.
+  # NOT a required status check (verified live, #2445). Job always runs (so a
+  # future promotion to required needs no wrapper change); the actual
+  # regenerate-and-diff steps are gated on the `relevant` filter below, which
+  # unions every input the eleven generators + templ + tailwind read: all Go
+  # source (struct tags the generators reflect over), .templ files, the
+  # generators' own source and the Makefile they and gen-make-reference
+  # parse, the i18n locale JSON gen-settings-reference reads, the docs tree
+  # gen-doc-anchors walks, and the CSS gen-tailwind builds. This workflow only
+  # triggers on push/pull_request (no schedule/workflow_dispatch), both of
+  # which dorny/paths-filter can always diff, so there is no ambiguous-trigger
+  # case to fail closed on here.
   # ---------------------------------------------------------------------------
   generated-files:
     name: Generated Files
@@ -71,9 +80,26 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check relevant paths
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            relevant:
+              - '**/*.go'
+              - '**/*.templ'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Makefile'
+              - 'internal/i18n/locales/**'
+              - 'docs/site/src/**'
+              - 'web/static/css/**'
+              - '.github/workflows/gate.yml'
+
       # SHA verified against live tag via:
       #   gh api repos/actions/setup-go/git/ref/tags/v6 --jq '.object.sha'
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: steps.filter.outputs.relevant == 'true'
         with:
           go-version-file: go.mod
           cache: true
@@ -81,11 +107,14 @@ jobs:
       # Install Tailwind CSS via the shared composite action (single source of
       # truth for version + SHA; see .github/actions/setup-tailwind).
       - uses: ./.github/actions/setup-tailwind
+        if: steps.filter.outputs.relevant == 'true'
 
       - name: Regenerate templ
+        if: steps.filter.outputs.relevant == 'true'
         run: go tool templ generate
 
       - name: Regenerate Tailwind CSS
+        if: steps.filter.outputs.relevant == 'true'
         run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
 
       - name: Regenerate doc generators
@@ -97,6 +126,7 @@ jobs:
         # checks (#2009 #3 -- the audit said 3 missing; two more were added to
         # check-generated.sh since, so it is 5). Keep this list == the
         # generators in check-generated.sh.
+        if: steps.filter.outputs.relevant == 'true'
         run: |
           go run ./cmd/gen-provider-matrix
           go run ./cmd/gen-env-reference
@@ -111,6 +141,7 @@ jobs:
           go run ./cmd/gen-prefs-reference
 
       - name: Fail on stale generated files
+        if: steps.filter.outputs.relevant == 'true'
         run: |
           # Mark untracked files intent-to-add so a brand-new generated
           # artifact (a first-time anchors file, a new matrix page) shows up
@@ -141,23 +172,35 @@ jobs:
           fi
           echo "OK: all generated files are current."
 
+      - name: Skip (no generator-relevant changes)
+        if: steps.filter.outputs.relevant != 'true'
+        run: echo "No Go/templ/docs/CSS/generator-input changes; generated-file regeneration skipped."
+
   # ---------------------------------------------------------------------------
-  # Per-package coverage floor (pass-through)
+  # Per-package coverage floor (pass-through, informational only)
   #
-  # Real enforcement has moved to the CI workflow (ci.yml Coverage Floor job),
-  # which consumes the per-shard coverage artifacts uploaded by the test matrix
-  # instead of re-running the full ./internal/... suite.
+  # Real enforcement lives in the CI workflow (ci.yml's `coverage-floor` +
+  # `coverage-floor-summary` jobs, the latter owning the required "Coverage
+  # Floor" check name), which consumes the per-shard coverage artifacts
+  # uploaded by the test matrix instead of re-running the full
+  # ./internal/... suite.
   #
-  # This job is kept here solely to preserve the "Pre-Push Gate / Coverage Floor"
-  # required-status-check entry.  It always runs and always emits a terminal
-  # status without running go test.
-  #
-  # BRANCH PROTECTION NOTE: add "CI / Coverage Floor" as a required status check
-  # in addition to (or replacing) this one so the enforcement in ci.yml is
-  # actually gated.  See docs/pr-workflow.md.
+  # RENAMED from "Coverage Floor" (#2445): this job and ci.yml's
+  # coverage-floor-summary used to emit two check runs with the identical
+  # name "Coverage Floor". GitHub's required-status-check matching is by bare
+  # check name, not workflow-qualified, so branch protection's single
+  # "Coverage Floor" requirement was satisfied by whichever of the two
+  # reported success -- including this pass-through placeholder, which never
+  # actually enforces anything. A superseded/cancelled run of one of the two
+  # same-named checks already false-blocked two PRs' merge oracle. Renaming
+  # this (non-enforcing) job removes it as a second emitter of that name;
+  # ci.yml's coverage-floor-summary remains the SOLE job named "Coverage
+  # Floor", so it alone satisfies the existing branch-protection requirement.
+  # NO branch-protection change is needed: the required check's name is
+  # unchanged, only the duplicate producer is removed.
   # ---------------------------------------------------------------------------
   coverage-floor:
-    name: Coverage Floor
+    name: Coverage Floor (Gate Pointer)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -432,3 +475,59 @@ jobs:
             exit 1
           }
           echo "$output"
+
+  # ---------------------------------------------------------------------------
+  # Shellcheck (#2445)
+  #
+  # NOT a required status check (new job). Before this, a script-only diff
+  # (e.g. #2443: 4 shell/Markdown files, zero Go) ran 41 checks, none of which
+  # gave any real signal on the shell scripts themselves. This job is the
+  # replacement: real shellcheck signal on script-only PRs instead of only
+  # no-ops.
+  #
+  # Gated on the `scripts` filter (job always runs, step gated -- same
+  # uniform pattern as the rest of this file, though not load-bearing here
+  # since the check isn't required). reviewdog's default filter_mode (file)
+  # only reports/fails on diagnostics in files that are part of the current
+  # diff, so pre-existing shellcheck findings in an untouched script do not
+  # block this PR.
+  # ---------------------------------------------------------------------------
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Check relevant paths
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            scripts:
+              - 'scripts/**'
+              - '.githooks/**'
+
+      # SHA verified via: gh api repos/reviewdog/action-shellcheck/git/ref/tags/v1.32.0 --jq '.object.sha'
+      - name: Run shellcheck
+        if: steps.filter.outputs.scripts == 'true'
+        uses: reviewdog/action-shellcheck@853366d6a4afe65985b8f9ba43924a4afc0a45c9 # v1.32.0
+        with:
+          # github-check (not github-pr-check): this job runs on both
+          # pull_request AND push (to main); github-pr-check assumes PR
+          # context and github-check works either way.
+          reporter: github-check
+          fail_level: error
+          path: |
+            scripts
+            .githooks
+
+      - name: Skip (no script changes)
+        if: steps.filter.outputs.scripts != 'true'
+        run: echo "No scripts/ or .githooks/ changes; shellcheck skipped."
