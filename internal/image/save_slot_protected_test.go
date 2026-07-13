@@ -288,9 +288,22 @@ func TestSaveSlotProtected_NilLoggerDoesNotPanic(t *testing.T) {
 // naming list has no slot to protect. Fail rather than guess.
 func TestSaveSlotProtected_NoConfiguredNames(t *testing.T) {
 	t.Parallel()
-	_, err := SaveSlotProtected(t.TempDir(), "fanart", nil, makeJPEG(t, 10, 10), nil, discardLogger())
+	dir := t.TempDir()
+	_, err := SaveSlotProtected(dir, "fanart", nil, makeJPEG(t, 10, 10), nil, discardLogger())
 	if err == nil {
 		t.Fatal("expected an empty naming list to fail")
+	}
+	// Assert the SPECIFIC error. "some error came back" would also be satisfied by a
+	// backup failure or a save failure, which are different bugs with different fixes --
+	// and by a nil-deref panic recovered somewhere upstream.
+	const want = `no filenames configured for image type "fanart"`
+	if err.Error() != want {
+		t.Errorf("wrong error for an empty naming list:\n got: %v\nwant: %s", err, want)
+	}
+	// And it must fail BEFORE touching the filesystem: with no slot named, there is
+	// nothing it could legitimately back up or write.
+	if HasBackup(dir, "fanart") {
+		t.Error("an empty naming list wrote a backup; it should have failed before any filesystem work")
 	}
 }
 
