@@ -146,9 +146,19 @@ jobs:
             // Resolve each family against the union AND the PR's current labels,
             // so a PR that is ALREADY mislabeled gets repaired, not just
             // prevented. (The old code was add-only and could never repair one.)
-            const existing = new Set(
-              context.payload.pull_request.labels.map(l => l.name)
-            );
+            //
+            // Read the current labels from the API, NOT from
+            // context.payload.pull_request.labels. The payload is a snapshot
+            // taken when the event fired and can be stale -- the gate step below
+            // already re-fetches for exactly this reason. Acting on a stale set
+            // would silently SKIP removing a losing label that is really on the
+            // PR, which is the repair this step exists to perform.
+            const prNow = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            const existing = new Set(prNow.data.labels.map(l => l.name));
             const candidates = new Set([...toApply, ...existing]);
             const toRemove = new Set();
 
