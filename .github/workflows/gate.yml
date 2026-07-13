@@ -499,6 +499,17 @@ jobs:
   # only reports/fails on diagnostics in files that are part of the current
   # diff, so pre-existing shellcheck findings in an untouched script do not
   # block this PR.
+  #
+  # The `path` list covers every tracked *.sh file, not just scripts/ and
+  # .githooks/ -- build/docker/entrypoint.sh in particular is a production
+  # path and was previously never linted (#2445).
+  #
+  # The reviewdog step only runs on same-repo PRs: its `github-check`
+  # reporter needs `checks: write` to create a check run, but GITHUB_TOKEN is
+  # read-only on a fork PR, so the step would hard-fail on every external
+  # contribution with zero shellcheck signal to show for it. On a fork PR the
+  # fallback step runs shellcheck directly and fails the job on a real
+  # finding, without attempting to post a check run.
   # ---------------------------------------------------------------------------
   shellcheck:
     name: Shellcheck
@@ -507,7 +518,6 @@ jobs:
     permissions:
       contents: read
       checks: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -521,10 +531,14 @@ jobs:
             scripts:
               - 'scripts/**'
               - '.githooks/**'
+              - 'build/docker/entrypoint.sh'
+              - 'docs/site/build-api-reference.sh'
+              - 'docs/hero/**'
+              - 'tests/load/run.sh'
 
       # SHA verified via: gh api repos/reviewdog/action-shellcheck/git/ref/tags/v1.32.0 --jq '.object.sha'
-      - name: Run shellcheck
-        if: steps.filter.outputs.scripts == 'true'
+      - name: Run shellcheck (same-repo PR / push)
+        if: steps.filter.outputs.scripts == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: reviewdog/action-shellcheck@853366d6a4afe65985b8f9ba43924a4afc0a45c9 # v1.32.0
         with:
           # github-check (not github-pr-check): this job runs on both
@@ -535,6 +549,18 @@ jobs:
           path: |
             scripts
             .githooks
+            build/docker/entrypoint.sh
+            docs/site/build-api-reference.sh
+            docs/hero
+            tests/load/run.sh
+
+      - name: Run shellcheck (fork PR -- no check-run annotations)
+        # ubuntu-latest ships shellcheck preinstalled; no install step needed.
+        if: steps.filter.outputs.scripts == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          shellcheck scripts/*.sh scripts/lib/*.sh .githooks/* \
+            build/docker/entrypoint.sh docs/site/build-api-reference.sh \
+            docs/hero/*.sh docs/hero/mocks/*.sh tests/load/run.sh
 
       - name: Skip (no script changes)
         if: steps.filter.outputs.scripts != 'true'
