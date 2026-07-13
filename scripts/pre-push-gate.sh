@@ -540,14 +540,13 @@ else
   # this script's silent HEAD~1 fallback. Letting the child resolve BASE
   # avoids narrowing patch coverage to only the tip commit on a branch
   # whose base ref isn't reachable.
-  # Prefer the repo-vendored helper so a fresh clone works without any
-  # user-local install. Fall back to ~/.claude/scripts/patch-coverage.sh only
-  # if the repo copy is missing (e.g. mid-rebase against a commit that
-  # pre-dates the vendoring).
-  PATCH_COVERAGE_HELPER="$SCRIPT_DIR/patch-coverage.sh"
-  if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
-    PATCH_COVERAGE_HELPER="$HOME/.claude/scripts/patch-coverage.sh"
-  fi
+  #
+  # This helper lives only in the orchestrate plugin (~/.claude/scripts/),
+  # not vendored in-repo: a prior repo-vendored copy carried a silent
+  # wrong-number bug (summed nstmts across duplicate coverage blocks under
+  # -coverpkg=./..., collapsing readings toward 0) and shadowed the fixed
+  # plugin copy (#2437).
+  PATCH_COVERAGE_HELPER="$HOME/.claude/scripts/patch-coverage.sh"
   if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
     echo "pre-push-gate: patch-coverage.sh not found in scripts/ or ~/.claude/scripts/" >&2
     exit 1

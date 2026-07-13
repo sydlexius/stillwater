@@ -189,7 +189,7 @@ See `docs/milestone-protocol.md`. Start with scope assessment, create `~/.claude
 
 - `scripts/pre-push-gate.sh` -- deterministic pre-push checks (tests, OpenAPI, generated files, lint, patch coverage). Run automatically by the pre-push git hook; do not invoke manually as a standalone pre-PR step (see PR Workflow).
 - `scripts/dev-restart.sh` -- canonical dev rebuild + restart (use this; never kill by port)
-- `scripts/patch-coverage.sh` -- patch-level coverage check (called by pre-push-gate)
+- `~/.claude/scripts/patch-coverage.sh` (orchestrate plugin; not vendored in-repo) -- patch-level coverage check (called by pre-push-gate)
 - `scripts/coverage-floor.sh` -- per-package coverage floor enforcement (called by pre-push-gate)
 - `scripts/smoke.sh` -- API smoke tests against a running instance
 - `scripts/smoke-provider-failure.sh` -- fault-injection smoke harness for provider failure surfaces
