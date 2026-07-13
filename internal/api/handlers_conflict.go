@@ -402,17 +402,24 @@ func (r *Router) applyStillwaterManaged(ctx context.Context, conn *connection.Co
 // rollbackStillwaterManaged best-effort restores the peer to the snapshotted
 // state when applyStillwaterManaged fails after the snapshot was available.
 // It clears the persisted pre-Stillwater config row only when owned is true
-// -- i.e. this call captured the snapshot itself. When the snapshot was
-// reused from a prior successful enable (owned=false), it must survive this
-// rollback: clearing it here would destroy the only copy of the user's
-// original config, the exact #2422 data-loss scenario. Rollback failures are
-// logged but not returned: the caller surfaces the original failure so the
-// user sees the proximate cause rather than a derived rollback error.
+// -- i.e. this call captured the snapshot itself -- AND the peer restore
+// above actually succeeded. When the snapshot was reused from a prior
+// successful enable (owned=false), it must survive this rollback: clearing
+// it here would destroy the only copy of the user's original config, the
+// exact #2422 data-loss scenario. The same is true when the restore fails:
+// the peer is left in its Stillwater-managed (savers disabled) state, so the
+// snapshot is the only way a retry can ever recover the original config --
+// clearing it then would strand the user with disabled savers and nothing
+// to restore from. The snapshot is only cleared once the peer is known to
+// be restored. Rollback failures are logged but not returned: the caller
+// surfaces the original failure so the user sees the proximate cause rather
+// than a derived rollback error.
 func (r *Router) rollbackStillwaterManaged(ctx context.Context, conn *connection.Connection, snapshot string, owned bool, stage string) {
-	if err := r.restoreLibraryOptions(ctx, conn, snapshot); err != nil {
-		r.logger.Error("rollback restoreLibraryOptions failed", "connection_id", conn.ID, "stage", stage, "error", err)
+	restoreErr := r.restoreLibraryOptions(ctx, conn, snapshot)
+	if restoreErr != nil {
+		r.logger.Error("rollback restoreLibraryOptions failed", "connection_id", conn.ID, "stage", stage, "error", restoreErr)
 	}
-	if !owned {
+	if !owned || restoreErr != nil {
 		return
 	}
 	if err := r.connectionService.SetPreStillwaterConfig(ctx, conn.ID, ""); err != nil {

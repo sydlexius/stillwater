@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 	"github.com/sydlexius/stillwater/internal/encryption"
 )
 
@@ -611,12 +613,15 @@ func TestSetStillwaterManaged_DisableReturns502OnPeerRestoreFailure(t *testing.T
 	}
 }
 
-// TestSetStillwaterManaged_RollbackRestoreFailureLogged covers the rollback
-// path's logging branch: when applyStillwaterManaged fails AND the rollback
-// restoreLibraryOptions also fails (peer is fully broken), the handler must
-// still surface the original 502 to the caller and the snapshot row must
-// still be cleared. The rollback restore error is logged but not returned.
-func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
+// TestSetStillwaterManaged_RollbackRestoreFailurePreservesSnapshot covers
+// the rollback path's data-loss guard: when applyStillwaterManaged fails AND
+// the rollback restoreLibraryOptions also fails (peer is fully broken), the
+// handler must still surface the original 502 to the caller, and the
+// snapshot row must NOT be cleared -- the peer is left in its
+// Stillwater-managed (savers disabled) state, so the snapshot is the only
+// way a retry can ever recover the user's original config. The rollback
+// restore error is logged but not returned.
+func TestSetStillwaterManaged_RollbackRestoreFailurePreservesSnapshot(t *testing.T) {
 	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
 
@@ -626,7 +631,7 @@ func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 	// a second POST to restore the original config (which also 500s,
 	// driving the restoreLibraryOptions error branch). A regression that
 	// silently skips the restore call would leave postCount at 1, but the
-	// outer effects (502 + cleared snapshot) would still match. Without
+	// outer effects (502 + preserved snapshot) would still match. Without
 	// this counter the test cannot distinguish "rollback ran and failed"
 	// from "rollback was never attempted".
 	var (
@@ -666,6 +671,21 @@ func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
+	// The disable/rollback-restore path below never succeeds against the
+	// peer, so the library options observed by a fresh snapshot call here
+	// (before the handler mutates anything) match exactly what
+	// applyStillwaterManaged captures and persists as PreStillwaterConfigJSON,
+	// modulo the snapshotted_at timestamp -- this is the baseline the
+	// surviving snapshot's library data is checked against below.
+	wantSnapshotJSON, err := r.snapshotLibraryOptions(ctx, conn)
+	if err != nil {
+		t.Fatalf("capturing expected snapshot: %v", err)
+	}
+	var wantSnapshot mediabrowser.LibraryWriteBackSnapshot
+	if err := json.Unmarshal([]byte(wantSnapshotJSON), &wantSnapshot); err != nil {
+		t.Fatalf("decoding expected snapshot: %v", err)
+	}
+
 	body := bytes.NewReader([]byte(`{"enabled":true}`))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+conn.ID+"/stillwater-managed", body)
 	req.SetPathValue("id", conn.ID)
@@ -687,8 +707,15 @@ func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if updated.PreStillwaterConfigJSON != "" {
-		t.Errorf("snapshot should be cleared even when rollback restore fails, got %q", updated.PreStillwaterConfigJSON)
+	if updated.PreStillwaterConfigJSON == "" {
+		t.Fatal("snapshot should survive a failed rollback restore -- clearing it here would strand the user with disabled savers and no snapshot to retry from (the #2422 data-loss variant)")
+	}
+	var gotSnapshot mediabrowser.LibraryWriteBackSnapshot
+	if err := json.Unmarshal([]byte(updated.PreStillwaterConfigJSON), &gotSnapshot); err != nil {
+		t.Fatalf("decoding surviving snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(gotSnapshot.Libraries, wantSnapshot.Libraries) {
+		t.Errorf("surviving snapshot libraries = %+v, want byte-identical to the pre-rollback original %+v", gotSnapshot.Libraries, wantSnapshot.Libraries)
 	}
 }
 
