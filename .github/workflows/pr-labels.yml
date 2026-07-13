@@ -60,7 +60,13 @@ jobs:
 
             // Parse issue references from the PR body.
             const body = context.payload.pull_request.body || '';
-            const pattern = /(?:fix(?:es)?|close[sd]?|resolve[sd]?)\s+#(\d+)/gi;
+            // `Part of #N` is the repo's HOUSE CONVENTION for an epic-child PR: it
+            // links the PR to the epic WITHOUT auto-closing it (GitHub only
+            // auto-closes on fixes/closes/resolves). Omitting it from this pattern
+            // meant the rule that protects an epic from being auto-closed was the
+            // same rule that made this automation skip the PR entirely -- silently,
+            // with the job reporting success (#2412).
+            const pattern = /\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?|part\s+of)\s+#(\d+)/gi;
             const issueNumbers = [];
             let match;
             while ((match = pattern.exec(body)) !== null) {
