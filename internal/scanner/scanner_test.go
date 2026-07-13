@@ -2136,11 +2136,12 @@ func TestScan_RecoversFromPanic(t *testing.T) {
 	}
 }
 
-// TestPostScanHook_RunsAfterScanCompletes locks the hook contract the #2380
+// TestPostScanHook_RunsBeforeScanCompletes locks the hook contract the #2380
 // path-mapping re-run depends on: the hook fires once per scan, and it runs
-// inside the scan's WaitGroup slot so Shutdown is a deterministic join point
-// (a caller that waited for the scan has also waited for the hook).
-func TestPostScanHook_RunsAfterScanCompletes(t *testing.T) {
+// BEFORE the scan's status is stamped "completed" (inside the scan's
+// WaitGroup slot), so a caller that observes "completed" has also implicitly
+// waited for the hook.
+func TestPostScanHook_RunsBeforeScanCompletes(t *testing.T) {
 	// An empty library keeps the test on the scan LIFECYCLE (which is what the
 	// hook contract is about) rather than on artist persistence, which needs a
 	// seeded library row.
