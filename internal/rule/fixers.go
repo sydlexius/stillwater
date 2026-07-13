@@ -1808,8 +1808,10 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 // deletionSetFor. The two rules differ in how much trust their answer earns,
 // not in what is done with it:
 //
-//   - image_duplicate_exact matches on byte equality, which cannot be wrong,
-//     so its rule seeds to auto mode and this fixer runs during evaluation.
+//   - image_duplicate_exact matches on byte equality, which cannot be wrong --
+//     but the rule still seeds to manual mode (a destructive rule should not
+//     start deleting a user's files on upgrade without them asking; see the
+//     rule's definition in service.go). An operator can opt it into auto.
 //   - image_duplicate matches on perceptual similarity, which is a judgement,
 //     so its rule seeds to manual mode and this fixer runs only when a user
 //     triggers FixViolation. It implements no CandidateDiscoverer, so manual

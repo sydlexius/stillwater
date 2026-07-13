@@ -271,7 +271,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		FixBehavior: "Removes byte-identical fanart duplicates: for each group of fanart slots whose files have the same content hash, keeps the lowest-numbered slot and deletes the others, then renumbers the survivors into a contiguous sequence.",
 		Conditional: true,
 		Caveats: []string{
-			"Runs automatically. Byte-identical files carry no distinct artwork, so removing the extra copies cannot lose anything.",
+			"Ships in manual mode by default. Byte-identical files carry no distinct artwork, so removing the extra copies cannot lose anything.",
 			"Skipped on shared-filesystem libraries.",
 			"Does not catch re-encoded or re-tagged copies of the same picture. Two files can look identical and still differ byte-for-byte (a re-saved JPEG, or the same image saved twice with different provenance recorded in it). Those are found by the 'No duplicate images' rule instead.",
 			"Only fanart is checked, because it is the only image type with more than one slot.",

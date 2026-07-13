@@ -36,7 +36,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Banner minimum resolution](#banner-minimum-resolution) | Image | Disabled, auto | Yes |
 | [Extraneous image files](#extraneous-image-files) | Image | Enabled, manual | Sometimes |
 | [No duplicate images](#no-duplicate-images) | Image | Disabled, manual | Sometimes |
-| [No byte-identical images](#no-byte-identical-images) | Image | Enabled, auto | Sometimes |
+| [No byte-identical images](#no-byte-identical-images) | Image | Enabled, manual | Sometimes |
 | [Backdrop/fanart sequencing](#backdropfanart-sequencing) | Image | Disabled, manual | Yes |
 | [Minimum backdrop count](#minimum-backdrop-count) | Image | Disabled, manual | Detection-only |
 | [Logo excessive padding](#logo-excessive-padding) | Image | Disabled, manual | Yes |
@@ -609,7 +609,7 @@ After:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (duplicate fanart2.
 
 ## No byte-identical images
 
-**Category:** Image &middot; **Default:** Enabled, auto &middot; **Severity:** warning
+**Category:** Image &middot; **Default:** Enabled, manual &middot; **Severity:** warning
 
 Fanart slots should not contain byte-identical copies of the same file. Detection compares file hashes rather than image content, so a match is exact and the redundant copy is always safe to remove. Visually identical images that are not byte-identical (for example a re-encoded or re-tagged copy) are the separate 'No duplicate images' rule's concern.
 
@@ -631,7 +631,7 @@ After:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (the identical copy
 
 **Caveats:**
 
-- Runs automatically. Byte-identical files carry no distinct artwork, so removing the extra copies cannot lose anything.
+- Ships in manual mode by default. Byte-identical files carry no distinct artwork, so removing the extra copies cannot lose anything.
 - Skipped on shared-filesystem libraries.
 - Does not catch re-encoded or re-tagged copies of the same picture. Two files can look identical and still differ byte-for-byte (a re-saved JPEG, or the same image saved twice with different provenance recorded in it). Those are found by the 'No duplicate images' rule instead.
 - Only fanart is checked, because it is the only image type with more than one slot.
