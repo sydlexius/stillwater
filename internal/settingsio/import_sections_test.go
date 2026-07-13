@@ -176,6 +176,126 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 	}
 }
 
+// TestImportConnections_ManagedWithoutSnapshotNormalizedOnCreate proves the
+// #2422 import-side invariant guard: an envelope with managed=true but an
+// empty pre_stillwater_config_json must not be persisted verbatim on a
+// fresh insert. Left as-is, the conflict detector's snapshot-unaware auto
+// re-disable path would PATCH the peer to clear its savers with nothing on
+// file to restore -- the same destructive-clear failure mode as the toggle
+// bug, reached via import instead.
+func TestImportConnections_ManagedWithoutSnapshotNormalizedOnCreate(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	conns := []ConnectionExport{{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key1", Enabled: true,
+		FeatureManageServerFiles: true,
+		PreStillwaterConfigJSON:  "",
+	}}
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true, true); err != nil {
+		t.Fatalf("importConnections: %v", err)
+	}
+
+	all, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(all))
+	}
+	got := all[0]
+	if got.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should be normalized to false for an imported managed=true/empty-snapshot connection")
+	}
+	if got.PreStillwaterConfigJSON != "" {
+		t.Errorf("PreStillwaterConfigJSON should remain empty, got %q", got.PreStillwaterConfigJSON)
+	}
+}
+
+// TestImportConnections_ManagedWithoutSnapshotNormalizedOnUpdate is the
+// update-path companion: an existing target row is overwritten by an
+// incoming envelope carrying the same inconsistent managed=true/empty-
+// snapshot pairing. ImportUpdateTx must normalize it the same way
+// ImportCreateTx does.
+func TestImportConnections_ManagedWithoutSnapshotNormalizedOnUpdate(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	seed := &connection.Connection{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key1", Enabled: true,
+	}
+	if err := connSvc.Create(ctx, seed); err != nil {
+		t.Fatalf("seeding target connection: %v", err)
+	}
+
+	conns := []ConnectionExport{{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key2", Enabled: true,
+		FeatureManageServerFiles: true,
+		PreStillwaterConfigJSON:  "",
+	}}
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true, true); err != nil {
+		t.Fatalf("importConnections (update): %v", err)
+	}
+
+	all, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(all))
+	}
+	got := all[0]
+	if got.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should be normalized to false for an updated managed=true/empty-snapshot connection")
+	}
+	if got.PreStillwaterConfigJSON != "" {
+		t.Errorf("PreStillwaterConfigJSON should remain empty, got %q", got.PreStillwaterConfigJSON)
+	}
+}
+
+// TestImportConnections_ManagedWithSnapshotPreservedOnCreate is the
+// companion assertion: a consistent managed=true + non-empty-snapshot
+// envelope must be preserved unchanged, proving the normalization is
+// narrowly scoped to the inconsistent pairing.
+func TestImportConnections_ManagedWithSnapshotPreservedOnCreate(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	conns := []ConnectionExport{{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key1", Enabled: true,
+		FeatureManageServerFiles: true,
+		PreStillwaterConfigJSON:  `{"some":"snapshot"}`,
+	}}
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true, true); err != nil {
+		t.Fatalf("importConnections: %v", err)
+	}
+
+	all, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(all))
+	}
+	got := all[0]
+	if !got.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should remain true for a consistent managed+snapshot import")
+	}
+	if got.PreStillwaterConfigJSON != `{"some":"snapshot"}` {
+		t.Errorf("PreStillwaterConfigJSON should be preserved unchanged, got %q", got.PreStillwaterConfigJSON)
+	}
+}
+
 // TestImportConnections_PreV14EnvelopePreservesV14Fields proves that when a
 // legacy (pre-1.4) envelope updates an existing target connection, the four
 // v1.4-only fields the envelope cannot carry are NOT overwritten with their
