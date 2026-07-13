@@ -100,13 +100,102 @@ jobs:
               return;
             }
 
-            // Only add labels not already present on the PR.
+            // ---------------------------------------------------------------
+            // Dedupe + elevate mutually-exclusive families (#2499).
+            //
+            // The union above is correct for ADDITIVE labels (ci, security,
+            // bug, ...): a PR closing several issues really is all of those
+            // things. It is WRONG for families whose members are mutually
+            // exclusive. #2498 (closing three issues) ended up labeled
+            // `priority: high` + `medium` + `low`, `scope: small` + `medium`,
+            // and BOTH `needs-docs-review` and `docs: not-required` -- the PR
+            // asserting three different priorities at once, and the gate
+            // passing anyway because it only requires *a* valid label.
+            //
+            // Each family collapses to exactly ONE member, ELEVATED to the most
+            // conservative value present. Direction matters: a PR closing N
+            // issues genuinely IS the union of that work, so we elevate rather
+            // than take the first or the lowest. Never under-prioritize, never
+            // under-scope, never silently skip a docs review.
+            //
+            // Each array is ordered MOST-conservative first (index 0 wins).
+            const EXCLUSIVE_FAMILIES = {
+              priority: ['priority: critical', 'priority: high', 'priority: medium', 'priority: low'],
+              scope: ['scope: large', 'scope: medium', 'scope: small'],
+              docs: ['needs-docs-review', 'docs: not-required'],
+            };
+
+            // Guard the table against label renames/additions. A repo label that
+            // LOOKS like a family member but is not ranked would fall through as
+            // an additive label and silently re-introduce the union this fixes.
+            // Fail loudly instead of quietly doing the wrong thing.
+            const ranked = new Set(Object.values(EXCLUSIVE_FAMILIES).flat());
+            const unranked = [...validLabels].filter(
+              l => /^(priority|scope|docs):/.test(l) && !ranked.has(l)
+            );
+            if (unranked.length > 0) {
+              core.setFailed(
+                `Label(s) ${unranked.join(', ')} look like members of a mutually-exclusive ` +
+                `family but are not ranked in EXCLUSIVE_FAMILIES in this workflow. ` +
+                `Add them (most-conservative first) so the elevator can order them. ` +
+                `Leaving them unranked would silently re-introduce conflicting labels.`
+              );
+              return;
+            }
+
+            // Resolve each family against the union AND the PR's current labels,
+            // so a PR that is ALREADY mislabeled gets repaired, not just
+            // prevented. (The old code was add-only and could never repair one.)
             const existing = new Set(
               context.payload.pull_request.labels.map(l => l.name)
             );
+            const candidates = new Set([...toApply, ...existing]);
+            const toRemove = new Set();
+
+            for (const [family, order] of Object.entries(EXCLUSIVE_FAMILIES)) {
+              const present = order.filter(l => candidates.has(l));
+              if (present.length === 0) continue;
+              const winner = present[0];               // order is most-conservative first
+              for (const loser of present.slice(1)) {
+                toApply.delete(loser);
+                if (existing.has(loser)) toRemove.add(loser);
+              }
+              if (present.length > 1) {
+                core.info(
+                  `${family}: elevated to "${winner}" (dropped ${present.slice(1).join(', ')})`
+                );
+              }
+            }
+
+            // Remove losing family members already on the PR.
+            //
+            // Loop safety: removeLabel fires an `unlabeled` event, but THIS step
+            // is skipped on labeled/unlabeled (see the `if:` above), so the
+            // elevator cannot re-trigger itself. The gate step still re-runs and
+            // re-checks, which is what we want.
+            for (const loser of toRemove) {
+              core.info(`Removing conflicting label: ${loser}`);
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.pull_request.number,
+                  name: loser,
+                });
+              } catch (err) {
+                // 404 = already gone (race with a concurrent run). Anything else
+                // is real: surface it rather than leaving a conflicting label on.
+                if (err.status === 404) {
+                  core.info(`  ${loser} was already removed`);
+                } else {
+                  core.warning(`Could not remove ${loser}: ${err.message}`);
+                }
+              }
+            }
+
             const missing = [...toApply].filter(l => !existing.has(l));
             if (missing.length === 0) {
-              core.info('All inferred labels already present on PR');
+              core.info('No new labels to apply');
               return;
             }
 
