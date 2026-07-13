@@ -2,13 +2,21 @@
 description: Get artwork from providers or the web, crop in-browser, save canonical filenames.
 ---
 
-<!-- code: internal/api/router.go (POST /artists/{id}/images/upload, /fetch, /crop, /logo/trim, GET /search, /websearch, fanart batch + reorder + assign endpoints), internal/api/handlers_image.go (maxUploadSize 25MB), internal/image/processor.go (Resize, IsLowResolution thresholds), web/templates/artist.templ (cropper integration), web/templates/backdrop_management.templ (per-slot crop/fetch buttons). -->
+<!-- code: internal/api/router.go (POST /artists/{id}/images/upload, /fetch, /crop, /logo/trim, GET /search, /websearch, fanart batch + reorder + assign endpoints), internal/api/handlers_image.go (maxUploadSize 25MB, aspect-ratio check before save), internal/image/geometry.go (CheckGeometry, SlotAspectRatio, tolerance), internal/image/processor.go (Resize, IsLowResolution thresholds), web/templates/artist.templ (cropper integration), web/templates/backdrop_management.templ (per-slot crop/fetch buttons). -->
 
 # Fetch and crop images
 
 Stillwater handles the four image slots per artist (thumb, fanart, logo, banner) through a single workflow: choose candidates from providers (or the web, or a local file), preview them side by side, crop if needed, save. This page walks through the variations.
 
 For the *concept* (slots, multi-fanart, platform terminology), see [images](../core-concepts/images.md).
+
+## When cropping is required, not optional
+
+Thumb, fanart, and banner each expect a specific shape (logo does not). If the image you fetch or upload does not match that shape closely enough, Stillwater does not save it. Instead, the cropper opens automatically so you can crop it to fit, and the image is saved only once you confirm the crop.
+
+This applies the same way whether the image came from a provider, a web search, or a local file upload, on any slot with a required shape.
+
+If you dismiss the cropper without saving, nothing changes on disk -- the fetch or upload that triggered it did not go through. That can look like the action "did nothing"; in fact it means the image needed a crop first.
 
 ## Fetch from providers (one image)
 
