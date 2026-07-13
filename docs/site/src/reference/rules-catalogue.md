@@ -613,7 +613,7 @@ After:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (duplicate fanart2.
 
 Fanart slots should not contain byte-identical copies of the same file. Detection compares file hashes rather than image content, so a match is exact and the redundant copy is always safe to remove. Visually identical images that are not byte-identical (for example a re-encoded or re-tagged copy) are the separate 'No duplicate images' rule's concern.
 
-When the same file ends up in two fanart slots, media servers show the same backdrop twice and the extra copy wastes space for no benefit. This rule compares a hash of each file's bytes: two slots are duplicates only when their files are identical, which is a certainty rather than a similarity judgment, so the redundant copy is removed without asking. It is also the cheap half of duplicate detection, because it needs no image decoding, and every duplicate it removes is one fewer image the slower visual comparison has to consider.
+When the same file ends up in two fanart slots, media servers show the same backdrop twice and the extra copy wastes space for no benefit. This rule compares a hash of each file's bytes: two slots are duplicates only when their files are identical, which is a certainty rather than a similarity judgment -- that certainty is what makes this rule safe to trust, and safe to opt into auto mode if you want it to act without review. It is also the cheap half of duplicate detection, because it needs no image decoding, and every duplicate it removes is one fewer image the slower visual comparison has to consider.
 
 **When this fires:**
 
