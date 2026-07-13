@@ -446,16 +446,21 @@ func TestImageDuplicateExactFixer_RemovesCopiesKeepsLowestAndRenumbers(t *testin
 }
 
 // TestImageDuplicateExactFixer_NeverDeletesMerelySimilarFiles is the most
-// important guard in this file, because the exact rule runs AUTOMATICALLY and
-// deletes files.
+// important guard in this file, because the exact fixer DELETES FILES.
+//
+// The rule ships Manual by default, but auto is a legitimate mode an
+// operator can opt into (and a future contributor could flip the default
+// back). This guard matters because the exact fixer can run unattended when
+// an operator chooses that, not because it does so by default: the danger
+// didn't go away with the default, it just got more subtle.
 //
 // The two fanart files here are perceptually identical (same picture) but not
 // byte-identical (re-encoded at a different quality). The perceptual rule is
 // entitled to flag them -- but it is manual, so a human decides. The exact
 // fixer must delete NOTHING here. If it were ever wired to the perceptual
-// deletion set, it would auto-delete a file on a similarity judgement, which
-// is exactly the destructive false positive the two-tier split exists to
-// prevent. Both files must survive.
+// deletion set, an operator running it on auto would get a file deleted on a
+// similarity judgement, which is exactly the destructive false positive the
+// two-tier split exists to prevent. Both files must survive.
 func TestImageDuplicateExactFixer_NeverDeletesMerelySimilarFiles(t *testing.T) {
 	_, db := newDupTestEngine(t)
 	insertTestArtist(t, db, "art-similar", "Similar Artist")
