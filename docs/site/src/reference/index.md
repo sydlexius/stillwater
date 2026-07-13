@@ -16,11 +16,11 @@ The map for "where do I find the exact list of X?" Each page is a deep enumerati
 
     [Read more](settings-by-tab.md)
 
-- __Rules catalogue__
+- __Rules catalog__
 
     ---
 
-    All 24 built-in rules with their defaults, configurable knobs, and what each fix does.
+    All 25 built-in rules with their defaults, configurable knobs, and what each fix does.
 
     [Read more](rules-catalogue.md)
 
