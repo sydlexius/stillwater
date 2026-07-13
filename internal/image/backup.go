@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -324,7 +325,17 @@ func BackupSlot(dir, imageType, fileName string) error {
 // Routes the bytes through Save so CleanupConflictingFormats drops the half-written
 // post-edit format -- a png-original overwritten with jpeg data restores the png AND
 // removes the jpg, rather than leaving both.
-func RestoreSlot(dir, imageType, fileName string, meta *ExifMeta, logger *slog.Logger) error {
+//
+// useSymlinks is forwarded to that Save so the ROLLBACK cannot disagree with the SAVE
+// about symlink semantics. It used to be hardcoded false here, which was invisible
+// while fanart was the only caller (Save disables symlinking for fanart regardless)
+// and would have bitten the first non-fanart caller during a rollback -- i.e. exactly
+// when the user's data is already at risk (#2446).
+//
+// Restoring ONE slot writes ONE real file: this Save is handed a single name, so it
+// takes Save's i == 0 path and the flag changes nothing today. It is threaded through
+// so the parameter tells the truth and stays correct if that ever changes.
+func RestoreSlot(dir, imageType, fileName string, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) error {
 	typeDir, err := backupTypeDir(dir, imageType)
 	if err != nil {
 		return err
@@ -355,7 +366,7 @@ func RestoreSlot(dir, imageType, fileName string, meta *ExifMeta, logger *slog.L
 		}
 		return fmt.Errorf("reading slot backup: %w", err)
 	}
-	if _, saveErr := Save(dir, imageType, data, []string{backupName}, false, meta, logger); saveErr != nil {
+	if _, saveErr := Save(dir, imageType, data, []string{backupName}, useSymlinks, meta, logger); saveErr != nil {
 		return fmt.Errorf("restoring slot via save: %w", saveErr)
 	}
 	// Consume the backup. Best-effort: the restore has already landed on disk.
@@ -398,6 +409,65 @@ func slotMutex(dir, imageType, fileName string) *sync.Mutex {
 	return mu.(*sync.Mutex)
 }
 
+// protectedSlotNames returns the naming entries SaveSlotProtected backs up: ONE per
+// distinct slot, in naming order. fanart.jpg and fanart.png are the same slot in two
+// formats (slotBase), so only the first is kept -- BackupSlot probes alternate
+// extensions anyway and a second pass would just re-copy the same original.
+//
+// skipped holds entries that do NOT name a slot in this directory, i.e. anything with a
+// path separator. Those cannot be keyed into the flat .sw-backup/<type>/ dir: the backup
+// is stored under filepath.Base(original), so backing up "sub/fanart.jpg" would write
+// over the TOP-LEVEL fanart.jpg's backup -- destroying the primary's only recovery copy
+// while appearing to add protection. ValidateImageNaming rejects "/" and "\" in a
+// configured filename, so a validated profile cannot produce one; they are returned to
+// the caller to be reported rather than dropped silently.
+func protectedSlotNames(naming []string) (protected, skipped []string) {
+	seen := make(map[string]bool, len(naming))
+	for _, name := range naming {
+		if name != filepath.Base(name) ||
+			strings.ContainsRune(name, '/') ||
+			strings.ContainsRune(name, '\\') ||
+			strings.ContainsRune(name, os.PathSeparator) {
+			skipped = append(skipped, name)
+			continue
+		}
+		base := slotBase(name)
+		if base == "" || seen[base] {
+			continue
+		}
+		seen[base] = true
+		protected = append(protected, name)
+	}
+	return protected, skipped
+}
+
+// lockSlots takes the per-slot lock for EVERY slot a save is about to touch and returns
+// the release func.
+//
+// The locks are acquired in sorted order. Two saves whose naming lists overlap (say
+// [fanart.jpg, backdrop.jpg] and [backdrop.jpg, fanart.jpg]) would otherwise be able to
+// grab the same two mutexes in opposite orders and deadlock. A fixed global order makes
+// that impossible.
+func lockSlots(dir, imageType string, names []string) func() {
+	bases := make([]string, 0, len(names))
+	for _, name := range names {
+		bases = append(bases, slotBase(name))
+	}
+	sort.Strings(bases)
+
+	locked := make([]*sync.Mutex, 0, len(bases))
+	for _, base := range bases {
+		mu := slotMutex(dir, imageType, base)
+		mu.Lock()
+		locked = append(locked, mu)
+	}
+	return func() {
+		for i := len(locked) - 1; i >= 0; i-- {
+			locked[i].Unlock()
+		}
+	}
+}
+
 // SaveSlotProtected performs a DESTRUCTIVE write to ONE image slot: it backs the
 // existing image up first (BackupSlot), and puts it back (RestoreSlot) if the save
 // fails. It is THE chokepoint every destructive slot write must go through.
@@ -418,61 +488,94 @@ func slotMutex(dir, imageType, fileName string) *sync.Mutex {
 // primitives do and because callers outside internal/api (the rule engine's fixers)
 // must be able to reach it. There is exactly one implementation of this policy.
 //
-// naming[0] is the slot's canonical name and is the backup key. THAT NAME IS ALL
-// THE BACKUP COVERS. Save writes every name in naming, but only naming[0] is
-// backed up, so a rollback restores only naming[0]; any other configured name is
-// left holding the failed write's bytes (#2434). Nothing today configures a
-// second fanart name, which is why that gap is tracked rather than fixed here --
-// but do not read this function as protecting names it does not.
+// EVERY name in naming is backed up, not just naming[0]. Save writes each configured
+// name as its own real file for fanart (symlinkEligible is false), and each write runs
+// its own CleanupConflictingFormats DELETE. With naming ["fanart.jpg", "backdrop.jpg"]
+// and a backdrop.png on disk, backing up only naming[0] left backdrop.png deleted with
+// no backup and a rollback that restored only fanart.* (#2434). DefaultFileNames["fanart"]
+// is a four-name list and ImageNaming.Fanart is user-editable and uncapped, so a
+// multi-name list is the norm, not an edge case.
 //
-// CONCURRENCY: the whole backup -> save -> rollback sequence is ONE critical
-// section, serialized per slot (see slotMu). Without that, two concurrent writes
-// to the same slot interleave their steps and the ROLLBACK becomes the very thing
-// that destroys data: the loser's RestoreSlot puts stale bytes back OVER the
-// winner's successful write, and either racer's BackupSlot can clobber the other's
-// backup. Different slots (fanart vs fanart1) never contend; the same slot always
-// does.
+// Entries that are not plain filenames are NOT backed up and are logged (see
+// protectedSlotNames); they cannot be keyed into the flat backup dir without clobbering
+// a real slot's backup, and a validated profile cannot contain one.
+//
+// useSymlinks is caller-supplied and forwarded to BOTH the save and the rollback, so the
+// two can never disagree about symlink semantics (#2446). Save independently disables
+// symlinking whenever imageType == "fanart" (symlinkEligible := useSymlinks && imageType
+// != "fanart"), so every fanart caller passing false sees identical behavior either way;
+// the parameter exists so this generic chokepoint stops lying to its non-fanart callers.
+//
+// CONCURRENCY: the whole backup -> save -> rollback sequence is ONE critical section,
+// serialized across every slot the save touches (see slotMu, lockSlots). Without that,
+// two concurrent writes to the same slot interleave their steps and the ROLLBACK becomes
+// the very thing that destroys data: the loser's RestoreSlot puts stale bytes back OVER
+// the winner's successful write, and either racer's BackupSlot can clobber the other's
+// backup. Different slots (fanart vs fanart1) never contend; a shared slot always does.
 //
 // A nil logger is accepted: it falls back to slog.Default(), since this is a
 // cross-package entry point (internal/rule and others call it without
 // necessarily holding a logger) and a nil logger must never panic on the
 // failed-rollback path.
-func SaveSlotProtected(dir, imageType string, naming []string, data []byte, meta *ExifMeta, logger *slog.Logger) ([]string, error) {
+func SaveSlotProtected(dir, imageType string, naming []string, data []byte, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) ([]string, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if len(naming) == 0 {
 		return nil, fmt.Errorf("no filenames configured for image type %q", imageType)
 	}
-	targetName := naming[0]
 
-	// Take the slot lock BEFORE the backup and hold it through the rollback. The
+	protected, skipped := protectedSlotNames(naming)
+	if len(protected) == 0 {
+		return nil, fmt.Errorf("no backup-protectable filename among %v for image type %q (aborting destructive save)", naming, imageType)
+	}
+	for _, name := range skipped {
+		// Loud, never silent: this name WILL be written (Save takes the full list) but
+		// will NOT be rolled back if the save fails.
+		logger.Warn("naming entry is not a plain filename; it cannot be backed up and will NOT be restored if the save fails",
+			slog.String("dir", dir), slog.String("image_type", imageType), slog.String("name", name))
+	}
+
+	// Take the slot locks BEFORE the backups and hold them through the rollback. The
 	// lock lives here, at the chokepoint, and not in the caller: a lock a caller
 	// must remember to take is a lock the next caller forgets, and a second caller
 	// (the rule engine) is already queued behind this (#2433).
-	mu := slotMutex(dir, imageType, targetName)
-	mu.Lock()
-	defer mu.Unlock()
+	unlock := lockSlots(dir, imageType, protected)
+	defer unlock()
 
-	if bErr := BackupSlot(dir, imageType, targetName); bErr != nil {
-		return nil, fmt.Errorf("backing up the %s slot before overwrite (aborting destructive save): %w", imageType, bErr)
+	for _, name := range protected {
+		if bErr := BackupSlot(dir, imageType, name); bErr != nil {
+			return nil, fmt.Errorf("backing up the %s slot before overwrite (aborting destructive save): %w", imageType, bErr)
+		}
 	}
-	saved, saveErr := Save(dir, imageType, data, naming, false, meta, logger)
+
+	saved, saveErr := Save(dir, imageType, data, naming, useSymlinks, meta, logger)
 	if saveErr == nil {
 		return saved, nil
 	}
-	// The save failed after a successful backup. Put the original back rather than
-	// leaving the slot empty or half-written -- Save's CleanupConflictingFormats has
-	// already DELETED the original's other-format file by the time a write can fail,
-	// so without this the artwork is simply gone. A first-ever write has no backup,
-	// and that is not a failed rollback -- nothing was lost.
+	// The save failed after successful backups. Put the originals back rather than
+	// leaving the slots empty or half-written -- Save's CleanupConflictingFormats has
+	// already DELETED each original's other-format file by the time a write can fail,
+	// so without this the artwork is simply gone. Restore EVERY protected name: a
+	// mid-list failure leaves the earlier names holding the failed edit's bytes.
+	//
+	// A slot with no backup is a first-ever write, not a failed rollback -- nothing was
+	// lost there, so os.ErrNotExist is not collected as an error.
 	//
 	// Pass a nil meta so RestoreSlot re-derives fresh provenance from the restored
 	// bytes rather than stamping them with the failed edit's metadata.
-	if restoreErr := RestoreSlot(dir, imageType, targetName, nil, logger); restoreErr != nil &&
-		!errors.Is(restoreErr, os.ErrNotExist) {
+	var restoreErrs []error
+	for _, name := range protected {
+		if restoreErr := RestoreSlot(dir, imageType, name, useSymlinks, nil, logger); restoreErr != nil &&
+			!errors.Is(restoreErr, os.ErrNotExist) {
+			restoreErrs = append(restoreErrs, fmt.Errorf("%s: %w", name, restoreErr))
+		}
+	}
+	if len(restoreErrs) > 0 {
+		restoreErr := errors.Join(restoreErrs...)
 		logger.Error("rolling back a failed image slot save FAILED; the original may need manual recovery",
-			slog.String("dir", dir), slog.String("image_type", imageType), slog.String("slot", targetName),
+			slog.String("dir", dir), slog.String("image_type", imageType),
+			slog.String("slots", strings.Join(protected, ",")),
 			slog.String("save_error", saveErr.Error()), slog.String("restore_error", restoreErr.Error()))
 		return nil, fmt.Errorf("saving: %w (the original could not be restored: %w)", saveErr, restoreErr)
 	}

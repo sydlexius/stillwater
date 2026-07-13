@@ -81,14 +81,14 @@ func TestSaveSlotProtected_ConcurrentSameSlot_RollbackCannotEatAGoodWrite(t *tes
 		go func() {
 			defer wg.Done()
 			<-start
-			_, winnerErr = SaveSlotProtected(dir, "fanart", []string{"fanart.jpg"}, winnerImage, nil, discardLogger())
+			_, winnerErr = SaveSlotProtected(dir, "fanart", []string{"fanart.jpg"}, winnerImage, false, nil, discardLogger())
 		}()
 		go func() {
 			defer wg.Done()
 			<-start
 			// Same slot ("fanart"), and its second name is unwritable, so it rolls back.
 			_, loserErr = SaveSlotProtected(dir, "fanart",
-				[]string{"fanart.jpg", "blocked/fanart.jpg"}, makeJPEG(t, 60, 40), nil, discardLogger())
+				[]string{"fanart.jpg", "blocked/fanart.jpg"}, makeJPEG(t, 60, 40), false, nil, discardLogger())
 		}()
 		close(start)
 		wg.Wait()
@@ -148,7 +148,7 @@ func TestSaveSlotProtected_ConcurrentSameSlot_LastWriteIsIntact(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, errs[i] = SaveSlotProtected(dir, "fanart", []string{"fanart.jpg"}, payloads[i], nil, discardLogger())
+			_, errs[i] = SaveSlotProtected(dir, "fanart", []string{"fanart.jpg"}, payloads[i], false, nil, discardLogger())
 		}()
 	}
 	close(start)
