@@ -548,7 +548,7 @@ else
   # plugin copy (#2437).
   PATCH_COVERAGE_HELPER="$HOME/.claude/scripts/patch-coverage.sh"
   if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
-    echo "pre-push-gate: patch-coverage.sh not found in scripts/ or ~/.claude/scripts/" >&2
+    echo "pre-push-gate: patch-coverage.sh not found at ~/.claude/scripts/patch-coverage.sh (ships with the orchestrate plugin)" >&2
     exit 1
   fi
   if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=78 \
