@@ -583,6 +583,10 @@ jobs:
         # ubuntu-latest ships shellcheck preinstalled; no install step needed.
         if: steps.filter.outputs.scripts == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
         run: |
+          # nullglob: an unmatched glob (e.g. no docs/hero/mocks/*.sh files)
+          # would otherwise pass shellcheck a literal, unexpanded pattern and
+          # false-fail the job on an unrelated fork PR.
+          shopt -s nullglob
           shellcheck -S error scripts/*.sh scripts/lib/*.sh .githooks/* \
             build/docker/entrypoint.sh docs/site/build-api-reference.sh \
             docs/hero/*.sh docs/hero/mocks/*.sh tests/load/run.sh
