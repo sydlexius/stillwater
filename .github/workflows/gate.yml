@@ -539,6 +539,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          # Needed to diff against the PR base / previous push commit below.
+          fetch-depth: 0
 
       - name: Check relevant paths
         id: filter
@@ -563,6 +565,12 @@ jobs:
           # context and github-check works either way.
           reporter: github-check
           fail_level: error
+          # .githooks/pre-commit and .githooks/pre-push have no .sh extension
+          # (standard hook naming); reviewdog's default *.sh pattern would
+          # silently skip both, so the primary same-repo lint path never
+          # checks the hooks it lists as an input. This mirrors the fork-PR
+          # fallback below, which globs .githooks/* unconditionally.
+          check_all_files_with_shebangs: true
           path: |
             scripts
             .githooks
