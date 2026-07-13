@@ -399,7 +399,7 @@ func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Requ
 	slotMeta.Mode = "user"
 	slotMeta.DHash = "" // Force recomputation from the cropped image data.
 
-	saved, saveErr := r.saveFanartSlotProtected(dir, []string{targetName}, imgData, slotMeta)
+	saved, saveErr := r.saveFanartSlotProtected(req.Context(), dir, []string{targetName}, imgData, slotMeta)
 	if saveErr != nil {
 		r.logger.Error("saving cropped fanart slot",
 			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
@@ -440,7 +440,7 @@ func (r *Router) handleImageFetchFanartSlot(w http.ResponseWriter, req *http.Req
 	targetName := img.FanartFilename(primary, slot, kodiNumbering)
 	slotMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
 
-	saved, saveErr := r.saveFanartSlotProtected(dir, []string{targetName}, data, slotMeta)
+	saved, saveErr := r.saveFanartSlotProtected(req.Context(), dir, []string{targetName}, data, slotMeta)
 	if saveErr != nil {
 		r.logger.Error("saving fetched fanart slot",
 			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
@@ -1039,13 +1039,20 @@ func (r *Router) saveSingleSlotWithRollback(dir, imageType string, naming []stri
 // the paths the save is about to touch with the filesystem watcher, so the watcher can
 // tell Stillwater's own writes apart from an external editor's. The registration spans
 // the rollback too -- a restore rewrites the same paths.
-func (r *Router) saveFanartSlotProtected(dir string, naming []string, data []byte, meta *img.ExifMeta) ([]string, error) {
+//
+// useSymlinks is resolved from the active platform profile, the same single source of
+// truth every other Router save/restore call site reads, instead of the literal false
+// that used to be hardcoded inside the chokepoint (#2446). Save disables symlinking for
+// fanart regardless of the flag, so this resolves to the same on-disk result today; it
+// passes the value it MEANS rather than one that happens to agree.
+func (r *Router) saveFanartSlotProtected(ctx context.Context, dir string, naming []string, data []byte, meta *img.ExifMeta) ([]string, error) {
 	if r.expectedWrites != nil {
 		expectedPaths := img.ExpectedPaths(dir, naming)
 		r.expectedWrites.AddAll(expectedPaths)
 		defer r.expectedWrites.RemoveAll(expectedPaths)
 	}
-	return img.SaveSlotProtected(dir, "fanart", naming, data, meta, r.logger)
+	_, useSymlinks := r.getActiveNamingAndSymlinks(ctx, "fanart")
+	return img.SaveSlotProtected(dir, "fanart", naming, data, useSymlinks, meta, r.logger)
 }
 
 // processAndSaveImage processes image data (convert format, optimize) and saves it.
@@ -1090,7 +1097,7 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 	// numbered slot's backup, silently disarming the protection for fanart1.jpg,
 	// fanart2.jpg and the rest. One image type, one backup mechanism.
 	if imageType == "fanart" {
-		return r.saveFanartSlotProtected(dir, naming, converted, meta)
+		return r.saveFanartSlotProtected(ctx, dir, naming, converted, meta)
 	}
 
 	if bErr := img.BackupSingleSlot(dir, imageType, naming); bErr != nil {

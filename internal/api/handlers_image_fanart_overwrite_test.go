@@ -143,7 +143,7 @@ func TestSaveFanartSlotProtected_BacksUpTheOriginal(t *testing.T) {
 	}
 
 	// A successful overwrite must leave a recoverable backup of the original.
-	if _, err := r.saveFanartSlotProtected(dir, []string{slot}, jpegBytes(t, 120, 90), nil); err != nil {
+	if _, err := r.saveFanartSlotProtected(context.Background(), dir, []string{slot}, jpegBytes(t, 120, 90), nil); err != nil {
 		t.Fatalf("saveFanartSlotProtected: %v", err)
 	}
 	backup := filepath.Join(dir, img.BackupDirName, "fanart", slot)
@@ -161,7 +161,7 @@ func TestSaveFanartSlotProtected_BacksUpTheOriginal(t *testing.T) {
 	// before CleanupConflictingFormats can delete anything. Do not mistake this for a
 	// rollback assertion -- it holds with the rollback removed.
 	current, _ := os.ReadFile(filepath.Join(dir, slot))
-	if _, err := r.saveFanartSlotProtected(dir, []string{slot}, []byte("not an image"), nil); err == nil {
+	if _, err := r.saveFanartSlotProtected(context.Background(), dir, []string{slot}, []byte("not an image"), nil); err == nil {
 		t.Fatal("expected undecodable data to fail")
 	}
 	survived, readErr := os.ReadFile(filepath.Join(dir, slot))
@@ -227,7 +227,7 @@ func TestSaveFanartSlotProtected_RegistersExpectedWrites(t *testing.T) {
 	r.expectedWrites = tracker
 	r.logger = slog.New(probe)
 
-	if _, err := r.saveFanartSlotProtected(dir, []string{slot}, jpegBytes(t, 120, 90), nil); err != nil {
+	if _, err := r.saveFanartSlotProtected(context.Background(), dir, []string{slot}, jpegBytes(t, 120, 90), nil); err != nil {
 		t.Fatalf("saveFanartSlotProtected: %v", err)
 	}
 
@@ -263,10 +263,10 @@ func TestBackupSlot_DoesNotClobberAnotherSlotsBackup(t *testing.T) {
 		t.Fatalf("seeding slot 1: %v", err)
 	}
 
-	if _, err := r.saveFanartSlotProtected(dir, []string{"fanart.jpg"}, jpegBytes(t, 200, 100), nil); err != nil {
+	if _, err := r.saveFanartSlotProtected(context.Background(), dir, []string{"fanart.jpg"}, jpegBytes(t, 200, 100), nil); err != nil {
 		t.Fatalf("overwriting the primary: %v", err)
 	}
-	if _, err := r.saveFanartSlotProtected(dir, []string{"fanart1.jpg"}, jpegBytes(t, 210, 110), nil); err != nil {
+	if _, err := r.saveFanartSlotProtected(context.Background(), dir, []string{"fanart1.jpg"}, jpegBytes(t, 210, 110), nil); err != nil {
 		t.Fatalf("overwriting slot 1: %v", err)
 	}
 
@@ -304,7 +304,7 @@ func TestBackupSlot_PrunesAStaleBackupSoDeletedArtDoesNotResurrect(t *testing.T)
 		t.Fatalf("seeding: %v", err)
 	}
 	// Overwrite -> a backup now exists.
-	if _, err := r.saveFanartSlotProtected(dir, []string{slot}, jpegBytes(t, 120, 90), nil); err != nil {
+	if _, err := r.saveFanartSlotProtected(context.Background(), dir, []string{slot}, jpegBytes(t, 120, 90), nil); err != nil {
 		t.Fatalf("overwrite: %v", err)
 	}
 	// PRECONDITION. Without this the whole test can pass vacuously: "the deleted art did
@@ -320,7 +320,7 @@ func TestBackupSlot_PrunesAStaleBackupSoDeletedArtDoesNotResurrect(t *testing.T)
 		t.Fatalf("deleting: %v", err)
 	}
 	// A later save fails. The rollback must NOT resurrect the deleted image.
-	if _, err := r.saveFanartSlotProtected(dir, []string{slot}, []byte("not an image"), nil); err == nil {
+	if _, err := r.saveFanartSlotProtected(context.Background(), dir, []string{slot}, []byte("not an image"), nil); err == nil {
 		t.Fatal("expected undecodable data to fail")
 	}
 
@@ -368,7 +368,7 @@ func TestPrimaryOverwriteDoesNotWipeNumberedSlotBackups(t *testing.T) {
 	}
 
 	// Overwrite slot 1 -> its backup exists.
-	if _, err := r.saveFanartSlotProtected(dir, []string{"fanart1.jpg"}, jpegBytes(t, 200, 100), nil); err != nil {
+	if _, err := r.saveFanartSlotProtected(context.Background(), dir, []string{"fanart1.jpg"}, jpegBytes(t, 200, 100), nil); err != nil {
 		t.Fatalf("overwriting slot 1: %v", err)
 	}
 

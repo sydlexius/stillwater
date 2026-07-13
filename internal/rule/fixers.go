@@ -863,6 +863,13 @@ func SaveImageFromURL(ctx context.Context, client *http.Client, a *artist.Artist
 //
 // When naming is non-empty, it overrides the platform-aware resolution.
 // Returns the list of saved filenames on success.
+//
+// Fanart writes from here are DESTRUCTIVE and unattended. fanart_min_res and
+// fanart_aspect fire precisely BECAUSE a fanart already exists (it is too small or the
+// wrong shape), and the fix downloads a replacement -- so this function, reached from
+// the image fixer, from BulkExecutor.saveBestImage (bulk Mode "auto") and from the
+// apply-candidate API handler, overwrites the user's primary backdrop library-wide with
+// no confirmation. It routes through saveImageToDisk for that reason (#2433).
 func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, data []byte, naming []string, useSymlinks bool, meta *img.ExifMeta, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
 	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
@@ -874,13 +881,41 @@ func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, 
 		naming = existingImageFileNames(ctx, a.Path, imageType, platformService)
 	}
 
-	saved, err := img.Save(a.Path, imageType, converted, naming, useSymlinks, meta, logger)
+	saved, err := saveImageToDisk(a.Path, imageType, converted, naming, useSymlinks, meta, logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving image: %w", err)
 	}
 
 	setImageFlag(a, imageType)
 	return saved, nil
+}
+
+// saveImageToDisk is the rule engine's SINGLE image-write sink, and the only place in
+// internal/rule allowed to reach img.Save (see TestFanartSaveHasASingleChokepoint in
+// internal/api, which fails the build on any other direct img.Save in this package).
+//
+// FANART routes through img.SaveSlotProtected: back up the existing image, write, and
+// put the original back if the write fails. Every rule-driven fanart write lands here,
+// and every one of them is destructive -- ruleToImageType maps fanart_exists,
+// fanart_min_res and fanart_aspect to "fanart", and the latter two only fire when a
+// fanart is ALREADY on disk. Before #2433 this called img.Save directly: Save's
+// CleanupConflictingFormats DELETES the slot's other-format file before writing, so a
+// failed replacement left the user with no backdrop and nothing to restore -- running
+// unattended, across the whole library, in bulk auto-fix mode.
+//
+// EVERY OTHER TYPE (thumb/logo/banner) still goes to a bare img.Save with NO backup and
+// NO rollback. That is a REAL residual gap of the same bug class, deliberately left
+// outside this change's scope rather than papered over: the single-slot types have their
+// own backup mechanism (img.BackupSingleSlot, one-deep PER TYPE) whose prune semantics
+// differ from the slot-scoped one used here, and mixing the two in one .sw-backup/<type>/
+// directory would corrupt the Router's revert feature. Closing it means lifting the
+// Router's single-slot backup+rollback policy into internal/image as a second shared
+// chokepoint, which is its own change.
+func saveImageToDisk(dir, imageType string, data []byte, naming []string, useSymlinks bool, meta *img.ExifMeta, logger *slog.Logger) ([]string, error) {
+	if imageType == "fanart" {
+		return img.SaveSlotProtected(dir, imageType, naming, data, useSymlinks, meta, logger)
+	}
+	return img.Save(dir, imageType, data, naming, useSymlinks, meta, logger)
 }
 
 // existingImageFileNames returns the subset of canonical filenames for imageType
@@ -1234,7 +1269,11 @@ func (f *LogoPaddingFixer) fixViaDisk(ctx context.Context, a *artist.Artist, v *
 
 	naming := []string{filepath.Base(logoPath)}
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
-	savedNames, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, padMeta, f.logger)
+	// Through the shared sink, not img.Save directly, so saveImageToDisk stays the ONE
+	// place in this package that reaches the image-write primitives. A logo is
+	// single-slot, so this still lands on a bare Save today (see saveImageToDisk); the
+	// point is that a fanart write can never be added here without the guard seeing it.
+	savedNames, err := saveImageToDisk(a.Path, "logo", trimmed, naming, useSymlinks, padMeta, f.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving trimmed logo: %w", err)
 	}
