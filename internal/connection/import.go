@@ -30,6 +30,27 @@ type DBExecutor interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// normalizeImportedManagedInvariant coerces an imported connection with
+// FeatureManageServerFiles=true but an empty PreStillwaterConfigJSON to
+// unmanaged. The live toggle handler (handleSetStillwaterManaged) treats
+// that pairing as inconsistent and never produces it, but the import path
+// writes both columns verbatim with no cross-field validation. Left as-is,
+// the conflict detector's snapshot-unaware auto re-disable path (checkOne
+// in internal/conflict/detector.go) would see managed=true and PATCH the
+// peer to clear its savers with nothing on file to restore -- the same
+// destructive-clear failure mode as #2422, reached via import instead of
+// the toggle. Coercing to unmanaged is non-fatal and lets a later toggle
+// snapshot the peer's real config first. Every consistent combination
+// (managed with a snapshot, unmanaged without one) is left untouched.
+func normalizeImportedManagedInvariant(c *Connection) {
+	if !c.FeatureManageServerFiles || c.PreStillwaterConfigJSON != "" {
+		return
+	}
+	slog.Warn("import: clearing feature_manage_server_files for connection with no snapshot",
+		"connection_id", c.ID, "connection_name", c.Name, "reason", "managed=true but pre_stillwater_config_json is empty")
+	c.FeatureManageServerFiles = false
+}
+
 // ImportGetByTypeAndURLTx is the tx-aware equivalent of GetByTypeAndURL,
 // scoped to the import orchestrator so the lookup observes uncommitted
 // writes inside the same transaction.
@@ -65,6 +86,7 @@ func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, c *Connecti
 	if c.ID == "" {
 		c.ID = uuid.New().String()
 	}
+	normalizeImportedManagedInvariant(c)
 	now := time.Now().UTC()
 	c.CreatedAt = now
 	c.UpdatedAt = now
@@ -110,6 +132,7 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, c *Connecti
 	if err := c.Validate(); err != nil {
 		return fmt.Errorf("validating connection: %w", err)
 	}
+	normalizeImportedManagedInvariant(c)
 	c.UpdatedAt = time.Now().UTC()
 	encKey, err := s.encryptor.Encrypt(c.APIKey)
 	if err != nil {
