@@ -276,6 +276,155 @@ func TestImageDuplicate_ToleranceMismatchForcesRecompute(t *testing.T) {
 	}
 }
 
+// TestImageDuplicate_EvaluateClearsCacheBetweenCalls is the M3 regression test
+// (PR #2458 review round 2, adversarial-review finding). The adversarial
+// review deleted the `e.imageDupCache = nil` clear at the top of Evaluate and
+// the entire internal/rule suite stayed green -- a surviving mutant. The
+// memo's ENTIRE safety story is "cleared at the start of every Evaluate
+// call"; nothing else guarded that one line.
+//
+// Not destructive today: getCachedImageDuplicates is reachable only from the
+// two checkers (fresh=false, hardcoded), never from the destructive fixer
+// (fresh=true, calls the raw findImageDuplicates directly, confirmed in
+// F3/M4). But a stale memo one Evaluate call away from the checkers is one
+// wiring change away from becoming the "cached result feeds the fixer"
+// scenario this whole PR exists to prevent, and had no test.
+//
+// This evaluates the SAME artist twice with a NEW fanart slot added in
+// between -- not a mutation of an existing file's bytes, which would be
+// confounded by the STORED hash's own steady-state caching (#2349's separate,
+// intentional mechanism: a row whose content_hash is already persisted is
+// never re-read regardless of the imageDupCache). Only one fanart file exists
+// for the first Evaluate call (no duplicate is even possible with a single
+// slot); a second, byte-identical file and its brand-new, never-hashed DB row
+// are added before the second call. A stale imageDupCache entry from the
+// first call describes only the ORIGINAL one-row query result and would never
+// see the new row at all, regardless of what its stored hash says -- so this
+// isolates the memo specifically, not the separate stored-hash cache.
+func TestImageDuplicate_EvaluateClearsCacheBetweenCalls(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := t.Context()
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	e := NewEngine(svc, db, nil, nil, testLogger())
+	e.SetImageHashRecorder(artist.NewService(db))
+
+	insertTestArtist(t, db, "art-m3", "M3 Artist")
+	dir := t.TempDir()
+	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
+	insertTestImage(t, db, "art-m3", "fanart", 0)
+
+	a := &artist.Artist{ID: "art-m3", Name: "M3 Artist", Path: dir, LibraryID: "lib-test"}
+
+	first, err := e.Evaluate(ctx, a)
+	if err != nil {
+		t.Fatalf("first Evaluate: %v", err)
+	}
+	for _, v := range first.Violations {
+		if v.RuleID == RuleImageDuplicateExact {
+			t.Fatalf("fixture bug: first Evaluate already reports a duplicate violation (%s); "+
+				"only one fanart slot exists, so no duplicate is possible yet", v.Message)
+		}
+	}
+
+	// Add a second fanart file, byte-identical to the first, with a
+	// brand-new DB row that has never been hashed.
+	writeBytes(t, filepath.Join(dir, "fanart2.jpg"), readBytes(t, filepath.Join(dir, "fanart.jpg")))
+	insertTestImage(t, db, "art-m3", "fanart", 1)
+
+	second, err := e.Evaluate(ctx, a)
+	if err != nil {
+		t.Fatalf("second Evaluate: %v", err)
+	}
+	found := false
+	for _, v := range second.Violations {
+		if v.RuleID == RuleImageDuplicateExact {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("second Evaluate did not report the new exact-duplicate violation -- the " +
+			"per-Evaluate cache served a stale result from the first call instead of recomputing")
+	}
+}
+
+// TestImageDuplicate_FixerNeverSeesTheCheckerMemo is the M4 regression test
+// (PR #2458 review round 2, adversarial-review finding). This is the test the
+// F3 round should have shipped with and did not.
+//
+// HONEST SCOPE, stated up front because a prior comment in this file overclaimed
+// what a passing test proves and that is exactly the failure mode this whole
+// review round exists to stop: the adversarial review confirmed
+// ImageDuplicateFixer has NO *Engine field at all -- it is a wholly separate
+// type with its own db/imageHashRecorder/logger, and cannot reach
+// Engine.imageDupCache even in principle. So THIS TEST PASSES TRIVIALLY
+// TODAY. It is not evidence that today's code is correct (the structural
+// separation already proves that, independent of any test). It exists as a
+// REGRESSION GUARD against a future refactor that hands ImageDuplicateFixer
+// an *Engine reference and wires its detection call through
+// getCachedImageDuplicates instead of the raw fresh=true findImageDuplicates
+// call -- the exact trap the lead's addendum warned about. If that refactor
+// ever happens without also preserving fresh=true semantics, this test is
+// designed to catch it: it runs a checker (populating the memo with a
+// deliberately WRONG cached grouping), then mutates the artist's fanart to
+// disagree with that grouping, then asserts the FIXER acts on the fresh,
+// correct state -- which only stays true if the fixer's detection pass is
+// never served the checker's stale memo entry.
+func TestImageDuplicate_FixerNeverSeesTheCheckerMemo(t *testing.T) {
+	e, db := newDupTestEngine(t)
+	insertTestArtist(t, db, "art-m4", "M4 Artist")
+
+	dir := t.TempDir()
+	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
+	writeBytes(t, filepath.Join(dir, "fanart2.jpg"), readBytes(t, filepath.Join(dir, "fanart.jpg")))
+	insertTestImage(t, db, "art-m4", "fanart", 0)
+	insertTestImage(t, db, "art-m4", "fanart", 1)
+
+	a := &artist.Artist{
+		ID: "art-m4", Name: "M4 Artist", Path: dir, LibraryID: "lib-test",
+		FanartExists: true, FanartCount: 2,
+	}
+
+	// Run a checker: slot 0 and slot 1 are byte-identical right now, so this
+	// populates the memo with a grouping that says "slot 1 is a duplicate of
+	// slot 0, removable."
+	primaryName := resolveFanartPrimaryName(t.Context(), e.platformService)
+	memoed, err := e.getCachedImageDuplicates(t.Context(), a, primaryName, defaultImageDupTolerance, testLogger())
+	if err != nil {
+		t.Fatalf("populating the memo: %v", err)
+	}
+	if len(memoed.exactFanartToDelete) == 0 {
+		t.Fatal("fixture bug: the memoed grouping does not show slot 1 as removable")
+	}
+
+	// Now make the memoed grouping WRONG: overwrite slot 1 with a genuinely
+	// DISTINCT image. If the fixer were ever wired to consult this Engine's
+	// memo instead of its own fresh=true call, it would still see slot 0 and
+	// slot 1 as duplicates and delete slot 1 -- destroying distinct artwork
+	// on the strength of a stale grouping computed before the file changed.
+	createGradientJPEG(t, filepath.Join(dir, "fanart2.jpg"), 9)
+	distinct := readBytes(t, filepath.Join(dir, "fanart2.jpg"))
+
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), artist.NewService(db), testLogger())
+	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicateExact})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if res.Fixed {
+		t.Errorf("fixer reported Fixed=true (%q) -- it deleted a file based on a stale grouping "+
+			"instead of re-deriving from the current, now-distinct disk state", res.Message)
+	}
+
+	got := readBytes(t, filepath.Join(dir, "fanart2.jpg"))
+	if string(got) != string(distinct) {
+		t.Error("fanart2.jpg's distinct bytes were destroyed -- the fixer acted on the checker's " +
+			"stale memoed grouping instead of a fresh read")
+	}
+}
+
 // TestImageDuplicate_StoredPerceptualHashSkipsTheDecode pins the "exact-first
 // saves the decode, not the read" property. A slot that already has a stored
 // perceptual hash but no content hash still has to be read (both tiers need
@@ -911,6 +1060,108 @@ func TestImageDuplicateExactFixer_InvalidationFailureAbortsBeforeDestructiveRena
 	}
 	if _, statErr := os.Stat(filepath.Join(dir, "fanart.jpg")); statErr != nil {
 		t.Errorf("fanart.jpg (the kept original) is gone: %v", statErr)
+	}
+}
+
+// TestImageDuplicateExactFixer_StaleTmpSweepFailureStrandsNothing is the B1
+// regression test (PR #2458 review round 2, adversarial-review finding,
+// BLOCKING). Reproduces the reviewer's fault injection with ZERO code
+// mutation: a non-empty directory squats the ".tmp" path a mid-list survivor
+// needs, so the leftover-temp-file sweep's os.Remove fails with ENOTEMPTY --
+// a realistic fault on a real filesystem, no fault-injection seam required.
+//
+// Before the fix, this sweep ran INSIDE the staging loop, immediately before
+// each survivor's stage-rename, and its failure branch returned WITHOUT
+// rolling back survivors already staged earlier in the same loop -- the one
+// asymmetric exit in a function whose entire premise is two-phase crash
+// safety (the adjacent os.Rename failure branch four lines below it DOES
+// roll back). The stranded survivors sat at "fanart_renumber_N.ext.tmp",
+// invisible to DiscoverFanart; the caller's restoreStaged() only knows about
+// tombed duplicates, so it un-tombed the duplicate while the kept primary and
+// distinct artwork stayed vanished -- and the NEXT renumber's stale-tmp sweep
+// would then unlink those stranded originals PERMANENTLY.
+//
+// The fix hoists the whole sweep out of the staging loop into its own pass
+// that runs before ANY survivor is staged, so a sweep failure now always
+// happens before the first file moves: nothing to strand, nothing to roll
+// back, matching the F1 invalidate-before-rename reorder's exact reasoning.
+func TestImageDuplicateExactFixer_StaleTmpSweepFailureStrandsNothing(t *testing.T) {
+	_, db := newDupTestEngine(t)
+	insertTestArtist(t, db, "art-b1", "B1 Artist")
+
+	dir := t.TempDir()
+	// Mirrors the reviewer's reproduction: fanart.jpg=A (kept primary),
+	// fanart2.jpg=A (duplicate, will be tombed), fanart3.jpg=B (distinct),
+	// fanart4.jpg=C, fanart5.jpg=D.
+	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
+	writeBytes(t, filepath.Join(dir, "fanart2.jpg"), readBytes(t, filepath.Join(dir, "fanart.jpg")))
+	createGradientJPEG(t, filepath.Join(dir, "fanart3.jpg"), 3)
+	createGradientJPEG(t, filepath.Join(dir, "fanart4.jpg"), 4)
+	createGradientJPEG(t, filepath.Join(dir, "fanart5.jpg"), 5)
+
+	original := map[string][]byte{
+		"fanart.jpg":  readBytes(t, filepath.Join(dir, "fanart.jpg")),
+		"fanart2.jpg": readBytes(t, filepath.Join(dir, "fanart2.jpg")),
+		"fanart3.jpg": readBytes(t, filepath.Join(dir, "fanart3.jpg")),
+		"fanart4.jpg": readBytes(t, filepath.Join(dir, "fanart4.jpg")),
+		"fanart5.jpg": readBytes(t, filepath.Join(dir, "fanart5.jpg")),
+	}
+
+	for i := 0; i < 5; i++ {
+		insertTestImage(t, db, "art-b1", "fanart", i)
+	}
+
+	// Survivors (slot 1 is the duplicate, tombed) are, in order:
+	// fanart.jpg(0), fanart3.jpg(1), fanart4.jpg(2), fanart5.jpg(3).
+	// renumberFanartFiles names survivor i's staging file
+	// "fanart_renumber_{i}.jpg.tmp"; squat index 2's (fanart4.jpg's) path
+	// with a non-empty directory so os.Remove fails with ENOTEMPTY -- no
+	// source mutation, a realistic filesystem fault.
+	squatPath := filepath.Join(dir, "fanart_renumber_2.jpg.tmp")
+	if err := os.Mkdir(squatPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(squatPath, "occupied"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), artist.NewService(db), testLogger())
+	a := &artist.Artist{
+		ID: "art-b1", Name: "B1 Artist", Path: dir, LibraryID: "lib-test",
+		FanartExists: true, FanartCount: 5,
+	}
+
+	_, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicateExact})
+	if err == nil {
+		t.Fatal("Fix() = nil error, want an error (the stale-tmp sweep must fail on the squatted path)")
+	}
+
+	// THE ASSERTION: every original file must be at its ORIGINAL path with
+	// its ORIGINAL bytes. Nothing may be stranded at a .tmp path, and no
+	// distinct artwork may have vanished or been overwritten.
+	for name, want := range original {
+		got, statErr := os.ReadFile(filepath.Join(dir, name))
+		if statErr != nil {
+			t.Errorf("%s is gone: %v -- a survivor was stranded or lost by the failed renumber", name, statErr)
+			continue
+		}
+		if string(got) != string(want) {
+			t.Errorf("%s bytes changed -- got overwritten by a rollback that clobbered it", name)
+		}
+	}
+
+	// No stranded .tmp files anywhere in dir (the squatted directory itself
+	// is expected and cleaned up by t.TempDir(); this checks for renamed-away
+	// survivors, which is the actual data-loss shape).
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") && e.Name() != "fanart_renumber_2.jpg.tmp" {
+			t.Errorf("found an unexpected stranded temp file: %s -- a survivor was staged despite the "+
+				"sweep failure", e.Name())
+		}
 	}
 }
 

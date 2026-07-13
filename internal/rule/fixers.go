@@ -1993,9 +1993,37 @@ func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Cont
 
 	// restoreStaged rolls staged tombs back to their originals (best-effort),
 	// returning any restore-error descriptions for inclusion in the wrapped err.
+	//
+	// Checks occupancy before every rename rather than clobbering blindly.
+	// This restore only runs after img.RenumberFanart reports a failure, and
+	// that failure can be img.renumberFanartFiles' OWN best-effort rollback
+	// failing partway (a rename-back that errors on some, but not all, of the
+	// files it already finalized) -- in which case a just-renumbered survivor
+	// can be left sitting on exactly the path a tombed duplicate used to
+	// occupy. Renaming the tomb over an occupied path in that state would
+	// silently overwrite that survivor with the content that was supposed to
+	// be deleted -- the same destructive-rollback shape F1 closed for the
+	// invalidation-failure trigger, but via a different trigger (a rollback
+	// failure inside RenumberFanart itself) that the F1 reorder does not
+	// reach. Refusing and failing loudly, rather than overwriting, is what
+	// "never destroy data to clean up after a failure" means in practice:
+	// the tomb is left in place (recoverable, inert -- discovery ignores its
+	// suffix) instead of the alternative of silently erasing distinct
+	// artwork.
 	restoreStaged := func() []string {
 		var rollbackErrs []string
 		for _, s := range staged {
+			if _, statErr := os.Lstat(s.origPath); statErr == nil {
+				f.logger.Error("refusing to restore a staged duplicate onto an occupied path",
+					"artist", a.Name, "path", s.origPath, "tomb", filepath.Base(s.tombPath))
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf(
+					"restore %s: refused -- path is occupied (tomb left at %s)",
+					filepath.Base(s.origPath), filepath.Base(s.tombPath)))
+				continue
+			} else if !os.IsNotExist(statErr) {
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf("restore %s: checking occupancy: %v", filepath.Base(s.origPath), statErr))
+				continue
+			}
 			if rbErr := os.Rename(s.tombPath, s.origPath); rbErr != nil {
 				rollbackErrs = append(rollbackErrs, fmt.Sprintf("restore %s: %v", filepath.Base(s.origPath), rbErr))
 			}
