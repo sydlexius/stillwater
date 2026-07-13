@@ -58,19 +58,16 @@ jobs:
     name: Analyze Go
     runs-on: ubuntu-latest
     needs: [changes]
-    # Run for real when the diff can plausibly affect Go (changes.outputs.go)
-    # or on schedule/workflow_dispatch (the `changes` job's own `if:` skips it
-    # for those triggers, leaving both outputs empty/false -- fail-closed to a
-    # real run rather than treating empty as "safe to skip"). Otherwise skip:
-    # a diff with zero Go/templ files cannot change CodeQL's Go findings.
-    # always() makes the schedule/dispatch fail-closed path explicit/robust
-    # rather than relying on GitHub's evaluation of a truthy `if:` past a
-    # skipped dependency. Not a required check, so a skip here does not need
-    # a satisfier the way ci.yml's required jobs do.
-    if: |
-      always() &&
-      (needs.changes.result == 'skipped' ||
-       (needs.changes.result == 'success' && needs.changes.outputs.go == 'true'))
+    # Run for real unless we have positive, successful evidence that no
+    # Go/templ file changed. Skip ONLY when changes.result == 'success' AND
+    # go == 'false'; every other state (failure, cancellation, an empty
+    # output, or the job being skipped on schedule/workflow_dispatch) runs
+    # the real analysis. This fails closed: a `changes` job that errors or is
+    # cancelled (paths-filter action fault, checkout flake, a
+    # cancel-in-progress race) must not silently skip a security scan.
+    # Not a required check, so a skip here does not need a satisfier the way
+    # ci.yml's required jobs do.
+    if: always() && !(needs.changes.result == 'success' && needs.changes.outputs.go == 'false')
     permissions:
       security-events: write
       contents: read
