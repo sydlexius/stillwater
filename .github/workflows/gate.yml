@@ -84,6 +84,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          # Needed to diff against the PR base / previous push commit below.
+          fetch-depth: 0
 
       - name: Check relevant paths
         id: filter
@@ -100,6 +102,13 @@ jobs:
               - 'internal/database/migrations/**'
               - 'docs/site/src/**'
               - 'web/static/css/**'
+              # gate.yml and ci.yml are listed here deliberately, not as an
+              # instance of the "workflow file the check happens to live in"
+              # anti-pattern called out above: gate.yml is this job's own
+              # regenerate-and-diff logic (a change to it can change what
+              # this check does), and ci.yml is gen-ci-reference's actual
+              # generator input (see line 69). Both are genuine inputs, not
+              # filler.
               - '.github/workflows/gate.yml'
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-tailwind/**'
@@ -215,6 +224,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          # Needed to diff against the PR base / previous push commit below.
+          fetch-depth: 0
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -256,6 +267,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          # Needed to diff against the PR base / previous push commit below.
+          fetch-depth: 0
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -339,6 +352,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          # Needed to diff against the PR base / previous push commit below.
+          fetch-depth: 0
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -378,6 +393,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          # Needed to diff against the PR base / previous push commit below.
+          fetch-depth: 0
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
