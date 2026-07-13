@@ -707,7 +707,7 @@ components:
           description: When true, issues a follow-up GET after rename PUT to verify path wasn't coerced. Lidarr only.
         path_mappings:
           type: [array, "null"]
-          description: Host-to-platform path prefix mappings applied before a rename/merge PUT. Empty or null for non-Lidarr and shared-mount Lidarr connections.
+          description: Host-to-platform path prefix mappings applied before a rename/merge PUT. Applies to every connection type (Lidarr, Emby, Jellyfin). Empty or null for a shared-mount connection.
           items:
             $ref: "#/components/schemas/PathMapping"
         library_count:

@@ -41,9 +41,10 @@ type connectionResponse struct {
 	// for non-Lidarr connections (the nil-safe getter returns false). See
 	// connection.LidarrConfig.VerifyPathAfterUpdate (#1685/#1640).
 	VerifyPathAfterUpdate bool `json:"verify_path_after_update"`
-	// PathMappings is the Lidarr-only host<->platform path-mapping list. Empty
-	// for non-Lidarr connections and shared-mount Lidarr connections. See
-	// connection.LidarrConfig.PathMappings (#2303).
+	// PathMappings is the connection-level host<->platform path-mapping list,
+	// applicable to Lidarr, Emby, and Jellyfin alike. Empty for a shared-mount
+	// connection where Stillwater and the peer address the library
+	// identically. See connection.Connection.PathMappings (#2303, #2380).
 	PathMappings []connection.PathMapping `json:"path_mappings"`
 }
 

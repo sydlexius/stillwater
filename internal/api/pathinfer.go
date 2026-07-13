@@ -55,21 +55,31 @@ type mediaArtistLister interface {
 // size the library scanners already use against the same endpoint.
 const mediaArtistPageSize = 200
 
+// mediaArtistPageCap bounds the number of pages a single ListArtistPaths
+// enumeration will walk. Same concept as jellyfin.listArtistsPageCap: a peer
+// that misreports TotalRecordCount (or returns a full page forever) would
+// otherwise spin here indefinitely. 200 pages x 200 = 40k artists, far past
+// any real library, so the cap can only be hit by a misbehaving peer.
+const mediaArtistPageCap = 200
+
 // mediaArtistListerFactory builds a mediaArtistLister for an Emby or Jellyfin
 // connection. Overridable by tests (t.Cleanup-restored). Returns nil for a type
 // with no media-server artist surface.
 var mediaArtistListerFactory = func(conn *connection.Connection, logger *slog.Logger) mediaArtistLister {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return embyArtistLister{emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)}
+		return embyArtistLister{c: emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger), logger: logger}
 	case connection.TypeJellyfin:
-		return jellyfinArtistLister{jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)}
+		return jellyfinArtistLister{c: jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger), logger: logger}
 	default:
 		return nil
 	}
 }
 
-type embyArtistLister struct{ c *emby.Client }
+type embyArtistLister struct {
+	c      *emby.Client
+	logger *slog.Logger
+}
 
 func (l embyArtistLister) ListArtistPaths(ctx context.Context) ([]platformArtistPath, error) {
 	libs, err := l.c.GetMusicLibraries(ctx)
@@ -80,7 +90,14 @@ func (l embyArtistLister) ListArtistPaths(ctx context.Context) ([]platformArtist
 	// Index-based iteration: VirtualFolder and ArtistItem are large enough that a
 	// per-iteration value copy trips gocritic's rangeValCopy.
 	for i := range libs {
+		page := 0
 		for start := 0; ; start += mediaArtistPageSize {
+			if page >= mediaArtistPageCap {
+				l.logger.Error("emby artist enumeration truncated: page cap reached",
+					"library_id", libs[i].ItemID, "page_cap", mediaArtistPageCap)
+				break
+			}
+			page++
 			resp, err := l.c.GetArtists(ctx, libs[i].ItemID, start, mediaArtistPageSize)
 			if err != nil {
 				return nil, fmt.Errorf("listing emby artists: %w", err)
@@ -100,7 +117,10 @@ func (l embyArtistLister) ListArtistPaths(ctx context.Context) ([]platformArtist
 	return out, nil
 }
 
-type jellyfinArtistLister struct{ c *jellyfin.Client }
+type jellyfinArtistLister struct {
+	c      *jellyfin.Client
+	logger *slog.Logger
+}
 
 func (l jellyfinArtistLister) ListArtistPaths(ctx context.Context) ([]platformArtistPath, error) {
 	libs, err := l.c.GetMusicLibraries(ctx)
@@ -111,7 +131,14 @@ func (l jellyfinArtistLister) ListArtistPaths(ctx context.Context) ([]platformAr
 	// Index-based iteration: VirtualFolder and ArtistItem are large enough that a
 	// per-iteration value copy trips gocritic's rangeValCopy.
 	for i := range libs {
+		page := 0
 		for start := 0; ; start += mediaArtistPageSize {
+			if page >= mediaArtistPageCap {
+				l.logger.Error("jellyfin artist enumeration truncated: page cap reached",
+					"library_id", libs[i].ItemID, "page_cap", mediaArtistPageCap)
+				break
+			}
+			page++
 			resp, err := l.c.GetArtists(ctx, libs[i].ItemID, start, mediaArtistPageSize)
 			if err != nil {
 				return nil, fmt.Errorf("listing jellyfin artists: %w", err)

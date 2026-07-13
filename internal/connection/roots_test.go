@@ -1,6 +1,9 @@
 package connection
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestMapArtistPath_AppliesToEveryPlatform is THE #2380 regression guard at the
 // model layer.
@@ -117,7 +120,7 @@ func TestRemedyForOutsideRoots_NamesTheFix(t *testing.T) {
 
 	msg := RemedyForOutsideRoots("Jelly", TypeJellyfin, "/host/music/Alpha", "/host/music/Alpha", []string{"/music"})
 	for _, want := range []string{"/host/music/Alpha", "/music", "Jelly", "path mapping", "no path mapping matched"} {
-		if !contains(msg, want) {
+		if !strings.Contains(msg, want) {
 			t.Errorf("remedy message missing %q; got:\n%s", want, msg)
 		}
 	}
@@ -125,22 +128,9 @@ func TestRemedyForOutsideRoots_NamesTheFix(t *testing.T) {
 	// When a mapping DID apply, the message shows both sides so a wrong mapping
 	// is legible rather than looking like no mapping at all.
 	mapped := RemedyForOutsideRoots("Jelly", TypeJellyfin, "/host/music/Alpha", "/wrong/Alpha", []string{"/music"})
-	if !contains(mapped, "mapped from") {
+	if !strings.Contains(mapped, "mapped from") {
 		t.Errorf("remedy for a mapped-but-wrong path should show the translation; got:\n%s", mapped)
 	}
-}
-
-func contains(haystack, needle string) bool {
-	return len(haystack) >= len(needle) && (haystack == needle || indexOf(haystack, needle) >= 0)
-}
-
-func indexOf(h, n string) int {
-	for i := 0; i+len(n) <= len(h); i++ {
-		if h[i:i+len(n)] == n {
-			return i
-		}
-	}
-	return -1
 }
 
 // TestPathWithinRoots_TraversalDoesNotReadAsInRoot is the regression test for

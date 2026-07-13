@@ -1,14 +1,18 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -114,7 +118,7 @@ func TestEmbyArtistLister_PagesAllArtists(t *testing.T) {
 	f := pagedFixture()
 	srv := f.server(t)
 
-	l := embyArtistLister{emby.New(srv.URL, "k", "", testLogger())}
+	l := embyArtistLister{c: emby.New(srv.URL, "k", "", testLogger()), logger: testLogger()}
 	got, err := l.ListArtistPaths(context.Background())
 	if err != nil {
 		t.Fatalf("ListArtistPaths: %v", err)
@@ -138,7 +142,7 @@ func TestEmbyArtistLister_LibraryError(t *testing.T) {
 	f := &mediaFixture{libStatus: http.StatusInternalServerError}
 	srv := f.server(t)
 
-	l := embyArtistLister{emby.New(srv.URL, "k", "", testLogger())}
+	l := embyArtistLister{c: emby.New(srv.URL, "k", "", testLogger()), logger: testLogger()}
 	got, err := l.ListArtistPaths(context.Background())
 	if err == nil {
 		t.Fatalf("got (%+v, nil), want an error when the libraries cannot be listed", got)
@@ -157,7 +161,7 @@ func TestEmbyArtistLister_ArtistsError(t *testing.T) {
 	}
 	srv := f.server(t)
 
-	l := embyArtistLister{emby.New(srv.URL, "k", "", testLogger())}
+	l := embyArtistLister{c: emby.New(srv.URL, "k", "", testLogger()), logger: testLogger()}
 	if _, err := l.ListArtistPaths(context.Background()); err == nil {
 		t.Fatal("want an error when the artist page fails")
 	}
@@ -172,7 +176,7 @@ func TestEmbyArtistLister_EmptyLibraryStopsPaging(t *testing.T) {
 	}
 	srv := f.server(t)
 
-	l := embyArtistLister{emby.New(srv.URL, "k", "", testLogger())}
+	l := embyArtistLister{c: emby.New(srv.URL, "k", "", testLogger()), logger: testLogger()}
 	got, err := l.ListArtistPaths(context.Background())
 	if err != nil {
 		t.Fatalf("ListArtistPaths: %v", err)
@@ -192,7 +196,7 @@ func TestJellyfinArtistLister_PagesAllArtists(t *testing.T) {
 	f := pagedFixture()
 	srv := f.server(t)
 
-	l := jellyfinArtistLister{jellyfin.New(srv.URL, "k", "", testLogger())}
+	l := jellyfinArtistLister{c: jellyfin.New(srv.URL, "k", "", testLogger()), logger: testLogger()}
 	got, err := l.ListArtistPaths(context.Background())
 	if err != nil {
 		t.Fatalf("ListArtistPaths: %v", err)
@@ -208,7 +212,7 @@ func TestJellyfinArtistLister_LibraryError(t *testing.T) {
 	f := &mediaFixture{libStatus: http.StatusInternalServerError}
 	srv := f.server(t)
 
-	l := jellyfinArtistLister{jellyfin.New(srv.URL, "k", "", testLogger())}
+	l := jellyfinArtistLister{c: jellyfin.New(srv.URL, "k", "", testLogger()), logger: testLogger()}
 	if _, err := l.ListArtistPaths(context.Background()); err == nil {
 		t.Fatal("want an error when the libraries cannot be listed")
 	}
@@ -221,9 +225,129 @@ func TestJellyfinArtistLister_ArtistsError(t *testing.T) {
 	}
 	srv := f.server(t)
 
-	l := jellyfinArtistLister{jellyfin.New(srv.URL, "k", "", testLogger())}
+	l := jellyfinArtistLister{c: jellyfin.New(srv.URL, "k", "", testLogger()), logger: testLogger()}
 	if _, err := l.ListArtistPaths(context.Background()); err == nil {
 		t.Fatal("want an error when the artist page fails")
+	}
+}
+
+// misreportingFixture serves an Emby/Jellyfin AlbumArtists endpoint that NEVER
+// stops paging on its own: every page comes back full (mediaArtistPageSize
+// items) and TotalRecordCount always claims there is at least one more page
+// past whatever StartIndex was requested. A real peer that misreports its
+// count this way (or simply never returns an empty page) would spin the
+// lister forever without a page cap.
+func misreportingFixture(t *testing.T) (*httptest.Server, *int32) {
+	t.Helper()
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/Library/VirtualFolders"):
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"Name": "Music", "ItemId": "lib-1", "CollectionType": "music"},
+			})
+		case strings.HasPrefix(r.URL.Path, "/Artists/AlbumArtists"):
+			atomic.AddInt32(&calls, 1)
+			items := make([]any, 0, mediaArtistPageSize)
+			for i := 0; i < mediaArtistPageSize; i++ {
+				items = append(items, map[string]any{
+					"Path":        "/music/never-ending",
+					"ProviderIds": map[string]any{"MusicBrainzArtist": "mbid"},
+				})
+			}
+			// TotalRecordCount always claims one more artist exists past this
+			// page, no matter how far StartIndex has already walked.
+			start, _ := strconv.Atoi(r.URL.Query().Get("StartIndex"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Items":            items,
+				"TotalRecordCount": start + mediaArtistPageSize + 1,
+			})
+		default:
+			t.Errorf("unexpected request path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &calls
+}
+
+// TestEmbyArtistLister_PageCapTerminatesMisreportingPeer is #F1's proof: a
+// peer whose AlbumArtists page never empties and whose TotalRecordCount never
+// catches up must still TERMINATE (not hang) once mediaArtistPageCap pages
+// have been walked, and the truncation must be logged so an operator can see
+// the enumeration was cut short rather than silently believing it was
+// complete.
+//
+// This test only passes with the page cap in place: reverting the cap check
+// in ListArtistPaths makes this fixture page forever and the test times out.
+func TestEmbyArtistLister_PageCapTerminatesMisreportingPeer(t *testing.T) {
+	srv, calls := misreportingFixture(t)
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	l := embyArtistLister{c: emby.New(srv.URL, "k", "", logger), logger: logger}
+
+	done := make(chan struct{})
+	var got []platformArtistPath
+	var err error
+	go func() {
+		got, err = l.ListArtistPaths(context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("ListArtistPaths did not terminate against a misreporting peer (called %d times) -- page cap did not bound the loop", atomic.LoadInt32(calls))
+	}
+
+	if err != nil {
+		t.Fatalf("ListArtistPaths: %v, want a bounded (nil-error) result with a truncation log instead", err)
+	}
+	if got := len(got); got != mediaArtistPageCap*mediaArtistPageSize {
+		t.Fatalf("got %d artists, want exactly mediaArtistPageCap*mediaArtistPageSize (%d) -- the cap must bound how much is returned",
+			got, mediaArtistPageCap*mediaArtistPageSize)
+	}
+	if callCount := atomic.LoadInt32(calls); callCount != mediaArtistPageCap {
+		t.Fatalf("AlbumArtists called %d times, want exactly mediaArtistPageCap (%d)", callCount, mediaArtistPageCap)
+	}
+	if !strings.Contains(logBuf.String(), "page cap") {
+		t.Fatalf("log output = %q, want a truncation warning mentioning the page cap", logBuf.String())
+	}
+}
+
+// TestJellyfinArtistLister_PageCapTerminatesMisreportingPeer is the Jellyfin
+// half of #F1 -- asserted directly, not "same as Emby", per this package's
+// existing convention of proving each platform's lister independently.
+func TestJellyfinArtistLister_PageCapTerminatesMisreportingPeer(t *testing.T) {
+	srv, calls := misreportingFixture(t)
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	l := jellyfinArtistLister{c: jellyfin.New(srv.URL, "k", "", logger), logger: logger}
+
+	done := make(chan struct{})
+	var err error
+	go func() {
+		_, err = l.ListArtistPaths(context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("ListArtistPaths did not terminate against a misreporting peer (called %d times) -- page cap did not bound the loop", atomic.LoadInt32(calls))
+	}
+
+	if err != nil {
+		t.Fatalf("ListArtistPaths: %v, want a bounded (nil-error) result with a truncation log instead", err)
+	}
+	if callCount := atomic.LoadInt32(calls); callCount != mediaArtistPageCap {
+		t.Fatalf("AlbumArtists called %d times, want exactly mediaArtistPageCap (%d)", callCount, mediaArtistPageCap)
+	}
+	if !strings.Contains(logBuf.String(), "page cap") {
+		t.Fatalf("log output = %q, want a truncation warning mentioning the page cap", logBuf.String())
 	}
 }
 

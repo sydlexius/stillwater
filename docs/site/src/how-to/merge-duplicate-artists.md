@@ -54,7 +54,7 @@ Once you click **Confirm merge**:
 - Stillwater deletes each merged-away (loser) artist's record from every connected server, so no stale entry is left pointing at a directory that no longer exists. This removes only the server's library record, never any files.
 - Stillwater then refreshes every connected server that had indexed the survivor or any loser, so they pick up the new location. If a server happens to be offline during the merge, trigger a library refresh there yourself once it's back.
 
-**This is a one-way operation.** There's no undo once a merge commits -- the dry-run preview is the safety net, so review it before confirming. See [Connect Lidarr](../getting-started/connect-lidarr.md) for how path mappings and MusicBrainz-ID matching keep a merged artist linked to a server afterward.
+**This is a one-way operation.** There's no undo once a merge commits -- the dry-run preview is the safety net, so review it before confirming. Path mapping applies to every connection type (Lidarr, Emby, and Jellyfin alike); see [Connect Lidarr](../getting-started/connect-lidarr.md) for how path mappings and MusicBrainz-ID matching keep a merged artist linked to a server afterward -- the same mechanics apply regardless of which platform the connection is.
 
 If a merge reports a connection as failed with a path-mapping message, set that connection's **Path mapping** (Settings > Connections) so Stillwater can translate its own view of the library into the path that server expects, then re-run the merge or rename. Without a mapping, a server whose library is mounted under a different prefix would be handed a path that means nothing on its side -- and would report success anyway.
 
@@ -68,4 +68,4 @@ If a merge reports a connection as failed with a path-mapping message, set that 
 ## See also
 
 - [Run scans](run-scans.md#possible-duplicate-artists) -- how duplicate detection ties into a filesystem scan.
-- [Connect Lidarr](../getting-started/connect-lidarr.md) -- path mapping and MBID-based self-heal, which keep Lidarr's link to an artist intact across merges and renames.
+- [Connect Lidarr](../getting-started/connect-lidarr.md) -- path mapping and MBID-based self-heal, which keep a connection's link to an artist intact across merges and renames (applies to Emby and Jellyfin connections too, not just Lidarr).
