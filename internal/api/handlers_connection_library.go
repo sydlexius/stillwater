@@ -1206,7 +1206,10 @@ func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, pri
 		return backdropSkipped
 	}
 	meta := &img.ExifMeta{Source: p.connType, Fetched: time.Now().UTC(), Mode: "user"}
-	saved, saveErr := img.Save(p.dir, "fanart", converted, []string{filename}, false, meta, r.logger)
+	// An import that lands on an existing slot overwrites the user's image, so it
+	// takes the same backup + rollback protection as every other destructive fanart
+	// write (#2413).
+	saved, saveErr := r.saveFanartSlotProtected(p.dir, []string{filename}, converted, meta)
 	if saveErr != nil {
 		r.logger.Warn("saving backdrop", "artist", a.Name, "index", i, "error", saveErr)
 		return backdropSkipped

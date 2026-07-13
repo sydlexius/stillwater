@@ -39,9 +39,14 @@ func TestProcessAndSaveImage_FanartSaveError(t *testing.T) {
 	t.Parallel()
 	r, _ := newImageHandlerTestServer(t)
 
-	// Point the "directory" at a regular file so the atomic save cannot write
-	// into it. Fanart takes the no-backup branch, so the failure surfaces as a
-	// plain "saving" error rather than a rollback attempt.
+	// Point the "directory" at a regular file so nothing can be written into it.
+	//
+	// This assertion used to demand a plain "saving" error, on the reasoning that
+	// "fanart takes the no-backup branch". That branch was the #2413 defect: fanart
+	// was the one image type whose OVERWRITE could destroy the user's artwork without
+	// a backup. It is now protected like every other type, so the strict backup probe
+	// (#1161) fails FIRST and we ABORT BEFORE the destructive save -- which is the
+	// point. The original must never be destroyed just because we could not verify it.
 	tmp := t.TempDir()
 	fileAsDir := filepath.Join(tmp, "not-a-dir")
 	if err := os.WriteFile(fileAsDir, []byte("x"), 0o644); err != nil {
@@ -50,12 +55,13 @@ func TestProcessAndSaveImage_FanartSaveError(t *testing.T) {
 
 	saved, err := r.processAndSaveImage(context.Background(), fileAsDir, "fanart", jpegBytes(t, 60, 40), nil)
 	if err == nil {
-		t.Fatalf("expected a save error when the target dir is a file, got saved=%v", saved)
+		t.Fatalf("expected an error when the target dir is a file, got saved=%v", saved)
 	}
 	if saved != nil {
-		t.Errorf("saved = %v; want nil on save failure", saved)
+		t.Errorf("saved = %v; want nil on failure", saved)
 	}
-	if !strings.Contains(err.Error(), "saving") {
-		t.Errorf("error = %q; want it to mention the save failure", err.Error())
+	if !strings.Contains(err.Error(), "aborting destructive save") {
+		t.Errorf("error = %q; want the strict backup probe to ABORT the destructive save before it "+
+			"can destroy an original it could not back up (#2413/#1161)", err.Error())
 	}
 }
