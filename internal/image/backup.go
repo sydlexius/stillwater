@@ -470,7 +470,30 @@ func lockSlots(dir, imageType string, names []string) func() {
 
 // SaveSlotProtected performs a DESTRUCTIVE write to ONE image slot: it backs the
 // existing image up first (BackupSlot), and puts it back (RestoreSlot) if the save
-// fails. It is THE chokepoint every destructive slot write must go through.
+// fails.
+//
+// WHAT IT ACTUALLY COVERS, and what it does not. This comment used to open by calling
+// it "THE chokepoint every destructive slot write must go through", which was FALSE:
+// writers bypassed it entirely. A comment vouching for protection the code does not
+// provide is how this bug class started, so the contract is stated exactly.
+//
+// COVERED -- every destructive image-DATA write to a fanart slot:
+//   - internal/api's save paths (crop, fetch/replace, assign, import), via the Router's
+//     saveFanartSlotProtected wrapper.
+//   - internal/rule's fixers and bulk auto-fix, via saveImageToDisk. This is why the
+//     function is package-level in internal/image rather than a Router method: the rule
+//     engine has to be able to reach the SAME implementation (#2433).
+//
+// NOT COVERED -- writers that move or delete a slot's FILE rather than writing image
+// bytes through it. These take no slot lock and get no backup, so they can still race a
+// protected write and silently replace or renumber a slot (tracked as #2449, NOT fixed
+// here):
+//   - handleFanartReorder -- os.Rename silently replaces its destination.
+//   - handleFanartSlotDelete + RenumberFanart -- unlocked renumbering renames.
+//
+// NOT DESTRUCTIVE, deliberately outside -- processAndAppendFanart writes a NEW numbered
+// slot and overwrites nothing. (Its own nextIndex computation is unsynchronized, which
+// is part of #2449, but that is a lost-append, not a destroyed original.)
 //
 // Fanart slot 0 IS the primary backdrop (FanartFilename returns the primary name
 // verbatim for index 0), and every numbered slot is a real image the user chose. So

@@ -121,6 +121,97 @@ func TestSaveSlotProtected_ConcurrentSameSlot_RollbackCannotEatAGoodWrite(t *tes
 	}
 }
 
+// TestSaveSlotProtected_ConcurrentSameSlot_CrossFormat is the test that makes the LOCK KEY
+// enforceable instead of merely incidental.
+//
+// The key is (filepath.Clean(dir), imageType, slotBase(naming[0])) -- extension-LESS on
+// purpose. fanart.png and fanart.jpg are the SAME SLOT in two formats: Save's
+// CleanupConflictingFormats has each one DELETING the other. Two writers configured with
+// different formats therefore contend, and must serialize.
+//
+// Every other concurrency test here gives both racers "fanart.jpg", so they pass as long as
+// the key is STABLE -- whether or not it is CORRECT. An over-separated key (one that keeps
+// the extension, or uses the raw un-Cleaned dir) hands the two racers DIFFERENT mutexes,
+// they never contend, and the whole suite still goes green. This case is what closes that:
+// a mutant keyed on the full basename gives the racers different locks, the loser's rollback
+// restores the stale ORIGINAL over the winner's successful write, and this goes RED.
+//
+// Serialized, either order lands on the winner's image:
+//
+//	loser first:  loser backs up the original, writes fanart.jpg, fails, restores fanart.png.
+//	              Then the winner writes fanart.png. Disk = the winner.
+//	winner first: winner writes fanart.png. Then the loser backs up THE WINNER'S image,
+//	              writes fanart.jpg (deleting the winner's png as a conflicting format),
+//	              fails, and restores THE WINNER'S image. Disk = the winner.
+func TestSaveSlotProtected_ConcurrentSameSlot_CrossFormat(t *testing.T) {
+	t.Parallel()
+
+	const rounds = 60
+
+	// The winner writes PNG bytes to the png name; the loser writes JPEG bytes to the jpg
+	// name. Same slot, different formats -- which is precisely the contention the
+	// extension-less key exists to catch.
+	winnerImage := makePNG(t, 120, 90)
+
+	for round := range rounds {
+		dir, original := seedSlotRace(t)
+		if bytes.Equal(winnerImage, original) {
+			t.Fatal("the winner's image equals the seeded original; a stale restore would be undetectable")
+		}
+
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		var winnerErr, loserErr error
+
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, winnerErr = SaveSlotProtected(dir, "fanart", []string{"fanart.png"}, winnerImage, false, nil, discardLogger())
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			// The SAME slot, spelled with the other extension, and an unwritable second name
+			// so it fails AFTER its write lands and therefore really does roll back.
+			_, loserErr = SaveSlotProtected(dir, "fanart",
+				[]string{"fanart.jpg", "blocked/fanart.jpg"}, makeJPEG(t, 60, 40), false, nil, discardLogger())
+		}()
+		close(start)
+		wg.Wait()
+
+		if winnerErr != nil {
+			t.Fatalf("round %d: the valid write failed: %v", round, winnerErr)
+		}
+		if loserErr == nil {
+			t.Fatalf("round %d: the write with an unwritable second name was expected to fail, "+
+				"but succeeded -- the fault injection is not working and this test proves nothing", round)
+		}
+
+		// THE ASSERTION: the winner's bytes, on disk. Not an error value.
+		got, err := os.ReadFile(filepath.Join(dir, "fanart.png"))
+		if err != nil {
+			t.Fatalf("round %d: the winner's image is GONE from the slot: %v", round, err)
+		}
+		if bytes.Equal(got, original) {
+			t.Fatalf("round %d: the slot holds the STALE ORIGINAL. The cross-format loser's rollback "+
+				"restored the pre-edit image OVER the winner's successful write -- the two racers did not "+
+				"share a lock, so the key is separating fanart.png from fanart.jpg. They are ONE slot: "+
+				"CleanupConflictingFormats has each format deleting the other.", round)
+		}
+		if !bytes.Equal(got, winnerImage) {
+			t.Fatalf("round %d: the slot holds neither the winner's image nor the original (%d bytes); "+
+				"a rollback or a torn write has corrupted it", round, len(got))
+		}
+		// The loser's half-written jpg must not survive next to the winner's png: they are the
+		// same slot, and a slot holds ONE image.
+		if _, statErr := os.Stat(filepath.Join(dir, "fanart.jpg")); statErr == nil {
+			t.Fatalf("round %d: the loser's fanart.jpg survived alongside the winner's fanart.png; "+
+				"the rollback must leave the slot holding exactly one image", round)
+		}
+	}
+}
+
 // TestSaveSlotProtected_ConcurrentSameSlot_LastWriteIsIntact covers the all-succeed case:
 // N racers all writing valid images to one slot. Every write must succeed, and the file
 // left on disk must be EXACTLY one of them, whole -- not a mix, not a truncation, and not
