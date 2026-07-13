@@ -119,6 +119,12 @@ templ ImageCard(artistID string, img provider.ImageResult, fanartExists bool) {
 			if (string(img.Type) == "logo" || string(img.Type) == "hdlogo") && img.Source == "duckduckgo" {
 				<div class="text-xs text-amber-700 dark:text-amber-400">Check transparency before saving</div>
 			}
+			// #2415: /images/fetch answers an aspect-ratio mismatch with a 200
+			// that saved NOTHING (body: needs_crop). With hx-swap="none" and no
+			// after-request handler, this button discarded that response outright
+			// -- the user clicked Save, saw no error, and got no image. The shared
+			// handler (image_search.templ's crop script block, rendered on both
+			// image layouts) opens the crop modal instead.
 			<button
 				type="button"
 				class="image-card-save w-full mt-1 inline-flex items-center justify-center gap-1.5 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
@@ -127,6 +133,7 @@ templ ImageCard(artistID string, img provider.ImageResult, fanartExists bool) {
 				hx-swap="none"
 				hx-confirm="Save this image?"
 				data-confirm-key="image-save"
+				hx-on::after-request="swHandleFetchNeedsCrop(event)"
 			>
 				@IconArrowDownTray("h-4 w-4")
 				Save

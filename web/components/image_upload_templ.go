@@ -38,13 +38,13 @@ func ImageUpload(artistID string, selectedType string) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/upload", artistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_upload.templ`, Line: 10, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_upload.templ`, Line: 18, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" hx-encoding=\"multipart/form-data\" hx-target=\"#upload-result\" hx-swap=\"innerHTML\" hx-indicator=\"#upload-spinner\" class=\"space-y-3\"><div><label for=\"image-type\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Image Type</label> <select id=\"image-type\" name=\"type\" class=\"w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500\"><option value=\"thumb\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" hx-encoding=\"multipart/form-data\" hx-target=\"#upload-result\" hx-swap=\"innerHTML\" hx-indicator=\"#upload-spinner\" hx-on::before-swap=\"swSuppressNeedsCropSwap(event)\" hx-on::after-request=\"swHandleFetchNeedsCrop(event)\" class=\"space-y-3\"><div><label for=\"image-type\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Image Type</label> <select id=\"image-type\" name=\"type\" class=\"w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500\"><option value=\"thumb\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -91,13 +91,13 @@ func ImageUpload(artistID string, selectedType string) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_upload.templ`, Line: 65, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_upload.templ`, Line: 77, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" hx-target=\"#upload-result\" hx-swap=\"innerHTML\" hx-indicator=\"#upload-spinner\" class=\"flex flex-col gap-2 sm:flex-row\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" hx-target=\"#upload-result\" hx-swap=\"innerHTML\" hx-indicator=\"#upload-spinner\" hx-on::before-swap=\"swSuppressNeedsCropSwap(event)\" hx-on::after-request=\"swHandleFetchNeedsCrop(event)\" class=\"flex flex-col gap-2 sm:flex-row\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -109,7 +109,7 @@ func ImageUpload(artistID string, selectedType string) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(selectedType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_upload.templ`, Line: 72, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_upload.templ`, Line: 86, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {

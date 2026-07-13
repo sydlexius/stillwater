@@ -385,6 +385,125 @@ templ ArtworkManageEditor(data ImageSearchData) {
 				_cropper.setAspectRatio(checked && !isNaN(_currentRatio) ? _currentRatio : NaN);
 			}
 		}
+		// -- needs_crop response handling (#2415) ----------------------------
+		//
+		// /images/fetch and /images/upload answer an aspect-ratio mismatch with
+		// a 200 whose body is {needs_crop:true, image_data:...} and NOTHING
+		// SAVED. Every surface that POSTs to those endpoints must therefore
+		// branch on needs_crop -- a surface that reads the 2xx as "saved"
+		// silently drops the user's image, which is the whole of #2415.
+		//
+		// These helpers live in THIS script block deliberately. It is the one
+		// ArtworkManageEditor renders on BOTH layouts; the drag-drop IIFE
+		// further down renders only on the contextualized layout. The surfaces
+		// that need this handling most (components.ImageCard's Save button and
+		// both components.ImageUpload forms) render on the GENERIC layout,
+		// where that IIFE -- and, before #2415, openAutoCrop along with it --
+		// does not exist at all. Hanging the handler off the IIFE would have
+		// left those surfaces exactly as broken as they already were.
+		//
+		// User-facing copy is read from #crop-modal's data-msg-* attributes
+		// (rendered by components.ImageCropModal, likewise present on both
+		// layouts) so the strings stay translatable.
+		function swNeedsCropMsg(key, fallback) {
+			var modal = document.getElementById('crop-modal');
+			var msg = modal && modal.dataset ? modal.dataset[key] : '';
+			return msg || fallback;
+		}
+
+		// swNeedsCropAlert reports a needs_crop failure the user MUST see:
+		// their image was not saved AND the crop prompt could not be opened.
+		// Loud by design -- a silent return here is the exact defect #2415
+		// exists to kill.
+		function swNeedsCropAlert(logMsg, userMsg) {
+			console.error(logMsg);
+			if (typeof window.showToast === 'function') {
+				window.showToast(userMsg);
+			} else {
+				console.error('showToast unavailable; the needs_crop failure above reached the console only, not the user: ' + userMsg);
+			}
+		}
+
+		// openAutoCrop opens the crop modal with the image data URI and locks
+		// the aspect ratio to the slot requirement. Called whenever an upload or
+		// fetch comes back needs_crop=true.
+		function openAutoCrop(data) {
+			if (typeof openCropModal !== 'function') {
+				swNeedsCropAlert(
+					'openCropModal unavailable; cannot open the crop modal for a needs_crop response -- the image was NOT saved',
+					swNeedsCropMsg('msgCropUnavailable', 'This image needs cropping, but the crop editor could not be opened, so it was not saved.'));
+				return;
+			}
+			var cropType = document.getElementById('crop-type');
+			if (cropType) cropType.value = data.type;
+			// Pass the required ratio so the Cropper ready callback applies it
+			// reliably instead of a timing-dependent setTimeout. data.append
+			// mirrors the server's own append decision (same type == "fanart" &&
+			// FanartExists condition) so the auto-opened crop modal appends when
+			// the triggering upload/fetch would have. data.slot (#2281 QOL #48)
+			// is echoed back only when the triggering fetch carried an explicit
+			// fanart slot, so the follow-up crop save persists to that same slot.
+			openCropModal(data.image_data, data.type, data.required_ratio, !!data.append, data.slot);
+			// The amber status line exists only on the contextualized layout. On
+			// the generic one, the crop modal opening IS the signal.
+			var statusEl = document.getElementById('upload-status');
+			if (statusEl) {
+				var s = document.createElement('span');
+				s.className = 'text-sm text-amber-600';
+				s.textContent = swNeedsCropMsg('msgNeedsCrop', 'Image needs cropping to match the required aspect ratio.');
+				statusEl.replaceChildren(s);
+			}
+		}
+		window.openAutoCrop = openAutoCrop;
+
+		// swNeedsCropParse classifies an image-save response body:
+		//   the parsed body -- a needs_crop response; nothing was saved
+		//   null            -- a normal save; nothing to do here
+		//   undefined       -- unparsable, so we cannot tell; never swallow it
+		// The undefined/null split is what keeps "saved fine" distinguishable
+		// from "no idea what happened".
+		function swNeedsCropParse(xhr) {
+			var body;
+			try {
+				body = JSON.parse(xhr.responseText);
+			} catch (e) {
+				return undefined;
+			}
+			return (body && body.needs_crop) ? body : null;
+		}
+
+		// swHandleFetchNeedsCrop is the hx-on::after-request handler shared by
+		// every surface that POSTs /images/fetch or /images/upload. It opens the
+		// crop modal on a needs_crop response and fails loudly rather than
+		// dropping it.
+		function swHandleFetchNeedsCrop(event) {
+			if (!event || !event.detail || !event.detail.successful) return;
+			var data = swNeedsCropParse(event.detail.xhr);
+			if (data === undefined) {
+				swNeedsCropAlert(
+					'could not parse the image save response; a needs_crop response may have been dropped and the image not saved',
+					swNeedsCropMsg('msgSaveUnreadable', 'The server response could not be read. Reload the page and check whether the image was saved.'));
+				return;
+			}
+			if (data === null) return;
+			openAutoCrop(data);
+		}
+		window.swHandleFetchNeedsCrop = swHandleFetchNeedsCrop;
+
+		// swSuppressNeedsCropSwap stops htmx swapping a needs_crop body into the
+		// page. Both components.ImageUpload forms target #upload-result with
+		// hx-swap="innerHTML", so without this the user gets the raw JSON -- a
+		// screenful of base64 image data -- dumped into the page while the crop
+		// modal opens over it. Only the needs_crop body is suppressed; a normal
+		// save still swaps exactly as before.
+		function swSuppressNeedsCropSwap(event) {
+			if (!event || !event.detail || !event.detail.xhr) return;
+			if (swNeedsCropParse(event.detail.xhr)) {
+				event.detail.shouldSwap = false;
+			}
+		}
+		window.swSuppressNeedsCropSwap = swSuppressNeedsCropSwap;
+
 		// Auto-crop: if the page was navigated with crop=1, open the crop
 		// modal immediately. The trigger element carries the image src and
 		// type via data attributes so no inline Go interpolation is needed.
@@ -458,7 +577,6 @@ templ imageSearchContextualized(data ImageSearchData) {
 		class="max-w-4xl mx-auto space-y-6"
 		data-artist-id={ data.Artist.ID }
 		data-image-type={ data.SelectedType }
-		data-msg-needs-crop={ t(ctx, "image.msg_needs_crop") }
 		data-msg-uploading={ t(ctx, "image.msg_uploading") }
 		data-msg-upload-failed={ t(ctx, "image.msg_upload_failed") }
 		data-msg-fetching={ t(ctx, "image.msg_fetching") }
@@ -772,13 +890,14 @@ templ imageSearchContextualized(data ImageSearchData) {
 							<p class="text-xs text-gray-400 py-8">{ t(ctx, "image.click_compare_hint") }</p>
 						</div>
 						<div id="compare-right-meta" class="mt-2 text-xs text-gray-500 dark:text-gray-400"></div>
-						// #2331 CR-2: /images/fetch's needs_crop check now runs for every
-						// caller (removed the old blanket !isHTMXRequest(req) skip, which
-						// incorrectly exempted this genuinely htmx-driven Save flow too),
-						// so this hx-on::after-request reacts to a needs_crop response by
-						// opening the crop modal via window.openAutoCrop (exposed by this
-						// same fragment's script below) -- otherwise a "successful" (2xx)
-						// needs_crop response would silently no-op instead of saving.
+						// #2331 CR-2: /images/fetch's needs_crop check runs for every
+						// caller (the old blanket !isHTMXRequest(req) skip incorrectly
+						// exempted this genuinely htmx-driven Save flow too), so a 2xx
+						// here does NOT mean the image was saved.
+						// #2415: reacting to it is now the shared swHandleFetchNeedsCrop
+						// handler's job, on every /images/fetch surface alike. It
+						// replaced an inline try/catch whose empty catch and
+						// typeof-guard both swallowed the response without a trace.
 						<button
 							type="button"
 							id="compare-save-btn"
@@ -789,7 +908,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 							data-confirm-key="image-save"
 							data-sw-requires-image-write
 							title={ t(ctx, "image.disabled_during_conflict") }
-							hx-on::after-request="if(event.detail.successful){try{var d=JSON.parse(event.detail.xhr.responseText);if(d&&d.needs_crop&&typeof window.openAutoCrop==='function'){window.openAutoCrop(d);}}catch(e){}}"
+							hx-on::after-request="swHandleFetchNeedsCrop(event)"
 						>
 							{ t(ctx, "image.use_this_one") }
 						</button>
@@ -863,32 +982,14 @@ templ imageSearchContextualized(data ImageSearchData) {
 					statusEl.replaceChildren(s);
 				}
 
-				// openAutoCrop opens the crop modal with the image data URI and locks
-				// the aspect ratio to the slot requirement. Called when an upload or
-				// fetch returns needs_crop=true.
-				function openAutoCrop(data) {
-					if (typeof openCropModal !== 'function') return;
-					var cropType = document.getElementById('crop-type');
-					if (cropType) cropType.value = data.type;
-					// Pass the required ratio so the Cropper ready callback
-					// applies it reliably instead of a timing-dependent setTimeout.
-					// data.append mirrors the server's own append decision (same
-					// type == "fanart" && FanartExists condition) so the auto-opened
-					// crop modal appends when the triggering upload/fetch would have.
-					// data.slot (#2281 QOL #48) is echoed back only when the
-					// triggering fetch carried an explicit fanart slot, so the
-					// follow-up crop save persists to that same slot.
-					openCropModal(data.image_data, data.type, data.required_ratio, !!data.append, data.slot);
-					setStatus(container.dataset.msgNeedsCrop, 'text-amber-600');
-				}
-				// #2331 CR-2: exposed globally so the hx-post Save buttons'
-				// inline hx-on::after-request handlers (compare-save and the
-				// fanart search-results Save button, both htmx-driven) can
-				// react to a needs_crop response the same way the plain-JS
-				// upload/fetch-URL flows already do -- an inline attribute
-				// handler runs in global scope and cannot reach this
-				// IIFE-local function otherwise.
-				window.openAutoCrop = openAutoCrop;
+				// #2415: openAutoCrop used to be defined HERE, inside this
+				// contextualized-only IIFE, and merely exposed on window. That
+				// left it undefined on the generic layout -- which is precisely
+				// where components.ImageCard and components.ImageUpload render --
+				// so those surfaces could not have reacted to needs_crop even if
+				// they had been wired for it. It now lives in the crop script
+				// block above, which BOTH layouts render, and the plain-JS
+				// upload/fetch-URL flows below simply call that global.
 
 				function uploadFile(file) {
 					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
@@ -1228,7 +1329,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 									<span class="ml-1">{ tn(ctx, "image.likes_count", img.Likes) }</span>
 								}
 							</div>
-							// #2331 CR-2: same needs_crop after-request handling as the
+							// #2331 CR-2 / #2415: same shared needs_crop handling as the
 							// compare-save button above -- this Save button picks a raw
 							// provider thumbnail directly and is just as likely to be a
 							// mismatched aspect ratio needing a crop prompt.
@@ -1242,7 +1343,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 								data-confirm-key="image-save"
 								data-sw-requires-image-write
 								title={ t(ctx, "image.disabled_during_conflict") }
-								hx-on::after-request="if(event.detail.successful){try{var d=JSON.parse(event.detail.xhr.responseText);if(d&&d.needs_crop&&typeof window.openAutoCrop==='function'){window.openAutoCrop(d);}}catch(e){}}"
+								hx-on::after-request="swHandleFetchNeedsCrop(event)"
 							>
 								{ t(ctx, "common.save") }
 							</button>
