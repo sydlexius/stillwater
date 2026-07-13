@@ -1040,7 +1040,7 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 		}
 
 		primaryName := resolveFanartPrimaryName(ctx, e.platformService)
-		res, err := findImageDuplicates(ctx, e.db, a, primaryName, tolerance, e.imageHashRecorder, e.logger)
+		res, err := findImageDuplicates(ctx, e.db, a, primaryName, tolerance, e.imageHashRecorder, false, e.logger)
 		if err != nil {
 			e.logger.Debug("detecting image duplicates", "artist", a.Name, "error", err)
 			return nil
@@ -1098,7 +1098,7 @@ func (e *Engine) makeImageDuplicateExactChecker() Checker {
 		// Tolerance is irrelevant to byte equality; the perceptual tier's
 		// default is passed only so the shared pass produces its usual
 		// perceptual grouping for the other rule to consume.
-		res, err := findImageDuplicates(ctx, e.db, a, primaryName, defaultImageDupTolerance, e.imageHashRecorder, e.logger)
+		res, err := findImageDuplicates(ctx, e.db, a, primaryName, defaultImageDupTolerance, e.imageHashRecorder, false, e.logger)
 		if err != nil {
 			e.logger.Debug("detecting exact image duplicates", "artist", a.Name, "error", err)
 			return nil

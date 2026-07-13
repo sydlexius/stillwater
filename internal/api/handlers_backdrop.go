@@ -473,7 +473,7 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 	}
 
 	var renumberWarning string
-	if renumberErr := img.RenumberFanart(r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
+	if renumberErr := img.RenumberFanart(req.Context(), r.artistService, a.ID, r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
 		r.logger.Warn("renumbering fanart after slot delete",
 			slog.String("artist_id", artistID),
 			slog.String("error", renumberErr.Error()))
@@ -570,6 +570,19 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 	}
 
 	dir := r.imageDir(a)
+
+	// Every rename below moves a different FILE into a slot, and the stored
+	// image hashes are keyed by slot -- so from this point on they describe
+	// files their slots no longer hold. Left stale, the exact-duplicate fixer
+	// reads two slots as byte-identical and deletes artwork that is not a copy
+	// of anything.
+	//
+	// This handler permutes the files itself rather than calling
+	// image.RenumberFanart, so it does not inherit that function's compile-time
+	// invalidation gate and has to do the same job by hand. The defer covers the
+	// rollback paths too: those are best-effort, so a failed reorder cannot
+	// promise the original slot-to-file mapping was restored.
+	defer r.invalidateFanartHashes(req.Context(), a.ID)
 
 	// Phase 1: stage all files to temporary names to avoid collisions.
 	type stagedFile struct {
@@ -698,6 +711,21 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 		"count":         a.FanartCount,
 		"sync_warnings": syncWarnings,
 	})
+}
+
+// invalidateFanartHashes marks the artist's stored fanart hashes unknown, so the
+// next duplicate evaluation re-derives them from the files actually on disk.
+//
+// A failure here is logged rather than surfaced: the file operation it follows
+// has already committed, and failing the request would not undo it. It is logged
+// at Error, not Debug, because a stale hash is what lets the exact-duplicate
+// fixer delete a distinct image -- if this is failing, that is worth seeing.
+func (r *Router) invalidateFanartHashes(ctx context.Context, artistID string) {
+	if err := r.artistService.InvalidateImageHashes(ctx, artistID, "fanart"); err != nil {
+		r.logger.Error("invalidating fanart hashes after reordering files",
+			slog.String("artist_id", artistID),
+			slog.String("error", err.Error()))
+	}
 }
 
 // isValidPermutation checks that order is a valid permutation of [0, len(order)).

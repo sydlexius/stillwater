@@ -257,6 +257,31 @@ func (r *sqliteImageRepo) UpdateHashes(ctx context.Context, artistID, imageType 
 	return nil
 }
 
+// ClearHashesForType blanks phash and content_hash for every slot of one image
+// type belonging to one artist, returning them to the "not yet hashed" state
+// that a fresh row starts in. The next duplicate evaluation re-derives them from
+// the files on disk.
+//
+// It is deliberately whole-type rather than per-slot. The operations that
+// require it -- renumbering, reordering, deleting a slot -- shift files ACROSS
+// slots, so the set of rows whose file changed identity is precisely the set
+// this cannot cheaply enumerate. Clearing the type costs one re-read per file on
+// the next evaluation; getting the enumeration subtly wrong costs a file.
+//
+// A zero-row update is not an error: an artist with no rows of this type has no
+// stale hashes by definition.
+func (r *sqliteImageRepo) ClearHashesForType(ctx context.Context, artistID, imageType string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE artist_images SET phash = '', content_hash = ''
+		WHERE artist_id = ? AND image_type = ?`,
+		artistID, imageType,
+	)
+	if err != nil {
+		return fmt.Errorf("clearing image hashes for %s/%s: %w", artistID, imageType, err)
+	}
+	return nil
+}
+
 // ClearExistsFlag sets exists_flag=0 for the given artist/image_type/slot.
 // This is a best-effort update used when a previously existing image file is
 // confirmed missing on disk, so that subsequent UI renders show a placeholder

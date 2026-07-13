@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -339,7 +340,7 @@ func TestRenumberFanart_Basic(t *testing.T) {
 		filepath.Join(dir, "backdrop3.jpg"),
 	}
 
-	if err := RenumberFanart(dir, "backdrop.jpg", survivors, false); err != nil {
+	if err := renumberFanartFiles(dir, "backdrop.jpg", survivors, false); err != nil {
 		t.Fatalf("RenumberFanart() error: %v", err)
 	}
 
@@ -378,7 +379,7 @@ func TestRenumberFanart_MixedExtensions(t *testing.T) {
 		filepath.Join(dir, "backdrop3.jpg"),
 	}
 
-	if err := RenumberFanart(dir, "backdrop.jpg", survivors, false); err != nil {
+	if err := renumberFanartFiles(dir, "backdrop.jpg", survivors, false); err != nil {
 		t.Fatalf("RenumberFanart() error: %v", err)
 	}
 
@@ -411,7 +412,7 @@ func TestRenumberFanart_KodiNumbering(t *testing.T) {
 		filepath.Join(dir, "fanart2.jpg"),
 	}
 
-	if err := RenumberFanart(dir, "fanart.jpg", survivors, true); err != nil {
+	if err := renumberFanartFiles(dir, "fanart.jpg", survivors, true); err != nil {
 		t.Fatalf("RenumberFanart() error: %v", err)
 	}
 
@@ -435,10 +436,10 @@ func TestRenumberFanart_EmptySurvivors(t *testing.T) {
 	dir := t.TempDir()
 
 	// Empty survivors should return nil without crashing.
-	if err := RenumberFanart(dir, "backdrop.jpg", nil, false); err != nil {
+	if err := renumberFanartFiles(dir, "backdrop.jpg", nil, false); err != nil {
 		t.Errorf("RenumberFanart(nil survivors) = %v, want nil", err)
 	}
-	if err := RenumberFanart(dir, "backdrop.jpg", []string{}, false); err != nil {
+	if err := renumberFanartFiles(dir, "backdrop.jpg", []string{}, false); err != nil {
 		t.Errorf("RenumberFanart(empty survivors) = %v, want nil", err)
 	}
 }
@@ -453,7 +454,7 @@ func TestRenumberFanart_SingleSurvivor(t *testing.T) {
 
 	survivors := []string{filepath.Join(dir, "backdrop3.jpg")}
 
-	if err := RenumberFanart(dir, "backdrop.jpg", survivors, false); err != nil {
+	if err := renumberFanartFiles(dir, "backdrop.jpg", survivors, false); err != nil {
 		t.Fatalf("RenumberFanart() error: %v", err)
 	}
 
@@ -485,7 +486,7 @@ func TestRenumberFanart_Phase1Rollback(t *testing.T) {
 		filepath.Join(dir, "nonexistent.jpg"), // triggers Phase 1 failure
 	}
 
-	err := RenumberFanart(dir, "backdrop.jpg", survivors, false)
+	err := renumberFanartFiles(dir, "backdrop.jpg", survivors, false)
 	if err == nil {
 		t.Fatal("expected error from non-existent survivor, got nil")
 	}
@@ -542,7 +543,7 @@ func TestRenumberFanart_Phase2Rollback(t *testing.T) {
 		filepath.Join(dir, "backdrop5.jpg"),
 	}
 
-	err := RenumberFanart(dir, "backdrop.jpg", survivors, false)
+	err := renumberFanartFiles(dir, "backdrop.jpg", survivors, false)
 	if err == nil {
 		t.Fatal("expected error from Phase 2 collision with directory, got nil")
 	}
@@ -593,7 +594,7 @@ func TestRenumberFanart_ContentPreservation(t *testing.T) {
 		filepath.Join(dir, "backdrop3.jpg"),
 	}
 
-	if err := RenumberFanart(dir, "backdrop.jpg", survivors, false); err != nil {
+	if err := renumberFanartFiles(dir, "backdrop.jpg", survivors, false); err != nil {
 		t.Fatalf("RenumberFanart() error: %v", err)
 	}
 
@@ -613,5 +614,100 @@ func TestRenumberFanart_ContentPreservation(t *testing.T) {
 	}
 	if string(got) != "content-for-index-two" {
 		t.Errorf("backdrop2.jpg content = %q, want %q", string(got), "content-for-index-two")
+	}
+}
+
+// fakeHashInvalidator records the InvalidateImageHashes calls made against it.
+type fakeHashInvalidator struct {
+	calls []string // "artistID/imageType" per call
+	err   error
+}
+
+func (f *fakeHashInvalidator) InvalidateImageHashes(_ context.Context, artistID, imageType string) error {
+	f.calls = append(f.calls, artistID+"/"+imageType)
+	return f.err
+}
+
+// TestRenumberFanart_InvalidatesHashes proves the invalidation is not optional.
+//
+// Renumbering moves a different file into a slot while the stored hashes stay
+// keyed by slot, so a renumber that does not invalidate leaves rows describing
+// files their slots no longer hold -- which the exact-duplicate fixer then
+// deletes as byte-identical copies. This asserts the observable outcome (the
+// invalidator was actually called for this artist's fanart), not that the
+// function returned nil.
+func TestRenumberFanart_InvalidatesHashes(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"backdrop.jpg", "backdrop3.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	survivors := []string{
+		filepath.Join(dir, "backdrop.jpg"),
+		filepath.Join(dir, "backdrop3.jpg"),
+	}
+
+	inv := &fakeHashInvalidator{}
+	if err := RenumberFanart(context.Background(), inv, "artist-1", dir, "backdrop.jpg", survivors, false); err != nil {
+		t.Fatalf("RenumberFanart() error: %v", err)
+	}
+
+	if want := []string{"artist-1/fanart"}; len(inv.calls) != 1 || inv.calls[0] != want[0] {
+		t.Errorf("invalidator calls = %v, want %v", inv.calls, want)
+	}
+	// The rename must still have happened.
+	if _, err := os.Stat(filepath.Join(dir, "backdrop2.jpg")); err != nil {
+		t.Errorf("survivor was not renumbered into slot 1: %v", err)
+	}
+}
+
+// TestRenumberFanart_NilInvalidatorRefusesToRenumber proves the guard fails
+// LOUD and CLOSED. A caller with nowhere to record the invalidation must not get
+// a silently-unsafe renumber: the files must be left exactly as they were.
+func TestRenumberFanart_NilInvalidatorRefusesToRenumber(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"backdrop.jpg", "backdrop3.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	survivors := []string{
+		filepath.Join(dir, "backdrop.jpg"),
+		filepath.Join(dir, "backdrop3.jpg"),
+	}
+
+	err := RenumberFanart(context.Background(), nil, "artist-1", dir, "backdrop.jpg", survivors, false)
+	if err == nil {
+		t.Fatal("RenumberFanart(nil invalidator) = nil, want an error")
+	}
+
+	// No file may have moved: backdrop3.jpg must still be where it was, and
+	// slot 1 must not have been created.
+	if _, statErr := os.Stat(filepath.Join(dir, "backdrop3.jpg")); statErr != nil {
+		t.Errorf("original file was renamed despite the refusal: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "backdrop2.jpg")); !os.IsNotExist(statErr) {
+		t.Errorf("renumber proceeded without an invalidator (backdrop2.jpg exists)")
+	}
+}
+
+// TestRenumberFanart_InvalidationFailureSurfaces proves an invalidation failure
+// is reported rather than swallowed. The files are renumbered at that point, so
+// a swallowed error would leave stale hashes behind with the caller none the
+// wiser -- the precise state that gets artwork deleted.
+func TestRenumberFanart_InvalidationFailureSurfaces(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "backdrop3.jpg"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	survivors := []string{filepath.Join(dir, "backdrop3.jpg")}
+
+	sentinel := errors.New("db is down")
+	inv := &fakeHashInvalidator{err: sentinel}
+
+	err := RenumberFanart(context.Background(), inv, "artist-1", dir, "backdrop.jpg", survivors, false)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("RenumberFanart() error = %v, want it to wrap %v", err, sentinel)
 	}
 }

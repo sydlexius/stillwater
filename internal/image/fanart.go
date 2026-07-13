@@ -1,6 +1,8 @@
 package image
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -192,13 +194,69 @@ func NextFanartIndex(maxSuffix int, kodi bool) int {
 	return maxSuffix
 }
 
+// HashInvalidator drops the stored perceptual and content hashes for an
+// artist's images of a given type, so that the next duplicate evaluation
+// re-derives them from the files actually on disk.
+//
+// It is an interface here, rather than a concrete store, so that this package
+// keeps depending on nothing but the filesystem.
+type HashInvalidator interface {
+	InvalidateImageHashes(ctx context.Context, artistID, imageType string) error
+}
+
 // RenumberFanart renames the given survivor paths so they occupy contiguous
-// 0-based indices. Each file keeps its original extension. primaryName is the
-// base name for index 0 (e.g. "backdrop.jpg"). dir is the parent directory.
-// kodi controls the numbering convention (see FanartFilename).
+// 0-based indices, then invalidates the artist's stored fanart hashes.
+//
+// Each file keeps its original extension. primaryName is the base name for
+// index 0 (e.g. "backdrop.jpg"). dir is the parent directory. kodi controls the
+// numbering convention (see FanartFilename).
+//
+// The invalidator is a required argument rather than an optional one because
+// renumbering is precisely the operation that breaks the assumption the hash
+// columns encode: hashes are stored per SLOT, and a renumber moves a different
+// FILE into a slot while leaving that slot's row untouched. A stale hash is not
+// merely a cache miss -- the exact-duplicate fixer deletes files on the strength
+// of it, so a slot holding a neighbour's hash makes distinct artwork look like a
+// byte-identical copy and get removed.
+//
+// Threading the invalidator through the signature is what stops that from
+// recurring: a caller cannot renumber without confronting the hashes, because
+// the code does not compile otherwise. Every previous version of this function
+// left invalidation to the caller's memory, and every caller forgot.
+//
+// Hashes are cleared rather than recomputed. Clearing has exactly one meaning
+// ("unknown"), which the detector already handles -- an empty hash never matches
+// anything, including another empty one -- and it costs one re-read on the next
+// evaluation. Recomputing would mean re-deriving the slot-to-file mapping at the
+// one moment that mapping is in flux, which is the same reasoning that produced
+// the bug.
+func RenumberFanart(ctx context.Context, inv HashInvalidator, artistID, dir, primaryName string, survivors []string, kodi bool) error {
+	if inv == nil {
+		return fmt.Errorf("renumbering fanart in %s: no hash invalidator supplied", dir)
+	}
+	if len(survivors) == 0 {
+		return nil
+	}
+
+	renumberErr := renumberFanartFiles(dir, primaryName, survivors, kodi)
+
+	// Invalidate on the failure path too. A failed renumber rolls back
+	// best-effort, and "best-effort" is exactly the case where the on-disk
+	// slot-to-file mapping may no longer be the one the hashes were computed
+	// against. Clearing a hash that did not need clearing costs one re-read;
+	// keeping one that did costs a file.
+	invErr := inv.InvalidateImageHashes(ctx, artistID, "fanart")
+
+	return errors.Join(renumberErr, invErr)
+}
+
+// renumberFanartFiles performs the on-disk half of RenumberFanart. It is
+// separate only so the two-phase rename can be tested without a hash store;
+// production code must go through RenumberFanart, which cannot skip the
+// invalidation.
 //
 //nolint:gocognit // Two-phase rename (stage to .tmp then commit to final name) with best-effort rollback in both phases; the rollback walks the already-mutated subset of files so the partial-failure recovery has to remain inline alongside the forward path.
-func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) error {
+func renumberFanartFiles(dir, primaryName string, survivors []string, kodi bool) error {
 	if len(survivors) == 0 {
 		return nil
 	}

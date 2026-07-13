@@ -18,6 +18,20 @@ import (
 // tolerance of its own.
 const defaultImageDupTolerance = 0.90
 
+// hashUnknown is the zero value both hash columns use to mean "this file has
+// not been hashed", as distinct from any hash a real file could have.
+//
+// It is load-bearing in three separate places -- a stored phash of 0 is treated
+// as absent, a member with a 0 phash is excluded from perceptual comparison
+// (Similarity(0, 0) is 1.0, so comparing two unhashed images would report them
+// as identical), and an empty content hash is excluded from exact grouping -- so
+// it is named rather than spelled as a bare literal at each site. "Unknown" must
+// never compare equal to another "unknown".
+const (
+	hashUnknown        uint64 = 0
+	contentHashUnknown        = ""
+)
+
 // imageDupMember describes one image involved in a detected duplicate pair.
 // path is only populated for rows whose file had to be read this evaluation
 // (to compute a hash that was not yet stored); it is empty for rows served
@@ -108,10 +122,17 @@ func queryImageDupRows(ctx context.Context, db *sql.DB, a *artist.Artist, logger
 }
 
 // imageHashRecorder persists hashes computed during duplicate detection back
-// to artist_images. It is the narrow slice of artist.Service that the rule
-// engine needs; see Engine.SetImageHashRecorder.
+// to artist_images, and drops them again when an operation moves files between
+// slots. It is the narrow slice of artist.Service that the rule engine needs;
+// see Engine.SetImageHashRecorder.
+//
+// It includes InvalidateImageHashes -- and therefore satisfies
+// image.HashInvalidator -- so that a fixer holding a recorder can renumber, and
+// a fixer holding no recorder cannot. Renumbering without invalidating is the
+// defect this interface exists to make unrepresentable.
 type imageHashRecorder interface {
 	UpdateImageHashes(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash string) error
+	InvalidateImageHashes(ctx context.Context, artistID, imageType string) error
 }
 
 // hashImageFile is the seam through which duplicate detection reads and hashes
@@ -151,21 +172,36 @@ type resolvedHashes struct {
 // fanartPaths is the already-discovered on-disk fanart path list indexed by
 // slot. persist, when non-nil, writes any newly computed hash back so no later
 // evaluation recomputes it.
+//
+// fresh forces the file to be re-read and re-hashed even when both hashes are
+// already stored, discarding the cache for this pass. See findImageDuplicates
+// for why the destructive fixer always sets it.
 func resolveImageDupHashes(
 	ctx context.Context,
 	a *artist.Artist,
 	r imageDupRawRow,
 	fanartPaths []string,
 	persist imageHashRecorder,
+	fresh bool,
 	logger *slog.Logger,
 ) resolvedHashes {
 	storedPerceptual, parseErr := image.ParseHashHex(r.hashHex)
-	havePerceptual := parseErr == nil && storedPerceptual != 0
-	haveContent := r.contentHash != ""
+	havePerceptual := !fresh && parseErr == nil && storedPerceptual != hashUnknown
+	haveContent := !fresh && r.contentHash != contentHashUnknown
 
 	if havePerceptual && haveContent {
 		// Fully cached: the common steady-state path. No file is touched.
 		return resolvedHashes{perceptual: storedPerceptual, content: r.contentHash, usable: true}
+	}
+
+	if fresh {
+		// Nothing stored may be carried forward: the whole point is to ignore
+		// it. Zeroing here keeps the "did the value change?" test below honest,
+		// so a re-read that finds a DIFFERENT file at this slot persists the
+		// correction rather than comparing equal to the stale value and
+		// skipping the write.
+		storedPerceptual = hashUnknown
+		r.contentHash = contentHashUnknown
 	}
 
 	path, ok := imageDupRowPath(r, fanartPaths)
@@ -187,13 +223,13 @@ func resolveImageDupHashes(
 	}
 
 	res := resolvedHashes{perceptual: storedPerceptual, content: r.contentHash, path: path}
-	if !havePerceptual && fh.Perceptual != 0 {
+	if !havePerceptual && fh.Perceptual != hashUnknown {
 		res.perceptual = fh.Perceptual
 	}
-	if !haveContent && fh.Content != "" {
+	if !haveContent && fh.Content != contentHashUnknown {
 		res.content = fh.Content
 	}
-	res.usable = res.perceptual != 0 || res.content != ""
+	res.usable = res.perceptual != hashUnknown || res.content != contentHashUnknown
 
 	// Persist whatever is now known so this file is never re-read for these
 	// hashes again. Both columns are written together because UpdateHashes
@@ -201,7 +237,7 @@ func resolveImageDupHashes(
 	// change is a no-op rewrite, not a clobber.
 	if persist != nil && res.usable && (res.perceptual != storedPerceptual || res.content != r.contentHash) {
 		phashHex := ""
-		if res.perceptual != 0 {
+		if res.perceptual != hashUnknown {
 			phashHex = image.HashHex(res.perceptual)
 		}
 		if err := persist.UpdateImageHashes(ctx, a.ID, r.imageType, r.slotIndex, phashHex, res.content); err != nil {
@@ -256,7 +292,7 @@ func pairImageDuplicates(members []imageDupMember, hashes []uint64, tolerance fl
 	var groups []imageDupGroup
 	for i := 0; i < len(members); i++ {
 		for j := i + 1; j < len(members); j++ {
-			if hashes[i] == 0 || hashes[j] == 0 {
+			if hashes[i] == hashUnknown || hashes[j] == hashUnknown {
 				// A member can reach this point with a content hash but no
 				// usable perceptual hash (an image that would not decode).
 				// Similarity(0, 0) is 1.0, so comparing those would report
@@ -293,7 +329,7 @@ func pairImageDuplicates(members []imageDupMember, hashes []uint64, tolerance fl
 func exactFanartDuplicates(members []imageDupMember) map[int]bool {
 	bySlot := make(map[string][]int)
 	for _, m := range members {
-		if m.imageType != "fanart" || m.contentHash == "" {
+		if m.imageType != "fanart" || m.contentHash == contentHashUnknown {
 			continue
 		}
 		bySlot[m.contentHash] = append(bySlot[m.contentHash], m.slotIndex)
@@ -350,6 +386,29 @@ type imageDupResult struct {
 // invisible to callers: neither the violation set nor any file on disk changes
 // as a result, so the checker still observes the Checker contract of not
 // mutating the artist's state.
+//
+// fresh discards the stored hashes and re-reads every file, and is what makes
+// the destructive fixer safe. The hash columns are keyed by SLOT, but several
+// operations -- renumbering, reordering, deleting a slot, or a user simply
+// replacing a file over a network share -- move a different FILE into a slot
+// without touching its row. Such a row then describes a file the slot no longer
+// holds, and the exact fixer, which deletes on byte equality, would read two
+// slots as byte-identical and remove artwork that is not a copy of anything.
+//
+// Invalidation at each mutation site (see image.RenumberFanart) keeps the cache
+// honest, but it can never be complete: nothing in this process observes a user
+// overwriting fanart2.jpg over Samba, and a rescan deliberately preserves the
+// hash columns. So completeness is not what the safety rests on. It rests on
+// this: a pass that is about to DELETE a file re-derives its hashes from the
+// bytes on disk, every time. Detection may be served from cache; destruction may
+// not.
+//
+// The cost lands only where it is affordable. A routine evaluation reads no
+// files at all (that is #2349's fix, and it is untouched). The fresh pass runs
+// only when a fix is actually executing against an artist that has duplicates --
+// rare, and trivial next to the file deletion it is about to perform. It also
+// re-persists what it computed, so the same pass that refuses to trust a stale
+// hash also repairs it.
 func findImageDuplicates(
 	ctx context.Context,
 	db *sql.DB,
@@ -357,6 +416,7 @@ func findImageDuplicates(
 	fanartPrimaryName string,
 	tolerance float64,
 	persist imageHashRecorder,
+	fresh bool,
 	logger *slog.Logger,
 ) (imageDupResult, error) {
 	var out imageDupResult
@@ -369,11 +429,11 @@ func findImageDuplicates(
 		return out, err
 	}
 
-	fanartPaths := discoverFanartForDup(a, raw, fanartPrimaryName, logger)
+	fanartPaths := discoverFanartForDup(a, raw, fanartPrimaryName, fresh, logger)
 
 	var hashes []uint64
 	for _, r := range raw {
-		res := resolveImageDupHashes(ctx, a, r, fanartPaths, persist, logger)
+		res := resolveImageDupHashes(ctx, a, r, fanartPaths, persist, fresh, logger)
 		if !res.usable {
 			continue
 		}
@@ -396,17 +456,21 @@ func findImageDuplicates(
 // when some fanart row actually needs a file read (a hash it does not have
 // stored). An artist whose hashes are all persisted causes no directory scan
 // at all, which is the steady state after the first evaluation.
-func discoverFanartForDup(a *artist.Artist, raw []imageDupRawRow, fanartPrimaryName string, logger *slog.Logger) []string {
+// A fresh pass always needs the paths: it re-reads every file by definition.
+func discoverFanartForDup(a *artist.Artist, raw []imageDupRawRow, fanartPrimaryName string, fresh bool, logger *slog.Logger) []string {
 	if fanartPrimaryName == "" {
 		return nil
 	}
-	needed := false
+	needed := fresh
 	for _, r := range raw {
+		if needed {
+			break
+		}
 		if r.imageType != "fanart" {
 			continue
 		}
 		storedPerceptual, parseErr := image.ParseHashHex(r.hashHex)
-		if r.contentHash == "" || parseErr != nil || storedPerceptual == 0 {
+		if r.contentHash == contentHashUnknown || parseErr != nil || storedPerceptual == hashUnknown {
 			needed = true
 			break
 		}

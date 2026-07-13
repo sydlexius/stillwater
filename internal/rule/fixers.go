@@ -1692,14 +1692,19 @@ func pathIsFree(p string) (bool, error) {
 type BackdropSequencingFixer struct {
 	platformService *platform.Service
 	fsCheck         *SharedFSCheck
-	logger          *slog.Logger
+	// hashRecorder is required, not optional: renumbering moves a different
+	// file into a slot, which invalidates that slot's stored hashes, and
+	// image.RenumberFanart will not renumber without somewhere to record that.
+	hashRecorder imageHashRecorder
+	logger       *slog.Logger
 }
 
 // NewBackdropSequencingFixer creates a BackdropSequencingFixer.
-func NewBackdropSequencingFixer(platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *BackdropSequencingFixer {
+func NewBackdropSequencingFixer(platformService *platform.Service, fsCheck *SharedFSCheck, hashRecorder imageHashRecorder, logger *slog.Logger) *BackdropSequencingFixer {
 	return &BackdropSequencingFixer{
 		platformService: platformService,
 		fsCheck:         fsCheck,
+		hashRecorder:    hashRecorder,
 		logger:          logger.With(slog.String("component", "backdrop-sequencing-fixer")),
 	}
 }
@@ -1770,7 +1775,7 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 			continue
 		}
 
-		if err := img.RenumberFanart(a.Path, primaryName, discovered, kodiNumbering); err != nil {
+		if err := img.RenumberFanart(ctx, f.hashRecorder, a.ID, a.Path, primaryName, discovered, kodiNumbering); err != nil {
 			return nil, fmt.Errorf("renumbering fanart for %s: %w", a.Name, err)
 		}
 
@@ -1914,7 +1919,15 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 		tolerance = v.Config.Tolerance
 	}
 
-	res, err := findImageDuplicates(ctx, f.db, a, primaryName, tolerance, f.imageHashRecorder, f.logger)
+	// fresh=true: this pass decides which files to DELETE, so it re-hashes every
+	// file from disk rather than trusting the stored hashes. Those are keyed by
+	// slot, and anything that moves a file between slots -- a previous fix's
+	// renumber, a reorder, a slot delete, a user replacing a file over a network
+	// share -- leaves a slot describing a file it no longer holds. Acting on
+	// that reads distinct artwork as a byte-identical copy and deletes it. The
+	// re-read also re-persists the corrected hashes, so this pass repairs the
+	// staleness it refuses to trust. See findImageDuplicates.
+	res, err := findImageDuplicates(ctx, f.db, a, primaryName, tolerance, f.imageHashRecorder, true, f.logger)
 	if err != nil {
 		return nil, fmt.Errorf("re-detecting image duplicates for %s: %w", a.Name, err)
 	}
@@ -1929,7 +1942,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 		}, nil
 	}
 
-	removedNames, delErr := f.deleteDuplicateFanartWithRollback(a, primaryName, kodiNumbering, toDelete)
+	removedNames, delErr := f.deleteDuplicateFanartWithRollback(ctx, a, primaryName, kodiNumbering, toDelete)
 	if delErr != nil {
 		return nil, delErr
 	}
@@ -1961,7 +1974,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 // (best-effort) so no distinct artwork is lost on a partial failure. A
 // post-commit tomb-unlink failure is logged, not rolled back -- the survivors
 // are already renumbered, and a leftover tomb is ignored by discovery.
-func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
+func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Context, a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
 	paths, discErr := img.DiscoverFanart(a.Path, primaryName)
 	if discErr != nil {
 		return nil, fmt.Errorf("discovering fanart for %s: %w", a.Name, discErr)
@@ -2009,7 +2022,7 @@ func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(a *artist.Artist
 		removedNames = append(removedNames, filepath.Base(p))
 	}
 
-	if renumberErr := img.RenumberFanart(a.Path, primaryName, survivors, kodiNumbering); renumberErr != nil {
+	if renumberErr := img.RenumberFanart(ctx, f.imageHashRecorder, a.ID, a.Path, primaryName, survivors, kodiNumbering); renumberErr != nil {
 		return nil, wrapWithRollbackErrs(restoreStaged(),
 			fmt.Errorf("renumbering fanart after removing %d duplicate(s) (%s) for %s: %w", len(removedNames), strings.Join(removedNames, ", "), a.Name, renumberErr))
 	}

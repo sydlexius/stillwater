@@ -2553,7 +2553,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 		renumberWarning = true
 		r.logger.Warn("skipping fanart renumber due to failed deletes",
 			slog.String("artist_id", artistID))
-	} else if renumberErr := img.RenumberFanart(r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
+	} else if renumberErr := img.RenumberFanart(req.Context(), r.artistService, a.ID, r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
 		renumberWarning = true
 		r.logger.Warn("renumbering fanart after batch delete",
 			slog.String("artist_id", artistID),

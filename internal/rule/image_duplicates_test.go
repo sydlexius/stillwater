@@ -266,7 +266,7 @@ func TestImageDuplicateFixer_Fix_SharedFSSkip(t *testing.T) {
 	sharedCheck := NewSharedFSCheck(&stubLibQuerier{
 		lib: &library.Library{SharedFSStatus: library.SharedFSConfirmed},
 	}, testLogger())
-	f := NewImageDuplicateFixer(nil, nil, sharedCheck, nil, testLogger())
+	f := NewImageDuplicateFixer(nil, nil, sharedCheck, &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{Name: "Shared Artist", Path: t.TempDir(), LibraryID: "lib-test"}
 	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicate})
 	if err != nil {
@@ -289,7 +289,7 @@ func TestImageDuplicateFixer_Fix_NoRemovableDuplicates(t *testing.T) {
 	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
 	createGradientJPEG(t, filepath.Join(dir, "fanart2.jpg"), 9)
 
-	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), nil, testLogger())
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{ID: "art-fix-none", Name: "No Dup Artist", Path: dir, LibraryID: "lib-test"}
 	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicate, Config: RuleConfig{Tolerance: 0.90}})
 	if err != nil {
@@ -321,7 +321,7 @@ func TestImageDuplicateFixer_Fix_RemovesDuplicateAndRenumbersSurvivors(t *testin
 	createGradientJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1)
 	createGradientJPEG(t, filepath.Join(dir, "fanart4.jpg"), 2)
 
-	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), nil, testLogger())
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{
 		ID: "art-fix-dup", Name: "Fix Dup Artist", Path: dir, LibraryID: "lib-test",
 		FanartExists: true, FanartCount: 4,
@@ -400,7 +400,7 @@ func TestImageDuplicateFixer_Fix_RestoresStagedTombsOnRenumberFailure(t *testing
 		t.Fatalf("populating block dir: %v", err)
 	}
 
-	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), nil, testLogger())
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{
 		ID: "art-rollback", Name: "Rollback Artist", Path: dir, LibraryID: "lib-test",
 		FanartExists: true, FanartCount: 3,

@@ -497,7 +497,7 @@ func TestImageDuplicateExactFixer_SkipsSharedFilesystem(t *testing.T) {
 	sharedCheck := NewSharedFSCheck(&stubLibQuerier{
 		lib: &library.Library{SharedFSStatus: library.SharedFSConfirmed},
 	}, testLogger())
-	f := NewImageDuplicateFixer(nil, nil, sharedCheck, nil, testLogger())
+	f := NewImageDuplicateFixer(nil, nil, sharedCheck, &fakeHashRecorder{}, testLogger())
 
 	dir := t.TempDir()
 	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
@@ -521,7 +521,7 @@ func TestImageDuplicateExactFixer_SkipsSharedFilesystem(t *testing.T) {
 
 // TestImageDuplicateFixer_CanFixBothRules: one fixer serves both tiers.
 func TestImageDuplicateFixer_CanFixBothRules(t *testing.T) {
-	f := NewImageDuplicateFixer(nil, nil, nonSharedFSCheck(), nil, testLogger())
+	f := NewImageDuplicateFixer(nil, nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	for _, id := range []string{RuleImageDuplicate, RuleImageDuplicateExact} {
 		if !f.CanFix(&Violation{RuleID: id}) {
 			t.Errorf("CanFix(%q) = false, want true", id)
@@ -529,5 +529,142 @@ func TestImageDuplicateFixer_CanFixBothRules(t *testing.T) {
 	}
 	if f.CanFix(&Violation{RuleID: RuleThumbExists}) {
 		t.Error("CanFix(thumb_exists) = true; the fixer must not claim unrelated rules")
+	}
+}
+
+// TestImageDuplicateExactFixer_SecondCycleKeepsDistinctArtwork is the guard for
+// the stale-hash data-destruction bug, and it has to run TWO evaluation cycles
+// to see it. Every other test in this file runs one, which is exactly why the
+// suite was green while the fixer was destroying artwork.
+//
+// The mechanism: cycle 1 legitimately deletes the byte-identical copy in slot 1
+// and renumbers the distinct image in slot 2 DOWN into slot 1. Slot 1's row,
+// however, still carries the hash of the duplicate that used to live there --
+// the file moved, the row did not. Cycle 2 then reads slot 0 and slot 1 as
+// carrying the same content hash, concludes they are byte-identical, and deletes
+// slot 1. Slot 1 is the distinct image. It was never a copy of anything.
+//
+// Persisting the hashes (the #2349 fix) is what exposes this: before, detection
+// re-read every file on every evaluation and was accidentally self-correcting.
+//
+// The assertion is on the BYTES ON DISK after cycle 2, not on a Fixed flag or an
+// error value -- the destructive version of this code reports success while
+// destroying the file.
+func TestImageDuplicateExactFixer_SecondCycleKeepsDistinctArtwork(t *testing.T) {
+	_, db := newDupTestEngine(t)
+	insertTestArtist(t, db, "art-stale", "Stale Artist")
+
+	dir := t.TempDir()
+	// slot 0 and slot 1: byte-identical. slot 2: a DISTINCT image.
+	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
+	writeBytes(t, filepath.Join(dir, "fanart2.jpg"), readBytes(t, filepath.Join(dir, "fanart.jpg")))
+	createGradientJPEG(t, filepath.Join(dir, "fanart3.jpg"), 9)
+	kept := readBytes(t, filepath.Join(dir, "fanart.jpg"))
+	distinct := readBytes(t, filepath.Join(dir, "fanart3.jpg"))
+	if string(kept) == string(distinct) {
+		t.Fatal("fixture is wrong: the distinct image must not equal the duplicated one")
+	}
+
+	for i := range 3 {
+		insertTestImage(t, db, "art-stale", "fanart", i)
+	}
+
+	svc := artist.NewService(db)
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), svc, testLogger())
+	a := &artist.Artist{
+		ID: "art-stale", Name: "Stale Artist", Path: dir, LibraryID: "lib-test",
+		FanartExists: true, FanartCount: 3,
+	}
+
+	// Two cycles through the production path: Pipeline.FixViolation calls Fix
+	// and then artistService.Update, and it is the SECOND pass over an artist
+	// that has nothing left to fix which destroys the file.
+	for cycle := 1; cycle <= 2; cycle++ {
+		res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicateExact})
+		if err != nil {
+			t.Fatalf("cycle %d: Fix: %v", cycle, err)
+		}
+		if err := svc.Update(t.Context(), a); err != nil {
+			t.Fatalf("cycle %d: Update: %v", cycle, err)
+		}
+		if cycle == 2 && res.Fixed {
+			t.Errorf("cycle 2 reported a fix (%q), but there was nothing left to de-duplicate; "+
+				"it is acting on a hash that no longer describes the file in that slot", res.Message)
+		}
+	}
+
+	// THE ASSERTION. Both files must be on disk, and slot 1 must still hold the
+	// distinct image. If the stale hash won, fanart2.jpg is gone and only
+	// fanart.jpg remains.
+	survivors, err := image.DiscoverFanart(dir, "fanart.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart: %v", err)
+	}
+	if len(survivors) != 2 {
+		t.Fatalf("DATA DESTRUCTION: %d fanart file(s) survive, want 2. The distinct image was "+
+			"auto-deleted by the second exact-fixer cycle on a stale content_hash. Survivors: %v",
+			len(survivors), survivors)
+	}
+	if got := readBytes(t, filepath.Join(dir, "fanart.jpg")); string(got) != string(kept) {
+		t.Error("fanart.jpg is not the image that should have been kept")
+	}
+	if got := readBytes(t, filepath.Join(dir, "fanart2.jpg")); string(got) != string(distinct) {
+		t.Error("DATA DESTRUCTION: fanart2.jpg is not the distinct image -- the distinct artwork " +
+			"was deleted and a duplicate kept in its place")
+	}
+}
+
+// TestImageDuplicateExactFixer_RenumberInvalidatesStoredHashes pins the
+// mechanism the test above depends on, so that a regression is diagnosable
+// rather than merely red: after a fix renumbers survivors, no fanart slot may
+// still be carrying a hash computed from a file that has since moved.
+//
+// The fixer re-reads from disk before deleting (that is the guarantee), and it
+// re-persists what it read. Either way, what must NOT survive is a row whose
+// stored content hash describes a different file than the one in its slot.
+func TestImageDuplicateExactFixer_RenumberInvalidatesStoredHashes(t *testing.T) {
+	_, db := newDupTestEngine(t)
+	insertTestArtist(t, db, "art-inv", "Inv Artist")
+
+	dir := t.TempDir()
+	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
+	writeBytes(t, filepath.Join(dir, "fanart2.jpg"), readBytes(t, filepath.Join(dir, "fanart.jpg")))
+	createGradientJPEG(t, filepath.Join(dir, "fanart3.jpg"), 9)
+	for i := range 3 {
+		insertTestImage(t, db, "art-inv", "fanart", i)
+	}
+
+	svc := artist.NewService(db)
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), svc, testLogger())
+	a := &artist.Artist{
+		ID: "art-inv", Name: "Inv Artist", Path: dir, LibraryID: "lib-test",
+		FanartExists: true, FanartCount: 3,
+	}
+	if _, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicateExact}); err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if err := svc.Update(t.Context(), a); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Whatever slot 1 now stores, it must agree with the bytes actually in slot
+	// 1's file. Compare against the truth on disk rather than against a
+	// hard-coded expectation, so this holds whether the hash was cleared or
+	// rewritten.
+	var stored string
+	if err := db.QueryRow(
+		`SELECT content_hash FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' AND slot_index = 1`,
+		"art-inv",
+	).Scan(&stored); err != nil {
+		t.Fatalf("reading slot 1 content_hash: %v", err)
+	}
+	onDisk, err := image.HashFile(filepath.Join(dir, "fanart2.jpg"), false)
+	if err != nil {
+		t.Fatalf("hashing the file now in slot 1: %v", err)
+	}
+	if stored != "" && stored != onDisk.Content {
+		t.Errorf("slot 1 stores content_hash %q but its file hashes to %q -- the row describes a "+
+			"file the slot no longer holds, which is what gets distinct artwork auto-deleted",
+			stored, onDisk.Content)
 	}
 }

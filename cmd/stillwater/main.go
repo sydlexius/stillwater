@@ -925,7 +925,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		rule.NewExtraneousImagesFixer(a.platformService, a.fsCheck, logger),
 		logoPaddingFixer,
 		rule.NewDirectoryRenameFixer(a.fsCheck, a.artistService, logger),
-		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, logger),
+		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, a.artistService, logger),
 		rule.NewImageDuplicateFixer(a.db, a.platformService, a.fsCheck, a.artistService, logger),
 		rule.NewDiscographyFixer(releaseGroupFetcher, a.fsCheck, a.nfoSnapshotService, logger),
 	}

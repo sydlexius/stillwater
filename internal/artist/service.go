@@ -967,6 +967,22 @@ func (s *Service) UpdateImageHashes(ctx context.Context, artistID, imageType str
 	return s.images.UpdateHashes(ctx, artistID, imageType, slotIndex, phash, contentHash)
 }
 
+// InvalidateImageHashes marks every stored hash for one image type as unknown,
+// so the next duplicate evaluation re-derives them from the files on disk.
+//
+// Call it after any operation that changes which file occupies a slot --
+// renumbering, reordering, deleting a slot. The hash columns are keyed by slot,
+// and those operations move a different file into a slot without touching its
+// row, which leaves the slot holding a hash that describes a file it no longer
+// contains. The exact-duplicate fixer deletes files on the strength of those
+// hashes, so a stale one makes distinct artwork look like a byte-identical copy.
+//
+// It satisfies image.HashInvalidator, which is how image.RenumberFanart makes
+// this call impossible to omit.
+func (s *Service) InvalidateImageHashes(ctx context.Context, artistID, imageType string) error {
+	return s.images.ClearHashesForType(ctx, artistID, imageType)
+}
+
 // ClearImageFlag sets the exists flag to false for a single image slot.
 // This is called when a request to serve an image discovers the file is
 // missing on disk, clearing the stale flag so subsequent UI renders show a

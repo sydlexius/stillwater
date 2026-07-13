@@ -186,7 +186,7 @@ func TestMakeImageDuplicateChecker_QueryErrorReturnsNil(t *testing.T) {
 
 func TestBackdropSequencingFixer_Fix_EmptyPath(t *testing.T) {
 	// fsCheck must be non-shared so the IsShared guard does not fire first.
-	f := NewBackdropSequencingFixer(nil, nonSharedFSCheck(), testLogger())
+	f := NewBackdropSequencingFixer(nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{Name: "No Path", LibraryID: "lib-test"}
 	res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleBackdropSequencing})
 	if err != nil {
@@ -206,7 +206,7 @@ func TestBackdropSequencingFixer_Fix_RenumbersWithGap(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
 	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
 
-	f := NewBackdropSequencingFixer(nil, nonSharedFSCheck(), testLogger())
+	f := NewBackdropSequencingFixer(nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{Name: "Gap Artist", Path: dir, LibraryID: "lib-test"}
 	res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleBackdropSequencing})
 	if err != nil {
@@ -234,7 +234,7 @@ func TestBackdropSequencingFixer_Fix_AlreadyContiguous(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
 	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
 
-	f := NewBackdropSequencingFixer(nil, nonSharedFSCheck(), testLogger())
+	f := NewBackdropSequencingFixer(nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{Name: "Already OK", Path: dir, LibraryID: "lib-test"}
 	res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleBackdropSequencing})
 	if err != nil {
@@ -251,7 +251,7 @@ func TestBackdropSequencingFixer_Fix_AlreadyContiguous(t *testing.T) {
 func TestBackdropSequencingFixer_Fix_NoFanartFiles(t *testing.T) {
 	// Empty directory -- no fanart files discovered for any primary name.
 	dir := t.TempDir()
-	f := NewBackdropSequencingFixer(nil, nonSharedFSCheck(), testLogger())
+	f := NewBackdropSequencingFixer(nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{Name: "Empty Dir", Path: dir, LibraryID: "lib-test"}
 	res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleBackdropSequencing})
 	if err != nil {
@@ -291,7 +291,7 @@ func TestBackdropSequencingFixer_Fix_WithPlatformService(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "backdrop.jpg"), 1920, 1080)
 	createTestJPEG(t, filepath.Join(dir, "backdrop3.jpg"), 1920, 1080)
 
-	f := NewBackdropSequencingFixer(platformSvc, nonSharedFSCheck(), testLogger())
+	f := NewBackdropSequencingFixer(platformSvc, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{Name: "Emby Artist", Path: dir, LibraryID: "lib-test"}
 	res, err := f.Fix(ctx, a, &Violation{RuleID: RuleBackdropSequencing})
 	if err != nil {
