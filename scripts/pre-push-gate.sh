@@ -136,6 +136,23 @@ fi
 bash "$TOOL_VERSIONS_HELPER"
 
 echo ""
+echo "=== Action pin drift ==="
+# Assert every sub-action of one action repo (github/codeql-action/{init,analyze,
+# upload-sarif}, actions/cache{,/restore}) is pinned to the SAME commit SHA. They
+# ship from one repo and are version-locked to each other, but Dependabot names
+# each subpath separately and will bump one without the others -- which is exactly
+# how #2490 broke every CodeQL job on every PR. dependabot.yml now groups these
+# families, but a group is a policy, not an assertion: it cannot catch a skew
+# introduced by hand, by a bad merge, or in an ungrouped family.
+# Fast grep-only check, so it fail-fasts before the multi-minute test suite.
+ACTION_PINS_HELPER="$SCRIPT_DIR/check-action-pins.sh"
+if [ ! -x "$ACTION_PINS_HELPER" ]; then
+  echo "pre-push-gate: check-action-pins.sh not found or not executable in scripts/" >&2
+  exit 1
+fi
+bash "$ACTION_PINS_HELPER"
+
+echo ""
 echo "=== Changed Go files/packages ==="
 # Derived once, up front, so both the Tests step below and the measurement-
 # linter re-pass further down (in the Lint section) reuse the same set instead

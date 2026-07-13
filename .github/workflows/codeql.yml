@@ -38,12 +38,21 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     outputs:
       go: ${{ steps.filter.outputs.go }}
+      actions: ${{ steps.filter.outputs.actions }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           fetch-depth: 0
 
+      # The `actions` filter (#2491) gates `Analyze Actions Check`, which
+      # previously ran UNCONDITIONALLY on every PR -- including docs-only,
+      # OpenAPI-only and shell-only diffs that CodeQL's `actions` language
+      # cannot say anything about. That language analyses workflow and
+      # composite-action files only, so standalone shell scripts are
+      # deliberately NOT matched here: Shellcheck (gate.yml) already owns them,
+      # and adding `**/*.sh` would resurrect the unconditional run.
+      # Dependabot's action bumps still match, via `.github/workflows/**`.
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         id: filter
         with:
@@ -53,9 +62,20 @@ jobs:
               - '**/*.templ'
               - 'go.mod'
               - 'go.sum'
+            actions:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+              - '**/action.yml'
+              - '**/action.yaml'
 
+  # Renamed from "Analyze Go" to free that literal name for the always-running
+  # aggregator below (#2491), mirroring the Coverage Floor Check -> Coverage
+  # Floor precedent in ci.yml. A REQUIRED status check must be owned by a job
+  # that ALWAYS reports; this worker is paths-gated and legitimately skips, and
+  # a required check that never reports blocks the PR forever. The job id is
+  # unchanged so `needs:` references elsewhere are untouched.
   analyze:
-    name: Analyze Go
+    name: Analyze Go Check
     runs-on: ubuntu-latest
     needs: [changes]
     # Run for real unless we have positive, successful evidence that no
@@ -107,9 +127,19 @@ jobs:
         with:
           category: /language:go
 
+  # Renamed for the same reason as `analyze` above, AND given the paths gating it
+  # never had (#2491): before this, it had no `needs`, no `if` and no filter, so
+  # it ran on EVERY PR regardless of whether the diff could affect it. The `if:`
+  # is the same fail-closed shape the Go worker uses -- skip ONLY on positive,
+  # successful evidence that no workflow/action file changed. A `changes` job
+  # that errored, was cancelled, or did not run (schedule/workflow_dispatch)
+  # still runs the scan: a broken detector must never silently skip a security
+  # scan.
   analyze-actions:
-    name: Analyze Actions
+    name: Analyze Actions Check
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: always() && !(needs.changes.result == 'success' && needs.changes.outputs.actions == 'false')
     permissions:
       security-events: write
       contents: read
@@ -130,3 +160,85 @@ jobs:
         uses: github/codeql-action/analyze@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
         with:
           category: /language:actions
+
+  # ---------------------------------------------------------------------------
+  # Gate pointers (#2491).
+  #
+  # These two jobs own the literal check names `Analyze Go` / `Analyze Actions`
+  # so those names can be added to the `Protect main` ruleset's required status
+  # checks. Until they are, a FAILING CodeQL blocks nothing -- which is how two
+  # Dependabot PRs (#2484, #2486) broke CodeQL on every PR and merged anyway.
+  #
+  # >> MERGING THIS PR DOES NOT CLOSE THE HOLE. <<
+  # A maintainer must add `Analyze Go` and `Analyze Actions` to the ruleset's
+  # required checks afterwards. This PR only makes doing so SAFE: the workers
+  # legitimately skip on irrelevant diffs, and a required check that never
+  # reports would otherwise block every such PR forever.
+  #
+  # The split each aggregator enforces:
+  #   does it REPORT?  -- always (`if: always()`), so the required check resolves
+  #   does it DO WORK? -- only when the diff could affect that language
+  #
+  # Fail-closed rules, in order:
+  #   changes failed/cancelled -> FAIL. The detector is broken; we cannot know
+  #                               whether the scan was needed, so do not pass.
+  #   changes skipped          -> the detector does not run on schedule /
+  #                               workflow_dispatch, but the worker does. Mirror
+  #                               the worker.
+  #   changes ok, filter false -> PASS. The language genuinely did not change;
+  #                               the worker was correctly skipped.
+  #   otherwise                -> the worker had to run, so require its success.
+  # ---------------------------------------------------------------------------
+  analyze-summary:
+    name: Analyze Go
+    runs-on: ubuntu-latest
+    needs: [changes, analyze]
+    if: always()
+    steps:
+      - name: Verify the Go analysis succeeded or was legitimately skipped
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CHANGES_GO: ${{ needs.changes.outputs.go }}
+          ANALYZE_RESULT: ${{ needs.analyze.result }}
+        run: |
+          if [ "$CHANGES_RESULT" = "failure" ] || [ "$CHANGES_RESULT" = "cancelled" ]; then
+            echo "Detect Changes (CodeQL) did not succeed: $CHANGES_RESULT"
+            echo "Failing closed: cannot prove the Go scan was unnecessary."
+            exit 1
+          fi
+          if [ "$CHANGES_RESULT" = "success" ] && [ "$CHANGES_GO" = "false" ]; then
+            echo "No Go/templ changes; Analyze Go Check was correctly skipped."
+            exit 0
+          fi
+          if [ "$ANALYZE_RESULT" != "success" ]; then
+            echo "Analyze Go Check did not succeed: $ANALYZE_RESULT"
+            exit 1
+          fi
+          echo "Analyze Go Check succeeded."
+
+  analyze-actions-summary:
+    name: Analyze Actions
+    runs-on: ubuntu-latest
+    needs: [changes, analyze-actions]
+    if: always()
+    steps:
+      - name: Verify the Actions analysis succeeded or was legitimately skipped
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CHANGES_ACTIONS: ${{ needs.changes.outputs.actions }}
+          ANALYZE_RESULT: ${{ needs.analyze-actions.result }}
+        run: |
+          if [ "$CHANGES_RESULT" = "failure" ] || [ "$CHANGES_RESULT" = "cancelled" ]; then
+            echo "Detect Changes (CodeQL) did not succeed: $CHANGES_RESULT"
+            echo "Failing closed: cannot prove the Actions scan was unnecessary."
+            exit 1
+          fi
+          if [ "$CHANGES_RESULT" = "success" ] && [ "$CHANGES_ACTIONS" = "false" ]; then
+            echo "No workflow/action changes; Analyze Actions Check was correctly skipped."
+            exit 0
+          fi
+          if [ "$ANALYZE_RESULT" != "success" ]; then
+            echo "Analyze Actions Check did not succeed: $ANALYZE_RESULT"
+            exit 1
+          fi
+          echo "Analyze Actions Check succeeded."

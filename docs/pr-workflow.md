@@ -117,17 +117,48 @@ The fix: every required context in `ci.yml` is owned by an always-running (`if: 
 
 `A11y Smoke Tests` runs the full Playwright/axe-core suite in CI when a11y-relevant files changed and fails hard on any real violation -- CI is the strict, authoritative a11y gate; the always-running `a11y-summary` wrapper (#2223) exists only so the check name always reports a result, not to change when the real suite executes. The local pre-push gate's a11y step (`scripts/pre-push-gate.sh`) runs the same suite when a11y-relevant files changed since `BASE`, but treats a failure there as advisory (warn, don't block): a local-only harness flake -- a CPU-starved theme-toggle timeout in `tests/a11y/contrast.spec.js`, not a real contrast violation -- otherwise hard-blocks pushes unrelated to the flaking page (#2223). Set `RUN_A11Y=1` to make the local run blocking again.
 
-### Workflow-only trim (#2131)
+### Harness-touching trim (#2453, supersedes the #2131 workflow-only trim)
 
-A diff where every changed file is under `.github/workflows/**` -- in practice a Dependabot GitHub Actions version bump (`actions/setup-go`, `actions/cache`, etc.) -- no longer re-runs the full app-test fan-out. The application code is byte-identical to `main` on such a diff, so the 5-platform build matrix, the 9-shard race suite, Docker, CodeQL's Go analysis, and the a11y/axe smoke add zero marginal signal over a green CI; what actually needs validating is "do the jobs that use the bumped action still run."
+A diff that does not touch the Go build/test harness no longer pays for the Go legs. The application code is byte-identical to `main` on such a diff, so the build matrix, the race suite, the Go cache primer, and CodeQL's Go analysis add zero marginal signal.
 
-`ci.yml`'s `changes` job computes a `workflow_only` output (mutually exclusive with `code`) by diffing the actual changed-file list against the PR base SHA -- this is NOT expressible as a `dorny/paths-filter` output, since paths-filter answers "did any file match a pattern", not "do all files match". An unresolvable base SHA (e.g. an unexpected trigger shape) defaults `workflow_only` to `false`, i.e. fails toward running the full stack rather than under-testing a real code change. `.github/workflows/ci.yml` itself was removed from the `code`/`js`/`a11y` `dorny/paths-filter` filters that used to force a full run on any CI-workflow edit; that job is now `workflow_only`'s exclusive concern.
+The original #2131 trim keyed on `workflow_only` / `workflow_touched`: **any** file under `.github/workflows/**` forced a real (if trimmed) Go leg. That was too coarse. Measured on #2490 -- a two-file diff touching only `codeql.yml` and `dependabot.yml` -- it ran a 144s Go Cache Primer and a 248s test shard, about 95% of the run's wall clock, to prove nothing about a change containing no Go.
 
-When `workflow_only` is true, `changes.outputs.build_matrix` and `changes.outputs.test_matrix` collapse to a single REAL leg/shard (linux/amd64 build, the `rest` test shard) instead of either the full fan-out or a `skip:true` no-op placeholder -- this is the representative build+test path that exercises the bumped action for real (checkout, setup-go, cache restore/save, upload-artifact). `go-cache-primer` and the `test` job's `if` were extended to also run on `workflow_only == 'true'`; `test-summary`'s pass-through logic was extended the same way so the required `Test` context reflects the real (single-shard) result instead of treating it as a docs-only skip.
+`ci.yml`'s `changes` job now computes a single `harness_touched` output. It is **derived, not an enumerated allowlist** of "safe" workflow files: a hand-maintained list asserts something nothing enforces, and when it goes stale it fails toward *skipping* the suite -- silent under-testing, which #2199 and #2445 both establish as the dangerous direction.
 
-`Coverage Floor` stays gated on `code == 'true'` only (unchanged) -- a single shard's coverage profile only covers a fraction of `internal/**`, so running the per-package floor ratchet against it would spuriously fail every package the `rest` shard doesn't touch. The existing `coverage-floor-summary` docs-only pass-through already covers the `workflow_only` case for free, since `workflow_only` implies `code != 'true'`. `Docker Build` and `Lint` are likewise left gated on `code` only -- no app code changed, so there is nothing new to build or lint.
+The derivation follows from what the Go legs are actually built out of:
 
-CodeQL's `Analyze Go` job is not a required status check, so it gets a plain skip rather than a wrapper; it's gated on its own purpose-built `go` `dorny/paths-filter` output in `codeql.yml`, not `ci.yml`'s `workflow_only` detector. `Analyze Actions` always runs regardless, since it directly targets the changed workflow files. `Bruno API Tests` needed no change: its per-step `dorny/paths-filter` already excludes `ci.yml` from its `relevant` filter (only `.github/workflows/bruno-ci.yml` triggers it), so a `ci.yml`-only diff already gets the cheap always-runs-but-does-nothing path; a diff that bumps an action inside `bruno-ci.yml` itself correctly runs the full Bruno suite for real, which *is* the representative path for that file.
+| Changed path | Harness? | Why |
+|---|---|---|
+| `.github/workflows/ci.yml` | yes | defines the Go legs |
+| `.github/actions/**` | yes | composite actions those legs use |
+| `Makefile` | yes | invoked by them |
+| `scripts/lib/**` | yes | shared infrastructure the CI scripts source |
+| `scripts/<x>` | **only if `ci.yml` references it** | grepped, not listed, so the set cannot go stale |
+| any *other* workflow file | no | see below |
+| docs, OpenAPI, JS, Python, non-CI shell | no | unchanged from before |
+
+A workflow **other than `ci.yml` is non-harness by construction** -- including one added tomorrow. This is deliberately *not* "any workflow that mentions the Go toolchain": `codeql.yml` runs `setup-go` and `go build` for its own analysis, as do `nightly`/`fuzz`/`mutation`. None of them feed `ci.yml`'s Go legs, so none can invalidate `ci.yml`'s Go results. There is no list to update and no way to forget.
+
+An unresolvable base SHA yields `harness_touched=true` -- fail closed, run the suite.
+
+When `harness_touched` is true, `build_matrix` and `test_matrix` collapse to a single REAL leg/shard (linux/amd64 build, the `rest` test shard) rather than the full fan-out -- the representative path that exercises the changed harness for real. Otherwise they take the existing `skip: true` no-op branch, so the required `Build` / `Test` contexts still report success while Go compute drops to zero.
+
+`Coverage Floor` stays gated on `code == 'true'` only -- a single shard's profile covers a fraction of `internal/**`, so running the per-package ratchet against it would spuriously fail every package the `rest` shard misses. `Docker Build` is likewise `code`-only.
+
+`Lint` hosts the action-pin drift guard (#2492) as a step, because it is a required, always-running check -- see below.
+
+`Bruno API Tests` needed no change: its per-step `dorny/paths-filter` already excludes `ci.yml` from its `relevant` filter.
+
+### CodeQL gate pointers (#2491)
+
+CodeQL's two analyses follow the same "always REPORT, only WORK when relevant" split as `Lint` and `Coverage Floor`:
+
+- `Analyze Go Check` / `Analyze Actions Check` are the real workers. Each is gated on a purpose-built `dorny/paths-filter` output in `codeql.yml` (`go` and `actions` respectively) and skips when its language did not change. `Analyze Actions` previously had **no gating at all** and ran on every PR, including docs-only ones.
+- `Analyze Go` / `Analyze Actions` are `if: always()` aggregators that own those literal check names. They fail closed when the detector reports `failure` or `cancelled`, pass when the language legitimately did not change, and otherwise require the worker to have succeeded.
+
+The `actions` filter covers `.github/workflows/**`, `.github/actions/**` and `**/action.{yml,yaml}` only. Standalone shell scripts are deliberately excluded: CodeQL's `actions` language analyses workflow and composite-action files, and `Shellcheck` already owns `scripts/**`.
+
+**This structure exists so the two names can be added to the branch ruleset's required status checks.** Until a maintainer does that, a failing CodeQL still blocks nothing -- which is how #2484 and #2486 broke CodeQL on every PR and merged anyway. The aggregators make that promotion safe: without them, a required check that legitimately skips would block every non-Go PR forever.
 
 ## Copilot instruction files
 
