@@ -274,23 +274,29 @@ fi
 # --------------------------------------------------------------------------
 # Configuration lives in .markdownlint-cli2.yaml at the repo root.
 #
-# The version below MUST match the markdownlint-cli2 that CI's
-# markdownlint-cli2-action bundles -- declared in the "bundles:" comment beside
-# the action pin in .github/workflows/docs.yml, and asserted by
-# scripts/check-tool-versions.sh. A different major/minor here runs a different
-# RULE SET, so this hook passes and CI then fails on the same tree (#2500).
+# The version comes from .markdownlint-cli2-version -- the SAME file
+# .github/workflows/docs.yml reads. One token, one place: this hook and CI cannot
+# run different linters (and so cannot disagree about what is a violation),
+# because there is only one version in the repo (#2504).
 #
-# (An earlier comment claimed this pin "matches .pre-commit-config.yaml". Those
-# redundant lint hooks were removed from that file; nothing there to match.)
+# This replaced a `# bundles:` declaration comment in docs.yml plus a parity
+# assertion in check-tool-versions.sh. That guard was VACUOUS: both sides read
+# the comment, so they always agreed, and a Dependabot bump of the action's SHA
+# -- the exact scenario it existed for -- passed while CI ran a different CLI.
+# The drift is now impossible by construction rather than checked for.
 #
-# The pinned version is used UNCONDITIONALLY. A previous version preferred a
-# system-installed `markdownlint-cli2` when one was on PATH, which silently ran
-# whatever a developer happened to have globally installed -- neither the pin nor
-# CI's version -- making the pin advisory in practice (#2500).
+# The pinned version is used UNCONDITIONALLY. An earlier version preferred a
+# system-installed `markdownlint-cli2` when one was on PATH, silently running
+# whatever a developer happened to have installed globally (#2500).
 #
 # Paths are collected NUL-delimited so filenames containing spaces or other
 # shell metacharacters are handled safely.
-MARKDOWNLINT_CLI2_VERSION="0.23.0"
+MDL_VERSION_FILE="$(git rev-parse --show-toplevel)/.markdownlint-cli2-version"
+MARKDOWNLINT_CLI2_VERSION="$(tr -d '[:space:]' < "$MDL_VERSION_FILE" 2>/dev/null || true)"
+if [ -z "$MARKDOWNLINT_CLI2_VERSION" ]; then
+    echo -e "${RED}${BOLD}FAIL${RESET} markdownlint: $MDL_VERSION_FILE is missing or empty"
+    exit 1
+fi
 STAGED_MD=()
 while IFS= read -r -d '' f; do
     STAGED_MD+=("$f")

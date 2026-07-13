@@ -1,8 +1,28 @@
 # Gate -- pre-push-gate.sh checks that have no CI equivalent in ci.yml.
 #
-# These checks are enforced by the local pre-push git hook. This workflow
-# closes the bypass: a PR pushed without the hook still fails required status
-# checks here before it can merge.
+# These checks are enforced by the local pre-push git hook. This workflow exists
+# to close the bypass: a PR pushed WITHOUT the hook (or with --no-verify) still
+# has to face them here.
+#
+# >> IT ONLY ACTUALLY CLOSES THE BYPASS FOR THE JOBS THAT ARE *REQUIRED* STATUS
+# >> CHECKS. A job that is not in the `Protect main` ruleset can go red and the
+# >> PR merges anyway. (#2503)
+#
+# Every job below runs UNCONDITIONALLY at the job level -- the paths-filtering is
+# at the STEP level, so each job always reports a conclusion even when its steps
+# no-op on an irrelevant diff. That is what makes them safe to require: unlike a
+# job skipped via a job-level `if:`, they can never leave a required check
+# permanently unreported (which would block the PR forever). No gate-pointer
+# aggregator is needed to promote any of them.
+#
+# So keeping a job out of the required list is a DECISION, not a technical limit.
+# Whenever a check here is one whose failure should stop a merge, add its name to
+# the ruleset -- otherwise this header is describing an intention rather than a
+# guarantee, which is the exact defect #2503 was filed for.
+#
+# Note `Coverage Floor (Gate Pointer)` is deliberately NOT named `Coverage Floor`:
+# ci.yml's `coverage-floor-summary` owns that required check name. The suffix is
+# the disambiguator, not an oversight -- see the comment on that job.
 #
 # Covers:
 #   1. Generated-file freshness: templ + all doc generators.

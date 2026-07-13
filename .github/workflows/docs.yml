@@ -44,15 +44,29 @@ jobs:
         with:
           files: '**/*.md'
 
+      # Run markdownlint-cli2 EXACTLY as .githooks/pre-commit does, reading the
+      # version from the SAME file (.markdownlint-cli2-version). One token, one
+      # place: CI and the hook cannot run different linters, because there is only
+      # one version in the repo (#2504).
+      #
+      # This replaces DavidAnson/markdownlint-cli2-action. That action pinned the
+      # ACTION version (v24.x) while the hook pinned the CLI's npm version
+      # (0.23.x) -- two incomparable schemes. #2501 tried to relate them with a
+      # `# bundles:` declaration comment and a parity assertion, but BOTH SIDES
+      # READ THE COMMENT, so they always agreed: Dependabot bumping the action's
+      # SHA (the exact scenario the guard existed for) left the comment untouched
+      # and the check PASSED while CI silently ran a different CLI. A comment
+      # asserting a fact is not a check of that fact.
+      #
+      # Removing the second scheme makes the drift impossible BY CONSTRUCTION
+      # rather than detectable by a guard -- and drops one pinned action that
+      # Dependabot can no longer bump out of lockstep.
       - name: Lint markdown
-        # The ACTION version (v24.x) and the markdownlint-cli2 CLI version it
-        # bundles (0.23.x) are DIFFERENT numbering schemes. The local pre-commit
-        # hook pins the CLI by its npm version, so the two sides cannot be
-        # compared textually. The declaration below is the single anchor that
-        # relates them, and scripts/check-tool-versions.sh asserts the local pin
-        # matches it. Dependabot bumps the SHA but NOT this comment, so the drift
-        # check fails closed and forces both sides to move together (#2500).
-        # bundles: markdownlint-cli2 0.23.0
-        uses: DavidAnson/markdownlint-cli2-action@8de2aa07cae85fd17c0b35642db70cf5495f1d25 # v24.0.0
-        with:
-          globs: '**/*.md'
+        run: |
+          version="$(tr -d '[:space:]' < .markdownlint-cli2-version)"
+          if [ -z "$version" ]; then
+            echo "::error::.markdownlint-cli2-version is empty or missing"
+            exit 1
+          fi
+          echo "markdownlint-cli2 $version (from .markdownlint-cli2-version)"
+          npx -y "markdownlint-cli2@${version}" '**/*.md'
