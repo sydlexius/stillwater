@@ -92,7 +92,7 @@ func TestUpdateProvenance(t *testing.T) {
 
 	// Now update provenance fields via the targeted update.
 	err = svc.UpdateImageProvenance(ctx, a.ID, "thumb", 0,
-		"ff00ff00ff00ff00", "musicbrainz", "jpeg", "2026-03-21T15:30:00Z")
+		"ff00ff00ff00ff00", "sha-thumb", "musicbrainz", "jpeg", "2026-03-21T15:30:00Z")
 	if err != nil {
 		t.Fatalf("UpdateImageProvenance: %v", err)
 	}
@@ -109,6 +109,9 @@ func TestUpdateProvenance(t *testing.T) {
 	got := images[0]
 	if got.PHash != "ff00ff00ff00ff00" {
 		t.Errorf("PHash = %q, want %q", got.PHash, "ff00ff00ff00ff00")
+	}
+	if got.ContentHash != "sha-thumb" {
+		t.Errorf("ContentHash = %q, want %q", got.ContentHash, "sha-thumb")
 	}
 	if got.Source != "musicbrainz" {
 		t.Errorf("Source = %q, want %q", got.Source, "musicbrainz")
@@ -144,7 +147,7 @@ func TestUpdateProvenance_NoRow(t *testing.T) {
 	// UpdateProvenance on a non-existent row should return an error indicating
 	// no matching row was found.
 	err := svc.UpdateImageProvenance(ctx, a.ID, "thumb", 0,
-		"deadbeef", "user", "png", "2026-03-21T10:00:00Z")
+		"deadbeef", "sha-missing", "user", "png", "2026-03-21T10:00:00Z")
 	if err == nil {
 		t.Fatal("UpdateImageProvenance on missing row should return an error")
 	}
@@ -207,23 +210,23 @@ func TestNewestWriteTimesByArtist(t *testing.T) {
 
 	// Set provenance with different timestamps for each artist.
 	if err := repo.UpdateProvenance(ctx, artistA.ID, "thumb", 0,
-		"aaa", "musicbrainz", "jpeg", "2026-03-20T10:00:00Z"); err != nil {
+		"aaa", "sha-a", "musicbrainz", "jpeg", "2026-03-20T10:00:00Z"); err != nil {
 		t.Fatalf("UpdateProvenance A: %v", err)
 	}
 
 	// Artist B has two images with different timestamps -- the MAX should be returned.
 	if err := repo.UpdateProvenance(ctx, artistB.ID, "thumb", 0,
-		"bbb", "fanarttv", "jpeg", "2026-03-21T08:00:00Z"); err != nil {
+		"bbb", "sha-b-thumb", "fanarttv", "jpeg", "2026-03-21T08:00:00Z"); err != nil {
 		t.Fatalf("UpdateProvenance B thumb: %v", err)
 	}
 	if err := repo.UpdateProvenance(ctx, artistB.ID, "fanart", 0,
-		"ccc", "fanarttv", "jpeg", "2026-03-21T15:30:00Z"); err != nil {
+		"ccc", "sha-b-fanart", "fanarttv", "jpeg", "2026-03-21T15:30:00Z"); err != nil {
 		t.Fatalf("UpdateProvenance B fanart: %v", err)
 	}
 
 	// Artist C is in a different library -- set provenance to verify filtering.
 	if err := repo.UpdateProvenance(ctx, artistC.ID, "thumb", 0,
-		"ddd", "user", "png", "2026-03-22T00:00:00Z"); err != nil {
+		"ddd", "sha-c", "user", "png", "2026-03-22T00:00:00Z"); err != nil {
 		t.Fatalf("UpdateProvenance C: %v", err)
 	}
 
@@ -332,7 +335,7 @@ func TestUpsertAll_PreservesProvenance(t *testing.T) {
 
 	// Step 2: Set provenance via UpdateProvenance (the normal flow after image save).
 	if err := repo.UpdateProvenance(ctx, a.ID, "fanart", 0,
-		"1234567890abcdef", "fanarttv", "jpeg", "2026-01-15T08:00:00Z"); err != nil {
+		"1234567890abcdef", "sha-fanart", "fanarttv", "jpeg", "2026-01-15T08:00:00Z"); err != nil {
 		t.Fatalf("UpdateProvenance: %v", err)
 	}
 
@@ -356,6 +359,9 @@ func TestUpsertAll_PreservesProvenance(t *testing.T) {
 	}
 	if got[0].PHash != "1234567890abcdef" {
 		t.Errorf("PHash = %q, want %q", got[0].PHash, "1234567890abcdef")
+	}
+	if got[0].ContentHash != "sha-fanart" {
+		t.Errorf("ContentHash = %q, want %q", got[0].ContentHash, "sha-fanart")
 	}
 	if got[0].Source != "fanarttv" {
 		t.Errorf("Source = %q, want %q", got[0].Source, "fanarttv")

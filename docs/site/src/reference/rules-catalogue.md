@@ -2,11 +2,11 @@
 description: Every built-in rule in Stillwater -- what it checks, what the fix does, what's configurable, and the default state.
 ---
 
-<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 23 rules verified. -->
+<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer, ImageDuplicateFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 25 rules verified. -->
 
-# Rules catalogue
+# Rules catalog
 
-Stillwater ships with 24 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
+Stillwater ships with 25 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
 
 For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-concepts/rules.md). This page is the enumeration.
 
@@ -36,6 +36,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Banner minimum resolution](#banner-minimum-resolution) | Image | Disabled, auto | Yes |
 | [Extraneous image files](#extraneous-image-files) | Image | Enabled, manual | Sometimes |
 | [No duplicate images](#no-duplicate-images) | Image | Disabled, manual | Sometimes |
+| [No byte-identical images](#no-byte-identical-images) | Image | Enabled, manual | Sometimes |
 | [Backdrop/fanart sequencing](#backdropfanart-sequencing) | Image | Disabled, manual | Yes |
 | [Minimum backdrop count](#minimum-backdrop-count) | Image | Disabled, manual | Detection-only |
 | [Logo excessive padding](#logo-excessive-padding) | Image | Disabled, manual | Yes |
@@ -603,6 +604,37 @@ After:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (duplicate fanart2.
 - Runs in manual mode only; never auto-deletes files.
 - Skipped on shared-filesystem libraries.
 - Only within-type fanart duplicates are fixable; cross-type duplicates remain informational.
+
+---
+
+## No byte-identical images
+
+**Category:** Image &middot; **Default:** Enabled, manual &middot; **Severity:** warning
+
+Fanart slots should not contain byte-identical copies of the same file. Detection compares file hashes rather than image content, so a match is exact and the redundant copy is always safe to remove. Visually identical images that are not byte-identical (for example a re-encoded or re-tagged copy) are the separate 'No duplicate images' rule's concern.
+
+When the same file ends up in two fanart slots, media servers show the same backdrop twice and the extra copy wastes space for no benefit. This rule compares a hash of each file's bytes: two slots are duplicates only when their files are identical, which is a certainty rather than a similarity judgment -- that certainty is what makes this rule safe to trust, and safe to opt into auto mode if you want it to act without review. It is also the cheap half of duplicate detection, because it needs no image decoding, and every duplicate it removes is one fewer image the slower visual comparison has to consider.
+
+**When this fires:**
+
+- An artist where the same backdrop was downloaded twice and saved as both fanart.jpg and fanart2.jpg.
+- An artist directory where a fanart file was copied to the next free slot by hand, leaving two identical files.
+
+**What the fix does:** Removes byte-identical fanart duplicates: for each group of fanart slots whose files have the same content hash, keeps the lowest-numbered slot and deletes the others, then renumbers the survivors into a contiguous sequence.
+
+```
+Before: /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg (identical file), fanart3.jpg
+After:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (the identical copy deleted, former fanart3.jpg renumbered to fanart2.jpg)
+```
+
+**Configurable:** Severity only.
+
+**Caveats:**
+
+- Ships in manual mode by default. Byte-identical files carry no distinct artwork, so removing the extra copies cannot lose anything.
+- Skipped on shared-filesystem libraries.
+- Does not catch re-encoded or re-tagged copies of the same picture. Two files can look identical and still differ byte-for-byte (a re-saved JPEG, or the same image saved twice with different provenance recorded in it). Those are found by the 'No duplicate images' rule instead.
+- Only fanart is checked, because it is the only image type with more than one slot.
 
 ---
 

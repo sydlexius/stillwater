@@ -37,6 +37,7 @@ const (
 	RuleArtistIDMismatch      = "artist_id_mismatch"
 	RuleDirectoryNameMismatch = "directory_name_mismatch"
 	RuleImageDuplicate        = "image_duplicate"
+	RuleImageDuplicateExact   = "image_duplicate_exact"
 	RuleMetadataQuality       = "metadata_quality"
 	RuleBackdropSequencing    = "backdrop_sequencing"
 	RuleBackdropMinCount      = "backdrop_min_count"
@@ -192,6 +193,30 @@ var defaultRules = []Rule{
 		Enabled:        false,
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{Severity: "warning", Tolerance: 0.90},
+	},
+	{
+		ID:   RuleImageDuplicateExact,
+		Name: "No byte-identical images",
+		Description: "Fanart slots should not contain byte-identical copies of the same file. " +
+			"Detection compares file hashes rather than image content, so a match is exact and " +
+			"the redundant copy is always safe to remove. Visually identical images that are not " +
+			"byte-identical (for example a re-encoded or re-tagged copy) are the separate " +
+			"'No duplicate images' rule's concern.",
+		Category: RuleCategoryImage,
+		// Enabled by default: byte equality admits no false positives, so
+		// the MATCH itself needs no human judgement. But the default mode is
+		// Manual, not Auto -- this rule did not exist in earlier versions,
+		// and shipping Enabled+Auto would mean Stillwater starts deleting
+		// files from a user's library on upgrade with no opt-in and no
+		// prompt. "The deletion is safe" (no distinct artwork is lost) and
+		// "the user consented to us deleting things" are different claims.
+		// Every other file-touching rule in the catalogue defaults to
+		// Manual; this one is no exception. The rule still runs, so users
+		// immediately see their byte-identical duplicates -- they just
+		// click to remove them. Auto is a reasonable thing to opt into.
+		Enabled:        true,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "warning"},
 	},
 	{
 		ID:             RuleMetadataQuality,

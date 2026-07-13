@@ -18,7 +18,7 @@ import (
 )
 
 func TestImageDuplicateFixer_CanFix(t *testing.T) {
-	f := NewImageDuplicateFixer(nil, nil, nonSharedFSCheck(), testLogger())
+	f := NewImageDuplicateFixer(nil, nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	if !f.CanFix(&Violation{RuleID: RuleImageDuplicate}) {
 		t.Error("CanFix should be true for the image_duplicate rule")
 	}
@@ -29,7 +29,7 @@ func TestImageDuplicateFixer_CanFix(t *testing.T) {
 
 func TestImageDuplicateFixer_Fix_NoPath(t *testing.T) {
 	db := setupTestDB(t)
-	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), testLogger())
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{ID: "art-nopath", Name: "No Path Artist", Path: "", LibraryID: "lib-test"}
 	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicate})
 	if err != nil {
@@ -46,7 +46,7 @@ func TestImageDuplicateFixer_Fix_NoPath(t *testing.T) {
 func TestImageDuplicateFixer_Fix_NilDB(t *testing.T) {
 	// A non-empty path but no DB handle: the fixer cannot re-detect duplicates,
 	// so it must decline rather than proceed to (destructive) deletion.
-	f := NewImageDuplicateFixer(nil, nil, nonSharedFSCheck(), testLogger())
+	f := NewImageDuplicateFixer(nil, nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{ID: "art-nodb", Name: "No DB Artist", Path: t.TempDir(), LibraryID: "lib-test"}
 	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicate})
 	if err != nil {
@@ -73,7 +73,7 @@ func TestImageDuplicateFixer_Fix_GetActiveProfileError(t *testing.T) {
 	}
 	platSvc := platform.NewService(closedDB)
 
-	f := NewImageDuplicateFixer(validDB, platSvc, nonSharedFSCheck(), testLogger())
+	f := NewImageDuplicateFixer(validDB, platSvc, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{ID: "art-proferr", Name: "Profile Err Artist", Path: t.TempDir(), LibraryID: "lib-test"}
 	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicate})
 	if err == nil {
@@ -120,7 +120,7 @@ func TestImageDuplicateFixer_Fix_WithPlatformProfile(t *testing.T) {
 	createGradientJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1)
 	createGradientJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1) // duplicate of slot 1
 
-	f := NewImageDuplicateFixer(db, platSvc, nonSharedFSCheck(), testLogger())
+	f := NewImageDuplicateFixer(db, platSvc, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{
 		ID: "art-profile-dup", Name: "Profile Dup Artist", Path: dir, LibraryID: "lib-test",
 		FanartExists: true, FanartCount: 3,
@@ -151,7 +151,7 @@ func TestImageDuplicateFixer_Fix_DetectionError(t *testing.T) {
 		t.Fatalf("closing DB: %v", err)
 	}
 
-	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), testLogger())
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
 	a := &artist.Artist{ID: "art-det-err", Name: "Detection Err Artist", Path: t.TempDir(), LibraryID: "lib-test"}
 	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicate, Config: RuleConfig{Tolerance: 0.90}})
 	if err == nil {

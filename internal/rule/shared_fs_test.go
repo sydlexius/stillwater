@@ -158,7 +158,7 @@ func TestBackdropSequencingFixer_SharedFS_Skips(t *testing.T) {
 	check := NewSharedFSCheck(&stubLibQuerier{
 		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
-	fixer := NewBackdropSequencingFixer(nil, check, logger)
+	fixer := NewBackdropSequencingFixer(nil, check, &fakeHashRecorder{}, logger)
 	a := &artist.Artist{Name: "Test", Path: t.TempDir(), LibraryID: "lib-1"}
 	v := &Violation{RuleID: RuleBackdropSequencing}
 	result, err := fixer.Fix(context.Background(), a, v)

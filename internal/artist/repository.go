@@ -164,7 +164,23 @@ type ImageRepository interface {
 	GetForArtists(ctx context.Context, artistIDs []string) (map[string][]ArtistImage, error)
 	Upsert(ctx context.Context, img *ArtistImage) error
 	UpsertAll(ctx context.Context, artistID string, images []ArtistImage) error
-	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
+	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error
+
+	// UpdateHashes writes only phash and content_hash, leaving the other
+	// provenance columns intact. Used by the lazy hash backfill, which hashes
+	// files it did not write and so must not overwrite their recorded source.
+	// Returns ErrNotFound when the slot no longer exists (a benign race with
+	// a concurrent scan), which callers are expected to log and skip.
+	UpdateHashes(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash string) error
+
+	// ClearHashesForType blanks phash and content_hash for every slot of one
+	// image type, marking them unknown so the next evaluation re-derives them
+	// from disk. Callers use it after any operation that moves files between
+	// slots (renumber, reorder, slot delete), because the hash columns are
+	// keyed by slot and such an operation silently changes which file a slot
+	// holds.
+	ClearHashesForType(ctx context.Context, artistID, imageType string) error
+
 	// ClearExistsFlag sets exists_flag=0 for the given artist/image_type/slot.
 	// Used to mark stale image entries when the file is confirmed missing on disk.
 	ClearExistsFlag(ctx context.Context, artistID, imageType string, slotIndex int) error

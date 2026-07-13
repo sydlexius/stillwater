@@ -21,7 +21,7 @@ func newSQLiteImageRepo(db *sql.DB) *sqliteImageRepo {
 func (r *sqliteImageRepo) GetForArtist(ctx context.Context, artistID string) ([]ArtistImage, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
-			width, height, phash, file_format, source, last_written_at, locked
+			width, height, phash, content_hash, file_format, source, last_written_at, locked
 		FROM artist_images WHERE artist_id = ? ORDER BY image_type, slot_index`,
 		artistID)
 	if err != nil {
@@ -45,7 +45,7 @@ func (r *sqliteImageRepo) GetForArtists(ctx context.Context, artistIDs []string)
 	}
 
 	query := `SELECT id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder, ` + //nolint:gosec // G202: placeholders are "?" literals
-		`width, height, phash, file_format, source, last_written_at, locked ` +
+		`width, height, phash, content_hash, file_format, source, last_written_at, locked ` +
 		`FROM artist_images ` +
 		`WHERE artist_id IN (` + strings.Join(placeholders, ",") + `) ` +
 		`ORDER BY artist_id, image_type, slot_index`
@@ -62,7 +62,7 @@ func (r *sqliteImageRepo) GetForArtists(ctx context.Context, artistIDs []string)
 		if err := rows.Scan(
 			&img.ID, &img.ArtistID, &img.ImageType, &img.SlotIndex,
 			&existsFlag, &lowRes, &img.Placeholder,
-			&img.Width, &img.Height, &img.PHash, &img.FileFormat, &img.Source,
+			&img.Width, &img.Height, &img.PHash, &img.ContentHash, &img.FileFormat, &img.Source,
 			&img.LastWrittenAt, &locked,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image row: %w", err)
@@ -82,8 +82,8 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
-			width, height, phash, file_format, source, last_written_at, locked)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			width, height, phash, content_hash, file_format, source, last_written_at, locked)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(artist_id, image_type, slot_index) DO UPDATE SET
 			id = excluded.id,
 			exists_flag = excluded.exists_flag,
@@ -92,13 +92,14 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 			width = excluded.width,
 			height = excluded.height,
 			phash = excluded.phash,
+			content_hash = excluded.content_hash,
 			file_format = excluded.file_format,
 			source = excluded.source,
 			last_written_at = excluded.last_written_at,
 			locked = excluded.locked`,
 		img.ID, img.ArtistID, img.ImageType, img.SlotIndex,
 		dbutil.BoolToInt(img.Exists), dbutil.BoolToInt(img.LowRes), img.Placeholder,
-		img.Width, img.Height, img.PHash, img.FileFormat, img.Source, img.LastWrittenAt,
+		img.Width, img.Height, img.PHash, img.ContentHash, img.FileFormat, img.Source, img.LastWrittenAt,
 		dbutil.BoolToInt(img.Locked),
 	)
 	if err != nil {
@@ -123,12 +124,15 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 	incoming := make(map[slotKey]struct{}, len(images))
 
 	// Upsert each incoming image row. ON CONFLICT updates only display fields,
-	// leaving provenance columns (phash, source, file_format, last_written_at)
-	// untouched so that UpdateProvenance data survives.
+	// leaving provenance columns (phash, content_hash, source, file_format,
+	// last_written_at) untouched so that UpdateProvenance and UpdateHashes data
+	// survives. This is what makes the lazy hash backfill durable: a rescan
+	// re-syncs the display fields without wiping the hashes it just computed,
+	// so hashing stays a once-per-file cost rather than a once-per-scan one.
 	upsertStmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
-			width, height, phash, file_format, source, last_written_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', '')
+			width, height, phash, content_hash, file_format, source, last_written_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', '', '')
 		ON CONFLICT(artist_id, image_type, slot_index) DO UPDATE SET
 			exists_flag = excluded.exists_flag,
 			low_res     = excluded.low_res,
@@ -197,17 +201,17 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 	return tx.Commit()
 }
 
-// UpdateProvenance updates only the provenance-related fields (phash, source,
-// file_format, last_written_at) on an existing artist_images row, identified by
-// artist_id + image_type + slot_index. This is a targeted update that does not
-// touch display fields (exists_flag, low_res, placeholder, dimensions).
-// Returns an error if no matching row exists.
-func (r *sqliteImageRepo) UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error {
+// UpdateProvenance updates only the provenance-related fields (phash,
+// content_hash, source, file_format, last_written_at) on an existing
+// artist_images row, identified by artist_id + image_type + slot_index. This is
+// a targeted update that does not touch display fields (exists_flag, low_res,
+// placeholder, dimensions). Returns an error if no matching row exists.
+func (r *sqliteImageRepo) UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error {
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE artist_images
-		SET phash = ?, source = ?, file_format = ?, last_written_at = ?
+		SET phash = ?, content_hash = ?, source = ?, file_format = ?, last_written_at = ?
 		WHERE artist_id = ? AND image_type = ? AND slot_index = ?`,
-		phash, source, fileFormat, lastWrittenAt,
+		phash, contentHash, source, fileFormat, lastWrittenAt,
 		artistID, imageType, slotIndex,
 	)
 	if err != nil {
@@ -219,6 +223,61 @@ func (r *sqliteImageRepo) UpdateProvenance(ctx context.Context, artistID, imageT
 	}
 	if n == 0 {
 		return fmt.Errorf("no image row found for %s/%s/%d", artistID, imageType, slotIndex)
+	}
+	return nil
+}
+
+// UpdateHashes writes only the two hash columns for an existing artist_images
+// row. It exists alongside UpdateProvenance for the lazy-backfill path, which
+// hashes a file that Stillwater did not necessarily write and therefore knows
+// nothing about its source: routing that through UpdateProvenance would blank
+// the source, file_format, and last_written_at of an already-provenanced row.
+//
+// A zero-row update means the slot was removed or renumbered by a concurrent
+// scan between detection and persistence. That is a benign race, not a
+// corruption, so it is reported as ErrNotFound for the caller to log and skip
+// rather than treated as a failure of the evaluation.
+func (r *sqliteImageRepo) UpdateHashes(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash string) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE artist_images
+		SET phash = ?, content_hash = ?
+		WHERE artist_id = ? AND image_type = ? AND slot_index = ?`,
+		phash, contentHash, artistID, imageType, slotIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("updating image hashes %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected for hashes %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: image row %s/%s/%d", ErrNotFound, artistID, imageType, slotIndex)
+	}
+	return nil
+}
+
+// ClearHashesForType blanks phash and content_hash for every slot of one image
+// type belonging to one artist, returning them to the "not yet hashed" state
+// that a fresh row starts in. The next duplicate evaluation re-derives them from
+// the files on disk.
+//
+// It is deliberately whole-type rather than per-slot. The operations that
+// require it -- renumbering, reordering, deleting a slot -- shift files ACROSS
+// slots, so the set of rows whose file changed identity is precisely the set
+// this cannot cheaply enumerate. Clearing the type costs one re-read per file on
+// the next evaluation; getting the enumeration subtly wrong costs a file.
+//
+// A zero-row update is not an error: an artist with no rows of this type has no
+// stale hashes by definition.
+func (r *sqliteImageRepo) ClearHashesForType(ctx context.Context, artistID, imageType string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE artist_images SET phash = '', content_hash = ''
+		WHERE artist_id = ? AND image_type = ?`,
+		artistID, imageType,
+	)
+	if err != nil {
+		return fmt.Errorf("clearing image hashes for %s/%s: %w", artistID, imageType, err)
 	}
 	return nil
 }
@@ -308,7 +367,7 @@ func scanImageRows(rows *sql.Rows) ([]ArtistImage, error) {
 		if err := rows.Scan(
 			&img.ID, &img.ArtistID, &img.ImageType, &img.SlotIndex,
 			&existsFlag, &lowRes, &img.Placeholder,
-			&img.Width, &img.Height, &img.PHash, &img.FileFormat, &img.Source,
+			&img.Width, &img.Height, &img.PHash, &img.ContentHash, &img.FileFormat, &img.Source,
 			&img.LastWrittenAt, &locked,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image: %w", err)

@@ -1149,7 +1149,7 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 		// only matches the primary name pattern. Compact the numbered files
 		// so the lowest available becomes the primary -- same pattern used
 		// by handleFanartBatchDelete.
-		r.compactFanartIfNeeded(p.dir, primary, kodi)
+		r.compactFanartIfNeeded(ctx, a.ID, p.dir, primary, kodi)
 		r.updateArtistImageFlag(ctx, a, "fanart")
 		r.updateArtistFanartCount(ctx, a)
 	}
@@ -1242,7 +1242,7 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 // compactFanartIfNeeded renumbers fanart files when the primary slot is missing
 // but numbered files exist. This closes gaps so the primary filename always
 // corresponds to the first available fanart.
-func (r *Router) compactFanartIfNeeded(dir, primary string, kodi bool) {
+func (r *Router) compactFanartIfNeeded(ctx context.Context, artistID, dir, primary string, kodi bool) {
 	paths, discoverErr := img.DiscoverFanart(dir, primary)
 	if discoverErr != nil {
 		r.logger.Warn("discovering fanart for compact",
@@ -1262,7 +1262,7 @@ func (r *Router) compactFanartIfNeeded(dir, primary string, kodi bool) {
 		return // primary exists, nothing to compact
 	}
 	// Renumber all discovered files sequentially from index 0.
-	if err := img.RenumberFanart(dir, primary, paths, kodi); err != nil {
+	if err := img.RenumberFanart(ctx, r.artistService, artistID, dir, primary, paths, kodi); err != nil {
 		r.logger.Warn("compacting fanart after primary removal",
 			slog.String("error", err.Error()))
 	}

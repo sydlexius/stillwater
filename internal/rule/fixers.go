@@ -411,12 +411,13 @@ func firstNonEmptyFieldValue(results []provider.FieldProviderResult) (value, sou
 	return "", ""
 }
 
-// provenanceRecorder records image provenance data (phash, source, file format,
-// write timestamp) in the artist_images table after an image is saved to disk.
-// Used by the fix pipeline and bulk executor after persisting the artist so
-// that the artist_images row exists before UpdateImageProvenance is called.
+// provenanceRecorder records image provenance data (phash, content hash,
+// source, file format, write timestamp) in the artist_images table after an
+// image is saved to disk. Used by the fix pipeline and bulk executor after
+// persisting the artist so that the artist_images row exists before
+// UpdateImageProvenance is called.
 type provenanceRecorder interface {
-	UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
+	UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error
 }
 
 // ImageFixer resolves image-related rule violations by fetching images from
@@ -807,7 +808,7 @@ func recordSavedImageProvenance(ctx context.Context, pr provenanceRecorder, arti
 		log.Warn("no provenance data collected from saved image, skipping update")
 		return
 	}
-	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
+	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
 		log.Warn("recording image provenance after save",
 			slog.String("error", err.Error()))
 	}
@@ -1691,14 +1692,19 @@ func pathIsFree(p string) (bool, error) {
 type BackdropSequencingFixer struct {
 	platformService *platform.Service
 	fsCheck         *SharedFSCheck
-	logger          *slog.Logger
+	// hashRecorder is required, not optional: renumbering moves a different
+	// file into a slot, which invalidates that slot's stored hashes, and
+	// image.RenumberFanart will not renumber without somewhere to record that.
+	hashRecorder imageHashRecorder
+	logger       *slog.Logger
 }
 
 // NewBackdropSequencingFixer creates a BackdropSequencingFixer.
-func NewBackdropSequencingFixer(platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *BackdropSequencingFixer {
+func NewBackdropSequencingFixer(platformService *platform.Service, fsCheck *SharedFSCheck, hashRecorder imageHashRecorder, logger *slog.Logger) *BackdropSequencingFixer {
 	return &BackdropSequencingFixer{
 		platformService: platformService,
 		fsCheck:         fsCheck,
+		hashRecorder:    hashRecorder,
 		logger:          logger.With(slog.String("component", "backdrop-sequencing-fixer")),
 	}
 }
@@ -1769,7 +1775,7 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 			continue
 		}
 
-		if err := img.RenumberFanart(a.Path, primaryName, discovered, kodiNumbering); err != nil {
+		if err := img.RenumberFanart(ctx, f.hashRecorder, a.ID, a.Path, primaryName, discovered, kodiNumbering); err != nil {
 			return nil, fmt.Errorf("renumbering fanart for %s: %w", a.Name, err)
 		}
 
@@ -1792,33 +1798,63 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 	}, nil
 }
 
-// ImageDuplicateFixer removes redundant within-type fanart duplicates
-// detected by makeImageDuplicateChecker (via the shared findImageDuplicates
-// helper), keeping the lowest slot index in each duplicate group and
-// renumbering survivors into a contiguous sequence. Runs in manual mode only
-// (no CandidateDiscoverer implementation): the deletion is destructive, so
-// it is deferred to a user-triggered FixViolation call rather than applied
-// automatically during evaluation.
+// ImageDuplicateFixer removes redundant within-type fanart duplicates, keeping
+// the lowest slot index in each duplicate group and renumbering survivors into
+// a contiguous sequence.
+//
+// It serves both duplicate rules, because the destructive half of the work --
+// stage, delete, renumber, roll back on failure -- is identical for each; only
+// the choice of which slots are redundant differs, and that choice is made by
+// deletionSetFor. The two rules differ in how much trust their answer earns,
+// not in what is done with it:
+//
+//   - image_duplicate_exact matches on byte equality, which cannot be wrong --
+//     but the rule still seeds to manual mode (a destructive rule should not
+//     start deleting a user's files on upgrade without them asking; see the
+//     rule's definition in service.go). An operator can opt it into auto.
+//   - image_duplicate matches on perceptual similarity, which is a judgement,
+//     so its rule seeds to manual mode and this fixer runs only when a user
+//     triggers FixViolation. It implements no CandidateDiscoverer, so manual
+//     mode never invokes it as a side effect of evaluation.
 type ImageDuplicateFixer struct {
-	db              *sql.DB
-	platformService *platform.Service
-	fsCheck         *SharedFSCheck
-	logger          *slog.Logger
+	db                *sql.DB
+	platformService   *platform.Service
+	fsCheck           *SharedFSCheck
+	imageHashRecorder imageHashRecorder
+	logger            *slog.Logger
 }
 
 // NewImageDuplicateFixer creates an ImageDuplicateFixer.
-func NewImageDuplicateFixer(db *sql.DB, platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *ImageDuplicateFixer {
+func NewImageDuplicateFixer(db *sql.DB, platformService *platform.Service, fsCheck *SharedFSCheck, hashRecorder imageHashRecorder, logger *slog.Logger) *ImageDuplicateFixer {
 	return &ImageDuplicateFixer{
-		db:              db,
-		platformService: platformService,
-		fsCheck:         fsCheck,
-		logger:          logger.With(slog.String("component", "image-duplicate-fixer")),
+		db:                db,
+		platformService:   platformService,
+		fsCheck:           fsCheck,
+		imageHashRecorder: hashRecorder,
+		logger:            logger.With(slog.String("component", "image-duplicate-fixer")),
 	}
 }
 
-// CanFix returns true for the image_duplicate rule.
+// CanFix returns true for both the exact and perceptual duplicate rules.
 func (f *ImageDuplicateFixer) CanFix(v *Violation) bool {
-	return v.RuleID == RuleImageDuplicate
+	return v.RuleID == RuleImageDuplicate || v.RuleID == RuleImageDuplicateExact
+}
+
+// deletionSetFor picks the redundant slots for the rule that raised the
+// violation.
+//
+// For the exact rule this is pure byte-equality grouping: equality is
+// transitive, so a group of identical files collapses onto its lowest slot with
+// no risk of destroying distinct artwork.
+//
+// For the perceptual rule it must go through nonTransitiveFanartDeletionSet,
+// because perceptual similarity is NOT transitive and naive grouping there can
+// delete genuinely distinct images (see that function's comment).
+func deletionSetFor(ruleID string, res imageDupResult) map[int]bool {
+	if ruleID == RuleImageDuplicateExact {
+		return res.exactFanartToDelete
+	}
+	return nonTransitiveFanartDeletionSet(res.perceptual)
 }
 
 // Fix re-detects current within-type fanart duplicates, deletes the
@@ -1828,19 +1864,24 @@ func (f *ImageDuplicateFixer) CanFix(v *Violation) bool {
 // violation from the DB row without re-running the checker, so the on-disk
 // state may have drifted since the violation was recorded.
 func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	ruleID := RuleImageDuplicate
+	if v != nil && v.RuleID != "" {
+		ruleID = v.RuleID
+	}
+
 	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
-			RuleID:  RuleImageDuplicate,
+			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "skipped: shared-filesystem library",
 		}, nil
 	}
 
 	if a.Path == "" {
-		return &FixResult{RuleID: RuleImageDuplicate, Fixed: false, Message: "artist has no path"}, nil
+		return &FixResult{RuleID: ruleID, Fixed: false, Message: "artist has no path"}, nil
 	}
 	if f.db == nil {
-		return &FixResult{RuleID: RuleImageDuplicate, Fixed: false, Message: "no database connection"}, nil
+		return &FixResult{RuleID: ruleID, Fixed: false, Message: "no database connection"}, nil
 	}
 
 	var profile *platform.Profile
@@ -1868,34 +1909,42 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	}
 	if primaryName == "" {
 		return &FixResult{
-			RuleID:  RuleImageDuplicate,
+			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "skipped: no fanart naming convention available",
 		}, nil
 	}
 	kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
 
-	tolerance := 0.90
+	tolerance := defaultImageDupTolerance
 	if v != nil && v.Config.Tolerance > 0 && v.Config.Tolerance <= 1.0 {
 		tolerance = v.Config.Tolerance
 	}
 
-	groups, err := findImageDuplicates(ctx, f.db, a, primaryName, tolerance, f.logger)
+	// fresh=true: this pass decides which files to DELETE, so it re-hashes every
+	// file from disk rather than trusting the stored hashes. Those are keyed by
+	// slot, and anything that moves a file between slots -- a previous fix's
+	// renumber, a reorder, a slot delete, a user replacing a file over a network
+	// share -- leaves a slot describing a file it no longer holds. Acting on
+	// that reads distinct artwork as a byte-identical copy and deletes it. The
+	// re-read also re-persists the corrected hashes, so this pass repairs the
+	// staleness it refuses to trust. See findImageDuplicates.
+	res, err := findImageDuplicates(ctx, f.db, a, primaryName, tolerance, f.imageHashRecorder, true, f.logger)
 	if err != nil {
 		return nil, fmt.Errorf("re-detecting image duplicates for %s: %w", a.Name, err)
 	}
 
-	toDelete := nonTransitiveFanartDeletionSet(groups)
+	toDelete := deletionSetFor(ruleID, res)
 
 	if len(toDelete) == 0 {
 		return &FixResult{
-			RuleID:  RuleImageDuplicate,
+			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "no removable within-type fanart duplicates found",
 		}, nil
 	}
 
-	removedNames, delErr := f.deleteDuplicateFanartWithRollback(a, primaryName, kodiNumbering, toDelete)
+	removedNames, delErr := f.deleteDuplicateFanartWithRollback(ctx, a, primaryName, kodiNumbering, toDelete)
 	if delErr != nil {
 		return nil, delErr
 	}
@@ -1907,7 +1956,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	resyncFanartFields(a, primaryName)
 
 	return &FixResult{
-		RuleID:  RuleImageDuplicate,
+		RuleID:  ruleID,
 		Fixed:   true,
 		Message: fmt.Sprintf("removed %d duplicate fanart file(s) for %s: %s", len(removedNames), a.Name, strings.Join(removedNames, ", ")),
 	}, nil
@@ -1927,7 +1976,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 // (best-effort) so no distinct artwork is lost on a partial failure. A
 // post-commit tomb-unlink failure is logged, not rolled back -- the survivors
 // are already renumbered, and a leftover tomb is ignored by discovery.
-func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
+func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Context, a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
 	paths, discErr := img.DiscoverFanart(a.Path, primaryName)
 	if discErr != nil {
 		return nil, fmt.Errorf("discovering fanart for %s: %w", a.Name, discErr)
@@ -1944,9 +1993,37 @@ func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(a *artist.Artist
 
 	// restoreStaged rolls staged tombs back to their originals (best-effort),
 	// returning any restore-error descriptions for inclusion in the wrapped err.
+	//
+	// Checks occupancy before every rename rather than clobbering blindly.
+	// This restore only runs after img.RenumberFanart reports a failure, and
+	// that failure can be img.renumberFanartFiles' OWN best-effort rollback
+	// failing partway (a rename-back that errors on some, but not all, of the
+	// files it already finalized) -- in which case a just-renumbered survivor
+	// can be left sitting on exactly the path a tombed duplicate used to
+	// occupy. Renaming the tomb over an occupied path in that state would
+	// silently overwrite that survivor with the content that was supposed to
+	// be deleted -- the same destructive-rollback shape F1 closed for the
+	// invalidation-failure trigger, but via a different trigger (a rollback
+	// failure inside RenumberFanart itself) that the F1 reorder does not
+	// reach. Refusing and failing loudly, rather than overwriting, is what
+	// "never destroy data to clean up after a failure" means in practice:
+	// the tomb is left in place (recoverable, inert -- discovery ignores its
+	// suffix) instead of the alternative of silently erasing distinct
+	// artwork.
 	restoreStaged := func() []string {
 		var rollbackErrs []string
 		for _, s := range staged {
+			if _, statErr := os.Lstat(s.origPath); statErr == nil {
+				f.logger.Error("refusing to restore a staged duplicate onto an occupied path",
+					"artist", a.Name, "path", s.origPath, "tomb", filepath.Base(s.tombPath))
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf(
+					"restore %s: refused -- path is occupied (tomb left at %s)",
+					filepath.Base(s.origPath), filepath.Base(s.tombPath)))
+				continue
+			} else if !os.IsNotExist(statErr) {
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf("restore %s: checking occupancy: %v", filepath.Base(s.origPath), statErr))
+				continue
+			}
 			if rbErr := os.Rename(s.tombPath, s.origPath); rbErr != nil {
 				rollbackErrs = append(rollbackErrs, fmt.Sprintf("restore %s: %v", filepath.Base(s.origPath), rbErr))
 			}
@@ -1975,7 +2052,7 @@ func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(a *artist.Artist
 		removedNames = append(removedNames, filepath.Base(p))
 	}
 
-	if renumberErr := img.RenumberFanart(a.Path, primaryName, survivors, kodiNumbering); renumberErr != nil {
+	if renumberErr := img.RenumberFanart(ctx, f.imageHashRecorder, a.ID, a.Path, primaryName, survivors, kodiNumbering); renumberErr != nil {
 		return nil, wrapWithRollbackErrs(restoreStaged(),
 			fmt.Errorf("renumbering fanart after removing %d duplicate(s) (%s) for %s: %w", len(removedNames), strings.Join(removedNames, ", "), a.Name, renumberErr))
 	}

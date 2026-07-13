@@ -6,9 +6,9 @@ description: Turn rules on and off, switch between manual and auto modes, tune t
 
 # Enable and configure rules
 
-Stillwater ships with 24 built-in rules. Most are enabled out of the box; some are opinionated and start disabled. This page covers turning them on and off, picking the right automation mode, tuning thresholds, and scheduling recurring evaluation.
+Stillwater ships with 25 built-in rules. Most are enabled out of the box; some are opinionated and start disabled. This page covers turning them on and off, picking the right automation mode, tuning thresholds, and scheduling recurring evaluation.
 
-For the *concept* (the three states, fix-all, the conflict gate), see [rules in core concepts](../core-concepts/rules.md). For the full per-rule reference, see [rules catalogue](../reference/rules-catalogue.md).
+For the *concept* (the three states, fix-all, the conflict gate), see [rules in core concepts](../core-concepts/rules.md). For the full per-rule reference, see [rules catalog](../reference/rules-catalogue.md).
 
 ## Turn a rule on or off
 
@@ -47,7 +47,7 @@ Common tuning examples:
 - **Higher biography minimum length.** Default is 10 characters (which catches "?" and "N/A" placeholders). Raise to 100 if you want substantive bios.
 - **Article handling for directory-name matching.** Default is "prefix" (`The Beatles` stays `The Beatles`). Switch to "strip" if your media platform sorts by content, not the leading article.
 
-The full list of knobs per rule is in the [rules catalogue](../reference/rules-catalogue.md).
+The full list of knobs per rule is in the [rules catalog](../reference/rules-catalogue.md).
 
 ## Run rules now
 
@@ -114,5 +114,5 @@ before disabling. Disable is for rules that don't apply to your collection at al
 ## See also
 
 - [Rules concept](../core-concepts/rules.md)
-- [Rules catalogue](../reference/rules-catalogue.md) -- every built-in rule and its knobs.
+- [Rules catalog](../reference/rules-catalogue.md) -- every built-in rule and its knobs.
 - [Run scans](run-scans.md) -- discovery populates the artist set that rules then evaluate.

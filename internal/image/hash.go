@@ -1,12 +1,17 @@
 package image
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
 	"math/bits"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"golang.org/x/image/draw"
@@ -66,4 +71,63 @@ func HashHex(h uint64) string {
 // Returns an error if the string is not a valid 64-bit hex value.
 func ParseHashHex(s string) (uint64, error) {
 	return strconv.ParseUint(s, 16, 64)
+}
+
+// ContentHash returns the SHA-256 of the exact bytes as a lowercase hex
+// string. Unlike PerceptualHash it does not decode the image: it answers
+// only "are these two byte sequences identical", which is the one duplicate
+// claim that has no false positives. It is the cheap first tier of duplicate
+// detection; PerceptualHash is the expensive second tier that additionally
+// catches re-encoded or metadata-stripped copies of the same picture.
+func ContentHash(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// FileHashes carries the hashes computed from a single read of one image file.
+// Perceptual is zero when the caller did not ask for it (see HashFile), which
+// is indistinguishable from a decode that legitimately produced the all-zero
+// hash; callers that need the perceptual hash must request it explicitly and
+// treat zero as "unusable" exactly as the stored-phash path does.
+type FileHashes struct {
+	Content    string
+	Perceptual uint64
+}
+
+// HashFile reads path exactly once and returns its hashes.
+//
+// The content hash is always computed: it is a SHA-256 over bytes already in
+// memory and costs nothing next to the read itself. The perceptual hash is
+// computed only when needPerceptual is true, because that requires a full
+// image decode and resample -- by far the most expensive step, and pure waste
+// for a file whose hash is already persisted or that an exact-duplicate match
+// has already accounted for.
+//
+// This single-read shape is the point: duplicate detection needs both tiers,
+// and reading the file twice (once per tier) would give back most of what
+// ordering the cheap tier first buys.
+//
+// The security boundary on path is enforced at the call sites, exactly as for
+// ReadProvenance: callers construct paths from trusted sources (database rows,
+// filesystem discovery, fixed naming patterns), never from request input.
+func HashFile(path string, needPerceptual bool) (FileHashes, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return FileHashes{}, fmt.Errorf("reading image for hashing: %w", err)
+	}
+
+	h := FileHashes{Content: ContentHash(data)}
+	if !needPerceptual {
+		return h, nil
+	}
+
+	perceptual, err := PerceptualHash(bytes.NewReader(data))
+	if err != nil {
+		// The content hash is still valid and useful on its own (an
+		// undecodable file can still be byte-compared), so return it
+		// alongside the error rather than discarding it.
+		return h, fmt.Errorf("perceptual hash for %s: %w", path, err)
+	}
+	h.Perceptual = perceptual
+	return h, nil
 }

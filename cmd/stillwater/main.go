@@ -840,6 +840,10 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	}
 	a.ruleEngine = rule.NewEngine(a.ruleService, db, a.platformService, a.libraryService, logger)
 	a.ruleEngine.SetFSCache(rule.NewFSCache(0, 0, logger))
+	// Lets duplicate detection persist the hashes it computes, so each image
+	// is read and decoded once for the life of the file rather than on every
+	// rule evaluation.
+	a.ruleEngine.SetImageHashRecorder(a.artistService)
 	a.ruleEngine.SetMetadataProvider(a.orchestrator)
 
 	// Wire image bridge so logo_padding rule can check/fix API-only artists.
@@ -921,8 +925,8 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		rule.NewExtraneousImagesFixer(a.platformService, a.fsCheck, logger),
 		logoPaddingFixer,
 		rule.NewDirectoryRenameFixer(a.fsCheck, a.artistService, logger),
-		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, logger),
-		rule.NewImageDuplicateFixer(a.db, a.platformService, a.fsCheck, logger),
+		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, a.artistService, logger),
+		rule.NewImageDuplicateFixer(a.db, a.platformService, a.fsCheck, a.artistService, logger),
 		rule.NewDiscographyFixer(releaseGroupFetcher, a.fsCheck, a.nfoSnapshotService, logger),
 	}
 	a.pipeline = rule.NewPipeline(a.ruleEngine, a.artistService, a.ruleService, fixers, a.publisher, logger)

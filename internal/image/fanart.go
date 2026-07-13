@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -192,19 +193,124 @@ func NextFanartIndex(maxSuffix int, kodi bool) int {
 	return maxSuffix
 }
 
-// RenumberFanart renames the given survivor paths so they occupy contiguous
-// 0-based indices. Each file keeps its original extension. primaryName is the
-// base name for index 0 (e.g. "backdrop.jpg"). dir is the parent directory.
-// kodi controls the numbering convention (see FanartFilename).
+// HashInvalidator drops the stored perceptual and content hashes for an
+// artist's images of a given type, so that the next duplicate evaluation
+// re-derives them from the files actually on disk.
 //
-//nolint:gocognit // Two-phase rename (stage to .tmp then commit to final name) with best-effort rollback in both phases; the rollback walks the already-mutated subset of files so the partial-failure recovery has to remain inline alongside the forward path.
-func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) error {
+// It is an interface here, rather than a concrete store, so that this package
+// keeps depending on nothing but the filesystem.
+type HashInvalidator interface {
+	InvalidateImageHashes(ctx context.Context, artistID, imageType string) error
+}
+
+// RenumberFanart renames the given survivor paths so they occupy contiguous
+// 0-based indices, then invalidates the artist's stored fanart hashes.
+//
+// Each file keeps its original extension. primaryName is the base name for
+// index 0 (e.g. "backdrop.jpg"). dir is the parent directory. kodi controls the
+// numbering convention (see FanartFilename).
+//
+// The invalidator is a required argument rather than an optional one because
+// renumbering is precisely the operation that breaks the assumption the hash
+// columns encode: hashes are stored per SLOT, and a renumber moves a different
+// FILE into a slot while leaving that slot's row untouched. A stale hash is not
+// merely a cache miss -- the exact-duplicate fixer deletes files on the strength
+// of it, so a slot holding a neighbour's hash makes distinct artwork look like a
+// byte-identical copy and get removed.
+//
+// Threading the invalidator through the signature is what stops that from
+// recurring: a caller cannot renumber without confronting the hashes, because
+// the code does not compile otherwise. Every previous version of this function
+// left invalidation to the caller's memory, and every caller forgot.
+//
+// Hashes are cleared rather than recomputed. Clearing has exactly one meaning
+// ("unknown"), which the detector already handles -- an empty hash never matches
+// anything, including another empty one -- and it costs one re-read on the next
+// evaluation. Recomputing would mean re-deriving the slot-to-file mapping at the
+// one moment that mapping is in flux, which is the same reasoning that produced
+// the bug.
+func RenumberFanart(ctx context.Context, inv HashInvalidator, artistID, dir, primaryName string, survivors []string, kodi bool) error {
+	if inv == nil {
+		return fmt.Errorf("renumbering fanart in %s: no hash invalidator supplied", dir)
+	}
+
+	// Invalidate BEFORE the destructive rename, and unconditionally -- even
+	// when survivors is empty. An empty-survivors call means every fanart
+	// file for this artist just vanished, so there is MORE to invalidate in
+	// that case, not less; returning early here (as a prior version of this
+	// function did) walked straight past the one call that keeps the
+	// compile-time "cannot renumber without confronting the hashes"
+	// guarantee honest, and left the stale hash from the deleted slot ready
+	// to falsely match whatever distinct image gets uploaded into it next.
+	//
+	// Ordering also matters for failure isolation. If invalidation ran AFTER
+	// the rename (the previous shape of this function), an invalidation-only
+	// failure -- a transient DB-busy error, unrelated to the filesystem --
+	// surfaced after the survivors were already sitting at their new,
+	// correct paths. The caller cannot tell that failure apart from a failed
+	// rename, so it rolls back by restoring the tombed duplicates to their
+	// ORIGINAL paths -- paths the just-renumbered survivors may now occupy,
+	// silently overwriting distinct artwork with content that was supposed
+	// to be permanently deleted. Invalidating first removes THAT race
+	// entirely: if invalidation fails, this function returns before any file
+	// moves, so the caller's rollback is safe WITH RESPECT TO AN
+	// INVALIDATION FAILURE SPECIFICALLY (nothing on disk has changed yet).
+	//
+	// This is NOT a general "the caller's rollback is always safe" claim --
+	// it narrows to the one trigger this reorder closes. renumberFanartFiles
+	// below still has its own internal rollback paths (staging failures,
+	// finalize failures), and if ONE of those best-effort rollbacks itself
+	// only partially succeeds, a survivor can still end up sitting on a path
+	// the caller's rollback would then overwrite. See restoreStaged's own
+	// occupancy check in fixers.go for the hardening that covers that
+	// remaining trigger; this ordering fixes the invalidation-failure
+	// trigger, not every trigger.
+	//
+	// Reordering is also strictly safer than the reverse order for the hash
+	// cache itself -- an empty hash never matches anything, so clearing
+	// early can only ever cost an extra re-read on the next evaluation,
+	// never a wrong-hash-based delete.
+	if invErr := inv.InvalidateImageHashes(ctx, artistID, "fanart"); invErr != nil {
+		return fmt.Errorf("invalidating fanart hashes for artist %s before renumber: %w", artistID, invErr)
+	}
+
 	if len(survivors) == 0 {
 		return nil
 	}
 
-	// Phase 1: stage all survivors to temporary names to avoid collisions
-	// when renaming (e.g., fanart1->fanart0 while fanart0 still exists).
+	return renumberFanartFiles(dir, primaryName, survivors, kodi)
+}
+
+// renumberFanartFiles performs the on-disk half of RenumberFanart. It is
+// separate only so the two-phase rename can be tested without a hash store;
+// production code must go through RenumberFanart, which cannot skip the
+// invalidation.
+//
+//nolint:gocognit // Two-phase rename (stage to .tmp then commit to final name) with best-effort rollback in both phases; the rollback walks the already-mutated subset of files so the partial-failure recovery has to remain inline alongside the forward path.
+func renumberFanartFiles(dir, primaryName string, survivors []string, kodi bool) error {
+	if len(survivors) == 0 {
+		return nil
+	}
+
+	// Phase 0: compute every survivor's staging path and clear any leftover
+	// temp file from a previous crashed operation, for ALL survivors, BEFORE
+	// any survivor is staged (renamed away from its current path).
+	//
+	// This is hoisted out of the staging loop on purpose -- same medicine as
+	// the RenumberFanart invalidate-before-rename reorder: do the fallible,
+	// non-destructive step FIRST, so a failure costs nothing. Sweeping stale
+	// .tmp files inline within the staging loop (the previous shape) had
+	// exactly one asymmetric exit: an os.Remove failure at survivor i left
+	// survivors 0..i-1 already staged at their .tmp names with NO rollback
+	// (the os.Rename failure branch four lines below it DOES roll back; this
+	// one did not). Those stranded .tmp files are invisible to
+	// DiscoverFanart, so the caller's restoreStaged() -- which only knows
+	// about tombed duplicates, not stranded survivors -- would restore the
+	// duplicate while the stranded originals stayed vanished. The NEXT
+	// renumber's stale-tmp sweep would then find those same .tmp paths,
+	// remove them cleanly, and permanently unlink the stranded originals.
+	// Doing the whole sweep before any file moves makes that sequence
+	// structurally unreachable rather than correctly recoverable.
 	type staged struct {
 		tmpPath string
 		ext     string
@@ -214,12 +320,17 @@ func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) erro
 		ext := filepath.Ext(oldPath)
 		tmpName := fmt.Sprintf("fanart_renumber_%d%s.tmp", i, ext)
 		tmpPath := filepath.Join(dir, tmpName)
-		// Remove any leftover temp file from a previous crashed operation.
 		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			return fmt.Errorf("clearing stale temp file %s: %w", tmpName, removeErr)
 		}
-		filesystem.TraceFSWrite("Rename(stage)", tmpPath, 0)
-		if err := os.Rename(oldPath, tmpPath); err != nil {
+		stagedFiles[i] = staged{tmpPath: tmpPath, ext: ext}
+	}
+
+	// Phase 1: stage all survivors to temporary names to avoid collisions
+	// when renaming (e.g., fanart1->fanart0 while fanart0 still exists).
+	for i, oldPath := range survivors {
+		filesystem.TraceFSWrite("Rename(stage)", stagedFiles[i].tmpPath, 0)
+		if err := os.Rename(oldPath, stagedFiles[i].tmpPath); err != nil {
 			// Best-effort rollback of already-staged files.
 			var rollbackErrs []string
 			for rollback := range i {
@@ -232,7 +343,6 @@ func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) erro
 			}
 			return fmt.Errorf("staging %s for renumber: %w", filepath.Base(oldPath), err)
 		}
-		stagedFiles[i] = staged{tmpPath: tmpPath, ext: ext}
 	}
 
 	// Phase 2: rename staged files to their final contiguous names.
