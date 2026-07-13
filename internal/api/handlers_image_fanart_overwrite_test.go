@@ -307,6 +307,14 @@ func TestBackupSlot_PrunesAStaleBackupSoDeletedArtDoesNotResurrect(t *testing.T)
 	if _, err := r.saveFanartSlotProtected(dir, []string{slot}, jpegBytes(t, 120, 90), nil); err != nil {
 		t.Fatalf("overwrite: %v", err)
 	}
+	// PRECONDITION. Without this the whole test can pass vacuously: "the deleted art did
+	// not come back" proves nothing if no backup was ever written to come back FROM.
+	// Assert the backup FILE itself, not just that some backup exists for the type.
+	staleBackup := filepath.Join(dir, img.BackupDirName, "fanart", slot)
+	if _, err := os.Stat(staleBackup); err != nil {
+		t.Fatalf("precondition: the overwrite should have left a backup at %s, stat err = %v", staleBackup, err)
+	}
+
 	// The user deletes the artwork.
 	if err := os.Remove(filepath.Join(dir, slot)); err != nil {
 		t.Fatalf("deleting: %v", err)
@@ -315,6 +323,21 @@ func TestBackupSlot_PrunesAStaleBackupSoDeletedArtDoesNotResurrect(t *testing.T)
 	if _, err := r.saveFanartSlotProtected(dir, []string{slot}, []byte("not an image"), nil); err == nil {
 		t.Fatal("expected undecodable data to fail")
 	}
+
+	// The MECHANISM: BackupSlot found no original and PRUNED the stale backup, so there
+	// is nothing left for any later rollback to restore. Asserting the pruned file
+	// directly -- rather than only the absence of the restored artwork -- is what makes
+	// this a test of the fix and not merely of this one save's failure mode.
+	if _, statErr := os.Stat(staleBackup); !os.IsNotExist(statErr) {
+		t.Errorf("the stale backup file %s SURVIVED (stat err = %v). It outlived the image it "+
+			"protected, so a later failed save can still resurrect deleted artwork (#2413)",
+			staleBackup, statErr)
+	}
+	if img.HasBackup(dir, "fanart") {
+		t.Error("a fanart backup still exists after the original was deleted")
+	}
+
+	// The OUTCOME: the artwork the user threw away stayed thrown away.
 	if _, statErr := os.Stat(filepath.Join(dir, slot)); !os.IsNotExist(statErr) {
 		t.Errorf("the DELETED fanart was RESURRECTED from a stale backup (stat err = %v). "+
 			"A backup must not outlive the image it protects (#2413)", statErr)
