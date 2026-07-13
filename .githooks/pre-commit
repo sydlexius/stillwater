@@ -272,21 +272,34 @@ fi
 # --------------------------------------------------------------------------
 # 8. markdownlint -- lint staged markdown files (mirrors CI Docs / Markdown Lint)
 # --------------------------------------------------------------------------
-# Configuration lives in .markdownlint-cli2.yaml at the repo root. Version pin
-# (v0.22.1) matches .pre-commit-config.yaml so contributors using either
-# entrypoint get identical results. Paths are collected NUL-delimited so
-# filenames containing spaces or other shell metacharacters are handled safely.
+# Configuration lives in .markdownlint-cli2.yaml at the repo root.
+#
+# The version below MUST match the markdownlint-cli2 that CI's
+# markdownlint-cli2-action bundles -- declared in the "bundles:" comment beside
+# the action pin in .github/workflows/docs.yml, and asserted by
+# scripts/check-tool-versions.sh. A different major/minor here runs a different
+# RULE SET, so this hook passes and CI then fails on the same tree (#2500).
+#
+# (An earlier comment claimed this pin "matches .pre-commit-config.yaml". Those
+# redundant lint hooks were removed from that file; nothing there to match.)
+#
+# The pinned version is used UNCONDITIONALLY. A previous version preferred a
+# system-installed `markdownlint-cli2` when one was on PATH, which silently ran
+# whatever a developer happened to have globally installed -- neither the pin nor
+# CI's version -- making the pin advisory in practice (#2500).
+#
+# Paths are collected NUL-delimited so filenames containing spaces or other
+# shell metacharacters are handled safely.
+MARKDOWNLINT_CLI2_VERSION="0.23.0"
 STAGED_MD=()
 while IFS= read -r -d '' f; do
     STAGED_MD+=("$f")
 done < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
 if [ "${#STAGED_MD[@]}" -gt 0 ]; then
-    if command -v markdownlint-cli2 &>/dev/null; then
-        MDL_CMD=(markdownlint-cli2)
-    elif command -v npx &>/dev/null; then
-        MDL_CMD=(npx -y markdownlint-cli2@v0.22.1)
+    if command -v npx &>/dev/null; then
+        MDL_CMD=(npx -y "markdownlint-cli2@${MARKDOWNLINT_CLI2_VERSION}")
     else
-        warn "markdownlint (markdownlint-cli2 and npx not installed, skipping)"
+        warn "markdownlint (npx not installed, skipping)"
         MDL_CMD=()
     fi
     if [ "${#MDL_CMD[@]}" -gt 0 ]; then
