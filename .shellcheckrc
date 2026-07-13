@@ -1,0 +1,31 @@
+# shellcheck configuration -- read by BOTH the local `shellcheck` invocation and
+# CI's reviewdog/action-shellcheck, so the two run the same rules and a script
+# that is clean locally is clean in CI. (Same local/CI parity principle as the
+# markdownlint pin -- see #2500.)
+#
+# Why these are disabled:
+#
+# SC2001 -- "See if you can use ${variable//search/replace} instead."
+#   The suggestion does not apply to this codebase's actual usage. Every hit is
+#   of the form:
+#
+#       echo "$MULTILINE_VAR" | sed 's/^/  /'
+#
+#   i.e. indent EVERY LINE of a multi-line string. Bash parameter expansion
+#   operates on the string as a whole and has no per-line `^` anchor, so it
+#   cannot express this. Rewriting to ${var//.../...} would silently change the
+#   output. The rule is style-only and its advice is wrong here.
+#
+# SC1091 -- "Not following: <file> was not specified as input."
+#   Sourced helpers (e.g. scripts/lib/run-paths.sh) are resolved at runtime from
+#   the repo root. shellcheck cannot follow them when linting a file in
+#   isolation, which is how both CI and the pre-commit hook invoke it. This is a
+#   limitation of the linter's file-at-a-time mode, not a defect in the script.
+#
+# Both are informational severities. They are disabled rather than raised to a
+# higher severity because reviewdog concludes `failure` on findings of ANY level
+# despite `fail_level: error`, so a purely stylistic notice was turning the
+# Shellcheck check red on any PR that touched a shell script -- while the same
+# script passed locally.
+disable=SC2001
+disable=SC1091
