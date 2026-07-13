@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
 )
@@ -365,6 +366,38 @@ func RestoreSlot(dir, imageType, fileName string, meta *ExifMeta, logger *slog.L
 	return nil
 }
 
+// slotMu holds one mutex per image SLOT, serializing SaveSlotProtected's
+// backup -> save -> rollback sequence against a concurrent write to the SAME slot.
+//
+// The key is (dir, imageType, slot base name) -- the three things that together
+// name one file on disk and one backup entry under .sw-backup/<type>/. It is
+// deliberately NOT the artist: two writes to fanart1 and fanart2 of the same artist
+// touch different files and different backups, and must run in parallel. And it is
+// deliberately the extension-LESS base (slotBase), because fanart.png and fanart.jpg
+// are the same slot in two formats -- Save's CleanupConflictingFormats has each one
+// deleting the other, so keying on the full basename would let them race.
+//
+// The key is built with a NUL separator, which cannot occur in a path segment or an
+// image type, so no (dir, type, slot) triple can be confused for another by
+// concatenation.
+//
+// Entries are never evicted: one mutex per slot ever written, for the process
+// lifetime. That is the same unbounded-sync.Map shape as this repo's existing
+// per-ID lock idiom (Router.stillwaterManagedMu in internal/api), and it is bounded
+// in practice by the number of image slots in the library -- a few bytes each, only
+// for slots actually written. An eviction scheme would need its own lock to close
+// the evict-while-acquiring race, which costs more than it saves.
+var slotMu sync.Map // map[string]*sync.Mutex
+
+// slotMutex returns the one mutex guarding a slot, creating it on first use.
+// LoadOrStore guarantees every caller for a given slot gets the SAME mutex even
+// when several arrive at once.
+func slotMutex(dir, imageType, fileName string) *sync.Mutex {
+	key := filepath.Clean(dir) + "\x00" + imageType + "\x00" + slotBase(fileName)
+	mu, _ := slotMu.LoadOrStore(key, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
 // SaveSlotProtected performs a DESTRUCTIVE write to ONE image slot: it backs the
 // existing image up first (BackupSlot), and puts it back (RestoreSlot) if the save
 // fails. It is THE chokepoint every destructive slot write must go through.
@@ -385,8 +418,20 @@ func RestoreSlot(dir, imageType, fileName string, meta *ExifMeta, logger *slog.L
 // primitives do and because callers outside internal/api (the rule engine's fixers)
 // must be able to reach it. There is exactly one implementation of this policy.
 //
-// naming[0] is the slot's canonical name and is the backup key. The rest are
-// additional configured names for the SAME slot, so one backup covers them.
+// naming[0] is the slot's canonical name and is the backup key. THAT NAME IS ALL
+// THE BACKUP COVERS. Save writes every name in naming, but only naming[0] is
+// backed up, so a rollback restores only naming[0]; any other configured name is
+// left holding the failed write's bytes (#2434). Nothing today configures a
+// second fanart name, which is why that gap is tracked rather than fixed here --
+// but do not read this function as protecting names it does not.
+//
+// CONCURRENCY: the whole backup -> save -> rollback sequence is ONE critical
+// section, serialized per slot (see slotMu). Without that, two concurrent writes
+// to the same slot interleave their steps and the ROLLBACK becomes the very thing
+// that destroys data: the loser's RestoreSlot puts stale bytes back OVER the
+// winner's successful write, and either racer's BackupSlot can clobber the other's
+// backup. Different slots (fanart vs fanart1) never contend; the same slot always
+// does.
 //
 // A nil logger is accepted: it falls back to slog.Default(), since this is a
 // cross-package entry point (internal/rule and others call it without
@@ -400,6 +445,15 @@ func SaveSlotProtected(dir, imageType string, naming []string, data []byte, meta
 		return nil, fmt.Errorf("no filenames configured for image type %q", imageType)
 	}
 	targetName := naming[0]
+
+	// Take the slot lock BEFORE the backup and hold it through the rollback. The
+	// lock lives here, at the chokepoint, and not in the caller: a lock a caller
+	// must remember to take is a lock the next caller forgets, and a second caller
+	// (the rule engine) is already queued behind this (#2433).
+	mu := slotMutex(dir, imageType, targetName)
+	mu.Lock()
+	defer mu.Unlock()
+
 	if bErr := BackupSlot(dir, imageType, targetName); bErr != nil {
 		return nil, fmt.Errorf("backing up the %s slot before overwrite (aborting destructive save): %w", imageType, bErr)
 	}
