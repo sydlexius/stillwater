@@ -558,7 +558,7 @@ jobs:
         # ubuntu-latest ships shellcheck preinstalled; no install step needed.
         if: steps.filter.outputs.scripts == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
         run: |
-          shellcheck scripts/*.sh scripts/lib/*.sh .githooks/* \
+          shellcheck -S error scripts/*.sh scripts/lib/*.sh .githooks/* \
             build/docker/entrypoint.sh docs/site/build-api-reference.sh \
             docs/hero/*.sh docs/hero/mocks/*.sh tests/load/run.sh
 
