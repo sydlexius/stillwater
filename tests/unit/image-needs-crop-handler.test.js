@@ -178,6 +178,26 @@ describe('swHandleFetchNeedsCrop: a needs_crop 200 saved nothing, so the user mu
     assert.equal(calls.toasts.length, 0, 'a real save must not toast');
   });
 
+  // Regression: finalizeImageSave answers an ordinary successful HTMX save
+  // with 204 No Content and NO BODY, so xhr.responseText is "". JSON.parse("")
+  // throws exactly like a corrupt body would, so without an explicit
+  // empty-body check this fell into the unparsable/undefined branch and
+  // alerted the user their image might not have saved on every normal save --
+  // the silent-failure bug #2415 exists to prevent, just aimed at the wrong
+  // case. The 'is a quiet no-op for a normal save' case above did not catch
+  // this: it exercises a non-empty, PARSEABLE {status:'ok'} body, never the
+  // real 204's actually-empty responseText, so it stayed green through the
+  // whole regression.
+  it('is a quiet no-op for an empty-body 204 (the real HTMX success response)', () => {
+    const { dom, calls } = loadDom();
+    afterRequest(dom, '');
+
+    assert.equal(calls.crop.length, 0, 'an empty body must not open the crop modal');
+    assert.equal(calls.errors.length, 0, 'an empty body must not log anything');
+    assert.equal(calls.toasts.length, 0,
+      'an empty body is a normal save with nothing to say, not an unreadable response -- it must not toast');
+  });
+
   it('ignores a failed request, leaving error handling to the surface', () => {
     const { dom, calls } = loadDom();
     afterRequest(dom, '{"error":"boom"}', false);

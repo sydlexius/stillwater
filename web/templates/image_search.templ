@@ -463,6 +463,17 @@ templ ArtworkManageEditor(data ImageSearchData) {
 		// The undefined/null split is what keeps "saved fine" distinguishable
 		// from "no idea what happened".
 		function swNeedsCropParse(xhr) {
+			// An empty body is its OWN case, checked BEFORE parsing: a normal
+			// HTMX save gets a 204 No Content with NO body (finalizeImageSave on
+			// the server), and JSON.parse("") throws just like a genuinely
+			// corrupt body would. Without this check every ordinary successful
+			// save fell into the undefined/unparsable branch below and alerted
+			// the user their image might not have saved -- the exact
+			// silent-failure this handler exists to prevent, pointed at the
+			// wrong case. Empty means "nothing to say", not "couldn't read it".
+			if (!xhr.responseText) {
+				return null;
+			}
 			var body;
 			try {
 				body = JSON.parse(xhr.responseText);
