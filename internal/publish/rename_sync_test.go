@@ -772,3 +772,54 @@ func TestSyncRename_LidarrVerifyWiringDisabled(t *testing.T) {
 			"a count of 1 means the read-back became opt-in again -- the #2380 defect", got)
 	}
 }
+
+// nilPairArtistGetter always returns (nil, nil), modeling a repository whose
+// not-found path returns no error (e.g. artist.GetByMBID) rather than one
+// that always errors, which fakeArtistGetter does.
+type nilPairArtistGetter struct{}
+
+func (nilPairArtistGetter) GetByID(context.Context, string, ...artist.HydrateOpts) (*artist.Artist, error) {
+	return nil, nil
+}
+
+// TestArtistNameFor covers every branch of artistNameFor: no getter wired,
+// GetByID erroring, GetByID returning (nil, nil) with no error, and success.
+// This is the identity key the relink needs on a pathless peer (Emby); a
+// silent "" here is how the #2380 corruption reached the relink undetected.
+func TestArtistNameFor(t *testing.T) {
+	t.Run("no getter wired", func(t *testing.T) {
+		p := New(Deps{Logger: silentLogger()})
+		if got := p.artistNameFor(context.Background(), "a1"); got != "" {
+			t.Errorf("got %q, want empty with no ArtistGetter wired", got)
+		}
+	})
+
+	t.Run("GetByID errors", func(t *testing.T) {
+		p := New(Deps{
+			ArtistGetter: &fakeArtistGetter{err: errors.New("db unavailable")},
+			Logger:       silentLogger(),
+		})
+		if got := p.artistNameFor(context.Background(), "a1"); got != "" {
+			t.Errorf("got %q, want empty on a GetByID error", got)
+		}
+	})
+
+	t.Run("GetByID returns nil artist with no error", func(t *testing.T) {
+		p := New(Deps{ArtistGetter: nilPairArtistGetter{}, Logger: silentLogger()})
+		if got := p.artistNameFor(context.Background(), "a1"); got != "" {
+			t.Errorf("got %q, want empty when GetByID returns (nil, nil)", got)
+		}
+	})
+
+	t.Run("success returns the artist name", func(t *testing.T) {
+		p := New(Deps{
+			ArtistGetter: &fakeArtistGetter{artists: map[string]*artist.Artist{
+				"a1": {ID: "a1", Name: "Artist A"},
+			}},
+			Logger: silentLogger(),
+		})
+		if got := p.artistNameFor(context.Background(), "a1"); got != "Artist A" {
+			t.Errorf("got %q, want %q", got, "Artist A")
+		}
+	})
+}

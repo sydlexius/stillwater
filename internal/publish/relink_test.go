@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -912,5 +914,200 @@ func TestRelink_PathlessGhostOnAFolderBackedPeerIsRefused(t *testing.T) {
 	}
 	if got != "jf-ghost" {
 		t.Errorf("on a pathless-by-design peer (Emby) a pathless name match MUST resolve; got %q", got)
+	}
+}
+
+// TestRelinkResolverFactory_ProductionDispatch exercises the production
+// relinkResolverFactory (not the fake withFakePeer swaps for the rest of
+// this file) for all three supported connection types plus an unsupported
+// one, and drives each real adapter's methods against a closed httptest
+// server. Mirrors TestSyncRename_FactoryProductionDispatch's rationale: the
+// GetArtistPath/ListLibraryArtists/TriggerLibraryScan adapter methods and the
+// factory's switch are production code with no other route to coverage,
+// since every relink behavior test injects a fake peerArtistResolver.
+func TestRelinkResolverFactory_ProductionDispatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.Close()
+
+	logger := silentLogger()
+
+	cases := []struct {
+		name     string
+		connType string
+		wantOK   bool
+	}{
+		{"emby", connection.TypeEmby, true},
+		{"jellyfin", connection.TypeJellyfin, true},
+		{"lidarr", connection.TypeLidarr, true},
+		{"unsupported", "sonarr", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := &connection.Connection{
+				ID: "c1", Name: "peer", Type: tc.connType, URL: srv.URL,
+				Emby:     &connection.EmbyConfig{PlatformUserID: "u1"},
+				Jellyfin: &connection.JellyfinConfig{PlatformUserID: "u1"},
+			}
+			resolver, ok := relinkResolverFactory(conn, logger)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if !tc.wantOK {
+				if resolver != nil {
+					t.Errorf("resolver = %+v, want nil for an unsupported type", resolver)
+				}
+				return
+			}
+
+			ctx := context.Background()
+			if _, err := resolver.GetArtistPath(ctx, "p1"); err == nil {
+				t.Error("GetArtistPath against a closed server: want error, got nil")
+			}
+			if _, err := resolver.ListLibraryArtists(ctx); err == nil {
+				t.Error("ListLibraryArtists against a closed server: want error, got nil")
+			}
+			// Lidarr has no server-wide scan primitive and its adapter is a
+			// documented no-op (see lidarrResolver.TriggerLibraryScan), so it
+			// must succeed even against a dead server; Emby/Jellyfin must not.
+			err := resolver.TriggerLibraryScan(ctx)
+			if tc.connType == connection.TypeLidarr {
+				if err != nil {
+					t.Errorf("lidarr TriggerLibraryScan: want nil no-op, got %v", err)
+				}
+			} else if err == nil {
+				t.Errorf("%s TriggerLibraryScan against a closed server: want error, got nil", tc.connType)
+			}
+		})
+	}
+}
+
+// TestRelink_CtxCanceledDuringPollKeepsTheLink covers the ctx.Done() exit of
+// relinkArtist's poll loop (as opposed to the poll-BUDGET exit, which the
+// ...NotYetRescannedItemKeepsTheLink tests already cover): the outer
+// per-connection deadline (renameSyncTimeout) expires while the peer still
+// has not surfaced the moved item, and the link must be kept, not dropped.
+func TestRelink_CtxCanceledDuringPollKeepsTheLink(t *testing.T) {
+	origTimeout := renameSyncTimeout
+	renameSyncTimeout = 30 * time.Millisecond
+	t.Cleanup(func() { renameSyncTimeout = origTimeout })
+
+	peer := &fakePeer{
+		honorsPath: false,
+		storedPath: "/music/Old Name",
+		roots:      []string{"/music"},
+		items:      nil, // never resolves
+		onScan:     func(*fakePeer) {},
+	}
+	p, lister := relinkFixture(t, connection.TypeJellyfin, peer, "jf-old")
+	// relinkFixture's shortenRelinkPolling sets a 150ms budget; widen it so the
+	// outer ctx (30ms) cancels first, isolating the ctx.Done() branch from the
+	// deadline-ticker branch. Registered after relinkFixture's own cleanup, so
+	// it restores to the fixture's 150ms/10ms before that cleanup restores the
+	// package defaults.
+	origBudget, origInterval := relinkPollBudget, relinkPollInterval
+	relinkPollBudget = 5 * time.Second
+	relinkPollInterval = 5 * time.Millisecond
+	t.Cleanup(func() { relinkPollBudget, relinkPollInterval = origBudget, origInterval })
+
+	results, err := p.SyncRename(context.Background(), "a1", "/music/Old Name", "/music/New Name")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if results[0].Result != artist.PlatformRemapFailed {
+		t.Fatalf("Result = %q, want failed", results[0].Result)
+	}
+	if !strings.Contains(results[0].Error, "did not surface") {
+		t.Errorf("Error = %q, want the ctx-canceled poll message", results[0].Error)
+	}
+	if len(lister.directSets) != 0 || len(lister.deletedConnIDs) != 0 {
+		t.Errorf("link was mutated (sets=%v deletes=%v) on ctx cancellation; it must be kept",
+			lister.directSets, lister.deletedConnIDs)
+	}
+}
+
+// TestRelink_PollErrorKeepsTheLink covers the in-loop pollErr branch of
+// relinkArtist: the FIRST resolve attempt (before a scan is even triggered)
+// succeeds with no match, but a SUBSEQUENT enumerate (inside the ticker loop)
+// fails. That is distinct from TestRelink_UnreachablePeerKeepsTheLink, which
+// fails on the pre-scan resolve and never reaches the loop at all.
+func TestRelink_PollErrorKeepsTheLink(t *testing.T) {
+	peer := &fakePeer{
+		honorsPath: false,
+		storedPath: "/music/Old Name",
+		roots:      []string{"/music"},
+		items:      nil, // pre-scan resolve: no match, no error
+		onScan: func(p *fakePeer) {
+			// The scan "succeeds" but the peer starts erroring on the next
+			// enumerate -- e.g. it fell over mid-rebuild.
+			p.listErr = errors.New("peer index rebuild failed")
+		},
+	}
+	p, lister := relinkFixture(t, connection.TypeJellyfin, peer, "jf-old")
+
+	results, err := p.SyncRename(context.Background(), "a1", "/music/Old Name", "/music/New Name")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if results[0].Result != artist.PlatformRemapFailed {
+		t.Fatalf("Result = %q, want failed", results[0].Result)
+	}
+	if !strings.Contains(results[0].Error, "enumerate") {
+		t.Errorf("Error = %q, want the enumerate-failure message", results[0].Error)
+	}
+	if len(lister.directSets) != 0 || len(lister.deletedConnIDs) != 0 {
+		t.Errorf("link was mutated (sets=%v deletes=%v) on a poll enumerate error; it must be kept",
+			lister.directSets, lister.deletedConnIDs)
+	}
+}
+
+// TestResolvePathHits covers the two branches TestRelink_PathTieDoesNotHandTheLinkToAnImpostor
+// and the ambiguous-name tests do not reach directly: preferring the
+// already-held link among multiple path hits, and falling back to a unique
+// name match when the held link is not among them.
+func TestResolvePathHits(t *testing.T) {
+	hits := []connection.PeerArtist{
+		{ID: "jf-a", Name: "Artist A", Path: "/music/Artist A"},
+		{ID: "jf-b", Name: "Artist B", Path: "/music/Artist A"},
+	}
+
+	t.Run("prefers the currently held link", func(t *testing.T) {
+		got, err := resolvePathHits(hits, "/music/Artist A", "", "jf-b")
+		if err != nil {
+			t.Fatalf("resolvePathHits: %v", err)
+		}
+		if got != "jf-b" {
+			t.Errorf("got %q, want the currently held link jf-b", got)
+		}
+	})
+
+	t.Run("falls back to a unique name match", func(t *testing.T) {
+		got, err := resolvePathHits(hits, "/music/Artist A", "Artist A", "jf-c")
+		if err != nil {
+			t.Fatalf("resolvePathHits: %v", err)
+		}
+		if got != "jf-a" {
+			t.Errorf("got %q, want the unique name match jf-a", got)
+		}
+	})
+}
+
+// TestCommitRelink_SamePlatformIDIsANoOp covers commitRelink's short-circuit:
+// when the peer's re-resolved item ID equals the one already stored, nothing
+// is written -- asserted here via a Publisher whose ArtistService would fail
+// the test if SetPlatformID were called at all.
+func TestCommitRelink_SamePlatformIDIsANoOp(t *testing.T) {
+	lister := &fakePlatformLister{ids: []artist.PlatformID{
+		{ArtistID: "a1", ConnectionID: "c1", PlatformArtistID: "p1"},
+	}}
+	p := New(Deps{ArtistService: lister, Logger: silentLogger()})
+
+	err := p.commitRelink(context.Background(), &connection.Connection{ID: "c1", Type: connection.TypeJellyfin}, "a1", "p1", "p1")
+	if err != nil {
+		t.Fatalf("commitRelink: %v", err)
+	}
+	if len(lister.directSets) != 0 {
+		t.Errorf("SetPlatformID called (%v) for an unchanged platform ID; commitRelink must no-op", lister.directSets)
 	}
 }
