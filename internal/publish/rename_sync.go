@@ -444,8 +444,8 @@ func (p *Publisher) reconcilePeerLink(
 		// evidence actually exists -- the merge path (which holds the loser's link) and
 		// the background reconciler (#2426), which can wait minutes for the peer to
 		// settle before it re-resolves and drops.
-		res.Error = truncErr(relinkErr) + "; the existing link was KEPT (it could not be verified, " +
-			"and an unverified link must not be destroyed); retry the rename or run a library scan for this connection"
+		res.Error = truncStr(relinkErr.Error() + "; the existing link was KEPT (it could not be verified, " +
+			"and an unverified link must not be destroyed); retry the rename or run a library scan for this connection")
 		p.logger.Error("rename-sync: could not VERIFY the peer link after the move; keeping the existing link",
 			slog.String("artist_id", artistID),
 			slog.String("connection", conn.Name),
@@ -504,9 +504,18 @@ func (p *Publisher) artistNameFor(ctx context.Context, artistID string) string {
 // include the full peer response body in the returned error: that string
 // flows into res.Error which becomes both the JSON response payload and
 // the slog attribute, so an unbounded body can blow up either consumer.
+//
+// Callers that compose additional text onto this message (e.g. a suffix
+// explaining the remedy) must run the FULLY COMPOSED string back through
+// truncStr, not just the sub-error -- otherwise the composed string can
+// exceed the bound truncErr exists to enforce.
 func truncErr(err error) string {
+	return truncStr(err.Error())
+}
+
+// truncStr caps s at 256 bytes, matching truncErr's bound.
+func truncStr(s string) string {
 	const maxLen = 256
-	s := err.Error()
 	if len(s) <= maxLen {
 		return s
 	}
