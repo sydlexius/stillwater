@@ -22,21 +22,17 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       js: ${{ steps.filter.outputs.js }}
       a11y: ${{ steps.filter.outputs.a11y }}
-      # True only when EVERY changed file is under .github/workflows/ (e.g. a
-      # Dependabot action-version bump). Mutually exclusive with `code`: a diff
-      # that also touches app code always has code=true instead. Drives a
-      # trimmed-but-real representative build+test leg (see build_matrix/
-      # test_matrix below) instead of the full app-test fan-out -- see
-      # docs/pr-workflow.md "Workflow-only trim".
-      workflow_only: ${{ steps.workflow_only.outputs.only }}
-      # True when ANY changed file is under .github/workflows/, regardless of
-      # what else changed. Broader than workflow_only: a diff that mixes a
-      # workflow file with e.g. docs (code=false, workflow_only=false) would
-      # otherwise fall through to the docs-only skip path and run zero
-      # build/test legs despite a workflow change. Used alongside
-      # workflow_only to still gate the representative leg on real code
-      # changes taking the full fan-out instead.
-      workflow_touched: ${{ steps.workflow_only.outputs.touched }}
+      # True when the diff touches something the Go build/test legs are actually
+      # BUILT OUT OF (ci.yml itself, a composite action, the Makefile, scripts/lib,
+      # or a script ci.yml invokes) -- see the "Detect harness-touching diff" step
+      # below for the full derivation and why it is not a filename allowlist.
+      # Drives a trimmed-but-real representative build+test leg (see build_matrix/
+      # test_matrix) rather than the full app-test fan-out.
+      #
+      # Replaces workflow_only/workflow_touched (#2453), which fired on ANY
+      # .github/workflows/** edit and so ran real Go legs for workflows that
+      # cannot affect the Go path at all.
+      harness_touched: ${{ steps.harness.outputs.touched }}
       # Always emits at least one matrix leg so GitHub can interpolate the job
       # name. Non-code PRs get a single placeholder leg marked skip=true whose
       # build steps no-op. (An empty matrix, or a job skipped via `if:`, instead
@@ -89,16 +85,39 @@ jobs:
               - '**/*.go'
               - '**/*.templ'
 
-      # Detects (a) a diff where EVERY changed file is under .github/workflows/
-      # (`only`), and (b) a diff where ANY changed file is under
-      # .github/workflows/ (`touched`). Neither can be expressed as a
-      # dorny/paths-filter "matches" output (that answers "did ANY file
-      # match" for `touched` but has no "do ALL files match" equivalent for
-      # `only`), so this walks the actual changed-file list. Ambiguous cases
-      # (no resolvable base SHA) default both to false, i.e. fail toward
-      # running the full stack rather than under-testing a real change.
-      - name: Detect workflow-only / workflow-touched diff
-        id: workflow_only
+      # Does this diff touch the Go BUILD/TEST HARNESS? (#2453)
+      #
+      # Supersedes workflow_only/workflow_touched, which collapsed ANY
+      # `.github/workflows/**` edit into "run the real Go legs". That made a
+      # 2-file YAML diff (#2490: codeql.yml + dependabot.yml) pay for a 144s Go
+      # Cache Primer and a 248s test shard -- 95% of the run -- to prove
+      # nothing about a change containing no Go.
+      #
+      # The classification is DERIVED, not an enumerated allowlist of
+      # "non-harness" workflow files. A hand-maintained list asserts something
+      # nothing enforces, and the day it goes stale it fails toward SKIPPING the
+      # suite -- silent under-testing, which #2199/#2445 establish as the
+      # dangerous direction.
+      #
+      # It is derived BY CONSTRUCTION, from what the Go legs actually consume:
+      #
+      #   ci.yml            -- defines the Go legs themselves
+      #   .github/actions/  -- composite actions those legs use
+      #   Makefile          -- invoked by them
+      #   scripts/<x>       -- ONLY when ci.yml actually references it (grepped,
+      #                        not listed, so the set can never go stale)
+      #   scripts/lib/      -- shared infrastructure the above source
+      #
+      # Deliberately NOT "any workflow that mentions the Go toolchain": codeql.yml
+      # runs setup-go and `go build` for its OWN analysis, and nightly/fuzz/
+      # mutation do likewise. None of them feed ci.yml's Go legs, so none can
+      # invalidate ci.yml's Go results. A workflow OTHER than ci.yml is therefore
+      # non-harness BY CONSTRUCTION -- including one added tomorrow, with no list
+      # to update and no way to forget.
+      #
+      # Fail-closed: an unresolvable base SHA yields harness=true (run the suite).
+      - name: Detect harness-touching diff
+        id: harness
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_SHA="${{ github.event.pull_request.base.sha }}"
@@ -106,27 +125,39 @@ jobs:
             BASE_SHA="${{ github.event.before }}"
           fi
           if [ -z "${BASE_SHA}" ] || [ "${BASE_SHA}" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            echo "Cannot resolve base SHA; treating as not workflow-only/touched."
-            echo "only=false" >> "$GITHUB_OUTPUT"
-            echo "touched=false" >> "$GITHUB_OUTPUT"
+            echo "Cannot resolve base SHA; failing CLOSED (harness=true) so the suite still runs."
+            echo "touched=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           CHANGED=$(git diff --name-only "${BASE_SHA}" "${{ github.sha }}")
           if [ -z "${CHANGED}" ]; then
-            echo "only=false" >> "$GITHUB_OUTPUT"
+            echo "Empty diff; harness=false."
             echo "touched=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if printf '%s\n' "${CHANGED}" | grep -qvE '^\.github/workflows/'; then
-            echo "only=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "only=true" >> "$GITHUB_OUTPUT"
+
+          HARNESS=false
+
+          # Things the Go legs are built out of.
+          if printf '%s\n' "${CHANGED}" \
+            | grep -qE '^(\.github/workflows/ci\.yml|Makefile)$|^(\.github/actions/|scripts/lib/)'; then
+            echo "harness: a Go-leg component changed (ci.yml / composite action / Makefile / scripts/lib)."
+            HARNESS=true
           fi
-          if printf '%s\n' "${CHANGED}" | grep -qE '^\.github/workflows/'; then
-            echo "touched=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "touched=false" >> "$GITHUB_OUTPUT"
-          fi
+
+          # A changed script counts ONLY if ci.yml actually invokes it. Derived by
+          # grepping ci.yml for the path, so the set cannot drift out of date.
+          # (Script paths in this repo contain no spaces, so word-splitting the
+          # filtered list is safe here.)
+          for f in $(printf '%s\n' "${CHANGED}" | grep -E '^scripts/' || true); do
+            if grep -qF -- "${f}" .github/workflows/ci.yml; then
+              echo "harness: ci.yml invokes ${f}."
+              HARNESS=true
+            fi
+          done
+
+          echo "harness_touched=${HARNESS}"
+          echo "touched=${HARNESS}" >> "$GITHUB_OUTPUT"
 
       - name: Compute build/test matrices
         id: matrix
@@ -134,7 +165,7 @@ jobs:
           if [ "${{ steps.filter.outputs.code }}" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"},{"goos":"linux","goarch":"arm64"},{"goos":"darwin","goarch":"amd64"},{"goos":"darwin","goarch":"arm64"},{"goos":"windows","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
             echo 'test_matrix={"shard":["api-1","api-2","rule-1","rule-2","services","settingsio","providers","scan","rest"]}' >> "$GITHUB_OUTPUT"
-          elif [ "${{ steps.workflow_only.outputs.only }}" = "true" ] || [ "${{ steps.workflow_only.outputs.touched }}" = "true" ]; then
+          elif [ "${{ steps.harness.outputs.touched }}" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
             echo 'test_matrix={"shard":["rest"]}' >> "$GITHUB_OUTPUT"
           else
@@ -168,7 +199,7 @@ jobs:
     name: Go Cache Primer
     runs-on: ubuntu-latest
     needs: [changes]
-    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.workflow_only == 'true' || needs.changes.outputs.workflow_touched == 'true'
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.harness_touched == 'true'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -264,7 +295,29 @@ jobs:
     needs: [changes, lint]
     if: always()
     steps:
+      # Action-pin drift (#2492) is hosted HERE, inside an already-REQUIRED
+      # check, rather than as a new standalone job. A new job's check name is
+      # not required until the branch ruleset is edited out-of-band, so a guard
+      # shipped that way would run, report, and block nothing -- the same
+      # false-assurance failure #2491 exists to remove. This job is required and
+      # `if: always()`, so a step added here is enforced the moment it merges.
+      #
+      # It is a lint over the workflow files, so `Lint` is also its honest home.
+      # No paths filter: the check is a sub-second grep, and gating it would
+      # only add a way for it to silently not run.
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Action pin drift
+        run: bash scripts/check-action-pins.sh
+
+      # `if: always()` so a pin-drift failure above does not mask the lint
+      # result (and vice versa): both signals must reach the operator on the
+      # same run, not one-at-a-time across two pushes.
       - name: Verify lint check succeeded
+        if: always()
         run: |
           if [ "${{ needs.changes.result }}" != "success" ]; then
             echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
@@ -475,7 +528,7 @@ jobs:
     name: Test Shard
     runs-on: ubuntu-latest
     needs: [changes, go-cache-primer]
-    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.workflow_only == 'true' || needs.changes.outputs.workflow_touched == 'true'
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.harness_touched == 'true'
     strategy:
       # One shard's failure should not cancel the others -- a flake in one
       # shard hides real failures in the others if fail-fast is on.
@@ -651,7 +704,7 @@ jobs:
             echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
             exit 1
           fi
-          if [ "${{ needs.changes.outputs.code }}" != "true" ] && [ "${{ needs.changes.outputs.workflow_only }}" != "true" ] && [ "${{ needs.changes.outputs.workflow_touched }}" != "true" ]; then
+          if [ "${{ needs.changes.outputs.code }}" != "true" ] && [ "${{ needs.changes.outputs.harness_touched }}" != "true" ]; then
             echo "No code or workflow changes; Test shards were skipped."
             exit 0
           fi
@@ -670,7 +723,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes, test]
     # Gated on real code changes only: a workflow-only push still runs the
-    # `test` job (single `rest` shard, see changes.outputs.workflow_only), and
+    # `test` job (single `rest` shard, see changes.outputs.harness_touched), and
     # that shard's coverage alone would poison main's Codecov baseline if
     # uploaded unflagged. Docs-only pushes skip `test` entirely (result is
     # 'skipped', not 'success'), so this job is naturally a no-op there too.
