@@ -35,11 +35,37 @@ type fakePlatformLister struct {
 	setErr        error
 	setCalls      []setPlatformIDCall
 	stableOutcome artist.PlatformIDStableOutcome
+
+	// The authoritative link writers used by the #2380 post-move relink.
+	// directSetErr / deleteErr force their failure branches; the call slices let
+	// a test assert WHICH link was written or dropped -- the whole point of the
+	// relink is that the row ends up pointing at the right item, so a test that
+	// only checked the returned Result would be as vacuous as the bug it guards.
+	directSetErr   error
+	directSets     []setPlatformIDCall
+	deleteErr      error
+	deletedConnIDs []string
 }
 
 // setPlatformIDCall records one accepted SetPlatformIDStable invocation.
 type setPlatformIDCall struct {
 	artistID, connectionID, platformArtistID string
+}
+
+func (f *fakePlatformLister) SetPlatformID(_ context.Context, artistID, connectionID, platformArtistID string) error {
+	if f.directSetErr != nil {
+		return f.directSetErr
+	}
+	f.directSets = append(f.directSets, setPlatformIDCall{artistID, connectionID, platformArtistID})
+	return nil
+}
+
+func (f *fakePlatformLister) DeletePlatformID(_ context.Context, _, connectionID string) error {
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	f.deletedConnIDs = append(f.deletedConnIDs, connectionID)
+	return nil
 }
 
 func (f *fakePlatformLister) SetPlatformIDStable(_ context.Context, artistID, connectionID, platformArtistID string) (artist.PlatformIDStableOutcome, error) {

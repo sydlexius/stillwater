@@ -438,12 +438,12 @@ func TestRoundTrip_ConnectionPathMappings(t *testing.T) {
 		{HostPrefix: "/music", PlatformPrefix: "/data/media"},
 	}
 	c := &connection.Connection{
-		Name:    "Lidarr Split",
-		Type:    "lidarr",
-		URL:     "http://lidarr.local:8686",
-		APIKey:  "lidarr-key",
-		Enabled: true,
-		Lidarr:  &connection.LidarrConfig{PathMappings: want},
+		Name:         "Lidarr Split",
+		Type:         "lidarr",
+		URL:          "http://lidarr.local:8686",
+		APIKey:       "lidarr-key",
+		Enabled:      true,
+		PathMappings: want,
 	}
 	if err := connSvc.Create(ctx, c); err != nil {
 		t.Fatalf("creating connection: %v", err)

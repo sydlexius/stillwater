@@ -142,17 +142,39 @@ func TestHandleSetPathMappings_RootPrefixRejected(t *testing.T) {
 	}
 }
 
-// TestHandleSetPathMappings_NonLidarrRejected pins the 400 for an Emby
-// connection: the field is unrepresentable on non-Lidarr sub-configs.
-func TestHandleSetPathMappings_NonLidarrRejected(t *testing.T) {
+// TestHandleSetPathMappings_EmbyAccepted is the #2380 inversion of the old
+// "non-Lidarr rejected" rule. Emby (and Jellyfin) containers mount the library
+// under their own prefix exactly the way Lidarr does, so rejecting path mappings
+// for them was the bug: it left Stillwater pushing raw HOST paths into their
+// CONTAINER namespace with no way for the operator to configure a translation.
+// The mapping must now be accepted AND persisted.
+func TestHandleSetPathMappings_EmbyAccepted(t *testing.T) {
 	t.Parallel()
 	r := newConnectionTestRouter(t)
 	id := seedEmbyConn(t, r)
 
 	w := postPathMappings(t, r, id, "application/json",
-		`{"path_mappings":[{"host_prefix":"/music","platform_prefix":"/data"}]}`)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("emby connection: status %d, want 400 (body %s)", w.Code, w.Body.String())
+		`{"path_mappings":[{"host_prefix":"/host/music","platform_prefix":"/music"}]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("emby connection: status %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+
+	got, err := r.connectionService.GetByID(context.Background(), id)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	mappings := got.GetPathMappings()
+	if len(mappings) != 1 ||
+		mappings[0].HostPrefix != "/host/music" ||
+		mappings[0].PlatformPrefix != "/music" {
+		t.Fatalf("persisted mappings = %+v, want one /host/music -> /music", mappings)
+	}
+
+	// And the mapping must actually translate on THIS connection type -- the
+	// pre-#2380 MapArtistPath short-circuited on a nil Lidarr sub-config, so an
+	// Emby connection returned the host path verbatim no matter what was saved.
+	if p := got.MapArtistPath("/host/music/Alpha"); p != "/music/Alpha" {
+		t.Errorf("MapArtistPath on emby = %q, want %q (mapping must apply to non-Lidarr peers)", p, "/music/Alpha")
 	}
 }
 

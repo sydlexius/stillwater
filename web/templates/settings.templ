@@ -1881,8 +1881,16 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 								</div>
 								<span id={ "verify-path-error-" + c.ID } class="hidden text-xs text-red-600 dark:text-red-400 mt-1"></span>
 							</div>
-							@connectionPathMappings(c)
 						}
+						// Path mappings render for EVERY connection type. Keeping this
+						// inside the lidarr-only guard was half of the #2380
+						// showstopper: an Emby or Jellyfin container mounts the library
+						// under its own prefix exactly the way Lidarr does, so an
+						// operator on a split mount had no way to configure the
+						// translation, and Stillwater pushed raw HOST paths into their
+						// container namespace. This is the STABLE connection card; the
+						// /next card carries the same fix.
+						@connectionPathMappings(c)
 						<div
 							id={ "detected-" + c.ID }
 							class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2"

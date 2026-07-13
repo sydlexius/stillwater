@@ -29,23 +29,18 @@ type LidarrConfig struct {
 	// rarely drifts and the extra request roughly doubles the per-rename
 	// HTTP cost.
 	VerifyPathAfterUpdate bool `json:"verify_path_after_update,omitempty"`
-	// PathMappings translates the artist-directory path prefixes Stillwater
-	// sees on disk into the prefixes the Lidarr peer expects for the same
-	// location (see Connection.MapArtistPath). Empty (the default) sends the
-	// path verbatim - correct for shared-mount deployments where Stillwater's
-	// container and Lidarr address the library identically. Operators on split
-	// mounts enter the pair(s) so a rename/merge propagates a path Lidarr can
-	// resolve instead of one it rejects or silently coerces against its Root
-	// Folder list (#2303).
-	PathMappings []PathMapping `json:"path_mappings,omitempty"`
 }
 
 // PathMapping translates one host-filesystem path prefix (as Stillwater sees
 // the artist directory) to the prefix the platform expects for the same
-// location. A peer such as Lidarr may mount the shared library under a
-// different path than Stillwater's container - e.g. Stillwater sees
-// "/music/Artist" while Lidarr addresses it as "/data/Artist" - so sending the
-// host path verbatim breaks the platform-side rename. #2303.
+// location. ANY peer - Emby, Jellyfin or Lidarr - may mount the shared library
+// under a different path than Stillwater's container: Stillwater sees
+// "/host/music/Artist" while the peer container addresses it as
+// "/music/Artist", so sending the host path verbatim pushes a path that is
+// meaningless in the peer's filesystem view. Lidarr stores it verbatim,
+// Jellyfin rejects it and keeps the old path (whose NFO saver then re-creates
+// the merged-away directory, which the next Stillwater scan re-imports as a
+// duplicate artist) - and all three report success. #2303 / #2380.
 type PathMapping struct {
 	// HostPrefix is the leading path segment as Stillwater sees it on disk.
 	HostPrefix string `json:"host_prefix"`
@@ -113,6 +108,21 @@ type Connection struct {
 	// options taken when FeatureManageServerFiles was flipped on. Empty
 	// string when the toggle has never been flipped or has been restored.
 	PreStillwaterConfigJSON string `json:"pre_stillwater_config_json,omitempty"`
+	// PathMappings translates the artist-directory path prefixes Stillwater
+	// sees on disk into the prefixes THIS peer expects for the same location
+	// (see MapArtistPath). Empty (the default) sends the path verbatim -
+	// correct only for shared-mount deployments where Stillwater and the peer
+	// address the library identically.
+	//
+	// Lives on Connection rather than on the Lidarr sub-config (where #2303
+	// first put it) because the split-mount problem is not Lidarr-specific:
+	// an Emby or Jellyfin container mounts the library under its own prefix
+	// exactly the same way, and leaving them unmapped was the #2380
+	// showstopper - Stillwater pushed a host path into their container
+	// namespace and every peer reported ok while two silently did the wrong
+	// thing. Persisted in the existing connections.path_mappings column for
+	// every type, so promoting it needs no schema migration.
+	PathMappings []PathMapping `json:"path_mappings,omitempty"`
 	// Lidarr/Emby/Jellyfin hold the platform-specific config. Exactly one is
 	// non-nil after Validate, corresponding to Type.
 	Lidarr   *LidarrConfig   `json:"lidarr,omitempty"`
@@ -156,60 +166,100 @@ func (c *Connection) GetVerifyPathAfterUpdate() bool {
 	return false
 }
 
-// GetPathMappings returns the Lidarr host-to-platform path-mapping list, or
-// nil for non-Lidarr / unresolved connections. Nil-safe.
+// GetPathMappings returns the connection's host-to-platform path-mapping list.
+// Valid for every connection type since #2380 promoted the field off the Lidarr
+// sub-config. Nil-safe.
 func (c *Connection) GetPathMappings() []PathMapping {
-	if c.Lidarr != nil {
-		return c.Lidarr.PathMappings
+	if c == nil {
+		return nil
 	}
-	return nil
+	return c.PathMappings
+}
+
+// SetPathMappings replaces the connection's path-mapping list. Valid for every
+// connection type. Nil or empty clears the mappings, restoring verbatim path
+// propagation (correct for a shared-mount deployment).
+func (c *Connection) SetPathMappings(m []PathMapping) {
+	if c == nil {
+		return
+	}
+	c.PathMappings = m
 }
 
 // MapArtistPath translates a host artist path into the platform's namespace
-// using the connection's Lidarr PathMappings. It applies the mapping whose
-// HostPrefix is the longest path-prefix of hostPath - a separator-boundary
-// match, so "/music/jazz" does not claim "/music/jazzfusion" (the same rule
+// using the connection's PathMappings. It applies the mapping whose HostPrefix
+// is the longest path-prefix of hostPath - a separator-boundary match, so
+// "/music/jazz" does not claim "/music/jazzfusion" (the same rule
 // library.pathContains uses) - replacing that prefix with the corresponding
-// PlatformPrefix. When no mapping matches, the Lidarr config is nil, or
-// hostPath is empty, hostPath is returned unchanged, preserving the pre-#2303
-// verbatim behavior for shared-mount deployments.
+// PlatformPrefix. When no mapping matches, the path is returned unchanged apart
+// from the POSIX separator fold (see toPosixPath), preserving the verbatim
+// behavior for shared-mount deployments. An empty hostPath is returned as-is.
+//
+// Applies to EVERY connection type. Before #2380 this short-circuited on a nil
+// Lidarr sub-config, so Emby and Jellyfin were never path-mapped at all and
+// received the raw host path; that verbatim push into the peers' container
+// namespace is exactly the bug this fix closes. A mapping that fails to move
+// the path inside a peer root is caught downstream by the pre-flight root
+// guard (see publish.guardPlatformPath) rather than silently pushed.
 //
 // Comparison uses forward-slash semantics because platform paths cross the
 // wire in POSIX form regardless of the host OS. Nil-safe: callers holding a
 // mixed-type or unresolved connection may call it unconditionally.
 func (c *Connection) MapArtistPath(hostPath string) string {
-	if c == nil || c.Lidarr == nil || hostPath == "" {
+	if c == nil || hostPath == "" {
 		return hostPath
 	}
+	// Fold to POSIX form FIRST, on every input, so the mapping and the
+	// downstream root guard compare the same shape. On Windows the host path
+	// arrives from filepath.Join/Clean as `C:\music\Artist` while a root (and
+	// often the operator's own HostPrefix) is forward-slashed; without this fold
+	// NO mapping can ever match, the raw backslash path is pushed, the guard
+	// normalizes it to `C:/music/Artist` and finds it outside every Linux peer
+	// root - so every push is permanently refused with no path-mapping value the
+	// operator could enter to fix it (#2380 follow-up). The output is POSIX
+	// because platform paths cross the wire in POSIX form regardless of host OS,
+	// and MapArtistPath's result is only ever sent to a peer (never used for a
+	// local filesystem operation).
+	posixHost := toPosixPath(hostPath)
 	bestLen := -1
-	mapped := hostPath
-	for _, m := range c.Lidarr.PathMappings {
-		host := strings.TrimRight(m.HostPrefix, "/")
+	mapped := posixHost
+	for _, m := range c.PathMappings {
+		host := strings.TrimRight(toPosixPath(m.HostPrefix), "/")
 		if host == "" {
 			continue
 		}
-		remainder, ok := pathRemainder(hostPath, host)
+		remainder, ok := pathRemainder(posixHost, host)
 		if !ok {
 			continue
 		}
 		if len(host) > bestLen {
 			bestLen = len(host)
-			mapped = strings.TrimRight(m.PlatformPrefix, "/") + remainder
+			mapped = strings.TrimRight(toPosixPath(m.PlatformPrefix), "/") + remainder
 		}
 	}
 	return mapped
 }
 
-// pathRemainder reports whether prefix is a separator-bounded path prefix of
-// path (forward-slash semantics); on a match it returns the trailing portion,
-// which is "" for an exact match or begins with "/" otherwise. Grafting the
-// platform prefix onto this remainder reconstructs the translated path.
-func pathRemainder(path, prefix string) (string, bool) {
-	if path == prefix {
+// toPosixPath folds Windows backslash separators to forward slashes. It is the
+// single normalization both halves of the push path-check share: MapArtistPath
+// (which produces the path) and connection.normalizeRootPath (which the root
+// guard compares it against). Keeping the fold in one helper is what stops the
+// two from disagreeing on the comparison form.
+func toPosixPath(p string) string {
+	return strings.ReplaceAll(p, `\`, "/")
+}
+
+// pathRemainder reports whether prefix is a separator-bounded path prefix of p
+// (forward-slash semantics; BOTH arguments must already be POSIX-folded by
+// toPosixPath); on a match it returns the trailing portion, which is "" for an
+// exact match or begins with "/" otherwise. Grafting the platform prefix onto
+// this remainder reconstructs the translated path.
+func pathRemainder(p, prefix string) (string, bool) {
+	if p == prefix {
 		return "", true
 	}
-	if strings.HasPrefix(path, prefix+"/") {
-		return path[len(prefix):], true
+	if strings.HasPrefix(p, prefix+"/") {
+		return p[len(prefix):], true
 	}
 	return "", false
 }

@@ -124,6 +124,32 @@ type artistPlatformLister interface {
 	// self-heal caller treats a non-nil error as best-effort and does not
 	// propagate it further up the stack (it skips the connection and continues).
 	SetPlatformIDStable(ctx context.Context, artistID, connectionID, platformArtistID string) (artist.PlatformIDStableOutcome, error)
+	// SetPlatformID upserts a link AUTHORITATIVELY, overwriting whatever is
+	// there. Used by the post-move relink (#2380) and ONLY by it: that caller
+	// just moved the directory and then read the peer's own item back at the new
+	// path, so unlike the scan-time resolvers it is not guessing and must not be
+	// routed through SetPlatformIDStable -- the stable set deliberately keeps an
+	// existing divergent mapping, which is precisely the stale row the relink
+	// exists to replace.
+	SetPlatformID(ctx context.Context, artistID, connectionID, platformArtistID string) error
+	// NOTE: there is deliberately NO DeletePlatformID here, and adding one back
+	// would re-open #2380's worst regression.
+	//
+	// The publisher's rename path cannot obtain the evidence a drop requires. A
+	// peer's artist listing is a snapshot of an index the peer rebuilds
+	// ASYNCHRONOUSLY, so within the rename's budget "the item is gone" and "the item
+	// is mid-scan" are indistinguishable -- and the scan is the far likelier of the
+	// two, since it takes minutes and the budget is seconds. Two versions of this
+	// code inferred staleness here anyway (once from the timeout, once from the
+	// peer's library roots) and both DELETED GOOD LINKS, unrecoverably: nothing
+	// re-stamps a dropped link automatically.
+	//
+	// Withholding the capability is what makes that a TYPE-LEVEL guarantee instead
+	// of a policy the next patch can quietly undo. Dropping belongs where the
+	// evidence lives: the merge path, which holds the loser's link outright, and the
+	// background reconciler (#2426), which can let the peer settle for minutes and
+	// then re-resolve. Those callers declare their own capability; this one does not
+	// get it.
 }
 
 // artistGetter loads a full artist record by ID for the background reconciler.

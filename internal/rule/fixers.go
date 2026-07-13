@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1375,19 +1376,46 @@ func fetchImageURL(ctx context.Context, client *http.Client, rawURL string) ([]b
 	return data, nil
 }
 
+// DirectoryRenamer is the GUARDED rename port: the one road a directory rename
+// is allowed to take. It is satisfied by *artist.Service, whose RenameDirectory
+// holds renameMu across the Lstat -> RenameDirAtomic -> UpdatePath sequence,
+// rolls back on a DB failure, AND invokes the PlatformRenameSyncer so every
+// connected peer (Emby / Jellyfin / Lidarr) is re-pointed at the new path -
+// which is where publish.guardPlatformPath refuses an out-of-root push.
+//
+// It exists as an interface here, rather than the fixer holding *artist.Service
+// directly, purely for the injection seam (tests substitute a spy). internal/rule
+// already imports internal/artist, and internal/artist imports nothing from
+// internal/rule, so there is no cycle either way.
+//
+// #1221 / #2380: before this port existed the fixer called
+// filesystem.RenameDirAtomic itself and told no peer. That was a SECOND,
+// UNGUARDED road to a rename, and it reproduced the exact #2380 duplicate-artist
+// symptom - peers kept the old path, a peer's NFO saver re-created the directory
+// that was just renamed away, and the next scan re-imported it as a duplicate.
+// Do not reintroduce a direct filesystem rename here.
+type DirectoryRenamer interface {
+	RenameDirectory(ctx context.Context, artistID, newDirName string) (newPath string, platforms []artist.PlatformRemapResult, err error)
+}
+
 // DirectoryRenameFixer renames an artist's directory to match the canonical name.
 // When the artist's library has a shared-filesystem status, the fixer declines to
 // auto-fix and returns a warning message instead, because renaming a directory
 // that a platform connection references can break the platform's metadata index.
 type DirectoryRenameFixer struct {
 	fsCheck *SharedFSCheck
+	renamer DirectoryRenamer
 	logger  *slog.Logger
 }
 
-// NewDirectoryRenameFixer creates a DirectoryRenameFixer.
-func NewDirectoryRenameFixer(fsCheck *SharedFSCheck, logger *slog.Logger) *DirectoryRenameFixer {
+// NewDirectoryRenameFixer creates a DirectoryRenameFixer. renamer is REQUIRED:
+// with a nil renamer the fixer refuses every rename (loudly - see Fix) rather
+// than falling back to an unguarded direct rename, because a rename that cannot
+// notify the peers is the bug, not a degraded mode.
+func NewDirectoryRenameFixer(fsCheck *SharedFSCheck, renamer DirectoryRenamer, logger *slog.Logger) *DirectoryRenameFixer {
 	return &DirectoryRenameFixer{
 		fsCheck: fsCheck,
+		renamer: renamer,
 		logger:  logger.With(slog.String("component", "directory-rename-fixer")),
 	}
 }
@@ -1453,7 +1481,6 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 		return nil, fmt.Errorf("checking destination %q: %w", newPath, err)
 	}
 
-	target := newPath
 	chosen := canonical
 	usedFallback := false
 	if !canonicalFree {
@@ -1494,33 +1521,111 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 				),
 			}, nil
 		}
-		target = fallbackPath
 		chosen = fallback
 		usedFallback = true
 	}
 
-	// Does NOT invoke PlatformRenameSyncer; tracked separately by #1221.
-	if err := filesystem.RenameDirAtomic(a.Path, target); err != nil {
-		return nil, fmt.Errorf("renaming %q to %q: %w", a.Path, target, err)
+	// BOTH the canonical branch and the sort-name FALLBACK branch land here, and
+	// both go through the guarded port (#1221 / #2380). `chosen` is the leaf name
+	// either branch settled on; `target` is only used for the collision probes
+	// above - the renamer recomputes the path from the artist's persisted row.
+	oldPath := a.Path
+	newPath, platforms, err := f.renameGuarded(ctx, a, chosen)
+	if err != nil {
+		// Refusals the renamer expresses as sentinel errors are outcomes, not
+		// failures: report them as an unfixed violation with the reason.
+		if res, ok := f.declineFor(err, v, chosen); ok {
+			return res, nil
+		}
+		return nil, err
+	}
+
+	// The renamer persisted the new path; mirror it onto the caller's in-memory
+	// artist exactly once. Assigning the RETURNED path (not the locally computed
+	// target) keeps this from drifting if the renamer ever normalizes differently.
+	a.Path = newPath
+
+	failed := 0
+	for _, p := range platforms {
+		if p.Result == artist.PlatformRemapFailed {
+			failed++
+		}
 	}
 
 	f.logger.Info("renamed artist directory",
 		"artist", a.Name,
-		"old_path", a.Path,
-		"new_path", target,
-		"used_sort_name_fallback", usedFallback)
-
-	a.Path = target
+		"old_path", oldPath,
+		"new_path", newPath,
+		"used_sort_name_fallback", usedFallback,
+		"platforms_synced", len(platforms)-failed,
+		"platforms_failed", failed)
 
 	msg := fmt.Sprintf("renamed directory to canonical name '%s'", chosen)
 	if usedFallback {
 		msg = fmt.Sprintf("renamed directory to sort-name fallback '%s' (canonical name collided)", chosen)
+	}
+	// A per-peer push failure does NOT fail the fix - the on-disk + DB rename has
+	// already committed and SyncRename is best-effort by contract (see
+	// artist.PlatformRenameSyncer). It is surfaced in the message instead of being
+	// swallowed, so the operator can see that a peer still points at the old path.
+	if failed > 0 {
+		msg = fmt.Sprintf("%s; %d platform path push(es) failed - see logs", msg, failed)
 	}
 	return &FixResult{
 		RuleID:  v.RuleID,
 		Fixed:   true,
 		Message: msg,
 	}, nil
+}
+
+// renameGuarded performs the rename through the injected DirectoryRenamer, the
+// SAME chokepoint the user-driven rename and the merge flow use (and therefore
+// the same one publish.guardPlatformPath sits on).
+//
+// It FAILS LOUDLY rather than silently degrading. A missing renamer or an artist
+// with no persisted ID means the peers cannot be notified at all; renaming the
+// directory anyway is precisely the #2380 duplicate-artist bug, so the fix is
+// refused and the misconfiguration is logged at error level.
+func (f *DirectoryRenameFixer) renameGuarded(ctx context.Context, a *artist.Artist, newDirName string) (string, []artist.PlatformRemapResult, error) {
+	if f.renamer == nil {
+		f.logger.Error("directory rename refused: no guarded renamer configured; " +
+			"renaming without notifying the platforms would strand peers on the old path")
+		return "", nil, errRenamerUnavailable
+	}
+	if strings.TrimSpace(a.ID) == "" {
+		f.logger.Error("directory rename refused: artist has no persisted ID, so the guarded rename cannot load it",
+			"artist", a.Name, "path", a.Path)
+		return "", nil, errRenamerUnavailable
+	}
+	return f.renamer.RenameDirectory(ctx, a.ID, newDirName)
+}
+
+// errRenamerUnavailable marks a rename that could not even be ATTEMPTED through
+// the guarded road. It is reported as an unfixed violation (never as Fixed), so
+// no rename ever reports success without the platform-sync step having run.
+var errRenamerUnavailable = errors.New("guarded directory rename is unavailable")
+
+// declineFor maps the renamer's sentinel refusals onto an unfixed FixResult. Any
+// error not listed here is a genuine failure and is returned to the pipeline.
+func (f *DirectoryRenameFixer) declineFor(err error, v *Violation, chosen string) (*FixResult, bool) {
+	var msg string
+	switch {
+	case errors.Is(err, errRenamerUnavailable):
+		msg = "skipped: directory rename cannot notify the connected platforms (see logs)"
+	case errors.Is(err, artist.ErrRenameLocked):
+		msg = "skipped: artist is locked"
+	case errors.Is(err, artist.ErrRenameDestExists):
+		msg = fmt.Sprintf("destination '%s' already exists", chosen)
+	case errors.Is(err, artist.ErrRenameNoChange):
+		msg = "paths already match"
+	case errors.Is(err, artist.ErrRenameNoPath):
+		msg = "artist has no path"
+	case errors.Is(err, artist.ErrRenameInvalidName):
+		msg = fmt.Sprintf("canonical name '%s' is not a valid directory name", chosen)
+	default:
+		return nil, false
+	}
+	return &FixResult{RuleID: v.RuleID, Fixed: false, Message: msg}, true
 }
 
 // pathIsFree reports whether the given path is available for use as a rename

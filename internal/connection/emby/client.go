@@ -546,6 +546,85 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	return nil
 }
 
+// GetArtistPath reads back the peer's CURRENT path for an artist item. Returns
+// "" when the peer exposes no path for the item.
+//
+// On Emby that is the ONLY answer it ever gives for an artist. Two facts were
+// established by direct replay against a live Emby 4.9.5.0:
+//
+//  1. POST /Items/{id} with a Path field returns 204 and SILENTLY DISCARDS the
+//     path - the read-back shows the value unchanged. Emby has the identical
+//     defect to Jellyfin (both descend from the same codebase), so
+//     UpdateArtistPath's success return is NOT evidence the path changed.
+//  2. Emby artist items carry no path at all: every MusicArtist in the probed
+//     library reported Path: null. Emby artists are VIRTUAL, keyed by name and
+//     derived from track tags, rather than folder-backed the way Jellyfin's are.
+//
+// Consequence for callers: an empty return here is the normal, expected Emby
+// answer and means "this peer does not track a path for artists", NOT "the item
+// is broken". The relink logic keys Emby off the artist NAME for exactly that
+// reason - a path-keyed re-resolve cannot work on a peer that reports no paths.
+func (c *Client) GetArtistPath(ctx context.Context, platformArtistID string) (string, error) {
+	if strings.TrimSpace(platformArtistID) == "" {
+		return "", fmt.Errorf("platformArtistID is required")
+	}
+	if c.userID == "" {
+		return "", fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
+	}
+	getPath := fmt.Sprintf("/Users/%s/Items/%s",
+		url.PathEscape(c.userID), url.PathEscape(platformArtistID))
+	var item map[string]any
+	if err := c.Get(ctx, getPath, &item); err != nil {
+		return "", fmt.Errorf("fetching artist for path read-back: %w", wrapAuthIfStatusAuth(err))
+	}
+	path, _ := item["Path"].(string)
+	return path, nil
+}
+
+// listArtistsPageLimit bounds each GetArtists page during a full library
+// enumeration. See the Jellyfin twin for the rationale; the two peers share the
+// AlbumArtists paging surface.
+const listArtistsPageLimit = 500
+
+// listArtistsPageCap bounds how many pages one enumeration will walk, so a peer
+// that misreports its page count cannot spin this loop forever inside a rename.
+const listArtistsPageCap = 200
+
+// ListLibraryArtists enumerates every artist in this peer's MUSIC LIBRARIES,
+// with the peer's own path for each (empty on Emby - see GetArtistPath).
+//
+// Scoped to the music libraries (ParentId) on purpose: the scoping is load-bearing
+// for the post-move relink, since an unscoped query also surfaces metadata-only
+// ghosts stranded outside every library root, and re-linking to one of those is
+// the #2380 corruption itself.
+func (c *Client) ListLibraryArtists(ctx context.Context) ([]connection.PeerArtist, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing music libraries: %w", err)
+	}
+	var out []connection.PeerArtist
+	for i := range libs {
+		libID := libs[i].ItemID
+		if libID == "" {
+			continue
+		}
+		for page := 0; page < listArtistsPageCap; page++ {
+			resp, err := c.GetArtists(ctx, libID, page*listArtistsPageLimit, listArtistsPageLimit)
+			if err != nil {
+				return nil, fmt.Errorf("listing artists in library %s: %w", libID, err)
+			}
+			for j := range resp.Items {
+				it := &resp.Items[j]
+				out = append(out, connection.PeerArtist{ID: it.ID, Name: it.Name, Path: it.Path})
+			}
+			if len(resp.Items) < listArtistsPageLimit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 // embyLockedFieldCanonical maps the lowercase field names Stillwater stores in
 // the database to the PascalCase values Emby's MetadataFields enum expects on
 // the LockedFields property. Any value not present here is dropped from the

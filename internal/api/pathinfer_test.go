@@ -42,6 +42,30 @@ func withFakeLister(t *testing.T, lister lidarrArtistLister) {
 	}
 }
 
+// fakeMediaLister is a test double for the mediaArtistLister seam (Emby /
+// Jellyfin). It returns a fixed (MBID, platform path) list, or a fixed error, so
+// inference can be exercised for the media servers without an HTTP fixture.
+type fakeMediaLister struct {
+	artists []platformArtistPath
+	err     error
+}
+
+func (f fakeMediaLister) ListArtistPaths(context.Context) ([]platformArtistPath, error) {
+	return f.artists, f.err
+}
+
+// withFakeMediaLister swaps the package-level mediaArtistListerFactory for the
+// run and restores it on cleanup. Tests using it must NOT call t.Parallel(): the
+// factory is process-global (same constraint as withFakeLister).
+func withFakeMediaLister(t *testing.T, lister mediaArtistLister) {
+	t.Helper()
+	orig := mediaArtistListerFactory
+	t.Cleanup(func() { mediaArtistListerFactory = orig })
+	mediaArtistListerFactory = func(*connection.Connection, *slog.Logger) mediaArtistLister {
+		return lister
+	}
+}
+
 // seedArtistMBIDPath inserts an artist row with a MusicBrainz provider ID and a
 // path so ListMBIDPaths returns it.
 func seedArtistMBIDPath(t *testing.T, r *Router, id, mbid, path string) {
@@ -271,7 +295,7 @@ func TestInferLidarrPathMappings_MatchedPairs(t *testing.T) {
 		{ID: 2, ForeignArtistID: "MBID-2", Path: "/data/Beta"}, // case-insensitive match
 	}})
 
-	mappings, matched, err := r.inferLidarrPathMappings(context.Background(), conn)
+	mappings, matched, err := r.inferPathMappings(context.Background(), conn)
 	if err != nil {
 		t.Fatalf("infer: %v", err)
 	}
@@ -295,7 +319,7 @@ func TestInferLidarrPathMappings_NoStillwaterArtists(t *testing.T) {
 		{ID: 1, ForeignArtistID: "mbid-1", Path: "/data/Alpha"},
 	}})
 
-	mappings, matched, err := r.inferLidarrPathMappings(context.Background(), conn)
+	mappings, matched, err := r.inferPathMappings(context.Background(), conn)
 	if err != nil || matched != 0 || len(mappings) != 0 {
 		t.Fatalf("got (%+v, %d, %v); want (nil, 0, nil)", mappings, matched, err)
 	}
@@ -310,7 +334,7 @@ func TestInferLidarrPathMappings_GetArtistsError(t *testing.T) {
 	seedArtistMBIDPath(t, r, "a1", "mbid-1", "/music/Alpha")
 	withFakeLister(t, fakeArtistLister{err: errFakeLidarr})
 
-	_, matched, err := r.inferLidarrPathMappings(context.Background(), conn)
+	_, matched, err := r.inferPathMappings(context.Background(), conn)
 	if err == nil {
 		t.Fatal("expected GetArtists error to propagate")
 	}
@@ -331,7 +355,7 @@ func TestInferLidarrPathMappings_NoMatches(t *testing.T) {
 		{ID: 10, ForeignArtistID: "", Path: "/data/Blank"}, // blank MBID guard
 	}})
 
-	mappings, matched, err := r.inferLidarrPathMappings(context.Background(), conn)
+	mappings, matched, err := r.inferPathMappings(context.Background(), conn)
 	if err != nil {
 		t.Fatalf("infer: %v", err)
 	}
@@ -349,11 +373,11 @@ func TestInferLidarrPathMappings_NoMatches(t *testing.T) {
 func TestBuildInferencePairs_AmbiguousMBIDSkipped(t *testing.T) {
 	t.Parallel()
 
-	lidarrArtists := []lidarr.Artist{
-		{ID: 1, ForeignArtistID: "dup", Path: "/data/Alpha"},    // ambiguous MBID
-		{ID: 2, ForeignArtistID: "clean1", Path: "/data/Beta"},  // clean
-		{ID: 3, ForeignArtistID: "clean2", Path: "/data/Gamma"}, // clean
-		{ID: 4, ForeignArtistID: "truedup", Path: "/data/Echo"}, // benign duplicate
+	lidarrArtists := []platformArtistPath{
+		{MBID: "dup", Path: "/data/Alpha"},    // ambiguous MBID
+		{MBID: "clean1", Path: "/data/Beta"},  // clean
+		{MBID: "clean2", Path: "/data/Gamma"}, // clean
+		{MBID: "truedup", Path: "/data/Echo"}, // benign duplicate
 	}
 
 	orderA := []artist.MBIDPath{
@@ -420,7 +444,7 @@ func TestInferLidarrPathMappings_ListMBIDPathsError(t *testing.T) {
 		t.Fatalf("close db: %v", cerr)
 	}
 
-	_, matched, err := r.inferLidarrPathMappings(context.Background(), conn)
+	_, matched, err := r.inferPathMappings(context.Background(), conn)
 	if err == nil {
 		t.Fatal("expected ListMBIDPaths error to propagate")
 	}
@@ -436,7 +460,7 @@ func TestInferLidarrPathMappings_NonLidarr(t *testing.T) {
 	id := seedEmbyConn(t, r)
 	conn, _ := r.connectionService.GetByID(context.Background(), id)
 
-	mappings, matched, err := r.inferLidarrPathMappings(context.Background(), conn)
+	mappings, matched, err := r.inferPathMappings(context.Background(), conn)
 	if err != nil || matched != 0 || len(mappings) != 0 {
 		t.Fatalf("got (%+v, %d, %v); want (nil, 0, nil)", mappings, matched, err)
 	}
@@ -508,7 +532,7 @@ func TestHandleInferPathMappings_InferErrorInfoLine(t *testing.T) {
 	}
 }
 
-// TestHandleInferPathMappings_NotFound and _NonLidarr cover the gate branches.
+// TestHandleInferPathMappings_NotFound covers the existence gate.
 func TestHandleInferPathMappings_NotFound(t *testing.T) {
 	r := newConnectionTestRouter(t)
 	w := postInferPathMappings(t, r, "00000000-0000-0000-0000-000000000000")
@@ -517,12 +541,37 @@ func TestHandleInferPathMappings_NotFound(t *testing.T) {
 	}
 }
 
-func TestHandleInferPathMappings_NonLidarr(t *testing.T) {
+// TestHandleInferPathMappings_Emby is the #2380 inversion of the old
+// "non-Lidarr -> 400" gate: inference now runs for Emby and Jellyfin too. An
+// Emby peer reporting its artists under /music while Stillwater sees them under
+// the host prefix must yield an applied host->container mapping. Before this,
+// inference refused non-Lidarr connections outright, so Emby/Jellyfin could
+// never reach a mapped state through any code path at all.
+func TestHandleInferPathMappings_Emby(t *testing.T) {
 	r := newConnectionTestRouter(t)
 	id := seedEmbyConn(t, r)
+
+	seedArtistMBIDPath(t, r, "a1", "mbid-1", "/host/music/Alpha")
+	seedArtistMBIDPath(t, r, "a2", "mbid-2", "/host/music/Beta")
+	withFakeMediaLister(t, fakeMediaLister{artists: []platformArtistPath{
+		{MBID: "mbid-1", Path: "/music/Alpha"},
+		{MBID: "mbid-2", Path: "/music/Beta"},
+	}})
+
 	w := postInferPathMappings(t, r, id)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status %d, want 400; body %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200; body %s", w.Code, w.Body.String())
+	}
+
+	got, err := r.connectionService.GetByID(context.Background(), id)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	mappings := got.GetPathMappings()
+	if len(mappings) != 1 ||
+		mappings[0].HostPrefix != "/host/music" ||
+		mappings[0].PlatformPrefix != "/music" {
+		t.Fatalf("inferred mappings = %+v, want one /host/music -> /music", mappings)
 	}
 }
 

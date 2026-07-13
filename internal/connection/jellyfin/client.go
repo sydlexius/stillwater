@@ -555,6 +555,78 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	return c.postFullItem(ctx, platformArtistID, existing, "path update")
 }
 
+// GetArtistPath reads back the peer's CURRENT path for an artist item. Returns
+// "" when the peer exposes no path for the item.
+//
+// This is the read-back half of the verify-after-update contract, and on
+// Jellyfin it is the ONLY thing that can detect the #2380 defect: Jellyfin's
+// POST /Items/{id} accepts a Path field, returns 204, and SILENTLY DISCARDS it
+// (confirmed by replay against a live Jellyfin 10.11.10). The API spec actively
+// misleads here - Path is documented on BaseItemDto as "Gets or sets the path"
+// and is NOT marked readOnly - so the write looks contractually sound and the
+// 2xx looks like confirmation. It is not. Two prior fixes shipped broken on
+// exactly that false signal. Never treat UpdateArtistPath's success return as
+// evidence the path changed; read it back.
+func (c *Client) GetArtistPath(ctx context.Context, platformArtistID string) (string, error) {
+	if strings.TrimSpace(platformArtistID) == "" {
+		return "", fmt.Errorf("platformArtistID is required")
+	}
+	item, err := c.fetchItem(ctx, platformArtistID)
+	if err != nil {
+		return "", fmt.Errorf("fetching artist for path read-back: %w", err)
+	}
+	path, _ := item["Path"].(string)
+	return path, nil
+}
+
+// listArtistsPageLimit bounds each GetArtists page during a full library
+// enumeration. Jellyfin and Emby both page the AlbumArtists endpoint; 500 keeps
+// the request count low on a large library without producing a response body
+// big enough to matter.
+const listArtistsPageLimit = 500
+
+// listArtistsPageCap bounds the number of pages a single enumeration will walk.
+// A peer that misreports TotalRecordCount (or returns a full page forever)
+// would otherwise spin here indefinitely inside a rename. 200 pages x 500 = 100k
+// artists, far past any real library, so the cap can only be hit by a
+// misbehaving peer - which is exactly when a bounded loop matters.
+const listArtistsPageCap = 200
+
+// ListLibraryArtists enumerates every artist that lives in one of this peer's
+// MUSIC LIBRARIES, together with the peer's own path for each.
+//
+// Scoped to the music libraries (ParentId) on purpose: that scoping is part of
+// the correctness of the post-move relink. An unscoped artist query also returns
+// metadata-only ghosts stranded outside every library root, and re-linking to one
+// of those is the #2380 corruption itself.
+func (c *Client) ListLibraryArtists(ctx context.Context) ([]connection.PeerArtist, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing music libraries: %w", err)
+	}
+	var out []connection.PeerArtist
+	for i := range libs {
+		libID := libs[i].ItemID
+		if libID == "" {
+			continue
+		}
+		for page := 0; page < listArtistsPageCap; page++ {
+			resp, err := c.GetArtists(ctx, libID, page*listArtistsPageLimit, listArtistsPageLimit)
+			if err != nil {
+				return nil, fmt.Errorf("listing artists in library %s: %w", libID, err)
+			}
+			for j := range resp.Items {
+				it := &resp.Items[j]
+				out = append(out, connection.PeerArtist{ID: it.ID, Name: it.Name, Path: it.Path})
+			}
+			if len(resp.Items) < listArtistsPageLimit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) setAuth(req *http.Request) {
 	req.Header.Set("Authorization", fmt.Sprintf(`MediaBrowser Token="%s"`, c.APIKey))
 }

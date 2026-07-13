@@ -422,6 +422,11 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 	c.UpdatedAt = dbutil.ParseTime(updatedAt)
 	c.PreStillwaterConfigJSON = preStillwaterConfigJSON.String
 
+	// path_mappings is a connection-level column for EVERY type since #2380
+	// (Emby and Jellyfin need the same host->container translation Lidarr
+	// does), so it is decoded outside the type switch below.
+	c.PathMappings = pathMappings
+
 	// Map the flat platform columns into the type-discriminated sub-config
 	// matching the connection type (#1686). Persistence is unchanged - the
 	// sub-structs are purely the in-memory shape - so a Lidarr row's Emby
@@ -430,7 +435,6 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 	case TypeLidarr:
 		c.Lidarr = &LidarrConfig{
 			VerifyPathAfterUpdate: verifyPathAfterUpdate == 1,
-			PathMappings:          pathMappings,
 		}
 	case TypeEmby:
 		c.Emby = &EmbyConfig{
