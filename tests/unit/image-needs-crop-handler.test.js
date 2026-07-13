@@ -227,6 +227,26 @@ describe('swSuppressNeedsCropSwap: the base64 body must not be dumped into the p
   // hx-swap="innerHTML". Without this, a needs_crop response lands as a
   // screenful of raw JSON and base64 image data -- with no hint that nothing
   // was saved -- while the crop modal opens over the top of it.
+  //
+  // IMPORTANT -- this describe block tests swSuppressNeedsCropSwap's LOGIC
+  // ONLY. It invokes the function directly with a hand-built
+  // {detail:{xhr, shouldSwap}}, so it proves nothing about whether htmx
+  // actually DELIVERS htmx:beforeSwap to wherever the attribute lives. This
+  // harness stubs htmx (`win.htmx = { ajax: ... }` in dom-harness.js) rather
+  // than loading the real library, so it cannot realistically dispatch a real
+  // htmx swap event to exercise DOM placement/targeting -- that would require
+  // the real htmx.js and a live event dispatch, not a direct function call.
+  //
+  // The #2415 regression this bit was BLOCKING-1 in the hostile review: the
+  // attribute lived on the <form>, but htmx dispatches htmx:beforeSwap on the
+  // SWAP TARGET (#upload-result, a sibling of the form, not a descendant), so
+  // the handler never ran in production even though every case below stayed
+  // green. Placement is guarded in Go instead --
+  // web/components/image_needs_crop_wiring_test.go's
+  // TestImageUpload_BothFormsHandleNeedsCrop asserts the attribute is on
+  // #upload-result and is ABSENT from both forms. That Go test is the
+  // load-bearing guard against this regressing again; treat the cases below
+  // as handler-logic coverage only.
   function beforeSwap(dom, responseText) {
     const detail = { xhr: { responseText }, shouldSwap: true };
     dom.window.swSuppressNeedsCropSwap({ detail });

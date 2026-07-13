@@ -84,12 +84,24 @@ func TestImageUpload_BothFormsHandleNeedsCrop(t *testing.T) {
 		if !strings.Contains(tag, afterRequestAttr) {
 			t.Errorf("%s: must open the crop modal on needs_crop.\ntag: %s", tc.name, tag)
 		}
-		// Both forms swap the response body into #upload-result. Without the
-		// before-swap guard a needs_crop response lands as a screenful of raw
-		// JSON and base64 image data, with no hint that nothing was saved.
-		if !strings.Contains(tag, beforeSwapAttr) {
-			t.Errorf("%s: must suppress the swap of a needs_crop body.\ntag: %s", tc.name, tag)
+		// htmx dispatches htmx:beforeSwap on the SWAP TARGET, not on the
+		// requesting element. #upload-result is a sibling of each form (not a
+		// descendant), so a listener on the form never sees the event -- it
+		// must live on #upload-result instead (asserted below). Putting it
+		// back on the form regressed #2415: the needs_crop JSON/base64 body
+		// dumps into #upload-result unsuppressed.
+		if strings.Contains(tag, beforeSwapAttr) {
+			t.Errorf("%s: before-swap suppression must NOT be on the form -- htmx:beforeSwap fires on the swap target (#upload-result), never on the form, so a listener here is dead code.\ntag: %s", tc.name, tag)
 		}
+	}
+
+	// Both forms target #upload-result and swap the response body straight
+	// into it. Without the before-swap guard ON THE TARGET, a needs_crop
+	// response lands as a screenful of raw JSON and base64 image data, with
+	// no hint that nothing was saved.
+	resultTag := tagContaining(t, html, `id="upload-result"`)
+	if !strings.Contains(resultTag, beforeSwapAttr) {
+		t.Errorf("#upload-result must suppress the swap of a needs_crop body (htmx:beforeSwap fires on the swap target).\ntag: %s", resultTag)
 	}
 }
 

@@ -10,17 +10,20 @@ templ ImageUpload(artistID string, selectedType string) {
 			// that saved NOTHING (body: needs_crop). This form swaps the response
 			// body straight into #upload-result, so that outcome used to land as a
 			// screenful of raw JSON and base64 image data with no indication the
-			// image had not been saved. before-swap suppresses that dump and
-			// after-request opens the crop modal; a normal save still swaps as
-			// before. Both handlers come from image_search.templ's crop script
-			// block, which is rendered on both image layouts.
+			// image had not been saved. after-request opens the crop modal; a
+			// normal save still swaps as before. The before-swap suppression that
+			// stops the JSON dump lives on #upload-result (below), not on this
+			// form: htmx dispatches htmx:beforeSwap on the SWAP TARGET, and
+			// #upload-result is a sibling of this form, not a descendant, so a
+			// listener on the form would never see it. Both handlers come from
+			// image_search.templ's crop script block, which is rendered on both
+			// image layouts.
 			<form
 				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/upload", artistID) }
 				hx-encoding="multipart/form-data"
 				hx-target="#upload-result"
 				hx-swap="innerHTML"
 				hx-indicator="#upload-spinner"
-				hx-on::before-swap="swSuppressNeedsCropSwap(event)"
 				hx-on::after-request="swHandleFetchNeedsCrop(event)"
 				class="space-y-3"
 			>
@@ -72,13 +75,14 @@ templ ImageUpload(artistID string, selectedType string) {
 			<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
 				<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Or fetch from URL</h3>
 				// #2415: same needs_crop handling as the Upload form above -- this
-				// one POSTs /images/fetch, which short-circuits identically.
+				// one POSTs /images/fetch, which short-circuits identically. See
+				// the comment on the Upload form for why before-swap suppression
+				// lives on #upload-result rather than on either form.
 				<form
 					hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
 					hx-target="#upload-result"
 					hx-swap="innerHTML"
 					hx-indicator="#upload-spinner"
-					hx-on::before-swap="swSuppressNeedsCropSwap(event)"
 					hx-on::after-request="swHandleFetchNeedsCrop(event)"
 					class="flex flex-col gap-2 sm:flex-row"
 				>
@@ -105,7 +109,7 @@ templ ImageUpload(artistID string, selectedType string) {
 			<div id="upload-spinner" class="htmx-indicator text-center py-2">
 				<span class="text-sm text-gray-500 dark:text-gray-400">Processing...</span>
 			</div>
-			<div id="upload-result"></div>
+			<div id="upload-result" hx-on::before-swap="swSuppressNeedsCropSwap(event)"></div>
 		</div>
 	</section>
 }
