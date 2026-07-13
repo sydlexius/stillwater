@@ -30,6 +30,17 @@ permissions:
   contents: read
 
 jobs:
+  # REQUIRED status check ("Go Vulnerability Check" in the "Protect main"
+  # ruleset -- verified live via `gh api repos/.../rulesets/13340463`, #2445).
+  # The job always runs and always reports a result; only the expensive
+  # install+scan steps are gated on the `relevant` filter, per the maintainer's
+  # directive to scope this specifically to go.mod/go.sum (not any Go source
+  # change -- a new call path into an already-vetted dependency graph is an
+  # accepted gap, matching docs/pr-workflow.md's advisory-local-run framing).
+  # Fail-closed: `schedule` (weekly) and `workflow_dispatch` always run the
+  # real scan regardless of the filter, since dorny/paths-filter cannot
+  # resolve a diff for those triggers and treating that ambiguity as "skip"
+  # would silently stop the periodic full-repo scan.
   govulncheck:
     name: Go Vulnerability Check
     runs-on: ubuntu-latest
@@ -38,18 +49,44 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check relevant paths
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        # Only runs on push/pull_request (the only events this filter can
+        # diff); schedule/workflow_dispatch skip it entirely and are handled
+        # by the `run` condition below.
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        with:
+          filters: |
+            relevant:
+              - 'go.mod'
+              - 'go.sum'
 
       - name: Set up Go
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
 
       - name: Install govulncheck
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
       - name: Run govulncheck
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: govulncheck ./...
 
+      - name: Skip (no dependency changes)
+        if: steps.filter.outputs.relevant != 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+        run: echo "No go.mod/go.sum changes; govulncheck skipped (dependency set unchanged)."
+
+  # NOT a required status check (verified live, #2445). Job always runs (so
+  # future promotion to required needs no wrapper change); only the actual
+  # lint step is gated on the `docker` filter, since a diff touching no
+  # Docker-relevant files cannot change hadolint's findings. Fail-closed:
+  # workflow_dispatch always runs for real (no diff to filter against).
   hadolint:
     name: Dockerfile Lint
     runs-on: ubuntu-latest
@@ -59,11 +96,27 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check relevant paths
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        with:
+          filters: |
+            docker:
+              - 'build/docker/**'
+              - 'Dockerfile*'
 
       - name: Lint Dockerfile
+        if: steps.filter.outputs.docker == 'true' || github.event_name == 'workflow_dispatch'
         uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
         with:
           dockerfile: build/docker/Dockerfile
+
+      - name: Skip (no Dockerfile changes)
+        if: steps.filter.outputs.docker != 'true' && github.event_name != 'workflow_dispatch'
+        run: echo "No Dockerfile/build/docker changes; hadolint skipped."
 
   trivy:
     name: Container Scan
