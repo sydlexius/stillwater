@@ -45,10 +45,17 @@ var fanartChokepoints = map[string]bool{
 
 // ruleImageSinks are the image-write primitives internal/rule must never reach directly.
 // Matched as img.<name> (internal/rule imports internal/image under the alias img).
+//
+// SaveSlotProtected is on the list even though it is the SAFE primitive. The invariant this
+// guard protects is not "only safe primitives are reached" but "there is exactly ONE funnel":
+// a second fixer calling img.SaveSlotProtected directly, bypassing saveImageToDisk, would
+// construct its own naming/useSymlinks and could disagree with the funnel about them. The
+// guard asserted single-funnel while being blind to that path.
 var ruleImageSinks = map[string]bool{
 	"Save":              true,
 	"BackupSingleSlot":  true,
 	"RestoreSingleSlot": true,
+	"SaveSlotProtected": true,
 }
 
 // ruleImageChokepoints are the functions in internal/rule allowed to call an image-write

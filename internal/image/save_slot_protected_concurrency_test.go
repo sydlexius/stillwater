@@ -25,16 +25,13 @@ import (
 // the write has landed -- so it really does roll back, and really can eat the winner.
 
 // seedSlotRace sets up one round: an artist dir holding the ORIGINAL fanart.png, plus
-// the "blocked" barrier file that makes a second configured filename unwritable.
+// the unwritableName barrier that makes a second configured filename fail to write.
 func seedSlotRace(t *testing.T) (dir string, original []byte) {
 	t.Helper()
 	dir = t.TempDir()
 	original = makePNG(t, 80, 50)
 	if err := os.WriteFile(filepath.Join(dir, "fanart.png"), original, 0o644); err != nil {
 		t.Fatalf("seeding the original fanart.png: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "blocked"), []byte("a regular file, not a directory"), 0o644); err != nil {
-		t.Fatalf("seeding the write barrier: %v", err)
 	}
 	return dir, original
 }
@@ -88,7 +85,7 @@ func TestSaveSlotProtected_ConcurrentSameSlot_RollbackCannotEatAGoodWrite(t *tes
 			<-start
 			// Same slot ("fanart"), and its second name is unwritable, so it rolls back.
 			_, loserErr = SaveSlotProtected(dir, "fanart",
-				[]string{"fanart.jpg", "blocked/fanart.jpg"}, makeJPEG(t, 60, 40), false, nil, discardLogger())
+				[]string{"fanart.jpg", unwritableName}, makeJPEG(t, 60, 40), false, nil, discardLogger())
 		}()
 		close(start)
 		wg.Wait()
@@ -175,7 +172,7 @@ func TestSaveSlotProtected_ConcurrentSameSlot_CrossFormat(t *testing.T) {
 			// The SAME slot, spelled with the other extension, and an unwritable second name
 			// so it fails AFTER its write lands and therefore really does roll back.
 			_, loserErr = SaveSlotProtected(dir, "fanart",
-				[]string{"fanart.jpg", "blocked/fanart.jpg"}, makeJPEG(t, 60, 40), false, nil, discardLogger())
+				[]string{"fanart.jpg", unwritableName}, makeJPEG(t, 60, 40), false, nil, discardLogger())
 		}()
 		close(start)
 		wg.Wait()

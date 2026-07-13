@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -11,11 +12,11 @@ import (
 // TWO names, each holding a genuinely DIFFERENT image on disk, plus the write barrier
 // that makes the save fail after the destructive cleanup has already run.
 //
-// naming is ["fanart.jpg", "backdrop.jpg", "blocked/fanart.jpg"]:
+// naming is ["fanart.jpg", "backdrop.jpg", unwritableName]:
 //
-//	fanart.jpg    -- decodes fine; Save's cleanup DELETES the fanart.png original
-//	backdrop.jpg  -- decodes fine; Save's cleanup DELETES the backdrop.png original
-//	blocked/...   -- "blocked" is a regular FILE, so the write fails ENOTDIR
+//	fanart.jpg      -- decodes fine; Save's cleanup DELETES the fanart.png original
+//	backdrop.jpg    -- decodes fine; Save's cleanup DELETES the backdrop.png original
+//	unwritableName  -- a plain, backup-protectable filename whose write fails ENAMETOOLONG
 //
 // Fanart is never symlink-eligible, so Save writes each name as its own real file and
 // each one runs its own CleanupConflictingFormats DELETE. Both originals are therefore
@@ -39,13 +40,10 @@ func seedTwoNamedOriginals(t *testing.T) (dir string, fanartOrig, backdropOrig [
 	if err := os.WriteFile(filepath.Join(dir, "backdrop.png"), backdropOrig, 0o644); err != nil {
 		t.Fatalf("seeding backdrop.png: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "blocked"), []byte("a regular file, not a directory"), 0o644); err != nil {
-		t.Fatalf("seeding the write barrier: %v", err)
-	}
 	if bytes.Equal(fanartOrig, backdropOrig) {
 		t.Fatal("the two originals are byte-identical; a wrong-slot restore could pass by accident")
 	}
-	return dir, fanartOrig, backdropOrig, []string{"fanart.jpg", "backdrop.jpg", "blocked/fanart.jpg"}
+	return dir, fanartOrig, backdropOrig, []string{"fanart.jpg", "backdrop.jpg", unwritableName}
 }
 
 // TestSaveUnprotected_DestroysEveryConfiguredName is the PRECONDITION for the rollback
@@ -274,10 +272,9 @@ func TestSaveSlotProtected_ThreadsUseSymlinksIntoTheSave(t *testing.T) {
 // stored under filepath.Base(original), so "sub/fanart.jpg" would write straight over the
 // TOP-LEVEL fanart.jpg's backup and destroy the primary's only recovery copy.
 //
-// ValidateImageNaming rejects "/" and "\" in a configured filename, so this cannot come
-// from a validated profile. When such a name is the ONLY one, there is no protectable
-// slot at all, and the save must ABORT rather than run unprotected -- the same #1161
-// contract as a backup that cannot be taken.
+// When such a name is the ONLY one, there is no protectable slot at all, and the save must
+// ABORT rather than run unprotected -- the same #1161 contract as a backup that cannot be
+// taken.
 func TestSaveSlotProtected_UnprotectableNameIsRefusedNotSilentlySkipped(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -293,8 +290,8 @@ func TestSaveSlotProtected_UnprotectableNameIsRefusedNotSilentlySkipped(t *testi
 	if err == nil {
 		t.Fatal("a save with no backup-protectable name PROCEEDED; it must abort instead")
 	}
-	if !bytes.Contains([]byte(err.Error()), []byte("aborting destructive save")) {
-		t.Errorf("error does not say the save was aborted: %v", err)
+	if !strings.Contains(err.Error(), "nothing was written") {
+		t.Errorf("error does not say the save was refused with nothing written: %v", err)
 	}
 
 	// THE ASSERTION: it aborted before touching the image.
@@ -304,5 +301,83 @@ func TestSaveSlotProtected_UnprotectableNameIsRefusedNotSilentlySkipped(t *testi
 	}
 	if !bytes.Equal(got, original) {
 		t.Error("the original was modified by a save that could not protect it")
+	}
+}
+
+// TestSaveSlotProtected_UnprotectableNameRefusesTheWHOLESave is the guard for the
+// no-rollback bypass: a naming list that MIXES a protectable name with an unprotectable
+// one must write NOTHING AT ALL.
+//
+// The old code backed up only the protectable names but handed the FULL list -- including
+// the unprotectable one -- to Save. Save writes each configured name as its own real file
+// for fanart, and each write first runs CleanupConflictingFormats, which DELETES the
+// slot's other-format original. So the unprotectable name got written destructively with
+// no backup and no rollback: precisely the destroy-with-no-recovery hole this chokepoint
+// exists to close. It logged a warning and proceeded. A warning does not undelete a file.
+//
+// REACHABLE, and this is why the fix is fail-closed rather than "validation covers it":
+// platform.ValidateImageNaming rejects path separators on the API create/update path, but
+// platform.ImportCreateTx / ImportUpdateTx (settings restore, via settingsio's
+// importPlatformProfiles) write ImageNaming straight to the DB with NO validation. A
+// restored or hand-edited profile carries the name in, and ordinary fanart fixing lands here.
+//
+// It asserts the BYTES ON DISK, not the error value: an error return proves the function
+// was unhappy, not that it kept its hands off the user's files.
+func TestSaveSlotProtected_UnprotectableNameRefusesTheWHOLESave(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// A protectable primary that a permissive save WOULD overwrite...
+	primary := makePNG(t, 80, 50)
+	if err := os.WriteFile(filepath.Join(dir, "fanart.png"), primary, 0o644); err != nil {
+		t.Fatalf("seeding fanart.png: %v", err)
+	}
+	// ...and the unprotectable original that has no backup to fall back on.
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o750); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+	nested := makePNG(t, 60, 40)
+	if err := os.WriteFile(filepath.Join(dir, "sub", "fanart.png"), nested, 0o644); err != nil {
+		t.Fatalf("seeding sub/fanart.png: %v", err)
+	}
+
+	naming := []string{"fanart.jpg", "sub/fanart.jpg"}
+	saved, err := SaveSlotProtected(dir, "fanart", naming, makeJPEG(t, 200, 120), false, nil, discardLogger())
+	if err == nil {
+		t.Fatal("a save carrying a name it cannot back up PROCEEDED; it must refuse outright")
+	}
+	if len(saved) != 0 {
+		t.Errorf("the refused save reported writing %v; it must write nothing", saved)
+	}
+
+	// THE ASSERTIONS: nothing on disk moved. Not the protectable slot's original (which a
+	// permissive save would have deleted as a conflicting format), and not the
+	// unprotectable one (which it would have destroyed with no way back).
+	for _, tc := range []struct {
+		path string
+		want []byte
+	}{
+		{filepath.Join(dir, "fanart.png"), primary},
+		{filepath.Join(dir, "sub", "fanart.png"), nested},
+	} {
+		got, readErr := os.ReadFile(tc.path)
+		if readErr != nil {
+			t.Fatalf("%s was DESTROYED by a save that refused: the refusal happened after the "+
+				"destructive write, which is no refusal at all (%v)", tc.path, readErr)
+		}
+		if !bytes.Equal(got, tc.want) {
+			t.Errorf("%s was modified by a save that refused: got %d bytes, want %d",
+				tc.path, len(got), len(tc.want))
+		}
+	}
+	// And no new file was written under EITHER name.
+	for _, leftover := range []string{filepath.Join(dir, "fanart.jpg"), filepath.Join(dir, "sub", "fanart.jpg")} {
+		if _, statErr := os.Stat(leftover); !os.IsNotExist(statErr) {
+			t.Errorf("the refused save still wrote %s (stat err = %v)", leftover, statErr)
+		}
+	}
+	// No backup was taken either: the refusal precedes every filesystem effect.
+	if HasBackup(dir, "fanart") {
+		t.Error("the refused save wrote a backup; it must fail before any filesystem work")
 	}
 }

@@ -400,11 +400,21 @@ func RestoreSlot(dir, imageType, fileName string, useSymlinks bool, meta *ExifMe
 // the evict-while-acquiring race, which costs more than it saves.
 var slotMu sync.Map // map[string]*sync.Mutex
 
-// slotMutex returns the one mutex guarding a slot, creating it on first use.
-// LoadOrStore guarantees every caller for a given slot gets the SAME mutex even
-// when several arrive at once.
-func slotMutex(dir, imageType, fileName string) *sync.Mutex {
-	key := filepath.Clean(dir) + "\x00" + imageType + "\x00" + slotBase(fileName)
+// slotMutexForBase returns the one mutex guarding a slot, keyed by an ALREADY-normalized
+// slot base (the output of slotBase). It uses base VERBATIM and never re-derives it.
+// LoadOrStore guarantees every caller for a given slot gets the SAME mutex even when
+// several arrive at once.
+//
+// The base/fileName split is not cosmetic: normalizing twice is a DEADLOCK. slotBase
+// trims whatever follows the LAST dot, real extension or not, so two distinct configured
+// names like "backdrop.wide.jpg" and "backdrop.tall.jpg" -- both legal under
+// ValidateImageNaming, which says nothing about internal dots -- normalize once to the
+// distinct bases "backdrop.wide"/"backdrop.tall" and a SECOND time to the SAME "backdrop".
+// lockSlots would then Lock() one non-reentrant *sync.Mutex twice in the same goroutine:
+// it blocks forever, never returns, so SaveSlotProtected's deferred unlock is never even
+// registered and the slot is wedged for the life of the process.
+func slotMutexForBase(dir, imageType, base string) *sync.Mutex {
+	key := filepath.Clean(dir) + "\x00" + imageType + "\x00" + base
 	mu, _ := slotMu.LoadOrStore(key, &sync.Mutex{})
 	return mu.(*sync.Mutex)
 }
@@ -418,9 +428,10 @@ func slotMutex(dir, imageType, fileName string) *sync.Mutex {
 // path separator. Those cannot be keyed into the flat .sw-backup/<type>/ dir: the backup
 // is stored under filepath.Base(original), so backing up "sub/fanart.jpg" would write
 // over the TOP-LEVEL fanart.jpg's backup -- destroying the primary's only recovery copy
-// while appearing to add protection. ValidateImageNaming rejects "/" and "\" in a
-// configured filename, so a validated profile cannot produce one; they are returned to
-// the caller to be reported rather than dropped silently.
+// while appearing to add protection. ValidateImageNaming rejects "/" and "\" on the API
+// create/update path, but the settings-import path (platform.ImportCreateTx) does NOT
+// validate, so a restored profile can still carry one. They are returned to the caller,
+// which REFUSES the save outright rather than writing a name it cannot roll back.
 func protectedSlotNames(naming []string) (protected, skipped []string) {
 	seen := make(map[string]bool, len(naming))
 	for _, name := range naming {
@@ -448,16 +459,31 @@ func protectedSlotNames(naming []string) (protected, skipped []string) {
 // [fanart.jpg, backdrop.jpg] and [backdrop.jpg, fanart.jpg]) would otherwise be able to
 // grab the same two mutexes in opposite orders and deadlock. A fixed global order makes
 // that impossible.
+//
+// The bases computed here are passed to slotMutexForBase, NOT to a helper that normalizes
+// again: a second slotBase pass would collapse two distinct dotted names onto one key and
+// self-deadlock this very loop (see slotMutexForBase).
+//
+// Duplicate bases are also de-duplicated. Two naming entries that name the SAME slot in two
+// formats (fanart.jpg, fanart.png) share one mutex, and locking it twice in this goroutine
+// would deadlock exactly the same way. protectedSlotNames already collapses those, but this
+// loop must not depend on its caller having done so.
 func lockSlots(dir, imageType string, names []string) func() {
+	seen := make(map[string]bool, len(names))
 	bases := make([]string, 0, len(names))
 	for _, name := range names {
-		bases = append(bases, slotBase(name))
+		base := slotBase(name)
+		if seen[base] {
+			continue
+		}
+		seen[base] = true
+		bases = append(bases, base)
 	}
 	sort.Strings(bases)
 
 	locked := make([]*sync.Mutex, 0, len(bases))
 	for _, base := range bases {
-		mu := slotMutex(dir, imageType, base)
+		mu := slotMutexForBase(dir, imageType, base)
 		mu.Lock()
 		locked = append(locked, mu)
 	}
@@ -519,9 +545,10 @@ func lockSlots(dir, imageType string, names []string) func() {
 // is a four-name list and ImageNaming.Fanart is user-editable and uncapped, so a
 // multi-name list is the norm, not an edge case.
 //
-// Entries that are not plain filenames are NOT backed up and are logged (see
-// protectedSlotNames); they cannot be keyed into the flat backup dir without clobbering
-// a real slot's backup, and a validated profile cannot contain one.
+// An entry that is not a plain filename REFUSES the whole save (see protectedSlotNames):
+// it cannot be keyed into the flat backup dir without clobbering a real slot's backup, so
+// it cannot be protected -- and anything this function cannot roll back it must never
+// write. Nothing is touched on that path.
 //
 // useSymlinks is caller-supplied and forwarded to BOTH the save and the rollback, so the
 // two can never disagree about symlink semantics (#2446). Save independently disables
@@ -549,14 +576,26 @@ func SaveSlotProtected(dir, imageType string, naming []string, data []byte, useS
 	}
 
 	protected, skipped := protectedSlotNames(naming)
+	// FAIL CLOSED. A skipped entry is one this function cannot back up, yet Save is handed
+	// the FULL naming list, so the entry would still be WRITTEN -- and each write runs its
+	// own CleanupConflictingFormats DELETE. If a later name then failed, that write would
+	// have no backup and no rollback: the exact destroy-with-no-recovery hole this
+	// chokepoint exists to close. This used to warn and proceed. Warning does not undelete
+	// a file, so it now refuses the ENTIRE save and touches nothing.
+	//
+	// Not unreachable: ValidateImageNaming rejects path separators on the API create/update
+	// path, but internal/platform's ImportCreateTx/ImportUpdateTx (settings restore, via
+	// settingsio's importPlatformProfiles) write ImageNaming straight to the DB with NO
+	// validation. A restored or hand-edited profile can carry such a name, and ordinary
+	// fanart fixing then reaches this branch.
+	if len(skipped) > 0 {
+		logger.Error("refusing a destructive save: a configured naming entry is not a plain filename, so it cannot be backed up or rolled back",
+			slog.String("dir", dir), slog.String("image_type", imageType),
+			slog.String("names", strings.Join(skipped, ",")))
+		return nil, fmt.Errorf("naming entries %v for image type %q are not plain filenames and cannot be backed up (refusing the destructive save; nothing was written)", skipped, imageType)
+	}
 	if len(protected) == 0 {
 		return nil, fmt.Errorf("no backup-protectable filename among %v for image type %q (aborting destructive save)", naming, imageType)
-	}
-	for _, name := range skipped {
-		// Loud, never silent: this name WILL be written (Save takes the full list) but
-		// will NOT be rolled back if the save fails.
-		logger.Warn("naming entry is not a plain filename; it cannot be backed up and will NOT be restored if the save fails",
-			slog.String("dir", dir), slog.String("image_type", imageType), slog.String("name", name))
 	}
 
 	// Take the slot locks BEFORE the backups and hold them through the rollback. The
@@ -568,7 +607,9 @@ func SaveSlotProtected(dir, imageType string, naming []string, data []byte, useS
 
 	for _, name := range protected {
 		if bErr := BackupSlot(dir, imageType, name); bErr != nil {
-			return nil, fmt.Errorf("backing up the %s slot before overwrite (aborting destructive save): %w", imageType, bErr)
+			// Name the SPECIFIC slot file, not just the type: a multi-name save backs up
+			// several files and "the fanart slot failed" does not tell an operator which.
+			return nil, fmt.Errorf("backing up %s (the %s slot) before overwrite (aborting destructive save): %w", name, imageType, bErr)
 		}
 	}
 

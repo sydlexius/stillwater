@@ -10,12 +10,23 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// unwritableFanartName is the fault injection: a configured filename whose WRITE fails,
+// landing AFTER Save's destructive CleanupConflictingFormats has deleted the original.
+//
+// It is a PLAIN filename (no path separator) with a 250-character base. img.SaveSlotProtected
+// REFUSES outright any naming entry it cannot back up -- and a path-separator name is exactly
+// such an entry -- so the old "blocked/fanart.jpg" barrier would now abort the save before it
+// wrote anything, silently turning this rollback test VACUOUS. This one is a name the
+// chokepoint accepts, whose os.CreateTemp temp file overruns NAME_MAX (255) instead.
+var unwritableFanartName = strings.Repeat("b", 250) + ".jpg"
 
 // makeChokepointPNG encodes a real PNG. The fanart originals in these tests MUST be
 // genuinely PNG-encoded, not JPEG bytes in a .png file: Save picks the output extension
@@ -57,11 +68,12 @@ func makeChokepointPNG(t *testing.T, w, h int) []byte {
 // TestSaveImageFromData_RollsBackAFailedFanartOverwrite proves the rule engine's shared
 // save funnel now restores the user's fanart when the write fails.
 //
-// The fault is the one that actually reaches the rollback: naming[1] cannot be written
-// ("blocked" is a regular file, so the write fails ENOTDIR), and by the time it fails,
-// Save's CleanupConflictingFormats has ALREADY DELETED the fanart.png original to make
-// way for fanart.jpg. Undecodable bytes would be useless here -- ConvertFormat rejects
-// them long before anything is destroyed, so such a test passes against the broken code.
+// The fault is the one that actually reaches the rollback: naming[1] is a plain,
+// backup-protectable filename whose write fails ENAMETOOLONG (see unwritableFanartName),
+// and by the time it fails, Save's CleanupConflictingFormats has ALREADY DELETED the
+// fanart.png original to make way for fanart.jpg. Undecodable bytes would be useless here
+// -- ConvertFormat rejects them long before anything is destroyed, so such a test passes
+// against the broken code.
 //
 // Routed through img.Save (main), this leaves the artwork deleted and unrecoverable.
 func TestSaveImageFromData_RollsBackAFailedFanartOverwrite(t *testing.T) {
@@ -72,12 +84,9 @@ func TestSaveImageFromData_RollsBackAFailedFanartOverwrite(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "fanart.png"), original, 0o644); err != nil {
 		t.Fatalf("seeding the user's fanart: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "blocked"), []byte("a regular file, not a directory"), 0o644); err != nil {
-		t.Fatalf("seeding the write barrier: %v", err)
-	}
 
 	a := &artist.Artist{Name: "Rollback", Path: dir}
-	naming := []string{"fanart.jpg", "blocked/fanart.jpg"}
+	naming := []string{"fanart.jpg", unwritableFanartName}
 
 	_, err := SaveImageFromData(context.Background(), a, "fanart", makeTestJPEG(t, 1920, 1080),
 		naming, false, nil, nil, testLogger())
@@ -173,7 +182,13 @@ func TestImageFixer_AutoFix_BacksUpTheUsersFanartBeforeReplacingIt(t *testing.T)
 		t.Errorf("the backup does not hold the user's original bytes: got %d, want %d", len(backup), len(original))
 	}
 	if !img.HasBackup(dir, "fanart") {
-		t.Error("HasBackup reports no fanart backup, so the UI will not offer the user a revert")
+		// The backup FILE was read above, so this failing means HasBackup cannot SEE it --
+		// the lookup the rest of the app uses to decide a slot is recoverable is broken.
+		// Note this is not (today) what gates the revert button: artwork-modal.js hides
+		// revert for type === "fanart" unconditionally, before it ever consults
+		// backup_exists. The recoverability invariant is what this asserts, not the UI.
+		t.Error("HasBackup reports no fanart backup even though the backup file exists on disk; " +
+			"the app cannot see the recovery copy it just wrote")
 	}
 }
 
