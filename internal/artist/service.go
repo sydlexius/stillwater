@@ -949,12 +949,22 @@ func (s *Service) persistNormalized(ctx context.Context, a *Artist) error {
 	return s.images.UpsertAll(ctx, a.ID, extractImageMetadata(a))
 }
 
-// UpdateImageProvenance updates the provenance-related fields (phash, source,
-// file_format, last_written_at) on an existing image row without touching display
-// fields like exists_flag, low_res, or placeholder. This is called after an image
-// save to record evidence of what was written and when.
-func (s *Service) UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error {
-	return s.images.UpdateProvenance(ctx, artistID, imageType, slotIndex, phash, source, fileFormat, lastWrittenAt)
+// UpdateImageProvenance updates the provenance-related fields (phash,
+// content_hash, source, file_format, last_written_at) on an existing image row
+// without touching display fields like exists_flag, low_res, or placeholder.
+// This is called after an image save to record evidence of what was written and
+// when.
+func (s *Service) UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error {
+	return s.images.UpdateProvenance(ctx, artistID, imageType, slotIndex, phash, contentHash, source, fileFormat, lastWrittenAt)
+}
+
+// UpdateImageHashes writes only the perceptual and content hashes for an image
+// slot, leaving the rest of the provenance columns alone. The duplicate rules
+// use it to persist hashes they computed from a file on disk, so that the
+// decode happens once for the life of the file rather than once per rule
+// evaluation. Returns ErrNotFound if the slot has since been removed.
+func (s *Service) UpdateImageHashes(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash string) error {
+	return s.images.UpdateHashes(ctx, artistID, imageType, slotIndex, phash, contentHash)
 }
 
 // ClearImageFlag sets the exists flag to false for a single image slot.
@@ -2125,9 +2135,11 @@ func applyImageMetadata(a *Artist, imgs []ArtistImage) {
 }
 
 // extractImageMetadata builds an ArtistImage slice from the Artist struct's
-// image fields, ready for persistence. Provenance fields (phash, source,
-// file_format, last_written_at) are populated separately via
-// UpdateImageProvenance after the image file is saved to disk.
+// image fields, ready for persistence. Provenance fields (phash, content_hash,
+// source, file_format, last_written_at) are deliberately left zero here and
+// populated separately via UpdateImageProvenance / UpdateImageHashes: UpsertAll
+// never overwrites them on conflict, so a rescan through this path preserves
+// hashes that were computed earlier rather than clearing them.
 func extractImageMetadata(a *Artist) []ArtistImage {
 	var imgs []ArtistImage
 

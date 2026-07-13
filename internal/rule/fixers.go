@@ -411,12 +411,13 @@ func firstNonEmptyFieldValue(results []provider.FieldProviderResult) (value, sou
 	return "", ""
 }
 
-// provenanceRecorder records image provenance data (phash, source, file format,
-// write timestamp) in the artist_images table after an image is saved to disk.
-// Used by the fix pipeline and bulk executor after persisting the artist so
-// that the artist_images row exists before UpdateImageProvenance is called.
+// provenanceRecorder records image provenance data (phash, content hash,
+// source, file format, write timestamp) in the artist_images table after an
+// image is saved to disk. Used by the fix pipeline and bulk executor after
+// persisting the artist so that the artist_images row exists before
+// UpdateImageProvenance is called.
 type provenanceRecorder interface {
-	UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
+	UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error
 }
 
 // ImageFixer resolves image-related rule violations by fetching images from
@@ -807,7 +808,7 @@ func recordSavedImageProvenance(ctx context.Context, pr provenanceRecorder, arti
 		log.Warn("no provenance data collected from saved image, skipping update")
 		return
 	}
-	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
+	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
 		log.Warn("recording image provenance after save",
 			slog.String("error", err.Error()))
 	}
@@ -1792,33 +1793,61 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 	}, nil
 }
 
-// ImageDuplicateFixer removes redundant within-type fanart duplicates
-// detected by makeImageDuplicateChecker (via the shared findImageDuplicates
-// helper), keeping the lowest slot index in each duplicate group and
-// renumbering survivors into a contiguous sequence. Runs in manual mode only
-// (no CandidateDiscoverer implementation): the deletion is destructive, so
-// it is deferred to a user-triggered FixViolation call rather than applied
-// automatically during evaluation.
+// ImageDuplicateFixer removes redundant within-type fanart duplicates, keeping
+// the lowest slot index in each duplicate group and renumbering survivors into
+// a contiguous sequence.
+//
+// It serves both duplicate rules, because the destructive half of the work --
+// stage, delete, renumber, roll back on failure -- is identical for each; only
+// the choice of which slots are redundant differs, and that choice is made by
+// deletionSetFor. The two rules differ in how much trust their answer earns,
+// not in what is done with it:
+//
+//   - image_duplicate_exact matches on byte equality, which cannot be wrong,
+//     so its rule seeds to auto mode and this fixer runs during evaluation.
+//   - image_duplicate matches on perceptual similarity, which is a judgement,
+//     so its rule seeds to manual mode and this fixer runs only when a user
+//     triggers FixViolation. It implements no CandidateDiscoverer, so manual
+//     mode never invokes it as a side effect of evaluation.
 type ImageDuplicateFixer struct {
-	db              *sql.DB
-	platformService *platform.Service
-	fsCheck         *SharedFSCheck
-	logger          *slog.Logger
+	db                *sql.DB
+	platformService   *platform.Service
+	fsCheck           *SharedFSCheck
+	imageHashRecorder imageHashRecorder
+	logger            *slog.Logger
 }
 
 // NewImageDuplicateFixer creates an ImageDuplicateFixer.
-func NewImageDuplicateFixer(db *sql.DB, platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *ImageDuplicateFixer {
+func NewImageDuplicateFixer(db *sql.DB, platformService *platform.Service, fsCheck *SharedFSCheck, hashRecorder imageHashRecorder, logger *slog.Logger) *ImageDuplicateFixer {
 	return &ImageDuplicateFixer{
-		db:              db,
-		platformService: platformService,
-		fsCheck:         fsCheck,
-		logger:          logger.With(slog.String("component", "image-duplicate-fixer")),
+		db:                db,
+		platformService:   platformService,
+		fsCheck:           fsCheck,
+		imageHashRecorder: hashRecorder,
+		logger:            logger.With(slog.String("component", "image-duplicate-fixer")),
 	}
 }
 
-// CanFix returns true for the image_duplicate rule.
+// CanFix returns true for both the exact and perceptual duplicate rules.
 func (f *ImageDuplicateFixer) CanFix(v *Violation) bool {
-	return v.RuleID == RuleImageDuplicate
+	return v.RuleID == RuleImageDuplicate || v.RuleID == RuleImageDuplicateExact
+}
+
+// deletionSetFor picks the redundant slots for the rule that raised the
+// violation.
+//
+// For the exact rule this is pure byte-equality grouping: equality is
+// transitive, so a group of identical files collapses onto its lowest slot with
+// no risk of destroying distinct artwork.
+//
+// For the perceptual rule it must go through nonTransitiveFanartDeletionSet,
+// because perceptual similarity is NOT transitive and naive grouping there can
+// delete genuinely distinct images (see that function's comment).
+func deletionSetFor(ruleID string, res imageDupResult) map[int]bool {
+	if ruleID == RuleImageDuplicateExact {
+		return res.exactFanartToDelete
+	}
+	return nonTransitiveFanartDeletionSet(res.perceptual)
 }
 
 // Fix re-detects current within-type fanart duplicates, deletes the
@@ -1828,19 +1857,24 @@ func (f *ImageDuplicateFixer) CanFix(v *Violation) bool {
 // violation from the DB row without re-running the checker, so the on-disk
 // state may have drifted since the violation was recorded.
 func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	ruleID := RuleImageDuplicate
+	if v != nil && v.RuleID != "" {
+		ruleID = v.RuleID
+	}
+
 	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
-			RuleID:  RuleImageDuplicate,
+			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "skipped: shared-filesystem library",
 		}, nil
 	}
 
 	if a.Path == "" {
-		return &FixResult{RuleID: RuleImageDuplicate, Fixed: false, Message: "artist has no path"}, nil
+		return &FixResult{RuleID: ruleID, Fixed: false, Message: "artist has no path"}, nil
 	}
 	if f.db == nil {
-		return &FixResult{RuleID: RuleImageDuplicate, Fixed: false, Message: "no database connection"}, nil
+		return &FixResult{RuleID: ruleID, Fixed: false, Message: "no database connection"}, nil
 	}
 
 	var profile *platform.Profile
@@ -1868,28 +1902,28 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	}
 	if primaryName == "" {
 		return &FixResult{
-			RuleID:  RuleImageDuplicate,
+			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "skipped: no fanart naming convention available",
 		}, nil
 	}
 	kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
 
-	tolerance := 0.90
+	tolerance := defaultImageDupTolerance
 	if v != nil && v.Config.Tolerance > 0 && v.Config.Tolerance <= 1.0 {
 		tolerance = v.Config.Tolerance
 	}
 
-	groups, err := findImageDuplicates(ctx, f.db, a, primaryName, tolerance, f.logger)
+	res, err := findImageDuplicates(ctx, f.db, a, primaryName, tolerance, f.imageHashRecorder, f.logger)
 	if err != nil {
 		return nil, fmt.Errorf("re-detecting image duplicates for %s: %w", a.Name, err)
 	}
 
-	toDelete := nonTransitiveFanartDeletionSet(groups)
+	toDelete := deletionSetFor(ruleID, res)
 
 	if len(toDelete) == 0 {
 		return &FixResult{
-			RuleID:  RuleImageDuplicate,
+			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "no removable within-type fanart duplicates found",
 		}, nil
@@ -1907,7 +1941,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	resyncFanartFields(a, primaryName)
 
 	return &FixResult{
-		RuleID:  RuleImageDuplicate,
+		RuleID:  ruleID,
 		Fixed:   true,
 		Message: fmt.Sprintf("removed %d duplicate fanart file(s) for %s: %s", len(removedNames), a.Name, strings.Join(removedNames, ", ")),
 	}, nil

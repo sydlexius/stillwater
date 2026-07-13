@@ -526,7 +526,7 @@ func newCheckSyncMtimeFixture(t *testing.T, lastWrittenISO string) *checkSyncMti
 	// Record the last-written-at provenance so NewestWriteTimesByArtist returns
 	// something the mtime check can compare against.
 	if err := r.artistService.UpdateImageProvenance(context.Background(),
-		a.ID, "thumb", 0, "deadbeef", "user", "jpeg", lastWrittenISO); err != nil {
+		a.ID, "thumb", 0, "deadbeef", "sha-thumb", "user", "jpeg", lastWrittenISO); err != nil {
 		t.Fatalf("UpdateImageProvenance: %v", err)
 	}
 

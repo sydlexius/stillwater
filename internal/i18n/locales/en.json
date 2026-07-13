@@ -864,6 +864,8 @@
   "findings.fanart_min_res.title": "Fanart resolution too low",
   "findings.image_duplicate.fix": "Replace one of the duplicate images.",
   "findings.image_duplicate.title": "Duplicate images detected",
+  "findings.image_duplicate_exact.fix": "Delete the identical copies, keeping the first slot.",
+  "findings.image_duplicate_exact.title": "Identical images detected",
   "findings.logo_exists.fix": "Fetch a logo image from a provider.",
   "findings.logo_exists.title": "Logo missing",
   "findings.logo_min_res.fix": "Fetch a higher-resolution logo from a provider.",

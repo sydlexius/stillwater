@@ -48,6 +48,15 @@ func insertTestImageWithHash(t *testing.T, db *sql.DB, artistID, imageType strin
 // duplicates.
 func createGradientJPEG(t *testing.T, path string, variant int) {
 	t.Helper()
+	createGradientJPEGQuality(t, path, variant, 90)
+}
+
+// createGradientJPEGQuality is createGradientJPEG with an explicit encoder
+// quality. Encoding the same gradient at two different qualities yields two
+// files that depict the same picture but differ byte-for-byte -- the exact
+// case that separates the perceptual duplicate tier from the exact one.
+func createGradientJPEGQuality(t *testing.T, path string, variant, quality int) {
+	t.Helper()
 	const width, height = 400, 300
 	img := stdimage.NewRGBA(stdimage.Rect(0, 0, width, height))
 	for y := 0; y < height; y++ {
@@ -61,7 +70,7 @@ func createGradientJPEG(t *testing.T, path string, variant int) {
 		t.Fatalf("creating gradient test image: %v", err)
 	}
 	defer f.Close()
-	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 90}); err != nil {
+	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: quality}); err != nil {
 		t.Fatalf("encoding gradient jpeg: %v", err)
 	}
 }
@@ -257,7 +266,7 @@ func TestImageDuplicateFixer_Fix_SharedFSSkip(t *testing.T) {
 	sharedCheck := NewSharedFSCheck(&stubLibQuerier{
 		lib: &library.Library{SharedFSStatus: library.SharedFSConfirmed},
 	}, testLogger())
-	f := NewImageDuplicateFixer(nil, nil, sharedCheck, testLogger())
+	f := NewImageDuplicateFixer(nil, nil, sharedCheck, nil, testLogger())
 	a := &artist.Artist{Name: "Shared Artist", Path: t.TempDir(), LibraryID: "lib-test"}
 	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicate})
 	if err != nil {
@@ -280,7 +289,7 @@ func TestImageDuplicateFixer_Fix_NoRemovableDuplicates(t *testing.T) {
 	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
 	createGradientJPEG(t, filepath.Join(dir, "fanart2.jpg"), 9)
 
-	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), testLogger())
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), nil, testLogger())
 	a := &artist.Artist{ID: "art-fix-none", Name: "No Dup Artist", Path: dir, LibraryID: "lib-test"}
 	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicate, Config: RuleConfig{Tolerance: 0.90}})
 	if err != nil {
@@ -312,7 +321,7 @@ func TestImageDuplicateFixer_Fix_RemovesDuplicateAndRenumbersSurvivors(t *testin
 	createGradientJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1)
 	createGradientJPEG(t, filepath.Join(dir, "fanart4.jpg"), 2)
 
-	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), testLogger())
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), nil, testLogger())
 	a := &artist.Artist{
 		ID: "art-fix-dup", Name: "Fix Dup Artist", Path: dir, LibraryID: "lib-test",
 		FanartExists: true, FanartCount: 4,
@@ -391,7 +400,7 @@ func TestImageDuplicateFixer_Fix_RestoresStagedTombsOnRenumberFailure(t *testing
 		t.Fatalf("populating block dir: %v", err)
 	}
 
-	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), testLogger())
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), nil, testLogger())
 	a := &artist.Artist{
 		ID: "art-rollback", Name: "Rollback Artist", Path: dir, LibraryID: "lib-test",
 		FanartExists: true, FanartCount: 3,

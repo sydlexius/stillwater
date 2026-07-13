@@ -611,12 +611,33 @@ func InjectMeta(data []byte, meta *ExifMeta) ([]byte, error) {
 // request-tainted input. Do not call ReadProvenance with paths derived from
 // untrusted input without re-establishing that invariant.
 func ReadProvenance(path string) (*ExifMeta, error) {
+	meta, _, err := readProvenanceBytes(path)
+	return meta, err
+}
+
+// readProvenanceBytes is ReadProvenance plus the raw file bytes it had to read
+// anyway. It exists so a caller that needs both the embedded provenance and a
+// content hash of the same file (CollectProvenance) can get them from one read
+// instead of two. The bytes are returned even when no Stillwater provenance is
+// present, since an un-tagged file still has a hashable byte sequence.
+func readProvenanceBytes(path string) (*ExifMeta, []byte, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
-		return nil, fmt.Errorf("reading image for provenance: %w", err)
+		return nil, nil, fmt.Errorf("reading image for provenance: %w", err)
 	}
 
+	meta, err := parseProvenanceFromBytes(data)
+	if err != nil {
+		return nil, data, err
+	}
+	return meta, data, nil
+}
+
+// parseProvenanceFromBytes extracts embedded Stillwater provenance from image
+// bytes already in memory. Returns nil, nil for images with no Stillwater tag.
+func parseProvenanceFromBytes(data []byte) (*ExifMeta, error) {
 	var description string
+	var err error
 
 	// Detect format and extract description.
 	if len(data) >= 2 && data[0] == 0xFF && data[1] == jpegSOI {

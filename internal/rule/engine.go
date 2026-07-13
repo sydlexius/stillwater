@@ -144,6 +144,13 @@ type Engine struct {
 	// are consumed (deleted) by ConsumeAPIImage when the fixer reads them,
 	// preventing unbounded growth without requiring a global clear.
 	apiImageCache map[apiImageCacheKey][]byte
+
+	// imageHashRecorder persists perceptual and content hashes computed during
+	// duplicate detection. Without it the duplicate rules still return correct
+	// results, but every evaluation re-reads and re-decodes each unhashed image
+	// because nothing writes the result back; wiring it is what turns hashing
+	// into a once-per-file cost. Set via SetImageHashRecorder.
+	imageHashRecorder imageHashRecorder
 }
 
 // NewEngine creates a rule evaluation engine with all built-in checkers registered.
@@ -179,12 +186,22 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleBannerMinRes] = e.makeBannerMinResChecker()
 	e.checkers[RuleExtraneousImages] = e.makeExtraneousImagesChecker()
 	e.checkers[RuleImageDuplicate] = e.makeImageDuplicateChecker()
+	e.checkers[RuleImageDuplicateExact] = e.makeImageDuplicateExactChecker()
 	e.checkers[RuleBackdropSequencing] = e.makeBackdropSequencingChecker()
 	e.checkers[RuleBackdropMinCount] = e.makeBackdropMinCountChecker()
 	e.checkers[RuleLogoPadding] = e.makeLogoPaddingChecker()
 	e.checkers[RuleNameLanguagePref] = e.makeNameLanguagePrefChecker()
 	e.checkers[RuleDiscographyPopulated] = e.makeDiscographyChecker()
 	return e
+}
+
+// SetImageHashRecorder attaches the store that duplicate detection writes
+// computed image hashes back to (typically artist.Service). It is required for
+// the duplicate rules to perform correctly at scale: detection still returns
+// the right answer without it, but every evaluation re-reads and re-decodes
+// each image whose hash is not yet stored, because nothing persists the result.
+func (e *Engine) SetImageHashRecorder(r imageHashRecorder) {
+	e.imageHashRecorder = r
 }
 
 // SetMetadataProvider attaches a metadata provider (typically the

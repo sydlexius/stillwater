@@ -267,6 +267,22 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		},
 		FixExample: "Before: /music/Pink Floyd/ contains fanart.jpg, folder.jpg, backdrop_old.png, artist_backup.jpg\nAfter:  /music/Pink Floyd/ contains fanart.jpg, folder.jpg  (two extraneous files deleted)",
 	},
+	RuleImageDuplicateExact: {
+		FixBehavior: "Removes byte-identical fanart duplicates: for each group of fanart slots whose files have the same content hash, keeps the lowest-numbered slot and deletes the others, then renumbers the survivors into a contiguous sequence.",
+		Conditional: true,
+		Caveats: []string{
+			"Runs automatically. Byte-identical files carry no distinct artwork, so removing the extra copies cannot lose anything.",
+			"Skipped on shared-filesystem libraries.",
+			"Does not catch re-encoded or re-tagged copies of the same picture. Two files can look identical and still differ byte-for-byte (a re-saved JPEG, or the same image saved twice with different provenance recorded in it). Those are found by the 'No duplicate images' rule instead.",
+			"Only fanart is checked, because it is the only image type with more than one slot.",
+		},
+		Guards: "When the same file ends up in two fanart slots, media servers show the same backdrop twice and the extra copy wastes space for no benefit. This rule compares a hash of each file's bytes: two slots are duplicates only when their files are identical, which is a certainty rather than a similarity judgment, so the redundant copy is removed without asking. It is also the cheap half of duplicate detection, because it needs no image decoding, and every duplicate it removes is one fewer image the slower visual comparison has to consider.",
+		Examples: []string{
+			"An artist where the same backdrop was downloaded twice and saved as both fanart.jpg and fanart2.jpg.",
+			"An artist directory where a fanart file was copied to the next free slot by hand, leaving two identical files.",
+		},
+		FixExample: "Before: /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg (identical file), fanart3.jpg\nAfter:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (the identical copy deleted, former fanart3.jpg renumbered to fanart2.jpg)",
+	},
 	RuleImageDuplicate: {
 		FixBehavior: "Removes redundant within-type fanart duplicates: for each group of visually identical fanart slots, keeps the lowest-numbered slot and deletes the higher-numbered duplicate file(s), then renumbers the survivors into a contiguous sequence. Cross-type duplicates (e.g. thumbnail vs. fanart, or logo vs. banner) are not fixed automatically; resolving them requires manually replacing one of the images with a distinct alternative.",
 		Conditional: true,

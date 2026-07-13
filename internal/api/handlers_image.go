@@ -1441,7 +1441,7 @@ func (r *Router) recordImageProvenance(ctx context.Context, artistID, imageType,
 		log.Warn("no provenance data collected, skipping update")
 		return
 	}
-	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
+	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
 		log.Warn("recording image provenance",
 			slog.String("error", err.Error()))
 	}

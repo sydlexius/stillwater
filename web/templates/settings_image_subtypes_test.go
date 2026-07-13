@@ -134,8 +134,9 @@ func TestRulesForImageSubtypeFallback_EmptyInput(t *testing.T) {
 func TestImageRuleCatalogue_AllOnAllowList(t *testing.T) {
 	knownPrefixes := imageSubtypePrefixes
 	intentionalGeneral := map[string]bool{
-		"extraneous_images": true,
-		"image_duplicate":   true,
+		"extraneous_images":     true,
+		"image_duplicate":       true,
+		"image_duplicate_exact": true,
 	}
 
 	for _, r := range rule.DefaultRules() {

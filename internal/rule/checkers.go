@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -1035,15 +1036,16 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 
 		tolerance := cfg.Tolerance
 		if tolerance <= 0 || tolerance > 1.0 {
-			tolerance = 0.90
+			tolerance = defaultImageDupTolerance
 		}
 
 		primaryName := resolveFanartPrimaryName(ctx, e.platformService)
-		groups, err := findImageDuplicates(ctx, e.db, a, primaryName, tolerance, e.logger)
+		res, err := findImageDuplicates(ctx, e.db, a, primaryName, tolerance, e.imageHashRecorder, e.logger)
 		if err != nil {
 			e.logger.Debug("detecting image duplicates", "artist", a.Name, "error", err)
 			return nil
 		}
+		groups := res.perceptual
 		if len(groups) == 0 {
 			return nil
 		}
@@ -1072,6 +1074,68 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 			Fixable: g.withinTypeFanart,
 		}
 	}
+}
+
+// makeImageDuplicateExactChecker returns a Checker closure that detects fanart
+// slots holding byte-identical files.
+//
+// This is the cheap, zero-false-positive tier: it compares sha256 content
+// hashes rather than decoding images, so a match is a certainty rather than a
+// similarity judgement, and the redundant copies are safe to delete
+// automatically. It is deliberately narrower than the perceptual rule -- it
+// cannot see a re-encoded or retagged copy of the same picture, which is
+// exactly why the perceptual rule still exists and still runs.
+//
+// Detection is restricted to fanart because that is the only multi-slot image
+// type, and therefore the only place one image type can hold two files at all.
+func (e *Engine) makeImageDuplicateExactChecker() Checker {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+		if a.Path == "" || e.db == nil {
+			return nil
+		}
+
+		primaryName := resolveFanartPrimaryName(ctx, e.platformService)
+		// Tolerance is irrelevant to byte equality; the perceptual tier's
+		// default is passed only so the shared pass produces its usual
+		// perceptual grouping for the other rule to consume.
+		res, err := findImageDuplicates(ctx, e.db, a, primaryName, defaultImageDupTolerance, e.imageHashRecorder, e.logger)
+		if err != nil {
+			e.logger.Debug("detecting exact image duplicates", "artist", a.Name, "error", err)
+			return nil
+		}
+		if len(res.exactFanartToDelete) == 0 {
+			return nil
+		}
+
+		slots := make([]int, 0, len(res.exactFanartToDelete))
+		for s := range res.exactFanartToDelete {
+			slots = append(slots, s)
+		}
+		sort.Ints(slots)
+
+		labels := make([]string, 0, len(slots))
+		for _, s := range slots {
+			labels = append(labels, imageSlotLabel("fanart", s))
+		}
+
+		return &Violation{
+			RuleID:   RuleImageDuplicateExact,
+			RuleName: "No byte-identical images",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message: fmt.Sprintf("artist %s: %s %s byte-identical to a lower-numbered slot and can be removed",
+				a.Name, strings.Join(labels, ", "), pluralIs(len(labels))),
+			Fixable: true,
+		}
+	}
+}
+
+// pluralIs returns the verb agreeing with n for the duplicate-slot message.
+func pluralIs(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
 }
 
 // truncateStr returns the first maxRunes runes of s, appending "..." if truncated.
