@@ -31,9 +31,12 @@ const TEMPL_PATH = join(REPO_ROOT, 'web/templates/image_search.templ');
 // swOpenCropForSlot. Identified by containing "swOpenFetchUrlForSlot" so a
 // future reordering of the file's <script> blocks does not silently extract
 // the wrong one.
+// The open/close tags are anchored to their own line: a bare /<script>/ also
+// matches the literal tag name inside templ's `//` comments (image_search.templ
+// has one), which yields a block starting mid-comment.
 function extractFetchUrlScript() {
   const src = readFileSync(TEMPL_PATH, 'utf-8');
-  const blocks = [...src.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+  const blocks = [...src.matchAll(/^\s*<script>$([\s\S]*?)^\s*<\/script>$/gm)];
   const match = blocks.find(b => b[1].includes('swOpenFetchUrlForSlot'));
   if (!match) {
     throw new Error('could not find the swOpenFetchUrlForSlot <script> block in image_search.templ -- did it move or get renamed?');
@@ -87,11 +90,12 @@ function loadDom() {
 async function submitAndCaptureBody(dom) {
   // Respond with needs_crop rather than a plain "ok": a plain "ok" success
   // triggers window.location.reload(), which jsdom does not implement. The
-  // needs_crop path instead calls openAutoCrop -> openCropModal, which is
-  // undefined in this isolated eval (it lives in the file's OTHER <script>
-  // block, not extracted here) -- openAutoCrop's own capability guard makes
-  // that a clean no-op, so no navigation is attempted either way. Either
-  // response shape is fine for what this test verifies (the request body).
+  // needs_crop path instead calls openAutoCrop, which since #2415 lives in the
+  // file's OTHER <script> block (the crop block, rendered on both image
+  // layouts) and so is not defined by this isolated eval. Stub it -- this test
+  // is about the request body, and the handler's own behavior is covered by
+  // image-needs-crop-handler.test.js.
+  dom.window.openAutoCrop = () => {};
   const fetchMock = makeFetchMock({
     ok: true,
     json: { status: 'needs_crop', needs_crop: true, type: 'fanart', image_data: 'data:image/jpeg;base64,AA==', required_ratio: 1 },

@@ -7,6 +7,13 @@ package components
 // Co-applying `hidden` + `flex` (or any other display utility) is a Tailwind
 // cascade trap -- whichever rule is declared later in the compiled stylesheet
 // wins, so a future utility reorder could leave the modal stuck visible.
+//
+// #2415: the data-msg-needs-crop / -crop-unavailable / -save-unreadable
+// attributes carry the copy for image_search.templ's shared needs_crop handler.
+// They hang off this modal, rather than the image editor's container, because
+// the modal is the one element rendered on BOTH the contextualized and the
+// generic image layout -- and the generic layout is where the previously
+// unwired ImageCard / ImageUpload surfaces live.
 templ ImageCropModal(artistID string) {
 	<div
 		id="crop-modal"
@@ -15,6 +22,9 @@ templ ImageCropModal(artistID string) {
 		data-confirm-discard="Discard your in-progress crop?"
 		data-msg-staging="Loading image for cropping..."
 		data-msg-crop-load-failed="Could not load this image for cropping. Please try again."
+		data-msg-needs-crop={ t(ctx, "image.msg_needs_crop") }
+		data-msg-crop-unavailable={ t(ctx, "image.msg_crop_unavailable") }
+		data-msg-save-unreadable={ t(ctx, "image.msg_save_unreadable") }
 		onclick="if (event.target === this) guardedCloseCropModal()"
 	>
 		<div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
