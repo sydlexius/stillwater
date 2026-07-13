@@ -279,13 +279,17 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Check whether the image dimensions match the slot's required aspect ratio.
-	// If mismatched, return the image data to the client for cropping instead of saving.
+	// If mismatched, return the image data to the client for cropping instead of
+	// saving. As on the fetch path, this is a 200 that did NOT save -- the client
+	// must branch on needs_crop (#2415).
 	skipCrop := req.URL.Query().Get("skip_crop") == "true"
 	if !skipCrop {
 		w2, h2, dimErr := img.GetDimensions(bytes.NewReader(data))
 		if dimErr == nil {
 			geo := img.CheckGeometry(w2, h2, imageType)
 			if geo.NeedsCrop {
+				// An upload carries no fanart slot, hence the nil slot.
+				r.logNeedsCropShortCircuit(artistID, imageType, geo, nil)
 				encoded := base64.StdEncoding.EncodeToString(data)
 				detectedCT := http.DetectContentType(data)
 				if detectedCT == "application/octet-stream" && ct != "" {
@@ -476,11 +480,34 @@ func validateImageFetchInput(ctx context.Context, imageURL, imageType string) (s
 	return 0, ""
 }
 
+// logNeedsCropShortCircuit records that an image save was short-circuited for
+// cropping rather than written to disk (#2415).
+//
+// This is the one image-save outcome that used to log nothing at all, which is
+// exactly the outcome most worth logging: the response is a 200, so an operator
+// reading access logs (or a client that ignores the needs_crop flag) sees a
+// success while nothing was saved. Info level, because a short-circuit is a
+// normal, expected outcome -- the silence was the defect, not the branch.
+func (r *Router) logNeedsCropShortCircuit(artistID, imageType string, geo img.GeometryResult, slot *int) {
+	attrs := []any{
+		slog.String("artist_id", artistID),
+		slog.String("type", imageType),
+		slog.Float64("required_ratio", geo.RequiredRatio),
+		slog.Float64("actual_ratio", geo.ActualRatio),
+		slog.Int("width", geo.Width),
+		slog.Int("height", geo.Height),
+	}
+	if slot != nil {
+		attrs = append(attrs, slog.Int("slot", *slot))
+	}
+	r.logger.Info("image not saved: aspect ratio needs cropping", attrs...)
+}
+
 // fetchRespondIfNeedsCrop writes the needs_crop JSON response when the
 // fetched image's aspect ratio does not match the target slot, and reports
 // whether it did so (the caller must return immediately when true). Extracted
 // from handleImageFetch to keep its cognitive complexity down (gocognit).
-func (r *Router) fetchRespondIfNeedsCrop(w http.ResponseWriter, imageType string, data []byte, fanartExists bool, slot *int) bool {
+func (r *Router) fetchRespondIfNeedsCrop(w http.ResponseWriter, artistID string, imageType string, data []byte, fanartExists bool, slot *int) bool {
 	w2, h2, dimErr := img.GetDimensions(bytes.NewReader(data))
 	if dimErr != nil {
 		return false
@@ -489,6 +516,7 @@ func (r *Router) fetchRespondIfNeedsCrop(w http.ResponseWriter, imageType string
 	if !geo.NeedsCrop {
 		return false
 	}
+	r.logNeedsCropShortCircuit(artistID, imageType, geo, slot)
 	format, _, _ := img.DetectFormat(bytes.NewReader(data))
 	var mimeType string
 	switch format {
@@ -577,22 +605,21 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Check geometry before saving. If the aspect ratio does not match the slot
-	// requirement, return the fetched image data for client-side cropping.
+	// requirement, return the fetched image data for client-side cropping
+	// INSTEAD OF SAVING. The response is a 200, so every caller must branch on
+	// needs_crop; treating a 2xx as "saved" is wrong on this path.
 	//
-	// #2331 CR-2: this used to also gate on !isHTMXRequest(req), skipping
-	// crop-detection for EVERY htmx-driven caller. /images/fetch is hit via
-	// hx-post from two distinct templ sites though (image_search.templ): the
-	// compare-panel "Use this one" button (already reviewed via the compare
-	// UI, genuinely wants no crop prompt -- it now opts out explicitly via
-	// ?skip_crop=true on its hx-post URL) and the provider/fanart search
-	// results' plain "Save" button (a first-pick from a thumbnail, which
-	// DOES need the same aspect-mismatch check as every non-HTMX caller --
-	// it has its own hx-on::after-request handler that opens the crop modal
-	// when the response comes back needs_crop). Keying on "is it HTMX" was
-	// too broad a proxy for "does this specific caller want the check" and
-	// silently skipped the check for the search-results Save button too.
+	// #2415: the previous comment here claimed the compare-panel Save button
+	// "opts out explicitly via ?skip_crop=true on its hx-post URL". It does
+	// not, and never did -- no UI surface sends skip_crop (grep: the string
+	// appears in no .templ file). Every UI surface instead handles needs_crop
+	// by opening the crop modal, which is the correct UX: an aspect mismatch is
+	// a geometry fact, independent of whether the user already eyeballed the
+	// image in the compare panel. skip_crop=true remains a documented
+	// programmatic opt-out (see openapi.yaml) for API callers that genuinely
+	// want a forced save at the source aspect ratio; it has no UI sender.
 	skipCrop := req.URL.Query().Get("skip_crop") == "true"
-	if !skipCrop && r.fetchRespondIfNeedsCrop(w, imageType, data, a.FanartExists, slot) {
+	if !skipCrop && r.fetchRespondIfNeedsCrop(w, artistID, imageType, data, a.FanartExists, slot) {
 		return
 	}
 

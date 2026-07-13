@@ -1232,6 +1232,8 @@
   "image.msg_fetch_unable": "Unable to fetch image",
   "image.msg_fetching": "Fetching...",
   "image.msg_needs_crop": "Image needs cropping to match the required aspect ratio.",
+  "image.msg_crop_unavailable": "This image needs cropping, but the crop editor could not be opened, so it was not saved.",
+  "image.msg_save_unreadable": "The server response could not be read. Reload the page and check whether the image was saved.",
   "image.msg_upload_failed": "Upload failed",
   "image.msg_uploading": "Uploading...",
   "image.web_search": "Web Search",

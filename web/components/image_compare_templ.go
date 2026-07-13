@@ -143,7 +143,7 @@ func ComparePanel(artistID string, url string, source string, imageType string, 
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_compare.templ`, Line: 49, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_compare.templ`, Line: 54, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 		if templ_7745c5c3_Err != nil {
@@ -156,13 +156,13 @@ func ComparePanel(artistID string, url string, source string, imageType string, 
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(hxValsJSON(map[string]string{"url": url, "type": imageType}))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_compare.templ`, Line: 50, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_compare.templ`, Line: 55, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" hx-swap=\"none\" hx-confirm=\"Save this image?\" data-confirm-key=\"image-save\">Use this one</button></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" hx-swap=\"none\" hx-confirm=\"Save this image?\" data-confirm-key=\"image-save\" hx-on::after-request=\"swHandleFetchNeedsCrop(event)\">Use this one</button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

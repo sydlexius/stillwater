@@ -43,6 +43,11 @@ templ ComparePanel(artistID string, url string, source string, imageType string,
 				</div>
 			}
 		</dl>
+		// #2415: ComparePanel currently has NO call site -- the live compare panel
+		// is hand-rolled in image_search.templ (its #compare-save-btn carries the
+		// same handler). Wiring this one anyway keeps it correct if it is ever
+		// rendered, rather than leaving a pre-broken component that silently
+		// discards the needs_crop 200 the moment someone reaches for it.
 		<button
 			type="button"
 			class="w-full text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
@@ -51,6 +56,7 @@ templ ComparePanel(artistID string, url string, source string, imageType string,
 			hx-swap="none"
 			hx-confirm="Save this image?"
 			data-confirm-key="image-save"
+			hx-on::after-request="swHandleFetchNeedsCrop(event)"
 		>
 			Use this one
 		</button>

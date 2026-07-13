@@ -391,7 +391,7 @@ func ImageCard(artistID string, img provider.ImageResult, fanartExists bool) tem
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 125, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 131, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 		if templ_7745c5c3_Err != nil {
@@ -404,13 +404,13 @@ func ImageCard(artistID string, img provider.ImageResult, fanartExists bool) tem
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(hxValsJSON(map[string]string{"url": img.URL, "type": normalizeCardImageType(string(img.Type))}))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 126, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 132, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" hx-swap=\"none\" hx-confirm=\"Save this image?\" data-confirm-key=\"image-save\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" hx-swap=\"none\" hx-confirm=\"Save this image?\" data-confirm-key=\"image-save\" hx-on::after-request=\"swHandleFetchNeedsCrop(event)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
