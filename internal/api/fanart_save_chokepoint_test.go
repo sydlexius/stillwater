@@ -29,8 +29,8 @@ var unprotectedFanartSinks = map[string]bool{
 	"saveSingleSlotWithRollback": true, // the SINGLE-slot chokepoint, wrong for fanart
 }
 
-// fanartChokepoints are the functions allowed to name "fanart" at a sink. The AST walk
-// does not descend into them.
+// fanartChokepoints are the functions in package api allowed to name "fanart" at a sink.
+// The AST walk does not descend into them.
 //
 //	saveFanartSlotProtected -- the Router wrapper (watcher registration + delegate)
 //	processAndAppendFanart  -- APPEND: writes a NEW numbered slot, destroys nothing
@@ -43,7 +43,29 @@ var fanartChokepoints = map[string]bool{
 	"saveSingleSlotWithRollback": true,
 }
 
-// TestFanartSaveHasASingleChokepoint stops #2413 from being re-introduced.
+// ruleImageSinks are the image-write primitives internal/rule must never reach directly.
+// Matched as img.<name> (internal/rule imports internal/image under the alias img).
+var ruleImageSinks = map[string]bool{
+	"Save":              true,
+	"BackupSingleSlot":  true,
+	"RestoreSingleSlot": true,
+}
+
+// ruleImageChokepoints are the functions in internal/rule allowed to call an image-write
+// primitive. There is exactly ONE, deliberately:
+//
+//	saveImageToDisk -- routes fanart to img.SaveSlotProtected (backup + rollback) and
+//	                   everything else to img.Save.
+//
+// Keeping it to a single function is what lets this guard be blunt: ANY img.Save
+// anywhere else in the package is an offense, with no need to reason about what the
+// image type happens to be at that call site.
+var ruleImageChokepoints = map[string]bool{
+	"saveImageToDisk": true,
+}
+
+// TestFanartSaveHasASingleChokepoint stops #2413 from being re-introduced, in EITHER of
+// the two packages that write artwork.
 //
 // This bug class keeps coming back because the safety behavior of an image write is
 // chosen IMPLICITLY, by branching on a string image type, so a destructive write is
@@ -51,98 +73,144 @@ var fanartChokepoints = map[string]bool{
 // processAndSaveImage; the first fix closed that and MISSED the per-slot Crop,
 // Fetch/Replace, assign and import handlers, which called img.Save directly and
 // destroyed the primary backdrop anyway (FanartFilename(primary, 0, ...) IS the primary
-// name). A unit test of the helper cannot catch a handler that bypasses it.
+// name). The SECOND fix closed those and MISSED internal/rule entirely -- where the rule
+// engine was overwriting the primary backdrop library-wide, unattended, in bulk auto-fix
+// mode (#2433). A unit test of one helper cannot catch a caller that bypasses it, and a
+// guard that scans one package cannot catch the package next door.
 //
-// So: every destructive fanart write in this package must go through the protected
-// chokepoint (img.SaveSlotProtected, reached via saveFanartSlotProtected), which backs
-// the existing image up and restores it if the save fails.
+// So both packages are scanned, under the policy each one needs:
 //
-// WHAT EVADES A GUARD LIKE THIS. The first version matched only a literal `"fanart"`
-// passed to an `img.Save` selector, which left two open doors, both closed here:
+//	internal/api  -- a destructive sink NAMED "fanart" outside a sanctioned chokepoint.
+//	                 The api package writes every image type through shared helpers, so
+//	                 the image type is what distinguishes a destructive write here.
+//	internal/rule -- ANY direct img.Save/BackupSingleSlot/RestoreSingleSlot outside
+//	                 saveImageToDisk. The rule engine's image type is a VARIABLE
+//	                 (ruleToImageType(v.RuleID)), never a literal, so a fanart-literal
+//	                 match would have been blind to the exact bug that was there. Matching
+//	                 the CALLEE instead of the argument is what closes that.
 //
-//   - a DIFFERENT SINK. saveSingleSlotWithRollback(dir, "fanart", ...) is not an img.Save
-//     selector at all, yet it drives fanart straight into the per-type prune that wipes
-//     the numbered slots' backups. Hence unprotectedFanartSinks rather than one name.
-//   - an INDIRECT ARG. fanartType := "fanart"; img.Save(dir, fanartType, ...) is a
-//     string-literal check away from invisible. Hence fanartIdents: an identifier bound
-//     to the literal "fanart", at file scope or inside the function, counts as naming it.
+// WHAT EVADES A GUARD LIKE THIS. It is a tripwire on the shape of the bug we have already
+// had, not a proof. Known holes, stated plainly rather than implied away:
 //
-// Still uncaught, by construction: a fanart write from ANOTHER package (internal/rule's
-// SaveImageFromData is the live one -- it is why the chokepoint now lives in
-// internal/image where a package-level caller can reach it), a type assembled at runtime
-// (imageType := kind + "art"), or a sink reached through a function value. This test
-// walks THIS package's source only. It is a tripwire on the shape of the bug we have
-// already had, not a proof.
+//   - A THIRD PACKAGE. This walks internal/api and internal/rule. Any other package that
+//     imports internal/image and writes artwork is invisible. That is precisely how
+//     internal/rule stayed invisible through two rounds of this fix.
+//   - THE SINK ITSELF. saveImageToDisk is allowlisted, so deleting its
+//     `if imageType == "fanart"` branch would route fanart back to a bare img.Save and
+//     this test would still pass. Nothing structural can catch that; the BEHAVIORAL
+//     guards do -- TestImageFixer_AutoFix_BacksUpTheUsersFanartBeforeReplacingIt and
+//     TestSaveImageFromData_RollsBackAFailedFanartOverwrite (internal/rule) both go RED.
+//     Structure and behavior cover each other here; neither alone is sufficient.
+//   - AN IMPORT ALIAS. The rule scan matches the selector `img.Save`. Importing
+//     internal/image under a different name would slip past it.
+//   - INDIRECTION. A sink reached through a function value, an interface method, or a
+//     type assembled at runtime (imageType := kind + "art") is not matched anywhere.
 //
-// If it fails, you have added a new way to destroy a user's artwork. Route it through
-// saveFanartSlotProtected instead of adding a name to fanartChokepoints.
+// If it fails, you have added a new way to destroy a user's artwork. Route it through the
+// chokepoint instead of adding a name to an allowlist.
 func TestFanartSaveHasASingleChokepoint(t *testing.T) {
 	t.Parallel()
 
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading package dir: %v", err)
-	}
-
 	fset := token.NewFileSet()
 	var offenders []string
+	var scanned int
+
+	// Package api: a destructive sink handed the "fanart" image type.
+	scanned += walkGoFiles(t, fset, ".", func(fn *ast.FuncDecl, f *ast.File) {
+		if fanartChokepoints[fn.Name.Name] {
+			return
+		}
+		// Identifiers bound to the literal "fanart" at FILE scope are in scope in every
+		// function in the file; plus any bound inside this function body.
+		idents := fanartIdents(fn.Body)
+		for k := range fanartIdents(f) {
+			idents[k] = true
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, isCall := n.(*ast.CallExpr)
+			if !isCall || !isUnprotectedFanartSink(call) {
+				return true
+			}
+			for _, arg := range call.Args {
+				if namesFanart(arg, idents) {
+					offenders = append(offenders,
+						fset.Position(call.Pos()).String()+" in api."+fn.Name.Name+
+							" (destructive sink named \"fanart\" outside saveFanartSlotProtected)")
+					break
+				}
+			}
+			return true
+		})
+	})
+
+	// Package rule: ANY direct image-write primitive, whatever the image type.
+	scanned += walkGoFiles(t, fset, filepath.Join("..", "rule"), func(fn *ast.FuncDecl, _ *ast.File) {
+		if ruleImageChokepoints[fn.Name.Name] {
+			return
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, isCall := n.(*ast.CallExpr)
+			if !isCall || !isRuleImageSink(call) {
+				return true
+			}
+			offenders = append(offenders,
+				fset.Position(call.Pos()).String()+" in rule."+fn.Name.Name+
+					" (image-write primitive outside saveImageToDisk)")
+			return true
+		})
+	})
+
+	// The walk silently passes if it reads nothing -- a wrong working directory, a
+	// renamed package, a mistyped relative path. Assert it actually scanned both.
+	if scanned == 0 {
+		t.Fatal("the guard parsed ZERO source files; it would pass no matter what the code did")
+	}
+
+	if len(offenders) > 0 {
+		t.Errorf("unprotected image write(s) outside the sanctioned chokepoints:\n  %s\n\n"+
+			"A destructive fanart write MUST go through the protected chokepoint (img.SaveSlotProtected, "+
+			"reached via saveFanartSlotProtected in api and saveImageToDisk in rule), which backs the "+
+			"existing image up first and restores it if the save fails. Fanart slot 0 IS the primary "+
+			"backdrop, so an unprotected slot write destroys the user's artwork with no way back "+
+			"(#2413, #2433).",
+			strings.Join(offenders, "\n  "))
+	}
+}
+
+// walkGoFiles parses every non-test .go file in dir and hands each function declaration
+// to visit. It returns the number of files scanned so the caller can prove the walk was
+// not a no-op.
+func walkGoFiles(t *testing.T, fset *token.FileSet, dir string, visit func(fn *ast.FuncDecl, f *ast.File)) int {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading package dir %s: %v", dir, err)
+	}
 	var scanned int
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		f, parseErr := parser.ParseFile(fset, filepath.Join(".", name), nil, 0)
+		path := filepath.Join(dir, name)
+		f, parseErr := parser.ParseFile(fset, path, nil, 0)
 		if parseErr != nil {
-			t.Fatalf("parsing %s: %v", name, parseErr)
+			t.Fatalf("parsing %s: %v", path, parseErr)
 		}
 		scanned++
-
-		// Identifiers bound to the literal "fanart" at FILE scope are in scope in every
-		// function in the file.
-		fileIdents := fanartIdents(f)
-
 		for _, decl := range f.Decls {
 			fn, isFn := decl.(*ast.FuncDecl)
-			if !isFn || fn.Body == nil || fanartChokepoints[fn.Name.Name] {
+			if !isFn || fn.Body == nil {
 				continue
 			}
-			// Plus any bound inside this function body.
-			idents := fanartIdents(fn.Body)
-			for k := range fileIdents {
-				idents[k] = true
-			}
-
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, isCall := n.(*ast.CallExpr)
-				if !isCall || !isUnprotectedFanartSink(call) {
-					return true
-				}
-				for _, arg := range call.Args {
-					if namesFanart(arg, idents) {
-						offenders = append(offenders,
-							fset.Position(call.Pos()).String()+" in "+fn.Name.Name)
-						break
-					}
-				}
-				return true
-			})
+			visit(fn, f)
 		}
 	}
-
-	// The walk silently passes if it reads nothing -- a wrong working directory, a
-	// renamed package. Assert it actually scanned the package.
 	if scanned == 0 {
-		t.Fatal("the guard parsed ZERO source files; it would pass no matter what the code did")
+		t.Fatalf("the guard parsed ZERO source files in %s; it would pass no matter what the code did", dir)
 	}
-
-	if len(offenders) > 0 {
-		t.Errorf("unprotected fanart write(s) outside the sanctioned chokepoints:\n  %s\n\n"+
-			"A destructive fanart write MUST go through saveFanartSlotProtected, which backs the existing "+
-			"image up first and restores it if the save fails. Slot 0 IS the primary backdrop, so an "+
-			"unprotected slot write destroys the user's artwork with no way back (#2413).",
-			strings.Join(offenders, "\n  "))
-	}
+	return scanned
 }
 
 // isUnprotectedFanartSink reports whether the call is one of the destructive sinks,
@@ -156,6 +224,19 @@ func isUnprotectedFanartSink(call *ast.CallExpr) bool {
 		return unprotectedFanartSinks[fun.Name]
 	}
 	return false
+}
+
+// isRuleImageSink reports whether the call is a direct image-write primitive, written as
+// the img.<Name> selector internal/rule uses. It deliberately does NOT look at the
+// arguments: the rule engine's image type is a variable, so an argument-based match would
+// be blind to the very call that was destroying fanart (#2433).
+func isRuleImageSink(call *ast.CallExpr) bool {
+	sel, isSel := call.Fun.(*ast.SelectorExpr)
+	if !isSel || !ruleImageSinks[sel.Sel.Name] {
+		return false
+	}
+	pkg, isIdent := sel.X.(*ast.Ident)
+	return isIdent && pkg.Name == "img"
 }
 
 // namesFanart reports whether an argument expression is the image type "fanart" --
