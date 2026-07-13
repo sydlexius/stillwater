@@ -399,7 +399,7 @@ func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Requ
 	slotMeta.Mode = "user"
 	slotMeta.DHash = "" // Force recomputation from the cropped image data.
 
-	saved, saveErr := img.Save(dir, "fanart", imgData, []string{targetName}, false, slotMeta, r.logger)
+	saved, saveErr := r.saveFanartSlotProtected(dir, []string{targetName}, imgData, slotMeta)
 	if saveErr != nil {
 		r.logger.Error("saving cropped fanart slot",
 			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
@@ -440,7 +440,7 @@ func (r *Router) handleImageFetchFanartSlot(w http.ResponseWriter, req *http.Req
 	targetName := img.FanartFilename(primary, slot, kodiNumbering)
 	slotMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
 
-	saved, saveErr := img.Save(dir, "fanart", data, []string{targetName}, false, slotMeta, r.logger)
+	saved, saveErr := r.saveFanartSlotProtected(dir, []string{targetName}, data, slotMeta)
 	if saveErr != nil {
 		r.logger.Error("saving fetched fanart slot",
 			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
@@ -1028,6 +1028,26 @@ func (r *Router) saveSingleSlotWithRollback(dir, imageType string, naming []stri
 	return saveOrRestoreResult{SaveErr: err}
 }
 
+// saveFanartSlotProtected is the API-side entry to the protected fanart write.
+//
+// The backup/save/rollback policy itself lives in img.SaveSlotProtected, next to the
+// BackupSlot and RestoreSlot primitives it is built from, so that callers outside this
+// package (the rule engine, which is package-level and cannot call a Router method)
+// reach the SAME chokepoint rather than growing a second copy of it.
+//
+// What this wrapper adds is the one thing that is genuinely the Router's: registering
+// the paths the save is about to touch with the filesystem watcher, so the watcher can
+// tell Stillwater's own writes apart from an external editor's. The registration spans
+// the rollback too -- a restore rewrites the same paths.
+func (r *Router) saveFanartSlotProtected(dir string, naming []string, data []byte, meta *img.ExifMeta) ([]string, error) {
+	if r.expectedWrites != nil {
+		expectedPaths := img.ExpectedPaths(dir, naming)
+		r.expectedWrites.AddAll(expectedPaths)
+		defer r.expectedWrites.RemoveAll(expectedPaths)
+	}
+	return img.SaveSlotProtected(dir, "fanart", naming, data, meta, r.logger)
+}
+
 // processAndSaveImage processes image data (convert format, optimize) and saves it.
 // For logos, transparent borders are automatically trimmed before saving.
 // meta is optional EXIF provenance metadata to embed in the saved image.
@@ -1046,17 +1066,35 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(ctx, imageType)
 
-	// Non-destructive: keep a one-deep peer-inert backup of the current
-	// canonical single-slot image before we overwrite it, so the edit is
-	// revertible (#1837). Fanart is multi-slot (a new slot is appended
-	// elsewhere) and is never backed up here. BackupSingleSlot probes strictly
-	// (#1161): a transient stat error or a backup-write failure returns an error
-	// and we ABORT the destructive save so the source-of-truth original is never
-	// overwritten without a recoverable backup.
-	if imageType != "fanart" {
-		if bErr := img.BackupSingleSlot(dir, imageType, naming); bErr != nil {
-			return nil, fmt.Errorf("backing up original before overwrite (aborting destructive save): %w", bErr)
-		}
+	// Non-destructive: keep a one-deep peer-inert backup of the current canonical
+	// image before we overwrite it, so the edit is revertible (#1837).
+	// BackupSingleSlot probes strictly (#1161): a transient stat error or a
+	// backup-write failure returns an error and we ABORT the destructive save, so the
+	// source-of-truth original is never overwritten without a recoverable backup.
+	//
+	// THIS APPLIES TO FANART TOO. It used to be excluded here on the reasoning that
+	// "fanart is multi-slot (a new slot is appended elsewhere)" -- but this is the
+	// OVERWRITE path. Appending is a different function (processAndAppendFanart),
+	// called earlier in the handler. So the one operation that can destroy a primary
+	// backdrop was the only one skipping the safety net (#2413).
+	//
+	// And it does destroy it. The loss is a DELETE, not an overwrite, which is why the
+	// atomic write never protected anyone: img.Save calls CleanupConflictingFormats,
+	// which REMOVES the other format of the same slot before writing. Overwrite a
+	// fanart.png with JPEG data and the canonical name becomes fanart.jpg, so the
+	// original fanart.png is deleted outright -- and if the write then fails, the
+	// artwork is gone with nothing to put back.
+	// FANART TAKES THE SLOT-SCOPED PATH. It is MULTI-slot, and BackupSingleSlot's
+	// prune is one-deep PER TYPE -- it deletes every file in .sw-backup/fanart/ except
+	// the one it just wrote. So backing the PRIMARY up through it would DESTROY every
+	// numbered slot's backup, silently disarming the protection for fanart1.jpg,
+	// fanart2.jpg and the rest. One image type, one backup mechanism.
+	if imageType == "fanart" {
+		return r.saveFanartSlotProtected(dir, naming, converted, meta)
+	}
+
+	if bErr := img.BackupSingleSlot(dir, imageType, naming); bErr != nil {
+		return nil, fmt.Errorf("backing up original before overwrite (aborting destructive save): %w", bErr)
 	}
 
 	// Register expected write paths so the filesystem watcher can
@@ -1067,20 +1105,15 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 		defer r.expectedWrites.RemoveAll(expectedPaths)
 	}
 
-	if imageType == "fanart" {
-		// Fanart has no single-slot backup to roll back to: a failed append
-		// leaves the primary untouched (append writes a new numbered file),
-		// so a plain save without rollback is correct here.
-		saved, saveErr := img.Save(dir, imageType, converted, naming, useSymlinks, meta, r.logger)
-		if saveErr != nil {
-			return nil, fmt.Errorf("saving: %w", saveErr)
-		}
-		return saved, nil
-	}
-
-	// Single-slot types: route through the shared helper so a save failure
-	// after the successful backup above triggers an automatic rollback
-	// instead of silently leaving the canonical image missing (#2339).
+	// Route through the shared helper so a save failure after the successful backup
+	// above triggers an automatic rollback instead of silently leaving the canonical
+	// image missing (#2339).
+	//
+	// Fanart is no longer carved out. The old branch here called img.Save directly
+	// with no rollback, justified by "a failed append leaves the primary untouched
+	// (append writes a new numbered file)" -- append-path reasoning in the OVERWRITE
+	// path. A failed fanart overwrite does NOT leave the primary untouched: the
+	// conflicting-format cleanup has already deleted it (#2413).
 	res := r.saveSingleSlotWithRollback(dir, imageType, naming, useSymlinks, meta, converted)
 	if res.SaveErr != nil {
 		// A first-ever upload for this slot has no prior original, so the

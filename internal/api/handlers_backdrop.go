@@ -358,7 +358,9 @@ func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request
 	dir := r.imageDir(a)
 
 	assignMeta := &img.ExifMeta{Source: conn.Type, Fetched: time.Now().UTC(), Mode: "user"}
-	_, saveErr := img.Save(dir, "fanart", converted, []string{targetName}, false, assignMeta, r.logger)
+	// Assigning a backdrop to a slot OVERWRITES whatever image is already there
+	// (slot 0 is the primary backdrop), so it must back up and roll back (#2413).
+	_, saveErr := r.saveFanartSlotProtected(dir, []string{targetName}, converted, assignMeta)
 	if saveErr != nil {
 		r.logger.Error("saving backdrop to slot",
 			slog.String("artist_id", artistID),

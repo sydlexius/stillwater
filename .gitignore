@@ -113,3 +113,4 @@ __pycache__/
 
 # Machine-local session checkpoint (resume state; read on demand, not committed)
 SESSION-STATE.md
+.session/
