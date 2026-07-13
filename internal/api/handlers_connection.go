@@ -681,6 +681,14 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 	if updateErr := r.connectionService.UpdateStatus(req.Context(), id, status, msg); updateErr != nil {
 		r.logger.Error("updating connection status", "error", updateErr)
 	}
+	// A successful test is a second cheap opportunity to fill in path mappings
+	// the create-time attempt could not derive (empty library at the time). No-op
+	// when the connection is already mapped or the library still has no MBIDs;
+	// the authoritative re-run is the post-scan hook (see
+	// applyInferredPathMappingsAllConnections).
+	if status == "ok" {
+		r.applyInferredPathMappingsIfEmpty(req.Context(), conn)
+	}
 	resp := map[string]any{"status": status, "message": msg}
 	if len(result.DriftWarnings) > 0 {
 		resp["drift_warnings"] = result.DriftWarnings
@@ -907,21 +915,22 @@ type pathMappingsRequest struct {
 	PathMappings []connection.PathMapping `json:"path_mappings"`
 }
 
-// handleSetPathMappings replaces the Lidarr-only host<->platform path-mapping
-// list (connection.Lidarr.PathMappings). When set, the rename/merge publisher
-// rewrites an artist path's host prefix to the platform prefix before the
-// UpdateArtistPath PUT so a split-mount Lidarr receives a path it can resolve
-// instead of one it rejects or silently coerces against its Root Folder list
-// (#2303).
+// handleSetPathMappings replaces the connection-level host<->platform
+// path-mapping list (connection.PathMappings). When set, the rename/merge
+// publisher rewrites an artist path's host prefix to the platform prefix before
+// the UpdateArtistPath call so a split-mount peer receives a path it can resolve
+// instead of one it rejects, silently coerces, or stores as nonsense (#2303 /
+// #2380).
 //
 // POST /api/v1/connections/{id}/path-mappings
 // Body: {"path_mappings": [{"host_prefix": "/music", "platform_prefix": "/data"}]}
 //
-// Mirrors handleSetVerifyPathAfterUpdate: non-Lidarr connections are rejected
-// (400) because the field is unrepresentable on Emby/Jellyfin sub-configs, and
-// a per-connection mutex (pathMappingsMu) serializes the read-modify-write. The
-// existence + type gate runs BEFORE the per-id LoadOrStore so unknown or
-// wrong-type ids never grow the mutex map.
+// Valid for EVERY connection type since #2380: an Emby or Jellyfin container
+// mounts the library under its own prefix exactly the way Lidarr does, and
+// leaving them unmapped pushed host paths into their container namespace. A
+// per-connection mutex (pathMappingsMu) serializes the read-modify-write; the
+// existence gate runs BEFORE the per-id LoadOrStore so unknown ids never grow
+// the mutex map.
 func (r *Router) handleSetPathMappings(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
@@ -941,13 +950,11 @@ func (r *Router) handleSetPathMappings(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	// Existence + type gate BEFORE allocating per-id serialization state, so an
-	// unknown or non-Lidarr id returns without ever touching the mutex map.
-	if gate, gerr := r.connectionService.GetByID(req.Context(), id); gerr != nil {
+	// Existence gate BEFORE allocating per-id serialization state, so an unknown
+	// id returns without ever touching the mutex map. No type gate: path mappings
+	// are valid for every connection type since #2380.
+	if _, gerr := r.connectionService.GetByID(req.Context(), id); gerr != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
-		return
-	} else if gate.Type != connection.TypeLidarr {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path-mappings is only valid for lidarr connections"})
 		return
 	}
 
@@ -959,12 +966,6 @@ func (r *Router) handleSetPathMappings(w http.ResponseWriter, req *http.Request)
 	existing, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
-		return
-	}
-	// Re-check the type under the lock: a concurrent type change between the
-	// pre-lock gate and here must still yield the documented 400, not a 500.
-	if existing.Type != connection.TypeLidarr {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path-mappings is only valid for lidarr connections"})
 		return
 	}
 
@@ -1053,16 +1054,17 @@ func sanitizePathMappings(in []connection.PathMapping) ([]connection.PathMapping
 	return out, nil
 }
 
-// handleInferPathMappings re-runs Lidarr path-mapping inference for a connection
-// and, when the connection currently has no mappings, applies the derived set
-// (never overwriting an existing list -- #2329 B3). It returns the refreshed
+// handleInferPathMappings re-runs path-mapping inference for a connection and,
+// when the connection currently has no mappings, applies the derived set (never
+// overwriting an existing list -- #2329 B3). It returns the refreshed
 // path-mapping card fragment with a read-only info line reporting the outcome,
 // so the settings UI updates in place.
 //
 // POST /api/v1/connections/{id}/path-mappings/infer
 //
-// Mirrors handleSetPathMappings: non-Lidarr connections are rejected (400), the
-// existence + type gate runs BEFORE the per-id LoadOrStore, and the shared
+// Valid for EVERY connection type since #2380 (Emby and Jellyfin need the same
+// host->container translation Lidarr does). The existence gate runs BEFORE the
+// per-id LoadOrStore so an unknown id never grows the mutex map, and the shared
 // pathMappingsMu serializes the read-modify-write so a concurrent manual save
 // and an infer cannot interleave.
 func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Request) {
@@ -1083,15 +1085,11 @@ func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Reques
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
 		return
 	}
-	if gate.Type != connection.TypeLidarr {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path-mappings is only valid for lidarr connections"})
-		return
-	}
 
 	// Compute the inference outcome UNLOCKED. It reports the matched count and
 	// derived-mapping count for the info line even when nothing is applied (the
 	// list was already populated or the consensus floor emitted zero).
-	mappings, matched, inferErr := r.inferLidarrPathMappings(req.Context(), gate)
+	mappings, matched, inferErr := r.inferPathMappings(req.Context(), gate)
 	if inferErr != nil {
 		r.logger.Info("path-mapping inference (manual) skipped", "connection_id", id, "error", inferErr)
 		mappings, matched = nil, 0
@@ -1108,10 +1106,6 @@ func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Reques
 	existing, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
-		return
-	}
-	if existing.Type != connection.TypeLidarr {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path-mappings is only valid for lidarr connections"})
 		return
 	}
 
@@ -1139,14 +1133,11 @@ func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Reques
 	}))
 }
 
-// setPathMappings replaces the Lidarr path-mapping list on c, allocating the
-// Lidarr sub-config first if a legacy row left it nil. Extracted as a pure
-// mutation (no I/O) so the nil-allocation branch is unit-testable without a DB.
+// setPathMappings replaces the connection-level path-mapping list on c. Since
+// #2380 the field lives on Connection (not the Lidarr sub-config), so this is a
+// thin pass-through kept for call-site readability and test reuse.
 func setPathMappings(c *connection.Connection, mappings []connection.PathMapping) {
-	if c.Lidarr == nil {
-		c.Lidarr = &connection.LidarrConfig{}
-	}
-	c.Lidarr.PathMappings = mappings
+	c.SetPathMappings(mappings)
 }
 
 // handleGetPlatformSettings returns the fetcher/saver/downloader configuration for all

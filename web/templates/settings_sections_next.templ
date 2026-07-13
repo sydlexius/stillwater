@@ -247,8 +247,14 @@ templ serverConnectionRowNext(c connection.Connection) {
 					</div>
 					<span id={ "verify-path-error-" + c.ID } class="hidden text-xs text-red-600 dark:text-red-400 mt-1"></span>
 				</div>
-				@connectionPathMappings(c)
 			}
+			// Path mappings are rendered for EVERY connection type. Keeping this
+			// editor inside the lidarr-only guard was half of the #2380
+			// showstopper: an Emby or Jellyfin container mounts the library under
+			// its own prefix exactly the way Lidarr does, so an operator on a split
+			// mount had no way to configure the translation, and Stillwater pushed
+			// raw HOST paths into their container namespace.
+			@connectionPathMappings(c)
 			<div
 				id={ "detected-" + c.ID }
 				class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2"
@@ -423,14 +429,16 @@ script toggleServerAddPanel() {
 	}
 }
 
-// connectionPathMappings renders the Lidarr-only host<->platform path-mapping
-// editor: one row per configured mapping plus a trailing blank row so an
-// operator can add another. The form posts the parallel host_prefix /
-// platform_prefix fields to the path-mappings endpoint (form-encoded, no
-// client-side array assembly); swPathMappingsAfterRequest reports the outcome
-// in the inline result span. Rendered inside the `c.Type == "lidarr"` guard, so
-// it never appears for Emby/Jellyfin (#2303). Shared by the stable and next
-// connection cards.
+// connectionPathMappings renders the host<->platform path-mapping editor: one
+// row per configured mapping plus a trailing blank row so an operator can add
+// another. The form posts the parallel host_prefix / platform_prefix fields to
+// the path-mappings endpoint (form-encoded, no client-side array assembly);
+// swPathMappingsAfterRequest reports the outcome in the inline result span.
+//
+// Rendered for EVERY connection type since #2380. It used to sit inside the
+// `c.Type == "lidarr"` guard (#2303), which left Emby and Jellyfin operators on
+// split mounts with no way to configure the translation at all. Shared by the
+// stable and next connection cards.
 templ connectionPathMappings(c connection.Connection) {
 	@ConnectionPathMappingsBlock(c, PathInferResult{})
 }

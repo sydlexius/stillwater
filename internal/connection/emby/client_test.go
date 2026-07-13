@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -1520,6 +1521,80 @@ func TestUpdateArtistPath_RoundTrip(t *testing.T) {
 	// untouched so a path remap does not collaterally clear other metadata.
 	if lock, _ := got["LockData"].(bool); !lock {
 		t.Errorf("LockData preservation failed: %v", got["LockData"])
+	}
+}
+
+// TestUpdateArtistPath_EmbySilentlyDiscardsPath encodes what a live Emby 4.9.5.0
+// was MEASURED doing, and it is why the round-trip test above -- which asserts only
+// that the client SENT a Path -- cannot be trusted as evidence the feature works.
+//
+// Measured, by replaying exactly what UpdateArtistPath does against a real server:
+//
+//	GET  /Users/{uid}/Items/9446   -> Path: null
+//	POST /Items/9446  Path=/share/Music/__probe__  -> HTTP 204
+//	GET  /Users/{uid}/Items/9446   -> Path: null      (UNCHANGED)
+//
+// Emby accepts the field, reports success, and discards it -- the same defect
+// Jellyfin has, which is unsurprising since Jellyfin forked from Emby. Emby also
+// reports NO path for artists at all (every MusicArtist in the probed library had
+// Path: null), because Emby artists are virtual name-keyed items rather than
+// folder-backed ones.
+//
+// So this fake stores state, drops Path on write, and the test asserts the OUTCOME.
+func TestUpdateArtistPath_EmbySilentlyDiscardsPath(t *testing.T) {
+	var mu sync.Mutex
+	// Path starts absent, exactly as a real Emby artist item reports it.
+	item := map[string]any{"Id": "a1", "Name": "Radiohead", "LockData": true}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(item)
+		case http.MethodPost:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			// Apply everything EXCEPT Path -- the measured Emby behavior.
+			for k, v := range body {
+				if k == "Path" {
+					continue
+				}
+				item[k] = v
+			}
+			w.WriteHeader(http.StatusNoContent) // 204, and the path did not move
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+
+	// "Succeeds".
+	if err := c.UpdateArtistPath(context.Background(), "a1", "/new/Radiohead"); err != nil {
+		t.Fatalf("UpdateArtistPath: %v", err)
+	}
+
+	// The read-back is the only thing that can tell the truth here.
+	got, err := c.GetArtistPath(context.Background(), "a1")
+	if err != nil {
+		t.Fatalf("GetArtistPath: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("peer path = %q, want \"\": this fake models Emby DISCARDING the path and "+
+			"reporting none for artists; a non-empty read-back means the fake stopped modeling "+
+			"the real server and the test has gone vacuous", got)
+	}
+	// An absent path must NEVER verify as a match against what we sent -- if it
+	// did, every Emby rename would report success while nothing had happened.
+	if connection.SamePeerPath(got, "/new/Radiohead") {
+		t.Error("an empty read-back verified as a match; that is the #2380 defect")
 	}
 }
 

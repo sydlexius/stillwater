@@ -2093,7 +2093,7 @@ func TestPipeline_FixViolation_DirectoryRename_PersistsPath(t *testing.T) {
 
 	logger := testLogger()
 	fsCheck := NewSharedFSCheck(libSvc, logger)
-	fixer := NewDirectoryRenameFixer(fsCheck, logger)
+	fixer := NewDirectoryRenameFixer(fsCheck, artistSvc, logger)
 	engine := NewEngine(ruleSvc, db, nil, nil, logger)
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, logger)
 

@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -714,27 +715,127 @@ func TestUpdateArtistLocks_EmptyItemID(t *testing.T) {
 	}
 }
 
-// TestUpdateArtistPath_RoundTrip exercises the fetch-mutate-POST cycle used
-// by publish.Publisher.SyncRename (#1222). Jellyfin's POST /Items/{id} is a
-// full replacement so the read-only field strip and the unrelated-field
-// preservation both need to fire; the test asserts both.
-func TestUpdateArtistPath_RoundTrip(t *testing.T) {
-	bodyCh := make(chan map[string]any, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+// jellyfinItemFake is a STATEFUL stand-in for a Jellyfin item store, and it
+// models the one behavior that matters for #2380: POST /Items/{id} applies every
+// field of the submitted body EXCEPT Path, which it silently discards, and then
+// answers 204.
+//
+// That is not a caricature. It is what a live Jellyfin 10.11.10 was measured
+// doing, and Emby 4.9.5.0 does the same. Jellyfin has NO repath endpoint at all -
+// an item's path is derived by the library scanner from the filesystem, so the
+// server simply drops a path a client tries to set. The OpenAPI spec actively
+// misleads about this: Path is documented on BaseItemDto as "Gets or sets the
+// path" and is not marked readOnly.
+//
+// A fake that answers 204 and stores nothing is NOT a peer. The previous version
+// of the test below used one, so it could only assert that the client SENT a Path
+// field - and the entire bug passed it. Modeling the discard is what lets a test
+// tell "we asked" apart from "it happened".
+type jellyfinItemFake struct {
+	mu   sync.Mutex
+	item map[string]any
+	// posted captures the last body the client POSTed, so the marshaling
+	// assertions (field preservation, read-only strip) still have something to
+	// look at.
+	posted map[string]any
+}
+
+func (f *jellyfinItemFake) handler(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/Items":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-a1","Name":"Bjork","Path":"/old/Bjork","Genres":["Pop"],"ImageTags":{"Primary":"abc"}}]}`))
-			return
-		}
-		if r.Method == http.MethodPost && r.URL.Path == "/Items/jf-a1" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"Items": []any{f.item}})
+		case r.Method == http.MethodPost && r.URL.Path == "/Items/jf-a1":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Errorf("decoding body: %v", err)
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			bodyCh <- body
-			w.WriteHeader(http.StatusNoContent)
+			f.posted = body
+			// Apply every field the client sent -- EXCEPT Path. This is the lie.
+			for k, v := range body {
+				if k == "Path" {
+					continue
+				}
+				f.item[k] = v
+			}
+			w.WriteHeader(http.StatusNoContent) // and report success anyway
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}
+}
+
+// TestUpdateArtistPath_PeerSilentlyDiscardsPath is the rewritten #2380 guard, and
+// the reason the old TestUpdateArtistPath_RoundTrip was worthless.
+//
+// The old test asked "did the client put Path in the body?" against a fake that
+// stored nothing. Answer: yes -- and the path never changed on the real server, so
+// the shipped code was broken while the test was green. Twice.
+//
+// This one asks the question that matters: AFTER a successful UpdateArtistPath,
+// what does the peer actually say the path is? It must be the OLD one, and
+// GetArtistPath must report that, because that read-back is the only mechanism
+// that can catch a peer discarding the write.
+func TestUpdateArtistPath_PeerSilentlyDiscardsPath(t *testing.T) {
+	fake := &jellyfinItemFake{item: map[string]any{
+		"Id": "jf-a1", "Name": "Bjork", "Path": "/old/Bjork",
+		"Genres": []any{"Pop"}, "ImageTags": map[string]any{"Primary": "abc"},
+	}}
+	srv := httptest.NewServer(fake.handler(t))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+
+	// The write "succeeds". It returns nil. It changes nothing.
+	if err := c.UpdateArtistPath(context.Background(), "jf-a1", "/new/Bjork"); err != nil {
+		t.Fatalf("UpdateArtistPath: %v", err)
+	}
+
+	// THE ASSERTION THE OLD TEST COULD NOT MAKE. A nil return above proves only
+	// that the request was accepted. Ask the peer what it stored.
+	got, err := c.GetArtistPath(context.Background(), "jf-a1")
+	if err != nil {
+		t.Fatalf("GetArtistPath: %v", err)
+	}
+	if got != "/old/Bjork" {
+		t.Fatalf("peer path = %q, want %q: this fake models Jellyfin DISCARDING the path, "+
+			"so if the read-back sees the new path the fake stopped modeling the real server "+
+			"and the test has gone vacuous again", got, "/old/Bjork")
+	}
+	// And that is exactly what the caller must be able to detect: sent != stored.
+	if connection.SamePeerPath(got, "/new/Bjork") {
+		t.Error("read-back compared EQUAL to the path we sent, so a peer that discards the " +
+			"path would read as success -- this is the #2380 defect")
+	}
+
+	// The marshaling contract from #1222 still holds and is still worth asserting:
+	// the client must send Path, preserve unrelated fields, and strip read-only ones.
+	if fake.posted["Path"] != "/new/Bjork" {
+		t.Errorf("Path sent = %v, want /new/Bjork", fake.posted["Path"])
+	}
+	if fake.posted["Name"] != "Bjork" {
+		t.Errorf("Name preservation failed: %v", fake.posted["Name"])
+	}
+	if _, present := fake.posted["ImageTags"]; present {
+		t.Errorf("read-only ImageTags should have been stripped, got %v", fake.posted["ImageTags"])
+	}
+}
+
+// TestGetArtistPath_ReadsBackWhatThePeerStored is the positive control for the
+// read-back: against a peer that DOES hold the path, GetArtistPath returns it. A
+// detector that always reported "not honored" would pass the test above while
+// being useless, so pin both directions.
+func TestGetArtistPath_ReadsBackWhatThePeerStored(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-a1","Name":"Bjork","Path":"/new/Bjork"}]}`))
 			return
 		}
 		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -742,19 +843,15 @@ func TestUpdateArtistPath_RoundTrip(t *testing.T) {
 	defer srv.Close()
 
 	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
-	if err := c.UpdateArtistPath(context.Background(), "jf-a1", "/new/Bjork"); err != nil {
-		t.Fatalf("UpdateArtistPath: %v", err)
+	got, err := c.GetArtistPath(context.Background(), "jf-a1")
+	if err != nil {
+		t.Fatalf("GetArtistPath: %v", err)
 	}
-	got := <-bodyCh
-	if got["Path"] != "/new/Bjork" {
-		t.Errorf("Path = %v, want /new/Bjork", got["Path"])
+	if got != "/new/Bjork" {
+		t.Errorf("GetArtistPath = %q, want %q", got, "/new/Bjork")
 	}
-	if got["Name"] != "Bjork" {
-		t.Errorf("Name preservation failed: %v", got["Name"])
-	}
-	// Read-only fields must be stripped by postFullItem before POST.
-	if _, present := got["ImageTags"]; present {
-		t.Errorf("read-only ImageTags should have been stripped, got %v", got["ImageTags"])
+	if !connection.SamePeerPath(got, "/new/Bjork") {
+		t.Error("a peer that DID store the path must verify as a match")
 	}
 }
 

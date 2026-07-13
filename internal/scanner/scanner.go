@@ -64,6 +64,11 @@ type Service struct {
 	defaultLibraryID  string
 	libraryLister     LibraryLister
 
+	// postScanHook, when set, runs once every scan finishes. Wired at
+	// construction only (never mid-scan), like eventBus/libraryLister, so it
+	// needs no synchronization. See SetPostScanHook.
+	postScanHook PostScanHook
+
 	// mtimeFastPath toggles the per-directory mtime check that skips the
 	// inner ReadDir + image probe loop when an artist directory has not
 	// been touched since the previous scan. Set via SetMtimeFastPath
@@ -98,6 +103,29 @@ func (s *Service) SetDefaultLibraryID(id string) {
 // SetLibraryLister sets the library lister used to discover all library paths.
 func (s *Service) SetLibraryLister(ll LibraryLister) {
 	s.libraryLister = ll
+}
+
+// PostScanHook runs once a scan's work is done, BEFORE the scan is stamped
+// completed and ScanCompleted is published - so anything observing "scan
+// completed" (UI, SSE, a test) can rely on the hook having already run. ctx is
+// the scanner's shutdown-scoped context, so a hook doing I/O is canceled with the
+// application.
+type PostScanHook func(ctx context.Context)
+
+// SetPostScanHook registers the post-scan hook. It exists because the SCAN is
+// where several derived states first become computable: path-mapping inference
+// (#2380) joins Stillwater artists to a peer's artists by MusicBrainz ID, and in
+// the normal first-run order the operator adds the connection BEFORE the first
+// scan - at which point the library has zero MBIDs and inference has nothing to
+// infer from. Without a re-run at end-of-scan the connection stays permanently
+// unmapped on a split mount (and the fail-closed root guard then refuses every
+// push, forever), because nothing else ever revisits it.
+//
+// Wire it at construction, before the first Run; it is not safe to swap while a
+// scan is in flight. Nil clears it. The hook is best-effort and must not panic
+// on its own errors: a scan is never failed by it.
+func (s *Service) SetPostScanHook(h PostScanHook) {
+	s.postScanHook = h
 }
 
 // NewService creates a scanner service. The mtime fast-path is enabled by
@@ -238,6 +266,21 @@ func (s *Service) Status() *ScanResult {
 func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 	defer s.scanWg.Done()
 	defer func() {
+		// Post-scan hook runs BEFORE the scan is marked finished, deliberately.
+		// Two reasons, both learned the hard way:
+		//   1. "Scan completed" must mean the post-scan work (path-mapping
+		//      inference, #2380) is done too. Otherwise an observer that waits for
+		//      the completed status - the UI, the SSE client, a test - races the
+		//      hook and can read a connection that is not yet mapped.
+		//   2. Shutdown cancels shutdownCtx and THEN waits on scanWg. A hook that
+		//      ran after the status flip could still be mid-flight at that moment
+		//      and have its context canceled out from under its HTTP calls.
+		// The hook is best-effort: it never fails the scan, and its own timeouts
+		// bound how long completion can be delayed.
+		if hook := s.postScanHook; hook != nil {
+			hook(ctx)
+		}
+
 		s.mu.Lock()
 		now := time.Now().UTC()
 		result.CompletedAt = &now

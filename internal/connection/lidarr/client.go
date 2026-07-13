@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -534,6 +535,23 @@ func setConsumerArtistField(m map[string]any, fieldName string, value bool) map[
 	return m
 }
 
+// GetRootFolders lists Lidarr's configured root folders (GET
+// /api/v1/rootfolder). Their paths are in LIDARR's filesystem namespace, so the
+// pre-flight root guard (publish.guardPlatformPath) uses them to refuse any
+// artist path that would land outside every root.
+//
+// This is the ONLY reliable way to catch a wrongly mapped path before it lands:
+// Lidarr's PUT /api/v1/artist accepts an out-of-root path verbatim and echoes
+// it straight back, so the existing verify-after-update round-trip (which
+// compares got != sent) can never fire on this class of bug (#2380).
+func (c *Client) GetRootFolders(ctx context.Context) ([]RootFolder, error) {
+	var folders []RootFolder
+	if err := c.Get(ctx, "/api/v1/rootfolder", &folders); err != nil {
+		return nil, fmt.Errorf("getting root folders: %w", wrapAuthIfStatusAuth(err))
+	}
+	return folders, nil
+}
+
 // UpdateArtistPath rewrites the Path on the given Lidarr artist by GET-modify-
 // PUT round-tripping the full ArtistResource. Lidarr's PUT /api/v1/artist/{id}
 // accepts a moveFiles query parameter; we pass moveFiles=false because
@@ -632,6 +650,55 @@ func (c *Client) verifyArtistPath(ctx context.Context, escapedID, sent string) e
 		return fmt.Errorf("lidarr path verify mismatch: sent %q, got %q", sent, got)
 	}
 	return nil
+}
+
+// GetArtistPath reads back Lidarr's CURRENT path for an artist. Returns "" when
+// the resource carries no path.
+//
+// The read-back half of the verify-after-update contract, generalized across all
+// three adapters (#2380). Lidarr is the ONLY one of the three that actually
+// honors a path write - Emby and Jellyfin both accept the field, return 2xx, and
+// silently discard it (both confirmed by replay against live servers). Lidarr
+// therefore ECHOES what we sent, which makes this read-back a WEAK detector here:
+// it can catch Lidarr coercing a path against its Root Folder list, but it cannot
+// distinguish "stored" from "echoed". That weakness is precisely why the check
+// must not be Lidarr-only - the peers where it is a STRONG detector (Emby,
+// Jellyfin) are the two that had no read-back at all.
+func (c *Client) GetArtistPath(ctx context.Context, platformArtistID string) (string, error) {
+	if strings.TrimSpace(platformArtistID) == "" {
+		return "", fmt.Errorf("platformArtistID is required")
+	}
+	getPath := fmt.Sprintf("/api/v1/artist/%s", url.PathEscape(platformArtistID))
+	var item map[string]any
+	if err := c.Get(ctx, getPath, &item); err != nil {
+		return "", fmt.Errorf("fetching artist for path read-back: %w", wrapAuthIfStatusAuth(err))
+	}
+	if item == nil {
+		return "", fmt.Errorf("lidarr returned empty artist body for id %s", platformArtistID)
+	}
+	path, _ := item["path"].(string)
+	return path, nil
+}
+
+// ListLibraryArtists enumerates Lidarr's artists in the shared PeerArtist shape
+// the post-move relink consumes. Lidarr has no library/ParentId scoping (its
+// artist list IS the library), so unlike Emby/Jellyfin there is no ghost class to
+// exclude here: every Lidarr artist carries a real path under a Root Folder.
+func (c *Client) ListLibraryArtists(ctx context.Context) ([]connection.PeerArtist, error) {
+	artists, err := c.GetArtists(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]connection.PeerArtist, 0, len(artists))
+	for i := range artists {
+		a := &artists[i]
+		out = append(out, connection.PeerArtist{
+			ID:   strconv.Itoa(a.ID),
+			Name: a.ArtistName,
+			Path: a.Path,
+		})
+	}
+	return out, nil
 }
 
 func (c *Client) setAuth(req *http.Request) {

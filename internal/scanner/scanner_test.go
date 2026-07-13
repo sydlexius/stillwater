@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2132,5 +2133,49 @@ func TestScan_RecoversFromPanic(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Shutdown did not return: scanWg was not released after a panicked scan")
+	}
+}
+
+// TestPostScanHook_RunsAfterScanCompletes locks the hook contract the #2380
+// path-mapping re-run depends on: the hook fires once per scan, and it runs
+// inside the scan's WaitGroup slot so Shutdown is a deterministic join point
+// (a caller that waited for the scan has also waited for the hook).
+func TestPostScanHook_RunsAfterScanCompletes(t *testing.T) {
+	// An empty library keeps the test on the scan LIFECYCLE (which is what the
+	// hook contract is about) rather than on artist persistence, which needs a
+	// seeded library row.
+	libDir := t.TempDir()
+	svc, _ := setupScanner(t, libDir)
+
+	var calls int32
+	var statusAtHook string
+	svc.SetPostScanHook(func(context.Context) {
+		atomic.AddInt32(&calls, 1)
+		// The hook runs while the scan is still marked "running": completion is
+		// stamped only after the hook returns, so "completed" genuinely means the
+		// post-scan work is done.
+		if st := svc.Status(); st != nil {
+			statusAtHook = st.Status
+		}
+	})
+
+	if _, err := svc.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// The hook runs BEFORE the status settles, so a settled status is proof the
+	// hook already ran - no Shutdown needed (and Shutdown would cancel the hook's
+	// context, which is precisely the race the ordering avoids).
+	waitForScan(t, svc, 5*time.Second)
+
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("post-scan hook called %d times, want exactly 1", got)
+	}
+	if statusAtHook != "running" {
+		t.Errorf("scan status seen by the hook = %q, want %q (the hook must run BEFORE completion "+
+			"is published, so an observer that sees 'completed' knows the hook already ran)",
+			statusAtHook, "running")
+	}
+	if final := svc.Status(); final == nil || final.Status != "completed" {
+		t.Errorf("final scan status = %+v, want completed", final)
 	}
 }

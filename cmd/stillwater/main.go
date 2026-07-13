@@ -920,7 +920,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		rule.NewImageFixer(a.orchestrator, a.platformService, a.fsCheck, logger),
 		rule.NewExtraneousImagesFixer(a.platformService, a.fsCheck, logger),
 		logoPaddingFixer,
-		rule.NewDirectoryRenameFixer(a.fsCheck, logger),
+		rule.NewDirectoryRenameFixer(a.fsCheck, a.artistService, logger),
 		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, logger),
 		rule.NewImageDuplicateFixer(a.db, a.platformService, a.fsCheck, logger),
 		rule.NewDiscographyFixer(releaseGroupFetcher, a.fsCheck, a.nfoSnapshotService, logger),

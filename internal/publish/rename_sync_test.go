@@ -46,6 +46,125 @@ func withFakePathUpdater(t *testing.T, fake *fakePathUpdater) {
 		return fake, true
 	}
 	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+	// The pre-flight root guard (#2380) is fail-closed, so a test that only
+	// stubs the updater would have every push refused before reaching it.
+	// Install the roots this test corpus actually pushes into ("/music" for the
+	// shared-mount cases, "/data..." for the mapped ones) so the guard genuinely
+	// PASSES rather than being bypassed -- the guard's own refusal branches get
+	// dedicated tests below.
+	withFakeRootLister(t, fakeRootLister{roots: []string{"/music", "/data", "/data/media", "/new", "/old"}})
+	// The post-update read-back verifier (#2380) is likewise unconditional, so a
+	// test that stubs only the updater would fall through to a REAL HTTP client
+	// aimed at a bogus host. Install a peer that HONORS the path write, which is
+	// what these pre-existing cases were implicitly assuming when they asserted
+	// "ok" off a fake updater's nil return. The peers that LIE about the write
+	// (Emby, Jellyfin -- both proven live) get dedicated tests in relink_test.go.
+	withFakePeer(t, &fakePeer{honorsPath: true, updater: fake,
+		roots: []string{"/music", "/data", "/data/media", "/new", "/old"}})
+}
+
+// fakePeer models a peer's item store rather than a single endpoint's status
+// code. That distinction is the whole lesson of #2380: a fake that answers 204
+// and echoes nothing is NOT a peer, and a test built on one asserts only that
+// Stillwater SENT something -- never that the peer HONORED it. So this double
+// stores state and can be told to LIE the way the real media servers do.
+//
+// honorsPath=false reproduces the proven Emby/Jellyfin behavior: accept the
+// write, report success, discard the path.
+type fakePeer struct {
+	// honorsPath: when false, UpdateArtistPath succeeds but the stored path is
+	// left untouched -- exactly what Jellyfin 10.11.10 and Emby 4.9.5.0 do.
+	honorsPath bool
+	// updater, when set, is the fakePathUpdater whose last-sent path this peer
+	// echoes back on a read. Only consulted when honorsPath is true.
+	updater *fakePathUpdater
+	// storedPath is the peer's own current path for the linked item.
+	storedPath string
+	// items is what ListLibraryArtists reports.
+	items []connection.PeerArtist
+	roots []string
+	// onScan mutates the peer when a library scan is triggered, modeling the
+	// ASYNCHRONOUS scanner: the moved directory only becomes visible after it runs.
+	onScan   func(p *fakePeer)
+	scans    int32
+	lists    int32
+	readErr  error
+	listErr  error
+	rootsErr error
+	scanErr  error
+}
+
+func (f *fakePeer) GetArtistPath(_ context.Context, _ string) (string, error) {
+	if f.readErr != nil {
+		return "", f.readErr
+	}
+	if f.honorsPath && f.updater != nil {
+		return f.updater.gotPath, nil
+	}
+	return f.storedPath, nil
+}
+
+func (f *fakePeer) ListLibraryArtists(_ context.Context) ([]connection.PeerArtist, error) {
+	atomic.AddInt32(&f.lists, 1)
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.items, nil
+}
+
+func (f *fakePeer) ListRoots(_ context.Context) ([]string, error) {
+	if f.rootsErr != nil {
+		return nil, f.rootsErr
+	}
+	return f.roots, nil
+}
+
+func (f *fakePeer) TriggerLibraryScan(_ context.Context) error {
+	atomic.AddInt32(&f.scans, 1)
+	if f.scanErr != nil {
+		return f.scanErr
+	}
+	if f.onScan != nil {
+		f.onScan(f)
+	}
+	return nil
+}
+
+// withFakePeer swaps relinkResolverFactory for the duration of a test.
+func withFakePeer(t *testing.T, peer *fakePeer) {
+	t.Helper()
+	orig := relinkResolverFactory
+	relinkResolverFactory = func(_ *connection.Connection, _ *slog.Logger) (peerArtistResolver, bool) {
+		return peer, true
+	}
+	t.Cleanup(func() { relinkResolverFactory = orig })
+}
+
+// fakeRootLister is a test double for the rootLister seam: it reports a fixed
+// set of peer root folders, or a fixed error (to drive the guard's fail-closed
+// "cannot verify" branch).
+type fakeRootLister struct {
+	roots  []string
+	err    error
+	called int32
+}
+
+func (f *fakeRootLister) ListRoots(context.Context) ([]string, error) {
+	atomic.AddInt32(&f.called, 1)
+	return f.roots, f.err
+}
+
+// withFakeRootLister swaps renameRootListerFactory for the duration of a test.
+// Passing a fakeRootLister value (not pointer) is fine for the read-only cases;
+// the pointer form lets a test assert the guard actually consulted the peer.
+func withFakeRootLister(t *testing.T, lister fakeRootLister) {
+	t.Helper()
+	orig := renameRootListerFactory
+	l := &lister
+	renameRootListerFactory = func(_ *connection.Connection, _ *slog.Logger) (rootLister, bool) {
+		return l, true
+	}
+	t.Cleanup(func() { renameRootListerFactory = orig })
 }
 
 // TestSyncRename_AllPlatformsOK is the happy path: three connections
@@ -106,6 +225,11 @@ func TestSyncRename_PartialFailureDoesNotStopFanout(t *testing.T) {
 		return okFake, true
 	}
 	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+	withFakeRootLister(t, fakeRootLister{roots: []string{"/music", "/data", "/data/media", "/new", "/old"}})
+	// Only c-ok reaches the read-back (c-fail errors out at the update), so a peer
+	// echoing okFake's sent path is the right double for the verify step here.
+	withFakePeer(t, &fakePeer{honorsPath: true, updater: okFake,
+		roots: []string{"/music", "/data", "/data/media", "/new", "/old"}})
 
 	p := New(Deps{
 		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
@@ -157,13 +281,16 @@ func TestSyncRename_AppliesPathMapping(t *testing.T) {
 		return fake, true
 	}
 	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+	withFakeRootLister(t, fakeRootLister{roots: []string{"/music", "/data", "/data/media", "/new", "/old"}})
+	withFakePeer(t, &fakePeer{honorsPath: true, updater: fake,
+		roots: []string{"/music", "/data", "/data/media", "/new", "/old"}})
 
 	// Mapped connection: /music -> /data/media.
 	mapped := &connection.Connection{
 		ID: "c-mapped", Name: "mapped", Type: connection.TypeLidarr, URL: "http://lid", Enabled: true,
-		Lidarr: &connection.LidarrConfig{PathMappings: []connection.PathMapping{
+		PathMappings: []connection.PathMapping{
 			{HostPrefix: "/music", PlatformPrefix: "/data/media"},
-		}},
+		},
 	}
 	p := New(Deps{
 		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
@@ -184,6 +311,8 @@ func TestSyncRename_AppliesPathMapping(t *testing.T) {
 	renamePathUpdaterFactory = func(_ *connection.Connection, _ *slog.Logger) (pathUpdater, bool) {
 		return fake2, true
 	}
+	withFakePeer(t, &fakePeer{honorsPath: true, updater: fake2,
+		roots: []string{"/music", "/data", "/data/media", "/new", "/old"}})
 	unmapped := &connection.Connection{
 		ID: "c-plain", Name: "plain", Type: connection.TypeLidarr, URL: "http://lid2", Enabled: true,
 		Lidarr: &connection.LidarrConfig{},
@@ -276,6 +405,7 @@ func TestSyncRename_UnsupportedConnectionType(t *testing.T) {
 		return nil, false
 	}
 	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+	withFakeRootLister(t, fakeRootLister{roots: []string{"/music", "/data", "/data/media", "/new", "/old"}})
 
 	p := New(Deps{
 		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
@@ -474,6 +604,7 @@ func TestSyncRename_PerPlatformTimeoutFires(t *testing.T) {
 		return blockingPathUpdater{}, true
 	}
 	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+	withFakeRootLister(t, fakeRootLister{roots: []string{"/music", "/data", "/data/media", "/new", "/old"}})
 
 	p := New(Deps{
 		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
@@ -515,6 +646,17 @@ func lidarrVerifyServer(t *testing.T, newPath string) (*httptest.Server, func() 
 	// trips -race under the project's race-test rule.
 	var getCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The pre-flight root guard (#2380) reads /api/v1/rootfolder through the
+		// REAL lidarr client on this production-dispatch path. Serve a root that
+		// contains newPath so the guard passes, and do NOT count it: the GET
+		// assertions below are about the artist-resource round-trips (pre-PUT +
+		// verify), and folding the guard's read into that count would silently
+		// change what the verify-wiring assertion means.
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/rootfolder" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"id":1,"path":"/new"}]`))
+			return
+		}
 		switch r.Method {
 		case http.MethodGet:
 			n := getCount.Add(1)
@@ -536,14 +678,18 @@ func lidarrVerifyServer(t *testing.T, newPath string) (*httptest.Server, func() 
 	return srv, func() int { return int(getCount.Load()) }
 }
 
-// TestSyncRename_LidarrVerifyWiringEnabled asserts the load-bearing wiring
-// for #1640: when conn.VerifyPathAfterUpdate is true the real
-// renamePathUpdaterFactory must call client.SetVerifyPathAfterUpdate(true)
-// so the rename produces 2 GETs (pre-PUT + verify) against the Lidarr
-// peer. The factory is NOT swapped here so the test exercises the actual
-// production path. Without this coverage the Connection field could be
-// silently dropped on its way to the client and the verify capability
-// would be dead code.
+// TestSyncRename_LidarrVerifyWiringEnabled asserts the load-bearing wiring for
+// #1640: when conn.VerifyPathAfterUpdate is true the real
+// renamePathUpdaterFactory must call client.SetVerifyPathAfterUpdate(true), so
+// lidarr.Client issues its own in-client verify GET. The factory is NOT swapped
+// here so the test exercises the actual production path. Without this coverage
+// the Connection field could be silently dropped on its way to the client and
+// the toggle would be dead code.
+//
+// The expected GET count is 3 since #2380, not 2: pre-PUT + the in-client verify
+// + the publish-layer read-back, which now runs on EVERY connection type
+// unconditionally. See the Disabled twin for why that last one cannot be
+// switched off any more.
 func TestSyncRename_LidarrVerifyWiringEnabled(t *testing.T) {
 	srv, gets := lidarrVerifyServer(t, "/new/X")
 
@@ -572,16 +718,27 @@ func TestSyncRename_LidarrVerifyWiringEnabled(t *testing.T) {
 	if len(results) != 1 || results[0].Result != artist.PlatformRemapOK {
 		t.Fatalf("results = %+v, want one ok entry", results)
 	}
-	if got := gets(); got != 2 {
-		t.Errorf("GET count = %d, want 2 (pre-PUT + verify); wiring did not reach client", got)
+	if got := gets(); got != 3 {
+		t.Errorf("GET count = %d, want 3 (pre-PUT + in-client verify + publish read-back); wiring did not reach client", got)
 	}
 }
 
-// TestSyncRename_LidarrVerifyWiringDisabled is the negative-branch twin
-// of the enabled wiring test: when conn.VerifyPathAfterUpdate is false the
-// rename must produce exactly 1 GET (pre-PUT only) so the opt-in default
-// stays cheap. A regression that hard-codes verify=true would surface
-// here as a 2-GET observation.
+// TestSyncRename_LidarrVerifyWiringDisabled is the negative-branch twin of the
+// enabled wiring test, and since #2380 it guards the more important half of the
+// contract: with conn.VerifyPathAfterUpdate FALSE the rename must still produce
+// 2 GETs, because the pre-PUT fetch is followed by the publish-layer read-back
+// that NO connection setting can turn off.
+//
+// The old expectation here was 1 GET -- "verify must remain opt-in". That is
+// precisely the defect this issue exists to close. The only read-back in the
+// codebase was Lidarr's, it defaulted to OFF, and Emby/Jellyfin had none at all,
+// so the one mechanism that could have caught a peer silently discarding a path
+// was disabled on the two peers that silently discard paths. A read-back is a
+// correctness guard, not a preference; the toggle now only controls Lidarr's
+// EXTRA in-client check (1 GET more, asserted by the twin above).
+//
+// A regression that makes the publish-layer verifier conditional again would
+// surface here as a 1-GET observation.
 func TestSyncRename_LidarrVerifyWiringDisabled(t *testing.T) {
 	srv, gets := lidarrVerifyServer(t, "/new/X")
 
@@ -610,7 +767,8 @@ func TestSyncRename_LidarrVerifyWiringDisabled(t *testing.T) {
 	if len(results) != 1 || results[0].Result != artist.PlatformRemapOK {
 		t.Fatalf("results = %+v, want one ok entry", results)
 	}
-	if got := gets(); got != 1 {
-		t.Errorf("GET count = %d, want 1 (verify must remain opt-in)", got)
+	if got := gets(); got != 2 {
+		t.Errorf("GET count = %d, want 2 (pre-PUT + the publish-layer read-back, which is unconditional); "+
+			"a count of 1 means the read-back became opt-in again -- the #2380 defect", got)
 	}
 }

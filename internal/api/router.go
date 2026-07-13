@@ -357,6 +357,16 @@ func NewRouter(deps RouterDeps) *Router {
 		r.foreignRepo = foreign.NewRepository(deps.DB)
 	}
 
+	// Re-run path-mapping inference at the end of every scan (#2380). The scan is
+	// where inference's inputs (artist MBIDs + host paths) first exist: in the
+	// normal first-run order the operator adds the connection BEFORE the first
+	// scan, so the create-time inference sees an empty library, infers nothing,
+	// and - without this hook - never runs again. On a split mount that leaves the
+	// connection unmapped and the fail-closed root guard refusing every push.
+	if r.scannerService != nil {
+		r.scannerService.SetPostScanHook(r.applyInferredPathMappingsAllConnections)
+	}
+
 	// Configure the static asset base path used by template helpers (logoSrc, etc.)
 	// so that sub-path deployments produce correct URLs.
 	templates.SetBasePath(deps.BasePath)

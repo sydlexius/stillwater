@@ -141,3 +141,151 @@ func splitDirBase(p string) (dir, base string, ok bool) {
 	}
 	return dir, base, true
 }
+
+// InferPathMappingsFromRoots derives host->platform prefix mappings by pairing
+// Stillwater's LIBRARY ROOTS against the peer's OWN ROOTS (Lidarr root folders,
+// Emby/Jellyfin library Locations), matching on the final path segment
+// case-insensitively. Zero I/O, zero artist evidence required.
+//
+// This exists because per-artist evidence is NOT universally available (#2380
+// functional test): Emby returns NO Path on artist items - not from
+// /Artists/AlbumArtists, not from /Items, not from the single-item detail
+// endpoint, with or without Fields=Path - so an inference that can only learn
+// from (host path, platform path) artist pairs infers NOTHING for Emby, forever,
+// no matter how many artists are linked. Emby DOES report its library Locations,
+// and Lidarr reports its root folders, so the roots are the one signal every peer
+// type actually gives us. Root pairing also covers a library root that simply has
+// too few matched artists to clear the pair-consensus floor (a one-artist
+// classical root), which is how a connection ended up half-mapped.
+//
+// Pairing rules, deliberately conservative - a WRONG mapping is worse than none,
+// because the root guard would then refuse pushes with a translation the operator
+// can see but not explain:
+//   - A host root maps to a platform root when their final segments match
+//     case-insensitively ("/host/media/classical" <-> "/classical") and that match
+//     is UNIQUE on both sides. Ambiguity (two roots sharing a segment) yields no
+//     mapping for the roots involved.
+//   - When each side has exactly ONE root, they are paired regardless of segment,
+//     since there is no other candidate to confuse them with.
+//   - Identical host and platform paths are skipped: a shared mount needs no
+//     mapping and sending the path verbatim already resolves.
+//
+// Results are sorted (platform prefix, then host prefix) for determinism.
+func InferPathMappingsFromRoots(hostRoots, platformRoots []string) []PathMapping {
+	hosts := normalizeRootList(hostRoots)
+	plats := normalizeRootList(platformRoots)
+	if len(hosts) == 0 || len(plats) == 0 {
+		return nil
+	}
+
+	var out []PathMapping
+	add := func(host, plat string) {
+		if host == "" || plat == "" || host == plat {
+			return
+		}
+		out = append(out, PathMapping{HostPrefix: host, PlatformPrefix: plat})
+	}
+
+	// Single root on each side: unambiguous by construction.
+	if len(hosts) == 1 && len(plats) == 1 {
+		add(hosts[0], plats[0])
+		return out
+	}
+
+	// Segment matching. Count both sides first so a duplicated segment can be
+	// rejected rather than resolved arbitrarily.
+	hostSeg := map[string]int{}
+	for _, h := range hosts {
+		hostSeg[lastSegment(h)]++
+	}
+	platBySeg := map[string][]string{}
+	for _, p := range plats {
+		seg := lastSegment(p)
+		platBySeg[seg] = append(platBySeg[seg], p)
+	}
+
+	for _, h := range hosts {
+		seg := lastSegment(h)
+		if seg == "" || hostSeg[seg] != 1 {
+			continue // ambiguous on the host side
+		}
+		cands := platBySeg[seg]
+		if len(cands) != 1 {
+			continue // absent, or ambiguous on the platform side
+		}
+		add(h, cands[0])
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PlatformPrefix != out[j].PlatformPrefix {
+			return out[i].PlatformPrefix < out[j].PlatformPrefix
+		}
+		return out[i].HostPrefix < out[j].HostPrefix
+	})
+	return out
+}
+
+// MergePathMappings returns base plus every mapping from extra whose HostPrefix
+// is not already covered by base. Evidence-based mappings (the artist-pair kind)
+// are the base and always win; root-paired mappings only FILL the roots the
+// evidence could not reach. Coverage is separator-bounded, so a base mapping at
+// "/host/media" covers an extra at "/host/media/classical" and the two cannot
+// both be emitted for the same subtree.
+func MergePathMappings(base, extra []PathMapping) []PathMapping {
+	out := append([]PathMapping(nil), base...)
+	for _, e := range extra {
+		host := normalizeRootPath(e.HostPrefix)
+		if host == "" {
+			continue
+		}
+		covered := false
+		for _, b := range out {
+			bh := normalizeRootPath(b.HostPrefix)
+			if bh == "" {
+				continue
+			}
+			if _, ok := pathRemainder(host, bh); ok {
+				covered = true
+				break
+			}
+			if _, ok := pathRemainder(bh, host); ok {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PlatformPrefix != out[j].PlatformPrefix {
+			return out[i].PlatformPrefix < out[j].PlatformPrefix
+		}
+		return out[i].HostPrefix < out[j].HostPrefix
+	})
+	return out
+}
+
+// normalizeRootList normalizes each root (POSIX fold, Clean, trailing-slash trim)
+// and drops empties and duplicates, preserving first-seen order.
+func normalizeRootList(roots []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range roots {
+		n := normalizeRootPath(r)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
+}
+
+// lastSegment returns the final path segment of an already-normalized root.
+func lastSegment(p string) string {
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return strings.ToLower(p[i+1:])
+	}
+	return strings.ToLower(p)
+}
