@@ -668,3 +668,67 @@ func TestImageDuplicateExactFixer_RenumberInvalidatesStoredHashes(t *testing.T) 
 			stored, onDisk.Content)
 	}
 }
+
+// TestImageDuplicateExactFixer_RefusesToDeleteOnAnUnverifiedHash pins the layer
+// that the safety actually rests on: the fixer re-derives hashes from disk
+// before deleting, so no stored hash -- however it got there -- can talk it into
+// removing a file.
+//
+// This is the case call-site invalidation can NEVER cover. The stale hash here
+// is not produced by any Stillwater code path: it is what a user gets by
+// replacing fanart2.jpg over a network share. Nothing in this process observes
+// that, and a rescan deliberately preserves the hash columns (see
+// UpsertAll's ON CONFLICT), so the wrong hash simply persists. Invalidating on
+// renumber does nothing for it.
+//
+// Simulated by writing slot 0's content hash onto slot 1's row while slot 1's
+// file is a DISTINCT image. A fixer that trusts the DB reads them as
+// byte-identical and deletes slot 1. A fixer that re-reads sees two different
+// files and deletes nothing.
+func TestImageDuplicateExactFixer_RefusesToDeleteOnAnUnverifiedHash(t *testing.T) {
+	_, db := newDupTestEngine(t)
+	insertTestArtist(t, db, "art-oob", "Out Of Band Artist")
+
+	dir := t.TempDir()
+	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
+	createGradientJPEG(t, filepath.Join(dir, "fanart2.jpg"), 9) // DISTINCT
+	insertTestImage(t, db, "art-oob", "fanart", 0)
+	insertTestImage(t, db, "art-oob", "fanart", 1)
+
+	slot0, err := image.HashFile(filepath.Join(dir, "fanart.jpg"), true)
+	if err != nil {
+		t.Fatalf("hashing slot 0: %v", err)
+	}
+	// The lie: slot 1's row claims to hold a byte-identical copy of slot 0.
+	// Its file does not. This is the state an out-of-band file swap leaves.
+	for _, slot := range []int{0, 1} {
+		if _, err := db.Exec(
+			`UPDATE artist_images SET phash = ?, content_hash = ?
+			 WHERE artist_id = ? AND image_type = 'fanart' AND slot_index = ?`,
+			image.HashHex(slot0.Perceptual), slot0.Content, "art-oob", slot,
+		); err != nil {
+			t.Fatalf("seeding stale hash for slot %d: %v", slot, err)
+		}
+	}
+
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), artist.NewService(db), testLogger())
+	a := &artist.Artist{
+		ID: "art-oob", Name: "Out Of Band Artist", Path: dir, LibraryID: "lib-test",
+		FanartExists: true, FanartCount: 2,
+	}
+	res, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicateExact})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if res.Fixed {
+		t.Errorf("the fixer deleted a file on a hash it never verified against disk (%q)", res.Message)
+	}
+
+	// THE ASSERTION: both files still on disk. The two images are distinct; the
+	// only thing that said otherwise was a row in a table.
+	for _, n := range []string{"fanart.jpg", "fanart2.jpg"} {
+		if _, statErr := os.Stat(filepath.Join(dir, n)); statErr != nil {
+			t.Errorf("DATA DESTRUCTION: %s was deleted on an unverified stored hash: %v", n, statErr)
+		}
+	}
+}
