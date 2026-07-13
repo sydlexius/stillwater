@@ -68,10 +68,12 @@ func TestImageDuplicate_ColdVsWarmEvaluationCost(t *testing.T) {
 		t.Fatalf("warm pass did %d reads and %d decodes, want 0 of each -- the hashes "+
 			"are not being reused across evaluations (#2349)", warmCount.reads, warmCount.decodes)
 	}
-	if warm >= cold {
-		t.Errorf("warm evaluation (%v) was not faster than the cold one (%v); the "+
-			"persisted hashes are buying nothing", warm, cold)
-	}
+	// No wall-clock assertion here: a zero-read/zero-decode warm pass can
+	// still occasionally clock slower than the cold one on a loaded runner
+	// (GC pauses, scheduler noise), and the deterministic decode/read-count
+	// assertions above already prove the hash cache is doing its job. A
+	// timing comparison would only add flake risk, not coverage. The t.Logf
+	// speedup line above stays for visibility.
 }
 
 // fanartSlotFileName maps a slot index to the numbered fanart filename that

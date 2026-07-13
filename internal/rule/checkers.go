@@ -1040,7 +1040,7 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 		}
 
 		primaryName := resolveFanartPrimaryName(ctx, e.platformService)
-		res, err := findImageDuplicates(ctx, e.db, a, primaryName, tolerance, e.imageHashRecorder, false, e.logger)
+		res, err := e.getCachedImageDuplicates(ctx, a, primaryName, tolerance, e.logger)
 		if err != nil {
 			e.logger.Debug("detecting image duplicates", "artist", a.Name, "error", err)
 			return nil
@@ -1095,10 +1095,13 @@ func (e *Engine) makeImageDuplicateExactChecker() Checker {
 		}
 
 		primaryName := resolveFanartPrimaryName(ctx, e.platformService)
-		// Tolerance is irrelevant to byte equality; the perceptual tier's
-		// default is passed only so the shared pass produces its usual
-		// perceptual grouping for the other rule to consume.
-		res, err := findImageDuplicates(ctx, e.db, a, primaryName, defaultImageDupTolerance, e.imageHashRecorder, false, e.logger)
+		// Tolerance is irrelevant to byte equality; the default is passed
+		// only because getCachedImageDuplicates keys its per-evaluation cache
+		// on tolerance too, and the default is what the perceptual checker
+		// requests in the overwhelming common case (no custom threshold
+		// configured) -- so this call reuses that one computation instead of
+		// triggering a second recompute at a different key.
+		res, err := e.getCachedImageDuplicates(ctx, a, primaryName, defaultImageDupTolerance, e.logger)
 		if err != nil {
 			e.logger.Debug("detecting exact image duplicates", "artist", a.Name, "error", err)
 			return nil

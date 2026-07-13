@@ -662,6 +662,27 @@ func TestRenumberFanart_InvalidatesHashes(t *testing.T) {
 	}
 }
 
+// TestRenumberFanart_EmptySurvivorsStillInvalidates is the F2 regression test
+// (PR #2458 review, CodeRabbit HIGH). Deleting the last/only fanart image for
+// an artist calls RenumberFanart with an empty survivors slice; a prior
+// version of this function returned nil immediately in that case, before ever
+// calling the invalidator, leaving the deleted slot's hash to falsely match
+// whatever distinct image gets uploaded into it next. An empty-survivors call
+// means every fanart file for this artist just vanished, so there is MORE to
+// invalidate, not less.
+func TestRenumberFanart_EmptySurvivorsStillInvalidates(t *testing.T) {
+	dir := t.TempDir()
+	inv := &fakeHashInvalidator{}
+
+	if err := RenumberFanart(context.Background(), inv, "artist-1", dir, "backdrop.jpg", nil, false); err != nil {
+		t.Fatalf("RenumberFanart(empty survivors) error: %v", err)
+	}
+
+	if want := []string{"artist-1/fanart"}; len(inv.calls) != 1 || inv.calls[0] != want[0] {
+		t.Errorf("invalidator calls = %v, want %v -- the empty-survivors path must still invalidate", inv.calls, want)
+	}
+}
+
 // TestRenumberFanart_NilInvalidatorRefusesToRenumber proves the guard fails
 // LOUD and CLOSED. A caller with nowhere to record the invalidation must not get
 // a silently-unsafe renumber: the files must be left exactly as they were.
@@ -692,10 +713,14 @@ func TestRenumberFanart_NilInvalidatorRefusesToRenumber(t *testing.T) {
 	}
 }
 
-// TestRenumberFanart_InvalidationFailureSurfaces proves an invalidation failure
-// is reported rather than swallowed. The files are renumbered at that point, so
-// a swallowed error would leave stale hashes behind with the caller none the
-// wiser -- the precise state that gets artwork deleted.
+// TestRenumberFanart_InvalidationFailureSurfaces proves an invalidation
+// failure is reported rather than swallowed, AND that it aborts before the
+// destructive rename ever runs. Invalidation happens first specifically so a
+// failure here cannot leave the caller staring at survivors that moved while
+// the reason it moved got lost -- see the ordering rationale on
+// RenumberFanart. A swallowed or post-hoc error would leave stale hashes (or
+// worse, a rolled-back caller overwriting freshly-renumbered files) with
+// nobody the wiser.
 func TestRenumberFanart_InvalidationFailureSurfaces(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "backdrop3.jpg"), []byte("x"), 0o644); err != nil {
@@ -709,5 +734,14 @@ func TestRenumberFanart_InvalidationFailureSurfaces(t *testing.T) {
 	err := RenumberFanart(context.Background(), inv, "artist-1", dir, "backdrop.jpg", survivors, false)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("RenumberFanart() error = %v, want it to wrap %v", err, sentinel)
+	}
+
+	// The rename must NOT have happened: backdrop3.jpg stays exactly where it
+	// was, and slot 0 (backdrop.jpg) must not have been created.
+	if _, statErr := os.Stat(filepath.Join(dir, "backdrop3.jpg")); statErr != nil {
+		t.Errorf("original file was renamed despite the invalidation failure: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "backdrop.jpg")); !os.IsNotExist(statErr) {
+		t.Errorf("renumber proceeded despite the invalidation failure (backdrop.jpg exists)")
 	}
 }

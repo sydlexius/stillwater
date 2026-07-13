@@ -104,6 +104,26 @@ type Engine struct {
 	sharedFSMu    sync.Mutex
 	sharedFSCache map[string]bool
 
+	// imageDupCache caches one findImageDuplicates result per artist within a
+	// single Evaluate call, so the exact and perceptual duplicate checkers --
+	// which both call findImageDuplicates for the same artist -- share one
+	// computation instead of each independently re-reading and re-hashing
+	// every fanart slot (#2349's whole point, reintroduced by running the
+	// same pass twice). Keyed by artist ID rather than a single slot because
+	// Evaluate runs from concurrent HTTP handlers for different artists; an
+	// unkeyed slot would let one artist's checker read another artist's
+	// result mid-flight. Also keyed by tolerance: the perceptual grouping
+	// depends on it, and the two checkers are not guaranteed to request the
+	// same value (the exact checker always uses the default; the perceptual
+	// checker honors a per-rule override), so a tolerance mismatch forces a
+	// fresh, correct recompute rather than serving a result grouped at the
+	// wrong threshold. Cleared at the start of each Evaluate call, same as
+	// sharedFSCache; a clear racing a concurrent artist's in-flight populate
+	// costs that artist a cache miss (one redundant recompute), never wrong
+	// data -- the same safety envelope sharedFSCache already relies on.
+	imageDupMu    sync.Mutex
+	imageDupCache map[string]imageDupCacheEntry
+
 	// ruleCacheMu guards ruleList and ruleFetchedAt.
 	ruleCacheMu   sync.RWMutex
 	ruleList      []Rule
@@ -366,6 +386,14 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 	e.sharedFSCache = nil
 	e.sharedFSMu.Unlock()
 
+	// Clear the image-duplicate-detection cache for the same reason: it is
+	// scoped to one Evaluate call so the exact and perceptual checkers below
+	// share one computation for THIS artist, without carrying a stale result
+	// into the next Evaluate call for a different artist.
+	e.imageDupMu.Lock()
+	e.imageDupCache = nil
+	e.imageDupMu.Unlock()
+
 	rules, err := e.cachedRules(ctx)
 	if err != nil {
 		return nil, err
@@ -483,6 +511,54 @@ func (e *Engine) cacheSharedFS(libraryID string, shared bool) {
 		e.sharedFSCache = make(map[string]bool)
 	}
 	e.sharedFSCache[libraryID] = shared
+}
+
+// imageDupCacheEntry holds a findImageDuplicates result alongside the
+// tolerance it was computed with, so a cache lookup can tell a genuine hit
+// apart from a stale result computed for a different threshold.
+type imageDupCacheEntry struct {
+	tolerance float64
+	result    imageDupResult
+}
+
+// getCachedImageDuplicates returns findImageDuplicates' result for this
+// artist and tolerance, computing it at most once per Evaluate call.
+//
+// The exact and perceptual duplicate checkers (makeImageDuplicateExactChecker,
+// makeImageDuplicateChecker) both call this for the same artist during the
+// same evaluation pass; without it, each independently re-reads and re-hashes
+// every fanart slot findImageDuplicates' own doc comment promises is shared
+// work -- true within one call, false across the two rules that actually
+// exercise it. See that comment for why sharing is safe (detection only,
+// never the destructive path) and the imageDupCache field doc for why the
+// cache is keyed by artist ID and tolerance rather than a single slot.
+func (e *Engine) getCachedImageDuplicates(
+	ctx context.Context,
+	a *artist.Artist,
+	primaryName string,
+	tolerance float64,
+	logger *slog.Logger,
+) (imageDupResult, error) {
+	e.imageDupMu.Lock()
+	if cached, ok := e.imageDupCache[a.ID]; ok && cached.tolerance == tolerance {
+		e.imageDupMu.Unlock()
+		return cached.result, nil
+	}
+	e.imageDupMu.Unlock()
+
+	res, err := findImageDuplicates(ctx, e.db, a, primaryName, tolerance, e.imageHashRecorder, false, logger)
+	if err != nil {
+		return imageDupResult{}, err
+	}
+
+	e.imageDupMu.Lock()
+	if e.imageDupCache == nil {
+		e.imageDupCache = make(map[string]imageDupCacheEntry)
+	}
+	e.imageDupCache[a.ID] = imageDupCacheEntry{tolerance: tolerance, result: res}
+	e.imageDupMu.Unlock()
+
+	return res, nil
 }
 
 // lookupLogoBounds returns the cached ContentBounds result for the given logo

@@ -2,7 +2,6 @@ package image
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -234,20 +233,40 @@ func RenumberFanart(ctx context.Context, inv HashInvalidator, artistID, dir, pri
 	if inv == nil {
 		return fmt.Errorf("renumbering fanart in %s: no hash invalidator supplied", dir)
 	}
+
+	// Invalidate BEFORE the destructive rename, and unconditionally -- even
+	// when survivors is empty. An empty-survivors call means every fanart
+	// file for this artist just vanished, so there is MORE to invalidate in
+	// that case, not less; returning early here (as a prior version of this
+	// function did) walked straight past the one call that keeps the
+	// compile-time "cannot renumber without confronting the hashes"
+	// guarantee honest, and left the stale hash from the deleted slot ready
+	// to falsely match whatever distinct image gets uploaded into it next.
+	//
+	// Ordering also matters for failure isolation. If invalidation ran AFTER
+	// the rename (the previous shape of this function), an invalidation-only
+	// failure -- a transient DB-busy error, unrelated to the filesystem --
+	// surfaced after the survivors were already sitting at their new,
+	// correct paths. The caller cannot tell that failure apart from a failed
+	// rename, so it rolls back by restoring the tombed duplicates to their
+	// ORIGINAL paths -- paths the just-renumbered survivors may now occupy,
+	// silently overwriting distinct artwork with content that was supposed
+	// to be permanently deleted. Invalidating first removes that race
+	// entirely: if it fails, this function returns before any file moves, so
+	// the caller's rollback is always safe (nothing on disk has changed
+	// yet). It is also strictly safer than the reverse order for the hash
+	// cache itself -- an empty hash never matches anything, so clearing
+	// early can only ever cost an extra re-read on the next evaluation,
+	// never a wrong-hash-based delete.
+	if invErr := inv.InvalidateImageHashes(ctx, artistID, "fanart"); invErr != nil {
+		return fmt.Errorf("invalidating fanart hashes for artist %s before renumber: %w", artistID, invErr)
+	}
+
 	if len(survivors) == 0 {
 		return nil
 	}
 
-	renumberErr := renumberFanartFiles(dir, primaryName, survivors, kodi)
-
-	// Invalidate on the failure path too. A failed renumber rolls back
-	// best-effort, and "best-effort" is exactly the case where the on-disk
-	// slot-to-file mapping may no longer be the one the hashes were computed
-	// against. Clearing a hash that did not need clearing costs one re-read;
-	// keeping one that did costs a file.
-	invErr := inv.InvalidateImageHashes(ctx, artistID, "fanart")
-
-	return errors.Join(renumberErr, invErr)
+	return renumberFanartFiles(dir, primaryName, survivors, kodi)
 }
 
 // renumberFanartFiles performs the on-disk half of RenumberFanart. It is

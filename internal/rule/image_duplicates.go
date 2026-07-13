@@ -377,6 +377,13 @@ type imageDupResult struct {
 // once (see resolveImageDupHashes), its content hash always taken, and a decode
 // performed only when the perceptual hash is missing.
 //
+// This sharing is only real WITHIN one call: it does nothing for the exact and
+// perceptual RULES, which are two separate Checkers that each call this
+// function independently for the same artist during the same evaluation.
+// getCachedImageDuplicates (in engine.go) is what makes the promise in this
+// comment hold across both checkers, not just within one call -- call that
+// instead of this function directly from a checker.
+//
 // Ordering is a filter, not the fix, for the recomputation problem: exact-first
 // shrinks how many images reach the perceptual comparison, but the survivors
 // would still be re-decoded on every evaluation if nothing persisted their
@@ -409,7 +416,14 @@ type imageDupResult struct {
 // rare, and trivial next to the file deletion it is about to perform. It also
 // re-persists what it computed, so the same pass that refuses to trust a stale
 // hash also repairs it.
-func findImageDuplicates(
+//
+// findImageDuplicates is a package var, not a plain func, so a test can swap
+// it for a call-counting wrapper (mirroring hashImageFile) and measure
+// whether getCachedImageDuplicates actually invoked this once per Evaluate
+// call for two checkers, rather than once per checker.
+var findImageDuplicates = findImageDuplicatesImpl
+
+func findImageDuplicatesImpl(
 	ctx context.Context,
 	db *sql.DB,
 	a *artist.Artist,

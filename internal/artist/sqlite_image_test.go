@@ -110,6 +110,9 @@ func TestUpdateProvenance(t *testing.T) {
 	if got.PHash != "ff00ff00ff00ff00" {
 		t.Errorf("PHash = %q, want %q", got.PHash, "ff00ff00ff00ff00")
 	}
+	if got.ContentHash != "sha-thumb" {
+		t.Errorf("ContentHash = %q, want %q", got.ContentHash, "sha-thumb")
+	}
 	if got.Source != "musicbrainz" {
 		t.Errorf("Source = %q, want %q", got.Source, "musicbrainz")
 	}
@@ -356,6 +359,9 @@ func TestUpsertAll_PreservesProvenance(t *testing.T) {
 	}
 	if got[0].PHash != "1234567890abcdef" {
 		t.Errorf("PHash = %q, want %q", got[0].PHash, "1234567890abcdef")
+	}
+	if got[0].ContentHash != "sha-fanart" {
+		t.Errorf("ContentHash = %q, want %q", got[0].ContentHash, "sha-fanart")
 	}
 	if got[0].Source != "fanarttv" {
 		t.Errorf("Source = %q, want %q", got[0].Source, "fanarttv")
