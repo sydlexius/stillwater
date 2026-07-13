@@ -235,7 +235,8 @@ func TestDirectoryRenameFixer_SharedFS_Blocks(t *testing.T) {
 	check := NewSharedFSCheck(&stubLibQuerier{
 		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
-	fixer := NewDirectoryRenameFixer(check, logger)
+	renamer, _ := newGuardedRenamer(t)
+	fixer := NewDirectoryRenameFixer(check, renamer, logger)
 	a := &artist.Artist{Name: "New Name", Path: t.TempDir(), LibraryID: "lib-1"}
 	v := &Violation{RuleID: RuleDirectoryNameMismatch, Config: RuleConfig{ArticleMode: "prefix"}}
 	result, err := fixer.Fix(context.Background(), a, v)
@@ -255,7 +256,8 @@ func TestDirectoryRenameFixer_NonSharedFS_Proceeds(t *testing.T) {
 	check := NewSharedFSCheck(&stubLibQuerier{
 		lib: &library.Library{SharedFSStatus: library.SharedFSNone},
 	}, logger)
-	fixer := NewDirectoryRenameFixer(check, logger)
+	svc, _ := newGuardedRenamer(t)
+	fixer := NewDirectoryRenameFixer(check, svc, logger)
 
 	tmp := t.TempDir()
 	oldPath := filepath.Join(tmp, "Old Name")
@@ -267,6 +269,7 @@ func TestDirectoryRenameFixer_NonSharedFS_Proceeds(t *testing.T) {
 	}
 
 	a := &artist.Artist{Name: "New Name", Path: oldPath, LibraryID: "lib-1"}
+	persistArtist(t, svc, a)
 	v := &Violation{RuleID: RuleDirectoryNameMismatch, Config: RuleConfig{ArticleMode: "prefix"}}
 
 	result, err := fixer.Fix(context.Background(), a, v)

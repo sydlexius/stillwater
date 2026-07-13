@@ -707,7 +707,7 @@ components:
           description: When true, issues a follow-up GET after rename PUT to verify path wasn't coerced. Lidarr only.
         path_mappings:
           type: [array, "null"]
-          description: Host-to-platform path prefix mappings applied before a rename/merge PUT. Empty or null for non-Lidarr and shared-mount Lidarr connections.
+          description: Host-to-platform path prefix mappings applied before a rename/merge PUT. Applies to every connection type (Lidarr, Emby, Jellyfin). Empty or null for a shared-mount connection.
           items:
             $ref: "#/components/schemas/PathMapping"
         library_count:
@@ -8649,14 +8649,16 @@ paths:
   /connections/{id}/path-mappings:
     post:
       tags: [Connections]
-      summary: Replace host-to-platform path mappings (Lidarr only)
+      summary: Replace host-to-platform path mappings
       operationId: setPathMappings
       description: >
-        Replaces the Lidarr host<->platform path-mapping list. The supplied
-        list fully replaces any existing mappings (PUT-like); an empty or
-        omitted list clears them, restoring verbatim path propagation. Each
+        Replaces the connection's host<->platform path-mapping list. The
+        supplied list fully replaces any existing mappings (PUT-like); an empty
+        or omitted list clears them, restoring verbatim path propagation. Each
         mapping must carry both a non-empty host prefix and platform prefix.
-        Lidarr only; returns 400 for non-Lidarr connections.
+        Valid for every connection type (emby, jellyfin, lidarr): each peer
+        mounts the library in its own filesystem namespace, so each may need a
+        translation.
       parameters:
         - name: id
           in: path
@@ -8701,8 +8703,8 @@ paths:
         "400":
           description: >
             Invalid request. Returned when the connection id is missing, the
-            body could not be parsed, a mapping is missing one of its two
-            prefixes, or the connection is not a Lidarr connection.
+            body could not be parsed, or a mapping is missing one of its two
+            prefixes.
           content:
             application/json:
               schema:
@@ -8723,17 +8725,17 @@ paths:
   /connections/{id}/path-mappings/infer:
     post:
       tags: [Connections]
-      summary: Re-run Lidarr path-mapping inference (Lidarr only)
+      summary: Re-run path-mapping inference
       operationId: inferPathMappings
       description: >
-        Re-derives host<->platform path mappings for a Lidarr connection by
-        matching Stillwater artists to the connection's Lidarr artists by
-        MusicBrainz ID and comparing the two mount prefixes. When the connection
-        currently has no mappings, the derived set is applied; an existing
-        (operator-entered or previously inferred) list is never overwritten.
-        Returns the refreshed path-mapping card HTML fragment with a read-only
-        info line reporting how many mappings were inferred from how many matched
-        artists. Lidarr only; returns 400 for non-Lidarr connections.
+        Re-derives host<->platform path mappings for a connection by matching
+        Stillwater artists to the peer's artists by MusicBrainz ID and comparing
+        the two mount prefixes. When the connection currently has no mappings,
+        the derived set is applied; an existing (operator-entered or previously
+        inferred) list is never overwritten. Returns the refreshed path-mapping
+        card HTML fragment with a read-only info line reporting how many mappings
+        were inferred from how many matched artists. Valid for every connection
+        type (emby, jellyfin, lidarr).
       parameters:
         - name: id
           in: path

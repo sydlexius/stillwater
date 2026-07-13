@@ -50,3 +50,15 @@ type CommandResponse struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 }
+
+// RootFolder represents one entry from GET /api/v1/rootfolder. Path is the
+// directory as LIDARR addresses it (its own container's filesystem namespace),
+// which is precisely what the pre-flight root guard needs: a path Stillwater is
+// about to push must resolve inside one of these, or Lidarr will store a
+// location that means nothing on its side. Lidarr accepts an out-of-root path
+// verbatim over the API -- it does NOT enforce canonical naming -- so this list
+// is the only way to catch the mistake before it lands (#2380).
+type RootFolder struct {
+	ID   int    `json:"id"`
+	Path string `json:"path"`
+}

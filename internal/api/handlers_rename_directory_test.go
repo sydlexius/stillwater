@@ -316,8 +316,17 @@ func TestHandleArtistRenameDirectory_FilesystemError500(t *testing.T) {
 // does NOT cause the rename itself to fail or roll back (#1222, #1231).
 func TestHandleArtistRenameDirectory_PlatformsInResponse(t *testing.T) {
 	t.Parallel()
-	r, a, _ := renameHandlerFixture(t)
+	r, a, root := renameHandlerFixture(t)
 	ctx := context.Background()
+
+	// Both stubs must also answer the #2380 pre-flight root guard, which reads
+	// each peer's own root folders before any path is pushed and REFUSES a path
+	// that falls outside them. This fixture is a shared-mount deployment (the
+	// peers see the same tmpdir Stillwater does), so each peer reports `root` and
+	// the guard passes -- which is what makes the ok/failed assertions below
+	// about the UPDATE calls rather than about the guard.
+	embyRootBody := `[{"Name":"Music","CollectionType":"music","ItemId":"lib1","Locations":["` + root + `"]}]`
+	lidarrRootBody := `[{"id":1,"path":"` + root + `"}]`
 
 	// Emby stub: GET /Users/{u}/Items/emby-pid returns minimal item;
 	// POST /Items/emby-pid returns 204 (success). The stub validates the
@@ -326,17 +335,51 @@ func TestHandleArtistRenameDirectory_PlatformsInResponse(t *testing.T) {
 	// before writing back), and that every call carries Emby's
 	// X-Emby-Token auth header. Without these assertions a wrong
 	// URL/body/auth wiring could pass a method-only stub silently.
+	// The path Stillwater is renaming TO. The Emby stub needs it because, since
+	// #2380, a successful rename no longer ends at the POST: the path is read back,
+	// and on a media server it never matches (Emby and Jellyfin both accept the
+	// Path field, answer 204, and discard it -- confirmed against live servers), so
+	// the publisher re-resolves the artist against the peer's library and rewrites
+	// the link. This stub therefore has to model a real peer's post-move state, not
+	// just a 204.
+	newPath := filepath.Join(root, "Renamed With Platforms")
+
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Header.Get("X-Emby-Token") == "" {
 			t.Errorf("emby stub: missing X-Emby-Token auth header on %s %s", req.Method, req.URL.Path)
 		}
+		switch req.URL.Path {
+		case "/Library/VirtualFolders":
+			// Root guard read, and the library enumeration the relink walks.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(embyRootBody))
+			return
+		case "/Library/Refresh":
+			// The relink asks the peer to re-scan. Asynchronous in reality; the
+			// listing below already reflects the move, so accepting is enough.
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case "/Artists/AlbumArtists":
+			// The scanner has re-derived the artist AT THE NEW DIRECTORY. This is
+			// what lets the relink resolve the link back to a real item -- and it
+			// keeps the same item id here, so the link is confirmed rather than
+			// rewritten.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"TotalRecordCount":1,"Items":[{"Id":"emby-pid","Name":"Rename Me","Path":"` + newPath + `"}]}`))
+			return
+		}
+		// Everything past here is the per-item round-trip, which must be keyed by
+		// the platform_artist_id.
 		if !strings.Contains(req.URL.Path, "emby-pid") {
 			t.Errorf("emby stub: URL path %q does not contain expected platform_artist_id 'emby-pid'", req.URL.Path)
 		}
 		switch req.Method {
 		case http.MethodGet:
+			// The item still reports its OLD path: Emby DISCARDED the write. A stub
+			// that echoed the new path back would be lying about the peer, and would
+			// let a regression that trusts the 204 sail through this test.
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"Id":"emby-pid","Name":"X","Path":"/old"}`))
+			_, _ = w.Write([]byte(`{"Id":"emby-pid","Name":"Rename Me","Path":"/old"}`))
 		case http.MethodPost:
 			var body map[string]any
 			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -359,6 +402,13 @@ func TestHandleArtistRenameDirectory_PlatformsInResponse(t *testing.T) {
 	lidarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Header.Get("X-Api-Key") == "" {
 			t.Errorf("lidarr stub: missing X-Api-Key auth header on %s %s", req.Method, req.URL.Path)
+		}
+		// Root guard read: answer before the per-artist assertions below, which
+		// only apply to the artist-resource round-trip.
+		if req.URL.Path == "/api/v1/rootfolder" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(lidarrRootBody))
+			return
 		}
 		if !strings.Contains(req.URL.Path, "artist") {
 			t.Errorf("lidarr stub: URL path %q does not contain expected 'artist' segment", req.URL.Path)

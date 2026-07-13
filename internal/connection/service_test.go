@@ -757,11 +757,11 @@ func TestPathMappings_RoundTrip(t *testing.T) {
 		{HostPrefix: "/media/audio", PlatformPrefix: "/mnt/audio"},
 	}
 	conn := &Connection{
-		Name:   "Lidarr split mount",
-		Type:   TypeLidarr,
-		URL:    "http://localhost:8686",
-		APIKey: "key",
-		Lidarr: &LidarrConfig{PathMappings: want},
+		Name:         "Lidarr split mount",
+		Type:         TypeLidarr,
+		URL:          "http://localhost:8686",
+		APIKey:       "key",
+		PathMappings: want,
 	}
 	if err := svc.Create(ctx, conn); err != nil {
 		t.Fatalf("create: %v", err)
@@ -771,7 +771,7 @@ func TestPathMappings_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got.Lidarr == nil || !reflect.DeepEqual(got.Lidarr.PathMappings, want) {
+	if !reflect.DeepEqual(got.GetPathMappings(), want) {
 		t.Fatalf("PathMappings after round-trip = %+v, want %+v", got.GetPathMappings(), want)
 	}
 
@@ -789,7 +789,7 @@ func TestPathMappings_RoundTrip(t *testing.T) {
 	}
 
 	// Clear the mappings; the column returns to empty and reads back nil.
-	reloaded.Lidarr.PathMappings = nil
+	reloaded.SetPathMappings(nil)
 	if err := svc.Update(ctx, reloaded); err != nil {
 		t.Fatalf("update (clear): %v", err)
 	}

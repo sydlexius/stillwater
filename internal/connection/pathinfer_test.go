@@ -164,3 +164,177 @@ func TestInferPathMappings_Deterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestInferPathMappings_TwoHostRootsIntoOneContainerRoot is the multi-root case a
+// real split-mount deployment actually has, and which a single-mapping test would
+// pass right over: TWO separate host library roots collapse into SUBFOLDERS of one
+// container root on the peer. This is not one prefix swap - "/host/media -> /music"
+// would be wrong in both shape and case - so inference must emit one mapping PER
+// root, and the mapped paths must all land inside the peer's single root.
+func TestInferPathMappings_TwoHostRootsIntoOneContainerRoot(t *testing.T) {
+	t.Parallel()
+
+	pairs := []PathPair{
+		// Host root A -> /music/RootA
+		{HostPath: "/host/media/roota/Alpha", PlatformPath: "/music/RootA/Alpha"},
+		{HostPath: "/host/media/roota/Beta", PlatformPath: "/music/RootA/Beta"},
+		// Host root B -> /music/RootB
+		{HostPath: "/host/media/rootb/Gamma", PlatformPath: "/music/RootB/Gamma"},
+		{HostPath: "/host/media/rootb/Delta", PlatformPath: "/music/RootB/Delta"},
+	}
+
+	got := InferPathMappings(pairs, DefaultPathInferConsensus)
+	want := []PathMapping{
+		{HostPrefix: "/host/media/roota", PlatformPrefix: "/music/RootA"},
+		{HostPrefix: "/host/media/rootb", PlatformPrefix: "/music/RootB"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("InferPathMappings = %+v, want %+v (one mapping PER host root; stopping at the "+
+			"first would leave every artist under the other root failing the root guard)", got, want)
+	}
+
+	// End to end: with BOTH mappings on the connection, an artist from either root
+	// must translate and land inside the peer's single reported root. Longest-prefix
+	// resolution must keep the two roots from claiming each other's paths.
+	c := &Connection{PathMappings: got}
+	for host, wantPlatform := range map[string]string{
+		"/host/media/roota/Alpha": "/music/RootA/Alpha",
+		"/host/media/rootb/Gamma": "/music/RootB/Gamma",
+	} {
+		mapped := c.MapArtistPath(host)
+		if mapped != wantPlatform {
+			t.Errorf("MapArtistPath(%q) = %q, want %q", host, mapped, wantPlatform)
+		}
+		if !PathWithinRoots(mapped, []string{"/music"}) {
+			t.Errorf("mapped path %q is outside the peer root /music; the push would be refused", mapped)
+		}
+	}
+}
+
+// TestInferPathMappings_PartialEvidenceStillEmitsWhatItHas pins the partial case:
+// one host root has enough matched artists, the other does not (yet). The evidenced
+// root must still be emitted rather than the whole inference collapsing to nothing -
+// half-mapped beats unmapped, and the caller surfaces the un-inferred root.
+func TestInferPathMappings_PartialEvidenceStillEmitsWhatItHas(t *testing.T) {
+	t.Parallel()
+
+	pairs := []PathPair{
+		{HostPath: "/host/media/roota/Alpha", PlatformPath: "/music/RootA/Alpha"},
+		{HostPath: "/host/media/roota/Beta", PlatformPath: "/music/RootA/Beta"},
+		// Only ONE pair for root B: below the consensus floor.
+		{HostPath: "/host/media/rootb/Gamma", PlatformPath: "/music/RootB/Gamma"},
+	}
+	got := InferPathMappings(pairs, DefaultPathInferConsensus)
+	want := []PathMapping{{HostPrefix: "/host/media/roota", PlatformPrefix: "/music/RootA"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("InferPathMappings = %+v, want %+v", got, want)
+	}
+}
+
+// TestInferPathMappingsFromRoots covers the root-pairing signal that exists
+// because artist evidence is not universally available: a live Emby server
+// returns NO Path on artist items, so a pair-only inference maps Emby never.
+// Roots, unlike artist paths, every peer type reports.
+func TestInferPathMappingsFromRoots(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		hosts []string
+		plats []string
+		want  []PathMapping
+	}{
+		{
+			// The real deployment shape: two host roots, two peer roots, matched by
+			// final segment. Note the trailing slash a live Emby server actually
+			// reports on one of its Locations.
+			name:  "two roots matched by final segment",
+			hosts: []string{"/host/media/classical", "/host/media/music"},
+			plats: []string{"/classical", "/music/"},
+			want: []PathMapping{
+				{HostPrefix: "/host/media/classical", PlatformPrefix: "/classical"},
+				{HostPrefix: "/host/media/music", PlatformPrefix: "/music"},
+			},
+		},
+		{
+			name:  "segment match is case-insensitive",
+			hosts: []string{"/host/media/classical"},
+			plats: []string{"/media/Classical", "/media/Music"},
+			want:  []PathMapping{{HostPrefix: "/host/media/classical", PlatformPrefix: "/media/Classical"}},
+		},
+		{
+			// One root on each side: pair them even though the segments differ -
+			// there is no other candidate to confuse them with.
+			name:  "single root each side pairs regardless of segment",
+			hosts: []string{"/host/media/library"},
+			plats: []string{"/data"},
+			want:  []PathMapping{{HostPrefix: "/host/media/library", PlatformPrefix: "/data"}},
+		},
+		{
+			// A WRONG mapping is worse than none: the guard would refuse pushes with
+			// a translation the operator can see but cannot explain.
+			name:  "ambiguous platform segment yields nothing",
+			hosts: []string{"/host/a/music", "/host/b/other"},
+			plats: []string{"/x/music", "/y/music"},
+			want:  nil,
+		},
+		{
+			name:  "ambiguous host segment yields nothing",
+			hosts: []string{"/host/a/music", "/host/b/music"},
+			plats: []string{"/peer/music", "/peer/other"},
+			want:  nil,
+		},
+		{
+			// Shared mount: host and platform agree already, so no mapping is needed
+			// and emitting an identity mapping would just be noise.
+			name:  "identical roots need no mapping",
+			hosts: []string{"/music"},
+			plats: []string{"/music"},
+			want:  nil,
+		},
+		{
+			name:  "no roots on one side",
+			hosts: []string{"/host/media/music"},
+			plats: nil,
+			want:  nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := InferPathMappingsFromRoots(tc.hosts, tc.plats)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("InferPathMappingsFromRoots(%v, %v) = %+v, want %+v", tc.hosts, tc.plats, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMergePathMappings pins the precedence rule: artist EVIDENCE wins, and root
+// pairing only fills host roots the evidence never reached. Two mappings for one
+// host subtree would make the translation ambiguous, so a covered root is never
+// added twice.
+func TestMergePathMappings(t *testing.T) {
+	t.Parallel()
+
+	base := []PathMapping{{HostPrefix: "/host/media/music", PlatformPrefix: "/music"}}
+	extra := []PathMapping{
+		// Already covered by the evidence-derived base: must NOT be added, even
+		// though the root pairing would have translated it differently.
+		{HostPrefix: "/host/media/music", PlatformPrefix: "/wrong"},
+		// A child of a covered root: still covered, separator-bounded.
+		{HostPrefix: "/host/media/music/sub", PlatformPrefix: "/wrong"},
+		// Genuinely uncovered: this is the half-mapped root the evidence missed.
+		{HostPrefix: "/host/media/classical", PlatformPrefix: "/classical"},
+	}
+
+	got := MergePathMappings(base, extra)
+	want := []PathMapping{
+		{HostPrefix: "/host/media/classical", PlatformPrefix: "/classical"},
+		{HostPrefix: "/host/media/music", PlatformPrefix: "/music"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("MergePathMappings = %+v, want %+v (evidence wins; root pairing only fills gaps)", got, want)
+	}
+}

@@ -170,6 +170,12 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 // have one resolved - so a fresh row (empty) takes the envelope value while an
 // existing row keeps its own.
 func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14, gateV15, gateV17 bool) {
+	// PathMappings is connection-level for EVERY type since #2380, so it is
+	// applied outside the type switch. A pre-1.7 envelope (gateV17 false)
+	// decoded it as nil and must not clobber the target's existing mappings.
+	if gateV17 {
+		conn.SetPathMappings(ce.PathMappings)
+	}
 	switch conn.Type {
 	case connection.TypeLidarr:
 		if conn.Lidarr == nil {
@@ -177,9 +183,6 @@ func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14
 		}
 		if gateV15 {
 			conn.Lidarr.VerifyPathAfterUpdate = ce.VerifyPathAfterUpdate
-		}
-		if gateV17 {
-			conn.Lidarr.PathMappings = ce.PathMappings
 		}
 	case connection.TypeEmby:
 		if conn.Emby == nil {

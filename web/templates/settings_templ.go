@@ -5331,10 +5331,10 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = connectionPathMappings(c).Render(ctx, templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
+				}
+				templ_7745c5c3_Err = connectionPathMappings(c).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
 				}
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 380, "<div id=\"")
 				if templ_7745c5c3_Err != nil {
@@ -5343,7 +5343,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var260 string
 				templ_7745c5c3_Var260, templ_7745c5c3_Err = templ.ResolveAttributeValue("detected-" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1887, Col: 30}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1895, Col: 30}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var260)
 				if templ_7745c5c3_Err != nil {
@@ -5356,7 +5356,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var261 string
 				templ_7745c5c3_Var261, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/connections/" + c.ID + "/conflict-detail")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1889, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1897, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var261)
 				if templ_7745c5c3_Err != nil {
@@ -5369,7 +5369,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var262 string
 				templ_7745c5c3_Var262, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.connections.checking_saver_status"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1893, Col: 115}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1901, Col: 115}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var262))
 				if templ_7745c5c3_Err != nil {
@@ -5382,7 +5382,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var263 string
 				templ_7745c5c3_Var263, templ_7745c5c3_Err = templ.ResolveAttributeValue("edit-panel-" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1896, Col: 35}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1904, Col: 35}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var263)
 				if templ_7745c5c3_Err != nil {
@@ -5395,7 +5395,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var264 string
 				templ_7745c5c3_Var264, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/connections/" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1899, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1907, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var264)
 				if templ_7745c5c3_Err != nil {
@@ -5408,7 +5408,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var265 string
 				templ_7745c5c3_Var265, templ_7745c5c3_Err = templ.ResolveAttributeValue("#edit-result-" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1901, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1909, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var265)
 				if templ_7745c5c3_Err != nil {
@@ -5421,7 +5421,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var266 string
 				templ_7745c5c3_Var266, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.edit"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1904, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1912, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var266))
 				if templ_7745c5c3_Err != nil {
@@ -5434,7 +5434,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var267 string
 				templ_7745c5c3_Var267, templ_7745c5c3_Err = templ.ResolveAttributeValue("edit-name-" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1906, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1914, Col: 40}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var267)
 				if templ_7745c5c3_Err != nil {
@@ -5447,7 +5447,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var268 string
 				templ_7745c5c3_Var268, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.connections.server_name"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1906, Col: 103}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1914, Col: 103}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var268))
 				if templ_7745c5c3_Err != nil {
@@ -5460,7 +5460,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var269 string
 				templ_7745c5c3_Var269, templ_7745c5c3_Err = templ.ResolveAttributeValue("edit-name-" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1908, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1916, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var269)
 				if templ_7745c5c3_Err != nil {
@@ -5473,7 +5473,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var270 string
 				templ_7745c5c3_Var270, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1911, Col: 23}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1919, Col: 23}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var270)
 				if templ_7745c5c3_Err != nil {
@@ -5486,7 +5486,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var271 string
 				templ_7745c5c3_Var271, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.connections.server_name"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1912, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1920, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var271)
 				if templ_7745c5c3_Err != nil {
@@ -5499,7 +5499,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var272 string
 				templ_7745c5c3_Var272, templ_7745c5c3_Err = templ.ResolveAttributeValue("edit-url-" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1917, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1925, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var272)
 				if templ_7745c5c3_Err != nil {
@@ -5512,7 +5512,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var273 string
 				templ_7745c5c3_Var273, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.connections.base_url"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1917, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1925, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var273))
 				if templ_7745c5c3_Err != nil {
@@ -5525,7 +5525,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var274 string
 				templ_7745c5c3_Var274, templ_7745c5c3_Err = templ.ResolveAttributeValue("edit-url-" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1919, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1927, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var274)
 				if templ_7745c5c3_Err != nil {
@@ -5538,7 +5538,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var275 string
 				templ_7745c5c3_Var275, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1922, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1930, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var275)
 				if templ_7745c5c3_Err != nil {
@@ -5551,7 +5551,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var276 string
 				templ_7745c5c3_Var276, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.connections.base_url"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1923, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1931, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var276)
 				if templ_7745c5c3_Err != nil {
@@ -5564,7 +5564,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var277 string
 				templ_7745c5c3_Var277, templ_7745c5c3_Err = templ.ResolveAttributeValue("edit-api-key-" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1928, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1936, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var277)
 				if templ_7745c5c3_Err != nil {
@@ -5577,7 +5577,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var278 string
 				templ_7745c5c3_Var278, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.connections.api_key"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1928, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1936, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var278))
 				if templ_7745c5c3_Err != nil {
@@ -5605,7 +5605,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var279 string
 				templ_7745c5c3_Var279, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.save"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1939, Col: 151}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1947, Col: 151}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var279))
 				if templ_7745c5c3_Err != nil {
@@ -5635,7 +5635,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var281 string
 				templ_7745c5c3_Var281, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.cancel"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1940, Col: 234}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1948, Col: 234}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var281))
 				if templ_7745c5c3_Err != nil {
@@ -5648,7 +5648,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 				var templ_7745c5c3_Var282 string
 				templ_7745c5c3_Var282, templ_7745c5c3_Err = templ.ResolveAttributeValue("edit-result-" + c.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1943, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1951, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var282)
 				if templ_7745c5c3_Err != nil {
@@ -5671,7 +5671,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 			var templ_7745c5c3_Var283 string
 			templ_7745c5c3_Var283, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.connections.not_configured"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1948, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1956, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var283))
 			if templ_7745c5c3_Err != nil {
@@ -5693,7 +5693,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var284 string
 		templ_7745c5c3_Var284, templ_7745c5c3_Err = templ.ResolveAttributeValue("conn-form-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1953, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1961, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var284)
 		if templ_7745c5c3_Err != nil {
@@ -5730,7 +5730,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var286 string
 		templ_7745c5c3_Var286, templ_7745c5c3_Err = templ.ResolveAttributeValue("conn-form-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1963, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1971, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var286)
 		if templ_7745c5c3_Err != nil {
@@ -5743,7 +5743,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var287 string
 		templ_7745c5c3_Var287, templ_7745c5c3_Err = templ.ResolveAttributeValue("#conn-result-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1967, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1975, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var287)
 		if templ_7745c5c3_Err != nil {
@@ -5756,7 +5756,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var288 string
 		templ_7745c5c3_Var288, templ_7745c5c3_Err = templ.ResolveAttributeValue(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1970, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1978, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var288)
 		if templ_7745c5c3_Err != nil {
@@ -5769,7 +5769,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var289 string
 		templ_7745c5c3_Var289, templ_7745c5c3_Err = templ.ResolveAttributeValue("conn-name-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1971, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1979, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var289)
 		if templ_7745c5c3_Err != nil {
@@ -5782,7 +5782,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var290 string
 		templ_7745c5c3_Var290, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.connections.server_name"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1971, Col: 103}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1979, Col: 103}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var290))
 		if templ_7745c5c3_Err != nil {
@@ -5795,7 +5795,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var291 string
 		templ_7745c5c3_Var291, templ_7745c5c3_Err = templ.ResolveAttributeValue("conn-name-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1973, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1981, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var291)
 		if templ_7745c5c3_Err != nil {
@@ -5808,7 +5808,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var292 string
 		templ_7745c5c3_Var292, templ_7745c5c3_Err = templ.ResolveAttributeValue(displayName + " server")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1975, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1983, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var292)
 		if templ_7745c5c3_Err != nil {
@@ -5821,7 +5821,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var293 string
 		templ_7745c5c3_Var293, templ_7745c5c3_Err = templ.ResolveAttributeValue("conn-url-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1981, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1989, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var293)
 		if templ_7745c5c3_Err != nil {
@@ -5834,7 +5834,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var294 string
 		templ_7745c5c3_Var294, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.connections.base_url"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1981, Col: 146}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1989, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var294))
 		if templ_7745c5c3_Err != nil {
@@ -5855,7 +5855,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var295 string
 		templ_7745c5c3_Var295, templ_7745c5c3_Err = templ.ResolveAttributeValue("conn-url-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1985, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1993, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var295)
 		if templ_7745c5c3_Err != nil {
@@ -5868,7 +5868,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var296 string
 		templ_7745c5c3_Var296, templ_7745c5c3_Err = templ.ResolveAttributeValue("URL (e.g. " + exampleURL + ")")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1988, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1996, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var296)
 		if templ_7745c5c3_Err != nil {
@@ -5881,7 +5881,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var297 string
 		templ_7745c5c3_Var297, templ_7745c5c3_Err = templ.ResolveAttributeValue("conn-api-key-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1995, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2003, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var297)
 		if templ_7745c5c3_Err != nil {
@@ -5894,7 +5894,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var298 string
 		templ_7745c5c3_Var298, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.connections.api_key"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1995, Col: 149}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2003, Col: 149}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var298))
 		if templ_7745c5c3_Err != nil {
@@ -5930,7 +5930,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var299 string
 		templ_7745c5c3_Var299, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.save"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2008, Col: 148}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2016, Col: 148}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var299))
 		if templ_7745c5c3_Err != nil {
@@ -5960,7 +5960,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var301 string
 		templ_7745c5c3_Var301, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.cancel"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2009, Col: 235}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2017, Col: 235}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var301))
 		if templ_7745c5c3_Err != nil {
@@ -5973,7 +5973,7 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 		var templ_7745c5c3_Var302 string
 		templ_7745c5c3_Var302, templ_7745c5c3_Err = templ.ResolveAttributeValue("conn-result-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2012, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2020, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var302)
 		if templ_7745c5c3_Err != nil {
@@ -6017,7 +6017,7 @@ func ConnectionTestSaveFailure(connType string, name string, url string, apiKey 
 		var templ_7745c5c3_Var304 string
 		templ_7745c5c3_Var304, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.provider_keys.test_failed", errMsg))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2022, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2030, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var304))
 		if templ_7745c5c3_Err != nil {
@@ -6035,7 +6035,7 @@ func ConnectionTestSaveFailure(connType string, name string, url string, apiKey 
 			var templ_7745c5c3_Var305 string
 			templ_7745c5c3_Var305, templ_7745c5c3_Err = templ.ResolveAttributeValue("#ob-conn-result-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2028, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2036, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var305)
 			if templ_7745c5c3_Err != nil {
@@ -6053,7 +6053,7 @@ func ConnectionTestSaveFailure(connType string, name string, url string, apiKey 
 			var templ_7745c5c3_Var306 string
 			templ_7745c5c3_Var306, templ_7745c5c3_Err = templ.ResolveAttributeValue("#conn-result-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2030, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2038, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var306)
 			if templ_7745c5c3_Err != nil {
@@ -6071,7 +6071,7 @@ func ConnectionTestSaveFailure(connType string, name string, url string, apiKey 
 		var templ_7745c5c3_Var307 string
 		templ_7745c5c3_Var307, templ_7745c5c3_Err = templ.ResolveAttributeValue(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2034, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2042, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var307)
 		if templ_7745c5c3_Err != nil {
@@ -6084,7 +6084,7 @@ func ConnectionTestSaveFailure(connType string, name string, url string, apiKey 
 		var templ_7745c5c3_Var308 string
 		templ_7745c5c3_Var308, templ_7745c5c3_Err = templ.ResolveAttributeValue(name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2035, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2043, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var308)
 		if templ_7745c5c3_Err != nil {
@@ -6097,7 +6097,7 @@ func ConnectionTestSaveFailure(connType string, name string, url string, apiKey 
 		var templ_7745c5c3_Var309 string
 		templ_7745c5c3_Var309, templ_7745c5c3_Err = templ.ResolveAttributeValue(url)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2036, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2044, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var309)
 		if templ_7745c5c3_Err != nil {
@@ -6110,7 +6110,7 @@ func ConnectionTestSaveFailure(connType string, name string, url string, apiKey 
 		var templ_7745c5c3_Var310 string
 		templ_7745c5c3_Var310, templ_7745c5c3_Err = templ.ResolveAttributeValue(apiKey)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2037, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2045, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var310)
 		if templ_7745c5c3_Err != nil {
@@ -6243,7 +6243,7 @@ func connectionFeatureToggleTT(connID string, feature string, label string, enab
 		var templ_7745c5c3_Var312 string
 		templ_7745c5c3_Var312, templ_7745c5c3_Err = templ.ResolveAttributeValue(labelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2128, Col: 21}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2136, Col: 21}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var312)
 		if templ_7745c5c3_Err != nil {
@@ -6256,7 +6256,7 @@ func connectionFeatureToggleTT(connID string, feature string, label string, enab
 		var templ_7745c5c3_Var313 string
 		templ_7745c5c3_Var313, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2128, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2136, Col: 80}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var313))
 		if templ_7745c5c3_Err != nil {
@@ -6299,7 +6299,7 @@ func connectionFeatureToggleTT(connID string, feature string, label string, enab
 		var templ_7745c5c3_Var316 string
 		templ_7745c5c3_Var316, templ_7745c5c3_Err = templ.ResolveAttributeValue(boolAttr(enabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2135, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2143, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var316)
 		if templ_7745c5c3_Err != nil {
@@ -6312,7 +6312,7 @@ func connectionFeatureToggleTT(connID string, feature string, label string, enab
 		var templ_7745c5c3_Var317 string
 		templ_7745c5c3_Var317, templ_7745c5c3_Err = templ.ResolveAttributeValue(labelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2136, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2144, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var317)
 		if templ_7745c5c3_Err != nil {
@@ -6325,7 +6325,7 @@ func connectionFeatureToggleTT(connID string, feature string, label string, enab
 		var templ_7745c5c3_Var318 string
 		templ_7745c5c3_Var318, templ_7745c5c3_Err = templ.ResolveAttributeValue(ttID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2137, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2145, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var318)
 		if templ_7745c5c3_Err != nil {
@@ -6338,7 +6338,7 @@ func connectionFeatureToggleTT(connID string, feature string, label string, enab
 		var templ_7745c5c3_Var319 string
 		templ_7745c5c3_Var319, templ_7745c5c3_Err = templ.ResolveAttributeValue(connID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2138, Col: 24}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2146, Col: 24}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var319)
 		if templ_7745c5c3_Err != nil {
@@ -6351,7 +6351,7 @@ func connectionFeatureToggleTT(connID string, feature string, label string, enab
 		var templ_7745c5c3_Var320 string
 		templ_7745c5c3_Var320, templ_7745c5c3_Err = templ.ResolveAttributeValue(feature)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2139, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2147, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var320)
 		if templ_7745c5c3_Err != nil {
@@ -6386,7 +6386,7 @@ func connectionFeatureToggleTT(connID string, feature string, label string, enab
 		var templ_7745c5c3_Var323 string
 		templ_7745c5c3_Var323, templ_7745c5c3_Err = templ.ResolveAttributeValue(ttID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2144, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2152, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var323)
 		if templ_7745c5c3_Err != nil {
@@ -6399,7 +6399,7 @@ func connectionFeatureToggleTT(connID string, feature string, label string, enab
 		var templ_7745c5c3_Var324 string
 		templ_7745c5c3_Var324, templ_7745c5c3_Err = templ.JoinStringErrs(tooltip)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2144, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2152, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var324))
 		if templ_7745c5c3_Err != nil {
@@ -6476,7 +6476,7 @@ func webhookCard(wh webhook.Webhook) templ.Component {
 		var templ_7745c5c3_Var328 string
 		templ_7745c5c3_Var328, templ_7745c5c3_Err = templ.JoinStringErrs(wh.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2164, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2172, Col: 14}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var328))
 		if templ_7745c5c3_Err != nil {
@@ -6489,7 +6489,7 @@ func webhookCard(wh webhook.Webhook) templ.Component {
 		var templ_7745c5c3_Var329 string
 		templ_7745c5c3_Var329, templ_7745c5c3_Err = templ.JoinStringErrs(wh.Type)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2166, Col: 15}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2174, Col: 15}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var329))
 		if templ_7745c5c3_Err != nil {
@@ -6503,7 +6503,7 @@ func webhookCard(wh webhook.Webhook) templ.Component {
 			var templ_7745c5c3_Var330 string
 			templ_7745c5c3_Var330, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(wh.Events))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2171, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2179, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var330))
 			if templ_7745c5c3_Err != nil {
@@ -6522,7 +6522,7 @@ func webhookCard(wh webhook.Webhook) templ.Component {
 		var templ_7745c5c3_Var331 string
 		templ_7745c5c3_Var331, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/webhooks/" + wh.ID + "/test")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2182, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2190, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var331)
 		if templ_7745c5c3_Err != nil {
@@ -6535,7 +6535,7 @@ func webhookCard(wh webhook.Webhook) templ.Component {
 		var templ_7745c5c3_Var332 string
 		templ_7745c5c3_Var332, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/webhooks/" + wh.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2190, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2198, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var332)
 		if templ_7745c5c3_Err != nil {
@@ -6548,7 +6548,7 @@ func webhookCard(wh webhook.Webhook) templ.Component {
 		var templ_7745c5c3_Var333 string
 		templ_7745c5c3_Var333, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.webhooks.confirm_delete"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2191, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2199, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var333)
 		if templ_7745c5c3_Err != nil {
@@ -6596,7 +6596,7 @@ func ProfileNamingRow(label, imageType string, names []string, readOnly bool) te
 		var templ_7745c5c3_Var335 string
 		templ_7745c5c3_Var335, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2209, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2217, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var335))
 		if templ_7745c5c3_Err != nil {
@@ -6614,7 +6614,7 @@ func ProfileNamingRow(label, imageType string, names []string, readOnly bool) te
 			var templ_7745c5c3_Var336 string
 			templ_7745c5c3_Var336, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(names))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2211, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2219, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var336))
 			if templ_7745c5c3_Err != nil {
@@ -6632,7 +6632,7 @@ func ProfileNamingRow(label, imageType string, names []string, readOnly bool) te
 			var templ_7745c5c3_Var337 string
 			templ_7745c5c3_Var337, templ_7745c5c3_Err = templ.ResolveAttributeValue(imageType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2213, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2221, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var337)
 			if templ_7745c5c3_Err != nil {
@@ -6650,7 +6650,7 @@ func ProfileNamingRow(label, imageType string, names []string, readOnly bool) te
 				var templ_7745c5c3_Var338 string
 				templ_7745c5c3_Var338, templ_7745c5c3_Err = templ.ResolveAttributeValue(name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2215, Col: 182}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2223, Col: 182}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var338)
 				if templ_7745c5c3_Err != nil {
@@ -6663,7 +6663,7 @@ func ProfileNamingRow(label, imageType string, names []string, readOnly bool) te
 				var templ_7745c5c3_Var339 string
 				templ_7745c5c3_Var339, templ_7745c5c3_Err = templ.JoinStringErrs(name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2216, Col: 12}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2224, Col: 12}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var339))
 				if templ_7745c5c3_Err != nil {
@@ -6676,7 +6676,7 @@ func ProfileNamingRow(label, imageType string, names []string, readOnly bool) te
 				var templ_7745c5c3_Var340 string
 				templ_7745c5c3_Var340, templ_7745c5c3_Err = templ.ResolveAttributeValue("Remove " + name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2220, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2228, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var340)
 				if templ_7745c5c3_Err != nil {
@@ -6762,7 +6762,7 @@ func profileCard(p platform.Profile) templ.Component {
 		var templ_7745c5c3_Var345 string
 		templ_7745c5c3_Var345, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/platforms/" + p.ID + "/activate")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2246, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2254, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var345)
 		if templ_7745c5c3_Err != nil {
@@ -6780,7 +6780,7 @@ func profileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var346 string
 			templ_7745c5c3_Var346, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2254, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2262, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var346)
 			if templ_7745c5c3_Err != nil {
@@ -6793,7 +6793,7 @@ func profileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var347 string
 			templ_7745c5c3_Var347, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2255, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2263, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var347)
 			if templ_7745c5c3_Err != nil {
@@ -6811,7 +6811,7 @@ func profileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var348 string
 			templ_7745c5c3_Var348, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2262, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2270, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var348)
 			if templ_7745c5c3_Err != nil {
@@ -6848,7 +6848,7 @@ func profileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var349 string
 			templ_7745c5c3_Var349, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.enabled"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2280, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2288, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var349))
 			if templ_7745c5c3_Err != nil {
@@ -6866,7 +6866,7 @@ func profileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var350 string
 			templ_7745c5c3_Var350, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.disabled"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2282, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2290, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var350))
 			if templ_7745c5c3_Err != nil {
@@ -6884,7 +6884,7 @@ func profileCard(p platform.Profile) templ.Component {
 		var templ_7745c5c3_Var351 string
 		templ_7745c5c3_Var351, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("thumb", p.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2285, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2293, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var351))
 		if templ_7745c5c3_Err != nil {
@@ -6897,7 +6897,7 @@ func profileCard(p platform.Profile) templ.Component {
 		var templ_7745c5c3_Var352 string
 		templ_7745c5c3_Var352, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(p.ImageNaming.Thumb))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2285, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2293, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var352))
 		if templ_7745c5c3_Err != nil {
@@ -6910,7 +6910,7 @@ func profileCard(p platform.Profile) templ.Component {
 		var templ_7745c5c3_Var353 string
 		templ_7745c5c3_Var353, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("fanart", p.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2286, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2294, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var353))
 		if templ_7745c5c3_Err != nil {
@@ -6923,7 +6923,7 @@ func profileCard(p platform.Profile) templ.Component {
 		var templ_7745c5c3_Var354 string
 		templ_7745c5c3_Var354, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(p.ImageNaming.Fanart))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2286, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2294, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var354))
 		if templ_7745c5c3_Err != nil {
@@ -6989,7 +6989,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 			var templ_7745c5c3_Var358 string
 			templ_7745c5c3_Var358, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.rules.requires_local_tooltip"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2300, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2308, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var358)
 			if templ_7745c5c3_Err != nil {
@@ -7007,7 +7007,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var359 string
 		templ_7745c5c3_Var359, templ_7745c5c3_Err = templ.JoinStringErrs(rl.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2306, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2314, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var359))
 		if templ_7745c5c3_Err != nil {
@@ -7020,7 +7020,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var360 templ.SafeURL
 		templ_7745c5c3_Var360, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(ruleCatalogueURL(rl.Name)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2308, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2316, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var360))
 		if templ_7745c5c3_Err != nil {
@@ -7033,7 +7033,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var361 string
 		templ_7745c5c3_Var361, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.rules.catalogue_link_aria") + ": " + rl.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2312, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2320, Col: 80}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var361)
 		if templ_7745c5c3_Err != nil {
@@ -7046,7 +7046,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var362 string
 		templ_7745c5c3_Var362, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.rules.catalogue_link_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2313, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2321, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var362)
 		if templ_7745c5c3_Err != nil {
@@ -7074,7 +7074,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 			var templ_7745c5c3_Var363 string
 			templ_7745c5c3_Var363, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.rules.requires_local_tooltip_short"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2326, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2334, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var363)
 			if templ_7745c5c3_Err != nil {
@@ -7087,7 +7087,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 			var templ_7745c5c3_Var364 string
 			templ_7745c5c3_Var364, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.requires_local"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2328, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2336, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var364))
 			if templ_7745c5c3_Err != nil {
@@ -7111,7 +7111,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var365 string
 		templ_7745c5c3_Var365, templ_7745c5c3_Err = templ.JoinStringErrs(rl.Description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2335, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2343, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var365))
 		if templ_7745c5c3_Err != nil {
@@ -7124,7 +7124,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var366 string
 		templ_7745c5c3_Var366, templ_7745c5c3_Err = templ.ResolveAttributeValue(rl.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2341, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2349, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var366)
 		if templ_7745c5c3_Err != nil {
@@ -7147,7 +7147,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var367 string
 		templ_7745c5c3_Var367, templ_7745c5c3_Err = templ.ResolveAttributeValue("Run " + rl.Name + " now")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2345, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2353, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var367)
 		if templ_7745c5c3_Err != nil {
@@ -7160,7 +7160,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var368 string
 		templ_7745c5c3_Var368, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "actions.run"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2346, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2354, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var368)
 		if templ_7745c5c3_Err != nil {
@@ -7178,7 +7178,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var369 string
 		templ_7745c5c3_Var369, templ_7745c5c3_Err = templ.ResolveAttributeValue(autoModeLabelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2352, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2360, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var369)
 		if templ_7745c5c3_Err != nil {
@@ -7191,7 +7191,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var370 string
 		templ_7745c5c3_Var370, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.rules.automation_mode_for", rl.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2352, Col: 106}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2360, Col: 106}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var370))
 		if templ_7745c5c3_Err != nil {
@@ -7204,7 +7204,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var371 string
 		templ_7745c5c3_Var371, templ_7745c5c3_Err = templ.ResolveAttributeValue(autoModeLabelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2355, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2363, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var371)
 		if templ_7745c5c3_Err != nil {
@@ -7217,7 +7217,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var372 string
 		templ_7745c5c3_Var372, templ_7745c5c3_Err = templ.ResolveAttributeValue(rl.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2356, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2364, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var372)
 		if templ_7745c5c3_Err != nil {
@@ -7250,7 +7250,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var373 string
 		templ_7745c5c3_Var373, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.auto_fix"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2360, Col: 131}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2368, Col: 131}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var373))
 		if templ_7745c5c3_Err != nil {
@@ -7273,7 +7273,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var374 string
 		templ_7745c5c3_Var374, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.manual"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2361, Col: 106}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2369, Col: 106}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var374))
 		if templ_7745c5c3_Err != nil {
@@ -7316,7 +7316,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var377 string
 		templ_7745c5c3_Var377, templ_7745c5c3_Err = templ.ResolveAttributeValue(boolAttr(rl.Enabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2369, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2377, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var377)
 		if templ_7745c5c3_Err != nil {
@@ -7329,7 +7329,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var378 string
 		templ_7745c5c3_Var378, templ_7745c5c3_Err = templ.ResolveAttributeValue(rl.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2370, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2378, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var378)
 		if templ_7745c5c3_Err != nil {
@@ -7352,7 +7352,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 		var templ_7745c5c3_Var379 string
 		templ_7745c5c3_Var379, templ_7745c5c3_Err = templ.ResolveAttributeValue("Enable " + rl.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2373, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2381, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var379)
 		if templ_7745c5c3_Err != nil {
@@ -7370,7 +7370,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 			var templ_7745c5c3_Var380 string
 			templ_7745c5c3_Var380, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.rules.cannot_enable_tooltip"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2375, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2383, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var380)
 			if templ_7745c5c3_Err != nil {
@@ -7432,7 +7432,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 			var templ_7745c5c3_Var384 string
 			templ_7745c5c3_Var384, templ_7745c5c3_Err = templ.ResolveAttributeValue("rule-cfg-" + rl.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2389, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2397, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var384)
 			if templ_7745c5c3_Err != nil {
@@ -7445,7 +7445,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 			var templ_7745c5c3_Var385 string
 			templ_7745c5c3_Var385, templ_7745c5c3_Err = templ.ResolveAttributeValue("Configure " + rl.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2390, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2398, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var385)
 			if templ_7745c5c3_Err != nil {
@@ -7468,7 +7468,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 			var templ_7745c5c3_Var386 string
 			templ_7745c5c3_Var386, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.configure"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2392, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2400, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var386))
 			if templ_7745c5c3_Err != nil {
@@ -7481,7 +7481,7 @@ func ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) t
 			var templ_7745c5c3_Var387 string
 			templ_7745c5c3_Var387, templ_7745c5c3_Err = templ.ResolveAttributeValue("rule-cfg-" + rl.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2393, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2401, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var387)
 			if templ_7745c5c3_Err != nil {
@@ -7555,7 +7555,7 @@ func severityBadge(severity string) templ.Component {
 		var templ_7745c5c3_Var391 string
 		templ_7745c5c3_Var391, templ_7745c5c3_Err = templ.JoinStringErrs(severity)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2404, Col: 12}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2412, Col: 12}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var391))
 		if templ_7745c5c3_Err != nil {
@@ -7597,7 +7597,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 		var templ_7745c5c3_Var393 string
 		templ_7745c5c3_Var393, templ_7745c5c3_Err = templ.ResolveAttributeValue(rl.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2411, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2419, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var393)
 		if templ_7745c5c3_Err != nil {
@@ -7615,7 +7615,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var394 string
 			templ_7745c5c3_Var394, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.resolution_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2417, Col: 104}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2425, Col: 104}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var394))
 			if templ_7745c5c3_Err != nil {
@@ -7642,7 +7642,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var395 string
 			templ_7745c5c3_Var395, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_width"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2429, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2437, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var395))
 			if templ_7745c5c3_Err != nil {
@@ -7655,7 +7655,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var396 string
 			templ_7745c5c3_Var396, templ_7745c5c3_Err = templ.ResolveAttributeValue(intOrDefault(rl.Config.MinWidth, defaultMinWidth(rl.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2434, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2442, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var396)
 			if templ_7745c5c3_Err != nil {
@@ -7668,7 +7668,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var397 string
 			templ_7745c5c3_Var397, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_height"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2439, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2447, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var397))
 			if templ_7745c5c3_Err != nil {
@@ -7681,7 +7681,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var398 string
 			templ_7745c5c3_Var398, templ_7745c5c3_Err = templ.ResolveAttributeValue(intOrDefault(rl.Config.MinHeight, defaultMinHeight(rl.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2444, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2452, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var398)
 			if templ_7745c5c3_Err != nil {
@@ -7700,7 +7700,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var399 string
 			templ_7745c5c3_Var399, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_width"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2451, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2459, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var399))
 			if templ_7745c5c3_Err != nil {
@@ -7713,7 +7713,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var400 string
 			templ_7745c5c3_Var400, templ_7745c5c3_Err = templ.ResolveAttributeValue(intOrDefault(rl.Config.MinWidth, 400))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2456, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2464, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var400)
 			if templ_7745c5c3_Err != nil {
@@ -7732,7 +7732,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var401 string
 			templ_7745c5c3_Var401, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.aspect_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2464, Col: 100}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2472, Col: 100}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var401))
 			if templ_7745c5c3_Err != nil {
@@ -7753,7 +7753,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var402 string
 			templ_7745c5c3_Var402, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.aspect_ratio"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2474, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2482, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var402))
 			if templ_7745c5c3_Err != nil {
@@ -7766,7 +7766,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var403 string
 			templ_7745c5c3_Var403, templ_7745c5c3_Err = templ.ResolveAttributeValue(floatOrDefault(rl.Config.AspectRatio, defaultAspectRatio(rl.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2480, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2488, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var403)
 			if templ_7745c5c3_Err != nil {
@@ -7779,7 +7779,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var404 string
 			templ_7745c5c3_Var404, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.tolerance"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2485, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2493, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var404))
 			if templ_7745c5c3_Err != nil {
@@ -7792,7 +7792,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var405 string
 			templ_7745c5c3_Var405, templ_7745c5c3_Err = templ.ResolveAttributeValue(floatOrDefault(rl.Config.Tolerance, 0.1))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2492, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2500, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var405)
 			if templ_7745c5c3_Err != nil {
@@ -7811,7 +7811,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var406 string
 			templ_7745c5c3_Var406, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_length"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2499, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2507, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var406))
 			if templ_7745c5c3_Err != nil {
@@ -7824,7 +7824,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var407 string
 			templ_7745c5c3_Var407, templ_7745c5c3_Err = templ.ResolveAttributeValue(intOrDefault(rl.Config.MinLength, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2504, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2512, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var407)
 			if templ_7745c5c3_Err != nil {
@@ -7843,7 +7843,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var408 string
 			templ_7745c5c3_Var408, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.threshold_percent"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2511, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2519, Col: 103}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var408))
 			if templ_7745c5c3_Err != nil {
@@ -7856,7 +7856,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var409 string
 			templ_7745c5c3_Var409, templ_7745c5c3_Err = templ.ResolveAttributeValue(floatOrDefault(rl.Config.ThresholdPercent, 15))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2518, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2526, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var409)
 			if templ_7745c5c3_Err != nil {
@@ -7869,7 +7869,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var410 string
 			templ_7745c5c3_Var410, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.trim_margin"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2523, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2531, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var410))
 			if templ_7745c5c3_Err != nil {
@@ -7882,7 +7882,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var411 string
 			templ_7745c5c3_Var411, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(rl.Config.TrimMargin))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2529, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2537, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var411)
 			if templ_7745c5c3_Err != nil {
@@ -7901,7 +7901,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var412 string
 			templ_7745c5c3_Var412, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "rules.discography.coverage_threshold.help"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2535, Col: 83}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2543, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var412)
 			if templ_7745c5c3_Err != nil {
@@ -7914,7 +7914,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var413 string
 			templ_7745c5c3_Var413, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "rules.discography.coverage_threshold"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2536, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2544, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var413))
 			if templ_7745c5c3_Err != nil {
@@ -7927,7 +7927,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var414 string
 			templ_7745c5c3_Var414, templ_7745c5c3_Err = templ.ResolveAttributeValue(floatOrDefault(rl.Config.CoverageThreshold, 50))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2543, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2551, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var414)
 			if templ_7745c5c3_Err != nil {
@@ -7940,7 +7940,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var415 string
 			templ_7745c5c3_Var415, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "rules.discography.release_types.help"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2547, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2555, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var415)
 			if templ_7745c5c3_Err != nil {
@@ -7953,7 +7953,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var416 string
 			templ_7745c5c3_Var416, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "rules.discography.release_types"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2548, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2556, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var416))
 			if templ_7745c5c3_Err != nil {
@@ -7966,7 +7966,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var417 string
 			templ_7745c5c3_Var417, templ_7745c5c3_Err = templ.ResolveAttributeValue(stringOrDefault(rl.Config.ReleaseTypes, "Album,EP"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2553, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2561, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var417)
 			if templ_7745c5c3_Err != nil {
@@ -7984,7 +7984,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 		var templ_7745c5c3_Var418 string
 		templ_7745c5c3_Var418, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.severity_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2559, Col: 99}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2567, Col: 99}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var418))
 		if templ_7745c5c3_Err != nil {
@@ -8007,7 +8007,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 		var templ_7745c5c3_Var419 string
 		templ_7745c5c3_Var419, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.error"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2564, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2572, Col: 94}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var419))
 		if templ_7745c5c3_Err != nil {
@@ -8030,7 +8030,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 		var templ_7745c5c3_Var420 string
 		templ_7745c5c3_Var420, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.warning"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2565, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2573, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var420))
 		if templ_7745c5c3_Err != nil {
@@ -8053,7 +8053,7 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 		var templ_7745c5c3_Var421 string
 		templ_7745c5c3_Var421, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.info"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2566, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2574, Col: 91}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var421))
 		if templ_7745c5c3_Err != nil {
@@ -8114,7 +8114,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var424 string
 			templ_7745c5c3_Var424, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2590, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2598, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var424))
 			if templ_7745c5c3_Err != nil {
@@ -8137,7 +8137,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var425 string
 			templ_7745c5c3_Var425, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_720p"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2591, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2599, Col: 94}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var425))
 			if templ_7745c5c3_Err != nil {
@@ -8160,7 +8160,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var426 string
 			templ_7745c5c3_Var426, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_1080p"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2592, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2600, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var426))
 			if templ_7745c5c3_Err != nil {
@@ -8183,7 +8183,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var427 string
 			templ_7745c5c3_Var427, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_1440p"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2593, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2601, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var427))
 			if templ_7745c5c3_Err != nil {
@@ -8206,7 +8206,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var428 string
 			templ_7745c5c3_Var428, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_4k"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2594, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2602, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var428))
 			if templ_7745c5c3_Err != nil {
@@ -8229,7 +8229,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var429 string
 			templ_7745c5c3_Var429, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2595, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2603, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var429))
 			if templ_7745c5c3_Err != nil {
@@ -8249,7 +8249,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var430 string
 			templ_7745c5c3_Var430, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2599, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2607, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var430))
 			if templ_7745c5c3_Err != nil {
@@ -8272,7 +8272,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var431 string
 			templ_7745c5c3_Var431, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.thumb_standard"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2600, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2608, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var431))
 			if templ_7745c5c3_Err != nil {
@@ -8295,7 +8295,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var432 string
 			templ_7745c5c3_Var432, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.thumb_hd"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2601, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2609, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var432))
 			if templ_7745c5c3_Err != nil {
@@ -8318,7 +8318,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var433 string
 			templ_7745c5c3_Var433, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.thumb_ultra"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2602, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2610, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var433))
 			if templ_7745c5c3_Err != nil {
@@ -8341,7 +8341,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var434 string
 			templ_7745c5c3_Var434, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2603, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2611, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var434))
 			if templ_7745c5c3_Err != nil {
@@ -8361,7 +8361,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var435 string
 			templ_7745c5c3_Var435, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2607, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2615, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var435))
 			if templ_7745c5c3_Err != nil {
@@ -8384,7 +8384,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var436 string
 			templ_7745c5c3_Var436, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.banner_kodi"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2608, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2616, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var436))
 			if templ_7745c5c3_Err != nil {
@@ -8407,7 +8407,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var437 string
 			templ_7745c5c3_Var437, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.banner_wide"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2609, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2617, Col: 94}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var437))
 			if templ_7745c5c3_Err != nil {
@@ -8430,7 +8430,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var438 string
 			templ_7745c5c3_Var438, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2610, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2618, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var438))
 			if templ_7745c5c3_Err != nil {
@@ -8450,7 +8450,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var439 string
 			templ_7745c5c3_Var439, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2614, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2622, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var439))
 			if templ_7745c5c3_Err != nil {
@@ -8473,7 +8473,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var440 string
 			templ_7745c5c3_Var440, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.logo_standard"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2615, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2623, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var440))
 			if templ_7745c5c3_Err != nil {
@@ -8496,7 +8496,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var441 string
 			templ_7745c5c3_Var441, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.logo_large"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2616, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2624, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var441))
 			if templ_7745c5c3_Err != nil {
@@ -8519,7 +8519,7 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var442 string
 			templ_7745c5c3_Var442, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2617, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2625, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var442))
 			if templ_7745c5c3_Err != nil {
@@ -8564,7 +8564,7 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var444 string
 			templ_7745c5c3_Var444, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2624, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2632, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var444))
 			if templ_7745c5c3_Err != nil {
@@ -8587,7 +8587,7 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var445 string
 			templ_7745c5c3_Var445, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_16_9"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2625, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2633, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var445))
 			if templ_7745c5c3_Err != nil {
@@ -8610,7 +8610,7 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var446 string
 			templ_7745c5c3_Var446, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_16_10"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2626, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2634, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var446))
 			if templ_7745c5c3_Err != nil {
@@ -8633,7 +8633,7 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var447 string
 			templ_7745c5c3_Var447, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_2_1"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2627, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2635, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var447))
 			if templ_7745c5c3_Err != nil {
@@ -8656,7 +8656,7 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var448 string
 			templ_7745c5c3_Var448, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2628, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2636, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var448))
 			if templ_7745c5c3_Err != nil {
@@ -8676,7 +8676,7 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var449 string
 			templ_7745c5c3_Var449, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2632, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2640, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var449))
 			if templ_7745c5c3_Err != nil {
@@ -8699,7 +8699,7 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var450 string
 			templ_7745c5c3_Var450, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_1_1"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2633, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2641, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var450))
 			if templ_7745c5c3_Err != nil {
@@ -8722,7 +8722,7 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			var templ_7745c5c3_Var451 string
 			templ_7745c5c3_Var451, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2634, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2642, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var451))
 			if templ_7745c5c3_Err != nil {
@@ -8786,7 +8786,7 @@ func updaterIntervalOption(value, current int, label string) templ.Component {
 			var templ_7745c5c3_Var453 string
 			templ_7745c5c3_Var453, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(value))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2654, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2662, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var453)
 			if templ_7745c5c3_Err != nil {
@@ -8799,7 +8799,7 @@ func updaterIntervalOption(value, current int, label string) templ.Component {
 			var templ_7745c5c3_Var454 string
 			templ_7745c5c3_Var454, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2654, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2662, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var454))
 			if templ_7745c5c3_Err != nil {
@@ -8817,7 +8817,7 @@ func updaterIntervalOption(value, current int, label string) templ.Component {
 			var templ_7745c5c3_Var455 string
 			templ_7745c5c3_Var455, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(value))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2656, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2664, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var455)
 			if templ_7745c5c3_Err != nil {
@@ -8830,7 +8830,7 @@ func updaterIntervalOption(value, current int, label string) templ.Component {
 			var templ_7745c5c3_Var456 string
 			templ_7745c5c3_Var456, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2656, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2664, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var456))
 			if templ_7745c5c3_Err != nil {
@@ -8892,7 +8892,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var458 string
 		templ_7745c5c3_Var458, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.state_checking"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2685, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2693, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var458)
 		if templ_7745c5c3_Err != nil {
@@ -8905,7 +8905,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var459 string
 		templ_7745c5c3_Var459, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.state_downloading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2686, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2694, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var459)
 		if templ_7745c5c3_Err != nil {
@@ -8918,7 +8918,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var460 string
 		templ_7745c5c3_Var460, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.state_applying"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2687, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2695, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var460)
 		if templ_7745c5c3_Err != nil {
@@ -8931,7 +8931,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var461 string
 		templ_7745c5c3_Var461, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.state_error"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2688, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2696, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var461)
 		if templ_7745c5c3_Err != nil {
@@ -8944,7 +8944,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var462 string
 		templ_7745c5c3_Var462, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.state_saved"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2689, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2697, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var462)
 		if templ_7745c5c3_Err != nil {
@@ -8957,7 +8957,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var463 string
 		templ_7745c5c3_Var463, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.update_available"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2690, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2698, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var463)
 		if templ_7745c5c3_Err != nil {
@@ -8970,7 +8970,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var464 string
 		templ_7745c5c3_Var464, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.up_to_date"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2691, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2699, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var464)
 		if templ_7745c5c3_Err != nil {
@@ -8983,7 +8983,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var465 string
 		templ_7745c5c3_Var465, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.release_notes"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2692, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2700, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var465)
 		if templ_7745c5c3_Err != nil {
@@ -8996,7 +8996,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var466 string
 		templ_7745c5c3_Var466, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.not_checked"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2693, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2701, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var466)
 		if templ_7745c5c3_Err != nil {
@@ -9009,7 +9009,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var467 string
 		templ_7745c5c3_Var467, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.restart_required_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2694, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2702, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var467)
 		if templ_7745c5c3_Err != nil {
@@ -9022,7 +9022,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var468 string
 		templ_7745c5c3_Var468, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.restart_required_body"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2695, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2703, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var468)
 		if templ_7745c5c3_Err != nil {
@@ -9035,7 +9035,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var469 string
 		templ_7745c5c3_Var469, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.restart_required_native_instruction"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2696, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2704, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var469)
 		if templ_7745c5c3_Err != nil {
@@ -9048,7 +9048,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var470 string
 		templ_7745c5c3_Var470, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.load_failed_save_blocked"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2697, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2705, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var470)
 		if templ_7745c5c3_Err != nil {
@@ -9061,7 +9061,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var471 string
 		templ_7745c5c3_Var471, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.skip_version.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2698, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2706, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var471)
 		if templ_7745c5c3_Err != nil {
@@ -9074,7 +9074,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var472 string
 		templ_7745c5c3_Var472, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.last_auto_applied.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2699, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2707, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var472)
 		if templ_7745c5c3_Err != nil {
@@ -9087,7 +9087,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var473 string
 		templ_7745c5c3_Var473, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.updates.skip_version.list_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2700, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2708, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var473)
 		if templ_7745c5c3_Err != nil {
@@ -9112,7 +9112,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var474 string
 		templ_7745c5c3_Var474, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2708, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2716, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var474))
 		if templ_7745c5c3_Err != nil {
@@ -9125,7 +9125,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var475 string
 		templ_7745c5c3_Var475, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.current_version"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2714, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2722, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var475))
 		if templ_7745c5c3_Err != nil {
@@ -9138,7 +9138,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var476 string
 		templ_7745c5c3_Var476, templ_7745c5c3_Err = templ.JoinStringErrs(data.CurrentVersion)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2715, Col: 95}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2723, Col: 95}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var476))
 		if templ_7745c5c3_Err != nil {
@@ -9151,7 +9151,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var477 string
 		templ_7745c5c3_Var477, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.latest_version"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2718, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2726, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var477))
 		if templ_7745c5c3_Err != nil {
@@ -9170,7 +9170,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 				var templ_7745c5c3_Var478 string
 				templ_7745c5c3_Var478, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2725, Col: 91}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2733, Col: 91}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var478))
 				if templ_7745c5c3_Err != nil {
@@ -9183,7 +9183,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 				var templ_7745c5c3_Var479 string
 				templ_7745c5c3_Var479, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.update_available"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2727, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2735, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var479))
 				if templ_7745c5c3_Err != nil {
@@ -9197,7 +9197,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 				var templ_7745c5c3_Var480 string
 				templ_7745c5c3_Var480, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2730, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2738, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var480))
 				if templ_7745c5c3_Err != nil {
@@ -9210,7 +9210,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 				var templ_7745c5c3_Var481 string
 				templ_7745c5c3_Var481, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.up_to_date"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2731, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2739, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var481))
 				if templ_7745c5c3_Err != nil {
@@ -9229,7 +9229,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var482 string
 			templ_7745c5c3_Var482, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.not_checked"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2734, Col: 101}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2742, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var482))
 			if templ_7745c5c3_Err != nil {
@@ -9271,7 +9271,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var485 string
 		templ_7745c5c3_Var485, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.last_checked"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2746, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2754, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var485))
 		if templ_7745c5c3_Err != nil {
@@ -9284,7 +9284,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var486 string
 		templ_7745c5c3_Var486, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastChecked)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2746, Col: 99}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2754, Col: 99}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var486))
 		if templ_7745c5c3_Err != nil {
@@ -9321,7 +9321,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var489 templ.SafeURL
 		templ_7745c5c3_Var489, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.ReleaseURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2760, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2768, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var489))
 		if templ_7745c5c3_Err != nil {
@@ -9334,7 +9334,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var490 string
 		templ_7745c5c3_Var490, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.release_notes"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2765, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2773, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var490))
 		if templ_7745c5c3_Err != nil {
@@ -9352,7 +9352,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var491 string
 			templ_7745c5c3_Var491, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.docker_notice"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2771, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2779, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var491))
 			if templ_7745c5c3_Err != nil {
@@ -9394,7 +9394,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var494 string
 		templ_7745c5c3_Var494, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2812, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2820, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var494))
 		if templ_7745c5c3_Err != nil {
@@ -9412,7 +9412,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var495 string
 			templ_7745c5c3_Var495, templ_7745c5c3_Err = templ.JoinStringErrs(data.PendingVersion)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2814, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2822, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var495))
 			if templ_7745c5c3_Err != nil {
@@ -9435,7 +9435,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var496 string
 		templ_7745c5c3_Var496, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_body"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2820, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2828, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var496))
 		if templ_7745c5c3_Err != nil {
@@ -9453,7 +9453,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var497 string
 			templ_7745c5c3_Var497, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_docker_instruction"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2829, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2837, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var497))
 			if templ_7745c5c3_Err != nil {
@@ -9471,7 +9471,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var498 string
 			templ_7745c5c3_Var498, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_native_instruction"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2833, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2841, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var498))
 			if templ_7745c5c3_Err != nil {
@@ -9501,7 +9501,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var499 string
 		templ_7745c5c3_Var499, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.config.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2848, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2856, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var499))
 		if templ_7745c5c3_Err != nil {
@@ -9519,7 +9519,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var500 string
 			templ_7745c5c3_Var500, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.load_failed_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2873, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2881, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var500))
 			if templ_7745c5c3_Err != nil {
@@ -9532,7 +9532,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var501 string
 			templ_7745c5c3_Var501, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.load_failed_body"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2876, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2884, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var501))
 			if templ_7745c5c3_Err != nil {
@@ -9545,7 +9545,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var502 string
 			templ_7745c5c3_Var502, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.dismiss"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2883, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2891, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var502)
 			if templ_7745c5c3_Err != nil {
@@ -9581,7 +9581,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var503 string
 		templ_7745c5c3_Var503, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2907, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2915, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var503))
 		if templ_7745c5c3_Err != nil {
@@ -9602,7 +9602,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var504 string
 		templ_7745c5c3_Var504, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2910, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2918, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var504))
 		if templ_7745c5c3_Err != nil {
@@ -9693,7 +9693,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var507 string
 			templ_7745c5c3_Var507, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.last_auto_applied.label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2952, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2960, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var507))
 			if templ_7745c5c3_Err != nil {
@@ -9728,7 +9728,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var510 string
 			templ_7745c5c3_Var510, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastAutoAppliedVersion)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2953, Col: 212}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2961, Col: 212}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var510))
 			if templ_7745c5c3_Err != nil {
@@ -9741,7 +9741,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var511 string
 			templ_7745c5c3_Var511, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastAutoApplied)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2954, Col: 88}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2962, Col: 88}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var511))
 			if templ_7745c5c3_Err != nil {
@@ -9754,7 +9754,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var512 string
 			templ_7745c5c3_Var512, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.rollback_hint"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2957, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2965, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var512))
 			if templ_7745c5c3_Err != nil {
@@ -9767,7 +9767,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var513 string
 			templ_7745c5c3_Var513, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.rollback_link"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2959, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2967, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var513))
 			if templ_7745c5c3_Err != nil {
@@ -9802,7 +9802,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var516 string
 			templ_7745c5c3_Var516, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.LatestVersion)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2969, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2977, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var516)
 			if templ_7745c5c3_Err != nil {
@@ -9815,7 +9815,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var517 string
 			templ_7745c5c3_Var517, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.updates.skip_version.label", data.LatestVersion))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2973, Col: 116}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2981, Col: 116}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var517))
 			if templ_7745c5c3_Err != nil {
@@ -9850,7 +9850,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var520 string
 			templ_7745c5c3_Var520, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.skip_version.list_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2980, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2988, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var520))
 			if templ_7745c5c3_Err != nil {
@@ -9865,7 +9865,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 					var templ_7745c5c3_Var521 string
 					templ_7745c5c3_Var521, templ_7745c5c3_Err = templ.JoinStringErrs(", ")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2984, Col: 15}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2992, Col: 15}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var521))
 					if templ_7745c5c3_Err != nil {
@@ -9879,7 +9879,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 				var templ_7745c5c3_Var522 string
 				templ_7745c5c3_Var522, templ_7745c5c3_Err = templ.JoinStringErrs(v)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2986, Col: 35}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 2994, Col: 35}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var522))
 				if templ_7745c5c3_Err != nil {
@@ -9897,7 +9897,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var523 string
 			templ_7745c5c3_Var523, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.confirm_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3006, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3014, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var523))
 			if templ_7745c5c3_Err != nil {
@@ -9910,7 +9910,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var524 string
 			templ_7745c5c3_Var524, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.confirm_body"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3009, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3017, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var524))
 			if templ_7745c5c3_Err != nil {
@@ -9923,7 +9923,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var525 string
 			templ_7745c5c3_Var525, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3017, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3025, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var525))
 			if templ_7745c5c3_Err != nil {
@@ -9936,7 +9936,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var526 string
 			templ_7745c5c3_Var526, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.confirm_accept"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3024, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3032, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var526))
 			if templ_7745c5c3_Err != nil {
@@ -9954,7 +9954,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var527 string
 		templ_7745c5c3_Var527, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_interval.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3039, Col: 157}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3047, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var527))
 		if templ_7745c5c3_Err != nil {
@@ -9967,7 +9967,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var528 string
 		templ_7745c5c3_Var528, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_interval.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3040, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3048, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var528))
 		if templ_7745c5c3_Err != nil {
@@ -9985,7 +9985,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var529 string
 			templ_7745c5c3_Var529, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(data.CheckIntervalHours))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3048, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3056, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var529)
 			if templ_7745c5c3_Err != nil {
@@ -9998,7 +9998,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var530 string
 			templ_7745c5c3_Var530, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.updates.interval_custom", data.CheckIntervalHours))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3048, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3056, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var530))
 			if templ_7745c5c3_Err != nil {
@@ -10044,7 +10044,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var531 string
 		templ_7745c5c3_Var531, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_now"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3071, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3079, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var531))
 		if templ_7745c5c3_Err != nil {
@@ -10072,7 +10072,7 @@ func SettingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var532 string
 			templ_7745c5c3_Var532, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.apply_update"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3081, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3089, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var532))
 			if templ_7745c5c3_Err != nil {

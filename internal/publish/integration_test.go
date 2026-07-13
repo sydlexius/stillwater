@@ -113,6 +113,10 @@ func (errPlatformLister) SetPlatformIDStable(_ context.Context, _, _, _ string) 
 	return artist.PlatformIDStableOutcome{}, nil
 }
 
+func (errPlatformLister) SetPlatformID(_ context.Context, _, _, _ string) error { return nil }
+
+func (errPlatformLister) DeletePlatformID(_ context.Context, _, _ string) error { return nil }
+
 // --- BuildArtistPushData ---
 
 // TestBuildArtistPushData exercises every branch of the type switch and

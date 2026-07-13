@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2132,5 +2133,102 @@ func TestScan_RecoversFromPanic(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Shutdown did not return: scanWg was not released after a panicked scan")
+	}
+}
+
+// TestPostScanHook_RunsBeforeScanCompletes locks the hook contract the #2380
+// path-mapping re-run depends on: the hook fires once per scan, and it runs
+// BEFORE the scan's status is stamped "completed" (inside the scan's
+// WaitGroup slot), so a caller that observes "completed" has also implicitly
+// waited for the hook.
+func TestPostScanHook_RunsBeforeScanCompletes(t *testing.T) {
+	// An empty library keeps the test on the scan LIFECYCLE (which is what the
+	// hook contract is about) rather than on artist persistence, which needs a
+	// seeded library row.
+	libDir := t.TempDir()
+	svc, _ := setupScanner(t, libDir)
+
+	var calls int32
+	var statusAtHook string
+	svc.SetPostScanHook(func(context.Context) {
+		atomic.AddInt32(&calls, 1)
+		// The hook runs while the scan is still marked "running": completion is
+		// stamped only after the hook returns, so "completed" genuinely means the
+		// post-scan work is done.
+		if st := svc.Status(); st != nil {
+			statusAtHook = st.Status
+		}
+	})
+
+	if _, err := svc.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// The hook runs BEFORE the status settles, so a settled status is proof the
+	// hook already ran - no Shutdown needed (and Shutdown would cancel the hook's
+	// context, which is precisely the race the ordering avoids).
+	waitForScan(t, svc, 5*time.Second)
+
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("post-scan hook called %d times, want exactly 1", got)
+	}
+	if statusAtHook != "running" {
+		t.Errorf("scan status seen by the hook = %q, want %q (the hook must run BEFORE completion "+
+			"is published, so an observer that sees 'completed' knows the hook already ran)",
+			statusAtHook, "running")
+	}
+	if final := svc.Status(); final == nil || final.Status != "completed" {
+		t.Errorf("final scan status = %+v, want completed", final)
+	}
+}
+
+// TestPostScanHook_PanicIsRecovered guards runScan's hook invocation: the
+// hook is documented as best-effort and must never be able to crash the scan
+// goroutine, but the recover() defer registered for the SCAN's own panics
+// runs (LIFO) BEFORE the hook is even called, so it cannot catch a panic
+// inside the hook -- that call needs its own recover. Without one this test
+// crashes the whole test binary rather than failing cleanly.
+func TestPostScanHook_PanicIsRecovered(t *testing.T) {
+	var logBuf bytes.Buffer
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+	libDir := t.TempDir()
+	svc := NewService(artistSvc, nil, nil, logger, libDir, nil)
+
+	svc.SetPostScanHook(func(context.Context) {
+		panic("post-scan hook exploded")
+	})
+
+	if _, err := svc.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	final := waitForScan(t, svc, 5*time.Second)
+
+	// The scan itself must still report success: the hook's panic is not the
+	// SCAN's failure, it is the hook's, and the two must not be conflated.
+	if final.Status != "completed" {
+		t.Errorf("status = %q, want completed (a panicking hook must not fail the scan)", final.Status)
+	}
+	logged := logBuf.String()
+	if !strings.Contains(logged, "post-scan hook panicked") {
+		t.Errorf("log output = %q, want it to contain the recovered-panic message", logged)
+	}
+	if !strings.Contains(logged, "post-scan hook exploded") {
+		t.Errorf("log output = %q, want the recovered panic value logged, not swallowed", logged)
+	}
+
+	// A leaked scanWg here would mean the panic escaped the hook's own defer
+	// and unwound past scanWg.Done(), hanging Shutdown -- the same regression
+	// guard TestScan_RecoversFromPanic applies to a panic in the scan body.
+	done := make(chan struct{})
+	go func() {
+		svc.Shutdown()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Shutdown did not return: scanWg was not released after a panicking hook")
 	}
 }

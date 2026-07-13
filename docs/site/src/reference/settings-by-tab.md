@@ -152,7 +152,7 @@ Most metadata providers (Fanart.tv, Discogs, TheAudioDB, and others) require a f
 
 ### Web Image Search  {#settings-providers-web-search}
 
-Authoritative sources like Fanart.tv and TheAudioDB curate a fixed catalogue of images per artist; for obscure or local artists they often have nothing. Web image search (DuckDuckGo) crawls the open web for matches, giving Stillwater far more candidates at the cost of mixed quality. No API key required.
+Authoritative sources like Fanart.tv and TheAudioDB curate a fixed catalog of images per artist; for obscure or local artists they often have nothing. Web image search (DuckDuckGo) crawls the open web for matches, giving Stillwater far more candidates at the cost of mixed quality. No API key required.
 
 ### Provider Priorities  {#settings-providers-priorities}
 
@@ -306,13 +306,13 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-manage-title }
 - **Verify path after rename (Lidarr only)**
 {: #settings-connections-connections-verify-path-title }
-- **Path mapping (Lidarr only)** -- Translates the artist path Stillwater sees on disk into the path Lidarr expects when the two mount the shared library under different roots (for example Stillwater's /music/Artist versus Lidarr's /data/media/Artist). Enter one or more host-to-platform prefix pairs; on a rename or merge, Stillwater rewrites the longest matching host prefix before telling Lidarr the new path. Leave it empty when both sides see identical paths, and the path is sent verbatim as before. This is the prevention half that pairs with Verify path after rename (the detection half): a correct mapping leaves Lidarr nothing to coerce against its Root Folder list, and a Verify error that fires after you set a mapping means the mapping (or a Lidarr Root Folder) is still wrong.
+- **Path mapping** -- Translates the artist path Stillwater sees on disk into the path this server expects when the two mount the shared library under different roots (for example Stillwater's /host/music/Artist versus the server's /music/Artist). Enter one or more host-to-server prefix pairs; on a rename or merge, Stillwater rewrites the longest matching host prefix before telling the server the new path. Leave it empty only when both sides see identical paths. Applies to Emby, Jellyfin and Lidarr alike: each mounts the library in its own namespace, and a path that lands outside the server's own root folders is refused before it is sent - otherwise the server stores or ignores a location that means nothing on its side while still reporting success.
 {: #settings-connections-connections-path-mapping-title }
 - **Inferred %s mapping(s) from %s matched artists.**
 {: #settings-connections-connections-path-mapping-inferred }
 - **Inferred %s mapping(s) from %s matched artists; kept your existing mappings.**
 {: #settings-connections-connections-path-mapping-inferred-kept }
-- **No mappings inferred (shared mount or no matched Lidarr artists).**
+- **No mappings inferred (shared mount or no matched artists on this server).**
 {: #settings-connections-connections-path-mapping-none-inferred }
 - **Re-infer**
 {: #settings-connections-connections-path-mapping-reinfer }
