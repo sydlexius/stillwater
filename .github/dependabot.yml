@@ -26,6 +26,22 @@ updates:
       - dependencies
       - ci
     open-pull-requests-limit: 5
+    # Sub-actions of one repo share a commit SHA, but Dependabot names each
+    # subpath as its own dependency and will happily bump one and not the rest.
+    # These groups force a single PR per family so the pins cannot drift apart.
+    #
+    # codeql-action is the family that already broke: init writes a config file
+    # stamped with its own version, and a stale analyze refuses to load it
+    # ("Loaded a configuration file for version X, but running version Y"),
+    # failing every CodeQL job. actions/cache is consistent today but is exposed
+    # to the identical split, so it is grouped pre-emptively.
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
+      actions-cache:
+        patterns:
+          - "actions/cache*"
 
   - package-ecosystem: docker
     directory: /build/docker
