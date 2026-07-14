@@ -102,6 +102,20 @@ For the full Fix-all behavior, see [rules in core concepts](../core-concepts/rul
 
 If you see an amber chip next to a rule on the Rules tab, the conflict gate is currently blocking writes for that category (image or NFO). Even an auto-mode rule won't apply fixes that would touch disk while the gate is engaged. Resolve the underlying conflict (typically an active platform refresh against a shared library) and the chip clears.
 
+## When a rule is skipped for an artist
+
+A rule can report a third outcome besides passed and failed: **skipped**. A rule is skipped when it needs data that a particular artist does not have, so it genuinely cannot reach a verdict.
+
+The clearest example is duplicate-image detection. It works by comparing image fingerprints. For an artist with a local folder, Stillwater reads the files and fingerprints them on demand. For an artist that exists only through a platform connection (imported from Emby or Jellyfin, with no folder on disk), there are no files to read, so it can only compare the fingerprints already stored for that artist's images. If fewer than two of them have one, there is nothing to compare and the rule is skipped.
+
+Skipped is not a quiet failure, and it is not a pass:
+
+- **A skipped rule does not count toward the health score at all.** The score is calculated over the rules that could actually run, so it never credits an artist for a check that never happened.
+- **An artist with nothing to compare still passes.** If an artist has fewer than two images, no duplicate is possible, so the rule is satisfied and passes. That is a real result, not a skip.
+- **Skips are surfaced, not swallowed.** The artist health response reports which rules were skipped and why.
+
+If you see a rule skipped across many artists, that is a signal about missing data rather than a problem with the rule. Duplicate detection skipped for platform-only artists usually means their images have not been fingerprinted yet.
+
 ## Don't reach for "disable" first
 
 When a rule is producing too much noise, the right response is usually:
