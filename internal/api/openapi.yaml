@@ -4308,6 +4308,7 @@ paths:
                       nothing. A thin result set is not evidence that the search was complete.
                     items:
                       type: object
+                      required: [provider, outcome]
                       properties:
                         provider:
                           type: string

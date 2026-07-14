@@ -118,11 +118,22 @@ To enforce the threshold strictly (no save unless a candidate meets the rule), t
 
 ## Why a fetch returned no images
 
-If a slot's Find action shows no candidates:
+A thin result set does not mean the search was thorough. Stillwater tells you which providers it actually asked, so you can tell "we looked everywhere and there is little out there" apart from "most providers were never consulted".
 
-- **No providers supply that slot.** The MusicBrainz API has limited image coverage; Fanart.tv has the broadest. Check that Fanart.tv (and ideally AudioDB) are in your priority list for the slot.
-- **No usable IDs.** Some image providers need their own IDs (Spotify needs a Spotify ID). If Stillwater hasn't learned the ID yet, the call is skipped. Run a metadata refresh first to populate IDs.
+Above the results, you may see:
+
+- **A "not searched" notice naming specific providers.** Those providers were never queried, so the results below are incomplete. Some image providers can only be looked up by their own ID (Discogs, Deezer, and Spotify each need theirs), and this artist has none stored. Run a metadata refresh to populate the IDs, then search again.
+- **An error notice naming a provider.** That provider was asked and failed, and the message says why. The results are incomplete for a different reason: the provider is misconfigured, rate-limited, or down. Credentials are stripped from anything shown here.
+- **"No provider could be searched."** Nothing was looked up at all. Every provider was missing the ID it needs. This is the case worth acting on: the empty grid says nothing about the artist's artwork, only about your stored IDs.
+
+If every provider was searched and the grid is still thin:
+
+- **No provider supplies that slot.** MusicBrainz has limited image coverage; Fanart.tv has the broadest. Check that Fanart.tv (and ideally TheAudioDB) are in your priority list for the slot.
 - **Transient outage.** Try again in a few minutes; the orchestrator preserves existing images on transient errors.
+
+Providers that can be looked up by MusicBrainz ID (TheAudioDB among them) are searched even when their own ID is unknown, so a missing provider ID does not by itself cost you those results.
+
+API clients get the same facts: the image-search response carries a `provider_statuses` list reporting, per provider, whether it was queried, skipped (and why), or errored.
 
 ## See also
 
