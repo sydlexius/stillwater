@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 )
 
@@ -151,6 +152,209 @@ func TestDetectDuplicates(t *testing.T) {
 			}())
 		}
 	}
+}
+
+// seedArtistWithMBID inserts a path-bearing artist and, when mbid is non-empty,
+// its MusicBrainz provider row.  It returns the new artist ID.  Shared by the
+// conflicting-MBID tests below.
+func seedArtistWithMBID(t *testing.T, ctx context.Context, db *sql.DB, name, path, mbid string) string {
+	t.Helper()
+	repo := newSQLiteArtistRepo(db)
+	a := &Artist{Name: name, SortName: name, Path: path}
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatalf("seeding artist %q: %v", name, err)
+	}
+	if mbid != "" {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_provider_ids (artist_id, provider, provider_id) VALUES (?, 'musicbrainz', ?)`,
+			a.ID, mbid,
+		); err != nil {
+			t.Fatalf("seeding MBID for %q: %v", name, err)
+		}
+	}
+	return a.ID
+}
+
+// assertSeededMBID reads the MusicBrainz provider_id back out of the DB and
+// fails when it does not match want.  This is the anti-vacuity guard for the
+// conflicting-MBID tests: a "rows are not grouped" pass must not come from a
+// row that silently failed to seed its MBID and so never entered the
+// conflicting-MBID code path at all.
+func assertSeededMBID(t *testing.T, ctx context.Context, db *sql.DB, id, want string) {
+	t.Helper()
+	var got string
+	err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(provider_id, '') FROM artist_provider_ids WHERE artist_id = ? AND provider = 'musicbrainz'`,
+		id,
+	).Scan(&got)
+	if err != nil {
+		t.Fatalf("reading back MBID for %s: %v", id, err)
+	}
+	if got != want {
+		t.Fatalf("seeded MBID for %s = %q, want %q", id, got, want)
+	}
+}
+
+// groupContainingBoth returns the group (if any) whose member ID set includes
+// both a and b.
+func groupContainingBoth(groups []NearDuplicateGroup, a, b string) *NearDuplicateGroup {
+	for i := range groups {
+		ids := make(map[string]bool, len(groups[i].Members))
+		for _, m := range groups[i].Members {
+			ids[m.ID] = true
+		}
+		if ids[a] && ids[b] {
+			return &groups[i]
+		}
+	}
+	return nil
+}
+
+// TestDetectDuplicates_ConflictingMBID is the #2527 Defect 1 acceptance
+// criterion: two artists with the SAME normalized name key but TWO DIFFERENT
+// non-empty MusicBrainz IDs are distinct artists that merely collide on name.
+// A merge is irreversible and physically relocates files, so they must NEVER be
+// offered as a merge candidate -- i.e. they must never share a group.
+//
+// Both fall out as singletons here (each is the only member of its would-be
+// group), so no group is emitted at all.
+//
+// MUTANT NOTE: if the MBID guard were removed, the name-key union would join
+// these two rows and this test would go RED (a group with both ids appears).
+// A weaker assertion -- e.g. only checking len(groups)==0 without asserting the
+// distinct MBIDs were actually seeded -- could pass vacuously if a row failed to
+// insert its MBID; the assertSeededMBID calls below close that hole.
+func TestDetectDuplicates_ConflictingMBID(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	const (
+		mbid1 = "11111111-1111-1111-1111-111111111111"
+		mbid2 = "22222222-2222-2222-2222-222222222222"
+	)
+	// Same normalized name key ("duplicity"), different real artists.
+	idA := seedArtistWithMBID(t, ctx, db, "Duplicity", "/music/DuplicityA", mbid1)
+	idB := seedArtistWithMBID(t, ctx, db, "DUPLICITY", "/music/DuplicityB", mbid2)
+
+	// Anti-vacuity: prove the distinct MBIDs actually persisted so the
+	// conflicting-MBID path is genuinely exercised.
+	assertSeededMBID(t, ctx, db, idA, mbid1)
+	assertSeededMBID(t, ctx, db, idB, mbid2)
+
+	groups, err := DetectDuplicates(ctx, db)
+	if err != nil {
+		t.Fatalf("DetectDuplicates: %v", err)
+	}
+	if g := groupContainingBoth(groups, idA, idB); g != nil {
+		t.Fatalf("conflicting-MBID artists %s / %s were grouped together (reason=%q, key=%q); "+
+			"a merge would irreversibly relocate files for two distinct artists", idA, idB, g.Reason, g.Key)
+	}
+	// Neither should appear in ANY group (each is a singleton once the other is
+	// excluded).
+	for _, g := range groups {
+		for _, m := range g.Members {
+			if m.ID == idA || m.ID == idB {
+				t.Errorf("conflicting-MBID artist %s unexpectedly appears in group key=%q", m.ID, g.Key)
+			}
+		}
+	}
+}
+
+// TestDetectDuplicates_ConflictingMBIDTransitivity covers the transitivity and
+// bucket-order corners of the guarded union.
+//
+// Sub-case "bridge": three rows share the same name key -- A(mbid=M1),
+// B(mbid=""), C(mbid=M2).  The empty-MBID bridge row B must NOT let M1 and M2
+// end up in one component.  A pairwise-only guard (no per-component
+// representative propagation) would union A-B then B-C and smuggle M1 and M2
+// into a single group; the per-component repMBID tracking prevents that.
+//
+// Sub-case "bucket order": three rows share the same name key -- A(mbid=M1),
+// B(mbid=M1), C(mbid=M2) -- and C is named so it sorts FIRST (queries ORDER BY
+// name, so C becomes the bucket pivot).  A and B are genuine duplicates (same
+// M1) and MUST still group together.  A pivot-on-first union loop would only
+// try union(C,A) and union(C,B), both refused by the guard, and would DROP the
+// A-B pairing entirely (silent false negative).  The all-pairs loop adds
+// union(A,B) and keeps them together.
+func TestDetectDuplicates_ConflictingMBIDTransitivity(t *testing.T) {
+	const (
+		m1 = "aaaaaaaa-0000-0000-0000-000000000001"
+		m2 = "bbbbbbbb-0000-0000-0000-000000000002"
+	)
+
+	t.Run("bridge", func(t *testing.T) {
+		db := newTestDB(t)
+		ctx := context.Background()
+
+		// Three case-variant names that all normalize to the same key
+		// ("aaa bridge"); the guard must keep M1 and M2 apart for ANY bucket
+		// order, so the exact ordering here is not load-bearing.
+		idA := seedArtistWithMBID(t, ctx, db, "Aaa Bridge", "/music/bridgeA", m1)
+		idB := seedArtistWithMBID(t, ctx, db, "AAA BRIDGE", "/music/bridgeB", "") // empty bridge
+		idC := seedArtistWithMBID(t, ctx, db, "aaa bridge", "/music/bridgeC", m2)
+
+		// Premise guard: all three must share one normalized name key, else the
+		// name-key bucket never forms and the test proves nothing.
+		if NormalizeIdentityKey("Aaa Bridge") != NormalizeIdentityKey("AAA BRIDGE") ||
+			NormalizeIdentityKey("AAA BRIDGE") != NormalizeIdentityKey("aaa bridge") {
+			t.Fatalf("bridge names do not share a name key; test premise invalid")
+		}
+		_ = idB
+		assertSeededMBID(t, ctx, db, idA, m1)
+		assertSeededMBID(t, ctx, db, idC, m2)
+
+		groups, err := DetectDuplicates(ctx, db)
+		if err != nil {
+			t.Fatalf("DetectDuplicates: %v", err)
+		}
+		// The M1 row and the M2 row must never share a group.
+		if g := groupContainingBoth(groups, idA, idC); g != nil {
+			t.Fatalf("M1 row %s and M2 row %s were bridged into one group (key=%q) via the empty-MBID row; "+
+				"transitivity guard failed", idA, idC, g.Key)
+		}
+	})
+
+	t.Run("bucket_order_pivot_conflicts", func(t *testing.T) {
+		db := newTestDB(t)
+		ctx := context.Background()
+
+		// Three case-variant names that all normalize to the same key
+		// ("orderly") but sort differently by raw ASCII: uppercase bytes sort
+		// before lowercase, so "ORDERLY" < "Orderly" < "orderly".  Give the
+		// CONFLICTING M2 row the all-caps name so it is the ORDER BY name pivot.
+		idPivotConflict := seedArtistWithMBID(t, ctx, db, "ORDERLY", "/music/orderPivot", m2)
+		idA := seedArtistWithMBID(t, ctx, db, "Orderly", "/music/orderA", m1)
+		idB := seedArtistWithMBID(t, ctx, db, "orderly", "/music/orderB", m1)
+
+		assertSeededMBID(t, ctx, db, idPivotConflict, m2)
+		assertSeededMBID(t, ctx, db, idA, m1)
+		assertSeededMBID(t, ctx, db, idB, m1)
+
+		// Premise guards: identical name keys, and the conflicting row sorts
+		// first (so it is the pivot a pivot-on-first loop would use).
+		if NormalizeIdentityKey("ORDERLY") != NormalizeIdentityKey("Orderly") ||
+			NormalizeIdentityKey("Orderly") != NormalizeIdentityKey("orderly") {
+			t.Fatalf("order names do not share a name key; test premise invalid")
+		}
+		if "ORDERLY" >= "Orderly" || "Orderly" >= "orderly" {
+			t.Fatalf("order names do not sort as expected; test premise invalid")
+		}
+
+		groups, err := DetectDuplicates(ctx, db)
+		if err != nil {
+			t.Fatalf("DetectDuplicates: %v", err)
+		}
+		// The two genuine M1 duplicates must still be grouped together despite
+		// the conflicting pivot sorting first.
+		if g := groupContainingBoth(groups, idA, idB); g == nil {
+			t.Fatalf("genuine M1 duplicates %s / %s were dropped when the conflicting pivot sorted first "+
+				"(all-pairs union missing)", idA, idB)
+		}
+		// And the conflicting M2 row must not be dragged in with them.
+		if g := groupContainingBoth(groups, idA, idPivotConflict); g != nil {
+			t.Fatalf("conflicting M2 pivot %s was grouped with M1 row %s (key=%q)", idPivotConflict, idA, g.Key)
+		}
+	})
 }
 
 // TestDetectDuplicates_EmptyDB verifies that DetectDuplicates returns an empty
