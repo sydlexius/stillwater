@@ -228,6 +228,20 @@ type MergeResult struct {
 	// (a warning is recorded instead). Populated only by MergeAndReconcile.
 	CanonicalRename *CanonicalRenameResult
 
+	// SurvivorPathSync records the per-connection outcome of re-issuing the
+	// survivor's path to the peers when NO canonical rename happened -- the
+	// common dedupe, where the survivor is already correctly named (#2380).
+	// Nil on dry-run, when a CanonicalRename already pushed the path, or when
+	// no platform syncer is wired.
+	//
+	// The path being pushed is usually the SAME path the peer already has. The
+	// point is not the path: it is that this is the only code path that runs
+	// the peer relink, which re-resolves an Emby/Jellyfin link off the deleted
+	// loser item onto the surviving one. Without it a peer keeps its item at the
+	// merged-away directory and its NFO saver recreates that directory, which
+	// the scanner re-imports as a duplicate -- undoing the merge.
+	SurvivorPathSync []PlatformRemapResult
+
 	// PlatformRefresh lists the post-merge per-connection refresh outcomes
 	// (survivor re-index + stale loser eviction). Populated only by
 	// MergeAndReconcile when a refresher is wired; empty otherwise.
@@ -395,7 +409,71 @@ func (s *Service) MergeAndReconcile(ctx context.Context, req MergeRequest) (*Mer
 	}
 	s.reconcileSurvivorCanonicalPath(ctx, req.ArticleMode, result)
 	s.refreshAffectedPlatforms(ctx, result)
+	s.reconcileSurvivorPeerPaths(ctx, result)
 	return result, nil
+}
+
+// reconcileSurvivorPeerPaths re-issues the survivor's path to every peer after a
+// merge that did NOT rename the survivor (#2380).
+//
+// reconcileSurvivorCanonicalPath only renames when the survivor's basename
+// differs from canonical, and in the common dedupe -- merging a duplicate INTO
+// the correctly-named survivor -- it does not. So SyncRename never ran, and
+// SyncRename is the ONLY chokepoint that performs the peer relink. The peers
+// were left pointing at the loser's now-deleted directory; Emby's and
+// Jellyfin's NFO savers then recreate that directory, the scanner re-imports it
+// as a duplicate row, and the merge is undone. That is the data loss in #2380.
+//
+// The path pushed is almost always the path the peer already has. This is not
+// about the path. It is about running the relink.
+//
+// Ordering is deliberate: this runs AFTER refreshAffectedPlatforms, whose
+// library scan gives the relink's peer-resolution poll a head start (the poll
+// otherwise spends its full budget waiting for the peer to notice the merge).
+//
+// Best-effort, exactly like the other reconcile steps: the merge has already
+// committed, so a failure here is recorded as a warning and never fails the
+// merge. A push refused by the pre-flight root guard arrives as a
+// PlatformRemapFailed entry -- which is the intended loud behavior, not an
+// error to swallow.
+func (s *Service) reconcileSurvivorPeerPaths(ctx context.Context, result *MergeResult) {
+	if s.platformSyncer == nil {
+		return // platform syncing disabled; RenameDirectory behaves the same way.
+	}
+	if result.CanonicalRename != nil {
+		return // the rename already pushed the path and ran the relink.
+	}
+	if result.SurvivorID == "" || result.SurvivorPath == "" {
+		return // nothing to push against.
+	}
+
+	// WithoutCancel for the same reason RenameDirectory uses it: the merge has
+	// committed on disk and in the DB, so a client disconnect must not abandon
+	// the peers pointing at a directory that no longer exists.
+	syncCtx := context.WithoutCancel(ctx)
+
+	// oldPath == newPath: the survivor has not moved. SyncRename is being used
+	// for its relink + guard chain, not to change a path.
+	results, err := s.platformSyncer.SyncRename(syncCtx, result.SurvivorID, result.SurvivorPath, result.SurvivorPath)
+	if err != nil {
+		slog.Error("merge: survivor peer-path reconcile failed",
+			"survivor_id", result.SurvivorID,
+			"survivor_path", result.SurvivorPath,
+			"error", err.Error())
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("could not re-issue the survivor's path to platforms: %v. "+
+				"A peer may still reference the merged-away directory and recreate it; "+
+				"re-scan the affected connections.", err))
+		return
+	}
+	result.SurvivorPathSync = results
+
+	for _, r := range results {
+		if r.Result == PlatformRemapFailed {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("connection %s: could not re-issue the survivor's path: %s", r.ConnectionID, r.Error))
+		}
+	}
 }
 
 // reconcileSurvivorCanonicalPath renames the survivor to CanonicalDirName when
