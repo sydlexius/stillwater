@@ -61,8 +61,44 @@ on:
 permissions:
   contents: read
 
+# Concurrency is keyed by EVENT CLASS, not just by PR (#2521).
+#
+# Every label applied to a PR fires its own `labeled` event, so a PR opened with
+# four labels spawns five runs (opened + 4x labeled) in the same instant. With a
+# single per-PR group they cancelled each other: on PR #2520, four of the five
+# runs were cancelled and each still posted a `Check docs drift` check-run, so a
+# check that evaluated exactly once looked like it had failed four times. A gate
+# whose red state is usually noise is a gate people learn to wave through -- and
+# this one has real things to say (it caught #2520 changing openapi.yaml with no
+# docs update).
+#
+# `cancel-in-progress: false` does NOT fix this. GitHub only protects the
+# IN-PROGRESS run: when a run is queued behind it the run goes pending, and any
+# previously pending run in the group is cancelled. The cancellations would
+# persist, just among the pending runs instead.
+#
+# Skipping the job on uninteresting label events would be WORSE and must not be
+# done: a run whose job is skipped STILL occupies the concurrency group and still
+# cancels the in-progress real run, so the hard gate would silently never
+# evaluate. Never trade a cosmetic bug for a gate that no-ops.
+#
+# So: give each label event its own group (they cancel nothing), and keep
+# opened/synchronize/reopened sharing one `code` group so rapid pushes still
+# collapse to the latest run -- which is what cancel-in-progress is FOR, and is
+# behavior worth keeping. Every run still genuinely evaluates the gate.
+#
+# The two branches are NAMESPACED (`label-<name>` vs `code`) rather than sharing
+# a flat namespace. Without the prefix, a label literally named `code` would
+# resolve to the same group as opened/synchronize/reopened and re-introduce the
+# very cross-cancellation this fix removes -- a latent collision waiting for
+# someone to create that label.
+#
+# The expression is deliberately on ONE line. In a YAML folded scalar (>-), a
+# continuation line indented deeper than the first keeps its newline instead of
+# folding to a space, which would embed literal newlines inside the ${{ }}.
+# actionlint accepts that (it checks syntax, not this), so the trap is silent.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') && format('label-{0}', github.event.label.name) || 'code' }}
   cancel-in-progress: true
 
 jobs:
@@ -120,10 +156,26 @@ jobs:
               .filter(Boolean);
             const codeChanged = process.env.CODE_CHANGED === 'true';
             const docsChanged = process.env.DOCS_CHANGED === 'true';
-            const pr = context.payload.pull_request;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const issue_number = pr.number;
+            const issue_number = context.payload.pull_request.number;
+
+            // Read the PR (and therefore its LABEL SET) LIVE, not from
+            // context.payload (#2521). The payload is a snapshot taken when the
+            // event fired, and label events and code pushes now run in separate
+            // concurrency groups, so they no longer serialize by cancelling each
+            // other. Two runs can be in flight at once: push a docs fix and apply
+            // `docs: not-required` at the same moment, and the synchronize run's
+            // snapshot would not contain the label (verdict: FAIL) while the
+            // labeled run's would (verdict: PASS) -- whichever finished last would
+            // win, making the gate nondeterministic. Querying the current labels
+            // makes every concurrent run compute the SAME verdict regardless of
+            // which event spawned it.
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: issue_number,
+            });
 
             async function ensureLabel(name, color, description) {
               try {
