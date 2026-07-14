@@ -613,10 +613,12 @@ body { font-family: var(--sw-font-family); }
  * design rule forbids -- and the severity tokens are bound by the identical
  * "never a fill" rule for destructive/error (spec SS1: destructive = never a
  * fill; error = never a control, never a fill). Tailwind v4's --color-*
- * namespace mints the full bg-*/text-*/border-* utility set per variable with
- * no way to publish a partial subset, so the only way to keep the fill
+ * namespace mints the full background, text and border utility set per variable
+ * with no way to publish a partial subset, so the only way to keep the fill
  * utility from existing is to keep these out of --color-* entirely, same as
- * the accent. All current consumption is `var(--swd-err)` / `var(--swd-warn)`
+ * the accent. (Spelling those utility prefixes out as globs is what broke this
+ * comment in the first place -- see #2525 -- so they stay spelled as words.)
+ * All current consumption is `var(--swd-err)` / `var(--swd-warn)`
  * / `var(--swd-ok)` directly (input.css, artist_detail.templ) -- nothing
  * reaches these as a Tailwind utility today, so nothing is lost by excluding
  * them. The accent is reachable as a border, as ink, as the 22% tint, and as

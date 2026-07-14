@@ -522,6 +522,48 @@ jobs:
           echo "$output"
 
   # ---------------------------------------------------------------------------
+  # CSS Comments (#2525)
+  #
+  # Mirrors the "CSS comments" step in scripts/pre-push-gate.sh. Asserts that no
+  # hand-written CSS comment terminates itself: a `*/` inside comment PROSE closes
+  # the comment, so the text after it is parsed as CSS. In #2525 that swallowed the
+  # `@theme` block in design-tokens.css and the `swd-*` utilities it publishes were
+  # never generated -- with no visual damage and no error, because nothing consumed
+  # them yet. The only signal was a Tailwind build warning, which is exactly the
+  # kind of thing nobody reads.
+  #
+  # Deliberately NOT paths-filtered. The scan is sub-second, and an always-run job
+  # can be promoted to a required status check without tripping the "a skipped
+  # required check reads as failed" hazard.
+  # ---------------------------------------------------------------------------
+  css-comments:
+    name: CSS Comments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Check for self-terminating CSS comments
+        run: |
+          output=$(bash scripts/check-css-comments.sh 2>&1) || {
+            echo "$output"
+            {
+              echo "## CSS Comments -- FAILED"
+              echo ""
+              echo "A hand-written CSS comment terminates itself: a \`*/\` inside the comment PROSE closes it, so everything after it is parsed as CSS. This silently breaks whatever follows (in #2525, an entire \`@theme\` block, whose utilities were then never generated). Reword the prose -- there is no escape for \`*/\` inside a CSS comment."
+              echo ""
+              echo "Details:"
+              echo '```'
+              echo "$output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          echo "$output"
+
+  # ---------------------------------------------------------------------------
   # Shellcheck (#2445)
   #
   # NOT a required status check (new job). Before this, a script-only diff
