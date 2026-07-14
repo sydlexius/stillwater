@@ -425,6 +425,17 @@ echo "=== OpenAPI consistency ==="
 go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
 
 echo ""
+echo "=== CSS comments ==="
+# Assert no hand-written CSS comment terminates itself. A `*/` inside comment
+# PROSE closes the comment, so everything after it is parsed as CSS -- which in
+# #2525 silently swallowed the entire `@theme` block and meant its `swd-*`
+# utilities were never generated. No visual damage, no error: just a design-system
+# guardrail that was quietly off. Runs BEFORE the generated-files check below, so
+# the source defect is named directly rather than surfacing as a confusing diff in
+# the Tailwind build product.
+bash "$SCRIPT_DIR/check-css-comments.sh"
+
+echo ""
 echo "=== Generated files ==="
 bash "$SCRIPT_DIR/check-generated.sh"
 
