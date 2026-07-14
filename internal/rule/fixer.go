@@ -457,28 +457,42 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 	ctx, counters := p.withEvalContext(ctx, a)
 	defer p.logEvalCounters(a, counters)
 
-	eval, err := p.engine.Evaluate(ctx, a)
+	// Issue #2476: evaluate ONLY the requested rule. Selecting a rule used to
+	// scope which fixer acted while every enabled checker still ran, so asking
+	// for a purely local rule (byte-identical image de-dupe) also fired the
+	// provider-backed checkers and queried MusicBrainz once per artist.
+	only := map[string]bool{ruleID: true}
+
+	eval, err := p.engine.EvaluateScoped(ctx, a, only)
 	if err != nil {
 		p.logger.Warn("evaluating artist", "artist", a.Name, "rule_id", ruleID, "error", err)
 		return contrib, false
 	}
 
+	// No RuleID filter here on purpose: the evaluation considered only ruleID,
+	// so every violation it returned belongs to it. Re-filtering would mask a
+	// regression in the scoping rather than catch it.
 	for j := range eval.Violations {
-		v := &eval.Violations[j]
-		if v.RuleID != ruleID {
-			continue
-		}
 		contrib.violationsFound++
-		acc.mergeIntoContrib(p.dispatchViolation(ctx, a, v, targetRule), &contrib)
+		acc.mergeIntoContrib(p.dispatchViolation(ctx, a, &eval.Violations[j], targetRule), &contrib)
 	}
 
 	// Issue #699 propagation fix: derive the pass/fail skip-set from the
 	// POST-fix evaluation, not the pre-fix snapshot. A rule the fixer just
 	// repaired still appears in the pre-fix Violations slice, so using that
-	// set would suppress its pass row for this run. updateHealthScore
-	// re-evaluates the artist anyway (to recompute the health score), so we
-	// reuse that result.
-	postEval, persistOKHealth := p.updateHealthScore(ctx, a, acc.artistDirty)
+	// set would suppress its pass row for this run.
+	//
+	// This re-evaluation is scoped too. It used to be a full unscoped Evaluate
+	// inside updateHealthScore, which is why a single-rule run produced two
+	// back-to-back provider queries per artist rather than one (#2476).
+	postEval, err := p.engine.EvaluateScoped(ctx, a, only)
+	if err != nil {
+		p.logger.Warn("re-evaluating artist after fixes",
+			"artist", a.Name, "rule_id", ruleID, "error", err)
+		postEval = nil
+	}
+
+	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty)
 	if !persistOKHealth {
 		acc.persistOK = false
 	}
@@ -488,7 +502,10 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows) {
 		acc.persistOK = false
 	}
-	if postEval != nil {
+	// Gate pass rows on the artist row having persisted: rule_results must not
+	// lead the stored artist by claiming passed=1 from in-memory fix state that
+	// never reached the DB (CR review-body 4144589645).
+	if persistOKHealth && postEval != nil {
 		postViolated := make(map[string]struct{}, len(postEval.Violations))
 		for j := range postEval.Violations {
 			postViolated[postEval.Violations[j].RuleID] = struct{}{}
@@ -646,7 +663,18 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	evalCtx, counters := p.withEvalContext(ctx, a)
 	defer p.logEvalCounters(a, counters)
 
-	eval, err := p.engine.Evaluate(evalCtx, a)
+	// Issue #2476: scope the evaluation to the requested category. Like the
+	// single-rule path, this used to evaluate EVERY enabled rule and then
+	// discard the violations outside the category, so RunImageRulesForArtist
+	// ("fetch images for this artist") also ran the provider-backed checkers and
+	// queried MusicBrainz. A nil scope (empty categoryFilter) means the
+	// whole-artist run, which legitimately evaluates everything.
+	scope, err := p.engine.ScopeForCategory(evalCtx, a, categoryFilter)
+	if err != nil {
+		return nil, fmt.Errorf("resolving rule scope for artist %s: %w", a.Name, err)
+	}
+
+	eval, err := p.engine.EvaluateScoped(evalCtx, a, scope)
 	if err != nil {
 		return nil, fmt.Errorf("evaluating artist %s: %w", a.Name, err)
 	}
@@ -657,7 +685,7 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	ruleCache := map[string]*Rule{}
 
 	p.dispatchViolations(evalCtx, a, eval.Violations, categoryFilter, ruleCache, acc, result)
-	p.finalizeArtistRun(evalCtx, a, ruleCache, acc, categoryFilter, startedAt)
+	p.finalizeArtistRun(evalCtx, a, ruleCache, acc, categoryFilter, scope, startedAt)
 	return result, nil
 }
 
@@ -749,8 +777,18 @@ func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, vio
 //   - markArtistEvaluated stamps rules_evaluated_at only when every
 //     persistence step succeeded AND the run covered every rule (i.e.
 //     categoryFilter was empty).
-func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, ruleCache map[string]*Rule, acc *runForArtistAccum, categoryFilter string, startedAt time.Time) {
-	postEval, persistOKHealth := p.updateHealthScore(ctx, a, acc.artistDirty)
+func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, ruleCache map[string]*Rule, acc *runForArtistAccum, categoryFilter string, scope map[string]bool, startedAt time.Time) {
+	// Re-evaluate at the SAME scope the run used. A whole-artist run (nil scope)
+	// evaluates everything and its HealthScore is authoritative; a category run
+	// evaluates only that category and its health is derived offline, so neither
+	// path re-runs a checker the operator did not ask for (#2476).
+	postEval, err := p.engine.EvaluateScoped(ctx, a, scope)
+	if err != nil {
+		p.logger.Warn("re-evaluating health score", "artist", a.Name, "error", err)
+		postEval = nil
+	}
+
+	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty)
 	if !persistOKHealth {
 		acc.persistOK = false
 	}
@@ -760,7 +798,14 @@ func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, rule
 	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows) {
 		acc.persistOK = false
 	}
-	if postEval != nil && !p.writeFilteredPassResults(ctx, a, postEval, ruleCache, categoryFilter, startedAt) {
+	// Gate pass rows on the artist row having persisted. Previously this was
+	// implicit -- updateHealthScore returned a nil eval on a persist failure, so
+	// the postEval != nil check below doubled as the persist gate. The scoped
+	// rework separates the evaluation from the write, so the gate has to be
+	// stated: rule_results must never claim passed=1 from in-memory fix state
+	// that failed to reach the artist row.
+	if persistOKHealth && postEval != nil &&
+		!p.writeFilteredPassResults(ctx, a, postEval, ruleCache, categoryFilter, startedAt) {
 		acc.persistOK = false
 	}
 	p.publishAccumulated(ctx, a, acc.metadataFixed, acc.fixedImageTypes)
@@ -1432,10 +1477,30 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		if err := p.ruleService.ResolveViolation(ctx, rv.ID); err != nil {
 			return nil, fmt.Errorf("resolving violation after fix: %w", err)
 		}
-		// FixViolation operates on a single violation and does not own
-		// rule_results writes (the pipeline's RunRule/RunAll paths do),
-		// so we discard the post-fix evaluation result here.
-		_, _ = p.updateHealthScore(ctx, a, false)
+		// Refresh the health score after the fix, scoped to the rule that was
+		// actually fixed. This used to be a full unscoped Evaluate, so repairing
+		// a single thumbnail from the UI issued a MusicBrainz query for that
+		// artist -- the same unrequested-provider-call defect as the run paths,
+		// one artist at a time (#2476).
+		//
+		// A fixer CAN affect other rules (the thumb fixer can create a
+		// byte-identical duplicate; the rename fixer changes a.Path). Those
+		// knock-on effects are no longer re-detected here, and that is not a
+		// regression: FixViolation does not own rule_results writes (the
+		// RunRule/RunAll paths do), so the old full re-evaluation never recorded
+		// them either. It only moved the health score. The score now inherits the
+		// staleness of the persisted rows instead, and the next full pass corrects
+		// it -- which is the same guarantee the score had before.
+		//
+		// The post-fix evaluation is therefore used only to rescore, not to
+		// persist pass rows.
+		postEval, err := p.engine.EvaluateScoped(ctx, a, map[string]bool{rv.RuleID: true})
+		if err != nil {
+			p.logger.Warn("re-evaluating health score after fix",
+				"artist", a.Name, "rule_id", rv.RuleID, "error", err)
+			postEval = nil
+		}
+		_ = p.persistHealthAfterRun(ctx, a, postEval, false)
 		p.publishAfterFix(ctx, a, fr)
 	}
 
@@ -1644,21 +1709,175 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 	}
 }
 
-// updateHealthScore re-evaluates the artist and persists the score. Returns
-// the post-fix evaluation (nil when Evaluate failed) and a bool that is true
-// only when the artist row reached the DB cleanly. The walker uses the bool
-// to decide whether to stamp rules_evaluated_at: a failed persist must leave
-// the artist in the dirty set so the next pass retries.
+// persistHealthAfterRun recomputes and persists the artist's health score from
+// the run's POST-fix evaluation, then writes the artist row.
 //
-// The returned EvaluationResult is consumed by the pass-row writer so
-// rule_results reflects the POST-fix state of the artist -- a rule the
-// fixer just repaired shows up as passed=1 in the same run, and a rule
-// that started passing but failed mid-run is written as a fail (issue #699).
+// For an UNSCOPED run the evaluation already scored every eligible rule, so its
+// HealthScore is authoritative and is taken directly. That keeps the whole-artist
+// path byte-for-byte what it was.
 //
-// When mustPersist is true, the artist is persisted even if health
-// evaluation fails, to flush in-memory changes made by fixers. In that
-// case the caller relies on the returned bool to detect the transient
-// persist failure.
+// For a SCOPED run it is not authoritative: health means passed/total across all
+// eligible rules and a scoped evaluation only saw some of them. The score is
+// therefore derived offline, from the fresh results plus the artist's persisted
+// rule_results.
+//
+// This is the other half of #2476. Scoping the run's own evaluation is not
+// enough on its own: the post-fix health recompute used to run a SECOND full
+// Evaluate, and because health spans every enabled rule, that second pass re-ran
+// the provider-backed checkers no matter which rule was requested. That is why
+// one click on a local image rule produced two back-to-back MusicBrainz queries
+// per artist instead of none.
+//
+// mustPersist forces the artist row to be written even when no score could be
+// derived, so in-memory mutations made by fixers are still flushed.
+// The returned bool is AUTHORITATIVE, not merely "the write succeeded". It is
+// false whenever this run cannot vouch for the artist's post-fix state, which is
+// what stops the caller from stamping rules_evaluated_at, resolving violation
+// rows, or writing pass rows on the strength of a run that did not complete.
+func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, postEval *EvaluationResult, mustPersist bool) bool {
+	// A FAILED post-fix evaluation is never authoritative. The old
+	// updateHealthScore encoded this by returning a nil result with
+	// authoritative=false, and callers leaned on the nil to gate their writes.
+	// Splitting the evaluation out of this function made that gate implicit, and
+	// dropping it here would let a failed run stamp rules_evaluated_at, which
+	// removes the artist from the dirty set with stale rule_results and means no
+	// incremental pass ever looks at it again.
+	if postEval == nil {
+		if mustPersist {
+			// Still flush the fixer's in-memory mutations; just do not claim the
+			// run was authoritative.
+			if err := p.artistService.UpdateAfterRuleEvaluation(ctx, a); err != nil {
+				p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
+			}
+		}
+		return false
+	}
+
+	score, ok := postEval.HealthScore, true
+	if postEval.Scoped {
+		score, ok = p.offlineHealthScore(ctx, a, freshResultsFrom(postEval))
+	}
+
+	if ok {
+		a.HealthScore = score
+		// HealthEvaluatedAt is deliberately NOT stamped on the scoped path. The
+		// score there is a merge of this run's fresh results with persisted
+		// rule_results of arbitrary age, so its freshness is bounded by the last
+		// FULL evaluation, not by now. Stamping it would assert a freshness the
+		// score does not have, and would also hide the artist from the health
+		// subscriber's bootstrap, which is what establishes the baseline in the
+		// first place.
+		if !postEval.Scoped {
+			now := time.Now().UTC()
+			a.HealthEvaluatedAt = &now
+		}
+	} else if !mustPersist {
+		// Nothing to score and no fixer mutation to flush: touching the row would
+		// only bump updated_at for nothing. The evaluation itself succeeded, so
+		// the run IS authoritative for the rules it was asked to run.
+		return true
+	}
+
+	// UpdateAfterRuleEvaluation (not Update) for the same reason as the full
+	// path: a regular Update would stamp dirty_since and race the walker's
+	// rules_evaluated_at stamp at second-precision boundaries.
+	if err := p.artistService.UpdateAfterRuleEvaluation(ctx, a); err != nil {
+		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
+		return false
+	}
+	return true
+}
+
+// offlineHealthScore derives the artist's health score from the rules this run
+// just evaluated plus the persisted results of every other eligible rule. It
+// runs no checkers and makes no provider calls.
+//
+// ok is false when at least one eligible rule has neither a fresh result nor a
+// persisted row. That means the artist has never had a complete evaluation, so
+// no honest score exists yet, and the caller must leave the stored one alone.
+// We refuse rather than score the subset: artist scan treats health_score >= 100
+// as "compliant", so a score computed over some of the rules would quietly
+// corrupt the compliant/non-compliant split for every downstream consumer.
+//
+// The denominator comes from EligibleRuleIDs, never from the count of persisted
+// rows. A rule enabled since the last full pass has no row, and a rule disabled
+// since then still has one; scoring against the rows would drift from what an
+// evaluation would actually produce.
+func (p *Pipeline) offlineHealthScore(ctx context.Context, a *artist.Artist, fresh map[string]bool) (float64, bool) {
+	eligible, err := p.engine.EligibleRuleIDs(ctx, a)
+	if err != nil {
+		p.logger.Warn("health recompute: listing eligible rules",
+			"artist", a.Name, "error", err)
+		return 0, false
+	}
+
+	rows, err := p.ruleService.GetRuleResultsForArtist(ctx, a.ID)
+	if err != nil {
+		p.logger.Warn("health recompute: reading persisted rule results",
+			"artist", a.Name, "error", err)
+		return 0, false
+	}
+	persisted := make(map[string]bool, len(rows))
+	for i := range rows {
+		persisted[rows[i].RuleID] = rows[i].Passed
+	}
+
+	var passed, total int
+	var missing []string
+	for _, id := range eligible {
+		total++
+		if ok, seen := fresh[id]; seen {
+			if ok {
+				passed++
+			}
+			continue
+		}
+		if ok, seen := persisted[id]; seen {
+			if ok {
+				passed++
+			}
+			continue
+		}
+		missing = append(missing, id)
+	}
+
+	if len(missing) > 0 {
+		// Loud, not silent. A health score that quietly stops updating is the
+		// failure mode this codebase keeps producing; the operator gets told
+		// what is missing and how to fix it.
+		p.logger.Info("health score left unchanged: artist has no complete evaluation baseline",
+			"artist", a.Name,
+			"eligible_rules", total,
+			"never_evaluated_rules", len(missing),
+			"first_missing_rule", missing[0],
+			"remedy", "run all rules once for this artist to establish a baseline",
+		)
+		return 0, false
+	}
+
+	return calculateHealthScore(passed, total), true
+}
+
+// freshResultsFrom turns a scoped evaluation into the rule_id -> passed map that
+// the offline health recompute consumes. Every rule the evaluation considered is
+// present, so a rule that was evaluated and failed is recorded as false rather
+// than being mistaken for "not evaluated".
+func freshResultsFrom(eval *EvaluationResult) map[string]bool {
+	if eval == nil {
+		return nil
+	}
+	violated := make(map[string]struct{}, len(eval.Violations))
+	for i := range eval.Violations {
+		violated[eval.Violations[i].RuleID] = struct{}{}
+	}
+	fresh := make(map[string]bool, len(eval.RulesConsidered))
+	for _, id := range eval.RulesConsidered {
+		_, bad := violated[id]
+		fresh[id] = !bad
+	}
+	return fresh
+}
+
 func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist bool) (*EvaluationResult, bool) {
 	eval, err := p.engine.Evaluate(ctx, a)
 	// authoritative is only true when the post-fix evaluation succeeded;

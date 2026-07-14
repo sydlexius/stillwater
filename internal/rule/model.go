@@ -103,6 +103,11 @@ type EvaluationResult struct {
 	RulesTotal      int         `json:"rules_total"`
 	HealthScore     float64     `json:"health_score"`
 	RulesConsidered []string    `json:"-"` // not serialized; consumed by persistence paths
+	// Scoped marks a result produced by EvaluateScoped for a subset of rules.
+	// HealthScore is left zero on such a result: health means passed/total across
+	// ALL eligible rules, so a subset score is not the artist's score and must
+	// never be persisted as one (#2476).
+	Scoped bool `json:"-"`
 }
 
 // HealthSnapshot represents a recorded library health score.
