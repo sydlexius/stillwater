@@ -377,7 +377,32 @@ func (e *Engine) InvalidateRuleCache() {
 
 // Evaluate runs all enabled rules against an artist and returns the results.
 func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationResult, error) {
-	// Clear the shared-filesystem cache so each top-level Evaluate call gets
+	return e.EvaluateScoped(ctx, a, nil)
+}
+
+// EvaluateScoped runs only the rules whose IDs appear in only.
+//
+// A NIL set means "no scoping": every eligible rule runs, which is exactly what
+// Evaluate does. A non-nil set means "only these", and an EMPTY non-nil set
+// therefore means "evaluate nothing". That distinction is load-bearing: a
+// category that happens to match no eligible rules must evaluate nothing, and
+// if emptiness were treated as "unscoped" it would instead run every rule and
+// silently reintroduce the very bug this scoping exists to fix.
+//
+// Scoping is a correctness concern, not an optimization. Some checkers reach an
+// external provider (discography_populated queries MusicBrainz; name_language_pref
+// fetches metadata), so evaluating rules the operator never asked for turns a
+// purely local operation -- de-duplicating images by file hash, say -- into
+// unrequested outbound traffic against a third party, once per artist. See #2476.
+//
+// The returned HealthScore is only meaningful for an unscoped call, because
+// health is defined as passed/total across ALL eligible rules. A scoped result
+// therefore leaves HealthScore at zero and sets Scoped, so a caller cannot
+// mistake a subset score for the artist's real one. Callers that need to refresh
+// the persisted score after a scoped run must use the pipeline's offline
+// recompute rather than reading HealthScore from here.
+func (e *Engine) EvaluateScoped(ctx context.Context, a *artist.Artist, only map[string]bool) (*EvaluationResult, error) {
+	// Clear the shared-filesystem cache so each top-level evaluation gets
 	// fresh data while avoiding N+1 queries within the same run. The API image
 	// cache is NOT cleared here: it is keyed by (artistID, imageType) so
 	// entries from different evaluations do not conflict, and the fixer consumes
@@ -387,42 +412,33 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 	e.sharedFSMu.Unlock()
 
 	// Clear the image-duplicate-detection cache for the same reason: it is
-	// scoped to one Evaluate call so the exact and perceptual checkers below
+	// scoped to one evaluation so the exact and perceptual checkers below
 	// share one computation for THIS artist, without carrying a stale result
-	// into the next Evaluate call for a different artist.
+	// into the next evaluation for a different artist.
 	e.imageDupMu.Lock()
 	e.imageDupCache = nil
 	e.imageDupMu.Unlock()
 
-	rules, err := e.cachedRules(ctx)
+	rules, err := e.eligibleRules(ctx, a)
 	if err != nil {
 		return nil, err
 	}
 
+	scoped := only != nil
 	result := &EvaluationResult{
 		ArtistID:   a.ID,
 		ArtistName: a.Name,
+		Scoped:     scoped,
 	}
 
 	for i := range rules {
 		r := &rules[i]
-		if !r.Enabled {
+		if scoped && !only[r.ID] {
 			continue
 		}
 
-		// Skip filesystem-dependent rules for artists without a local path.
-		// API-imported artists (Emby/Jellyfin) have no filesystem directory and
-		// cannot have NFO files; evaluating these rules against them produces
-		// false violations.
-		if r.FilesystemDependent && a.Path == "" {
-			continue
-		}
-
-		checker, ok := e.checkers[r.ID]
-		if !ok {
-			e.logger.Debug("no checker registered for rule", slog.String("rule_id", r.ID))
-			continue
-		}
+		// eligibleRules already guaranteed a checker is registered.
+		checker := e.checkers[r.ID]
 
 		result.RulesTotal++
 		result.RulesConsidered = append(result.RulesConsidered, r.ID)
@@ -440,9 +456,96 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 		}
 	}
 
-	result.HealthScore = calculateHealthScore(result.RulesPassed, result.RulesTotal)
+	if !scoped {
+		result.HealthScore = calculateHealthScore(result.RulesPassed, result.RulesTotal)
+	}
 
 	return result, nil
+}
+
+// eligibleRules returns the rules a full evaluation would consider for this
+// artist, in evaluation order: enabled, not skipped for want of a local path,
+// and backed by a registered checker.
+//
+// EvaluateScoped and EligibleRuleIDs both derive from this, deliberately. The
+// offline health recompute needs the same denominator a real evaluation would
+// use, and computing that set twice in two places is how the two silently drift
+// apart and start writing a wrong score.
+func (e *Engine) eligibleRules(ctx context.Context, a *artist.Artist) ([]Rule, error) {
+	rules, err := e.cachedRules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	eligible := make([]Rule, 0, len(rules))
+	for i := range rules {
+		r := &rules[i]
+		if !r.Enabled {
+			continue
+		}
+
+		// Skip filesystem-dependent rules for artists without a local path.
+		// API-imported artists (Emby/Jellyfin) have no filesystem directory and
+		// cannot have NFO files; evaluating these rules against them produces
+		// false violations.
+		if r.FilesystemDependent && a.Path == "" {
+			continue
+		}
+
+		if _, ok := e.checkers[r.ID]; !ok {
+			e.logger.Debug("no checker registered for rule", slog.String("rule_id", r.ID))
+			continue
+		}
+
+		eligible = append(eligible, *r)
+	}
+	return eligible, nil
+}
+
+// ScopeForCategory resolves a rule category into the evaluation scope that
+// EvaluateScoped expects: the eligible rules in that category.
+//
+// An empty category returns a nil scope, meaning "evaluate everything" -- that is
+// the whole-artist run. A category that matches no eligible rules returns an
+// EMPTY, NON-NIL scope, meaning "evaluate nothing", which is the honest answer
+// and not an invitation to run every rule.
+//
+// It runs no checkers and makes no provider calls, so the scope can be computed
+// before deciding what to evaluate.
+func (e *Engine) ScopeForCategory(ctx context.Context, a *artist.Artist, category string) (map[string]bool, error) {
+	if category == "" {
+		return nil, nil
+	}
+	rules, err := e.eligibleRules(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	scope := make(map[string]bool, len(rules))
+	for i := range rules {
+		if string(rules[i].Category) == category {
+			scope[rules[i].ID] = true
+		}
+	}
+	return scope, nil
+}
+
+// EligibleRuleIDs returns the IDs of the rules a full evaluation would consider
+// for this artist right now. It runs no checkers and makes no provider calls.
+//
+// This is the denominator for the offline health recompute: health must be
+// passed/total over the rules that are currently eligible, never over whatever
+// rule_results rows happen to exist, because a rule enabled or disabled since
+// the last full pass would otherwise skew the score.
+func (e *Engine) EligibleRuleIDs(ctx context.Context, a *artist.Artist) ([]string, error) {
+	rules, err := e.eligibleRules(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(rules))
+	for i := range rules {
+		ids = append(ids, rules[i].ID)
+	}
+	return ids, nil
 }
 
 // EvaluateAll runs all enabled rules against multiple artists.
