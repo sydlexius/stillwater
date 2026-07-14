@@ -153,19 +153,42 @@ func (s *Service) DeleteRuleResultsForRule(ctx context.Context, ruleID string) e
 // check comes first and the writes are issued only when there is something to
 // write. An unconditional DELETE plus UPDATE would open two write transactions
 // per skipped rule per pass against SQLite's single writer, matching zero rows
-// every time. A row that appears between the check and the writes is simply
-// retracted by the next pass; retraction is idempotent.
+// every time.
+//
+// The probe and both writes run in ONE transaction, matching UpsertViolation.
+// Retraction has two independent callers -- the fix pipeline and the
+// event-driven health subscriber, which runs on its own goroutine -- so an
+// evaluation of the same (artist, rule) can be in flight while this runs. Left
+// unserialized, a concurrent evaluation that writes a FRESH, correct verdict
+// between the probe and the DELETE would have that verdict destroyed by a delete
+// decided on a stale read, and nothing would rebuild it: the evaluation that
+// wrote it has already stamped rules_evaluated_at, so the artist drops out of the
+// dirty set with a rule_results row missing for a rule it is eligible for. That
+// is the frozen-health-score failure this whole change exists to prevent, so the
+// steady-state read must not be able to authorize a stale write.
+//
+// The transaction does not cost the hot path a write lock: when the probe finds
+// nothing to retract -- the common case -- no write is ever issued, so the
+// deferred transaction stays read-only and rolls back. It does hold the pooled
+// connection (the pool is capped at one; see database.Open) for the probe's
+// duration rather than releasing it between statements, which is precisely what
+// makes the probe and the writes atomic. Retraction remains idempotent.
 func (s *Service) RetractRuleVerdict(ctx context.Context, artistID, ruleID string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("beginning retract-verdict transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+
 	var hasResult, hasOpenViolation int
-	err := s.db.QueryRowContext(ctx, `
+	if err := tx.QueryRowContext(ctx, `
 		SELECT
 			EXISTS(SELECT 1 FROM rule_results
 			        WHERE artist_id = ? AND rule_id = ?),
 			EXISTS(SELECT 1 FROM rule_violations
 			        WHERE artist_id = ? AND rule_id = ? AND status = ?)
 	`, artistID, ruleID, artistID, ruleID,
-		ViolationStatusOpen).Scan(&hasResult, &hasOpenViolation)
-	if err != nil {
+		ViolationStatusOpen).Scan(&hasResult, &hasOpenViolation); err != nil {
 		return false, fmt.Errorf("checking stored verdict for skipped rule: %w", err)
 	}
 	if hasResult == 0 && hasOpenViolation == 0 {
@@ -173,7 +196,7 @@ func (s *Service) RetractRuleVerdict(ctx context.Context, artistID, ruleID strin
 	}
 
 	if hasResult != 0 {
-		if _, err := s.db.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`DELETE FROM rule_results WHERE artist_id = ? AND rule_id = ?`,
 			artistID, ruleID); err != nil {
 			return false, fmt.Errorf("deleting rule_result for skipped rule: %w", err)
@@ -181,13 +204,17 @@ func (s *Service) RetractRuleVerdict(ctx context.Context, artistID, ruleID strin
 	}
 	if hasOpenViolation != 0 {
 		now := time.Now().UTC().Format(time.RFC3339)
-		if _, err := s.db.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE rule_violations
 			   SET status = ?, resolved_at = ?, updated_at = ?
 			 WHERE artist_id = ? AND rule_id = ? AND status = ?
 		`, ViolationStatusResolved, now, now, artistID, ruleID, ViolationStatusOpen); err != nil {
 			return false, fmt.Errorf("resolving open violation for skipped rule: %w", err)
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("committing retract-verdict transaction: %w", err)
 	}
 	return true, nil
 }

@@ -238,22 +238,14 @@ func TestMigration024_ArmsExcludedAndLockedArtistsForReEvaluation(t *testing.T) 
 		t.Fatalf("unlocking the artist: %v", err)
 	}
 
-	var dirty int
-	if err := db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM artists
-		WHERE id = 'api-locked'
-		  AND is_excluded = 0
-		  AND locked = 0
-		  AND (
-		    rules_evaluated_at IS NULL
-		    OR (dirty_since IS NOT NULL AND datetime(dirty_since) > datetime(rules_evaluated_at))
-		  )`).Scan(&dirty); err != nil {
-		t.Fatalf("running the dirty predicate: %v", err)
+	dirtyIDs, err := artist.NewService(db).ListDirtyIDs(ctx)
+	if err != nil {
+		t.Fatalf("ListDirtyIDs after unlocking: %v", err)
 	}
-	if dirty != 1 {
-		t.Errorf("after unlocking, the artist is NOT dirty, so the pipeline will never re-walk "+
-			"it and the rows migration 024 deleted are never rebuilt: its health score is frozen "+
-			"permanently (dirty=%d, want 1)", dirty)
+	if !slices.Contains(dirtyIDs, "api-locked") {
+		t.Errorf("ListDirtyIDs = %v after unlocking; want it to contain %q. The artist is NOT "+
+			"dirty, so the pipeline will never re-walk it and the rows migration 024 deleted are "+
+			"never rebuilt: its health score is frozen permanently.", dirtyIDs, "api-locked")
 	}
 }
 
