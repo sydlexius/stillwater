@@ -18,6 +18,22 @@ import (
 // whitespace, quote, or end of string.
 var sensitiveParamRe = regexp.MustCompile(`(?i)(api_?key|token|secret|password|authorization)=([^&\s"']+)`)
 
+// audioDBKeyPathRe redacts the key segment of a TheAudioDB v1 URL
+// (.../api/v1/json/{key}/artist-mb.php), which carries the key as a PATH segment
+// where sensitiveParamRe, a query-parameter rule, cannot see it. A transport
+// failure surfaces as a *url.Error embedding the whole request URL, and #2457
+// threads scrubbed provider errors into the image-search UI, so an unscrubbed
+// path reaches the operator.
+//
+// This is defense-in-depth, not the closure of a live leak: the adapter routes
+// any user-configured key to v2, which sends it in an X-API-KEY header, so the
+// only credential that can ever occupy a v1 path segment is the PUBLIC free-tier
+// constant "123". It is pinned to v1 deliberately -- a v\d+ pattern also matches
+// v2, whose corresponding segment is the endpoint NAME (lookup, search), and
+// redacting that would destroy the very diagnostic the new error banner exists
+// to show.
+var audioDBKeyPathRe = regexp.MustCompile(`(?i)(theaudiodb\.com/api/v1/json)/[^/\s"']+`)
+
 // wikidataQIDRe matches a well-formed Wikidata Q-item identifier. Callers that
 // accept a last-path-segment as a QID must validate against this to avoid
 // propagating malformed values like "Qabc" or "Qspecial:Random" through
@@ -25,17 +41,20 @@ var sensitiveParamRe = regexp.MustCompile(`(?i)(api_?key|token|secret|password|a
 // mask the MBID fallback.
 var wikidataQIDRe = regexp.MustCompile(`^Q\d+$`)
 
-// ScrubError removes sensitive query parameter values (API keys, tokens, passwords)
-// from error strings before they are written to logs. Provider errors may contain
-// full request URLs with credentials in query parameters (e.g. Fanart.tv includes
-// api_key in every request URL).
+// ScrubError removes sensitive credentials from error strings before they are
+// written to logs or shown to an operator. Provider errors may contain full
+// request URLs with credentials in a query parameter (Fanart.tv includes api_key
+// in every request URL), plus TheAudioDB's v1 path segment as defense-in-depth
+// (see audioDBKeyPathRe -- only the public free-tier key can appear there).
 func ScrubError(err error) string {
 	return scrubSensitiveParams(err.Error())
 }
 
-// scrubSensitiveParams redacts values of sensitive query parameters in s.
+// scrubSensitiveParams redacts sensitive query parameter values in s, plus the
+// path-embedded AudioDB v1 key segment that no query-parameter rule can catch.
 func scrubSensitiveParams(s string) string {
-	return sensitiveParamRe.ReplaceAllString(s, "${1}=REDACTED")
+	s = sensitiveParamRe.ReplaceAllString(s, "${1}=REDACTED")
+	return audioDBKeyPathRe.ReplaceAllString(s, "${1}/REDACTED")
 }
 
 // FieldSource records which provider supplied a given field.
@@ -68,6 +87,12 @@ type FetchResult struct {
 	Sources            []FieldSource   `json:"sources"`
 	Errors             []string        `json:"errors"`
 	AttemptedProviders []ProviderName  `json:"attempted_providers,omitempty"`
+	// ImageProviderStatuses records, for every image provider FetchImages
+	// iterated, whether it was queried, skipped (and why), or errored (with a
+	// scrubbed message). Set only by FetchImages. It lets the UI distinguish a
+	// search that ran everywhere and found little from one where most providers
+	// were never queried at all (issue #2457).
+	ImageProviderStatuses []ProviderImageStatus `json:"provider_statuses,omitempty"`
 	// AttemptedFields lists fields the orchestrator queried a provider for,
 	// regardless of whether any provider returned data. Useful for telemetry
 	// and "we tried these" UI signals.
@@ -303,15 +328,83 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 	return result, nil
 }
 
+// ImageProviderOutcome discriminates what happened to a single provider during
+// FetchImages. It is the discriminator of ProviderImageStatus.
+type ImageProviderOutcome string
+
+const (
+	// ImageOutcomeQueried means the provider was actually called. The provider
+	// may still have returned zero images (a genuine "found nothing").
+	ImageOutcomeQueried ImageProviderOutcome = "queried"
+	// ImageOutcomeSkipped means the provider was never called because its
+	// provider-specific ID is unknown and it cannot accept an MBID.
+	ImageOutcomeSkipped ImageProviderOutcome = "skipped"
+	// ImageOutcomeErrored means the provider was called and failed. The empty
+	// or thin result set is therefore incomplete.
+	ImageOutcomeErrored ImageProviderOutcome = "errored"
+)
+
+// SkipReasonNoProviderID is the well-known Reason value recorded when a
+// provider is skipped because the artist has no ID for it. Callers branch on
+// the constant rather than matching on message text.
+const SkipReasonNoProviderID = "no_artist_id"
+
+// ProviderImageStatus reports the outcome of a single provider's image query
+// inside FetchImages. It exists so callers can distinguish "every provider was
+// queried and there really are no images" from "most providers were never
+// queried at all" -- two states that rendered identically before issue #2457.
+//
+// It deliberately mirrors ProviderSearchStatus (same per-provider shape, same
+// scrubbed-text convention) but is a distinct type because image fetching has a
+// third outcome that provider search does not: a provider can be skipped
+// entirely. Folding a skip state into ProviderSearchStatus's boolean Errored
+// field would either lie ("errored") or stay silent, which is the bug.
+type ProviderImageStatus struct {
+	Provider ProviderName         `json:"provider"`
+	Outcome  ImageProviderOutcome `json:"outcome"`
+	// Reason is empty for ImageOutcomeQueried, a well-known constant such as
+	// SkipReasonNoProviderID for ImageOutcomeSkipped, and the user-presentable,
+	// secret-redacted error text from ScrubError(err) for ImageOutcomeErrored.
+	// Provider URLs embed API keys, so the raw error text must never reach a
+	// template; storing the scrubbed string (not the error) makes that
+	// structural rather than a convention a future caller can forget.
+	Reason string `json:"reason,omitempty"`
+}
+
+// mbidCapableProviders lists the providers that appear in ProviderIDMap (i.e.
+// have a provider-specific ID of their own) but whose adapters ALSO accept a
+// bare MusicBrainz ID. Such a provider must fall back to the MBID when its own
+// ID is unknown, not be skipped.
+//
+// AudioDB is the only one: its GetArtist/GetImages dispatch on the shape of the
+// id, routing a numeric id to artist.php and anything else (a MusicBrainz UUID)
+// to artist-mb.php. Discogs, Deezer and Spotify have no MBID lookup endpoint
+// and genuinely cannot be queried without their own ID.
+var mbidCapableProviders = map[ProviderName]bool{
+	NameAudioDB: true,
+}
+
+// ProviderAcceptsMBID reports whether prov can be queried with a bare
+// MusicBrainz ID in place of its own provider-specific ID.
+func ProviderAcceptsMBID(prov ProviderName) bool {
+	return mbidCapableProviders[prov]
+}
+
 // FetchImages queries all configured, image-capable providers and collects
 // every image candidate they return. Providers are queried in the order
 // determined by imageProvidersInPriorityOrder, which derives ordering from
 // the configured image field priorities (thumb, fanart, logo, banner).
 // All providers are always queried so that callers (image search UI, ImageFixer
 // quality sorting) receive the full set of candidates to choose from.
-// providerIDs supplies provider-specific IDs for providers that do not accept MBIDs
-// (e.g. Deezer uses its own numeric ID). Providers without an entry in providerIDs
-// receive the MBID. Providers with an empty entry are skipped.
+//
+// providerIDs supplies provider-specific IDs. A provider with no entry receives
+// the MBID. A provider with an empty entry receives the MBID too when
+// ProviderAcceptsMBID reports it can use one (AudioDB); otherwise it is skipped,
+// because it has no way to be looked up.
+//
+// Every provider iterated contributes exactly one entry to
+// result.ImageProviderStatuses (queried / skipped / errored) so callers can tell
+// a degraded search from an empty one.
 func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs map[ProviderName]string) (*FetchResult, error) {
 	result := &FetchResult{
 		Metadata: &ArtistMetadata{},
@@ -323,37 +416,62 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 	}
 
 	for _, p := range providers {
+		name := p.Name()
 		id := mbid
-		if pid, ok := providerIDs[p.Name()]; ok {
-			if pid == "" {
-				continue // provider-specific ID not known; skip rather than fail
-			}
+		if pid, ok := providerIDs[name]; ok && pid != "" {
 			id = pid
+		} else if ok && !ProviderAcceptsMBID(name) {
+			// Provider-specific ID not known and the provider has no MBID
+			// lookup: it cannot be queried at all. Report the skip instead of
+			// silently dropping it (issue #2457).
+			o.logger.Debug("provider skipped: no provider-specific ID",
+				slog.String("provider", string(name)))
+			result.ImageProviderStatuses = append(result.ImageProviderStatuses, ProviderImageStatus{
+				Provider: name,
+				Outcome:  ImageOutcomeSkipped,
+				Reason:   SkipReasonNoProviderID,
+			})
+			continue
 		}
 		images, err := p.GetImages(ctx, id)
 		if err != nil {
 			var notFound *ErrNotFound
 			if errors.As(err, &notFound) {
 				o.logger.Debug("provider has no images for artist",
-					slog.String("provider", string(p.Name())),
+					slog.String("provider", string(name)),
 					slog.String("id", id))
+				// Not-found is a genuine "queried, found nothing", not a failure.
+				result.ImageProviderStatuses = append(result.ImageProviderStatuses, ProviderImageStatus{
+					Provider: name,
+					Outcome:  ImageOutcomeQueried,
+				})
 				continue
 			}
+			scrubbed := ScrubError(err)
 			o.logger.Warn("provider image fetch failed",
-				slog.String("provider", string(p.Name())),
-				slog.String("error", ScrubError(err)),
+				slog.String("provider", string(name)),
+				slog.String("error", scrubbed),
 				retryAfterAttr(err))
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: image fetch failed", p.Name()))
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: image fetch failed", name))
+			result.ImageProviderStatuses = append(result.ImageProviderStatuses, ProviderImageStatus{
+				Provider: name,
+				Outcome:  ImageOutcomeErrored,
+				Reason:   scrubbed,
+			})
 			// Only signal AIMD on rate-limit / provider-unavailable errors.
 			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
 			if o.aimd != nil && IsRateLimitError(err) {
-				o.aimd.RecordFailure(p.Name(), RetryAfterDuration(err))
+				o.aimd.RecordFailure(name, RetryAfterDuration(err))
 			}
 			continue
 		}
 		result.Images = append(result.Images, images...)
+		result.ImageProviderStatuses = append(result.ImageProviderStatuses, ProviderImageStatus{
+			Provider: name,
+			Outcome:  ImageOutcomeQueried,
+		})
 		if o.aimd != nil {
-			o.aimd.RecordSuccess(p.Name())
+			o.aimd.RecordSuccess(name)
 		}
 	}
 
@@ -1543,11 +1661,12 @@ func isAllMusicID(s string) bool {
 // Deprecated: Callers with an *artist.Artist should use Artist.ProviderIDMap()
 // instead. This function remains for use in contexts without an Artist struct.
 //
-// All four providers are always included in the map. For FetchMetadata's
-// getProviderResult, an empty value causes fallback to MBID. For FetchImages,
-// an empty value signals "skip this provider" (it cannot accept MBIDs).
-// Omitting the key entirely would cause FetchImages to pass the MBID to
-// providers that only accept their own numeric ID format.
+// All four providers are always included in the map. An empty value means "this
+// artist's ID for that provider is unknown". FetchMetadata's getProviderResult
+// falls back to the MBID in that case. FetchImages falls back to the MBID for
+// providers ProviderAcceptsMBID reports can use one (AudioDB, whose adapter
+// routes a non-numeric id to artist-mb.php) and skips the rest (Discogs, Deezer
+// and Spotify have no MBID lookup endpoint).
 func BuildProviderIDMap(audioDBID, discogsID, deezerID, spotifyID string) map[ProviderName]string {
 	return map[ProviderName]string{
 		NameAudioDB: audioDBID,

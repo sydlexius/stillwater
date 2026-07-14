@@ -123,9 +123,12 @@ type DiscographyAlbum struct {
 // ProviderIDMap returns the artist's provider-specific IDs as a map keyed by
 // provider name, suitable for passing to orchestrator FetchMetadata/FetchImages.
 //
-// All four providers are always included in the map. For FetchMetadata, an
-// empty value causes fallback to MBID. For FetchImages, an empty value signals
-// "skip this provider" (it cannot accept MBIDs).
+// All four providers are always included in the map; an empty value means the
+// artist's ID for that provider is unknown. FetchMetadata falls back to the
+// MBID in that case. FetchImages falls back to the MBID for providers that can
+// accept one (AudioDB, see provider.ProviderAcceptsMBID) and skips the rest
+// (Discogs, Deezer and Spotify have no MusicBrainz lookup endpoint), reporting
+// each skip so the operator sees it (issue #2457).
 func (a *Artist) ProviderIDMap() map[provider.ProviderName]string {
 	return map[provider.ProviderName]string{
 		provider.NameAudioDB: a.AudioDBID,

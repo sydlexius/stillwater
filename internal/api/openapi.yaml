@@ -4299,6 +4299,33 @@ paths:
                     items:
                       type: string
                     description: Errors encountered during the image search. May be null when no errors occurred.
+                  provider_statuses:
+                    type: [array, "null"]
+                    description: >-
+                      What actually happened for each provider consulted. "errors" lists only
+                      failures, so on its own it cannot distinguish a provider that was never
+                      queried (no artist ID stored for it) from one that was queried and found
+                      nothing. A thin result set is not evidence that the search was complete.
+                    items:
+                      type: object
+                      required: [provider, outcome]
+                      properties:
+                        provider:
+                          type: string
+                          description: Provider name, e.g. "discogs".
+                        outcome:
+                          type: string
+                          enum: [queried, skipped, errored]
+                          description: Whether the provider was queried, skipped, or returned an error.
+                        reason:
+                          type: string
+                          description: >-
+                            Why the provider was not usable. When outcome is `skipped` this is a
+                            stable machine token safe to branch on (currently only `no_artist_id`:
+                            the artist has no ID for this provider and the provider cannot be
+                            looked up by MusicBrainz ID). When outcome is `errored` it is a
+                            human-readable message with credentials redacted, and its wording is
+                            not stable. Omitted when the provider was queried.
             text/html:
               schema:
                 type: string

@@ -91,7 +91,7 @@ func TestFanartSearchResults_SaveButtonHandlesNeedsCrop(t *testing.T) {
 	images := []provider.ImageResult{{
 		URL: "https://example.com/sq.jpg", Type: "fanart", Source: "fanarttv", Width: 800, Height: 800,
 	}}
-	if err := FanartSearchResults("art-1", images, "").Render(testCtx(t), &sb); err != nil {
+	if err := FanartSearchResults("art-1", images, "", nil).Render(testCtx(t), &sb); err != nil {
 		t.Fatalf("render FanartSearchResults: %v", err)
 	}
 	html := sb.String()
