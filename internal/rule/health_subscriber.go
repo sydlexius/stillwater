@@ -255,5 +255,23 @@ func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) 
 					"artist_id", artistID, "artist", a.Name, "rule_id", rid, "error", err)
 			}
 		}
+
+		// Issue #2509: retract, do not merely decline to write. A rule the
+		// engine SKIPPED for this artist (the capability gate found the
+		// artist lacks the data the rule needs) is not in RulesConsidered,
+		// so the loop above never touches its rows. Anything a previous
+		// evaluation left behind -- a pass row, or an open violation -- is a
+		// verdict the code can no longer stand behind, and it stays visible
+		// to every reader that does not consult the gate. Withdrawing both
+		// closes the stale-verdict window for the pass -> skipped transition
+		// exactly as the compensating fail write above closes it for
+		// pass -> fail.
+		for _, s := range result.RulesSkipped {
+			if _, err := h.engine.service.RetractRuleVerdict(ctx, artistID, s.RuleID); err != nil {
+				h.logger.Warn("health subscriber: retracting stored verdict for skipped rule",
+					"artist_id", artistID, "artist", a.Name, "rule_id", s.RuleID,
+					"reason", s.Reason, "error", err)
+			}
+		}
 	}
 }

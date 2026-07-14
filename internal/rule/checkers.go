@@ -1030,9 +1030,16 @@ func checkDirectoryNameMismatch(_ context.Context, a *artist.Artist, cfg RuleCon
 // with a distinct alternative that the fixer cannot choose on its own.
 func (e *Engine) makeImageDuplicateChecker() Checker {
 	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
-		if a.Path == "" || e.db == nil {
+		if e.db == nil {
 			return nil
 		}
+		// A path-less artist is NOT skipped here by returning nil: nil means
+		// "passed", and reporting an artist as passing a rule that never looked
+		// at it is the bug (#2509). Detection runs off the stored hashes in
+		// artist_images instead. An artist with too few stored hashes to compare
+		// never reaches this checker at all -- capImageDuplicate marks the rule
+		// ineligible, so it is reported as skipped and stays out of the health
+		// denominator.
 
 		tolerance := cfg.Tolerance
 		if tolerance <= 0 || tolerance > 1.0 {
@@ -1071,7 +1078,12 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 			Severity: effectiveSeverity(cfg),
 			Message: fmt.Sprintf("artist %s: %s and %s are %.0f%% similar",
 				a.Name, g.a.slotName, g.b.slotName, g.similarity*100),
-			Fixable: g.withinTypeFanart,
+			// The fixer deletes and renumbers FILES, so it cannot act on an
+			// artist with no directory. The duplicate is still worth reporting;
+			// it is just not fixable from here. A platform-side fix (delete the
+			// image through the Emby/Jellyfin API) is possible but deliberately
+			// out of scope -- see #2513.
+			Fixable: g.withinTypeFanart && a.Path != "",
 		}
 	}
 }
@@ -1090,9 +1102,13 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 // type, and therefore the only place one image type can hold two files at all.
 func (e *Engine) makeImageDuplicateExactChecker() Checker {
 	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
-		if a.Path == "" || e.db == nil {
+		if e.db == nil {
 			return nil
 		}
+		// As in makeImageDuplicateChecker: a path-less artist is evaluated from
+		// its stored content hashes rather than being silently passed. The
+		// eligibility gate (capImageDuplicateExact) already removed artists with
+		// fewer than two comparable fanart content hashes.
 
 		primaryName := resolveFanartPrimaryName(ctx, e.platformService)
 		// Tolerance is irrelevant to byte equality; the default is passed
@@ -1128,7 +1144,9 @@ func (e *Engine) makeImageDuplicateExactChecker() Checker {
 			Severity: effectiveSeverity(cfg),
 			Message: fmt.Sprintf("artist %s: %s %s byte-identical to a lower-numbered slot and can be removed",
 				a.Name, strings.Join(labels, ", "), pluralIs(len(labels))),
-			Fixable: true,
+			// Only fixable on disk: the fixer deletes files and renumbers the
+			// survivors. See the note in makeImageDuplicateChecker.
+			Fixable: a.Path != "",
 		}
 	}
 }
