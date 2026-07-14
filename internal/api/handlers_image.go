@@ -801,16 +801,23 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 	// Return HTML for HTMX requests, JSON for API requests
 	if isHTMXRequest(req) {
 		if typeFilter == "fanart" {
-			renderTempl(w, req, templates.FanartSearchResults(artistID, images, sortBy))
+			renderTempl(w, req, templates.FanartSearchResults(artistID, images, sortBy, result.ImageProviderStatuses))
 		} else {
-			renderTempl(w, req, templates.ImageSearchResults(artistID, images, sortBy, a.FanartExists))
+			renderTempl(w, req, templates.ImageSearchResults(artistID, images, sortBy, a.FanartExists, result.ImageProviderStatuses))
 		}
 		return
 	}
 
+	// provider_statuses reports what actually happened per provider: queried,
+	// skipped (and why), or errored (with a scrubbed message). "errors" carries
+	// only the failures, so on its own it cannot distinguish a provider that was
+	// never asked from one that was asked and found nothing -- which is the
+	// invisibility this endpoint is being fixed for. An API client gets the same
+	// facts the UI banner shows.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"images": images,
-		"errors": result.Errors,
+		"images":            images,
+		"errors":            result.Errors,
+		"provider_statuses": result.ImageProviderStatuses,
 	})
 }
 

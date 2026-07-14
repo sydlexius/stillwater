@@ -1274,11 +1274,34 @@ templ imageSortBar(activeSort string) {
 	</div>
 }
 
+// imageProviderStatusBanner warns that the result set below it is incomplete:
+// it names every provider that was never queried (no ID for it) and every
+// provider that was queried and failed. It renders nothing when every provider
+// was queried successfully.
+templ imageProviderStatusBanner(statuses []provider.ProviderImageStatus) {
+	if skippedProviderNames(statuses) != "" {
+		<p class="text-xs text-amber-700 dark:text-amber-400 mb-3" data-sw-providers-skipped>
+			{ tf(ctx, "image.providers_skipped", skippedProviderNames(statuses)) }
+		</p>
+	}
+	for _, st := range erroredProviderStatuses(statuses) {
+		<p class="text-xs text-amber-700 dark:text-amber-400 mb-3" data-sw-provider-errored>
+			{ tf(ctx, "image.provider_errored", st.Provider.DisplayName(), st.Reason) }
+		</p>
+	}
+}
+
 // ImageSearchResults renders the grid of image results from providers.
-// This is used as an HTMX partial response.
-templ ImageSearchResults(artistID string, images []provider.ImageResult, activeSort string, fanartExists bool) {
+// This is used as an HTMX partial response. statuses reports which providers
+// were actually queried so a degraded search is not mistaken for an empty one.
+templ ImageSearchResults(artistID string, images []provider.ImageResult, activeSort string, fanartExists bool, statuses []provider.ProviderImageStatus) {
+	@imageProviderStatusBanner(statuses)
 	if len(images) == 0 {
-		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_providers") }</p>
+		if allProvidersSkipped(statuses) {
+			<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_providers_searched") }</p>
+		} else {
+			<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_providers") }</p>
+		}
 	} else {
 		@imageSortBar(activeSort)
 		<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1291,9 +1314,14 @@ templ ImageSearchResults(artistID string, images []provider.ImageResult, activeS
 
 // FanartSearchResults renders the grid of fanart search results with checkboxes
 // for multi-select and a floating "Save All" bar for bulk download.
-templ FanartSearchResults(artistID string, images []provider.ImageResult, activeSort string) {
+templ FanartSearchResults(artistID string, images []provider.ImageResult, activeSort string, statuses []provider.ProviderImageStatus) {
+	@imageProviderStatusBanner(statuses)
 	if len(images) == 0 {
-		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_fanart_from_providers") }</p>
+		if allProvidersSkipped(statuses) {
+			<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_providers_searched") }</p>
+		} else {
+			<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_fanart_from_providers") }</p>
+		}
 	} else {
 		<div id="fanart-search-results" data-sw-fanart-search data-artist-id={ artistID }>
 			@imageSortBar(activeSort)
