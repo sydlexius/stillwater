@@ -516,6 +516,11 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 		if !p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, passFilter) {
 			acc.persistOK = false
 		}
+		// #2509: the requested rule may have been skipped for this artist
+		// (no capability). Retract any row an earlier evaluation left behind.
+		if !p.retractSkippedResults(ctx, a, postEval.RulesSkipped, passFilter) {
+			acc.persistOK = false
+		}
 	}
 	p.publishAccumulated(ctx, a, acc.metadataFixed, acc.fixedImageTypes)
 	return contrib, acc.persistOK
@@ -987,7 +992,16 @@ func (p *Pipeline) writeFilteredPassResults(ctx context.Context, a *artist.Artis
 			return present
 		}
 	}
-	return p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, passFilter)
+	persisted := p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, passFilter)
+	// #2509: no category filter on the retraction, deliberately. RulesSkipped is
+	// already scope-filtered by EvaluateScoped, and ScopeForCategory puts exactly
+	// the category's rules (eligible AND skipped) in that scope, so every entry
+	// here is in-category by construction. A second category filter over it would
+	// be a no-op at best -- and it was worse than that: the previous filter was
+	// applied to a set that ScopeForCategory could never populate, so the whole
+	// category-scoped retraction was dead code.
+	retracted := p.retractSkippedResults(ctx, a, postEval.RulesSkipped, nil)
+	return persisted && retracted
 }
 
 // allowedRulesForCategory builds the set of rule IDs from
@@ -1078,6 +1092,10 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 			postViolated[postEval.Violations[j].RuleID] = struct{}{}
 		}
 		if !p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, nil) {
+			acc.persistOK = false
+		}
+		// #2509: unscoped run, so every skipped rule is in scope for retraction.
+		if !p.retractSkippedResults(ctx, a, postEval.RulesSkipped, nil) {
 			acc.persistOK = false
 		}
 	}
@@ -1505,6 +1523,49 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 	}
 
 	return fr, nil
+}
+
+// retractSkippedResults withdraws every stored verdict -- the rule_results row
+// AND any still-open rule_violations row -- for the rules the engine SKIPPED for
+// this artist (#2509).
+//
+// The capability gate stops the evaluator from WRITING a pass row for a rule it
+// never ran, but a row written before the gate existed -- or before the artist
+// lost the data the rule needs -- survives on its own. persistPassResults only
+// touches rules in RulesConsidered, and a skipped rule is by construction not in
+// that set, so without this the stale row is never revisited. Every reader that
+// does not consult the gate (GetEnabledRuleResultsForArtist, GetRuleResultCounts,
+// GetRulePassRates) then keeps reporting a rule that never examined the artist as
+// a pass, and the violation list keeps counting an open finding that no evaluation
+// will ever re-check or resolve.
+//
+// filter mirrors the consideredFilter passed to persistPassResults so a scoped
+// run only retracts within its own scope: a single-rule run must not clear rows
+// for rules it was not asked to evaluate. A nil filter is correct wherever the
+// caller passed the same scope to EvaluateScoped, which already restricted
+// RulesSkipped to that scope.
+//
+// Returns true when every retraction succeeded. Failures are warn-logged and fold
+// into the caller's persistOK flag, keeping the artist dirty so the next pass
+// retries -- exactly like a failed pass write.
+func (p *Pipeline) retractSkippedResults(
+	ctx context.Context,
+	a *artist.Artist,
+	skipped []SkippedRule,
+	filter func(ruleID string) bool,
+) bool {
+	ok := true
+	for _, s := range skipped {
+		if filter != nil && !filter(s.RuleID) {
+			continue
+		}
+		if _, err := p.ruleService.RetractRuleVerdict(ctx, a.ID, s.RuleID); err != nil {
+			p.logger.Warn("retracting stored verdict for skipped rule",
+				"rule_id", s.RuleID, "artist", a.Name, "reason", s.Reason, "error", err)
+			ok = false
+		}
+	}
+	return ok
 }
 
 // getCachedRule returns a rule by ID, using an in-memory cache to avoid

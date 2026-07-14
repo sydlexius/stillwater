@@ -103,6 +103,13 @@ type EvaluationResult struct {
 	RulesTotal      int         `json:"rules_total"`
 	HealthScore     float64     `json:"health_score"`
 	RulesConsidered []string    `json:"-"` // not serialized; consumed by persistence paths
+	// RulesSkipped lists the enabled rules that did NOT run for this artist
+	// because they cannot apply to it (no local path, or no comparable stored
+	// data), each with a reason. These rules are outside RulesTotal and
+	// RulesPassed entirely: a rule that never examined the artist is neither a
+	// pass nor a failure, and counting it as a pass is the bug #2509 fixed.
+	// Serialized so an API caller can tell "skipped" from "passed".
+	RulesSkipped []SkippedRule `json:"rules_skipped,omitempty"`
 	// Scoped marks a result produced by EvaluateScoped for a subset of rules.
 	// HealthScore is left zero on such a result: health means passed/total across
 	// ALL eligible rules, so a subset score is not the artist's score and must

@@ -3745,6 +3745,33 @@ paths:
                   rules_total:
                     type: integer
                     description: Total number of applicable rules.
+                  rules_skipped:
+                    type: array
+                    description: |
+                      Rules that did NOT run for this artist because they cannot
+                      apply to it, each with a reason. An API-only artist (no
+                      directory on disk) has no NFO file and may have too few
+                      stored image hashes to compare, for example. Skipped rules
+                      are excluded from rules_total, rules_passed and the health
+                      score entirely: a rule that never examined the artist is
+                      neither a pass nor a failure. Omitted when nothing was
+                      skipped.
+                    items:
+                      type: object
+                      required:
+                        - rule_id
+                        - rule_name
+                        - reason
+                      properties:
+                        rule_id:
+                          type: string
+                          description: ID of the rule that did not run.
+                        rule_name:
+                          type: string
+                          description: Display name of the rule that did not run.
+                        reason:
+                          type: string
+                          description: Why the rule cannot apply to this artist.
                   health_score:
                     type: number
                     description: Health score from 0.0 (worst) to 1.0 (best).

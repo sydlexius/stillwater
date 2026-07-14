@@ -3,9 +3,11 @@ package rule
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"image"
 	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,6 +126,20 @@ type Engine struct {
 	imageDupMu    sync.Mutex
 	imageDupCache map[string]imageDupCacheEntry
 
+	// capabilities holds the per-(rule, artist) eligibility predicates keyed by
+	// rule ID. Consulted by eligibleRules before any checker runs, so that both
+	// the live evaluator and the offline health recompute derive the same set of
+	// applicable rules from one place. Populated in NewEngine; not mutated after.
+	capabilities map[string]ruleCapability
+
+	// imageCapCache memoizes the per-artist image-hash summary that the two
+	// duplicate rules' capability predicates need, so a single evaluation runs
+	// one query per artist instead of one per (rule, call-site). Cleared at the
+	// top of EvaluateScoped, same as imageDupCache. Guarded because evaluation
+	// runs from concurrent HTTP handlers.
+	imageCapMu    sync.Mutex
+	imageCapCache map[string]imageHashCapability
+
 	// ruleCacheMu guards ruleList and ruleFetchedAt.
 	ruleCacheMu   sync.RWMutex
 	ruleList      []Rule
@@ -212,6 +228,14 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleLogoPadding] = e.makeLogoPaddingChecker()
 	e.checkers[RuleNameLanguagePref] = e.makeNameLanguagePrefChecker()
 	e.checkers[RuleDiscographyPopulated] = e.makeDiscographyChecker()
+
+	// Register per-(rule, artist) capability predicates. A rule with no entry
+	// here is always capable and is gated only by Enabled and, for the
+	// filesystem-only rules, FilesystemDependent. See ruleCapability.
+	e.capabilities = map[string]ruleCapability{
+		RuleImageDuplicate:      e.capImageDuplicate,
+		RuleImageDuplicateExact: e.capImageDuplicateExact,
+	}
 	return e
 }
 
@@ -419,7 +443,15 @@ func (e *Engine) EvaluateScoped(ctx context.Context, a *artist.Artist, only map[
 	e.imageDupCache = nil
 	e.imageDupMu.Unlock()
 
-	rules, err := e.eligibleRules(ctx, a)
+	// Same lifetime for the rule-eligibility image-hash summary: one query per
+	// artist per evaluation, shared by both duplicate rules' capability checks
+	// and by the EligibleRuleIDs call the offline health recompute makes right
+	// after this evaluation.
+	e.imageCapMu.Lock()
+	e.imageCapCache = nil
+	e.imageCapMu.Unlock()
+
+	rules, skipped, err := e.eligibleRules(ctx, a)
 	if err != nil {
 		return nil, err
 	}
@@ -429,6 +461,34 @@ func (e *Engine) EvaluateScoped(ctx context.Context, a *artist.Artist, only map[
 		ArtistID:   a.ID,
 		ArtistName: a.Name,
 		Scoped:     scoped,
+	}
+
+	// A scoped run only speaks to the rules it was asked about, so it reports
+	// only the skips within that scope. Reporting a skip for a rule the caller
+	// never asked to evaluate would be noise, not information.
+	for _, s := range skipped {
+		if scoped && !only[s.RuleID] {
+			continue
+		}
+		result.RulesSkipped = append(result.RulesSkipped, s)
+	}
+
+	if len(result.RulesSkipped) > 0 {
+		// Debug rather than Info: this fires once per artist per evaluation, and
+		// on a library with many API-only artists that is a line per artist per
+		// pass. The operator-facing surface is RulesSkipped on the health API
+		// response; this line exists so the same information is recoverable from
+		// the logs when debugging a health score.
+		ids := make([]string, 0, len(result.RulesSkipped))
+		for _, s := range result.RulesSkipped {
+			ids = append(ids, s.RuleID+"="+s.Reason)
+		}
+		e.logger.Debug("rules skipped: not applicable to this artist",
+			slog.String("artist_id", a.ID),
+			slog.String("artist", a.Name),
+			slog.Int("skipped_count", len(result.RulesSkipped)),
+			slog.String("skipped_rules", strings.Join(ids, "; ")),
+		)
 	}
 
 	for i := range rules {
@@ -471,24 +531,25 @@ func (e *Engine) EvaluateScoped(ctx context.Context, a *artist.Artist, only map[
 // offline health recompute needs the same denominator a real evaluation would
 // use, and computing that set twice in two places is how the two silently drift
 // apart and start writing a wrong score.
-func (e *Engine) eligibleRules(ctx context.Context, a *artist.Artist) ([]Rule, error) {
+// It also returns the rules that were SKIPPED because they cannot apply to this
+// artist, each with a reason. A skipped rule is neither passed nor failed: it is
+// out of the denominator entirely. Reporting them is what stops an inapplicable
+// rule from being silently recorded as a pass, which is what #2509 fixed for the
+// duplicate rules and what the filesystem-dependent skip had been doing all along.
+//
+// A rule that is merely disabled, or has no registered checker, is NOT reported
+// as skipped: those are engine/config states, not statements about this artist.
+func (e *Engine) eligibleRules(ctx context.Context, a *artist.Artist) ([]Rule, []SkippedRule, error) {
 	rules, err := e.cachedRules(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	eligible := make([]Rule, 0, len(rules))
+	var skipped []SkippedRule
 	for i := range rules {
 		r := &rules[i]
 		if !r.Enabled {
-			continue
-		}
-
-		// Skip filesystem-dependent rules for artists without a local path.
-		// API-imported artists (Emby/Jellyfin) have no filesystem directory and
-		// cannot have NFO files; evaluating these rules against them produces
-		// false violations.
-		if r.FilesystemDependent && a.Path == "" {
 			continue
 		}
 
@@ -497,18 +558,53 @@ func (e *Engine) eligibleRules(ctx context.Context, a *artist.Artist) ([]Rule, e
 			continue
 		}
 
+		// Skip filesystem-dependent rules for artists without a local path.
+		// API-imported artists (Emby/Jellyfin) have no filesystem directory and
+		// cannot have NFO files; evaluating these rules against them produces
+		// false violations.
+		if r.FilesystemDependent && a.Path == "" {
+			skipped = append(skipped, SkippedRule{RuleID: r.ID, RuleName: r.Name, Reason: SkipReasonNoLocalPath})
+			continue
+		}
+
+		// The general per-(rule, artist) capability gate. Unlike the flag above,
+		// it may consult the database: a rule can be inapplicable to this artist
+		// because the data it compares does not exist, not just because a
+		// directory does not.
+		if capFn, ok := e.capabilities[r.ID]; ok {
+			capable, reason, capErr := capFn(ctx, a)
+			if capErr != nil {
+				return nil, nil, fmt.Errorf("checking capability for rule %s: %w", r.ID, capErr)
+			}
+			if !capable {
+				skipped = append(skipped, SkippedRule{RuleID: r.ID, RuleName: r.Name, Reason: reason})
+				continue
+			}
+		}
+
 		eligible = append(eligible, *r)
 	}
-	return eligible, nil
+	return eligible, skipped, nil
 }
 
 // ScopeForCategory resolves a rule category into the evaluation scope that
-// EvaluateScoped expects: the eligible rules in that category.
+// EvaluateScoped expects: every rule in that category, whether or not the artist
+// is currently capable of being evaluated against it.
 //
 // An empty category returns a nil scope, meaning "evaluate everything" -- that is
-// the whole-artist run. A category that matches no eligible rules returns an
-// EMPTY, NON-NIL scope, meaning "evaluate nothing", which is the honest answer
-// and not an invitation to run every rule.
+// the whole-artist run. A category that matches no rule at all returns an EMPTY,
+// NON-NIL scope, meaning "evaluate nothing", which is the honest answer and not
+// an invitation to run every rule.
+//
+// The scope deliberately includes the category's SKIPPED rules (#2509). Adding an
+// ineligible rule ID to the scope evaluates nothing extra: EvaluateScoped iterates
+// only the ELIGIBLE rules and intersects them with the scope, so an ID that is not
+// eligible can never reach a checker (and therefore never issues an unrequested
+// provider call, the #2476 constraint). What the ID does buy is recognition: the
+// skipped-set filter in EvaluateScoped keeps a SkippedRule only when it is in
+// scope, so without the ID a category run would report RulesSkipped as empty and
+// the pipeline's retraction would silently have nothing to retract -- leaving the
+// stale pass row for a rule that never examined the artist exactly where it was.
 //
 // It runs no checkers and makes no provider calls, so the scope can be computed
 // before deciding what to evaluate.
@@ -516,14 +612,33 @@ func (e *Engine) ScopeForCategory(ctx context.Context, a *artist.Artist, categor
 	if category == "" {
 		return nil, nil
 	}
-	rules, err := e.eligibleRules(ctx, a)
+	eligible, skipped, err := e.eligibleRules(ctx, a)
 	if err != nil {
 		return nil, err
 	}
-	scope := make(map[string]bool, len(rules))
-	for i := range rules {
-		if string(rules[i].Category) == category {
-			scope[rules[i].ID] = true
+	scope := make(map[string]bool, len(eligible)+len(skipped))
+	for i := range eligible {
+		if string(eligible[i].Category) == category {
+			scope[eligible[i].ID] = true
+		}
+	}
+	if len(skipped) == 0 {
+		return scope, nil
+	}
+	// eligibleRules strips the Rule bodies from the skipped set (it carries only
+	// id/name/reason), so the category has to come from the rule cache. This is
+	// the same in-memory snapshot eligibleRules just read; it costs no query.
+	all, err := e.cachedRules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	categoryByID := make(map[string]string, len(all))
+	for i := range all {
+		categoryByID[all[i].ID] = string(all[i].Category)
+	}
+	for _, s := range skipped {
+		if categoryByID[s.RuleID] == category {
+			scope[s.RuleID] = true
 		}
 	}
 	return scope, nil
@@ -537,7 +652,7 @@ func (e *Engine) ScopeForCategory(ctx context.Context, a *artist.Artist, categor
 // rule_results rows happen to exist, because a rule enabled or disabled since
 // the last full pass would otherwise skew the score.
 func (e *Engine) EligibleRuleIDs(ctx context.Context, a *artist.Artist) ([]string, error) {
-	rules, err := e.eligibleRules(ctx, a)
+	rules, _, err := e.eligibleRules(ctx, a)
 	if err != nil {
 		return nil, err
 	}

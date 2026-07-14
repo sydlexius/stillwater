@@ -206,11 +206,20 @@ func resolveImageDupHashes(
 
 	path, ok := imageDupRowPath(r, fanartPaths)
 	if !ok {
-		// Nothing to read. A stored perceptual hash on its own is still
-		// usable for the perceptual tier; the row simply cannot take part
-		// in exact matching (its content hash stays unknown, and unknown
-		// must never be treated as "identical to other unknowns").
-		return resolvedHashes{perceptual: storedPerceptual, usable: havePerceptual}
+		// Nothing to read: no local file backs this row (a path-less API artist,
+		// or a single-slot type that has no slot-to-path mapping). Whatever is
+		// already STORED still stands and is returned as-is -- a stored content
+		// hash lets the row take part in exact matching, a stored perceptual hash
+		// lets it take part in perceptual comparison, and a row with neither is
+		// unusable. Dropping the stored content hash here was what left path-less
+		// artists with no comparable rows at all even after detection was allowed
+		// to reach them (#2509). Unknown still never matches unknown: both tiers
+		// exclude the zero value explicitly.
+		return resolvedHashes{
+			perceptual: storedPerceptual,
+			content:    r.contentHash,
+			usable:     havePerceptual || haveContent,
+		}
 	}
 
 	fh, err := hashImageFile(path, !havePerceptual)
@@ -352,8 +361,10 @@ func exactFanartDuplicates(members []imageDupMember) map[int]bool {
 // that the exact and perceptual rules share one query, one directory scan, and
 // one read per file rather than each paying for their own.
 type imageDupResult struct {
-	// perceptual holds pairs that are visually similar but NOT byte-identical
-	// (byte-identical pairs are the exact tier's, and are excluded here).
+	// perceptual holds visually-similar pairs. Byte-identical pairs are NOT
+	// excluded: the two rules have independent enable toggles, so suppressing
+	// them here would leave a perceptual-only configuration blind to the most
+	// obvious duplicates. See pairImageDuplicates for the full reasoning.
 	perceptual []imageDupGroup
 	// exactFanartToDelete is the set of fanart slots that are byte-identical
 	// to a lower-numbered slot and can be removed with no false positives.
@@ -434,9 +445,16 @@ func findImageDuplicatesImpl(
 	logger *slog.Logger,
 ) (imageDupResult, error) {
 	var out imageDupResult
-	if a.Path == "" || db == nil {
+	if db == nil {
 		return out, nil
 	}
+	// A missing local path is NOT a reason to bail. artist_images is the primary
+	// source here: an API-only artist (Emby/Jellyfin import, no directory on disk)
+	// still has stored phash and content_hash values, and two of them are all
+	// detection needs. Only the filesystem discovery/backfill branch below needs
+	// a path, and it gates itself on one (see discoverFanartForDup). Bailing on
+	// a.Path == "" is what made the duplicate rules report every path-less artist
+	// as PASSING without ever looking at it (#2509).
 
 	raw, err := queryImageDupRows(ctx, db, a, logger)
 	if err != nil {
@@ -472,7 +490,10 @@ func findImageDuplicatesImpl(
 // at all, which is the steady state after the first evaluation.
 // A fresh pass always needs the paths: it re-reads every file by definition.
 func discoverFanartForDup(a *artist.Artist, raw []imageDupRawRow, fanartPrimaryName string, fresh bool, logger *slog.Logger) []string {
-	if fanartPrimaryName == "" {
+	// No local directory: nothing to discover. The caller then runs entirely off
+	// the hashes already stored in artist_images, which is the whole point of
+	// letting a path-less artist reach detection at all.
+	if a.Path == "" || fanartPrimaryName == "" {
 		return nil
 	}
 	needed := fresh

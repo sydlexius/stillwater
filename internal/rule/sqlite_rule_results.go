@@ -113,6 +113,112 @@ func (s *Service) DeleteRuleResultsForRule(ctx context.Context, ruleID string) e
 	return nil
 }
 
+// RetractRuleVerdict withdraws the stored verdicts a skipped rule has no right to
+// keep for one (artist, rule) pair: the rule_results row, and an OPEN
+// rule_violations row. It reports whether anything was actually withdrawn.
+//
+// It deliberately does NOT touch a violation awaiting an operator decision
+// (pending_choice), nor one the operator dismissed. See the note below.
+//
+// This is the retraction half of the capability gate (#2509). When a rule is
+// SKIPPED for an artist -- it cannot be evaluated because the artist lacks the
+// data the rule needs -- any row left behind from an earlier evaluation is a
+// claim the code can no longer stand behind. Declining to write a new row is
+// not enough: the old rows survive. A stale rule_results row keeps every reader
+// that does not consult the capability gate (the artist rule-result breakdown,
+// the compliance grid, the per-rule pass-rate dashboards) reporting a rule that
+// never examined the artist as a genuine outcome. A stale OPEN violation is
+// worse: persistPassResults only resolves violations for rules in
+// RulesConsidered, and a skipped rule is never in that set, so the finding keeps
+// counting against compliance and showing in "needs attention" with no
+// evaluation left that could ever clear it. Both must go, and both must go in
+// the same place, or the artist keeps a verdict in one table after losing it in
+// the other. A DISMISSED violation is left alone: dismissal is the operator's
+// terminal decision (#1107), not a verdict this code made.
+//
+// A PENDING_CHOICE violation is left alone for the same reason, and this is why
+// retraction resolves only OPEN violations rather than reusing
+// ResolveViolationIfActive (which clears both). pending_choice means an image
+// violation is parked awaiting the OPERATOR's decision on which candidate to keep
+// (see the fixer's manual-choice paths). Auto-resolving it on a transient
+// capability loss -- an artist whose hashes were cleared by a rescan, say --
+// destroys a queued human decision to save a stale row, and automation must never
+// overrule a human decision. The row stays; the next evaluation that CAN run the
+// rule either re-raises the finding or resolves it honestly.
+//
+// Retracting nothing is not an error: retraction runs on every evaluation of a
+// skipped rule, so on all but the first pass there is nothing left to withdraw.
+// That steady state is the common one -- a library with many API-only artists
+// re-walks the same skipped rules on every incremental pass -- so the existence
+// check comes first and the writes are issued only when there is something to
+// write. An unconditional DELETE plus UPDATE would open two write transactions
+// per skipped rule per pass against SQLite's single writer, matching zero rows
+// every time.
+//
+// The probe and both writes run in ONE transaction, matching UpsertViolation.
+// Retraction has two independent callers -- the fix pipeline and the
+// event-driven health subscriber, which runs on its own goroutine -- so an
+// evaluation of the same (artist, rule) can be in flight while this runs. Left
+// unserialized, a concurrent evaluation that writes a FRESH, correct verdict
+// between the probe and the DELETE would have that verdict destroyed by a delete
+// decided on a stale read, and nothing would rebuild it: the evaluation that
+// wrote it has already stamped rules_evaluated_at, so the artist drops out of the
+// dirty set with a rule_results row missing for a rule it is eligible for. That
+// is the frozen-health-score failure this whole change exists to prevent, so the
+// steady-state read must not be able to authorize a stale write.
+//
+// The transaction does not cost the hot path a write lock: when the probe finds
+// nothing to retract -- the common case -- no write is ever issued, so the
+// deferred transaction stays read-only and rolls back. It does hold the pooled
+// connection (the pool is capped at one; see database.Open) for the probe's
+// duration rather than releasing it between statements, which is precisely what
+// makes the probe and the writes atomic. Retraction remains idempotent.
+func (s *Service) RetractRuleVerdict(ctx context.Context, artistID, ruleID string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("beginning retract-verdict transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+
+	var hasResult, hasOpenViolation int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+			EXISTS(SELECT 1 FROM rule_results
+			        WHERE artist_id = ? AND rule_id = ?),
+			EXISTS(SELECT 1 FROM rule_violations
+			        WHERE artist_id = ? AND rule_id = ? AND status = ?)
+	`, artistID, ruleID, artistID, ruleID,
+		ViolationStatusOpen).Scan(&hasResult, &hasOpenViolation); err != nil {
+		return false, fmt.Errorf("checking stored verdict for skipped rule: %w", err)
+	}
+	if hasResult == 0 && hasOpenViolation == 0 {
+		return false, nil
+	}
+
+	if hasResult != 0 {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM rule_results WHERE artist_id = ? AND rule_id = ?`,
+			artistID, ruleID); err != nil {
+			return false, fmt.Errorf("deleting rule_result for skipped rule: %w", err)
+		}
+	}
+	if hasOpenViolation != 0 {
+		now := time.Now().UTC().Format(time.RFC3339)
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE rule_violations
+			   SET status = ?, resolved_at = ?, updated_at = ?
+			 WHERE artist_id = ? AND rule_id = ? AND status = ?
+		`, ViolationStatusResolved, now, now, artistID, ruleID, ViolationStatusOpen); err != nil {
+			return false, fmt.Errorf("resolving open violation for skipped rule: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("committing retract-verdict transaction: %w", err)
+	}
+	return true, nil
+}
+
 // GetRuleResultsForArtist returns every persisted rule outcome for a single
 // artist. Rows are ordered by rule_id so callers can render a stable list.
 func (s *Service) GetRuleResultsForArtist(ctx context.Context, artistID string) ([]RuleResult, error) {
