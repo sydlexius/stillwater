@@ -87,12 +87,18 @@ permissions:
 # collapse to the latest run -- which is what cancel-in-progress is FOR, and is
 # behavior worth keeping. Every run still genuinely evaluates the gate.
 #
+# The two branches are NAMESPACED (`label-<name>` vs `code`) rather than sharing
+# a flat namespace. Without the prefix, a label literally named `code` would
+# resolve to the same group as opened/synchronize/reopened and re-introduce the
+# very cross-cancellation this fix removes -- a latent collision waiting for
+# someone to create that label.
+#
 # The expression is deliberately on ONE line. In a YAML folded scalar (>-), a
 # continuation line indented deeper than the first keeps its newline instead of
 # folding to a space, which would embed literal newlines inside the ${{ }}.
 # actionlint accepts that (it checks syntax, not this), so the trap is silent.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name || 'code' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') && format('label-{0}', github.event.label.name) || 'code' }}
   cancel-in-progress: true
 
 jobs:
