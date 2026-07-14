@@ -14,10 +14,39 @@ import (
 // call so the reconcile tests can assert the chained canonical rename actually
 // propagated to platforms. Returns one canned OK entry so
 // CanonicalRenameResult.Platforms is non-empty.
-type recordingSyncer struct{ renamed []string }
+// syncCall is one recorded SyncRename invocation. oldPath is captured because
+// the #2380 survivor reconcile calls SyncRename with oldPath == newPath (it is
+// re-issuing an unchanged path to run the peer relink), and a test that ignored
+// oldPath could not tell that apart from a real rename.
+type syncCall struct {
+	artistID string
+	oldPath  string
+	newPath  string
+}
 
-func (r *recordingSyncer) SyncRename(_ context.Context, artistID, _, newPath string) ([]PlatformRemapResult, error) {
+// recordingSyncer implements PlatformRenameSyncer. events, when non-nil, is a
+// shared log both this and recordingRefresher append to, so a test can assert
+// the ORDER of the two reconcile steps and not merely that both happened.
+type recordingSyncer struct {
+	renamed []string
+	calls   []syncCall
+	err     error
+	results []PlatformRemapResult
+	events  *[]string
+}
+
+func (r *recordingSyncer) SyncRename(_ context.Context, artistID, oldPath, newPath string) ([]PlatformRemapResult, error) {
 	r.renamed = append(r.renamed, artistID+"->"+newPath)
+	r.calls = append(r.calls, syncCall{artistID: artistID, oldPath: oldPath, newPath: newPath})
+	if r.events != nil {
+		*r.events = append(*r.events, "sync")
+	}
+	if r.err != nil {
+		return nil, r.err
+	}
+	if r.results != nil {
+		return r.results, nil
+	}
 	return []PlatformRemapResult{{ConnectionID: "c1", Result: PlatformRemapOK}}, nil
 }
 
@@ -30,12 +59,16 @@ type recordingRefresher struct {
 	calls      int
 	err        error
 	failConns  map[string]string // connID -> error string -> PlatformRemapFailed
+	events     *[]string         // shared with recordingSyncer; see its doc comment
 }
 
 func (r *recordingRefresher) SyncMergeRefresh(_ context.Context, survivorID string, connectionIDs []string) ([]PlatformRefreshResult, error) {
 	r.calls++
 	r.survivorID = survivorID
 	r.conns = append(r.conns, connectionIDs...)
+	if r.events != nil {
+		*r.events = append(*r.events, "refresh")
+	}
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -290,12 +323,103 @@ func TestMergeAndReconcile_MergeErrorSkipsReconcile(t *testing.T) {
 	}
 }
 
-// TestMergeAndReconcile_CanonicalSurvivorSkipsRenameStillRefreshes: a survivor
-// already at its canonical basename gets no rename, but the platform refresh
-// (wire of Finding #1) still fans out over the affected connections.
-func TestMergeAndReconcile_CanonicalSurvivorSkipsRenameStillRefreshes(t *testing.T) {
+// TestMergeAndReconcile_CanonicalSurvivorStillPushesSurvivorPath: a survivor
+// already at its canonical basename gets no rename -- and MUST STILL have its
+// path re-issued to the peers (#2380).
+//
+// This test previously asserted the OPPOSITE ("SyncRename called %v, want none
+// (no rename)") and so enshrined the bug: it would have failed the fix and
+// certified the data loss as intended behavior. The old assertion was reasonable
+// on its face -- no rename happened, so why push a path? -- which is exactly why
+// it survived review.
+//
+// The push matters because SyncRename is the ONLY chokepoint that performs the
+// peer relink. In the common dedupe (merge a duplicate INTO the correctly-named
+// survivor) the basename does not change, so the old code pushed nothing and the
+// peers kept pointing at the loser's now-deleted directory. Emby's and
+// Jellyfin's NFO savers then recreate that directory, the scanner re-imports it
+// as a duplicate row, and the merge is undone.
+//
+// Note oldPath == newPath == the survivor's path: nothing moved. The point is
+// not the path, it is running the relink.
+func TestMergeAndReconcile_CanonicalSurvivorStillPushesSurvivorPath(t *testing.T) {
 	t.Parallel()
 	svc, db, survivorID, loserID := mergeSetup(t) // survivor dir "The Cure" is prefix-canonical
+	ctx := context.Background()
+	events := []string{}
+	sync := &recordingSyncer{events: &events}
+	ref := &recordingRefresher{events: &events}
+	svc.SetPlatformRenameSyncer(sync)
+	svc.SetPlatformMergeRefresher(ref)
+
+	seedEmbyConn(t, db)
+	if err := svc.SetPlatformID(ctx, survivorID, "conn-emby", "emby-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	res, err := svc.MergeAndReconcile(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeAndReconcile: %v", err)
+	}
+
+	// Precondition: this test is only meaningful if NO rename happened. If the
+	// survivor were renamed, the push would come from reconcileSurvivorCanonicalPath
+	// and prove nothing about the gap being closed here.
+	if res.CanonicalRename != nil {
+		t.Fatalf("CanonicalRename = %+v, want nil (survivor already canonical); "+
+			"this test cannot exercise the no-rename gap", res.CanonicalRename)
+	}
+
+	// The fix: the survivor's path is re-issued even though nothing moved.
+	if len(sync.calls) != 1 {
+		t.Fatalf("SyncRename called %d times, want exactly 1: a merge that does not rename "+
+			"the survivor must STILL push its path, or the peers keep pointing at the "+
+			"merged-away directory and recreate it (#2380). calls=%+v", len(sync.calls), sync.calls)
+	}
+	got := sync.calls[0]
+	if got.artistID != survivorID {
+		t.Errorf("SyncRename artistID = %q, want the survivor %q", got.artistID, survivorID)
+	}
+	if got.oldPath != res.SurvivorPath || got.newPath != res.SurvivorPath {
+		t.Errorf("SyncRename paths = (%q -> %q), want both = the survivor's unchanged path %q",
+			got.oldPath, got.newPath, res.SurvivorPath)
+	}
+
+	// The per-connection outcome is reported, not swallowed.
+	if len(res.SurvivorPathSync) != 1 || res.SurvivorPathSync[0].Result != PlatformRemapOK {
+		t.Errorf("SurvivorPathSync = %+v, want one ok entry", res.SurvivorPathSync)
+	}
+
+	// Ordering (maintainer's call): the survivor push runs AFTER the refresh, so
+	// the library scan the refresh triggers gives the relink's peer-resolution
+	// poll a head start rather than making it wait out its full budget.
+	if len(events) != 2 || events[0] != "refresh" || events[1] != "sync" {
+		t.Errorf("reconcile order = %v, want [refresh sync]: the survivor push must run "+
+			"after the platform refresh", events)
+	}
+
+	// The pre-existing refresh behavior is unchanged.
+	if ref.survivorID != survivorID {
+		t.Errorf("refresh survivorID = %q, want %q", ref.survivorID, survivorID)
+	}
+	if !equalStringSets(ref.conns, []string{"conn-emby"}) {
+		t.Errorf("refresh connections = %v, want [conn-emby]", ref.conns)
+	}
+	if len(res.PlatformRefresh) != 1 || res.PlatformRefresh[0].ConnectionID != "conn-emby" {
+		t.Errorf("PlatformRefresh = %+v, want one conn-emby entry", res.PlatformRefresh)
+	}
+}
+
+// TestMergeAndReconcile_RenamedSurvivorPushesPathOnce guards the other side of
+// the branch: when a rename DID happen, reconcileSurvivorCanonicalPath already
+// pushed the path and ran the relink, so the new survivor reconcile must NOT
+// push a second time. Without this, the fix would double-push on every
+// non-canonical merge and pay the relink poll twice.
+func TestMergeAndReconcile_RenamedSurvivorPushesPathOnce(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := nonCanonicalMergeSetup(t)
 	ctx := context.Background()
 	sync := &recordingSyncer{}
 	ref := &recordingRefresher{}
@@ -313,20 +437,144 @@ func TestMergeAndReconcile_CanonicalSurvivorSkipsRenameStillRefreshes(t *testing
 	if err != nil {
 		t.Fatalf("MergeAndReconcile: %v", err)
 	}
-	if res.CanonicalRename != nil {
-		t.Errorf("CanonicalRename = %+v, want nil (survivor already canonical)", res.CanonicalRename)
+
+	// Precondition: a rename really happened, otherwise this asserts nothing.
+	if res.CanonicalRename == nil {
+		t.Fatalf("CanonicalRename = nil, want a rename; this test cannot exercise the "+
+			"already-pushed branch. SurvivorPath=%q", res.SurvivorPath)
 	}
-	if len(sync.renamed) != 0 {
-		t.Errorf("SyncRename called %v, want none (no rename)", sync.renamed)
+	if len(sync.calls) != 1 {
+		t.Errorf("SyncRename called %d times, want exactly 1 (the rename's own push); "+
+			"the survivor reconcile must not push again. calls=%+v", len(sync.calls), sync.calls)
 	}
-	if ref.survivorID != survivorID {
-		t.Errorf("refresh survivorID = %q, want %q", ref.survivorID, survivorID)
+	if res.SurvivorPathSync != nil {
+		t.Errorf("SurvivorPathSync = %+v, want nil when a rename already pushed the path",
+			res.SurvivorPathSync)
 	}
-	if !equalStringSets(ref.conns, []string{"conn-emby"}) {
-		t.Errorf("refresh connections = %v, want [conn-emby]", ref.conns)
+}
+
+// TestMergeAndReconcile_SurvivorPushRefusedIsWarnedNotSwallowed: a push refused
+// by the pre-flight root guard (PlatformRemapFailed -- e.g. an unmapped
+// split-mount connection) must surface as an operator-visible warning. It must
+// NOT fail the merge (which has already committed) and must NOT be silently
+// dropped: a refused push means a peer is still pointing at the merged-away
+// directory and may recreate it.
+func TestMergeAndReconcile_SurvivorPushRefusedIsWarnedNotSwallowed(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+	sync := &recordingSyncer{results: []PlatformRemapResult{{
+		ConnectionID: "conn-emby",
+		Result:       PlatformRemapFailed,
+		Error:        "/host/music/The Cure is outside that server's root folders",
+	}}}
+	svc.SetPlatformRenameSyncer(sync)
+	svc.SetPlatformMergeRefresher(&recordingRefresher{})
+
+	seedEmbyConn(t, db)
+	if err := svc.SetPlatformID(ctx, survivorID, "conn-emby", "emby-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
 	}
-	if len(res.PlatformRefresh) != 1 || res.PlatformRefresh[0].ConnectionID != "conn-emby" {
-		t.Errorf("PlatformRefresh = %+v, want one conn-emby entry", res.PlatformRefresh)
+
+	res, err := svc.MergeAndReconcile(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeAndReconcile returned an error; a refused push must not fail the "+
+			"already-committed merge: %v", err)
+	}
+	if len(sync.calls) != 1 {
+		t.Fatalf("SyncRename called %d times, want 1", len(sync.calls))
+	}
+	if len(res.SurvivorPathSync) != 1 || res.SurvivorPathSync[0].Result != PlatformRemapFailed {
+		t.Errorf("SurvivorPathSync = %+v, want the failed entry reported", res.SurvivorPathSync)
+	}
+	found := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "conn-emby") && strings.Contains(w, "root folders") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Warnings = %v, want one naming conn-emby and the refusal reason; a refused "+
+			"push must be operator-visible, not swallowed", res.Warnings)
+	}
+}
+
+// TestMergeAndReconcile_SurvivorPushEnumerationErrorWarns: SyncRename can fail
+// outright (it enumerates the connections, so a DB or transport failure returns
+// an error rather than per-connection results). The merge has already committed,
+// so this must not fail it -- but it must NOT pass silently either. An
+// enumeration failure means we do not know whether ANY peer was relinked, which
+// is precisely the state that lets a peer recreate the merged-away directory.
+func TestMergeAndReconcile_SurvivorPushEnumerationErrorWarns(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+	sync := &recordingSyncer{err: errors.New("connection enumeration failed")}
+	svc.SetPlatformRenameSyncer(sync)
+	svc.SetPlatformMergeRefresher(&recordingRefresher{})
+
+	seedEmbyConn(t, db)
+	if err := svc.SetPlatformID(ctx, survivorID, "conn-emby", "emby-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	res, err := svc.MergeAndReconcile(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeAndReconcile returned an error; the merge has already committed and a "+
+			"failed peer push must not fail it: %v", err)
+	}
+
+	// Precondition: the push really was attempted and really did fail.
+	if len(sync.calls) != 1 {
+		t.Fatalf("SyncRename called %d times, want 1; the error path was never exercised", len(sync.calls))
+	}
+	if res.SurvivorPathSync != nil {
+		t.Errorf("SurvivorPathSync = %+v, want nil when the push failed outright", res.SurvivorPathSync)
+	}
+	found := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "enumeration failed") && strings.Contains(w, "re-scan") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Warnings = %v, want one carrying the failure and telling the operator to "+
+			"re-scan; a failed push must not be silent", res.Warnings)
+	}
+}
+
+// TestMergeAndReconcile_NoSyncerSkipsSurvivorPush: with platform syncing
+// disabled the survivor push is a no-op and records nothing. It must not panic
+// and must not invent a warning -- there are no peers to be wrong about.
+func TestMergeAndReconcile_NoSyncerSkipsSurvivorPush(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+	svc.SetPlatformMergeRefresher(&recordingRefresher{})
+	// Deliberately no SetPlatformRenameSyncer.
+
+	seedEmbyConn(t, db)
+	if err := svc.SetPlatformID(ctx, survivorID, "conn-emby", "emby-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	res, err := svc.MergeAndReconcile(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeAndReconcile: %v", err)
+	}
+	if res.SurvivorPathSync != nil {
+		t.Errorf("SurvivorPathSync = %+v, want nil with no syncer wired", res.SurvivorPathSync)
+	}
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "re-issue the survivor's path") {
+			t.Errorf("warning %q recorded with no syncer wired; there are no peers to warn about", w)
+		}
 	}
 }
 
