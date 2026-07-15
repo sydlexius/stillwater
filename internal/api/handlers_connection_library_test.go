@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/event"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -616,11 +618,43 @@ func TestPopulateLibrary_ConflictWhenRunning(t *testing.T) {
 // createTestJPEGForHandler generates a minimal 1x1 JPEG image for handler tests.
 func createTestJPEGForHandler(t *testing.T) []byte {
 	t.Helper()
-	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
-	img.Set(0, 0, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+	return createTestJPEGColor(t, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+}
+
+// createTestJPEGColor encodes a 1x1 JPEG of the given color. Two different
+// colors produce byte-DISTINCT JPEGs (so content-hash tells them apart) even
+// though a 1x1 image's perceptual hash is degenerate (all-zero): the backdrop
+// dedup gate keys on content-hash first for exactly this reason.
+func createTestJPEGColor(t *testing.T, c color.RGBA) []byte {
+	t.Helper()
+	im := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	im.Set(0, 0, c)
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, img, nil); err != nil {
+	if err := jpeg.Encode(&buf, im, nil); err != nil {
 		t.Fatalf("encoding test jpeg: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// createGradientJPEG encodes a 32x32 horizontal bright->dark gradient. Unlike a
+// solid color it has a NON-degenerate perceptual hash (each pixel is brighter
+// than its right neighbor, so every dHash bit is set), and that hash is stable
+// across JPEG re-encoding. This is what lets a test exercise cross-run
+// perceptual-hash dedup, where content-hash cannot match (a re-encoded / EXIF-
+// stamped on-disk copy has different bytes but the same decoded pixels).
+func createGradientJPEG(t *testing.T) []byte {
+	t.Helper()
+	const w, h = 32, 32
+	im := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			v := uint8(255 - x*255/(w-1))
+			im.Set(x, y, color.RGBA{R: v, G: v, B: v, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, im, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatalf("encoding gradient jpeg: %v", err)
 	}
 	return buf.Bytes()
 }
@@ -1600,7 +1634,12 @@ func TestValidatedArtistPath_SymlinkEscape(t *testing.T) {
 
 func TestPopulateFromEmby_DownloadsMultipleBackdrops(t *testing.T) {
 	t.Parallel()
-	jpegData := createTestJPEGForHandler(t)
+	// Two DISTINCT backdrops (different colors -> different content-hash) so the
+	// dedup gate keeps both. Using identical bytes here would (correctly) collapse
+	// to a single slot; that path is covered by
+	// TestPopulateFromEmby_DeduplicatesIdenticalBackdrops.
+	jpegData0 := createTestJPEGColor(t, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+	jpegData1 := createTestJPEGColor(t, color.RGBA{R: 0, G: 0, B: 255, A: 255})
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -1629,11 +1668,11 @@ func TestPopulateFromEmby_DownloadsMultipleBackdrops(t *testing.T) {
 		case "/Items/emby-001/Images/Backdrop/0":
 			backdrop0Requested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
-			_, _ = w.Write(jpegData)
+			_, _ = w.Write(jpegData0)
 		case "/Items/emby-001/Images/Backdrop/1":
 			backdrop1Requested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
-			_, _ = w.Write(jpegData)
+			_, _ = w.Write(jpegData1)
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -1690,9 +1729,343 @@ func TestPopulateFromEmby_DownloadsMultipleBackdrops(t *testing.T) {
 	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
+// TestPopulateFromEmby_DeduplicatesIdenticalBackdrops is the #2540 regression
+// guard. Emby's historical fetcher piled the SAME backdrop into an item's
+// BackdropImageTags many times; the mirror wrote each index to a fresh fanart
+// slot because it only checked the destination FILENAME, never the CONTENT.
+// One artist ended up with the same picture 41 times.
+//
+// Here Emby lists three backdrop tags that all resolve to byte-identical image
+// data. After populate exactly ONE fanart file must exist: the content-dedup
+// gate skips the two repeats. This test FAILS before the fix (three slots,
+// result.Images == 3) and passes after.
+func TestPopulateFromEmby_DeduplicatesIdenticalBackdrops(t *testing.T) {
+	t.Parallel()
+	jpegData := createTestJPEGForHandler(t)
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	var reqCount atomic.Int32
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Artists/AlbumArtists":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Radiohead",
+					"SortName":"Radiohead",
+					"Id":"emby-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-001"},
+					"ImageTags":{},
+					"BackdropImageTags":["dup","dup","dup"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		case "/Items/emby-001/Images/Backdrop/0",
+			"/Items/emby-001/Images/Backdrop/1",
+			"/Items/emby-001/Images/Backdrop/2":
+			reqCount.Add(1)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-dedup",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	// All three backdrops must be fetched: dedup happens AFTER download (on the
+	// image content), not by skipping the fetch. If processing stopped at index
+	// 0 this would be < 3 and the test below would pass for the wrong reason.
+	if got := reqCount.Load(); got != 3 {
+		t.Errorf("backdrop requests = %d, want 3 (all indexes fetched, then deduped by content)", got)
+	}
+
+	// Only the first backdrop is kept; the two identical repeats are deduped.
+	if result.Images != 1 {
+		t.Errorf("images = %d, want 1 (two identical backdrops must be deduped)", result.Images)
+	}
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart.jpg")); err != nil {
+		t.Errorf("expected fanart.jpg (the first, kept copy) to exist: %v", err)
+	}
+	// Exactly one fanart file must exist regardless of naming scheme -- a
+	// stronger guard than checking specific dup names, which would miss e.g. a
+	// non-Kodi fanart3.jpg. Any extra fanart* file is a leaked spray copy.
+	entries, err := os.ReadDir(artistDir)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
+	fanartFiles := make([]string, 0, 1)
+	for _, e := range entries {
+		if strings.HasPrefix(strings.ToLower(e.Name()), "fanart") {
+			fanartFiles = append(fanartFiles, e.Name())
+		}
+	}
+	if len(fanartFiles) != 1 {
+		t.Errorf("fanart files on disk = %v, want exactly 1 (identical backdrops must dedup to a single slot)", fanartFiles)
+	}
+
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
+	if err != nil || a == nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a.FanartCount != 1 {
+		t.Errorf("FanartCount = %d, want 1", a.FanartCount)
+	}
+}
+
+// TestBackdropDedup_isDuplicate exercises the dedup decision directly -- the
+// httptest-level tests use 1x1 fixtures whose dHash is the degenerate zero, so
+// they never reach the perceptual-hash comparison branch or the threshold
+// boundary. This table drives both tiers and the phash==0 guard.
+func TestBackdropDedup_isDuplicate(t *testing.T) {
+	t.Parallel()
+	const seeded = uint64(0x0f0f0f0f0f0f0f0f)
+	d := &backdropDedup{content: map[string]struct{}{}}
+	d.add("held-content", seeded)
+	d.add("blank-content", 0) // a degenerate (solid-color) image already held
+
+	cases := []struct {
+		name    string
+		content string
+		phash   uint64
+		want    bool
+	}{
+		{"exact content match (phash irrelevant)", "held-content", 0, true},
+		{"exact phash match, new content", "new", seeded, true},
+		{"phash within threshold (1 bit)", "new", seeded ^ 0x1, true},
+		{"phash at threshold (2 bits)", "new", seeded ^ 0x3, true},
+		{"phash beyond threshold (3 bits)", "new", seeded ^ 0x7, false},
+		{"degenerate zero phash never matches on similarity", "new", 0, false},
+		{"unknown content, distant phash", "new", 0xffffffffffffffff, false},
+	}
+	for _, c := range cases {
+		if got := d.isDuplicate(c.content, c.phash); got != c.want {
+			t.Errorf("%s: isDuplicate(%q, %#x) = %v, want %v", c.name, c.content, c.phash, got, c.want)
+		}
+	}
+}
+
+// TestNewBackdropDedup_SeedsFromDisk verifies the seed path: an image already on
+// disk is hashed and recognized as a duplicate, so a fresh download of the same
+// bytes would be skipped rather than sprayed into a new slot.
+func TestNewBackdropDedup_SeedsFromDisk(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	jpegData := createTestJPEGForHandler(t)
+	existing := filepath.Join(dir, "fanart.jpg")
+	if err := os.WriteFile(existing, jpegData, 0o644); err != nil {
+		t.Fatalf("writing existing fanart: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	d := newBackdropDedup(dir, "fanart.jpg", logger)
+
+	h, err := img.HashFile(existing, true)
+	if err != nil {
+		t.Fatalf("hashing existing file: %v", err)
+	}
+	if !d.isDuplicate(h.Content, h.Perceptual) {
+		t.Error("expected the on-disk fanart to be seeded and recognized as a duplicate")
+	}
+	// A different image must NOT be treated as a duplicate of the seeded one.
+	other := img.ContentHash(createTestJPEGColor(t, color.RGBA{R: 0, G: 128, B: 0, A: 255}))
+	if d.isDuplicate(other, 0) {
+		t.Error("a distinct image was wrongly flagged as a duplicate")
+	}
+}
+
+// TestNewBackdropDedup_EmptyDir tolerates an artist directory with no existing
+// fanart: seeding finds nothing and every hash is initially novel.
+func TestNewBackdropDedup_EmptyDir(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	d := newBackdropDedup(t.TempDir(), "fanart.jpg", logger)
+	if d.isDuplicate("anything", 12345) {
+		t.Error("empty-dir dedup should hold nothing")
+	}
+}
+
+// TestNewBackdropDedup_DiscoverError degrades gracefully when the artist
+// directory cannot be listed (here, it does not exist): seeding logs and
+// returns an empty tracker rather than failing the whole populate.
+func TestNewBackdropDedup_DiscoverError(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	d := newBackdropDedup(missing, "fanart.jpg", logger)
+	if d.isDuplicate("anything", 12345) {
+		t.Error("dedup seeded from an unreadable dir should hold nothing")
+	}
+}
+
+// TestNewBackdropDedup_UnhashableFileSkipped skips a fanart-named file that
+// cannot be hashed (invalid image bytes) instead of aborting the seed. A
+// separate, valid fanart in the same dir is still seeded.
+func TestNewBackdropDedup_UnhashableFileSkipped(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// A fanart-named file that is not a decodable image: HashFile with
+	// needPerceptual fails to decode it, so the seed loop must skip it.
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), []byte("not an image"), 0o644); err != nil {
+		t.Fatalf("writing bad fanart: %v", err)
+	}
+	// A valid numbered fanart that must still be seeded despite the bad one.
+	valid := createTestJPEGColor(t, color.RGBA{R: 12, G: 200, B: 64, A: 255})
+	if err := os.WriteFile(filepath.Join(dir, "fanart1.jpg"), valid, 0o644); err != nil {
+		t.Fatalf("writing valid fanart: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	d := newBackdropDedup(dir, "fanart.jpg", logger)
+
+	h, err := img.HashFile(filepath.Join(dir, "fanart1.jpg"), true)
+	if err != nil {
+		t.Fatalf("hashing valid fanart: %v", err)
+	}
+	if !d.isDuplicate(h.Content, h.Perceptual) {
+		t.Error("the valid fanart should have been seeded even though a sibling file was unhashable")
+	}
+}
+
+// TestPopulateFromEmby_DedupPromotesOrphanedNumberedFanart guards the edge
+// CodeRabbit caught: an artist holds only a NUMBERED fanart (fanart1.jpg, no
+// primary fanart.jpg), and the platform serves that same image at backdrop
+// index 0. The import correctly dedups it (nothing new written), but the
+// artist still genuinely has that fanart -- with an empty primary slot the UI
+// would show no backdrop. The post-loop compaction must therefore still run on
+// a pure-duplicate result and promote fanart1.jpg to the primary fanart.jpg.
+// Before the fix, that promotion only happened as a side effect of index 0
+// being sprayed as a duplicate copy; dedup removed the side effect, so the
+// compaction is now triggered explicitly when duplicates > 0.
+func TestPopulateFromEmby_DedupPromotesOrphanedNumberedFanart(t *testing.T) {
+	t.Parallel()
+	// A non-degenerate image so cross-run PERCEPTUAL-hash dedup fires: the
+	// on-disk copy and the freshly downloaded+converted copy have different
+	// bytes (so content-hash cannot match) but the same decoded pixels.
+	gradient := createGradientJPEG(t)
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	// Only a NUMBERED fanart on disk -- no primary fanart.jpg.
+	if err := os.WriteFile(filepath.Join(artistDir, "fanart1.jpg"), gradient, 0o644); err != nil {
+		t.Fatalf("writing orphaned numbered fanart: %v", err)
+	}
+
+	var backdrop0Requested atomic.Bool
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Artists/AlbumArtists":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Radiohead",
+					"SortName":"Radiohead",
+					"Id":"emby-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-001"},
+					"ImageTags":{},
+					"BackdropImageTags":["dup"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		case "/Items/emby-001/Images/Backdrop/0":
+			backdrop0Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(gradient)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-promote",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	// The served backdrop was a content duplicate of the existing file, so
+	// nothing new was imported -- this is what makes the test specifically
+	// exercise the dedup-then-compact path (a non-dedup would import it, =1).
+	if result.Images != 0 {
+		t.Fatalf("images = %d, want 0 (the backdrop must be recognized as a duplicate of the existing fanart)", result.Images)
+	}
+	// Compaction must have promoted the orphaned numbered file to the primary.
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart.jpg")); err != nil {
+		t.Errorf("expected fanart.jpg (promoted from fanart1.jpg) to exist: %v", err)
+	}
+	entries, err := os.ReadDir(artistDir)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
+	var fanartFiles []string
+	for _, e := range entries {
+		if strings.HasPrefix(strings.ToLower(e.Name()), "fanart") {
+			fanartFiles = append(fanartFiles, e.Name())
+		}
+	}
+	if len(fanartFiles) != 1 || fanartFiles[0] != "fanart.jpg" {
+		t.Errorf("fanart files on disk = %v, want exactly [fanart.jpg] (numbered orphan promoted to primary)", fanartFiles)
+	}
+}
+
 func TestPopulateFromEmby_SkipsExistingBackdrop(t *testing.T) {
 	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
+	// A DISTINCT image for the newly-downloaded slot 1: identical bytes would be
+	// (correctly) deduped against the pre-seeded fanart.jpg, so index 1 must
+	// carry different content to exercise the "skip existing slot, download the
+	// new one" path this test is about.
+	jpegData1 := createTestJPEGColor(t, color.RGBA{R: 0, G: 0, B: 255, A: 255})
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -1730,7 +2103,7 @@ func TestPopulateFromEmby_SkipsExistingBackdrop(t *testing.T) {
 		case "/Items/emby-002/Images/Backdrop/1":
 			backdrop1Requested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
-			_, _ = w.Write(jpegData)
+			_, _ = w.Write(jpegData1)
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -1775,7 +2148,10 @@ func TestPopulateFromEmby_SkipsExistingBackdrop(t *testing.T) {
 
 func TestPopulateFromJellyfin_DownloadsMultipleBackdrops(t *testing.T) {
 	t.Parallel()
+	// Two DISTINCT backdrops so the content-dedup gate keeps both (identical
+	// bytes would collapse to one -- see TestPopulateFromEmby_DeduplicatesIdenticalBackdrops).
 	jpegData := createTestJPEGForHandler(t)
+	jpegData1 := createTestJPEGColor(t, color.RGBA{R: 0, G: 0, B: 255, A: 255})
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -1808,7 +2184,7 @@ func TestPopulateFromJellyfin_DownloadsMultipleBackdrops(t *testing.T) {
 		case "/Items/jf-001/Images/Backdrop/1":
 			backdrop1Requested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
-			_, _ = w.Write(jpegData)
+			_, _ = w.Write(jpegData1)
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -2173,7 +2549,10 @@ func TestScanFromJellyfin_FanartExistsFromBackdropImageTags(t *testing.T) {
 
 func TestPopulateFromEmby_NonKodiBackdropNaming(t *testing.T) {
 	t.Parallel()
+	// Two DISTINCT backdrops so the content-dedup gate keeps both under
+	// non-Kodi naming (backdrop.jpg + backdrop2.jpg).
 	jpegData := createTestJPEGForHandler(t)
+	jpegData1 := createTestJPEGColor(t, color.RGBA{R: 0, G: 0, B: 255, A: 255})
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -2206,7 +2585,7 @@ func TestPopulateFromEmby_NonKodiBackdropNaming(t *testing.T) {
 		case "/Items/emby-nk-001/Images/Backdrop/1":
 			backdrop1Requested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
-			_, _ = w.Write(jpegData)
+			_, _ = w.Write(jpegData1)
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)

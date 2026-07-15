@@ -1114,7 +1114,90 @@ const (
 	backdropSkipped backdropOutcome = iota
 	backdropExisted
 	backdropDownloaded
+	// backdropDuplicate: the image was downloaded but its content matches a
+	// fanart image the artist already holds in another slot, so it was NOT
+	// written. This is the #2540 guard against spraying the same picture into
+	// many slots.
+	backdropDuplicate
 )
+
+// backdropDupPhashThreshold is the maximum Hamming distance between two 64-bit
+// perceptual (dHash) hashes for them to count as the same image. Sprayed
+// duplicates are byte-identical (distance 0) and are caught by the content
+// hash; this tiny threshold additionally catches a re-encoded or rescaled copy
+// of the same picture (a few bits differ). It stays far below the ~20+ distance
+// observed between genuinely distinct backdrops on real libraries, so distinct
+// art is never collapsed.
+const backdropDupPhashThreshold = 2
+
+// backdropDedup tracks the content-hash and perceptual-hash of every fanart
+// image the artist already holds -- the files on disk when the run starts, plus
+// each one saved during the run. It is the #2540 fix: the mirror must skip a
+// downloaded backdrop whose image is already present in another slot instead of
+// writing it to a fresh fanart{N} slot. Emby's historical fetcher listed the
+// same picture under many BackdropImageTags, and the old filename-only slot
+// check wrote each one out, piling the same image into dozens of slots.
+type backdropDedup struct {
+	content map[string]struct{}
+	phashes []uint64
+}
+
+// newBackdropDedup seeds a tracker from the artist's existing on-disk fanart so
+// a duplicate of an already-present image is skipped. A discovery or hashing
+// error degrades to in-run dedup only (still prevents spraying within this
+// populate) rather than failing the download.
+func newBackdropDedup(dir, primary string, log *slog.Logger) *backdropDedup {
+	d := &backdropDedup{content: map[string]struct{}{}}
+	paths, err := img.DiscoverFanart(dir, primary)
+	if err != nil {
+		log.Warn("discovering existing fanart for dedup; proceeding with in-run dedup only",
+			slog.String("dir", dir), slog.String("error", err.Error()))
+		return d
+	}
+	for _, p := range paths {
+		h, herr := img.HashFile(p, true)
+		if herr != nil {
+			// A file we cannot hash cannot be deduped against; log and skip it
+			// rather than fail the whole populate. Worst case a duplicate slips
+			// through, which the remediation pass (#2540 PR-2) still collapses.
+			log.Warn("hashing existing fanart for dedup; skipping this file",
+				slog.String("path", p), slog.String("error", herr.Error()))
+			continue
+		}
+		d.add(h.Content, h.Perceptual)
+	}
+	return d
+}
+
+// isDuplicate reports whether an image with the given hashes is already held.
+func (d *backdropDedup) isDuplicate(content string, phash uint64) bool {
+	if _, ok := d.content[content]; ok {
+		return true
+	}
+	if phash == 0 {
+		// A zero dHash is degenerate (a solid-color or blank image resamples to
+		// a uniform grid): many unrelated blanks share it, so it must not be
+		// used as a similarity signal. Content-hash above is the only safe
+		// check for these -- which means a solid-color backdrop re-downloaded
+		// in a SEPARATE run (where content-hash cannot match the EXIF-stamped
+		// on-disk copy) may not dedup. This is a rare, bounded edge (music
+		// backdrops are almost never solid color); the #2540 remediation pass
+		// (PR-2) collapses any that slip through.
+		return false
+	}
+	for _, existing := range d.phashes {
+		if existing != 0 && img.HammingDistance(existing, phash) <= backdropDupPhashThreshold {
+			return true
+		}
+	}
+	return false
+}
+
+// add records an image's hashes so later slots in the same run dedup against it.
+func (d *backdropDedup) add(content string, phash uint64) {
+	d.content[content] = struct{}{}
+	d.phashes = append(d.phashes, phash)
+}
 
 // downloadBackdrops downloads missing backdrop images for the given tags and,
 // if anything was downloaded or already present, compacts the fanart
@@ -1126,29 +1209,49 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 	r, a := p.r, p.artist
 	primary := r.getActiveFanartPrimary(ctx)
 	kodi := r.isKodiNumbering(ctx)
+	dedup := newBackdropDedup(p.dir, primary, r.logger)
 
 	downloaded := 0
+	duplicates := 0
 	anyExisted := false
 	for i, tag := range backdropTags {
 		if tag == "" {
 			r.logger.Debug("skipping backdrop with empty tag", "artist", a.Name, "index", i)
 			continue
 		}
-		switch p.downloadBackdrop(ctx, i, primary, kodi) {
+		switch p.downloadBackdrop(ctx, i, primary, kodi, dedup) {
 		case backdropExisted:
 			anyExisted = true
 		case backdropDownloaded:
 			downloaded++
+		case backdropDuplicate:
+			duplicates++
 		case backdropSkipped:
 		}
 	}
-	if downloaded > 0 || anyExisted {
+	if duplicates > 0 {
+		// Visible at Info because a nonzero count means the platform served the
+		// same image under multiple backdrop tags -- the #2540 shape. Operators
+		// should be able to see the mirror suppressing the spray.
+		r.logger.Info("skipped duplicate backdrops during import",
+			slog.String("artist", a.Name),
+			slog.Int("duplicates", duplicates))
+	}
+	if downloaded > 0 || anyExisted || duplicates > 0 {
 		// When backdrop index 0 failed (empty tag, download error, etc.)
 		// but later indexes succeeded, no primary fanart file exists.
 		// The UI serves the background image from /images/fanart/file which
 		// only matches the primary name pattern. Compact the numbered files
 		// so the lowest available becomes the primary -- same pattern used
 		// by handleFanartBatchDelete.
+		//
+		// duplicates>0 must run this too: a backdrop deduped against a
+		// pre-existing NUMBERED fanart (e.g. only fanart1.jpg on disk, no
+		// primary) means the artist genuinely holds that image -- but with an
+		// empty primary slot the UI would show no backdrop. Compaction promotes
+		// the numbered file to the primary. Before this fix that promotion only
+		// happened because index 0 was written as a spray copy; dedup removed
+		// that side effect, so the compaction must be triggered explicitly.
 		r.compactFanartIfNeeded(ctx, a.ID, p.dir, primary, kodi)
 		r.updateArtistImageFlag(ctx, a, "fanart")
 		r.updateArtistFanartCount(ctx, a)
@@ -1158,7 +1261,7 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 // downloadBackdrop handles a single backdrop slot: existence check, download,
 // format conversion, and save with provenance metadata. Errors are non-fatal:
 // logged as warnings and reported as backdropSkipped.
-func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, primary string, kodi bool) backdropOutcome {
+func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, primary string, kodi bool, dedup *backdropDedup) backdropOutcome {
 	r, a := p.r, p.artist
 
 	filename := img.FanartFilename(primary, i, kodi)
@@ -1205,6 +1308,36 @@ func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, pri
 		r.logger.Warn("converting backdrop format", "artist", a.Name, "index", i, "error", convertErr)
 		return backdropSkipped
 	}
+
+	// #2540: skip a backdrop whose image the artist already holds in another
+	// slot. Two tiers, both on the pre-save converted bytes:
+	//   - Content-hash catches the dominant vector: the SAME picture served
+	//     under many BackdropImageTags in ONE populate run. Every such copy
+	//     produces identical converted bytes, so their content-hashes match
+	//     exactly (zero false positives). This is what the regression test
+	//     proves and what fixes the 41-copies-in-one-artist prod case.
+	//   - Perceptual-hash carries dedup across runs and against re-encoded
+	//     copies, where content-hash cannot: files already on disk were saved
+	//     with injected (timestamped) EXIF, so their bytes -- and thus their
+	//     content-hash -- differ from a fresh download of the same picture.
+	//     phash is computed on decoded pixels, so it is invariant to that.
+	// The check runs on the converted bytes (what would be written) so a format
+	// conversion cannot make two copies of one picture look distinct.
+	content := img.ContentHash(converted)
+	phash, phErr := img.PerceptualHash(bytes.NewReader(converted))
+	if phErr != nil {
+		// Fall back to content-hash-only dedup; a decode failure here is
+		// unusual and non-fatal to the import.
+		r.logger.Debug("perceptual hash for backdrop dedup failed; using content-hash only",
+			"artist", a.Name, "index", i, "error", phErr)
+		phash = 0
+	}
+	if dedup.isDuplicate(content, phash) {
+		r.logger.Debug("skipping duplicate backdrop already held in another slot",
+			"artist", a.Name, "index", i)
+		return backdropDuplicate
+	}
+
 	meta := &img.ExifMeta{Source: p.connType, Fetched: time.Now().UTC(), Mode: "user"}
 	// An import that lands on an existing slot overwrites the user's image, so it
 	// takes the same backup + rollback protection as every other destructive fanart
@@ -1218,6 +1351,9 @@ func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, pri
 		r.logger.Warn("saving backdrop produced no files", "artist", a.Name, "index", i, "dir", p.dir, "filename", filename)
 		return backdropSkipped
 	}
+	// Record the just-saved image so a later index carrying the same picture is
+	// deduped against it within this same run.
+	dedup.add(content, phash)
 	p.result.Images++
 	return backdropDownloaded
 }
