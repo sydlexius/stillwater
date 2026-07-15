@@ -139,6 +139,13 @@ type imageSaveFinalization struct {
 	// publishOrder selects whether the ArtistUpdated event is published
 	// before or after rule reevaluation. See imagePublishOrder.
 	publishOrder imagePublishOrder
+	// savedFanartSlot, when non-nil, is the exact fanart slot index the save
+	// targeted (the per-slot Crop/Fetch controls, #2281). finalizeImageSave
+	// uses it as the auto-lock target (#2533) instead of deriving one, so a
+	// per-slot edit locks the slot it actually wrote rather than slot 0. Nil
+	// for single-slot types (thumb/logo/banner -> slot 0) and for fanart
+	// append (the appended file lands at FanartCount-1).
+	savedFanartSlot *int
 	// setTriggerOnJSON controls whether the JSON (non-HTMX) response path
 	// also calls setSyncWarningTrigger before writing the body. The HTMX
 	// response path always sets the trigger (its 204 body carries no
@@ -161,6 +168,31 @@ func (r *Router) finalizeImageSave(ctx context.Context, w http.ResponseWriter, a
 		if imageType == "fanart" {
 			r.updateArtistFanartCount(ctx, a)
 		}
+	}
+
+	// #2533: a hand-saved image is operator intent -- auto-lock its slot before
+	// rule re-evaluation runs below, so the rule-engine carve-out
+	// (Pipeline.imageSlotProtected) reliably suppresses the same-request
+	// auto-fix that would otherwise clobber the just-saved crop. This is also
+	// what durably protects the slot from later nightly sweeps. Best-effort:
+	// a lock failure is logged but must not fail the save (consistent with the
+	// other supplementary post-save calls here). Slot resolution: an explicit
+	// per-slot fanart edit (#2281) carries its target slot in savedFanartSlot;
+	// a fanart append lands at the highest slot (FanartCount-1 after the recount
+	// above); every other save targets slot 0.
+	lockSlot := 0
+	switch {
+	case opts.savedFanartSlot != nil:
+		lockSlot = *opts.savedFanartSlot
+	case opts.isFanartAppend && a.FanartCount > 0:
+		lockSlot = a.FanartCount - 1
+	}
+	if err := r.artistService.SetImageLockBySlot(ctx, a.ID, imageType, lockSlot, true); err != nil {
+		r.logger.Warn("auto-locking saved image slot",
+			slog.String("artist_id", a.ID),
+			slog.String("image_type", imageType),
+			slog.Int("slot", lockSlot),
+			slog.String("error", err.Error()))
 	}
 
 	publish := func() {
@@ -411,10 +443,11 @@ func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Requ
 		return
 	}
 	r.finalizeImageSave(req.Context(), w, a, "fanart", saved, imageSaveFinalization{
-		isHTMX:         false,
-		syncBehavior:   syncAllFanart,
-		isFanartAppend: false,
-		publishOrder:   publishBeforeRuleEval,
+		isHTMX:          false,
+		syncBehavior:    syncAllFanart,
+		isFanartAppend:  false,
+		publishOrder:    publishBeforeRuleEval,
+		savedFanartSlot: &slot,
 	})
 }
 
@@ -452,10 +485,11 @@ func (r *Router) handleImageFetchFanartSlot(w http.ResponseWriter, req *http.Req
 		return
 	}
 	r.finalizeImageSave(req.Context(), w, a, "fanart", saved, imageSaveFinalization{
-		isHTMX:         isHTMXRequest(req),
-		syncBehavior:   syncAllFanart,
-		isFanartAppend: false,
-		publishOrder:   publishBeforeRuleEval,
+		isHTMX:          isHTMXRequest(req),
+		syncBehavior:    syncAllFanart,
+		isFanartAppend:  false,
+		publishOrder:    publishBeforeRuleEval,
+		savedFanartSlot: &slot,
 	})
 }
 

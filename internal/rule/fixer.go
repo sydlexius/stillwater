@@ -1700,6 +1700,23 @@ func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violatio
 			}
 		}
 	}
+	// #2533 carve-out: an operator's hand-set image is off-limits to every
+	// auto image fixer. A single-slot image rule (thumb/fanart/logo/banner
+	// exists, min-res, aspect, square) whose target slot is locked or carries
+	// "user" provenance is skipped here -- before any fixer runs -- so a
+	// fetch-replace fix can never clobber a deliberately-set crop. This one
+	// insertion point covers both the synchronous post-crop re-evaluation and
+	// the nightly sweep, since both converge on attemptFix. Multi-slot fanart
+	// deletion (ImageDuplicateFixer) bypasses ruleToImageType and filters
+	// protected slots itself. DiscoveryOnly fixes touch no disk, so they are
+	// still allowed through to surface candidate lists.
+	if !v.Config.DiscoveryOnly {
+		if imageType := ruleToImageType(v.RuleID); imageType != "" {
+			if p.imageSlotProtected(ctx, a.ID, imageType) {
+				return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "skipped: image slot locked or user-set"}
+			}
+		}
+	}
 	for _, f := range p.fixers {
 		if !f.CanFix(v) {
 			continue
@@ -1735,6 +1752,40 @@ func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violatio
 		Fixed:   false,
 		Message: "no fixer available",
 	}
+}
+
+// imageSlotProtected reports whether the artist's primary (slot 0) image of the
+// given type must not be mutated by an auto fixer because the operator set it
+// deliberately -- the row is locked or carries "user" provenance (#2533). Only
+// slot 0 is checked: every rule that reaches this guard via ruleToImageType is
+// single-slot (thumb/logo/banner, and the primary fanart). Multi-slot fanart
+// deletion is handled separately by ImageDuplicateFixer.protectedFanartSlots.
+//
+// On a lookup error the slot is treated as PROTECTED (fail toward
+// preservation), consistent with ImageDuplicateFixer: this is a data-loss
+// carve-out, so an unknown lock state must never let a fetch-replace fixer
+// overwrite an image that might be operator-set. A transient DB error therefore
+// skips the fix and leaves the violation open for the next pass, rather than
+// risking the exact clobber this guard exists to prevent. The one exception is
+// a genuinely un-wired pipeline (no artistService): with no way to read lock
+// state at all, blocking every image fix would break test/bare harnesses, so
+// that case stays non-protecting.
+func (p *Pipeline) imageSlotProtected(ctx context.Context, artistID, imageType string) bool {
+	if p.artistService == nil || imageType == "" {
+		return false
+	}
+	imgs, err := p.artistService.GetImagesForArtist(ctx, artistID)
+	if err != nil {
+		p.logger.Warn("image-slot protection lookup failed; treating slot as protected to avoid clobbering operator artwork",
+			"artist", artistID, "image_type", imageType, "error", err)
+		return true
+	}
+	for i := range imgs {
+		if imgs[i].ImageType == imageType && imgs[i].SlotIndex == 0 {
+			return imgs[i].Locked || imgs[i].Source == "user"
+		}
+	}
+	return false
 }
 
 // publishAfterFix publishes metadata or image changes to platforms after a

@@ -1944,6 +1944,29 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 		}, nil
 	}
 
+	// #2533 carve-out: never delete a fanart slot the operator set by hand.
+	// This fixer deletes by slot index and so bypasses the ruleToImageType
+	// guard in attemptFix; it must filter protected (locked or "user"-
+	// provenance) slots itself. A lock-state read error aborts the fix (no
+	// deletion) rather than risk destroying a protected image -- a wrong delete
+	// is irreversible. It is returned as a hard error to match the identical
+	// DB-error handling of findImageDuplicates above (both read the same
+	// connection, so in practice this errors only if that one already did).
+	protected, protErr := f.protectedFanartSlots(ctx, a.ID)
+	if protErr != nil {
+		return nil, fmt.Errorf("reading fanart lock state for %s: %w", a.Name, protErr)
+	}
+	for slot := range protected {
+		delete(toDelete, slot)
+	}
+	if len(toDelete) == 0 {
+		return &FixResult{
+			RuleID:  ruleID,
+			Fixed:   false,
+			Message: "skipped: duplicate slots locked or user-set",
+		}, nil
+	}
+
 	removedNames, delErr := f.deleteDuplicateFanartWithRollback(ctx, a, primaryName, kodiNumbering, toDelete)
 	if delErr != nil {
 		return nil, delErr
@@ -1960,6 +1983,31 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 		Fixed:   true,
 		Message: fmt.Sprintf("removed %d duplicate fanart file(s) for %s: %s", len(removedNames), a.Name, strings.Join(removedNames, ", ")),
 	}, nil
+}
+
+// protectedFanartSlots returns the set of fanart slot indices for an artist
+// that must not be auto-deleted because the operator set them deliberately --
+// the artist_images row is locked or carries "user" provenance (#2533). The
+// caller filters the deletion set against this before removing anything.
+func (f *ImageDuplicateFixer) protectedFanartSlots(ctx context.Context, artistID string) (map[int]bool, error) {
+	rows, err := f.db.QueryContext(ctx,
+		`SELECT slot_index FROM artist_images
+		 WHERE artist_id = ? AND image_type = 'fanart' AND (locked = 1 OR source = 'user')`,
+		artistID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	protected := make(map[int]bool)
+	for rows.Next() {
+		var slot int
+		if scanErr := rows.Scan(&slot); scanErr != nil {
+			return nil, scanErr
+		}
+		protected[slot] = true
+	}
+	return protected, rows.Err()
 }
 
 // deleteDuplicateFanartWithRollback discovers the artist's fanart files and
