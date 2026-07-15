@@ -1237,13 +1237,21 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 			slog.String("artist", a.Name),
 			slog.Int("duplicates", duplicates))
 	}
-	if downloaded > 0 || anyExisted {
+	if downloaded > 0 || anyExisted || duplicates > 0 {
 		// When backdrop index 0 failed (empty tag, download error, etc.)
 		// but later indexes succeeded, no primary fanart file exists.
 		// The UI serves the background image from /images/fanart/file which
 		// only matches the primary name pattern. Compact the numbered files
 		// so the lowest available becomes the primary -- same pattern used
 		// by handleFanartBatchDelete.
+		//
+		// duplicates>0 must run this too: a backdrop deduped against a
+		// pre-existing NUMBERED fanart (e.g. only fanart1.jpg on disk, no
+		// primary) means the artist genuinely holds that image -- but with an
+		// empty primary slot the UI would show no backdrop. Compaction promotes
+		// the numbered file to the primary. Before this fix that promotion only
+		// happened because index 0 was written as a spray copy; dedup removed
+		// that side effect, so the compaction must be triggered explicitly.
 		r.compactFanartIfNeeded(ctx, a.ID, p.dir, primary, kodi)
 		r.updateArtistImageFlag(ctx, a, "fanart")
 		r.updateArtistFanartCount(ctx, a)

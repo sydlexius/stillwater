@@ -636,6 +636,29 @@ func createTestJPEGColor(t *testing.T, c color.RGBA) []byte {
 	return buf.Bytes()
 }
 
+// createGradientJPEG encodes a 32x32 horizontal bright->dark gradient. Unlike a
+// solid color it has a NON-degenerate perceptual hash (each pixel is brighter
+// than its right neighbor, so every dHash bit is set), and that hash is stable
+// across JPEG re-encoding. This is what lets a test exercise cross-run
+// perceptual-hash dedup, where content-hash cannot match (a re-encoded / EXIF-
+// stamped on-disk copy has different bytes but the same decoded pixels).
+func createGradientJPEG(t *testing.T) []byte {
+	t.Helper()
+	const w, h = 32, 32
+	im := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			v := uint8(255 - x*255/(w-1))
+			im.Set(x, y, color.RGBA{R: v, G: v, B: v, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, im, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatalf("encoding gradient jpeg: %v", err)
+	}
+	return buf.Bytes()
+}
+
 // assertArtistInLibrary fails the test unless the artist holds an
 // artist_libraries membership row for the given library. Populate/scan
 // happy-path tests now look up the artist via the unscoped GetByName /
@@ -1778,6 +1801,13 @@ func TestPopulateFromEmby_DeduplicatesIdenticalBackdrops(t *testing.T) {
 		t.Fatalf("populateFromEmbyCtx: %v", err)
 	}
 
+	// All three backdrops must be fetched: dedup happens AFTER download (on the
+	// image content), not by skipping the fetch. If processing stopped at index
+	// 0 this would be < 3 and the test below would pass for the wrong reason.
+	if got := reqCount.Load(); got != 3 {
+		t.Errorf("backdrop requests = %d, want 3 (all indexes fetched, then deduped by content)", got)
+	}
+
 	// Only the first backdrop is kept; the two identical repeats are deduped.
 	if result.Images != 1 {
 		t.Errorf("images = %d, want 1 (two identical backdrops must be deduped)", result.Images)
@@ -1922,6 +1952,109 @@ func TestNewBackdropDedup_UnhashableFileSkipped(t *testing.T) {
 	}
 	if !d.isDuplicate(h.Content, h.Perceptual) {
 		t.Error("the valid fanart should have been seeded even though a sibling file was unhashable")
+	}
+}
+
+// TestPopulateFromEmby_DedupPromotesOrphanedNumberedFanart guards the edge
+// CodeRabbit caught: an artist holds only a NUMBERED fanart (fanart1.jpg, no
+// primary fanart.jpg), and the platform serves that same image at backdrop
+// index 0. The import correctly dedups it (nothing new written), but the
+// artist still genuinely has that fanart -- with an empty primary slot the UI
+// would show no backdrop. The post-loop compaction must therefore still run on
+// a pure-duplicate result and promote fanart1.jpg to the primary fanart.jpg.
+// Before the fix, that promotion only happened as a side effect of index 0
+// being sprayed as a duplicate copy; dedup removed the side effect, so the
+// compaction is now triggered explicitly when duplicates > 0.
+func TestPopulateFromEmby_DedupPromotesOrphanedNumberedFanart(t *testing.T) {
+	t.Parallel()
+	// A non-degenerate image so cross-run PERCEPTUAL-hash dedup fires: the
+	// on-disk copy and the freshly downloaded+converted copy have different
+	// bytes (so content-hash cannot match) but the same decoded pixels.
+	gradient := createGradientJPEG(t)
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	// Only a NUMBERED fanart on disk -- no primary fanart.jpg.
+	if err := os.WriteFile(filepath.Join(artistDir, "fanart1.jpg"), gradient, 0o644); err != nil {
+		t.Fatalf("writing orphaned numbered fanart: %v", err)
+	}
+
+	var backdrop0Requested atomic.Bool
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Artists/AlbumArtists":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Radiohead",
+					"SortName":"Radiohead",
+					"Id":"emby-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-001"},
+					"ImageTags":{},
+					"BackdropImageTags":["dup"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		case "/Items/emby-001/Images/Backdrop/0":
+			backdrop0Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(gradient)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-promote",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	// The served backdrop was a content duplicate of the existing file, so
+	// nothing new was imported -- this is what makes the test specifically
+	// exercise the dedup-then-compact path (a non-dedup would import it, =1).
+	if result.Images != 0 {
+		t.Fatalf("images = %d, want 0 (the backdrop must be recognized as a duplicate of the existing fanart)", result.Images)
+	}
+	// Compaction must have promoted the orphaned numbered file to the primary.
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart.jpg")); err != nil {
+		t.Errorf("expected fanart.jpg (promoted from fanart1.jpg) to exist: %v", err)
+	}
+	entries, err := os.ReadDir(artistDir)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
+	var fanartFiles []string
+	for _, e := range entries {
+		if strings.HasPrefix(strings.ToLower(e.Name()), "fanart") {
+			fanartFiles = append(fanartFiles, e.Name())
+		}
+	}
+	if len(fanartFiles) != 1 || fanartFiles[0] != "fanart.jpg" {
+		t.Errorf("fanart files on disk = %v, want exactly [fanart.jpg] (numbered orphan promoted to primary)", fanartFiles)
 	}
 }
 
