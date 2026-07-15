@@ -1516,6 +1516,26 @@ func (s *Service) SetImageLock(ctx context.Context, imageID string, locked bool)
 	return s.images.SetLock(ctx, imageID, locked)
 }
 
+// SetImageLockBySlot toggles the lock flag on the artist_images slot identified
+// by imageType + slotIndex, resolving it to the row ID that SetImageLock
+// requires. Manual-save code paths know the imageType and (for fanart) the
+// slot, but not the row ID; this bridges that gap. If no matching row exists
+// yet it is a graceful no-op returning nil -- the exists-flag/provenance upsert
+// path is responsible for creating the row, and a save that has not yet
+// created one has nothing to lock.
+func (s *Service) SetImageLockBySlot(ctx context.Context, artistID, imageType string, slotIndex int, locked bool) error {
+	imgs, err := s.GetImagesForArtist(ctx, artistID)
+	if err != nil {
+		return err
+	}
+	for i := range imgs {
+		if imgs[i].ImageType == imageType && imgs[i].SlotIndex == slotIndex {
+			return s.SetImageLock(ctx, imgs[i].ID, locked)
+		}
+	}
+	return nil
+}
+
 // IsFieldLocked returns true when the artist has the given field marked as
 // locked. Comparison is case-insensitive and ignores leading/trailing
 // whitespace on the input. The typed FieldName parameter encourages

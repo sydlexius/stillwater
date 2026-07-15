@@ -139,6 +139,13 @@ type imageSaveFinalization struct {
 	// publishOrder selects whether the ArtistUpdated event is published
 	// before or after rule reevaluation. See imagePublishOrder.
 	publishOrder imagePublishOrder
+	// savedFanartSlot, when non-nil, is the exact fanart slot index the save
+	// targeted (the per-slot Crop/Fetch controls, #2281). finalizeImageSave
+	// uses it as the auto-lock target (#2533) instead of deriving one, so a
+	// per-slot edit locks the slot it actually wrote rather than slot 0. Nil
+	// for single-slot types (thumb/logo/banner -> slot 0) and for fanart
+	// append (the appended file lands at FanartCount-1).
+	savedFanartSlot *int
 	// setTriggerOnJSON controls whether the JSON (non-HTMX) response path
 	// also calls setSyncWarningTrigger before writing the body. The HTMX
 	// response path always sets the trigger (its 204 body carries no
@@ -161,6 +168,31 @@ func (r *Router) finalizeImageSave(ctx context.Context, w http.ResponseWriter, a
 		if imageType == "fanart" {
 			r.updateArtistFanartCount(ctx, a)
 		}
+	}
+
+	// #2533: a hand-saved image is operator intent -- auto-lock its slot before
+	// rule re-evaluation runs below, so the rule-engine carve-out
+	// (Pipeline.imageSlotProtected) reliably suppresses the same-request
+	// auto-fix that would otherwise clobber the just-saved crop. This is also
+	// what durably protects the slot from later nightly sweeps. Best-effort:
+	// a lock failure is logged but must not fail the save (consistent with the
+	// other supplementary post-save calls here). Slot resolution: an explicit
+	// per-slot fanart edit (#2281) carries its target slot in savedFanartSlot;
+	// a fanart append lands at the highest slot (FanartCount-1 after the recount
+	// above); every other save targets slot 0.
+	lockSlot := 0
+	switch {
+	case opts.savedFanartSlot != nil:
+		lockSlot = *opts.savedFanartSlot
+	case opts.isFanartAppend && a.FanartCount > 0:
+		lockSlot = a.FanartCount - 1
+	}
+	if err := r.artistService.SetImageLockBySlot(ctx, a.ID, imageType, lockSlot, true); err != nil {
+		r.logger.Warn("auto-locking saved image slot",
+			slog.String("artist_id", a.ID),
+			slog.String("image_type", imageType),
+			slog.Int("slot", lockSlot),
+			slog.String("error", err.Error()))
 	}
 
 	publish := func() {
@@ -313,7 +345,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// User uploads always get "user" source provenance.
-	uploadMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), Mode: "user"}
+	uploadMeta := &img.ExifMeta{Source: artist.ImageSourceUser, Fetched: time.Now().UTC(), Mode: "user"}
 
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
@@ -393,7 +425,7 @@ func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Requ
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodiNumbering := r.isKodiNumbering(req.Context())
 	targetName := img.FanartFilename(primary, slot, kodiNumbering)
-	slotMeta := &img.ExifMeta{Source: "user"}
+	slotMeta := &img.ExifMeta{Source: artist.ImageSourceUser}
 	if existingPath, found := img.FindExistingImage(dir, []string{targetName}); found {
 		if existingMeta, readErr := img.ReadProvenance(existingPath); readErr == nil && existingMeta != nil {
 			slotMeta = existingMeta
@@ -411,10 +443,11 @@ func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Requ
 		return
 	}
 	r.finalizeImageSave(req.Context(), w, a, "fanart", saved, imageSaveFinalization{
-		isHTMX:         false,
-		syncBehavior:   syncAllFanart,
-		isFanartAppend: false,
-		publishOrder:   publishBeforeRuleEval,
+		isHTMX:          false,
+		syncBehavior:    syncAllFanart,
+		isFanartAppend:  false,
+		publishOrder:    publishBeforeRuleEval,
+		savedFanartSlot: &slot,
 	})
 }
 
@@ -442,7 +475,7 @@ func (r *Router) handleImageFetchFanartSlot(w http.ResponseWriter, req *http.Req
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodiNumbering := r.isKodiNumbering(req.Context())
 	targetName := img.FanartFilename(primary, slot, kodiNumbering)
-	slotMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
+	slotMeta := &img.ExifMeta{Source: artist.ImageSourceUser, Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
 
 	saved, saveErr := r.saveFanartSlotProtected(req.Context(), dir, []string{targetName}, data, slotMeta)
 	if saveErr != nil {
@@ -452,10 +485,11 @@ func (r *Router) handleImageFetchFanartSlot(w http.ResponseWriter, req *http.Req
 		return
 	}
 	r.finalizeImageSave(req.Context(), w, a, "fanart", saved, imageSaveFinalization{
-		isHTMX:         isHTMXRequest(req),
-		syncBehavior:   syncAllFanart,
-		isFanartAppend: false,
-		publishOrder:   publishBeforeRuleEval,
+		isHTMX:          isHTMXRequest(req),
+		syncBehavior:    syncAllFanart,
+		isFanartAppend:  false,
+		publishOrder:    publishBeforeRuleEval,
+		savedFanartSlot: &slot,
 	})
 }
 
@@ -623,7 +657,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	fetchMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
+	fetchMeta := &img.ExifMeta{Source: artist.ImageSourceUser, Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
 
 	// #2281 QOL #48: an explicit fanart slot replaces that specific saved
 	// backdrop (already validated to exist, above), taking priority over the
@@ -974,7 +1008,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	// tracked in #2317. Otherwise fall through to the provenance-preserving
 	// single-slot overwrite (recrop-of-primary and all non-fanart types).
 	if body.Type == "fanart" && a.FanartExists && body.Append {
-		appendMeta := &img.ExifMeta{Source: "user", Mode: "user", Fetched: time.Now().UTC()}
+		appendMeta := &img.ExifMeta{Source: artist.ImageSourceUser, Mode: "user", Fetched: time.Now().UTC()}
 		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), imgData, appendMeta)
 		if saveErr != nil {
 			r.logger.Error("appending cropped fanart", "artist_id", artistID, "error", saveErr)
@@ -1003,7 +1037,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	if cropMeta == nil {
-		cropMeta = &img.ExifMeta{Source: "user"}
+		cropMeta = &img.ExifMeta{Source: artist.ImageSourceUser}
 	}
 	cropMeta.Fetched = time.Now().UTC()
 	cropMeta.Mode = "user"
@@ -2702,7 +2736,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 			errMsgs = append(errMsgs, fmt.Sprintf("fetch failed: %s", u))
 			continue
 		}
-		batchMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: u, Mode: "user"}
+		batchMeta := &img.ExifMeta{Source: artist.ImageSourceUser, Fetched: time.Now().UTC(), URL: u, Mode: "user"}
 		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data, batchMeta)
 		if saveErr != nil {
 			r.logger.Error("saving fanart image", "url", u, "error", saveErr)

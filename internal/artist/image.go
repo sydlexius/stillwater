@@ -1,5 +1,15 @@
 package artist
 
+// ImageSourceUser is the provenance sentinel stamped on an image slot's
+// `source` (in EXIF at write time and in the artist_images row) when the
+// operator set that image by hand. The #2533 data-loss carve-out keys off it
+// to protect operator-set artwork from auto image fixers, so every write site
+// that marks user provenance and every read site that checks for it must use
+// this single constant -- a divergent literal on either side would silently
+// disable the protection, and tests hardcoding the same string would not catch
+// the drift.
+const ImageSourceUser = "user"
+
 // ArtistImage represents image metadata for a specific image type and slot.
 // Image metadata is stored in a normalized table (artist_images) rather than
 // as columns on the artists table.
