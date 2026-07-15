@@ -142,7 +142,17 @@ func groupDuplicates(rows []artistRow) []NearDuplicateGroup {
 	parent, rank := initUnionFind(rows)
 
 	find := makeFind(parent)
-	union := makeUnion(parent, rank, find)
+
+	// repMBID tracks, per union-find component (keyed by ROOT), the single
+	// non-empty MusicBrainz ID that component is bound to.  It is seeded from
+	// each row's own MBID (every node is initially its own root) and propagated
+	// on every merge so a later empty-MBID "bridge" row cannot smuggle a second,
+	// conflicting MBID into an already-bound component.
+	repMBID := make(map[string]string, len(rows))
+	for _, r := range rows {
+		repMBID[r.id] = r.mbid
+	}
+	union := makeGuardedUnion(parent, rank, repMBID, find)
 
 	// Track which union-find roots gained an MBID edge so Reason can be set.
 	hasMBIDEdge := make(map[string]bool)
@@ -183,12 +193,29 @@ func makeFind(parent map[string]string) func(string) string {
 	return find
 }
 
-// makeUnion returns a union-by-rank function closed over parent, rank, and find.
-func makeUnion(parent map[string]string, rank map[string]int, find func(string) string) func(string, string) {
-	return func(a, b string) {
+// Guarded-union outcomes.  A union is REFUSED when the two components are each
+// already bound to a different non-empty MBID: merging them would offer two
+// distinct artists (that merely collide on name) as an irreversible merge
+// candidate -- the #2527 data-loss vector.
+const (
+	unionMerged  = "merged"         // the two components were joined
+	unionJoined  = "already-joined" // a and b were already in the same component
+	unionRefused = "refused"        // conflicting non-empty MBIDs; NOT joined
+)
+
+// makeGuardedUnion returns a union-by-rank function that refuses to merge two
+// components bound to different non-empty MBIDs, and otherwise propagates the
+// surviving non-empty MBID onto the merged component's new root.  It returns
+// the outcome so callers can distinguish a refusal from a real or no-op merge.
+func makeGuardedUnion(parent map[string]string, rank map[string]int, repMBID map[string]string, find func(string) string) func(string, string) string {
+	return func(a, b string) string {
 		ra, rb := find(a), find(b)
 		if ra == rb {
-			return
+			return unionJoined
+		}
+		ma, mb := repMBID[ra], repMBID[rb]
+		if ma != "" && mb != "" && ma != mb {
+			return unionRefused
 		}
 		if rank[ra] < rank[rb] {
 			ra, rb = rb, ra
@@ -197,29 +224,70 @@ func makeUnion(parent map[string]string, rank map[string]int, find func(string) 
 		if rank[ra] == rank[rb] {
 			rank[ra]++
 		}
+		// ra is the new root.  Propagate the non-empty MBID (at most one of the
+		// two is non-empty here, or they are equal) so the component stays bound.
+		if repMBID[ra] == "" {
+			repMBID[ra] = repMBID[rb]
+		}
+		return unionMerged
 	}
 }
 
 // unionByNameKey merges all artists that share a normalized name key.
-func unionByNameKey(rows []artistRow, union func(string, string)) {
-	nameKeyToIDs := make(map[string][]string)
+//
+// With the guarded union, a naive pivot-on-first loop is wrong: if a
+// conflicting-MBID row sorts first and becomes the bucket pivot, both genuine
+// duplicates' edges to the pivot are refused and they are left un-unioned (a
+// silent false negative).  Rather than pay the O(k^2) all-pairs sweep over the
+// whole bucket, partition the bucket by MBID and run the guarded cross-edges
+// only between the distinct-MBID representatives (O(p^2) in the small number of
+// distinct MBIDs).
+func unionByNameKey(rows []artistRow, union func(string, string) string) {
+	nameKeyToRows := make(map[string][]artistRow)
 	for _, r := range rows {
 		k := NormalizeIdentityKey(r.name)
 		if k == "" {
 			continue
 		}
-		nameKeyToIDs[k] = append(nameKeyToIDs[k], r.id)
+		nameKeyToRows[k] = append(nameKeyToRows[k], r)
 	}
-	for _, ids := range nameKeyToIDs {
-		for i := 1; i < len(ids); i++ {
-			union(ids[0], ids[i])
+	for _, bucket := range nameKeyToRows {
+		// Partition by MBID. Rows sharing an MBID (or both empty) can never
+		// conflict, so union each partition through its first member. Then run
+		// guarded unions only between the DISTINCT-MBID representatives (O(p^2)
+		// in the number of distinct MBIDs, which is tiny): this joins the
+		// empty-MBID partition into the first compatible non-empty one and lets
+		// the guard keep differing non-empty MBIDs apart. Preserves the
+		// all-pairs correctness (a conflicting row cannot strand genuine
+		// duplicates) without the O(k^2) sweep over the whole bucket.
+		firstByMBID := make(map[string]string)
+		var reps []string // representative id per distinct MBID, first-seen order
+		for _, r := range bucket {
+			if rep, ok := firstByMBID[r.mbid]; ok {
+				union(rep, r.id)
+			} else {
+				firstByMBID[r.mbid] = r.id
+				reps = append(reps, r.id)
+			}
+		}
+		for i := 0; i < len(reps); i++ {
+			for j := i + 1; j < len(reps); j++ {
+				union(reps[i], reps[j])
+			}
 		}
 	}
 }
 
 // unionByMBID merges all artists that share a non-empty MusicBrainz ID and
 // marks the resulting root in hasMBIDEdge so the Reason can be set to "mbid".
-func unionByMBID(rows []artistRow, find func(string) string, union func(string, string), hasMBIDEdge map[string]bool) {
+//
+// Every row in a bucket shares the SAME non-empty MBID, so a component holding
+// any bucket member already has repMBID == that MBID: the guarded union can
+// never refuse within a single-MBID bucket.  Unioning each member with the
+// bucket's first through a representative is therefore correct and O(k); the
+// former all-pairs sweep was pure waste.  An MBID edge always exists, so mark
+// hasMBIDEdge on the resulting root.
+func unionByMBID(rows []artistRow, find func(string) string, union func(string, string) string, hasMBIDEdge map[string]bool) {
 	mbidToIDs := make(map[string][]string)
 	for _, r := range rows {
 		if r.mbid != "" {
@@ -228,7 +296,7 @@ func unionByMBID(rows []artistRow, find func(string) string, union func(string, 
 	}
 	for _, ids := range mbidToIDs {
 		for i := 1; i < len(ids); i++ {
-			union(ids[0], ids[i])
+			union(ids[0], ids[i]) // same MBID -> never refused
 			hasMBIDEdge[find(ids[0])] = true
 		}
 	}
