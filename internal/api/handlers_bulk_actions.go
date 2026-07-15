@@ -262,18 +262,24 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 		StartedAt: time.Now().UTC(),
 	}
 	r.bulkActionMu.Lock()
+	running := false
 	if r.bulkActionProgress != nil {
 		r.bulkActionProgress.mu.RLock()
-		running := r.bulkActionProgress.Status == bulkActionRunning
+		running = r.bulkActionProgress.Status == bulkActionRunning
 		r.bulkActionProgress.mu.RUnlock()
-		if running {
-			r.bulkActionMu.Unlock()
-			writeJSON(w, http.StatusConflict, map[string]any{
-				"status":  "running",
-				"message": "a bulk action is already in progress",
-			})
-			return
-		}
+	}
+	// r.backdropRepairRunning also gates here: a fanart-duplicate remediation
+	// run (handleBackdropDuplicatesRemediate) tombs/renumbers/resyncs an
+	// artist's fanart rows the same way fetch_images/run_rules bulk actions
+	// do, so the two singletons must be mutually exclusive. Both share
+	// bulkActionMu, so this read is atomic with the claim below.
+	if running || r.backdropRepairRunning {
+		r.bulkActionMu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"status":  "running",
+			"message": "a bulk action is already in progress",
+		})
+		return
 	}
 	r.bulkActionProgress = progress
 	r.bulkActionMu.Unlock()

@@ -58,7 +58,29 @@ Six further reports appear in the rail and are coming in a future release:
 
 ## Duplicate and foreign-file reports
 
-The sidebar's **Reports** group also lists **Duplicates** and **Foreign Files**. These are dedicated pages at their own URLs (`/reports/duplicates`, `/reports/foreign-files`), not entries in the two-pane workspace's rail -- each report pill shows a live count when there's something to review. See [Merge duplicate artists](merge-duplicate-artists.md) for the duplicate-detection and merge workflow.
+The sidebar's **Reports** group also lists **Duplicates**, **Backdrop Duplicates**, and **Foreign Files**. These are dedicated pages at their own URLs (`/reports/duplicates`, `/reports/backdrop-duplicates`, `/reports/foreign-files`), not entries in the two-pane workspace's rail. The Duplicates and Foreign Files pills show a live count when there's something to review. See [Merge duplicate artists](merge-duplicate-artists.md) for the duplicate-detection and merge workflow.
+
+## Backdrop duplicates
+
+<!-- code: web/templates/backdrop_duplicates.templ, internal/api/handlers_backdrop_repair.go, internal/rule/fanart_repair.go -->
+
+The **Backdrop Duplicates** report finds cases where the *same* backdrop picture has been written into several of one artist's backdrop (fanart) slots. This commonly happens when a media server's own image fetcher saves the same artwork under many tags, so one artist ends up with the same image repeated across `fanart.jpg`, `fanart2.jpg`, `fanart3.jpg`, and so on. It is an admin-only page; click **Backdrop Duplicates** in the sidebar's Reports group to open it.
+
+The report scans every artist's backdrops on disk and finds **exact duplicates**: byte-for-byte identical files, matched by a content hash. Because a removed copy is identical to the one kept, collapsing them loses nothing.
+
+The page summarizes how many artists are affected and how many exact redundant slots exist, with a per-artist breakdown. If some artists could not be scanned, a **Partial Scan** notice reports how many were skipped, so a partial result is never mistaken for a clean library.
+
+### Collapse exact duplicates
+
+Click **Remediate Exact Duplicates** to collapse the exact (byte-identical) redundant slots across the whole library in one pass. For each affected artist, the lowest-numbered backdrop slot is kept and the identical copies are removed, with the remaining backdrops renumbered into a gap-free sequence.
+
+Remediation is safe by design:
+
+- A backdrop you set or locked yourself is never removed -- operator-curated artwork is protected from this tool.
+- An artist always keeps one copy of each distinct backdrop; the tool only removes proven duplicates.
+- Only one remediation runs at a time, and it will not run while a bulk image action is in progress, so the two can never touch the same files at once.
+
+Only the copies stored locally are collapsed; backdrops already pushed to a connected platform are not removed by this action.
 
 ## Background appearance
 

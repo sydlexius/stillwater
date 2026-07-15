@@ -155,6 +155,21 @@ templ Sidebar(data SidebarData) {
 						hx-trigger="load, every 60s"
 						hx-swap="innerHTML"
 					></li>
+					<!-- Backdrop Duplicates: admin-only within-artist fanart
+					     duplicate report + remediation. Static link with no count
+					     pill: the count needs a full from-disk scan of every artist's
+					     fanart, too expensive to poll on every sidebar render. -->
+					<li id="sidebar-backdrop-duplicates-nav">
+						<a
+							href={ templ.SafeURL(data.BasePath + "/reports/backdrop-duplicates") }
+							class="sw-sidebar-link sw-sidebar-subnav-link"
+							data-path="/reports/backdrop-duplicates"
+							aria-label={ t(ctx, "nav.reports.backdrop_duplicates") }
+						>
+							@components.IconPhoto("sw-sidebar-icon")
+							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.backdrop_duplicates") }</span>
+						</a>
+					</li>
 					<!-- Foreign Files: admin-only (count endpoint 403s for non-admins;
 					     not present in the v1 non-admin sidebar). ALWAYS visible to
 					     admins even at zero count (allowlist must stay reachable);

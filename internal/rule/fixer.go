@@ -34,13 +34,14 @@ type CandidateDiscoverer interface {
 
 // FixResult describes the outcome of a fix attempt.
 type FixResult struct {
-	RuleID     string           `json:"rule_id"`
-	Fixed      bool             `json:"fixed"`
-	Dismissed  bool             `json:"dismissed,omitempty"` // true when violation was auto-dismissed (e.g. orphaned artist)
-	Message    string           `json:"message"`
-	Candidates []ImageCandidate `json:"candidates,omitempty"` // set when multiple candidates need user selection
-	SavedPath  string           `json:"-"`                    // set by image fixers for post-Update provenance recording
-	ImageType  string           `json:"-"`                    // image type for provenance recording (matches SavedPath)
+	RuleID       string           `json:"rule_id"`
+	Fixed        bool             `json:"fixed"`
+	Dismissed    bool             `json:"dismissed,omitempty"` // true when violation was auto-dismissed (e.g. orphaned artist)
+	Message      string           `json:"message"`
+	Candidates   []ImageCandidate `json:"candidates,omitempty"` // set when multiple candidates need user selection
+	SavedPath    string           `json:"-"`                    // set by image fixers for post-Update provenance recording
+	ImageType    string           `json:"-"`                    // image type for provenance recording (matches SavedPath)
+	SlotsRemoved int              `json:"-"`                    // ACTUAL count of image slots this fix deleted (set by ImageDuplicateFixer); 0 for non-deleting fixers
 }
 
 // RunScope controls which artists "Run Rules" walks. Incremental (the

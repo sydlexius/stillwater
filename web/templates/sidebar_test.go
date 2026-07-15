@@ -55,6 +55,10 @@ func TestSidebar_ReportsSection_AdminChildrenRender(t *testing.T) {
 	if !strings.Contains(html, `hx-trigger="load, every 60s"`) {
 		t.Error("admin sidebar missing duplicates hx-trigger (load + 60s poll)")
 	}
+	// Backdrop Duplicates: admin-only static link (no count pill).
+	if !strings.Contains(html, `data-path="/reports/backdrop-duplicates"`) {
+		t.Error("admin sidebar missing backdrop-duplicates sub-nav child")
+	}
 	// Foreign Files child is always present for admins and uses the sub-nav class.
 	if !strings.Contains(html, `data-path="/reports/foreign-files"`) {
 		t.Error("admin sidebar missing foreign-files sub-nav child")
@@ -88,5 +92,9 @@ func TestSidebar_ReportsSection_NonAdmin(t *testing.T) {
 	}
 	if strings.Contains(html, `data-path="/reports/foreign-files"`) {
 		t.Error("non-admin sidebar must omit the admin-only Foreign Files item")
+	}
+	// Backdrop Duplicates is admin-only (requireForeignAdmin); non-admins must not see it.
+	if strings.Contains(html, `data-path="/reports/backdrop-duplicates"`) {
+		t.Error("non-admin sidebar must omit the admin-only Backdrop Duplicates item")
 	}
 }

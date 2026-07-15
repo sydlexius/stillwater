@@ -288,6 +288,10 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
+    "route": "POST /api/v1/reports/backdrop-duplicates/remediate",
+    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765); admin-gated destructive remediation not suited to the smoke suite. Add a Bruno request when contract-testing this route, then remove this entry."
+  },
+  {
     "route": "POST /api/v1/setup/restore",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },

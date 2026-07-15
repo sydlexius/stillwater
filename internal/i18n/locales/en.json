@@ -466,6 +466,22 @@
   "artists.title": "Artists",
   "artists.view.grid": "Grid view",
   "artists.view.table": "Table view",
+  "backdrop_duplicates.artists_affected": "Artists Affected",
+  "backdrop_duplicates.column_artist": "Artist",
+  "backdrop_duplicates.column_exact_drops": "Exact Drops",
+  "backdrop_duplicates.empty": "No within-artist fanart duplication detected.",
+  "backdrop_duplicates.exact_redundant_slots": "Exact Redundant Slots",
+  "backdrop_duplicates.page_title": "Backdrop Duplicates",
+  "backdrop_duplicates.partial_scan_body.one": "The scan was partial: {count} artist could not be scanned and was skipped.",
+  "backdrop_duplicates.partial_scan_body.other": "The scan was partial: {count} artists could not be scanned and were skipped.",
+  "backdrop_duplicates.partial_scan_title": "Partial Scan",
+  "backdrop_duplicates.remediate_button": "Remediate Exact Duplicates",
+  "backdrop_duplicates.remediate_confirm": "Collapse byte-identical redundant backdrop slots for every affected artist?",
+  "backdrop_duplicates.remediate_note": "Remediation collapses only byte-identical (exact) redundant backdrop slots for every affected artist.",
+  "backdrop_duplicates.remediate_response_error": "Remediation failed. Please try again.",
+  "backdrop_duplicates.remediate_send_error": "Network error while remediating. Please try again.",
+  "backdrop_duplicates.subtitle": "Within-artist fanart (backdrop) duplication detected across the library. Exact duplicates can be collapsed automatically.",
+  "backdrop_duplicates.title": "Backdrop Duplicates",
   "banner.clean.body": "No conflict gating is active. No write-back or round-trip overlap detected.",
   "banner.clean.body_managed": "Write-back savers disabled on: %s. Metadata changes are controlled by Stillwater.",
   "banner.clean.dismiss_aria": "Dismiss",
@@ -1388,6 +1404,7 @@
   "nav.reports": "Reports",
   "nav.reports.compliance": "Compliance",
   "nav.reports.duplicates": "Duplicates",
+  "nav.reports.backdrop_duplicates": "Backdrop Duplicates",
   "nav.reports.foreign": "Unmatched Files",
   "nav.reports.foreign.tooltip": "Unrecognized files in your library, review when you like",
   "nav.reports.foreign.aria": "%d unrecognized files in your library, review when you like",
@@ -2685,23 +2702,19 @@
   "artist.other_findings": "Other findings",
   "artist.add_alias_label": "Add an alias",
   "artist.section_identity": "Identity",
-
   "prefs.drawer.title": "Preferences",
   "prefs.drawer.search_placeholder": "Search preferences...",
   "prefs.drawer.search_label": "Filter preferences",
   "prefs.drawer.footer_hint": "Live preview - saved automatically",
   "prefs.drawer.reset_all": "Reset to defaults",
-
   "prefs.group.appearance": "Appearance",
   "prefs.group.layout": "Layout",
   "prefs.group.typography": "Typography",
   "prefs.group.a11y": "Accessibility and Performance",
   "prefs.group.behavior": "Behavior",
   "prefs.group.artist_layout": "Artist Detail Layout",
-
   "prefs.bg_opacity.flyout_desc": "Flyout is hard-floored at 85% for readability. Full range available in stable Preferences.",
   "prefs.bg_opacity.help": "How opaque cards and the top bar are over the backdrop. The 85% floor keeps text AA-legible over the artwork; raise it toward 100% for fully solid surfaces. Lite mode forces opaque.",
-
   "prefs.density.label": "Layout Density",
   "prefs.density.description": "Controls vertical spacing in lists and grids. Compact fits more content; Spacious adds breathing room.",
   "prefs.density.help": "Vertical breathing room in lists and cards. Compact fits more on screen; Spacious adds padding.",
@@ -2710,27 +2723,21 @@
   "prefs.density.compact": "Compact",
   "prefs.density.comfortable": "Comfortable",
   "prefs.density.spacious": "Spacious",
-
   "prefs.mono_font.label": "Monospace Font",
   "prefs.mono_font.description": "Used for keyboard badges, IDs, and timestamps.",
   "prefs.mono_font.help": "Used for IDs, timestamps, and code values, distinct from the body typeface. All options are system fonts or openly licensed (SIL OFL).",
-
   "prefs.kbd_hints.label": "Keyboard Hints",
   "prefs.kbd_hints.description": "Show or hide keyboard shortcut badges throughout the UI.",
   "prefs.kbd_hints.help": "The full ? shortcut cheat sheet stays available even when inline hints are hidden.",
-
   "prefs.auto_fetch.label": "Prefetch Images",
   "prefs.auto_fetch.description": "Automatically search providers for images when opening an artist's image page.",
   "prefs.auto_fetch.help": "Uses more bandwidth and storage up front in exchange for instant page loads.",
-
   "prefs.notification_enabled.label": "Notifications",
   "prefs.notification_enabled.description": "Show in-app toast notifications for rule violations.",
   "prefs.notification_enabled.help": "Affects in-app toasts only - not email or webhook notifications, which are configured in Settings.",
-
   "prefs.show_platform_debug.label": "Show Platform Debug Tab",
   "prefs.show_platform_debug.description": "Add a Debug tab to each artist page showing the raw API payload from connected platforms.",
   "prefs.show_platform_debug.help": "When on, a Debug tab appears on each artist's detail page with the raw API payload received from connected media servers (Emby, Jellyfin). Useful for diagnosing unexpected IDs, image URLs, or library paths.",
-
   "prefs.sidebar_state.help": "Full shows nav icons with labels. Icon-only reclaims horizontal space; Hidden removes the sidebar entirely.",
   "prefs.content_width.help": "Narrow caps line length for comfortable reading. Wide fills the screen to fit more per row.",
   "prefs.thumbnail_size.help": "Size of artist artwork in lists and the action queue. Shown here at the actual pixel sizes.",
@@ -2745,7 +2752,6 @@
   "prefs.letter_spacing.help": "Tracks the whole UI. Extra Wide (0.05em) is a dyslexia-readability aid; Wide is 0.025em.",
   "prefs.language.help": "Sets the interface language. Biography language fallbacks are configured separately in Settings.",
   "prefs.artist_layout.help": "Drag the handle or use the arrows to reorder; the eye toggles a section's visibility. Hero and action bar are fixed page chrome and are not in the list. The chevron collapses or expands a section in place.",
-
   "prefs.artist_layout.description": "Drag to reorder sections. Toggle the eye to show or hide.",
   "prefs.artist_layout.list_label": "Artist detail sections",
   "prefs.artist_layout.reset": "Reset layout",
@@ -2755,34 +2761,25 @@
   "prefs.artist_layout.expand_section": "Expand",
   "prefs.artist_layout.move_up_aria": "Move %s up",
   "prefs.artist_layout.move_down_aria": "Move %s down",
-
   "prefs.sidebar_state.icons_labels": "Icons + labels",
   "prefs.sidebar_state.icons_only": "Icons only",
   "prefs.sidebar_state.no_sidebar": "No sidebar",
-
   "prefs.content_width.easier_reading": "Easier reading",
   "prefs.content_width.more_per_row": "More per row",
-
   "prefs.font_family.sub.default": "Default",
   "prefs.font_family.sub.os_native": "OS native",
   "prefs.font_family.sub.hyperlegible": "Hyperlegible",
-
   "prefs.mono_font.sub.mono": "Mono",
   "prefs.mono_font.sub.code": "Code",
-
   "prefs.reduced_motion.full": "Full",
   "prefs.reduced_motion.reduced": "Reduced",
-
   "prefs.page_size.unit": "rows / page",
-
   "prefs.help.about_aria": "About %s",
-
   "prefs.section.metadata": "Details",
   "prefs.section.artwork": "Artwork",
   "prefs.section.findings": "Findings",
   "prefs.section.providers": "Providers",
   "prefs.section.discography": "Discography",
   "prefs.section.identifiers": "Identifiers",
-
   "prefs.search.no_match": "No preferences match \"%s\""
 }

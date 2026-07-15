@@ -165,6 +165,17 @@ type Router struct {
 	identifyMu         sync.RWMutex
 	bulkActionProgress *BulkActionProgress
 	bulkActionMu       sync.RWMutex
+	// backdropRepairRunning guards the singleton fanart-duplicate remediation
+	// run (#2540 PR-2 Task 4): only one repair may be in flight at a time, so
+	// a concurrent POST /api/v1/reports/backdrop-duplicates/remediate gets
+	// 409 instead of racing the batch collapse. Guarded by bulkActionMu (not
+	// a dedicated mutex) so the remediation singleton and the bulk-action
+	// singleton share one lock: a fetch_images/run_rules bulk action also
+	// tombs/renumbers/resyncs an artist's fanart rows, so the two must be
+	// mutually exclusive to avoid a TOCTOU file/DB race. Sharing bulkActionMu
+	// makes that exclusion atomic with a single lock and no lock-ordering or
+	// deadlock risk.
+	backdropRepairRunning bool
 	// discographyFetchInFlight holds the artist IDs that currently have a
 	// discography fetch running. A concurrent fetch for the same artist is
 	// rejected with 409: the fetch is a read-modify-write of artist.nfo, so
@@ -908,6 +919,16 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// /reports/duplicates so it is registered right after it; admin-only via the
 	// in-handler requireForeignAdmin gate (same as the page above).
 	mux.HandleFunc("GET "+bp+"/reports/duplicates/ignored", wrapOptionalAuth(r.handleArtistDuplicatesIgnoredPage, optAuthMw))
+	// Within-artist fanart (backdrop) duplication report (#2540 PR-2).
+	// Registered next to /reports/duplicates so it sits alongside the other
+	// Reports-hub detection pages; admin-only via the in-handler
+	// requireForeignAdmin gate (same as the pages above).
+	mux.HandleFunc("GET "+bp+"/reports/backdrop-duplicates", wrapOptionalAuth(r.handleBackdropDuplicatesPage, optAuthMw))
+	// Remediate endpoint for the report above (#2540 PR-2 Task 4): collapses
+	// exact within-artist fanart duplicates library-wide. Registered as a
+	// plain /api/v1 POST (mirrors /api/v1/artists/duplicates/ignore) since the
+	// admin gate is enforced in-handler via requireForeignAdmin.
+	mux.HandleFunc("POST "+bp+"/api/v1/reports/backdrop-duplicates/remediate", wrapAuth(r.handleBackdropDuplicatesRemediate, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		target := r.basePath + "/reports/duplicates"
 		if raw := req.URL.RawQuery; raw != "" {
