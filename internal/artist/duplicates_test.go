@@ -157,7 +157,7 @@ func TestDetectDuplicates(t *testing.T) {
 // seedArtistWithMBID inserts a path-bearing artist and, when mbid is non-empty,
 // its MusicBrainz provider row.  It returns the new artist ID.  Shared by the
 // conflicting-MBID tests below.
-func seedArtistWithMBID(t *testing.T, ctx context.Context, db *sql.DB, name, path, mbid string) string {
+func seedArtistWithMBID(ctx context.Context, t *testing.T, db *sql.DB, name, path, mbid string) string {
 	t.Helper()
 	repo := newSQLiteArtistRepo(db)
 	a := &Artist{Name: name, SortName: name, Path: path}
@@ -180,7 +180,7 @@ func seedArtistWithMBID(t *testing.T, ctx context.Context, db *sql.DB, name, pat
 // conflicting-MBID tests: a "rows are not grouped" pass must not come from a
 // row that silently failed to seed its MBID and so never entered the
 // conflicting-MBID code path at all.
-func assertSeededMBID(t *testing.T, ctx context.Context, db *sql.DB, id, want string) {
+func assertSeededMBID(ctx context.Context, t *testing.T, db *sql.DB, id, want string) {
 	t.Helper()
 	var got string
 	err := db.QueryRowContext(ctx,
@@ -233,13 +233,13 @@ func TestDetectDuplicates_ConflictingMBID(t *testing.T) {
 		mbid2 = "22222222-2222-2222-2222-222222222222"
 	)
 	// Same normalized name key ("duplicity"), different real artists.
-	idA := seedArtistWithMBID(t, ctx, db, "Duplicity", "/music/DuplicityA", mbid1)
-	idB := seedArtistWithMBID(t, ctx, db, "DUPLICITY", "/music/DuplicityB", mbid2)
+	idA := seedArtistWithMBID(ctx, t, db, "Duplicity", "/music/DuplicityA", mbid1)
+	idB := seedArtistWithMBID(ctx, t, db, "DUPLICITY", "/music/DuplicityB", mbid2)
 
 	// Anti-vacuity: prove the distinct MBIDs actually persisted so the
 	// conflicting-MBID path is genuinely exercised.
-	assertSeededMBID(t, ctx, db, idA, mbid1)
-	assertSeededMBID(t, ctx, db, idB, mbid2)
+	assertSeededMBID(ctx, t, db, idA, mbid1)
+	assertSeededMBID(ctx, t, db, idB, mbid2)
 
 	groups, err := DetectDuplicates(ctx, db)
 	if err != nil {
@@ -289,9 +289,9 @@ func TestDetectDuplicates_ConflictingMBIDTransitivity(t *testing.T) {
 		// Three case-variant names that all normalize to the same key
 		// ("aaa bridge"); the guard must keep M1 and M2 apart for ANY bucket
 		// order, so the exact ordering here is not load-bearing.
-		idA := seedArtistWithMBID(t, ctx, db, "Aaa Bridge", "/music/bridgeA", m1)
-		idB := seedArtistWithMBID(t, ctx, db, "AAA BRIDGE", "/music/bridgeB", "") // empty bridge
-		idC := seedArtistWithMBID(t, ctx, db, "aaa bridge", "/music/bridgeC", m2)
+		idA := seedArtistWithMBID(ctx, t, db, "Aaa Bridge", "/music/bridgeA", m1)
+		idB := seedArtistWithMBID(ctx, t, db, "AAA BRIDGE", "/music/bridgeB", "") // empty bridge
+		idC := seedArtistWithMBID(ctx, t, db, "aaa bridge", "/music/bridgeC", m2)
 
 		// Premise guard: all three must share one normalized name key, else the
 		// name-key bucket never forms and the test proves nothing.
@@ -300,8 +300,8 @@ func TestDetectDuplicates_ConflictingMBIDTransitivity(t *testing.T) {
 			t.Fatalf("bridge names do not share a name key; test premise invalid")
 		}
 		_ = idB
-		assertSeededMBID(t, ctx, db, idA, m1)
-		assertSeededMBID(t, ctx, db, idC, m2)
+		assertSeededMBID(ctx, t, db, idA, m1)
+		assertSeededMBID(ctx, t, db, idC, m2)
 
 		groups, err := DetectDuplicates(ctx, db)
 		if err != nil {
@@ -322,13 +322,13 @@ func TestDetectDuplicates_ConflictingMBIDTransitivity(t *testing.T) {
 		// ("orderly") but sort differently by raw ASCII: uppercase bytes sort
 		// before lowercase, so "ORDERLY" < "Orderly" < "orderly".  Give the
 		// CONFLICTING M2 row the all-caps name so it is the ORDER BY name pivot.
-		idPivotConflict := seedArtistWithMBID(t, ctx, db, "ORDERLY", "/music/orderPivot", m2)
-		idA := seedArtistWithMBID(t, ctx, db, "Orderly", "/music/orderA", m1)
-		idB := seedArtistWithMBID(t, ctx, db, "orderly", "/music/orderB", m1)
+		idPivotConflict := seedArtistWithMBID(ctx, t, db, "ORDERLY", "/music/orderPivot", m2)
+		idA := seedArtistWithMBID(ctx, t, db, "Orderly", "/music/orderA", m1)
+		idB := seedArtistWithMBID(ctx, t, db, "orderly", "/music/orderB", m1)
 
-		assertSeededMBID(t, ctx, db, idPivotConflict, m2)
-		assertSeededMBID(t, ctx, db, idA, m1)
-		assertSeededMBID(t, ctx, db, idB, m1)
+		assertSeededMBID(ctx, t, db, idPivotConflict, m2)
+		assertSeededMBID(ctx, t, db, idA, m1)
+		assertSeededMBID(ctx, t, db, idB, m1)
 
 		// Premise guards: identical name keys, and the conflicting row sorts
 		// first (so it is the pivot a pivot-on-first loop would use).
