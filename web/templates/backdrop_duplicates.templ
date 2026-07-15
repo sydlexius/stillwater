@@ -73,7 +73,6 @@ templ BackdropDuplicatesPage(assets AssetPaths, view BackdropDuplicatesPageView)
 							class="sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none shrink-0"
 							hx-post="/api/v1/reports/backdrop-duplicates/remediate"
 							hx-confirm={ t(ctx, "backdrop_duplicates.remediate_confirm") }
-							hx-target="body"
 							data-sw-error={ t(ctx, "backdrop_duplicates.remediate_response_error") }
 							data-sw-net-error={ t(ctx, "backdrop_duplicates.remediate_send_error") }
 							hx-on::response-error="alert(this.dataset.swError)"

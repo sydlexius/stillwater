@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -201,6 +202,57 @@ func TestBackdropDuplicatesPage_PipelineMissingCapability_FailsLoud(t *testing.T
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500 when pipeline lacks fanartDuplicateRepairer", w.Code)
+	}
+}
+
+// TestBackdropDuplicatesPage_ScanError pins the report page's error path: if the
+// scan itself fails, the handler returns 500 rather than a misleading empty report.
+func TestBackdropDuplicatesPage_ScanError(t *testing.T) {
+	t.Parallel()
+	pipeline := &fanartCapablePipeline{
+		stubPipeline: &stubPipeline{},
+		scanFn: func(_ context.Context) (rule.FanartDupReport, error) {
+			return rule.FanartDupReport{}, errors.New("scan failed")
+		},
+	}
+	r := testRouterWithFanartPipeline(t, pipeline)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/backdrop-duplicates", nil))
+	w := httptest.NewRecorder()
+	r.handleBackdropDuplicatesPage(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 when the scan errors", w.Code)
+	}
+}
+
+// TestBackdropDuplicatesRemediate_Error pins the remediate endpoint's error path:
+// if remediation fails, it returns 500 rather than a misleading success summary,
+// and releases the singleton so the next request is not blocked.
+func TestBackdropDuplicatesRemediate_Error(t *testing.T) {
+	t.Parallel()
+	pipeline := &fanartCapablePipeline{
+		stubPipeline: &stubPipeline{},
+		remediateFn: func(_ context.Context) (rule.FanartRepairResult, error) {
+			return rule.FanartRepairResult{}, errors.New("remediate failed")
+		},
+	}
+	r := testRouterWithFanartPipeline(t, pipeline)
+
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/backdrop-duplicates/remediate", nil)
+	w := httptest.NewRecorder()
+	r.handleBackdropDuplicatesRemediate(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 when remediation errors", w.Code)
+	}
+	// The singleton must be released on the error path so a later repair is not
+	// permanently blocked.
+	r.bulkActionMu.Lock()
+	running := r.backdropRepairRunning
+	r.bulkActionMu.Unlock()
+	if running {
+		t.Error("backdropRepairRunning must be released after a failed remediation")
 	}
 }
 

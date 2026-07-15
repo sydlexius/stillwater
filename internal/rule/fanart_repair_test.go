@@ -154,7 +154,6 @@ func TestScanFanartDuplicates_CountsExactDrops(t *testing.T) {
 	if report.ScanErrors != 0 {
 		t.Fatalf("ScanErrors = %d, want 0", report.ScanErrors)
 	}
-	_ = filepath.Join // keep import if unused after edits
 }
 
 // TestRemediateFanartDuplicates_CollapsesExactKeepsSurvivor sets up an artist
@@ -219,7 +218,11 @@ func TestRemediateFanartDuplicates_SkipsLockedSlot(t *testing.T) {
 	if got := len(listFanartFiles(t, dir)); got != 2 {
 		t.Fatalf("locked duplicate was deleted: %d files remain, want 2", got)
 	}
-	_ = res
+	// The one redundant slot is locked, so nothing is removed: the honest
+	// count must be 0, not the 1 an unlocked group would have dropped.
+	if res.SlotsRemoved != 0 {
+		t.Fatalf("SlotsRemoved = %d, want 0 (the only redundant slot is locked)", res.SlotsRemoved)
+	}
 }
 
 // TestFanartDuplicates_NilWiringGuard asserts both entry points hard-fail

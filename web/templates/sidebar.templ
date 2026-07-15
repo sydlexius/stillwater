@@ -115,11 +115,13 @@ templ Sidebar(data SidebarData) {
 		<!-- Reports: visible to ALL users (#1757 fix-round; the v1 sidebar showed
 		     Reports/Compliance to non-admins). The workspace link and the
 		     Compliance report page are reachable by non-admins (wrapOptionalAuth),
-		     so they render for everyone. The Compliance/Duplicates count pills and
-		     the Foreign Files item are admin-only because their count endpoints
-		     return 403 for non-admins, so non-admins get a plain Compliance link
-		     (no polling pill) and the admin-only items are omitted (no lying
-		     markup, no poll-and-403). -->
+		     so they render for everyone. The admin-only Reports entries are the
+		     Compliance/Duplicates count pills, a static Backdrop Duplicates link
+		     (no count pill, since its count needs a full from-disk scan that is too
+		     expensive to poll), and the Foreign Files item; their endpoints 403 for
+		     non-admins, so non-admins get a plain Compliance link (no polling pill)
+		     and the admin-only items are omitted (no lying markup, no
+		     poll-and-403). -->
 		<div class="sw-sidebar-section">
 			<span class="sw-sidebar-section-label" aria-hidden="true">{ t(ctx, "nav.reports") }</span>
 			<ul role="list" class="sw-sidebar-nav-list">

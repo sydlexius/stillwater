@@ -167,6 +167,8 @@ func (p *Pipeline) remediateOneArtistFanart(ctx context.Context, a *artist.Artis
 	// locked) is counted honestly rather than as the requested count.
 	fr, fixErr := fixer.Fix(ctx, a, &Violation{RuleID: RuleImageDuplicateExact})
 	if fixErr != nil {
+		p.logger.Warn("skipping artist in fanart duplicate remediation",
+			slog.String("artist_id", a.ID), slog.String("artist", a.Name), slog.String("error", fixErr.Error()))
 		result.Failures = append(result.Failures, FanartRepairFailure{ArtistID: a.ID, Err: fixErr.Error()})
 		return
 	}
@@ -175,7 +177,10 @@ func (p *Pipeline) remediateOneArtistFanart(ctx context.Context, a *artist.Artis
 	}
 	// Persist the collapsed fanart rows, mirroring Pipeline.FixViolation.
 	if err := p.artistService.Update(ctx, a); err != nil {
-		result.Failures = append(result.Failures, FanartRepairFailure{ArtistID: a.ID, Err: fmt.Sprintf("update after collapse: %v", err)})
+		msg := fmt.Sprintf("update after collapse: %v", err)
+		p.logger.Warn("fanart collapse persisted to disk but the artist row update failed",
+			slog.String("artist_id", a.ID), slog.String("artist", a.Name), slog.String("error", err.Error()))
+		result.Failures = append(result.Failures, FanartRepairFailure{ArtistID: a.ID, Err: msg})
 		return
 	}
 	result.ArtistsProcessed++
