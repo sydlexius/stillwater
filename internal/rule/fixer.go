@@ -1782,7 +1782,7 @@ func (p *Pipeline) imageSlotProtected(ctx context.Context, artistID, imageType s
 	}
 	for i := range imgs {
 		if imgs[i].ImageType == imageType && imgs[i].SlotIndex == 0 {
-			return imgs[i].Locked || imgs[i].Source == "user"
+			return imgs[i].Locked || imgs[i].Source == artist.ImageSourceUser
 		}
 	}
 	return false

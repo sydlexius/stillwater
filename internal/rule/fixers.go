@@ -1992,8 +1992,8 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 func (f *ImageDuplicateFixer) protectedFanartSlots(ctx context.Context, artistID string) (map[int]bool, error) {
 	rows, err := f.db.QueryContext(ctx,
 		`SELECT slot_index FROM artist_images
-		 WHERE artist_id = ? AND image_type = 'fanart' AND (locked = 1 OR source = 'user')`,
-		artistID)
+		 WHERE artist_id = ? AND image_type = 'fanart' AND (locked = 1 OR source = ?)`,
+		artistID, artist.ImageSourceUser)
 	if err != nil {
 		return nil, err
 	}

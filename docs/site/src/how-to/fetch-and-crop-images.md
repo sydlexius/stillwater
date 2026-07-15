@@ -110,6 +110,8 @@ When you want to compare what's currently saved against the candidates from prov
 
 Once a fetch or upload writes a new image, Stillwater reruns the artist's image rules immediately. Violations like "missing thumb" or "missing fanart" disappear from the artist's row and the dashboard the moment the slot is populated, instead of waiting for the next scheduled rule scan.
 
+An image you set by hand -- cropped, uploaded, or fetched into a specific slot -- is locked to that slot automatically. Automatic image rules (including the ones that replace a non-square thumbnail or remove duplicate fanart) will not overwrite or delete a locked or hand-set image, on the immediate rerun or on any later scheduled scan, so a deliberate choice is never undone by automation. This lock lives in Stillwater only; it is not written out to Emby or other connected platforms.
+
 ## Skip rule violations during a fetch
 
 If a fetch returns nothing satisfactory and the rule has "select best candidate" turned on, Stillwater picks the highest-resolution candidate and saves it -- even if it doesn't meet the threshold. The result still flags as a violation, but you've at least populated the slot.
