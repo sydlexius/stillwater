@@ -1016,17 +1016,49 @@ func (a *Application) startFanartHashBackfill(ctx context.Context, db *sql.DB) {
 	if backfillHours <= 0 {
 		backfillHours = 6
 	}
-	primaryFn := func(c context.Context) string {
-		profile, err := a.platformService.GetActive(c)
-		if err != nil || profile == nil {
-			return img.PrimaryFileName(img.DefaultFileNames, "fanart")
+	primaryFn := fanartPrimaryResolver(a.platformService.GetActive, a.logger)
+	go a.maintenanceService.StartFanartHashBackfill(ctx, primaryFn, time.Duration(backfillHours)*time.Hour, 45*time.Second)
+}
+
+// fanartPrimaryResolver builds the maintenance.FanartPrimaryFn that resolves the
+// active profile's primary fanart filename.
+//
+// It returns "" when the active profile cannot be READ -- a GetActive error, or
+// a nil profile with no error. Per maintenance.FanartPrimaryFn's contract, an
+// unknown profile must NOT be papered over with the default naming: falling back
+// to "fanart.jpg" against an Emby library (whose files are backdrop.jpg) makes
+// DiscoverFanart match nothing, so every starved slot is skipped and the pass
+// logs a clean, error-free run having healed nothing. Returning "" instead makes
+// BackfillFanartHashes fail loudly and retry on the next tick, when the profile
+// read may well succeed.
+//
+// A profile that reads back FINE but simply configures no custom fanart name is
+// a different case, and the default IS correct there: that is an ordinary Kodi
+// profile, whose primary name genuinely is "fanart.jpg".
+//
+// getActive is injected rather than reached for through *platform.Service so the
+// error and nil-profile branches are directly testable; both are branches whose
+// regression is silent by construction.
+func fanartPrimaryResolver(
+	getActive func(context.Context) (*platform.Profile, error),
+	logger *slog.Logger,
+) maintenance.FanartPrimaryFn {
+	return func(c context.Context) string {
+		profile, err := getActive(c)
+		if err != nil {
+			logger.Warn("fanart hash backfill: reading active platform profile, skipping pass",
+				slog.Any("error", err))
+			return ""
+		}
+		if profile == nil {
+			logger.Warn("fanart hash backfill: no active platform profile, skipping pass")
+			return ""
 		}
 		if name := profile.ImageNaming.PrimaryName("fanart"); name != "" {
 			return name
 		}
 		return img.PrimaryFileName(img.DefaultFileNames, "fanart")
 	}
-	go a.maintenanceService.StartFanartHashBackfill(ctx, primaryFn, time.Duration(backfillHours)*time.Hour, 45*time.Second)
 }
 
 // startLockSyncScheduler launches the LockSync platform-pull scheduler if
