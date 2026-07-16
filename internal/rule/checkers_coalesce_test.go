@@ -172,3 +172,35 @@ func TestNameLanguageChecker_CoalescesMetadataFetchAcrossPasses(t *testing.T) {
 		t.Errorf("EvaluationContext recorded %d dedups; want 1 (the second pass must hit the cache)", dedups)
 	}
 }
+
+// TestNameLanguageChecker_WithoutEvalContextStillFetches is the negative
+// control for the test above: with no EvaluationContext on ctx, each pass
+// legitimately fetches. Without this, the coalescing test could pass simply
+// because the fetcher was never reached, or because the checker caches
+// outside the per-artist EvaluationContext (which would leak one artist's
+// localized name onto another).
+func TestNameLanguageChecker_WithoutEvalContextStillFetches(t *testing.T) {
+	prov := &countingEvalProvider{
+		metaResult: &provider.FetchResult{
+			Metadata: &provider.ArtistMetadata{Name: "Localized", SortName: "Localized"},
+		},
+	}
+	e := &Engine{logger: testLogger(), metadataProvider: prov}
+	checker := e.makeNameLanguagePrefChecker()
+
+	a := &artist.Artist{ID: "art-1", Name: "Пример", MusicBrainzID: "mbid-abc"}
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"en"})
+
+	// Bare context: no EvaluationContext attached.
+	v1 := checker(ctx, a, RuleConfig{})
+	v2 := checker(ctx, a, RuleConfig{})
+	if v1 == nil || v2 == nil {
+		t.Fatalf("precondition: the script-mismatch violation must fire on both passes so the "+
+			"alias fetch runs; got v1=%v v2=%v", v1, v2)
+	}
+	if got := prov.fetchMetaCalls.Load(); got != 2 {
+		t.Errorf("metadata provider called %d times across two checker passes with NO "+
+			"EvaluationContext; want 2 (nothing to coalesce against). If this is 1 the checker is "+
+			"caching outside the per-pass context, which would leak a localized name across artists.", got)
+	}
+}
