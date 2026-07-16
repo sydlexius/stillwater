@@ -561,7 +561,9 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 									ta.style.position = 'fixed';
 									ta.style.opacity = '0';
 									document.body.appendChild(ta);
+									ta.focus();
 									ta.select();
+									ta.setSelectionRange(0, ta.value.length);
 									var ok = document.execCommand('copy');
 									if (ok) resolve(); else reject(new Error('execCommand copy failed'));
 								} catch (e) {

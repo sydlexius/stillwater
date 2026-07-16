@@ -1376,6 +1376,7 @@
   "logs.export_fail": "Could not copy bug report.",
   "logs.copy_json": "Copy JSON",
   "logs.copy_ok": "Copied to clipboard.",
+  "logs.copy_fail": "Copy failed.",
   "logs.drawer_title": "Log Entry",
   "logs.drawer_close": "Close",
   "logs.jump_to_bottom": "Jump to Bottom",

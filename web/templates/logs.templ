@@ -94,6 +94,7 @@ templ LogsPage(assets AssetPaths, filter LogsFilterState, logComponents []string
 			data-label-export-ok={ t(ctx, "logs.export_ok") }
 			data-label-export-fail={ t(ctx, "logs.export_fail") }
 			data-label-copy-ok={ t(ctx, "logs.copy_ok") }
+			data-label-copy-fail={ t(ctx, "logs.copy_fail") }
 		>
 			<!-- Header -->
 			<div class="flex items-center justify-between gap-3">
@@ -851,7 +852,7 @@ templ LogsViewerScript() {
 			if (drawerScrim) drawerScrim.addEventListener('click', closeDrawer);
 			if (drawerCopy) drawerCopy.addEventListener('click', function () {
 				if (!drawerEntry) return;
-				copyText(JSON.stringify(drawerEntry, null, 2), L('labelCopyOk'));
+				copyText(JSON.stringify(drawerEntry, null, 2), L('labelCopyOk'), L('labelCopyFail'));
 			});
 
 			// Line click: rule chip filters; artist link navigates (default); a
@@ -889,11 +890,11 @@ templ LogsViewerScript() {
 			// #2526) so a genuine double-failure (Clipboard API AND
 			// execCommand both fail) surfaces the error toast instead of
 			// silently reporting success.
-			function copyText(text, okMsg) {
+			function copyText(text, okMsg, errMsg) {
 				window.swCopyToClipboard(text).then(function () {
 					if (typeof showSuccessToast === 'function') showSuccessToast(okMsg);
 				}, function () {
-					if (typeof showToast === 'function') showToast(L('labelExportFail'));
+					if (typeof showToast === 'function') showToast(errMsg);
 				});
 			}
 			var exportBtn = document.getElementById('sw-logs-export');
@@ -920,7 +921,7 @@ templ LogsViewerScript() {
 					'- Active filters: ' + (filters.length ? filters.join(', ') : 'none') + '\n' +
 					'- Page: ' + window.location.href + '\n' +
 					'- User agent: ' + navigator.userAgent + '\n';
-				copyText(md, L('labelExportOk'));
+				copyText(md, L('labelExportOk'), L('labelExportFail'));
 			});
 
 			// -- keyboard: j/k scroll the viewer; register cheat-sheet entries ---
