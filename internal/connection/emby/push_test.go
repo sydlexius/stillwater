@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -70,9 +71,10 @@ func TestBuildProviderIDs(t *testing.T) {
 }
 
 func TestDeleteImageAtIndex_IssuesIndexedDelete(t *testing.T) {
-	var gotMethod, gotPath string
+	var gotMethod, gotPath, gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath = r.Method, r.URL.Path
+		gotAuth = r.Header.Get("X-Emby-Token")
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -86,6 +88,9 @@ func TestDeleteImageAtIndex_IssuesIndexedDelete(t *testing.T) {
 	}
 	if want := "/Items/artist-42/Images/Backdrop/3"; gotPath != want {
 		t.Errorf("path = %s, want %s", gotPath, want)
+	}
+	if gotAuth != "api-key" {
+		t.Errorf("X-Emby-Token = %q, want %q", gotAuth, "api-key")
 	}
 }
 
@@ -130,5 +135,11 @@ func TestDeleteImageAtIndex_ServerError(t *testing.T) {
 	err := c.DeleteImageAtIndex(context.Background(), "artist-42", "fanart", 0)
 	if err == nil {
 		t.Fatal("want error for 500 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error = %q, want it to contain the status code %q", err.Error(), "500")
+	}
+	if !strings.Contains(err.Error(), "boom") {
+		t.Errorf("error = %q, want it to contain the response body %q", err.Error(), "boom")
 	}
 }
