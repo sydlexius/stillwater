@@ -332,15 +332,6 @@ func (s *Service) StartExistsFlagScanner(ctx context.Context, interval, startupD
 // no work -- a silent no-op in the exact place a silent no-op is most expensive.
 type FanartPrimaryFn func(ctx context.Context) string
 
-// backfillRow is one starved fanart slot awaiting a hash.
-type backfillRow struct {
-	artistID  string
-	slotIndex int
-	path      string
-	phash     string
-	content   string
-}
-
 // BackfillFanartHashes computes and stores the perceptual and content hashes of
 // fanart slots whose phash column is empty.
 //
@@ -354,12 +345,20 @@ type backfillRow struct {
 // detector built on those hashes can tell "no corruption" apart from "no data".
 //
 // WHY IT DOES NOT RE-HASH THE LIBRARY ON EVERY BOOT. The work-set is defined by
-// the starvation itself: `phash = ”` selects only unfilled rows, and UpsertAll
-// preserves the ones this pass fills, so each pass strictly shrinks the set and
-// a healed library converges to zero work. That is what makes a run ledger
-// unnecessary -- which matters, because this package has none (the only
-// last-run marker, db_maintenance.last_optimize_at, is display-only and gates
-// nothing).
+// the starvation itself: the empty-phash predicate selects only unfilled rows,
+// and UpsertAll preserves the ones this pass fills, so every row this pass heals
+// leaves the work-set for good.
+//
+// It does NOT converge to zero in every library. A row whose file cannot be
+// decoded is never filled, so it stays selected and is re-hashed every pass,
+// forever. That residue is bounded by the number of undecodable files and is
+// benign -- a failed decode is cheap, logged, and costs one read per file per
+// six hours -- but it is a steady-state floor, not a transient. What actually
+// makes a run ledger unnecessary is that the DB itself records the progress:
+// a filled row is durably distinguishable from a starved one, so no pass has to
+// remember what an earlier pass did. That matters because this package has no
+// ledger (the only last-run marker, db_maintenance.last_optimize_at, is
+// display-only and gates nothing).
 //
 // FANART ONLY, deliberately. Fanart is the sole multi-slot image type, so it is
 // the only type whose slots can starve while a sibling slot looks healthy, and
@@ -426,12 +425,36 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 		return nil
 	}
 
-	// Resolve and hash. DiscoverFanart reads a directory, so its result is
-	// cached per artist: the rows are ordered by artist_id, but a map keeps that
-	// independent of the ORDER BY rather than silently depending on it.
+	// Resolve, hash and write ONE ROW AT A TIME.
+	//
+	// The hash and the UPDATE that stores it are deliberately interleaved rather
+	// than batched into a hash-everything-then-write-everything pair of loops.
+	// Batching leaves a window as long as the whole pass between reading a file
+	// and writing its hash, and slot_index is a DiscoverFanart ORDINAL, not a
+	// stable identifier: a concurrent scan that renumbers slots inside that
+	// window makes the UPDATE attach file A's phash to the row that now
+	// describes file B. That is worse than the starvation this task exists to
+	// end -- a wrong phash is indistinguishable from a real one, so it
+	// MANUFACTURES false cross-artist matches, while the true slot stays
+	// starved. Interleaving shrinks the window to one file's hash.
+	//
+	// It NARROWS the window; it does not close it. The read and the write are
+	// still separate operations against a filesystem and a DB that a scan can
+	// mutate in between -- a genuine TOCTOU that only a scan/backfill lock could
+	// eliminate, which is out of scope here. Interleaving is what is available
+	// for ~no cost, not a proof of exclusion.
+	//
+	// Interleaving is free with respect to the two-phase drain above: that
+	// requirement is about the SELECT CURSOR, and `pending` is fully drained by
+	// this point, so the cursor is closed and these writes cannot contend with
+	// it.
+	//
+	// DiscoverFanart reads a directory, so its result is cached per artist: the
+	// rows are ordered by artist_id, but a map keeps that independent of the
+	// ORDER BY rather than silently depending on it.
 	discovered := make(map[string][]string)
-	var ready []backfillRow
 	skipped := 0
+	filled, failed := 0, 0
 
 	for _, st := range pending {
 		dir := s.artistImageDir(st.artistPath, st.artistID)
@@ -479,31 +502,22 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 			skipped++
 			continue
 		}
-		ready = append(ready, backfillRow{
-			artistID:  st.artistID,
-			slotIndex: st.slotIndex,
-			path:      path,
-			phash:     img.HashHex(fh.Perceptual),
-			content:   fh.Content,
-		})
-	}
-
-	filled, failed := 0, 0
-	for _, r := range ready {
-		// Guarded by phash = '' so a provenance write that landed between this
-		// pass's SELECT and now wins instead of being overwritten by this
-		// slower, EXIF-less read. The save path's value is the better one: it
-		// hashes the bytes it just wrote.
+		// Store this row's hash NOW, before hashing the next file, so the
+		// hash-to-write window stays one file long. Guarded by phash = '' so a
+		// provenance write that landed between this pass's SELECT and now wins
+		// instead of being overwritten by this slower, EXIF-less read. The save
+		// path's value is the better one: it hashes the bytes it just wrote.
 		_, err := s.db.ExecContext(ctx, `
 			UPDATE artist_images SET phash = ?, content_hash = ?
 			WHERE artist_id = ? AND image_type = 'fanart' AND slot_index = ? AND phash = ''`,
-			r.phash, r.content, r.artistID, r.slotIndex)
+			img.HashHex(fh.Perceptual), fh.Content, st.artistID, st.slotIndex)
 		if err != nil {
 			// Filling these is the entire point of the task; a failed UPDATE
 			// leaves a slot starved, which is the defect this exists to end.
 			s.logger.Error("fanart hash backfill: UPDATE failed, slot remains starved",
-				slog.String("artist_id", r.artistID),
-				slog.Int("slot_index", r.slotIndex),
+				slog.String("artist_id", st.artistID),
+				slog.Int("slot_index", st.slotIndex),
+				slog.String("path", path),
 				slog.Any("error", err))
 			failed++
 			continue
