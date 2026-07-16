@@ -304,8 +304,6 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-feature-image-write }
 - **Let Stillwater manage images and NFO files on this server**
 {: #settings-connections-connections-manage-title }
-- **Verify path after rename (Lidarr only)**
-{: #settings-connections-connections-verify-path-title }
 - **Path mapping** -- Translates the artist path Stillwater sees on disk into the path this server expects when the two mount the shared library under different roots (for example Stillwater's /host/music/Artist versus the server's /music/Artist). Enter one or more host-to-server prefix pairs; on a rename or merge, Stillwater rewrites the longest matching host prefix before telling the server the new path. Leave it empty only when both sides see identical paths. Applies to Emby, Jellyfin and Lidarr alike: each mounts the library in its own namespace, and a path that lands outside the server's own root folders is refused before it is sent - otherwise the server stores or ignores a location that means nothing on its side while still reporting success.
 {: #settings-connections-connections-path-mapping-title }
 - **Inferred %s mapping(s) from %s matched artists.**

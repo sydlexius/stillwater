@@ -111,9 +111,11 @@ func TestSectionServersNext_PreservesConnectionHooks(t *testing.T) {
 }
 
 // TestSectionServersNext_Feature1917Cleanup asserts the #1917 toggle cleanup:
-// the dead library_import / nfo_write toggles are dropped, image_write is
-// rendered for Emby/Jellyfin but NOT Lidarr, and the Lidarr-only verify-path
-// toggle is present only for Lidarr.
+// the dead library_import / nfo_write toggles are dropped and image_write is
+// rendered for Emby/Jellyfin but NOT Lidarr. It also pins the #2563 removal of
+// the Lidarr-only verify-path toggle: that carrier governed nothing after
+// #2419 retired its only behavioral read, so it must not render for ANY
+// connection type.
 func TestSectionServersNext_Feature1917Cleanup(t *testing.T) {
 	ctx := testCtx(t)
 	data := SettingsData{Connections: threeConnections}
@@ -135,12 +137,23 @@ func TestSectionServersNext_Feature1917Cleanup(t *testing.T) {
 		t.Errorf(`#1917: image_write toggle count: want 2 (emby+jellyfin, not lidarr), got %d`, got)
 	}
 
-	// verify-path toggle only for the Lidarr connection.
-	if got := strings.Count(out, `id="verify-path-conn-lidarr"`); got != 1 {
-		t.Errorf("verify-path (lidarr-only): want 1, got %d", got)
+	// Precondition for the #2563 absence check below: the Lidarr connection
+	// must actually render. Without this, the verify-path assertions would
+	// pass vacuously if SectionServersNext silently stopped emitting the
+	// Lidarr card at all.
+	if !strings.Contains(out, "conn-lidarr") {
+		t.Fatal("precondition: the Lidarr connection did not render; the verify-path absence check below would pass vacuously")
 	}
-	if strings.Contains(out, `id="verify-path-conn-emby"`) || strings.Contains(out, `id="verify-path-conn-jellyfin"`) {
-		t.Errorf("verify-path leaked onto a non-Lidarr connection")
+
+	// #2563: the verify-path carrier is gone. It must not render for the
+	// Lidarr connection (where it used to) nor leak onto any other type.
+	for _, id := range []string{"conn-lidarr", "conn-emby", "conn-jellyfin"} {
+		if strings.Contains(out, `id="verify-path-`+id+`"`) {
+			t.Errorf("#2563: removed verify-path toggle still renders for %s", id)
+		}
+	}
+	if strings.Contains(out, "verify-path-after-update") {
+		t.Error("#2563: removed verify-path-after-update endpoint still referenced in rendered output")
 	}
 }
 

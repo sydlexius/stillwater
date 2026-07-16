@@ -35,8 +35,7 @@ func setupTestServiceWithDB(t *testing.T) (*Service, DBExecutor) {
 }
 
 // TestImportCreateTx_RoundTrip exercises the happy path: ImportCreateTx writes
-// through the supplied executor and ImportGetByTypeAndURLTx reads the row
-// back, including the v1.5 VerifyPathAfterUpdate field added by #1692.
+// through the supplied executor and ImportGetByTypeAndURLTx reads the row back.
 func TestImportCreateTx_RoundTrip(t *testing.T) {
 	t.Parallel()
 	svc, db := setupTestServiceWithDB(t)
