@@ -15,6 +15,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/rule"
 )
 
 // blockVal returns a deterministic pseudo-random gray level for a block of a
@@ -291,4 +292,117 @@ func TestFanartExplicitSlot_RecordsProvenanceOnThatSlot(t *testing.T) {
 	}
 
 	assertSlot0HoldsPrimary(t, svc, a.ID, prim)
+}
+
+// TestApplyViolationCandidate_RecordsProvenanceOnAppliedImage is the #2564
+// regression guard for the apply-candidate path.
+//
+// handleApplyViolationCandidate downloads a user-chosen candidate and writes it
+// to the artist's primary slot, then persists the artist -- and Update creates
+// the artist_images row through UpsertAll, which leaves every provenance column
+// empty and then deliberately PRESERVES them empty on each later rescan. Without
+// the recording call the row is therefore starved permanently, not transiently:
+// a per-slot phash reader over it finds nothing to judge and reports the artist
+// clean. That false green is exactly the defect class #2564 exists to close, and
+// this is the one image-write path a user reaches by hand from the notifications
+// screen, so it earns its own guard.
+//
+// The assertion is specific rather than "phash is non-empty": it compares the
+// row against provenance collected from the file the handler actually wrote, and
+// checks that the CANDIDATE's provider source made it through. The handler
+// builds an ExifMeta from matchedCandidate.Source, so a row carrying that source
+// proves the chosen candidate's identity survived the download-save-record trip
+// rather than some other file's.
+//
+// REVERT-AND-RERUN: deleting the recordImageProvenanceSlot0 call in
+// handleApplyViolationCandidate must turn this RED.
+func TestApplyViolationCandidate_RecordsProvenanceOnAppliedImage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r, svc := newImageHandlerTestServer(t)
+
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Apply Candidate Provenance", SortName: "Apply Candidate Provenance", Path: dir}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// A pending_choice violation carrying the candidate the request will name.
+	// The handler validates the posted url+image_type against these stored
+	// candidates, so this is the only way to reach the save.
+	const candidateURL = "https://8.8.8.8/chosen.jpg"
+	const candidateSource = "candidate-provider"
+	v := &rule.RuleViolation{
+		RuleID:     rule.RuleFanartExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "warning",
+		Message:    "no fanart",
+		Fixable:    true,
+		Status:     rule.ViolationStatusPendingChoice,
+		Candidates: []rule.ImageCandidate{{
+			URL:       candidateURL,
+			Width:     1920,
+			Height:    1080,
+			Source:    candidateSource,
+			ImageType: "fanart",
+		}},
+	}
+	if err := r.ruleService.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("seeding pending-choice violation: %v", err)
+	}
+
+	// PRECONDITION: the slot-0 row is either absent or starved before the
+	// request. If it already carried a phash, the assertion below could pass on
+	// pre-existing data without the handler recording anything.
+	if row, ok := fanartRowBySlot(t, svc, a.ID, 0); ok && row.PHash != "" {
+		t.Fatalf("precondition: slot 0 already has phash %q before apply; the test could not attribute a later value to the handler", row.PHash)
+	}
+
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: distinctJPEG(t, 5)}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+v.ID+"/apply-candidate",
+		strings.NewReader(`{"url":"`+candidateURL+`","image_type":"fanart"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", v.ID)
+
+	w := httptest.NewRecorder()
+	r.handleApplyViolationCandidate(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	// PRECONDITION: the candidate actually landed on disk. Without this the
+	// provenance assertions would judge a write that never happened -- the
+	// handler reporting success while doing nothing.
+	appliedPath := filepath.Join(dir, "fanart.jpg")
+	if _, err := os.Stat(appliedPath); err != nil {
+		t.Fatalf("precondition: applied candidate not on disk at %s: %v", appliedPath, err)
+	}
+
+	// The applied file's own provenance, read back from the bytes the handler
+	// wrote. Comparing against this is what makes the claim specific.
+	want := img.CollectProvenance(appliedPath, testDiscardLogger())
+	if want.PHash == "" {
+		t.Fatalf("precondition: applied file carries no embedded phash; cannot judge what was recorded")
+	}
+
+	// THE GUARD: the applied image's slot must carry its own provenance.
+	row, ok := fanartRowBySlot(t, svc, a.ID, 0)
+	if !ok {
+		t.Fatalf("no artist_images row for fanart slot 0 after apply-candidate")
+	}
+	if row.PHash == "" {
+		t.Errorf("slot 0 phash is empty -- the applied candidate was never given provenance, so a per-slot phash reader would see no data and false-green this artist (#2564)")
+	}
+	if row.PHash != want.PHash {
+		t.Errorf("slot 0 phash = %q, want the APPLIED file's %q", row.PHash, want.PHash)
+	}
+	if row.ContentHash != want.ContentHash {
+		t.Errorf("slot 0 content_hash = %q, want the APPLIED file's %q", row.ContentHash, want.ContentHash)
+	}
+	// The handler stamps the CHOSEN candidate's provider into the file's EXIF;
+	// seeing it on the row proves the candidate's identity survived the trip.
+	if row.Source != candidateSource {
+		t.Errorf("slot 0 source = %q, want the chosen candidate's %q", row.Source, candidateSource)
+	}
 }

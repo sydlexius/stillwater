@@ -1,5 +1,4 @@
 [
-  "applyViolationCandidate",
   "batchFetchFanart",
   "bulkDismissViolations",
   "bulkFetchImages",
