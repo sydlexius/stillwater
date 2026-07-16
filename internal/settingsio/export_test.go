@@ -375,15 +375,26 @@ func TestExport_ConnectionOmitsVerifyPathAfterUpdate(t *testing.T) {
 	ctx := context.Background()
 	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
 
+	// The domain toggle is seeded ON deliberately. The export field carried
+	// `omitempty`, so a connection left at the zero value would omit the key
+	// even if the field were still exported -- the absence assertion below
+	// would then pass for the wrong reason. Seeding true is what makes this
+	// test able to fail. (The domain field itself is retired separately.)
 	c := &connection.Connection{
 		Name:    "Lidarr A",
 		Type:    "lidarr",
 		URL:     "http://lidarr.local:8686",
 		APIKey:  "lidarr-key",
 		Enabled: true,
+		Lidarr:  &connection.LidarrConfig{VerifyPathAfterUpdate: true},
 	}
 	if err := connSvc.Create(ctx, c); err != nil {
 		t.Fatalf("creating connection: %v", err)
+	}
+	// Precondition: the toggle really is set on the persisted row. If a future
+	// change makes this silently false, the test would go vacuous again.
+	if !c.GetVerifyPathAfterUpdate() {
+		t.Fatal("seeded connection has the toggle off; the absence assertion would be vacuous")
 	}
 
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
