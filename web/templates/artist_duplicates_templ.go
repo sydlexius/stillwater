@@ -596,7 +596,7 @@ func ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) tem
 							}
 						}
 					} else {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<span class=\"italic text-gray-400 dark:text-gray-500\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<span class=\"italic text-gray-500 dark:text-gray-400\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
