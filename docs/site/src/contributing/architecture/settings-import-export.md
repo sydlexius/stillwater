@@ -62,8 +62,10 @@ The outer envelope carries a `version` string identifying the payload schema.
 emitted by `Export`. Import rejects any version outside the supported set with
 `ErrUnsupportedVersion`; an empty version is treated as the oldest schema for
 backward compatibility. Version-gating helpers prevent a field absent from an
-older envelope (for example `verify_path_after_update`, added in a later
-version) from overwriting the target's live value with a decoded zero. The
+older envelope (for example `path_mappings`, added in a later version) from
+overwriting the target's live value with a decoded zero. A key that a newer
+binary no longer recognizes is simply ignored, so a legacy envelope still
+carrying a retired field imports cleanly rather than failing. The
 version history is authoritative in the doc comment on `CurrentEnvelopeVersion`
 and is generated into the table below by `cmd/gen-envelope-changelog`:
 

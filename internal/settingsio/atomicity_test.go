@@ -363,11 +363,8 @@ func TestImport_AtomicSameSectionRollback(t *testing.T) {
 	conns := []ConnectionExport{
 		{Name: "TxBoundConn", Type: "emby", URL: "http://txbound.example:8096", APIKey: "k", Enabled: true},
 	}
-	const (
-		carryV15Fields    = true // envelope is v1.5+ (irrelevant here; new row)
-		overwriteExisting = true // standard import semantics
-	)
-	if err := svc.importConnections(ctx, tx, conns, &ImportResult{}, carryV15Fields, overwriteExisting, overwriteExisting); err != nil {
+	const overwriteExisting = true // standard import semantics
+	if err := svc.importConnections(ctx, tx, conns, &ImportResult{}, overwriteExisting, overwriteExisting); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("importConnections inside tx: %v", err)
 	}

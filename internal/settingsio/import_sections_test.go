@@ -146,7 +146,7 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 		{Name: "Emby A", Type: "emby", URL: "http://emby.local:8096", APIKey: "key1", Enabled: true},
 	}
 	result := &ImportResult{}
-	if err := svc.importConnections(ctx, db, conns, result, true, true, true); err != nil {
+	if err := svc.importConnections(ctx, db, conns, result, true, true); err != nil {
 		t.Fatalf("importConnections (insert): %v", err)
 	}
 	if result.Connections != 1 {
@@ -157,7 +157,7 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 	conns[0].Name = "Emby A Renamed"
 	conns[0].APIKey = "key2"
 	result2 := &ImportResult{}
-	if err := svc.importConnections(ctx, db, conns, result2, true, true, true); err != nil {
+	if err := svc.importConnections(ctx, db, conns, result2, true, true); err != nil {
 		t.Fatalf("importConnections (update): %v", err)
 	}
 	if result2.Connections != 1 {
@@ -195,7 +195,7 @@ func TestImportConnections_ManagedWithoutSnapshotNormalizedOnCreate(t *testing.T
 		FeatureManageServerFiles: true,
 		PreStillwaterConfigJSON:  "",
 	}}
-	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true, true); err != nil {
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true); err != nil {
 		t.Fatalf("importConnections: %v", err)
 	}
 
@@ -240,7 +240,7 @@ func TestImportConnections_ManagedWithoutSnapshotNormalizedOnUpdate(t *testing.T
 		FeatureManageServerFiles: true,
 		PreStillwaterConfigJSON:  "",
 	}}
-	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true, true); err != nil {
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true); err != nil {
 		t.Fatalf("importConnections (update): %v", err)
 	}
 
@@ -276,7 +276,7 @@ func TestImportConnections_ManagedWithSnapshotPreservedOnCreate(t *testing.T) {
 		FeatureManageServerFiles: true,
 		PreStillwaterConfigJSON:  `{"some":"snapshot"}`,
 	}}
-	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true, true); err != nil {
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true); err != nil {
 		t.Fatalf("importConnections: %v", err)
 	}
 
@@ -335,7 +335,7 @@ func TestImportConnections_PreV14EnvelopePreservesV14Fields(t *testing.T) {
 		APIKey: "key2", Enabled: true,
 		// v1.4-only fields explicitly left zero to model a pre-1.4 payload.
 	}}
-	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, false, false, false); err != nil {
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, false, false); err != nil {
 		t.Fatalf("importConnections (legacy envelope): %v", err)
 	}
 
@@ -388,63 +388,44 @@ func TestEnvelopeCarriesConnectionV14Fields(t *testing.T) {
 	}
 }
 
-// TestEnvelopeCarriesConnectionV15Fields locks the v1.5 allow-set. Same
-// motivation as the v1.4 test: a future version bump that forgets to add
-// itself here would silently disable VerifyPathAfterUpdate on legacy
-// imports because the field would decode to its zero value.
-func TestEnvelopeCarriesConnectionV15Fields(t *testing.T) {
-	cases := []struct {
-		version string
-		want    bool
-	}{
-		{"1.0", false},
-		{"1.1", false},
-		{"1.2", false},
-		{"1.3", false},
-		{"1.4", false},
-		{"1.5", true},
-		{"", false},
-		{"99.0", false},
-	}
-	for _, tc := range cases {
-		if got := envelopeCarriesConnectionV15Fields(tc.version); got != tc.want {
-			t.Errorf("envelopeCarriesConnectionV15Fields(%q) = %v, want %v", tc.version, got, tc.want)
-		}
-	}
-}
-
-// TestImportConnections_PreV15EnvelopePreservesV15Fields proves that a
-// pre-1.5 envelope updating an existing target connection does NOT clear
-// VerifyPathAfterUpdate. Without the gate, a 1.4 backup would silently
-// disable the Lidarr path-verification opt-in after restore.
-func TestImportConnections_PreV15EnvelopePreservesV15Fields(t *testing.T) {
+// TestImport_LegacyEnvelopeCarryingVerifyPathAfterUpdate proves a real v1.5
+// backup -- one whose payload still carries the retired
+// verify_path_after_update key (#2563) -- imports cleanly. The decoder must
+// ignore the unknown key rather than reject the envelope, and it must not
+// disturb the sibling fields decoded alongside it. The payload is built as raw
+// JSON because ConnectionExport no longer has a field that could emit the key.
+func TestImport_LegacyEnvelopeCarryingVerifyPathAfterUpdate(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
 	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 
-	// Seed the target with VerifyPathAfterUpdate=true, simulating an
-	// operator who upgraded to a v1.5 binary and then enabled the toggle.
-	seed := &connection.Connection{
-		Name:    "Lidarr A",
-		Type:    "lidarr",
-		URL:     "http://lidarr.local:8686",
-		APIKey:  "key1",
-		Enabled: true,
-		Lidarr:  &connection.LidarrConfig{VerifyPathAfterUpdate: true},
+	const passphrase = "test-passphrase"
+	legacyPayload := []byte(`{
+		"connections": [{
+			"name": "Lidarr A",
+			"type": "lidarr",
+			"url": "http://lidarr.local:8686",
+			"api_key": "legacy-key",
+			"enabled": true,
+			"verify_path_after_update": true
+		}]
+	}`)
+	data, salt, err := encryptWithPassphrase(legacyPayload, passphrase)
+	if err != nil {
+		t.Fatalf("encrypting legacy payload: %v", err)
 	}
-	if err := connSvc.Create(ctx, seed); err != nil {
-		t.Fatalf("seeding target connection: %v", err)
-	}
+	env := &Envelope{Version: "1.5", Data: data, Salt: salt}
 
-	// Pre-1.5 envelope: the v1.5 field is absent and decodes to zero.
-	conns := []ConnectionExport{{
-		Name: "Lidarr A", Type: "lidarr", URL: "http://lidarr.local:8686",
-		APIKey: "key2", Enabled: true,
-		// VerifyPathAfterUpdate explicitly left zero to model a pre-1.5 payload.
-	}}
-	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, false, false); err != nil {
-		t.Fatalf("importConnections (legacy envelope): %v", err)
+	result, err := svc.Import(ctx, env, passphrase)
+	if err != nil {
+		t.Fatalf("Import of a legacy envelope carrying verify_path_after_update must succeed, got: %v", err)
+	}
+	// Precondition: the import actually applied the connection section. Without
+	// this, an import that silently dropped every connection would still pass
+	// the assertions below.
+	if result.Connections != 1 {
+		t.Fatalf("result.Connections = %d, want 1; the legacy connection was not imported", result.Connections)
 	}
 
 	all, err := connSvc.List(ctx)
@@ -455,11 +436,20 @@ func TestImportConnections_PreV15EnvelopePreservesV15Fields(t *testing.T) {
 		t.Fatalf("expected 1 connection, got %d", len(all))
 	}
 	got := all[0]
-	if got.APIKey != "key2" {
-		t.Errorf("APIKey: got %q, want key2 (legacy import must still rotate keys)", got.APIKey)
+	// The sibling fields must survive: this proves the unknown key was skipped
+	// cleanly rather than derailing the decode of the rest of the object.
+	if got.Name != "Lidarr A" || got.URL != "http://lidarr.local:8686" {
+		t.Errorf("legacy connection decoded wrong: name=%q url=%q", got.Name, got.URL)
 	}
-	if !got.GetVerifyPathAfterUpdate() {
-		t.Error("VerifyPathAfterUpdate was cleared by a legacy import; target value must be preserved")
+	if got.APIKey != "legacy-key" {
+		t.Errorf("APIKey: got %q, want legacy-key", got.APIKey)
+	}
+	if !got.Enabled {
+		t.Error("Enabled: got false, want true")
+	}
+	// The retired key carried true; the import must ignore it outright.
+	if got.GetVerifyPathAfterUpdate() {
+		t.Error("legacy verify_path_after_update=true was applied; the retired field must be ignored on import")
 	}
 }
 
@@ -928,7 +918,7 @@ func TestImportConnections_DBError(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
 	conns := []ConnectionExport{{Name: "x", Type: "emby", URL: "http://localhost:8096"}}
-	err := svc.importConnections(t.Context(), db, conns, &ImportResult{}, true, true, true)
+	err := svc.importConnections(t.Context(), db, conns, &ImportResult{}, true, true)
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
