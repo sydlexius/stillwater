@@ -230,6 +230,19 @@ func TestArtistMergeModal_DisambiguationGate(t *testing.T) {
 	if !strings.Contains(body, "function updateConfirmState()") {
 		t.Errorf("expected a single updateConfirmState() authority over the Confirm button")
 	}
+
+	// Without the change listener the soft gate becomes a HARD block: Confirm is
+	// disabled, the operator ticks the override, no event fires, Confirm stays
+	// disabled and the group is unmergeable.
+	if !strings.Contains(body, "disambOverride.addEventListener('change', updateConfirmState)") {
+		t.Errorf("the override checkbox is not wired to updateConfirmState on 'change'; ticking it " +
+			"would never re-enable Confirm, turning the soft gate into a hard block")
+	}
+	// The gate decision must read the server's flag, not re-derive it client-side.
+	if !strings.Contains(body, "m.disambiguation_conflict") {
+		t.Errorf("the Confirm gate does not derive from the server's disambiguation_conflict flag; " +
+			"a client-side re-derivation can silently disagree with the card badge")
+	}
 }
 
 // sampleDuplicatesView returns a two-group view: one name_key group with a

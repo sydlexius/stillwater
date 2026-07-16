@@ -667,8 +667,11 @@ templ ArtistMergeModal() {
 
 			// Reveal the soft gate for this group and reset the override, so an
 			// acknowledgement never carries over from a previously merged group.
+			// The gate DECISION reads the SERVER's flag (the same truth the card
+			// badge renders, so the two cannot disagree); conflictingDisambValues
+			// stays, but only to DISPLAY the values below.
 			var conflicts = conflictingDisambValues(members);
-			current.disambConflict = conflicts.length > 0;
+			current.disambConflict = members.some(function (m) { return m.disambiguation_conflict; });
 			if (disambOverride) disambOverride.checked = false;
 			if (disambValues) {
 				disambValues.innerHTML = '';

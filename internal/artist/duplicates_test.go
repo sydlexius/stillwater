@@ -332,6 +332,44 @@ func TestDetectDuplicates_DisambiguationNoConflict(t *testing.T) {
 	}
 }
 
+// TestDetectDuplicates_DisambiguationIdenticalValuesNoConflict pins the
+// DISTINCT-vs-count predicate in a group that ACTUALLY FORMS.  A mutant counting
+// non-empty values instead of DISTINCT ones survives every other test here: the
+// only other same-value group is the conflicting-MBID one above, which never
+// forms.  Its effect is crying wolf on the clearest merge case, training the
+// reflexive override click the gate exists to prevent.
+func TestDetectDuplicates_DisambiguationIdenticalValuesNoConflict(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	const mbid = "88888888-8888-8888-8888-888888888888"
+	idA := seedArtistWithDisamb(ctx, t, db, "Massive Attack", "/music/MA1", mbid, "Bristol trip-hop")
+	idB := seedArtistWithDisamb(ctx, t, db, "MASSIVE ATTACK", "/music/MA2", mbid, "Bristol trip-hop")
+
+	// Anti-vacuity: two empties never conflict, so a "no conflict" pass must not
+	// come from rows whose disambiguation silently failed to persist.
+	assertSeededDisamb(ctx, t, db, idA, "Bristol trip-hop")
+	assertSeededDisamb(ctx, t, db, idB, "Bristol trip-hop")
+
+	groups, err := DetectDuplicates(ctx, db)
+	if err != nil {
+		t.Fatalf("DetectDuplicates: %v", err)
+	}
+	g := groupContainingBoth(groups, idA, idB)
+	if g == nil {
+		t.Fatalf("same-MBID artists were not grouped; groups=%+v", groups)
+	}
+	if g.DisambiguationConflict {
+		t.Errorf("group %q: DisambiguationConflict = true, want false; both members assert the SAME "+
+			"value, so they agree and the gate must stay open", g.Key)
+	}
+	for _, id := range []string{idA, idB} {
+		if m := memberByID(g, id); m != nil && m.DisambiguationConflict {
+			t.Errorf("member %s: DisambiguationConflict = true, want false", id)
+		}
+	}
+}
+
 // TestDetectDuplicates_DisambiguationPartialConflict covers the mixed group:
 // values {X, Y, ""}.  The group conflicts, but the UNTAGGED member is not the
 // one making a contradictory claim and must stay unflagged.
