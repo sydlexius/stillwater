@@ -275,6 +275,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 			"Skipped on shared-filesystem libraries.",
 			"Does not catch re-encoded or re-tagged copies of the same picture. Two files can look identical and still differ byte-for-byte (a re-saved JPEG, or the same image saved twice with different provenance recorded in it). Those are found by the 'No duplicate images' rule instead.",
 			"Only fanart is checked, because it is the only image type with more than one slot.",
+			"Cleans local fanart files only. Platform sync is additive, so copies already pushed to Emby/Jellyfin are not removed by this rule; prune them with the Platform Backdrop Duplicates admin report.",
 		},
 		Guards: "When the same file ends up in two fanart slots, media servers show the same backdrop twice and the extra copy wastes space for no benefit. This rule compares a hash of each file's bytes: two slots are duplicates only when their files are identical, which is a certainty rather than a similarity judgment -- that certainty is what makes this rule safe to trust, and safe to opt into auto mode if you want it to act without review. It is also the cheap half of duplicate detection, because it needs no image decoding, and every duplicate it removes is one fewer image the slower visual comparison has to consider.",
 		Examples: []string{

@@ -3046,6 +3046,88 @@ paths:
               schema:
                 type: string
 
+  /reports/platform-backdrop-duplicates/prune:
+    post:
+      tags: [Reports]
+      summary: Delete duplicate backdrops on connected platforms
+      description: >-
+        Prunes the byte-identical duplicate backdrops surfaced by the
+        /reports/platform-backdrop-duplicates report (#2540 remote prune):
+        for every affected artist and connection, deletes redundant
+        exact-duplicate backdrops already pushed out to the platform,
+        high-index-first. Re-detects from the platform on every call rather
+        than trusting a prior scan result, since it may be stale by the time
+        an operator triggers the prune. Singleton: only one prune run may be
+        in flight at a time, so a concurrent request while one is running is
+        rejected with 409. Admin-only. Triggered by the "Prune Platform
+        Duplicates" button on the report page.
+      operationId: prunePlatformBackdropDuplicates
+      responses:
+        "200":
+          description: Prune completed (individual per-artist/connection failures do not fail the request).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artists_processed:
+                    type: integer
+                    description: Number of artists whose platform backdrops were pruned.
+                  backdrops_removed:
+                    type: integer
+                    description: Total redundant backdrops deleted across all artists/connections.
+                  skipped_changed:
+                    type: integer
+                    description: >-
+                      Number of redundant indices skipped because an
+                      immediate-pre-delete re-verify found their content had
+                      changed since detection (re-fetch error or hash
+                      mismatch) -- a concurrent platform write closed the
+                      TOCTOU window, so the index was left untouched rather
+                      than risking the deletion of a now-unique image.
+                  failures:
+                    type: integer
+                    description: Number of artist/connection pairs whose prune failed and were skipped.
+        "401":
+          description: >-
+            Authentication required. The auth middleware rejects the request
+            before the handler runs, emitting the body via http.Error, so the
+            content type is text/plain rather than the JSON Error schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            (requireForeignAdmin) via http.Error, so the body is plain text
+            ("Forbidden: administrator role required"), not the JSON Error
+            schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "409":
+          description: A platform backdrop prune is already running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        "500":
+          description: >-
+            The publisher is not wired, or the prune itself failed. The
+            wrapped error is logged server-side; the response is plain text
+            via http.Error.
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /reports/duplicates/count:
     get:
       tags: [Reports]

@@ -96,3 +96,16 @@ type IndexedImageUploader interface {
 type ImageDeleter interface {
 	DeleteImage(ctx context.Context, platformArtistID string, imageType string) error
 }
+
+// IndexedImageDeleter deletes an image at a specific index on a platform that
+// supports multiple images per type (Emby/Jellyfin Backdrop/0, Backdrop/1, ...).
+type IndexedImageDeleter interface {
+	DeleteImageAtIndex(ctx context.Context, platformArtistID string, imageType string, index int) error
+}
+
+// BackdropReader reads an artist's backdrops from a platform: the count (via
+// GetArtistDetail) and each backdrop's raw bytes (via GetArtistBackdrop).
+type BackdropReader interface {
+	GetArtistDetail(ctx context.Context, platformArtistID string) (*ArtistPlatformState, error)
+	GetArtistBackdrop(ctx context.Context, platformArtistID string, index int) ([]byte, string, error)
+}

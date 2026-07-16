@@ -380,6 +380,44 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 	return nil
 }
 
+// DeleteImageAtIndex deletes the image at a specific index for the given
+// artist. DELETE /Items/{id}/Images/{type}/{index}. Used to prune redundant
+// backdrops on the platform (#2540 remote prune). Emby re-indexes remaining
+// backdrops after a delete, so callers pruning multiple indices MUST delete
+// high-index-first.
+func (c *Client) DeleteImageAtIndex(ctx context.Context, platformArtistID string, imageType string, index int) error {
+	if index < 0 {
+		return fmt.Errorf("invalid image index: %d", index)
+	}
+	embyType := mapImageType(imageType)
+	if embyType == "" {
+		return fmt.Errorf("unsupported image type: %s", imageType)
+	}
+
+	path := fmt.Sprintf("/Items/%s/Images/%s/%d", url.PathEscape(platformArtistID), embyType, index)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), http.NoBody)
+	if err != nil {
+		return fmt.Errorf("creating indexed image delete request: %w", err)
+	}
+	c.AuthFunc(req)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("executing indexed image delete: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
+
+	if resp.StatusCode >= 300 {
+		statusErr := httpclient.ReadBoundedStatusError(resp)
+		formatted := fmt.Errorf("indexed image delete failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
+		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	c.Logger.Debug("image deleted from emby at index", "artist_id", platformArtistID, "type", embyType, "index", index)
+	return nil
+}
+
 // logDateNormalization logs the result of normalizing a date field for push.
 func (c *Client) logDateNormalization(field, raw, normalized, artistID string) {
 	if normalized == "" {

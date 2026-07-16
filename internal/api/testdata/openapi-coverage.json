@@ -1302,6 +1302,13 @@
     "covered": false
   },
   {
+    "operationId": "prunePlatformBackdropDuplicates",
+    "method": "POST",
+    "path": "/reports/platform-backdrop-duplicates/prune",
+    "handler": "handlePlatformBackdropDuplicatesPrune",
+    "covered": true
+  },
+  {
     "operationId": "pullMetadata",
     "method": "POST",
     "path": "/artists/{id}/pull",
