@@ -89,32 +89,37 @@ type PlatformBackdropDupReport struct {
 const scanBackdropPageSize = 200
 
 // redundantBackdrop is one redundant (deletable) backdrop index together
-// with the sha256 it had at detection time. The hash is carried forward so
-// the prune loop can re-verify, immediately before deleting, that the
-// index's content has not changed since detection (closing the TOCTOU
-// window between hashing and delete: a concurrent platform write could
-// otherwise replace the index's content and this guard would delete a
-// now-possibly-unique image).
+// with the sha256 it had at detection time and the index of the surviving
+// (kept) copy it duplicates. Both the hash and the survivor index are
+// carried forward so the prune loop can re-verify, immediately before
+// deleting, that NEITHER the candidate NOR the survivor's content has
+// changed since detection (closing the TOCTOU window between hashing and
+// delete: a concurrent platform write could otherwise replace either
+// image's content -- if only the candidate were re-checked, a write that
+// replaced the SURVIVOR's content would go undetected and the last
+// remaining copy of the survivor's original image would be deleted).
 type redundantBackdrop struct {
-	Index int
-	Hash  [32]byte
+	Index    int
+	Hash     [32]byte
+	Survivor int
 }
 
 // dedupBackdropIndices returns the indices to delete: every index except the
 // lowest in each byte-identical group, each carrying the hash it had at
-// detection. Sorted DESCENDING by Index so callers delete high-index-first
+// detection and the index of the group's surviving (lowest, kept) index.
+// Sorted DESCENDING by Index so callers delete high-index-first
 // (Emby/Jellyfin re-index the remaining backdrops after each delete, so a
 // low-to-high delete order would shift later indices out from under the
 // caller).
 func dedupBackdropIndices(hashes [][32]byte) []redundantBackdrop {
-	seen := make(map[[32]byte]bool, len(hashes))
+	seen := make(map[[32]byte]int, len(hashes))
 	var redundant []redundantBackdrop
 	for i, h := range hashes {
-		if seen[h] {
-			redundant = append(redundant, redundantBackdrop{Index: i, Hash: h})
+		if survivor, ok := seen[h]; ok {
+			redundant = append(redundant, redundantBackdrop{Index: i, Hash: h, Survivor: survivor})
 			continue
 		}
-		seen[h] = true
+		seen[h] = i
 	}
 	sort.Slice(redundant, func(a, b int) bool { return redundant[a].Index > redundant[b].Index })
 	return redundant
@@ -288,6 +293,23 @@ func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context) (Platfo
 	return result, nil
 }
 
+// verifyBackdropUnchanged re-fetches the backdrop at index and confirms it
+// still hashes to want, returning a descriptive error otherwise (either a
+// fetch failure or a content change) suitable for direct logging by the
+// caller. Factored out of pruneOneArtist's delete loop so that loop can
+// re-verify both the candidate and its surviving counterpart without
+// duplicating the fetch/hash/compare branches inline.
+func verifyBackdropUnchanged(ctx context.Context, client backdropPruneClient, platformArtistID string, index int, want [32]byte) error {
+	data, _, err := client.GetArtistBackdrop(ctx, platformArtistID, index)
+	if err != nil {
+		return fmt.Errorf("re-verify fetch failed: %w", err)
+	}
+	if sha256.Sum256(data) != want {
+		return fmt.Errorf("content changed since detection")
+	}
+	return nil
+}
+
 // pruneOneArtist detects and deletes redundant backdrops for one artist
 // across its image-write-enabled platforms, updating result in place.
 func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, result *PlatformBackdropPruneResult) {
@@ -323,24 +345,28 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, result
 		for _, rb := range redundant { // already descending by Index
 			// Re-verify immediately before deleting: a concurrent platform
 			// write between detection (hashing, above) and this delete could
-			// have replaced the index's content. Re-fetch and re-hash; only
-			// delete if the content still matches what detection hashed. A
-			// skip here performs no delete, so lower indices are unaffected
-			// and the connection continues (`continue`) -- this is distinct
-			// from an actual delete error below, which leaves platform state
+			// have replaced the index's content. Re-check BOTH the candidate
+			// (about to be deleted) and its surviving (kept) counterpart;
+			// only delete if BOTH still match what detection hashed.
+			// Checking only the candidate would miss a write that instead
+			// replaced the SURVIVOR's content -- the candidate would still
+			// look redundant and deleting it would then destroy the last
+			// remaining copy of the survivor's original image. A skip here
+			// performs no delete, so lower indices are unaffected and the
+			// connection continues (`continue`) -- this is distinct from an
+			// actual delete error below, which leaves platform state
 			// ambiguous and must `break`.
-			data, _, ferr := client.GetArtistBackdrop(ctx, pid.PlatformArtistID, rb.Index)
-			if ferr != nil {
-				p.logger.Warn("platform backdrop prune: re-verify fetch failed; skipping delete",
+			if verr := verifyBackdropUnchanged(ctx, client, pid.PlatformArtistID, rb.Index, rb.Hash); verr != nil {
+				p.logger.Warn("platform backdrop prune: candidate re-verify failed; skipping delete",
 					slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
-					slog.Int("index", rb.Index), slog.String("error", ferr.Error()))
+					slog.Int("index", rb.Index), slog.String("error", verr.Error()))
 				result.SkippedChanged++
 				continue
 			}
-			if sha256.Sum256(data) != rb.Hash {
-				p.logger.Warn("platform backdrop prune: backdrop content changed since detection; skipping delete to avoid deleting a now-unique image",
+			if verr := verifyBackdropUnchanged(ctx, client, pid.PlatformArtistID, rb.Survivor, rb.Hash); verr != nil {
+				p.logger.Warn("platform backdrop prune: survivor re-verify failed; skipping delete to avoid deleting its last remaining copy",
 					slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
-					slog.Int("index", rb.Index))
+					slog.Int("index", rb.Index), slog.Int("survivor_index", rb.Survivor), slog.String("error", verr.Error()))
 				result.SkippedChanged++
 				continue
 			}

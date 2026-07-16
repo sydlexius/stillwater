@@ -401,6 +401,44 @@ func TestPrunePlatformBackdropDuplicates_SkipsWhenContentChangedSinceDetection(t
 	}
 }
 
+// TestPrunePlatformBackdropDuplicates_SkipsWhenSurvivorContentChangedSinceDetection
+// guards the OTHER half of the TOCTOU re-verify gate (#2552 F4): the
+// candidate's own re-verify passing is not enough -- if the SURVIVING
+// (kept, lower-index) copy's content changed since detection, deleting the
+// candidate would destroy the last remaining copy of the survivor's
+// original image. Fixture: two byte-identical backdrops at indices 0
+// (survivor) and 1 (candidate). Index 0's content is mutated on its
+// second fetch (the prune loop's pre-delete re-verify of the survivor),
+// simulating a concurrent platform write to the KEPT copy rather than the
+// one about to be deleted. The candidate (index 1) itself never changes,
+// so a re-verify that checks only the candidate would wrongly proceed to
+// delete it -- destroying the only unmutated-content copy left. The fix
+// must instead skip the delete and count it in SkippedChanged.
+func TestPrunePlatformBackdropDuplicates_SkipsWhenSurvivorContentChangedSinceDetection(t *testing.T) {
+	dup, mutated := []byte("AAA"), []byte("CCC")
+	fake := &fakeBackdropClient{
+		backdrops:      [][]byte{dup, dup},
+		failAt:         -1,
+		failDeleteAt:   -1,
+		mutateAtVerify: map[int][]byte{0: mutated},
+	}
+	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background())
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if len(fake.deleted) != 0 {
+		t.Fatalf("deleted = %v, want none (survivor's content changed since detection; candidate must not be deleted)", fake.deleted)
+	}
+	if res.SkippedChanged != 1 {
+		t.Fatalf("SkippedChanged = %d, want 1", res.SkippedChanged)
+	}
+	if res.BackdropsRemoved != 0 {
+		t.Fatalf("BackdropsRemoved = %d, want 0", res.BackdropsRemoved)
+	}
+}
+
 // TestPrunePlatformBackdropDuplicates_SkipsWhenReVerifyFetchFails guards the
 // OTHER re-verify skip branch: the re-fetch itself erroring (as opposed to
 // succeeding but returning changed content, covered above). Fixture: indices
