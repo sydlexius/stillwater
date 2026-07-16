@@ -232,14 +232,14 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 				return templ_7745c5c3_Err
 			}
 			if view.RedundantBackdrops > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button type=\"button\" id=\"platform-backdrop-duplicates-prune-button\" class=\"sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none shrink-0\" hx-post=\"/api/v1/reports/platform-backdrop-duplicates/prune\" hx-confirm=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button type=\"button\" id=\"platform-backdrop-duplicates-prune-button\" class=\"sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none shrink-0\" hx-post=\"/api/v1/reports/platform-backdrop-duplicates/prune\" hx-swap=\"none\" hx-confirm=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "platform_backdrop_duplicates.prune_confirm"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 84, Col: 72}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 85, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 				if templ_7745c5c3_Err != nil {
@@ -252,7 +252,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "platform_backdrop_duplicates.prune_response_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 85, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 86, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 				if templ_7745c5c3_Err != nil {
@@ -265,20 +265,20 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "platform_backdrop_duplicates.prune_send_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 86, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 87, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" hx-on::response-error=\"alert(this.dataset.swError)\" hx-on::send-error=\"alert(this.dataset.swNetError)\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" hx-on::after-request=\"if(event.detail.successful) location.reload()\" hx-on::response-error=\"alert(this.dataset.swError)\" hx-on::send-error=\"alert(this.dataset.swNetError)\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "platform_backdrop_duplicates.prune_button"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 89, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 91, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -301,7 +301,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "platform_backdrop_duplicates.empty"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 96, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 98, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
@@ -319,7 +319,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "platform_backdrop_duplicates.column_artist"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 102, Col: 96}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 104, Col: 96}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -332,7 +332,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "platform_backdrop_duplicates.column_platform"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 103, Col: 98}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 105, Col: 98}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -345,7 +345,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 				var templ_7745c5c3_Var21 string
 				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "platform_backdrop_duplicates.column_backdrops"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 104, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 106, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
@@ -358,7 +358,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "platform_backdrop_duplicates.column_redundant"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 105, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 107, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -376,7 +376,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 					var templ_7745c5c3_Var23 templ.SafeURL
 					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/artists/" + row.ArtistID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 112, Col: 97}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 114, Col: 97}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
@@ -389,7 +389,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 					var templ_7745c5c3_Var24 string
 					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(row.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 112, Col: 110}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 114, Col: 110}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 					if templ_7745c5c3_Err != nil {
@@ -402,7 +402,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 					var templ_7745c5c3_Var25 string
 					templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(row.Connection)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 114, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 116, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 					if templ_7745c5c3_Err != nil {
@@ -415,7 +415,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 					var templ_7745c5c3_Var26 string
 					templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(row.Backdrops))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 115, Col: 60}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 117, Col: 60}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 					if templ_7745c5c3_Err != nil {
@@ -428,7 +428,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 					var templ_7745c5c3_Var27 string
 					templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(row.Redundant))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 116, Col: 60}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_backdrop_duplicates.templ`, Line: 118, Col: 60}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 					if templ_7745c5c3_Err != nil {

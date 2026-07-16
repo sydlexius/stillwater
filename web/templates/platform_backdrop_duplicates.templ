@@ -81,9 +81,11 @@ templ PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDup
 							id="platform-backdrop-duplicates-prune-button"
 							class="sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none shrink-0"
 							hx-post="/api/v1/reports/platform-backdrop-duplicates/prune"
+							hx-swap="none"
 							hx-confirm={ t(ctx, "platform_backdrop_duplicates.prune_confirm") }
 							data-sw-error={ t(ctx, "platform_backdrop_duplicates.prune_response_error") }
 							data-sw-net-error={ t(ctx, "platform_backdrop_duplicates.prune_send_error") }
+							hx-on::after-request="if(event.detail.successful) location.reload()"
 							hx-on::response-error="alert(this.dataset.swError)"
 							hx-on::send-error="alert(this.dataset.swNetError)"
 						>{ t(ctx, "platform_backdrop_duplicates.prune_button") }</button>
