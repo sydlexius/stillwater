@@ -425,17 +425,3 @@ func TestDiscographyFixer_Fix_SeedsMissingNFO(t *testing.T) {
 		t.Fatalf("seeded NFO has %d albums, want 1", len(got.Albums))
 	}
 }
-
-// TestDiscographyEngine_ReleaseGroupFetcherWiring verifies the engine setter
-// and getter for the release-group fetcher round-trip.
-func TestDiscographyEngine_ReleaseGroupFetcherWiring(t *testing.T) {
-	e := &Engine{logger: testLogger()}
-	if e.ReleaseGroupFetcher() != nil {
-		t.Error("ReleaseGroupFetcher should be nil before wiring")
-	}
-	fetcher := &stubReleaseGroupFetcher{}
-	e.SetReleaseGroupFetcher(fetcher)
-	if e.ReleaseGroupFetcher() == nil {
-		t.Error("ReleaseGroupFetcher should be set after SetReleaseGroupFetcher")
-	}
-}

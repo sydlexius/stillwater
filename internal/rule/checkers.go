@@ -540,12 +540,12 @@ func (e *Engine) makeLogoPaddingChecker() Checker {
 			}
 
 			content, original, ok = e.getLogoBoundsContent(logoPath)
-		} else if e.imageFetcher != nil {
+		} else if imageFetcher := e.platformImageFetcherFor(RuleLogoPadding); imageFetcher != nil {
 			// No local path: try fetching via platform API.
 			data, cached := e.lookupAPIImage(a.ID, "logo")
 			if !cached {
 				var fetchErr error
-				data, _, fetchErr = e.imageFetcher.FetchArtistImage(
+				data, _, fetchErr = imageFetcher.FetchArtistImage(
 					ctx, a.ID, "logo")
 				if fetchErr != nil {
 					e.logger.Debug("logo padding check skipped: API fetch failed",
@@ -914,8 +914,8 @@ func (e *Engine) checkExtraneousImagesFromDB(ctx context.Context, a *artist.Arti
 	// Check for platform-reported image slots that have no matching
 	// artist_images row. These are images the platform knows about but
 	// Stillwater does not track, indicating unmanaged/orphaned images.
-	if e.imageFetcher != nil {
-		platformSlots, slotErr := e.imageFetcher.ListArtistImageSlots(ctx, a.ID)
+	if imageFetcher := e.platformImageFetcherFor(RuleExtraneousImages); imageFetcher != nil {
+		platformSlots, slotErr := imageFetcher.ListArtistImageSlots(ctx, a.ID)
 		if slotErr == nil {
 			for imgType, count := range platformSlots {
 				for slot := 0; slot < count; slot++ {

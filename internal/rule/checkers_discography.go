@@ -11,6 +11,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/nfo"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // discographyFetchTimeout caps the MusicBrainz round-trip the coverage check
@@ -104,8 +105,9 @@ func (e *Engine) makeDiscographyChecker() Checker {
 		}
 
 		// Signal 2: coverage comparison. Only attempted when a release-group
-		// fetcher is wired; otherwise a non-empty discography is accepted.
-		if e.releaseGroupFetcher == nil {
+		// fetcher is wired AND this rule declares the capability to reach it;
+		// otherwise a non-empty discography is accepted.
+		if e.releaseGroupFetcherFor(RuleDiscographyPopulated) == nil {
 			return nil
 		}
 
@@ -151,7 +153,8 @@ func (e *Engine) makeDiscographyChecker() Checker {
 // when the fetcher is unwired, the artist has no MBID, or the lookup fails or
 // times out -- the caller treats 0 as "skip the coverage check".
 func (e *Engine) countMBReleaseGroups(ctx context.Context, a *artist.Artist, cfg RuleConfig) int {
-	if e.releaseGroupFetcher == nil || a.MusicBrainzID == "" {
+	fetcher := e.releaseGroupFetcherFor(RuleDiscographyPopulated)
+	if fetcher == nil || a.MusicBrainzID == "" {
 		return 0
 	}
 
@@ -160,7 +163,7 @@ func (e *Engine) countMBReleaseGroups(ctx context.Context, a *artist.Artist, cfg
 	fetchCtx, cancel := context.WithTimeout(ctx, discographyFetchTimeout)
 	defer cancel()
 
-	groups, err := e.releaseGroupFetcher.GetReleaseGroups(fetchCtx, a.MusicBrainzID)
+	groups, err := e.fetchReleaseGroupsCoalesced(fetchCtx, fetcher, a.MusicBrainzID)
 	if err != nil {
 		e.logger.Warn("discography_populated: release-group fetch failed",
 			slog.String("artist", a.Name),
@@ -174,4 +177,22 @@ func (e *Engine) countMBReleaseGroups(ctx context.Context, a *artist.Artist, cfg
 	// fixer would merge.
 	filter := nfo.ParseReleaseTypeFilter(cfg.ReleaseTypes)
 	return filter.CountReleaseGroups(groups)
+}
+
+// fetchReleaseGroupsCoalesced routes the release-group fetch through the
+// per-artist EvaluationContext coalescer when one is attached to ctx (the
+// canonical pipeline path), so the pre-fix and post-fix checker passes of a
+// single scoped run collapse to one MusicBrainz call (#2476). When no
+// EvaluationContext is present -- single-violation paths, or a pipeline wired
+// without an orchestrator -- it falls back to the bare fetcher, which preserves
+// the legacy behavior. fetcher is the capability-gated handle the caller
+// already obtained via releaseGroupFetcherFor; it is passed in rather than read
+// off the Engine so the capability gate stays the single access point.
+func (e *Engine) fetchReleaseGroupsCoalesced(ctx context.Context, fetcher ReleaseGroupFetcher, mbid string) ([]provider.ReleaseGroupInfo, error) {
+	if ec := EvaluationContextFromContext(ctx); ec != nil {
+		return ec.GetReleaseGroups(ctx, mbid, func(fetchCtx context.Context) ([]provider.ReleaseGroupInfo, error) {
+			return fetcher.GetReleaseGroups(fetchCtx, mbid)
+		})
+	}
+	return fetcher.GetReleaseGroups(ctx, mbid)
 }

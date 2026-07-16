@@ -257,13 +257,6 @@ func (e *Engine) SetMetadataProvider(p MetadataProvider) {
 	e.metadataProvider = p
 }
 
-// MetadataProvider returns the engine's metadata provider, or nil if none
-// is configured. The name_language_pref fixer uses this to perform the
-// alias lookup and promotion.
-func (e *Engine) MetadataProvider() MetadataProvider {
-	return e.metadataProvider
-}
-
 // SetReleaseGroupFetcher attaches a MusicBrainz release-group fetcher to the
 // engine. The discography_populated checker uses it to count an artist's
 // release groups when measuring how much of the discography the NFO covers.
@@ -271,12 +264,6 @@ func (e *Engine) MetadataProvider() MetadataProvider {
 // whose NFO has zero album entries).
 func (e *Engine) SetReleaseGroupFetcher(f ReleaseGroupFetcher) {
 	e.releaseGroupFetcher = f
-}
-
-// ReleaseGroupFetcher returns the engine's release-group fetcher, or nil if
-// none is configured.
-func (e *Engine) ReleaseGroupFetcher() ReleaseGroupFetcher {
-	return e.releaseGroupFetcher
 }
 
 // cachedRules returns the rule list from the in-memory cache when it is still
@@ -340,13 +327,6 @@ func (e *Engine) FSCache() *FSCache {
 // no local filesystem path.
 func (e *Engine) SetImageFetcher(f PlatformImageFetcher) {
 	e.imageFetcher = f
-}
-
-// ImageFetcher returns the engine's platform image fetcher, or nil if none
-// is configured. Fixers use this accessor to fetch and upload images through
-// platform APIs.
-func (e *Engine) ImageFetcher() PlatformImageFetcher {
-	return e.imageFetcher
 }
 
 // lookupAPIImage returns cached image bytes fetched via the platform API for

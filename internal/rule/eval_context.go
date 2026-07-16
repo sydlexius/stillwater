@@ -103,11 +103,12 @@ type evalCacheKey struct {
 // callers (the W4 telemetry decision depends on the counter staying
 // honest under Phase 2 parallel evaluation).
 type evalCacheEntry struct {
-	fetch  *provider.FetchResult
-	search []provider.ArtistSearchResult
-	field  []provider.FieldProviderResult
-	err    error
-	done   chan struct{}
+	fetch         *provider.FetchResult
+	search        []provider.ArtistSearchResult
+	field         []provider.FieldProviderResult
+	releaseGroups []provider.ReleaseGroupInfo
+	err           error
+	done          chan struct{}
 }
 
 // alreadyDoneCh is a closed channel reused as the done signal for cache
@@ -347,6 +348,48 @@ func (e *EvaluationContext) Search(ctx context.Context, name string) ([]provider
 	return result.search, err
 }
 
+// GetReleaseGroups coalesces MusicBrainz release-group fetches keyed by
+// (artist_id, mbid). Unlike FetchImages/FetchMetadata/FetchFieldFromProviders/
+// Search, the release-group fetcher is NOT part of the EvalProvider surface:
+// it is a separate registry-resolved MusicBrainz adapter held by the Engine
+// (Engine.releaseGroupFetcher). The caller therefore supplies the fetch
+// closure and the EvaluationContext contributes only the singleflight cache.
+//
+// This exists for issue #2476: a single scoped run of one artist invokes the
+// discography_populated checker twice under the same per-artist context -- once
+// in the pre-fix evaluation and once in the post-fix re-evaluation (see
+// runForArtist in fixer.go). With the checker fetching directly on the Engine
+// those two passes each queried MusicBrainz; routing through here collapses
+// them to a single upstream call.
+func (e *EvaluationContext) GetReleaseGroups(ctx context.Context, mbid string, fetch func(context.Context) ([]provider.ReleaseGroupInfo, error)) ([]provider.ReleaseGroupInfo, error) {
+	if e == nil {
+		return nil, errNilEvalContext
+	}
+	key := evalCacheKey{
+		artistID: e.artistID,
+		method:   "releasegroups",
+		detail:   mbid,
+	}
+	e.mu.Lock()
+	if cached, ok := e.cache[key]; ok {
+		e.mu.Unlock()
+		<-cached.done
+		e.dedupTotal.Add(1)
+		e.logger.Debug("provider fetch dedup",
+			slog.String("method", "releasegroups"),
+			slog.String("artist_id", e.artistID),
+			slog.String("mbid", mbid),
+		)
+		return cached.releaseGroups, cached.err
+	}
+	e.mu.Unlock()
+	result, err := e.dispatch(ctx, key, func() *evalCacheEntry {
+		rgs, ferr := fetch(ctx)
+		return &evalCacheEntry{releaseGroups: rgs, err: ferr}
+	})
+	return result.releaseGroups, err
+}
+
 // dispatch is the singleflight publisher for a coalesced provider call.
 // It guarantees exactly one fetch() per cache key by inserting an
 // in-flight placeholder entry under the cache lock BEFORE running fetch;
@@ -450,6 +493,7 @@ func (e *EvaluationContext) dispatch(ctx context.Context, key evalCacheKey, fetc
 			passEntry.fetch = cached.fetch
 			passEntry.search = cached.search
 			passEntry.field = cached.field
+			passEntry.releaseGroups = cached.releaseGroups
 			passEntry.err = cached.err
 			close(passEntry.done)
 			passCtx.finalize(key)
@@ -467,6 +511,7 @@ func (e *EvaluationContext) dispatch(ctx context.Context, key evalCacheKey, fetc
 		passEntry.fetch = filled.fetch
 		passEntry.search = filled.search
 		passEntry.field = filled.field
+		passEntry.releaseGroups = filled.releaseGroups
 		passEntry.err = filled.err
 		e.fetchTotal.Add(1)
 		close(passEntry.done)
@@ -506,6 +551,7 @@ func (e *EvaluationContext) dispatch(ctx context.Context, key evalCacheKey, fetc
 	placeholder.fetch = filled.fetch
 	placeholder.search = filled.search
 	placeholder.field = filled.field
+	placeholder.releaseGroups = filled.releaseGroups
 	placeholder.err = filled.err
 	e.fetchTotal.Add(1)
 	close(placeholder.done)
