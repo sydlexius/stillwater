@@ -141,7 +141,7 @@ func TestSectionServersNext_Feature1917Cleanup(t *testing.T) {
 	// must actually render. Without this, the verify-path assertions would
 	// pass vacuously if SectionServersNext silently stopped emitting the
 	// Lidarr card at all.
-	if !strings.Contains(out, "conn-lidarr") {
+	if !strings.Contains(out, `id="connection-conn-lidarr"`) {
 		t.Fatal("precondition: the Lidarr connection did not render; the verify-path absence check below would pass vacuously")
 	}
 
