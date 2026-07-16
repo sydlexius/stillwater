@@ -219,14 +219,41 @@
       var el = form.elements[f];
       if (el && el.value !== '') cfg[f] = intFields[f] ? parseInt(el.value, 10) : parseFloat(el.value);
     });
-    // Text-valued config fields (e.g. the discography release-type filter)
-    // are forwarded as-is rather than parsed as numbers.
+    // Text-valued config fields (e.g. the discography release-type filter) are
+    // forwarded as-is rather than parsed as numbers.
     ['release_types'].forEach(function(f) {
       var el = form.elements[f];
       if (!el) return;
       var value = el.value.trim();
       if (value !== '') cfg[f] = value;
     });
+    // The provider_id_missing rule renders its required-provider set as one
+    // checkbox per available in-scope provider (name="required_provider_ids").
+    // Storage mirrors the checker's dynamic-default semantics (config replaces
+    // the whole RuleConfig; required_provider_ids is omitempty, so an omitted
+    // value persists as empty):
+    //   - all available checked  -> omit, storing empty so the rule keeps
+    //     requiring every available in-scope provider as they are added/removed.
+    //   - a strict subset checked -> store that subset, comma-separated.
+    //   - none checked            -> reject the save. An empty string means
+    //     "all", so silently storing it would invert the operator's intent;
+    //     require at least one provider (or disable the rule to require none).
+    var providerBoxes = form.querySelectorAll('input[type="checkbox"][name="required_provider_ids"]');
+    if (providerBoxes.length > 0) {
+      var checkedProviders = [];
+      providerBoxes.forEach(function(box) {
+        if (box.checked) checkedProviders.push(box.value);
+      });
+      if (checkedProviders.length === 0) {
+        if (typeof showToast === 'function') {
+          showToast('Select at least one provider, or disable the rule.');
+        }
+        return;
+      }
+      if (checkedProviders.length < providerBoxes.length) {
+        cfg['required_provider_ids'] = checkedProviders.join(',');
+      }
+    }
     var sev = form.elements['severity'];
     if (sev) cfg['severity'] = sev.value;
     var panel = document.getElementById('rule-cfg-' + ruleID);

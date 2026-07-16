@@ -550,7 +550,7 @@ func ruleHasConfig(id string) bool {
 	switch id {
 	case "thumb_min_res", "thumb_square", "fanart_min_res", "fanart_aspect",
 		"logo_min_res", "banner_min_res", "bio_exists", "logo_padding",
-		"discography_populated":
+		"discography_populated", "provider_id_missing":
 		return true
 	}
 	return false
@@ -758,6 +758,56 @@ func availableProviders(pri provider.FieldPriority, keys []provider.ProviderKeyS
 		}
 	}
 	return result
+}
+
+// providerIDToggle describes one checkbox in the provider_id_missing rule
+// config: an in-scope provider (Discogs/Deezer/Spotify) that is currently
+// available, plus whether it is checked given the rule's stored override.
+type providerIDToggle struct {
+	Name    provider.ProviderName
+	Label   string
+	Checked bool
+}
+
+// parseRequiredProviderIDs parses the comma-separated RequiredProviderIDs
+// override into a set for checkbox rendering. It mirrors the checker's
+// parseProviderIDSet (case-insensitive, whitespace-trimmed) but lives in the
+// templates package for render-time use. An empty string yields a nil set,
+// which the caller treats as the dynamic default (all available checked).
+func parseRequiredProviderIDs(csv string) map[provider.ProviderName]bool {
+	if strings.TrimSpace(csv) == "" {
+		return nil
+	}
+	out := make(map[provider.ProviderName]bool)
+	for _, tok := range strings.Split(csv, ",") {
+		name := provider.ProviderName(strings.ToLower(strings.TrimSpace(tok)))
+		if name != "" {
+			out[name] = true
+		}
+	}
+	return out
+}
+
+// providerIDToggles builds the checkbox model for the provider_id_missing rule
+// config. It renders one toggle per in-scope provider that is currently
+// available (configured). The checked state follows the checker's
+// dynamic-default semantics: an empty RequiredProviderIDs means "require every
+// available in-scope provider", so every box is checked; a non-empty override
+// checks exactly the listed providers.
+func providerIDToggles(cfg string, keys []provider.ProviderKeyStatus) []providerIDToggle {
+	override := parseRequiredProviderIDs(cfg)
+	var out []providerIDToggle
+	for _, name := range rule.InScopeProviderIDs() {
+		if !providerIsAvailable(name, keys) {
+			continue
+		}
+		out = append(out, providerIDToggle{
+			Name:    name,
+			Label:   name.DisplayName(),
+			Checked: len(override) == 0 || override[name],
+		})
+	}
+	return out
 }
 
 // providerIsDisabled returns true if a provider is in the field's disabled list.
@@ -2296,7 +2346,7 @@ templ profileCard(p platform.Profile) {
 	</div>
 }
 
-templ ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) {
+templ ruleRow(rl rule.Rule, providerKeys []provider.ProviderKeyStatus, hasLocalLibrary, showSeverityHelp, showFsHelp bool) {
 	// A filesystem-dependent rule is unavailable when no local library exists.
 	// In that state, all controls are disabled and a tooltip explains why.
 	{{ fsUnavailable := rl.FilesystemDependent && !hasLocalLibrary }}
@@ -2399,7 +2449,7 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) 
 					disabled?={ fsUnavailable }
 				>{ t(ctx, "actions.configure") }</button>
 				<div id={ "rule-cfg-" + rl.ID } class="hidden mt-2">
-					@ruleConfigForm(rl)
+					@ruleConfigForm(rl, providerKeys)
 				</div>
 			</div>
 		}
@@ -2413,7 +2463,7 @@ templ severityBadge(severity string) {
 	</span>
 }
 
-templ ruleConfigForm(rl rule.Rule) {
+templ ruleConfigForm(rl rule.Rule, providerKeys []provider.ProviderKeyStatus) {
 	<form
 		class="grid grid-cols-2 gap-3 sm:grid-cols-3 items-end"
 		data-rule-id={ rl.ID }
@@ -2562,6 +2612,30 @@ templ ruleConfigForm(rl rule.Rule) {
 					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
 				/>
 			</label>
+		}
+		if rl.ID == "provider_id_missing" {
+			{{ providerToggles := providerIDToggles(rl.Config.RequiredProviderIDs, providerKeys) }}
+			<fieldset class="block col-span-full" title={ t(ctx, "rules.provider_id_missing.required_provider_ids.help") }>
+				<legend class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "rules.provider_id_missing.required_provider_ids") }</legend>
+				if len(providerToggles) == 0 {
+					<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "rules.provider_id_missing.no_providers") }</p>
+				} else {
+					<div class="mt-0.5 flex flex-wrap gap-x-4 gap-y-1">
+						for _, tg := range providerToggles {
+							<label class="inline-flex items-center gap-1.5 text-sm">
+								<input
+									type="checkbox"
+									name="required_provider_ids"
+									value={ string(tg.Name) }
+									checked?={ tg.Checked }
+									class="sw-provider-checkbox"
+								/>
+								<span>{ tg.Label }</span>
+							</label>
+						}
+					</div>
+				}
+			</fieldset>
 		}
 		<label class="block">
 			<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.severity_label") }</span>

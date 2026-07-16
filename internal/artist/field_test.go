@@ -19,6 +19,7 @@ func TestFieldValueFromArtist_NewFields(t *testing.T) {
 		DiscogsID:      "54321",
 		WikidataID:     "Q161103",
 		DeezerID:       "5432",
+		SpotifyID:      "7dGJo4pcD2V6oG8kP0tJRR",
 	}
 
 	tests := []struct {
@@ -34,6 +35,7 @@ func TestFieldValueFromArtist_NewFields(t *testing.T) {
 		{"discogs_id", "54321"},
 		{"wikidata_id", "Q161103"},
 		{"deezer_id", "5432"},
+		{"spotify_id", "7dGJo4pcD2V6oG8kP0tJRR"},
 	}
 
 	for _, tt := range tests {
@@ -199,6 +201,7 @@ func TestUpdateProviderField(t *testing.T) {
 		{"discogs_id", "54321", func(a *Artist) bool { return a.DiscogsID == "54321" }},
 		{"wikidata_id", "Q161103", func(a *Artist) bool { return a.WikidataID == "Q161103" }},
 		{"deezer_id", "5432", func(a *Artist) bool { return a.DeezerID == "5432" }},
+		{"spotify_id", "7dGJo4pcD2V6oG8kP0tJRR", func(a *Artist) bool { return a.SpotifyID == "7dGJo4pcD2V6oG8kP0tJRR" }},
 	}
 
 	for _, tt := range tests {

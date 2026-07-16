@@ -3297,6 +3297,55 @@ html[data-density="spacious"] .sw-next-reports .sw-rep-rate-item {
   outline-color: var(--sw-content-text-secondary); /* override #1335 blue outline */
 }
 
+/* Required-provider-IDs rule config checkboxes (#2457; ux-design-spec.md
+ * Components table, "Checkboxes (established, styled)" row): membership of a
+ * provider in the required-set, so this is a CHECKBOX per the control rule
+ * (ux-design-spec.md sect. "toggle vs checkbox vs radio"), and it is a
+ * SETTINGS AFFORDANCE rather than a row selection, so it takes the de-blue
+ * variant, never the row-selection blue-fill (#1335) treatment -- no opaque
+ * accent fill anywhere (ux-design-spec.md sect. "THE RULE: no OPAQUE accent
+ * fill"). This settings page is stable (outside .sw-next-artists), so the
+ * de-blue colors above are ported here self-contained rather than relying on
+ * the [data-col-toggle] override, which needs the .sw-next-artists base rule
+ * (#1335) in scope for its geometry. Same tokens, same transparent-box +
+ * drawn-glyph-in-ink treatment, just inlined for a surface outside that
+ * scope. */
+.sw-provider-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 4px;
+  border: 1.5px solid var(--sw-content-text-secondary);
+  background-color: transparent;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+  flex: none;
+  vertical-align: middle;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.sw-provider-checkbox:hover {
+  border-color: var(--sw-content-text);
+}
+.sw-provider-checkbox:checked {
+  background-color: transparent;
+  border-color: var(--sw-content-text);
+}
+.sw-provider-checkbox:checked::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.28rem;
+  border-left: 2px solid var(--sw-content-text);
+  border-bottom: 2px solid var(--sw-content-text);
+  transform: rotate(-45deg) translate(0.5px, -1px);
+}
+.sw-provider-checkbox:focus-visible {
+  outline: 2px solid var(--sw-content-text-secondary);
+  outline-offset: 2px;
+}
+
 /* Roving keyboard focus (M55 #1789): j/k move focus between list rows/cards via
  * the shared keyboard helper. A <tr>/<div> has no reliable default focus ring,
  * so give the roving item an explicit visible outline for keyboard-only nav. */

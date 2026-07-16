@@ -45,6 +45,7 @@ const (
 	RuleNameLanguagePref      = "name_language_pref"
 	RuleOriginMissing         = "origin_missing"
 	RuleDiscographyPopulated  = "discography_populated"
+	RuleProviderIDMissing     = "provider_id_missing"
 
 	// Deprecated rule IDs kept for migration. These rules have been merged
 	// into other rules but may still have violations in the database.
@@ -283,6 +284,18 @@ var defaultRules = []Rule{
 		// the configured-type release groups MusicBrainz reports is flagged.
 		// ReleaseTypes defaults to "Album,EP" (nfo.DefaultReleaseTypeFilter).
 		Config: RuleConfig{Severity: "info", CoverageThreshold: 50, ReleaseTypes: "Album,EP"},
+	},
+	{
+		ID:             RuleProviderIDMissing,
+		Name:           "Provider IDs present",
+		Description:    "Flags artists missing a non-MusicBrainz provider ID (Discogs, Deezer, or Spotify) that image search needs, since a missing ID makes that provider silently skip the artist during artwork lookup. By default the rule requires only providers you have configured; the fix backfills IDs derivable from the artist's MusicBrainz URL relations.",
+		Category:       RuleCategoryMetadata,
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		// RequiredProviderIDs is left empty by default: the checker then requires
+		// the dynamic default (every configured provider among Discogs, Deezer,
+		// and Spotify). An operator override narrows that set to a chosen subset.
+		Config: RuleConfig{Severity: "info"},
 	},
 }
 

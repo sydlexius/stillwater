@@ -328,6 +328,21 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		},
 		FixExample: "Before: artist.nfo has 0 <album> entries\nAfter:  artist.nfo has 12 <album> entries merged from MusicBrainz release groups",
 	},
+	RuleProviderIDMissing: {
+		FixBehavior: "Fetches the artist's MusicBrainz URL relations and fills in any missing Discogs, Deezer, or Spotify ID that can be derived from them. Existing provider IDs are never overwritten.",
+		Conditional: true,
+		Caveats: []string{
+			"Requires a MusicBrainz ID; without one there are no URL relations to derive provider IDs from.",
+			"Only fills IDs MusicBrainz actually links to; a provider with no MusicBrainz relation stays missing and must be entered by hand.",
+			"By default the rule requires only providers you have configured (Discogs, Deezer, Spotify); an unconfigured provider is never flagged.",
+		},
+		Guards: "During artwork search, a provider is queried using its own artist ID; when that ID is missing the provider is silently skipped, so the search quietly covers fewer sources than it appears to (issue #2457). This rule fires when an artist is missing a provider ID for one of the configured image providers among Discogs, Deezer, and Spotify. It reads the artist's stored provider IDs and compares them against the set of providers currently configured, optionally narrowed to a chosen subset.",
+		Examples: []string{
+			"An artist identified only by MusicBrainz ID whose Discogs and Spotify IDs were never populated, so image search skips both providers.",
+			"An artist imported before Deezer was configured, leaving the Deezer ID blank once the provider is enabled.",
+		},
+		FixExample: "Before: Discogs ID and Spotify ID are empty; MusicBrainz lists discogs and spotify URL relations\nAfter:  Discogs ID and Spotify ID are populated from those relations (existing IDs untouched)",
+	},
 }
 
 // CatalogueEntry returns the documentation metadata for a rule ID.

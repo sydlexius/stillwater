@@ -845,6 +845,9 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	// rule evaluation.
 	a.ruleEngine.SetImageHashRecorder(a.artistService)
 	a.ruleEngine.SetMetadataProvider(a.orchestrator)
+	// Lets the provider_id_missing checker require a provider ID only for
+	// providers that are actually configured (issue #2457).
+	a.ruleEngine.SetProviderAvailability(a.providerSettings)
 
 	// Wire image bridge so logo_padding rule can check/fix API-only artists.
 	a.imageBridge = imagebridge.New(a.connectionService, a.artistService, logger)
@@ -929,6 +932,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, a.artistService, logger),
 		rule.NewImageDuplicateFixer(a.db, a.platformService, a.fsCheck, a.artistService, logger),
 		rule.NewDiscographyFixer(releaseGroupFetcher, a.fsCheck, a.nfoSnapshotService, logger),
+		rule.NewProviderIDBackfillFixer(a.orchestrator, a.artistService, logger),
 	}
 	a.pipeline = rule.NewPipeline(a.ruleEngine, a.artistService, a.ruleService, fixers, a.publisher, logger)
 	a.pipeline.SetHistoryService(a.historyService)

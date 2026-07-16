@@ -197,7 +197,12 @@ func renderFixExample(entry rule.RuleCatalogueEntry) string {
 // renderConfigurable returns the "Configurable:" block for a rule. When only
 // severity is configurable it emits a compact inline form; otherwise it emits
 // a bullet list.
-func renderConfigurable(cfg rule.RuleConfig) string {
+//
+// ruleID is needed for knobs whose default value is intentionally empty and so
+// cannot be inferred from cfg alone: provider_id_missing's RequiredProviderIDs
+// defaults to "" (meaning "require every configured provider"), so keying off a
+// non-empty default would silently hide the knob from the catalogue.
+func renderConfigurable(ruleID string, cfg rule.RuleConfig) string {
 	var params []string
 
 	if cfg.MinWidth > 0 && cfg.MinHeight > 0 {
@@ -243,6 +248,14 @@ func renderConfigurable(cfg rule.RuleConfig) string {
 
 	if cfg.SelectBestCandidate {
 		params = append(params, "Auto-select best candidate")
+	}
+
+	// RequiredProviderIDs defaults to "" (require every configured provider among
+	// Discogs, Deezer, Spotify); an operator override narrows it to a subset. The
+	// empty default means this knob is invisible to the cfg-driven checks above,
+	// so surface it by rule identity.
+	if ruleID == rule.RuleProviderIDMissing {
+		params = append(params, "Required provider IDs (default: every configured provider among Discogs, Deezer, Spotify; override to require a subset)")
 	}
 
 	if len(params) == 0 {
@@ -377,7 +390,7 @@ func renderCatalogue(rules []rule.Rule) string {
 			}
 
 			// Configurable block
-			b.WriteString(renderConfigurable(r.Config))
+			b.WriteString(renderConfigurable(r.ID, r.Config))
 			b.WriteString("\n")
 
 			// Caveats block

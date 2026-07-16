@@ -36,6 +36,17 @@ type ReleaseGroupFetcher interface {
 	GetReleaseGroups(ctx context.Context, mbid string) ([]provider.ReleaseGroupInfo, error)
 }
 
+// ProviderAvailability abstracts the subset of provider.SettingsService that the
+// provider_id_missing checker needs: the set of providers that are currently
+// configured (no key required, or a key is stored). The checker requires an
+// artist to carry a provider ID only for providers that are actually available,
+// so a missing key never produces a violation the operator cannot act on. Wired
+// by SetProviderAvailability; when nil the checker degrades to a no-op rather
+// than failing evaluation.
+type ProviderAvailability interface {
+	AvailableProviderNames(ctx context.Context) (map[provider.ProviderName]bool, error)
+}
+
 // ruleCacheTTL is how long the in-memory rule list cache is considered fresh.
 // A short TTL (5 s) eliminates the N+1 DB query pattern under concurrent load
 // while ensuring that rule changes propagate within a few seconds.
@@ -172,6 +183,11 @@ type Engine struct {
 	// discography and skips the coverage comparison.
 	releaseGroupFetcher ReleaseGroupFetcher
 
+	// providerAvailability is used by the provider_id_missing checker to learn
+	// which providers are configured, so it only requires a provider ID for
+	// providers image search can actually reach. When nil the checker no-ops.
+	providerAvailability ProviderAvailability
+
 	// apiImageCacheMu guards apiImageCache.
 	apiImageCacheMu sync.Mutex
 	// apiImageCache stores raw image bytes fetched via the platform API. This
@@ -228,6 +244,7 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleLogoPadding] = e.makeLogoPaddingChecker()
 	e.checkers[RuleNameLanguagePref] = e.makeNameLanguagePrefChecker()
 	e.checkers[RuleDiscographyPopulated] = e.makeDiscographyChecker()
+	e.checkers[RuleProviderIDMissing] = e.makeProviderIDMissingChecker()
 
 	// Register per-(rule, artist) capability predicates. A rule with no entry
 	// here is always capable and is gated only by Enabled and, for the
@@ -264,6 +281,20 @@ func (e *Engine) SetMetadataProvider(p MetadataProvider) {
 // whose NFO has zero album entries).
 func (e *Engine) SetReleaseGroupFetcher(f ReleaseGroupFetcher) {
 	e.releaseGroupFetcher = f
+}
+
+// ReleaseGroupFetcher returns the engine's release-group fetcher, or nil if
+// none is configured.
+func (e *Engine) ReleaseGroupFetcher() ReleaseGroupFetcher {
+	return e.releaseGroupFetcher
+}
+
+// SetProviderAvailability attaches a provider-availability source (typically
+// the provider.SettingsService) to the engine. The provider_id_missing checker
+// uses it to require a provider ID only for providers that are configured. Pass
+// nil to disable the rule (its checker returns nil for every artist).
+func (e *Engine) SetProviderAvailability(p ProviderAvailability) {
+	e.providerAvailability = p
 }
 
 // cachedRules returns the rule list from the in-memory cache when it is still
