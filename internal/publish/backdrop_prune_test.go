@@ -474,6 +474,313 @@ func TestPrunePlatformBackdropDuplicates_FetchFailureSkipsConnection(t *testing.
 	}
 }
 
+// errArtistLister is an artistPageLister that always fails List, exercising
+// the "listing artists" error path shared by ScanPlatformBackdropDuplicates
+// and PrunePlatformBackdropDuplicates.
+type errArtistLister struct{}
+
+func (errArtistLister) List(_ context.Context, _ artist.ListParams) ([]artist.Artist, int, error) {
+	return nil, 0, fmt.Errorf("list boom")
+}
+
+// TestScanPlatformBackdropDuplicates_NilWiring guards the not-fully-wired
+// guard clause: a nil Publisher and a Publisher missing any of the three
+// required dependencies must both error rather than panic.
+func TestScanPlatformBackdropDuplicates_NilWiring(t *testing.T) {
+	var nilP *Publisher
+	if _, err := nilP.ScanPlatformBackdropDuplicates(context.Background()); err == nil {
+		t.Fatal("nil publisher: want error, got nil")
+	}
+
+	p := New(Deps{Logger: silentLogger()})
+	if _, err := p.ScanPlatformBackdropDuplicates(context.Background()); err == nil {
+		t.Fatal("unwired publisher: want error, got nil")
+	}
+}
+
+// TestScanPlatformBackdropDuplicates_ListError guards the artist-paging error
+// path: a List failure must be returned rather than silently swallowed.
+func TestScanPlatformBackdropDuplicates_ListError(t *testing.T) {
+	p := New(Deps{
+		ArtistService:     &fakePlatformLister{},
+		ArtistLister:      errArtistLister{},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+	})
+	if _, err := p.ScanPlatformBackdropDuplicates(context.Background()); err == nil {
+		t.Fatal("want error from List failure, got nil")
+	}
+}
+
+// TestPrunePlatformBackdropDuplicates_NilWiring mirrors the scan-side nil-
+// wiring guard for the prune entry point.
+func TestPrunePlatformBackdropDuplicates_NilWiring(t *testing.T) {
+	var nilP *Publisher
+	if _, err := nilP.PrunePlatformBackdropDuplicates(context.Background()); err == nil {
+		t.Fatal("nil publisher: want error, got nil")
+	}
+
+	p := New(Deps{Logger: silentLogger()})
+	if _, err := p.PrunePlatformBackdropDuplicates(context.Background()); err == nil {
+		t.Fatal("unwired publisher: want error, got nil")
+	}
+}
+
+// TestPrunePlatformBackdropDuplicates_ListError mirrors the scan-side List
+// error path for the prune entry point.
+func TestPrunePlatformBackdropDuplicates_ListError(t *testing.T) {
+	p := New(Deps{
+		ArtistService:     &fakePlatformLister{},
+		ArtistLister:      errArtistLister{},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+	})
+	if _, err := p.PrunePlatformBackdropDuplicates(context.Background()); err == nil {
+		t.Fatal("want error from List failure, got nil")
+	}
+}
+
+// TestBackdropRedundantIndices_DetailError guards the GetArtistDetail error
+// path: a failure fetching artist detail must abort with an error rather
+// than proceeding with a zero-value backdrop count.
+func TestBackdropRedundantIndices_DetailError(t *testing.T) {
+	fake := &errDetailBackdropClient{}
+	_, _, err := backdropRedundantIndices(context.Background(), fake, "p1")
+	if err == nil {
+		t.Fatal("want error from GetArtistDetail failure, got nil")
+	}
+}
+
+// TestBackdropRedundantIndices_ZeroOrOneBackdrop guards the count<=1
+// short-circuit: with 0 or 1 backdrops there is nothing to dedup, so no
+// fetches should be issued and no redundant entries returned.
+func TestBackdropRedundantIndices_ZeroOrOneBackdrop(t *testing.T) {
+	for _, n := range []int{0, 1} {
+		fake := &fakeBackdropClient{backdrops: make([][]byte, n), failAt: -1, failDeleteAt: -1}
+		redundant, total, err := backdropRedundantIndices(context.Background(), fake, "p1")
+		if err != nil {
+			t.Fatalf("n=%d: unexpected error: %v", n, err)
+		}
+		if total != n {
+			t.Fatalf("n=%d: total = %d, want %d", n, total, n)
+		}
+		if len(redundant) != 0 {
+			t.Fatalf("n=%d: redundant = %v, want none", n, redundant)
+		}
+		if fake.fetchCounts != nil {
+			t.Fatalf("n=%d: fetched backdrops %v, want no fetches (count<=1 short-circuit)", n, fake.fetchCounts)
+		}
+	}
+}
+
+// errDetailBackdropClient is a backdropPruneClient whose GetArtistDetail
+// always errors; its other methods are never expected to be called.
+type errDetailBackdropClient struct{}
+
+func (errDetailBackdropClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	return nil, fmt.Errorf("detail boom")
+}
+
+func (errDetailBackdropClient) GetArtistBackdrop(_ context.Context, _ string, _ int) ([]byte, string, error) {
+	return nil, "", fmt.Errorf("must not be called")
+}
+
+func (errDetailBackdropClient) DeleteImageAtIndex(_ context.Context, _ string, _ string, _ int) error {
+	return fmt.Errorf("must not be called")
+}
+
+// TestDetectArtistPlatformDups_GetPlatformIDsError guards the platform-IDs
+// lookup failure path: it must report one scan error and no dups rather than
+// propagating the error to the caller (a scan tolerates per-artist failures).
+func TestDetectArtistPlatformDups_GetPlatformIDsError(t *testing.T) {
+	p := New(Deps{
+		ArtistService:     errPlatformLister{},
+		ArtistLister:      &fakePlatformLister{},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+	})
+	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1")
+	if scanErrs != 1 {
+		t.Fatalf("scanErrs = %d, want 1", scanErrs)
+	}
+	if len(dups) != 0 {
+		t.Fatalf("dups = %+v, want none", dups)
+	}
+}
+
+// TestDetectArtistPlatformDups_ConnectionLoadFailed guards the per-connection
+// GetByID failure path: it must count a scan error for that connection and
+// continue rather than aborting the whole artist.
+func TestDetectArtistPlatformDups_ConnectionLoadFailed(t *testing.T) {
+	artistLister := &fakePlatformLister{
+		ids: []artist.PlatformID{{ArtistID: "a1", ConnectionID: "missing", PlatformArtistID: "p1"}},
+	}
+	p := New(Deps{
+		ArtistService:     artistLister,
+		ArtistLister:      artistLister,
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+	})
+	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1")
+	if scanErrs != 1 {
+		t.Fatalf("scanErrs = %d, want 1", scanErrs)
+	}
+	if len(dups) != 0 {
+		t.Fatalf("dups = %+v, want none", dups)
+	}
+}
+
+// TestDetectArtistPlatformDups_DisabledOrUnhealthySkipped guards the
+// connection-health gate: a disabled connection and an unhealthy (non-"ok"
+// status) connection are both skipped silently -- neither a dup nor a scan
+// error, since this is expected steady-state, not a failure.
+func TestDetectArtistPlatformDups_DisabledOrUnhealthySkipped(t *testing.T) {
+	for name, conn := range map[string]*connection.Connection{
+		"disabled": {ID: "c1", Type: connection.TypeEmby, Enabled: false, Status: "ok"},
+		"degraded": {ID: "c1", Type: connection.TypeEmby, Enabled: true, Status: "degraded"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			artistLister := &fakePlatformLister{
+				ids: []artist.PlatformID{{ArtistID: "a1", ConnectionID: "c1", PlatformArtistID: "p1"}},
+			}
+			p := New(Deps{
+				ArtistService:     artistLister,
+				ArtistLister:      artistLister,
+				ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{"c1": conn}},
+				Logger:            silentLogger(),
+			})
+			dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1")
+			if scanErrs != 0 || len(dups) != 0 {
+				t.Fatalf("scanErrs=%d dups=%+v, want 0/none", scanErrs, dups)
+			}
+		})
+	}
+}
+
+// TestDetectArtistPlatformDups_NilClientSkipped guards the unsupported-
+// connection-type path: backdropPruneClientFactory returns nil for a type
+// with no prune client (e.g. Lidarr), and that connection must be skipped
+// rather than dereferencing the nil client.
+func TestDetectArtistPlatformDups_NilClientSkipped(t *testing.T) {
+	artistLister := &fakePlatformLister{
+		ids: []artist.PlatformID{{ArtistID: "a1", ConnectionID: "c1", PlatformArtistID: "p1"}},
+	}
+	p := New(Deps{
+		ArtistService: artistLister,
+		ArtistLister:  artistLister,
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c1": {ID: "c1", Type: "lidarr", Enabled: true, Status: "ok"},
+		}},
+		Logger: silentLogger(),
+	})
+	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1")
+	if scanErrs != 0 || len(dups) != 0 {
+		t.Fatalf("scanErrs=%d dups=%+v, want 0/none", scanErrs, dups)
+	}
+}
+
+// TestPruneOneArtist_GetPlatformIDsError guards pruneOneArtist's own
+// platform-IDs lookup failure: it must record a per-artist Failure (no
+// ConnectionID, since none was reached) and not process any connection.
+func TestPruneOneArtist_GetPlatformIDsError(t *testing.T) {
+	p := New(Deps{
+		ArtistService:     errPlatformLister{},
+		ArtistLister:      &fakePlatformLister{},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+	})
+	var result PlatformBackdropPruneResult
+	p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, &result)
+	if len(result.Failures) != 1 {
+		t.Fatalf("Failures = %+v, want 1 entry", result.Failures)
+	}
+	if result.Failures[0].ArtistID != "a1" || result.Failures[0].ConnectionID != "" {
+		t.Fatalf("Failures[0] = %+v, want ArtistID=a1 ConnectionID=empty", result.Failures[0])
+	}
+	if result.BackdropsRemoved != 0 || result.ArtistsProcessed != 0 {
+		t.Fatalf("result = %+v, want no processing", result)
+	}
+}
+
+// TestPruneOneArtist_ConnectionLoadFailed guards the per-connection GetByID
+// failure path: it must record a Failure for that connection and continue
+// (there is only one connection here, so "continue" and "return" are
+// indistinguishable by ArtistsProcessed alone -- the assertion is on the
+// recorded Failure's fields, which a bare early-return would still produce
+// identically; the real regression this guards is a panic/nil-deref on the
+// error branch, exercised directly here).
+func TestPruneOneArtist_ConnectionLoadFailed(t *testing.T) {
+	artistLister := &fakePlatformLister{
+		ids: []artist.PlatformID{{ArtistID: "a1", ConnectionID: "missing", PlatformArtistID: "p1"}},
+	}
+	p := New(Deps{
+		ArtistService:     artistLister,
+		ArtistLister:      artistLister,
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+	})
+	var result PlatformBackdropPruneResult
+	p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, &result)
+	if len(result.Failures) != 1 {
+		t.Fatalf("Failures = %+v, want 1 entry", result.Failures)
+	}
+	if result.Failures[0].ConnectionID != "missing" {
+		t.Fatalf("Failures[0].ConnectionID = %q, want %q", result.Failures[0].ConnectionID, "missing")
+	}
+}
+
+// TestPruneOneArtist_DisabledOrUnhealthySkipped guards the connection-health
+// gate on the prune side (Enabled and Status, distinct from the
+// FeatureImageWrite gate already covered by
+// TestPrunePlatformBackdropDuplicates_SkipsWhenNoImageWrite): neither a
+// disabled nor an unhealthy connection is processed, and neither counts as a
+// failure.
+func TestPruneOneArtist_DisabledOrUnhealthySkipped(t *testing.T) {
+	for name, conn := range map[string]*connection.Connection{
+		"disabled": {ID: "c1", Type: connection.TypeEmby, Enabled: false, Status: "ok", Emby: &connection.EmbyConfig{FeatureImageWrite: true}},
+		"degraded": {ID: "c1", Type: connection.TypeEmby, Enabled: true, Status: "degraded", Emby: &connection.EmbyConfig{FeatureImageWrite: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			artistLister := &fakePlatformLister{
+				ids: []artist.PlatformID{{ArtistID: "a1", ConnectionID: "c1", PlatformArtistID: "p1"}},
+			}
+			p := New(Deps{
+				ArtistService:     artistLister,
+				ArtistLister:      artistLister,
+				ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{"c1": conn}},
+				Logger:            silentLogger(),
+			})
+			var result PlatformBackdropPruneResult
+			p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, &result)
+			if len(result.Failures) != 0 || result.BackdropsRemoved != 0 {
+				t.Fatalf("result = %+v, want no failures and nothing removed", result)
+			}
+		})
+	}
+}
+
+// TestPruneOneArtist_NilClientSkipped mirrors the scan-side nil-client guard
+// for the prune path: an unsupported connection type must be skipped, not
+// dereferenced.
+func TestPruneOneArtist_NilClientSkipped(t *testing.T) {
+	artistLister := &fakePlatformLister{
+		ids: []artist.PlatformID{{ArtistID: "a1", ConnectionID: "c1", PlatformArtistID: "p1"}},
+	}
+	p := New(Deps{
+		ArtistService: artistLister,
+		ArtistLister:  artistLister,
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c1": {ID: "c1", Type: "lidarr", Enabled: true, Status: "ok"},
+		}},
+		Logger: silentLogger(),
+	})
+	var result PlatformBackdropPruneResult
+	p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, &result)
+	if len(result.Failures) != 0 || result.BackdropsRemoved != 0 {
+		t.Fatalf("result = %+v, want no failures and nothing removed", result)
+	}
+}
+
 // TestPrunePlatformBackdropDuplicates_DeleteFailureStopsConnection: 4
 // byte-identical backdrops (0-3) plus 1 distinct (4) -> redundant indices
 // [3, 2, 1] descending, keeping 0 and 4. failDeleteAt=2 fails the SECOND
