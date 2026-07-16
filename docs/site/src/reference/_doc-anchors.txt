@@ -159,7 +159,6 @@ getting-started/connect-lidarr#get-a-lidarr-api-key
 getting-started/connect-lidarr#path-mapping-when-stillwater-and-lidarr-disagree-on-paths
 getting-started/connect-lidarr#stillwater-infers-it-for-you-when-it-can
 getting-started/connect-lidarr#troubleshooting
-getting-started/connect-lidarr#verify-path-after-rename
 getting-started/connect-lidarr#verify-the-connection-works
 getting-started/connect-lidarr#what-the-connection-enables
 getting-started/first-run-oobe#after-the-wizard

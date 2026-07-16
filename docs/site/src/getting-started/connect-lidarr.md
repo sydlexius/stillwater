@@ -54,10 +54,6 @@ The first time you save or enable a Lidarr connection (and any time you click **
 
 If inference finds a consistent mapping, it's applied automatically and the connection panel reports how many mappings came from how many matched artists. If you already have mappings entered, inference never overwrites them -- it only fills in the gap when the list is empty. If your paths already match, leave the mapping empty. If too few artists corroborate a differing prefix pair, you'll see a "no mappings inferred" message and can enter the host/Lidarr prefixes manually.
 
-### Verify path after rename
-
-A related toggle, **Verify path after rename (Lidarr only)**, catches the rare case where Lidarr silently coerces the path Stillwater submitted against its own Root Folder list instead of accepting it as given. It costs one extra request per rename and is worth leaving on if you're not fully confident your path mapping (or Lidarr's Root Folders) is correct yet -- it's the detection half; the path mapping is the prevention half.
-
 ## What the connection enables
 
 - **Path sync on rename or merge.** When an artist's directory is renamed, or two duplicate artists are [merged](../how-to/merge-duplicate-artists.md), Stillwater rewrites the path (through the mapping above) and tells Lidarr, so Lidarr's reference to the artist doesn't go stale.

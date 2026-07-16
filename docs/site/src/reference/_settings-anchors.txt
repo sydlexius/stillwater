@@ -64,7 +64,6 @@ settings-connections-connections-path-mapping-title
 settings-connections-connections-pick-type
 settings-connections-connections-sends-heading
 settings-connections-connections-server-name
-settings-connections-connections-verify-path-title
 settings-general-base-path
 settings-general-confirm-dialogs
 settings-general-tls-status

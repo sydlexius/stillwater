@@ -601,14 +601,6 @@ func manageServerFilesPayload(enable bool) string {
 	return hxValsJSONAny(map[string]any{"enabled": enable})
 }
 
-// verifyPathAfterUpdatePayload returns the JSON body for the hx-vals attribute
-// on the Lidarr-only "Verify path after rename" toggle. enable=true means the
-// user is flipping the toggle on; false reverses. Mirrors
-// manageServerFilesPayload (#1685).
-func verifyPathAfterUpdatePayload(enable bool) string {
-	return hxValsJSONAny(map[string]any{"enabled": enable})
-}
-
 // humanBytes formats a file size in IEC binary units (KiB, MiB, GiB).
 // Used by the foreign-files page so per-row sizes are scannable.
 func humanBytes(n int64) string {
