@@ -18,12 +18,24 @@ name: Docs Drift
 #     - `internal/api/openapi.yaml` changes without a corresponding
 #       `docs/**` update. The API spec is the contract for external
 #       integrators.
-#     - Changes to the irreversible/destructive handlers -- filesystem
-#       deletion (`internal/api/handlers_foreign_files.go`), irreversible
-#       artist merge (`internal/api/handlers_artist_duplicates.go`), and
-#       cascade-delete library operations (`internal/api/handlers_library.go`)
-#       -- without a corresponding `docs/**` update (precedent: #1779 / PR
-#       #2007 changed filesystem deletion behavior and was only soft-flagged).
+#     - Changes to the irreversible/destructive surfaces -- both the HTTP
+#       doorway and the domain layer that actually implements the
+#       behavior -- without a corresponding `docs/**` update:
+#         - filesystem deletion: `internal/api/handlers_foreign_files.go`
+#           (handler) and `internal/filesystem/atomic.go` (domain)
+#         - irreversible artist merge: `internal/api/handlers_artist_duplicates.go`
+#           (handler) and `internal/artist/merge_artists.go` /
+#           `internal/artist/merge_refresh.go` (domain), including the
+#           atomic move/rename primitives the merge's loser-move path calls
+#           directly (`internal/filesystem/rename.go`, alongside
+#           `atomic.go`)
+#         - cascade-delete library operations: `internal/api/handlers_library.go`
+#           (handler) and `internal/library/service.go` (domain)
+#       (precedent: #1779 / PR #2007 changed filesystem deletion behavior and
+#       was only soft-flagged; #2524 / PR #2523 changed merge-refresh domain
+#       behavior with no handler diff and the hard gate never triggered --
+#       the filter previously only guarded the handler doorway, not the
+#       domain layer that implements the operation).
 #   SOFT advisory (this workflow, #2008) -- other hand-written narrative docs:
 #     - Provider guides, troubleshooting, and other API-adjacent handlers
 #       (`internal/provider/**`, `internal/connection/**`,
@@ -57,6 +69,11 @@ on:
       - 'internal/scraper/**'
       - 'internal/api/openapi.yaml'
       - 'internal/api/handlers_*'
+      - 'internal/artist/merge_artists.go'
+      - 'internal/artist/merge_refresh.go'
+      - 'internal/filesystem/atomic.go'
+      - 'internal/filesystem/rename.go'
+      - 'internal/library/service.go'
 
 permissions:
   contents: read
@@ -127,6 +144,11 @@ jobs:
               - 'internal/api/handlers_foreign_files.go'
               - 'internal/api/handlers_artist_duplicates.go'
               - 'internal/api/handlers_library.go'
+              - 'internal/artist/merge_artists.go'
+              - 'internal/artist/merge_refresh.go'
+              - 'internal/filesystem/atomic.go'
+              - 'internal/filesystem/rename.go'
+              - 'internal/library/service.go'
             code:
               - 'internal/provider/**'
               - 'internal/connection/**'
@@ -251,8 +273,8 @@ jobs:
               if (destructiveChanged) {
                 const files = destructiveFiles.length
                   ? destructiveFiles.map(f => `\`${f}\``).join(', ')
-                  : 'a destructive handler file (`handlers_foreign_files.go`, `handlers_artist_duplicates.go`, or `handlers_library.go`)';
-                surfaces.push(`an irreversible/destructive handler: ${files}`);
+                  : 'a destructive handler or domain file (`handlers_foreign_files.go`, `handlers_artist_duplicates.go`, `handlers_library.go`, `merge_artists.go`, `merge_refresh.go`, `filesystem/atomic.go`, `filesystem/rename.go`, or `library/service.go`)';
+                surfaces.push(`an irreversible/destructive surface: ${files}`);
               }
 
               const body = [
