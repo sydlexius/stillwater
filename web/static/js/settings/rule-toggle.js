@@ -232,26 +232,52 @@
     // Storage mirrors the checker's dynamic-default semantics (config replaces
     // the whole RuleConfig; required_provider_ids is omitempty, so an omitted
     // value persists as empty):
-    //   - all available checked  -> omit, storing empty so the rule keeps
-    //     requiring every available in-scope provider as they are added/removed.
-    //   - a strict subset checked -> store that subset, comma-separated.
-    //   - none checked            -> reject the save. An empty string means
-    //     "all", so silently storing it would invert the operator's intent;
-    //     require at least one provider (or disable the rule to require none).
+    //   - all available checked, no unrendered override -> omit, storing empty
+    //     so the rule keeps requiring every available in-scope provider as
+    //     they are added/removed.
+    //   - a strict subset checked, or an unrendered override exists -> store
+    //     the union of checked-visible + unrendered-stored, comma-separated.
+    //   - none of the rendered boxes checked -> reject the save. An empty
+    //     string means "all", so silently storing it would invert the
+    //     operator's intent; require at least one provider (or disable the
+    //     rule to require none).
+    // The fieldset's data-stored-provider-ids (settings.templ) carries the
+    // raw persisted override so a provider that is no longer rendered (its
+    // key/availability was removed) is not silently dropped from the stored
+    // requirement on the next save -- it is merged back in as "unrendered".
     var providerBoxes = form.querySelectorAll('input[type="checkbox"][name="required_provider_ids"]');
-    if (providerBoxes.length > 0) {
+    var providerFieldset = form.querySelector('fieldset[data-stored-provider-ids]');
+    var storedProviderIDs = providerFieldset ? providerFieldset.dataset.storedProviderIds : '';
+    if (providerBoxes.length > 0 || storedProviderIDs) {
+      var visibleProviders = {};
       var checkedProviders = [];
       providerBoxes.forEach(function(box) {
+        visibleProviders[box.value] = true;
         if (box.checked) checkedProviders.push(box.value);
       });
-      if (checkedProviders.length === 0) {
+      if (providerBoxes.length > 0 && checkedProviders.length === 0) {
         if (typeof showToast === 'function') {
           showToast('Select at least one provider, or disable the rule.');
         }
         return;
       }
-      if (checkedProviders.length < providerBoxes.length) {
-        cfg['required_provider_ids'] = checkedProviders.join(',');
+      var unrenderedStored = [];
+      if (storedProviderIDs) {
+        storedProviderIDs.split(',').forEach(function(tok) {
+          var name = tok.trim().toLowerCase();
+          if (name && !visibleProviders[name] && unrenderedStored.indexOf(name) === -1) {
+            unrenderedStored.push(name);
+          }
+        });
+      }
+      var allVisibleCheckedNoOverride = providerBoxes.length > 0 &&
+        checkedProviders.length === providerBoxes.length &&
+        unrenderedStored.length === 0;
+      if (!allVisibleCheckedNoOverride) {
+        var finalProviders = checkedProviders.concat(unrenderedStored);
+        if (finalProviders.length > 0) {
+          cfg['required_provider_ids'] = finalProviders.join(',');
+        }
       }
     }
     var sev = form.elements['severity'];

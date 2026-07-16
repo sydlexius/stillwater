@@ -2615,7 +2615,11 @@ templ ruleConfigForm(rl rule.Rule, providerKeys []provider.ProviderKeyStatus) {
 		}
 		if rl.ID == "provider_id_missing" {
 			{{ providerToggles := providerIDToggles(rl.Config.RequiredProviderIDs, providerKeys) }}
-			<fieldset class="block col-span-full" title={ t(ctx, "rules.provider_id_missing.required_provider_ids.help") }>
+			// data-stored-provider-ids carries the raw persisted override so the
+			// client can preserve entries for providers that are not currently
+			// rendered as checkboxes (e.g. a provider that became unavailable
+			// after the override was saved) -- see rule-toggle.js.
+			<fieldset class="block col-span-full" title={ t(ctx, "rules.provider_id_missing.required_provider_ids.help") } data-stored-provider-ids={ rl.Config.RequiredProviderIDs }>
 				<legend class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "rules.provider_id_missing.required_provider_ids") }</legend>
 				if len(providerToggles) == 0 {
 					<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "rules.provider_id_missing.no_providers") }</p>

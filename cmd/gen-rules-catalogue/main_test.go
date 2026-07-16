@@ -459,6 +459,39 @@ func TestRun_CheckMode(t *testing.T) {
 	}
 }
 
+// TestRenderConfigurable_ProviderIDMissingEmptyConfig verifies that
+// renderConfigurable surfaces the "Required provider IDs" knob for
+// provider_id_missing even with a zero-value RuleConfig, since
+// RequiredProviderIDs' empty-string default ("require every configured
+// provider") means the knob can't be inferred from cfg alone -- it is keyed
+// off ruleID (see the comment on renderConfigurable). It also checks the
+// severity setting is present alongside it.
+func TestRenderConfigurable_ProviderIDMissingEmptyConfig(t *testing.T) {
+	got := renderConfigurable(rule.RuleProviderIDMissing, rule.RuleConfig{})
+
+	if !strings.Contains(got, "Required provider IDs") {
+		t.Errorf("expected %q to contain the Required provider IDs knob; got:\n%s", rule.RuleProviderIDMissing, got)
+	}
+	if !strings.Contains(got, "Severity (default:") {
+		t.Errorf("expected %q to contain the severity setting; got:\n%s", rule.RuleProviderIDMissing, got)
+	}
+}
+
+// TestRenderConfigurable_UnrelatedRuleEmptyConfigOmitsProviderIDs verifies
+// that the "Required provider IDs" knob is specific to provider_id_missing:
+// an unrelated rule with the same zero-value RuleConfig must render only the
+// severity setting.
+func TestRenderConfigurable_UnrelatedRuleEmptyConfigOmitsProviderIDs(t *testing.T) {
+	got := renderConfigurable(rule.RuleNFOExists, rule.RuleConfig{})
+
+	if strings.Contains(got, "Required provider IDs") {
+		t.Errorf("expected %q to omit the Required provider IDs knob; got:\n%s", rule.RuleNFOExists, got)
+	}
+	if got != "**Configurable:** Severity only." {
+		t.Errorf("expected the compact severity-only form; got:\n%s", got)
+	}
+}
+
 // TestNameToAnchor exercises the MkDocs heading anchor helper.
 func TestNameToAnchor(t *testing.T) {
 	cases := []struct{ name, want string }{
