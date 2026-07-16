@@ -17,6 +17,7 @@ flowchart TD
     coverage_floor["Coverage Floor Check"]
     coverage_floor_summary["Coverage Floor"]
     coverage_upload["Upload Coverage"]
+    css_lint["CSS Lint"]
     docker["Docker Build"]
     go_cache_primer["Go Cache Primer"]
     js_test["JS Unit Tests"]
@@ -40,6 +41,7 @@ flowchart TD
     coverage_floor --> coverage_floor_summary
     changes --> coverage_upload
     test --> coverage_upload
+    changes --> css_lint
     changes --> docker
     lint --> docker
     test --> docker
