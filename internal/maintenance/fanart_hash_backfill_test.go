@@ -443,9 +443,20 @@ func TestStartFanartHashBackfill_RunsStartupAndTick(t *testing.T) {
 	}()
 	// Cancel unconditionally on the way out so a failed assertion cannot leak the
 	// scheduler goroutine into the rest of the package's tests.
+	//
+	// The wait is BOUNDED because this defer runs on the t.Fatal path too: an
+	// unbounded <-done would, in exactly the scheduler-regression case the
+	// t.Fatals below exist to report, block until the 10-minute package timeout
+	// and take the whole internal/maintenance run down with it -- converting a
+	// clean, legible failure into an opaque one. On the happy path done is
+	// already closed and this returns immediately.
 	defer func() {
 		cancel()
-		<-done
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Error("scheduler did not stop within 2s of cancel during cleanup")
+		}
 	}()
 
 	if !waitForPhash(t, db, "artist-boot", 0, 3*time.Second) {
@@ -483,20 +494,34 @@ func TestStartFanartHashBackfill_ZeroTimingsDeferAndCancelCleanly(t *testing.T) 
 	seedFanartArtist(t, db, "artist-deferred", 1)
 
 	// Zero interval and zero startupDelay: both must fall back to their defaults
-	// (6h / 30s), which this test then cancels well inside.
-	runCtx, cancel := context.WithCancel(context.Background())
+	// (6h / 30s), which this deadline then expires well inside.
+	//
+	// The deadline is established INSIDE the scheduler goroutine, immediately
+	// before the call, and deliberately not by a cancel() racing it from the test
+	// goroutine. Canceling from outside after a sleep only guarantees the ctx
+	// dies ~20ms after the `go` statement -- NOT that the scheduler was ever
+	// entered first. If the goroutine is not scheduled within that window the
+	// scheduler starts with an already-Done ctx, returns at once from its
+	// select, runs no pass, and the "still starved" assertion below passes
+	// against the very regression it exists to catch. Creating the deadline on
+	// this side of the call closes that window: the ctx is provably live at
+	// entry, so a regressed startupDelay=0 MUST run its pass and trip the
+	// assertion.
 	done := make(chan struct{})
 	go func() {
+		defer close(done)
+		runCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
 		svc.StartFanartHashBackfill(runCtx, embyPrimary, 0, 0)
-		close(done)
 	}()
 
-	time.Sleep(20 * time.Millisecond)
-	cancel()
+	// Still bounded: the scheduler must return via its ctx.Done branch shortly
+	// after the 20ms deadline, and a hang must fail this test rather than the
+	// package.
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("scheduler did not stop within 2s of cancel during the startup delay")
+		t.Fatal("scheduler did not stop within 2s of the ctx deadline during the startup delay")
 	}
 
 	if ph, _ := fanartHashes(t, db, "artist-deferred", 0); ph != "" {
