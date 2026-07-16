@@ -66,6 +66,7 @@ type RuleConfig struct {
 	ArticleMode         string  `json:"article_mode,omitempty"`          // "prefix" (default), "suffix", "strip"
 	CoverageThreshold   float64 `json:"coverage_threshold,omitempty"`    // discography_populated: min % of MB release groups the NFO must cover (0-100)
 	ReleaseTypes        string  `json:"release_types,omitempty"`         // discography_populated: comma-separated MB primary types to include (e.g. "Album,EP")
+	RequiredProviderIDs string  `json:"required_provider_ids,omitempty"` // provider_id_missing: comma-separated provider names to require (subset of discogs,deezer,spotify); empty = dynamic default (all available)
 	DiscoveryOnly       bool    `json:"-"`                               // transient: set by pipeline in manual mode, never persisted
 }
 

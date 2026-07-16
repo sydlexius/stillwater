@@ -40,6 +40,7 @@ var providerFieldMap = map[string]string{
 	"discogs_id":     "discogs",
 	"wikidata_id":    "wikidata",
 	"deezer_id":      "deezer",
+	"spotify_id":     "spotify",
 }
 
 // sliceFields are fields that store JSON arrays in the database.

@@ -2868,7 +2868,7 @@ func SectionRules(data SettingsData) templ.Component {
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
-								templ_7745c5c3_Err = ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp).Render(ctx, templ_7745c5c3_Buffer)
+								templ_7745c5c3_Err = ruleRow(rl, data.ProviderKeys, data.HasLocalLibrary, showSeverityHelp, showFsHelp).Render(ctx, templ_7745c5c3_Buffer)
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
@@ -2903,7 +2903,7 @@ func SectionRules(data SettingsData) templ.Component {
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							templ_7745c5c3_Err = ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp).Render(ctx, templ_7745c5c3_Buffer)
+							templ_7745c5c3_Err = ruleRow(rl, data.ProviderKeys, data.HasLocalLibrary, showSeverityHelp, showFsHelp).Render(ctx, templ_7745c5c3_Buffer)
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
@@ -2928,7 +2928,7 @@ func SectionRules(data SettingsData) templ.Component {
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp).Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = ruleRow(rl, data.ProviderKeys, data.HasLocalLibrary, showSeverityHelp, showFsHelp).Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}

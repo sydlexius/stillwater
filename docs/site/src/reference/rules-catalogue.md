@@ -2,11 +2,11 @@
 description: Every built-in rule in Stillwater -- what it checks, what the fix does, what's configurable, and the default state.
 ---
 
-<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer, ImageDuplicateFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 25 rules verified. -->
+<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer, ImageDuplicateFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 26 rules verified. -->
 
 # Rules catalog
 
-Stillwater ships with 25 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
+Stillwater ships with 26 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
 
 For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-concepts/rules.md). This page is the enumeration.
 
@@ -24,6 +24,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Artist name matches preferred language](#artist-name-matches-preferred-language) | Metadata | Disabled, manual | Sometimes |
 | [Origin is populated](#origin-is-populated) | Metadata | Disabled, manual | Yes |
 | [Discography is populated](#discography-is-populated) | Metadata | Disabled, manual | Sometimes |
+| [Provider IDs present](#provider-ids-present) | Metadata | Disabled, manual | Sometimes |
 | [Thumbnail image exists](#thumbnail-image-exists) | Image | Enabled, auto | Yes |
 | [Thumbnail is square](#thumbnail-is-square) | Image | Enabled, auto | Yes |
 | [Thumbnail minimum resolution](#thumbnail-minimum-resolution) | Image | Enabled, auto | Yes |
@@ -292,6 +293,39 @@ After:  artist.nfo has 12 <album> entries merged from MusicBrainz release groups
 - Requires a MusicBrainz ID; an artist without one cannot have its discography fetched.
 - Coverage detection makes one MusicBrainz request per artist. The rule is disabled by default so this cost is opt-in.
 - A corrupt artist.nfo is refused rather than overwritten, so hand-edited content is never lost.
+
+---
+
+## Provider IDs present
+
+**Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** info
+
+Flags artists missing a non-MusicBrainz provider ID (Discogs, Deezer, or Spotify) that image search needs, since a missing ID makes that provider silently skip the artist during artwork lookup. By default the rule requires only providers you have configured; the fix backfills IDs derivable from the artist's MusicBrainz URL relations.
+
+During artwork search, a provider is queried using its own artist ID; when that ID is missing the provider is silently skipped, so the search quietly covers fewer sources than it appears to (issue #2457). This rule fires when an artist is missing a provider ID for one of the configured image providers among Discogs, Deezer, and Spotify. It reads the artist's stored provider IDs and compares them against the set of providers currently configured, optionally narrowed to a chosen subset.
+
+**When this fires:**
+
+- An artist identified only by MusicBrainz ID whose Discogs and Spotify IDs were never populated, so image search skips both providers.
+- An artist imported before Deezer was configured, leaving the Deezer ID blank once the provider is enabled.
+
+**What the fix does:** Fetches the artist's MusicBrainz URL relations and fills in any missing Discogs, Deezer, or Spotify ID that can be derived from them. Existing provider IDs are never overwritten.
+
+```
+Before: Discogs ID and Spotify ID are empty; MusicBrainz lists discogs and spotify URL relations
+After:  Discogs ID and Spotify ID are populated from those relations (existing IDs untouched)
+```
+
+**Configurable:**
+
+- Required provider IDs (default: every configured provider among Discogs, Deezer, Spotify; override to require a subset)
+- Severity (default: info)
+
+**Caveats:**
+
+- Requires a MusicBrainz ID; without one there are no URL relations to derive provider IDs from.
+- Only fills IDs MusicBrainz actually links to; a provider with no MusicBrainz relation stays missing and must be entered by hand.
+- By default the rule requires only providers you have configured (Discogs, Deezer, Spotify); an unconfigured provider is never flagged.
 
 ---
 

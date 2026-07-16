@@ -1237,7 +1237,7 @@ func (s *Service) ClearField(ctx context.Context, id, field string) (bool, error
 }
 
 // UpdateProviderField sets a single provider ID field (musicbrainz_id,
-// audiodb_id, discogs_id, wikidata_id, or deezer_id) on the artist.
+// audiodb_id, discogs_id, wikidata_id, deezer_id, or spotify_id) on the artist.
 // It re-fetches the artist, applies the field update, and calls Update so
 // that all provider IDs in the normalized table are written consistently.
 func (s *Service) UpdateProviderField(ctx context.Context, id, field, value string) error {
@@ -1280,6 +1280,8 @@ func applyProviderFieldToArtist(a *Artist, providerName, value string) {
 		a.WikidataID = value
 	case "deezer":
 		a.DeezerID = value
+	case "spotify":
+		a.SpotifyID = value
 	}
 }
 
@@ -1372,6 +1374,8 @@ func FieldValueFromArtist(a *Artist, field string) string {
 		return a.WikidataID
 	case "deezer_id":
 		return a.DeezerID
+	case "spotify_id":
+		return a.SpotifyID
 	default:
 		return ""
 	}

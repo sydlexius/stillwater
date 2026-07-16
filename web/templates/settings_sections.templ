@@ -911,7 +911,7 @@ templ SectionRules(data SettingsData) {
 									if showSeverityHelp {
 										{{ severityHelpShown = true }}
 									}
-									@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+									@ruleRow(rl, data.ProviderKeys, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
 								}
 							}
 						}
@@ -928,7 +928,7 @@ templ SectionRules(data SettingsData) {
 								if showSeverityHelp {
 									{{ severityHelpShown = true }}
 								}
-								@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+								@ruleRow(rl, data.ProviderKeys, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
 							}
 						}
 					} else {
@@ -942,7 +942,7 @@ templ SectionRules(data SettingsData) {
 							if showSeverityHelp {
 								{{ severityHelpShown = true }}
 							}
-							@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+							@ruleRow(rl, data.ProviderKeys, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
 						}
 					}
 				</div>

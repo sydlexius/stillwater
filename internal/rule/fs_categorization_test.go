@@ -47,6 +47,7 @@ func TestIsFilesystemDependent(t *testing.T) {
 		RuleBackdropMinCount,
 		RuleNameLanguagePref,
 		RuleOriginMissing,
+		RuleProviderIDMissing,
 	}
 	for _, id := range apiRules {
 		if IsFilesystemDependent(id) {
@@ -89,6 +90,7 @@ func TestAllDefaultRulesAreCategorized(t *testing.T) {
 		RuleBackdropMinCount:      true,
 		RuleNameLanguagePref:      true,
 		RuleOriginMissing:         true,
+		RuleProviderIDMissing:     true,
 	}
 
 	for _, r := range defaultRules {
