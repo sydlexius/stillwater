@@ -154,6 +154,39 @@ func TestBulkAction_ConcurrentReject(t *testing.T) {
 	}
 }
 
+// TestBulkAction_ConflictWhenBackdropRepairRunning ensures a bulk action
+// request gets 409 while a fanart-duplicate remediation run
+// (handleBackdropDuplicatesRemediate, #2540 PR-2 Task 4) is in flight: the
+// two singletons share bulkActionMu because a bulk action and a remediation
+// run can both write/renumber the same artist's fanart rows.
+func TestBulkAction_ConflictWhenBackdropRepairRunning(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithIdentify(t)
+
+	r.bulkActionMu.Lock()
+	r.backdropRepairRunning = true
+	r.bulkActionMu.Unlock()
+
+	body := strings.NewReader(`{"action":"run_rules","ids":["abc123"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleBulkAction(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp["status"] != "running" {
+		t.Errorf("status = %v, want running", resp["status"])
+	}
+}
+
 // TestBulkActionStatus_Idle returns idle when no progress is set.
 func TestBulkActionStatus_Idle(t *testing.T) {
 	t.Parallel()

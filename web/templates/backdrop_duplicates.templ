@@ -1,0 +1,112 @@
+package templates
+
+import "strconv"
+
+// BackdropDupArtistRow is one artist's within-artist fanart duplication,
+// rendered as a table row on /reports/backdrop-duplicates.
+type BackdropDupArtistRow struct {
+	ArtistID   string
+	Name       string
+	ExactDrops int
+}
+
+// BackdropDuplicatesPageView is the full-page view model for
+// /reports/backdrop-duplicates (#2540 PR-2). ScanErrors is surfaced
+// separately from the totals so a partial scan is never rendered as if it
+// were a clean, complete report.
+type BackdropDuplicatesPageView struct {
+	ArtistsAffected     int
+	ExactRedundantSlots int
+	ScanErrors          int
+	Rows                []BackdropDupArtistRow
+}
+
+// BackdropDuplicatesPage renders the admin-gated within-artist fanart
+// duplication report (#2540 PR-2). It is a dry-run preview: ScanFanartDuplicates
+// re-hashes fanart from disk and reports redundancy without deleting anything.
+// The "Remediate Exact Duplicates" button below posts to
+// /api/v1/reports/backdrop-duplicates/remediate (#2540 PR-2 Task 4), which
+// collapses only byte-identical (exact) redundant slots for every affected
+// artist.
+templ BackdropDuplicatesPage(assets AssetPaths, view BackdropDuplicatesPageView) {
+	@Layout(t(ctx, "backdrop_duplicates.page_title"), assets) {
+		<div class="sw-backdrop-duplicates space-y-6">
+			<div class="sw-card rounded-lg px-3 py-2">
+				<div class="min-w-0">
+					<h1 class="text-xs font-semibold leading-tight">{ t(ctx, "backdrop_duplicates.title") }</h1>
+					<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug">
+						{ t(ctx, "backdrop_duplicates.subtitle") }
+					</p>
+				</div>
+			</div>
+			if view.ScanErrors > 0 {
+				<div id="backdrop-duplicates-partial-notice" class="sw-card rounded-lg px-3 py-2 border-l-4 border-amber-500" role="alert">
+					<p class="text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400">
+						{ t(ctx, "backdrop_duplicates.partial_scan_title") }
+					</p>
+					<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug">
+						{ tn(ctx, "backdrop_duplicates.partial_scan_body", view.ScanErrors) }
+					</p>
+				</div>
+			}
+			<div class="sw-card rounded-lg px-3 py-2">
+				<dl class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+					<div>
+						<dt class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "backdrop_duplicates.artists_affected") }</dt>
+						<dd class="text-lg font-semibold" id="backdrop-duplicates-artists-affected">{ strconv.Itoa(view.ArtistsAffected) }</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "backdrop_duplicates.exact_redundant_slots") }</dt>
+						<dd class="text-lg font-semibold" id="backdrop-duplicates-exact-slots">{ strconv.Itoa(view.ExactRedundantSlots) }</dd>
+					</div>
+				</dl>
+			</div>
+			<div class="sw-card rounded-lg px-3 py-2">
+				<div class="flex items-start justify-between gap-3 flex-wrap">
+					<p class="text-xs text-gray-500 dark:text-gray-400 leading-snug max-w-prose">
+						{ t(ctx, "backdrop_duplicates.remediate_note") }
+					</p>
+					if view.ExactRedundantSlots > 0 {
+						<button
+							type="button"
+							id="backdrop-duplicates-remediate-button"
+							class="sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none shrink-0"
+							hx-post="/api/v1/reports/backdrop-duplicates/remediate"
+							hx-confirm={ t(ctx, "backdrop_duplicates.remediate_confirm") }
+							data-sw-error={ t(ctx, "backdrop_duplicates.remediate_response_error") }
+							data-sw-net-error={ t(ctx, "backdrop_duplicates.remediate_send_error") }
+							hx-on::response-error="alert(this.dataset.swError)"
+							hx-on::send-error="alert(this.dataset.swNetError)"
+						>{ t(ctx, "backdrop_duplicates.remediate_button") }</button>
+					}
+				</div>
+			</div>
+			<div id="backdrop-duplicates-table" class="sw-card rounded-lg overflow-x-auto">
+				if len(view.Rows) == 0 {
+					<p id="backdrop-duplicates-empty" class="px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
+						{ t(ctx, "backdrop_duplicates.empty") }
+					</p>
+				} else {
+					<table class="min-w-full text-xs">
+						<thead>
+							<tr class="text-left text-gray-500 dark:text-gray-400">
+								<th class="px-3 py-2 font-medium">{ t(ctx, "backdrop_duplicates.column_artist") }</th>
+								<th class="px-3 py-2 font-medium">{ t(ctx, "backdrop_duplicates.column_exact_drops") }</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, row := range view.Rows {
+								<tr class="border-t border-gray-100 dark:border-gray-800">
+									<td class="px-3 py-2">
+										<a class="underline" href={ templ.SafeURL(assets.BasePath + "/artists/" + row.ArtistID) }>{ row.Name }</a>
+									</td>
+									<td class="px-3 py-2">{ strconv.Itoa(row.ExactDrops) }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			</div>
+		</div>
+	}
+}

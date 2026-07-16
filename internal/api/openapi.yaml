@@ -2973,6 +2973,79 @@ paths:
                 items:
                   $ref: "#/components/schemas/DuplicateGroup"
 
+  /reports/backdrop-duplicates/remediate:
+    post:
+      tags: [Reports]
+      summary: Collapse exact within-artist fanart duplicates
+      description: >-
+        Remediates the byte-identical (exact) fanart duplication surfaced by
+        the /reports/backdrop-duplicates report (#2540 PR-2): for every
+        affected artist, collapses redundant exact-duplicate backdrop slots
+        down to one canonical file. Perceptual near-duplicate groups are
+        review-only and are never touched by this endpoint. Singleton: only
+        one repair run may be in flight at a time, so a concurrent request
+        while one is running is rejected with 409. Admin-only. Triggered by
+        the "Remediate Exact Duplicates" button on the report page (HTMX
+        POST), so a successful response also sets HX-Refresh so the browser
+        reloads the report showing the now-clean state.
+      operationId: remediateBackdropDuplicates
+      responses:
+        "200":
+          description: Remediation completed (individual per-artist failures do not fail the request).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artists_processed:
+                    type: integer
+                    description: Number of artists whose duplicate backdrops were collapsed.
+                  slots_removed:
+                    type: integer
+                    description: Total redundant exact-duplicate slots removed across all artists.
+                  failures:
+                    type: integer
+                    description: Number of artists whose collapse failed and were skipped.
+        "401":
+          description: >-
+            Authentication required. The auth middleware rejects the request
+            before the handler runs, emitting the body via http.Error, so the
+            content type is text/plain rather than the JSON Error schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            (requireForeignAdmin) via http.Error, so the body is plain text
+            ("Forbidden: administrator role required"), not the JSON Error
+            schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "409":
+          description: A fanart duplicate repair is already running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        "500":
+          description: >-
+            The pipeline does not implement the remediation capability, or
+            the remediation itself failed. The wrapped error is logged
+            server-side; the response is plain text via http.Error.
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /reports/duplicates/count:
     get:
       tags: [Reports]

@@ -1372,6 +1372,13 @@
     "covered": false
   },
   {
+    "operationId": "remediateBackdropDuplicates",
+    "method": "POST",
+    "path": "/reports/backdrop-duplicates/remediate",
+    "handler": "handleBackdropDuplicatesRemediate",
+    "covered": true
+  },
+  {
     "operationId": "removeAlias",
     "method": "DELETE",
     "path": "/artists/{id}/aliases/{aliasId}",
