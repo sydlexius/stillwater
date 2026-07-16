@@ -322,14 +322,22 @@ func mergeI18nJSON(ctx context.Context) string {
 //
 // Exported so the next/ duplicates template (package next) can embed the same
 // blob, reusing the shared merge modal byte-for-byte rather than forking it.
+//
+// wire(m) below is a Go STRUCT TYPE-CONVERSION, not a field-by-field copy: it
+// compiles only while wire and ArtistDuplicateMember have identical field
+// names, types, and ORDER (tags are ignored for conversion since Go 1.8). Any
+// field added to ArtistDuplicateMember must be mirrored here in the same
+// position -- the compiler enforces this, so the two cannot silently drift.
 func DuplicateGroupMembersJSON(members []ArtistDuplicateMember) string {
 	type wire struct {
-		ID                string `json:"id"`
-		Name              string `json:"name"`
-		Path              string `json:"path"`
-		MBID              string `json:"mbid"`
-		Recommended       bool   `json:"recommended"`
-		RecommendedReason string `json:"recommended_reason"`
+		ID                     string `json:"id"`
+		Name                   string `json:"name"`
+		Path                   string `json:"path"`
+		MBID                   string `json:"mbid"`
+		Recommended            bool   `json:"recommended"`
+		RecommendedReason      string `json:"recommended_reason"`
+		Disambiguation         string `json:"disambiguation"`
+		DisambiguationConflict bool   `json:"disambiguation_conflict"`
 	}
 	out := make([]wire, 0, len(members))
 	for _, m := range members {

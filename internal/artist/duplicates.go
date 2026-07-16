@@ -43,6 +43,18 @@ type NearDuplicateGroup struct {
 	// MBID edge existed during union-find.
 	Reason string
 
+	// DisambiguationConflict is true when two or more members carry DISTINCT
+	// non-empty disambiguation values (#2527 Defect-2).  It is a SOFT signal
+	// only: the group is still offered for merge, but the UI warns and gates
+	// the Confirm action behind an explicit operator override.
+	//
+	// Contrast with the conflicting-MBID guard in makeGuardedUnion, which is a
+	// HARD exclusion.  The distinction is deliberate: a differing MBID is
+	// MusicBrainz asserting these are different entities (objective), whereas
+	// disambiguation is the operator's own subjective tag and may simply be a
+	// mistake -- so warn, but allow.
+	DisambiguationConflict bool
+
 	// Members is the list of artists in this group, at least 2 entries.
 	Members []NearDuplicateArtist
 }
@@ -55,14 +67,25 @@ type NearDuplicateArtist struct {
 	Name string
 	Path string
 	MBID string // empty when no MusicBrainz provider row exists
+
+	// Disambiguation is the artist's disambiguation text ('' when unset).
+	Disambiguation string
+
+	// DisambiguationConflict is true when this member carries a non-empty
+	// disambiguation that DIFFERS from another member's non-empty value.
+	// Members with an empty disambiguation are compatible with every value and
+	// are never flagged, so a group can conflict while some of its members are
+	// unflagged.
+	DisambiguationConflict bool
 }
 
 // artistRow is an internal row read from the DB query.
 type artistRow struct {
-	id   string
-	name string
-	path string
-	mbid string // empty when no row in artist_provider_ids for musicbrainz
+	id     string
+	name   string
+	path   string
+	mbid   string // empty when no row in artist_provider_ids for musicbrainz
+	disamb string // artists.disambiguation; NOT NULL DEFAULT '' so never NULL
 }
 
 // DetectDuplicates loads all path-bearing artists and their MusicBrainz IDs,
@@ -90,12 +113,16 @@ func DetectDuplicates(ctx context.Context, db *sql.DB) ([]NearDuplicateGroup, er
 // Only rows with a non-empty path are returned -- platform-only artists cannot
 // be merged on disk and are not useful in the duplicate view.
 func queryDuplicateCandidates(ctx context.Context, db *sql.DB) ([]artistRow, error) {
+	// a.disambiguation is NOT NULL DEFAULT '' (001_initial_schema.sql), so it
+	// scans straight into a string without a COALESCE.  It feeds the Defect-2
+	// soft-gating annotation only -- it is NOT a grouping input.
 	const q = `
 		SELECT
 			a.id,
 			a.name,
 			a.path,
-			COALESCE(p.provider_id, '') AS mbid
+			COALESCE(p.provider_id, '') AS mbid,
+			a.disambiguation
 		FROM artists a
 		LEFT JOIN artist_provider_ids p
 			ON p.artist_id = a.id AND p.provider = 'musicbrainz'
@@ -111,7 +138,7 @@ func queryDuplicateCandidates(ctx context.Context, db *sql.DB) ([]artistRow, err
 	var artists []artistRow
 	for sqlRows.Next() {
 		var r artistRow
-		if err := sqlRows.Scan(&r.id, &r.name, &r.path, &r.mbid); err != nil {
+		if err := sqlRows.Scan(&r.id, &r.name, &r.path, &r.mbid, &r.disamb); err != nil {
 			return nil, fmt.Errorf("scanning artist row: %w", err)
 		}
 		artists = append(artists, r)
@@ -309,10 +336,11 @@ func collectGroups(rows []artistRow, find func(string) string, finalEdges map[st
 	for _, r := range rows {
 		root := find(r.id)
 		rootToMembers[root] = append(rootToMembers[root], NearDuplicateArtist{
-			ID:   r.id,
-			Name: r.name,
-			Path: r.path,
-			MBID: r.mbid,
+			ID:             r.id,
+			Name:           r.name,
+			Path:           r.path,
+			MBID:           r.mbid,
+			Disambiguation: r.disamb,
 		})
 	}
 
@@ -339,10 +367,16 @@ func collectGroups(rows []artistRow, find func(string) string, finalEdges map[st
 			}
 		}
 
+		// Soft-gating annotation (#2527 Defect-2).  Runs AFTER grouping has
+		// settled and never feeds back into it: a disambiguation conflict warns
+		// the operator, it does not split or suppress the group.
+		conflict := markDisambiguationConflicts(members)
+
 		groups = append(groups, NearDuplicateGroup{
-			Key:     key,
-			Reason:  reason,
-			Members: members,
+			Key:                    key,
+			Reason:                 reason,
+			DisambiguationConflict: conflict,
+			Members:                members,
 		})
 	}
 
@@ -350,6 +384,43 @@ func collectGroups(rows []artistRow, find func(string) string, finalEdges map[st
 		return groups[i].Members[0].Name < groups[j].Members[0].Name
 	})
 	return groups
+}
+
+// markDisambiguationConflicts flags the members of a group that carry a
+// non-empty disambiguation differing from another member's non-empty value, and
+// returns whether the group conflicts at all (#2527 Defect-2).
+//
+// It MUTATES members in place (setting DisambiguationConflict) and is called
+// once per group, after the union-find has settled.  It deliberately has no
+// influence on grouping: this is the SOFT half of #2527.  The HARD half
+// (conflicting MBIDs) lives in makeGuardedUnion and refuses the merge outright.
+//
+// Empty disambiguation is treated as "unknown", NOT as a distinct value: an
+// untagged artist is compatible with every tag, so {"UK band", ""} is not a
+// conflict while {"UK band", "US grunge"} is.  This is why a conflicting group
+// can still contain unflagged members -- only the rows actually asserting a
+// contradictory value are marked.
+//
+// Comparison is exact-string, matching the existing MBID bucketing.  A pure
+// case or whitespace variant therefore reads as a conflict; that is
+// safe-biased, since the cost is a dismissible warning rather than a wrong
+// irreversible merge.
+func markDisambiguationConflicts(members []NearDuplicateArtist) bool {
+	// Collect the distinct non-empty values.  Fewer than two means nothing can
+	// contradict anything else, so no member is flagged.
+	distinct := make(map[string]struct{}, len(members))
+	for _, m := range members {
+		if m.Disambiguation != "" {
+			distinct[m.Disambiguation] = struct{}{}
+		}
+	}
+	if len(distinct) < 2 {
+		return false
+	}
+	for i := range members {
+		members[i].DisambiguationConflict = members[i].Disambiguation != ""
+	}
+	return true
 }
 
 // findSharedMBID returns the MBID shared by all members in the group when all
