@@ -31,7 +31,11 @@ cd "$REPO_ROOT"
 CSS_GLOB='web/static/css/*.css'
 
 resolve_base() {
-  if [ -n "${1:-}" ]; then
+  # GitHub sets github.event.before to the all-zero SHA on a branch's first
+  # push (no prior commit to diff against) -- treat that as "not provided"
+  # and fall through to the merge-base logic below, rather than failing the
+  # later `git rev-parse --verify` on a SHA that can never resolve.
+  if [ -n "${1:-}" ] && [ "${1}" != "0000000000000000000000000000000000000000" ]; then
     echo "$1"
     return 0
   fi
@@ -96,18 +100,35 @@ while IFS= read -r diff_line; do
   esac
 done < <(git diff --unified=0 "$BASE" -- "$CSS_GLOB")
 
+HAS_ADDED_LINES=1
 if [ ! -s "$ADDED_LINES" ]; then
-  echo "No added lines in $CSS_GLOB since $BASE -- nothing to check. OK"
-  exit 0
+  HAS_ADDED_LINES=0
+  echo "No added lines in $CSS_GLOB since $BASE -- checking that the config still loads and runs cleanly."
 fi
 
+# Always invoke stylelint -- even when the diff added no CSS lines -- so a
+# config-only change (.stylelintrc.json, a plugin bump, this script itself)
+# still gets validated. $ADDED_LINES is used below only to decide which
+# reported warnings count as "new" for the pass/fail verdict; it no longer
+# gates whether stylelint runs at all.
 STYLELINT_JSON="$WORK_DIR/stylelint.json"
-# stylelint exits non-zero when it finds ANY violation (including
-# pre-existing ones on untouched lines) -- that's expected here, so don't let
-# `set -e` abort before we get to filter the output against $ADDED_LINES.
-# It also writes the --formatter json report to STDERR (not stdout) whenever
-# it exits non-zero, so both streams must be captured or the report is lost.
+# stylelint exits non-zero both when it finds ANY violation (including
+# pre-existing ones on untouched lines) AND when the config/plugin chain
+# itself is broken -- that's expected here, so don't let `set -e` abort
+# before we get a chance to tell the two apart below. It also writes the
+# --formatter json report to STDERR (not stdout) whenever it exits non-zero,
+# so both streams must be captured or the report is lost.
 npx --no-install stylelint --formatter json "$CSS_GLOB" > "$STYLELINT_JSON" 2>&1 || true
+
+# A clean or violations-found run produces a valid JSON array on stdout. A
+# config/plugin resolution failure (bad regex, missing plugin, malformed
+# rule) instead leaves stylelint's plaintext error message in the file,
+# which is not valid JSON -- treat that as a setup error, not a silent pass.
+if ! jq -e 'type == "array"' "$STYLELINT_JSON" >/dev/null 2>&1; then
+  echo "FAIL: stylelint did not produce a valid report -- likely a config or plugin resolution error:" >&2
+  cat "$STYLELINT_JSON" >&2
+  exit 2
+fi
 
 # Reduce stylelint's JSON to one "relative/path:line" per warning, then keep
 # only the ones present in $ADDED_LINES.
@@ -135,5 +156,9 @@ if [ "$NEW" -gt 0 ]; then
   exit 1
 fi
 
-echo "OK: 0 new stylelint violations on added lines ($TOTAL pre-existing violation(s) untouched by this diff)"
+if [ "$HAS_ADDED_LINES" -eq 0 ]; then
+  echo "OK: config loads and stylelint ran cleanly (0 new added CSS lines this diff; $TOTAL pre-existing violation(s) unaffected)"
+else
+  echo "OK: 0 new stylelint violations on added lines ($TOTAL pre-existing violation(s) untouched by this diff)"
+fi
 exit 0

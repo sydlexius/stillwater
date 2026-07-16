@@ -14,8 +14,8 @@
       { "ignoreValues": ["transparent", "inherit", "currentColor", "none"] }
     ],
     "declaration-property-value-disallowed-list": {
-      "background":       ["/var\\(--swd-accent\\)/"],
-      "background-color": ["/var\\(--swd-accent\\)/"]
+      "background":       ["/^var\\(--swd-accent\\)$/"],
+      "background-color": ["/^var\\(--swd-accent\\)$/"]
     }
   },
   "overrides": [

@@ -386,7 +386,7 @@ jobs:
         run: npm ci
 
       - name: Run stylelint (diff-scoped ratchet)
-        run: scripts/stylelint-diff-gate.sh
+        run: scripts/stylelint-diff-gate.sh "${{ github.event_name == 'push' && github.event.before || github.event.pull_request.base.sha }}"
 
   # Worker job: does the real a11y work, gated on tests/a11y/** changes. The
   # always-running a11y-summary wrapper below owns the required "A11y Smoke
