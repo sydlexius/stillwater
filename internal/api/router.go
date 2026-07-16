@@ -176,6 +176,17 @@ type Router struct {
 	// makes that exclusion atomic with a single lock and no lock-ordering or
 	// deadlock risk.
 	backdropRepairRunning bool
+	// platformPruneRunning guards the singleton platform backdrop prune run
+	// (#2540 Task 7): only one prune may be in flight at a time, so a
+	// concurrent POST /api/v1/reports/platform-backdrop-duplicates/prune
+	// gets 409 instead of racing platform deletes. Deliberately a dedicated
+	// mutex/flag pair (not shared with bulkActionMu/backdropRepairRunning):
+	// this prune only deletes redundant images already pushed to connected
+	// platforms, it does not touch the local library's fanart rows the way
+	// the local remediation and bulk actions do, so there is no shared
+	// TOCTOU surface requiring cross-singleton exclusion.
+	platformPruneMu      sync.Mutex
+	platformPruneRunning bool
 	// discographyFetchInFlight holds the artist IDs that currently have a
 	// discography fetch running. A concurrent fetch for the same artist is
 	// rejected with 409: the fetch is a read-modify-write of artist.nfo, so
@@ -929,6 +940,18 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// plain /api/v1 POST (mirrors /api/v1/artists/duplicates/ignore) since the
 	// admin gate is enforced in-handler via requireForeignAdmin.
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/backdrop-duplicates/remediate", wrapAuth(r.handleBackdropDuplicatesRemediate, authMw))
+	// Platform-side backdrop de-duplication report (#2540 remote prune).
+	// Registered next to /reports/backdrop-duplicates (the local report)
+	// since it sits alongside it in the Reports hub; admin-only via the
+	// in-handler requireForeignAdmin gate (same as the pages above). The
+	// prune endpoint (Task 7) is registered separately once implemented.
+	mux.HandleFunc("GET "+bp+"/reports/platform-backdrop-duplicates", wrapOptionalAuth(r.handlePlatformBackdropDuplicatesPage, optAuthMw))
+	// Prune endpoint for the report above (#2540 Task 7): deletes
+	// byte-identical duplicate backdrops on connected platforms. Registered
+	// as a plain /api/v1 POST (mirrors
+	// /api/v1/reports/backdrop-duplicates/remediate above) since the admin
+	// gate is enforced in-handler via requireForeignAdmin.
+	mux.HandleFunc("POST "+bp+"/api/v1/reports/platform-backdrop-duplicates/prune", wrapAuth(r.handlePlatformBackdropDuplicatesPrune, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		target := r.basePath + "/reports/duplicates"
 		if raw := req.URL.RawQuery; raw != "" {

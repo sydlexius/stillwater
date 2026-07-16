@@ -52,7 +52,14 @@ const (
 
 // Deps holds all dependencies for a Publisher.
 type Deps struct {
-	ArtistService      artistPlatformLister
+	ArtistService artistPlatformLister
+	// ArtistLister is the narrow paged-listing dependency used by
+	// ScanPlatformBackdropDuplicates to walk the whole library. Kept as its
+	// own explicit field rather than a runtime type assertion on
+	// ArtistService so a future decorator around *artist.Service that
+	// satisfies artistPlatformLister but not List fails to compile instead
+	// of failing at scan time (#2540 review).
+	ArtistLister       artistPageLister
 	ArtistGetter       artistGetter
 	ConnectionService  connectionGetter
 	LibraryService     libraryResolver
@@ -97,6 +104,7 @@ type Notifier interface {
 // since the primary operation (DB update) has already succeeded.
 type Publisher struct {
 	artistService      artistPlatformLister
+	artistLister       artistPageLister
 	artistGetter       artistGetter
 	connectionService  connectionGetter
 	libraryService     libraryResolver
@@ -196,6 +204,7 @@ type expectedWritesTracker interface {
 func New(d Deps) *Publisher {
 	return &Publisher{
 		artistService:      d.ArtistService,
+		artistLister:       d.ArtistLister,
 		artistGetter:       d.ArtistGetter,
 		connectionService:  d.ConnectionService,
 		libraryService:     d.LibraryService,

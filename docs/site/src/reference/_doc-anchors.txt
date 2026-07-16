@@ -501,6 +501,8 @@ how-to/view-reports#library-health
 how-to/view-reports#live-reports
 how-to/view-reports#metadata-completeness
 how-to/view-reports#open-the-reports-workspace
+how-to/view-reports#platform-backdrop-duplicates
+how-to/view-reports#prune-platform-duplicates
 how-to/view-reports#rule-pass-rates
 how-to/view-reports#the-reports-rail
 how-to/view-reports#view-reports

@@ -874,6 +874,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	}
 	a.publisher = publish.New(publish.Deps{
 		ArtistService:      a.artistService,
+		ArtistLister:       a.artistService,
 		ArtistGetter:       a.artistService,
 		ConnectionService:  a.connectionService,
 		LibraryService:     a.libraryService,

@@ -172,6 +172,23 @@ templ Sidebar(data SidebarData) {
 							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.backdrop_duplicates") }</span>
 						</a>
 					</li>
+					<!-- Platform Backdrop Duplicates: admin-only cross-platform
+					     fanart duplicate report + prune (dedup within the images a
+					     connected platform mirrors, distinct from the local
+					     within-artist report above). Static link with no count
+					     pill: the scan requires querying every connected platform,
+					     too expensive to poll on every sidebar render. -->
+					<li id="sidebar-platform-backdrop-duplicates-nav">
+						<a
+							href={ templ.SafeURL(data.BasePath + "/reports/platform-backdrop-duplicates") }
+							class="sw-sidebar-link sw-sidebar-subnav-link"
+							data-path="/reports/platform-backdrop-duplicates"
+							aria-label={ t(ctx, "nav.reports.platform_backdrop_duplicates") }
+						>
+							@components.IconPhoto("sw-sidebar-icon")
+							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.platform_backdrop_duplicates") }</span>
+						</a>
+					</li>
 					<!-- Foreign Files: admin-only (count endpoint 403s for non-admins;
 					     not present in the v1 non-admin sidebar). ALWAYS visible to
 					     admins even at zero count (allowlist must stay reachable);

@@ -45,6 +45,22 @@ type fakePlatformLister struct {
 	directSets     []setPlatformIDCall
 	deleteErr      error
 	deletedConnIDs []string
+
+	// artists backs List (paged artist listing), used by full-library scans
+	// such as ScanPlatformBackdropDuplicates. Most tests never set this and
+	// never call List; it is an additive method, not part of
+	// artistPlatformLister, so it does not affect any other fake's contract.
+	artists []artist.Artist
+}
+
+// List returns the fake's artists on page 1 and an empty page thereafter,
+// matching artist.Service's paging contract closely enough for tests that
+// scan the whole (small) library in one page.
+func (f *fakePlatformLister) List(_ context.Context, params artist.ListParams) ([]artist.Artist, int, error) {
+	if params.Page > 1 {
+		return nil, len(f.artists), nil
+	}
+	return f.artists, len(f.artists), nil
 }
 
 // setPlatformIDCall records one accepted SetPlatformIDStable invocation.

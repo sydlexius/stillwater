@@ -82,6 +82,22 @@ Remediation is safe by design:
 
 Only the copies stored locally are collapsed; backdrops already pushed to a connected platform are not removed by this action.
 
+## Platform backdrop duplicates
+
+<!-- code: web/templates/platform_backdrop_duplicates.templ, internal/api/handlers_platform_backdrop_prune.go, internal/publish/backdrop_prune.go -->
+
+Platform sync is additive: pushing fanart to a connected media server never deletes a surplus copy on that server, so a redundant slot that the local Backdrop Duplicates report already cleaned up on disk can still linger on Emby or Jellyfin. The **Platform Backdrop Duplicates** report finds those leftover copies directly on your connected platforms. It is an admin-only page at `/reports/platform-backdrop-duplicates`.
+
+The report re-reads every artist's backdrops from each connected platform and finds **exact duplicates**: byte-for-byte identical files, matched by a content hash, the same standard the local report uses. It is a dry-run: opening the page only scans and summarizes, nothing is deleted until you choose to prune.
+
+The page summarizes how many connections and artists are affected and how many redundant backdrops exist, with a per-artist, per-platform breakdown. If some artist/connection scans could not complete, a **Partial Scan** notice reports how many were skipped, so a partial result is never mistaken for a clean sweep.
+
+### Prune platform duplicates
+
+Click the prune button to delete the exact (byte-identical) redundant backdrops across every connected platform in one pass, keeping one surviving copy per artist per platform. The prune re-scans each platform immediately before deleting, rather than trusting the report you're looking at, so it never acts on a stale count. Only one prune runs at a time; starting a second while one is in progress is rejected rather than allowed to overlap.
+
+Because the prune only ever removes copies that are byte-identical to a kept survivor, no distinct artwork is ever lost. If a platform's copy is later needed again, re-running fanart sync from the local library re-pushes it from the local survivor.
+
 ## Background appearance
 
 The card surfaces in the Reports workspace follow the **Background Opacity** preference. See [Customize preferences](customize-preferences.md#background-opacity) to adjust the frosted-glass opacity of cards and panels.
