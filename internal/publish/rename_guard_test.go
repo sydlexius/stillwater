@@ -160,8 +160,8 @@ func TestSyncRename_GuardFailsClosedOnZeroRoots(t *testing.T) {
 // TestSyncRename_GuardConsultsThePeer proves the guard actually performs the
 // root lookup rather than being short-circuited by some earlier branch -- a
 // guard that never runs is exactly the failure mode #2380 replaced (Lidarr's
-// verifyArtistPath compared got != sent against a peer that echoes back whatever
-// it was sent, so it could never fire).
+// former verifyArtistPath guard, removed in #2419, compared got != sent against
+// a peer that echoes back whatever it was sent, so it could never fire).
 func TestSyncRename_GuardConsultsThePeer(t *testing.T) {
 	p, _ := guardFixture(t, connection.TypeEmby, nil)
 

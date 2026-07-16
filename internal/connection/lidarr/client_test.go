@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -520,96 +519,16 @@ func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
 	}
 }
 
-// TestUpdateArtistPath_VerifyAfterPut_Match exercises the #1640 happy
-// path: when verify-after-PUT is enabled and Lidarr returns the path we
-// sent on the follow-up GET, the call succeeds. The test server tracks
-// each request so we can confirm the verify GET actually fired.
-func TestUpdateArtistPath_VerifyAfterPut_Match(t *testing.T) {
+// TestUpdateArtistPath_IssuesSingleGET pins the per-rename request shape:
+// exactly one GET (the pre-PUT fetch) plus the PUT, for every client. Lidarr
+// used to carry an opt-in follow-up GET that re-read the artist to confirm the
+// path round-tripped; #2419 removed it as redundant, because the publish layer
+// now read-backs every peer unconditionally (publish.Publisher.verifyPeerPath).
+// A second GET observed here means an in-client read-back has returned.
+func TestUpdateArtistPath_IssuesSingleGET(t *testing.T) {
 	// atomic.Int32 because the counter is written from the httptest
 	// handler goroutine and read from the test goroutine; a plain int
 	// trips -race under the project's race-test rule.
-	var getCount atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			n := getCount.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			// Both the pre-PUT fetch and the verify-after-PUT GET hit the
-			// same handler; for the verify branch we must echo the new
-			// path so the comparison succeeds. The first GET (pre-PUT)
-			// can return the old path; current path field is overwritten
-			// on the PUT body anyway.
-			if n == 1 {
-				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
-			} else {
-				_, _ = w.Write([]byte(`{"id":42,"path":"/new/X"}`))
-			}
-		case http.MethodPut:
-			w.WriteHeader(http.StatusOK)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
-	c.SetVerifyPathAfterUpdate(true)
-	if err := c.UpdateArtistPath(context.Background(), "42", "/new/X"); err != nil {
-		t.Fatalf("UpdateArtistPath with verify (match): %v", err)
-	}
-	if got := getCount.Load(); got != 2 {
-		t.Errorf("expected 2 GET requests (pre-PUT + verify), got %d", got)
-	}
-}
-
-// TestUpdateArtistPath_VerifyAfterPut_Mismatch covers the divergence
-// branch: when Lidarr coerces the path against the Root Folder list, the
-// follow-up GET returns a different value and UpdateArtistPath surfaces
-// an error including both sent and got values so the operator can
-// diagnose the drift.
-func TestUpdateArtistPath_VerifyAfterPut_Mismatch(t *testing.T) {
-	// atomic.Int32: see TestUpdateArtistPath_VerifyAfterPut_Match.
-	var getCount atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			n := getCount.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			if n == 1 {
-				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
-			} else {
-				// Simulate Lidarr coercing the path to a different value
-				// (e.g. canonicalizing against the Root Folder).
-				_, _ = w.Write([]byte(`{"id":42,"path":"/lidarr-canonical/X"}`))
-			}
-		case http.MethodPut:
-			w.WriteHeader(http.StatusOK)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
-	c.SetVerifyPathAfterUpdate(true)
-	err := c.UpdateArtistPath(context.Background(), "42", "/new/X")
-	if err == nil {
-		t.Fatal("expected verify-mismatch error")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "verify mismatch") {
-		t.Errorf("error %q does not mention verify mismatch", msg)
-	}
-	if !strings.Contains(msg, "/new/X") || !strings.Contains(msg, "/lidarr-canonical/X") {
-		t.Errorf("error %q must include both sent and got paths for diagnosis", msg)
-	}
-}
-
-// TestUpdateArtistPath_VerifyAfterPut_Disabled confirms that without
-// SetVerifyPathAfterUpdate(true) the follow-up GET does NOT fire, so the
-// opt-in default keeps the historical per-rename cost (1 GET + 1 PUT).
-func TestUpdateArtistPath_VerifyAfterPut_Disabled(t *testing.T) {
-	// atomic.Int32: see TestUpdateArtistPath_VerifyAfterPut_Match.
 	var getCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -626,12 +545,13 @@ func TestUpdateArtistPath_VerifyAfterPut_Disabled(t *testing.T) {
 	defer srv.Close()
 
 	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
-	// SetVerifyPathAfterUpdate not called; default is false.
 	if err := c.UpdateArtistPath(context.Background(), "42", "/new/X"); err != nil {
-		t.Fatalf("UpdateArtistPath (verify disabled): %v", err)
+		t.Fatalf("UpdateArtistPath: %v", err)
 	}
 	if got := getCount.Load(); got != 1 {
-		t.Errorf("expected 1 GET (pre-PUT only), got %d -- verify-after-PUT must be opt-in", got)
+		t.Errorf("GET count = %d, want 1 (the pre-PUT fetch only); "+
+			"a second GET means an in-client read-back returned -- the publish "+
+			"layer already verifies every peer, so it would be a duplicate", got)
 	}
 }
 
@@ -679,46 +599,5 @@ func TestGetMetadataConsumers_AuthClass401(t *testing.T) {
 	}
 	if !errors.Is(err, ErrAuthRequired) {
 		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
-	}
-}
-
-// TestUpdateArtistPath_VerifyAfterPut_AuthClass401 covers the credentials
-// rotation between PUT and verify case: the pre-PUT GET and the PUT both
-// succeed, but the verify GET returns 401. The error must still wrap with
-// ErrAuthRequired so the toast surface routes to auth_failed rather than a
-// generic verify mismatch class.
-func TestUpdateArtistPath_VerifyAfterPut_AuthClass401(t *testing.T) {
-	// atomic.Int32: see TestUpdateArtistPath_VerifyAfterPut_Match.
-	var getCount atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			n := getCount.Add(1)
-			if n == 1 {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
-				return
-			}
-			// Second GET is the verify call; simulate credentials revoked.
-			w.WriteHeader(http.StatusUnauthorized)
-		case http.MethodPut:
-			w.WriteHeader(http.StatusOK)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
-	c.SetVerifyPathAfterUpdate(true)
-	err := c.UpdateArtistPath(context.Background(), "42", "/new/X")
-	if err == nil {
-		t.Fatal("expected error on verify 401")
-	}
-	if !errors.Is(err, ErrAuthRequired) {
-		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
-	}
-	if got := getCount.Load(); got != 2 {
-		t.Errorf("expected 2 GETs (pre-PUT + verify), got %d", got)
 	}
 }

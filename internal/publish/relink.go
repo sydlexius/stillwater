@@ -200,10 +200,12 @@ var errRelinkUnverified = fmt.Errorf("peer link could not be verified after the 
 // to OFF -- switched off on exactly the peers where it would have caught the bug,
 // and left on the one peer where it is weakest (Lidarr echoes its input, so its
 // read-back cannot distinguish "stored" from "echoed"). It is now unconditional:
-// a correctness guard, not a preference. That is why nothing here consults
-// Connection.GetVerifyPathAfterUpdate -- that toggle still drives Lidarr's own
-// in-client check and is left alone, but it can no longer switch OFF the guard
-// that matters.
+// a correctness guard, not a preference.
+//
+// Nothing consults Connection.GetVerifyPathAfterUpdate any more. Lidarr's
+// in-client follow-up GET was removed in #2419 once this verifier made it
+// redundant, so no code path reads that toggle; the field itself is retired in
+// #2563.
 func (p *Publisher) verifyPeerPath(ctx context.Context, r peerArtistResolver, platformArtistID, sentPath string) (honored bool, got string, err error) {
 	got, err = r.GetArtistPath(ctx, platformArtistID)
 	if err != nil {

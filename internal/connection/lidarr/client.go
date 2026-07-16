@@ -38,12 +38,6 @@ func wrapAuthIfStatusAuth(err error) error {
 // Client communicates with a Lidarr server.
 type Client struct {
 	httpclient.BaseClient
-	// verifyPathAfterUpdate, when true, makes UpdateArtistPath issue a
-	// follow-up GET after the PUT and confirm the returned path field
-	// round-trips intact. Default false (opt-in): a healthy Lidarr
-	// rarely drifts and the extra request roughly doubles the per-rename
-	// cost.
-	verifyPathAfterUpdate bool
 }
 
 // New creates a Lidarr client with default HTTP settings.
@@ -65,18 +59,6 @@ func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, logger *
 	}
 	c.AuthFunc = c.setAuth
 	return c
-}
-
-// SetVerifyPathAfterUpdate toggles the per-connection verify-after-PUT
-// behavior. When enabled, UpdateArtistPath issues a follow-up GET after a
-// successful PUT and compares the returned `path` field against the value
-// we sent. A mismatch surfaces an error wrapped with enough context (sent
-// vs got) to identify the divergence so the operator knows Lidarr coerced
-// the path against the Root Folder list. Default false: a healthy Lidarr
-// almost never drifts and the extra request roughly doubles per-rename
-// cost.
-func (c *Client) SetVerifyPathAfterUpdate(enabled bool) {
-	c.verifyPathAfterUpdate = enabled
 }
 
 // TestConnection verifies connectivity by calling GET /api/v1/system/status.
@@ -604,51 +586,13 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	if err := c.PutJSON(ctx, putPath, bytes.NewReader(body), nil); err != nil {
 		return fmt.Errorf("putting artist path update: %w", wrapAuthIfStatusAuth(err))
 	}
-
-	// Optional verify-after-PUT round-trip. Older Lidarr versions
-	// sometimes coerce a submitted path against the Root Folder list and
-	// silently store the coerced value, so a 2xx PUT alone is not
-	// authoritative confirmation that the path persisted exactly as
-	// sent. Reuses the caller's context so the verify GET shares the
-	// per-platform rename deadline (publish.renameSyncTimeout); no
-	// additional timeout knob.
-	if c.verifyPathAfterUpdate {
-		if err := c.verifyArtistPath(ctx, escapedID, newPath); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// verifyArtistPath issues a follow-up GET on the artist resource and
-// confirms the `path` field round-tripped intact. Mismatch returns a
-// caller-friendly error including both sent and got values; the auth-class
-// wrap is applied to any transport / status error so a credentials
-// rotation between PUT and verify still routes to ErrAuthRequired.
-func (c *Client) verifyArtistPath(ctx context.Context, escapedID, sent string) error {
-	getPath := fmt.Sprintf("/api/v1/artist/%s", escapedID)
-	var verifyItem map[string]any
-	if err := c.Get(ctx, getPath, &verifyItem); err != nil {
-		return fmt.Errorf("verifying artist path after update: %w", wrapAuthIfStatusAuth(err))
-	}
-	// Distinguish "body decoded to nil" (Lidarr returned literal JSON null,
-	// or the GET succeeded but the artist disappeared between PUT and
-	// verify) from "body decoded to an object with no path field". The
-	// former is a malformed-body class error the operator must triage on
-	// the peer; the latter is a genuine field-level mismatch (sent X, got
-	// "") so we route to the regular mismatch error.
-	if verifyItem == nil {
-		return fmt.Errorf("lidarr path verify: empty response body after update")
-	}
-	got, _ := verifyItem["path"].(string)
-	if got != sent {
-		c.Logger.Warn("lidarr path verify mismatch",
-			slog.String("artist_id_escaped", escapedID),
-			slog.String("sent", sent),
-			slog.String("got", got),
-		)
-		return fmt.Errorf("lidarr path verify mismatch: sent %q, got %q", sent, got)
-	}
+	// No in-client read-back here. The publish layer verifies the path on
+	// EVERY peer unconditionally (publish.Publisher.verifyPeerPath), which
+	// makes a Lidarr-only follow-up GET redundant: it duplicated a check the
+	// caller already performs, on the one peer where the check is weakest
+	// (Lidarr echoes what it was sent, so its read-back cannot distinguish
+	// "stored" from "echoed"). See GetArtistPath, the read-back half the
+	// publish layer calls.
 	return nil
 }
 
