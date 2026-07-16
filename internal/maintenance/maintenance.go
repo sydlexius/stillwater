@@ -316,6 +316,257 @@ func (s *Service) StartExistsFlagScanner(ctx context.Context, interval, startupD
 	}
 }
 
+// FanartPrimaryFn reports the primary fanart filename of the ACTIVE platform
+// profile (e.g. "backdrop.jpg" for Emby, "fanart.jpg" for Kodi).
+//
+// It is a function parameter rather than a Service field, following
+// StartForeignFileScanner's precedent of injecting a dependency at the call
+// site, so this package keeps depending on nothing but the DB and the
+// filesystem.
+//
+// It must not be substituted with the DEFAULT naming that ScanExistsFlags uses.
+// ScanExistsFlags can afford defaults because it probes EVERY candidate name and
+// only acts on a definitive miss. Fanart slot resolution cannot: DiscoverFanart
+// keys off ONE primary name, so guessing "fanart.jpg" on an Emby library
+// discovers zero files, backfills nothing, and reports a clean pass having done
+// no work -- a silent no-op in the exact place a silent no-op is most expensive.
+type FanartPrimaryFn func(ctx context.Context) string
+
+// backfillRow is one starved fanart slot awaiting a hash.
+type backfillRow struct {
+	artistID  string
+	slotIndex int
+	path      string
+	phash     string
+	content   string
+}
+
+// BackfillFanartHashes computes and stores the perceptual and content hashes of
+// fanart slots whose phash column is empty.
+//
+// WHY THIS EXISTS. Provenance is recorded at SAVE time, so any fanart that was
+// merely scanned rather than written by Stillwater -- and every fanart appended
+// before #2564 fixed the append path -- has an artist_images row with an empty
+// phash. UpsertAll deliberately preserves provenance columns on rescan, so that
+// emptiness is permanent, not transient. A per-slot phash reader over such a row
+// finds no data and reports the artist clean because it had nothing to judge.
+// Existing libraries therefore need their starved rows healed before any
+// detector built on those hashes can tell "no corruption" apart from "no data".
+//
+// WHY IT DOES NOT RE-HASH THE LIBRARY ON EVERY BOOT. The work-set is defined by
+// the starvation itself: `phash = ”` selects only unfilled rows, and UpsertAll
+// preserves the ones this pass fills, so each pass strictly shrinks the set and
+// a healed library converges to zero work. That is what makes a run ledger
+// unnecessary -- which matters, because this package has none (the only
+// last-run marker, db_maintenance.last_optimize_at, is display-only and gates
+// nothing).
+//
+// FANART ONLY, deliberately. Fanart is the sole multi-slot image type, so it is
+// the only type whose slots can starve while a sibling slot looks healthy, and
+// DiscoverFanart gives an exact slot-to-path map to heal them with. The
+// single-slot types have no equivalent authoritative mapping here and would have
+// to guess at naming (see FanartPrimaryFn); healing them is a separate change
+// rather than a guess bolted onto this one.
+//
+// maxPerPass bounds the work per pass. A row whose file cannot be decoded stays
+// selected and is retried next pass; the bound is what stops a pocket of corrupt
+// files from monopolising a run. Truncation is logged rather than silent.
+func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary FanartPrimaryFn, maxPerPass int) error {
+	if fanartPrimary == nil {
+		return errors.New("backfilling fanart hashes: no fanart primary-name resolver supplied")
+	}
+	if maxPerPass <= 0 {
+		maxPerPass = 500
+	}
+	primary := fanartPrimary(ctx)
+	if primary == "" {
+		return errors.New("backfilling fanart hashes: resolver returned an empty primary name")
+	}
+
+	// Select one extra row beyond the cap purely to detect truncation, so the
+	// log can say the set was clipped instead of implying full coverage.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ai.artist_id, ai.slot_index, a.path
+		FROM artist_images ai
+		JOIN artists a ON ai.artist_id = a.id
+		WHERE ai.image_type = 'fanart' AND ai.phash = '' AND ai.exists_flag = 1
+		ORDER BY ai.artist_id, ai.slot_index
+		LIMIT ?`, maxPerPass+1)
+	if err != nil {
+		return fmt.Errorf("querying starved fanart rows: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only cursor, no actionable close error
+
+	type starved struct {
+		artistID   string
+		slotIndex  int
+		artistPath string
+	}
+	// Drain the cursor before issuing any write. modernc.org/sqlite uses a
+	// single-writer pool, so holding this SELECT open across writes on the same
+	// *sql.DB serializes badly or deadlocks. Two-phase is a correctness
+	// requirement under the pure-Go driver, not an optimization.
+	var pending []starved
+	for rows.Next() {
+		var st starved
+		if err := rows.Scan(&st.artistID, &st.slotIndex, &st.artistPath); err != nil {
+			return fmt.Errorf("scanning starved fanart row: %w", err)
+		}
+		pending = append(pending, st)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating starved fanart rows: %w", err)
+	}
+
+	truncated := len(pending) > maxPerPass
+	if truncated {
+		pending = pending[:maxPerPass]
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	// Resolve and hash. DiscoverFanart reads a directory, so its result is
+	// cached per artist: the rows are ordered by artist_id, but a map keeps that
+	// independent of the ORDER BY rather than silently depending on it.
+	discovered := make(map[string][]string)
+	var ready []backfillRow
+	skipped := 0
+
+	for _, st := range pending {
+		dir := s.artistImageDir(st.artistPath, st.artistID)
+		if dir == "" {
+			s.logger.Warn("fanart hash backfill: unresolvable image dir, skipping",
+				slog.String("artist_id", st.artistID))
+			skipped++
+			continue
+		}
+		paths, ok := discovered[st.artistID]
+		if !ok {
+			p, discErr := img.DiscoverFanart(dir, primary)
+			if discErr != nil {
+				s.logger.Warn("fanart hash backfill: discovering fanart, skipping artist",
+					slog.String("artist_id", st.artistID),
+					slog.String("dir", dir),
+					slog.Any("error", discErr))
+				discovered[st.artistID] = nil
+				skipped++
+				continue
+			}
+			discovered[st.artistID] = p
+			paths = p
+		}
+		// slot_index is the DiscoverFanart ORDINAL, so it indexes the slice
+		// directly -- the same mapping imageDupRowPath uses. Matching it exactly
+		// matters: reading the numeric filename suffix instead would drift the
+		// moment a renumber closes a gap.
+		if st.slotIndex < 0 || st.slotIndex >= len(paths) {
+			// The row outlived its file, or a concurrent scan renumbered the
+			// slots between the SELECT and here. Detection is unaffected; the
+			// next pass re-derives.
+			skipped++
+			continue
+		}
+		path := paths[st.slotIndex]
+
+		fh, hashErr := img.HashFile(path, true)
+		if hashErr != nil || fh.Perceptual == 0 && fh.Content == "" {
+			s.logger.Warn("fanart hash backfill: hashing file, skipping",
+				slog.String("artist_id", st.artistID),
+				slog.Int("slot_index", st.slotIndex),
+				slog.String("path", path),
+				slog.Any("error", hashErr))
+			skipped++
+			continue
+		}
+		ready = append(ready, backfillRow{
+			artistID:  st.artistID,
+			slotIndex: st.slotIndex,
+			path:      path,
+			phash:     img.HashHex(fh.Perceptual),
+			content:   fh.Content,
+		})
+	}
+
+	filled, failed := 0, 0
+	for _, r := range ready {
+		// Guarded by phash = '' so a provenance write that landed between this
+		// pass's SELECT and now wins instead of being overwritten by this
+		// slower, EXIF-less read. The save path's value is the better one: it
+		// hashes the bytes it just wrote.
+		_, err := s.db.ExecContext(ctx, `
+			UPDATE artist_images SET phash = ?, content_hash = ?
+			WHERE artist_id = ? AND image_type = 'fanart' AND slot_index = ? AND phash = ''`,
+			r.phash, r.content, r.artistID, r.slotIndex)
+		if err != nil {
+			// Filling these is the entire point of the task; a failed UPDATE
+			// leaves a slot starved, which is the defect this exists to end.
+			s.logger.Error("fanart hash backfill: UPDATE failed, slot remains starved",
+				slog.String("artist_id", r.artistID),
+				slog.Int("slot_index", r.slotIndex),
+				slog.Any("error", err))
+			failed++
+			continue
+		}
+		filled++
+	}
+
+	s.logger.Info("fanart hash backfill pass complete",
+		slog.Int("selected", len(pending)),
+		slog.Int("filled", filled),
+		slog.Int("skipped", skipped),
+		slog.Int("failed", failed),
+		slog.Bool("truncated", truncated))
+	return nil
+}
+
+// StartFanartHashBackfill runs BackfillFanartHashes after startupDelay and then
+// on the given interval until the context is canceled.
+//
+// It keeps running rather than firing once at boot because starved rows are
+// still created after boot: any fanart discovered by a scan (as opposed to
+// written by Stillwater) arrives with no phash.
+func (s *Service) StartFanartHashBackfill(ctx context.Context, fanartPrimary FanartPrimaryFn, interval, startupDelay time.Duration) {
+	if fanartPrimary == nil {
+		s.logger.Warn("fanart hash backfill not started: no primary-name resolver provided")
+		return
+	}
+	if interval <= 0 {
+		interval = 6 * time.Hour
+	}
+	if startupDelay <= 0 {
+		startupDelay = 30 * time.Second
+	}
+	s.logger.Info("fanart hash backfill started",
+		slog.String("interval", interval.String()),
+		slog.String("startup_delay", startupDelay.String()))
+
+	select {
+	case <-ctx.Done():
+		s.logger.Info("fanart hash backfill stopped")
+		return
+	case <-time.After(startupDelay):
+	}
+	if err := s.BackfillFanartHashes(ctx, fanartPrimary, 0); err != nil {
+		s.logger.Error("initial fanart hash backfill failed", slog.Any("error", err))
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("fanart hash backfill stopped")
+			return
+		case <-ticker.C:
+			if err := s.BackfillFanartHashes(ctx, fanartPrimary, 0); err != nil {
+				s.logger.Error("fanart hash backfill failed", slog.Any("error", err))
+			}
+		}
+	}
+}
+
 // StartForeignFileScanner constructs a foreign-file scanner against the
 // service's *sql.DB and starts it on the given cadence. Owns no scanner
 // state of its own; this method exists so cmd/stillwater/main.go can stand

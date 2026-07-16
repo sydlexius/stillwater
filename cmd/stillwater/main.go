@@ -31,6 +31,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/i18n"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/imagebridge"
 	"github.com/sydlexius/stillwater/internal/langpref"
 	"github.com/sydlexius/stillwater/internal/library"
@@ -993,6 +994,41 @@ func resolveReleaseGroupFetcher(registry *provider.Registry) provider.ReleaseGro
 //
 // logManager.Close, eventBus.Stop, and db.Close are deferred in run() so
 // they fire even if this phase returns early.
+// startFanartHashBackfill launches the per-slot fanart hash backfill (#2564).
+//
+// It heals artist_images rows whose phash was never written: fanart that was
+// scanned rather than saved, and every slot appended before the append path
+// started recording provenance. Without it, a per-slot phash reader cannot tell
+// an uncorrupted slot from one it simply has no data for.
+//
+// The primary fanart name is resolved per-run from the ACTIVE platform profile
+// rather than captured once at startup, so switching profiles (Emby's
+// backdrop.jpg to Kodi's fanart.jpg) is picked up by the next pass instead of
+// leaving the task discovering nothing forever.
+//
+// Extracted from startListeners to keep that method's cognitive complexity
+// under the lint cap, matching startLockSyncScheduler below.
+func (a *Application) startFanartHashBackfill(ctx context.Context, db *sql.DB) {
+	if a.maintenanceService == nil || a.platformService == nil {
+		return
+	}
+	backfillHours := getDBIntSetting(ctx, db, "fanart_hash_backfill.interval_hours", 6)
+	if backfillHours <= 0 {
+		backfillHours = 6
+	}
+	primaryFn := func(c context.Context) string {
+		profile, err := a.platformService.GetActive(c)
+		if err != nil || profile == nil {
+			return img.PrimaryFileName(img.DefaultFileNames, "fanart")
+		}
+		if name := profile.ImageNaming.PrimaryName("fanart"); name != "" {
+			return name
+		}
+		return img.PrimaryFileName(img.DefaultFileNames, "fanart")
+	}
+	go a.maintenanceService.StartFanartHashBackfill(ctx, primaryFn, time.Duration(backfillHours)*time.Hour, 45*time.Second)
+}
+
 // startLockSyncScheduler launches the LockSync platform-pull scheduler if
 // lockSyncService is wired and lock_sync.interval_minutes is not 0
 // (explicit disable). Negative values fall back to the 30-minute default,
@@ -1070,6 +1106,9 @@ func (a *Application) startListeners() error {
 		}
 		go a.maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
 	}
+
+	// Fanart per-slot hash backfill (issue #2564).
+	a.startFanartHashBackfill(ctx, db)
 
 	// LockSync platform-pull scheduler (issue #1726 Part C).
 	a.startLockSyncScheduler(ctx, db, logger)
