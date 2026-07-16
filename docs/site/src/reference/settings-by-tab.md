@@ -373,6 +373,8 @@ API tokens are long-lived credentials that let scripts and external tools call t
 {: #settings-tokens-api-tokens-scope-webhook }
 - **Admin** -- Grants every API scope (read, write, and webhook) on top of the routes the owning user's role allows. Routes that are gated by the administrator role still require the owning user to be an administrator; revocation is always limited to the owning user's own tokens.
 {: #settings-tokens-api-tokens-scope-admin }
+- **Generated API token**
+{: #settings-tokens-api-tokens-generated-token }
 
 ## Users  {#tab-users}
 

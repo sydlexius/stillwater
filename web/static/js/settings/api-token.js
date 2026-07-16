@@ -7,7 +7,8 @@
 //
 // DOM contract: bound via onsubmit="createAPIToken(event)" on #create-token-form;
 //   reads name + scope_read/scope_write/scope_webhook/scope_admin checkboxes;
-//   on success fills #token-plaintext and unhides #token-created-result.
+//   on success fills #token-plaintext (a readonly <input>, #2526) and unhides
+//   #token-created-result.
 // Network: POST {base}/api/v1/auth/tokens with {name, scopes}; sends csrf_token
 //   as X-CSRF-Token. Errors surface via alert() (verbatim original behavior).
 //
@@ -58,7 +59,7 @@
       return resp.json();
     })
     .then(function(data) {
-      document.getElementById('token-plaintext').textContent = data.token;
+      document.getElementById('token-plaintext').value = data.token;
       document.getElementById('token-created-result').classList.remove('hidden');
       form.reset();
       form.elements['scope_read'].checked = true;

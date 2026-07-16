@@ -276,7 +276,7 @@ templ SettingsUsersTab(data UsersTabData) {
 								aria-label={ t(ctx, "settings.users.copy_invite") }
 								data-toast-success={ t(ctx, "settings.users.invite_link_copied") }
 								data-toast-error={ t(ctx, "settings.users.invite_link_copy_failed") }
-								onclick="var btn=this; navigator.clipboard.writeText(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast(btn.dataset.toastSuccess); }).catch(function(){ showToast(btn.dataset.toastError); })"
+								onclick="var btn=this; swCopyToClipboard(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast(btn.dataset.toastSuccess); }).catch(function(){ showToast(btn.dataset.toastError); })"
 							>
 								{ t(ctx, "settings.users.copy_link") }
 							</button>
@@ -670,7 +670,7 @@ templ SettingsUsersScript() {
 
 		function copyInviteLink(code, successMsg, errorMsg) {
 			var link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(code);
-			navigator.clipboard.writeText(link).then(function() {
+			swCopyToClipboard(link).then(function() {
 				showSuccessToast(successMsg || 'Invite link copied');
 			}).catch(function() {
 				showToast(errorMsg || 'Failed to copy link');

@@ -885,29 +885,16 @@ templ LogsViewerScript() {
 			});
 
 			// -- bug-report export ----------------------------------------------
+			// Delegates to the shared window.swCopyToClipboard (layout.templ,
+			// #2526) so a genuine double-failure (Clipboard API AND
+			// execCommand both fail) surfaces the error toast instead of
+			// silently reporting success.
 			function copyText(text, okMsg) {
-				function fallback() {
-					try {
-						var ta = document.createElement('textarea');
-						ta.value = text;
-						ta.style.position = 'fixed';
-						ta.style.opacity = '0';
-						document.body.appendChild(ta);
-						ta.select();
-						document.execCommand('copy');
-						document.body.removeChild(ta);
-						if (typeof showToast === 'function') showToast(okMsg);
-					} catch (e) {
-						if (typeof showToast === 'function') showToast(L('labelExportFail'));
-					}
-				}
-				if (navigator.clipboard && navigator.clipboard.writeText) {
-					navigator.clipboard.writeText(text).then(function () {
-						if (typeof showToast === 'function') showToast(okMsg);
-					}, fallback);
-				} else {
-					fallback();
-				}
+				window.swCopyToClipboard(text).then(function () {
+					if (typeof showSuccessToast === 'function') showSuccessToast(okMsg);
+				}, function () {
+					if (typeof showToast === 'function') showToast(L('labelExportFail'));
+				});
 			}
 			var exportBtn = document.getElementById('sw-logs-export');
 			if (exportBtn) exportBtn.addEventListener('click', function () {

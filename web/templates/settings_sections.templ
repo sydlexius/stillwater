@@ -1326,8 +1326,14 @@ templ SectionAPITokens(data SettingsData) {
 				<div id="token-created-result" class="hidden mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded">
 					<p class="text-sm font-medium text-green-800 dark:text-green-200 mb-1">{ t(ctx, "settings.api_tokens.created_message") }</p>
 					<div class="flex items-center gap-2">
-						<code id="token-plaintext" class="flex-1 text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 break-all"></code>
-						<button type="button" class="text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="navigator.clipboard.writeText(document.getElementById('token-plaintext').textContent)">{ t(ctx, "actions.copy") }</button>
+						<input id="token-plaintext" type="text" readonly onclick="this.select()" aria-label={ t(ctx, "settings.api_tokens.generated_token") } class="flex-1 text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 font-mono"/>
+						<button
+							type="button"
+							class="text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+							data-toast-success={ t(ctx, "settings.api_tokens.copy_success") }
+							data-toast-error={ t(ctx, "settings.api_tokens.copy_failed") }
+							onclick="var btn=this; swCopyToClipboard(document.getElementById('token-plaintext').value).then(function(){ showSuccessToast(btn.dataset.toastSuccess); }).catch(function(){ showToast(btn.dataset.toastError); })"
+						>{ t(ctx, "actions.copy") }</button>
 					</div>
 				</div>
 			</div>
