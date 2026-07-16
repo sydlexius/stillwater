@@ -221,17 +221,8 @@ type Router struct {
 	// we accept the leak rather than racing removal against late-arriving
 	// requests.
 	stillwaterManagedMu sync.Map
-	// verifyPathAfterUpdateMu serializes the per-connection read-modify-write
-	// in handleSetVerifyPathAfterUpdate, mirroring stillwaterManagedMu. Without
-	// it two concurrent toggles for the same Lidarr connection could both read
-	// the stale flag and clobber one another. Values are *sync.Mutex via
-	// LoadOrStore. The handler gates connection existence + Lidarr type BEFORE
-	// the LoadOrStore, so unknown/wrong-type ids never create an entry; map
-	// cardinality is therefore bounded by the Lidarr connections actually
-	// served (#1685).
-	verifyPathAfterUpdateMu sync.Map
 	// pathMappingsMu serializes the per-connection read-modify-write in
-	// handleSetPathMappings, mirroring verifyPathAfterUpdateMu. Values are
+	// handleSetPathMappings, mirroring stillwaterManagedMu. Values are
 	// *sync.Mutex via LoadOrStore; the handler gates connection existence +
 	// Lidarr type BEFORE the LoadOrStore so map cardinality stays bounded by
 	// the Lidarr connections actually served (#2303).
@@ -567,7 +558,6 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/platform-settings", wrapAuth(r.handleGetPlatformSettings, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/platform-settings/disable", wrapAuth(middleware.RequireAdmin(r.handleDisablePlatformSettings), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/stillwater-managed", wrapAuth(middleware.RequireAdmin(r.handleSetStillwaterManaged), authMw))
-	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/verify-path-after-update", wrapAuth(middleware.RequireAdmin(r.handleSetVerifyPathAfterUpdate), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/path-mappings", wrapAuth(middleware.RequireAdmin(r.handleSetPathMappings), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/path-mappings/infer", wrapAuth(middleware.RequireAdmin(r.handleInferPathMappings), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/conflict-detail", wrapAuth(r.handleGetConnectionConflictDetail, authMw))
