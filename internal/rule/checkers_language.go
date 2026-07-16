@@ -111,7 +111,8 @@ func (e *Engine) makeNameLanguagePrefChecker() Checker {
 // values. Returns empty strings when the provider is unwired, the MBID is
 // missing, or the lookup fails or times out.
 func (e *Engine) lookupPreferredAlias(ctx context.Context, a *artist.Artist) (aliasName, aliasSort string) {
-	if a.MusicBrainzID == "" || e.metadataProvider == nil {
+	prov := e.metadataProviderFor(RuleNameLanguagePref)
+	if a.MusicBrainzID == "" || prov == nil {
 		return "", ""
 	}
 
@@ -122,7 +123,7 @@ func (e *Engine) lookupPreferredAlias(ctx context.Context, a *artist.Artist) (al
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	fr, err := e.metadataProvider.FetchMetadata(fetchCtx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
+	fr, err := e.fetchMetadataCoalesced(fetchCtx, prov, a)
 	if err != nil {
 		e.logger.Warn("name_language_pref: metadata fetch failed",
 			slog.String("artist", a.Name),
@@ -135,4 +136,22 @@ func (e *Engine) lookupPreferredAlias(ctx context.Context, a *artist.Artist) (al
 	}
 
 	return strings.TrimSpace(fr.Metadata.Name), strings.TrimSpace(fr.Metadata.SortName)
+}
+
+// fetchMetadataCoalesced routes the alias metadata fetch through the per-artist
+// EvaluationContext coalescer when one is attached to ctx (the canonical
+// pipeline path), so the pre-fix and post-fix name_language_pref checker passes
+// of a single scoped run collapse to one provider call (#2476). When no
+// EvaluationContext is present it falls back to the bare provider, preserving
+// the legacy behavior. In production the EvaluationContext's orchestrator and
+// the metadata provider are the same *provider.Orchestrator (both wired from
+// a.orchestrator in main.go), so routing through the coalescer hits the
+// identical upstream. prov is the capability-gated handle the caller already
+// obtained via metadataProviderFor; it is passed in rather than read off the
+// Engine so the capability gate stays the single access point.
+func (e *Engine) fetchMetadataCoalesced(ctx context.Context, prov MetadataProvider, a *artist.Artist) (*provider.FetchResult, error) {
+	if ec := EvaluationContextFromContext(ctx); ec != nil {
+		return ec.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
+	}
+	return prov.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 }
