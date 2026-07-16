@@ -1,0 +1,24 @@
+{
+  "ignoreFiles": [
+    "web/static/css/styles.css",
+    "web/static/css/*.min.css"
+  ],
+  "plugins": [
+    "stylelint-value-no-unknown-custom-properties",
+    "stylelint-declaration-strict-value"
+  ],
+  "rules": {
+    "csstools/value-no-unknown-custom-properties": [true, { "importFrom": ["web/static/css/design-tokens.css"] }],
+    "scale-unlimited/declaration-strict-value": [
+      ["color", "background-color", "border-color", "box-shadow"],
+      { "ignoreValues": ["transparent", "inherit", "currentColor", "none"] }
+    ],
+    "declaration-property-value-disallowed-list": {
+      "background":       ["/^var\\(--swd-accent\\)$/"],
+      "background-color": ["/^var\\(--swd-accent\\)$/"]
+    }
+  },
+  "overrides": [
+    { "files": ["web/static/css/design-tokens.css"], "rules": { "scale-unlimited/declaration-strict-value": null } }
+  ]
+}

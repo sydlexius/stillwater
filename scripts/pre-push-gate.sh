@@ -436,6 +436,25 @@ echo "=== CSS comments ==="
 bash "$SCRIPT_DIR/check-css-comments.sh"
 
 echo ""
+echo "=== CSS lint (diff-scoped ratchet, #2402) ==="
+# Design-token layer stylelint gate. The token migration is not complete
+# (input.css still carries ~135 pre-existing literal-value violations), so
+# this is a ratchet: only violations on lines this diff ADDED can fail the
+# build, matching coverage-floor.sh's one-way-ratchet shape. Hard-fail (not
+# SKIP) when stylelint/jq are missing, same rationale as the golangci-lint
+# check above -- this closes a `--no-verify` bypass, so a missing tool must
+# not silently reopen it.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "FAIL: jq not in PATH" >&2
+  exit 1
+fi
+if [ ! -d node_modules/stylelint ]; then
+  echo "FAIL: stylelint not installed (run: npm ci)" >&2
+  exit 1
+fi
+"$SCRIPT_DIR/stylelint-diff-gate.sh" "$BASE"
+
+echo ""
 echo "=== Generated files ==="
 bash "$SCRIPT_DIR/check-generated.sh"
 

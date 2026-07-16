@@ -2,12 +2,16 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/unit/*.test.js",
-    "test:responsive": "node tests/responsive/run.js"
+    "test:responsive": "node tests/responsive/run.js",
+    "lint:css": "stylelint 'web/static/css/*.css'"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",
     "axe-core": "4.12.1",
     "jsdom": "^26.1.0",
-    "playwright": "1.61.0"
+    "playwright": "1.61.0",
+    "stylelint": "^17.14.0",
+    "stylelint-declaration-strict-value": "^1.11.1",
+    "stylelint-value-no-unknown-custom-properties": "^6.1.1"
   }
 }
