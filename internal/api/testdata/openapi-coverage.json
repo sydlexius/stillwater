@@ -46,7 +46,7 @@
     "method": "POST",
     "path": "/notifications/{id}/apply-candidate",
     "handler": "handleApplyViolationCandidate",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "assignFanartSlot",

@@ -375,8 +375,10 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 	}
 
 	// Record provenance from the saved file so artist_images.source is populated.
+	// Slot 0: naming comes from getActiveNamingAndSymlinks, which only ever
+	// yields the primary filename, and the primary is DiscoverFanart ordinal 0.
 	if len(saved) > 0 && a.Path != "" {
-		r.recordImageProvenance(req.Context(), a.ID, body.ImageType, filepath.Join(a.Path, saved[0]))
+		r.recordImageProvenanceSlot0(req.Context(), a.ID, body.ImageType, filepath.Join(a.Path, saved[0]))
 	}
 
 	// Mark violation resolved and update health score before the best-effort

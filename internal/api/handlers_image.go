@@ -195,6 +195,32 @@ func (r *Router) finalizeImageSave(ctx context.Context, w http.ResponseWriter, a
 			slog.String("error", err.Error()))
 	}
 
+	// Record per-slot provenance for the file this request actually wrote
+	// (#2564).
+	//
+	// The primary-save branch above already covers slot 0 via
+	// setArtistImageFlag, which rediscovers the primary on disk and records it.
+	// What it cannot cover is a write that does NOT target the primary: a fanart
+	// append, and the per-slot Crop/Fetch edit (#2281). Those two were the only
+	// writers of slot >0 and NEITHER recorded provenance at all -- the append
+	// branch routes to updateArtistFanartCount, which never records, and the
+	// per-slot edit fell through to setArtistImageFlag, which re-recorded the
+	// untouched PRIMARY and left the edited slot alone.
+	//
+	// The result was that slots 1+ never received a phash. UpsertAll creates
+	// their rows with empty provenance columns and then deliberately preserves
+	// those columns on every rescan, so the emptiness was permanent rather than
+	// transient. A per-slot phash reader over such a row finds nothing and
+	// concludes the artist is clean because it had no data to judge -- a false
+	// green inside a tool whose whole job is detecting corruption.
+	//
+	// The slot is the one resolved above for the auto-lock: it is the same
+	// write, so it is the same slot by construction, and deriving it twice
+	// would invite the two derivations to disagree.
+	if len(saved) > 0 && (opts.isFanartAppend || opts.savedFanartSlot != nil) {
+		r.recordImageProvenance(ctx, a.ID, imageType, filepath.Join(r.imageDir(a), saved[0]), lockSlot)
+	}
+
 	publish := func() {
 		if r.eventBus != nil {
 			r.eventBus.Publish(event.Event{
@@ -1483,8 +1509,15 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 	// Record provenance evidence (phash, source, file format, write timestamp)
 	// from the saved image file. This is supplementary data -- failures here are
 	// logged as warnings but do not affect the image save operation.
+	//
+	// Slot 0 is correct here and not an assumption: resolvedPath comes from
+	// FindExistingImage over getActiveNamingConfig, which only ever yields the
+	// PRIMARY filename (never a numbered fanart variant), and the primary is
+	// DiscoverFanart ordinal 0 by definition. Writes that target a non-primary
+	// slot never reach this function; finalizeImageSave records those against
+	// their real slot (#2564).
 	if resolvedPath != "" {
-		r.recordImageProvenance(ctx, a.ID, imageType, resolvedPath)
+		r.recordImageProvenanceSlot0(ctx, a.ID, imageType, resolvedPath)
 	}
 }
 
@@ -1493,15 +1526,36 @@ func (r *Router) updateArtistImageFlag(ctx context.Context, a *artist.Artist, im
 	r.setArtistImageFlag(ctx, a, imageType, true)
 }
 
+// recordImageProvenanceSlot0 records provenance for a file known to occupy slot
+// 0. Single-slot types (thumb/logo/banner) have no other slot, and a fanart
+// write that targets the primary name is slot 0 by definition: DiscoverFanart
+// always sorts the primary to ordinal 0.
+func (r *Router) recordImageProvenanceSlot0(ctx context.Context, artistID, imageType, filePath string) {
+	r.recordImageProvenance(ctx, artistID, imageType, filePath, 0)
+}
+
 // recordImageProvenance reads Stillwater provenance metadata and file mtime from
 // the image at filePath, then records the phash, source, file format, and write
-// timestamp in the artist_images table. Errors are logged as warnings -- this
-// is supplementary evidence collection and must not fail the image save.
-func (r *Router) recordImageProvenance(ctx context.Context, artistID, imageType, filePath string) {
+// timestamp against the artist_images row for slotIndex. Errors are logged as
+// warnings -- this is supplementary evidence collection and must not fail the
+// image save.
+//
+// slotIndex is the DiscoverFanart ordinal, matching what every other per-slot
+// writer keys on (see imageDupRowPath in internal/rule/image_duplicates.go). It
+// used to be hard-coded to 0 here, which was correct only because every caller
+// at the time wrote the primary. It is now a parameter because the callers that
+// write a NON-primary slot -- a fanart append, and the per-slot Crop/Fetch edit
+// (#2281) -- must record against the slot they actually wrote. Passing 0 for
+// those would aim the UPDATE at another slot's row: with no slot-0 row it
+// silently matches nothing, and with one it stamps a DIFFERENT file's phash and
+// content hash onto slot 0. Both outcomes are worse than useless to a per-slot
+// phash reader, which is why this is a parameter rather than a default (#2564).
+func (r *Router) recordImageProvenance(ctx context.Context, artistID, imageType, filePath string, slotIndex int) {
 	log := r.logger.With(
 		slog.String("artist_id", artistID),
 		slog.String("image_type", imageType),
 		slog.String("path", filePath),
+		slog.Int("slot_index", slotIndex),
 	)
 
 	d := img.CollectProvenance(filePath, log)
@@ -1509,7 +1563,7 @@ func (r *Router) recordImageProvenance(ctx context.Context, artistID, imageType,
 		log.Warn("no provenance data collected, skipping update")
 		return
 	}
-	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
+	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, slotIndex, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
 		log.Warn("recording image provenance",
 			slog.String("error", err.Error()))
 	}
