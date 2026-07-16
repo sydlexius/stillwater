@@ -2,6 +2,7 @@ package lidarr
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -133,6 +134,27 @@ func TestGetArtistPath_NullBodyIsAnError(t *testing.T) {
 	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
 	if _, err := c.GetArtistPath(context.Background(), "42"); err == nil {
 		t.Fatal("an empty artist body was accepted as a valid read-back")
+	}
+}
+
+// A read-back that 401s must carry the ErrAuthRequired class, not a generic
+// error: this is the "credentials revoked mid-operation" case (#1639), and the
+// publish layer routes on the class to surface auth_failed rather than reading
+// the failure as a path mismatch. The behavior lives in GetArtistPath since
+// #2419 retired the in-client verify-after-PUT path.
+func TestGetArtistPath_Unauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "bad-key", srv.Client(), testLogger())
+	_, err := c.GetArtistPath(context.Background(), "42")
+	if err == nil {
+		t.Fatal("GetArtistPath returned no error on a 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
 	}
 }
 

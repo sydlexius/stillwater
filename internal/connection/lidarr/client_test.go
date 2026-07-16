@@ -519,8 +519,6 @@ func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
 	}
 }
 
-// TestUpdateArtistPath_VerifyAfterPut_Match exercises the #1640 happy
-// path: when verify-after-PUT is enabled and Lidarr returns the path we
 // TestUpdateArtistPath_IssuesSingleGET pins the per-rename request shape:
 // exactly one GET (the pre-PUT fetch) plus the PUT, for every client. Lidarr
 // used to carry an opt-in follow-up GET that re-read the artist to confirm the
