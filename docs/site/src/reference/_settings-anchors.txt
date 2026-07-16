@@ -205,6 +205,7 @@ settings-schedule-schedule-every-5m
 settings-schedule-schedule-every-6h
 settings-schedule-schedule-every-hour
 settings-tokens-api-tokens
+settings-tokens-api-tokens-generated-token
 settings-tokens-api-tokens-revoked
 settings-tokens-api-tokens-scope-admin
 settings-tokens-api-tokens-scope-read

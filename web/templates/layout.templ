@@ -545,6 +545,40 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						enqueueToast('warning', msg, 8000);
 					};
 
+					// swCopyToClipboard copies text to the clipboard, falling back to
+					// document.execCommand('copy') when the async Clipboard API is
+					// unavailable -- e.g. navigator.clipboard is undefined outside a
+					// secure context, which is the common case for Stillwater's
+					// self-hosted plain-HTTP LAN deployments (#2526). Returns a
+					// promise so callers can chain success/error toasts; rejects only
+					// if both the modern API and the fallback fail.
+					window.swCopyToClipboard = function(text) {
+						function execCommandFallback() {
+							return new Promise(function(resolve, reject) {
+								var ta = document.createElement('textarea');
+								try {
+									ta.value = text;
+									ta.style.position = 'fixed';
+									ta.style.opacity = '0';
+									document.body.appendChild(ta);
+									ta.focus();
+									ta.select();
+									ta.setSelectionRange(0, ta.value.length);
+									var ok = document.execCommand('copy');
+									if (ok) resolve(); else reject(new Error('execCommand copy failed'));
+								} catch (e) {
+									reject(e);
+								} finally {
+									if (ta.parentNode) ta.parentNode.removeChild(ta);
+								}
+							});
+						}
+						if (navigator.clipboard && navigator.clipboard.writeText) {
+							return navigator.clipboard.writeText(text).catch(execCommandFallback);
+						}
+						return execCommandFallback();
+					};
+
 					// showStickyToast renders a success toast that stays up until
 					// the user dismisses it with the close button. Use for run
 					// outcomes that summarise work the user is likely to reference
