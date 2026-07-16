@@ -72,6 +72,179 @@ func TestArtistDuplicatesTable_MergeButtonAndMembers(t *testing.T) {
 	}
 }
 
+// membersBlob extracts and decodes the first data-members JSON blob from a
+// rendered page. Shared by the tests that assert the wire contract the merge
+// modal's JS depends on.
+func membersBlob(t *testing.T, body string) []map[string]any {
+	t.Helper()
+	const startToken = `data-members="`
+	startIdx := strings.Index(body, startToken)
+	if startIdx < 0 {
+		t.Fatalf("missing data-members attribute")
+	}
+	startIdx += len(startToken)
+	endIdx := strings.Index(body[startIdx:], `"`)
+	if endIdx < 0 {
+		t.Fatalf("data-members attribute not closed")
+	}
+	raw := html.UnescapeString(body[startIdx : startIdx+endIdx])
+	var members []map[string]any
+	if err := json.Unmarshal([]byte(raw), &members); err != nil {
+		t.Fatalf("data-members not valid JSON after unescape: %v\nraw: %s", err, raw)
+	}
+	return members
+}
+
+// TestArtistDuplicatesTable_DisambiguationConflict pins the #2527 Defect-2
+// surface on the page: the group badge, the per-member amber marker, and -- the
+// load-bearing part -- the two JSON fields the merge modal reads to decide
+// whether to demand an override.
+//
+// The JSON keys are asserted by exact name because they cross a language
+// boundary: DuplicateGroupMembersJSON builds its DTO via a Go struct
+// type-conversion, so renaming a field compiles fine on both sides while the
+// JS silently reads undefined and the gate disarms itself. No Go test would
+// catch that except this one.
+func TestArtistDuplicatesTable_DisambiguationConflict(t *testing.T) {
+	view := ArtistDuplicatesPageView{
+		Groups: []ArtistDuplicateGroupRow{{
+			Key:                    "nirvana",
+			Reason:                 "mbid",
+			DisambiguationConflict: true,
+			Members: []ArtistDuplicateMember{
+				{ID: "a", Name: "Nirvana", Path: "/music/US", MBID: "m1",
+					Disambiguation: "Seattle grunge band", DisambiguationConflict: true},
+				{ID: "b", Name: "Nirvana", Path: "/music/UK", MBID: "m1",
+					Disambiguation: "UK progressive rock band", DisambiguationConflict: true},
+			},
+		}},
+	}
+
+	var buf bytes.Buffer
+	if err := ArtistDuplicatesTable(AssetPaths{BasePath: ""}, view).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+
+	if !strings.Contains(body, "Disambiguation Conflict") {
+		t.Errorf("conflicting group is missing the Disambiguation Conflict badge")
+	}
+	if !strings.Contains(body, "Seattle grunge band") || !strings.Contains(body, "UK progressive rock band") {
+		t.Errorf("member disambiguation values are not rendered; the operator cannot see which rows disagree")
+	}
+
+	members := membersBlob(t, body)
+	if len(members) != 2 {
+		t.Fatalf("expected 2 members in blob, got %d", len(members))
+	}
+	for i, m := range members {
+		if m["disambiguation_conflict"] != true {
+			t.Errorf("member[%d]: disambiguation_conflict = %#v, want true; the modal's override gate "+
+				"reads this key, so a false/absent value means an unguarded irreversible merge", i, m["disambiguation_conflict"])
+		}
+		if m["disambiguation"] == nil || m["disambiguation"] == "" {
+			t.Errorf("member[%d]: disambiguation missing from wire blob; got %#v", i, m["disambiguation"])
+		}
+	}
+}
+
+// TestArtistDuplicatesTable_NoDisambiguationConflict is the negative control:
+// an ordinary group must NOT badge, and its wire blob must carry
+// disambiguation_conflict=false. A template that always emitted the badge, or a
+// DTO that hardcoded the flag, would pass the test above and fail here.
+func TestArtistDuplicatesTable_NoDisambiguationConflict(t *testing.T) {
+	view := ArtistDuplicatesPageView{
+		Groups: []ArtistDuplicateGroupRow{{
+			Key:    "mbid-123",
+			Reason: "mbid",
+			Members: []ArtistDuplicateMember{
+				{ID: "c3", Name: "Boards of Canada", Path: "/music/BoC", MBID: "mbid-123", Disambiguation: "Scottish duo"},
+				{ID: "d4", Name: "Boards of Canada", Path: "/music/Boards", MBID: "mbid-123"},
+			},
+		}},
+	}
+
+	var buf bytes.Buffer
+	if err := ArtistDuplicatesTable(AssetPaths{BasePath: ""}, view).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+
+	if strings.Contains(body, "Disambiguation Conflict") {
+		t.Errorf("non-conflicting group must not render the Disambiguation Conflict badge; " +
+			"crying wolf trains operators to click through the override reflexively")
+	}
+	for i, m := range membersBlob(t, body) {
+		if m["disambiguation_conflict"] != false {
+			t.Errorf("member[%d]: disambiguation_conflict = %#v, want false", i, m["disambiguation_conflict"])
+		}
+	}
+}
+
+// TestArtistMergeModal_DisambiguationGate pins the modal-side soft gate
+// (#2527): the warning block exists, ships HIDDEN (so an ordinary merge is
+// unaffected), carries the override checkbox the JS gates Confirm on, and the
+// script actually consults that checkbox at commit time rather than trusting
+// the button's disabled state.
+func TestArtistMergeModal_DisambiguationGate(t *testing.T) {
+	var buf bytes.Buffer
+	if err := ArtistMergeModal().Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+
+	if !strings.Contains(body, `id="merge-disamb-warning"`) {
+		t.Fatalf("merge modal is missing the #merge-disamb-warning block")
+	}
+	if !strings.Contains(body, `id="merge-disamb-override"`) {
+		t.Fatalf("merge modal is missing the #merge-disamb-override checkbox")
+	}
+
+	// The warning must default to hidden: it is revealed per-group by openModal.
+	// A block that shipped visible would warn on every merge.
+	warnIdx := strings.Index(body, `id="merge-disamb-warning"`)
+	blockEnd := strings.Index(body[warnIdx:], ">")
+	if blockEnd < 0 {
+		t.Fatalf("#merge-disamb-warning element not closed")
+	}
+	if !strings.Contains(body[warnIdx:warnIdx+blockEnd], "hidden") {
+		t.Errorf("#merge-disamb-warning must render hidden by default; opening tag: %q",
+			body[warnIdx:warnIdx+blockEnd])
+	}
+
+	// ID uniqueness: the JS resolves both by getElementById, so a duplicate
+	// would make the gate bind to an arbitrary node.
+	for _, id := range []string{`id="merge-disamb-warning"`, `id="merge-disamb-override"`} {
+		if n := strings.Count(body, id); n != 1 {
+			t.Errorf("%s appears %d times, want exactly 1", id, n)
+		}
+	}
+
+	// The commit path must re-check the override, not merely rely on the
+	// disabled button -- this is the assertion that would fail if someone
+	// "simplified" the gate down to a visual one.
+	if !strings.Contains(body, "current.disambConflict && !(disambOverride && disambOverride.checked)") {
+		t.Errorf("commitMerge does not re-assert the disambiguation override before POSTing; " +
+			"a disabled-button-only gate is bypassable and this merge is irreversible")
+	}
+	if !strings.Contains(body, "function updateConfirmState()") {
+		t.Errorf("expected a single updateConfirmState() authority over the Confirm button")
+	}
+
+	// Without the change listener the soft gate becomes a HARD block: Confirm is
+	// disabled, the operator ticks the override, no event fires, Confirm stays
+	// disabled and the group is unmergeable.
+	if !strings.Contains(body, "disambOverride.addEventListener('change', updateConfirmState)") {
+		t.Errorf("the override checkbox is not wired to updateConfirmState on 'change'; ticking it " +
+			"would never re-enable Confirm, turning the soft gate into a hard block")
+	}
+	// The gate decision must read the server's flag, not re-derive it client-side.
+	if !strings.Contains(body, "m.disambiguation_conflict") {
+		t.Errorf("the Confirm gate does not derive from the server's disambiguation_conflict flag; " +
+			"a client-side re-derivation can silently disagree with the card badge")
+	}
+}
+
 // sampleDuplicatesView returns a two-group view: one name_key group with a
 // recommended survivor, one mbid group. Enough to exercise both reason badges,
 // the recommended badge, the per-group action buttons, and the data-* hooks.

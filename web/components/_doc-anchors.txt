@@ -418,6 +418,7 @@ how-to/logs-viewer#keyboard-shortcuts
 how-to/logs-viewer#logs-viewer
 how-to/logs-viewer#open-the-log-viewer
 how-to/logs-viewer#read-the-log
+how-to/merge-duplicate-artists#disambiguation-conflicts
 how-to/merge-duplicate-artists#find-suspected-duplicates
 how-to/merge-duplicate-artists#merge-a-group
 how-to/merge-duplicate-artists#merge-duplicate-artists

@@ -4,6 +4,11 @@ package templates
 // Declared here (not in internal/artist) so the template never imports
 // the artist domain package -- the handler constructs these from the
 // detection results and passes them in.
+//
+// FIELD ORDER IS LOAD-BEARING: DuplicateGroupMembersJSON (helpers.go) converts
+// this struct to its wire DTO with a Go struct type-conversion, which requires
+// both types to have identical field names, types, and ORDER. Adding a field
+// here without mirroring it there -- in the same position -- fails to compile.
 type ArtistDuplicateMember struct {
 	ID                string
 	Name              string
@@ -11,15 +16,27 @@ type ArtistDuplicateMember struct {
 	MBID              string // empty when no MusicBrainz ID is known
 	Recommended       bool   // true on exactly one member per group; mirrors artist.ChooseSurvivor
 	RecommendedReason string // "canonical_basename" | "most_content" | "fallback" | ""
+
+	// Disambiguation is the artist's disambiguation text ('' when unset).
+	Disambiguation string
+	// DisambiguationConflict is true when this member's non-empty
+	// disambiguation differs from another group member's non-empty value
+	// (#2527). Members with no disambiguation are never flagged.
+	DisambiguationConflict bool
 }
 
 // ArtistDuplicateGroupRow is one near-duplicate group displayed in the table.
 type ArtistDuplicateGroupRow struct {
 	// Key is the normalized identity key (for name_key groups) or the shared
 	// MBID (for mbid groups).
-	Key     string
-	Reason  string // "name_key" or "mbid"
-	Members []ArtistDuplicateMember
+	Key    string
+	Reason string // "name_key" or "mbid"
+	// DisambiguationConflict is true when two or more members carry distinct
+	// non-empty disambiguation values (#2527). A soft signal: the group is
+	// still mergeable, but the page badges it and the merge modal gates
+	// Confirm behind an explicit override.
+	DisambiguationConflict bool
+	Members                []ArtistDuplicateMember
 }
 
 // ArtistDuplicatesPageView is the full-page view model for /reports/duplicates.
@@ -99,6 +116,15 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 								{ t(ctx, "artist_duplicates.reason_name_key") }
 							</span>
 						}
+						if group.DisambiguationConflict {
+							// #2527 Defect-2: soft signal. The group stays mergeable; this
+							// badge plus the merge modal's override gate are the whole
+							// mitigation. Amber (warn), not red (block) -- red is reserved
+							// for the collision halt, which is terminal.
+							<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+								{ t(ctx, "artist_duplicates.disambiguation_conflict_badge") }
+							</span>
+						}
 						<span class="text-xs font-mono text-gray-500 dark:text-gray-400">{ group.Key }</span>
 						<div class="ml-auto flex items-center gap-2">
 							<button
@@ -127,6 +153,7 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 							<tr>
 								<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.col_name") }</th>
 								<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.col_path") }</th>
+								<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.col_disambiguation") }</th>
 								<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.col_mbid") }</th>
 							</tr>
 						</thead>
@@ -148,6 +175,22 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 										}
 									</td>
 									<td class="px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400">{ m.Path }</td>
+									<td class="px-4 py-2 text-xs">
+										if m.Disambiguation != "" {
+											if m.DisambiguationConflict {
+												// This member asserts a value that contradicts another
+												// member's. Amber-tint it so the operator can see WHICH
+												// rows disagree, not merely that the group disagrees.
+												<span class="inline-flex items-center rounded bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-300">
+													{ m.Disambiguation }
+												</span>
+											} else {
+												<span class="text-gray-600 dark:text-gray-400">{ m.Disambiguation }</span>
+											}
+										} else {
+											<span class="italic text-gray-500 dark:text-gray-400">{ t(ctx, "artist_duplicates.no_disambiguation") }</span>
+										}
+									</td>
 									<td class="px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400">
 										if m.MBID != "" {
 											{ m.MBID }
@@ -450,6 +493,35 @@ templ ArtistMergeModal() {
 					<p class="text-sm text-gray-600 dark:text-gray-400">
 						{ t(ctx, "artist_duplicates.merge_modal.description") }
 					</p>
+					// #2527 Defect-2 soft gate. Server-rendered (copy comes from t(ctx,...),
+					// the JS only toggles [hidden]) and placed FIRST in the body so the
+					// warning is read before the survivor is chosen. Hidden unless the open
+					// group actually carries conflicting disambiguation values; while shown
+					// and unchecked, the override checkbox holds Confirm disabled.
+					<div
+						id="merge-disamb-warning"
+						hidden
+						class="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3"
+						role="alert"
+					>
+						<h4 class="text-sm font-medium text-amber-800 dark:text-amber-200">
+							{ t(ctx, "artist_duplicates.merge_modal.disamb_warning_heading") }
+						</h4>
+						<p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+							{ t(ctx, "artist_duplicates.merge_modal.disamb_warning_body") }
+						</p>
+						<ul id="merge-disamb-values" class="mt-2 list-disc list-inside space-y-0.5 text-xs text-amber-700 dark:text-amber-300"></ul>
+						<label class="mt-3 flex items-start gap-2 cursor-pointer">
+							<input
+								type="checkbox"
+								id="merge-disamb-override"
+								class="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-400 dark:border-amber-600 text-amber-600 focus:ring-2 focus:ring-amber-500"
+							/>
+							<span class="text-xs font-medium text-amber-800 dark:text-amber-200">
+								{ t(ctx, "artist_duplicates.merge_modal.disamb_override_label") }
+							</span>
+						</label>
+					</div>
 					<fieldset>
 						<legend class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							{ t(ctx, "artist_duplicates.merge_modal.survivor_legend") }
@@ -502,8 +574,14 @@ templ ArtistMergeModal() {
 		var optionsRoot = document.getElementById('merge-survivor-options');
 		var previewBody = document.getElementById('merge-preview-body');
 		var confirmBtn = document.getElementById('merge-modal-confirm');
+		// #2527 Defect-2 soft-gate elements.
+		var disambWarning = document.getElementById('merge-disamb-warning');
+		var disambOverride = document.getElementById('merge-disamb-override');
+		var disambValues = document.getElementById('merge-disamb-values');
 
-		var current = { members: [], survivorId: null, dryRunOK: false };
+		// disambConflict: the open group carries conflicting disambiguation values,
+		// so Confirm additionally requires the override checkbox (#2527 Defect-2).
+		var current = { members: [], survivorId: null, dryRunOK: false, disambConflict: false };
 		// excludedIds holds member IDs the user has unchecked in the merge
 		// dialog (#1714): they are neither the survivor nor merged into it, so
 		// they are dropped from loser_ids. Re-checking a box re-includes the
@@ -547,6 +625,31 @@ templ ArtistMergeModal() {
 			try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
 		}
 
+		// conflictingDisambValues returns the DISTINCT non-empty disambiguation
+		// values across the group. Two or more means the members contradict each
+		// other and the merge needs an explicit override (#2527 Defect-2). An
+		// empty value is "unknown", not a distinct opinion, so it never conflicts
+		// -- this mirrors markDisambiguationConflicts in internal/artist so the
+		// client gate and the server's badge can never disagree.
+		function conflictingDisambValues(members) {
+			var seen = [];
+			members.forEach(function(m) {
+				var d = m.disambiguation || '';
+				if (d !== '' && seen.indexOf(d) === -1) seen.push(d);
+			});
+			return seen.length >= 2 ? seen : [];
+		}
+
+		// updateConfirmState is the SINGLE authority on whether Confirm is
+		// enabled. Every path that used to poke confirmBtn.disabled directly now
+		// routes through here, so a new gate condition cannot be silently bypassed
+		// by one stale assignment. Confirm requires a clean dry-run AND, when the
+		// group's disambiguation values conflict, an explicit override.
+		function updateConfirmState() {
+			var overridden = !current.disambConflict || (disambOverride && disambOverride.checked);
+			confirmBtn.disabled = !(current.dryRunOK && overridden);
+		}
+
 		function openModal(groupKey) {
 			var card = document.querySelector('[data-duplicate-group][data-group-key="' + cssEscape(groupKey) + '"]');
 			if (!card) return;
@@ -561,6 +664,25 @@ templ ArtistMergeModal() {
 			current.survivorId = rec ? rec.id : members[0].id;
 			current.dryRunOK = false;
 			excludedIds.clear();
+
+			// Reveal the soft gate for this group and reset the override, so an
+			// acknowledgement never carries over from a previously merged group.
+			// The gate DECISION reads the SERVER's flag (the same truth the card
+			// badge renders, so the two cannot disagree); conflictingDisambValues
+			// stays, but only to DISPLAY the values below.
+			var conflicts = conflictingDisambValues(members);
+			current.disambConflict = members.some(function (m) { return m.disambiguation_conflict; });
+			if (disambOverride) disambOverride.checked = false;
+			if (disambValues) {
+				disambValues.innerHTML = '';
+				conflicts.forEach(function(d) {
+					var li = document.createElement('li');
+					li.textContent = d;
+					disambValues.appendChild(li);
+				});
+			}
+			if (disambWarning) disambWarning.hidden = !current.disambConflict;
+			updateConfirmState();
 
 			renderSurvivorOptions();
 			modal.classList.remove('hidden');
@@ -584,9 +706,13 @@ templ ArtistMergeModal() {
 			optionsRoot.innerHTML = '';
 			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
 			confirmBtn.disabled = true;
-			current = { members: [], survivorId: null, dryRunOK: false };
+			current = { members: [], survivorId: null, dryRunOK: false, disambConflict: false };
 			excludedIds.clear();
 			rowControls = [];
+			// Reset the soft gate so the next group opens un-acknowledged.
+			if (disambWarning) disambWarning.hidden = true;
+			if (disambOverride) disambOverride.checked = false;
+			if (disambValues) disambValues.innerHTML = '';
 			// Restore focus to the element that opened the modal so keyboard
 			// users land back where they started (typically the group's
 			// Merge button), not at the top of the document.
@@ -628,7 +754,7 @@ templ ArtistMergeModal() {
 				radio.addEventListener('change', function() {
 					current.survivorId = m.id;
 					current.dryRunOK = false;
-					confirmBtn.disabled = true;
+					updateConfirmState();
 					applySurvivorState();
 					runDryRun();
 				});
@@ -658,6 +784,18 @@ templ ArtistMergeModal() {
 				path.textContent = m.path;
 				body.appendChild(name);
 				body.appendChild(path);
+				// Surface this member's disambiguation next to its path so the
+				// operator can see WHICH rows disagree while picking the survivor,
+				// rather than only that the group disagrees (#2527). Amber only on a
+				// contradicting row; a lone value is neutral context.
+				if (m.disambiguation) {
+					var disamb = document.createElement('div');
+					disamb.className = m.disambiguation_conflict
+						? 'text-xs font-medium text-amber-700 dark:text-amber-300'
+						: 'text-xs text-gray-500 dark:text-gray-400';
+					disamb.textContent = m.disambiguation;
+					body.appendChild(disamb);
+				}
 				// "Will be removed" note for non-survivor rows -- the discard-side
 				// counterpart of the keeping badge. Hidden on the survivor row.
 				var discardNote = document.createElement('div');
@@ -698,7 +836,7 @@ templ ArtistMergeModal() {
 						excludedIds.add(m.id);
 					}
 					current.dryRunOK = false;
-					confirmBtn.disabled = true;
+					updateConfirmState();
 					applySurvivorState();
 					runDryRun();
 				});
@@ -806,7 +944,7 @@ templ ArtistMergeModal() {
 			if (loserIDs().length === 0) {
 				previewBody.innerHTML = '<p class="text-sm text-amber-700 dark:text-amber-300">' + escapeHTML(tx('no_sources_selected')) + '</p>';
 				current.dryRunOK = false;
-				confirmBtn.disabled = true;
+				updateConfirmState();
 				return;
 			}
 			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
@@ -816,16 +954,16 @@ templ ArtistMergeModal() {
 				if (out.kind === 'success') {
 					renderPreview(out.body);
 					current.dryRunOK = true;
-					confirmBtn.disabled = false;
 				} else if (out.kind === 'collisions') {
 					renderConflicts(out.body);
 					current.dryRunOK = false;
-					confirmBtn.disabled = true;
 				} else {
 					renderError(out.body);
 					current.dryRunOK = false;
-					confirmBtn.disabled = true;
 				}
+				// A clean dry-run alone does not enable Confirm: the
+				// disambiguation override (when the group conflicts) still gates it.
+				updateConfirmState();
 			}).catch(function() {
 				if (seq !== dryRunSeq) return;
 				renderError({ message: tx('preview_network_error') });
@@ -834,6 +972,10 @@ templ ArtistMergeModal() {
 
 		function commitMerge() {
 			if (!current.dryRunOK) return;
+			// Re-assert the soft gate at the point of no return, not merely on the
+			// button's disabled state: this merge is irreversible, so the check
+			// that matters is the one immediately before the POST (#2527).
+			if (current.disambConflict && !(disambOverride && disambOverride.checked)) return;
 			confirmBtn.disabled = true;
 			postMerge(false).then(function(out) {
 				if (out.kind === 'success') {
@@ -853,12 +995,14 @@ templ ArtistMergeModal() {
 				// locked, stale_group, ...) -- show the message but re-
 				// enable Confirm so the user can retry without re-opening
 				// the modal. dryRunOK is still true from the preflight, so
-				// the gate at the top of commitMerge passes.
+				// the gate at the top of commitMerge passes. Re-enable via
+				// updateConfirmState so a retry cannot slip past the
+				// disambiguation override the user has since unchecked.
 				renderError(out.body);
-				confirmBtn.disabled = false;
+				updateConfirmState();
 			}).catch(function() {
 				renderError({ message: tx('preview_network_error') });
-				confirmBtn.disabled = false;
+				updateConfirmState();
 			});
 		}
 
@@ -1011,6 +1155,10 @@ templ ArtistMergeModal() {
 				closeModal();
 			}
 		});
+		// Acknowledging (or un-acknowledging) the disambiguation conflict re-runs
+		// the single Confirm predicate -- no dry-run round-trip needed, the
+		// preflight result is unchanged by the override (#2527).
+		if (disambOverride) disambOverride.addEventListener('change', updateConfirmState);
 		confirmBtn.addEventListener('click', commitMerge);
 		})();
 	</script>

@@ -2,7 +2,7 @@
 description: Find and merge duplicate artist records -- how the survivor is chosen, what the dry-run preview shows, and what happens on disk.
 ---
 
-<!-- code: internal/artist/merge_artists.go (MergeAndReconcile, ChooseSurvivor, executeLoserMerge, commitMergeDB), internal/artist/duplicates.go (DetectDuplicates), internal/api/handlers_artist_duplicates.go (POST /api/v1/artists/merge, /duplicates/ignore, DELETE /duplicates/ignored/{id}), web/templates/artist_duplicates.templ (ArtistMergeModal, dry-run preview). -->
+<!-- code: internal/artist/merge_artists.go (MergeAndReconcile, ChooseSurvivor, executeLoserMerge, commitMergeDB), internal/artist/duplicates.go (DetectDuplicates, markDisambiguationConflicts), internal/api/handlers_artist_duplicates.go (POST /api/v1/artists/merge, /duplicates/ignore, DELETE /duplicates/ignored/{id}), web/templates/artist_duplicates.templ (ArtistMergeModal, dry-run preview, disambiguation override gate). -->
 
 # Merge Duplicate Artists
 
@@ -16,6 +16,8 @@ Open **Possible Duplicate Artists** (sidebar, or `/reports/duplicates` directly)
 - **Name collision** -- the members' directory names normalize to the same value (ignoring punctuation style, hyphen vs. underscore, and a leading "The"). Worth a manual look before merging; not classified as a Shared MBID group.
 
 Only artists with a non-empty filesystem path are considered -- a platform-only artist (no filesystem path) can't be merged.
+
+Each group's member table includes a **Disambiguation** column (the artist's MusicBrainz disambiguation text, or "None" when unset). If two or more members carry different, non-empty disambiguation values, the group carries an amber **Disambiguation Conflict** badge and the conflicting values are highlighted in the table -- a member with no disambiguation set is never flagged, since an unset value doesn't contradict anything. This is a hint, not a block: differing disambiguation often means the members are genuinely different artists who happen to share a name or MBID grouping, so it's worth a second look before merging, but the group is still offered for merge. See [Read the preview before confirming](#read-the-preview-before-confirming) for what this means once you open the merge modal.
 
 If a group isn't actually a duplicate, click **Ignore** to dismiss it. Ignored groups move to **Manage ignored** (`/reports/duplicates/ignored`), where you can **Restore** one if you change your mind.
 
@@ -40,6 +42,10 @@ Each candidate also has an **Include in merge** checkbox, so you can exclude a m
 As soon as you pick a survivor, Stillwater runs a dry-run automatically -- no files or database rows are touched. The **Preview** section lists every album subdirectory that would move into the survivor's folder, plus any warnings. The **Confirm merge** button stays disabled until a clean dry-run completes, so you always see the plan before committing.
 
 If the dry-run finds an **album collision** -- the same album subdirectory name exists under both the survivor and a loser -- the merge is blocked entirely ("Cannot merge: album collisions detected"). Rename or remove one copy of the colliding album on disk, then refresh the page and try again.
+
+### Disambiguation conflicts
+
+If the group has a Disambiguation Conflict (see [Find suspected duplicates](#find-suspected-duplicates)), the merge modal shows an amber warning -- "These Artists May Not Be Duplicates" -- listing the conflicting values, and the **Confirm merge** button stays disabled until you tick "I have reviewed these values and want to merge anyway." This is deliberately a soft gate, not a hard refusal: a differing MusicBrainz ID means MusicBrainz itself asserts the members are different entities, which Stillwater refuses outright and does not offer here. A differing disambiguation is only the operator's own tag, and it may simply be a mistake in one of the source records -- so Stillwater warns loudly and asks for an explicit, deliberate acknowledgement rather than blocking the merge. Ticking the override does not skip the dry-run preview; both checks must pass before Confirm merge is enabled.
 
 ## What happens on merge
 

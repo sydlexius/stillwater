@@ -618,10 +618,12 @@ func buildArtistDuplicatesView(groups []artist.NearDuplicateGroup, articleMode s
 		members := make([]templates.ArtistDuplicateMember, 0, len(g.Members))
 		for _, m := range g.Members {
 			mem := templates.ArtistDuplicateMember{
-				ID:   m.ID,
-				Name: m.Name,
-				Path: m.Path,
-				MBID: m.MBID,
+				ID:                     m.ID,
+				Name:                   m.Name,
+				Path:                   m.Path,
+				MBID:                   m.MBID,
+				Disambiguation:         m.Disambiguation,
+				DisambiguationConflict: m.DisambiguationConflict,
 			}
 			if m.ID == recommendedID {
 				mem.Recommended = true
@@ -630,9 +632,10 @@ func buildArtistDuplicatesView(groups []artist.NearDuplicateGroup, articleMode s
 			members = append(members, mem)
 		}
 		rows = append(rows, templates.ArtistDuplicateGroupRow{
-			Key:     g.Key,
-			Reason:  g.Reason,
-			Members: members,
+			Key:                    g.Key,
+			Reason:                 g.Reason,
+			DisambiguationConflict: g.DisambiguationConflict,
+			Members:                members,
 		})
 	}
 	return templates.ArtistDuplicatesPageView{

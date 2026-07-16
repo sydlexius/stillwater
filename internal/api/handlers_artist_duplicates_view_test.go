@@ -59,6 +59,105 @@ func TestBuildArtistDuplicatesView_RecommendsSurvivor(t *testing.T) {
 	}
 }
 
+// TestBuildArtistDuplicatesView_ThreadsDisambiguation pins the detector ->
+// view-model contract for the #2527 Defect-2 soft gate. The merge modal reads
+// these fields out of the card's data-members blob to decide whether to demand
+// an explicit override, so a dropped field here silently disarms the gate: the
+// page would render, the merge would be offered, and no warning would appear.
+//
+// What still passes if broken: a view builder that copies Disambiguation (the
+// visible text) but drops DisambiguationConflict still renders a plausible
+// page -- the column populates -- while the modal never gates. Hence both
+// fields, and the group-level flag, are asserted independently.
+func TestBuildArtistDuplicatesView_ThreadsDisambiguation(t *testing.T) {
+	groups := []artist.NearDuplicateGroup{
+		{
+			Key:                    "nirvana",
+			Reason:                 "mbid",
+			DisambiguationConflict: true,
+			Members: []artist.NearDuplicateArtist{
+				{
+					ID: "id-a", Name: "Nirvana", Path: "/music/NirvanaUS",
+					Disambiguation: "Seattle grunge band", DisambiguationConflict: true,
+				},
+				{
+					ID: "id-b", Name: "Nirvana", Path: "/music/NirvanaUK",
+					Disambiguation: "UK progressive rock band", DisambiguationConflict: true,
+				},
+				// Untagged member: contradicts nothing, so it stays unflagged even
+				// though its group conflicts.
+				{ID: "id-c", Name: "Nirvana", Path: "/music/NirvanaX"},
+			},
+		},
+	}
+
+	view := buildArtistDuplicatesView(groups, "prefix")
+	if len(view.Groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(view.Groups))
+	}
+	g := view.Groups[0]
+	if !g.DisambiguationConflict {
+		t.Errorf("group DisambiguationConflict = false, want true; the page badge and the modal's " +
+			"override gate both hang off this flag")
+	}
+	if len(g.Members) != 3 {
+		t.Fatalf("expected 3 members, got %d", len(g.Members))
+	}
+
+	want := map[string]struct {
+		disamb   string
+		conflict bool
+	}{
+		"id-a": {"Seattle grunge band", true},
+		"id-b": {"UK progressive rock band", true},
+		"id-c": {"", false},
+	}
+	for _, m := range g.Members {
+		w, ok := want[m.ID]
+		if !ok {
+			t.Errorf("unexpected member %q", m.ID)
+			continue
+		}
+		if m.Disambiguation != w.disamb {
+			t.Errorf("member %s: Disambiguation = %q, want %q", m.ID, m.Disambiguation, w.disamb)
+		}
+		if m.DisambiguationConflict != w.conflict {
+			t.Errorf("member %s: DisambiguationConflict = %v, want %v",
+				m.ID, m.DisambiguationConflict, w.conflict)
+		}
+	}
+}
+
+// TestBuildArtistDuplicatesView_NoDisambiguationConflict is the negative
+// control for the threading test above: a non-conflicting group must arrive at
+// the template with the flag CLEAR, so the modal does not demand an override
+// for an ordinary merge. A builder that hardcoded the flag true would pass the
+// test above and fail here.
+func TestBuildArtistDuplicatesView_NoDisambiguationConflict(t *testing.T) {
+	groups := []artist.NearDuplicateGroup{
+		{
+			Key:    "portishead",
+			Reason: "mbid",
+			Members: []artist.NearDuplicateArtist{
+				{ID: "id-a", Name: "Portishead", Path: "/music/Portishead", Disambiguation: "Bristol trip-hop"},
+				{ID: "id-b", Name: "Portishead", Path: "/music/Portishead2"},
+			},
+		},
+	}
+	view := buildArtistDuplicatesView(groups, "prefix")
+	if len(view.Groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(view.Groups))
+	}
+	if view.Groups[0].DisambiguationConflict {
+		t.Errorf("group DisambiguationConflict = true, want false")
+	}
+	for _, m := range view.Groups[0].Members {
+		if m.DisambiguationConflict {
+			t.Errorf("member %s: DisambiguationConflict = true, want false", m.ID)
+		}
+	}
+}
+
 // TestBuildArtistDuplicatesView_EmptyGroups guards the no-duplicates path:
 // the view must round-trip an empty slice without panicking on a missing
 // recommended survivor (ChooseSurvivor returns "" for empty members).
