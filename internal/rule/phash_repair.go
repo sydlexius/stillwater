@@ -778,6 +778,28 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 	}
 	kodiNumbering := p.kodiFanartNumbering(ctx)
 
+	// Serialize this artist's whole restore against a concurrent back-out (or
+	// another restore) of the same artist. The restore appends fanart slots and
+	// consumes manifest entries while a back-out renumbers those same slots and
+	// rewrites the same manifest -- a file-level lost update -race cannot see.
+	// See Pipeline.phashArtistMu.
+	//
+	// The lock is taken BEFORE the manifest read below, not after, and held
+	// across the occupancy checks, the on-disk writes, the entry consumption,
+	// and the metadata resync. Reading the manifest outside the lock was a
+	// TOCTOU: a concurrent remediation could rewrite an entry's PlatformTargets
+	// (see deleteRemovedSlotsOnPlatforms -> SetRepairEntryPlatformTargets)
+	// between this snapshot and the restore that acts on it, so the restore
+	// would re-upload to a stale set of platform items. Snapshotting the
+	// manifest under the lock makes the read and the entry consumption one
+	// atomic critical section. Only this one mutex is held (image.repairOpMutex,
+	// which ReadRepairManifest/RepairEntryBytes/ConsumeRepairEntry take, is
+	// always acquired strictly inside it -- see phashArtistMutex), so there is
+	// no lock-ordering hazard or double-lock.
+	mu := p.phashArtistMutex(artistID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	m, err := img.ReadRepairManifest(a.Path, opID)
 	if err != nil {
 		return PHashRestoreResult{}, err
@@ -785,17 +807,6 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 	if m == nil {
 		return PHashRestoreResult{}, fmt.Errorf("restore phash quarantine: no repair operation %q for artist %s", opID, artistID)
 	}
-
-	// Serialize this artist's whole restore against a concurrent back-out (or
-	// another restore) of the same artist. The restore appends fanart slots and
-	// consumes manifest entries while a back-out renumbers those same slots and
-	// rewrites the same manifest -- a file-level lost update -race cannot see.
-	// See Pipeline.phashArtistMu. Held across the occupancy checks, the on-disk
-	// writes, and the entry consumption below, plus the metadata resync, so the
-	// artist's disk state and manifest stay consistent for the whole operation.
-	mu := p.phashArtistMutex(artistID)
-	mu.Lock()
-	defer mu.Unlock()
 
 	result := PHashRestoreResult{OpID: opID}
 	// Snapshot the entries: each restore mutates the manifest via

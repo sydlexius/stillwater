@@ -1773,18 +1773,59 @@ func TestRemediateAndRestore_ConcurrentSameArtistIsRaceFree(t *testing.T) {
 		t.Fatalf("seed remediate: %v", err)
 	}
 
-	var wg sync.WaitGroup
+	var (
+		wg         sync.WaitGroup
+		restoreRes PHashRestoreResult
+		restoreErr error
+		rem2Res    PHashRemediateResult
+		rem2Err    error
+	)
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = p.RestorePHashQuarantine(context.Background(), "art-a", res.OpID)
+		restoreRes, restoreErr = p.RestorePHashQuarantine(context.Background(), "art-a", res.OpID)
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = p.RemediatePHashMismatches(context.Background(),
+		rem2Res, rem2Err = p.RemediatePHashMismatches(context.Background(),
 			PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
 	}()
 	wg.Wait()
+
+	// Capture and ASSERT each op's result, not just err==nil. Because the
+	// per-artist lock serializes the two, each must land in a clean, fully
+	// accounted terminal state; discarding the results would let a lock that
+	// silently dropped or double-counted work still pass.
+	if restoreErr != nil {
+		t.Fatalf("concurrent restore: %v", restoreErr)
+	}
+	if rem2Err != nil {
+		t.Fatalf("concurrent second remediate: %v", rem2Err)
+	}
+	// The restore acts on THIS op's manifest, which the second remediate never
+	// touches (it mints its own op id), so the restore processes exactly the one
+	// entry the seed back-out quarantined and resolves it to exactly one terminal
+	// outcome (restored, already-present, or needs-review) with no failure --
+	// whatever the interleaving.
+	if restoreRes.OpID != res.OpID {
+		t.Errorf("restore result op id = %q, want %q", restoreRes.OpID, res.OpID)
+	}
+	if got := restoreRes.Restored + restoreRes.AlreadyPresent + restoreRes.NeedsReview; got != 1 {
+		t.Errorf("restore must account for exactly the 1 quarantined entry; got restored=%d already_present=%d needs_review=%d (sum %d)",
+			restoreRes.Restored, restoreRes.AlreadyPresent, restoreRes.NeedsReview, got)
+	}
+	if len(restoreRes.Failures) != 0 {
+		t.Errorf("restore must have no failures; got %v", restoreRes.Failures)
+	}
+	// The second back-out must also complete cleanly: it mints its own op id and
+	// records zero per-artist failures (a race that corrupted disk or the
+	// manifest would surface here as a failure).
+	if rem2Res.OpID == "" {
+		t.Error("second remediate must mint an op id")
+	}
+	if rem2Res.Failures != 0 {
+		t.Errorf("second remediate must have no per-artist failures; got %d", rem2Res.Failures)
+	}
 
 	// No tomb may survive either committed operation.
 	entries, err := os.ReadDir(dirA)
@@ -1823,12 +1864,18 @@ func TestRemediateAndRestore_ConcurrentSameArtistIsRaceFree(t *testing.T) {
 	}
 }
 
-// newPHashRepairPipelineWithPublisher builds the same harness as
-// newPHashRepairPipeline but wires a real *publish.Publisher over the same DB,
+// newPHashRepairPipelineWithPublisherLogged builds the same harness as
+// newPHashRepairPipeline but wires a real *publish.Publisher over the same DB --
 // so the platform delete/restore WIRING (deleteRemovedSlotsOnPlatforms,
 // restorePHashToPlatforms) is exercised rather than short-circuited by a nil
-// publisher.
-func newPHashRepairPipelineWithPublisher(t *testing.T) (*Pipeline, *sql.DB, *artist.Service) {
+// publisher -- with the pipeline's (and publisher's) logger swapped for one that
+// records to the returned buffer. The platform wiring surfaces its per-connection
+// outcome ONLY through this log -- the returned PHashRemediateResult/
+// PHashRestoreResult carry no platform field -- so a test that wants to prove the
+// wiring was actually reached must read the log. Reading the buffer after the op
+// returns is race-free: the platform pass runs synchronously on the calling
+// goroutine, no goroutine writes it concurrently.
+func newPHashRepairPipelineWithPublisherLogged(t *testing.T) (*Pipeline, *sql.DB, *artist.Service, *bytes.Buffer) {
 	t.Helper()
 	e, db := newDupTestEngine(t)
 	svc := artist.NewService(db)
@@ -1837,12 +1884,14 @@ func newPHashRepairPipelineWithPublisher(t *testing.T) (*Pipeline, *sql.DB, *art
 		t.Fatalf("building encryptor: %v", err)
 	}
 	connSvc := connection.NewService(db, enc)
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	pub := publish.New(publish.Deps{
 		ArtistService:     svc,
 		ConnectionService: connSvc,
-		Logger:            testLogger(),
+		Logger:            logger,
 	})
-	return NewPipeline(e, svc, nil, nil, pub, testLogger()), db, svc
+	return NewPipeline(e, svc, nil, nil, pub, logger), db, svc, &logBuf
 }
 
 // seedUndecryptableConnection inserts a connection whose api key cannot be
@@ -1870,7 +1919,7 @@ func seedUndecryptableConnection(t *testing.T, db *sql.DB, id string) {
 // per-connection failure -- non-fatal, as designed: the local removal still
 // stands and the quarantine still holds the bytes.
 func TestRemediatePHashMismatches_WiresPlatformDelete(t *testing.T) {
-	p, db, svc := newPHashRepairPipelineWithPublisher(t)
+	p, db, svc, logBuf := newPHashRepairPipelineWithPublisherLogged(t)
 	dirA := seedPollutedLibrary(t, db)
 	seedUndecryptableConnection(t, db, "conn-x")
 	if err := svc.SetPlatformID(context.Background(), "art-a", "conn-x", "plat-a"); err != nil {
@@ -1890,6 +1939,20 @@ func TestRemediatePHashMismatches_WiresPlatformDelete(t *testing.T) {
 	if got := fanartVariantAt(t, dirA, "fanart.jpg", []int{0, 1, 2}); got != 0 {
 		t.Errorf("slot 0 must still hold v0, holds v%d", got)
 	}
+	// The platform delete was ATTEMPTED for the mapped target and its
+	// per-connection failure was SURFACED. This is what stops the test being
+	// vacuous: the local assertions above pass even if the platform-delete call
+	// is deleted from the product code, because the local removal never depends
+	// on it. This log line is emitted ONLY by deleteRemovedSlotsOnPlatforms
+	// iterating the returned failures, so removing (or no-oping) that call turns
+	// this test RED.
+	logs := logBuf.String()
+	if !strings.Contains(logs, "phash back-out: platform delete reported a per-connection failure") {
+		t.Errorf("platform delete wiring was not reached (no per-connection failure logged); logs:\n%s", logs)
+	}
+	if !strings.Contains(logs, "conn-x") {
+		t.Errorf("platform delete failure was not surfaced for the mapped connection conn-x; logs:\n%s", logs)
+	}
 }
 
 // TestRestorePHashQuarantine_WiresPlatformRestore exercises the platform-restore
@@ -1899,7 +1962,7 @@ func TestRemediatePHashMismatches_WiresPlatformDelete(t *testing.T) {
 // the byte-identical copy already present) still completes and the entry is
 // consumed.
 func TestRestorePHashQuarantine_WiresPlatformRestore(t *testing.T) {
-	p, db, _ := newPHashRepairPipelineWithPublisher(t)
+	p, db, _, logBuf := newPHashRepairPipelineWithPublisherLogged(t)
 	dirA, _ := t.TempDir(), t.TempDir()
 	seedRepairArtist(t, db, "art-a", "Artist A", dirA)
 	seedUndecryptableConnection(t, db, "conn-x")
@@ -1937,5 +2000,19 @@ func TestRestorePHashQuarantine_WiresPlatformRestore(t *testing.T) {
 	}
 	if m != nil && len(m.Entries) != 0 {
 		t.Errorf("entry must be consumed after an already-present restore, got %+v", m)
+	}
+	// RestoreBackdropToPlatforms was ATTEMPTED for the recorded target, even
+	// though the local copy was already present. Without this the test is
+	// vacuous: the already-present / consumed assertions above pass even if the
+	// platform-restore call is deleted, because the on-disk outcome does not
+	// depend on it. This log line comes ONLY from restorePHashToPlatforms
+	// iterating the returned failures, so removing (or no-oping) that call turns
+	// this test RED.
+	logs := logBuf.String()
+	if !strings.Contains(logs, "phash restore: platform restore reported a per-connection failure") {
+		t.Errorf("platform restore wiring was not reached (no per-connection failure logged); logs:\n%s", logs)
+	}
+	if !strings.Contains(logs, "conn-x") {
+		t.Errorf("platform restore was not attempted for the recorded target conn-x; logs:\n%s", logs)
 	}
 }

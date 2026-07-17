@@ -147,12 +147,22 @@ func (r *Router) handlePHashMismatchRemediate(w http.ResponseWriter, req *http.R
 		return
 	}
 
-	// A run must be scoped to one artist OR explicitly library-wide. Reject
-	// neither here (the pipeline also enforces it) so a forgotten scope is a
-	// 400, never an accidental library-wide delete.
+	// A run must be scoped to EXACTLY ONE of: a single artist (artist_id) or
+	// explicitly library-wide (all_artists). Reject NEITHER here (the pipeline
+	// also enforces it) so a forgotten scope is a 400, never an accidental
+	// library-wide delete...
 	if body.ArtistID == "" && !body.AllArtists {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "artist_id is required unless all_artists is set",
+		})
+		return
+	}
+	// ...and reject BOTH, so an ambiguous request whose intent (one artist vs
+	// the whole library) cannot be resolved is never guessed on a path that
+	// deletes files. Distinct error so a caller can tell the two 400s apart.
+	if body.ArtistID != "" && body.AllArtists {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "artist_id and all_artists are mutually exclusive",
 		})
 		return
 	}

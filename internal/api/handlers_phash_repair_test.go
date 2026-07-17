@@ -84,6 +84,27 @@ func TestPHashMismatchRemediate_RequiresScope(t *testing.T) {
 	}
 }
 
+// TestPHashMismatchRemediate_RejectsBothScopes: a request that sets BOTH
+// artist_id AND all_artists is a 400. The two scopes are mutually exclusive --
+// their intent (one artist vs the whole library) is ambiguous and must never be
+// guessed on a path that deletes files. The error must be the distinct
+// exclusivity message, not the "neither" one, so a caller can tell them apart.
+func TestPHashMismatchRemediate_RejectsBothScopes(t *testing.T) {
+	t.Parallel()
+	r := newPHashRepairRouter(t, nil)
+
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/phash-mismatch/remediate", strings.NewReader(`{"artist_id":"art-a","all_artists":true}`))
+	w := httptest.NewRecorder()
+	r.handlePHashMismatchRemediate(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 when both artist_id and all_artists are set", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "artist_id and all_artists are mutually exclusive") {
+		t.Errorf("body should carry the exclusivity error; got %s", w.Body.String())
+	}
+}
+
 // TestPHashMismatchRemediate_RejectsUnusableTolerance: a NaN/out-of-range
 // tolerance on the destructive path is a 400, never a silent fallback.
 func TestPHashMismatchRemediate_RejectsUnusableTolerance(t *testing.T) {

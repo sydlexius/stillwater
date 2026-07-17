@@ -3285,29 +3285,52 @@ paths:
           application/json:
             schema:
               type: object
+              description: >-
+                Exactly one scope is required: either artist_id (one artist) or
+                all_artists=true (library-wide), never neither and never both.
+                The oneOf below encodes that exclusivity.
               properties:
                 artist_id:
                   type: string
                   description: >-
                     Scope the back-out to one artist. Required unless
-                    all_artists is set.
+                    all_artists is set; mutually exclusive with all_artists.
                 all_artists:
                   type: boolean
                   description: >-
                     Run library-wide. Must be set explicitly; the default is
-                    per-artist because this deletes files.
+                    per-artist because this deletes files. Mutually exclusive
+                    with artist_id.
                 dry_run:
                   type: boolean
                   description: Preview the outcomes without mutating anything.
                 tolerance:
-                  type: number
-                  format: double
-                  exclusiveMinimum: 0
-                  maximum: 1
                   description: >-
                     Override the similarity cutoff. Omit (or 0) to use the
-                    detector default (0.90). An out-of-range or NaN value is
-                    rejected, never silently defaulted.
+                    detector default (0.90). A provided positive value must be
+                    in (0, 1]. An out-of-range or NaN value is rejected, never
+                    silently defaulted.
+                  oneOf:
+                    - type: number
+                      format: double
+                      enum: [0]
+                    - type: number
+                      format: double
+                      exclusiveMinimum: 0
+                      maximum: 1
+              oneOf:
+                - title: Scope to a single artist
+                  required: [artist_id]
+                  properties:
+                    all_artists:
+                      enum: [false]
+                - title: Run library-wide
+                  required: [all_artists]
+                  not:
+                    required: [artist_id]
+                  properties:
+                    all_artists:
+                      enum: [true]
       responses:
         "200":
           description: >-
@@ -3367,8 +3390,8 @@ paths:
                           type: string
         "400":
           description: >-
-            No scope was given (neither artist_id nor all_artists), the body was
-            malformed, or the tolerance was out of (0, 1].
+            Invalid scope (neither artist_id nor all_artists, or both at once),
+            a malformed body, or a tolerance outside (0, 1].
           content:
             application/json:
               schema:
