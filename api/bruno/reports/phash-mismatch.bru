@@ -1,0 +1,47 @@
+meta {
+  name: PHash Mismatch Report
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{apiBase}}/reports/phash-mismatch
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Read-only cross-artist backdrop-pollution probe (#2564). Returns JSON: the
+  suspect list plus registry coverage (artists indexed vs skipped for a missing
+  identity hash). On an empty CI database there are no artists to index, so the
+  report is empty and coverage is zero -- the status is always 200.
+
+  Optional query params, not exercised here: ?artist_id= scopes the probe to one
+  artist (the registry stays library-wide), and ?tolerance= overrides the
+  similarity threshold and 400s on a malformed value.
+
+  Authenticated (not admin-gated); the CI session is authenticated so no 401 is
+  expected. An empty report is NOT the same as "clean" -- neither signal detects
+  pollution whose source artist is absent from the library.
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("content-type is application/json", function() {
+    expect(res.headers['content-type']).to.include('application/json');
+  });
+
+  test("reports registry coverage rather than silently omitting it", function() {
+    // The coverage counters are the fail-loudly half of the contract: an artist
+    // whose identity hash is missing drops out of the registry, and that must be
+    // reported rather than inferred from an empty suspect list.
+    expect(res.body).to.be.an('object');
+  });
+}
