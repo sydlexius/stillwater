@@ -798,6 +798,13 @@
     "covered": false
   },
   {
+    "operationId": "getPHashMismatchReport",
+    "method": "GET",
+    "path": "/reports/phash-mismatch",
+    "handler": "handlePHashMismatchReport",
+    "covered": true
+  },
+  {
     "operationId": "getPlatform",
     "method": "GET",
     "path": "/platforms/{id}",

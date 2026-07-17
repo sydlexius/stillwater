@@ -1,0 +1,79 @@
+meta {
+  name: PHash Mismatch Report
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{apiBase}}/reports/phash-mismatch
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Read-only cross-artist backdrop-pollution probe (#2564). Returns JSON: the
+  suspect list plus registry coverage (artists indexed vs skipped for a missing
+  identity hash). On an empty CI database there are no artists to index, so the
+  report is empty and coverage is zero -- the status is always 200.
+
+  Optional query params, not exercised here: ?artist_id= scopes the probe to one
+  artist (the registry stays library-wide), and ?tolerance= overrides the
+  similarity threshold and 400s on a malformed value.
+
+  Admin-gated: an ADMINISTRATOR session is required. The gate is in-handler
+  (requireForeignAdmin) rather than on the route -- the route line reads
+  `wrapAuth(...)` with no RequireAdmin wrapper, which makes this easy to
+  misread. Unauthenticated gets 401 from the auth middleware; an authenticated
+  NON-admin gets 403 ("Forbidden: administrator role required"). The CI session
+  is the bootstrap admin (ci-admin), so 200 is expected here.
+
+  An empty report is NOT the same as "clean" -- neither signal detects
+  pollution whose source artist is absent from the library.
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("content-type is application/json", function() {
+    expect(res.headers['content-type']).to.include('application/json');
+  });
+
+  test("reports registry coverage rather than silently omitting it", function() {
+    // The coverage counters are the fail-loudly half of the contract: an artist
+    // whose identity hash is missing drops out of the registry, and that must be
+    // reported rather than inferred from an empty suspect list. Assert the
+    // COUNTERS, not the envelope -- an earlier version of this test checked only
+    // that the body was an object, which passes with every coverage field
+    // deleted.
+    expect(res.body.fanart_registry, 'fanart_registry').to.be.an('object');
+    expect(res.body.fanart_registry.artists_indexed, 'artists_indexed').to.be.a('number');
+    expect(res.body.fanart_registry.artists_skipped, 'artists_skipped').to.be.a('number');
+  });
+
+  test("holds indeterminate slots apart from evaluated ones", function() {
+    // slots_evaluated counts slots that carried a usable hash and were actually
+    // compared; indeterminate_slots is the could-not-evaluate bucket. Collapsing
+    // the two would let a data-starved scan read as a passing one, which is the
+    // false-green this detector exists to prevent. Both must be present and
+    // distinct fields.
+    expect(res.body.slots_evaluated, 'slots_evaluated').to.be.a('number');
+    expect(res.body.indeterminate_slots, 'indeterminate_slots').to.be.a('number');
+    expect(res.body.suspect_slots, 'suspect_slots').to.be.a('number');
+  });
+
+  test("reports the tolerance the scan actually used", function() {
+    // Echoed so an operator can see the cutoff rather than trusting a default.
+    // A NaN here would mean the (0, 1] guards were defeated -- every IEEE-754
+    // comparison against NaN is false, so a range check admits it and every slot
+    // becomes a suspect. JSON cannot encode NaN, so a broken guard surfaces as a
+    // missing/!number field rather than as the value itself.
+    expect(res.body.tolerance, 'tolerance').to.be.a('number');
+    expect(res.body.tolerance, 'tolerance').to.be.within(0, 1);
+  });
+}

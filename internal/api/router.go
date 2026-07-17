@@ -943,6 +943,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// /api/v1/reports/backdrop-duplicates/remediate above) since the admin
 	// gate is enforced in-handler via requireForeignAdmin.
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/platform-backdrop-duplicates/prune", wrapAuth(r.handlePlatformBackdropDuplicatesPrune, authMw))
+	// Cross-artist backdrop pollution report (#2564 PR-2): read-only phash
+	// collision detection. Registered as a plain /api/v1 GET alongside the
+	// report endpoints above; admin gate is enforced in-handler via
+	// requireForeignAdmin. JSON only for now -- the operator page ships with
+	// the repair UI it drives.
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/phash-mismatch", wrapAuth(r.handlePHashMismatchReport, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		target := r.basePath + "/reports/duplicates"
 		if raw := req.URL.RawQuery; raw != "" {
