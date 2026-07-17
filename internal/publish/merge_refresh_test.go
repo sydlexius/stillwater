@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/emby"
 )
 
 // refreshRecorder captures the RefreshAfterMerge calls a swapped
@@ -22,9 +24,10 @@ import (
 // the production factory + per-client adapters are covered separately by
 // TestSyncMergeRefresh_FactoryProductionDispatch.
 type refreshRecorder struct {
-	mu    sync.Mutex
-	calls map[string]string // connID -> survivorPlatformID passed to RefreshAfterMerge
-	err   error             // when non-nil, every recorded call returns it
+	mu         sync.Mutex
+	calls      map[string]string   // connID -> survivorPlatformID passed to RefreshAfterMerge
+	loserCalls map[string][]string // connID -> loserPlatformIDs passed to RefreshAfterMerge
+	err        error               // when non-nil, every recorded call returns it
 }
 
 func (rec *refreshRecorder) forConn(conn *connection.Connection) mergeRefresher {
@@ -36,13 +39,17 @@ type recordingRefresher struct {
 	connID string
 }
 
-func (r *recordingRefresher) RefreshAfterMerge(_ context.Context, survivorPlatformID string) error {
+func (r *recordingRefresher) RefreshAfterMerge(_ context.Context, survivorPlatformID string, loserPlatformIDs []string) error {
 	r.rec.mu.Lock()
 	defer r.rec.mu.Unlock()
 	if r.rec.calls == nil {
 		r.rec.calls = map[string]string{}
 	}
+	if r.rec.loserCalls == nil {
+		r.rec.loserCalls = map[string][]string{}
+	}
 	r.rec.calls[r.connID] = survivorPlatformID
+	r.rec.loserCalls[r.connID] = loserPlatformIDs
 	return r.rec.err
 }
 
@@ -121,7 +128,7 @@ func TestSyncMergeRefresh_LibraryScanAndArtistRefresh(t *testing.T) {
 	})
 
 	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1",
-		[]string{"conn-emby", "conn-jf", "conn-lidarr", "conn-off"})
+		[]string{"conn-emby", "conn-jf", "conn-lidarr", "conn-off"}, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh: %v", err)
 	}
@@ -159,7 +166,7 @@ func TestSyncMergeRefresh_PrimitiveFailureIsPerConnection(t *testing.T) {
 		Logger: silentLogger(),
 	})
 
-	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-bad", "conn-ok"})
+	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-bad", "conn-ok"}, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh: %v", err)
 	}
@@ -186,7 +193,7 @@ func TestSyncMergeRefresh_ConnectionFetchError(t *testing.T) {
 		Logger:            silentLogger(),
 	})
 
-	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-missing"})
+	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-missing"}, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh: %v", err)
 	}
@@ -218,7 +225,7 @@ func TestSyncMergeRefresh_UnsupportedConnectionType(t *testing.T) {
 		Logger: silentLogger(),
 	})
 
-	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-kodi"})
+	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-kodi"}, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh: %v", err)
 	}
@@ -239,7 +246,7 @@ func TestSyncMergeRefresh_NoConnections(t *testing.T) {
 		Logger:            silentLogger(),
 	})
 
-	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", nil)
+	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", nil, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh: %v", err)
 	}
@@ -252,7 +259,7 @@ func TestSyncMergeRefresh_NoConnections(t *testing.T) {
 // publisher returns cleanly instead of panicking.
 func TestSyncMergeRefresh_NilPublisher(t *testing.T) {
 	var p *Publisher
-	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-emby"})
+	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-emby"}, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh on nil publisher: %v", err)
 	}
@@ -279,7 +286,7 @@ func TestSyncMergeRefresh_SurvivorIDLookupFailureStillReconciles(t *testing.T) {
 		Logger: silentLogger(),
 	})
 
-	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-emby"})
+	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-emby"}, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh: %v", err)
 	}
@@ -293,7 +300,7 @@ func TestSyncMergeRefresh_SurvivorIDLookupFailureStillReconciles(t *testing.T) {
 // deadline test can exercise the per-connection timeout branch.
 type blockingRefresher struct{}
 
-func (blockingRefresher) RefreshAfterMerge(ctx context.Context, _ string) error {
+func (blockingRefresher) RefreshAfterMerge(ctx context.Context, _ string, _ []string) error {
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -319,7 +326,7 @@ func TestSyncMergeRefresh_PerConnectionTimeoutFires(t *testing.T) {
 		Logger: silentLogger(),
 	})
 
-	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-slow"})
+	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1", []string{"conn-slow"}, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh: %v", err)
 	}
@@ -355,7 +362,7 @@ func TestSyncMergeRefresh_FactoryProductionDispatch(t *testing.T) {
 	})
 
 	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1",
-		[]string{"conn-emby", "conn-jf", "conn-lidarr"})
+		[]string{"conn-emby", "conn-jf", "conn-lidarr"}, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh: %v", err)
 	}
@@ -369,12 +376,209 @@ func TestSyncMergeRefresh_FactoryProductionDispatch(t *testing.T) {
 	}
 }
 
+// TestEmbyRefresher_ProductionScopesToSurvivorAndLoser exercises the real
+// embyRefresher -> real emby.Client -> scopedMergeRefresh chain against an
+// httptest server, recording which HTTP paths were hit. This is the
+// production glue TestScopedMergeRefresh_* tests (which use a fake
+// itemRescanner) don't cover: proves the real client's TriggerItemRescan is
+// what RefreshAfterMerge actually calls, not just the abstraction.
+func TestEmbyRefresher_ProductionScopesToSurvivorAndLoser(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	r := embyRefresher{c: emby.NewWithHTTPClient(srv.URL, "key", "", srv.Client(), silentLogger())}
+	if err := r.RefreshAfterMerge(context.Background(), "emby-survivor", []string{"emby-loser"}); err != nil {
+		t.Fatalf("RefreshAfterMerge: %v", err)
+	}
+	mu.Lock()
+	got := append([]string(nil), paths...)
+	mu.Unlock()
+	want := []string{"/Items/emby-survivor/Refresh", "/Items/emby-loser/Refresh"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("paths hit = %v, want %v (scoped item rescans, no full /Library/Refresh)", got, want)
+	}
+}
+
+// TestEmbyRefresher_ProductionUnmappedSurvivorFallsBackToFullScan is the
+// production-glue counterpart of TestScopedMergeRefresh_UnmappedSurvivorFallsBackToFullScan
+// (which uses a fake itemRescanner): with a real emby.Client, an unmapped
+// survivor must still reach /Library/Refresh, the existing full-scan
+// eviction/index guarantee, rather than silently skipping reconciliation.
+func TestEmbyRefresher_ProductionUnmappedSurvivorFallsBackToFullScan(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	r := embyRefresher{c: emby.NewWithHTTPClient(srv.URL, "key", "", srv.Client(), silentLogger())}
+	if err := r.RefreshAfterMerge(context.Background(), "", []string{"emby-loser"}); err != nil {
+		t.Fatalf("RefreshAfterMerge: %v", err)
+	}
+	mu.Lock()
+	got := append([]string(nil), paths...)
+	mu.Unlock()
+	want := []string{"/Library/Refresh"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("paths hit = %v, want %v (unmapped survivor falls back to a full scan, no scoped loser call)", got, want)
+	}
+}
+
+// fakeItemRescanner is a scriptable itemRescanner recording every call
+// scopedMergeRefresh makes, so the scoping tests can assert exactly which
+// primitive (scoped item rescan vs. full library scan) was issued for the
+// survivor and each loser without a real Emby/Jellyfin peer.
+type fakeItemRescanner struct {
+	rescanCalls   []string // itemIDs passed to TriggerItemRescan, in call order
+	libraryScans  int
+	failRescanIDs map[string]bool // itemID -> TriggerItemRescan returns an error
+}
+
+func (f *fakeItemRescanner) TriggerItemRescan(_ context.Context, itemID string) error {
+	f.rescanCalls = append(f.rescanCalls, itemID)
+	if f.failRescanIDs[itemID] {
+		return errors.New("peer rejected rescan")
+	}
+	return nil
+}
+
+func (f *fakeItemRescanner) TriggerLibraryScan(_ context.Context) error {
+	f.libraryScans++
+	return nil
+}
+
+// TestScopedMergeRefresh_ScopesToSurvivorAndLosers is the core #2431 guard: a
+// normal merge with a known survivor ID and known loser IDs on this
+// connection must issue a scoped item rescan for the survivor plus each
+// loser, and must NOT fall back to a full library scan. Reverting the
+// scoping fix (making scopedMergeRefresh always call TriggerLibraryScan)
+// turns this red: libraryScans would be 1 instead of 0 and rescanCalls empty.
+func TestScopedMergeRefresh_ScopesToSurvivorAndLosers(t *testing.T) {
+	f := &fakeItemRescanner{}
+	err := scopedMergeRefresh(context.Background(), f, "survivor-emby-id", []string{"loser-a", "loser-b"})
+	if err != nil {
+		t.Fatalf("scopedMergeRefresh: %v", err)
+	}
+	if f.libraryScans != 0 {
+		t.Errorf("libraryScans = %d, want 0 (a normal merge must not trigger a full scan)", f.libraryScans)
+	}
+	want := []string{"survivor-emby-id", "loser-a", "loser-b"}
+	if !reflect.DeepEqual(f.rescanCalls, want) {
+		t.Errorf("rescanCalls = %v, want %v (survivor first, then each loser)", f.rescanCalls, want)
+	}
+}
+
+// TestScopedMergeRefresh_UnmappedSurvivorFallsBackToFullScan covers the
+// documented fallback: when the survivor is not mapped on this connection
+// there is nothing to scope the index-side refresh to, so the full scan
+// still runs (and no loser rescans are attempted, since a full scan already
+// covers eviction).
+func TestScopedMergeRefresh_UnmappedSurvivorFallsBackToFullScan(t *testing.T) {
+	f := &fakeItemRescanner{}
+	err := scopedMergeRefresh(context.Background(), f, "", []string{"loser-a"})
+	if err != nil {
+		t.Fatalf("scopedMergeRefresh: %v", err)
+	}
+	if f.libraryScans != 1 {
+		t.Errorf("libraryScans = %d, want 1 (unmapped survivor must fall back)", f.libraryScans)
+	}
+	if len(f.rescanCalls) != 0 {
+		t.Errorf("rescanCalls = %v, want none (fallback skips scoped calls)", f.rescanCalls)
+	}
+}
+
+// TestScopedMergeRefresh_SurvivorRescanFailureFallsBackToFullScan covers the
+// other fallback branch: the survivor is mapped, but the scoped call itself
+// fails (peer or network issue), so a full scan is the safety net.
+func TestScopedMergeRefresh_SurvivorRescanFailureFallsBackToFullScan(t *testing.T) {
+	f := &fakeItemRescanner{failRescanIDs: map[string]bool{"survivor-emby-id": true}}
+	err := scopedMergeRefresh(context.Background(), f, "survivor-emby-id", []string{"loser-a"})
+	if err != nil {
+		t.Fatalf("scopedMergeRefresh: %v", err)
+	}
+	if f.libraryScans != 1 {
+		t.Errorf("libraryScans = %d, want 1 (failed survivor rescan must fall back)", f.libraryScans)
+	}
+	if len(f.rescanCalls) != 1 || f.rescanCalls[0] != "survivor-emby-id" {
+		t.Errorf("rescanCalls = %v, want only the failed survivor attempt (no loser calls after fallback)", f.rescanCalls)
+	}
+}
+
+// TestScopedMergeRefresh_LoserRescanFailureSurfacesWithoutFullScanFallback
+// covers a loser-only failure: the survivor rescan succeeded (so the
+// connection's own index is healthy), but one loser rescan failed. This must
+// surface as an error -- so the caller records the connection as failed
+// rather than silently missing the eviction -- without retriggering a full
+// scan (the survivor side already succeeded scoped).
+func TestScopedMergeRefresh_LoserRescanFailureSurfacesWithoutFullScanFallback(t *testing.T) {
+	f := &fakeItemRescanner{failRescanIDs: map[string]bool{"loser-b": true}}
+	err := scopedMergeRefresh(context.Background(), f, "survivor-emby-id", []string{"loser-a", "loser-b"})
+	if err == nil {
+		t.Fatal("scopedMergeRefresh: got nil error, want a loser-rescan failure")
+	}
+	if !strings.Contains(err.Error(), "loser-b") {
+		t.Errorf("error = %q, want mention of the failed loser item", err.Error())
+	}
+	if f.libraryScans != 0 {
+		t.Errorf("libraryScans = %d, want 0 (survivor side succeeded scoped; no fallback needed)", f.libraryScans)
+	}
+}
+
+// TestSyncMergeRefresh_LoserPlatformIDsRoutedPerConnection is the fan-out
+// wiring guard: loserPlatformIDs is keyed by connection ID, and each
+// connection's refresher must receive only ITS OWN loser IDs, not another
+// connection's.
+func TestSyncMergeRefresh_LoserPlatformIDsRoutedPerConnection(t *testing.T) {
+	rec := &refreshRecorder{}
+	swapMergeRefresherFactory(t, func(conn *connection.Connection, _ *slog.Logger) (mergeRefresher, bool) {
+		return rec.forConn(conn), true
+	})
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: nil},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"conn-emby": {ID: "conn-emby", Type: connection.TypeEmby, Enabled: true, Name: "Emby"},
+			"conn-jf":   {ID: "conn-jf", Type: connection.TypeJellyfin, Enabled: true, Name: "JF"},
+		}},
+		Logger: silentLogger(),
+	})
+
+	got, err := p.SyncMergeRefresh(context.Background(), "survivor-1",
+		[]string{"conn-emby", "conn-jf"},
+		map[string][]string{"conn-emby": {"loser-emby-1"}, "conn-jf": {"loser-jf-1", "loser-jf-2"}})
+	if err != nil {
+		t.Fatalf("SyncMergeRefresh: %v", err)
+	}
+	assertRefreshResult(t, got, "conn-emby", artist.PlatformRemapOK)
+	assertRefreshResult(t, got, "conn-jf", artist.PlatformRemapOK)
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if !reflect.DeepEqual(rec.loserCalls["conn-emby"], []string{"loser-emby-1"}) {
+		t.Errorf("conn-emby loser IDs = %v, want [loser-emby-1]", rec.loserCalls["conn-emby"])
+	}
+	if !reflect.DeepEqual(rec.loserCalls["conn-jf"], []string{"loser-jf-1", "loser-jf-2"}) {
+		t.Errorf("conn-jf loser IDs = %v, want [loser-jf-1 loser-jf-2]", rec.loserCalls["conn-jf"])
+	}
+}
+
 // TestLidarrRefresher_NonNumericID covers the Lidarr adapter's guard that a
 // non-numeric survivor platform ID is a hard error (Lidarr artist IDs are
 // integers), not a silent no-op.
 func TestLidarrRefresher_NonNumericID(t *testing.T) {
 	r := lidarrRefresher{c: nil} // c is unused: the numeric parse fails first.
-	err := r.RefreshAfterMerge(context.Background(), "not-a-number")
+	err := r.RefreshAfterMerge(context.Background(), "not-a-number", nil)
 	if err == nil {
 		t.Fatal("RefreshAfterMerge with non-numeric id: got nil, want error")
 	}
@@ -388,7 +592,7 @@ func TestLidarrRefresher_NonNumericID(t *testing.T) {
 // nil without touching the client.
 func TestLidarrRefresher_UnmappedNoOps(t *testing.T) {
 	r := lidarrRefresher{c: nil} // c is unused: the empty-id guard returns first.
-	if err := r.RefreshAfterMerge(context.Background(), ""); err != nil {
+	if err := r.RefreshAfterMerge(context.Background(), "", nil); err != nil {
 		t.Errorf("RefreshAfterMerge with empty id: got %v, want nil no-op", err)
 	}
 }

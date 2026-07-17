@@ -219,6 +219,60 @@ func TestTriggerArtistRefresh(t *testing.T) {
 	}
 }
 
+// TestTriggerItemRescan covers the #2431 non-destructive scoped-refresh
+// primitive: unlike TriggerArtistRefresh, it must NOT force a metadata/image
+// replace (MetadataRefreshMode=Default, ReplaceAllMetadata=false), and it
+// must be Recursive so a folder item picks up newly-appeared children.
+func TestTriggerItemRescan(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/Items/jf-001/Refresh" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if got := q.Get("Recursive"); got != "true" {
+			t.Errorf("Recursive = %q, want true (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("MetadataRefreshMode"); got != "Default" {
+			t.Errorf("MetadataRefreshMode = %q, want Default -- a scoped rescan must not force a re-import (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("ImageRefreshMode"); got != "Default" {
+			t.Errorf("ImageRefreshMode = %q, want Default -- a scoped rescan must not force a re-import (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("ReplaceAllMetadata"); got != "false" {
+			t.Errorf("ReplaceAllMetadata = %q, want false (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("ReplaceAllImages"); got != "false" {
+			t.Errorf("ReplaceAllImages = %q, want false (query=%q)", got, r.URL.RawQuery)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.TriggerItemRescan(context.Background(), "jf-001"); err != nil {
+		t.Fatalf("TriggerItemRescan failed: %v", err)
+	}
+}
+
+// TestTriggerItemRescan_EmptyItemID covers the defense-in-depth guard: an
+// empty/whitespace itemID must be rejected before any request is sent,
+// mirroring TriggerArtistRefresh's guard.
+func TestTriggerItemRescan_EmptyItemID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.TriggerItemRescan(context.Background(), "  "); err == nil {
+		t.Fatal("TriggerItemRescan with blank itemID: got nil error, want a validation error")
+	}
+}
+
 // TestTriggerArtistRefresh_EmptyArtistID covers the defense-in-depth guard:
 // an empty/whitespace artistID must be rejected before any request is sent,
 // mirroring the sibling UpdateArtistPath guard.
