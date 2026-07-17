@@ -409,8 +409,7 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 			slog.Any("warnings", warnings))
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
 }
 
 // handleNotificationCounts returns active violation counts by severity.
