@@ -56,7 +56,7 @@ func normalizeImportedManagedInvariant(c *Connection) {
 // writes inside the same transaction.
 func (s *Service) ImportGetByTypeAndURLTx(ctx context.Context, db DBExecutor, connType, url string) (*Connection, error) {
 	row := db.QueryRowContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
 		FROM connections WHERE type = ? AND url = ? ORDER BY created_at DESC LIMIT 1
 	`, connType, url)
 	c, err := s.scanConnection(row)
@@ -102,8 +102,8 @@ func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, c *Connecti
 		return err
 	}
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		c.ID, c.Name, c.Type, c.URL, encKey,
 		dbutil.BoolToInt(c.Enabled), c.Status, c.StatusMessage,
@@ -112,7 +112,6 @@ func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, c *Connecti
 		dbutil.BoolToInt(c.GetFeatureImageWrite()),
 		dbutil.BoolToInt(c.GetFeatureMetadataPush()), dbutil.BoolToInt(c.GetFeatureTriggerRefresh()),
 		dbutil.BoolToInt(c.FeatureManageServerFiles),
-		dbutil.BoolToInt(c.GetVerifyPathAfterUpdate()),
 		c.GetPlatformUserID(), c.GetPlatformServerID(),
 		c.PreStillwaterConfigJSON,
 		pathMappingsJSON,
@@ -149,7 +148,6 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, c *Connecti
 			feature_image_write = ?,
 			feature_metadata_push = ?, feature_trigger_refresh = ?,
 			feature_manage_server_files = ?,
-			verify_path_after_update = ?,
 			platform_user_id = ?, platform_server_id = ?,
 			pre_stillwater_config_json = ?,
 			path_mappings = ?
@@ -161,7 +159,6 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, c *Connecti
 		dbutil.BoolToInt(c.GetFeatureImageWrite()),
 		dbutil.BoolToInt(c.GetFeatureMetadataPush()), dbutil.BoolToInt(c.GetFeatureTriggerRefresh()),
 		dbutil.BoolToInt(c.FeatureManageServerFiles),
-		dbutil.BoolToInt(c.GetVerifyPathAfterUpdate()),
 		c.GetPlatformUserID(), c.GetPlatformServerID(),
 		c.PreStillwaterConfigJSON,
 		pathMappingsJSON,

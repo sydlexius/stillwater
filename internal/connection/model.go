@@ -17,19 +17,19 @@ const (
 
 // LidarrConfig holds the fields that are only meaningful for a Lidarr
 // connection. Keeping them on a dedicated sub-struct (rather than flat on
-// Connection) makes invalid combinations - e.g. VerifyPathAfterUpdate set on
-// an Emby connection - unrepresentable in the type system instead of merely
-// discouraged by a doc comment (#1686).
-type LidarrConfig struct {
-	// VerifyPathAfterUpdate enables a follow-up GET after the
-	// UpdateArtistPath PUT that confirms the returned path field matches
-	// what Stillwater sent. Mismatch produces an error with "sent X, got Y"
-	// context so the operator can identify that Lidarr coerced the path
-	// against its Root Folder list. Default false (opt-in): a healthy Lidarr
-	// rarely drifts and the extra request roughly doubles the per-rename
-	// HTTP cost.
-	VerifyPathAfterUpdate bool `json:"verify_path_after_update,omitempty"`
-}
+// Connection) makes invalid combinations - a platform's field set on the wrong
+// platform - unrepresentable in the type system instead of merely discouraged
+// by a doc comment (#1686).
+//
+// The struct is currently empty: its only member, VerifyPathAfterUpdate, was
+// retired in #2563 once #2380 made the publish-layer path read-back
+// unconditional on every peer, leaving the toggle with no behavior to gate.
+// The type is deliberately retained rather than deleted - it is the Lidarr arm
+// of the Type-discriminated config invariant that normalizeConfig enforces
+// (a Lidarr connection carries a *LidarrConfig and nothing else), and that
+// invariant is what makes a cross-platform config a validation error instead
+// of a silent no-op. Lidarr-only fields added later land here.
+type LidarrConfig struct{}
 
 // PathMapping translates one host-filesystem path prefix (as Stillwater sees
 // the artist directory) to the prefix the platform expects for the same
@@ -155,15 +155,6 @@ func (c *Connection) GetPlatformServerID() string {
 	default:
 		return ""
 	}
-}
-
-// GetVerifyPathAfterUpdate returns the Lidarr verify-after-PUT toggle, or
-// false for non-Lidarr / unresolved connections. Nil-safe.
-func (c *Connection) GetVerifyPathAfterUpdate() bool {
-	if c.Lidarr != nil {
-		return c.Lidarr.VerifyPathAfterUpdate
-	}
-	return false
 }
 
 // GetPathMappings returns the connection's host-to-platform path-mapping list.
