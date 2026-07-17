@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -404,5 +405,74 @@ func TestApplyViolationCandidate_RecordsProvenanceOnAppliedImage(t *testing.T) {
 	// seeing it on the row proves the candidate's identity survived the trip.
 	if row.Source != candidateSource {
 		t.Errorf("slot 0 source = %q, want the chosen candidate's %q", row.Source, candidateSource)
+	}
+}
+
+// TestApplyViolationCandidate_ResponseMatchesOpenAPIContract is the #2576
+// regression guard: openapi.yaml declares the 200 response for
+// POST /notifications/{id}/apply-candidate as application/json carrying the
+// Status schema, but the handler used to write an empty text/html body. A
+// caller decoding the declared JSON contract would get nothing.
+//
+// REVERT-AND-RERUN: reverting the handler back to
+// `w.Header().Set("Content-Type", "text/html; charset=utf-8"); w.WriteHeader(http.StatusOK)`
+// must turn this RED.
+func TestApplyViolationCandidate_ResponseMatchesOpenAPIContract(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r, svc := newImageHandlerTestServer(t)
+
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Apply Candidate Contract", SortName: "Apply Candidate Contract", Path: dir}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	const candidateURL = "https://8.8.8.8/contract.jpg"
+	v := &rule.RuleViolation{
+		RuleID:     rule.RuleFanartExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "warning",
+		Message:    "no fanart",
+		Fixable:    true,
+		Status:     rule.ViolationStatusPendingChoice,
+		Candidates: []rule.ImageCandidate{{
+			URL:       candidateURL,
+			Width:     1920,
+			Height:    1080,
+			Source:    "candidate-provider",
+			ImageType: "fanart",
+		}},
+	}
+	if err := r.ruleService.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("seeding pending-choice violation: %v", err)
+	}
+
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: distinctJPEG(t, 7)}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+v.ID+"/apply-candidate",
+		strings.NewReader(`{"url":"`+candidateURL+`","image_type":"fanart"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", v.ID)
+
+	w := httptest.NewRecorder()
+	r.handleApplyViolationCandidate(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	// THE GUARD: content-type and body must match the openapi Status schema
+	// ({"status": "..."}), not the old empty text/html response.
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("Content-Type = %q, want application/json (openapi declares Status schema)", ct)
+	}
+	var got struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("response body is not valid JSON: %v; body: %s", err, w.Body.String())
+	}
+	if got.Status == "" {
+		t.Errorf("response status field is empty; want a non-empty status value per the Status schema")
 	}
 }
