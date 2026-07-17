@@ -7,6 +7,7 @@ import (
 	stdimage "image"
 	"image/color"
 	"image/jpeg"
+	"math"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -535,7 +536,12 @@ func TestScanPHashMismatches_OutOfRangeToleranceFallsBackToDefault(t *testing.T)
 	p, db := newPHashScanPipeline(t)
 	seedScanArtist(t, db, "art-a", "Artist A")
 
-	for _, tol := range []float64{0, -1, 1.5} {
+	// math.NaN() is the one that matters: NaN defeats `tolerance <= 0 ||
+	// tolerance > 1` (every IEEE-754 comparison against NaN is false), so the
+	// fallback never fires and NaN reaches bestCrossArtistMatch, where it
+	// defeats `sim < tolerance` too -- making EVERY cross-artist slot a
+	// suspect. This method is public and the repair path calls it directly.
+	for _, tol := range []float64{0, -1, 1.5, math.NaN()} {
 		report := scan(t, p, PHashMismatchScope{Tolerance: tol})
 		if report.Tolerance != defaultPHashMismatchTolerance {
 			t.Fatalf("tolerance %v produced %v, want the %v default",

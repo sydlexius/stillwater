@@ -160,7 +160,11 @@ func TestPHashMismatchReport_ScopeAndToleranceReachTheDetector(t *testing.T) {
 // that decides what gets deleted.
 func TestPHashMismatchReport_BadToleranceIsRejected(t *testing.T) {
 	t.Parallel()
-	for _, raw := range []string{"abc", "0", "-0.5", "1.5"} {
+	// "NaN"/"nan" are not padding: ParseFloat accepts them, and every IEEE-754
+	// comparison against NaN is false, so a `tol <= 0 || tol > 1` guard ADMITS
+	// NaN. Without these two literals this table passes against a handler that
+	// forwards NaN to the detector, where it makes every slot a false suspect.
+	for _, raw := range []string{"abc", "0", "-0.5", "1.5", "NaN", "nan"} {
 		p := &phashCapablePipeline{stubPipeline: &stubPipeline{}}
 		r := testRouterWithFanartPipeline(t, p)
 

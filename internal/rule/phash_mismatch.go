@@ -60,6 +60,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -433,7 +434,16 @@ func (p *Pipeline) ScanPHashMismatches(ctx context.Context, scope PHashMismatchS
 		return PHashMismatchReport{}, fmt.Errorf("scan phash mismatches: pipeline not fully wired")
 	}
 	tolerance := scope.Tolerance
-	if tolerance <= 0 || tolerance > 1 {
+	// math.IsNaN is load-bearing here, not defensive noise. Every IEEE-754
+	// comparison against NaN is false, so `tolerance <= 0 || tolerance > 1`
+	// ADMITS NaN and the fallback never fires. NaN then defeats
+	// bestCrossArtistMatch's `sim < tolerance` filter the same way -- nothing
+	// is ever rejected, so EVERY cross-artist slot becomes a suspect. Measured:
+	// four provably distinct pictures (Hamming 30-38 apart) produced four false
+	// suspects at ~0.48 similarity. This method is public and PR-3's repair
+	// path calls it directly, so a programmatic NaN would feed a
+	// 100%-false-positive suspect set straight into a deletion.
+	if math.IsNaN(tolerance) || tolerance <= 0 || tolerance > 1 {
 		tolerance = defaultPHashMismatchTolerance
 	}
 

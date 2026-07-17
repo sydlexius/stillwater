@@ -21,6 +21,7 @@ package api
 import (
 	"context"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -52,7 +53,12 @@ func (r *Router) handlePHashMismatchReport(w http.ResponseWriter, req *http.Requ
 	scope := rule.PHashMismatchScope{ArtistID: req.URL.Query().Get("artist_id")}
 	if raw := req.URL.Query().Get("tolerance"); raw != "" {
 		tol, err := strconv.ParseFloat(raw, 64)
-		if err != nil || tol <= 0 || tol > 1 {
+		// math.IsNaN is load-bearing, not belt-and-braces: every IEEE-754
+		// comparison against NaN is false, so `tol <= 0 || tol > 1` ADMITS
+		// NaN. ParseFloat happily returns NaN for "NaN"/"nan". A NaN that
+		// reaches the detector defeats its `sim < tolerance` filter the same
+		// way and makes every cross-artist slot a suspect.
+		if err != nil || math.IsNaN(tol) || tol <= 0 || tol > 1 {
 			// Rejected rather than clamped: a caller who asked for a
 			// specific cutoff must not silently get a different one on a
 			// report that decides what gets deleted.
