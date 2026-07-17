@@ -87,6 +87,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -101,6 +102,20 @@ import (
 // steered by an id minted here.
 func newRepairOpID() string {
 	return uuid.New().String()
+}
+
+// phashArtistMutex returns the one mutex guarding an artist's back-out/restore
+// critical section. LoadOrStore guarantees every caller for a given artist id
+// gets the SAME mutex even when several arrive at once. See Pipeline.phashArtistMu
+// for why this serialization is load-bearing and invisible to -race.
+//
+// Only ONE such mutex is ever held at a time by design: remediate and restore
+// each lock exactly one artist for the duration of that artist's work, so there
+// is no multi-lock acquisition and no lock-ordering hazard with image.repairOpMutex,
+// which is always taken strictly inside this one.
+func (p *Pipeline) phashArtistMutex(artistID string) *sync.Mutex {
+	mu, _ := p.phashArtistMu.LoadOrStore(artistID, &sync.Mutex{})
+	return mu.(*sync.Mutex)
 }
 
 // phashTombSuffix marks a slot staged for removal but not yet committed.
@@ -301,7 +316,19 @@ func (p *Pipeline) RemediatePHashMismatches(ctx context.Context, scope PHashMism
 			continue
 		}
 		result.ArtistsProcessed++
-		if err := p.remediateArtistPHash(ctx, a, am, result.OpID, primaryName, kodiNumbering, report.Tolerance, opts, &result); err != nil {
+		// Serialize this artist's whole back-out against a concurrent restore
+		// (or another back-out) of the same artist: the two rewrite the same
+		// on-disk slots and manifest, a lost update -race cannot see. See
+		// Pipeline.phashArtistMu. A dry run mutates nothing, but it still reads
+		// the fanart directory the restore renumbers, so it holds the lock too
+		// rather than reason about which reads are safe to leave unguarded.
+		err = func() error {
+			mu := p.phashArtistMutex(am.ArtistID)
+			mu.Lock()
+			defer mu.Unlock()
+			return p.remediateArtistPHash(ctx, a, am, result.OpID, primaryName, kodiNumbering, report.Tolerance, opts, &result)
+		}()
+		if err != nil {
 			p.logger.Error("phash back-out failed for artist",
 				slog.String("op_id", result.OpID),
 				slog.String("artist_id", am.ArtistID),
@@ -353,6 +380,12 @@ func (p *Pipeline) remediateArtistPHash(
 	// lying audit trail on the failure path, where the staged tombs are rolled
 	// back to their original paths and nothing is actually removed.
 	var pending []PHashSlotOutcome
+	// quarantined tracks the entries staged for removal so the platform-side
+	// delete (below, after the on-disk commit confirms) can re-resolve each by
+	// its content hash and record where it was deleted from. Kept in lockstep
+	// with pending: both are appended only for a slot that quarantined and
+	// staged successfully.
+	var quarantined []img.RepairEntry
 	for _, s := range am.Suspects {
 		outcome := PHashSlotOutcome{
 			ArtistID: a.ID, ArtistName: a.Name, SlotIndex: s.SlotIndex,
@@ -447,6 +480,7 @@ func (p *Pipeline) remediateArtistPHash(
 		// Deliberately NOT stamped "removed" or appended yet: the removal is
 		// not confirmed until stageAndCommitPHashRemoval succeeds below.
 		pending = append(pending, outcome)
+		quarantined = append(quarantined, entry)
 		confirmed[s.SlotIndex] = true
 	}
 
@@ -474,6 +508,13 @@ func (p *Pipeline) remediateArtistPHash(
 		result.Outcomes = append(result.Outcomes, pending[i])
 	}
 
+	// Now that the removal is COMMITTED on disk, back the same picture out of
+	// the connected platforms. Deliberately AFTER the authoritative on-disk
+	// removal: the platform match is perceptual (fuzzy) and must never authorize
+	// a delete on its own -- the local, byte-exact removal is what licenses
+	// removing the mirrored copy.
+	p.deleteRemovedSlotsOnPlatforms(ctx, a, opID, tolerance, quarantined)
+
 	resyncFanartFields(a, primaryName)
 	if err := p.artistService.Update(ctx, a); err != nil {
 		// The destructive on-disk work is already committed and IRREVERSIBLE
@@ -487,6 +528,51 @@ func (p *Pipeline) remediateArtistPHash(
 			slog.String("artist", a.Name), slog.String("error", err.Error()))
 	}
 	return nil
+}
+
+// deleteRemovedSlotsOnPlatforms removes each just-removed slot's picture from
+// the connected platforms and records, on the quarantine entry, the items it
+// was deleted from so a later restore can re-upload the bytes to the same
+// items.
+//
+// It runs only after the on-disk removal has committed (see the call site) and
+// is entirely best-effort: a nil publisher (many test pipelines) is a clean
+// no-op, and a per-connection failure is logged, not propagated -- the on-disk
+// quarantine still holds the bytes, so a stranded platform copy is recoverable,
+// never lost data. Each slot is re-resolved on the platform by its content hash
+// (the recorded ordinal is stale by construction); DeletePollutedBackdropOnPlatforms
+// owns that resolution.
+func (p *Pipeline) deleteRemovedSlotsOnPlatforms(ctx context.Context, a *artist.Artist, opID string, tolerance float64, quarantined []img.RepairEntry) {
+	if p.publisher == nil {
+		return
+	}
+	for i := range quarantined {
+		e := &quarantined[i]
+		delRes, delErr := p.publisher.DeletePollutedBackdropOnPlatforms(ctx, a.ID, e.PHash, tolerance)
+		if delErr != nil {
+			p.logger.Error("phash back-out: platform delete failed after local removal committed",
+				slog.String("op_id", opID), slog.String("artist_id", a.ID),
+				slog.String("artist", a.Name), slog.String("file", e.FileName),
+				slog.String("error", delErr.Error()))
+			continue
+		}
+		for _, f := range delRes.Failures {
+			p.logger.Warn("phash back-out: platform delete reported a per-connection failure",
+				slog.String("op_id", opID), slog.String("artist_id", a.ID),
+				slog.String("connection_id", f.ConnectionID), slog.String("error", f.Err))
+		}
+		if len(delRes.Targets) > 0 {
+			if err := img.SetRepairEntryPlatformTargets(a.Path, opID, *e, delRes.Targets); err != nil {
+				// The picture is already off the platform, but we could not
+				// record where from. A restore will still put the bytes back on
+				// disk; it just will not re-upload to the platform. Non-fatal,
+				// and the safe direction to miss in -- warn.
+				p.logger.Warn("phash back-out: recording platform delete targets on the quarantine entry failed",
+					slog.String("op_id", opID), slog.String("artist_id", a.ID),
+					slog.String("file", e.FileName), slog.String("error", err.Error()))
+			}
+		}
+	}
 }
 
 // reverifySlotPHash re-hashes the file at path and reports whether it still
@@ -692,6 +778,28 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 	}
 	kodiNumbering := p.kodiFanartNumbering(ctx)
 
+	// Serialize this artist's whole restore against a concurrent back-out (or
+	// another restore) of the same artist. The restore appends fanart slots and
+	// consumes manifest entries while a back-out renumbers those same slots and
+	// rewrites the same manifest -- a file-level lost update -race cannot see.
+	// See Pipeline.phashArtistMu.
+	//
+	// The lock is taken BEFORE the manifest read below, not after, and held
+	// across the occupancy checks, the on-disk writes, the entry consumption,
+	// and the metadata resync. Reading the manifest outside the lock was a
+	// TOCTOU: a concurrent remediation could rewrite an entry's PlatformTargets
+	// (see deleteRemovedSlotsOnPlatforms -> SetRepairEntryPlatformTargets)
+	// between this snapshot and the restore that acts on it, so the restore
+	// would re-upload to a stale set of platform items. Snapshotting the
+	// manifest under the lock makes the read and the entry consumption one
+	// atomic critical section. Only this one mutex is held (image.repairOpMutex,
+	// which ReadRepairManifest/RepairEntryBytes/ConsumeRepairEntry take, is
+	// always acquired strictly inside it -- see phashArtistMutex), so there is
+	// no lock-ordering hazard or double-lock.
+	mu := p.phashArtistMutex(artistID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	m, err := img.ReadRepairManifest(a.Path, opID)
 	if err != nil {
 		return PHashRestoreResult{}, err
@@ -784,6 +892,12 @@ func (p *Pipeline) restoreOneQuarantined(
 		p.logger.Info("quarantined backdrop already present byte-for-byte; consuming the entry",
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("artist", a.Name), slog.String("file", entry.FileName))
+		// Re-upload to the platforms it was deleted from even though the local
+		// copy is already present: the platform delete removed the mirrored
+		// copy during remediation, so the artist may be missing it there while
+		// the local disk still has it. Content-addressed and idempotent -- a
+		// copy already present on the platform is a no-op.
+		p.restorePHashToPlatforms(ctx, a, entry, data, opID)
 		return restoreAlreadyPresent, img.ConsumeRepairEntry(a.Path, opID, *entry)
 
 	case similar:
@@ -847,7 +961,56 @@ func (p *Pipeline) restoreOneQuarantined(
 		slog.String("restored_as", filepath.Base(target)),
 		slog.Int("original_slot_index", entry.SlotIndex),
 		slog.Int("restored_slot_index", len(paths)))
+	// Put the picture back on the platforms it was deleted from during
+	// remediation. Runs after the on-disk restore so the local recovery -- the
+	// thing that must not be lost -- is committed first.
+	p.restorePHashToPlatforms(ctx, a, entry, data, opID)
 	return restoreWrote, img.ConsumeRepairEntry(a.Path, opID, *entry)
+}
+
+// restorePHashToPlatforms re-uploads a restored backdrop's bytes to each
+// platform item the remediation deleted it from (entry.PlatformTargets),
+// after the on-disk restore has committed.
+//
+// It is deliberately best-effort and NON-FATAL: the local restore is the
+// authoritative recovery and has already succeeded by the time this runs, so a
+// platform that is unreachable, disabled, or slow must not turn a successful
+// on-disk restore into a failure the operator is told to re-run. Per-connection
+// failures are logged and surfaced in the platform result, not propagated.
+//
+// It uses defaultPHashMismatchTolerance -- the same cutoff the on-disk
+// already-present check uses -- because the manifest records no cutoff and the
+// only thing this tolerance gates on the restore side is whether an upload is
+// suppressed as already-present (the conservative, non-destructive direction).
+// RestoreBackdropToPlatforms only ever APPENDS or no-ops; it deletes nothing, so
+// a looser tolerance here can at worst suppress a redundant upload, never harm.
+//
+// A nil publisher (many test pipelines) or an entry with no recorded targets (a
+// pre-platform-wiring manifest, or a removal where nothing matched on any
+// platform) is a clean no-op.
+func (p *Pipeline) restorePHashToPlatforms(ctx context.Context, a *artist.Artist, entry *img.RepairEntry, data []byte, opID string) {
+	if p.publisher == nil || len(entry.PlatformTargets) == 0 {
+		return
+	}
+	res, err := p.publisher.RestoreBackdropToPlatforms(ctx, entry.PlatformTargets, data, defaultPHashMismatchTolerance)
+	if err != nil {
+		p.logger.Error("phash restore: platform restore failed after local restore committed",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("artist", a.Name), slog.String("file", entry.FileName),
+			slog.String("error", err.Error()))
+		return
+	}
+	for _, f := range res.Failures {
+		p.logger.Warn("phash restore: platform restore reported a per-connection failure",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("connection_id", f.ConnectionID), slog.String("error", f.Err))
+	}
+	if res.Appended > 0 || res.AlreadyPresent > 0 {
+		p.logger.Info("phash restore: platform restore finished",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("artist", a.Name), slog.String("file", entry.FileName),
+			slog.Int("appended", res.Appended), slog.Int("already_present", res.AlreadyPresent))
+	}
 }
 
 // quarantinedImagePresence reports whether the artist already holds the

@@ -3257,6 +3257,296 @@ paths:
               schema:
                 type: string
 
+  /reports/phash-mismatch/remediate:
+    post:
+      tags: [Reports]
+      summary: Back out cross-artist backdrop pollution
+      description: >-
+        Remediates the cross-artist backdrop pollution surfaced by the
+        /reports/phash-mismatch report (#2564 PR-4). For each flagged slot it
+        re-detects from the live database (a stale report is never trusted),
+        re-verifies the picture against the bytes on disk AND against the
+        matched counterpart, quarantines the bytes, removes the slot locally,
+        and then deletes the mirrored copy from every connected platform the
+        artist is mapped to. The platform delete runs only AFTER the
+        authoritative on-disk removal commits -- a fuzzy perceptual match never
+        authorizes a delete on its own. Quarantined bytes are retained so a
+        false positive is fully recoverable via
+        /reports/phash-mismatch/restore. Set dry_run to preview without
+        mutating anything. Scope to one artist with artist_id, or set
+        all_artists to run library-wide (one of the two is required so a
+        forgotten scope cannot become a library-wide delete). Singleton: shares
+        the destructive-fanart slot with the fanart-duplicate remediation and
+        bulk actions, so a concurrent run is rejected with 409. Admin-only.
+      operationId: remediatePHashMismatches
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >-
+                Exactly one scope is required: either artist_id (one artist) or
+                all_artists=true (library-wide), never neither and never both.
+                The oneOf below encodes that exclusivity.
+              properties:
+                artist_id:
+                  type: string
+                  description: >-
+                    Scope the back-out to one artist. Required unless
+                    all_artists is set; mutually exclusive with all_artists.
+                all_artists:
+                  type: boolean
+                  description: >-
+                    Run library-wide. Must be set explicitly; the default is
+                    per-artist because this deletes files. Mutually exclusive
+                    with artist_id.
+                dry_run:
+                  type: boolean
+                  description: Preview the outcomes without mutating anything.
+                tolerance:
+                  description: >-
+                    Override the similarity cutoff. Omit (or 0) to use the
+                    detector default (0.90). A provided positive value must be
+                    in (0, 1]. An out-of-range or NaN value is rejected, never
+                    silently defaulted.
+                  oneOf:
+                    - type: number
+                      format: double
+                      enum: [0]
+                    - type: number
+                      format: double
+                      exclusiveMinimum: 0
+                      maximum: 1
+              oneOf:
+                - title: Scope to a single artist
+                  required: [artist_id]
+                  properties:
+                    all_artists:
+                      enum: [false]
+                - title: Run library-wide
+                  required: [all_artists]
+                  not:
+                    required: [artist_id]
+                  properties:
+                    all_artists:
+                      enum: [true]
+      responses:
+        "200":
+          description: >-
+            Back-out completed (individual per-artist failures do not fail the
+            request; they are counted in the result).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  op_id:
+                    type: string
+                    description: The repair operation id, used to restore later.
+                  dry_run:
+                    type: boolean
+                  artists_processed:
+                    type: integer
+                  slots_removed:
+                    type: integer
+                  quarantined:
+                    type: integer
+                  slots_skipped:
+                    type: integer
+                    description: >-
+                      Flagged slots deliberately NOT removed because
+                      re-verification disagreed with the report -- the safeguard
+                      working, held apart from failures.
+                  failures:
+                    type: integer
+                    description: Artists whose remediation errored and were rolled back.
+                  outcomes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        artist_id:
+                          type: string
+                        artist_name:
+                          type: string
+                        slot_index:
+                          type: integer
+                        file_name:
+                          type: string
+                        similarity:
+                          type: number
+                          format: double
+                        matched_artist_id:
+                          type: string
+                        matched_artist_name:
+                          type: string
+                        action:
+                          type: string
+                          description: >-
+                            One of "removed", "skipped", "would-remove" (dry
+                            run), or "failed".
+                        reason:
+                          type: string
+        "400":
+          description: >-
+            Invalid scope (neither artist_id nor all_artists, or both at once),
+            a malformed body, or a tolerance outside (0, 1].
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "401":
+          description: >-
+            Authentication required. The auth middleware rejects the request
+            before the handler runs, emitting the body via http.Error, so the
+            content type is text/plain rather than the JSON Error schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            (requireForeignAdmin) via http.Error, so the body is plain text.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "409":
+          description: A backdrop repair or bulk action is already running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        "500":
+          description: >-
+            The pipeline does not implement the remediation capability, or the
+            remediation itself failed. The wrapped error is logged server-side;
+            the response is plain text via http.Error.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /reports/phash-mismatch/restore:
+    post:
+      tags: [Reports]
+      summary: Restore quarantined cross-artist backdrops
+      description: >-
+        Reverses a /reports/phash-mismatch/remediate operation (#2564 PR-4):
+        puts the quarantined backdrops back for one artist, both on disk and on
+        the platforms they were deleted from. It is content-addressed and
+        index-free -- the recorded slot ordinal is stale by construction and is
+        never used as a write target. Each entry lands in exactly one of three
+        states: restored (bytes written back), already_present (a byte-identical
+        copy was already on disk, so the entry was consumed), or needs_review (a
+        surviving slot merely RESEMBLES the quarantined picture, so restoring was
+        declined and the entry retained for a human to decide -- this is NOT
+        success). Idempotent: an interrupted restore can be re-run. Singleton:
+        shares the destructive-fanart slot with the back-out and bulk actions,
+        so a concurrent run is rejected with 409. Admin-only.
+      operationId: restorePHashQuarantine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [artist_id, op_id]
+              properties:
+                artist_id:
+                  type: string
+                  description: The artist whose quarantined backdrops to restore.
+                op_id:
+                  type: string
+                  description: The repair operation id returned by the back-out.
+      responses:
+        "200":
+          description: >-
+            Restore completed (individual per-entry failures do not fail the
+            request; they are listed in the result).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  op_id:
+                    type: string
+                  restored:
+                    type: integer
+                    description: Entries whose bytes were written back to disk.
+                  already_present:
+                    type: integer
+                    description: >-
+                      Entries whose byte-identical copy was already on disk, so
+                      nothing was written and the entry was consumed.
+                  needs_review:
+                    type: integer
+                    description: >-
+                      Entries where a survivor merely resembles the quarantined
+                      picture, so restoring was declined and the entry retained.
+                      NOT success.
+                  failures:
+                    type: array
+                    items:
+                      type: string
+                    description: Per-entry error strings, if any.
+        "400":
+          description: artist_id or op_id was missing, or the body was malformed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "401":
+          description: >-
+            Authentication required. The auth middleware rejects the request
+            before the handler runs, emitting the body via http.Error, so the
+            content type is text/plain rather than the JSON Error schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            (requireForeignAdmin) via http.Error, so the body is plain text.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "409":
+          description: A backdrop repair or bulk action is already running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        "500":
+          description: >-
+            The pipeline does not implement the restore capability, or the
+            restore itself failed. The wrapped error is logged server-side; the
+            response is plain text via http.Error.
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /reports/platform-backdrop-duplicates/prune:
     post:
       tags: [Reports]

@@ -98,6 +98,52 @@ Click the prune button to delete the exact (byte-identical) redundant backdrops 
 
 Because the prune only ever removes copies that are byte-identical to a kept survivor, no distinct artwork is ever lost. If a platform's copy is later needed again, re-running fanart sync from the local library re-pushes it from the local survivor.
 
+## Cross-artist backdrop pollution
+
+<!-- code: internal/api/handlers_phash_repair.go, internal/rule/phash_repair.go -->
+
+Where the two duplicate reports above find the *same* backdrop repeated within *one* artist, this report finds the harder case: a backdrop that belongs to one artist has bled into a **different** artist's backdrop slots. This happens when a media server's image fetcher saves an artist's promo shot under the wrong artist, so the picture ends up mirrored across two artists' fanart. The report matches backdrops by visual near-similarity (a perceptual hash) rather than byte-for-byte, because a re-encoded or resized copy is no longer byte-identical but is still the same picture in the wrong place.
+
+Because the signal is a visual match, it is inherently ambiguous: two artists can legitimately share a picture (a duo, a collaboration, a festival photo), which looks identical to pollution. Every action below is built to absorb that ambiguity rather than assume it away, which is why the back-out is designed to be undone.
+
+### Back out polluted backdrops
+
+Remediation quarantines each flagged backdrop, removes it from the artist locally, and deletes the mirrored copy from your connected platforms. It is admin-only.
+
+Send a `POST` to `/api/v1/reports/phash-mismatch/remediate` with a JSON body:
+
+| Field | Meaning |
+|---|---|
+| `artist_id` | Scope the back-out to a single artist. |
+| `all_artists` | Set this to run library-wide. You must supply either `artist_id` or `all_artists` - a request with neither is rejected, so a forgotten scope can never become a library-wide delete. |
+| `dry_run` | Preview the outcome without changing anything. |
+| `tolerance` | Optionally override the similarity cutoff. A supplied value must be a number in the range `(0, 1]`; anything else is rejected rather than quietly falling back to the default. |
+
+Remediation is designed to be safe on an ambiguous signal:
+
+- It re-detects fresh from the current library at the moment it runs, never acting on a report that may have gone stale since you viewed it.
+- Before removing any backdrop it re-checks the picture against the bytes on disk - both the suspect and the artist it collided with - and skips anything that no longer confirms the match.
+- It copies the picture into a durable quarantine **before** removing the original, so a removed backdrop is always recoverable.
+- The platform-side delete happens only after the local removal has committed; the fuzzy platform match never authorizes a deletion on its own.
+
+The response summarizes how many artists were processed, how many slots were removed, quarantined, or skipped, and any failures, with a per-slot breakdown. On a dry run, slots are reported as "would-remove" and nothing is touched. Each run is tagged with an operation id (`op_id`) - keep it if you may want to restore the run later.
+
+### Restore a back-out
+
+If a back-out removed a backdrop that was not actually pollution, the restore puts that operation's quarantined backdrops back - both locally and on the platforms they were deleted from. It is admin-only.
+
+Send a `POST` to `/api/v1/reports/phash-mismatch/restore` with both `artist_id` and `op_id` (the id from the remediation run); a request missing either field is rejected.
+
+Restore is content-addressed: it appends a recovered backdrop at the next free slot rather than trying to put it back at its old position, because removal renumbers the survivors and the old position no longer exists. Appending can never overwrite another backdrop. Each quarantined picture lands in one of three states, reported separately so a restore that needs your attention is never mistaken for a clean one:
+
+- **Restored** - the backdrop was written back to disk.
+- **Already present** - a byte-identical copy was already there, so nothing was needed.
+- **Needs review** - a surviving backdrop only *resembles* the quarantined one but is not identical, so the restore was declined and the quarantined copy is kept for you to settle by hand. This is deliberately not counted as success.
+
+### One repair at a time
+
+Both actions, the two duplicate remediations above, and any bulk image action all share a single lock: only one runs at a time, and starting one while another is in progress is rejected with a "backdrop repair or bulk action is already in progress" response rather than allowed to overlap. They all rewrite an artist's backdrop files on disk, so this keeps two runs from ever touching the same files at once.
+
 ## Background appearance
 
 The card surfaces in the Reports workspace follow the **Background Opacity** preference. See [Customize preferences](customize-preferences.md#background-opacity) to adjust the frosted-glass opacity of cards and panels.
