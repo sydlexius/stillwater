@@ -122,6 +122,36 @@ func newConnectionTestConn(t *testing.T, r *Router, c *connection.Connection) {
 	}
 }
 
+// seedLidarrConn persists an enabled Lidarr fixture without an outbound test
+// call and returns its ID.
+func seedLidarrConn(t *testing.T, r *Router) string {
+	t.Helper()
+	c := &connection.Connection{
+		Name:    "Lidarr Test",
+		Type:    connection.TypeLidarr,
+		URL:     "http://lidarr.local:8686",
+		APIKey:  "k",
+		Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+	return c.ID
+}
+
+// seedEmbyConn persists an enabled Emby fixture without an outbound test call
+// and returns its ID.
+func seedEmbyConn(t *testing.T, r *Router) string {
+	t.Helper()
+	c := &connection.Connection{
+		Name:    "Emby Test",
+		Type:    connection.TypeEmby,
+		URL:     "http://emby.local:8096",
+		APIKey:  "k",
+		Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+	return c.ID
+}
+
 // assertLidarrContract checks that an outbound request from the Stillwater
 // Lidarr client carries the expected HTTP method and the X-Api-Key header
 // the client sets at lidarr/client.go:491. Used at the top of every Lidarr

@@ -101,17 +101,10 @@ func (s *Service) importProviderKeys(ctx context.Context, db dbExecutor, keys ma
 // must not be copied onto the target's existing connection row -- doing so
 // would silently disable toggles the operator had set.
 //
-// carryV15Fields signals that the envelope version is recognized as one
-// that carries the v1.5-only field (VerifyPathAfterUpdate), in which case
-// the field is authoritative. When false (a pre-1.5 envelope OR a future
-// envelope version not yet added to envelopeCarriesConnectionV15Fields),
-// the field decoded as a zero value and must not be copied onto the
-// target's existing connection row for the same reason as V14.
-//
 // carryV17Fields plays the same role for the v1.7-only PathMappings field: a
 // pre-1.7 envelope decoded it as nil, so it must not clobber the target's
 // existing Lidarr path mappings.
-func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []ConnectionExport, result *ImportResult, carryV14Fields, carryV15Fields, carryV17Fields bool) error {
+func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []ConnectionExport, result *ImportResult, carryV14Fields, carryV17Fields bool) error {
 	// Index rather than range-value: ConnectionExport is large enough that a
 	// per-iteration value copy trips gocritic's rangeValCopy.
 	for i := range conns {
@@ -132,12 +125,12 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 			// type-discriminated sub-config (#1686). existing already carries
 			// the matching sub-config from the DB scan; platform identity is
 			// preserved when already resolved (see applyExportConfig).
-			applyExportConfig(existing, *ce, carryV14Fields, carryV15Fields, carryV17Fields)
+			applyExportConfig(existing, *ce, carryV14Fields, carryV17Fields)
 			if err := s.connectionSvc.ImportUpdateTx(ctx, db, existing); err != nil {
 				return fmt.Errorf("updating connection %q: %w", ce.Name, err)
 			}
 		} else {
-			// A fresh row: every envelope field is authoritative (pre-1.4/1.5
+			// A fresh row: every envelope field is authoritative (pre-1.4
 			// envelopes simply decoded the newer fields as zero values).
 			c := &connection.Connection{
 				Name:                     ce.Name,
@@ -148,7 +141,7 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 				FeatureManageServerFiles: ce.FeatureManageServerFiles,
 				PreStillwaterConfigJSON:  ce.PreStillwaterConfigJSON,
 			}
-			applyExportConfig(c, *ce, true, true, true)
+			applyExportConfig(c, *ce, true, true)
 			if err := s.connectionSvc.ImportCreateTx(ctx, db, c); err != nil {
 				return fmt.Errorf("creating connection %q: %w", ce.Name, err)
 			}
@@ -163,13 +156,13 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 // shape is retained for backward compatibility with older Stillwater versions;
 // this is the single place the import path translates it into the sub-structs.
 //
-// gateV14/gateV15 mirror the version gating in importConnections: when false,
+// gateV14/gateV17 mirror the version gating in importConnections: when false,
 // the corresponding fields are not authoritative in this envelope and must not
 // overwrite values already on conn. Platform identity (user/server ID) reflects
 // the live peer and is only seeded from the envelope when conn does not already
 // have one resolved - so a fresh row (empty) takes the envelope value while an
 // existing row keeps its own.
-func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14, gateV15, gateV17 bool) {
+func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14, gateV17 bool) {
 	// PathMappings is connection-level for EVERY type since #2380, so it is
 	// applied outside the type switch. A pre-1.7 envelope (gateV17 false)
 	// decoded it as nil and must not clobber the target's existing mappings.
@@ -178,11 +171,11 @@ func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14
 	}
 	switch conn.Type {
 	case connection.TypeLidarr:
+		// The Lidarr sub-config carries no envelope-sourced fields since the
+		// verify-path-after-update toggle was retired (#2563), but it is still
+		// materialized so a Lidarr row always has a non-nil sub-config.
 		if conn.Lidarr == nil {
 			conn.Lidarr = &connection.LidarrConfig{}
-		}
-		if gateV15 {
-			conn.Lidarr.VerifyPathAfterUpdate = ce.VerifyPathAfterUpdate
 		}
 	case connection.TypeEmby:
 		if conn.Emby == nil {

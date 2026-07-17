@@ -60,11 +60,11 @@ var pbkdf2Iterations = defaultPBKDF2Iterations
 //     a different id can fail the import instead of silently remapping.
 //     Restore-from-OOBE flows also rely on the id stability so a restored
 //     backup keeps every downstream reference intact.
-//   - "1.5": adds verify_path_after_update to ConnectionExport so the
-//     Lidarr post-update path-verification opt-in survives export/import
-//     (#1692). Pre-1.5 envelopes lack the field, so legacy imports must
-//     preserve the target's existing value instead of clobbering it with
-//     a decoded zero.
+//   - "1.5": added verify_path_after_update to ConnectionExport so the Lidarr
+//     post-update path-verification opt-in survived export/import (#1692).
+//     That toggle was retired in #2563 and the field is no longer exported.
+//     A legacy envelope that still carries verify_path_after_update imports
+//     cleanly -- the unknown key is ignored, not an error.
 //   - "1.6": provider `api_key`/`key_status` rows are no longer duplicated
 //     into the generic settings blob; they are carried solely by the
 //     dedicated ProviderKeys section (decrypted at export, re-encrypted under
@@ -109,26 +109,6 @@ var supportedEnvelopeVersions = map[string]bool{
 func envelopeCarriesConnectionV14Fields(envelopeVersion string) bool {
 	switch envelopeVersion {
 	case "1.4", "1.5", "1.6", "1.7":
-		return true
-	default:
-		return false
-	}
-}
-
-// envelopeCarriesConnectionV15Fields reports whether an envelope of the given
-// version is known to carry the v1.5 connection feature field
-// (VerifyPathAfterUpdate). Pre-1.5 envelopes lack the field, so deserializing
-// leaves it at its zero value; copying that zero onto an existing target row
-// would silently disable a Lidarr verify toggle the operator had set. Returning
-// false here lets importConnections preserve the target's existing value
-// instead.
-//
-// When introducing a v1.6+ envelope that ALSO carries VerifyPathAfterUpdate,
-// add the new version to the case below. New schema bumps that drop the field
-// (unlikely) need their own gating function rather than reusing this one.
-func envelopeCarriesConnectionV15Fields(envelopeVersion string) bool {
-	switch envelopeVersion {
-	case "1.5", "1.6", "1.7":
 		return true
 	default:
 		return false
@@ -213,7 +193,6 @@ type ConnectionExport struct {
 	FeatureMetadataPush      bool   `json:"feature_metadata_push,omitempty"`
 	FeatureTriggerRefresh    bool   `json:"feature_trigger_refresh,omitempty"`
 	FeatureManageServerFiles bool   `json:"feature_manage_server_files,omitempty"`
-	VerifyPathAfterUpdate    bool   `json:"verify_path_after_update,omitempty"`
 	PreStillwaterConfigJSON  string `json:"pre_stillwater_config_json,omitempty"`
 	PlatformUserID           string `json:"platform_user_id,omitempty"`
 	PlatformServerID         string `json:"platform_server_id,omitempty"`
@@ -441,7 +420,6 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 			FeatureMetadataPush:      c.GetFeatureMetadataPush(),
 			FeatureTriggerRefresh:    c.GetFeatureTriggerRefresh(),
 			FeatureManageServerFiles: c.FeatureManageServerFiles,
-			VerifyPathAfterUpdate:    c.GetVerifyPathAfterUpdate(),
 			PreStillwaterConfigJSON:  c.PreStillwaterConfigJSON,
 			PlatformUserID:           c.GetPlatformUserID(),
 			PlatformServerID:         c.GetPlatformServerID(),
@@ -683,7 +661,7 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 	if err := s.importProviderKeys(ctx, tx, payload.ProviderKeys, result); err != nil {
 		return nil, fmt.Errorf("importing provider keys: %w", err)
 	}
-	if err := s.importConnections(ctx, tx, payload.Connections, result, envelopeCarriesConnectionV14Fields(v), envelopeCarriesConnectionV15Fields(v), envelopeCarriesConnectionV17Fields(v)); err != nil {
+	if err := s.importConnections(ctx, tx, payload.Connections, result, envelopeCarriesConnectionV14Fields(v), envelopeCarriesConnectionV17Fields(v)); err != nil {
 		return nil, fmt.Errorf("importing connections: %w", err)
 	}
 	if err := s.importPlatformProfiles(ctx, tx, payload.PlatformProfiles, result); err != nil {

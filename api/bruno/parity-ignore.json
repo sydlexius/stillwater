@@ -276,10 +276,6 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
-    "route": "POST /api/v1/connections/{}/verify-path-after-update",
-    "reason": "Admin-gated per-connection HTMX toggle (Lidarr verify-after-PUT, #1685); sibling connection-toggle endpoints (stillwater-managed, features) are parity-ignored - no standalone Bruno request needed."
-  },
-  {
     "route": "POST /api/v1/onboarding/reset",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
