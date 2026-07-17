@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -158,16 +159,16 @@ func TestWriteFanartBytes_ReportsAWriteItCannotPerform(t *testing.T) {
 // The assertion that carries the contract is that the TARGET IS UNCHANGED. An
 // error-only assertion would pass against a version that truncated the file and
 // then returned an error, which is the outcome this exists to prevent.
+//
+// Both nil and empty are covered because both reach the same len(data) == 0
+// guard, not because the function distinguishes them -- it must not.
 func TestWriteFanartBytes_RefusesToWriteNoBytesOverLiveArtwork(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		data    []byte
-		wantErr string
+		name string
+		data []byte
 	}{
-		// Same refusal, different upstream bug: nil is a caller that never
-		// obtained bytes, empty is a read that succeeded against an empty file.
-		{"nil", nil, "nil image data"},
-		{"empty", []byte{}, "empty image data"},
+		{"nil", nil},
+		{"empty", []byte{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -181,8 +182,8 @@ func TestWriteFanartBytes_RefusesToWriteNoBytesOverLiveArtwork(t *testing.T) {
 			if err == nil {
 				t.Fatal("writing no bytes must be refused, never a nil that reports the artwork restored")
 			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Errorf("expected an error mentioning %q, got: %v", tc.wantErr, err)
+			if !strings.Contains(err.Error(), "empty image data") {
+				t.Errorf("expected an empty-data refusal, got: %v", err)
 			}
 			if !strings.Contains(err.Error(), "fanart2.jpg") {
 				t.Errorf("the error must name the file, got: %v", err)
@@ -197,6 +198,97 @@ func TestWriteFanartBytes_RefusesToWriteNoBytesOverLiveArtwork(t *testing.T) {
 				t.Errorf("live artwork must be left byte-identical; len %d -> %d", len(live), len(got))
 			}
 		})
+	}
+}
+
+// TestReadRepairManifest_NeverReportsAnExistingOpAsAbsent pins the read side
+// against the mutators' rewrite window.
+//
+// WriteFileAtomic is CRASH-safe but NOT REPLACE-atomic against a concurrent
+// reader: it renames the existing target to a backup (atomic.go step 2) and only
+// then renames the temp file into place (step 3). Between those two renames
+// manifest.json DOES NOT EXIST. An unsynchronized reader landing in that gap
+// gets os.IsNotExist and returns (nil, nil) -- which this function's own
+// contract defines as "the operation does not exist".
+//
+// So the failure is not an error and not a torn read. It is the reader being
+// told there is NO QUARANTINED ARTWORK for an op that is holding the only copy
+// of the user's picture, while a repair is appending to it. A restore surface
+// polling during a repair shows "nothing to restore"; a caller reading (nil,
+// nil) as already-consumed skips the restore outright. That is the same
+// false-green ReadRepairManifest's doc comment claims to prevent, arriving
+// through a different door.
+//
+// WHY THE ASSERTION IS ABSENCE, NOT A RACE: -race is BLIND to this. Each
+// goroutine unmarshals into its own heap object; the conflict is between
+// ReadFile and rename SYSCALLS on a shared FILE, which TSan does not
+// instrument. This suite reports zero races with the lock removed. Only
+// counting observed absences measures it.
+func TestReadRepairManifest_NeverReportsAnExistingOpAsAbsent(t *testing.T) {
+	dir := t.TempDir()
+	const opID = "op-absence"
+	const appends = 40
+
+	// Seed one entry, so from here on the op provably EXISTS for the whole
+	// run and every (nil, nil) the reader sees is a false absence.
+	seed := quarantineFixture(t, dir, "seed.jpg", "seed-bytes")
+	if err := QuarantineImage(dir, opID, seed, RepairEntry{SlotIndex: 0, FileName: "seed.jpg"}); err != nil {
+		t.Fatalf("seeding the op: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+	var absent, readErrs int64
+
+	// Reader: hammer the manifest while the op is mutated.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			m, err := ReadRepairManifest(dir, opID)
+			if err != nil {
+				atomic.AddInt64(&readErrs, 1)
+				continue
+			}
+			if m == nil {
+				atomic.AddInt64(&absent, 1)
+			}
+		}
+	}()
+
+	// Mutator: append slots to the same op, rewriting the manifest each time.
+	for i := 1; i <= appends; i++ {
+		src := quarantineFixture(t, dir, fmt.Sprintf("fanart%d.jpg", i), fmt.Sprintf("bytes-%d", i))
+		if err := QuarantineImage(dir, opID, src, RepairEntry{SlotIndex: i, FileName: fmt.Sprintf("fanart%d.jpg", i)}); err != nil {
+			close(done)
+			wg.Wait()
+			t.Fatalf("appending slot %d: %v", i, err)
+		}
+	}
+	close(done)
+	wg.Wait()
+
+	if got := atomic.LoadInt64(&absent); got != 0 {
+		t.Errorf("reader saw the op as ABSENT %d times while it existed throughout; "+
+			"a caller is told there is no quarantined artwork for an op holding the only copy", got)
+	}
+	if got := atomic.LoadInt64(&readErrs); got != 0 {
+		t.Errorf("reader hit %d errors; the manifest must stay readable throughout", got)
+	}
+
+	// The op must also be intact and complete: a reader-side lock that somehow
+	// cost an append would be a worse bug than the one this test pins.
+	m, err := ReadRepairManifest(dir, opID)
+	if err != nil {
+		t.Fatalf("final read: %v", err)
+	}
+	if m == nil || len(m.Entries) != appends+1 {
+		t.Fatalf("expected %d surviving entries, got %+v", appends+1, m)
 	}
 }
 

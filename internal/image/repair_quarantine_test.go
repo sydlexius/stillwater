@@ -135,19 +135,25 @@ func treeSnapshot(t *testing.T, root string) []string {
 // would resolve outside the artist dir), and a negative slot is provenance that
 // lies. Neither is checked anywhere else.
 //
-// SCOPE: a name that merely CARRIES directory components ("../../evil.jpg") is
-// NOT rejected -- it reduces to a usable basename and is normalized to it. See
-// TestQuarantineImage_NormalizesFileNameToABasename. Rejected here are only the
-// names that reduce to no file at all.
+// SCOPE -- READ THIS BEFORE ADDING A CASE: a traversing FileName does NOT escape
+// the op dir, with or without this validation. repairStoredName reduces it to a
+// basename before the slot prefix, so "../../evil.jpg" quarantines to
+// "000-evil.jpg" inside the op dir -- measured, with a planted bystander left
+// untouched. These cases pin a guard against a FUTURE consumer that joins the
+// PERSISTED FileName onto a directory; they do not pin a live escape, and no
+// case here should be written as though they did.
 func TestQuarantineImage_RejectsAnEntryThatCannotDescribeARecoverableImage(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		entry   RepairEntry
 		wantErr string
 	}{
-		{"dot file name", RepairEntry{SlotIndex: 0, FileName: "."}, "no usable basename"},
-		{"parent file name", RepairEntry{SlotIndex: 0, FileName: ".."}, "no usable basename"},
-		{"separator file name", RepairEntry{SlotIndex: 0, FileName: "/"}, "no usable basename"},
+		{"traversing file name", RepairEntry{SlotIndex: 0, FileName: "../../evil.jpg"}, "is not a bare basename"},
+		{"directory components", RepairEntry{SlotIndex: 0, FileName: "sub/dir/fanart.jpg"}, "is not a bare basename"},
+		{"absolute path", RepairEntry{SlotIndex: 0, FileName: "/etc/fanart.jpg"}, "is not a bare basename"},
+		{"dot file name", RepairEntry{SlotIndex: 0, FileName: "."}, "names no file"},
+		{"parent file name", RepairEntry{SlotIndex: 0, FileName: ".."}, "names no file"},
+		{"separator file name", RepairEntry{SlotIndex: 0, FileName: "/"}, "names no file"},
 		{"empty file name", RepairEntry{SlotIndex: 0, FileName: ""}, "empty file name"},
 		{"negative slot", RepairEntry{SlotIndex: -1, FileName: "fanart.jpg"}, "negative slot index"},
 	} {
@@ -185,66 +191,40 @@ func TestQuarantineImage_RejectsAnEntryThatCannotDescribeARecoverableImage(t *te
 	}
 }
 
-// TestQuarantineImage_NormalizesFileNameToABasename pins that the only FileName
-// which can reach the durable manifest is one that names a file and nothing
-// else.
+// TestRepairStoredName_CollapsesPathComponentsBeforeThePrefix is a REGRESSION
+// guard on the property that actually contains the quarantine write, and it is
+// deliberately a unit test of repairStoredName rather than of QuarantineImage.
 //
-// The manifest outlives the process and is read back to decide a restore. A
-// consumer joining a raw FileName onto a directory -- the obvious reading of a
-// field named for a file -- would resolve "../../evil.jpg" outside the artist
-// dir. Normalizing at this boundary means such a FileName cannot be stored in
-// the first place, rather than being a hazard every future consumer has to
-// remember to defuse.
+// validateRepairEntry now rejects a non-basename FileName before QuarantineImage
+// writes anything, so an end-to-end test could no longer reach this code path
+// and would pin the validation instead -- leaving the containment itself
+// untested. But repairStoredName is STILL reached with unvalidated input, via
+// storedNameOf, for entries read back from a hand-edited manifest. This is what
+// keeps that path inside the op dir.
 //
-// The containment assertion is a REGRESSION guard on repairStoredName's
-// filepath.Base, which is what actually keeps the WRITE inside the op dir --
-// measured: a traversing FileName does not escape today, with or without the
-// normalization above. It is pinned here so a refactor that drops that Base
-// turns this red instead of silently writing artwork into the live artist dir.
-func TestQuarantineImage_NormalizesFileNameToABasename(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		fileName string
-	}{
-		{"directory components", "sub/dir/fanart3.jpg"},
-		{"traversing components", "../../fanart3.jpg"},
-		{"absolute path", "/etc/fanart3.jpg"},
+// The ordering is the subtle part and the reason this exists: filepath.Base runs
+// BEFORE the "%03d-" prefix is applied. Reverse them and you get "000-../../x",
+// which escapes. That is the mistake this test is here to catch.
+func TestRepairStoredName_CollapsesPathComponentsBeforeThePrefix(t *testing.T) {
+	for _, tc := range []struct{ fileName, want string }{
+		{"fanart.jpg", "000-fanart.jpg"},
+		{"../../evil.jpg", "000-evil.jpg"},
+		{"../../../etc/passwd", "000-passwd"},
+		{"sub/dir/fanart.jpg", "000-fanart.jpg"},
+		{"/etc/passwd", "000-passwd"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			dir := filepath.Join(root, "artist")
-			if err := os.MkdirAll(dir, 0o750); err != nil {
-				t.Fatalf("creating artist dir: %v", err)
+		t.Run(tc.fileName, func(t *testing.T) {
+			got := repairStoredName(0, tc.fileName)
+			if got != tc.want {
+				t.Errorf("repairStoredName(0, %q) = %q, want %q", tc.fileName, got, tc.want)
 			}
-			src := quarantineFixture(t, dir, "fanart.jpg", "artwork-bytes")
-
-			if err := QuarantineImage(dir, "op-norm", src, RepairEntry{SlotIndex: 2, FileName: tc.fileName}); err != nil {
-				t.Fatalf("a file name reducing to a usable basename must normalize, not fail: %v", err)
+			// The real contract behind the string comparison: the result is a
+			// bare name that cannot steer a join out of the op dir.
+			if filepath.Base(got) != got {
+				t.Errorf("stored name %q is not a bare basename -- it would escape the op dir", got)
 			}
-
-			m, err := ReadRepairManifest(dir, "op-norm")
-			if err != nil || m == nil || len(m.Entries) != 1 {
-				t.Fatalf("expected 1 entry, got %+v (err %v)", m, err)
-			}
-			if got := m.Entries[0].FileName; got != "fanart3.jpg" {
-				t.Errorf("persisted FileName = %q, want the bare basename %q", got, "fanart3.jpg")
-			}
-
-			// The bytes landed inside the op dir and nowhere else.
-			opDir := filepath.Join(dir, RepairDirName, "op-norm")
-			want := []string{"artist", "artist/.sw-repair", "artist/.sw-repair/op-norm",
-				"artist/.sw-repair/op-norm/002-fanart3.jpg", "artist/.sw-repair/op-norm/manifest.json",
-				"artist/fanart.jpg", "."}
-			sort.Strings(want)
-			if got := treeSnapshot(t, root); !slices.Equal(got, want) {
-				t.Errorf("quarantine must write only inside %s;\n got  = %v\n want = %v", opDir, got, want)
-			}
-
-			// Normalization that broke the round trip would make the artwork
-			// unrecoverable -- the failure this primitive exists to prevent.
-			data, err := RepairEntryBytes(dir, "op-norm", m.Entries[0])
-			if err != nil || string(data) != "artwork-bytes" {
-				t.Errorf("normalized entry must still resolve to its bytes, got %q (err %v)", data, err)
+			if filepath.IsAbs(got) || strings.Contains(got, "..") {
+				t.Errorf("stored name %q retains traversal material", got)
 			}
 		})
 	}
