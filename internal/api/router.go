@@ -223,9 +223,10 @@ type Router struct {
 	stillwaterManagedMu sync.Map
 	// pathMappingsMu serializes the per-connection read-modify-write in
 	// handleSetPathMappings, mirroring stillwaterManagedMu. Values are
-	// *sync.Mutex via LoadOrStore; the handler gates connection existence +
-	// Lidarr type BEFORE the LoadOrStore so map cardinality stays bounded by
-	// the Lidarr connections actually served (#2303).
+	// *sync.Mutex via LoadOrStore; the handler gates connection existence
+	// BEFORE the LoadOrStore so map cardinality stays bounded by the
+	// connections actually served (#2303). There is no type gate: path
+	// mappings are valid for every connection type since #2380.
 	pathMappingsMu sync.Map
 	// foreignRepo persists foreign-file ledger rows and the allowlist
 	// (#1185). Always non-nil after NewRouter when DB is provided so the
