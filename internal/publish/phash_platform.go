@@ -34,6 +34,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
@@ -86,6 +87,21 @@ func validPHashTolerance(t float64) error {
 		return fmt.Errorf("tolerance must be within (0, 1], got %v", t)
 	}
 	return nil
+}
+
+// lockPhashTarget acquires the per-target mutation guard for one platform item
+// and returns its unlock. The key is ConnectionID+PlatformArtistID, so distinct
+// targets never contend, but two operations on the SAME target serialize their
+// entire read-modify-verify. Callers must hold the lock across the complete
+// resolve->mutate->verify (delete or restore) and release only after it
+// finishes, so a concurrent duplicate observes the settled artifact rather than
+// racing a half-applied one.
+func (p *Publisher) lockPhashTarget(connectionID, platformArtistID string) func() {
+	key := connectionID + "\x00" + platformArtistID
+	m, _ := p.phashTargetLocks.LoadOrStore(key, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // matchingBackdropIndices reads every backdrop for the item, perceptually
@@ -277,14 +293,14 @@ func (p *Publisher) DeletePollutedBackdropOnPlatforms(ctx context.Context, artis
 		if client == nil {
 			continue
 		}
+		unlock := p.lockPhashTarget(pid.ConnectionID, pid.PlatformArtistID)
 		deleted, delErr := deletePollutedBackdrops(ctx, client, pid.PlatformArtistID, want, tolerance)
-		if delErr != nil {
-			p.logger.Error("phash platform delete failed",
-				slog.String("artist_id", artistID), slog.String("connection", conn.Name),
-				slog.String("error", delErr.Error()))
-			result.Failures = append(result.Failures, PlatformBackdropOpFailure{ConnectionID: pid.ConnectionID, Err: delErr.Error()})
-			continue
-		}
+		unlock()
+		// Record any SUCCESSFUL deletions BEFORE handling delErr: a partial
+		// multi-delete that removed slot A and then failed on slot B has really
+		// taken A off the platform, so A's target must be recorded to stay
+		// RESTORABLE. Dropping the target on a partial failure would strand the
+		// removed picture with nowhere for a restore to put it back.
 		if deleted > 0 {
 			result.Deleted += deleted
 			result.Targets = append(result.Targets, image.RepairPlatformTarget{
@@ -293,6 +309,13 @@ func (p *Publisher) DeletePollutedBackdropOnPlatforms(ctx context.Context, artis
 			p.logger.Info("phash platform delete removed polluted backdrop",
 				slog.String("artist_id", artistID), slog.String("connection", conn.Name),
 				slog.Int("deleted", deleted))
+		}
+		if delErr != nil {
+			p.logger.Error("phash platform delete failed",
+				slog.String("artist_id", artistID), slog.String("connection", conn.Name),
+				slog.String("error", delErr.Error()))
+			result.Failures = append(result.Failures, PlatformBackdropOpFailure{ConnectionID: pid.ConnectionID, Err: delErr.Error()})
+			continue
 		}
 	}
 	return result, nil
@@ -344,7 +367,9 @@ func (p *Publisher) RestoreBackdropToPlatforms(ctx context.Context, targets []im
 			result.Failures = append(result.Failures, PlatformBackdropOpFailure{ConnectionID: t.ConnectionID, Err: "unsupported connection type"})
 			continue
 		}
+		unlock := p.lockPhashTarget(t.ConnectionID, t.PlatformArtistID)
 		appended, rErr := restoreBackdrop(ctx, client, t.PlatformArtistID, data, tolerance)
+		unlock()
 		if rErr != nil {
 			p.logger.Error("phash platform restore failed",
 				slog.String("connection", conn.Name), slog.String("error", rErr.Error()))

@@ -9,6 +9,8 @@ import (
 	"image/jpeg"
 	"io"
 	"log/slog"
+	"math"
+	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -97,6 +99,17 @@ type fakePhashClient struct {
 	// wrappers' non-fatal-per-connection handling depends on.
 	deleteErr error
 	uploadErr error
+
+	// deleteCalls counts every DeleteImageAtIndex invocation (1-indexed against
+	// deleteErrAtCall).
+	deleteCalls int
+	// deleteErrAtCall selects WHICH delete fails when deleteErr is set: 0 (the
+	// default) fails EVERY call before it mutates -- the original
+	// checked-before-any-mutation behavior. N > 0 lets the first N-1 deletes
+	// succeed and MUTATE, then fails the Nth, so a test can exercise a partial
+	// multi-delete where earlier slots are really gone before a later delete
+	// errors.
+	deleteErrAtCall int
 }
 
 func (f *fakePhashClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
@@ -111,8 +124,9 @@ func (f *fakePhashClient) GetArtistBackdrop(_ context.Context, _ string, i int) 
 }
 
 func (f *fakePhashClient) DeleteImageAtIndex(_ context.Context, _ string, _ string, i int) error {
-	if f.deleteErr != nil {
-		return f.deleteErr // hard failure: nothing recorded, nothing mutated
+	f.deleteCalls++
+	if f.deleteErr != nil && (f.deleteErrAtCall == 0 || f.deleteCalls == f.deleteErrAtCall) {
+		return f.deleteErr // hard failure on this call: nothing recorded, nothing mutated
 	}
 	f.deletes = append(f.deletes, i)
 	if f.ignoreDeletes {
@@ -160,26 +174,33 @@ func TestDeletePollutedBackdrops_RemovesMatchAndVerifiesGone(t *testing.T) {
 	b2 := bandJPEG(t, 56)
 	assertDistinct(t, polluted, b0, b2)
 
-	f := &fakePhashClient{backdrops: [][]byte{b0, polluted, b2}}
+	// Two polluted copies (indices 1 and 3) separated by a bystander (index 2).
+	// A single match cannot tell descending deletion from ascending; two
+	// matches with a bystander between them can, and prove the descending order
+	// keeps un-deleted ordinals from shifting under the deletes.
+	f := &fakePhashClient{backdrops: [][]byte{b0, polluted, b2, polluted}}
 	want := phashOf(t, polluted)
 
 	deleted, err := deletePollutedBackdrops(context.Background(), f, "p1", want, testTolerance)
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if deleted != 1 {
-		t.Fatalf("deleted count: want 1, got %d", deleted)
+	if deleted != 2 {
+		t.Fatalf("deleted count: want 2, got %d", deleted)
 	}
-	// ARTIFACT assertions, not counters: the polluted picture is gone and BOTH
-	// bystanders survive (fail-closed: a non-matching slot is never touched).
+	// The delete order must be exactly DESCENDING [3, 1]: deleting the higher
+	// ordinal first means the lower one it has not reached yet does not shift.
+	if len(f.deletes) != 2 || f.deletes[0] != 3 || f.deletes[1] != 1 {
+		t.Errorf("expected descending delete order [3 1], got %v", f.deletes)
+	}
+	// ARTIFACT assertions, not counters: no polluted copy survives, and BOTH
+	// bystanders remain intact (fail-closed: a non-matching slot is never
+	// touched), including the one that sat between the two matches.
 	if f.hasMatch(t, want) {
 		t.Error("polluted backdrop still present after delete")
 	}
 	if len(f.backdrops) != 2 || !bytes.Equal(f.backdrops[0], b0) || !bytes.Equal(f.backdrops[1], b2) {
 		t.Errorf("bystanders not preserved intact: got %d backdrops", len(f.backdrops))
-	}
-	if len(f.deletes) != 1 || f.deletes[0] != 1 {
-		t.Errorf("expected exactly index 1 deleted, got %v", f.deletes)
 	}
 }
 
@@ -231,7 +252,12 @@ func TestDeletePollutedBackdrops_VerifyCatchesSilentIgnore(t *testing.T) {
 
 func TestDeletePollutedBackdrops_RejectsBadTolerance(t *testing.T) {
 	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 32)}}
-	for _, tol := range []float64{0, -0.1, 1.5} {
+	// NaN is the load-bearing case: every IEEE-754 compare against NaN is false,
+	// so `t <= 0 || t > 1` ADMITS it, and a NaN cutoff makes every slot's
+	// Similarity >= tolerance false -- a silent match-nothing over an
+	// un-remediated library. validPHashTolerance's math.IsNaN guard must reject
+	// it here before any platform IO.
+	for _, tol := range []float64{0, -0.1, 1.5, math.NaN()} {
 		if _, err := deletePollutedBackdrops(context.Background(), f, "p1", phashOf(t, bandJPEG(t, 32)), tol); err == nil {
 			t.Errorf("tolerance %v: want error, got nil", tol)
 		}
@@ -525,6 +551,102 @@ func TestDeletePollutedBackdropOnPlatforms_DeleteErrorIsFailureBatchContinues(t 
 	}
 }
 
+// TestDeletePollutedBackdropOnPlatforms_PartialDeleteRecordsTargetForRestore is
+// the proof for the partial-delete recording contract. Two polluted copies (at
+// indices 1 and 3) are deleted high-first; the delete of index 3 really removes
+// it, then the delete of index 1 fails. The op must: surface the failure, still
+// record the connection as a Target (index 3 is genuinely gone and must stay
+// RESTORABLE), and count the one real deletion. The surviving index-1 copy
+// proves the failure was partial, not a clean rollback.
+//
+// Revert-and-rerun proof (measured): reordering DeletePollutedBackdropOnPlatforms
+// so `if delErr != nil { ...; continue }` runs BEFORE the deleted>0 recording
+// (the pre-fix ordering) makes this test FAIL -- Targets comes back empty and
+// Deleted is 0 even though slot 3 was removed. Recording successes before
+// handling delErr makes it PASS.
+func TestDeletePollutedBackdropOnPlatforms_PartialDeleteRecordsTargetForRestore(t *testing.T) {
+	polluted := bandJPEG(t, 32)
+	b0 := bandJPEG(t, 8)
+	b2 := bandJPEG(t, 56)
+	assertDistinct(t, polluted, b0, b2)
+
+	// Matches at indices 1 and 3 (deleted descending: 3 then 1). deleteErrAtCall=2
+	// lets the first delete (index 3) mutate, then fails the second (index 1).
+	f := &fakePhashClient{
+		backdrops:       [][]byte{b0, polluted, b2, polluted},
+		deleteErr:       fmt.Errorf("connection reset mid-batch"),
+		deleteErrAtCall: 2,
+	}
+	withFakePhashClient(t, f)
+	p := oneEmbyPublisher()
+
+	res, err := p.DeletePollutedBackdropOnPlatforms(context.Background(), "a1", image.HashHex(phashOf(t, polluted)), testTolerance)
+	if err != nil {
+		t.Fatalf("delete on platforms: %v", err)
+	}
+	// The later delete failed, so the connection is a Failure...
+	if len(res.Failures) != 1 || res.Failures[0].ConnectionID != "c-emby" {
+		t.Errorf("want one failure for c-emby, got %#v", res.Failures)
+	}
+	// ...but the slot that WAS removed must still be recorded so a restore can
+	// put it back, and the one real deletion must be counted.
+	if res.Deleted != 1 {
+		t.Errorf("want Deleted=1 (the slot that really went), got %d", res.Deleted)
+	}
+	if len(res.Targets) != 1 || res.Targets[0].ConnectionID != "c-emby" {
+		t.Errorf("partial delete must still record the target for restore, got %#v", res.Targets)
+	}
+	// ARTIFACT: exactly one polluted copy remains (the one whose delete failed),
+	// proving the failure was partial -- one really removed, one really left.
+	remaining := 0
+	for _, b := range f.backdrops {
+		if image.Similarity(phashOf(t, polluted), phashOf(t, b)) >= testTolerance {
+			remaining++
+		}
+	}
+	if remaining != 1 {
+		t.Errorf("want exactly one polluted copy left after the partial delete, got %d", remaining)
+	}
+}
+
+// TestDeletePollutedBackdropOnPlatforms_ConcurrentSameTargetDeletesOnce drives
+// many concurrent deletes of the SAME target and asserts on the ARTIFACT: the
+// polluted picture is removed exactly once and the bystander survives. Without
+// the per-target guard the racing goroutines each resolve the same match index
+// and both call delete (a double delete that would take out the shifted
+// bystander), and the fake's slice mutation races under -race. With the guard
+// each op sees the settled artifact, so exactly one delete lands.
+func TestDeletePollutedBackdropOnPlatforms_ConcurrentSameTargetDeletesOnce(t *testing.T) {
+	polluted := bandJPEG(t, 32)
+	b0 := bandJPEG(t, 8)
+	assertDistinct(t, polluted, b0)
+
+	f := &fakePhashClient{backdrops: [][]byte{b0, polluted}}
+	withFakePhashClient(t, f)
+	p := oneEmbyPublisher()
+	want := image.HashHex(phashOf(t, polluted))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = p.DeletePollutedBackdropOnPlatforms(context.Background(), "a1", want, testTolerance)
+		}()
+	}
+	wg.Wait()
+
+	if len(f.deletes) != 1 {
+		t.Errorf("concurrent deletes of the same target must delete exactly once, got %v", f.deletes)
+	}
+	if f.hasMatch(t, phashOf(t, polluted)) {
+		t.Error("polluted backdrop still present after concurrent delete")
+	}
+	if len(f.backdrops) != 1 || !bytes.Equal(f.backdrops[0], b0) {
+		t.Errorf("bystander not intact after concurrent delete: got %d backdrops", len(f.backdrops))
+	}
+}
+
 // --- RestoreBackdropToPlatforms error branches -------------------------------
 
 // TestRestoreBackdropToPlatforms_NilWiring mirrors the delete-side nil-wiring
@@ -682,6 +804,49 @@ func TestRestoreBackdropToPlatforms_AlreadyPresentAcrossMultipleTargets(t *testi
 	}
 	if !needsIt.hasMatch(t, phashOf(t, polluted)) {
 		t.Error("the target that needed the restore must have received it")
+	}
+}
+
+// TestRestoreBackdropToPlatforms_ConcurrentSameTargetUploadsOnce drives many
+// concurrent restores of the SAME target and asserts on the ARTIFACT: exactly
+// one copy is uploaded and present. Without the per-target guard the racing
+// goroutines each run the presence-check while the item is still empty, all see
+// absent, and all upload -- a pile of duplicates (and a data race on the fake's
+// slice/counter under -race). With the guard the first restore's upload settles
+// before the next runs its presence-check, so the rest are idempotent no-ops.
+func TestRestoreBackdropToPlatforms_ConcurrentSameTargetUploadsOnce(t *testing.T) {
+	polluted := bandJPEG(t, 32)
+	b0 := bandJPEG(t, 8)
+	assertDistinct(t, polluted, b0)
+
+	f := &fakePhashClient{backdrops: [][]byte{b0}}
+	withFakePhashClient(t, f)
+	p := oneEmbyPublisher()
+	targets := []image.RepairPlatformTarget{{ConnectionID: "c-emby", PlatformArtistID: "p1"}}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = p.RestoreBackdropToPlatforms(context.Background(), targets, polluted, testTolerance)
+		}()
+	}
+	wg.Wait()
+
+	if f.uploads != 1 {
+		t.Errorf("concurrent restores of the same target must upload exactly once, got %d", f.uploads)
+	}
+	// ARTIFACT: exactly one restored copy is present (plus the untouched
+	// bystander) -- no duplicate stack.
+	matches := 0
+	for _, b := range f.backdrops {
+		if image.Similarity(phashOf(t, polluted), phashOf(t, b)) >= testTolerance {
+			matches++
+		}
+	}
+	if matches != 1 {
+		t.Errorf("want exactly one restored copy present, got %d", matches)
 	}
 }
 
