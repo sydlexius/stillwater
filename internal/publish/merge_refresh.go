@@ -2,6 +2,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -22,28 +23,67 @@ var mergeRefreshTimeout = 30 * time.Second
 // mergeRefresher is the per-connection capability SyncMergeRefresh needs.
 // survivorPlatformID is the survivor's platform artist ID on THIS connection,
 // or "" when the survivor is not mapped here (e.g. a connection that only
-// mapped a loser). Implementations that need the ID (Lidarr) no-op on "".
+// mapped a loser). loserPlatformIDs are the platform IDs the LOSERS held on
+// this connection (captured before their DB rows -- and platform_ids -- were
+// deleted). Implementations that need the survivor ID (Lidarr) no-op on "".
 type mergeRefresher interface {
-	RefreshAfterMerge(ctx context.Context, survivorPlatformID string) error
+	RefreshAfterMerge(ctx context.Context, survivorPlatformID string, loserPlatformIDs []string) error
+}
+
+// itemRescanner is the scoped-refresh primitive Emby and Jellyfin share:
+// re-validate a single item (and its children, if a folder) without forcing
+// a metadata/image replace. embyRefresher and jellyfinRefresher both use it
+// to scope post-merge reconciliation instead of a full library scan.
+type itemRescanner interface {
+	TriggerItemRescan(ctx context.Context, itemID string) error
+	TriggerLibraryScan(ctx context.Context) error
+}
+
+// scopedMergeRefresh implements the Emby/Jellyfin RefreshAfterMerge contract
+// against any itemRescanner: rescan the survivor's item (recursive, so newly
+// absorbed album subfolders are picked up) and each known loser item (so the
+// peer notices the now-missing directory and evicts it). Falls back to a full
+// library scan when the survivor is unmapped on this connection (nothing to
+// scope the index-side refresh to) or when the survivor rescan itself fails
+// (the peer or network is unhealthy enough that scoping is not trustworthy).
+// A loser rescan failure is logged by the caller via the returned error only
+// when it is the sole failure; today it is folded into the overall error so
+// a partial eviction still surfaces as a per-connection failure rather than a
+// silent miss.
+func scopedMergeRefresh(ctx context.Context, c itemRescanner, survivorPlatformID string, loserPlatformIDs []string) error {
+	if survivorPlatformID == "" {
+		return c.TriggerLibraryScan(ctx)
+	}
+	if err := c.TriggerItemRescan(ctx, survivorPlatformID); err != nil {
+		return c.TriggerLibraryScan(ctx)
+	}
+	var loserErrs []error
+	for _, id := range loserPlatformIDs {
+		if err := c.TriggerItemRescan(ctx, id); err != nil {
+			loserErrs = append(loserErrs, fmt.Errorf("loser item %s: %w", id, err))
+		}
+	}
+	if len(loserErrs) > 0 {
+		return fmt.Errorf("scoped rescan of %d loser item(s) failed: %w", len(loserErrs), errors.Join(loserErrs...))
+	}
+	return nil
 }
 
 type embyRefresher struct{ c *emby.Client }
 
-func (r embyRefresher) RefreshAfterMerge(ctx context.Context, _ string) error {
-	// A server library scan both indexes the survivor's absorbed albums and
-	// drops the stale loser item whose directory no longer exists on disk.
-	return r.c.TriggerLibraryScan(ctx)
+func (r embyRefresher) RefreshAfterMerge(ctx context.Context, survivorPlatformID string, loserPlatformIDs []string) error {
+	return scopedMergeRefresh(ctx, r.c, survivorPlatformID, loserPlatformIDs)
 }
 
 type jellyfinRefresher struct{ c *jellyfin.Client }
 
-func (r jellyfinRefresher) RefreshAfterMerge(ctx context.Context, _ string) error {
-	return r.c.TriggerLibraryScan(ctx)
+func (r jellyfinRefresher) RefreshAfterMerge(ctx context.Context, survivorPlatformID string, loserPlatformIDs []string) error {
+	return scopedMergeRefresh(ctx, r.c, survivorPlatformID, loserPlatformIDs)
 }
 
 type lidarrRefresher struct{ c *lidarr.Client }
 
-func (r lidarrRefresher) RefreshAfterMerge(ctx context.Context, survivorPlatformID string) error {
+func (r lidarrRefresher) RefreshAfterMerge(ctx context.Context, survivorPlatformID string, _ []string) error {
 	// Lidarr has no server-wide library-scan primitive; refresh the survivor
 	// so it re-reads its (now larger) folder. If the survivor is not mapped on
 	// this Lidarr connection there is nothing to refresh -> no-op OK.
@@ -78,13 +118,15 @@ var mergeRefresherFactory = func(conn *connection.Connection, logger *slog.Logge
 // failures land in the returned slice with Result == PlatformRemapFailed; the
 // outer error is always nil today.
 //
-// The refresh is not symmetric across platforms: Emby/Jellyfin run a full
-// library scan that both re-indexes the survivor and evicts the stale loser
-// item whose directory was removed, while Lidarr only re-reads the survivor via
-// TriggerArtistRefresh -- it has no server-wide scan primitive, so the loser's
-// Lidarr artist lingers pointing at the deleted folder and must be cleaned up on
-// the Lidarr side manually (broader eviction deferred to #2318).
-func (p *Publisher) SyncMergeRefresh(ctx context.Context, survivorID string, connectionIDs []string) ([]artist.PlatformRefreshResult, error) {
+// The refresh is not symmetric across platforms: Emby/Jellyfin scope a
+// rescan to the survivor item (re-indexing absorbed albums) and each known
+// loser item on that connection (evicting the stale item whose directory was
+// removed), falling back to a full library scan only when the survivor is
+// unmapped there or the scoped call fails; Lidarr only re-reads the survivor
+// via TriggerArtistRefresh -- it has no server-wide scan primitive, so the
+// loser's Lidarr artist lingers pointing at the deleted folder and must be
+// cleaned up on the Lidarr side manually (broader eviction deferred to #2318).
+func (p *Publisher) SyncMergeRefresh(ctx context.Context, survivorID string, connectionIDs []string, loserPlatformIDs map[string][]string) ([]artist.PlatformRefreshResult, error) {
 	// Only the nil-publisher guard remains: a fully-unlinked merge (empty
 	// connectionIDs) must still reach self-heal, since the whole point is to
 	// discover a Lidarr link that no pre-delete AffectedConnectionIDs entry
@@ -143,12 +185,12 @@ func (p *Publisher) SyncMergeRefresh(ctx context.Context, survivorID string, con
 	}
 	results := make([]artist.PlatformRefreshResult, 0, len(connectionIDs))
 	for _, cid := range connectionIDs {
-		results = append(results, p.refreshOne(ctx, survivorID, cid, survivorByConn[cid]))
+		results = append(results, p.refreshOne(ctx, survivorID, cid, survivorByConn[cid], loserPlatformIDs[cid]))
 	}
 	return results, nil
 }
 
-func (p *Publisher) refreshOne(ctx context.Context, survivorID, connID, survivorPlatformID string) artist.PlatformRefreshResult {
+func (p *Publisher) refreshOne(ctx context.Context, survivorID, connID, survivorPlatformID string, loserPlatformIDs []string) artist.PlatformRefreshResult {
 	res := artist.PlatformRefreshResult{ConnectionID: connID, Result: artist.PlatformRemapFailed}
 	// Per-connection deadline on a context detached from the originating HTTP
 	// request (WithoutCancel): the merge has already committed on disk, so
@@ -178,7 +220,7 @@ func (p *Publisher) refreshOne(ctx context.Context, survivorID, connID, survivor
 			slog.String("connection", conn.Name), slog.String("type", conn.Type))
 		return res
 	}
-	if err := refresher.RefreshAfterMerge(callCtx, survivorPlatformID); err != nil {
+	if err := refresher.RefreshAfterMerge(callCtx, survivorPlatformID, loserPlatformIDs); err != nil {
 		res.Error = truncErr(err)
 		p.logger.Error("merge-refresh: refresh failed",
 			slog.String("connection", conn.Name), slog.String("type", conn.Type),

@@ -54,18 +54,20 @@ func (r *recordingSyncer) SyncRename(_ context.Context, artistID, oldPath, newPa
 // ID and connection set MergeAndReconcile passes to the fan-out. failConns
 // marks specific connections as failed; err makes the whole call fail.
 type recordingRefresher struct {
-	survivorID string
-	conns      []string
-	calls      int
-	err        error
-	failConns  map[string]string // connID -> error string -> PlatformRemapFailed
-	events     *[]string         // shared with recordingSyncer; see its doc comment
+	survivorID       string
+	conns            []string
+	loserPlatformIDs map[string][]string // last loserPlatformIDs SyncMergeRefresh was called with
+	calls            int
+	err              error
+	failConns        map[string]string // connID -> error string -> PlatformRemapFailed
+	events           *[]string         // shared with recordingSyncer; see its doc comment
 }
 
-func (r *recordingRefresher) SyncMergeRefresh(_ context.Context, survivorID string, connectionIDs []string) ([]PlatformRefreshResult, error) {
+func (r *recordingRefresher) SyncMergeRefresh(_ context.Context, survivorID string, connectionIDs []string, loserPlatformIDs map[string][]string) ([]PlatformRefreshResult, error) {
 	r.calls++
 	r.survivorID = survivorID
 	r.conns = append(r.conns, connectionIDs...)
+	r.loserPlatformIDs = loserPlatformIDs
 	if r.events != nil {
 		*r.events = append(*r.events, "refresh")
 	}
@@ -627,6 +629,41 @@ func TestMergeAndReconcile_RenamesNonCanonicalSurvivorAndRefreshes(t *testing.T)
 	}
 	if _, statErr := os.Stat(res.CanonicalRename.OldPath); !os.IsNotExist(statErr) {
 		t.Errorf("expected old dir removed, stat err = %v", statErr)
+	}
+}
+
+// TestMergeAndReconcile_LoserPlatformIDsCapturedBeforeDelete is the #2431
+// capture guard: the loser's platform ID on a connection must be captured
+// into MergeResult.LoserPlatformIDs (and passed to SyncMergeRefresh) BEFORE
+// commitMergeDB deletes the loser row and cascades away its platform_ids --
+// otherwise the post-merge refresh would have nothing to scope the stale-item
+// eviction to and would have to fall back to a full library scan every time.
+func TestMergeAndReconcile_LoserPlatformIDsCapturedBeforeDelete(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+	ref := &recordingRefresher{}
+	svc.SetPlatformMergeRefresher(ref)
+
+	seedEmbyConn(t, db)
+	if err := svc.SetPlatformID(ctx, survivorID, "conn-emby", "emby-survivor"); err != nil {
+		t.Fatalf("SetPlatformID survivor: %v", err)
+	}
+	if err := svc.SetPlatformID(ctx, loserID, "conn-emby", "emby-loser"); err != nil {
+		t.Fatalf("SetPlatformID loser: %v", err)
+	}
+
+	res, err := svc.MergeAndReconcile(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeAndReconcile: %v", err)
+	}
+	if !equalStringSets(res.LoserPlatformIDs["conn-emby"], []string{"emby-loser"}) {
+		t.Errorf("LoserPlatformIDs[conn-emby] = %v, want [emby-loser]", res.LoserPlatformIDs["conn-emby"])
+	}
+	if !equalStringSets(ref.loserPlatformIDs["conn-emby"], []string{"emby-loser"}) {
+		t.Errorf("SyncMergeRefresh received loserPlatformIDs[conn-emby] = %v, want [emby-loser]", ref.loserPlatformIDs["conn-emby"])
 	}
 }
 

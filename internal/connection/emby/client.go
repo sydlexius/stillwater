@@ -199,6 +199,36 @@ func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 	return nil
 }
 
+// rescanQuery drives a non-destructive item refresh: Recursive=true so a
+// folder item (an artist) picks up newly-appeared child folders (albums
+// absorbed by a merge), while MetadataRefreshMode=Default and
+// ReplaceAllMetadata=false mean Emby only fills in missing data rather than
+// forcing a re-import -- unlike reimportRefreshQuery below, this never
+// overwrites existing metadata. This is also how Emby is asked to notice a
+// child item whose on-disk path has vanished (the merge's deleted loser
+// directory) and evict it from the library.
+const rescanQuery = "Recursive=true&MetadataRefreshMode=Default&ImageRefreshMode=Default&ReplaceAllMetadata=false&ReplaceAllImages=false"
+
+// TriggerItemRescan asks Emby to re-validate a single item (and, if it is a
+// folder, its children) without forcing a metadata or image replace: both
+// MetadataRefreshMode and ImageRefreshMode stay at Default and
+// ReplaceAllMetadata/ReplaceAllImages stay false, so this only fills in
+// missing data rather than overwriting what Emby already has. Used by the
+// post-merge refresh to scope reconciliation to the survivor and loser items
+// instead of a full library scan (#2431); the caller falls back to
+// TriggerLibraryScan when the survivor has no mapped item on this connection
+// or this scoped call errors.
+func (c *Client) TriggerItemRescan(ctx context.Context, itemID string) error {
+	if strings.TrimSpace(itemID) == "" {
+		return fmt.Errorf("itemID is required")
+	}
+	path := fmt.Sprintf("/Items/%s/Refresh?%s", url.PathEscape(itemID), rescanQuery)
+	if err := c.Post(ctx, path, nil); err != nil {
+		return fmt.Errorf("triggering item rescan: %w", wrapAuthIfStatusAuth(err))
+	}
+	return nil
+}
+
 // reimportRefreshQuery forces Emby to re-read an item's on-disk NFO. Emby only
 // re-imports local metadata under MetadataRefreshMode=FullRefresh, and only then
 // does ReplaceAllMetadata=true take effect (a destructive replace of the item's
