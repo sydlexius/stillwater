@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	stdimage "image"
 	"image/color"
 	"image/jpeg"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -399,6 +401,177 @@ func TestScanPHashMismatches_RegistryCoverageIsReported(t *testing.T) {
 	if report.FanartRegistry.SlotsIndexed != 2 || report.FanartRegistry.SlotsSkipped != 2 {
 		t.Fatalf("registry slots indexed/skipped = %d/%d, want 2/2",
 			report.FanartRegistry.SlotsIndexed, report.FanartRegistry.SlotsSkipped)
+	}
+}
+
+// TestScanPHashMismatches_ArtistWithNoFanartRowsIsSkippedNotInvisible covers the
+// third false-green route, and the nastiest, because it makes the report LIE
+// about its own coverage rather than about the library.
+//
+// An artist with no artist_images row at all contributes nothing to the
+// registry -- exactly as invisible to every other artist's scan as an artist
+// whose rows carry no usable hash. But a registry seeded from the ROWS never
+// learns such an artist exists, so it landed in neither ArtistsIndexed nor
+// ArtistsSkipped and simply vanished. On a real library where most artists have
+// no fanart, coverage then reads "indexed: 2, skipped: 0" -- which an operator
+// reads as "the registry covers everything", the precise claim the coverage
+// figures exist to refute.
+//
+// The artist here is seeded with NO images of any kind, which is the whole
+// point: the assertion is about an artist the rows cannot mention.
+func TestScanPHashMismatches_ArtistWithNoFanartRowsIsSkippedNotInvisible(t *testing.T) {
+	p, db := newPHashScanPipeline(t)
+	seedScanArtist(t, db, "art-a", "Artist A")
+	seedScanArtist(t, db, "art-b", "Artist B")
+	// Artist C exists in the library and has no artist_images row at all.
+	seedScanArtist(t, db, "art-c", "Artist C")
+	seedHashedImage(t, db, "art-a", "fanart", 0, image.HashHex(pollutionHash(t, 0)))
+	seedHashedImage(t, db, "art-b", "fanart", 0, image.HashHex(pollutionHash(t, 1)))
+
+	report := scan(t, p, PHashMismatchScope{})
+
+	if report.FanartRegistry.ArtistsIndexed != 2 {
+		t.Fatalf("registry artists indexed = %d, want 2 (A and B contributed a usable hash)",
+			report.FanartRegistry.ArtistsIndexed)
+	}
+	if report.FanartRegistry.ArtistsSkipped != 1 {
+		t.Fatalf("registry artists skipped = %d, want 1 (artist C has no fanart row, so C's "+
+			"pictures cannot be recognized as pollution anywhere -- that gap must be reported, "+
+			"not silently dropped from the coverage figures)", report.FanartRegistry.ArtistsSkipped)
+	}
+	// The coverage figures must account for the WHOLE library, which is the
+	// property that makes them readable as coverage at all.
+	if got := report.FanartRegistry.ArtistsIndexed + report.FanartRegistry.ArtistsSkipped; got != 3 {
+		t.Fatalf("indexed+skipped = %d, want 3 (every known artist is in exactly one bucket)", got)
+	}
+	// Slot counters are per-row and must NOT be inflated by an artist that
+	// has no rows: C contributed no slot, skipped or otherwise.
+	if report.FanartRegistry.SlotsIndexed != 2 || report.FanartRegistry.SlotsSkipped != 0 {
+		t.Fatalf("registry slots indexed/skipped = %d/%d, want 2/0 (an artist with no rows "+
+			"contributes no slots to either counter)",
+			report.FanartRegistry.SlotsIndexed, report.FanartRegistry.SlotsSkipped)
+	}
+	// ArtistsScanned is the iteration count over the artist list and stays
+	// independent of registry membership; pinned so the coverage fix cannot
+	// quietly redefine it.
+	if report.ArtistsScanned != 3 {
+		t.Fatalf("artists scanned = %d, want 3", report.ArtistsScanned)
+	}
+	// An artist with no rows is not "indeterminate" either: indeterminate is
+	// the per-SLOT could-not-evaluate bucket, and C has no slot to evaluate.
+	if report.IndeterminateSlots != 0 {
+		t.Fatalf("indeterminate slots = %d, want 0 (C has no slot to be indeterminate about)",
+			report.IndeterminateSlots)
+	}
+}
+
+// TestSuspectsForArtist_CanceledContextAbortsTheComparisonLoop is the test that
+// actually pins the cancellation fix, and it is deliberately white-box.
+//
+// The end-to-end test below CANNOT pin it: ScanPHashMismatches reads the artist
+// list and the image rows through ctx-aware DB calls first, so a ctx canceled
+// before the call is caught by QueryContext and the scan errors without the
+// comparison loop ever running. That test passes just as happily against a loop
+// with no ctx check in it at all (measured), so it proves the caller contract,
+// not the interruptibility of the loop.
+//
+// The comparison loop is the part with no I/O in it: all-pairs XOR+popcount over
+// an in-memory registry, nothing that notices a disconnected client on its own.
+// Calling it directly with a canceled ctx is the only way to assert it yields.
+func TestSuspectsForArtist_CanceledContextAbortsTheComparisonLoop(t *testing.T) {
+	p, db := newPHashScanPipeline(t)
+	seedScanArtist(t, db, "art-a", "Artist A")
+	seedScanArtist(t, db, "art-b", "Artist B")
+
+	// Build the registry directly, bypassing the DB reads, so ctx reaches the
+	// comparison loop as the only ctx-aware thing left in the call.
+	shared := image.HashHex(pollutionHash(t, 1))
+	names := map[string]string{"art-a": "Artist A", "art-b": "Artist B"}
+	idx := buildPHashIndex([]phashRow{
+		{artistID: "art-a", imageType: "fanart", slotIndex: 0, hashHex: shared},
+		{artistID: "art-b", imageType: "fanart", slotIndex: 0, hashHex: shared},
+	}, names)
+
+	// Precondition: with a live ctx this call FINDS the collision. Without
+	// this the canceled assertion below would pass against a loop that
+	// returns nothing for any reason at all.
+	var liveReport PHashMismatchReport
+	live, err := p.suspectsForArtist(context.Background(), idx, "art-a", names, defaultPHashMismatchTolerance, &liveReport)
+	if err != nil {
+		t.Fatalf("precondition: live scan errored: %v", err)
+	}
+	if len(live) != 1 {
+		t.Fatalf("precondition: live scan found %d suspects, want 1; the cancellation assertion "+
+			"is vacuous unless this loop has something to find", len(live))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var report PHashMismatchReport
+	suspects, err := p.suspectsForArtist(ctx, idx, "art-a", names, defaultPHashMismatchTolerance, &report)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled comparison loop error = %v, want context.Canceled; the loop is "+
+			"CPU-bound with no I/O, so an unchecked ctx means a disconnected client leaves it "+
+			"burning a core to completion", err)
+	}
+	if suspects != nil {
+		t.Fatalf("canceled comparison loop returned %+v, want no suspects: a partial suspect "+
+			"list from an abandoned scan feeds PR-3's deletion path", suspects)
+	}
+	if report.SlotsEvaluated != 0 {
+		t.Fatalf("canceled loop counted %d slots evaluated, want 0; a scan that did not run "+
+			"must not claim to have evaluated anything", report.SlotsEvaluated)
+	}
+}
+
+// TestScanPHashMismatches_CanceledContextAbortsAndDoesNotReportClean pins the
+// CALLER-facing half of the cancellation contract: a canceled scan surfaces an
+// error and NO report.
+//
+// Scope note, so this test is not mistaken for more than it is: a ctx canceled
+// before the call is caught by the ctx-aware DB reads, not by the comparison
+// loop, so this passes with or without the in-loop ctx check. The loop itself is
+// pinned by the white-box test above. What this one pins is that the abort path
+// discards the half-built report -- returning a partial suspect list, or a
+// partial "0 suspects", alongside an error would let an abandoned scan read as a
+// completed one, which is the false-green this detector exists to prevent.
+func TestScanPHashMismatches_CanceledContextAbortsAndDoesNotReportClean(t *testing.T) {
+	p, db := newPHashScanPipeline(t)
+	seedScanArtist(t, db, "art-a", "Artist A")
+	seedScanArtist(t, db, "art-b", "Artist B")
+	// A real cross-artist collision IS present, so a scan that ran to
+	// completion would report suspects. That is what makes the empty report
+	// below meaningful: it is empty because the scan aborted, not because
+	// there was nothing to find.
+	shared := image.HashHex(pollutionHash(t, 1))
+	seedHashedImage(t, db, "art-a", "fanart", 0, shared)
+	seedHashedImage(t, db, "art-b", "fanart", 0, shared)
+
+	// Precondition: uncanceled, this scan finds the collision. Without this
+	// the cancellation assertion could pass against a detector that finds
+	// nothing at all.
+	if base := scan(t, p, PHashMismatchScope{}); base.SuspectSlots != 2 {
+		t.Fatalf("precondition: uncanceled scan suspect slots = %d, want 2; the cancellation "+
+			"assertion is vacuous unless this scan has something to find", base.SuspectSlots)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	report, err := p.ScanPHashMismatches(ctx, PHashMismatchScope{})
+	if err == nil {
+		t.Fatalf("canceled scan returned nil error; a caller cannot distinguish an abandoned "+
+			"scan from a completed one. report: %+v", report)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled scan error = %v, want it to wrap context.Canceled", err)
+	}
+	// No partial result may escape: the zero report is the only honest answer
+	// for a scan that did not finish.
+	if !reflect.DeepEqual(report, PHashMismatchReport{}) {
+		t.Fatalf("canceled scan returned a non-zero report %+v; a partial report can be read "+
+			"as a complete one, which is the false-green this detector exists to prevent", report)
 	}
 }
 

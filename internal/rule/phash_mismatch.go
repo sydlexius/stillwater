@@ -166,10 +166,20 @@ type ArtistPHashMismatch struct {
 // silently under-built registry produces the same "0 suspects" as a clean
 // library.
 type PHashRegistryCoverage struct {
+	// ArtistsIndexed counts artists that contributed at least one usable
+	// hash. ArtistsSkipped counts KNOWN artists that contributed none --
+	// including artists with no artist_images row at all, which are just as
+	// invisible to every other artist's scan as an artist whose rows carry
+	// no usable hash. Together they cover the whole artist list, so
+	// indexed+skipped is the library size rather than only the subset that
+	// happened to have rows.
 	ArtistsIndexed int `json:"artists_indexed"`
 	ArtistsSkipped int `json:"artists_skipped"`
-	SlotsIndexed   int `json:"slots_indexed"`
-	SlotsSkipped   int `json:"slots_skipped"`
+
+	// SlotsIndexed/SlotsSkipped count individual artist_images rows, so an
+	// artist with no rows contributes to neither.
+	SlotsIndexed int `json:"slots_indexed"`
+	SlotsSkipped int `json:"slots_skipped"`
 }
 
 // PHashMismatchReport is the library-wide detection result.
@@ -318,13 +328,35 @@ func buildPHashIndex(rows []phashRow, names map[string]string) *phashIndex {
 	// Track per-artist whether the artist contributed anything usable, so
 	// "artists skipped" counts artists that dropped out of the registry
 	// entirely rather than individual slots.
-	fanartArtists := map[string]bool{}
-	thumbArtists := map[string]bool{}
+	//
+	// Seeded from the WHOLE artist list, not from the rows, and that is the
+	// load-bearing part. Seeding from rows only ever knows about artists that
+	// HAVE an artist_images row, so an artist with no fanart row at all landed
+	// in neither bucket and vanished from the coverage figures entirely: a
+	// 1000-artist library where 998 have no fanart reported
+	// "artists_indexed: 2, artists_skipped: 0", which reads as complete
+	// coverage of a two-artist library. That is the exact false-green this
+	// report exists to prevent -- an artist with no hash is invisible to every
+	// other artist's scan whether the hash is missing (row present, unusable)
+	// or the row is absent, so both must count as skipped. "Skipped" therefore
+	// means "known artist that contributed no usable hash", which is the
+	// honest reading. ArtistsIndexed is unchanged: it still counts only
+	// artists that contributed at least one usable hash.
+	fanartArtists := make(map[string]bool, len(names))
+	thumbArtists := make(map[string]bool, len(names))
+	for id := range names {
+		fanartArtists[id] = false
+		thumbArtists[id] = false
+	}
 
 	for _, r := range rows {
 		h, reason, ok := usablePHash(r.hashHex)
 		switch r.imageType {
 		case "fanart":
+			// An artist_images row whose artist is absent from names (a
+			// row orphaned by a deleted artist) is still counted: it is
+			// registry state either way, and dropping it here would
+			// re-introduce the undercount from the other direction.
 			if _, seen := fanartArtists[r.artistID]; !seen {
 				fanartArtists[r.artistID] = false
 			}
@@ -482,13 +514,30 @@ func (p *Pipeline) ScanPHashMismatches(ctx context.Context, scope PHashMismatchS
 	}
 
 	for _, artistID := range order {
+		// Also checked here, not only inside suspectsForArtist: an artist
+		// with no hashed fanart slots never enters the inner loop, so a
+		// library where most artists have no fanart would otherwise run to
+		// completion after cancellation without ever testing ctx.
+		if err := ctx.Err(); err != nil {
+			return PHashMismatchReport{}, fmt.Errorf("scan phash mismatches: %w", err)
+		}
 		if scope.ArtistID != "" && artistID != scope.ArtistID {
 			continue
 		}
 		report.ArtistsScanned++
 		report.Indeterminate = append(report.Indeterminate, idx.unusableFanart[artistID]...)
 
-		suspects := p.suspectsForArtist(idx, artistID, names, tolerance, &report)
+		suspects, err := p.suspectsForArtist(ctx, idx, artistID, names, tolerance, &report)
+		if err != nil {
+			// The half-built report is DISCARDED, not returned. An
+			// abandoned scan that surfaced its partial suspect list would
+			// be indistinguishable from a completed one that found less,
+			// and this detector feeds a deletion path: a short suspect
+			// list read as complete is a false-green, and a short
+			// "0 suspects" read as clean is the same bug wearing the
+			// other hat. Callers get an error and no report.
+			return PHashMismatchReport{}, fmt.Errorf("scan phash mismatches: %w", err)
+		}
 		if len(suspects) == 0 {
 			continue
 		}
@@ -514,9 +563,21 @@ func (p *Pipeline) ScanPHashMismatches(ctx context.Context, scope PHashMismatchS
 
 // suspectsForArtist compares one artist's hashed fanart slots against the
 // whole-library registry, tallying evaluated and suspect slots into report.
-func (p *Pipeline) suspectsForArtist(idx *phashIndex, artistID string, names map[string]string, tolerance float64, report *PHashMismatchReport) []PHashCollision {
+//
+// The comparison is all-pairs and CPU-bound with no I/O in it, so ctx is
+// checked here -- once per SLOT rather than once per comparison. The maintainer's
+// budget for this scan is ~1k hashes, i.e. ~500k iterations of a 64-bit XOR plus
+// popcount, and a ctx.Err() per iteration would cost more than the comparison it
+// guards. Per-slot keeps the check count at the slot count (~1k) while bounding
+// cancellation latency to one pass over the registry, which is the same ~1k
+// XOR+popcounts -- microseconds. Without this the CPU loop is uninterruptible and
+// a disconnected API client leaves the scan burning a core to completion.
+func (p *Pipeline) suspectsForArtist(ctx context.Context, idx *phashIndex, artistID string, names map[string]string, tolerance float64, report *PHashMismatchReport) ([]PHashCollision, error) {
 	var suspects []PHashCollision
 	for _, slot := range idx.fanartByArtist[artistID] {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		report.SlotsEvaluated++
 		match, sim, count := idx.bestCrossArtistMatch(artistID, slot.hash, tolerance)
 		if count == 0 {
@@ -546,5 +607,5 @@ func (p *Pipeline) suspectsForArtist(idx *phashIndex, artistID string, names map
 			slog.Float64("similarity", sim), slog.Int("match_count", count))
 		suspects = append(suspects, c)
 	}
-	return suspects
+	return suspects, nil
 }
