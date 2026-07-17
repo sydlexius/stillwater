@@ -192,6 +192,44 @@ func isPremiumKey(apiKey string) bool {
 	return apiKey != freeAPIKey
 }
 
+// redactAPIKeyFromURL returns reqURL with the API key masked, for safe logging.
+//
+// v1 (free-tier) requests embed the key as its own path segment (e.g.
+// ".../api/v1/json/<key>/search.php?..."); v2 (premium) requests send the key
+// in the X-API-KEY header, so it never appears in reqURL and this is a no-op.
+//
+// The key is matched as a whole path segment rather than via
+// strings.ReplaceAll/strings.Contains: AudioDB's free key is historically a
+// short numeric string (e.g. "123"), and a substring match against a short
+// key would corrupt unrelated parts of the URL (host, other numeric IDs,
+// query values). Matching a full path segment avoids that regardless of key
+// length.
+func redactAPIKeyFromURL(reqURL, apiKey string) string {
+	if apiKey == "" {
+		return reqURL
+	}
+	u, err := url.Parse(reqURL)
+	if err != nil {
+		// Unparsable means we can't safely confirm the key isn't embedded
+		// somewhere unexpected -- withhold the value entirely rather than log
+		// a raw string that might carry the key.
+		return "[unparsable URL redacted]"
+	}
+	segments := strings.Split(u.Path, "/")
+	redacted := false
+	for i, seg := range segments {
+		if seg == apiKey {
+			segments[i] = "REDACTED"
+			redacted = true
+		}
+	}
+	if redacted {
+		u.Path = strings.Join(segments, "/")
+		u.RawPath = ""
+	}
+	return u.String()
+}
+
 // buildSearchURL constructs the search endpoint URL for the appropriate API tier.
 func (a *Adapter) buildSearchURL(apiKey, name string) string {
 	if isPremiumKey(apiKey) {
@@ -236,7 +274,7 @@ func (a *Adapter) fetchArtists(ctx context.Context, reqURL string, apiKey string
 		if isPremiumKey(apiKey) {
 			req.Header.Set("X-API-KEY", apiKey)
 		}
-		a.logger.Debug("requesting", slog.String("url", reqURL))
+		a.logger.Debug("requesting", slog.String("url", redactAPIKeyFromURL(reqURL, apiKey)))
 		return a.client.Do(req)
 	}
 
