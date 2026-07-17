@@ -3109,9 +3109,12 @@ paths:
           schema:
             type: number
             format: double
-            minimum: 0
+            # OpenAPI 3.1 (this spec's dialect) types exclusiveMinimum as a
+            # NUMBER, not the 3.0 boolean-modifier-on-minimum. Writing
+            # `minimum: 0` + `exclusiveMinimum: true` is 3.0 syntax and is a
+            # hard struct-rule error under redocly.
+            exclusiveMinimum: 0
             maximum: 1
-            exclusiveMinimum: true
       responses:
         "200":
           description: Scan completed.
