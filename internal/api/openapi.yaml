@@ -30,6 +30,25 @@ components:
       description: "Deprecated: prefer bearerAuth (Authorization header). Query-string tokens risk leakage via logs and referrers."
       x-deprecated: true
   schemas:
+    PHashRegistryCoverage:
+      type: object
+      description: >-
+        How much of the library the cross-artist comparison registry actually
+        covers (#2564). An artist contributing no usable perceptual hash drops
+        out of the registry, which makes THEIR pictures unrecognizable as
+        pollution in every other artist's folder -- so an under-built registry
+        produces the same "0 suspects" as a clean library. These figures exist
+        so that gap is visible rather than silent.
+      properties:
+        artists_indexed:
+          type: integer
+        artists_skipped:
+          type: integer
+          description: Artists that contributed no usable hash and are invisible to every scan.
+        slots_indexed:
+          type: integer
+        slots_skipped:
+          type: integer
     DuplicateGroup:
       type: object
       description: >-
@@ -3038,6 +3057,198 @@ paths:
             The pipeline does not implement the remediation capability, or
             the remediation itself failed. The wrapped error is logged
             server-side; the response is plain text via http.Error.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /reports/phash-mismatch:
+    get:
+      tags: [Reports]
+      summary: Detect cross-artist backdrop pollution
+      description: >-
+        Reports fanart slots that hold the same picture as a DIFFERENT
+        artist's fanart slot (#2564): the signal for a backdrop written into
+        the wrong artist's folder. Detection compares stored perceptual
+        hashes; it is strictly read-only, touching neither the filesystem nor
+        any connected platform, and is safe to run against a live instance.
+
+
+        The collision is symmetric: a result says two artists share a picture,
+        NOT which artist owns it, so both sides are reported with their
+        similarity score for a human to judge. Two artists can also share a
+        promo image legitimately, which appears here as a true collision.
+
+
+        This report can never establish that a library is clean. Pollution
+        whose source artist is absent from the library collides with nothing
+        and is invisible to it, and slots with no stored hash could not be
+        evaluated at all -- those are counted in indeterminate_slots, held
+        apart from slots_evaluated, and the registry coverage figures report
+        how much of the library the comparison actually covered. Admin-only.
+      operationId: getPHashMismatchReport
+      parameters:
+        - name: artist_id
+          in: query
+          required: false
+          description: >-
+            Probe only this artist's fanart slots. The comparison registry
+            stays library-wide regardless, since a collision needs the other
+            side. An unknown id is an error, not an empty report.
+          schema:
+            type: string
+        - name: tolerance
+          in: query
+          required: false
+          description: >-
+            Minimum perceptual similarity in (0, 1] at which two slots are
+            reported as the same picture. Defaults to 0.90, which admits at
+            most 6 differing bits of a 64-bit hash (Similarity = 1 -
+            Hamming/64) -- the near-duplicate band. An out-of-range or
+            unparsable value is rejected rather than silently defaulted.
+          schema:
+            type: number
+            format: double
+            minimum: 0
+            maximum: 1
+            exclusiveMinimum: true
+      responses:
+        "200":
+          description: Scan completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tolerance:
+                    type: number
+                    format: double
+                    description: The similarity cutoff this scan actually used.
+                  scoped_artist_id:
+                    type: string
+                    description: The artist the probe was narrowed to, if any.
+                  artists_scanned:
+                    type: integer
+                  artists_affected:
+                    type: integer
+                  slots_evaluated:
+                    type: integer
+                    description: >-
+                      In-scope fanart slots that carried a usable hash and were
+                      actually compared. Deliberately not labeled "clean": see
+                      the endpoint description.
+                  suspect_slots:
+                    type: integer
+                  indeterminate_slots:
+                    type: integer
+                    description: >-
+                      In-scope fanart slots that exist on disk but carry no
+                      usable hash, so they could not be evaluated. Not clean;
+                      unknown.
+                  fanart_registry:
+                    $ref: "#/components/schemas/PHashRegistryCoverage"
+                  thumb_registry:
+                    $ref: "#/components/schemas/PHashRegistryCoverage"
+                  per_artist:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        artist_id:
+                          type: string
+                        name:
+                          type: string
+                        suspects:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              slot_index:
+                                type: integer
+                              phash:
+                                type: string
+                              matched_artist_id:
+                                type: string
+                                description: >-
+                                  The other side of the collision, NOT the
+                                  artist the picture belongs to.
+                              matched_artist_name:
+                                type: string
+                              matched_slot_index:
+                                type: integer
+                              similarity:
+                                type: number
+                                format: double
+                                description: >-
+                                  Score of the best match, reported so a human
+                                  can judge each suspect rather than trusting
+                                  the cutoff.
+                              match_count:
+                                type: integer
+                                description: >-
+                                  How many other-artist slots this slot collided
+                                  with. A high count suggests shared legitimate
+                                  promo art rather than a wrong-artist write.
+                              thumb_attribution_artist_id:
+                                type: string
+                                description: >-
+                                  Corroborating only: an artist whose thumb this
+                                  picture also resembles, naming the true subject
+                                  on the rare occasion it fires. Never raises a
+                                  suspect on its own.
+                              thumb_attribution_artist_name:
+                                type: string
+                  indeterminate:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        artist_id:
+                          type: string
+                        artist_name:
+                          type: string
+                        slot_index:
+                          type: integer
+                        reason:
+                          type: string
+                  scan_errors:
+                    type: integer
+                    description: >-
+                      Rows dropped by a read failure, surfaced so a partial scan
+                      is never mistaken for a complete one.
+        "400":
+          description: The tolerance parameter was unparsable or out of (0, 1].
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "401":
+          description: >-
+            Authentication required. The auth middleware rejects the request
+            before the handler runs, emitting the body via http.Error, so the
+            content type is text/plain rather than the JSON Error schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            (requireForeignAdmin) via http.Error, so the body is plain text
+            ("Forbidden: administrator role required"), not the JSON Error
+            schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          description: >-
+            The pipeline does not implement the detection capability, or the
+            scan itself failed. The wrapped error is logged server-side; the
+            response is plain text via http.Error.
           content:
             text/plain:
               schema:
