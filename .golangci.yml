@@ -147,6 +147,13 @@ linters:
       # vars) as "new" issues. Exclude by path so generated code is never linted
       # in any mode.
       - _templ\.go$
+      # node_modules is an npm dependency tree (gitignored, restored via
+      # `npm ci`), not our code. Some transitive packages (e.g. flatted)
+      # ship a Go implementation alongside their JS one for cross-language
+      # parity tests; golangci-lint's `./...` package resolution has no
+      # concept of node_modules and picks it up like any other Go package
+      # in the module tree, so it must be excluded explicitly. #2568
+      - (^|/)node_modules/
     rules:
       - path: _test\.go
         linters:
