@@ -796,11 +796,49 @@ func ruleToImageType(ruleID string) string {
 // recordSavedImageProvenance collects provenance data from a saved image file
 // and records it in the database. Errors are logged as warnings; provenance
 // recording is supplementary and must not fail the image save operation.
+//
+// It records against slot 0, and every caller of it writes the primary. That
+// invariant is asserted by recordSavedImageProvenanceSlot0 below rather than
+// assumed here; see its comment for why 0 is right and what would make it wrong.
 func recordSavedImageProvenance(ctx context.Context, pr provenanceRecorder, artistID, imageType, filePath string, logger *slog.Logger) {
+	recordSavedImageProvenanceSlot0(ctx, pr, artistID, imageType, filePath, logger)
+}
+
+// recordSavedImageProvenanceSlot0 records provenance for a file known to occupy
+// slot 0, mirroring Router.recordImageProvenanceSlot0 in internal/api.
+//
+// #2564's acceptance criteria name this package's call site alongside the API's,
+// because both passed a hard-coded 0. The API's was a genuine DEFECT: it had
+// acquired callers -- a fanart append, the per-slot Crop/Fetch edit (#2281) --
+// that write a NON-primary slot, so the literal aimed their UPDATE at another
+// slot's row. It now takes a slotIndex parameter (#2574).
+//
+// This package's 0 is CORRECT, and unlike the API's it is correct for a
+// structural reason rather than by luck. Both callers -- Pipeline.FixViolation
+// via FixResult.SavedPath, and BulkExecutor via saveBestImage -- reach the disk
+// through SaveImageFromData, which resolves filenames via existingImageFileNames.
+// That returns names from ImageNaming.NamesForType / img.FileNamesForType, which
+// are format ALIASES for the primary (fanart.jpg, backdrop.jpg) and never
+// numbered variants; when none exist it falls back to all[:1], "create only the
+// primary filename". So no path from this package can write fanart2.jpg or
+// above, and DiscoverFanart sorts the primary to ordinal 0 by exact-base match.
+// The written file is slot 0 in every reachable case.
+//
+// It is kept as a distinct named function rather than a bare literal because
+// that argument is load-bearing and lives two files away: the moment a caller in
+// this package learns to write a numbered slot -- a rule that appends a backdrop
+// rather than replacing the primary -- the literal silently becomes the API's
+// bug, stamping the appended file's phash onto slot 0's row and feeding a
+// per-slot phash reader a hash belonging to a different picture. The name is
+// where that tripwire lives. A caller that writes a non-primary slot must call a
+// slot-aware recorder, not this.
+func recordSavedImageProvenanceSlot0(ctx context.Context, pr provenanceRecorder, artistID, imageType, filePath string, logger *slog.Logger) {
+	const primarySlotIndex = 0
 	log := logger.With(
 		slog.String("artist_id", artistID),
 		slog.String("image_type", imageType),
 		slog.String("path", filePath),
+		slog.Int("slot_index", primarySlotIndex),
 	)
 
 	d := img.CollectProvenance(filePath, log)
@@ -808,7 +846,7 @@ func recordSavedImageProvenance(ctx context.Context, pr provenanceRecorder, arti
 		log.Warn("no provenance data collected from saved image, skipping update")
 		return
 	}
-	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
+	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, primarySlotIndex, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
 		log.Warn("recording image provenance after save",
 			slog.String("error", err.Error()))
 	}
