@@ -679,15 +679,20 @@ func TestRestorePHashQuarantine_RefusesToRestoreOntoAnOccupiedPath(t *testing.T)
 	}
 }
 
-// TestRestorePHashQuarantine_RecognizesAReEncodedCopyAsAlreadyPresent exercises
-// the PERCEPTUAL arm of the already-present check, which the byte-equal arm
-// otherwise shadows.
+// TestRestorePHashQuarantine_AReEncodedCopyIsRetainedForReviewNotConsumed
+// exercises the PERCEPTUAL arm, which the byte-equal arm otherwise shadows.
+//
+// It was called ...AsAlreadyPresent, which is now the name of a DIFFERENT and
+// incompatible outcome ("an identical copy is on disk, nothing is needed"). A
+// re-encode is not that: the quarantine still holds the only copy of the
+// original bytes and a human has to settle it. The old name asserted the
+// opposite of what this pins.
 //
 // It is the arm that matters in practice: a picture that came back through a
 // different path (a re-fetch, a platform round-trip, a format conversion) is the
 // same photograph but not the same bytes. Appending it again would hand the
 // operator a duplicate backdrop and re-arm the duplicate detector against them.
-func TestRestorePHashQuarantine_RecognizesAReEncodedCopyAsAlreadyPresent(t *testing.T) {
+func TestRestorePHashQuarantine_AReEncodedCopyIsRetainedForReviewNotConsumed(t *testing.T) {
 	p, db := newPHashRepairPipeline(t)
 	dirA := seedPollutedLibrary(t, db)
 
@@ -712,8 +717,12 @@ func TestRestorePHashQuarantine_RecognizesAReEncodedCopyAsAlreadyPresent(t *test
 	if err != nil {
 		t.Fatalf("RestorePHashQuarantine: %v", err)
 	}
-	if rres.AlreadyPresent != 1 || rres.Restored != 0 {
-		t.Errorf("a re-encoded copy must count as already present, got %+v", rres)
+	// A re-encode is a PERCEPTUAL match, so it is the RETAINED arm -- not
+	// AlreadyPresent, which means "an identical copy is on disk, nothing is
+	// needed". Asserting AlreadyPresent here used to pass only because the two
+	// facts shared one counter; now that they are distinct, so is this.
+	if rres.NeedsReview != 1 || rres.AlreadyPresent != 0 || rres.Restored != 0 {
+		t.Errorf("a re-encoded copy must be RETAINED for review, not reported as already present: %+v", rres)
 	}
 	if got := len(discoverForTest(t, dirA)); got != before {
 		t.Errorf("no duplicate may be appended: %d slots before, %d after", before, got)
@@ -1354,8 +1363,15 @@ func TestRestorePHashQuarantine_APerceptualNearMissMustNotDestroyTheQuarantinedB
 	if !bytes.Equal(data, removed) {
 		t.Error("the quarantined bytes must be exactly the removed picture")
 	}
-	if rres.Restored != 0 || rres.AlreadyPresent != 1 {
-		t.Errorf("a resemblance suppresses the append and reports already-present, got %+v", rres)
+	// The REPORTED fact must say a human is needed. The artwork is not on
+	// disk and the op will never empty on its own, so anything that reads as
+	// "nothing to do" -- which AlreadyPresent means -- is a lie of exactly the
+	// kind this repo keeps shipping: success reported, work not done.
+	if rres.NeedsReview != 1 {
+		t.Errorf("a resemblance must report NeedsReview so someone looks; got %+v", rres)
+	}
+	if rres.AlreadyPresent != 0 || rres.Restored != 0 || len(rres.Failures) != 0 {
+		t.Errorf("a resemblance is neither success nor failure, got %+v", rres)
 	}
 	// The bystander is untouched either way.
 	if onDisk, readErr := os.ReadFile(filepath.Join(dirA, "fanart3.jpg")); readErr != nil || !bytes.Equal(onDisk, bystander) {

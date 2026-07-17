@@ -47,13 +47,16 @@
 // gap survives for it to return to. Position is simply not recoverable
 // information, and any scheme that reconstructs one is inventing it.
 //
-// So restore is CONTENT-ADDRESSED and index-free:
+// So restore is CONTENT-ADDRESSED and index-free. It re-reads the artist's
+// fanart from disk, hashes it fresh, and lands in exactly one of three states:
 //
-//   - It re-reads the artist's fanart from disk and hashes it fresh.
-//   - If the quarantined picture is already present (perceptual match within
-//     tolerance), restoring is a NO-OP and the entry is consumed. This makes
-//     restore idempotent and safe to retry.
-//   - Otherwise it APPENDS the bytes at the next free ordinal. Appending can
+//   - A BYTE-IDENTICAL copy is on disk. Restoring is a no-op and the entry is
+//     consumed -- the bytes are provably recoverable from the artist directory,
+//     so dropping the quarantine copy destroys nothing. This makes restore
+//     idempotent and safe to retry.
+//   - A survivor merely RESEMBLES it. Restore is DECLINED and the entry is
+//     RETAINED for review; see restoreNeedsReview.
+//   - Otherwise the bytes are APPENDED at the next free ordinal. Appending can
 //     never overwrite a bystander, which is the property that matters; the
 //     artwork is what must come back, not the ordinal it used to sit on. An
 //     operator who cares about ordering can reorder afterwards.
@@ -61,6 +64,18 @@
 // The recorded index is never used to decide where the bytes go. That is what
 // makes this correct under index shift rather than merely correct when nothing
 // moved.
+//
+// # Why a resemblance is not a license to delete
+//
+// The middle state exists because conflating it with the first destroyed
+// artwork. A perceptual hash says two pictures LOOK alike at 64 bits of
+// resolution; it never says one IS the other. Treating a resemblance as
+// "already present" meant consuming the entry -- unlinking the quarantined
+// bytes -- while the original was ALREADY GONE, so the only surviving copy of a
+// picture this tool had deleted was destroyed by the path meant to recover it,
+// and the run reported success. Only byte equality proves the bytes are
+// somewhere else; only that may authorize the delete. A resemblance may
+// suppress an append, and nothing more.
 package rule
 
 import (
@@ -145,17 +160,70 @@ type PHashRemediateResult struct {
 	Outcomes []PHashSlotOutcome `json:"outcomes"`
 }
 
+// restoreOutcome is what happened to ONE quarantined entry.
+//
+// It is an enum rather than a bool BECAUSE a bool is what collapsed the
+// reporting once already: restoreOneQuarantined used to return
+// (restored bool, error), the caller dispatched `if restored {...} else {...}`,
+// and the third outcome -- "declined to act, a human must decide" -- had nowhere
+// to go but the bucket meaning "nothing to do". Three facts do not fit in two
+// values, and the type is where that gets enforced rather than remembered.
+type restoreOutcome int
+
+const (
+	// restoreOutcomeUnset is the ZERO VALUE and is deliberately not an
+	// outcome. It is what the error returns carry, so a caller that ever
+	// forgot to check err would count the entry as NOTHING rather than
+	// silently bank a failure as a success -- the switch has no case for it.
+	// Making the zero value inert is the same lesson as the enum itself: do
+	// not leave a type able to express a wrong answer.
+	restoreOutcomeUnset restoreOutcome = iota
+
+	// restoreWrote: the bytes were written back to disk.
+	restoreWrote
+
+	// restoreAlreadyPresent: a byte-identical copy was already on disk, so
+	// there was nothing to do and the quarantine entry was consumed. Benign
+	// and terminal -- no one needs to look.
+	restoreAlreadyPresent
+
+	// restoreNeedsReview: a surviving slot RESEMBLES the quarantined picture
+	// but is not it, so restoring was declined and the entry was RETAINED.
+	// The artwork is NOT on disk, the operation will never empty on its own,
+	// and only a human can settle it. Terminal for this run, unresolved for
+	// the operator.
+	restoreNeedsReview
+)
+
 // PHashRestoreResult summarizes a restore run.
 type PHashRestoreResult struct {
 	OpID string `json:"op_id"`
 
-	// Restored counts entries whose bytes were written back. AlreadyPresent
-	// counts entries whose picture was found still on disk, so restoring was
-	// a no-op -- reported separately because "nothing to do" and "put it
-	// back" are different facts and collapsing them would make a restore
-	// that silently did nothing indistinguishable from one that worked.
+	// The three outcomes are counted separately because they are three
+	// different facts and any two of them collapsed together produce a lie:
+	//
+	//   Restored       -- bytes written back. The artwork is on disk.
+	//   AlreadyPresent -- a byte-identical copy was already there, so nothing
+	//                     was needed and the entry was consumed. Benign.
+	//   NeedsReview    -- restoring was DECLINED because a survivor merely
+	//                     resembles the quarantined picture. The artwork is
+	//                     NOT on disk, the entry is still quarantined, and a
+	//                     human must decide. THIS IS NOT SUCCESS.
+	//
+	// NeedsReview exists because collapsing it into AlreadyPresent reported
+	// "we deliberately did nothing and you must intervene" as "nothing to do"
+	// -- an operator reading Restored=0 AlreadyPresent=1 Failures=[] would see
+	// unambiguous success while their artwork sat undelivered in quarantine.
+	// That is this repo's dominant bug class (reports success while doing
+	// nothing) on the recovery path, and a slog.Warn is not a substitute: the
+	// returned result is what the API surfaces and what a caller branches on.
+	//
+	// It is deliberately NOT a Failure either. Nothing broke, nothing was lost,
+	// and the run should not read as errored; the entry is intact and waiting.
+	// "Needs a decision" is its own state.
 	Restored       int `json:"restored"`
 	AlreadyPresent int `json:"already_present"`
+	NeedsReview    int `json:"needs_review"`
 
 	Failures []string `json:"failures,omitempty"`
 }
@@ -528,7 +596,7 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 
 	for i := range entries {
 		entry := &entries[i]
-		restored, err := p.restoreOneQuarantined(ctx, a, entry, opID, primaryName, kodiNumbering)
+		outcome, err := p.restoreOneQuarantined(ctx, a, entry, opID, primaryName, kodiNumbering)
 		if err != nil {
 			p.logger.Error("restoring quarantined backdrop",
 				slog.String("op_id", opID), slog.String("artist_id", a.ID),
@@ -537,10 +605,20 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 			result.Failures = append(result.Failures, fmt.Sprintf("%s: %v", entry.FileName, err))
 			continue
 		}
-		if restored {
+		switch outcome {
+		case restoreWrote:
 			result.Restored++
-		} else {
+		case restoreAlreadyPresent:
 			result.AlreadyPresent++
+		case restoreNeedsReview:
+			result.NeedsReview++
+		case restoreOutcomeUnset:
+			// Unreachable today: every path returning it also returns a
+			// non-nil err, which the check above already handled. Named
+			// explicitly anyway so this switch stays exhaustive and the
+			// zero value keeps counting as NOTHING -- if a future edit
+			// ever lets it through, the entry goes uncounted rather than
+			// silently banked as a success.
 		}
 	}
 
@@ -564,15 +642,15 @@ func (p *Pipeline) restoreOneQuarantined(
 	entry *img.RepairEntry,
 	opID, primaryName string,
 	kodiNumbering bool,
-) (bool, error) {
+) (restoreOutcome, error) {
 	data, err := img.RepairEntryBytes(a.Path, opID, *entry)
 	if err != nil {
-		return false, err
+		return restoreOutcomeUnset, err
 	}
 
 	exact, similar, err := p.quarantinedImagePresence(a.Path, primaryName, data)
 	if err != nil {
-		return false, err
+		return restoreOutcomeUnset, err
 	}
 	switch {
 	case exact:
@@ -583,7 +661,7 @@ func (p *Pipeline) restoreOneQuarantined(
 		p.logger.Info("quarantined backdrop already present byte-for-byte; consuming the entry",
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("artist", a.Name), slog.String("file", entry.FileName))
-		return false, img.ConsumeRepairEntry(a.Path, opID, *entry)
+		return restoreAlreadyPresent, img.ConsumeRepairEntry(a.Path, opID, *entry)
 
 	case similar:
 		// A surviving slot RESEMBLES this picture but is not it. Do
@@ -602,7 +680,7 @@ func (p *Pipeline) restoreOneQuarantined(
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("artist", a.Name), slog.String("file", entry.FileName),
 			slog.String("action", "entry retained for manual review"))
-		return false, nil
+		return restoreNeedsReview, nil
 	}
 
 	// Append at the next free ordinal. Re-discovered per entry rather than
@@ -611,7 +689,7 @@ func (p *Pipeline) restoreOneQuarantined(
 	// and clobber it.
 	paths, err := img.DiscoverFanart(a.Path, primaryName)
 	if err != nil {
-		return false, fmt.Errorf("discovering fanart: %w", err)
+		return restoreOutcomeUnset, fmt.Errorf("discovering fanart: %w", err)
 	}
 	target := filepath.Join(a.Path, img.FanartFilename(primaryName, len(paths), kodiNumbering))
 	if _, statErr := os.Lstat(target); statErr == nil {
@@ -619,13 +697,13 @@ func (p *Pipeline) restoreOneQuarantined(
 		// artwork names, so a stray file can occupy the computed target
 		// without being a slot; overwriting it here would destroy a file
 		// this feature never took.
-		return false, fmt.Errorf("refusing to restore onto occupied path %s", filepath.Base(target))
+		return restoreOutcomeUnset, fmt.Errorf("refusing to restore onto occupied path %s", filepath.Base(target))
 	} else if !os.IsNotExist(statErr) {
-		return false, fmt.Errorf("checking restore target %s: %w", filepath.Base(target), statErr)
+		return restoreOutcomeUnset, fmt.Errorf("checking restore target %s: %w", filepath.Base(target), statErr)
 	}
 
 	if err := img.WriteFanartBytes(target, data); err != nil {
-		return false, err
+		return restoreOutcomeUnset, err
 	}
 	// Invalidate the artist's stored fanart hashes: a new slot exists and
 	// the cached rows no longer describe the directory. Same reasoning as
@@ -646,7 +724,7 @@ func (p *Pipeline) restoreOneQuarantined(
 		slog.String("restored_as", filepath.Base(target)),
 		slog.Int("original_slot_index", entry.SlotIndex),
 		slog.Int("restored_slot_index", len(paths)))
-	return true, img.ConsumeRepairEntry(a.Path, opID, *entry)
+	return restoreWrote, img.ConsumeRepairEntry(a.Path, opID, *entry)
 }
 
 // quarantinedImagePresence reports whether the artist already holds the
