@@ -174,8 +174,60 @@ func repairOpDir(dir, opID string) (string, error) {
 // share an original basename cannot overwrite one another inside the op dir.
 // The basename is reduced to its own base to strip any directory component a
 // caller may have passed.
+//
+// That filepath.Base is what makes the stored name unable to traverse: a
+// FileName of "../../evil.jpg" reduces to "evil.jpg" and the write lands at
+// "<opDir>/000-evil.jpg", inside the op dir. It is NOT the reason
+// validateRepairEntry rejects such a name -- see that function for what is
+// actually at stake, which is the manifest's FileName field, not this path.
 func repairStoredName(slotIndex int, fileName string) string {
 	return fmt.Sprintf("%03d-%s", slotIndex, filepath.Base(fileName))
+}
+
+// validateRepairEntry rejects an entry that cannot describe a recoverable image,
+// and normalizes FileName to a bare basename.
+//
+// WHAT THIS IS NOT: it is not a traversal guard on the quarantine write.
+// repairStoredName already reduces FileName to its base, so a FileName carrying
+// "../.." cannot steer that write out of the op dir -- measured, not assumed.
+//
+// WHAT IT IS: the manifest is a DURABLE record that outlives this process and is
+// read back by a restore path to decide what to write and where. Two of its
+// fields are load-bearing and neither is checked anywhere else:
+//
+//   - FileName is documented as the original basename "and thus the original
+//     format". Persisting it raw keeps whatever directory components a caller
+//     passed, so the record disagrees with the StoredName derived from it, and a
+//     restore that joins FileName onto a directory -- the obvious reading of a
+//     field named for a file -- resolves outside the artist dir. Normalizing here
+//     means the only FileName that can ever reach the manifest is one that cannot
+//     do that, rather than a hazard every future consumer has to remember to
+//     defuse. An empty FileName is worse than useless: it yields a StoredName of
+//     "000-." and a record that names no format, so a restore cannot know what it
+//     is holding.
+//   - SlotIndex is a DiscoverFanart ordinal. A negative one denotes no slot that
+//     can exist, so it is a caller bug; caught here it is an error, and persisted
+//     it is provenance that lies.
+//
+// It runs BEFORE the lock, the mkdir, and every write, so a rejected entry
+// quarantines nothing, creates nothing, and -- because it returns an error -- can
+// never be the nil return that tells a caller its original is safe to delete.
+func validateRepairEntry(entry *RepairEntry) error {
+	if entry.SlotIndex < 0 {
+		return fmt.Errorf("invalid repair entry: negative slot index %d", entry.SlotIndex)
+	}
+	// Distinguished from the base checks below: an absent FileName is a caller
+	// that never set the field, while a "." or ".." base is one that set it to
+	// something that cannot name a file. Different bugs, different messages.
+	if entry.FileName == "" {
+		return fmt.Errorf("invalid repair entry: empty file name")
+	}
+	base := filepath.Base(entry.FileName)
+	if base == "." || base == ".." || base == string(filepath.Separator) {
+		return fmt.Errorf("invalid repair entry: file name %q has no usable basename", entry.FileName)
+	}
+	entry.FileName = base
+	return nil
 }
 
 // QuarantineImage copies srcPath's bytes into the operation's quarantine and
@@ -208,6 +260,12 @@ func repairStoredName(slotIndex int, fileName string) string {
 func QuarantineImage(dir, opID, srcPath string, entry RepairEntry) error {
 	opDir, err := repairOpDir(dir, opID)
 	if err != nil {
+		return err
+	}
+	// Before the lock, the mkdir, and every write: a rejected entry must leave
+	// no trace and, above all, must not return the nil that licenses the caller
+	// to delete the original. See validateRepairEntry.
+	if err := validateRepairEntry(&entry); err != nil {
 		return err
 	}
 
@@ -419,7 +477,27 @@ func ConsumeRepairEntry(dir, opID string, entry RepairEntry) error {
 // now, from nowhere" over the original provenance would erase the very history a
 // recovery is meant to reinstate. A restore returns bytes; it does not acquire
 // an image.
+//
+// EMPTY DATA IS REJECTED, and this is the point of the guard rather than a
+// formality. WriteFileAtomic has no opinion about length: handed no bytes it
+// atomically installs a zero-byte file over the target and returns nil, so a
+// restore would report success having replaced a live artwork with nothing --
+// destroying the picture it was invoked to reinstate, on the one path that
+// exists to undo a destructive change. The reachable chain is short:
+// RepairEntryBytes returns (empty, nil) for a zero-byte quarantined file, and a
+// restore hands that straight here. Refusing to write is the only outcome that
+// leaves the target as it was.
 func WriteFanartBytes(target string, data []byte) error {
+	// Split so the error names the upstream bug rather than just the symptom.
+	// Nil means a caller that never obtained bytes; empty means a read that
+	// succeeded against a zero-byte file. Same refusal, different root cause,
+	// and the message is the only clue a log carries.
+	if data == nil {
+		return fmt.Errorf("restoring %s: refusing to write nil image data", filepath.Base(target))
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("restoring %s: refusing to write empty image data", filepath.Base(target))
+	}
 	if err := filesystem.WriteFileAtomic(target, data, 0o644); err != nil {
 		return fmt.Errorf("restoring %s: %w", filepath.Base(target), err)
 	}

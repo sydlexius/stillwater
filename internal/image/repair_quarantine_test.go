@@ -3,6 +3,8 @@ package image
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -97,6 +99,154 @@ func TestQuarantineImage_RejectsTraversingOpID(t *testing.T) {
 	// Nothing may have been created outside the temp dir's repair root.
 	if _, err := os.Stat(filepath.Join(dir, RepairDirName)); !os.IsNotExist(err) {
 		t.Errorf("a rejected op id must not create a repair dir; stat err = %v", err)
+	}
+}
+
+// treeSnapshot returns every path under root, so a test can assert that a
+// rejected call wrote NOTHING ANYWHERE rather than merely that it returned an
+// error. An error-only assertion passes even when the bytes already landed --
+// including outside the directory they were meant for.
+func treeSnapshot(t *testing.T, root string) []string {
+	t.Helper()
+	var paths []string
+	if err := filepath.Walk(root, func(p string, _ os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return relErr
+		}
+		paths = append(paths, rel)
+		return nil
+	}); err != nil {
+		t.Fatalf("walking %s: %v", root, err)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+// TestQuarantineImage_RejectsAnEntryThatCannotDescribeARecoverableImage pins the
+// entry validation.
+//
+// The manifest is the durable record a restore reads back, and these two fields
+// are load-bearing: a FileName with no usable basename names no format (and,
+// persisted raw, carries directory components a consumer joining it onto a path
+// would resolve outside the artist dir), and a negative slot is provenance that
+// lies. Neither is checked anywhere else.
+//
+// SCOPE: a name that merely CARRIES directory components ("../../evil.jpg") is
+// NOT rejected -- it reduces to a usable basename and is normalized to it. See
+// TestQuarantineImage_NormalizesFileNameToABasename. Rejected here are only the
+// names that reduce to no file at all.
+func TestQuarantineImage_RejectsAnEntryThatCannotDescribeARecoverableImage(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		entry   RepairEntry
+		wantErr string
+	}{
+		{"dot file name", RepairEntry{SlotIndex: 0, FileName: "."}, "no usable basename"},
+		{"parent file name", RepairEntry{SlotIndex: 0, FileName: ".."}, "no usable basename"},
+		{"separator file name", RepairEntry{SlotIndex: 0, FileName: "/"}, "no usable basename"},
+		{"empty file name", RepairEntry{SlotIndex: 0, FileName: ""}, "empty file name"},
+		{"negative slot", RepairEntry{SlotIndex: -1, FileName: "fanart.jpg"}, "negative slot index"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The artist dir sits under a root holding a bystander, so the
+			// snapshot would catch a write that escaped upward as well as one
+			// that landed where it should not.
+			root := t.TempDir()
+			dir := filepath.Join(root, "artist")
+			if err := os.MkdirAll(dir, 0o750); err != nil {
+				t.Fatalf("creating artist dir: %v", err)
+			}
+			src := quarantineFixture(t, dir, "fanart.jpg", "artwork-bytes")
+			quarantineFixture(t, root, "evil.jpg", "bystander-original")
+
+			before := treeSnapshot(t, root)
+
+			err := QuarantineImage(dir, "op-invalid", src, tc.entry)
+			if err == nil {
+				t.Fatalf("entry %+v must be rejected, got nil error -- the caller would now delete its original", tc.entry)
+			}
+			if !strings.Contains(err.Error(), "invalid repair entry") || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("expected an entry rejection mentioning %q, got: %v", tc.wantErr, err)
+			}
+
+			// The assertion that matters: nothing was written ANYWHERE. An
+			// error return alone would pass even if the bytes had escaped.
+			if after := treeSnapshot(t, root); !slices.Equal(before, after) {
+				t.Errorf("a rejected entry must write nothing;\n before = %v\n after  = %v", before, after)
+			}
+			if b, readErr := os.ReadFile(filepath.Join(root, "evil.jpg")); readErr != nil || string(b) != "bystander-original" {
+				t.Errorf("a rejected entry must not touch a bystander file, got %q (err %v)", b, readErr)
+			}
+		})
+	}
+}
+
+// TestQuarantineImage_NormalizesFileNameToABasename pins that the only FileName
+// which can reach the durable manifest is one that names a file and nothing
+// else.
+//
+// The manifest outlives the process and is read back to decide a restore. A
+// consumer joining a raw FileName onto a directory -- the obvious reading of a
+// field named for a file -- would resolve "../../evil.jpg" outside the artist
+// dir. Normalizing at this boundary means such a FileName cannot be stored in
+// the first place, rather than being a hazard every future consumer has to
+// remember to defuse.
+//
+// The containment assertion is a REGRESSION guard on repairStoredName's
+// filepath.Base, which is what actually keeps the WRITE inside the op dir --
+// measured: a traversing FileName does not escape today, with or without the
+// normalization above. It is pinned here so a refactor that drops that Base
+// turns this red instead of silently writing artwork into the live artist dir.
+func TestQuarantineImage_NormalizesFileNameToABasename(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		fileName string
+	}{
+		{"directory components", "sub/dir/fanart3.jpg"},
+		{"traversing components", "../../fanart3.jpg"},
+		{"absolute path", "/etc/fanart3.jpg"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "artist")
+			if err := os.MkdirAll(dir, 0o750); err != nil {
+				t.Fatalf("creating artist dir: %v", err)
+			}
+			src := quarantineFixture(t, dir, "fanart.jpg", "artwork-bytes")
+
+			if err := QuarantineImage(dir, "op-norm", src, RepairEntry{SlotIndex: 2, FileName: tc.fileName}); err != nil {
+				t.Fatalf("a file name reducing to a usable basename must normalize, not fail: %v", err)
+			}
+
+			m, err := ReadRepairManifest(dir, "op-norm")
+			if err != nil || m == nil || len(m.Entries) != 1 {
+				t.Fatalf("expected 1 entry, got %+v (err %v)", m, err)
+			}
+			if got := m.Entries[0].FileName; got != "fanart3.jpg" {
+				t.Errorf("persisted FileName = %q, want the bare basename %q", got, "fanart3.jpg")
+			}
+
+			// The bytes landed inside the op dir and nowhere else.
+			opDir := filepath.Join(dir, RepairDirName, "op-norm")
+			want := []string{"artist", "artist/.sw-repair", "artist/.sw-repair/op-norm",
+				"artist/.sw-repair/op-norm/002-fanart3.jpg", "artist/.sw-repair/op-norm/manifest.json",
+				"artist/fanart.jpg", "."}
+			sort.Strings(want)
+			if got := treeSnapshot(t, root); !slices.Equal(got, want) {
+				t.Errorf("quarantine must write only inside %s;\n got  = %v\n want = %v", opDir, got, want)
+			}
+
+			// Normalization that broke the round trip would make the artwork
+			// unrecoverable -- the failure this primitive exists to prevent.
+			data, err := RepairEntryBytes(dir, "op-norm", m.Entries[0])
+			if err != nil || string(data) != "artwork-bytes" {
+				t.Errorf("normalized entry must still resolve to its bytes, got %q (err %v)", data, err)
+			}
+		})
 	}
 }
 

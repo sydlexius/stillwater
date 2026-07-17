@@ -144,6 +144,62 @@ func TestWriteFanartBytes_ReportsAWriteItCannotPerform(t *testing.T) {
 	}
 }
 
+// TestWriteFanartBytes_RefusesToWriteNoBytesOverLiveArtwork pins the guard on
+// the destructive edge of the restore path.
+//
+// WriteFileAtomic has no opinion about length: handed no bytes it atomically
+// installs a ZERO-BYTE FILE over the target and returns nil. On this path the
+// target is the artist's live artwork, so a restore invoked to reinstate a
+// picture would instead destroy it and report success -- this repo's dominant
+// bug class, on the one code path that exists to undo a destructive change. The
+// chain is reachable, not theoretical: RepairEntryBytes returns (empty, nil) for
+// a zero-byte quarantined file and a restore hands that straight here.
+//
+// The assertion that carries the contract is that the TARGET IS UNCHANGED. An
+// error-only assertion would pass against a version that truncated the file and
+// then returned an error, which is the outcome this exists to prevent.
+func TestWriteFanartBytes_RefusesToWriteNoBytesOverLiveArtwork(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		data    []byte
+		wantErr string
+	}{
+		// Same refusal, different upstream bug: nil is a caller that never
+		// obtained bytes, empty is a read that succeeded against an empty file.
+		{"nil", nil, "nil image data"},
+		{"empty", []byte{}, "empty image data"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "fanart2.jpg")
+			live := makeImageBytes(t, "jpeg")
+			if err := os.WriteFile(target, live, 0o644); err != nil {
+				t.Fatalf("seeding live artwork: %v", err)
+			}
+
+			err := WriteFanartBytes(target, tc.data)
+			if err == nil {
+				t.Fatal("writing no bytes must be refused, never a nil that reports the artwork restored")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("expected an error mentioning %q, got: %v", tc.wantErr, err)
+			}
+			if !strings.Contains(err.Error(), "fanart2.jpg") {
+				t.Errorf("the error must name the file, got: %v", err)
+			}
+
+			// The real contract: the live artwork survived untouched.
+			got, readErr := os.ReadFile(target)
+			if readErr != nil {
+				t.Fatalf("the live artwork must still be readable: %v", readErr)
+			}
+			if !bytes.Equal(got, live) {
+				t.Errorf("live artwork must be left byte-identical; len %d -> %d", len(live), len(got))
+			}
+		})
+	}
+}
+
 // --------------------------------------------------------------------------
 // QuarantineImage -- the safety hinge's failure branches
 // --------------------------------------------------------------------------
