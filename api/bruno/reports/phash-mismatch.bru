@@ -24,8 +24,14 @@ docs {
   artist (the registry stays library-wide), and ?tolerance= overrides the
   similarity threshold and 400s on a malformed value.
 
-  Authenticated (not admin-gated); the CI session is authenticated so no 401 is
-  expected. An empty report is NOT the same as "clean" -- neither signal detects
+  Admin-gated: an ADMINISTRATOR session is required. The gate is in-handler
+  (requireForeignAdmin) rather than on the route -- the route line reads
+  `wrapAuth(...)` with no RequireAdmin wrapper, which makes this easy to
+  misread. Unauthenticated gets 401 from the auth middleware; an authenticated
+  NON-admin gets 403 ("Forbidden: administrator role required"). The CI session
+  is the bootstrap admin (ci-admin), so 200 is expected here.
+
+  An empty report is NOT the same as "clean" -- neither signal detects
   pollution whose source artist is absent from the library.
 }
 
