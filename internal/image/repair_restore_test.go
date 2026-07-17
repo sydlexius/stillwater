@@ -2,9 +2,11 @@ package image
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -174,21 +176,31 @@ func TestQuarantineImage_FailsWhenTheQuarantineDirCannotBeCreated(t *testing.T) 
 	}
 }
 
-// TestQuarantineImage_FailsWhenTheStoredNameCannotBeWritten covers a real
-// overflow, not a synthetic one.
+// TestQuarantineImage_ReportsAByteWriteItCannotPerform pins the fail-loud half
+// of the safety hinge: when the bytes cannot be stored, the caller must learn
+// about it, because on nil it goes on to DELETE the original.
 //
-// StoredName prefixes the original basename with "%03d-" to namespace it by
-// slot. A filename that is legal on disk can therefore become illegal once
-// stored: at the usual 255-byte component limit, a 252-byte basename that the
-// scanner happily discovered overflows when the 4-byte prefix is added. The
-// quarantine write then fails -- and it must SAY so rather than return nil and
-// let the caller delete the original.
-func TestQuarantineImage_FailsWhenTheStoredNameCannotBeWritten(t *testing.T) {
+// The trigger is an unwritable name; the contract under test is the error and
+// the absence of a manifest entry, not the name. An earlier version of this test
+// claimed to pin a subtler thing -- that StoredName's "%03d-" prefix pushes an
+// otherwise-legal filename over the component limit -- and did not: at 304 bytes
+// the name is unwritable with or without the prefix, so deleting the prefix left
+// the test green. That claim is retracted rather than propped up. Measured, the
+// prefix is load-bearing only for basenames in (232, 236], because
+// WriteFileAtomic's own CreateTemp suffix already caps the full name near 240
+// rather than NAME_MAX's 255 -- and that suffix is 15 or 16 bytes depending on
+// the random's digit count, so a fixture sized into that band would encode a
+// stdlib implementation detail and wobble with it.
+//
+// The prefix does not need this test anyway: it is already pinned robustly by
+// TestQuarantineImage_SameBasenameAcrossSlotsDoesNotClobber, which goes RED the
+// moment the prefix is removed (measured).
+func TestQuarantineImage_ReportsAByteWriteItCannotPerform(t *testing.T) {
 	dir := t.TempDir()
-	longName := strings.Repeat("a", 300) + ".jpg"
+	unwritableName := strings.Repeat("a", 300) + ".jpg"
 	src := quarantineFixture(t, dir, "short.jpg", "artwork-bytes")
 
-	err := QuarantineImage(dir, "op-long", src, RepairEntry{SlotIndex: 1, FileName: longName})
+	err := QuarantineImage(dir, "op-long", src, RepairEntry{SlotIndex: 1, FileName: unwritableName})
 	if err == nil {
 		t.Fatal("quarantine must fail when the stored bytes cannot be written")
 	}
@@ -207,6 +219,146 @@ func TestQuarantineImage_FailsWhenTheStoredNameCannotBeWritten(t *testing.T) {
 	}
 }
 
+// TestQuarantineImage_ConcurrentSlotsOfOneOpAllSurvive pins the serialization
+// that keeps the manifest honest.
+//
+// Unguarded, this is silent artwork loss: two goroutines quarantining different
+// slots of one operation both write their bytes, both read the manifest, both
+// append to their own copy, and the last write wins. The loser's entry is gone
+// while its bytes sit on disk referenced by nothing -- unreachable through
+// ListRepairOps, ReadRepairManifest and RepairEntryBytes alike. Both calls
+// return nil, so the caller deletes both originals and one artwork is
+// unrecoverable through every supported path.
+//
+// PR-3b consumes this primitive and may fan an artist's slots across goroutines,
+// so the contract has to hold rather than be a convention nobody was told about.
+//
+// Run under -race, which catches the concurrent map access; the assertions catch
+// the lost-update itself, which is NOT a data race the detector would flag (the
+// writes are to separate files and separate structs -- it is a lost read-modify-
+// write across processes' worth of state, invisible to -race). That is why this
+// asserts entry survival rather than trusting a clean race report.
+func TestQuarantineImage_ConcurrentSlotsOfOneOpAllSurvive(t *testing.T) {
+	const slots = 8
+	dir := t.TempDir()
+
+	srcs := make([]string, slots)
+	for i := range slots {
+		srcs[i] = quarantineFixture(t, dir, fmt.Sprintf("fanart%d.jpg", i), fmt.Sprintf("bytes-%d", i))
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, slots)
+	start := make(chan struct{})
+	for i := range slots {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start // maximize overlap on the manifest read-modify-write
+			errs[i] = QuarantineImage(dir, "op-concurrent", srcs[i], RepairEntry{
+				SlotIndex: i, FileName: fmt.Sprintf("fanart%d.jpg", i),
+			})
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("slot %d: QuarantineImage: %v", i, err)
+		}
+	}
+
+	// EVERY entry survived. Each call returned nil, so the caller is entitled
+	// to delete all eight originals; the manifest must account for all eight.
+	m, err := ReadRepairManifest(dir, "op-concurrent")
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m == nil || len(m.Entries) != slots {
+		got := 0
+		if m != nil {
+			got = len(m.Entries)
+		}
+		t.Fatalf("manifest holds %d of %d entries -- every call returned nil, so the "+
+			"missing ones name artwork the caller has already deleted and nothing "+
+			"references", got, slots)
+	}
+
+	// And every entry actually resolves to its own bytes.
+	seen := make(map[string]bool, slots)
+	for i := range m.Entries {
+		data, err := RepairEntryBytes(dir, "op-concurrent", m.Entries[i])
+		if err != nil {
+			t.Errorf("entry %+v: RepairEntryBytes: %v", m.Entries[i], err)
+			continue
+		}
+		seen[string(data)] = true
+	}
+	for i := range slots {
+		if !seen[fmt.Sprintf("bytes-%d", i)] {
+			t.Errorf("slot %d's bytes are not retrievable through the manifest", i)
+		}
+	}
+}
+
+// TestConsumeRepairEntry_ConcurrentWithQuarantineDoesNotDropTheAppend pins the
+// other half: consume is a read-modify-write on the same shared manifest and
+// races quarantine identically. Unguarded, a consume that read the manifest
+// before a concurrent quarantine's append will rewrite it without that entry,
+// orphaning the bytes quarantine just stored and reported success for.
+func TestConsumeRepairEntry_ConcurrentWithQuarantineDoesNotDropTheAppend(t *testing.T) {
+	dir := t.TempDir()
+	victim := quarantineFixture(t, dir, "fanart.jpg", "victim-bytes")
+	keeper := quarantineFixture(t, dir, "fanart2.jpg", "keeper-bytes")
+
+	// Seed the entry that will be consumed.
+	if err := QuarantineImage(dir, "op-race", victim, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	var consumeErr, quarantineErr error
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		consumeErr = ConsumeRepairEntry(dir, "op-race", RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"})
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		quarantineErr = QuarantineImage(dir, "op-race", keeper, RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"})
+	}()
+	close(start)
+	wg.Wait()
+
+	if consumeErr != nil {
+		t.Fatalf("consume: %v", consumeErr)
+	}
+	if quarantineErr != nil {
+		t.Fatalf("quarantine: %v", quarantineErr)
+	}
+
+	// Whichever order they landed in, the keeper's entry must exist: its
+	// QuarantineImage returned nil, so its original is gone.
+	m, err := ReadRepairManifest(dir, "op-race")
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m == nil || len(m.Entries) != 1 {
+		t.Fatalf("expected exactly the keeper's entry to remain, got %+v", m)
+	}
+	data, err := RepairEntryBytes(dir, "op-race", m.Entries[0])
+	if err != nil {
+		t.Fatalf("RepairEntryBytes: %v", err)
+	}
+	if string(data) != "keeper-bytes" {
+		t.Errorf("the surviving entry resolves to %q, want keeper-bytes", data)
+	}
+}
+
 // TestQuarantineImage_RefusesWhenTheExistingManifestIsUnreadable pins that a
 // broken manifest stops the operation instead of being papered over.
 //
@@ -214,7 +366,14 @@ func TestQuarantineImage_FailsWhenTheStoredNameCannotBeWritten(t *testing.T) {
 // ORPHAN every entry already recorded: their bytes stay on disk but nothing
 // references them, so the artwork they hold becomes unrecoverable through any
 // supported path -- while the operation reports success and goes on to delete
-// more. Refusing keeps the damage at zero and leaves the evidence in place.
+// more.
+//
+// Refusing does NOT leave nothing behind: this call's own bytes were already
+// written before the manifest was read, so the refusal leaves them orphaned too.
+// That is the point. The bytes are inert litter, whereas the caller -- seeing an
+// error -- keeps the original and deletes nothing, and a retry rewrites the same
+// bytes and appends the entry. Zero artwork lost, one stray file; the alternative
+// trades the stray file for unrecoverable artwork.
 func TestQuarantineImage_RefusesWhenTheExistingManifestIsUnreadable(t *testing.T) {
 	dir := t.TempDir()
 	src := quarantineFixture(t, dir, "fanart.jpg", "artwork-bytes")
@@ -315,41 +474,97 @@ func TestListRepairOps_AbsentRootIsNotAnError(t *testing.T) {
 // StoredName back-compatibility
 // --------------------------------------------------------------------------
 
-// TestRepairEntry_StoredNameIsDerivedWhenAbsent pins the fallback that keeps a
-// manifest entry usable when it carries no StoredName.
+// seedBareManifestOp writes a quarantine operation whose MANIFEST ENTRY carries
+// no StoredName, with its bytes present under the derived name.
 //
-// This is not hypothetical: an entry hand-written by an operator recovering a
-// damaged manifest, or one produced before StoredName existed, has the field
-// empty. Deriving it from (SlotIndex, FileName) -- the same rule that produced
-// it in the first place -- means those entries still restore rather than
-// silently resolving to the op directory itself.
-func TestRepairEntry_StoredNameIsDerivedWhenAbsent(t *testing.T) {
-	dir := t.TempDir()
-	src := quarantineFixture(t, dir, "fanart2.jpg", "artwork-bytes")
-	if err := QuarantineImage(dir, "op-derive", src, RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"}); err != nil {
-		t.Fatalf("QuarantineImage: %v", err)
+// It builds the manifest by hand on purpose. Going through QuarantineImage
+// cannot produce this shape -- that function always populates StoredName -- so a
+// test that seeds via QuarantineImage and then passes a bare entry exercises
+// only the mirror case (manifest populated, caller bare), which never had a bug.
+// The shape that breaks is the STORED side being empty: a manifest hand-repaired
+// by an operator, or one written before the field existed.
+func seedBareManifestOp(t *testing.T, dir, opID string, slot int, fileName, content string) {
+	t.Helper()
+	opDir := filepath.Join(dir, RepairDirName, opID)
+	if err := os.MkdirAll(opDir, 0o750); err != nil {
+		t.Fatalf("creating op dir: %v", err)
+	}
+	// Bytes under the name QuarantineImage would have chosen.
+	stored := repairStoredName(slot, fileName)
+	if err := os.WriteFile(filepath.Join(opDir, stored), []byte(content), 0o644); err != nil {
+		t.Fatalf("writing quarantined bytes: %v", err)
+	}
+	// Manifest entry with NO stored_name field at all.
+	manifest := fmt.Sprintf(
+		`{"op_id":%q,"created_at":"2026-07-16T00:00:00Z","entries":[{"artist_id":"art-a","image_type":"fanart","slot_index":%d,"file_name":%q,"similarity":0.97,"quarantined_at":"2026-07-16T00:00:00Z"}]}`,
+		opID, slot, fileName)
+	if err := os.WriteFile(filepath.Join(opDir, repairManifestName), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("writing bare manifest: %v", err)
 	}
 
-	// An entry as a caller might reconstruct it: identity fields only.
-	bare := RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"}
+	// Precondition: the stored side really is empty. If a future change makes
+	// the decoder populate it, this test silently stops covering the bug.
+	m, err := ReadRepairManifest(dir, opID)
+	if err != nil || m == nil || len(m.Entries) != 1 {
+		t.Fatalf("seeding: expected 1 entry, got %+v (err %v)", m, err)
+	}
+	if m.Entries[0].StoredName != "" {
+		t.Fatalf("seeding: the manifest's StoredName must be EMPTY for this test to "+
+			"pin anything, got %q", m.Entries[0].StoredName)
+	}
+}
 
-	data, err := RepairEntryBytes(dir, "op-derive", bare)
+// TestConsumeRepairEntry_RemovesAnEntryWhoseStoredManifestNameIsEmpty pins the
+// bug that ConsumeRepairEntry derived only the CALLER's stored name and compared
+// it against the manifest's RAW field.
+//
+// An entry with an empty StoredName therefore matched nothing: the filter kept
+// every entry, the length check saw no change, and the function RETURNED NIL.
+// Success reported, nothing removed, bytes never unlinked, entry never dropped
+// -- this repo's dominant bug class exactly, on the path that bookkeeps the
+// operator's only remaining copy of their artwork. Reachable today via a
+// hand-repaired manifest or one predating the field.
+//
+// Revert-and-rerun proof (reported in the PR): restoring the raw-field
+// comparison (`m.Entries[i].StoredName != stored`) makes this RED on the
+// "manifest still holds" assertion; deriving both sides makes it GREEN.
+func TestConsumeRepairEntry_RemovesAnEntryWhoseStoredManifestNameIsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	seedBareManifestOp(t, dir, "op-bare", 1, "fanart2.jpg", "artwork-bytes")
+
+	bare := RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"}
+	if err := ConsumeRepairEntry(dir, "op-bare", bare); err != nil {
+		t.Fatalf("ConsumeRepairEntry: %v", err)
+	}
+
+	// The entry is really gone -- not "returned nil while doing nothing".
+	m, err := ReadRepairManifest(dir, "op-bare")
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m != nil && len(m.Entries) != 0 {
+		t.Fatalf("consume returned nil but the manifest STILL HOLDS %+v -- "+
+			"reported success while doing nothing", m.Entries)
+	}
+	// And the bytes were actually unlinked with it.
+	if _, err := os.Stat(filepath.Join(dir, RepairDirName, "op-bare")); !os.IsNotExist(err) {
+		t.Errorf("the emptied op dir must be removed; stat err = %v", err)
+	}
+}
+
+// TestRepairEntryBytes_DerivesTheStoredNameWhenAbsent covers the read side of
+// the same fallback: an entry carrying only identity fields still resolves to
+// its bytes rather than to the op directory itself.
+func TestRepairEntryBytes_DerivesTheStoredNameWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	seedBareManifestOp(t, dir, "op-read", 1, "fanart2.jpg", "artwork-bytes")
+
+	data, err := RepairEntryBytes(dir, "op-read", RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"})
 	if err != nil {
 		t.Fatalf("RepairEntryBytes must derive the stored name: %v", err)
 	}
 	if string(data) != "artwork-bytes" {
 		t.Errorf("derived lookup returned %q, want the quarantined bytes", data)
-	}
-
-	if err := ConsumeRepairEntry(dir, "op-derive", bare); err != nil {
-		t.Fatalf("ConsumeRepairEntry must derive the stored name: %v", err)
-	}
-	m, err := ReadRepairManifest(dir, "op-derive")
-	if err != nil {
-		t.Fatalf("ReadRepairManifest: %v", err)
-	}
-	if m != nil && len(m.Entries) != 0 {
-		t.Errorf("the derived entry must have been consumed, manifest holds %+v", m.Entries)
 	}
 }
 

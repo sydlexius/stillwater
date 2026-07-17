@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -108,6 +109,58 @@ type RepairManifest struct {
 	Entries   []RepairEntry `json:"entries"`
 }
 
+// repairOpMu guards each repair operation's manifest read-modify-write, keyed by
+// (artist dir, op id).
+//
+// The manifest is a single shared file per operation and every mutator is a
+// read-modify-write on it, so two goroutines quarantining different slots of the
+// SAME op will both read the manifest, both append to their own copy, and both
+// write -- and the last writer wins. The loser's entry vanishes while its BYTES
+// remain on disk, referenced by nothing: unreachable through ListRepairOps,
+// ReadRepairManifest and RepairEntryBytes alike. Both calls return nil, so the
+// caller goes on to delete both originals, and the artwork whose entry was lost
+// is gone through every supported path. A lock is what makes the manifest
+// describe every set of bytes actually stored.
+//
+// Entries are never evicted: one mutex per operation ever run, for the process
+// lifetime. That is the same unbounded-sync.Map shape as slotMu above (and
+// Router.stillwaterManagedMu in internal/api), and it is bounded in practice by
+// the number of repair operations a process performs -- a few bytes each. An
+// eviction scheme would need its own lock to close the evict-while-acquiring
+// race, which costs more than it saves.
+var repairOpMu sync.Map // map[string]*sync.Mutex
+
+// repairOpMutex returns the one mutex guarding an operation's manifest.
+// LoadOrStore guarantees every caller for a given (dir, opID) gets the SAME
+// mutex even when several arrive at once.
+//
+// Only ONE lock is ever held at a time by design -- there is no multi-lock
+// acquisition here and so no lock-ordering hazard of the kind lockSlots has to
+// sort around. Keep it that way: a mutator that needed two operations' manifests
+// at once would have to establish an order first.
+func repairOpMutex(dir, opID string) *sync.Mutex {
+	key := filepath.Clean(dir) + "\x00" + opID
+	mu, _ := repairOpMu.LoadOrStore(key, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
+// storedNameOf returns the entry's on-disk basename under the op dir, deriving
+// it when the field is absent.
+//
+// Both sides of any comparison MUST go through this. Deriving only the caller's
+// entry and matching it against the manifest's raw field means an entry whose
+// StoredName is empty -- a hand-repaired manifest, or one written before the
+// field existed -- never matches anything, so ConsumeRepairEntry removes
+// nothing, unlinks nothing, and returns nil. That is a silent success that did
+// not do the thing, on the path whose whole job is bookkeeping the operator's
+// only remaining copy.
+func storedNameOf(e RepairEntry) string {
+	if e.StoredName != "" {
+		return e.StoredName
+	}
+	return repairStoredName(e.SlotIndex, e.FileName)
+}
+
 // repairOpDir returns the per-operation quarantine subdirectory, validating the
 // op id against repairOpIDPattern first. See that pattern's guard comment.
 func repairOpDir(dir, opID string) (string, error) {
@@ -138,18 +191,43 @@ func repairStoredName(slotIndex int, fileName string) string {
 //
 // The manifest is rewritten atomically on every append. That is O(n) writes for
 // n slots, which is irrelevant at this scale (a handful of slots per artist) and
-// buys crash-consistency: the manifest on disk always describes bytes that are
-// already there, so a torn operation never advertises an entry it cannot serve.
+// buys ordering in ONE direction: the manifest never advertises an entry whose
+// bytes are not already on disk, so no reader is handed a reference it cannot
+// serve. The converse is NOT guaranteed. The bytes are written before the
+// manifest is read, so a failure between the two -- an unreadable manifest, a
+// crash -- leaves the stored bytes with no entry referencing them. That is the
+// safe direction to fail in: this returns an error, the caller keeps the
+// original and removes nothing, and a retry rewrites the same bytes and appends
+// the entry. The orphan is inert, not lost work.
+//
+// CONCURRENCY: calls for the SAME (dir, opID) are serialized on repairOpMutex,
+// and callers may safely fan slots of one operation across goroutines. That
+// serialization is load-bearing, not defensive -- see repairOpMu for what an
+// unguarded read-modify-write on the shared manifest destroys. Different
+// operations, and different artists, proceed in parallel.
 func QuarantineImage(dir, opID, srcPath string, entry RepairEntry) error {
 	opDir, err := repairOpDir(dir, opID)
 	if err != nil {
 		return err
 	}
+
+	mu := repairOpMutex(dir, opID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	if err := os.MkdirAll(opDir, 0o750); err != nil {
 		return fmt.Errorf("creating quarantine dir: %w", err)
 	}
 
-	data, err := os.ReadFile(srcPath) //nolint:gosec // srcPath is a DiscoverFanart result under the artist dir
+	// gosec G304: srcPath is caller-supplied and this function does NOT
+	// validate it -- unlike opID, which repairOpDir sanitizes against a closed
+	// pattern. It is a documented TRUST ASSUMPTION, not an enforced property:
+	// every caller in this repo passes a DiscoverFanart result rooted at the
+	// artist directory, and none of them derive it from request input. A caller
+	// that ever passes an untrusted path would read whatever it names, so a
+	// future exported entry point taking a user-supplied source must validate
+	// before calling here rather than inherit this assumption.
+	data, err := os.ReadFile(srcPath) //nolint:gosec // G304: caller-trusted path; see the trust-assumption comment above
 	if err != nil {
 		return fmt.Errorf("reading %s for quarantine: %w", filepath.Base(srcPath), err)
 	}
@@ -214,8 +292,16 @@ func ReadRepairManifest(dir, opID string) (*RepairManifest, error) {
 	return &m, nil
 }
 
-// ListRepairOps returns the artist directory's quarantine op ids, newest-named
-// last. Ops whose id does not match repairOpIDPattern are skipped: nothing this
+// ListRepairOps returns the artist directory's quarantine op ids, sorted
+// LEXICOGRAPHICALLY.
+//
+// That is deliberately not a claim about age. sort.Strings orders bytes, so this
+// is chronological only for an id scheme whose lexicographic order happens to
+// match its time order, and no op-id minter exists in this package to guarantee
+// one. A caller that needs newest-first must sort by the manifest's CreatedAt,
+// which is recorded for exactly that reason -- not by this slice's order.
+//
+// Ops whose id does not match repairOpIDPattern are skipped: nothing this
 // package writes can produce one, so such a directory was not created here and
 // must not be fed back into a path.
 func ListRepairOps(dir string) ([]string, error) {
@@ -242,10 +328,7 @@ func RepairEntryBytes(dir, opID string, entry RepairEntry) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	stored := entry.StoredName
-	if stored == "" {
-		stored = repairStoredName(entry.SlotIndex, entry.FileName)
-	}
+	stored := storedNameOf(entry)
 	// The stored name is derived here or read from a manifest this package
 	// wrote; reduce it to a basename anyway so a hand-edited manifest cannot
 	// steer the read out of the op dir.
@@ -266,23 +349,32 @@ func RepairEntryBytes(dir, opID string, entry RepairEntry) ([]byte, error) {
 // A no-op consume (no matching entry) is not an error: restore is idempotent by
 // design, so a retried restore must be able to reach a clean end state rather
 // than fail on the second attempt.
+// CONCURRENCY: serialized per (dir, opID) on the same mutex QuarantineImage
+// takes. This is a read-modify-write on the same shared manifest and races it
+// identically -- an unguarded consume running against a concurrent quarantine
+// drops the entry that quarantine just appended, orphaning its bytes.
 func ConsumeRepairEntry(dir, opID string, entry RepairEntry) error {
 	opDir, err := repairOpDir(dir, opID)
 	if err != nil {
 		return err
 	}
+
+	mu := repairOpMutex(dir, opID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	m, err := ReadRepairManifest(dir, opID)
 	if err != nil || m == nil {
 		return err
 	}
 
-	stored := entry.StoredName
-	if stored == "" {
-		stored = repairStoredName(entry.SlotIndex, entry.FileName)
-	}
+	// BOTH sides derived: matching a derived name against the manifest's raw
+	// field silently matches nothing when the stored side is empty. See
+	// storedNameOf.
+	stored := storedNameOf(entry)
 	remaining := make([]RepairEntry, 0, len(m.Entries))
 	for i := range m.Entries {
-		if m.Entries[i].StoredName != stored {
+		if storedNameOf(m.Entries[i]) != stored {
 			remaining = append(remaining, m.Entries[i])
 		}
 	}
