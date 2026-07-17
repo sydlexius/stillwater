@@ -1,5 +1,25 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 @import "./design-tokens.css";
+
+/* Tailwind v4 automatic content detection has no scope by default -- it
+   scans the ENTIRE project, including non-template files (comments, prose,
+   docs, plan files), and harvests anything that looks like a utility class
+   name (#2530). `source(none)` above disables automatic detection; the
+   `@source` directives below scope detection to the actual directories that
+   emit real markup with Tailwind utility classes:
+     - web/templates/**  and web/components/** : templ sources (excludes
+       web/templates/testdata, which is generated golden output of these
+       same templates, not an independent source of classes)
+     - web/static/js/**  : several hand-written JS files toggle Tailwind
+       utilities directly via classList (e.g. `hidden` in command-palette.js,
+       `sw-*` state classes elsewhere)
+     - internal/api/**   : several HTMX handlers build HTML fragments with
+       inline Tailwind classes in Go string literals (e.g.
+       handlers_artist.go, handlers_logging.go, handlers_settings_io.go) */
+@source "../../templates";
+@source "../../components";
+@source "../js";
+@source "../../../internal/api";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
