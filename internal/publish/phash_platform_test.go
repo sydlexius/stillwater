@@ -3,6 +3,7 @@ package publish
 import (
 	"bytes"
 	"context"
+	"fmt"
 	stdimage "image"
 	"image/color"
 	"image/jpeg"
@@ -88,6 +89,14 @@ type fakePhashClient struct {
 	uploads       int
 	ignoreDeletes bool // DeleteImageAtIndex returns nil but does not remove
 	ignoreUploads bool // UploadImage returns nil but does not append
+
+	// deleteErr / uploadErr, when non-nil, make the corresponding call fail
+	// hard (as opposed to ignoreDeletes/ignoreUploads' silent-2xx-but-nothing-
+	// happened simulation). Checked before any mutation, so a forced error
+	// never leaks a partial delete/upload -- the property the orchestration
+	// wrappers' non-fatal-per-connection handling depends on.
+	deleteErr error
+	uploadErr error
 }
 
 func (f *fakePhashClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
@@ -102,6 +111,9 @@ func (f *fakePhashClient) GetArtistBackdrop(_ context.Context, _ string, i int) 
 }
 
 func (f *fakePhashClient) DeleteImageAtIndex(_ context.Context, _ string, _ string, i int) error {
+	if f.deleteErr != nil {
+		return f.deleteErr // hard failure: nothing recorded, nothing mutated
+	}
 	f.deletes = append(f.deletes, i)
 	if f.ignoreDeletes {
 		return nil // accepted, but the artifact stays -- silent ignore
@@ -113,6 +125,9 @@ func (f *fakePhashClient) DeleteImageAtIndex(_ context.Context, _ string, _ stri
 }
 
 func (f *fakePhashClient) UploadImage(_ context.Context, _ string, _ string, data []byte, _ string) error {
+	if f.uploadErr != nil {
+		return f.uploadErr // hard failure: nothing recorded, nothing mutated
+	}
 	f.uploads++
 	if f.ignoreUploads {
 		return nil // accepted, but nothing stored -- silent ignore
@@ -324,6 +339,350 @@ func withFakePhashClient(t *testing.T, fake phashPlatformClient) {
 	prev := phashPlatformClientFactory
 	phashPlatformClientFactory = func(_ *connection.Connection, _ *slog.Logger) phashPlatformClient { return fake }
 	t.Cleanup(func() { phashPlatformClientFactory = prev })
+}
+
+// withFakePhashClientByConn swaps the package factory to dispatch by
+// connection ID, letting a test give two connections in one batch distinct
+// (and independently failing) fakes -- the shape needed to prove a
+// per-connection failure does not stop the batch from processing the others.
+func withFakePhashClientByConn(t *testing.T, byConn map[string]phashPlatformClient) {
+	t.Helper()
+	prev := phashPlatformClientFactory
+	phashPlatformClientFactory = func(conn *connection.Connection, _ *slog.Logger) phashPlatformClient {
+		return byConn[conn.ID]
+	}
+	t.Cleanup(func() { phashPlatformClientFactory = prev })
+}
+
+// twoEmbyConnPublisher wires artist "a1" to two enabled, healthy, image-write
+// connections ("c-good", "c-bad"), for batch-continuation tests: one
+// connection fails, the other must still be processed.
+func twoEmbyConnPublisher() *Publisher {
+	artistLister := &fakePlatformLister{
+		ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-good", PlatformArtistID: "p-good"},
+			{ArtistID: "a1", ConnectionID: "c-bad", PlatformArtistID: "p-bad"},
+		},
+		artists: []artist.Artist{{ID: "a1", Name: "Test Artist"}},
+	}
+	conns := &fakeConnectionGetter{conns: map[string]*connection.Connection{
+		"c-good": {
+			ID: "c-good", Name: "emby-good", Type: connection.TypeEmby, Enabled: true, Status: "ok",
+			Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true},
+		},
+		"c-bad": {
+			ID: "c-bad", Name: "emby-bad", Type: connection.TypeEmby, Enabled: true, Status: "ok",
+			Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true},
+		},
+	}}
+	return New(Deps{ArtistService: artistLister, ArtistLister: artistLister, ConnectionService: conns, Logger: silentLogger()})
+}
+
+// --- DeletePollutedBackdropOnPlatforms error branches -----------------------
+
+// TestDeletePollutedBackdropOnPlatforms_NilWiring guards the not-fully-wired
+// guard clause: a nil Publisher and a Publisher missing a required dependency
+// must both error rather than panic.
+func TestDeletePollutedBackdropOnPlatforms_NilWiring(t *testing.T) {
+	var nilP *Publisher
+	if _, err := nilP.DeletePollutedBackdropOnPlatforms(context.Background(), "a1", image.HashHex(0), testTolerance); err == nil {
+		t.Fatal("nil publisher: want error, got nil")
+	}
+	p := New(Deps{Logger: silentLogger()})
+	if _, err := p.DeletePollutedBackdropOnPlatforms(context.Background(), "a1", image.HashHex(0), testTolerance); err == nil {
+		t.Fatal("unwired publisher: want error, got nil")
+	}
+}
+
+// TestDeletePollutedBackdropOnPlatforms_BadHashHexReturnsError proves a
+// malformed phash string is rejected before any platform is touched, rather
+// than treated as a zero hash that could spuriously match.
+func TestDeletePollutedBackdropOnPlatforms_BadHashHexReturnsError(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 8)}}
+	withFakePhashClient(t, f)
+	p := oneEmbyPublisher()
+
+	if _, err := p.DeletePollutedBackdropOnPlatforms(context.Background(), "a1", "not-a-valid-hex-hash", testTolerance); err == nil {
+		t.Fatal("want error on unparsable phash, got nil")
+	}
+	if len(f.deletes) != 0 {
+		t.Errorf("no platform IO may happen on a hash parse failure, got deletes=%v", f.deletes)
+	}
+}
+
+// TestDeletePollutedBackdropOnPlatforms_GetPlatformIDsErrorReturnsError
+// proves a platform-id lookup failure is surfaced rather than treated as "no
+// mappings" (which would silently skip every platform).
+func TestDeletePollutedBackdropOnPlatforms_GetPlatformIDsErrorReturnsError(t *testing.T) {
+	artistLister := &fakePlatformLister{idsErr: fmt.Errorf("db unavailable")}
+	conns := &fakeConnectionGetter{conns: map[string]*connection.Connection{}}
+	p := New(Deps{ArtistService: artistLister, ArtistLister: artistLister, ConnectionService: conns, Logger: silentLogger()})
+
+	if _, err := p.DeletePollutedBackdropOnPlatforms(context.Background(), "a1", image.HashHex(phashOf(t, bandJPEG(t, 32))), testTolerance); err == nil {
+		t.Fatal("want error when loading platform ids fails, got nil")
+	}
+}
+
+// TestDeletePollutedBackdropOnPlatforms_GetByIDErrorIsFailureBatchContinues
+// proves a connection lookup failure on one mapping is collected as a
+// per-connection Failure and does NOT stop the other mapping from being
+// processed (the whole point of the non-fatal batch contract).
+func TestDeletePollutedBackdropOnPlatforms_GetByIDErrorIsFailureBatchContinues(t *testing.T) {
+	polluted := bandJPEG(t, 32)
+	b0 := bandJPEG(t, 8)
+	assertDistinct(t, polluted, b0)
+
+	artistLister := &fakePlatformLister{
+		ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-missing", PlatformArtistID: "p-missing"},
+			{ArtistID: "a1", ConnectionID: "c-good", PlatformArtistID: "p-good"},
+		},
+		artists: []artist.Artist{{ID: "a1", Name: "Test Artist"}},
+	}
+	// c-missing is intentionally absent from conns, forcing GetByID to error.
+	conns := &fakeConnectionGetter{conns: map[string]*connection.Connection{
+		"c-good": {
+			ID: "c-good", Name: "emby-good", Type: connection.TypeEmby, Enabled: true, Status: "ok",
+			Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true},
+		},
+	}}
+	p := New(Deps{ArtistService: artistLister, ArtistLister: artistLister, ConnectionService: conns, Logger: silentLogger()})
+
+	f := &fakePhashClient{backdrops: [][]byte{b0, polluted}}
+	withFakePhashClient(t, f)
+
+	res, err := p.DeletePollutedBackdropOnPlatforms(context.Background(), "a1", image.HashHex(phashOf(t, polluted)), testTolerance)
+	if err != nil {
+		t.Fatalf("delete on platforms: %v", err)
+	}
+	if len(res.Failures) != 1 || res.Failures[0].ConnectionID != "c-missing" {
+		t.Errorf("want one failure for c-missing, got %#v", res.Failures)
+	}
+	// c-good must still have been processed despite c-missing's lookup error.
+	if res.Deleted != 1 || len(res.Targets) != 1 || res.Targets[0].ConnectionID != "c-good" {
+		t.Errorf("want c-good processed despite c-missing failing, got %#v", res)
+	}
+}
+
+// TestDeletePollutedBackdropOnPlatforms_UnsupportedTypeSkipsNotPanics proves
+// a connection whose type has no phash client (client == nil) is skipped
+// cleanly -- neither a panic nor a recorded Failure, mirroring how an
+// unhealthy/disabled connection is silently skipped upstream of the client
+// construction.
+func TestDeletePollutedBackdropOnPlatforms_UnsupportedTypeSkipsNotPanics(t *testing.T) {
+	artistLister := &fakePlatformLister{
+		ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-lidarr", PlatformArtistID: "p1"},
+		},
+		artists: []artist.Artist{{ID: "a1", Name: "Test Artist"}},
+	}
+	conns := &fakeConnectionGetter{conns: map[string]*connection.Connection{
+		"c-lidarr": {ID: "c-lidarr", Name: "lidarr", Type: "lidarr", Enabled: true, Status: "ok"},
+	}}
+	p := New(Deps{ArtistService: artistLister, ArtistLister: artistLister, ConnectionService: conns, Logger: silentLogger()})
+
+	res, err := p.DeletePollutedBackdropOnPlatforms(context.Background(), "a1", image.HashHex(phashOf(t, bandJPEG(t, 32))), testTolerance)
+	if err != nil {
+		t.Fatalf("delete on platforms: %v", err)
+	}
+	if res.Deleted != 0 || len(res.Targets) != 0 || len(res.Failures) != 0 {
+		t.Errorf("unsupported connection type must be a silent skip, got %#v", res)
+	}
+}
+
+// TestDeletePollutedBackdropOnPlatforms_DeleteErrorIsFailureBatchContinues is
+// the orchestration-level proof that a hard delete error on one connection is
+// collected as a Failure, does not abort the batch, and leaks no destructive
+// action on the failing connection's own artifact (the c-bad backdrop must
+// still be present since the error fired before any mutation).
+func TestDeletePollutedBackdropOnPlatforms_DeleteErrorIsFailureBatchContinues(t *testing.T) {
+	polluted := bandJPEG(t, 32)
+	bystander := bandJPEG(t, 8)
+	assertDistinct(t, polluted, bystander)
+
+	good := &fakePhashClient{backdrops: [][]byte{bystander, polluted}}
+	bad := &fakePhashClient{backdrops: [][]byte{polluted}, deleteErr: fmt.Errorf("connection reset")}
+	withFakePhashClientByConn(t, map[string]phashPlatformClient{"c-good": good, "c-bad": bad})
+	p := twoEmbyConnPublisher()
+
+	want := image.HashHex(phashOf(t, polluted))
+	res, err := p.DeletePollutedBackdropOnPlatforms(context.Background(), "a1", want, testTolerance)
+	if err != nil {
+		t.Fatalf("delete on platforms: %v", err)
+	}
+	if len(res.Failures) != 1 || res.Failures[0].ConnectionID != "c-bad" {
+		t.Errorf("want one failure for c-bad, got %#v", res.Failures)
+	}
+	// c-good must still have been processed and its target recorded.
+	if res.Deleted != 1 || len(res.Targets) != 1 || res.Targets[0].ConnectionID != "c-good" {
+		t.Errorf("want c-good processed despite c-bad failing, got %#v", res)
+	}
+	// No destructive leak on the failing connection: the polluted backdrop it
+	// held is still present, and the delete attempt was not silently retried
+	// into a mutation.
+	if !bad.hasMatch(t, phashOf(t, polluted)) {
+		t.Error("c-bad's backdrop must be untouched after its delete errored")
+	}
+}
+
+// --- RestoreBackdropToPlatforms error branches -------------------------------
+
+// TestRestoreBackdropToPlatforms_NilWiring mirrors the delete-side nil-wiring
+// guard for the restore entry point.
+func TestRestoreBackdropToPlatforms_NilWiring(t *testing.T) {
+	var nilP *Publisher
+	targets := []image.RepairPlatformTarget{{ConnectionID: "c1", PlatformArtistID: "p1"}}
+	if _, err := nilP.RestoreBackdropToPlatforms(context.Background(), targets, bandJPEG(t, 32), testTolerance); err == nil {
+		t.Fatal("nil publisher: want error, got nil")
+	}
+	p := New(Deps{Logger: silentLogger()})
+	if _, err := p.RestoreBackdropToPlatforms(context.Background(), targets, bandJPEG(t, 32), testTolerance); err == nil {
+		t.Fatal("unwired publisher: want error, got nil")
+	}
+}
+
+// TestRestoreBackdropToPlatforms_RefusesEmptyData mirrors the helper-level
+// empty-data guard at the orchestration entry point, before any target is
+// touched.
+func TestRestoreBackdropToPlatforms_RefusesEmptyData(t *testing.T) {
+	f := &fakePhashClient{}
+	withFakePhashClient(t, f)
+	p := oneEmbyPublisher()
+	targets := []image.RepairPlatformTarget{{ConnectionID: "c-emby", PlatformArtistID: "p1"}}
+
+	if _, err := p.RestoreBackdropToPlatforms(context.Background(), targets, nil, testTolerance); err == nil {
+		t.Fatal("want error on empty data, got nil")
+	}
+	if f.uploads != 0 {
+		t.Errorf("empty data must not upload to any target, got %d", f.uploads)
+	}
+}
+
+// TestRestoreBackdropToPlatforms_GetByIDErrorIsFailureBatchContinues proves a
+// connection lookup failure on one target is collected as a Failure and does
+// not stop the other target from being restored.
+func TestRestoreBackdropToPlatforms_GetByIDErrorIsFailureBatchContinues(t *testing.T) {
+	polluted := bandJPEG(t, 32)
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 8)}}
+	withFakePhashClient(t, f)
+	conns := &fakeConnectionGetter{conns: map[string]*connection.Connection{
+		"c-good": {
+			ID: "c-good", Name: "emby-good", Type: connection.TypeEmby, Enabled: true, Status: "ok",
+			Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true},
+		},
+	}}
+	p := New(Deps{ArtistService: &fakePlatformLister{}, ArtistLister: &fakePlatformLister{}, ConnectionService: conns, Logger: silentLogger()})
+
+	targets := []image.RepairPlatformTarget{
+		{ConnectionID: "c-missing", PlatformArtistID: "p-missing"},
+		{ConnectionID: "c-good", PlatformArtistID: "p-good"},
+	}
+	res, err := p.RestoreBackdropToPlatforms(context.Background(), targets, polluted, testTolerance)
+	if err != nil {
+		t.Fatalf("restore to platforms: %v", err)
+	}
+	if len(res.Failures) != 1 || res.Failures[0].ConnectionID != "c-missing" {
+		t.Errorf("want one failure for c-missing, got %#v", res.Failures)
+	}
+	if res.Appended != 1 {
+		t.Errorf("want c-good restored despite c-missing failing, got %#v", res)
+	}
+	if !f.hasMatch(t, phashOf(t, polluted)) {
+		t.Error("c-good target must have received the restored backdrop")
+	}
+}
+
+// TestRestoreBackdropToPlatforms_UnsupportedTypeIsFailureNotSkip proves a
+// target whose connection type has no phash client is recorded as a Failure
+// (unlike the delete direction's silent skip): a restore target that cannot
+// be serviced must not be silently dropped, or the caller would consume the
+// quarantine entry against a restore that never happened.
+func TestRestoreBackdropToPlatforms_UnsupportedTypeIsFailureNotSkip(t *testing.T) {
+	conns := &fakeConnectionGetter{conns: map[string]*connection.Connection{
+		"c-lidarr": {ID: "c-lidarr", Name: "lidarr", Type: "lidarr", Enabled: true, Status: "ok"},
+	}}
+	p := New(Deps{ArtistService: &fakePlatformLister{}, ArtistLister: &fakePlatformLister{}, ConnectionService: conns, Logger: silentLogger()})
+
+	targets := []image.RepairPlatformTarget{{ConnectionID: "c-lidarr", PlatformArtistID: "p1"}}
+	res, err := p.RestoreBackdropToPlatforms(context.Background(), targets, bandJPEG(t, 32), testTolerance)
+	if err != nil {
+		t.Fatalf("restore to platforms: %v", err)
+	}
+	if len(res.Failures) != 1 || res.Appended != 0 {
+		t.Errorf("unsupported connection type must be a Failure, got %#v", res)
+	}
+}
+
+// TestRestoreBackdropToPlatforms_UploadErrorIsFailureBatchContinuesNoLeak is
+// the orchestration-level proof that a hard upload error on one target is
+// collected as a Failure, does not abort the batch, and leaks no destructive
+// write (the failing target's backdrop set is unchanged).
+func TestRestoreBackdropToPlatforms_UploadErrorIsFailureBatchContinuesNoLeak(t *testing.T) {
+	polluted := bandJPEG(t, 32)
+	bystanderGood := bandJPEG(t, 8)
+	bystanderBad := bandJPEG(t, 56)
+	assertDistinct(t, polluted, bystanderGood, bystanderBad)
+
+	good := &fakePhashClient{backdrops: [][]byte{bystanderGood}}
+	bad := &fakePhashClient{backdrops: [][]byte{bystanderBad}, uploadErr: fmt.Errorf("connection reset")}
+	withFakePhashClientByConn(t, map[string]phashPlatformClient{"c-good": good, "c-bad": bad})
+	p := twoEmbyConnPublisher()
+
+	targets := []image.RepairPlatformTarget{
+		{ConnectionID: "c-good", PlatformArtistID: "p-good"},
+		{ConnectionID: "c-bad", PlatformArtistID: "p-bad"},
+	}
+	res, err := p.RestoreBackdropToPlatforms(context.Background(), targets, polluted, testTolerance)
+	if err != nil {
+		t.Fatalf("restore to platforms: %v", err)
+	}
+	if len(res.Failures) != 1 || res.Failures[0].ConnectionID != "c-bad" {
+		t.Errorf("want one failure for c-bad, got %#v", res.Failures)
+	}
+	if res.Appended != 1 {
+		t.Errorf("want c-good restored despite c-bad failing, got %#v", res)
+	}
+	if !good.hasMatch(t, phashOf(t, polluted)) {
+		t.Error("c-good must have received the restored backdrop")
+	}
+	// No destructive leak: c-bad gained nothing beyond its original bystander.
+	if len(bad.backdrops) != 1 || !bytes.Equal(bad.backdrops[0], bystanderBad) {
+		t.Errorf("c-bad must be unchanged after its upload errored, got %d backdrops", len(bad.backdrops))
+	}
+}
+
+// TestRestoreBackdropToPlatforms_AlreadyPresentAcrossMultipleTargets is the
+// orchestration-level proof for the AlreadyPresent counter: when the picture
+// is already on a target, that target contributes to AlreadyPresent (not
+// Appended), makes no upload, and a second target that genuinely needs the
+// restore still gets it (the counters are per-target, not batch-wide).
+func TestRestoreBackdropToPlatforms_AlreadyPresentAcrossMultipleTargets(t *testing.T) {
+	polluted := bandJPEG(t, 32)
+	bystander := bandJPEG(t, 8)
+	assertDistinct(t, polluted, bystander)
+
+	alreadyHas := &fakePhashClient{backdrops: [][]byte{polluted}}
+	needsIt := &fakePhashClient{backdrops: [][]byte{bystander}}
+	withFakePhashClientByConn(t, map[string]phashPlatformClient{"c-good": alreadyHas, "c-bad": needsIt})
+	p := twoEmbyConnPublisher()
+
+	targets := []image.RepairPlatformTarget{
+		{ConnectionID: "c-good", PlatformArtistID: "p-good"},
+		{ConnectionID: "c-bad", PlatformArtistID: "p-bad"},
+	}
+	res, err := p.RestoreBackdropToPlatforms(context.Background(), targets, polluted, testTolerance)
+	if err != nil {
+		t.Fatalf("restore to platforms: %v", err)
+	}
+	if res.AlreadyPresent != 1 || res.Appended != 1 || len(res.Failures) != 0 {
+		t.Errorf("want AlreadyPresent=1 Appended=1, got %#v", res)
+	}
+	if alreadyHas.uploads != 0 {
+		t.Errorf("already-present target must not receive an upload, got %d", alreadyHas.uploads)
+	}
+	if !needsIt.hasMatch(t, phashOf(t, polluted)) {
+		t.Error("the target that needed the restore must have received it")
+	}
 }
 
 func oneEmbyPublisher() *Publisher {
