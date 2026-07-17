@@ -57,6 +57,22 @@ var repairOpIDPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // write that must not fail -- into an error after the source is already gone.
 const maxRepairOpIDLen = 64
 
+// RepairPlatformTarget identifies one platform item a removed backdrop was
+// also deleted from, so a restore can re-upload the bytes to the SAME item it
+// was taken from.
+//
+// It is keyed on (ConnectionID, PlatformArtistID) rather than a single id
+// because one artist can be mirrored to several platforms at once; recording a
+// lone id would lose every connection but one. Both fields are IDENTITY, never
+// an ordinal: PlatformArtistID names the item, and the platform re-indexes its
+// backdrops after each delete, so no per-slot index is (or may be) stored here.
+// The restore re-resolves the polluted backdrop by CONTENT, not position -- see
+// publish.Publisher.RestoreBackdropToPlatforms.
+type RepairPlatformTarget struct {
+	ConnectionID     string `json:"connection_id"`
+	PlatformArtistID string `json:"platform_artist_id"`
+}
+
 // RepairEntry is one quarantined image: the bytes plus everything needed to
 // judge, audit, and reverse the removal that produced it.
 type RepairEntry struct {
@@ -98,6 +114,14 @@ type RepairEntry struct {
 	MatchedArtistID   string  `json:"matched_artist_id,omitempty"`
 	MatchedArtistName string  `json:"matched_artist_name,omitempty"`
 	Similarity        float64 `json:"similarity"`
+
+	// PlatformTargets records the platform items the removed backdrop was also
+	// deleted from, so a restore can re-upload the bytes to each. It is
+	// ADDITIVE and BACK-COMPATIBLE: a manifest written before this field
+	// existed has no "platform_targets" key and loads as a nil slice, which the
+	// restore path treats as "no platform work to do" (the on-disk restore is
+	// unaffected). omitempty keeps such manifests byte-for-byte unchanged.
+	PlatformTargets []RepairPlatformTarget `json:"platform_targets,omitempty"`
 
 	QuarantinedAt time.Time `json:"quarantined_at"`
 }

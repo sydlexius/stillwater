@@ -116,6 +116,14 @@ type Publisher struct {
 	logger             *slog.Logger
 	notifier           Notifier
 	imageWriteGate     ImageWriteGate
+
+	// phashTargetLocks serializes the complete read-modify-verify of a single
+	// phash backdrop target (ConnectionID+PlatformArtistID) across concurrent
+	// delete/restore calls, so two duplicate operations on the SAME platform
+	// item cannot interleave their resolve->mutate->verify and race into a
+	// double delete or a duplicate upload. See lockPhashTarget in
+	// phash_platform.go. Keyed lazily; entries are cheap and never removed.
+	phashTargetLocks sync.Map
 }
 
 // Narrow interfaces keep the publish package decoupled from concrete types.
