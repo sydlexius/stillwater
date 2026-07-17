@@ -383,7 +383,7 @@ func TestSyncMergeRefresh_UnionsFreshlyLinkedConn(t *testing.T) {
 	})
 
 	// Empty connectionIDs = fully-unlinked merge.
-	results, err := p.SyncMergeRefresh(context.Background(), "surv", nil)
+	results, err := p.SyncMergeRefresh(context.Background(), "surv", nil, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestSyncMergeRefresh_SelfHealRefreshError_NoOuterError(t *testing.T) {
 		Logger:            silentLogger(),
 	})
 
-	results, err := p.SyncMergeRefresh(context.Background(), "surv", nil)
+	results, err := p.SyncMergeRefresh(context.Background(), "surv", nil, nil)
 	if err != nil {
 		t.Fatalf("SyncMergeRefresh returned outer error on best-effort refresh failure: %v", err)
 	}

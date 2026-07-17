@@ -182,7 +182,7 @@ type fakeMergeRefresher struct {
 	gotConns    []string
 }
 
-func (f *fakeMergeRefresher) SyncMergeRefresh(_ context.Context, survivorID string, connectionIDs []string) ([]artist.PlatformRefreshResult, error) {
+func (f *fakeMergeRefresher) SyncMergeRefresh(_ context.Context, survivorID string, connectionIDs []string, _ map[string][]string) ([]artist.PlatformRefreshResult, error) {
 	f.gotSurvivor = survivorID
 	f.gotConns = connectionIDs
 	out := make([]artist.PlatformRefreshResult, 0, len(connectionIDs))

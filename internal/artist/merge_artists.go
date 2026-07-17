@@ -222,6 +222,14 @@ type MergeResult struct {
 	// Empty on dry-run.
 	AffectedConnectionIDs []string
 
+	// LoserPlatformIDs maps each affected connection ID to the platform artist
+	// IDs the LOSERS held on that connection, captured at the same pre-delete
+	// point as AffectedConnectionIDs. SyncMergeRefresh uses these to scope the
+	// post-merge Emby/Jellyfin reconciliation to the specific loser items
+	// (whose directories were removed) instead of a full library scan (#2431).
+	// Empty on dry-run.
+	LoserPlatformIDs map[string][]string
+
 	// CanonicalRename is non-nil when MergeAndReconcile relocated the survivor
 	// to its canonical directory after the merge committed. Nil when the
 	// survivor was already canonical, on dry-run, or when the rename failed
@@ -367,7 +375,7 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 	// Capture affected platform connections BEFORE the loser rows (and their
 	// platform_ids) are deleted by commitMergeDB. MergeAndReconcile refreshes
 	// this set post-commit.
-	result.AffectedConnectionIDs = s.collectAffectedConnectionIDs(ctx, survivor.ID, losers)
+	result.AffectedConnectionIDs, result.LoserPlatformIDs = s.collectAffectedConnectionIDs(ctx, survivor.ID, losers)
 
 	// DB phase: fill-empty MBID forward, then delete loser rows. FKs
 	// cascade (artist_provider_ids, artist_images, artist_libraries,
@@ -529,7 +537,7 @@ func (s *Service) refreshAffectedPlatforms(ctx context.Context, result *MergeRes
 		}
 		return
 	}
-	refreshed, err := s.mergeRefresher.SyncMergeRefresh(ctx, result.SurvivorID, result.AffectedConnectionIDs)
+	refreshed, err := s.mergeRefresher.SyncMergeRefresh(ctx, result.SurvivorID, result.AffectedConnectionIDs, result.LoserPlatformIDs)
 	if err != nil {
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("post-merge platform refresh could not start: %v", err))
@@ -1321,14 +1329,17 @@ func uniqueDestName(dir, name string) (string, error) {
 }
 
 // collectAffectedConnectionIDs returns the distinct, sorted union of platform
-// connection IDs mapping the survivor or any loser. Called before the loser
-// rows are deleted (their platform_ids cascade away on delete), so the
-// post-merge platform refresh can reach every connection that indexed a member.
+// connection IDs mapping the survivor or any loser, plus a map of connection
+// ID to the platform artist IDs the LOSERS held on that connection. Called
+// before the loser rows are deleted (their platform_ids cascade away on
+// delete), so the post-merge platform refresh can reach every connection that
+// indexed a member and scope its reconciliation to the specific loser items.
 // Best-effort: a per-artist enumeration error is logged and skipped rather than
 // failing the merge, since the merge itself has already moved files on disk.
-func (s *Service) collectAffectedConnectionIDs(ctx context.Context, survivorID string, losers []NearDuplicateArtist) []string {
+func (s *Service) collectAffectedConnectionIDs(ctx context.Context, survivorID string, losers []NearDuplicateArtist) ([]string, map[string][]string) {
 	seen := make(map[string]struct{})
-	add := func(id string) {
+	loserPlatformIDs := make(map[string][]string)
+	add := func(id string, isLoser bool) {
 		pids, err := s.GetPlatformIDs(ctx, id)
 		if err != nil {
 			slog.Warn("merge: enumerating platform IDs for affected-connection capture",
@@ -1336,21 +1347,28 @@ func (s *Service) collectAffectedConnectionIDs(ctx context.Context, survivorID s
 			return
 		}
 		for _, p := range pids {
-			if p.ConnectionID != "" {
-				seen[p.ConnectionID] = struct{}{}
+			if p.ConnectionID == "" {
+				continue
+			}
+			seen[p.ConnectionID] = struct{}{}
+			if isLoser && p.PlatformArtistID != "" {
+				loserPlatformIDs[p.ConnectionID] = append(loserPlatformIDs[p.ConnectionID], p.PlatformArtistID)
 			}
 		}
 	}
-	add(survivorID)
+	add(survivorID, false)
 	for _, l := range losers {
-		add(l.ID)
+		add(l.ID, true)
 	}
 	out := make([]string, 0, len(seen))
 	for id := range seen {
 		out = append(out, id)
 	}
 	sort.Strings(out)
-	return out
+	for connID := range loserPlatformIDs {
+		sort.Strings(loserPlatformIDs[connID])
+	}
+	return out, loserPlatformIDs
 }
 
 // commitMergeDB runs the final DB transaction: fill-empty MBID forward from
