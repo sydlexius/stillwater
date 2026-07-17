@@ -457,3 +457,98 @@ func TestListRepairOps_SkipsIdsThisPackageCouldNotHaveWritten(t *testing.T) {
 		t.Errorf("ListRepairOps = %v, want only [op-legit]", ops)
 	}
 }
+
+// TestSetRepairEntryPlatformTargets_RecordsOntoTheMatchingEntry pins the wiring
+// gap this closes: a slot is quarantined (and its manifest entry written)
+// BEFORE the platform delete runs, so the platform items the backdrop was
+// deleted from can only be recorded afterward, and a restore reads them to know
+// where to re-upload. The entry is matched by stored name, and the targets are
+// identity (connection + platform artist id), never an ordinal.
+func TestSetRepairEntryPlatformTargets_RecordsOntoTheMatchingEntry(t *testing.T) {
+	dir := t.TempDir()
+	src := quarantineFixture(t, dir, "fanart2.jpg", "polluted-bytes")
+	entry := RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg", PHash: "abc123"}
+	if err := QuarantineImage(dir, "op-one", src, entry); err != nil {
+		t.Fatalf("QuarantineImage: %v", err)
+	}
+
+	targets := []RepairPlatformTarget{
+		{ConnectionID: "conn-emby", PlatformArtistID: "emby-42"},
+		{ConnectionID: "conn-jf", PlatformArtistID: "jf-99"},
+	}
+	// Match by the same fields the caller (the rule pipeline) holds: it does not
+	// know the derived StoredName, so pass an entry describing the slot.
+	if err := SetRepairEntryPlatformTargets(dir, "op-one", RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"}, targets); err != nil {
+		t.Fatalf("SetRepairEntryPlatformTargets: %v", err)
+	}
+
+	m, err := ReadRepairManifest(dir, "op-one")
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m == nil || len(m.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %+v", m)
+	}
+	got := m.Entries[0].PlatformTargets
+	if len(got) != 2 || got[0] != targets[0] || got[1] != targets[1] {
+		t.Errorf("platform targets not recorded: %+v", got)
+	}
+	// The rest of the entry is untouched (this is a targeted field update).
+	if m.Entries[0].PHash != "abc123" || m.Entries[0].SlotIndex != 1 {
+		t.Errorf("update must not disturb the rest of the entry: %+v", m.Entries[0])
+	}
+}
+
+// TestSetRepairEntryPlatformTargets_EmptyTargetsIsANoOp asserts an empty target
+// set never rewrites the manifest: there is nothing to record, and a rewrite
+// would only churn the file.
+func TestSetRepairEntryPlatformTargets_EmptyTargetsIsANoOp(t *testing.T) {
+	dir := t.TempDir()
+	src := quarantineFixture(t, dir, "fanart.jpg", "bytes")
+	entry := RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}
+	if err := QuarantineImage(dir, "op-one", src, entry); err != nil {
+		t.Fatalf("QuarantineImage: %v", err)
+	}
+	if err := SetRepairEntryPlatformTargets(dir, "op-one", entry, nil); err != nil {
+		t.Fatalf("empty targets must be a clean no-op, got: %v", err)
+	}
+	m, _ := ReadRepairManifest(dir, "op-one")
+	if m == nil || len(m.Entries) != 1 || len(m.Entries[0].PlatformTargets) != 0 {
+		t.Errorf("empty targets must not add any: %+v", m)
+	}
+}
+
+// TestSetRepairEntryPlatformTargets_NoMatchingEntryIsNotAnError mirrors
+// ConsumeRepairEntry's idempotent posture: a retried delete may find the entry
+// already consumed, so recording targets against a stored name that no longer
+// exists is a benign no-op, never an error.
+func TestSetRepairEntryPlatformTargets_NoMatchingEntryIsNotAnError(t *testing.T) {
+	dir := t.TempDir()
+	src := quarantineFixture(t, dir, "fanart.jpg", "bytes")
+	if err := QuarantineImage(dir, "op-one", src, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}); err != nil {
+		t.Fatalf("QuarantineImage: %v", err)
+	}
+	// A slot the manifest does not carry.
+	err := SetRepairEntryPlatformTargets(dir, "op-one",
+		RepairEntry{SlotIndex: 7, FileName: "nope.jpg"},
+		[]RepairPlatformTarget{{ConnectionID: "c", PlatformArtistID: "p"}})
+	if err != nil {
+		t.Errorf("a non-matching entry must be a no-op, got: %v", err)
+	}
+	m, _ := ReadRepairManifest(dir, "op-one")
+	if m == nil || len(m.Entries) != 1 || len(m.Entries[0].PlatformTargets) != 0 {
+		t.Errorf("no entry should have been modified: %+v", m)
+	}
+}
+
+// TestSetRepairEntryPlatformTargets_RejectsATraversingOpID pins that the op-id
+// sanitizer guards this mutator too, before any path is joined.
+func TestSetRepairEntryPlatformTargets_RejectsATraversingOpID(t *testing.T) {
+	dir := t.TempDir()
+	err := SetRepairEntryPlatformTargets(dir, "../escape",
+		RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"},
+		[]RepairPlatformTarget{{ConnectionID: "c", PlatformArtistID: "p"}})
+	if err == nil {
+		t.Fatal("a traversing op id must be rejected")
+	}
+}

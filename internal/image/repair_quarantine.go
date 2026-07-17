@@ -337,6 +337,71 @@ func QuarantineImage(dir, opID, srcPath string, entry RepairEntry) error {
 	return writeRepairManifest(dir, opID, m)
 }
 
+// SetRepairEntryPlatformTargets records, onto the manifest entry matching
+// entry, the platform items the removed backdrop was also deleted from, so a
+// later restore knows where to re-upload the bytes. It is the read-modify-write
+// that closes the wiring gap between the local removal (which writes the entry
+// via QuarantineImage, before the platform is contacted) and the platform
+// delete (which happens after the removal is confirmed on disk).
+//
+// It is separate from QuarantineImage BECAUSE the ordering is forced: the bytes
+// must be quarantined -- and thus the entry written -- BEFORE anything is
+// removed locally, and the platform delete may only run AFTER a confirmed local
+// removal (a fuzzy platform match must never authorize a delete before the
+// authoritative on-disk removal has committed). So the entry exists without its
+// platform targets for the window between those two steps, and this records them
+// afterward.
+//
+// A crash between the platform delete and this call leaves an entry whose
+// PlatformTargets are unset: a subsequent restore then puts the bytes back on
+// disk but not on the platform. That is the SAFE direction -- the local artwork,
+// the thing this feature exists to preserve, is fully recoverable; a mirror
+// platform is re-derivable by a later publish. It never destroys data.
+//
+// CONCURRENCY: serialized per (dir, opID) on the same repairOpMutex every other
+// mutator takes. Matching is by stored name (both sides through storedNameOf,
+// see ConsumeRepairEntry) so an entry with an empty StoredName cannot silently
+// match nothing. An empty targets slice is a no-op: there is nothing to record
+// and rewriting the manifest would only churn it. A caller for whom no entry
+// matches gets nil, not an error -- the same idempotent posture as
+// ConsumeRepairEntry, since a retried delete may legitimately find the entry
+// already consumed.
+func SetRepairEntryPlatformTargets(dir, opID string, entry RepairEntry, targets []RepairPlatformTarget) error {
+	if _, err := repairOpDir(dir, opID); err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+
+	mu := repairOpMutex(dir, opID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Locked helper: this goroutine already holds the mutex and it is not
+	// reentrant. See readRepairManifestLocked.
+	m, err := readRepairManifestLocked(dir, opID)
+	if err != nil || m == nil {
+		return err
+	}
+
+	// BOTH sides derived through storedNameOf: matching a derived name against
+	// the manifest's raw field silently matches nothing when the stored side is
+	// empty. See storedNameOf and ConsumeRepairEntry.
+	stored := storedNameOf(entry)
+	found := false
+	for i := range m.Entries {
+		if storedNameOf(m.Entries[i]) == stored {
+			m.Entries[i].PlatformTargets = targets
+			found = true
+		}
+	}
+	if !found {
+		return nil
+	}
+	return writeRepairManifest(dir, opID, m)
+}
+
 // writeRepairManifest atomically replaces the operation's manifest.
 func writeRepairManifest(dir, opID string, m *RepairManifest) error {
 	opDir, err := repairOpDir(dir, opID)
