@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"image/jpeg"
 	"math"
 	"os"
@@ -840,4 +841,374 @@ func discoverForTest(t *testing.T, dir string) []string {
 		t.Fatalf("discovering fanart: %v", err)
 	}
 	return paths
+}
+
+// --------------------------------------------------------------------------
+// #2564 AC: the provenance recorder itself
+// --------------------------------------------------------------------------
+
+// captureProvenanceRecorder records the slot index it was asked to write.
+type captureProvenanceRecorder struct {
+	calls []int // slotIndex per call
+	err   error
+}
+
+func (c *captureProvenanceRecorder) UpdateImageProvenance(_ context.Context, _, _ string, slotIndex int, _, _, _, _, _ string) error {
+	c.calls = append(c.calls, slotIndex)
+	return c.err
+}
+
+// TestRecordSavedImageProvenance_WritesThePrimarySlot pins #2564's AC for this
+// package: the rule engine's post-save provenance write lands on slot 0.
+//
+// The companion test TestExistingImageFileNames_NeverResolvesANonPrimaryFanartSlot
+// proves WHY 0 is the right answer (nothing here can write a non-primary slot).
+// This proves the recorder actually writes it -- the two together are what turn
+// "correct only by accident" into a checked property. Neither alone is enough:
+// the invariant test never calls the recorder, and this test would still pass if
+// the invariant broke.
+func TestRecordSavedImageProvenance_WritesThePrimarySlot(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "fanart.jpg")
+	if err := os.WriteFile(path, pollutionJPEG(t, 0), 0o644); err != nil {
+		t.Fatalf("writing image: %v", err)
+	}
+
+	// Precondition: provenance is actually collectable from this file. With an
+	// empty ProvenanceData the recorder returns early and never writes, so the
+	// slot assertion below would pass vacuously against a broken recorder.
+	if image.CollectProvenance(path, testLogger()).IsEmpty() {
+		t.Fatal("precondition: the fixture must yield collectable provenance, " +
+			"or the slot assertion never runs")
+	}
+
+	rec := &captureProvenanceRecorder{}
+	recordSavedImageProvenance(context.Background(), rec, "art-a", "fanart", path, testLogger())
+
+	if len(rec.calls) != 1 {
+		t.Fatalf("expected exactly one provenance write, got %d", len(rec.calls))
+	}
+	if rec.calls[0] != 0 {
+		t.Errorf("the rule engine's post-save provenance write must land on slot 0, got %d", rec.calls[0])
+	}
+}
+
+// TestRecordSavedImageProvenance_SkipsWhenNothingCollectable pins that a file
+// yielding no provenance is skipped rather than written as a row of empties,
+// which would stamp slot 0 with blanks and look to a per-slot phash reader like
+// a slot that was measured and found to have no hash.
+func TestRecordSavedImageProvenance_SkipsWhenNothingCollectable(t *testing.T) {
+	rec := &captureProvenanceRecorder{}
+	recordSavedImageProvenance(context.Background(), rec,
+		"art-a", "fanart", filepath.Join(t.TempDir(), "absent.jpg"), testLogger())
+
+	if len(rec.calls) != 0 {
+		t.Errorf("a file with no collectable provenance must not be written, got %d call(s)", len(rec.calls))
+	}
+}
+
+// --------------------------------------------------------------------------
+// Remediation failure branches -- the hinge, at the caller's level
+// --------------------------------------------------------------------------
+
+// TestRemediatePHashMismatches_QuarantineFailureLeavesTheOriginalInPlace is the
+// most important of these: it proves the safety hinge end-to-end from 3b's side.
+//
+// If the quarantine cannot store the bytes, the removal MUST NOT proceed. The
+// primitive returns an error for exactly this reason; this asserts that the
+// caller honors it -- the artist's file is still on disk, unstaged, and the run
+// reports the artist as failed rather than repaired.
+func TestRemediatePHashMismatches_QuarantineFailureLeavesTheOriginalInPlace(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA := seedPollutedLibrary(t, db)
+
+	// A regular file where the quarantine root must be: MkdirAll cannot
+	// descend through it, for root as much as anyone.
+	if err := os.WriteFile(filepath.Join(dirA, image.RepairDirName), []byte("x"), 0o644); err != nil {
+		t.Fatalf("seeding blocker: %v", err)
+	}
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("the run must not error; per-artist failures are counted: %v", err)
+	}
+	if res.Failures != 1 {
+		t.Fatalf("a quarantine failure must fail the artist, got %+v", res)
+	}
+	if res.SlotsRemoved != 0 {
+		t.Errorf("nothing may be removed when the quarantine failed, got %d", res.SlotsRemoved)
+	}
+
+	// THE ASSERTION: all three originals survive, unstaged.
+	for i, name := range []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg"} {
+		if got := fanartVariantAt(t, dirA, name, []int{0, 1, 2}); got != i {
+			t.Errorf("%s must be untouched holding v%d, holds v%d", name, i, got)
+		}
+	}
+	entries, _ := os.ReadDir(dirA)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), phashTombSuffix) {
+			t.Errorf("nothing may be staged when the quarantine failed, found %s", e.Name())
+		}
+	}
+}
+
+// TestRemediatePHashMismatches_StaleTombBlocksStagingAndFailsLoudly pins the
+// leftover-tomb path: a previous run crashed between staging and commit, leaving
+// something at the tomb path that cannot be cleared. Staging must abort rather
+// than proceed on an ambiguous filesystem, and the artist's slots must survive.
+//
+// A non-empty directory at the tomb path makes the clearing os.Remove return
+// ENOTEMPTY -- deterministic and host-independent, unlike a permission denial.
+func TestRemediatePHashMismatches_StaleTombBlocksStagingAndFailsLoudly(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA := seedPollutedLibrary(t, db)
+
+	tomb := filepath.Join(dirA, "fanart2.jpg"+phashTombSuffix)
+	if err := os.Mkdir(tomb, 0o755); err != nil {
+		t.Fatalf("creating stale tomb dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tomb, "keep"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("populating stale tomb dir: %v", err)
+	}
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("the run must not error; per-artist failures are counted: %v", err)
+	}
+	if res.Failures != 1 {
+		t.Fatalf("an unclearable stale tomb must fail the artist, got %+v", res)
+	}
+	if res.SlotsRemoved != 0 {
+		t.Errorf("nothing may be reported removed, got %d", res.SlotsRemoved)
+	}
+	// The polluted slot is still there: staging never happened.
+	if got := fanartVariantAt(t, dirA, "fanart2.jpg", []int{0, 1, 2}); got != 1 {
+		t.Errorf("the slot must survive a failed staging, holds v%d", got)
+	}
+}
+
+// TestRemediatePHashMismatches_SkipsASlotThatCannotBeHashed pins re-verification
+// against a file that is no longer a decodable image -- a truncated or corrupted
+// write. It cannot be confirmed as the flagged picture, so it must be skipped,
+// not deleted on the strength of a stale DB hash.
+func TestRemediatePHashMismatches_SkipsASlotThatCannotBeHashed(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA := seedPollutedLibrary(t, db)
+
+	// Still discoverable (.jpg), no longer decodable. The DB still claims v1.
+	if err := os.WriteFile(filepath.Join(dirA, "fanart2.jpg"), []byte("not a jpeg at all"), 0o644); err != nil {
+		t.Fatalf("corrupting slot: %v", err)
+	}
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("RemediatePHashMismatches: %v", err)
+	}
+	if res.SlotsRemoved != 0 || res.SlotsSkipped != 1 {
+		t.Fatalf("an unhashable slot must be skipped, not removed: %+v", res)
+	}
+	if !strings.Contains(res.Outcomes[0].Reason, "re-hashing slot") {
+		t.Errorf("the skip must name the hash failure, got %q", res.Outcomes[0].Reason)
+	}
+	if _, err := os.Stat(filepath.Join(dirA, "fanart2.jpg")); err != nil {
+		t.Errorf("the unhashable slot must survive: %v", err)
+	}
+}
+
+// TestRemediatePHashMismatches_ArtistPathThatIsNotADirectoryFails pins that a
+// library path which is no longer a directory fails the artist loudly rather
+// than being treated as an artist with nothing to repair.
+func TestRemediatePHashMismatches_ArtistPathThatIsNotADirectoryFails(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA := seedPollutedLibrary(t, db)
+
+	// Point the artist at a regular file. DiscoverFanart's ReadDir then fails
+	// with ENOTDIR -- a type error, not a permission one.
+	notADir := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(notADir, []byte("x"), 0o644); err != nil {
+		t.Fatalf("seeding file: %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(),
+		`UPDATE artists SET path = ? WHERE id = 'art-a'`, notADir); err != nil {
+		t.Fatalf("repointing artist: %v", err)
+	}
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("the run must not error; per-artist failures are counted: %v", err)
+	}
+	if res.Failures != 1 || res.SlotsRemoved != 0 {
+		t.Errorf("an unreadable artist dir must fail the artist and remove nothing, got %+v", res)
+	}
+	_ = dirA
+}
+
+// --------------------------------------------------------------------------
+// Restore failure branches
+// --------------------------------------------------------------------------
+
+// TestRestorePHashQuarantine_UnknownArtistIsAnError pins that restore refuses an
+// artist it cannot load rather than reporting a successful zero-entry restore.
+func TestRestorePHashQuarantine_UnknownArtistIsAnError(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	seedPollutedLibrary(t, db)
+
+	if _, err := p.RestorePHashQuarantine(context.Background(), "art-does-not-exist", "op-x"); err == nil {
+		t.Fatal("restoring for an unknown artist must error")
+	}
+}
+
+// TestRestorePHashQuarantine_ArtistWithNoPathIsAnError pins the same for an
+// artist whose directory was never resolved: there is nowhere to restore TO, and
+// saying so beats writing into "".
+func TestRestorePHashQuarantine_ArtistWithNoPathIsAnError(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	seedRepairArtist(t, db, "art-nopath", "No Path", "")
+
+	_, err := p.RestorePHashQuarantine(context.Background(), "art-nopath", "op-x")
+	if err == nil {
+		t.Fatal("restoring for a path-less artist must error")
+	}
+	if !strings.Contains(err.Error(), "no path") {
+		t.Errorf("the error must name the missing path, got: %v", err)
+	}
+}
+
+// TestRestorePHashQuarantine_UnreadableManifestPropagates pins that a corrupted
+// manifest stops the restore. Continuing would silently return artwork the
+// operator cannot account for, on the one path that exists to recover it.
+func TestRestorePHashQuarantine_UnreadableManifestPropagates(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA := seedPollutedLibrary(t, db)
+
+	opDir := filepath.Join(dirA, image.RepairDirName, "op-corrupt")
+	if err := os.MkdirAll(opDir, 0o750); err != nil {
+		t.Fatalf("creating op dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(opDir, "manifest.json"), []byte("{nope"), 0o644); err != nil {
+		t.Fatalf("writing corrupt manifest: %v", err)
+	}
+
+	_, err := p.RestorePHashQuarantine(context.Background(), "art-a", "op-corrupt")
+	if err == nil {
+		t.Fatal("an unreadable manifest must stop the restore")
+	}
+	if !strings.Contains(err.Error(), "decoding repair manifest") {
+		t.Errorf("expected a manifest decode error, got: %v", err)
+	}
+}
+
+// TestRestorePHashQuarantine_MissingBytesFailThatEntryNotTheRun pins per-entry
+// isolation: an entry whose bytes are gone is reported as that entry's failure,
+// and its manifest record is KEPT (nothing was restored, so nothing may be
+// consumed) rather than aborting the whole restore.
+func TestRestorePHashQuarantine_MissingBytesFailThatEntryNotTheRun(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA := seedPollutedLibrary(t, db)
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("remediate: %v", err)
+	}
+	m, err := image.ReadRepairManifest(dirA, res.OpID)
+	if err != nil || m == nil || len(m.Entries) != 1 {
+		t.Fatalf("setup: expected 1 entry, got %+v (err %v)", m, err)
+	}
+
+	// Delete the quarantined bytes out from under the manifest.
+	stored := filepath.Join(dirA, image.RepairDirName, res.OpID, m.Entries[0].StoredName)
+	if err := os.Remove(stored); err != nil {
+		t.Fatalf("removing quarantined bytes: %v", err)
+	}
+
+	rres, err := p.RestorePHashQuarantine(context.Background(), "art-a", res.OpID)
+	if err != nil {
+		t.Fatalf("the run must not error; per-entry failures are collected: %v", err)
+	}
+	if rres.Restored != 0 || len(rres.Failures) != 1 {
+		t.Fatalf("want 0 restored / 1 failure, got %+v", rres)
+	}
+	// The entry is NOT consumed: nothing came back, so the record must stand.
+	m, err = image.ReadRepairManifest(dirA, res.OpID)
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m == nil || len(m.Entries) != 1 {
+		t.Errorf("a failed restore must not consume its entry, got %+v", m)
+	}
+}
+
+// TestRestorePHashQuarantine_HashInvalidationFailureDoesNotFailTheRestore pins a
+// contract that is easy to get backwards: by the time the hashes are
+// invalidated, the artwork is ALREADY BACK ON DISK. The restore succeeded.
+//
+// A failure to drop the artist's stale fanart hashes is a cache problem -- the
+// next scan re-derives them -- so it must be logged and the entry still counted
+// restored. Propagating it would report a successful recovery as a failure, and
+// an operator retrying "the failed restore" would find the picture already
+// present and be told nothing happened. The entry must also still be consumed:
+// the bytes are back, so the quarantine has no further claim on them.
+//
+// REMEDIATION IS DELIBERATELY THE OPPOSITE, and the asymmetry is the point.
+// img.RenumberFanart invalidates BEFORE its destructive rename and propagates
+// the error, so an invalidation failure there ABORTS the removal -- correct,
+// because nothing has been destroyed yet and proceeding would leave a stale hash
+// pointing at a reshuffled slot. Here the write has already happened, so the
+// same failure must not be fatal. Fail-closed before the mutation, fail-open
+// after it. (Measured: a recorder that fails from the start never reaches this
+// test's restore -- it fails the remediate setup instead, via RenumberFanart.
+// Hence the mid-test arming below rather than a recorder that fails throughout.)
+func TestRestorePHashQuarantine_HashInvalidationFailureDoesNotFailTheRestore(t *testing.T) {
+	e, db := newDupTestEngine(t)
+	failing := &fakeHashRecorder{}
+	e.SetImageHashRecorder(failing)
+	p := NewPipeline(e, artist.NewService(db), nil, nil, nil, testLogger())
+	dirA := seedPollutedLibrary(t, db)
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("remediate: %v", err)
+	}
+	if res.SlotsRemoved != 1 {
+		t.Fatalf("setup: expected the polluted slot removed, got %+v", res)
+	}
+
+	// Arm the failure only now: the removal is committed, the restore is next.
+	failing.invalidateErr = errors.New("hash store offline")
+	failing.invalidated = nil
+
+	rres, err := p.RestorePHashQuarantine(context.Background(), "art-a", res.OpID)
+	if err != nil {
+		t.Fatalf("a hash-invalidation failure must not fail the restore: %v", err)
+	}
+	if rres.Restored != 1 || len(rres.Failures) != 0 {
+		t.Fatalf("the artwork is back, so the entry must count restored: %+v", rres)
+	}
+
+	// Precondition for this test meaning anything: the failing invalidator was
+	// actually reached. Without this the assertions above pass against a
+	// pipeline that never called it.
+	if len(failing.invalidated) == 0 {
+		t.Fatal("precondition: the invalidator was never called, so its failure was never exercised")
+	}
+
+	// The picture really is back on disk, appended.
+	if got := fanartVariantAt(t, dirA, "fanart3.jpg", []int{0, 1, 2}); got != 1 {
+		t.Errorf("the restored picture must be on disk at the next free ordinal, ordinal 2 holds v%d", got)
+	}
+	// And the entry is consumed -- the quarantine has no claim on returned bytes.
+	m, err := image.ReadRepairManifest(dirA, res.OpID)
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m != nil && len(m.Entries) != 0 {
+		t.Errorf("a successful restore must consume its entry, manifest holds %+v", m.Entries)
+	}
 }
