@@ -6,6 +6,7 @@ package settingsio
 // constraints are enforced exactly as in production.
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -394,6 +395,23 @@ func TestEnvelopeCarriesConnectionV14Fields(t *testing.T) {
 // ignore the unknown key rather than reject the envelope, and it must not
 // disturb the sibling fields decoded alongside it. The payload is built as raw
 // JSON because ConnectionExport no longer has a field that could emit the key.
+//
+// This test also carries the export-side half of the #2563 acceptance
+// criteria: after the legacy import it re-exports and asserts the key does not
+// reappear, i.e. a restore cannot resurrect a toggle the product no longer
+// honors. That assertion used to live in
+// TestExport_ConnectionOmitsVerifyPathAfterUpdate, which seeded the key
+// through the domain field and asserted its absence from the payload. With the
+// domain field and the DB column both retired, that test had no seeding
+// channel left: nothing could put the key into an export, so the absence
+// assertion could not fail and the test was vacuous by construction. The raw
+// legacy JSON below is the ONLY remaining channel that can introduce the key,
+// so the absence assertion is re-anchored here where a real source feeds it.
+//
+// What breaks this test: adding DisallowUnknownFields to the payload decoder
+// (the import would reject the legacy envelope), mishandling the unknown key
+// so sibling fields are lost, or stashing the unknown key anywhere the
+// exporter re-emits it.
 func TestImport_LegacyEnvelopeCarryingVerifyPathAfterUpdate(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
@@ -447,9 +465,30 @@ func TestImport_LegacyEnvelopeCarryingVerifyPathAfterUpdate(t *testing.T) {
 	if !got.Enabled {
 		t.Error("Enabled: got false, want true")
 	}
-	// The retired key carried true; the import must ignore it outright.
-	if got.GetVerifyPathAfterUpdate() {
-		t.Error("legacy verify_path_after_update=true was applied; the retired field must be ignored on import")
+	if got.Type != "lidarr" || got.Lidarr == nil {
+		t.Errorf("legacy connection must import as a lidarr connection with a Lidarr config: type=%q lidarr=%+v", got.Type, got.Lidarr)
+	}
+
+	// Re-export and prove the retired key did not survive the restore. The
+	// legacy payload above carried verify_path_after_update=true, so this is a
+	// real round-trip: if the import stashed the unknown key anywhere the
+	// exporter reads back, it would surface in the payload here.
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export after legacy import: %v", err)
+	}
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, passphrase)
+	if err != nil {
+		t.Fatalf("decrypting re-exported payload: %v", err)
+	}
+	// Precondition: the imported connection really is in the re-export.
+	// Without this the absence assertion below would pass vacuously on an
+	// empty payload.
+	if !bytes.Contains(plaintext, []byte(`"Lidarr A"`)) {
+		t.Fatalf("re-exported payload is missing the imported connection; the absence assertion would be vacuous")
+	}
+	if bytes.Contains(plaintext, []byte("verify_path_after_update")) {
+		t.Error("re-exported payload carries verify_path_after_update; a legacy restore must not resurrect the retired toggle")
 	}
 }
 

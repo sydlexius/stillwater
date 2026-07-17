@@ -96,10 +96,10 @@ CREATE TABLE connections (
     last_checked_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-, verify_path_after_update INTEGER NOT NULL DEFAULT 0);
-INSERT INTO connections VALUES('df9c1c55-4824-4a9e-8d21-4c84adcebe68','Emby','emby','http://emby.example.local:8096','',1,'ok','',1,1,1,0,0,1,'','','','2026-07-01T07:25:25Z','2026-04-24T03:48:24Z','2026-07-01T07:25:25Z',0);
-INSERT INTO connections VALUES('ac7b8025-295b-4c2c-86e6-df359196beff','Jellyfin','jellyfin','http://jellyfin.example.local:8096','',1,'ok','',1,1,1,0,0,1,'','','','2026-05-28T17:15:32Z','2026-04-24T03:48:24Z','2026-06-04T07:08:34Z',0);
-INSERT INTO connections VALUES('f6e83fb7-ff1c-4159-83f0-47a92abd9b9d','Lidarr','lidarr','http://lidarr.example.local:8686','',1,'ok','',1,1,1,0,0,1,'','','','2026-05-19T18:37:57Z','2026-04-24T03:48:24Z','2026-05-19T18:37:57Z',0);
+);
+INSERT INTO connections VALUES('df9c1c55-4824-4a9e-8d21-4c84adcebe68','Emby','emby','http://emby.example.local:8096','',1,'ok','',1,1,1,0,0,1,'','','','2026-07-01T07:25:25Z','2026-04-24T03:48:24Z','2026-07-01T07:25:25Z');
+INSERT INTO connections VALUES('ac7b8025-295b-4c2c-86e6-df359196beff','Jellyfin','jellyfin','http://jellyfin.example.local:8096','',1,'ok','',1,1,1,0,0,1,'','','','2026-05-28T17:15:32Z','2026-04-24T03:48:24Z','2026-06-04T07:08:34Z');
+INSERT INTO connections VALUES('f6e83fb7-ff1c-4159-83f0-47a92abd9b9d','Lidarr','lidarr','http://lidarr.example.local:8686','',1,'ok','',1,1,1,0,0,1,'','','','2026-05-19T18:37:57Z','2026-04-24T03:48:24Z','2026-05-19T18:37:57Z');
 CREATE TABLE IF NOT EXISTS "settings" (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,

@@ -366,57 +366,6 @@ func TestImport_LegacyEnvelopeProviderKeySkip(t *testing.T) {
 	}
 }
 
-// TestExport_ConnectionOmitsVerifyPathAfterUpdate pins that the retired
-// verify-path-after-update toggle (#2563) is no longer carried by the
-// connection export. The key must be absent from the serialized payload so a
-// restore cannot resurrect a toggle the product no longer honors.
-func TestExport_ConnectionOmitsVerifyPathAfterUpdate(t *testing.T) {
-	db := setupTestDB(t)
-	ctx := context.Background()
-	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
-
-	// The domain toggle is seeded ON deliberately. The export field carried
-	// `omitempty`, so a connection left at the zero value would omit the key
-	// even if the field were still exported -- the absence assertion below
-	// would then pass for the wrong reason. Seeding true is what makes this
-	// test able to fail. (The domain field itself is retired separately.)
-	c := &connection.Connection{
-		Name:    "Lidarr A",
-		Type:    "lidarr",
-		URL:     "http://lidarr.local:8686",
-		APIKey:  "lidarr-key",
-		Enabled: true,
-		Lidarr:  &connection.LidarrConfig{VerifyPathAfterUpdate: true},
-	}
-	if err := connSvc.Create(ctx, c); err != nil {
-		t.Fatalf("creating connection: %v", err)
-	}
-	// Precondition: the toggle really is set on the persisted row. If a future
-	// change makes this silently false, the test would go vacuous again.
-	if !c.GetVerifyPathAfterUpdate() {
-		t.Fatal("seeded connection has the toggle off; the absence assertion would be vacuous")
-	}
-
-	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
-	envelope, err := svc.Export(ctx, "test-passphrase")
-	if err != nil {
-		t.Fatalf("Export: %v", err)
-	}
-
-	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, "test-passphrase")
-	if err != nil {
-		t.Fatalf("decrypting exported payload: %v", err)
-	}
-	// Precondition: the connection really is in the payload. Without this the
-	// absence assertion below would pass vacuously on an empty export.
-	if !bytes.Contains(plaintext, []byte(`"Lidarr A"`)) {
-		t.Fatalf("exported payload is missing the seeded connection; assertion would be vacuous")
-	}
-	if bytes.Contains(plaintext, []byte("verify_path_after_update")) {
-		t.Error("export payload still carries verify_path_after_update; the field must not be exported")
-	}
-}
-
 // TestRoundTrip_ConnectionPathMappings pins that the Lidarr host<->platform
 // path-mapping list (#2303) survives the connection export/import round-trip
 // introduced in envelope v1.7. Without this, a backup taken after the operator

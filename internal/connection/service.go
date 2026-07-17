@@ -56,8 +56,8 @@ func (s *Service) Create(ctx context.Context, c *Connection) error {
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		c.ID, c.Name, c.Type, c.URL, encKey,
 		dbutil.BoolToInt(c.Enabled), c.Status, c.StatusMessage,
@@ -66,7 +66,6 @@ func (s *Service) Create(ctx context.Context, c *Connection) error {
 		dbutil.BoolToInt(c.GetFeatureImageWrite()),
 		dbutil.BoolToInt(c.GetFeatureMetadataPush()), dbutil.BoolToInt(c.GetFeatureTriggerRefresh()),
 		dbutil.BoolToInt(c.FeatureManageServerFiles),
-		dbutil.BoolToInt(c.GetVerifyPathAfterUpdate()),
 		c.GetPlatformUserID(), c.GetPlatformServerID(),
 		c.PreStillwaterConfigJSON,
 		pathMappingsJSON,
@@ -80,7 +79,7 @@ func (s *Service) Create(ctx context.Context, c *Connection) error {
 // GetByID retrieves a connection by ID with API key decrypted.
 func (s *Service) GetByID(ctx context.Context, id string) (*Connection, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
 		FROM connections WHERE id = ?
 	`, id)
 	c, err := s.scanConnection(row)
@@ -96,7 +95,7 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Connection, error) {
 // List returns all connections with API keys decrypted.
 func (s *Service) List(ctx context.Context) ([]Connection, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
 		FROM connections ORDER BY name
 	`)
 	if err != nil {
@@ -122,7 +121,7 @@ func (s *Service) List(ctx context.Context) ([]Connection, error) {
 // ListByType returns connections filtered by type.
 func (s *Service) ListByType(ctx context.Context, connType string) ([]Connection, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
 		FROM connections WHERE type = ? ORDER BY name
 	`, connType)
 	if err != nil {
@@ -148,7 +147,7 @@ func (s *Service) ListByType(ctx context.Context, connType string) ([]Connection
 // GetByTypeAndURL returns the most recently created connection matching type and URL, or nil if none.
 func (s *Service) GetByTypeAndURL(ctx context.Context, connType, url string) (*Connection, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
 		FROM connections WHERE type = ? AND url = ? ORDER BY created_at DESC LIMIT 1
 	`, connType, url)
 	c, err := s.scanConnection(row)
@@ -208,7 +207,6 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 			feature_image_write = ?,
 			feature_metadata_push = ?, feature_trigger_refresh = ?,
 			feature_manage_server_files = ?,
-			verify_path_after_update = ?,
 			platform_user_id = ?, platform_server_id = ?,
 			pre_stillwater_config_json = ?,
 			path_mappings = ?
@@ -220,7 +218,6 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 		dbutil.BoolToInt(c.GetFeatureImageWrite()),
 		dbutil.BoolToInt(c.GetFeatureMetadataPush()), dbutil.BoolToInt(c.GetFeatureTriggerRefresh()),
 		dbutil.BoolToInt(c.FeatureManageServerFiles),
-		dbutil.BoolToInt(c.GetVerifyPathAfterUpdate()),
 		c.GetPlatformUserID(), c.GetPlatformServerID(),
 		c.PreStillwaterConfigJSON,
 		pathMappingsJSON,
@@ -381,7 +378,6 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 	var featImageWrite int
 	var featMetadataPush, featTriggerRefresh int
 	var featManageServerFiles int
-	var verifyPathAfterUpdate int
 	var platformUserID sql.NullString
 	var platformServerID sql.NullString
 	var preStillwaterConfigJSON sql.NullString
@@ -395,7 +391,6 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 		&featImageWrite,
 		&featMetadataPush, &featTriggerRefresh,
 		&featManageServerFiles,
-		&verifyPathAfterUpdate,
 		&platformUserID, &platformServerID,
 		&preStillwaterConfigJSON,
 		&pathMappingsJSON,
@@ -433,9 +428,7 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 	// feature columns (always 0) simply never reach a sub-config.
 	switch c.Type {
 	case TypeLidarr:
-		c.Lidarr = &LidarrConfig{
-			VerifyPathAfterUpdate: verifyPathAfterUpdate == 1,
-		}
+		c.Lidarr = &LidarrConfig{}
 	case TypeEmby:
 		c.Emby = &EmbyConfig{
 			PlatformUserID:        platformUserID.String,

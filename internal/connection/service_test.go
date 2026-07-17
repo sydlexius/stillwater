@@ -700,49 +700,6 @@ func TestSetManageServerFiles_ErrorOnUnknownID(t *testing.T) {
 	}
 }
 
-// TestVerifyPathAfterUpdate_RoundTrip exercises the persistence half of
-// the #1640 toggle: a Lidarr connection inserted with VerifyPathAfterUpdate
-// = true must read back true after a GetByID and stay sticky across an
-// Update() that does not touch the field. Mirrors the
-// FeatureManageServerFiles round-trip pattern.
-func TestVerifyPathAfterUpdate_RoundTrip(t *testing.T) {
-	t.Parallel()
-	svc := setupTestService(t)
-	ctx := context.Background()
-
-	conn := &Connection{
-		Name:   "Lidarr verify on",
-		Type:   TypeLidarr,
-		URL:    "http://localhost:8686",
-		APIKey: "key",
-		Lidarr: &LidarrConfig{VerifyPathAfterUpdate: true},
-	}
-	if err := svc.Create(ctx, conn); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	got, err := svc.GetByID(ctx, conn.ID)
-	if err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if got.Lidarr == nil || !got.Lidarr.VerifyPathAfterUpdate {
-		t.Error("VerifyPathAfterUpdate should be true after round-trip")
-	}
-
-	// Update without touching the field; it must persist.
-	got.Name = "renamed"
-	if err := svc.Update(ctx, got); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-	reloaded, err := svc.GetByID(ctx, conn.ID)
-	if err != nil {
-		t.Fatalf("reload after update: %v", err)
-	}
-	if reloaded.Lidarr == nil || !reloaded.Lidarr.VerifyPathAfterUpdate {
-		t.Error("VerifyPathAfterUpdate should survive an Update that did not change it")
-	}
-}
-
 // TestPathMappings_RoundTrip exercises the persistence half of the #2303
 // path-mapping list: a Lidarr connection created with mappings reads them back
 // after GetByID, they survive an Update that does not touch them, and clearing
@@ -825,34 +782,6 @@ func TestPathMappings_DefaultsEmpty(t *testing.T) {
 	}
 	if len(got.GetPathMappings()) != 0 {
 		t.Errorf("default PathMappings = %+v, want none", got.GetPathMappings())
-	}
-}
-
-// TestVerifyPathAfterUpdate_DefaultsFalse pins the opt-in default required
-// by issue #1640: a connection inserted without setting the field reads
-// back false. Existing rows on upgrade hit the same path via the
-// ensureConnectionsColumn DEFAULT 0 fallback in migrate.go.
-func TestVerifyPathAfterUpdate_DefaultsFalse(t *testing.T) {
-	t.Parallel()
-	svc := setupTestService(t)
-	ctx := context.Background()
-
-	conn := &Connection{
-		Name:   "Lidarr default",
-		Type:   TypeLidarr,
-		URL:    "http://localhost:8686",
-		APIKey: "key",
-	}
-	if err := svc.Create(ctx, conn); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	got, err := svc.GetByID(ctx, conn.ID)
-	if err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if got.GetVerifyPathAfterUpdate() {
-		t.Error("VerifyPathAfterUpdate should default to false")
 	}
 }
 

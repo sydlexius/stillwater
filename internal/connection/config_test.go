@@ -13,7 +13,7 @@ func TestGetters_NilSafeAcrossTypes(t *testing.T) {
 	// must return zero values rather than panicking on a nil deref. This is
 	// the exact shape imagebridge/bridge.go relies on when it iterates a
 	// mixed-type connection list.
-	lidarr := &Connection{Type: TypeLidarr, Lidarr: &LidarrConfig{VerifyPathAfterUpdate: true}}
+	lidarr := &Connection{Type: TypeLidarr, Lidarr: &LidarrConfig{}}
 	if lidarr.GetPlatformUserID() != "" {
 		t.Errorf("Lidarr GetPlatformUserID() = %q, want empty", lidarr.GetPlatformUserID())
 	}
@@ -22,9 +22,6 @@ func TestGetters_NilSafeAcrossTypes(t *testing.T) {
 	}
 	if lidarr.GetFeatureImageWrite() {
 		t.Error("Lidarr GetFeatureImageWrite() = true, want false")
-	}
-	if !lidarr.GetVerifyPathAfterUpdate() {
-		t.Error("Lidarr GetVerifyPathAfterUpdate() = false, want true")
 	}
 
 	// A connection whose matching config pointer is nil must also be safe.
@@ -83,7 +80,7 @@ func TestValidate_RejectsMismatchedConfig(t *testing.T) {
 		Type:   TypeEmby,
 		URL:    "http://emby:8096",
 		APIKey: "k",
-		Lidarr: &LidarrConfig{VerifyPathAfterUpdate: true}, // wrong platform
+		Lidarr: &LidarrConfig{}, // wrong platform
 	}
 	if err := c.Validate(); err == nil {
 		t.Error("Validate() must reject an Emby connection carrying a LidarrConfig")

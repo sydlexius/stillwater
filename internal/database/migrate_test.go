@@ -1915,3 +1915,35 @@ func TestMigration016SeedPlatformDebugUserPref(t *testing.T) {
 		}
 	})
 }
+
+// TestMigration025_VerifyPathAfterUpdateColumnDropped pins that the retired
+// verify_path_after_update toggle (#2563) is gone from the schema after a full
+// migrate. The column was added by 013 and dropped by 025 once #2380/#2419 left
+// it gating nothing.
+//
+// This asserts the migration actually took effect rather than trusting that it
+// ran: a fresh migrated DB is the same artifact production upgrades to. It also
+// guards the re-add vector -- ensureConnectionsColumn (migrate.go) re-creates
+// forward-compat connections columns on every startup, so a future entry there
+// naming this column would silently resurrect it behind the migration's back.
+func TestMigration025_VerifyPathAfterUpdateColumnDropped(t *testing.T) {
+	t.Parallel()
+	db := openMigratedDB(t)
+
+	// Precondition: a column the schema definitely still has, so a bug in
+	// columnExists (always-false) cannot make the assertion below pass
+	// vacuously.
+	if has, err := columnExists(db, "connections", "feature_image_write"); err != nil {
+		t.Fatalf("columnExists(feature_image_write): %v", err)
+	} else if !has {
+		t.Fatal("feature_image_write missing; columnExists is broken and the assertion below would be vacuous")
+	}
+
+	has, err := columnExists(db, "connections", "verify_path_after_update")
+	if err != nil {
+		t.Fatalf("columnExists(verify_path_after_update): %v", err)
+	}
+	if has {
+		t.Error("connections.verify_path_after_update still exists after migrate; migration 025 did not drop it")
+	}
+}

@@ -635,11 +635,9 @@ func TestSyncRename_PerPlatformTimeoutFires(t *testing.T) {
 }
 
 // lidarrVerifyServer is a minimal httptest fixture that counts GET vs PUT
-// hits against /api/v1/artist/{id}. Shared by the two tests below so the only
-// delta between them is the Connection.VerifyPathAfterUpdate value -- which,
-// since #2419, must make no difference at all.
+// hits against /api/v1/artist/{id}.
 // Echoes the requested path on the read-back GET so the match branch
-// succeeds without each test needing to script per-request bodies.
+// succeeds without the test needing to script per-request bodies.
 func lidarrVerifyServer(t *testing.T, newPath string) (*httptest.Server, func() int) {
 	t.Helper()
 	// atomic.Int32 because the counter is written from the httptest
@@ -679,23 +677,34 @@ func lidarrVerifyServer(t *testing.T, newPath string) (*httptest.Server, func() 
 	return srv, func() int { return int(getCount.Load()) }
 }
 
-// TestSyncRename_LidarrReadBackUnconditional_ToggleOn is the load-bearing guard
-// for #2419: with conn.VerifyPathAfterUpdate TRUE the rename must produce
-// exactly 2 GETs -- the pre-PUT fetch plus the publish-layer read-back. The
-// toggle no longer buys a third.
+// TestSyncRename_LidarrReadBackUnconditional is the load-bearing guard for
+// #2380 and #2419: a Lidarr rename must produce exactly 2 GETs against the
+// artist resource -- the pre-PUT fetch plus the publish-layer read-back.
 //
-// The count was 3 before #2419 (pre-PUT + Lidarr's own in-client verify GET +
-// the publish read-back). That middle GET was the entire remaining behavior of
-// a toggle named "verify path after update", and it was redundant: #2380 made
-// the publish-layer read-back unconditional on every peer, so the toggle only
-// ever bought a duplicate check on the one peer where a read-back is weakest
-// (Lidarr echoes what it was sent). A count of 3 here means the in-client
-// verify has come back.
+// The count pins BOTH failure directions, which is why it survives the
+// retirement of the verify_path_after_update toggle (#2563):
+//
+//   - A count of 3 means Lidarr's in-client verify GET has come back. That
+//     GET was the entire remaining behavior of the toggle and it was a
+//     duplicate: #2380 made the publish-layer read-back unconditional on
+//     every peer, so it only ever bought a second check on the one peer where
+//     a read-back is weakest (Lidarr echoes what it was sent). #2419 removed
+//     it.
+//   - A count of 1 means the publish-layer read-back became conditional
+//     again. That was precisely the #2380 defect: the only read-back in the
+//     codebase was Lidarr's, it defaulted to OFF, and Emby/Jellyfin had none,
+//     so the one mechanism that could catch a peer silently discarding a path
+//     was disabled on the two peers that silently discard paths. A read-back
+//     is a correctness guard, not a preference.
+//
+// This was previously a pair of tests differing only in the toggle value,
+// asserting the same 2 GETs to prove the toggle was inert. With the field
+// gone that delta is unrepresentable and the twin is redundant, but the
+// unconditional-read-back assertion is a live behavioral pin on SyncRename
+// and is kept here.
 //
 // The factory is NOT swapped, so this exercises the real production path.
-// Paired with the ToggleOff twin: identical expectations, opposite toggle
-// values, which together assert the toggle is inert.
-func TestSyncRename_LidarrReadBackUnconditional_ToggleOn(t *testing.T) {
+func TestSyncRename_LidarrReadBackUnconditional(t *testing.T) {
 	srv, gets := lidarrVerifyServer(t, "/new/X")
 
 	p := New(Deps{
@@ -710,7 +719,7 @@ func TestSyncRename_LidarrReadBackUnconditional_ToggleOn(t *testing.T) {
 				URL:     srv.URL,
 				APIKey:  "k",
 				Enabled: true,
-				Lidarr:  &connection.LidarrConfig{VerifyPathAfterUpdate: true},
+				Lidarr:  &connection.LidarrConfig{},
 			},
 		}},
 		Logger: silentLogger(),
@@ -725,57 +734,9 @@ func TestSyncRename_LidarrReadBackUnconditional_ToggleOn(t *testing.T) {
 	}
 	if got := gets(); got != 2 {
 		t.Errorf("GET count = %d, want 2 (pre-PUT + the unconditional publish-layer "+
-			"read-back). A count of 3 means Lidarr's in-client verify GET returned -- "+
-			"#2419 removed it as a duplicate of the publish read-back", got)
-	}
-}
-
-// TestSyncRename_LidarrReadBackUnconditional_ToggleOff is the opposite-toggle
-// twin: with conn.VerifyPathAfterUpdate FALSE the rename must produce the SAME
-// 2 GETs as the ToggleOn case, because the pre-PUT fetch is followed by the
-// publish-layer read-back that no connection setting can turn off.
-//
-// The expectation here was 1 GET before #2380 -- "verify must remain opt-in".
-// That was precisely the defect #2380 closed. The only read-back in the
-// codebase was Lidarr's, it defaulted to OFF, and Emby/Jellyfin had none at all,
-// so the one mechanism that could have caught a peer silently discarding a path
-// was disabled on the two peers that silently discard paths. A read-back is a
-// correctness guard, not a preference.
-//
-// A regression that makes the publish-layer verifier conditional again would
-// surface here as a 1-GET observation.
-func TestSyncRename_LidarrReadBackUnconditional_ToggleOff(t *testing.T) {
-	srv, gets := lidarrVerifyServer(t, "/new/X")
-
-	p := New(Deps{
-		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
-			{ArtistID: "a1", ConnectionID: "c-lid", PlatformArtistID: "42"},
-		}},
-		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-lid": {
-				ID:      "c-lid",
-				Name:    "lid",
-				Type:    connection.TypeLidarr,
-				URL:     srv.URL,
-				APIKey:  "k",
-				Enabled: true,
-				// VerifyPathAfterUpdate defaults to false.
-			},
-		}},
-		Logger: silentLogger(),
-	})
-
-	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new/X")
-	if err != nil {
-		t.Fatalf("SyncRename: %v", err)
-	}
-	if len(results) != 1 || results[0].Result != artist.PlatformRemapOK {
-		t.Fatalf("results = %+v, want one ok entry", results)
-	}
-	if got := gets(); got != 2 {
-		t.Errorf("GET count = %d, want 2 (pre-PUT + the publish-layer read-back, which is "+
-			"unconditional and matches the ToggleOn twin exactly); a count of 1 means the "+
-			"read-back became opt-in again -- the #2380 defect", got)
+			"read-back). A count of 3 means Lidarr's in-client verify GET returned "+
+			"(#2419 removed it as a duplicate); a count of 1 means the read-back "+
+			"became opt-in again -- the #2380 defect", got)
 	}
 }
 
