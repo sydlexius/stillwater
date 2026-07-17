@@ -8,6 +8,7 @@ import (
 	stdimage "image"
 	"image/color"
 	"image/jpeg"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -353,6 +354,18 @@ func TestRemediatePHashMismatches_RestoresStagedTombsAndKeepsQuarantineOnRenumbe
 	}
 	if res.SlotsRemoved != 0 {
 		t.Errorf("nothing may be reported removed when the commit failed, got %d", res.SlotsRemoved)
+	}
+	// The audit trail must not lie: a slot staged for removal whose commit
+	// failed and was rolled back must be reported "failed", never "removed".
+	// The outcome is stamped only AFTER the commit confirms; before this fix it
+	// was set to "removed" inside the suspect loop and left standing on the
+	// failure path, claiming a removal that never happened.
+	if len(res.Outcomes) != 1 {
+		t.Fatalf("want exactly 1 outcome for the staged-then-failed slot, got %+v", res.Outcomes)
+	}
+	if res.Outcomes[0].Action != "failed" {
+		t.Errorf("a rolled-back slot must be reported %q, not %q (%+v)",
+			"failed", res.Outcomes[0].Action, res.Outcomes[0])
 	}
 
 	// Rollback proof: the staged slot is back at its original path, and no
@@ -1114,6 +1127,261 @@ func TestRestorePHashQuarantine_ArtistWithNoPathIsAnError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no path") {
 		t.Errorf("the error must name the missing path, got: %v", err)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Metadata sync after irreversible work must not report success as failure
+// --------------------------------------------------------------------------
+
+// captureWarnPipeline builds a repair pipeline whose logger writes WARN+ lines
+// to the returned buffer, so a test can assert a soft-failure path actually
+// surfaced a warning rather than merely swallowing an error and returning nil.
+func captureWarnPipeline(t *testing.T, e *Engine, db *sql.DB) (*Pipeline, *bytes.Buffer) {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	return NewPipeline(e, artist.NewService(db), nil, nil, nil, logger), buf
+}
+
+// blockArtistUpdates installs a trigger that aborts every UPDATE on the artists
+// table while leaving reads and inserts working.
+//
+// It is the deterministic way to make artistService.Update fail AFTER the scan
+// and after the on-disk work: closing the DB would fail the scan first and never
+// reach the metadata sync, and the concrete *artist.Service field cannot be
+// stubbed. The trigger touches only the artists table, so the image-hash
+// recorder's writes to artist_images (which the renumber depends on) still work.
+func blockArtistUpdates(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.ExecContext(context.Background(),
+		`CREATE TRIGGER block_artist_update BEFORE UPDATE ON artists
+		 BEGIN SELECT RAISE(ABORT, 'artist update blocked for test'); END`); err != nil {
+		t.Fatalf("installing artist-update block trigger: %v", err)
+	}
+}
+
+// TestRemediatePHashMismatches_MetadataSyncFailureStillReportsRemovalSuccess
+// pins that a failed artist metadata sync AFTER the irreversible on-disk removal
+// is reported as a warning, not as the operation failing.
+//
+// The removal (quarantine, stage, renumber, unlink tombs) has already committed
+// by the time Update runs; it cannot be undone. Reporting the metadata miss as a
+// failure would invite an operator to re-run a destructive path that already
+// succeeded. The result must stay successful and a warning must be surfaced.
+func TestRemediatePHashMismatches_MetadataSyncFailureStillReportsRemovalSuccess(t *testing.T) {
+	e, db := newDupTestEngine(t)
+	p, logs := captureWarnPipeline(t, e, db)
+	dirA := seedPollutedLibrary(t, db)
+
+	// Fail the metadata sync only; the scan and the on-disk work must still run.
+	blockArtistUpdates(t, db)
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("a metadata sync miss after an irreversible removal must not fail the run: %v", err)
+	}
+	// (1) The destructive result is still reported successful.
+	if res.SlotsRemoved != 1 || res.Quarantined != 1 || res.Failures != 0 {
+		t.Fatalf("want 1 removed / 1 quarantined / 0 failures despite the sync miss, got %+v", res)
+	}
+	if len(res.Outcomes) != 1 || res.Outcomes[0].Action != "removed" {
+		t.Fatalf("the committed slot must be reported removed, got %+v", res.Outcomes)
+	}
+	// The removal really happened on disk: the polluted picture is gone and the
+	// gap is closed. Assert the artifact, not just the counters.
+	if got := fanartVariantAt(t, dirA, "fanart.jpg", []int{0, 1, 2}); got != 0 {
+		t.Errorf("slot 0 must still hold v0, holds v%d", got)
+	}
+	if got := fanartVariantAt(t, dirA, "fanart2.jpg", []int{0, 1, 2}); got != 2 {
+		t.Errorf("slot 1 must hold v2 after renumbering, holds v%d", got)
+	}
+	if _, err := os.Stat(filepath.Join(dirA, "fanart3.jpg")); !os.IsNotExist(err) {
+		t.Errorf("the gap must be closed, fanart3.jpg still present; stat err = %v", err)
+	}
+	// (2) A warning was surfaced.
+	if !strings.Contains(logs.String(), "metadata sync failed") {
+		t.Errorf("a metadata sync miss must surface a warning; log was: %q", logs.String())
+	}
+}
+
+// TestRestorePHashQuarantine_MetadataSyncFailureStillReportsRestoreSuccess pins
+// the same contract on the restore path: by the time Update runs, the artwork is
+// already back on disk. A metadata sync miss must warn and preserve the
+// successful restore, not report the recovered artwork as a failed restore.
+func TestRestorePHashQuarantine_MetadataSyncFailureStillReportsRestoreSuccess(t *testing.T) {
+	e, db := newDupTestEngine(t)
+	p, logs := captureWarnPipeline(t, e, db)
+	dirA := seedPollutedLibrary(t, db)
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("remediate setup: %v", err)
+	}
+	if res.SlotsRemoved != 1 {
+		t.Fatalf("setup: expected the polluted slot removed, got %+v", res)
+	}
+
+	// Arm the failure only now: the removal is committed, the restore is next.
+	blockArtistUpdates(t, db)
+	logs.Reset()
+
+	rres, err := p.RestorePHashQuarantine(context.Background(), "art-a", res.OpID)
+	if err != nil {
+		t.Fatalf("a metadata sync miss after the artwork is back must not fail the restore: %v", err)
+	}
+	// (1) The restore is still reported successful.
+	if rres.Restored != 1 || len(rres.Failures) != 0 {
+		t.Fatalf("want 1 restored / 0 failures despite the sync miss, got %+v", rres)
+	}
+	// The artwork really is back on disk, appended.
+	if got := fanartVariantAt(t, dirA, "fanart3.jpg", []int{0, 1, 2}); got != 1 {
+		t.Errorf("the restored picture must be on disk at the next free ordinal, ordinal 2 holds v%d", got)
+	}
+	// The entry is consumed -- the bytes are back, so the quarantine has no claim.
+	m, err := image.ReadRepairManifest(dirA, res.OpID)
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m != nil && len(m.Entries) != 0 {
+		t.Errorf("a successful restore must consume its entry, manifest holds %+v", m.Entries)
+	}
+	// (2) A warning was surfaced.
+	if !strings.Contains(logs.String(), "metadata sync failed") {
+		t.Errorf("a metadata sync miss must surface a warning; log was: %q", logs.String())
+	}
+}
+
+// --------------------------------------------------------------------------
+// Re-verify the matched counterpart before authorizing a delete
+// --------------------------------------------------------------------------
+
+// TestRemediatePHashMismatches_SkipsWhenMatchedCounterpartChangedOnDisk pins the
+// second half of the re-verification safeguard.
+//
+// A removal is authorized by a PAIR: the suspect looks like some OTHER artist's
+// fanart. reverifySlotPHash re-hashes only the suspect's own bytes; the matched
+// counterpart's hash comes from the scan's cache and is otherwise never re-read.
+// So a counterpart that changed on disk after the scan but before the commit
+// would leave the collision no longer holding, yet the stale cache would still
+// authorize a destructive removal. The counterpart must be re-read and the match
+// re-confirmed; a stale counterpart is a SKIP, not a delete.
+func TestRemediatePHashMismatches_SkipsWhenMatchedCounterpartChangedOnDisk(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	seedRepairArtist(t, db, "art-a", "Artist A", dirA)
+	seedRepairArtist(t, db, "art-b", "Artist B", dirB)
+
+	h0 := writePollutionFanart(t, dirA, "fanart.jpg", 0)
+	h1 := writePollutionFanart(t, dirA, "fanart2.jpg", 1) // the pollution
+	h2 := writePollutionFanart(t, dirA, "fanart3.jpg", 2)
+	hB := writePollutionFanart(t, dirB, "fanart.jpg", 1) // B's copy: the counterpart
+
+	seedHashedImage(t, db, "art-a", "fanart", 0, h0)
+	seedHashedImage(t, db, "art-a", "fanart", 1, h1)
+	seedHashedImage(t, db, "art-a", "fanart", 2, h2)
+	seedHashedImage(t, db, "art-b", "fanart", 0, hB)
+
+	if h1 != hB {
+		t.Fatalf("precondition: the pollution and B's copy must be the same picture, got %s vs %s", h1, hB)
+	}
+
+	// The counterpart changes on disk AFTER the scan's cache was written: B's
+	// slot 0 now holds a DIFFERENT picture (v2), while the DB still says hB (v1).
+	// The scan still finds the collision from the stale cache; the live
+	// counterpart no longer matches.
+	writePollutionFanart(t, dirB, "fanart.jpg", 2)
+
+	// Precondition: the new counterpart must genuinely fall outside the
+	// tolerance, or the skip below would prove nothing.
+	if sim := image.Similarity(pollutionHash(t, 1), pollutionHash(t, 2)); sim >= defaultPHashMismatchTolerance {
+		t.Fatalf("precondition: v1 and v2 must be distinguishable, similarity %.4f >= tolerance", sim)
+	}
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("RemediatePHashMismatches: %v", err)
+	}
+	// The suspect's OWN bytes still match its flagged hash, so the suspect-only
+	// safeguard would have authorized the delete. The counterpart re-check is
+	// what must stop it.
+	if res.SlotsRemoved != 0 || res.Quarantined != 0 {
+		t.Errorf("a suspect whose counterpart no longer matches must not be removed, got %+v", res)
+	}
+	if res.SlotsSkipped != 1 {
+		t.Fatalf("want 1 skipped slot, got %d (%+v)", res.SlotsSkipped, res.Outcomes)
+	}
+	if res.Failures != 0 {
+		t.Errorf("a skip is the safeguard working, not a failure; got %d failures", res.Failures)
+	}
+	if len(res.Outcomes) != 1 || res.Outcomes[0].Action != "skipped" {
+		t.Fatalf("expected a skipped outcome, got %+v", res.Outcomes)
+	}
+	if !strings.Contains(res.Outcomes[0].Reason, "counterpart") {
+		t.Errorf("the skip must name the counterpart re-verification, got %q", res.Outcomes[0].Reason)
+	}
+	// A's suspect slot survived: nothing was deleted on an unreproducible signal.
+	if got := fanartVariantAt(t, dirA, "fanart2.jpg", []int{0, 1, 2}); got != 1 {
+		t.Errorf("the suspect slot must survive, slot 1 holds v%d", got)
+	}
+}
+
+// TestRemediatePHashMismatches_SkipsWhenMatchedCounterpartRemovedFromDisk pins
+// the other half of the counterpart re-verification: the counterpart file is
+// GONE, not merely changed.
+//
+// The scan's cache still records the counterpart's hash, so the collision is
+// still reported; but the file that gave the removal its only corroboration is
+// no longer on disk. An absent counterpart must NOT authorize a delete -- it is
+// strictly a skip, same as a counterpart that no longer matches.
+func TestRemediatePHashMismatches_SkipsWhenMatchedCounterpartRemovedFromDisk(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	seedRepairArtist(t, db, "art-a", "Artist A", dirA)
+	seedRepairArtist(t, db, "art-b", "Artist B", dirB)
+
+	h0 := writePollutionFanart(t, dirA, "fanart.jpg", 0)
+	h1 := writePollutionFanart(t, dirA, "fanart2.jpg", 1) // the pollution
+	h2 := writePollutionFanart(t, dirA, "fanart3.jpg", 2)
+	hB := writePollutionFanart(t, dirB, "fanart.jpg", 1) // B's copy: the counterpart
+
+	seedHashedImage(t, db, "art-a", "fanart", 0, h0)
+	seedHashedImage(t, db, "art-a", "fanart", 1, h1)
+	seedHashedImage(t, db, "art-a", "fanart", 2, h2)
+	seedHashedImage(t, db, "art-b", "fanart", 0, hB)
+
+	if h1 != hB {
+		t.Fatalf("precondition: the pollution and B's copy must be the same picture, got %s vs %s", h1, hB)
+	}
+
+	// The counterpart file vanishes after the scan's cache was written: the DB
+	// still says B slot 0 = hB, but the disk no longer holds it.
+	if err := os.Remove(filepath.Join(dirB, "fanart.jpg")); err != nil {
+		t.Fatalf("removing counterpart: %v", err)
+	}
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("RemediatePHashMismatches: %v", err)
+	}
+	if res.SlotsRemoved != 0 || res.Quarantined != 0 {
+		t.Errorf("a suspect whose counterpart is gone must not be removed, got %+v", res)
+	}
+	if res.SlotsSkipped != 1 {
+		t.Fatalf("want 1 skipped slot, got %d (%+v)", res.SlotsSkipped, res.Outcomes)
+	}
+	if len(res.Outcomes) != 1 || res.Outcomes[0].Action != "skipped" {
+		t.Fatalf("expected a skipped outcome, got %+v", res.Outcomes)
+	}
+	if !strings.Contains(res.Outcomes[0].Reason, "counterpart slot no longer exists") {
+		t.Errorf("the skip must name the vanished counterpart, got %q", res.Outcomes[0].Reason)
+	}
+	if got := fanartVariantAt(t, dirA, "fanart2.jpg", []int{0, 1, 2}); got != 1 {
+		t.Errorf("the suspect slot must survive, slot 1 holds v%d", got)
 	}
 }
 

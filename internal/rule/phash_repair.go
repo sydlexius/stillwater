@@ -132,7 +132,9 @@ type PHashSlotOutcome struct {
 	MatchedArtistID   string `json:"matched_artist_id,omitempty"`
 	MatchedArtistName string `json:"matched_artist_name,omitempty"`
 
-	// Action is "removed", "skipped", or "would-remove" (dry run).
+	// Action is "removed", "skipped", "would-remove" (dry run), or "failed"
+	// (staged for removal, but the renumber/commit did not confirm, so the
+	// staged tombs were rolled back and nothing was removed).
 	Action string `json:"action"`
 
 	// Reason explains a skip. Empty otherwise.
@@ -299,7 +301,7 @@ func (p *Pipeline) RemediatePHashMismatches(ctx context.Context, scope PHashMism
 			continue
 		}
 		result.ArtistsProcessed++
-		if err := p.remediateArtistPHash(ctx, a, am, result.OpID, primaryName, kodiNumbering, opts, &result); err != nil {
+		if err := p.remediateArtistPHash(ctx, a, am, result.OpID, primaryName, kodiNumbering, report.Tolerance, opts, &result); err != nil {
 			p.logger.Error("phash back-out failed for artist",
 				slog.String("op_id", result.OpID),
 				slog.String("artist_id", am.ArtistID),
@@ -335,6 +337,7 @@ func (p *Pipeline) remediateArtistPHash(
 	am ArtistPHashMismatch,
 	opID, primaryName string,
 	kodiNumbering bool,
+	tolerance float64,
 	opts PHashRemediateOpts,
 	result *PHashRemediateResult,
 ) error {
@@ -344,6 +347,12 @@ func (p *Pipeline) remediateArtistPHash(
 	}
 
 	confirmed := make(map[int]bool)
+	// Outcomes for slots quarantined and staged for removal are held here,
+	// NOT stamped "removed" or appended to result.Outcomes, until the renumber
+	// commit confirms. Recording "removed" before the commit would leave a
+	// lying audit trail on the failure path, where the staged tombs are rolled
+	// back to their original paths and nothing is actually removed.
+	var pending []PHashSlotOutcome
 	for _, s := range am.Suspects {
 		outcome := PHashSlotOutcome{
 			ArtistID: a.ID, ArtistName: a.Name, SlotIndex: s.SlotIndex,
@@ -383,6 +392,32 @@ func (p *Pipeline) remediateArtistPHash(
 			continue
 		}
 
+		// Re-verify the MATCHED COUNTERPART against its own bytes on disk too,
+		// not just the suspect. The suspect re-verification above binds the
+		// deletion to what is about to be deleted, but the collision that
+		// justifies deleting it rests on the OTHER side of the pair -- and that
+		// side's hash came from the scan's cache (artist_images.phash), never
+		// re-read here. If the counterpart changed or was removed on disk after
+		// the scan but before this commit, the collision no longer holds, yet
+		// the stale cache would still authorize a destructive removal. Re-read
+		// the counterpart, re-hash it, and require the perceptual match to still
+		// hold at the removal's own tolerance. A stale or absent counterpart is
+		// strictly a SKIP: an ambiguous, no-longer-reproducible signal must not
+		// authorize an exact delete.
+		if ok, reason := p.reverifyMatchedCounterpart(ctx, primaryName, s.PHash, s.MatchedArtistID, s.MatchedSlotIndex, tolerance); !ok {
+			outcome.Action, outcome.Reason = "skipped", reason
+			p.logger.Warn("phash back-out skipping slot whose matched counterpart no longer confirms the collision",
+				slog.String("op_id", opID), slog.String("artist_id", a.ID),
+				slog.String("artist", a.Name), slog.Int("slot_index", s.SlotIndex),
+				slog.String("file", outcome.FileName),
+				slog.String("matched_artist_id", s.MatchedArtistID),
+				slog.Int("matched_slot_index", s.MatchedSlotIndex),
+				slog.String("reason", reason))
+			result.SlotsSkipped++
+			result.Outcomes = append(result.Outcomes, outcome)
+			continue
+		}
+
 		if opts.DryRun {
 			outcome.Action = "would-remove"
 			result.Outcomes = append(result.Outcomes, outcome)
@@ -409,8 +444,9 @@ func (p *Pipeline) remediateArtistPHash(
 			slog.String("matched_artist", s.MatchedArtistName),
 			slog.Float64("similarity", s.Similarity))
 
-		outcome.Action = "removed"
-		result.Outcomes = append(result.Outcomes, outcome)
+		// Deliberately NOT stamped "removed" or appended yet: the removal is
+		// not confirmed until stageAndCommitPHashRemoval succeeds below.
+		pending = append(pending, outcome)
 		confirmed[s.SlotIndex] = true
 	}
 
@@ -420,13 +456,35 @@ func (p *Pipeline) remediateArtistPHash(
 
 	removed, err := p.stageAndCommitPHashRemoval(ctx, a, primaryName, kodiNumbering, paths, confirmed, opID)
 	if err != nil {
+		// The commit failed: the staged tombs were rolled back to their
+		// original paths, so nothing was removed. Record the pending slots as
+		// "failed" rather than "removed" so the audit trail matches the disk,
+		// then propagate the error (the caller bumps result.Failures).
+		for i := range pending {
+			pending[i].Action = "failed"
+			pending[i].Reason = "renumber/commit failed; staged tombs were rolled back and nothing was removed"
+			result.Outcomes = append(result.Outcomes, pending[i])
+		}
 		return err
 	}
+	// Confirmed: stamp the pending outcomes "removed" and bump the counter.
 	result.SlotsRemoved += len(removed)
+	for i := range pending {
+		pending[i].Action = "removed"
+		result.Outcomes = append(result.Outcomes, pending[i])
+	}
 
 	resyncFanartFields(a, primaryName)
 	if err := p.artistService.Update(ctx, a); err != nil {
-		return fmt.Errorf("updating artist %s after back-out: %w", a.Name, err)
+		// The destructive on-disk work is already committed and IRREVERSIBLE
+		// at this point. A metadata sync miss is a cache problem the next scan
+		// re-derives; reporting it as the operation failing would invite an
+		// operator to re-run a destructive path that already succeeded. Warn
+		// and preserve the successful result instead of returning the error.
+		p.logger.Warn("phash back-out removed slots on disk but the artist metadata sync failed; "+
+			"the removal is committed and must not be re-run",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("artist", a.Name), slog.String("error", err.Error()))
 	}
 	return nil
 }
@@ -456,6 +514,61 @@ func (p *Pipeline) reverifySlotPHash(path, flagged string) (bool, string) {
 	actual := img.HashHex(h)
 	if !strings.EqualFold(actual, flagged) {
 		return false, "on-disk image no longer matches the flagged hash; the slot changed since detection"
+	}
+	return true, ""
+}
+
+// reverifyMatchedCounterpart re-reads the matched artist's fanart slot from
+// disk, re-hashes it, and reports whether the perceptual collision that
+// justifies removing the suspect still holds at the removal's tolerance.
+//
+// This closes the other half of the re-verification gap. reverifySlotPHash
+// binds the decision to the suspect's OWN bytes, but a removal is authorized by
+// a PAIR: the suspect looks like some other artist's fanart. That other side's
+// hash was read from the scan's cache and is never otherwise re-read, so a
+// counterpart that changed or vanished on disk between the scan and this commit
+// would leave the cache pointing at a picture that is no longer there while
+// still authorizing a delete. Re-hashing the counterpart from disk is the only
+// check that binds the removal to a collision that is still real.
+//
+// suspectPHash is the suspect's flagged hash, which reverifySlotPHash has
+// already confirmed matches the suspect's current on-disk bytes -- so it is the
+// live suspect hash, not a stale one. Every failure to re-confirm the match is
+// a refusal: a stale or absent counterpart must NOT authorize a delete.
+func (p *Pipeline) reverifyMatchedCounterpart(ctx context.Context, primaryName, suspectPHash, matchedArtistID string, matchedSlotIndex int, tolerance float64) (bool, string) {
+	if matchedArtistID == "" {
+		return false, "collision has no matched counterpart to re-verify; refusing to remove"
+	}
+	want, err := img.ParseHashHex(suspectPHash)
+	if err != nil {
+		return false, fmt.Sprintf("parsing flagged suspect hash: %v", err)
+	}
+	ma, err := p.artistService.GetByID(ctx, matchedArtistID)
+	if err != nil {
+		return false, fmt.Sprintf("loading matched artist %s to re-verify the counterpart: %v", matchedArtistID, err)
+	}
+	if ma.Path == "" {
+		return false, "matched artist has no path; cannot re-verify the counterpart on disk"
+	}
+	paths, err := img.DiscoverFanart(ma.Path, primaryName)
+	if err != nil {
+		return false, fmt.Sprintf("discovering matched artist fanart: %v", err)
+	}
+	if matchedSlotIndex < 0 || matchedSlotIndex >= len(paths) {
+		return false, "matched counterpart slot no longer exists on disk; the collision cannot be re-confirmed"
+	}
+	f, err := os.Open(paths[matchedSlotIndex])
+	if err != nil {
+		return false, fmt.Sprintf("re-reading matched counterpart: %v", err)
+	}
+	defer f.Close() //nolint:errcheck // best-effort close after read
+
+	got, err := img.PerceptualHash(f)
+	if err != nil {
+		return false, fmt.Sprintf("re-hashing matched counterpart: %v", err)
+	}
+	if img.Similarity(want, got) < tolerance {
+		return false, "matched counterpart on disk no longer resembles the suspect; the collision that justified removal is gone"
 	}
 	return true, ""
 }
@@ -624,12 +737,22 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 
 	resyncFanartFields(a, primaryName)
 	if err := p.artistService.Update(ctx, a); err != nil {
-		return result, fmt.Errorf("updating artist %s after restore: %w", a.Name, err)
+		// The bytes are already back on disk at this point -- the restore
+		// succeeded. A metadata sync miss is a cache problem the next scan
+		// re-derives; returning it as an error would report a successful
+		// recovery as a failure, and an operator re-running "the failed
+		// restore" would find the artwork already present and be told nothing
+		// happened. Warn and preserve the successful result.
+		p.logger.Warn("phash quarantine restore wrote the artwork back but the artist metadata sync failed; "+
+			"the restore is complete and must not be re-run as a failure",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("artist", a.Name), slog.String("error", err.Error()))
 	}
 	p.logger.Info("phash quarantine restore finished",
 		slog.String("op_id", opID), slog.String("artist_id", a.ID),
 		slog.String("artist", a.Name), slog.Int("restored", result.Restored),
 		slog.Int("already_present", result.AlreadyPresent),
+		slog.Int("needs_review", result.NeedsReview),
 		slog.Int("failures", len(result.Failures)))
 	return result, nil
 }
