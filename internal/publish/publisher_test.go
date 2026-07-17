@@ -51,6 +51,10 @@ type fakePlatformLister struct {
 	// never call List; it is an additive method, not part of
 	// artistPlatformLister, so it does not affect any other fake's contract.
 	artists []artist.Artist
+
+	// idsErr, when non-nil, makes GetPlatformIDs fail (exercises the
+	// platform-id-load error branch in the phash orchestration wrappers).
+	idsErr error
 }
 
 // List returns the fake's artists on page 1 and an empty page thereafter,
@@ -93,6 +97,9 @@ func (f *fakePlatformLister) SetPlatformIDStable(_ context.Context, artistID, co
 }
 
 func (f *fakePlatformLister) GetPlatformIDs(_ context.Context, _ string) ([]artist.PlatformID, error) {
+	if f.idsErr != nil {
+		return nil, f.idsErr
+	}
 	return f.ids, nil
 }
 
