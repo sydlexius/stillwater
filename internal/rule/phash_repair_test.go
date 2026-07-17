@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	stdimage "image"
+	"image/color"
 	"image/jpeg"
 	"math"
 	"os"
@@ -716,6 +718,33 @@ func TestRestorePHashQuarantine_RecognizesAReEncodedCopyAsAlreadyPresent(t *test
 	if got := len(discoverForTest(t, dirA)); got != before {
 		t.Errorf("no duplicate may be appended: %d slots before, %d after", before, got)
 	}
+
+	// The entry is RETAINED, and this assertion is the point. A re-encode is a
+	// PERCEPTUAL match, not a byte match: the quarantine still holds the only
+	// copy of the ORIGINAL bytes, and the thing on disk is a lossier version of
+	// them. Consuming here would destroy the better copy in favor of the worse
+	// one and call it success.
+	//
+	// This test previously asserted only the counters, so it passed just as
+	// happily against the version that consumed on a perceptual match -- it was
+	// blessing the blocker rather than pinning a contract. Asked "what broken
+	// behavior still passes this?", the answer was "the one that deletes the
+	// artwork". It is asked and answered now.
+	m, err := image.ReadRepairManifest(dirA, res.OpID)
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m == nil || len(m.Entries) != 1 {
+		t.Fatalf("a perceptual-only match must RETAIN the entry -- the quarantine holds "+
+			"the only copy of the original bytes. manifest = %+v", m)
+	}
+	data, err := image.RepairEntryBytes(dirA, res.OpID, m.Entries[0])
+	if err != nil {
+		t.Fatalf("the quarantined bytes must still be readable: %v", err)
+	}
+	if !bytes.Equal(data, pollutionJPEG(t, 1)) {
+		t.Error("the retained bytes must be exactly the removed picture")
+	}
 }
 
 // TestReverifySlotPHash_RefusesAnEmptyFlaggedHash pins "unknown never matches
@@ -1210,5 +1239,126 @@ func TestRestorePHashQuarantine_HashInvalidationFailureDoesNotFailTheRestore(t *
 	}
 	if m != nil && len(m.Entries) != 0 {
 		t.Errorf("a successful restore must consume its entry, manifest holds %+v", m.Entries)
+	}
+}
+
+// nearMissJPEG returns a picture built from pollutionJPEG(variant)'s block
+// structure with its first four blocks brightened -- a DIFFERENT photograph
+// whose dHash still lands inside the restore's tolerance. It models the
+// everyday case the restore path has to survive: a same-shoot frame, a crop
+// variant, a re-encode at another quality. This repo ships a whole duplicate
+// fixer precisely because such near-duplicates are common.
+func nearMissJPEG(t *testing.T, variant int) []byte {
+	t.Helper()
+	const blocks, w, h = 8, 640, 360
+	m := stdimage.NewRGBA(stdimage.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			bx, by := x*blocks/w, y*blocks/h
+			hsh := uint32(bx)*374761393 + uint32(by)*668265263 + uint32(variant)*2246822519
+			hsh ^= hsh >> 13
+			hsh *= 1274126177
+			hsh ^= hsh >> 16
+			v := int(uint8(hsh >> 8))
+			if by*blocks+bx < 4 {
+				if v += 90; v > 255 {
+					v = 255
+				}
+			}
+			m.Set(x, y, color.RGBA{R: uint8(v), G: uint8(v), B: uint8(v), A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, m, nil); err != nil {
+		t.Fatalf("encoding near-miss JPEG: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// TestRestorePHashQuarantine_APerceptualNearMissMustNotDestroyTheQuarantinedBytes
+// is the regression test for the blocker that inverted this PR's own thesis.
+//
+// The design argues a false positive is survivable BECAUSE the quarantine holds
+// the original. This path was what destroyed it: quarantinedImagePresent
+// returned true when ANY surviving slot merely RESEMBLED the removed picture
+// (>= 0.90, about 6 differing bits of 64 -- a loose bar), and restore treated
+// "present" as "no work to do" and called ConsumeRepairEntry, which UNLINKS the
+// stored bytes. A PERCEPTUAL match authorized an EXACT, IRREVERSIBLE deletion.
+// The original was already gone (remediation removed it), so the artwork was
+// destroyed outright -- and the run reported success.
+//
+// The fix decouples the two decisions: a resemblance may suppress an APPEND (do
+// not add a near-duplicate), but only BYTE EQUALITY may authorize a CONSUME,
+// because only byte equality proves the exact bytes are recoverable from disk.
+//
+// Measured before the fix: Restored=0 AlreadyPresent=1 Failures=[], quarantined
+// bytes GONE, manifest entries 0 -- the artwork unrecoverable through every
+// supported path. Measured after: entry retained, bytes intact.
+func TestRestorePHashQuarantine_APerceptualNearMissMustNotDestroyTheQuarantinedBytes(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA := seedPollutedLibrary(t, db)
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("remediate: %v", err)
+	}
+	if res.SlotsRemoved != 1 {
+		t.Fatalf("setup: expected the polluted slot removed, got %+v", res)
+	}
+
+	// Plant an unrelated survivor that merely RESEMBLES the removed picture.
+	// Two survivors remain, so the next free ordinal is fanart3.jpg.
+	bystander := nearMissJPEG(t, 1)
+	if err := os.WriteFile(filepath.Join(dirA, "fanart3.jpg"), bystander, 0o644); err != nil {
+		t.Fatalf("planting bystander: %v", err)
+	}
+
+	// Preconditions. Without both of these the test proves nothing: it must be
+	// a PERCEPTUAL match (inside tolerance) and NOT a byte match, which is
+	// exactly the band where a resemblance was authorizing a deletion.
+	removed := pollutionJPEG(t, 1)
+	if bytes.Equal(bystander, removed) {
+		t.Fatal("precondition: the bystander must NOT be byte-identical, or this tests the exact-match path")
+	}
+	bh, err := image.PerceptualHash(bytes.NewReader(bystander))
+	if err != nil {
+		t.Fatalf("hashing bystander: %v", err)
+	}
+	sim := image.Similarity(pollutionHash(t, 1), bh)
+	if sim < defaultPHashMismatchTolerance || sim >= 1.0 {
+		t.Fatalf("precondition: the bystander must sit inside the tolerance but not be identical, got %.4f", sim)
+	}
+	t.Logf("bystander resembles the removed picture at similarity %.4f (tolerance %.2f)", sim, defaultPHashMismatchTolerance)
+
+	rres, err := p.RestorePHashQuarantine(context.Background(), "art-a", res.OpID)
+	if err != nil {
+		t.Fatalf("RestorePHashQuarantine: %v", err)
+	}
+
+	// THE ASSERTIONS: the quarantined bytes must SURVIVE. Asserting the
+	// outcome counters alone would pass against the broken version, which
+	// reported AlreadyPresent=1 while deleting the artwork.
+	m, err := image.ReadRepairManifest(dirA, res.OpID)
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m == nil || len(m.Entries) != 1 {
+		t.Fatalf("a resemblance must NOT consume the entry -- the removed artwork's only "+
+			"copy is the quarantine, and the original is already deleted. manifest = %+v", m)
+	}
+	data, err := image.RepairEntryBytes(dirA, res.OpID, m.Entries[0])
+	if err != nil {
+		t.Fatalf("the quarantined bytes must still be readable: %v", err)
+	}
+	if !bytes.Equal(data, removed) {
+		t.Error("the quarantined bytes must be exactly the removed picture")
+	}
+	if rres.Restored != 0 || rres.AlreadyPresent != 1 {
+		t.Errorf("a resemblance suppresses the append and reports already-present, got %+v", rres)
+	}
+	// The bystander is untouched either way.
+	if onDisk, readErr := os.ReadFile(filepath.Join(dirA, "fanart3.jpg")); readErr != nil || !bytes.Equal(onDisk, bystander) {
+		t.Errorf("the bystander must be untouched (err %v)", readErr)
 	}
 }

@@ -570,15 +570,39 @@ func (p *Pipeline) restoreOneQuarantined(
 		return false, err
 	}
 
-	present, err := p.quarantinedImagePresent(a.Path, primaryName, data)
+	exact, similar, err := p.quarantinedImagePresence(a.Path, primaryName, data)
 	if err != nil {
 		return false, err
 	}
-	if present {
-		p.logger.Info("quarantined backdrop already present; restore is a no-op",
+	switch {
+	case exact:
+		// A byte-identical copy is on disk, so the quarantine's copy is
+		// redundant and consuming it destroys nothing: the exact bytes
+		// remain recoverable from the artist directory itself. This is
+		// the ONLY evidence that justifies unlinking them.
+		p.logger.Info("quarantined backdrop already present byte-for-byte; consuming the entry",
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("artist", a.Name), slog.String("file", entry.FileName))
 		return false, img.ConsumeRepairEntry(a.Path, opID, *entry)
+
+	case similar:
+		// A surviving slot RESEMBLES this picture but is not it. Do
+		// neither thing: appending would hand the operator a
+		// near-duplicate, and consuming would unlink the last exact copy
+		// of artwork whose original this tool already deleted.
+		//
+		// The entry is RETAINED deliberately. A perceptual match is
+		// evidence about similarity, never about recoverability, and this
+		// is the path whose entire job is holding the last copy -- so the
+		// two decisions are decoupled: a resemblance may suppress an
+		// append, only byte equality may authorize a delete. The
+		// operation stays un-empty until a human looks at it, which is
+		// the correct end state for an ambiguous signal.
+		p.logger.Warn("a surviving backdrop resembles the quarantined one; not restoring, and KEEPING the quarantined copy",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("artist", a.Name), slog.String("file", entry.FileName),
+			slog.String("action", "entry retained for manual review"))
+		return false, nil
 	}
 
 	// Append at the next free ordinal. Re-discovered per entry rather than
@@ -625,20 +649,46 @@ func (p *Pipeline) restoreOneQuarantined(
 	return true, img.ConsumeRepairEntry(a.Path, opID, *entry)
 }
 
-// quarantinedImagePresent reports whether the artist already holds the
-// quarantined picture, making a restore a no-op.
+// quarantinedImagePresence reports whether the artist already holds the
+// quarantined picture.
 //
-// Byte equality is checked first (the common case: nothing touched the file
-// since it was quarantined) and is exact. The perceptual fallback catches a
-// re-encode of the same picture. Both are content comparisons; neither consults
-// a slot index.
-func (p *Pipeline) quarantinedImagePresent(dir, primaryName string, data []byte) (bool, error) {
+// It reports two DIFFERENT facts and the caller must not conflate them:
+//
+//   - exact -- some slot is byte-identical. The quarantined bytes are provably
+//     recoverable from the artist directory, so the quarantine copy may be
+//     consumed.
+//   - similar -- some slot is within the perceptual tolerance but is NOT those
+//     bytes. Evidence about resemblance only. It may suppress an append; it may
+//     NEVER authorize unlinking the quarantined copy.
+//
+// Collapsing them is what made a resemblance destroy artwork: consuming on a
+// perceptual match unlinked the last exact copy of a picture whose original this
+// tool had already removed, and reported success. A perceptual hash says two
+// pictures LOOK alike at 64 bits of resolution; it never says one IS the other,
+// and only the latter makes a deletion safe.
+//
+// exact wins over similar, and the scan does not stop at the first resemblance:
+// a later slot may still be the byte-identical copy that makes consuming safe.
+//
+// Both comparisons are content-addressed; neither consults a slot index.
+//
+// TOLERANCE: this uses defaultPHashMismatchTolerance, NOT the operator's
+// PHashMismatchScope.Tolerance, and it cannot do otherwise --
+// RestorePHashQuarantine takes no tolerance and the manifest records none
+// (image.RepairEntry carries the per-suspect Similarity, not the cutoff it was
+// judged against). That mismatch is now harmless BECAUSE of the split above: the
+// only thing this tolerance still gates is whether an append is suppressed, and
+// a looser value there is the conservative direction -- it withholds a
+// near-duplicate and keeps the quarantined bytes, rather than authorizing
+// anything destructive. It must not be reconnected to a delete without also
+// plumbing the operator's real tolerance through the manifest.
+func (p *Pipeline) quarantinedImagePresence(dir, primaryName string, data []byte) (exact, similar bool, err error) {
 	paths, err := img.DiscoverFanart(dir, primaryName)
 	if err != nil {
-		return false, fmt.Errorf("discovering fanart: %w", err)
+		return false, false, fmt.Errorf("discovering fanart: %w", err)
 	}
 	if len(paths) == 0 {
-		return false, nil
+		return false, false, nil
 	}
 
 	want, wantErr := img.PerceptualHash(bytes.NewReader(data))
@@ -648,7 +698,7 @@ func (p *Pipeline) quarantinedImagePresent(dir, primaryName string, data []byte)
 			continue
 		}
 		if bytes.Equal(onDisk, data) {
-			return true, nil
+			return true, true, nil
 		}
 		if wantErr != nil {
 			continue
@@ -657,16 +707,11 @@ func (p *Pipeline) quarantinedImagePresent(dir, primaryName string, data []byte)
 		if hashErr != nil {
 			continue
 		}
-		// Compared at the same tolerance the removal was decided at, so
-		// restore recognizes "the same picture" by the identical
-		// standard that called it pollution. A stricter test here would
-		// re-append a near-duplicate the operator already has; a looser
-		// one would refuse to restore a picture that is genuinely absent.
 		if img.Similarity(want, got) >= defaultPHashMismatchTolerance {
-			return true, nil
+			similar = true
 		}
 	}
-	return false, nil
+	return false, similar, nil
 }
 
 // kodiFanartNumbering reports whether the active platform profile uses Kodi's
