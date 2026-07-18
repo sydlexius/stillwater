@@ -35,8 +35,11 @@ import (
 // the exact call instant; the rule-pipeline stub records time.Now() inside
 // RunForArtist, itself invoked synchronously from runRulesAfterRefresh).
 // Both calls happen in the same goroutine as the HTTP handler with real
-// work (cache invalidation, DB writes) between them, so the timestamps are
-// never close enough to tie.
+// work (cache invalidation, DB writes) between them. Two adjacent time.Now()
+// calls can still land in the same microsecond under CPU contention, so the
+// assertions are tie-tolerant: each fails only on a STRICT ordering
+// violation (the property under test is ordering, not elapsed time). See
+// #2575.
 func TestFinalizeImageSave_PreservesPerCallSitePublishOrder(t *testing.T) {
 	t.Run("handleImageUpload primary path publishes before rule reevaluation", func(t *testing.T) {
 		t.Parallel()
@@ -94,7 +97,9 @@ func TestFinalizeImageSave_PreservesPerCallSitePublishOrder(t *testing.T) {
 		rt := waitForFinalizeOrderTime(t, ruleTime, "rule reevaluation")
 		pt := waitForFinalizeOrderTime(t, publishTime, "ArtistUpdated publish")
 
-		if !pt.Before(rt) {
+		// Tie-tolerant: fail only if publish landed STRICTLY AFTER rule
+		// reevaluation (a same-microsecond tie is an acceptable ordering).
+		if pt.After(rt) {
 			t.Errorf("expected ArtistUpdated to publish BEFORE rule reevaluation (publishBeforeRuleEval), got publish=%s rules=%s",
 				pt.Format(time.RFC3339Nano), rt.Format(time.RFC3339Nano))
 		}
@@ -150,7 +155,9 @@ func TestFinalizeImageSave_PreservesPerCallSitePublishOrder(t *testing.T) {
 
 		// This is the one call site (of four) that must NOT match the
 		// "before" ordering asserted above -- see imagePublishOrder.
-		if !rt.Before(pt) {
+		// Tie-tolerant: fail only if publish landed STRICTLY BEFORE rule
+		// reevaluation (a same-microsecond tie is an acceptable ordering).
+		if pt.Before(rt) {
 			t.Errorf("expected ArtistUpdated to publish AFTER rule reevaluation (publishAfterRuleEval) for the fetch fanart-append branch, got rules=%s publish=%s -- if this now publishes BEFORE, finalizeImageSave has silently homogenized the per-call-site publish ordering",
 				rt.Format(time.RFC3339Nano), pt.Format(time.RFC3339Nano))
 		}
