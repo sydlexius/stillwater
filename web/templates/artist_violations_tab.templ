@@ -46,6 +46,7 @@ templ artistFindingListItem(v rule.RuleViolation, artistID string) {
 		id={ "artist-violation-" + v.ID }
 		class="sw-next-finding"
 		data-severity={ v.Severity }
+		data-rule-id={ v.RuleID }
 		data-fix-failed={ t(ctx, "notifications.fix_failed") }
 		data-fix-network={ t(ctx, "notifications.fix_network") }
 		data-dismiss-failed={ t(ctx, "notifications.dismiss_failed") }
@@ -115,6 +116,9 @@ script artistViolationFix(violationID string, artistID string) {
 	var row = document.getElementById('artist-violation-' + violationID);
 	var fixFailedTpl = (row && row.dataset.fixFailed) || 'Fix failed: %s';
 	var fixNetworkTpl = (row && row.dataset.fixNetwork) || 'Network error applying fix.';
+	// Captured before the fetch (not read back off row.dataset after, since a
+	// successful fix can remove the row from the DOM on the next refresh).
+	var ruleID = (row && row.dataset.ruleId) || '';
 	// Disable both action buttons in this row for the duration of the
 	// fetch so a rapid second click cannot queue a duplicate POST. The
 	// finally() block re-enables them on every settled outcome (success,
@@ -137,8 +141,11 @@ script artistViolationFix(violationID string, artistID string) {
 			// The page-level artistDetailViolationSync listener (in
 			// artist_detail.templ) issues the violations-tab refresh on
 			// this event, so we do NOT call htmx.ajax here -- doing so
-			// would fire two identical GETs back-to-back.
-			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved'));
+			// would fire two identical GETs back-to-back. The rule ID rides
+			// in detail so that listener can also refresh the hero, scoped
+			// to the one fix (directory_name_mismatch) that mutates
+			// artist.Path (#2507); every other rule ID leaves the hero alone.
+			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved', { detail: { ruleId: ruleID } }));
 		} else {
 			// Surface the rule-fixer's reason via the global toast pipeline
 			// (window.showToast in layout.templ) so the user sees the same

@@ -43,6 +43,10 @@ type AssetPaths struct {
 	// inline scripts in artist_detail.templ / artist_field.templ.
 	ArtistFanartSlideshowJS string
 	ArtistViolationsSyncJS  string
+	// ArtistHeroPathSyncJS is the hero-path-refresh scoping predicate (#2507):
+	// whether a dashboard:action-resolved event should trigger the inline
+	// refreshHero()/rebindHero() pair in artist_detail.templ.
+	ArtistHeroPathSyncJS string
 	ArtistMembersApplyJS    string
 	ArtistFieldLockSaveJS   string
 	ArtistSectionLayoutJS   string
@@ -310,6 +314,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 	<script src={ assets.KeyboardJS }></script>
 	<script src={ assets.ArtistFanartSlideshowJS }></script>
 	<script src={ assets.ArtistViolationsSyncJS }></script>
+	<script src={ assets.ArtistHeroPathSyncJS }></script>
 	<script src={ assets.ArtistMembersApplyJS }></script>
 	<script src={ assets.ArtistFieldLockSaveJS }></script>
 	<script src={ assets.ArtistSectionLayoutJS }></script>

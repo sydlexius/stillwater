@@ -289,7 +289,7 @@ templ artistHero(assets AssetPaths, data ArtistDetailPageData) {
 				// stands on its own.
 				if a.Path != "" {
 					<div class="flex items-center gap-2 text-xs">
-						<code class="font-mono break-all text-gray-500 dark:text-gray-400">{ a.Path }</code>
+						<code id="next-hero-path" class="font-mono break-all text-gray-500 dark:text-gray-400">{ a.Path }</code>
 					</div>
 				}
 				// Compliance summary bar: health score + findings + ID coverage.
@@ -1396,9 +1396,22 @@ templ artistDetailPageScript() {
 			// those sections in place too -- otherwise the resolved chip lingers until a
 			// reload. Skipped while editing so an open editor's unsaved input is never
 			// clobbered (the chip then clears on the next non-edit refresh / Done).
-			document.body.addEventListener('dashboard:action-resolved', function () {
+			//
+			// The directory_name_mismatch rule (see rule.RuleDirectoryNameMismatch)
+			// is the one fix that mutates artist.Path -- renaming the on-disk
+			// directory to the canonical name -- and the hero's path <code> does
+			// not otherwise refresh until a full reload (#2507). The rule ID rides
+			// in the dispatched event's detail (artist_violations_tab.templ's
+			// artistViolationFix script); the scoping decision itself lives in
+			// hero-path-sync.js (loaded before this script, see layout.templ) so
+			// it is unit-testable on its own, and just gates the same
+			// refreshHero/rebindHero pair the history-revert path above uses.
+			document.body.addEventListener('dashboard:action-resolved', function (evt) {
 				if (editing) return;
 				refreshEditableSections();
+				if (window.swHeroPathSync && window.swHeroPathSync.shouldRefreshHeroPath(evt)) {
+					refreshHero().then(rebindHero);
+				}
 			});
 
 			// Sticky mini-header: initial bind (runs once at page load). After a

@@ -165,111 +165,124 @@ func artistFindingListItem(v rule.RuleViolation, artistID string) templ.Componen
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" data-fix-failed=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" data-rule-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var7 string
-		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.fix_failed"))
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.RuleID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 49, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 49, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" data-fix-network=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" data-fix-failed=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.fix_network"))
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.fix_failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 50, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 50, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" data-dismiss-failed=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" data-fix-network=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var9 string
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.dismiss_failed"))
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.fix_network"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 51, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 51, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" data-dismiss-network=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" data-dismiss-failed=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var10 string
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.dismiss_network"))
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.dismiss_failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 52, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 52, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\"><span class=\"sw-next-finding-sev\"><span class=\"sw-next-finding-dot\" aria-hidden=\"true\"></span> <span class=\"sw-next-finding-sev-label\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" data-dismiss-network=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var11 string
-		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(v.Severity)
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.dismiss_network"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 56, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 53, Col: 64}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</span></span><div class=\"sw-next-finding-main\"><div class=\"sw-next-finding-head\"><span class=\"sw-next-finding-rule\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\"><span class=\"sw-next-finding-sev\"><span class=\"sw-next-finding-dot\" aria-hidden=\"true\"></span> <span class=\"sw-next-finding-sev-label\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(v.RuleID)
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(v.Severity)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 60, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 57, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</span> <span class=\"sw-next-finding-age\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</span></span><div class=\"sw-next-finding-main\"><div class=\"sw-next-finding-head\"><span class=\"sw-next-finding-rule\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var13 string
-		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(formatAge(v.CreatedAt))
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(v.RuleID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 61, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 61, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span></div><p class=\"sw-next-finding-msg\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span> <span class=\"sw-next-finding-age\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var14 string
-		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(v.Message)
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(formatAge(v.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 63, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 62, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</p></div><div class=\"sw-next-finding-actions\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</span></div><p class=\"sw-next-finding-msg\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var15 string
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(v.Message)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 64, Col: 45}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</p></div><div class=\"sw-next-finding-actions\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -278,68 +291,68 @@ func artistFindingListItem(v rule.RuleViolation, artistID string) templ.Componen
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<button type=\"button\" data-violation-id=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var15 string
-			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.ID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 69, Col: 29}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" data-artist-id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<button type=\"button\" data-violation-id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var16 string
-			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(artistID)
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 70, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 70, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" data-artist-id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var17 templ.ComponentScript = artistViolationFix(v.ID, artistID)
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17.Call)
+			var templ_7745c5c3_Var17 string
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(artistID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 71, Col: 30}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var18 string
-			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf(t(ctx, "artist.fix_action_aria"), fixButtonLabel(ctx, v.RuleID)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 72, Col: 94}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
+			var templ_7745c5c3_Var18 templ.ComponentScript = artistViolationFix(v.ID, artistID)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18.Call)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" class=\"sw-next-finding-fix\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var19 string
-			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(fixButtonLabel(ctx, v.RuleID))
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf(t(ctx, "artist.fix_action_aria"), fixButtonLabel(ctx, v.RuleID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 75, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 73, Col: 94}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" class=\"sw-next-finding-fix\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var20 string
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(fixButtonLabel(ctx, v.RuleID))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 76, Col: 36}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -348,68 +361,68 @@ func artistFindingListItem(v rule.RuleViolation, artistID string) templ.Componen
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<button type=\"button\" data-violation-id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var20 string
-		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 80, Col: 28}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" data-artist-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<button type=\"button\" data-violation-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var21 string
-		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(artistID)
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 81, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 81, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" data-confirm=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" data-artist-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var22 string
-		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.dismiss_confirm"))
+		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 82, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 82, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" data-confirm=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var23 templ.ComponentScript = artistViolationDismiss(v.ID, artistID)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23.Call)
+		var templ_7745c5c3_Var23 string
+		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "notifications.dismiss_confirm"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 83, Col: 58}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" class=\"sw-next-finding-dismiss\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var24 string
-		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.dismiss"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 86, Col: 30}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
+		var templ_7745c5c3_Var24 templ.ComponentScript = artistViolationDismiss(v.ID, artistID)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24.Call)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</button></div></li>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" class=\"sw-next-finding-dismiss\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var25 string
+		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.dismiss"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 87, Col: 30}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</button></div></li>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -435,31 +448,31 @@ func violationsTabBadgeOOB(count int) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var25 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var25 == nil {
-			templ_7745c5c3_Var25 = templ.NopComponent
+		templ_7745c5c3_Var26 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var26 == nil {
+			templ_7745c5c3_Var26 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if count > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span id=\"violations-tab-badge\" hx-swap-oob=\"true\" class=\"inline-flex items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 text-xs font-semibold min-w-[1.25rem] h-5 px-1.5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<span id=\"violations-tab-badge\" hx-swap-oob=\"true\" class=\"inline-flex items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 text-xs font-semibold min-w-[1.25rem] h-5 px-1.5\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var26 string
-			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(count))
+			var templ_7745c5c3_Var27 string
+			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 101, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_violations_tab.templ`, Line: 102, Col: 24}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<span id=\"violations-tab-badge\" hx-swap-oob=\"true\" class=\"hidden\"></span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<span id=\"violations-tab-badge\" hx-swap-oob=\"true\" class=\"hidden\"></span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -471,14 +484,17 @@ func violationsTabBadgeOOB(count int) templ.Component {
 // artistViolationFix triggers a fix for a violation and refreshes the violations tab.
 func artistViolationFix(violationID string, artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_artistViolationFix_511b`,
-		Function: `function __templ_artistViolationFix_511b(violationID, artistID){// Localized error strings sourced from data-* on the row, with English
+		Name: `__templ_artistViolationFix_b9dd`,
+		Function: `function __templ_artistViolationFix_b9dd(violationID, artistID){// Localized error strings sourced from data-* on the row, with English
 	// fallback as defense-in-depth (matches the established pattern from
 	// the retired notifications.templ). %s in fix_failed is substituted
 	// with the server-supplied error message.
 	var row = document.getElementById('artist-violation-' + violationID);
 	var fixFailedTpl = (row && row.dataset.fixFailed) || 'Fix failed: %s';
 	var fixNetworkTpl = (row && row.dataset.fixNetwork) || 'Network error applying fix.';
+	// Captured before the fetch (not read back off row.dataset after, since a
+	// successful fix can remove the row from the DOM on the next refresh).
+	var ruleID = (row && row.dataset.ruleId) || '';
 	// Disable both action buttons in this row for the duration of the
 	// fetch so a rapid second click cannot queue a duplicate POST. The
 	// finally() block re-enables them on every settled outcome (success,
@@ -501,8 +517,11 @@ func artistViolationFix(violationID string, artistID string) templ.ComponentScri
 			// The page-level artistDetailViolationSync listener (in
 			// artist_detail.templ) issues the violations-tab refresh on
 			// this event, so we do NOT call htmx.ajax here -- doing so
-			// would fire two identical GETs back-to-back.
-			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved'));
+			// would fire two identical GETs back-to-back. The rule ID rides
+			// in detail so that listener can also refresh the hero, scoped
+			// to the one fix (directory_name_mismatch) that mutates
+			// artist.Path (#2507); every other rule ID leaves the hero alone.
+			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved', { detail: { ruleId: ruleID } }));
 		} else {
 			// Surface the rule-fixer's reason via the global toast pipeline
 			// (window.showToast in layout.templ) so the user sees the same
@@ -519,8 +538,8 @@ func artistViolationFix(violationID string, artistID string) templ.ComponentScri
 		for (var j = 0; j < actionBtns.length; j++) { actionBtns[j].disabled = false; }
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_artistViolationFix_511b`, violationID, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_artistViolationFix_511b`, violationID, artistID),
+		Call:       templ.SafeScript(`__templ_artistViolationFix_b9dd`, violationID, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_artistViolationFix_b9dd`, violationID, artistID),
 	}
 }
 
