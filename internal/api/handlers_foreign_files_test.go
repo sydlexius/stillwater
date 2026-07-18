@@ -493,7 +493,7 @@ func TestHandleForeignFile_RenderRefreshedTable_AfterRowActions(t *testing.T) {
 	}
 
 	// After both actions, ledger is empty -> empty-state copy must render.
-	if !strings.Contains(rec.Body.String(), "No unmatched files detected") {
+	if !strings.Contains(rec.Body.String(), "No unmatched images detected") {
 		t.Errorf("empty-state copy should appear on last-row removal; body=%q", rec.Body.String())
 	}
 }
@@ -556,7 +556,7 @@ func TestHandleForeignFilesDismiss_RendersSurvivingRows(t *testing.T) {
 		t.Fatalf("dismiss status: got %d", rec.Code)
 	}
 	// Successful dismiss against a real DB clears every row -> empty state.
-	if !strings.Contains(rec.Body.String(), "No unmatched files detected") {
+	if !strings.Contains(rec.Body.String(), "No unmatched images detected") {
 		t.Errorf("dismiss should render empty-state when ledger is fully cleared; body=%q", rec.Body.String())
 	}
 }

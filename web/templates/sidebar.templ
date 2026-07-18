@@ -22,7 +22,7 @@ type SidebarData struct {
 // kills the old Reports/Compliance duplication):
 //
 //	brand+version -> Dashboard/Artists (with HTMX count pills)
-//	-> REPORTS header { Compliance, Duplicates*, Foreign Files* }
+//	-> REPORTS header { Compliance, Duplicates*, Unmatched Images* }
 //	-> Activity
 //	-> spacer
 //	-> low-freq: Logs, Settings (admin), Preferences
@@ -31,7 +31,7 @@ type SidebarData struct {
 // The Reports section is visible to ALL roles. The workspace link and the
 // Compliance report page are non-admin-reachable (wrapOptionalAuth), so
 // non-admins see the workspace link plus a plain Compliance link. Compliance's
-// count pill, Duplicates, and Foreign Files (*) are admin-only because their
+// count pill, Duplicates, and Unmatched Images (*) are admin-only because their
 // count endpoints return 403 for non-admins, so those placeholders are omitted
 // for non-admin sessions (no poll-and-403, no lying markup).
 //
@@ -118,7 +118,7 @@ templ Sidebar(data SidebarData) {
 		     so they render for everyone. The admin-only Reports entries are the
 		     Compliance/Duplicates count pills, a static Backdrop Duplicates link
 		     (no count pill, since its count needs a full from-disk scan that is too
-		     expensive to poll), and the Foreign Files item; their endpoints 403 for
+		     expensive to poll), and the Unmatched Images item; their endpoints 403 for
 		     non-admins, so non-admins get a plain Compliance link (no polling pill)
 		     and the admin-only items are omitted (no lying markup, no
 		     poll-and-403). -->
@@ -189,7 +189,7 @@ templ Sidebar(data SidebarData) {
 							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.platform_backdrop_duplicates") }</span>
 						</a>
 					</li>
-					<!-- Foreign Files: admin-only (count endpoint 403s for non-admins;
+					<!-- Unmatched Images: admin-only (count endpoint 403s for non-admins;
 					     not present in the v1 non-admin sidebar). ALWAYS visible to
 					     admins even at zero count (allowlist must stay reachable);
 					     only the count pill is HTMX-conditional. -->
@@ -200,7 +200,7 @@ templ Sidebar(data SidebarData) {
 							data-path="/reports/foreign-files"
 							aria-label={ t(ctx, "nav.reports.foreign") }
 						>
-							@components.IconDocument("sw-sidebar-icon")
+							@components.IconPhoto("sw-sidebar-icon")
 							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.foreign") }</span>
 							<span
 								id="sidebar-foreign-pill"

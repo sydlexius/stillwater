@@ -1,12 +1,12 @@
 ---
-description: Review, allowlist, or delete unmatched files Stillwater found on disk, and manage the allowlist that suppresses them from future detection.
+description: Review, allowlist, or delete unmatched images Stillwater found on disk, and manage the allowlist that suppresses them from future detection.
 ---
 
 <!-- code: web/templates/foreign_files.templ, internal/api/handlers_foreign_files.go. -->
 
-# Foreign files
+# Unmatched images
 
-The **Foreign Files** report (`/reports/foreign-files`, linked from the sidebar's Reports group as **Foreign Files**) lists unmatched files: images that match media-server naming patterns (fanart, thumb, logo, and so on) but that Stillwater didn't write and can't attribute to a provider. They typically arrive from another tool, a manual copy, or a naming pattern Stillwater doesn't recognize.
+The **Unmatched Images** report (`/reports/foreign-files`, linked from the sidebar's Reports group as **Unmatched Images**) lists unmatched images: artwork that matches media-server naming patterns (fanart, thumb, logo, and so on) but that Stillwater didn't write and can't attribute to a provider. They typically arrive from another tool, a manual copy, or a naming pattern Stillwater doesn't recognize.
 
 ## Review a detected file
 

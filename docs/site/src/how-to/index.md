@@ -40,11 +40,11 @@ Step-by-step procedures for the common operations. For background and *why*, see
 
     [Read more](filter-artists.md)
 
-- __Foreign files__
+- __Unmatched images__
 
     ---
 
-    Review, allowlist, or delete unmatched files found on disk.
+    Review, allowlist, or delete unmatched images found on disk.
 
     [Read more](foreign-files.md)
 

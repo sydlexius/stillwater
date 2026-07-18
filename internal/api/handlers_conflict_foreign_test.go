@@ -16,7 +16,7 @@ import (
 // real-handler proof for the M55 TRANQUILITY requirement (#1773): with foreign
 // files PRESENT (count > 0) and NO connection conflict, the conflict banner
 // must NOT render any "foreign files detected" state. Foreign-file detection
-// surfaces only via the sidebar "Unmatched Files" pill, so the banner falls
+// surfaces only via the sidebar "Unmatched Images" pill, so the banner falls
 // back to its clean (all-clear) state and the former slate/blue state E never
 // appears. The companion assertion confirms the same seeded count still drives
 // the sidebar pill, so removing the banner state did not also kill the pill.
@@ -91,11 +91,11 @@ func TestHandleGetConflictBanner_NoForeignFilesStateWhenFilesPresent(t *testing.
 	}
 	// data-aria is the localized, count-bearing accessible name the JS folds onto
 	// the nav link so screen-reader users hear the count (not a count-less label).
-	if !strings.Contains(pillBody, `data-aria="3 unrecognized files`) {
+	if !strings.Contains(pillBody, `data-aria="3 unrecognized images`) {
 		t.Errorf("sidebar pill data-aria should carry the count; got %q", pillBody)
 	}
 	// title supplies the calm hover tooltip.
-	if !strings.Contains(pillBody, `title="Unrecognized files`) {
+	if !strings.Contains(pillBody, `title="Unrecognized images`) {
 		t.Errorf("sidebar pill should carry the calm title tooltip; got %q", pillBody)
 	}
 }
