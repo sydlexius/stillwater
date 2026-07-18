@@ -1355,15 +1355,21 @@ func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, pri
 	}
 
 	// #2540 NOTIFY-ONLY: this backdrop passed intra-artist dedup and is about to
-	// be written. If it perceptually matches ANOTHER artist's fanart, raise the
-	// warning toast plus the durable, operator-fixable Action Queue entry. The
-	// save below ALWAYS proceeds -- aliases and collaborations legitimately share
-	// promo art, so a collision must never block an import; the operator-triggered
-	// back-out is the remedy. Fail-open: a zero phash (the decode failure handled
-	// above) or an empty registry yields Indeterminate and notifies nothing.
+	// be written. Compare it against the cross-artist registry HERE (the converted
+	// bytes and phash are in hand) but hold the verdict -- the notification is
+	// only emitted once the save is CONFIRMED below.
+	//
+	// Deciding here and notifying later is deliberate. The durable half of the
+	// notification is a fixable Action Queue entry whose auto-fix BACKS ARTWORK
+	// OUT of the artist. Raising it for an import that then failed to write would
+	// point a destructive remediation at a file that was never created.
+	//
+	// Fail-open: a zero phash (the decode failure handled above) or an empty
+	// registry yields Indeterminate, so collisionResult stays nil.
+	var collisionResult *img.IdentityResult
 	if len(identityIdx) > 0 {
 		if res := img.CompareIdentity(phash, a.ID, identityIdx, collision.DefaultTolerance); res.Verdict == img.IdentityMismatch {
-			r.collisionNotifier.Notify(ctx, a.ID, a.Name, res)
+			collisionResult = &res
 		}
 	}
 
@@ -1380,6 +1386,15 @@ func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, pri
 		r.logger.Warn("saving backdrop produced no files", "artist", a.Name, "index", i, "dir", p.dir, "filename", filename)
 		return backdropSkipped
 	}
+	// The save is confirmed (no error, at least one file on disk), so the image
+	// the collision was detected on genuinely exists now. Only here is it correct
+	// to raise the notification: the toast tells the operator what just landed,
+	// and the durable entry's back-out has real artwork to act on. The import
+	// itself is never blocked -- this runs after the write, not instead of it.
+	if collisionResult != nil {
+		r.collisionNotifier.Notify(ctx, a.ID, a.Name, *collisionResult)
+	}
+
 	// Record the just-saved image so a later index carrying the same picture is
 	// deduped against it within this same run.
 	dedup.add(content, phash)
