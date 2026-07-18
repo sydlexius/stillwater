@@ -220,14 +220,33 @@ type Router struct {
 	// by the number of connections (small for realistic deployments) so
 	// we accept the leak rather than racing removal against late-arriving
 	// requests.
-	stillwaterManagedMu sync.Map
-	// pathMappingsMu serializes the per-connection read-modify-write in
-	// handleSetPathMappings, mirroring stillwaterManagedMu. Values are
-	// *sync.Mutex via LoadOrStore; the handler gates connection existence
-	// BEFORE the LoadOrStore so map cardinality stays bounded by the
-	// connections actually served (#2303). There is no type gate: path
-	// mappings are valid for every connection type since #2380.
-	pathMappingsMu sync.Map
+	// connWriteMu is the SINGLE per-connection lock serializing every
+	// connection-write handler's read-modify-write: handleUpdateConnection,
+	// handleUpdateConnectionFeatures, handleSetPathMappings /
+	// handleInferPathMappings / applyInferredPathMappingsIfEmpty, and
+	// handleSetStillwaterManaged. It replaces three formerly-independent
+	// mutex pools (a dedicated stillwaterManagedMu, a dedicated
+	// pathMappingsMu, and NO lock at all around the full-row update in
+	// handleUpdateConnection / handleUpdateConnectionFeatures) that each
+	// guarded a different subset of a connection's fields (#2324). Because
+	// handleUpdateConnection issues a full-row UPDATE from an in-memory
+	// snapshot, two concurrent writes touching DIFFERENT fields of the SAME
+	// connection under different (or no) locks could each read-modify-write
+	// the row and silently lose the other's change (last writer wins on the
+	// non-overlapping field). Keying every write handler off the SAME
+	// *sync.Mutex per connection ID closes that gap.
+	//
+	// Values are *sync.Mutex via LoadOrStore, obtained through the
+	// lockConnection helper; callers gate connection existence BEFORE the
+	// LoadOrStore so map cardinality stays bounded by connections actually
+	// served (#2303). There is no type gate: every write path is valid for
+	// every connection type.
+	//
+	// lockConnection is NOT reentrant: applyInferredPathMappingsIfEmpty
+	// acquires it internally, so any caller that already holds it (e.g.
+	// handleUpdateConnection) MUST release before invoking that helper, or
+	// the second acquisition deadlocks.
+	connWriteMu sync.Map
 	// foreignRepo persists foreign-file ledger rows and the allowlist
 	// (#1185). Always non-nil after NewRouter when DB is provided so the
 	// foreign-files settings page never has to special-case a missing dep.
