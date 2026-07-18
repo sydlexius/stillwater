@@ -262,6 +262,24 @@ func (s *Service) Status() *ScanResult {
 	return &snapshot
 }
 
+// markScanFailed stamps result as terminally failed. Status, Error, and
+// CompletedAt are all written inside one critical section so a concurrent
+// reader (Status(), the completion event, a test) can never observe a
+// terminal Status with a still-nil CompletedAt -- the exact ordering gap
+// that made TestScan_RecoversFromPanic flake under -race (#2599): the old
+// code set Status="failed" and released the lock, then relied on the
+// unrelated completion defer -- which runs the (unlocked) post-scan hook
+// first -- to fill in CompletedAt later, leaving a real window where the
+// two fields disagreed.
+func (s *Service) markScanFailed(result *ScanResult, reason string) {
+	s.mu.Lock()
+	now := time.Now().UTC()
+	result.Status = "failed"
+	result.Error = reason
+	result.CompletedAt = &now
+	s.mu.Unlock()
+}
+
 //nolint:gocognit // Scan worker: lock-protected status transitions, per-library file walk, cancellation checkpoints, error aggregation, progress publication, and completion sync; the lifecycle ordering (acquire -> walk -> publish -> release) and cancellation-aware control flow do not factor cleanly into helpers without sharing the result mutex across them.
 func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 	defer s.scanWg.Done()
@@ -295,8 +313,15 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 		}
 
 		s.mu.Lock()
-		now := time.Now().UTC()
-		result.CompletedAt = &now
+		// Only stamp CompletedAt here if an earlier terminal write (a
+		// markScanFailed call, or the recover defer below) has not already
+		// set it. Each terminal writer sets Status and CompletedAt together
+		// under this same mutex, so "CompletedAt == nil" is equivalent to
+		// "still running" and never observable as a lone stale field.
+		if result.CompletedAt == nil {
+			now := time.Now().UTC()
+			result.CompletedAt = &now
+		}
 		if result.Status == "running" {
 			result.Status = "completed"
 		}
@@ -324,10 +349,7 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 	// never blocked by a panicked scan.
 	defer func() {
 		if r := recover(); r != nil {
-			s.mu.Lock()
-			result.Status = "failed"
-			result.Error = fmt.Sprintf("scan panicked: %v", r)
-			s.mu.Unlock()
+			s.markScanFailed(result, fmt.Sprintf("scan panicked: %v", r))
 			s.logger.Error("scan goroutine panicked",
 				"panic", r,
 				"stack", string(debug.Stack()),
@@ -363,10 +385,7 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 	}
 
 	if len(targets) == 0 {
-		s.mu.Lock()
-		result.Status = "failed"
-		result.Error = "no scannable libraries (all libraries are API-only or no paths configured)"
-		s.mu.Unlock()
+		s.markScanFailed(result, "no scannable libraries (all libraries are API-only or no paths configured)")
 		s.logger.Error("scan failed: no scannable libraries (all libraries are API-only or no paths configured)")
 		return
 	}
@@ -448,10 +467,7 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 		discoveredPaths := make(map[string]bool, len(entries))
 		for _, entry := range entries {
 			if ctx.Err() != nil {
-				s.mu.Lock()
-				result.Status = "failed"
-				result.Error = "scan canceled"
-				s.mu.Unlock()
+				s.markScanFailed(result, "scan canceled")
 				return
 			}
 
