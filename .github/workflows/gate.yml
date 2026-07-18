@@ -626,6 +626,17 @@ jobs:
           # pull_request AND push (to main); github-pr-check assumes PR
           # context and github-check works either way.
           reporter: github-check
+          # Explicit tool_name (#2506): reviewdog's default is the bare tool
+          # name "shellcheck", which collides case-insensitively with this
+          # job's own always-reporting status check "Shellcheck" (see the
+          # comment block above). That collision is confusing and this
+          # check-run only ever appears on same-repo PRs that touch the
+          # gated paths, so it must never be mistaken for (or required in
+          # place of) the job-level check. Renaming makes the two
+          # unambiguous: "Shellcheck" (job, always reports, safe to
+          # require) vs. "shellcheck-annotations" (inline findings only,
+          # paths-gated, never required).
+          tool_name: shellcheck-annotations
           fail_level: error
           # .githooks/pre-commit and .githooks/pre-push have no .sh extension
           # (standard hook naming); reviewdog's default *.sh pattern would
