@@ -5,12 +5,24 @@ package api
 // that #2613 established.
 //
 // #2613 wired the platform IMPORT path (handlers_connection_library.go's
-// downloadBackdrop). The two chokepoints here are the OPERATOR paths -- upload,
-// fetch-by-URL, crop, and batch-append -- which reach the same fanart slots and
-// so can pollute an artist with another artist's backdrop in exactly the same
-// way. Everything they need already exists: image.CompareIdentity,
+// downloadBackdrop). The two chokepoints here cover the OPERATOR upload,
+// fetch-by-URL, and crop paths, but ONLY their append-next and overwrite-primary
+// branches -- the same fanart slots those flows have always targeted, and so
+// can pollute an artist with another artist's backdrop in exactly the same way.
+// Everything they need already exists: image.CompareIdentity,
 // artist.Service.BuildFanartIdentityIndex, and collision.Notifier. This file
 // only packages them for reuse at those call sites.
+//
+// NOT covered by this PR: the slot-targeted variants
+// handleImageFetchFanartSlot and handleImageCropFanartSlot
+// (handlers_image.go), and handleFanartSlotAssign (handlers_backdrop.go),
+// which writes a platform backdrop into a fanart slot. These are unwired and
+// tracked as follow-up under #2540. That gap matters because the
+// cross_artist_backdrop_collision rule checker is a deliberate no-op (see
+// engine.go's RuleCrossArtistBackdropCollision registration) -- detection
+// happens ONLY at write chokepoints like this one. A write path that isn't
+// wired here is never checked for collision: not late, not on the next rule
+// sweep. Never.
 
 import (
 	"bytes"
