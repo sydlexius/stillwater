@@ -375,7 +375,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
-		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data, uploadMeta)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.newImageWriteScope(a), r.imageDir(a), data, uploadMeta)
 		if saveErr != nil {
 			r.logger.Error("appending fanart upload", "artist_id", artistID, "error", saveErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -395,7 +395,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), imageType, data, uploadMeta)
+	saved, err := r.processAndSaveImage(req.Context(), r.newImageWriteScope(a), r.imageDir(a), imageType, data, uploadMeta)
 	if err != nil {
 		r.logger.Error("saving uploaded image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -695,7 +695,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
-		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data, fetchMeta)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.newImageWriteScope(a), r.imageDir(a), data, fetchMeta)
 		if saveErr != nil {
 			r.logger.Error("appending fanart image", "artist_id", artistID, "error", saveErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -714,7 +714,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), imageType, data, fetchMeta)
+	saved, err := r.processAndSaveImage(req.Context(), r.newImageWriteScope(a), r.imageDir(a), imageType, data, fetchMeta)
 	if err != nil {
 		r.logger.Error("saving fetched image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -1035,7 +1035,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	// single-slot overwrite (recrop-of-primary and all non-fanart types).
 	if body.Type == "fanart" && a.FanartExists && body.Append {
 		appendMeta := &img.ExifMeta{Source: artist.ImageSourceUser, Mode: "user", Fetched: time.Now().UTC()}
-		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), imgData, appendMeta)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.newImageWriteScope(a), r.imageDir(a), imgData, appendMeta)
 		if saveErr != nil {
 			r.logger.Error("appending cropped fanart", "artist_id", artistID, "error", saveErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -1069,7 +1069,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	cropMeta.Mode = "user"
 	cropMeta.DHash = "" // Force recomputation from the cropped image data.
 
-	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), body.Type, imgData, cropMeta)
+	saved, err := r.processAndSaveImage(req.Context(), r.newImageWriteScope(a), r.imageDir(a), body.Type, imgData, cropMeta)
 	if err != nil {
 		r.logger.Error("saving cropped image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -1152,7 +1152,9 @@ func (r *Router) saveFanartSlotProtected(ctx context.Context, dir string, naming
 // processAndSaveImage processes image data (convert format, optimize) and saves it.
 // For logos, transparent borders are automatically trimmed before saving.
 // meta is optional EXIF provenance metadata to embed in the saved image.
-func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType string, data []byte, meta *img.ExifMeta) ([]string, error) {
+// scope carries the #2565 cross-artist collision check; it may be nil, which
+// disables the check (fail-open) without affecting the write.
+func (r *Router) processAndSaveImage(ctx context.Context, scope *imageWriteScope, dir string, imageType string, data []byte, meta *img.ExifMeta) ([]string, error) {
 	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("converting format: %w", err)
@@ -1191,7 +1193,25 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 	// numbered slot's backup, silently disarming the protection for fanart1.jpg,
 	// fanart2.jpg and the rest. One image type, one backup mechanism.
 	if imageType == "fanart" {
-		return r.saveFanartSlotProtected(ctx, dir, naming, converted, meta)
+		// #2565 NOTIFY-ONLY, FANART ONLY. The cross-artist registry holds fanart
+		// rows exclusively, so the check is scoped to this branch: a thumb, logo or
+		// banner overwrite has nothing to compare against and must not pay for a
+		// whole-library scan. The verdict is decided here from the converted bytes
+		// and HELD until saveFanartSlotProtected confirms the write.
+		collisionResult := scope.collisionVerdict(ctx, converted)
+
+		saved, saveErr := r.saveFanartSlotProtected(ctx, dir, naming, converted, meta)
+		if saveErr != nil {
+			return nil, saveErr
+		}
+		if len(saved) == 0 {
+			// No file on disk means no artwork for a back-out fix to act on, so
+			// this is a failed write for notification purposes.
+			return nil, fmt.Errorf("saving fanart: produced no files in %s", dir)
+		}
+		// Write confirmed -- safe to announce. See notifyCollision.
+		scope.notifyCollision(ctx, collisionResult)
+		return saved, nil
 	}
 
 	if bErr := img.BackupSingleSlot(dir, imageType, naming); bErr != nil {
@@ -2401,11 +2421,19 @@ func (r *Router) isKodiNumbering(ctx context.Context) bool {
 // processAndAppendFanart processes image data and saves it as the next
 // numbered fanart file. Returns the saved filenames.
 // meta is optional EXIF provenance metadata to embed in the saved image.
-func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []byte, meta *img.ExifMeta) ([]string, error) {
+// scope carries the #2565 cross-artist collision check; it may be nil, which
+// disables the check (fail-open) without affecting the write.
+func (r *Router) processAndAppendFanart(ctx context.Context, scope *imageWriteScope, dir string, data []byte, meta *img.ExifMeta) ([]string, error) {
 	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("converting format: %w", err)
 	}
+
+	// #2565 NOTIFY-ONLY: decide the cross-artist collision verdict HERE, while the
+	// converted bytes are in hand, but HOLD it. It is announced further down, only
+	// once img.Save has confirmed the file exists -- see notifyCollision for why
+	// the ordering is load-bearing.
+	collisionResult := scope.collisionVerdict(ctx, converted)
 
 	primary := r.getActiveFanartPrimary(ctx)
 	kodi := r.isKodiNumbering(ctx)
@@ -2428,6 +2456,18 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 	if err != nil {
 		return nil, fmt.Errorf("saving: %w", err)
 	}
+	if len(saved) == 0 {
+		// Save reported success but produced no file. Treat this as a failed write
+		// rather than a silent success: the collision notification below must never
+		// fire for artwork that is not on disk.
+		return nil, fmt.Errorf("saving: produced no files in %s", dir)
+	}
+
+	// The save is confirmed (no error, at least one file written), so the image the
+	// collision was detected on genuinely exists. Only now is it correct to raise
+	// the notification, whose durable half carries a back-out auto-fix. The append
+	// itself was never blocked -- this runs after the write, not instead of it.
+	scope.notifyCollision(ctx, collisionResult)
 
 	return saved, nil
 }
@@ -2773,6 +2813,13 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	// #2565: ONE collision scope for the whole batch. The identity index it builds
+	// lazily is a WHOLE-LIBRARY scan, and this loop pushes up to maxBatchURLs
+	// images through it -- creating a scope per image would repeat that scan for
+	// every URL. Hoisting it here is what makes the once-per-scope contract
+	// (design-2540.md section 4) hold on the batch path.
+	collisionScope := r.newImageWriteScope(a)
+
 	var allSaved []string
 	var errMsgs []string
 	for _, u := range body.URLs {
@@ -2791,7 +2838,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 			continue
 		}
 		batchMeta := &img.ExifMeta{Source: artist.ImageSourceUser, Fetched: time.Now().UTC(), URL: u, Mode: "user"}
-		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data, batchMeta)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), collisionScope, r.imageDir(a), data, batchMeta)
 		if saveErr != nil {
 			r.logger.Error("saving fanart image", "url", u, "error", saveErr)
 			errMsgs = append(errMsgs, fmt.Sprintf("save failed: %s", u))

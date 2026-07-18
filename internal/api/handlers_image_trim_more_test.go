@@ -53,7 +53,7 @@ func TestProcessAndSaveImage_FanartSaveError(t *testing.T) {
 		t.Fatalf("seeding blocker file: %v", err)
 	}
 
-	saved, err := r.processAndSaveImage(context.Background(), fileAsDir, "fanart", jpegBytes(t, 60, 40), nil)
+	saved, err := r.processAndSaveImage(context.Background(), nil, fileAsDir, "fanart", jpegBytes(t, 60, 40), nil)
 	if err == nil {
 		t.Fatalf("expected an error when the target dir is a file, got saved=%v", saved)
 	}

@@ -1,0 +1,158 @@
+package api
+
+// image_collision_scope.go -- the API-side half of #2565: wiring the operator
+// image-write chokepoints into the #2540 cross-artist backdrop collision seam
+// that #2613 established.
+//
+// #2613 wired the platform IMPORT path (handlers_connection_library.go's
+// downloadBackdrop). The two chokepoints here are the OPERATOR paths -- upload,
+// fetch-by-URL, crop, and batch-append -- which reach the same fanart slots and
+// so can pollute an artist with another artist's backdrop in exactly the same
+// way. Everything they need already exists: image.CompareIdentity,
+// artist.Service.BuildFanartIdentityIndex, and collision.Notifier. This file
+// only packages them for reuse at those call sites.
+
+import (
+	"bytes"
+	"context"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/collision"
+	img "github.com/sydlexius/stillwater/internal/image"
+)
+
+// imageWriteScope carries the request-scoped state a fanart write needs to run
+// the #2540 cross-artist collision check: the DESTINATION artist (the check is
+// meaningless without an id to exclude from the registry) and the identity
+// index itself, built LAZILY and AT MOST ONCE per scope.
+//
+// Once-per-scope is not an optimization detail, it is the contract from
+// design-2540.md section 4, and internal/artist/fanart_identity.go's doc comment
+// names this guard as one of the two callers responsible for honoring it:
+// BuildFanartIdentityIndex deliberately does no caching of its own because it is
+// a WHOLE-LIBRARY scan. The batch fanart-append handler pushes up to 20 images
+// through one request, so a per-image build would turn one library scan into
+// twenty.
+//
+// A nil *imageWriteScope is a valid, fully safe no-op: every method below
+// tolerates it and yields "no collision". That is the fail-open posture the
+// whole seam takes, and it lets non-fanart and test call sites pass nil rather
+// than assemble state the check will not use.
+type imageWriteScope struct {
+	r      *Router
+	artist *artist.Artist
+
+	// built records that an index build has been ATTEMPTED, so a failed build
+	// (which legitimately yields a nil index) is not retried once per image.
+	built bool
+	idx   []img.FanartIdentityEntry
+
+	// builds counts completed build attempts. It exists so tests can assert the
+	// once-per-scope contract directly on the production object rather than
+	// inferring it from a fake, and it is what makes the "index is built once,
+	// not once per image" regression test non-vacuous.
+	builds int
+}
+
+// newImageWriteScope builds the collision scope for a write targeting a. It
+// returns nil when the collision seam is not wired (headless/test routers) or
+// when there is no destination artist, so callers can hand the result straight
+// through without a nil check of their own.
+func (r *Router) newImageWriteScope(a *artist.Artist) *imageWriteScope {
+	if r == nil || a == nil || r.collisionNotifier == nil || r.artistService == nil {
+		return nil
+	}
+	return &imageWriteScope{r: r, artist: a}
+}
+
+// identityIndex returns the cross-artist fanart registry, building it on first
+// use and reusing that result for every later image in this scope.
+//
+// A build failure degrades to a nil index -- which CompareIdentity reads as
+// Indeterminate -- and is NOT retried. Failing to evaluate the check must never
+// cost the operator their write, and re-attempting a failing whole-library scan
+// once per image would turn a transient DB error into a pathological one.
+func (s *imageWriteScope) identityIndex(ctx context.Context) []img.FanartIdentityEntry {
+	if s == nil {
+		return nil
+	}
+	if s.built {
+		return s.idx
+	}
+	s.built = true
+	s.builds++
+
+	idx, err := s.r.artistService.BuildFanartIdentityIndex(ctx)
+	if err != nil {
+		s.r.logger.Warn("building fanart identity index; skipping cross-artist collision check for this write",
+			"artist", s.artist.Name, "error", err)
+		return nil
+	}
+	s.idx = idx
+	return s.idx
+}
+
+// collisionVerdict computes -- but deliberately does NOT act on -- the
+// cross-artist collision verdict for the converted bytes about to be written.
+// It returns nil when there is no collision to report.
+//
+// It is split from notifyCollision on purpose. The verdict has to be computed
+// HERE, while the candidate bytes are in hand, but must not be ANNOUNCED until
+// the write is confirmed; see notifyCollision.
+//
+// Fail-open at every step: no scope, an unhashable image, an empty registry, or
+// a Match/Indeterminate verdict all return nil. Nothing in this function may
+// prevent the caller's write.
+func (s *imageWriteScope) collisionVerdict(ctx context.Context, converted []byte) *img.IdentityResult {
+	if s == nil {
+		return nil
+	}
+	idx := s.identityIndex(ctx)
+	if len(idx) == 0 {
+		return nil
+	}
+
+	// Hash the CONVERTED bytes -- what will actually land on disk -- so a format
+	// conversion cannot make two copies of one picture look distinct. This
+	// matches the import path (handlers_connection_library.go) exactly, and it
+	// sidesteps raw-WebP decoding entirely: ConvertFormat special-cases WebP
+	// (internal/image/processor.go), so converted bytes are always a format the
+	// phash decoder handles.
+	phash, err := img.PerceptualHash(bytes.NewReader(converted))
+	if err != nil {
+		s.r.logger.Debug("perceptual hash for cross-artist collision check failed; skipping check for this image",
+			"artist", s.artist.Name, "error", err)
+		return nil
+	}
+	if phash == 0 {
+		// A zero hash is indistinguishable from "never hashed" and would
+		// manufacture a collision against every unhashed entry.
+		return nil
+	}
+
+	res := img.CompareIdentity(phash, s.artist.ID, idx, collision.DefaultTolerance)
+	if res.Verdict != img.IdentityMismatch {
+		return nil
+	}
+	return &res
+}
+
+// notifyCollision emits the #2540 notification for a verdict held from
+// collisionVerdict. It MUST be called only after the write it describes has been
+// CONFIRMED to have succeeded.
+//
+// That ordering is load-bearing, not stylistic. The durable half of the
+// notification is a fixable Action Queue entry whose auto-fix BACKS ARTWORK OUT
+// of the artist. Raising it for a write that then failed would point a
+// destructive remediation at a file that was never created, and hand the
+// operator a Fix button that acts on nothing.
+//
+// This is notify-only: it runs AFTER the write, never instead of it. Aliases and
+// collaborations legitimately share promo art, so a hard block would
+// false-positive; the operator-triggered back-out is the safety valve.
+func (s *imageWriteScope) notifyCollision(ctx context.Context, res *img.IdentityResult) {
+	if s == nil || res == nil {
+		return
+	}
+	s.r.collisionNotifier.Notify(ctx, s.artist.ID, s.artist.Name, *res)
+}
