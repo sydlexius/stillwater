@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -251,29 +250,34 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 
 	// Resolve the connection BEFORE allocating per-id serialization state.
 	// Otherwise every request with an arbitrary unknown {id} would
-	// LoadOrStore a fresh *sync.Mutex into stillwaterManagedMu and leave
-	// it there forever, letting a stream of 404 requests grow the map
-	// without bound. With this gate the map's cardinality is bounded by
-	// real connection IDs the process has ever seen (entries for deleted
-	// connections still linger -- a separate, lower-priority cleanup).
-	// We discard the resolved connection here on purpose -- it is only
-	// the existence gate; the canonical post-lock snapshot is fetched
-	// below, after we hold connMu.
+	// LoadOrStore a fresh *sync.Mutex into connWriteMu and leave it there
+	// forever, letting a stream of 404 requests grow the map without bound.
+	// With this gate the map's cardinality is bounded by real connection IDs
+	// the process has ever seen (entries for deleted connections still
+	// linger -- a separate, lower-priority cleanup). We discard the resolved
+	// connection here on purpose -- it is only the existence gate; the
+	// canonical post-lock snapshot is fetched below, after we hold the lock.
 	if _, err := r.connectionService.GetByID(req.Context(), id); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
 		return
 	}
 
-	// Serialize read-modify-write for this connection so two concurrent
-	// requests cannot both observe a stale snapshot below and both fall
-	// through the idempotency guard. The mutex is released after
-	// writeJSON via the deferred unlock when this handler returns.
-	// LoadOrStore guarantees a single *sync.Mutex per connection ID for
-	// the lifetime of the process.
-	muIface, _ := r.stillwaterManagedMu.LoadOrStore(id, &sync.Mutex{})
-	connMu := muIface.(*sync.Mutex)
-	connMu.Lock()
-	defer connMu.Unlock()
+	// Serialize read-modify-write for this connection, on the SAME shared
+	// per-connection lock every other connection-write handler uses
+	// (connWriteMu, via lockConnection -- #2324), so two concurrent
+	// requests -- to this handler OR any other connection-write handler --
+	// cannot both observe a stale snapshot below and both fall through the
+	// idempotency guard. The lock is released after writeJSON via the
+	// deferred unlock when this handler returns. NOTE: this critical
+	// section calls applyStillwaterManaged / clearStillwaterManaged below,
+	// which make peer network calls -- the lock is HELD across those calls,
+	// same as before the #2324 merge (this handler already serialized that
+	// way under its own dedicated mutex); the difference is that a slow/stuck
+	// peer call now also blocks other write handlers for this connection
+	// (rename, feature toggle, path-mapping save), not just concurrent calls
+	// to this same handler.
+	unlock := r.lockConnection(id)
+	defer unlock()
 
 	conn, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {

@@ -17,6 +17,22 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
+// lockConnection acquires the single per-connection write lock (connWriteMu)
+// for id and returns an unlock func for the caller to invoke (typically via
+// defer) once its critical section is done. LoadOrStore guarantees every
+// caller for a given id gets the SAME *sync.Mutex, so this serializes ALL
+// connection-write handlers against each other -- not just callers within
+// one handler -- closing the lost-update race described in #2324. The
+// returned mutex is NOT reentrant: a caller that is already holding the lock
+// for id must not call lockConnection(id) again (or invoke a helper that
+// does) before unlocking, or it deadlocks.
+func (r *Router) lockConnection(id string) func() {
+	muIface, _ := r.connWriteMu.LoadOrStore(id, &sync.Mutex{})
+	connMu := muIface.(*sync.Mutex)
+	connMu.Lock()
+	return connMu.Unlock
+}
+
 // connectionResponse is a Connection without the raw API key for list responses.
 type connectionResponse struct {
 	ID                    string  `json:"id"`
@@ -328,8 +344,11 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	if !ok {
 		return
 	}
-	existing, err := r.connectionService.GetByID(req.Context(), id)
-	if err != nil {
+	// Existence gate BEFORE allocating per-id serialization state (mirrors
+	// handleSetPathMappings), and before decoding the body so a malformed
+	// body against an unknown id still 404s. This snapshot is discarded --
+	// the canonical read-modify-write below re-fetches under the lock.
+	if _, gerr := r.connectionService.GetByID(req.Context(), id); gerr != nil {
 		writeFormError(w, req, http.StatusNotFound, "connection not found")
 		return
 	}
@@ -345,6 +364,22 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 		FeatureTriggerRefresh *bool  `json:"feature_trigger_refresh"`
 	}
 	if !DecodeJSON(w, req, &body) {
+		return
+	}
+
+	// Serialize the read-modify-write against every other connection-write
+	// handler (#2324): this issues a full-row UPDATE from an in-memory
+	// snapshot below, so without the per-connection lock a concurrent write
+	// to a different field (path mappings, features, stillwater-managed
+	// toggle) could be silently overwritten by this handler's stale
+	// snapshot. Unlocked explicitly (not deferred) so the lock is released
+	// before applyInferredPathMappingsIfEmpty, which acquires the SAME lock
+	// internally and would deadlock if called while still held.
+	unlock := r.lockConnection(id)
+	existing, err := r.connectionService.GetByID(req.Context(), id)
+	if err != nil {
+		unlock()
+		writeFormError(w, req, http.StatusNotFound, "connection not found")
 		return
 	}
 
@@ -385,12 +420,15 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	existing.SetFeatures(imageWrite, metadataPush, triggerRefresh)
 
 	if err := r.connectionService.Update(req.Context(), existing); err != nil {
+		unlock()
 		r.logger.Error("updating connection", "error", err)
 		writeFormError(w, req, http.StatusInternalServerError, "internal error")
 		return
 	}
+	unlock()
 	// Best-effort: a Lidarr connection updated to enabled with no path mappings
 	// yet gets them auto-derived (no-op when disabled or already mapped -- #2329).
+	// Called AFTER unlock: it acquires the same per-connection lock itself.
 	r.applyInferredPathMappingsIfEmpty(req.Context(), existing)
 	// HTMX form submission from the settings page edit panel: trigger a full
 	// page refresh so the updated connection values appear in the read-only
@@ -696,11 +734,6 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 	if !ok {
 		return
 	}
-	existing, err := r.connectionService.GetByID(req.Context(), id)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
-		return
-	}
 
 	var body struct {
 		FeatureImageWrite     *bool `json:"feature_image_write"`
@@ -708,6 +741,20 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 		FeatureTriggerRefresh *bool `json:"feature_trigger_refresh"`
 	}
 	if !DecodeJSON(w, req, &body) {
+		return
+	}
+
+	// Serialize the read-modify-write against every other connection-write
+	// handler (#2324): the feature columns get filled in from a snapshot
+	// read here, then a subset written back -- without the shared
+	// per-connection lock a concurrent handleUpdateConnection (or a second
+	// concurrent call to this handler) could interleave and silently drop
+	// one caller's feature-flag change.
+	unlock := r.lockConnection(id)
+	defer unlock()
+	existing, err := r.connectionService.GetByID(req.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
 		return
 	}
 
@@ -756,7 +803,8 @@ type pathMappingsRequest struct {
 // Valid for EVERY connection type since #2380: an Emby or Jellyfin container
 // mounts the library under its own prefix exactly the way Lidarr does, and
 // leaving them unmapped pushed host paths into their container namespace. A
-// per-connection mutex (pathMappingsMu) serializes the read-modify-write; the
+// the shared per-connection lock (connWriteMu, via lockConnection) serializes
+// the read-modify-write against every other connection-write handler; the
 // existence gate runs BEFORE the per-id LoadOrStore so unknown ids never grow
 // the mutex map.
 func (r *Router) handleSetPathMappings(w http.ResponseWriter, req *http.Request) {
@@ -786,10 +834,8 @@ func (r *Router) handleSetPathMappings(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	muIface, _ := r.pathMappingsMu.LoadOrStore(id, &sync.Mutex{})
-	connMu := muIface.(*sync.Mutex)
-	connMu.Lock()
-	defer connMu.Unlock()
+	unlock := r.lockConnection(id)
+	defer unlock()
 
 	existing, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
@@ -893,8 +939,9 @@ func sanitizePathMappings(in []connection.PathMapping) ([]connection.PathMapping
 // Valid for EVERY connection type since #2380 (Emby and Jellyfin need the same
 // host->container translation Lidarr does). The existence gate runs BEFORE the
 // per-id LoadOrStore so an unknown id never grows the mutex map, and the shared
-// pathMappingsMu serializes the read-modify-write so a concurrent manual save
-// and an infer cannot interleave.
+// per-connection lock (connWriteMu, via lockConnection) serializes the
+// read-modify-write so a concurrent manual save and an infer cannot
+// interleave -- nor can any other connection-write handler.
 func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
@@ -904,9 +951,9 @@ func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Reques
 
 	// Existence + type gate. The resolved connection also drives the inference
 	// enumeration below, which runs BEFORE the per-id lock: the ~10s Lidarr
-	// GetArtists round-trip must not be held under pathMappingsMu, or it would
-	// block every other path-mapping write on this connection for its full
-	// duration (mirrors applyInferredPathMappingsIfEmpty, which enumerates
+	// GetArtists round-trip must not be held under connWriteMu, or it would
+	// block every other write on this connection for its full duration
+	// (mirrors applyInferredPathMappingsIfEmpty, which enumerates
 	// unlocked and locks only the fast re-check-and-persist).
 	gate, gerr := r.connectionService.GetByID(req.Context(), id)
 	if gerr != nil {
@@ -926,10 +973,8 @@ func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Reques
 	// Now take the per-id lock ONLY for the fast re-check-and-persist, reusing
 	// the precomputed mappings. Serializing just this window keeps a concurrent
 	// manual save from being clobbered while never blocking it for the round-trip.
-	muIface, _ := r.pathMappingsMu.LoadOrStore(id, &sync.Mutex{})
-	connMu := muIface.(*sync.Mutex)
-	connMu.Lock()
-	defer connMu.Unlock()
+	unlock := r.lockConnection(id)
+	defer unlock()
 
 	existing, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
