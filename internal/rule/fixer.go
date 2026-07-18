@@ -1504,6 +1504,18 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 
 	fr := p.attemptFix(ctx, a, v)
 
+	// A fixer that reports Dismissed reached a TERMINAL answer without changing
+	// anything -- the condition is gone, or was never actionable, and re-running
+	// the fix can only produce the same result. Persist that terminality, or the
+	// row stays open and its Fix button does nothing every time the operator
+	// clicks it. (The orphaned-artist path above dismisses its row directly
+	// before returning; this covers Dismissed arriving from the fixer chain.)
+	if fr.Dismissed && !fr.Fixed {
+		if err := p.ruleService.DismissViolation(ctx, rv.ID); err != nil {
+			return nil, fmt.Errorf("dismissing violation after terminal fix result: %w", err)
+		}
+	}
+
 	if fr.Fixed {
 		if err := p.artistService.Update(ctx, a); err != nil {
 			return nil, fmt.Errorf("updating artist after fix: %w", err)

@@ -76,20 +76,31 @@ func (f *CrossArtistBackdropCollisionFixer) Fix(ctx context.Context, a *artist.A
 		return nil, fmt.Errorf("backing out cross-artist backdrop collision for artist %s: %w", a.ID, err)
 	}
 
+	// The remediation succeeded, so this fix attempt MUST return a terminal
+	// result -- Fixed or Dismissed. Removing nothing is a real, final answer
+	// ("re-detection says this artist is clean"), not a failure to retry: the
+	// remediation re-detects from the live library every time, so clicking Fix
+	// again can only produce the same empty result. Returning neither would leave
+	// the queue entry open forever with a Fix button that does nothing, which is
+	// the report-success-while-doing-nothing shape this feature must not have.
 	fixed := res.SlotsRemoved > 0
-	msg := fmt.Sprintf("No colliding backdrop slots to back out (re-detection removed nothing; op %s)", res.OpID)
+	msg := fmt.Sprintf(
+		"No colliding backdrop remains for this artist; re-detection found nothing to back out (op %s)",
+		res.OpID)
 	if fixed {
 		msg = fmt.Sprintf("Backed out %d colliding backdrop slot(s); restorable via op %s", res.SlotsRemoved, res.OpID)
 	}
 	f.logger.Info("cross-artist backdrop collision fix",
 		slog.String("artist_id", a.ID),
 		slog.Bool("fixed", fixed),
+		slog.Bool("dismissed", !fixed),
 		slog.Int("slots_removed", res.SlotsRemoved),
 		slog.String("op_id", res.OpID))
 
 	return &FixResult{
 		RuleID:       RuleCrossArtistBackdropCollision,
 		Fixed:        fixed,
+		Dismissed:    !fixed,
 		Message:      msg,
 		SlotsRemoved: res.SlotsRemoved,
 	}, nil

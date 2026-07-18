@@ -87,7 +87,7 @@ func TestCollisionFixer_Fix_BacksOutForRightArtist_NotDryRun(t *testing.T) {
 	}
 }
 
-func TestCollisionFixer_Fix_ZeroRemoved_NotFixed(t *testing.T) {
+func TestCollisionFixer_Fix_ZeroRemoved_IsTerminalDismissed(t *testing.T) {
 	rem := &fakeCollisionRemediator{result: PHashRemediateResult{OpID: "op-0", SlotsRemoved: 0}}
 	f := NewCrossArtistBackdropCollisionFixer(slog.Default())
 	f.SetRemediator(rem)
@@ -97,10 +97,21 @@ func TestCollisionFixer_Fix_ZeroRemoved_NotFixed(t *testing.T) {
 		t.Fatalf("Fix returned error: %v", err)
 	}
 	if res.Fixed {
-		t.Error("Fixed must be false when nothing was removed (violation stays open)")
+		t.Error("Fixed must be false when nothing was removed: no artwork was backed out")
 	}
 	if res.SlotsRemoved != 0 {
 		t.Errorf("SlotsRemoved = %d, want 0", res.SlotsRemoved)
+	}
+	// The load-bearing assertion. A successful run that removed nothing is a
+	// FINAL answer -- the remediation re-detects from the live library, so
+	// clicking Fix again can only repeat it. Neither-Fixed-nor-Dismissed leaves
+	// the queue entry open forever behind a Fix button that does nothing.
+	if !res.Dismissed {
+		t.Error("zero-removal result is neither Fixed nor Dismissed: the violation would stick " +
+			"in the Action Queue permanently with a no-op Fix button")
+	}
+	if res.Message == "" {
+		t.Error("terminal result needs a message explaining why nothing was backed out")
 	}
 }
 
