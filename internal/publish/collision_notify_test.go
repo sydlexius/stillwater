@@ -76,35 +76,45 @@ func TestSyncAllFanart_CollisionNotifiesAndStillUploads(t *testing.T) {
 	dir := t.TempDir()
 	ownHash := seedDecodableJPG(t, dir, "fanart.jpg")
 
+	// TWO platform destinations, deliberately. With a single connection the
+	// per-file cross-platform notification de-dup is never exercised, and
+	// boolean "did it notify?" checks would pass even if the operator got one
+	// toast and one durable violation PER PLATFORM. So every case asserts EXACT
+	// counts: the collision is a property of the image, so it notifies once,
+	// while the upload still happens to both platforms.
 	tests := []struct {
 		name        string
 		entries     []img.FanartIdentityEntry
-		wantNotify  bool
+		wantEvents  int
+		wantRaises  int
 		wantUploads int32
 	}{
 		{
 			// The polluting case: the identical hash is registered under a
-			// DIFFERENT artist -> IdentityMismatch -> notify, and still upload.
-			name:        "cross-artist collision notifies and uploads",
+			// DIFFERENT artist -> IdentityMismatch -> notify ONCE, upload twice.
+			name:        "collision notifies once across both platforms and still uploads to both",
 			entries:     []img.FanartIdentityEntry{{ArtistID: "other-artist", PHash: ownHash}},
-			wantNotify:  true,
-			wantUploads: 1,
+			wantEvents:  1,
+			wantRaises:  1,
+			wantUploads: 2,
 		},
 		{
 			// Own-artist entries are excluded by CompareIdentity -> IdentityMatch
-			// -> no notification, and the upload is unaffected.
-			name:        "own-artist entry does not notify but still uploads",
+			// -> no notification, and both uploads are unaffected.
+			name:        "own-artist entry does not notify but still uploads to both",
 			entries:     []img.FanartIdentityEntry{{ArtistID: "a1", PHash: ownHash}},
-			wantNotify:  false,
-			wantUploads: 1,
+			wantEvents:  0,
+			wantRaises:  0,
+			wantUploads: 2,
 		},
 		{
 			// Empty registry -> IdentityIndeterminate -> fail-open: no
-			// notification, upload unaffected.
-			name:        "empty registry fails open and still uploads",
+			// notification, both uploads unaffected.
+			name:        "empty registry fails open and still uploads to both",
 			entries:     nil,
-			wantNotify:  false,
-			wantUploads: 1,
+			wantEvents:  0,
+			wantRaises:  0,
+			wantUploads: 2,
 		},
 	}
 
@@ -122,12 +132,18 @@ func TestSyncAllFanart_CollisionNotifiesAndStillUploads(t *testing.T) {
 
 			p := New(Deps{
 				Logger: silentLogger(),
+				// Two connected platforms, one fanart file: the same image is
+				// pushed twice, so a per-(file, platform) notification would
+				// double-notify while a per-file one notifies once.
 				ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
-					{ConnectionID: "c", PlatformArtistID: "p1"},
+					{ConnectionID: "c1", PlatformArtistID: "p1"},
+					{ConnectionID: "c2", PlatformArtistID: "p2"},
 				}},
 				ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-					"c": {ID: "c", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok",
+					"c1": {ID: "c1", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok",
 						Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
+					"c2": {ID: "c2", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok",
+						Emby: &connection.EmbyConfig{PlatformUserID: "u2", FeatureImageWrite: true}},
 				}},
 			})
 			p.SetCollisionNotifier(notifier, &staticIdentityIndex{entries: tc.entries})
@@ -135,21 +151,30 @@ func TestSyncAllFanart_CollisionNotifiesAndStillUploads(t *testing.T) {
 			warnings := p.SyncAllFanartToPlatforms(context.Background(),
 				&artist.Artist{ID: "a1", Path: dir, Name: "Dest"})
 			if len(warnings) != 0 {
-				t.Errorf("expected no warnings; got %v", warnings)
+				t.Errorf("expected 0 warnings; got %d: %v", len(warnings), warnings)
 			}
 
-			// (b) The push ALWAYS happens -- notify-only must never block.
+			// (b) The push ALWAYS happens, to EVERY platform -- notify-only must
+			// never block or skip a destination. waitForUploads only waits for
+			// ">= want", so assert the exact total too: an extra upload is just
+			// as wrong as a missing one.
 			waitForUploads(t, hits, tc.wantUploads)
+			if got := hits.uploads.Load(); got != tc.wantUploads {
+				t.Errorf("uploads = %d, want exactly %d", got, tc.wantUploads)
+			}
 
-			// (a) Notification fired exactly when a cross-artist collision exists.
-			gotNotify := len(pub.events) > 0
-			if gotNotify != tc.wantNotify {
-				t.Errorf("SSE notification fired = %v, want %v (events: %d)", gotNotify, tc.wantNotify, len(pub.events))
+			// (a) EXACT notification counts. Booleans here would hide the
+			// double-notify regression this two-platform setup exists to catch.
+			if got := len(pub.events); got != tc.wantEvents {
+				t.Errorf("SSE events = %d, want exactly %d (one per colliding FILE, not per platform)",
+					got, tc.wantEvents)
 			}
-			if (raised > 0) != tc.wantNotify {
-				t.Errorf("durable violation raised = %v, want %v", raised > 0, tc.wantNotify)
+			if raised != tc.wantRaises {
+				t.Errorf("durable violation raises = %d, want exactly %d (upsert is idempotent, but "+
+					"re-raising per platform means redundant writes and repeated toasts)",
+					raised, tc.wantRaises)
 			}
-			if tc.wantNotify {
+			if tc.wantEvents > 0 {
 				if pub.events[0].Type != event.BackdropCollision {
 					t.Errorf("event type = %q, want %q", pub.events[0].Type, event.BackdropCollision)
 				}
