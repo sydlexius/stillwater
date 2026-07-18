@@ -171,6 +171,25 @@ type Pipeline struct {
 	ruleCacheMu sync.RWMutex
 	ruleCache   map[string]*Rule
 
+	// phashArtistMu holds one mutex per artist id, guarding the whole
+	// critical section of a cross-artist backdrop back-out (#2564):
+	// RemediatePHashMismatches's per-artist quarantine/stage/renumber/
+	// platform-delete AND RestorePHashQuarantine's occupancy-check/on-disk-
+	// write/quarantine-consume for the SAME artist run under it.
+	//
+	// It exists because -race cannot see the hazard it closes. A restore
+	// APPENDS a fanart slot and consumes a manifest entry while a concurrent
+	// remediation of the same artist RENUMBERS the surviving slots and rewrites
+	// the same manifest; those are file-level lost updates (os.Rename / atomic
+	// manifest replace on shared paths), not shared-memory conflicts, so the
+	// race detector is blind to them. Serializing per artist is what makes the
+	// on-disk state and the manifest agree. Keyed by artist id so different
+	// artists still proceed in parallel. Entries are never evicted -- one mutex
+	// per artist ever remediated, a few bytes each -- the same unbounded
+	// sync.Map shape image.repairOpMu uses, and bounded in practice by the
+	// number of artists a process repairs.
+	phashArtistMu sync.Map // map[string]*sync.Mutex
+
 	// orchestratorMu guards orchestrator. SetOrchestrator is the
 	// canonical wiring path (main.go installs it after construction),
 	// kept symmetric with SetWriteGate / SetHistoryService so the
