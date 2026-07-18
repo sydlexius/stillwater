@@ -41,6 +41,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Backdrop/fanart sequencing](#backdropfanart-sequencing) | Image | Disabled, manual | Yes |
 | [Minimum backdrop count](#minimum-backdrop-count) | Image | Disabled, manual | Detection-only |
 | [Logo excessive padding](#logo-excessive-padding) | Image | Disabled, manual | Yes |
+| [Cross-artist backdrop collision](#cross-artist-backdrop-collision) | Image | Disabled, manual | Sometimes |
 
 A rule marked **Detection-only** has no automated fix; you resolve the violations manually (or by adding artwork that satisfies the check).
 
@@ -746,4 +747,38 @@ After:  logo.png is 504 x 204 px (content bounds plus 2 px margin)
 - Padding threshold (default 15% of image area)
 - Trim margin (default 2 px)
 - Severity (default: info)
+
+---
+
+## Cross-artist backdrop collision
+
+**Category:** Image &middot; **Default:** Disabled, manual &middot; **Severity:** warning
+
+Flags a fanart/backdrop an artist holds that perceptually matches another artist's fanart -- a symptom of cross-artist promo-art pollution. Unlike other rules this is not evaluated during Run Rules; violations are raised as they happen when a matching backdrop is imported or pushed. The fix backs the polluting slot out of the artist's directory (and off connected platforms) using the reversible quarantine-before-removal remediation, so a false positive can be restored.
+
+When the same promotional image is filed under two different artists, one artist ends up displaying another artist's backdrop. This rule compares a perceptual hash of a fanart image against every other artist's fanart and fires when it matches a different artist at or above the similarity threshold (default 90%). It is raised as it happens -- when a colliding backdrop is imported from a media server or pushed to a platform -- rather than during Run Rules, and the count of distinct colliding artists is reported because a picture shared across many artists is more likely legitimate promo art than a single wrong-artist write.
+
+**When this fires:**
+
+- A media-server import that files a festival promo shot under two different artists who both performed at that festival.
+- A backdrop mistakenly downloaded for the wrong artist that duplicates a backdrop already held by the correct artist.
+
+**What the fix does:** Backs the polluting backdrop out of the affected artist: it re-detects the artist's cross-artist fanart collisions from the live library, quarantines the matching slots (reversible), removes them locally and from connected platforms, and renumbers the survivors. Nothing is deleted outright, so a false positive can be restored.
+
+```
+Before: Artist A holds fanart2.jpg that is 94% similar to Artist B's fanart.jpg
+After:  Artist A's fanart2.jpg is quarantined and removed (locally and on platforms); survivors renumbered. Restorable from quarantine if it was a false positive.
+```
+
+**Configurable:**
+
+- Tolerance (default 0.90)
+- Severity (default: warning)
+
+**Caveats:**
+
+- Runs in manual mode only: the fix is destructive and the collision signal is symmetric (it cannot tell which of two artists legitimately owns a shared promo image), so an operator confirms each back-out with one click.
+- Aliases and collaborations legitimately share promo art, so a flagged backdrop is not always pollution; the violation names the colliding artist and the similarity so you can judge before fixing.
+- Detection is notify-only at import and push time: the backdrop is still written and still pushed. This rule records the finding and offers the back-out; it never blocks a write.
+- Only fanart/backdrop images are compared; thumbnails, logos, and banners are out of scope.
 <!-- END GENERATED: rules-catalogue -->

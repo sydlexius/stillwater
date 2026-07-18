@@ -86,11 +86,15 @@ func TestAllDefaultRulesAreCategorized(t *testing.T) {
 		RuleDirectoryNameMismatch: true,
 		RuleImageDuplicate:        true,
 		RuleImageDuplicateExact:   true,
-		RuleBackdropSequencing:    true,
-		RuleBackdropMinCount:      true,
-		RuleNameLanguagePref:      true,
-		RuleOriginMissing:         true,
-		RuleProviderIDMissing:     true,
+		// API-compatible: not filesystem-only. It is raised event-driven and
+		// seeded disabled, so it is never engine-evaluated, but it must still be
+		// categorized here (and is not in filesystemRules).
+		RuleCrossArtistBackdropCollision: true,
+		RuleBackdropSequencing:           true,
+		RuleBackdropMinCount:             true,
+		RuleNameLanguagePref:             true,
+		RuleOriginMissing:                true,
+		RuleProviderIDMissing:            true,
 	}
 
 	for _, r := range defaultRules {

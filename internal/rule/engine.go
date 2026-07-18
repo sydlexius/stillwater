@@ -245,6 +245,13 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleNameLanguagePref] = e.makeNameLanguagePrefChecker()
 	e.checkers[RuleDiscographyPopulated] = e.makeDiscographyChecker()
 	e.checkers[RuleProviderIDMissing] = e.makeProviderIDMissingChecker()
+	// cross_artist_backdrop_collision is raised event-driven at the write/push
+	// chokepoints (Service.RaiseBackdropCollision), never by the engine. Its rule
+	// is seeded DISABLED so eligibleRules skips it and Run Rules never resolves
+	// its violations. This checker exists only to satisfy the checker/rule parity
+	// invariant (every seeded rule has a registered checker); it always returns
+	// nil (no violation) and is never invoked while the rule stays disabled.
+	e.checkers[RuleCrossArtistBackdropCollision] = func(context.Context, *artist.Artist, RuleConfig) *Violation { return nil }
 
 	// Register per-(rule, artist) capability predicates. A rule with no entry
 	// here is always capable and is gated only by Enabled and, for the

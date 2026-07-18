@@ -46,6 +46,15 @@ const (
 	RuleOriginMissing         = "origin_missing"
 	RuleDiscographyPopulated  = "discography_populated"
 	RuleProviderIDMissing     = "provider_id_missing"
+	// RuleCrossArtistBackdropCollision flags a fanart/backdrop an artist holds
+	// (or is about to receive) that perceptually matches ANOTHER artist's
+	// fanart -- cross-artist promo-art pollution (#2540). Unlike every other
+	// rule it is NOT evaluated by the engine: it is seeded disabled and its
+	// violations are raised event-driven at the write/push chokepoints
+	// (Service.RaiseBackdropCollision). The seeded row exists only as the FK
+	// target for its rule_violations rows and as the fixer's rule id; its fix
+	// backs the polluting slot out via the #2564 remediation.
+	RuleCrossArtistBackdropCollision = "cross_artist_backdrop_collision"
 
 	// Deprecated rule IDs kept for migration. These rules have been merged
 	// into other rules but may still have violations in the database.
@@ -296,6 +305,21 @@ var defaultRules = []Rule{
 		// the dynamic default (every configured provider among Discogs, Deezer,
 		// and Spotify). An operator override narrows that set to a chosen subset.
 		Config: RuleConfig{Severity: "info"},
+	},
+	{
+		ID:          RuleCrossArtistBackdropCollision,
+		Name:        "Cross-artist backdrop collision",
+		Description: "Flags a fanart/backdrop an artist holds that perceptually matches another artist's fanart -- a symptom of cross-artist promo-art pollution. Unlike other rules this is not evaluated during Run Rules; violations are raised as they happen when a matching backdrop is imported or pushed. The fix backs the polluting slot out of the artist's directory (and off connected platforms) using the reversible quarantine-before-removal remediation, so a false positive can be restored.",
+		Category:    RuleCategoryImage,
+		// Seeded DISABLED on purpose: this rule has no engine checker (it is
+		// raised event-driven at the write/push chokepoints), and a disabled rule
+		// is excluded from evaluation, so Run Rules never touches -- and so never
+		// auto-resolves -- these event-driven violations. Manual automation keeps
+		// the destructive back-out operator-triggered (one click), which is the
+		// safety valve on the ambiguous symmetric collision signal.
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "warning", Tolerance: 0.90},
 	},
 }
 
@@ -1008,6 +1032,32 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 		return fmt.Errorf("committing upsert-violation transaction: %w", err)
 	}
 	return nil
+}
+
+// RaiseBackdropCollision upserts the durable, operator-fixable Action Queue
+// entry for a cross-artist backdrop collision (#2540). It is the rule-side seam
+// the write/push chokepoints reach through internal/collision without importing
+// this package: the notifier passes plain strings, and this method owns the
+// collision-specific RuleID, severity, and Fixable flag. The row is keyed by
+// (rule_id, artist_id) via UpsertViolation, so repeated collisions for one
+// artist collapse onto a single open entry (latest wins), and its fixer backs
+// the polluting slot out via the reversible #2564 remediation.
+//
+// collidingArtistID is accepted for provenance/logging symmetry with the toast
+// payload; the human-readable message (which already names the colliding artist
+// and similarity) is the operator-facing surface, so the id is not persisted
+// into the image-shaped Candidates field.
+func (s *Service) RaiseBackdropCollision(ctx context.Context, destArtistID, destArtistName, message, collidingArtistID string) error {
+	_ = collidingArtistID
+	return s.UpsertViolation(ctx, &RuleViolation{
+		RuleID:     RuleCrossArtistBackdropCollision,
+		ArtistID:   destArtistID,
+		ArtistName: destArtistName,
+		Severity:   "warning",
+		Message:    message,
+		Fixable:    true,
+		Status:     ViolationStatusOpen,
+	})
 }
 
 // ListViolations returns rule violations filtered by status.
