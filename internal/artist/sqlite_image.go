@@ -359,6 +359,32 @@ func (r *sqliteImageRepo) NewestWriteTimesByArtist(ctx context.Context, libraryI
 	return result, nil
 }
 
+// AllFanartHashes loads artist_id/phash for every exists_flag=1 fanart row in
+// the library, unfiltered by artist. See ImageRepository.AllFanartHashes.
+func (r *sqliteImageRepo) AllFanartHashes(ctx context.Context) ([]FanartHashRow, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT artist_id, phash FROM artist_images
+		 WHERE exists_flag = 1 AND image_type = 'fanart'
+		 ORDER BY artist_id, slot_index`)
+	if err != nil {
+		return nil, fmt.Errorf("querying fanart hashes: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	var out []FanartHashRow
+	for rows.Next() {
+		var row FanartHashRow
+		if err := rows.Scan(&row.ArtistID, &row.PHashHex); err != nil {
+			return nil, fmt.Errorf("scanning fanart hash row: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating fanart hash rows: %w", err)
+	}
+	return out, nil
+}
+
 func scanImageRows(rows *sql.Rows) ([]ArtistImage, error) {
 	var images []ArtistImage
 	for rows.Next() {
