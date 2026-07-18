@@ -817,6 +817,41 @@ func TestUpdatePreference_SuppressConfirmAcceptsTrueAndFalse(t *testing.T) {
 	}
 }
 
+func TestUpdatePreference_SuppressConfirmAcceptsHyphenatedKey(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	// Real confirm-key action names are hyphenated (e.g. "image-save"), so the
+	// suppress_confirm_ key built from one must be accepted, not 400 (#2409).
+	body := `{"value":"true"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/suppress_confirm_image-save", strings.NewReader(body))
+	req.SetPathValue("key", "suppress_confirm_image-save")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT hyphenated key expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/suppress_confirm_image-save", nil)
+	req.SetPathValue("key", "suppress_confirm_image-save")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET hyphenated key expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != "true" {
+		t.Errorf("expected persisted value=true for hyphenated key, got %q", resp["value"])
+	}
+}
+
 func TestUpdatePreference_SuppressConfirmRejectsInvalidValue(t *testing.T) {
 	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
@@ -1074,14 +1109,20 @@ func TestIsSuppressConfirmKey(t *testing.T) {
 		"suppress_confirm_bulk_fix_all",
 		"suppress_confirm_a",
 		"suppress_confirm_x1",
+		"suppress_confirm_image-save",
+		"suppress_confirm_image-delete",
+		"suppress_confirm_provider-key-delete",
+		"suppress_confirm_members-clear",
+		"suppress_confirm_field-delete",
+		"suppress_confirm_has-dash",
 	}
 	invalid := []string{
 		"suppress_confirm_",
 		"suppress_confirm",
 		"theme",
 		"suppress_confirm_DELETE",
-		"suppress_confirm_has-dash",
 		"suppress_confirm_has space",
+		"suppress_confirm_../etc",
 		"",
 	}
 

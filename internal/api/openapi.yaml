@@ -8435,7 +8435,7 @@ paths:
                   - mono_font
                   - kbd_hints
               - type: string
-                pattern: "^suppress_confirm_[a-z0-9_]+$"
+                pattern: "^suppress_confirm_[a-z0-9_-]+$"
       responses:
         "200":
           description: Preference value
@@ -8509,7 +8509,7 @@ paths:
                   - mono_font
                   - kbd_hints
               - type: string
-                pattern: "^suppress_confirm_[a-z0-9_]+$"
+                pattern: "^suppress_confirm_[a-z0-9_-]+$"
       requestBody:
         required: true
         content:
