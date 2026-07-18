@@ -158,15 +158,69 @@
   // Persists via PATCH /api/v1/preferences to artist_detail_section_order
   // and artist_detail_hidden_sections.
 
+  // cachedArray reads a stored-preference array out of window.swPreferences'
+  // sessionStorage cache (preferences.js). Returns [] when the cache, the key,
+  // or swPreferences itself is unavailable, never throws.
+  function cachedArray(key) {
+    var cache = window.swPreferences && typeof window.swPreferences.getCache === 'function'
+      ? window.swPreferences.getCache()
+      : null;
+    var val = cache && cache[key];
+    return Array.isArray(val) ? val : [];
+  }
+
+  // mergeAbsent appends any id from storedIDs that is not already in liveIDs,
+  // preserving storedIDs' relative order.
+  //
+  // The drawer's layout list only ever renders the fixed default section set
+  // (orderedPrefsLayoutSections in prefs_drawer.templ), so a section the
+  // ON-PAGE controls manage but the drawer does not -- "debug", which only
+  // exists in the DOM when show_platform_debug is on (section-layout.js) --
+  // is never a row here. Without this merge, saving from the drawer would
+  // silently drop that section's stored order/collapsed state (#2108).
+  function mergeAbsent(liveIDs, storedIDs) {
+    var seen = {};
+    liveIDs.forEach(function (id) { seen[id] = true; });
+    var merged = liveIDs.slice();
+    storedIDs.forEach(function (id) {
+      if (!seen[id]) {
+        merged.push(id);
+        seen[id] = true;
+      }
+    });
+    return merged;
+  }
+
+  // applyLiveLayout forwards an order/collapsed pair to section-layout.js's
+  // live-apply API so a layout change made in the drawer takes effect
+  // immediately on an already-open artist-detail page (#2110), instead of
+  // only being visible after the next full page load. Gated inside
+  // applyLayout itself to a no-op when the artist-detail section container
+  // is not present (e.g. drawer opened on a different page).
+  function applyLiveLayout(order, collapsed) {
+    if (window.swArtistSectionLayout && typeof window.swArtistSectionLayout.applyLayout === 'function') {
+      window.swArtistSectionLayout.applyLayout(order, collapsed);
+    } else if (window.console) {
+      console.error('swPrefsDrawer: window.swArtistSectionLayout.applyLayout unavailable; layout change will not live-apply on this page');
+    }
+  }
+
   function saveSectionOrder() {
     var list = document.getElementById('sw-prefs-layout-list');
     if (!list || !window.swPreferences) return;
     var rows = Array.prototype.slice.call(list.querySelectorAll('[data-section-id]'));
-    var order  = rows.map(function (r) { return r.getAttribute('data-section-id'); });
-    var hidden = rows.filter(function (r) { return r.getAttribute('data-hidden') === 'true'; })
+    var liveOrder  = rows.map(function (r) { return r.getAttribute('data-section-id'); });
+    var liveHidden = rows.filter(function (r) { return r.getAttribute('data-hidden') === 'true'; })
                      .map(function (r) { return r.getAttribute('data-section-id'); });
-    var collapsed = rows.filter(function (r) { return r.getAttribute('data-collapsed') === 'true'; })
+    var liveCollapsed = rows.filter(function (r) { return r.getAttribute('data-collapsed') === 'true'; })
                         .map(function (r) { return r.getAttribute('data-section-id'); });
+
+    // Merge in any stored id absent from this drawer's fixed row set (#2108).
+    var order = mergeAbsent(liveOrder, cachedArray('artist_detail_section_order'));
+    var hidden = mergeAbsent(liveHidden, cachedArray('artist_detail_hidden_sections'));
+    var collapsed = mergeAbsent(liveCollapsed, cachedArray('artist_detail_collapsed_sections'));
+
+    applyLiveLayout(order, collapsed);
 
     var bp = (function () {
       var el = document.querySelector('meta[name="htmx-base-path"]');
@@ -574,6 +628,9 @@
       });
     }
 
+    // Live-apply the reset to an already-open artist-detail page (#2110).
+    applyLiveLayout(DEFAULT_ORDER, []);
+
     // Persist reset to server.
     fetch(bp + '/api/v1/preferences', {
       method: 'PATCH',
@@ -737,6 +794,9 @@
           list.appendChild(row);
         });
       }
+
+      // Live-apply the reset to an already-open artist-detail page (#2110).
+      applyLiveLayout(DEFAULT_ORDER, []);
     }
 
     // Persist all scalar defaults + layout reset in a single PATCH.
