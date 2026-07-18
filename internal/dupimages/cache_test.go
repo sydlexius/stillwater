@@ -550,6 +550,195 @@ func TestTriggerRefresh_SingleFlight(t *testing.T) {
 	}
 }
 
+// singleFlightStallCap bounds how long a deliberately-parked scan stays parked
+// in the single-flight tests below.
+//
+// The cap is what makes those tests fail FAST when the latch regresses. Without
+// it, a second sweep that should never have started parks on the same
+// unclosed channel and the test deadlocks, surfacing only as the package
+// timeout minutes later instead of as the assertion that actually explains the
+// bug. It is far longer than the microseconds the tests need, so it never fires
+// on the passing path.
+const singleFlightStallCap = 5 * time.Second
+
+// heldUntil parks until release is closed, or singleFlightStallCap elapses.
+func heldUntil(release <-chan struct{}) {
+	select {
+	case <-release:
+	case <-time.After(singleFlightStallCap):
+	}
+}
+
+// Get must not hand out an alias of the cached platform slice: the struct copy
+// it returns shares its backing array, so a caller that sorted or rewrote the
+// returned slice would mutate cached state outside the lock.
+func TestGet_ReturnedPlatformSliceIsIndependent(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	c.Set(Counts{Library: 1, Platforms: []PlatformCount{emby(4), jellyfin(6)}})
+
+	got := c.Get()
+	if len(got.Platforms) != 2 {
+		t.Fatalf("Platforms = %+v; want 2 entries", got.Platforms)
+	}
+	// Mutate in place the two ways a real consumer would: rewrite an element,
+	// and reorder.
+	got.Platforms[0].Count = 999
+	got.Platforms[0], got.Platforms[1] = got.Platforms[1], got.Platforms[0]
+
+	after := c.Get()
+	if after.Platforms[0].Type != "emby" || after.Platforms[0].Count != 4 {
+		t.Fatalf("cached Platforms[0] = %+v; want emby/4 -- mutating the slice returned by Get changed cached state", after.Platforms[0])
+	}
+	if after.Platforms[1].Type != "jellyfin" || after.Platforms[1].Count != 6 {
+		t.Fatalf("cached Platforms[1] = %+v; want jellyfin/6", after.Platforms[1])
+	}
+}
+
+// The single-flight latch must cover the DIRECT Refresh the maintenance
+// scheduler calls, not just TriggerRefresh. Before this was shared, a sidebar
+// poll landing during a minutes-long scheduled scan saw running == false and
+// launched a second concurrent full sweep.
+func TestRefresh_SingleFlightCoversDirectAndLazyPaths(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	var calls atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	c.SetSources(
+		func(context.Context) (int, error) {
+			calls.Add(1)
+			once.Do(func() { close(entered) })
+			heldUntil(release)
+			return 1, nil
+		},
+		nil,
+	)
+
+	// A direct (scheduler-style) Refresh is in flight...
+	direct := make(chan error, 1)
+	go func() { direct <- c.Refresh(context.Background()) }()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("direct Refresh never entered the scan")
+	}
+
+	// ...so a burst of lazy sidebar triggers must all drop.
+	for range 20 {
+		c.TriggerRefresh()
+	}
+	// ...and so must a second direct Refresh.
+	if err := c.Refresh(context.Background()); !errors.Is(err, ErrRefreshInFlight) {
+		t.Fatalf("concurrent direct Refresh err = %v; want ErrRefreshInFlight", err)
+	}
+
+	// Give any escaped goroutine a real chance to start a second sweep before
+	// the assertion; without the shared latch this window is where it happens.
+	time.Sleep(50 * time.Millisecond)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("scan ran %d times while one refresh was in flight; want exactly 1", got)
+	}
+
+	close(release)
+	if err := <-direct; err != nil {
+		t.Fatalf("direct Refresh: %v", err)
+	}
+	if got := c.Get().Library; got != 1 {
+		t.Fatalf("Library = %d; want 1 -- the in-flight refresh did not store its result", got)
+	}
+}
+
+// The converse ordering: a lazy refresh holds the latch, so the scheduler's
+// direct Refresh drops instead of starting a second sweep.
+func TestRefresh_DropsWhileLazyRefreshRunning(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	var calls atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	c.SetSources(
+		func(context.Context) (int, error) {
+			calls.Add(1)
+			once.Do(func() { close(entered) })
+			heldUntil(release)
+			return 2, nil
+		},
+		nil,
+	)
+
+	c.TriggerRefresh()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("lazy refresh never entered the scan")
+	}
+
+	if err := c.Refresh(context.Background()); !errors.Is(err, ErrRefreshInFlight) {
+		t.Fatalf("direct Refresh during a lazy refresh: err = %v; want ErrRefreshInFlight", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("scan ran %d times; the direct Refresh started a second sweep", got)
+	}
+
+	close(release)
+}
+
+// A direct Refresh must not arm the LAZY cooldown: lastAttempt means "when the
+// lazy path last started", and a scheduled run stamping it would suppress the
+// cold-cache warm-up an operator is waiting on.
+func TestRefresh_DirectRunDoesNotArmLazyCooldown(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	var calls atomic.Int32
+	c.SetSources(func(context.Context) (int, error) { calls.Add(1); return 3, nil }, nil)
+
+	if err := c.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	c.TriggerRefresh()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("scan ran %d times; want 2 -- a direct Refresh armed the lazy retry cooldown", got)
+	}
+}
+
+// RefreshContext is the shared per-run bound. Both refresh paths must use it,
+// so it has to carry the deadline AND stay derived from its parent (shutdown
+// must still abort an in-flight run immediately).
+func TestRefreshContext_BoundsAndInheritsCancellation(t *testing.T) {
+	t.Parallel()
+
+	parent, cancelParent := context.WithCancel(context.Background())
+	ctx, cancel := RefreshContext(parent)
+	defer cancel()
+
+	dl, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("RefreshContext returned a context with no deadline")
+	}
+	if remaining := time.Until(dl); remaining <= 0 || remaining > refreshTimeout {
+		t.Fatalf("deadline is %s out; want (0, %s]", remaining, refreshTimeout)
+	}
+
+	cancelParent()
+	select {
+	case <-ctx.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceling the parent did not cancel the refresh context")
+	}
+}
+
 func TestSet_MarksComputed(t *testing.T) {
 	t.Parallel()
 	c := New(quietLogger())

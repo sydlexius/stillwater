@@ -162,9 +162,10 @@ type Cache struct {
 	library  LibraryCountFn
 	platform PlatformCountFn
 
-	// inFlight is the single-flight latch for TriggerRefresh. A second
-	// trigger while a refresh is running is dropped, not queued: these scans
-	// are minutes long and the result would be identical.
+	// inFlight is the single-flight latch shared by BOTH refresh entry points
+	// (Refresh and TriggerRefresh). A second refresh of either kind while one
+	// is running is dropped, not queued: these scans are minutes long and the
+	// result would be identical.
 	inFlight sync.Mutex
 	running  bool
 	// lastAttempt is when the lazy path last STARTED a refresh, guarded by
@@ -228,7 +229,15 @@ func (c *Cache) sources() (LibraryCountFn, PlatformCountFn, *slog.Logger) {
 func (c *Cache) Get() Counts {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.counts
+	out := c.counts
+	// Copy the platform slice out. The struct copy above shares its backing
+	// array with the cached snapshot, so a caller that sorted or otherwise
+	// mutated the returned slice would be writing to cached state outside the
+	// lock -- a data race against every other reader. No current consumer does
+	// that, but this package advertises concurrency safety, so the hazard is
+	// closed here rather than left to every future caller to remember.
+	out.Platforms = append([]PlatformCount(nil), c.counts.Platforms...)
+	return out
 }
 
 // Set overwrites BOTH halves of the snapshot, stamping each as established
@@ -354,7 +363,72 @@ func (c *Cache) Reset() {
 //     authoritative-clean until the next periodic tick.
 //
 // The first error encountered is returned regardless of what was written.
+//
+// SINGLE-FLIGHT: Refresh shares one latch with TriggerRefresh (see
+// beginRefresh). If a refresh of either kind is already running, this call
+// DROPS and returns ErrRefreshInFlight without scanning.
 func (c *Cache) Refresh(ctx context.Context) error {
+	if !c.beginRefresh(false) {
+		return ErrRefreshInFlight
+	}
+	defer c.endRefresh()
+	return c.refresh(ctx)
+}
+
+// beginRefresh takes the single-flight latch, reporting whether the caller owns
+// it. The caller MUST call endRefresh when it owns the latch.
+//
+// This is the one place the latch is taken, which is the point: c.running used
+// to be set only by TriggerRefresh, so the maintenance scheduler's direct
+// Refresh never participated. During a cold scheduled scan -- minutes of disk
+// re-hashing plus a platform sweep -- a sidebar poll saw running == false and
+// launched a SECOND concurrent full sweep, doubling the I/O and CPU cost of the
+// most expensive task in the process on a design that advertises single-flight.
+//
+// WHY A DIRECT Refresh DROPS RATHER THAN WAITS. Both callers want the same
+// thing: a reasonably fresh snapshot, cheaply. Neither consumes the return
+// value as an answer to a question -- the sidebar reads Get(), never a Refresh
+// result. So a refresh that is ALREADY RUNNING will satisfy the dropped
+// caller's need within the same window, and waiting for it would buy nothing
+// while pinning a scheduler goroutine (and, for the 12h tick, delaying the
+// loop's return to its select for the whole remaining duration of the in-flight
+// scan). Dropping is also the safer failure mode: a wait could stack callers
+// behind a stalled sweep, which is exactly the pathology the per-run deadline
+// in maintenance exists to prevent. The dropped tick is not data loss -- the
+// next tick is 12h out and the in-flight scan writes the same numbers this one
+// would have.
+//
+// Lazy callers additionally honor retryCooldown; a direct Refresh does not,
+// because its cadence is already governed by the scheduler's interval.
+// A direct Refresh likewise does not stamp lastAttempt: that field means "when
+// the LAZY path last started", and letting a scheduled run arm the lazy
+// cooldown would suppress a cold-cache warm-up the operator is waiting on.
+func (c *Cache) beginRefresh(lazy bool) bool {
+	c.inFlight.Lock()
+	defer c.inFlight.Unlock()
+	if c.running {
+		return false
+	}
+	if lazy && !c.lastAttempt.IsZero() && time.Since(c.lastAttempt) < retryCooldown {
+		return false
+	}
+	c.running = true
+	if lazy {
+		c.lastAttempt = time.Now()
+	}
+	return true
+}
+
+// endRefresh releases the single-flight latch.
+func (c *Cache) endRefresh() {
+	c.inFlight.Lock()
+	c.running = false
+	c.inFlight.Unlock()
+}
+
+// refresh is the unguarded scan-and-store body shared by both entry points. The
+// caller must already hold the single-flight latch.
+func (c *Cache) refresh(ctx context.Context) error {
 	library, platform, logger := c.sources()
 	if library == nil && platform == nil {
 		// Fail loud rather than silently caching zeros: an unwired cache
@@ -473,29 +547,38 @@ func (c *Cache) Refresh(ctx context.Context) error {
 // next 60s sidebar poll after each multi-minute scan gave up, pinning the
 // process at a ~100% duty cycle on the most expensive task it runs.
 //
-// It bounds only the LAZY path. The periodic maintenance task calls Refresh
-// directly and is unaffected, so a genuine outage is still retried on schedule.
+// The cooldown bounds only the LAZY path. The periodic maintenance task calls
+// Refresh directly and is not subject to it, so a genuine outage is still
+// retried on schedule. Both paths DO share the single-flight latch -- see
+// beginRefresh.
 func (c *Cache) TriggerRefresh() {
-	c.inFlight.Lock()
-	if c.running || (!c.lastAttempt.IsZero() && time.Since(c.lastAttempt) < retryCooldown) {
-		c.inFlight.Unlock()
+	if !c.beginRefresh(true) {
 		return
 	}
-	c.running = true
-	c.lastAttempt = time.Now()
-	c.inFlight.Unlock()
 
 	go func() {
-		defer func() {
-			c.inFlight.Lock()
-			c.running = false
-			c.inFlight.Unlock()
-		}()
-		ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+		defer c.endRefresh()
+		ctx, cancel := RefreshContext(context.Background())
 		defer cancel()
-		// Error already logged inside Refresh; nothing actionable here.
-		_ = c.Refresh(ctx)
+		// Error already logged inside refresh; nothing actionable here.
+		_ = c.refresh(ctx)
 	}()
+}
+
+// RefreshContext derives a context bounded by the standard per-refresh
+// deadline. Every caller of Refresh must use it (the lazy path above does so
+// internally) so a stalled scan cannot run forever.
+//
+// It is exported for the maintenance scheduler, whose own ctx is
+// process-lifetime: without a per-run bound, one stalled sweep blocks the
+// ticker loop indefinitely and EVERY subsequent refresh is lost, not just the
+// stalled one. Sharing this single helper is what keeps the two paths'
+// deadlines from drifting apart again.
+//
+// The returned context is derived from parent, so canceling the scheduler's
+// context still aborts an in-flight run promptly. The caller must call cancel.
+func RefreshContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, refreshTimeout)
 }
 
 // refreshTimeout bounds a background refresh. Generous: a full from-disk
@@ -506,6 +589,19 @@ const refreshTimeout = 30 * time.Minute
 // See TriggerRefresh for why it exists. Well under the 12h periodic cadence, so
 // a cold cache still warms promptly once the source recovers.
 const retryCooldown = 15 * time.Minute
+
+// ErrRefreshInFlight is returned by Refresh when another refresh (scheduled or
+// lazy) already holds the single-flight latch, so this call scanned nothing.
+//
+// It is NOT a failure: the in-flight scan produces the same numbers this call
+// would have. Callers should log it at info level, not as an error.
+var ErrRefreshInFlight = errRefreshInFlight{}
+
+type errRefreshInFlight struct{}
+
+func (errRefreshInFlight) Error() string {
+	return "duplicate-image count refresh skipped: another refresh is already running"
+}
 
 // errNoSources is returned by Refresh when the cache has no scan functions.
 var errNoSources = errNoSourcesType{}

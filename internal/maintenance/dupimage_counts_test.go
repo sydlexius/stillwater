@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -240,6 +241,121 @@ func TestStartDuplicateImageCountRefresh_SurvivesCacheWithNoSources(t *testing.T
 	}
 	if got := cache.Get(); !got.Computed {
 		t.Fatalf("a successful refresh left the snapshot un-computed: %+v", got)
+	}
+}
+
+// Every SCHEDULED refresh must run under a per-run deadline, not the loop's
+// process-lifetime context. Without one, a single stalled sweep blocks the loop
+// forever and the ticker's subsequent ticks are dropped, so every later refresh
+// is lost too -- not just the stalled one.
+//
+// The source inspects the context it is actually handed, which is the only way
+// to observe the bound: the deadline itself is 30 minutes out, so a test cannot
+// wait for it to fire.
+func TestStartDuplicateImageCountRefresh_BoundsEachRunWithADeadline(t *testing.T) {
+	svc := newDupCountService(t)
+	cache := dupimages.New(svc.logger)
+
+	var (
+		calls       atomic.Int32
+		sawDeadline atomic.Bool
+		unbounded   atomic.Bool
+		cancels     = make(chan struct{}, 4)
+	)
+	cache.SetSources(func(ctx context.Context) (int, error) {
+		calls.Add(1)
+		if _, ok := ctx.Deadline(); ok {
+			sawDeadline.Store(true)
+		} else {
+			unbounded.Store(true)
+		}
+		// Record that this run's context is cancelable from the outside --
+		// the shutdown path a stalled sweep depends on.
+		go func() {
+			<-ctx.Done()
+			select {
+			case cancels <- struct{}{}:
+			default:
+			}
+		}()
+		return 1, nil
+	}, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go svc.StartDuplicateImageCountRefresh(ctx, cache, 10*time.Millisecond, time.Millisecond)
+
+	if !waitFor(t, func() bool { return calls.Load() >= 2 }) {
+		t.Fatalf("scheduled refresh ran only %d times", calls.Load())
+	}
+	if unbounded.Load() {
+		t.Fatal("a scheduled refresh received a context with NO deadline; a stalled sweep would block the loop forever and drop every later tick")
+	}
+	if !sawDeadline.Load() {
+		t.Fatal("no scheduled refresh observed a deadline")
+	}
+
+	// Each run's context is canceled when the run returns, so nothing leaks
+	// per tick.
+	select {
+	case <-cancels:
+	case <-time.After(waitForTimeout):
+		t.Fatal("a completed scheduled run left its context uncanceled (per-tick leak)")
+	}
+}
+
+// A tick that collides with an in-flight lazy refresh is a SKIP, not a failure:
+// it must not be logged as an error, and the loop must keep its cadence.
+func TestStartDuplicateImageCountRefresh_InFlightCollisionIsNotAnError(t *testing.T) {
+	// The counting handler must be the SERVICE's logger: the error line under
+	// test is emitted by the scheduler (s.logger), not by the cache.
+	failures := &countingHandler{want: "duplicate-image count refresh failed"}
+	svc := NewService(nil, "", "", slog.New(failures))
+	cache := dupimages.New(svc.logger)
+
+	release := make(chan struct{})
+	var calls atomic.Int32
+	var once sync.Once
+	entered := make(chan struct{})
+	cache.SetSources(func(context.Context) (int, error) {
+		calls.Add(1)
+		once.Do(func() { close(entered) })
+		// Bounded park: if the single-flight latch regresses, the second
+		// (scheduled) sweep that should never have started parks here too, and
+		// an unbounded wait would deadlock the test instead of failing the
+		// assertion that names the bug.
+		select {
+		case <-release:
+		case <-time.After(5 * time.Second):
+		}
+		return 5, nil
+	}, nil)
+
+	// A lazy refresh takes the latch first and parks inside the scan.
+	cache.TriggerRefresh()
+	select {
+	case <-entered:
+	case <-time.After(waitForTimeout):
+		t.Fatal("lazy refresh never entered the scan")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go svc.StartDuplicateImageCountRefresh(ctx, cache, 5*time.Millisecond, time.Millisecond)
+
+	// Several ticks collide with the in-flight lazy scan. None may start a
+	// second sweep, and none may log an error.
+	time.Sleep(60 * time.Millisecond)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("scan ran %d times; a scheduled tick started a second concurrent sweep", got)
+	}
+	if got := failures.count(); got != 0 {
+		t.Fatalf("%d dropped ticks logged as ERRORS; an already-running refresh is a skip, not a failure", got)
+	}
+
+	close(release)
+	if !waitFor(t, func() bool { return cache.Get().Library == 5 }) {
+		t.Fatalf("cache never populated (calls=%d, cache=%+v)", calls.Load(), cache.Get())
 	}
 }
 

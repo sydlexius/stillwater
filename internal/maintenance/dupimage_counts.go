@@ -18,6 +18,7 @@ package maintenance
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -39,8 +40,10 @@ const (
 //
 // The startup delay is longer than the other scanners' because this refresh is
 // the most expensive periodic task in the process and the least urgent: a
-// cold cache renders as "no section", which is also the steady-state correct
-// answer for a clean library.
+// cold cache renders as "no duplicate rows", which is also the steady-state
+// correct answer for a clean library. (The Images section itself stays visible
+// regardless -- it also carries the Unmatched item; only the duplicate rows
+// hide. See the dupimages package doc.)
 func (s *Service) StartDuplicateImageCountRefresh(ctx context.Context, cache *dupimages.Cache, interval, startupDelay time.Duration) {
 	if cache == nil {
 		// Fail loud: an unwired cache would leave the sidebar section dark
@@ -64,9 +67,7 @@ func (s *Service) StartDuplicateImageCountRefresh(ctx context.Context, cache *du
 		return
 	case <-time.After(startupDelay):
 	}
-	if err := cache.Refresh(ctx); err != nil {
-		s.logger.Error("initial duplicate-image count refresh failed", slog.Any("error", err))
-	}
+	s.refreshDupImageCounts(ctx, cache, "initial")
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -77,9 +78,38 @@ func (s *Service) StartDuplicateImageCountRefresh(ctx context.Context, cache *du
 			s.logger.Info("duplicate-image count refresh stopped")
 			return
 		case <-ticker.C:
-			if err := cache.Refresh(ctx); err != nil {
-				s.logger.Error("duplicate-image count refresh failed", slog.Any("error", err))
-			}
+			s.refreshDupImageCounts(ctx, cache, "periodic")
 		}
+	}
+}
+
+// refreshDupImageCounts runs ONE scheduled refresh under a per-run deadline.
+//
+// The deadline is the point. This loop's ctx is process-lifetime, so an
+// unbounded Refresh that stalls (a hung platform connection, a wedged disk
+// read) blocks the loop forever: while it is blocked the ticker's subsequent
+// ticks are DROPPED, so every later refresh is lost too, not merely the stalled
+// one. Bounding each run means a stall costs one refresh and the loop resumes.
+//
+// The bound comes from dupimages.RefreshContext -- the same helper the lazy
+// TriggerRefresh path uses -- so the two paths' deadlines cannot drift apart.
+// The context is derived from ctx, so shutdown still cancels an in-flight run
+// immediately, and cancel runs on every return, so nothing leaks per tick.
+func (s *Service) refreshDupImageCounts(ctx context.Context, cache *dupimages.Cache, phase string) {
+	runCtx, cancel := dupimages.RefreshContext(ctx)
+	defer cancel()
+
+	err := cache.Refresh(runCtx)
+	switch {
+	case err == nil:
+		return
+	case errors.Is(err, dupimages.ErrRefreshInFlight):
+		// Not a failure: a lazy (sidebar-triggered) refresh is already
+		// producing the very numbers this tick wanted. Info, not error.
+		s.logger.Info("duplicate-image count refresh skipped: another refresh already running",
+			slog.String("phase", phase))
+	default:
+		s.logger.Error("duplicate-image count refresh failed",
+			slog.String("phase", phase), slog.Any("error", err))
 	}
 }
