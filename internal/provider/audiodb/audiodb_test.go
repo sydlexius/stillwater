@@ -1,6 +1,7 @@
 package audiodb
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -753,6 +754,79 @@ func TestFetchArtistsRetriesOn429(t *testing.T) {
 	want := provider.DefaultRetryPolicy().MaxAttempts
 	if got := int(hits.Load()); got != want {
 		t.Errorf("expected %d requests (bounded retries), got %d", want, got)
+	}
+}
+
+func TestRedactAPIKeyFromURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		reqURL string
+		apiKey string
+		want   string
+	}{
+		{
+			name:   "free key path segment redacted",
+			reqURL: "https://www.theaudiodb.com/api/v1/json/123/search.php?s=Radiohead",
+			apiKey: "123",
+			want:   "https://www.theaudiodb.com/api/v1/json/REDACTED/search.php?s=Radiohead",
+		},
+		{
+			name:   "short single-digit key does not mangle unrelated digits",
+			reqURL: "https://www.theaudiodb.com/api/v1/json/2/artist.php?i=112024",
+			apiKey: "2",
+			want:   "https://www.theaudiodb.com/api/v1/json/REDACTED/artist.php?i=112024",
+		},
+		{
+			name:   "premium key not in URL is a no-op",
+			reqURL: "https://www.theaudiodb.com/api/v2/json/search/artist/Radiohead",
+			apiKey: "some-premium-key",
+			want:   "https://www.theaudiodb.com/api/v2/json/search/artist/Radiohead",
+		},
+		{
+			name:   "empty key is a no-op",
+			reqURL: "https://www.theaudiodb.com/api/v1/json/123/search.php?s=Radiohead",
+			apiKey: "",
+			want:   "https://www.theaudiodb.com/api/v1/json/123/search.php?s=Radiohead",
+		},
+		{
+			name:   "unparsable URL is withheld entirely rather than logged raw",
+			reqURL: "http://exa mple.com/api/v1/json/123/search.php?s=Radiohead",
+			apiKey: "123",
+			want:   "[unparsable URL redacted]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := redactAPIKeyFromURL(tt.reqURL, tt.apiKey)
+			if got != tt.want {
+				t.Errorf("redactAPIKeyFromURL(%q, %q) = %q, want %q", tt.reqURL, tt.apiKey, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFreeKeyRequestLogDoesNotLeakAPIKey(t *testing.T) {
+	limiter, settings := setupFreeTest(t)
+	var capturedKey, capturedPath string
+	srv := newTestServerCapturing(t, &capturedKey, &capturedPath)
+	defer srv.Close()
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	_, err := a.SearchArtist(context.Background(), "Radiohead")
+	if err != nil {
+		t.Fatalf("SearchArtist: %v", err)
+	}
+
+	logOutput := logBuf.String()
+	if strings.Contains(logOutput, freeAPIKey) {
+		t.Errorf("debug log leaked the free-tier API key %q:\n%s", freeAPIKey, logOutput)
+	}
+	if !strings.Contains(logOutput, "requesting") || !strings.Contains(logOutput, "REDACTED") {
+		t.Errorf("expected a redacted \"requesting\" log line, got:\n%s", logOutput)
 	}
 }
 

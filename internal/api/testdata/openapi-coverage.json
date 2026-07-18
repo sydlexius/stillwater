@@ -1393,6 +1393,13 @@
     "covered": true
   },
   {
+    "operationId": "remediatePHashMismatches",
+    "method": "POST",
+    "path": "/reports/phash-mismatch/remediate",
+    "handler": "handlePHashMismatchRemediate",
+    "covered": true
+  },
+  {
     "operationId": "removeAlias",
     "method": "DELETE",
     "path": "/artists/{id}/aliases/{aliasId}",
@@ -1460,6 +1467,13 @@
     "method": "DELETE",
     "path": "/artists/duplicates/ignored/{id}",
     "handler": "handleArtistDuplicatesRestore",
+    "covered": true
+  },
+  {
+    "operationId": "restorePHashQuarantine",
+    "method": "POST",
+    "path": "/reports/phash-mismatch/restore",
+    "handler": "handlePHashMismatchRestore",
     "covered": true
   },
   {
