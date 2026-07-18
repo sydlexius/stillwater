@@ -516,7 +516,9 @@ func (r *Router) loadVocabConfig(ctx context.Context) *tagdict.VocabConfig {
 
 // isSuppressConfirmKey reports whether key is a valid per-action confirm
 // suppression preference (prefix "suppress_confirm_" followed by at least one
-// character that is a lowercase letter, digit, or underscore).
+// character that is a lowercase letter, digit, underscore, or hyphen). Real
+// confirm-key action names use hyphens (e.g. "image-save", "field-delete"),
+// so the hyphen must be accepted here.
 func isSuppressConfirmKey(key string) bool {
 	if !strings.HasPrefix(key, PrefSuppressConfirmPrefix) {
 		return false
@@ -526,7 +528,7 @@ func isSuppressConfirmKey(key string) bool {
 		return false
 	}
 	for _, c := range action {
-		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' && c != '-' {
 			return false
 		}
 	}
