@@ -6,7 +6,7 @@ description: Turn rules on and off, switch between manual and auto modes, tune t
 
 # Enable and configure rules
 
-Stillwater ships with 26 built-in rules. Most are enabled out of the box; some are opinionated and start disabled. This page covers turning them on and off, picking the right automation mode, tuning thresholds, and scheduling recurring evaluation.
+Stillwater ships with 27 built-in rules. Some are enabled out of the box; the rest are opinionated, or make destructive changes, and start disabled. This page covers turning them on and off, picking the right automation mode, tuning thresholds, and scheduling recurring evaluation.
 
 For the *concept* (the three states, fix-all, the conflict gate), see [rules in core concepts](../core-concepts/rules.md). For the full per-rule reference, see [rules catalog](../reference/rules-catalogue.md).
 

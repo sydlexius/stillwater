@@ -47,6 +47,18 @@ const (
 	// platform write failed.
 	ConnectionPushFailed Type = "connection.push_failed"
 
+	// BackdropCollision fires when a fanart/backdrop about to be written or
+	// pushed for one artist perceptually matches another artist's fanart (#2540:
+	// cross-artist promo-art pollution). NOTIFY-ONLY: the originating write/push
+	// always proceeds -- aliases and collaborations legitimately share art, so a
+	// hard block would false-positive. The SSE hub broadcasts it as a warning
+	// toast; a durable, operator-fixable rule_violations row is upserted in
+	// parallel so the collision also lands on the Dashboard Action Queue. Data
+	// carries the destination + colliding artist ids/names, similarity %, and the
+	// count of distinct colliding artists so the toast can link the colliding
+	// artist and the operator can judge before backing the image out.
+	BackdropCollision Type = "backdrop.collision"
+
 	// --- M55 next-channel events (catalog defined by #1341) ---
 
 	// ActivityRecent carries a single recent-activity item for the next

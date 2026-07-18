@@ -343,6 +343,22 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		},
 		FixExample: "Before: Discogs ID and Spotify ID are empty; MusicBrainz lists discogs and spotify URL relations\nAfter:  Discogs ID and Spotify ID are populated from those relations (existing IDs untouched)",
 	},
+	RuleCrossArtistBackdropCollision: {
+		FixBehavior: "Backs the polluting backdrop out of the affected artist: it re-detects the artist's cross-artist fanart collisions from the live library, quarantines the matching slots (reversible), removes them locally and from connected platforms, and renumbers the survivors. Nothing is deleted outright, so a false positive can be restored.",
+		Conditional: true,
+		Caveats: []string{
+			"Runs in manual mode only: the fix is destructive and the collision signal is symmetric (it cannot tell which of two artists legitimately owns a shared promo image), so an operator confirms each back-out with one click.",
+			"Aliases and collaborations legitimately share promo art, so a flagged backdrop is not always pollution; the violation names the colliding artist and the similarity so you can judge before fixing.",
+			"Detection is notify-only at import and push time: the backdrop is still written and still pushed. This rule records the finding and offers the back-out; it never blocks a write.",
+			"Only fanart/backdrop images are compared; thumbnails, logos, and banners are out of scope.",
+		},
+		Guards: "When the same promotional image is filed under two different artists, one artist ends up displaying another artist's backdrop. This rule compares a perceptual hash of a fanart image against every other artist's fanart and fires when it matches a different artist at or above the similarity threshold (default 90%). It is raised as it happens -- when a colliding backdrop is imported from a media server or pushed to a platform -- rather than during Run Rules, and the count of distinct colliding artists is reported because a picture shared across many artists is more likely legitimate promo art than a single wrong-artist write.",
+		Examples: []string{
+			"A media-server import that files a festival promo shot under two different artists who both performed at that festival.",
+			"A backdrop mistakenly downloaded for the wrong artist that duplicates a backdrop already held by the correct artist.",
+		},
+		FixExample: "Before: Artist A holds fanart2.jpg that is 94% similar to Artist B's fanart.jpg\nAfter:  Artist A's fanart2.jpg is quarantined and removed (locally and on platforms); survivors renumbered. Restorable from quarantine if it was a false positive.",
+	},
 }
 
 // CatalogueEntry returns the documentation metadata for a rule ID.

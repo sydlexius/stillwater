@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/collision"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
@@ -1211,6 +1212,21 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 	kodi := r.isKodiNumbering(ctx)
 	dedup := newBackdropDedup(p.dir, primary, r.logger)
 
+	// #2540 NOTIFY-ONLY cross-artist collision registry. Built ONCE per artist's
+	// backdrop import (it is a whole-library scan) and reused for every slot --
+	// mirroring newBackdropDedup's once-per-run seed above. A build failure
+	// degrades to no checking: fail-open, never a blocked import.
+	var identityIdx []img.FanartIdentityEntry
+	if r.collisionNotifier != nil && r.artistService != nil {
+		idx, idxErr := r.artistService.BuildFanartIdentityIndex(ctx)
+		if idxErr != nil {
+			r.logger.Warn("building fanart identity index; skipping cross-artist collision check for this import",
+				"artist", a.Name, "error", idxErr)
+		} else {
+			identityIdx = idx
+		}
+	}
+
 	downloaded := 0
 	duplicates := 0
 	anyExisted := false
@@ -1219,7 +1235,7 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 			r.logger.Debug("skipping backdrop with empty tag", "artist", a.Name, "index", i)
 			continue
 		}
-		switch p.downloadBackdrop(ctx, i, primary, kodi, dedup) {
+		switch p.downloadBackdrop(ctx, i, primary, kodi, dedup, identityIdx) {
 		case backdropExisted:
 			anyExisted = true
 		case backdropDownloaded:
@@ -1261,7 +1277,7 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 // downloadBackdrop handles a single backdrop slot: existence check, download,
 // format conversion, and save with provenance metadata. Errors are non-fatal:
 // logged as warnings and reported as backdropSkipped.
-func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, primary string, kodi bool, dedup *backdropDedup) backdropOutcome {
+func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, primary string, kodi bool, dedup *backdropDedup, identityIdx []img.FanartIdentityEntry) backdropOutcome {
 	r, a := p.r, p.artist
 
 	filename := img.FanartFilename(primary, i, kodi)
@@ -1338,6 +1354,25 @@ func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, pri
 		return backdropDuplicate
 	}
 
+	// #2540 NOTIFY-ONLY: this backdrop passed intra-artist dedup and is about to
+	// be written. Compare it against the cross-artist registry HERE (the converted
+	// bytes and phash are in hand) but hold the verdict -- the notification is
+	// only emitted once the save is CONFIRMED below.
+	//
+	// Deciding here and notifying later is deliberate. The durable half of the
+	// notification is a fixable Action Queue entry whose auto-fix BACKS ARTWORK
+	// OUT of the artist. Raising it for an import that then failed to write would
+	// point a destructive remediation at a file that was never created.
+	//
+	// Fail-open: a zero phash (the decode failure handled above) or an empty
+	// registry yields Indeterminate, so collisionResult stays nil.
+	var collisionResult *img.IdentityResult
+	if len(identityIdx) > 0 {
+		if res := img.CompareIdentity(phash, a.ID, identityIdx, collision.DefaultTolerance); res.Verdict == img.IdentityMismatch {
+			collisionResult = &res
+		}
+	}
+
 	meta := &img.ExifMeta{Source: p.connType, Fetched: time.Now().UTC(), Mode: "user"}
 	// An import that lands on an existing slot overwrites the user's image, so it
 	// takes the same backup + rollback protection as every other destructive fanart
@@ -1351,6 +1386,15 @@ func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, pri
 		r.logger.Warn("saving backdrop produced no files", "artist", a.Name, "index", i, "dir", p.dir, "filename", filename)
 		return backdropSkipped
 	}
+	// The save is confirmed (no error, at least one file on disk), so the image
+	// the collision was detected on genuinely exists now. Only here is it correct
+	// to raise the notification: the toast tells the operator what just landed,
+	// and the durable entry's back-out has real artwork to act on. The import
+	// itself is never blocked -- this runs after the write, not instead of it.
+	if collisionResult != nil {
+		r.collisionNotifier.Notify(ctx, a.ID, a.Name, *collisionResult)
+	}
+
 	// Record the just-saved image so a later index carrying the same picture is
 	// deduped against it within this same run.
 	dedup.add(content, phash)

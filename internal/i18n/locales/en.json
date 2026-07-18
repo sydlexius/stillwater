@@ -891,6 +891,8 @@
   "findings.banner_min_res.title": "Banner resolution too low",
   "findings.bio_exists.fix": "Fetch a biography from a provider or write one manually.",
   "findings.bio_exists.title": "Biography missing",
+  "findings.cross_artist_backdrop_collision.fix": "Back the matching backdrop out of the affected artist (reversible).",
+  "findings.cross_artist_backdrop_collision.title": "Cross-artist backdrop collision",
   "findings.directory_name_mismatch.fix": "Rename the directory to the canonical artist name.",
   "findings.directory_name_mismatch.title": "Directory name not canonical",
   "findings.discography_populated.fix": "Fetch release groups from MusicBrainz to populate the discography.",

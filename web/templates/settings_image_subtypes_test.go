@@ -137,6 +137,10 @@ func TestImageRuleCatalogue_AllOnAllowList(t *testing.T) {
 		"extraneous_images":     true,
 		"image_duplicate":       true,
 		"image_duplicate_exact": true,
+		// Raised event-driven at the write/push chokepoints rather than by the
+		// engine, and it is not scoped to a single image sub-type, so it belongs
+		// under General rather than any one sub-type heading.
+		"cross_artist_backdrop_collision": true,
 	}
 
 	for _, r := range rule.DefaultRules() {

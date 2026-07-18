@@ -245,6 +245,13 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleNameLanguagePref] = e.makeNameLanguagePrefChecker()
 	e.checkers[RuleDiscographyPopulated] = e.makeDiscographyChecker()
 	e.checkers[RuleProviderIDMissing] = e.makeProviderIDMissingChecker()
+	// cross_artist_backdrop_collision is raised event-driven at the write/push
+	// chokepoints (Service.RaiseBackdropCollision), never by the engine. Its rule
+	// is seeded DISABLED so eligibleRules skips it and Run Rules never resolves
+	// its violations. This checker exists only to satisfy the checker/rule parity
+	// invariant (every seeded rule has a registered checker); it always returns
+	// nil (no violation) and is never invoked while the rule stays disabled.
+	e.checkers[RuleCrossArtistBackdropCollision] = func(context.Context, *artist.Artist, RuleConfig) *Violation { return nil }
 
 	// Register per-(rule, artist) capability predicates. A rule with no entry
 	// here is always capable and is gated only by Enabled and, for the
@@ -560,6 +567,19 @@ func (e *Engine) eligibleRules(ctx context.Context, a *artist.Artist) ([]Rule, [
 	var skipped []SkippedRule
 	for i := range rules {
 		r := &rules[i]
+
+		// Event-driven rules are excluded structurally, and deliberately BEFORE
+		// the Enabled check so the exclusion cannot be defeated by an operator
+		// flipping the rule's toggle. Their violations are raised at the
+		// write/push chokepoints and their checkers can never re-derive them, so
+		// considering one here would record a pass and resolve the operator's
+		// open entry. See eventDrivenRules (service.go). Like the disabled and
+		// no-checker cases this is an engine state, not a statement about this
+		// artist, so it is not reported as skipped.
+		if eventDrivenRules[r.ID] {
+			continue
+		}
+
 		if !r.Enabled {
 			continue
 		}

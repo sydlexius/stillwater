@@ -64,6 +64,7 @@ notification on their own.
 | `rule.violation` | toast | `{message}` |
 | `conflict.changed` | conflict banner refetch | `{banner_state}` |
 | `operation.progress` | ProgressPill | `{op_id, label, processed, total, status, cancel_url?}` |
+| `backdrop.collision` | warning toast + Dashboard Action Queue entry | `{dest_artist_id, dest_artist_name, colliding_artist_id, colliding_artist_name, similarity, match_count, message}` |
 | `connection.push_failed` | error toast | `{connection, error_class, artist_name?}` |
 | `activity.recent` | next dashboard activity rail | `{ts, kind, text, artistId?}` |
 | `settings.changed` | cross-tab settings refetch/toast | `{sectionId, updatedBy, ts}` |

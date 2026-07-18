@@ -24,6 +24,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/cli"
+	"github.com/sydlexius/stillwater/internal/collision"
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
@@ -161,6 +162,7 @@ type Application struct {
 	fsCheck             *rule.SharedFSCheck
 	expectedWrites      *watcher.ExpectedWrites
 	publisher           *publish.Publisher
+	collisionNotifier   *collision.Notifier
 	pipeline            *rule.Pipeline
 	bulkService         *rule.BulkService
 	bulkExecutor        *rule.BulkExecutor
@@ -581,6 +583,7 @@ func (a *Application) buildServices() error {
 		ProbeCache:         a.probeCache,
 		ExpectedWrites:     a.expectedWrites,
 		EventBus:           a.eventBus,
+		CollisionNotifier:  a.collisionNotifier,
 		DB:                 db,
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
@@ -922,6 +925,11 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	releaseGroupFetcher := resolveReleaseGroupFetcher(a.providerRegistry)
 	a.ruleEngine.SetReleaseGroupFetcher(releaseGroupFetcher)
 
+	// #2540: the cross-artist backdrop collision fixer backs the polluting slot
+	// out via the pipeline's #2564 remediation. The pipeline is built AFTER this
+	// slice, so the fixer is wired with a late SetRemediator setter below.
+	collisionFixer := rule.NewCrossArtistBackdropCollisionFixer(logger)
+
 	fixers := []rule.Fixer{
 		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites, a.publisher, a.platformService),
 		rule.NewMetadataFixer(a.orchestrator, logger),
@@ -934,8 +942,31 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		rule.NewImageDuplicateFixer(a.db, a.platformService, a.fsCheck, a.artistService, logger),
 		rule.NewDiscographyFixer(releaseGroupFetcher, a.fsCheck, a.nfoSnapshotService, logger),
 		rule.NewProviderIDBackfillFixer(a.orchestrator, a.artistService, logger),
+		collisionFixer,
 	}
 	a.pipeline = rule.NewPipeline(a.ruleEngine, a.artistService, a.ruleService, fixers, a.publisher, logger)
+	// Late-wire the collision fixer's remediator now that the pipeline exists.
+	collisionFixer.SetRemediator(a.pipeline)
+
+	// #2540 notify seam: one collision.Notifier shared by the write-time
+	// (populate, via the Router) and outbound (publisher) chokepoints. It emits
+	// the ephemeral SSE toast and upserts the durable, operator-fixable Action
+	// Queue entry (rule.Service.RaiseBackdropCollision) on a detected collision.
+	// The name closure resolves the colliding artist's display name with a
+	// name-only hydration (no side tables) on the rare mismatch path.
+	a.collisionNotifier = collision.NewNotifier(
+		a.eventBus,
+		a.ruleService.RaiseBackdropCollision,
+		func(ctx context.Context, id string) string {
+			ca, err := a.artistService.GetByID(ctx, id, artist.HydrateOpts{})
+			if err != nil || ca == nil {
+				return ""
+			}
+			return ca.Name
+		},
+		logger,
+	)
+	a.publisher.SetCollisionNotifier(a.collisionNotifier, a.artistService)
 	a.pipeline.SetHistoryService(a.historyService)
 	// Push a live activity row on every successful auto-fix (single Fix and
 	// Run-rules) so the next/ dashboard rail updates without a manual reload
