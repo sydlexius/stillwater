@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -417,7 +416,8 @@ func buildInferencePairs(mbidPaths []artist.MBIDPath, artists []platformArtistPa
 // POST /path-mappings landing mid-enumeration could save the operator's list
 // and then be clobbered by this write -- defeating the "never overwrite an
 // operator override" invariant. So the check-and-write is serialized on the
-// SAME per-id pathMappingsMu the manual handlers use, and the canonical
+// SAME per-id connWriteMu the manual handlers (and every other
+// connection-write handler) use, and the canonical
 // connection is RE-FETCHED and RE-CHECKED for emptiness inside the lock: a save
 // that landed during the enumeration is seen and this method backs off. The
 // expensive enumeration runs BEFORE the lock so a manual save is never blocked
@@ -461,10 +461,8 @@ func (r *Router) applyInferredPathMappingsIfEmpty(ctx context.Context, conn *con
 
 	// Serialize the read-check-write with the manual handlers so a save that
 	// committed during the enumeration is observed here and not clobbered.
-	muIface, _ := r.pathMappingsMu.LoadOrStore(conn.ID, &sync.Mutex{})
-	connMu := muIface.(*sync.Mutex)
-	connMu.Lock()
-	defer connMu.Unlock()
+	unlock := r.lockConnection(conn.ID)
+	defer unlock()
 
 	fresh, ferr := r.connectionService.GetByID(ctx, conn.ID)
 	if ferr != nil {
