@@ -9,7 +9,11 @@ package api
 // more call sites, so it is deliberately pinned the same way.
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"os"
 	"path/filepath"
 	"testing"
@@ -240,6 +244,260 @@ func TestProcessAndSaveImage_CollisionNotifiesOnlyAfterSaveSucceeds(t *testing.T
 		if scope.builds != 0 {
 			t.Errorf("identity index builds = %d, want 0: a non-fanart write must not build the registry",
 				scope.builds)
+		}
+	})
+}
+
+// flatBackdropJPEG returns a REAL, decodable but SOLID-COLOR JPEG. A uniform
+// image resamples to a uniform 9x8 grid, so every dHash column comparison is a
+// tie and PerceptualHash returns 0 -- the "hashed but unusable" case.
+func flatBackdropJPEG(t *testing.T) []byte {
+	t.Helper()
+	m := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			m.Set(x, y, color.RGBA{R: 128, G: 128, B: 128, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, m, nil); err != nil {
+		t.Fatalf("encoding flat fixture jpeg: %v", err)
+	}
+	h, err := img.PerceptualHash(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("hashing flat fixture: %v", err)
+	}
+	if h != 0 {
+		t.Fatalf("flat fixture hashed to %#x, want 0; this test needs the degenerate case", h)
+	}
+	return buf.Bytes()
+}
+
+// TestImageWriteScope_CheckFailureNeverBlocksTheWrite pins the FAIL-OPEN posture
+// of the #2540 collision check at the #2565 operator chokepoints.
+//
+// The check is a notify-only advisory bolted onto a write the operator asked
+// for. Every way it can fail to reach a verdict -- an unbuildable registry, an
+// empty one, an image it cannot hash, an image whose hash is unusable -- must
+// cost the operator NOTHING. The write lands, and no notification is invented
+// from a verdict that was never actually computed.
+//
+// Each case asserts the observable outcome on all three surfaces: the file is on
+// disk, no SSE event was published, and no durable Action Queue violation was
+// raised. A false violation is the expensive half: its auto-fix BACKS ARTWORK
+// OUT, so a check that guesses "collision" when it could not decide would aim a
+// destructive remediation at a legitimate image.
+func TestImageWriteScope_CheckFailureNeverBlocksTheWrite(t *testing.T) {
+	jpegBytes, phash := decodableBackdropJPEG(t)
+
+	t.Run("identity index build fails: image still written, no notification", func(t *testing.T) {
+		r := testRouterForLibraryOps(t)
+		// A genuine cross-artist collision IS present, so the ONLY thing suppressing
+		// the notification below is the failed index build.
+		seedCollidingArtist(t, r, phash)
+		pub, raised := wireCollisionNotifier(r)
+
+		dir := t.TempDir()
+		a := &artist.Artist{ID: "index-build-fails", Name: "Index Build Fails", Path: dir}
+		scope := r.newImageWriteScope(a)
+
+		// Break the registry at its source: BuildFanartIdentityIndex is a whole-library
+		// DB scan, so a closed handle is the transient-DB-failure case in miniature.
+		if err := r.db.Close(); err != nil {
+			t.Fatalf("closing db: %v", err)
+		}
+
+		saved, err := r.processAndAppendFanart(context.Background(), scope, dir, jpegBytes, nil)
+		if err != nil {
+			t.Fatalf("processAndAppendFanart: a failed collision check must not fail the write: %v", err)
+		}
+		if len(saved) == 0 {
+			t.Fatal("no file saved: a failed collision check must never cost the operator their write")
+		}
+		matches, _ := filepath.Glob(filepath.Join(dir, "fanart*"))
+		if len(matches) == 0 {
+			t.Error("no fanart file on disk despite a reported save")
+		}
+
+		// Precondition: the build was ATTEMPTED (and failed) rather than skipped.
+		if scope.builds != 1 {
+			t.Errorf("identity index builds = %d, want 1: the build must have been attempted", scope.builds)
+		}
+		if len(pub.events) != 0 {
+			t.Errorf("SSE collision events = %d, want 0: a verdict was announced without a registry to reach it",
+				len(pub.events))
+		}
+		if *raised != 0 {
+			t.Errorf("durable violations raised = %d, want 0: a back-out fix was armed on a check that never ran",
+				*raised)
+		}
+	})
+
+	t.Run("empty registry: image still written, no notification", func(t *testing.T) {
+		r := testRouterForLibraryOps(t)
+		pub, raised := wireCollisionNotifier(r)
+
+		dir := t.TempDir()
+		a := &artist.Artist{ID: "empty-registry", Name: "Empty Registry", Path: dir}
+		scope := r.newImageWriteScope(a)
+
+		// Precondition: the library genuinely holds no fanart at all, so the registry
+		// really is empty rather than merely unbuilt.
+		idx, err := r.artistService.BuildFanartIdentityIndex(context.Background())
+		if err != nil {
+			t.Fatalf("building identity index: %v", err)
+		}
+		if len(idx) != 0 {
+			t.Fatalf("registry has %d entries, want 0: this case needs an empty library", len(idx))
+		}
+
+		saved, err := r.processAndAppendFanart(context.Background(), scope, dir, jpegBytes, nil)
+		if err != nil {
+			t.Fatalf("processAndAppendFanart: %v", err)
+		}
+		if len(saved) == 0 {
+			t.Fatal("no file saved: the first backdrop in an empty library must still be written")
+		}
+		if len(pub.events) != 0 || *raised != 0 {
+			t.Errorf("events = %d, raised = %d, want 0 and 0: nothing to collide with in an empty registry",
+				len(pub.events), *raised)
+		}
+	})
+
+	t.Run("unhashable image: image still written, no notification", func(t *testing.T) {
+		r := testRouterForLibraryOps(t)
+		seedCollidingArtist(t, r, phash)
+		pub, raised := wireCollisionNotifier(r)
+
+		// A TRUNCATED JPEG. ConvertFormat passes non-WebP bytes through on the
+		// strength of the magic number alone (internal/image/processor.go), so a
+		// corrupt-but-well-headed upload reaches the hasher intact and fails to
+		// decode there. This is the operator uploading a partial file, not a
+		// synthetic fault.
+		truncated := jpegBytes[:len(jpegBytes)/2]
+		if _, err := img.PerceptualHash(bytes.NewReader(truncated)); err == nil {
+			t.Fatal("truncated fixture still hashes; this case needs an undecodable image")
+		}
+
+		dir := t.TempDir()
+		a := &artist.Artist{ID: "unhashable", Name: "Unhashable", Path: dir}
+		saved, err := r.processAndAppendFanart(context.Background(), r.newImageWriteScope(a), dir, truncated, nil)
+		if err != nil {
+			t.Fatalf("processAndAppendFanart: an unhashable image must not fail the write: %v", err)
+		}
+		if len(saved) == 0 {
+			t.Fatal("no file saved: an unhashable image must still be written")
+		}
+		matches, _ := filepath.Glob(filepath.Join(dir, "fanart*"))
+		if len(matches) == 0 {
+			t.Error("no fanart file on disk despite a reported save")
+		}
+
+		if len(pub.events) != 0 || *raised != 0 {
+			t.Errorf("events = %d, raised = %d, want 0 and 0: a collision was reported on bytes that were never hashed",
+				len(pub.events), *raised)
+		}
+	})
+
+	t.Run("degenerate zero hash: image still written, no notification", func(t *testing.T) {
+		r := testRouterForLibraryOps(t)
+		pub, raised := wireCollisionNotifier(r)
+
+		// A flat image hashes to 0, which is indistinguishable from "never hashed"
+		// and so cannot be compared against anything. The registry is populated with
+		// a REAL cross-artist hash here, so the write below is the one case where a
+		// populated registry still yields no verdict -- the candidate, not the
+		// reference, is the unusable side.
+		//
+		// Two layers enforce this: collisionVerdict's own zero check and
+		// CompareIdentity's (internal/image/identity.go). Belt and braces on purpose,
+		// since admitting a zero hash scores a PERFECT similarity against any other
+		// zero and would manufacture collisions between unrelated unhashable images.
+		// What is pinned here is the OUTCOME, which must hold whichever layer catches
+		// it: a flat backdrop is a legitimate image and gets written, silently.
+		seedCollidingArtist(t, r, phash)
+
+		flat := flatBackdropJPEG(t)
+		dir := t.TempDir()
+		a := &artist.Artist{ID: "zero-hash", Name: "Zero Hash", Path: dir}
+		scope := r.newImageWriteScope(a)
+
+		saved, err := r.processAndAppendFanart(context.Background(), scope, dir, flat, nil)
+		if err != nil {
+			t.Fatalf("processAndAppendFanart: %v", err)
+		}
+		if len(saved) == 0 {
+			t.Fatal("no file saved: a flat image is still a legitimate backdrop")
+		}
+
+		// Precondition: the registry was built and IS populated, so "no collision"
+		// reflects the zero-hash guard rather than an empty index.
+		if scope.builds != 1 {
+			t.Errorf("identity index builds = %d, want 1", scope.builds)
+		}
+		if len(scope.idx) == 0 {
+			t.Fatal("registry is empty; this assertion would pass for the wrong reason")
+		}
+
+		if len(pub.events) != 0 || *raised != 0 {
+			t.Errorf("events = %d, raised = %d, want 0 and 0: two unhashable images were matched to each other",
+				len(pub.events), *raised)
+		}
+	})
+}
+
+// TestImageWriteScope_NilScopeIsASafeNoOp pins the documented nil-tolerance
+// contract on imageWriteScope: newImageWriteScope returns nil whenever the seam
+// is not wired, and callers hand that nil straight through without a check of
+// their own. Every method has to absorb it.
+//
+// This is a live contract, not defensive padding: handlers_connection_library.go
+// passes a literal nil on the named-image path, and newImageWriteScope returns
+// nil for any router without a collision notifier.
+func TestImageWriteScope_NilScopeIsASafeNoOp(t *testing.T) {
+	ctx := context.Background()
+	jpegBytes, _ := decodableBackdropJPEG(t)
+
+	t.Run("newImageWriteScope yields nil when the seam is unwired", func(t *testing.T) {
+		r := testRouterForLibraryOps(t)
+		// Deliberately NOT calling wireCollisionNotifier: no notifier, no scope.
+		if scope := r.newImageWriteScope(&artist.Artist{ID: "x", Name: "X"}); scope != nil {
+			t.Errorf("newImageWriteScope = %v, want nil with no collision notifier wired", scope)
+		}
+		if scope := r.newImageWriteScope(nil); scope != nil {
+			t.Errorf("newImageWriteScope(nil artist) = %v, want nil", scope)
+		}
+	})
+
+	t.Run("every method absorbs a nil scope", func(t *testing.T) {
+		var scope *imageWriteScope
+
+		if idx := scope.identityIndex(ctx); idx != nil {
+			t.Errorf("identityIndex on a nil scope = %v, want nil", idx)
+		}
+		if res := scope.collisionVerdict(ctx, jpegBytes); res != nil {
+			t.Errorf("collisionVerdict on a nil scope = %v, want nil", res)
+		}
+		// notifyCollision must swallow both a nil scope and a nil verdict rather than
+		// dereference either; a panic here would take down the operator's write.
+		scope.notifyCollision(ctx, nil)
+	})
+
+	t.Run("a nil scope still writes the image", func(t *testing.T) {
+		r := testRouterForLibraryOps(t)
+		pub, raised := wireCollisionNotifier(r)
+
+		dir := t.TempDir()
+		saved, err := r.processAndAppendFanart(ctx, nil, dir, jpegBytes, nil)
+		if err != nil {
+			t.Fatalf("processAndAppendFanart with a nil scope: %v", err)
+		}
+		if len(saved) == 0 {
+			t.Fatal("no file saved: a nil scope disables the check, never the write")
+		}
+		if len(pub.events) != 0 || *raised != 0 {
+			t.Errorf("events = %d, raised = %d, want 0 and 0: a nil scope must not notify",
+				len(pub.events), *raised)
 		}
 	})
 }
