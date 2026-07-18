@@ -86,9 +86,11 @@ func ContentHash(data []byte) string {
 }
 
 // ErrImageTooLarge reports that a file exceeded the read bound and was not
-// hashed. It is a sentinel so callers can distinguish "too big to be worth
-// reading" (skip this file, keep going) from "unreadable" (a real I/O fault).
-// The bound is maxDecodeBytes -- the same constant decodeWithLimit enforces,
+// hashed. It is a sentinel so callers CAN distinguish "too big to be worth
+// reading" (skip this file, keep going) from "unreadable" (a real I/O
+// fault), should a future caller need to act on that difference; today's
+// three production callers log-and-skip both cases identically. The bound
+// is maxDecodeBytes -- the same constant decodeWithLimit enforces,
 // deliberately reused rather than duplicated so the read bound and the decode
 // bound cannot drift apart.
 var ErrImageTooLarge = errors.New("image file too large to hash")
@@ -128,7 +130,15 @@ type FileHashes struct {
 // error rather than an error value; under a container memory limit that is a
 // SIGKILL and a restart loop, not something a caller can recover from.
 //
-// Files over the bound return ErrImageTooLarge and are never allocated.
+// Files over the bound return ErrImageTooLarge; the read never allocates
+// more than maxDecodeBytes+1 (26,214,401 bytes) regardless of file size --
+// that fixed cap, not "zero allocation" for an oversized file, is the actual
+// guarantee. The realized peak is higher still: io.ReadAll grows its buffer
+// by repeated append, and append's growslice keeps the old backing array
+// alive while it copies into the new, larger one, so the transient
+// high-water mark is roughly 2x the bound -- about 50-60 MB for today's
+// 25 MB limit. Size any container memory budget off that peak, not the
+// nominal limit.
 func HashFile(path string, needPerceptual bool) (FileHashes, error) {
 	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
