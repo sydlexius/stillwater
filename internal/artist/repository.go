@@ -195,6 +195,24 @@ type ImageRepository interface {
 	// last_written_at timestamp string for all artists in the given library.
 	// Only artists with at least one non-empty last_written_at are included.
 	NewestWriteTimesByArtist(ctx context.Context, libraryID string) (map[string]string, error)
+
+	// AllFanartHashes returns artist_id/phash pairs for every exists_flag=1
+	// fanart row in the WHOLE library, including rows with an empty or
+	// unparsable phash -- the caller decides usability (see
+	// artist.Service.BuildFanartIdentityIndex). Deliberately unfiltered by
+	// artist, mirroring queryPHashRows (internal/rule/phash_mismatch.go:
+	// 232-257): a cross-artist identity comparison needs every OTHER
+	// artist's fanart to compare against.
+	AllFanartHashes(ctx context.Context) ([]FanartHashRow, error)
+}
+
+// FanartHashRow is one raw exists_flag=1 fanart row as read across the whole
+// library: an artist id paired with its stored phash hex, which may be empty
+// or unparsable. BuildFanartIdentityIndex is responsible for filtering to
+// usable hashes.
+type FanartHashRow struct {
+	ArtistID string
+	PHashHex string
 }
 
 // CompletenessRepository computes aggregate metadata completeness metrics
