@@ -567,6 +567,19 @@ func (e *Engine) eligibleRules(ctx context.Context, a *artist.Artist) ([]Rule, [
 	var skipped []SkippedRule
 	for i := range rules {
 		r := &rules[i]
+
+		// Event-driven rules are excluded structurally, and deliberately BEFORE
+		// the Enabled check so the exclusion cannot be defeated by an operator
+		// flipping the rule's toggle. Their violations are raised at the
+		// write/push chokepoints and their checkers can never re-derive them, so
+		// considering one here would record a pass and resolve the operator's
+		// open entry. See eventDrivenRules (service.go). Like the disabled and
+		// no-checker cases this is an engine state, not a statement about this
+		// artist, so it is not reported as skipped.
+		if eventDrivenRules[r.ID] {
+			continue
+		}
+
 		if !r.Enabled {
 			continue
 		}

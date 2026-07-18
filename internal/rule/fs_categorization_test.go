@@ -48,6 +48,11 @@ func TestIsFilesystemDependent(t *testing.T) {
 		RuleNameLanguagePref,
 		RuleOriginMissing,
 		RuleProviderIDMissing,
+		// Event-driven, but still API-compatible: it compares stored perceptual
+		// hashes, never the filesystem, so it must not be classified as
+		// filesystem-dependent. Listing it here asserts that classification
+		// rather than mere membership in the categorized map below.
+		RuleCrossArtistBackdropCollision,
 	}
 	for _, id := range apiRules {
 		if IsFilesystemDependent(id) {

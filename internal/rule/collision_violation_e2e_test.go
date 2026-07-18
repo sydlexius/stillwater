@@ -201,13 +201,126 @@ func TestCollisionViolation_SurvivesFixViolationIntoFixer(t *testing.T) {
 	}
 }
 
+// TestCollisionViolation_ZeroRemovalFixIsTerminal proves the queue entry cannot
+// get stuck. When the back-out succeeds but removes nothing (the artist is
+// already clean), FixViolation must leave the row in a TERMINAL state -- not
+// open. An open row with a Fix button that does nothing every click is the
+// user-visible shape of "reports success while doing nothing".
+func TestCollisionViolation_ZeroRemovalFixIsTerminal(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	_, ruleSvc, artistSvc, vid := seedCollisionArtist(t, db)
+
+	// Remediation succeeds but finds nothing to remove.
+	rem := &fakeCollisionRemediator{result: PHashRemediateResult{OpID: "op-clean", SlotsRemoved: 0}}
+	fixer := NewCrossArtistBackdropCollisionFixer(testLogger())
+	fixer.SetRemediator(rem)
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	fr, err := pipeline.FixViolation(ctx, vid)
+	if err != nil {
+		t.Fatalf("FixViolation: %v", err)
+	}
+	if rem.calls != 1 {
+		t.Fatalf("remediator invoked %d times, want 1", rem.calls)
+	}
+	if fr.Fixed {
+		t.Error("Fixed must be false: nothing was backed out")
+	}
+	if !fr.Dismissed {
+		t.Error("FixResult is neither Fixed nor Dismissed (terminal-less)")
+	}
+
+	// The assertion that matters: the PERSISTED row moved. Asserting only the
+	// FixResult would pass even if the pipeline ignored Dismissed and left the
+	// row open, which is precisely the stuck-entry bug.
+	got, err := ruleSvc.GetViolationByID(ctx, vid)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if got.Status == ViolationStatusOpen {
+		t.Errorf("violation still %q after a terminal zero-removal fix: the entry is stuck in the "+
+			"Action Queue and its Fix button will no-op forever", got.Status)
+	}
+	if got.Status != ViolationStatusDismissed {
+		t.Errorf("violation status = %q, want %q", got.Status, ViolationStatusDismissed)
+	}
+}
+
+// TestCollisionViolation_SurvivesFullEngineRun_WhenRuleEnabled is the hard case:
+// the same sweep with the rule's Enabled toggle flipped ON.
+//
+// Enabled is an operator-facing switch -- the rule renders on Settings > Rules
+// with a toggle like any other -- so engine safety must NOT rest on it being
+// seeded off. Before the structural exclusion (eventDrivenRules, consulted in
+// eligibleRules ahead of the Enabled check) this test failed exactly as its
+// assertions describe: enabling the rule made the engine consider it, its nil
+// checker reported no violation, persistPassResults recorded passed=1 and called
+// ResolveViolationIfActive, and the operator's event-raised entry was resolved
+// out from under them.
+func TestCollisionViolation_SurvivesFullEngineRun_WhenRuleEnabled(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	a, ruleSvc, artistSvc, vid := seedCollisionArtist(t, db)
+
+	// Flip the operator toggle ON. This is the whole point of the test: the
+	// guarantee has to hold in the configuration an operator can actually reach.
+	r, err := ruleSvc.GetByID(ctx, RuleCrossArtistBackdropCollision)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	r.Enabled = true
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("enabling the collision rule: %v", err)
+	}
+	// Confirm the toggle actually persisted, or the test proves nothing.
+	if check, err := ruleSvc.GetByID(ctx, RuleCrossArtistBackdropCollision); err != nil || !check.Enabled {
+		t.Fatalf("precondition failed: rule did not persist as enabled (err=%v)", err)
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, nil, testLogger())
+
+	res, err := pipeline.RunAllScoped(ctx, RunScopeAll)
+	if err != nil {
+		t.Fatalf("RunAllScoped: %v", err)
+	}
+	if res.ArtistsProcessed < 1 {
+		t.Fatalf("engine processed %d artists; the sweep never ran, so this proves nothing",
+			res.ArtistsProcessed)
+	}
+
+	// Same mechanism assertion as the disabled case: an ENABLED event-driven rule
+	// must still never be recorded as passing, because a pass is what triggers
+	// ResolveViolationIfActive.
+	var collisionPassed int
+	if err := db.QueryRow(
+		`SELECT passed FROM rule_results WHERE artist_id = ? AND rule_id = ?`,
+		a.ID, RuleCrossArtistBackdropCollision).Scan(&collisionPassed); err != nil {
+		t.Fatalf("reading the collision rule's rule_results row: %v", err)
+	}
+	if collisionPassed != 0 {
+		t.Errorf("ENABLED collision rule recorded passed=%d: engine safety is resting on the "+
+			"Enabled toggle instead of a structural exclusion", collisionPassed)
+	}
+
+	got, err := ruleSvc.GetViolationByID(ctx, vid)
+	if err != nil {
+		t.Fatalf("GetViolationByID after engine run: %v", err)
+	}
+	if got.Status != ViolationStatusOpen {
+		t.Errorf("violation status = %q after a full engine run with the rule ENABLED, want %q: "+
+			"flipping a UI toggle silently deleted an event-raised finding",
+			got.Status, ViolationStatusOpen)
+	}
+}
+
 // TestCollisionViolation_SurvivesFullEngineRun proves property (3): a forced
 // full evaluation of every artist does NOT auto-resolve the event-raised
-// violation. This is the reason the rule is seeded disabled -- eligibleRules
-// skips disabled rules, so the rule is never "considered", so persistPassResults
-// never calls ResolveViolationIfActive for it. If someone enables the rule while
-// its checker still returns nil for every artist, the rule would be considered,
-// counted as a pass, and this violation would be swept away silently.
+// violation, in the shipped (disabled) configuration. The enabled counterpart
+// above covers the case where an operator flips the toggle.
 func TestCollisionViolation_SurvivesFullEngineRun(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()

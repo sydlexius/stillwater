@@ -345,6 +345,33 @@ var filesystemRules = map[string]bool{
 	RuleDiscographyPopulated: true,
 }
 
+// eventDrivenRules are rules whose violations are raised as they happen at the
+// write/push chokepoints, never produced by engine evaluation. The engine
+// excludes them from evaluation STRUCTURALLY -- ahead of, and independent of,
+// their Enabled state (see Engine.eligibleRules).
+//
+// The exclusion is load-bearing, not tidiness. Being "considered" is what
+// destroys these violations: a considered rule that reports no violation is
+// recorded as a PASS, and persistPassResults then calls ResolveViolationIfActive
+// for that (rule, artist) pair. An event-driven rule has no checker that can
+// re-derive its finding, so its checker always reports nothing -- meaning every
+// evaluation pass would resolve the operator's open entry. Keying that safety off
+// the Enabled toggle would put silent data loss one UI click away, which is why
+// this set is consulted before Enabled rather than relying on the seeded default.
+//
+// Members keep a registered checker (the engine asserts checker/rule parity) and
+// a seeded rules row (the FK target for their violations); this set is what keeps
+// that checker from ever being invoked.
+var eventDrivenRules = map[string]bool{
+	RuleCrossArtistBackdropCollision: true,
+}
+
+// IsEventDriven reports whether a rule's violations are raised outside engine
+// evaluation, and so must never be evaluated (or auto-resolved) by it.
+func IsEventDriven(ruleID string) bool {
+	return eventDrivenRules[ruleID]
+}
+
 // IsFilesystemDependent reports whether a rule requires a local library with a
 // filesystem path. Rules that only inspect database or API metadata return false.
 func IsFilesystemDependent(ruleID string) bool {
