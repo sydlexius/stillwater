@@ -59,6 +59,10 @@
   var structuredEvents = [
     "operation.progress",
     "connection.push_failed",
+    // #2540: cross-artist backdrop collision. Renders its own warning toast
+    // (with a link to the colliding artist) below, so it is structured rather
+    // than a generic toast. Must be listed or EventSource drops the frame.
+    "backdrop.collision",
     // M55 next-channel events. Cross-tab / dashboard signals that render via
     // their own consumers (no generic toast). Each must be listed here or
     // EventSource silently drops the frame and its sse:<name> CustomEvent
@@ -256,6 +260,20 @@
         // failed platform write.
         window.showToast(message);
       }
+    }
+
+    // #2540: cross-artist backdrop collision. The write/push already went
+    // through (notify-only), so this warning toast is the operator's ephemeral
+    // signal; the durable, operator-fixable copy lands on the Dashboard Action
+    // Queue (the actionable surface -- it carries the auto-fix). The message is
+    // composed server-side (data.message) and already names the colliding artist
+    // and similarity. Toasts render text only (textContent), so no inline link is
+    // added here. isReplayDuplicate suppresses re-toasting the same collision on
+    // an SSE reconnect. The sse:backdrop.collision CustomEvent below still carries
+    // the colliding-artist id for any richer consumer.
+    if (eventType === "backdrop.collision" && !isReplayDuplicate &&
+        typeof window.showWarningToast === "function") {
+      window.showWarningToast((data && data.message) || "Possible cross-artist backdrop collision");
     }
 
     // Always dispatch the CustomEvent so the ProgressPill (and any

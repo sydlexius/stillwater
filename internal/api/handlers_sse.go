@@ -337,6 +337,15 @@ func buildConnectionPushFailedMsg(data map[string]any) string {
 	return base
 }
 
+// buildBackdropCollisionMsg returns the server-composed collision message. The
+// notifier (internal/collision) builds the full sentence -- naming the colliding
+// artist and the similarity -- and places it on Data["message"], so the hub just
+// surfaces it verbatim (mirrors buildRuleViolationMsg). The structured Data also
+// carries the colliding-artist id/name so the client can render a deep link.
+func buildBackdropCollisionMsg(data map[string]any) string {
+	return strVal(data, "message")
+}
+
 // buildActivityRecentMsg surfaces the human-readable text of a recent-activity
 // item for the next dashboard's live rail. The rail consumes the structured
 // Data directly; this message is the plain-toast fallback.
@@ -371,6 +380,10 @@ var sseEventMappings = []sseEventMapping{
 	// error_class + artist_name fields; the raw transport error is
 	// deliberately NOT in Data. See internal/publish/notifier.go.
 	{event.ConnectionPushFailed, "Platform push failed", buildConnectionPushFailedMsg},
+	// BackdropCollision Data carries the dest + colliding artist ids/names,
+	// similarity %, distinct-artist count, and a pre-composed message; the client
+	// renders a warning toast linking the colliding artist. See internal/collision.
+	{event.BackdropCollision, "Possible cross-artist backdrop", buildBackdropCollisionMsg},
 	// M55 next-channel events: low-volume cross-tab / dashboard signals whose
 	// consumers read the structured Data, so the Title is a plain-toast fallback.
 	{event.ActivityRecent, "Recent activity", buildActivityRecentMsg},
