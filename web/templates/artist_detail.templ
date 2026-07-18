@@ -1402,12 +1402,14 @@ templ artistDetailPageScript() {
 			// directory to the canonical name -- and the hero's path <code> does
 			// not otherwise refresh until a full reload (#2507). The rule ID rides
 			// in the dispatched event's detail (artist_violations_tab.templ's
-			// artistViolationFix script), so scope the hero refresh to it via the
-			// same refreshHero/rebindHero pair the history-revert path above uses.
+			// artistViolationFix script); the scoping decision itself lives in
+			// hero-path-sync.js (loaded before this script, see layout.templ) so
+			// it is unit-testable on its own, and just gates the same
+			// refreshHero/rebindHero pair the history-revert path above uses.
 			document.body.addEventListener('dashboard:action-resolved', function (evt) {
 				if (editing) return;
 				refreshEditableSections();
-				if (evt && evt.detail && evt.detail.ruleId === 'directory_name_mismatch') {
+				if (window.swHeroPathSync && window.swHeroPathSync.shouldRefreshHeroPath(evt)) {
 					refreshHero().then(rebindHero);
 				}
 			});

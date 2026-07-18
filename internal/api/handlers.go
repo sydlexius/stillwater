@@ -83,6 +83,7 @@ func (r *Router) assets() templates.AssetPaths {
 		// inline scripts in artist_detail.templ / artist_field.templ.
 		ArtistFanartSlideshowJS: r.basePath + r.staticAssets.Path("/js/artist-detail/fanart-slideshow.js"),
 		ArtistViolationsSyncJS:  r.basePath + r.staticAssets.Path("/js/artist-detail/violations-sync.js"),
+		ArtistHeroPathSyncJS:    r.basePath + r.staticAssets.Path("/js/artist-detail/hero-path-sync.js"),
 		ArtistMembersApplyJS:    r.basePath + r.staticAssets.Path("/js/artist-detail/members-apply.js"),
 		ArtistFieldLockSaveJS:   r.basePath + r.staticAssets.Path("/js/artist-detail/field-lock-save.js"),
 		// Artist-detail collapsible/sortable sections (M55 #2065).
