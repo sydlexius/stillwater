@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
+	"github.com/sydlexius/stillwater/internal/collision"
 	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/encryption"
@@ -73,10 +74,14 @@ type RouterDeps struct {
 	ProbeCache         *watcher.ProbeCache
 	ExpectedWrites     *watcher.ExpectedWrites
 	EventBus           *event.Bus
-	DB                 *sql.DB
-	Logger             *slog.Logger
-	BasePath           string
-	BasePathFromEnv    bool
+	// CollisionNotifier fires the #2540 cross-artist backdrop-collision
+	// notifications from the write-time populate chokepoint. May be nil in
+	// tests/headless (the notifier's nil-receiver Notify is a safe no-op).
+	CollisionNotifier *collision.Notifier
+	DB                *sql.DB
+	Logger            *slog.Logger
+	BasePath          string
+	BasePathFromEnv   bool
 	// UX is the SW_UX UI-channel mode: "stable", "next", or "dual". Drives the
 	// UX middleware (X-Stillwater-UX header + ux= log field) and the /next/*
 	// lane. Empty is treated as "stable".
@@ -143,6 +148,7 @@ type Router struct {
 	probeCache         *watcher.ProbeCache
 	expectedWrites     *watcher.ExpectedWrites
 	eventBus           *event.Bus
+	collisionNotifier  *collision.Notifier
 	publisher          *publish.Publisher
 	logger             *slog.Logger
 	basePath           string
@@ -326,6 +332,7 @@ func NewRouter(deps RouterDeps) *Router {
 		probeCache:               deps.ProbeCache,
 		expectedWrites:           deps.ExpectedWrites,
 		eventBus:                 deps.EventBus,
+		collisionNotifier:        deps.CollisionNotifier,
 		db:                       deps.DB,
 		logger:                   deps.Logger,
 		basePath:                 deps.BasePath,

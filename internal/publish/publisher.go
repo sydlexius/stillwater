@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/collision"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
@@ -115,6 +116,8 @@ type Publisher struct {
 	imageCacheDir      string
 	logger             *slog.Logger
 	notifier           Notifier
+	collisionNotifier  *collision.Notifier
+	fanartIdentity     FanartIdentityIndexer
 	imageWriteGate     ImageWriteGate
 
 	// phashTargetLocks serializes the complete read-modify-verify of a single
@@ -224,6 +227,28 @@ func New(d Deps) *Publisher {
 		logger:             d.Logger,
 		notifier:           d.Notifier,
 		imageWriteGate:     d.ImageWriteGate,
+	}
+}
+
+// FanartIdentityIndexer builds the cross-artist fanart phash registry that the
+// #2540 collision check compares a candidate backdrop against.
+// *artist.Service implements it. It is a dependency separate from the
+// publisher's narrow artistService interface so wiring it does not force every
+// artistPlatformLister implementation (including test fakes) to grow the method.
+type FanartIdentityIndexer interface {
+	BuildFanartIdentityIndex(ctx context.Context) ([]img.FanartIdentityEntry, error)
+}
+
+// SetCollisionNotifier wires the #2540 cross-artist backdrop-collision notifier
+// and the registry builder it compares against, used by the outbound fanart
+// sync. Set after construction because the notifier depends on the rule service,
+// which is built alongside the publisher. Both are optional: a nil notifier is
+// safe (Notify no-ops on a nil receiver) and a nil indexer disables the outbound
+// collision check entirely (fail-open, never a blocked push).
+func (p *Publisher) SetCollisionNotifier(n *collision.Notifier, idx FanartIdentityIndexer) {
+	if p != nil {
+		p.collisionNotifier = n
+		p.fanartIdentity = idx
 	}
 }
 
@@ -872,6 +897,11 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		return warnings
 	}
 
+	// #2540 NOTIFY-ONLY collision check: registry built ONCE per sync, plus the
+	// per-file notified set. Both are inert when the notifier is unwired.
+	fanartIdentityIdx := p.fanartIdentityIndex(ctx, a)
+	collisionNotified := make(map[string]bool)
+
 	// #2533: same shared-FS precondition as the primary path -- resolve once,
 	// operator push only (the reconciler passes respectWriteGate=true and is
 	// excluded), so a shared-volume peer cannot clobber the operator's backdrop.
@@ -924,6 +954,10 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 				ct = "image/png"
 			}
 
+			// #2540 NOTIFY-ONLY: notifies on a cross-artist collision but never
+			// blocks; the upload below ALWAYS proceeds.
+			p.notifyFanartCollision(ctx, a, fp, data, fanartIdentityIdx, collisionNotified)
+
 			if uploadErr := indexedUploader.UploadImageAtIndex(ctx, pid.PlatformArtistID, "fanart", i, data, ct); uploadErr != nil {
 				p.logger.Error("syncing fanart to platform",
 					slog.String("artist", a.Name),
@@ -936,6 +970,57 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		}
 	}
 	return warnings
+}
+
+// fanartIdentityIndex builds the cross-artist fanart phash registry for one
+// outbound sync. It is built ONCE per sync and reused for every file and every
+// platform: the registry is a whole-library scan, so rebuilding it per image
+// would re-scan the table for every backdrop of every connection.
+//
+// Returns nil (meaning "no collision checking this sync") when the notifier or
+// indexer is unwired, or when the build fails. That is deliberate fail-open: a
+// registry we cannot build must never turn into a blocked push.
+func (p *Publisher) fanartIdentityIndex(ctx context.Context, a *artist.Artist) []img.FanartIdentityEntry {
+	if p.collisionNotifier == nil || p.fanartIdentity == nil {
+		return nil
+	}
+	idx, err := p.fanartIdentity.BuildFanartIdentityIndex(ctx)
+	if err != nil {
+		p.logger.Warn("building fanart identity index; skipping cross-artist collision check for this sync",
+			slog.String("artist_id", a.ID),
+			slog.String("error", err.Error()))
+		return nil
+	}
+	return idx
+}
+
+// notifyFanartCollision raises the #2540 cross-artist backdrop-collision
+// notifications for one fanart file about to be pushed. It NEVER blocks or
+// alters the push -- the caller uploads regardless of what happens here.
+//
+// notified de-duplicates per FILE rather than per (file, platform): the same
+// file is uploaded to every connected platform, but the collision is a property
+// of the image, not of the destination, so without this the operator would get
+// one toast per platform for a single colliding backdrop.
+//
+// Fail-open at every step: an empty registry, an unhashable image, or a
+// Match/Indeterminate verdict all notify nothing.
+func (p *Publisher) notifyFanartCollision(ctx context.Context, a *artist.Artist, path string, data []byte, reference []img.FanartIdentityEntry, notified map[string]bool) {
+	if p.collisionNotifier == nil || len(reference) == 0 || notified[path] {
+		return
+	}
+	phash, phErr := img.PerceptualHash(bytes.NewReader(data))
+	if phErr != nil {
+		p.logger.Debug("perceptual hash for cross-artist collision check failed; skipping this file",
+			slog.String("path", path), slog.String("error", phErr.Error()))
+		return
+	}
+	res := img.CompareIdentity(phash, a.ID, reference, collision.DefaultTolerance)
+	if res.Verdict != img.IdentityMismatch {
+		return
+	}
+	notified[path] = true
+	p.collisionNotifier.Notify(ctx, a.ID, artistDisplayName(a), res)
 }
 
 // SetImageCacheDir updates the fallback image cache directory. This is used

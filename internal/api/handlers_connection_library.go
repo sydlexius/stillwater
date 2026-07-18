@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/collision"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
@@ -1211,6 +1212,21 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 	kodi := r.isKodiNumbering(ctx)
 	dedup := newBackdropDedup(p.dir, primary, r.logger)
 
+	// #2540 NOTIFY-ONLY cross-artist collision registry. Built ONCE per artist's
+	// backdrop import (it is a whole-library scan) and reused for every slot --
+	// mirroring newBackdropDedup's once-per-run seed above. A build failure
+	// degrades to no checking: fail-open, never a blocked import.
+	var identityIdx []img.FanartIdentityEntry
+	if r.collisionNotifier != nil && r.artistService != nil {
+		idx, idxErr := r.artistService.BuildFanartIdentityIndex(ctx)
+		if idxErr != nil {
+			r.logger.Warn("building fanart identity index; skipping cross-artist collision check for this import",
+				"artist", a.Name, "error", idxErr)
+		} else {
+			identityIdx = idx
+		}
+	}
+
 	downloaded := 0
 	duplicates := 0
 	anyExisted := false
@@ -1219,7 +1235,7 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 			r.logger.Debug("skipping backdrop with empty tag", "artist", a.Name, "index", i)
 			continue
 		}
-		switch p.downloadBackdrop(ctx, i, primary, kodi, dedup) {
+		switch p.downloadBackdrop(ctx, i, primary, kodi, dedup, identityIdx) {
 		case backdropExisted:
 			anyExisted = true
 		case backdropDownloaded:
@@ -1261,7 +1277,7 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 // downloadBackdrop handles a single backdrop slot: existence check, download,
 // format conversion, and save with provenance metadata. Errors are non-fatal:
 // logged as warnings and reported as backdropSkipped.
-func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, primary string, kodi bool, dedup *backdropDedup) backdropOutcome {
+func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, primary string, kodi bool, dedup *backdropDedup, identityIdx []img.FanartIdentityEntry) backdropOutcome {
 	r, a := p.r, p.artist
 
 	filename := img.FanartFilename(primary, i, kodi)
@@ -1336,6 +1352,19 @@ func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, pri
 		r.logger.Debug("skipping duplicate backdrop already held in another slot",
 			"artist", a.Name, "index", i)
 		return backdropDuplicate
+	}
+
+	// #2540 NOTIFY-ONLY: this backdrop passed intra-artist dedup and is about to
+	// be written. If it perceptually matches ANOTHER artist's fanart, raise the
+	// warning toast plus the durable, operator-fixable Action Queue entry. The
+	// save below ALWAYS proceeds -- aliases and collaborations legitimately share
+	// promo art, so a collision must never block an import; the operator-triggered
+	// back-out is the remedy. Fail-open: a zero phash (the decode failure handled
+	// above) or an empty registry yields Indeterminate and notifies nothing.
+	if len(identityIdx) > 0 {
+		if res := img.CompareIdentity(phash, a.ID, identityIdx, collision.DefaultTolerance); res.Verdict == img.IdentityMismatch {
+			r.collisionNotifier.Notify(ctx, a.ID, a.Name, res)
+		}
 	}
 
 	meta := &img.ExifMeta{Source: p.connType, Fetched: time.Now().UTC(), Mode: "user"}
