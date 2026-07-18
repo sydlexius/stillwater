@@ -949,6 +949,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// requireForeignAdmin. JSON only for now -- the operator page ships with
 	// the repair UI it drives.
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/phash-mismatch", wrapAuth(r.handlePHashMismatchReport, authMw))
+	// Destructive back-out + restore for the report above (#2564 PR-4b).
+	// Registered as plain /api/v1 POSTs (mirrors the backdrop-duplicates
+	// remediate/prune endpoints) since the admin gate is enforced in-handler
+	// via requireForeignAdmin. Both are singletons sharing r.backdropRepairRunning.
+	mux.HandleFunc("POST "+bp+"/api/v1/reports/phash-mismatch/remediate", wrapAuth(r.handlePHashMismatchRemediate, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/reports/phash-mismatch/restore", wrapAuth(r.handlePHashMismatchRestore, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		target := r.basePath + "/reports/duplicates"
 		if raw := req.URL.RawQuery; raw != "" {

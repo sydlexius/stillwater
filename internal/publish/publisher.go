@@ -116,6 +116,14 @@ type Publisher struct {
 	logger             *slog.Logger
 	notifier           Notifier
 	imageWriteGate     ImageWriteGate
+
+	// phashTargetLocks serializes the complete read-modify-verify of a single
+	// phash backdrop target (ConnectionID+PlatformArtistID) across concurrent
+	// delete/restore calls, so two duplicate operations on the SAME platform
+	// item cannot interleave their resolve->mutate->verify and race into a
+	// double delete or a duplicate upload. See lockPhashTarget in
+	// phash_platform.go. Keyed lazily; entries are cheap and never removed.
+	phashTargetLocks sync.Map
 }
 
 // Narrow interfaces keep the publish package decoupled from concrete types.
@@ -768,6 +776,13 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		ct = "image/png"
 	}
 
+	// #2533: the managed pre-push write-back disable only matters when the
+	// artist's library shares its filesystem with a platform peer (the clobber
+	// precondition). Resolve it once, and only on the operator push path -- the
+	// background reconciler (respectWriteGate=true) is excluded, so it pays no
+	// lookup and its behavior is unchanged.
+	operatorPushOnSharedFS := !respectWriteGate && p.artistOnSharedFS(ctx, a)
+
 	for _, pid := range platformIDs {
 		conn, connErr := p.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
@@ -779,6 +794,16 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		if !conn.Enabled || conn.Status != "ok" || (respectWriteGate && !conn.GetFeatureImageWrite()) {
 			p.logger.Debug("skipping connection for image sync", "connection", conn.Name, "type", imageType, "status", conn.Status)
 			continue
+		}
+
+		// #2533: for a linked MANAGED connection whose library is on a shared
+		// filesystem, make the peer's server-side artwork write-back OFF before
+		// uploading, so a shared-volume peer cannot rewrite the operator's
+		// authoritative file out from under Stillwater. Every other case pushes
+		// unchanged: unmanaged connections, and any non-shared/dedicated-volume
+		// library (operatorPushOnSharedFS is false), see zero behavior change.
+		if operatorPushOnSharedFS && conn.FeatureManageServerFiles {
+			p.ensurePeerWritebackDisabled(ctx, conn)
 		}
 
 		uploader := newImageUploader(conn, p.logger)
@@ -847,6 +872,11 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		return warnings
 	}
 
+	// #2533: same shared-FS precondition as the primary path -- resolve once,
+	// operator push only (the reconciler passes respectWriteGate=true and is
+	// excluded), so a shared-volume peer cannot clobber the operator's backdrop.
+	operatorPushOnSharedFS := !respectWriteGate && p.artistOnSharedFS(ctx, a)
+
 	for _, pid := range platformIDs {
 		conn, connErr := p.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
@@ -862,6 +892,13 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 				slog.String("connection", conn.Name),
 				slog.String("status", conn.Status))
 			continue
+		}
+
+		// #2533: the operator can crop/set/reorder a backdrop too, and the same
+		// shared-volume write-back clobbers fanart. Reuse the primary path's
+		// gated pre-disable at this operator-fanart choke point.
+		if operatorPushOnSharedFS && conn.FeatureManageServerFiles {
+			p.ensurePeerWritebackDisabled(ctx, conn)
 		}
 
 		indexedUploader := newIndexedImageUploader(conn, p.logger)
@@ -954,6 +991,94 @@ func (p *Publisher) getActiveFanartPrimary(ctx context.Context) string {
 		return img.PrimaryFileName(img.DefaultFileNames, "fanart")
 	}
 	return name
+}
+
+// writebackController is the subset of a platform client needed to make a
+// managed peer's server-side artwork write-back OFF before Stillwater pushes
+// an operator's image. Emby and Jellyfin clients both satisfy it; the factory
+// below returns nil for types without this control (e.g. Lidarr).
+type writebackController interface {
+	CheckImageSaverEnabled(ctx context.Context) (enabled bool, libName string, err error)
+	DisableFileWriteBack(ctx context.Context) error
+}
+
+// newWritebackControllerFn builds the write-back controller for a connection.
+// A package-level var (mirroring the injectable-hook pattern used elsewhere)
+// so tests can substitute a recording stub without standing up an HTTP peer.
+var newWritebackControllerFn = func(conn *connection.Connection, logger *slog.Logger) writebackController {
+	switch conn.Type {
+	case connection.TypeEmby:
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
+	case connection.TypeJellyfin:
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
+	default:
+		return nil
+	}
+}
+
+// artistOnSharedFS reports whether the artist's library shares its filesystem
+// with a platform peer -- the #2533 clobber precondition. Fail-closed: an
+// unresolvable or not-yet-evaluated library is treated as shared so the managed
+// pre-push write-back disable still fires rather than risk the peer overwriting
+// the operator's file. A library explicitly evaluated as not-shared
+// (SharedFSStatus "none") returns false, so dedicated-volume setups see zero
+// behavior change.
+func (p *Publisher) artistOnSharedFS(ctx context.Context, a *artist.Artist) bool {
+	if p.libraryService == nil || a == nil || a.Path == "" {
+		return true
+	}
+	lib, err := p.libraryService.FindForArtistPath(ctx, a.Path)
+	if err != nil {
+		p.logger.Warn("shared-FS lookup failed for pre-push write-back gate; assuming shared to protect the operator image",
+			"artist", a.ID, "error", err)
+		return true
+	}
+	if lib == nil {
+		return true
+	}
+	// Only an explicitly-evaluated not-shared status is safe to treat as
+	// dedicated-volume. An empty status means the conflict detector has not
+	// evaluated this library yet -- fail closed and treat it as shared so the
+	// pre-disable still fires during that window, rather than using
+	// lib.IsSharedFS() (false for "" as well as "none").
+	return lib.SharedFSStatus != library.SharedFSNone
+}
+
+// ensurePeerWritebackDisabled proactively turns OFF a managed peer's
+// server-side artwork write-back BEFORE Stillwater pushes the operator's image
+// (#2533). A shared-volume peer with SaveLocalMetadata on rewrites artwork
+// into the media folder under its own naming convention, which deletes the
+// operator's authoritative file (e.g. folder.jpg) moments after a manual crop.
+// detector.go only re-disables the saver reactively on the periodic conflict
+// refresh, leaving a drift window; this closes that window by enforcing the
+// managed contract at the exact moment of the push.
+//
+// Idempotent: it checks first and only issues the disable when the saver is on,
+// avoiding a redundant peer round-trip on the common already-off path. On a
+// check failure it disables defensively (fail toward preserving the operator's
+// file). Best-effort throughout: a check/disable error is logged but never
+// fails the push -- the local file is already the source of truth.
+func (p *Publisher) ensurePeerWritebackDisabled(ctx context.Context, conn *connection.Connection) {
+	ctrl := newWritebackControllerFn(conn, p.logger)
+	if ctrl == nil {
+		return
+	}
+	on, lib, err := ctrl.CheckImageSaverEnabled(ctx)
+	switch {
+	case err != nil:
+		p.logger.Warn("pre-push image-saver check failed; disabling peer write-back defensively",
+			"connection", conn.Name, "error", err)
+	case !on:
+		// Already off: nothing to do, and no redundant disable round-trip.
+		return
+	}
+	if disableErr := ctrl.DisableFileWriteBack(ctx); disableErr != nil {
+		p.logger.Error("pre-push disable of managed peer write-back failed; the mirror may clobber the operator's image",
+			"connection", conn.Name, "library", lib, "error", disableErr)
+		return
+	}
+	p.logger.Info("disabled managed peer write-back before operator image push",
+		"connection", conn.Name, "library", lib)
 }
 
 // newImageUploader constructs an ImageUploader for the given connection type.

@@ -13,10 +13,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/publish"
 )
 
 // --------------------------------------------------------------------------
@@ -1644,5 +1649,370 @@ func TestRestorePHashQuarantine_APerceptualNearMissMustNotDestroyTheQuarantinedB
 	// The bystander is untouched either way.
 	if onDisk, readErr := os.ReadFile(filepath.Join(dirA, "fanart3.jpg")); readErr != nil || !bytes.Equal(onDisk, bystander) {
 		t.Errorf("the bystander must be untouched (err %v)", readErr)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Per-artist serialization (#2564 PR-4b)
+// --------------------------------------------------------------------------
+
+// TestPhashArtistMutex_KeyedByArtist pins the keying: the same artist id always
+// yields the SAME mutex (so two operations on one artist contend), and a
+// different id yields a different one (so unrelated artists still run in
+// parallel).
+func TestPhashArtistMutex_KeyedByArtist(t *testing.T) {
+	p, _ := newPHashRepairPipeline(t)
+	a1 := p.phashArtistMutex("art-a")
+	a2 := p.phashArtistMutex("art-a")
+	b := p.phashArtistMutex("art-b")
+	if a1 != a2 {
+		t.Error("the same artist id must return the same mutex")
+	}
+	if a1 == b {
+		t.Error("different artist ids must return different mutexes")
+	}
+}
+
+// TestRestorePHashQuarantine_SerializesOnThePerArtistLock proves the restore's
+// whole critical section runs under the per-artist lock: with the lock held, a
+// restore for that artist must BLOCK and only proceed once it is released.
+//
+// This is the deterministic proof the -race detector cannot give: the hazard it
+// guards (a restore's append racing a concurrent remediation's renumber over the
+// same files and manifest) is a file-level lost update, invisible to -race. So
+// the guard is verified by observing that the operation actually contends on the
+// lock. Remove the mu.Lock() in RestorePHashQuarantine and this test fails: the
+// restore completes while the lock is held.
+func TestRestorePHashQuarantine_SerializesOnThePerArtistLock(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	seedPollutedLibrary(t, db)
+	// First remediate creates a quarantine op holding the removed pollution.
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("seed remediate: %v", err)
+	}
+
+	mu := p.phashArtistMutex("art-a")
+	mu.Lock()
+
+	done := make(chan error, 1)
+	go func() {
+		_, rErr := p.RestorePHashQuarantine(context.Background(), "art-a", res.OpID)
+		done <- rErr
+	}()
+
+	select {
+	case <-done:
+		mu.Unlock()
+		t.Fatal("restore completed while the per-artist lock was held; it does not serialize")
+	case <-time.After(200 * time.Millisecond):
+		// Still blocked on the lock, as required.
+	}
+	mu.Unlock()
+
+	select {
+	case rErr := <-done:
+		if rErr != nil {
+			t.Fatalf("restore after unlock: %v", rErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("restore did not complete after the lock was released")
+	}
+}
+
+// TestRemediatePHashMismatches_SerializesOnThePerArtistLock is the back-out
+// counterpart: with the artist's lock held, a remediation of that artist must
+// block until it is released. Remove the lock acquisition in the
+// RemediatePHashMismatches per-artist loop and this fails.
+func TestRemediatePHashMismatches_SerializesOnThePerArtistLock(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	seedPollutedLibrary(t, db)
+
+	mu := p.phashArtistMutex("art-a")
+	mu.Lock()
+
+	done := make(chan error, 1)
+	go func() {
+		_, rErr := p.RemediatePHashMismatches(context.Background(),
+			PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+		done <- rErr
+	}()
+
+	select {
+	case <-done:
+		mu.Unlock()
+		t.Fatal("remediate reached its per-artist work while the lock was held; it does not serialize")
+	case <-time.After(200 * time.Millisecond):
+		// Blocked, as required.
+	}
+	mu.Unlock()
+
+	select {
+	case rErr := <-done:
+		if rErr != nil {
+			t.Fatalf("remediate after unlock: %v", rErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("remediate did not complete after the lock was released")
+	}
+}
+
+// TestRemediateAndRestore_ConcurrentSameArtistIsRaceFree runs a remediate and a
+// restore of the SAME artist concurrently under -race and asserts the disk and
+// manifest are never left inconsistent: no staged tomb survives, every fanart
+// file on disk is readable, and any manifest entry still present has readable
+// bytes. The per-artist lock is what makes these invariants hold under any
+// interleaving.
+func TestRemediateAndRestore_ConcurrentSameArtistIsRaceFree(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dirA := seedPollutedLibrary(t, db)
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("seed remediate: %v", err)
+	}
+
+	var (
+		wg         sync.WaitGroup
+		restoreRes PHashRestoreResult
+		restoreErr error
+		rem2Res    PHashRemediateResult
+		rem2Err    error
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		restoreRes, restoreErr = p.RestorePHashQuarantine(context.Background(), "art-a", res.OpID)
+	}()
+	go func() {
+		defer wg.Done()
+		rem2Res, rem2Err = p.RemediatePHashMismatches(context.Background(),
+			PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	}()
+	wg.Wait()
+
+	// Capture and ASSERT each op's result, not just err==nil. Because the
+	// per-artist lock serializes the two, each must land in a clean, fully
+	// accounted terminal state; discarding the results would let a lock that
+	// silently dropped or double-counted work still pass.
+	if restoreErr != nil {
+		t.Fatalf("concurrent restore: %v", restoreErr)
+	}
+	if rem2Err != nil {
+		t.Fatalf("concurrent second remediate: %v", rem2Err)
+	}
+	// The restore acts on THIS op's manifest, which the second remediate never
+	// touches (it mints its own op id), so the restore processes exactly the one
+	// entry the seed back-out quarantined and resolves it to exactly one terminal
+	// outcome (restored, already-present, or needs-review) with no failure --
+	// whatever the interleaving.
+	if restoreRes.OpID != res.OpID {
+		t.Errorf("restore result op id = %q, want %q", restoreRes.OpID, res.OpID)
+	}
+	if got := restoreRes.Restored + restoreRes.AlreadyPresent + restoreRes.NeedsReview; got != 1 {
+		t.Errorf("restore must account for exactly the 1 quarantined entry; got restored=%d already_present=%d needs_review=%d (sum %d)",
+			restoreRes.Restored, restoreRes.AlreadyPresent, restoreRes.NeedsReview, got)
+	}
+	if len(restoreRes.Failures) != 0 {
+		t.Errorf("restore must have no failures; got %v", restoreRes.Failures)
+	}
+	// The second back-out must also complete cleanly: it mints its own op id and
+	// records zero per-artist failures (a race that corrupted disk or the
+	// manifest would surface here as a failure).
+	if rem2Res.OpID == "" {
+		t.Error("second remediate must mint an op id")
+	}
+	if rem2Res.Failures != 0 {
+		t.Errorf("second remediate must have no per-artist failures; got %d", rem2Res.Failures)
+	}
+
+	// No tomb may survive either committed operation.
+	entries, err := os.ReadDir(dirA)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), phashTombSuffix) {
+			t.Errorf("a staged tomb survived concurrent ops: %s", e.Name())
+		}
+	}
+
+	// Every discovered fanart file must be readable (no half-written slot).
+	paths, err := image.DiscoverFanart(dirA, "fanart")
+	if err != nil {
+		t.Fatalf("DiscoverFanart: %v", err)
+	}
+	for _, path := range paths {
+		if _, err := os.ReadFile(path); err != nil {
+			t.Errorf("a fanart slot is unreadable after concurrent ops: %v", err)
+		}
+	}
+
+	// Any manifest entry still present must reference bytes that exist: the
+	// manifest never advertises an entry whose bytes are gone.
+	m, err := image.ReadRepairManifest(dirA, res.OpID)
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m != nil {
+		for _, e := range m.Entries {
+			if _, err := image.RepairEntryBytes(dirA, res.OpID, e); err != nil {
+				t.Errorf("manifest references bytes that are gone: %v", err)
+			}
+		}
+	}
+}
+
+// newPHashRepairPipelineWithPublisherLogged builds the same harness as
+// newPHashRepairPipeline but wires a real *publish.Publisher over the same DB --
+// so the platform delete/restore WIRING (deleteRemovedSlotsOnPlatforms,
+// restorePHashToPlatforms) is exercised rather than short-circuited by a nil
+// publisher -- with the pipeline's (and publisher's) logger swapped for one that
+// records to the returned buffer. The platform wiring surfaces its per-connection
+// outcome ONLY through this log -- the returned PHashRemediateResult/
+// PHashRestoreResult carry no platform field -- so a test that wants to prove the
+// wiring was actually reached must read the log. Reading the buffer after the op
+// returns is race-free: the platform pass runs synchronously on the calling
+// goroutine, no goroutine writes it concurrently.
+func newPHashRepairPipelineWithPublisherLogged(t *testing.T) (*Pipeline, *sql.DB, *artist.Service, *bytes.Buffer) {
+	t.Helper()
+	e, db := newDupTestEngine(t)
+	svc := artist.NewService(db)
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("building encryptor: %v", err)
+	}
+	connSvc := connection.NewService(db, enc)
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	pub := publish.New(publish.Deps{
+		ArtistService:     svc,
+		ConnectionService: connSvc,
+		Logger:            logger,
+	})
+	return NewPipeline(e, svc, nil, nil, pub, logger), db, svc, &logBuf
+}
+
+// seedUndecryptableConnection inserts a connection whose api key cannot be
+// decrypted, so GetByID errors when the publisher tries to load it. That makes
+// the platform delete/restore record a per-connection FAILURE without any
+// network I/O -- exactly the wiring branch under test, deterministically and
+// offline.
+func seedUndecryptableConnection(t *testing.T, db *sql.DB, id string) {
+	t.Helper()
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO connections
+		 (id, name, type, url, encrypted_api_key, enabled, status,
+		  feature_image_write, created_at, updated_at)
+		 VALUES (?, ?, 'emby', 'http://127.0.0.1:0', 'not-decryptable', 1, 'ok', 1,
+		         '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')`,
+		id, id); err != nil {
+		t.Fatalf("seeding connection %s: %v", id, err)
+	}
+}
+
+// TestRemediatePHashMismatches_WiresPlatformDelete exercises the platform-delete
+// wiring: after the on-disk removal commits, the back-out asks the publisher to
+// remove the same picture from the artist's mapped platforms. The mapped
+// connection cannot be loaded (undecryptable key), so the platform delete is a
+// per-connection failure -- non-fatal, as designed: the local removal still
+// stands and the quarantine still holds the bytes.
+func TestRemediatePHashMismatches_WiresPlatformDelete(t *testing.T) {
+	p, db, svc, logBuf := newPHashRepairPipelineWithPublisherLogged(t)
+	dirA := seedPollutedLibrary(t, db)
+	seedUndecryptableConnection(t, db, "conn-x")
+	if err := svc.SetPlatformID(context.Background(), "art-a", "conn-x", "plat-a"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	res, err := p.RemediatePHashMismatches(context.Background(),
+		PHashMismatchScope{ArtistID: "art-a"}, PHashRemediateOpts{})
+	if err != nil {
+		t.Fatalf("RemediatePHashMismatches: %v", err)
+	}
+	// The local removal is unaffected by the platform-side failure.
+	if res.SlotsRemoved != 1 || res.Quarantined != 1 {
+		t.Fatalf("local removal must stand despite platform failure: %+v", res)
+	}
+	// The polluted slot is gone on disk.
+	if got := fanartVariantAt(t, dirA, "fanart.jpg", []int{0, 1, 2}); got != 0 {
+		t.Errorf("slot 0 must still hold v0, holds v%d", got)
+	}
+	// The platform delete was ATTEMPTED for the mapped target and its
+	// per-connection failure was SURFACED. This is what stops the test being
+	// vacuous: the local assertions above pass even if the platform-delete call
+	// is deleted from the product code, because the local removal never depends
+	// on it. This log line is emitted ONLY by deleteRemovedSlotsOnPlatforms
+	// iterating the returned failures, so removing (or no-oping) that call turns
+	// this test RED.
+	logs := logBuf.String()
+	if !strings.Contains(logs, "phash back-out: platform delete reported a per-connection failure") {
+		t.Errorf("platform delete wiring was not reached (no per-connection failure logged); logs:\n%s", logs)
+	}
+	if !strings.Contains(logs, "conn-x") {
+		t.Errorf("platform delete failure was not surfaced for the mapped connection conn-x; logs:\n%s", logs)
+	}
+}
+
+// TestRestorePHashQuarantine_WiresPlatformRestore exercises the platform-restore
+// wiring: a restore re-uploads the bytes to each recorded platform target. The
+// target's connection cannot be loaded, so the platform restore is a
+// per-connection failure -- non-fatal: the on-disk restore (here, recognizing
+// the byte-identical copy already present) still completes and the entry is
+// consumed.
+func TestRestorePHashQuarantine_WiresPlatformRestore(t *testing.T) {
+	p, db, _, logBuf := newPHashRepairPipelineWithPublisherLogged(t)
+	dirA, _ := t.TempDir(), t.TempDir()
+	seedRepairArtist(t, db, "art-a", "Artist A", dirA)
+	seedUndecryptableConnection(t, db, "conn-x")
+
+	// The artist holds v1 on disk; quarantine a copy of it under an op and
+	// record a platform target for it. A restore then finds the byte-identical
+	// copy already present (exact) and reaches the platform-restore wiring.
+	h := writePollutionFanart(t, dirA, "fanart.jpg", 1)
+	entry := image.RepairEntry{
+		ArtistID: "art-a", ArtistName: "Artist A", ImageType: "fanart",
+		SlotIndex: 0, FileName: "fanart.jpg", PHash: h,
+	}
+	if err := image.QuarantineImage(dirA, "op-restore", filepath.Join(dirA, "fanart.jpg"), entry); err != nil {
+		t.Fatalf("QuarantineImage: %v", err)
+	}
+	if err := image.SetRepairEntryPlatformTargets(dirA, "op-restore",
+		image.RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"},
+		[]image.RepairPlatformTarget{{ConnectionID: "conn-x", PlatformArtistID: "plat-a"}}); err != nil {
+		t.Fatalf("SetRepairEntryPlatformTargets: %v", err)
+	}
+
+	res, err := p.RestorePHashQuarantine(context.Background(), "art-a", "op-restore")
+	if err != nil {
+		t.Fatalf("RestorePHashQuarantine: %v", err)
+	}
+	// The byte-identical copy was already on disk, so the entry is consumed as
+	// already-present; the platform failure does not change that outcome.
+	if res.AlreadyPresent != 1 || len(res.Failures) != 0 {
+		t.Fatalf("expected 1 already-present / 0 local failures, got %+v", res)
+	}
+	// The entry was consumed: the op is now empty.
+	m, err := image.ReadRepairManifest(dirA, "op-restore")
+	if err != nil {
+		t.Fatalf("ReadRepairManifest: %v", err)
+	}
+	if m != nil && len(m.Entries) != 0 {
+		t.Errorf("entry must be consumed after an already-present restore, got %+v", m)
+	}
+	// RestoreBackdropToPlatforms was ATTEMPTED for the recorded target, even
+	// though the local copy was already present. Without this the test is
+	// vacuous: the already-present / consumed assertions above pass even if the
+	// platform-restore call is deleted, because the on-disk outcome does not
+	// depend on it. This log line comes ONLY from restorePHashToPlatforms
+	// iterating the returned failures, so removing (or no-oping) that call turns
+	// this test RED.
+	logs := logBuf.String()
+	if !strings.Contains(logs, "phash restore: platform restore reported a per-connection failure") {
+		t.Errorf("platform restore wiring was not reached (no per-connection failure logged); logs:\n%s", logs)
+	}
+	if !strings.Contains(logs, "conn-x") {
+		t.Errorf("platform restore was not attempted for the recorded target conn-x; logs:\n%s", logs)
 	}
 }

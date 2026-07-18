@@ -1,0 +1,67 @@
+meta {
+  name: PHash Mismatch Remediate
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{apiBase}}/reports/phash-mismatch/remediate
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "dry_run": true
+  }
+}
+
+docs {
+  Destructive back-out of cross-artist backdrop pollution (#2564 PR-4b):
+  quarantines the flagged bytes, removes them locally, and deletes the mirrored
+  copy from connected platforms. POST /api/v1/reports/phash-mismatch/remediate
+  with {artist_id?, all_artists, dry_run, tolerance} (snake_case).
+
+  Admin-gated: the gate is in-handler (requireForeignAdmin), not on the route,
+  so an unauthenticated caller gets 401 and an authenticated non-admin gets 403.
+  The CI session is the bootstrap admin (ci-admin), so the admin gate passes and
+  the request reaches the handler body.
+
+  Singleton: both remediate and restore claim the shared destructive-fanart slot
+  (r.backdropRepairRunning under r.bulkActionMu), so a phash back-out, a
+  fanart-duplicate repair, and a fetch_images/run_rules bulk action are mutually
+  exclusive (409 "a backdrop repair or bulk action is already in progress").
+
+  Empty-CI-DB expectation asserted here: the request body carries neither
+  artist_id nor all_artists, so the handler's scope guard returns a 400 BEFORE
+  claiming the singleton or touching the pipeline. This guard is load-bearing --
+  it turns a forgotten scope into a 400 rather than an accidental library-wide
+  delete -- so it is asserted deterministically on the empty CI database. The
+  dry_run:true is defensive: even if the guard order ever changed, a run could
+  not mutate anything.
+}
+
+tests {
+  test("returns 400 because neither artist_id nor all_artists was supplied", function() {
+    // The scope guard runs after the admin gate but before the singleton claim
+    // and any pipeline call, so this is deterministic on an empty CI database:
+    // a body with no scope is a 400, never an accidental library-wide back-out.
+    expect(res.status).to.equal(400);
+  });
+
+  test("content-type is application/json", function() {
+    expect(res.headers['content-type']).to.include('application/json');
+  });
+
+  test("error envelope names the missing-scope requirement", function() {
+    // Assert the concrete contract message, not just that the body is an object
+    // -- the exact string is the operator-facing guardrail against a scopeless
+    // (library-wide) delete.
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("artist_id is required unless all_artists is set");
+  });
+}
