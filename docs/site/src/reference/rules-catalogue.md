@@ -2,11 +2,11 @@
 description: Every built-in rule in Stillwater -- what it checks, what the fix does, what's configurable, and the default state.
 ---
 
-<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer, ImageDuplicateFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 26 rules verified. -->
+<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer, ImageDuplicateFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/rule/collision_fixer.go (CrossArtistBackdropCollisionFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 27 rules verified. -->
 
 # Rules catalog
 
-Stillwater ships with 26 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
+Stillwater ships with 27 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
 
 For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-concepts/rules.md). This page is the enumeration.
 
