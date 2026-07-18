@@ -330,8 +330,18 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			<input type="hidden" name="view" id="artist-view-input" value={ data.View }/>
 			<input type="hidden" name="sort" id="artist-sort-input" value={ data.Sort }/>
 			<input type="hidden" name="order" id="artist-order-input" value={ data.Order }/>
-			<!-- Single-row sticky toolbar (search · library · filters · sort · columns · view). -->
-			<div class="sw-next-toolbar sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-2 rounded-lg bg-gray-50/80 px-1 py-2 backdrop-blur dark:bg-gray-900/80">
+			<!-- Single-row sticky toolbar (search · library · filters · sort · columns · view).
+			     z-20, not z-10 (#2539): this sticky toolbar establishes its own stacking
+			     context (position:sticky + z-index), so the Sort panel's internal z-20 is
+			     scoped to that context and never compared against page content outside it.
+			     In GRID view the card bulk-select checkbox lives in an absolutely-positioned
+			     z-10 label that shares the toolbar's nearest ancestor stacking context (the
+			     card wrapper has no z-index of its own); at a tied z-10 the later-DOM
+			     element wins, so the grid (rendered after the toolbar) painted its
+			     checkbox above the whole toolbar, panel included. Raising the toolbar's
+			     own stacking context above that (z-20) makes the comparison unambiguous
+			     regardless of DOM order. -->
+			<div class="sw-next-toolbar sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 rounded-lg bg-gray-50/80 px-1 py-2 backdrop-blur dark:bg-gray-900/80">
 				<!-- The "/" focus-search shortcut is advertised once in the tip-line
 				     legend below and surfaced via the data-sw-shortcut attribute the
 				     #1789 keyboard registry reads; no inline sw-kbd keycap is pinned in
