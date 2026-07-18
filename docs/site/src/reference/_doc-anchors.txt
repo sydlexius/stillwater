@@ -392,11 +392,11 @@ how-to/find-a-setting#search-the-page
 how-to/find-a-setting#tips
 how-to/find-a-setting#what-is-not-searchable
 how-to/foreign-files#dismiss-everything-at-once
-how-to/foreign-files#foreign-files
 how-to/foreign-files#keyboard-shortcuts
 how-to/foreign-files#manage-the-allowlist
 how-to/foreign-files#review-a-detected-file
 how-to/foreign-files#see-also
+how-to/foreign-files#unmatched-images
 how-to/http-redirect#enabling-the-redirect-listener-http-redirect-enable
 how-to/http-redirect#http-to-https-redirect
 how-to/http-redirect#interaction-with-reverse-proxies-http-redirect-reverse-proxy

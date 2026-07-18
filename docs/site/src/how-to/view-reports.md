@@ -58,7 +58,7 @@ Six further reports appear in the rail and are coming in a future release:
 
 ## Duplicate and foreign-file reports
 
-The sidebar's **Reports** group also lists **Duplicates**, **Backdrop Duplicates**, and **Foreign Files**. These are dedicated pages at their own URLs (`/reports/duplicates`, `/reports/backdrop-duplicates`, `/reports/foreign-files`), not entries in the two-pane workspace's rail. The Duplicates and Foreign Files pills show a live count when there's something to review. See [Merge duplicate artists](merge-duplicate-artists.md) for the duplicate-detection and merge workflow.
+The sidebar's **Reports** group also lists **Duplicates**, **Backdrop Duplicates**, and **Unmatched Images**. These are dedicated pages at their own URLs (`/reports/duplicates`, `/reports/backdrop-duplicates`, `/reports/foreign-files`), not entries in the two-pane workspace's rail. The Duplicates and Unmatched Images pills show a live count when there's something to review. See [Merge duplicate artists](merge-duplicate-artists.md) for the duplicate-detection and merge workflow.
 
 ## Backdrop duplicates
 

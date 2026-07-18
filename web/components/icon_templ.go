@@ -1266,7 +1266,6 @@ func IconDocumentText(size string) templ.Component {
 }
 
 // IconDocument renders the Heroicons "document" outline icon (24x24).
-// Used for the Foreign Files nav item in the next/ sidebar Reports section.
 func IconDocument(size string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

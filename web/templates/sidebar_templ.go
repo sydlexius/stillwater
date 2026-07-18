@@ -30,7 +30,7 @@ type SidebarData struct {
 // kills the old Reports/Compliance duplication):
 //
 //	brand+version -> Dashboard/Artists (with HTMX count pills)
-//	-> REPORTS header { Compliance, Duplicates*, Foreign Files* }
+//	-> REPORTS header { Compliance, Duplicates*, Unmatched Images* }
 //	-> Activity
 //	-> spacer
 //	-> low-freq: Logs, Settings (admin), Preferences
@@ -39,7 +39,7 @@ type SidebarData struct {
 // The Reports section is visible to ALL roles. The workspace link and the
 // Compliance report page are non-admin-reachable (wrapOptionalAuth), so
 // non-admins see the workspace link plus a plain Compliance link. Compliance's
-// count pill, Duplicates, and Foreign Files (*) are admin-only because their
+// count pill, Duplicates, and Unmatched Images (*) are admin-only because their
 // count endpoints return 403 for non-admins, so those placeholders are omitted
 // for non-admin sessions (no poll-and-403, no lying markup).
 //
@@ -267,7 +267,7 @@ func Sidebar(data SidebarData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span> <span id=\"sidebar-artist-count\" class=\"sw-sidebar-badge\" hx-get=\"/api/v1/artists/badge\" hx-trigger=\"load, every 120s\" hx-swap=\"innerHTML\"></span></a></li></ul></div><!-- Reports: visible to ALL users (#1757 fix-round; the v1 sidebar showed\n\t\t     Reports/Compliance to non-admins). The workspace link and the\n\t\t     Compliance report page are reachable by non-admins (wrapOptionalAuth),\n\t\t     so they render for everyone. The admin-only Reports entries are the\n\t\t     Compliance/Duplicates count pills, a static Backdrop Duplicates link\n\t\t     (no count pill, since its count needs a full from-disk scan that is too\n\t\t     expensive to poll), and the Foreign Files item; their endpoints 403 for\n\t\t     non-admins, so non-admins get a plain Compliance link (no polling pill)\n\t\t     and the admin-only items are omitted (no lying markup, no\n\t\t     poll-and-403). --><div class=\"sw-sidebar-section\"><span class=\"sw-sidebar-section-label\" aria-hidden=\"true\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span> <span id=\"sidebar-artist-count\" class=\"sw-sidebar-badge\" hx-get=\"/api/v1/artists/badge\" hx-trigger=\"load, every 120s\" hx-swap=\"innerHTML\"></span></a></li></ul></div><!-- Reports: visible to ALL users (#1757 fix-round; the v1 sidebar showed\n\t\t     Reports/Compliance to non-admins). The workspace link and the\n\t\t     Compliance report page are reachable by non-admins (wrapOptionalAuth),\n\t\t     so they render for everyone. The admin-only Reports entries are the\n\t\t     Compliance/Duplicates count pills, a static Backdrop Duplicates link\n\t\t     (no count pill, since its count needs a full from-disk scan that is too\n\t\t     expensive to poll), and the Unmatched Images item; their endpoints 403 for\n\t\t     non-admins, so non-admins get a plain Compliance link (no polling pill)\n\t\t     and the admin-only items are omitted (no lying markup, no\n\t\t     poll-and-403). --><div class=\"sw-sidebar-section\"><span class=\"sw-sidebar-section-label\" aria-hidden=\"true\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -426,7 +426,7 @@ func Sidebar(data SidebarData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</span></a></li><!-- Foreign Files: admin-only (count endpoint 403s for non-admins;\n\t\t\t\t\t     not present in the v1 non-admin sidebar). ALWAYS visible to\n\t\t\t\t\t     admins even at zero count (allowlist must stay reachable);\n\t\t\t\t\t     only the count pill is HTMX-conditional. --> <li id=\"sidebar-foreign-next\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</span></a></li><!-- Unmatched Images: admin-only (count endpoint 403s for non-admins;\n\t\t\t\t\t     not present in the v1 non-admin sidebar). ALWAYS visible to\n\t\t\t\t\t     admins even at zero count (allowlist must stay reachable);\n\t\t\t\t\t     only the count pill is HTMX-conditional. --> <li id=\"sidebar-foreign-next\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -456,7 +456,7 @@ func Sidebar(data SidebarData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.IconDocument("sw-sidebar-icon").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.IconPhoto("sw-sidebar-icon").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
