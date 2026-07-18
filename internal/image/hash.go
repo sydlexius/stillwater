@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -84,6 +85,14 @@ func ContentHash(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// ErrImageTooLarge reports that a file exceeded the read bound and was not
+// hashed. It is a sentinel so callers can distinguish "too big to be worth
+// reading" (skip this file, keep going) from "unreadable" (a real I/O fault).
+// The bound is maxDecodeBytes -- the same constant decodeWithLimit enforces,
+// deliberately reused rather than duplicated so the read bound and the decode
+// bound cannot drift apart.
+var ErrImageTooLarge = errors.New("image file too large to hash")
+
 // FileHashes carries the hashes computed from a single read of one image file.
 // Perceptual is zero when the caller did not ask for it (see HashFile), which
 // is indistinguishable from a decode that legitimately produced the all-zero
@@ -110,10 +119,35 @@ type FileHashes struct {
 // The security boundary on path is enforced at the call sites, exactly as for
 // ReadProvenance: callers construct paths from trusted sources (database rows,
 // filesystem discovery, fixed naming patterns), never from request input.
+//
+// The read is bounded at maxDecodeBytes. That bound is a hard requirement, not
+// a nicety: the path is trusted but its CONTENTS are not sized by us -- these
+// are operator-supplied library directories, and an arbitrarily large file
+// sitting in one used to be read whole into memory here. Go has no
+// allocation-failure path, so an over-budget allocation is a fatal runtime
+// error rather than an error value; under a container memory limit that is a
+// SIGKILL and a restart loop, not something a caller can recover from.
+//
+// Files over the bound return ErrImageTooLarge and are never allocated.
 func HashFile(path string, needPerceptual bool) (FileHashes, error) {
-	data, err := os.ReadFile(filepath.Clean(path))
+	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return FileHashes{}, fmt.Errorf("reading image for hashing: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	// io.LimitReader, not os.Stat: a Stat-then-read has a TOCTOU window in
+	// which the file can grow between the size check and the read, so the
+	// check bounds a number while the read stays unbounded. The LimitReader
+	// bounds the ALLOCATION itself, which is the thing that has to be
+	// bounded. Reading one byte past the limit is what distinguishes
+	// "exactly at the limit" from "over it".
+	data, err := io.ReadAll(io.LimitReader(f, maxDecodeBytes+1))
+	if err != nil {
+		return FileHashes{}, fmt.Errorf("reading image for hashing: %w", err)
+	}
+	if int64(len(data)) > maxDecodeBytes {
+		return FileHashes{}, fmt.Errorf("hashing %s: %w (max %d bytes)", path, ErrImageTooLarge, maxDecodeBytes)
 	}
 
 	h := FileHashes{Content: ContentHash(data)}
