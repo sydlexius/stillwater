@@ -7,6 +7,8 @@
 #
 # Read by scripts/check-commit-signing.sh, which .githooks/pre-commit invokes.
 # Deleting this file turns the local pre-commit check into a no-op. It does NOT
-# relax the `required_signatures` ruleset on main, and it does NOT relax the
-# required "Signed Commits" CI check -- both live on infrastructure the committer
-# does not control. See docs/dev-setup.md.
+# relax the `required_signatures` ruleset on main, which lives on infrastructure
+# the committer does not control and is what actually blocks the merge. The
+# "Signed Commits" CI check also still runs, but it is not yet registered as a
+# required context, so today it reports rather than blocks. See
+# docs/dev-setup.md.

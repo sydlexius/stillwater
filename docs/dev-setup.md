@@ -178,7 +178,7 @@ Pre-commit hooks enforce formatting and linting automatically. Run `make hooks` 
 
 The requirement itself comes from the tracked file `.githooks/signed-commits-required`. It is deliberately not inferred from `commit.gpgsign`, because a check that reads the requirement from the setting would conclude "signing is not required here" in exactly the case it exists to catch. Set `SW_REQUIRE_SIGNED_COMMITS=0` to override.
 
-**In CI, as a required check.** `.github/workflows/signed-commits.yml` asks GitHub whether every commit in the PR is `verified`, and names any that are not. The local hook is earlier and cheaper but advisory -- it can be skipped with `--no-verify` or never installed. The CI check runs where the committer has no say, so it is the layer that actually holds.
+**In CI, as a backstop.** `.github/workflows/signed-commits.yml` asks GitHub whether every commit in the PR is `verified`, and names any that are not. The local hooks are earlier and cheaper but advisory -- they can be skipped with `--no-verify` or never installed. The CI check runs where the committer has no say, so it is the layer that will actually hold once a maintainer registers `Signed Commits` as a required context in the `Protect main` ruleset. Until then it reports without blocking, and the thing that stops the merge is the ruleset's `required_signatures` rule rather than this check.
 
 Fix an unsigned commit while it is still local. Once it is on a reviewed PR, the only remedy is rewriting shared history, which orphans any commit SHA cited in review replies.
 

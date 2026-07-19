@@ -67,11 +67,14 @@ jobs:
           # only as far as the first page, and silently pass on the rest.
           #
           # Known ceiling: this endpoint returns at most 250 commits even with
-          # --paginate, so a PR with more than 250 would have its tail unchecked.
-          # Deliberately not engineered around -- the repo's PR size gate (~800
-          # hand-written LOC / 10 files) puts that far out of reach, and the
-          # machinery to walk the compare API instead would cost more than the
-          # case is worth. Revisit if that gate ever goes away.
+          # --paginate, so a PR with more than 250 has its tail unchecked.
+          # Walking the compare API instead is deliberately NOT engineered around
+          # -- the repo's PR size gate (~800 hand-written LOC / 10 files) puts
+          # that far out of reach, and the machinery would cost more than the case
+          # is worth. What IS handled, just below, is DETECTING that the ceiling
+          # was hit: not fetching the tail is a cost trade-off, but passing
+          # silently without it would break the fail-closed invariant this job
+          # states everywhere else. Revisit the walk if that gate ever goes away.
           COMMITS=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits") || {
             echo "::error::Failed to fetch PR commits from the GitHub API."
             echo "Refusing to pass: an unverifiable result is not a verified one."
@@ -83,6 +86,37 @@ jobs:
             echo "::error::The GitHub API returned zero commits for PR #$PR_NUMBER."
             echo "A pull request always has at least one commit, so this is a fault,"
             echo "not an empty-and-therefore-fine result."
+            exit 1
+          fi
+
+          # Prove the list is COMPLETE before trusting it. The pull request object
+          # carries the authoritative total as a scalar, which is not itself
+          # subject to the 250-item list cap, so the two numbers disagreeing is a
+          # direct read on truncation. Without this, a >250-commit PR is the one
+          # path where an unsigned commit passes silently -- the exact
+          # "could not tell" outcome the rest of this job refuses to produce.
+          EXPECTED=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.commits') || {
+            echo "::error::Failed to fetch the PR's total commit count."
+            echo "Refusing to pass: completeness could not be established."
+            exit 1
+          }
+
+          # A non-numeric answer means the field was absent or null. Fail closed
+          # rather than let `[` abort with a bare arithmetic error.
+          case "$EXPECTED" in
+            ''|*[!0-9]*)
+              echo "::error::The PR object returned a non-numeric commit count: '$EXPECTED'."
+              echo "Refusing to pass: completeness could not be established."
+              exit 1
+              ;;
+          esac
+
+          if [ "$TOTAL" -ne "$EXPECTED" ]; then
+            echo "::error::Fetched $TOTAL of $EXPECTED commit(s) for PR #$PR_NUMBER."
+            echo "The PR commits endpoint returns at most 250 commits, so the tail of"
+            echo "this PR was never checked. Completeness cannot be proven, and an"
+            echo "unverifiable result is not a verified one, so this check refuses to"
+            echo "pass. Split the PR, or check the unfetched range via the compare API."
             exit 1
           fi
 

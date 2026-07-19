@@ -26,7 +26,12 @@
 # the merge gate costs a force-push on a reviewed PR, which orphans every fix SHA
 # cited in review replies and empties CodeRabbit's incremental-review delta.
 #
-# Skip with: git commit --no-verify (do not do this).
+# Note what the commit bypass flag does and does not reach. `git commit
+# --no-verify` bypasses the pre-commit and commit-msg hooks only -- post-commit
+# is not in that set, so THIS hook still runs. That is deliberate on git's part
+# and useful here: it means the signing-disabled-plus-hook-bypassed combination,
+# which defeats every earlier layer, is still caught and reported at this stage.
+# Neither flag should be used, but the bypass does not buy silence from this one.
 
 set -euo pipefail
 
