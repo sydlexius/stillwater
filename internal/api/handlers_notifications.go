@@ -368,11 +368,19 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 	// over the CONVERTED bytes -- exactly what SaveImageFromData writes, since
 	// ConvertFormat is a passthrough for the already-converted JPEG/PNG handed back
 	// to it. FetchImageURL keeps the original fetch semantics unchanged.
+	// The stage wrapping below is load-bearing, not cosmetic: SaveImageFromURL
+	// used to distinguish a fetch failure ("downloading image: ...") from a
+	// convert failure ("converting image format: ..."), and both stages share a
+	// single log line here. Without it the two are indistinguishable in the
+	// logs, and assertFailedAtSave's upstream markers go dead.
 	data, err := rule.FetchImageURL(req.Context(), r.ssrfClient, body.URL)
-	if err == nil {
-		var converted []byte
-		converted, _, err = img.ConvertFormat(bytes.NewReader(data))
-		if err == nil {
+	if err != nil {
+		err = fmt.Errorf("downloading image: %w", err)
+	} else {
+		converted, _, convErr := img.ConvertFormat(bytes.NewReader(data))
+		if convErr != nil {
+			err = fmt.Errorf("converting image format: %w", convErr)
+		} else {
 			data = converted
 		}
 	}
