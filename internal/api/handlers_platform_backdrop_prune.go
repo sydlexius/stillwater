@@ -48,6 +48,15 @@ func (r *Router) handlePlatformBackdropDuplicatesPage(w http.ResponseWriter, req
 		return
 	}
 
+	// Opportunistic cache refresh (#2608): same rationale as the local
+	// backdrop-duplicates page. A partial sweep is skipped -- when a platform
+	// is unreachable every per-artist query fails and PerArtist comes back
+	// empty with err == nil, which would CLEAR the platform rows and erase a
+	// real, still-present duplicate count during a transient outage.
+	if report.ScanErrors == 0 {
+		r.storePlatformDupCounts(r.bucketByPlatformType(req.Context(), report))
+	}
+
 	renderTempl(w, req, templates.PlatformBackdropDuplicatesPage(r.assetsFor(req), buildPlatformBackdropDuplicatesView(report)))
 }
 

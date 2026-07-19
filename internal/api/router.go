@@ -151,6 +151,9 @@ type Router struct {
 	collisionNotifier  *collision.Notifier
 	publisher          *publish.Publisher
 	logger             *slog.Logger
+	// dupImageOnce installs this router's scan sources on the shared
+	// duplicate-image count cache exactly once. See dupImageCache().
+	dupImageOnce       sync.Once
 	basePath           string
 	basePathFromEnv    bool
 	ux                 string
@@ -411,6 +414,13 @@ func NewRouter(deps RouterDeps) *Router {
 	// so that sub-path deployments produce correct URLs.
 	templates.SetBasePath(deps.BasePath)
 
+	// Install the duplicate-image scan sources EAGERLY, at construction (#2608).
+	// The periodic maintenance refresh holds only the cache, but the scan
+	// functions live on the Router. If this were deferred to the first sidebar
+	// request, a server nobody had opened the admin sidebar on would run the
+	// periodic task against a source-less cache and refresh nothing.
+	r.dupImageCache()
+
 	return r
 }
 
@@ -533,6 +543,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// drop the child entirely when no duplicates remain. Admin-only via
 	// the in-handler role check.
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/duplicates/count", wrapAuth(r.handleArtistDuplicatesCount, authMw))
+	// The sidebar's whole Images section (#2608): header, Unmatched row and
+	// the duplicate rows. Serves CACHED duplicate counts (internal/dupimages)
+	// -- it never scans on the request path. An empty body means the section
+	// renders nothing at all. Admin-only via the in-handler role check.
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/duplicate-images/nav", wrapAuth(r.handleDuplicateImagesNav, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/merge", wrapAuth(r.handleArtistsMerge, authMw))
 	// #2219: server-side ignore for a suspected-duplicate group. Admin-only via

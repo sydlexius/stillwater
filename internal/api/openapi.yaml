@@ -3667,6 +3667,47 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /reports/duplicate-images/nav:
+    get:
+      tags: [Reports]
+      summary: Sidebar Images section
+      description: >-
+        HTML fragment endpoint that renders the sidebar's entire Images
+        section (#2608): the section header, the Unmatched row, a Library
+        Duplicates row, and one "<Platform> Duplicates" row per offending
+        platform type. Each row is emitted only when its own count is
+        greater than zero, and when every count is zero the response body
+        is EMPTY so the whole section -- header included -- renders
+        nothing. Clients MUST therefore treat an empty body as "render no
+        section", not as "render an empty section".
+        The duplicate counts are served from a cached snapshot that is
+        refreshed out of band (periodic maintenance task, plus a
+        fire-and-forget background kick the first time the cache is read
+        before it has ever been computed). This endpoint never runs the
+        library or platform duplicate scans on the request path, so it is
+        safe for the sidebar's 60s poll; the unmatched count is a single
+        indexed row count. Admin-only; the sidebar omits the container
+        entirely for non-admin viewers so a healthy session never makes
+        the call.
+      operationId: getDuplicateImagesNav
+      responses:
+        "200":
+          description: >-
+            HTML fragment for HTMX innerHTML swap. Empty body when every
+            count is zero (the section hides entirely); otherwise the
+            section markup carrying only the rows whose count is greater
+            than zero.
+          content:
+            text/html:
+              schema:
+                type: string
+        "403":
+          description: Caller is not an administrator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/duplicates:
     get:
       tags: [Artists]

@@ -53,6 +53,16 @@ func (r *Router) handleBackdropDuplicatesPage(w http.ResponseWriter, req *http.R
 		return
 	}
 
+	// Opportunistic cache refresh (#2608): this page just paid for the full
+	// from-disk scan, so hand the sidebar's Images section a fresh library
+	// count for free rather than making it wait for the next periodic refresh.
+	// A PARTIAL scan is skipped -- ExactRedundantSlots then covers only the
+	// reachable half of the library, and caching that undercount would show a
+	// confidently wrong number the operator cannot distinguish from the truth.
+	if report.ScanErrors == 0 {
+		r.storeLibraryDupCount(report.ExactRedundantSlots)
+	}
+
 	renderTempl(w, req, templates.BackdropDuplicatesPage(r.assetsFor(req), buildBackdropDuplicatesView(report)))
 }
 

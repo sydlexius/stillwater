@@ -135,10 +135,11 @@ type Counts struct {
 // Empty reports whether no duplicate row has anything to show. An un-computed
 // snapshot is Empty.
 //
-// NOTE this governs only the DUPLICATE ROWS. The sidebar's Images section
-// itself is always rendered for admins, because it also carries the Unmatched
-// item, whose allowlist must stay reachable at a zero count (#2608). Never
-// use Empty to decide whether to render the section.
+// NOTE this governs only the DUPLICATE ROWS -- it knows nothing about the
+// Unmatched row, whose count is not part of this snapshot. The sidebar's
+// Images section hides entirely only when the unmatched count is zero TOO, so
+// this is a necessary but not sufficient condition for hiding it; the
+// whole-section test is templates.ImagesNavView.Empty (#2608).
 func (c Counts) Empty() bool { return c.Library <= 0 && len(c.Platforms) == 0 }
 
 // PlatformTotal is the summed redundant-backdrop count across every offending

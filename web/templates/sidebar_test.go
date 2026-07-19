@@ -55,16 +55,68 @@ func TestSidebar_ReportsSection_AdminChildrenRender(t *testing.T) {
 	if !strings.Contains(html, `hx-trigger="load, every 60s"`) {
 		t.Error("admin sidebar missing duplicates hx-trigger (load + 60s poll)")
 	}
-	// Backdrop Duplicates: admin-only static link (no count pill).
-	if !strings.Contains(html, `data-path="/reports/backdrop-duplicates"`) {
-		t.Error("admin sidebar missing backdrop-duplicates sub-nav child")
-	}
-	// Foreign Files child is always present for admins and uses the sub-nav class.
-	if !strings.Contains(html, `data-path="/reports/foreign-files"`) {
-		t.Error("admin sidebar missing foreign-files sub-nav child")
-	}
 	if !strings.Contains(html, `class="sw-sidebar-link sw-sidebar-subnav-link"`) {
 		t.Error("admin sidebar missing sw-sidebar-subnav-link class on a Reports child")
+	}
+	// Backdrop Duplicates, Platform Backdrop Duplicates and Unmatched Images
+	// MOVED to the Images section (#2608). They are no longer server-rendered
+	// anywhere in the sidebar -- the Images section hydrates them, and hides
+	// entirely when every count is zero. Assert their absence so a revert that
+	// re-adds a static link here is caught.
+	for _, moved := range []string{
+		`data-path="/reports/backdrop-duplicates"`,
+		`data-path="/reports/platform-backdrop-duplicates"`,
+		`data-path="/reports/foreign-files"`,
+	} {
+		if strings.Contains(html, moved) {
+			t.Errorf("sidebar still server-renders %s; it moved into the hydrated Images section (#2608)", moved)
+		}
+	}
+}
+
+// TestSidebar_ImagesSection_AdminContainerOnly pins the #2608 structure: the
+// admin sidebar ships an EMPTY hydration container for the Images section and
+// nothing else. The header, the Unmatched row and the duplicate rows all come
+// from the endpoint, because the section HIDES when every count is zero and
+// that decision needs all three counts at once -- a server-rendered header
+// here could not be taken back.
+func TestSidebar_ImagesSection_AdminContainerOnly(t *testing.T) {
+	html := renderSidebar(t, true)
+
+	if !strings.Contains(html, `id="sidebar-images-section"`) {
+		t.Fatal("admin sidebar missing the Images section hydration container")
+	}
+	if !strings.Contains(html, `hx-get="/api/v1/reports/duplicate-images/nav?ch=next"`) {
+		t.Error("Images container missing its hx-get URL (?ch=next)")
+	}
+	if !strings.Contains(html, `hx-on::after-swap="swSidebar.swImagesNavSwap()"`) {
+		t.Error("Images container missing the after-swap hook that drives the unmatched pulse")
+	}
+	// The container must be EMPTY and must NOT carry .sw-sidebar-section: that
+	// class has vertical padding, so an all-zero (empty) response would leave a
+	// phantom gap where the hidden section used to be. The fragment puts the
+	// class on its own wrapper instead.
+	if strings.Contains(html, `class="sw-sidebar-section" id="sidebar-images-section"`) ||
+		strings.Contains(html, `id="sidebar-images-section" class="sw-sidebar-section"`) {
+		t.Error("Images container must not carry .sw-sidebar-section (padding would leave a gap when hidden)")
+	}
+	if !strings.Contains(html, `hx-on::after-swap="swSidebar.swImagesNavSwap()"></div>`) {
+		t.Error("Images container must be server-rendered EMPTY; the section hydrates as a whole")
+	}
+}
+
+// Non-admins get no Images container at all -- not an empty one that would
+// poll and 403.
+func TestSidebar_ImagesSection_AbsentForNonAdmin(t *testing.T) {
+	html := renderSidebar(t, false)
+
+	for _, forbidden := range []string{
+		`id="sidebar-images-section"`,
+		`/api/v1/reports/duplicate-images/nav`,
+	} {
+		if strings.Contains(html, forbidden) {
+			t.Errorf("non-admin sidebar must omit %s (the endpoint 403s; no poll-and-403)", forbidden)
+		}
 	}
 }
 
@@ -93,7 +145,9 @@ func TestSidebar_ReportsSection_NonAdmin(t *testing.T) {
 	if strings.Contains(html, `data-path="/reports/foreign-files"`) {
 		t.Error("non-admin sidebar must omit the admin-only Foreign Files item")
 	}
-	// Backdrop Duplicates is admin-only (requireForeignAdmin); non-admins must not see it.
+	// Backdrop Duplicates is admin-only (requireForeignAdmin); non-admins must
+	// not see it. It now lives in the Images section, which non-admins do not
+	// get at all.
 	if strings.Contains(html, `data-path="/reports/backdrop-duplicates"`) {
 		t.Error("non-admin sidebar must omit the admin-only Backdrop Duplicates item")
 	}

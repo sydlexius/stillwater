@@ -30,11 +30,21 @@ import (
 //     leaves the parent <li> empty so the child disappears from the nav);
 //   - an <a> link populated with the count when count > 0.
 //
-// ?ch=next: caller is the promoted sidebar; the entry is static so the
-// response injects only the count pill span (no href). Stable callers get a
-// full <a> link to the canonical /reports/foreign-files path (M55 #1757 PR-6a:
-// the foreign-files page was promoted from /settings/foreign-files to the
-// Reports hub).
+// Returns a full <a> link to the canonical /reports/foreign-files path
+// (M55 #1757 PR-6a: the foreign-files page was promoted from
+// /settings/foreign-files to the Reports hub).
+//
+// This endpoint no longer serves the PROMOTED sidebar. It used to answer
+// ?ch=next with a pill-only fragment swapped into a server-rendered <li> that
+// was never removed -- which PINNED the Unmatched row open at a zero count, on
+// the reasoning that the allowlist behind it had to stay reachable. #2608
+// removed that guarantee deliberately: the Unmatched row now lives inside the
+// Images section fragment (handlers_duplicate_images_nav.go), which hides the
+// row at a zero count and hides the whole section when every image count is
+// zero. The accepted consequence is that with no unmatched images the
+// allowlist is reachable only by direct URL. The ?ch=next branch was deleted
+// rather than left dead, so nothing can resurrect the pinning behavior by
+// pointing a swap target back at it.
 //
 // The 403 response uses a JSON envelope (writeJSON) even though the success
 // path emits text/html. This is intentional and mirrors handleArtistDuplicatesCount:
@@ -57,29 +67,6 @@ func (r *Router) handleForeignFilesCount(w http.ResponseWriter, req *http.Reques
 
 	count := r.foreignSummaryForBanner(req.Context())
 	w.WriteHeader(http.StatusOK)
-	if req.URL.Query().Get("ch") == "next" {
-		// The sidebar entry is static (always visible); only inject the count pill.
-		// Empty response at count==0 clears the pill span without hiding the entry.
-		if count > 0 {
-			tr := i18n.TFromCtx(req.Context())
-			// Localized, count-bearing accessible name (fmt-style %d key, mirroring
-			// the tf() interpolation convention). swForeignPillSwap folds this onto
-			// the parent nav link's aria-label so screen-reader users hear the
-			// number; the link keeps a static aria-label for the collapsed sidebar
-			// states, which per ARIA would otherwise override a descendant pill name.
-			ariaTmpl := tr.T("nav.reports.foreign.aria")
-			aria := ariaTmpl
-			if ariaTmpl != "nav.reports.foreign.aria" { // guard a missing key
-				aria = fmt.Sprintf(ariaTmpl, count)
-			}
-			// data-count drives the pulse-on-increase detection; data-aria is the
-			// accessible name; title is the calm hover tooltip.
-			fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
-				`<span class="sw-sidebar-count-pill" data-count="%d" data-aria="%s" title="%s">%d</span>`,
-				count, html.EscapeString(aria), html.EscapeString(tr.T("nav.reports.foreign.tooltip")), count)
-		}
-		return
-	}
 	if count <= 0 {
 		return
 	}

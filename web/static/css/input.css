@@ -516,8 +516,8 @@
 #sw-sidebar[data-sidebar-state="hidden"] .sw-sidebar-count-pill {
   display: none;
 }
-/* Foreign Files pill: a single-run, decorative nudge when the unmatched-file
-   count rises (toggled by swForeignPillSwap in sidebar.js, cleared on
+/* Unmatched pill: a single-run, decorative nudge when the unmatched-file
+   count rises (toggled by swImagesNavSwap in sidebar.js, cleared on
    animationend). Purely ambient - the count digits + tooltip + aria-label
    carry the meaning, so the motion is safe to suppress. The soft halo uses the
    count pill's own border hue (not the active-toggle blue-halo) so it reads as
