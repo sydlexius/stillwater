@@ -46,18 +46,15 @@ func seedOwnFanart(t *testing.T, r *Router, artistID string, phash uint64) {
 	}
 }
 
-// breakFanartRegistry renames the table BuildFanartIdentityIndex reads
-// (artist_images), so the NEXT index build fails. restoreFanartRegistry puts it
-// back, so builds succeed again.
+// breakFanartRegistry hides the table BuildFanartIdentityIndex reads, so the
+// NEXT index build fails; restoreFanartRegistry puts it back.
 //
-// This pair is the seam these tests use to prove the once-per-scope caching
-// contract BEHAVIORALLY rather than by inspecting a counter on the production
-// object. Because the fault is reversible, "the index was cached" and "the index
-// was rebuilt" produce OPPOSITE observable outcomes: with the registry broken
-// after a successful build, a reused index still yields collisions while a
-// rebuilt one yields none -- and with the registry repaired after a FAILED
-// build, a cached failure still yields no collision while a retried build
-// suddenly finds one.
+// Reversibility is the point: it lets these tests prove the once-per-scope
+// caching contract BEHAVIORALLY instead of by reading a counter on the
+// production object. "Cached" and "rebuilt" then produce OPPOSITE outcomes --
+// broken after a good build, a reused index still collides while a rebuilt one
+// cannot; repaired after a FAILED build, a cached failure still finds nothing
+// while a retried build suddenly does.
 func breakFanartRegistry(t *testing.T, r *Router) {
 	t.Helper()
 	if _, err := r.db.ExecContext(context.Background(),
@@ -90,13 +87,11 @@ func TestProcessAndAppendFanart_CollisionNotifiesOnlyAfterSaveSucceeds(t *testin
 		seedCollidingArtist(t, r, phash)
 		pub, raised := wireCollisionNotifier(r)
 
-		// A destination UNDER a regular file. Every write into it fails with
-		// ENOTDIR, which is a STRUCTURAL failure rather than a permission one: root
-		// cannot treat a file as a directory either, so this behaves identically
-		// whatever uid the suite runs as. (An earlier version chmod'd the directory
-		// read-only, which a root container silently ignores.) The collision check
-		// runs on the converted bytes well before the destination is touched, so it
-		// is still fully evaluated here.
+		// A destination UNDER a regular file: every write fails with ENOTDIR. That
+		// is STRUCTURAL rather than a permission check, so it holds whatever uid the
+		// suite runs as -- unlike chmod, which a root container silently ignores.
+		// The collision check runs on the converted bytes long before the
+		// destination is touched, so it is still fully evaluated.
 		blocker := filepath.Join(t.TempDir(), "regular-file")
 		if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 			t.Fatalf("writing blocker file: %v", err)
@@ -290,11 +285,10 @@ func TestProcessAndSaveImage_CollisionNotifiesOnlyAfterSaveSucceeds(t *testing.T
 		}
 
 		// And it must not even have paid for the whole-library scan. Proven
-		// observably: break the registry's source AFTER the thumb write, then push a
-		// FANART image through the SAME scope. A scope that never built still has to
-		// build now -- and now the build fails, so nothing collides. Had the thumb
-		// write built and cached the (colliding) index, that cached index would be
-		// reused here and WOULD notify.
+		// observably: break the registry AFTER the thumb write, then push FANART
+		// through the SAME scope. A scope that never built has to build now, and
+		// that build fails, so nothing collides. Had the thumb write cached the
+		// colliding index, it would be reused here and WOULD notify.
 		if scope.built {
 			t.Error("scope reports an index build after a non-fanart write")
 		}
@@ -612,11 +606,10 @@ func TestImageWriteScope_IdentityIndexBuiltOncePerScope(t *testing.T) {
 			len(pub.events), *raised)
 	}
 
-	// Now make any REBUILD fail. This is what makes the assertion below a real
-	// test of reuse rather than an inspection of a counter: from here on, a scope
-	// that reuses its cached index keeps colliding, while a scope that rebuilds
-	// per image gets a nil index and silently stops colliding. The two hypotheses
-	// have opposite observable outcomes.
+	// Now make any REBUILD fail. From here on a scope that reuses its cached index
+	// keeps colliding, while one that rebuilds per image gets a nil index and
+	// silently stops -- opposite outcomes, which is what makes this a test of
+	// reuse rather than an inspection of a counter.
 	breakFanartRegistry(t, r)
 
 	const images = 4
