@@ -1,0 +1,56 @@
+meta {
+  name: Images Nav Section
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{apiBase}}/reports/duplicate-images/nav
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Returns the sidebar's whole Images section as an HTML fragment
+  (text/html): the section header, an Unmatched row, a Library Duplicates
+  row, and one "<Platform> Duplicates" row per offending platform type.
+  Each row renders only when its own count is greater than zero, and when
+  every count is zero the body is EMPTY so the section -- header included
+  -- renders nothing at all (#2608). On an empty CI database that is the
+  expected response; the status is always 200.
+
+  The duplicate counts come from a cached snapshot, so this endpoint never
+  runs the expensive library or platform scans on the request path. Admin
+  role required; the CI session is authenticated as admin so no 403 is
+  expected.
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("content-type is text/html when body non-empty", function() {
+    if (res.body && res.body.length > 0) {
+      expect(res.headers['content-type']).to.include('text/html');
+    }
+  });
+
+  test("never caches: no-store", function() {
+    expect(res.headers['cache-control']).to.include('no-store');
+  });
+
+  test("empty body renders no section chrome at all", function() {
+    // The all-zero contract: an empty response must not carry a bare
+    // section header. If the body is non-empty it must carry the header,
+    // since a row without its section would be orphaned markup.
+    if (!res.body || res.body.length === 0) {
+      return;
+    }
+    expect(res.body).to.include('sw-sidebar-section');
+  });
+}
