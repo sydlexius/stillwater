@@ -479,6 +479,15 @@ func TestHandleImageCropFanartSlot_NotifiesCrossArtistCollision(t *testing.T) {
 // returns the artist and the candidate URL the request must name.
 func applyCandidateFixture(t *testing.T, r *Router, svc *artist.Service, dir string, body []byte) (*artist.Artist, string) {
 	t.Helper()
+	return applyCandidateFixtureOfType(t, r, svc, dir, body, "fanart")
+}
+
+// applyCandidateFixtureOfType seeds the violation with a candidate of an explicit
+// image type. The handler validates the posted url+image_type against the STORED
+// candidates, so a non-fanart request only reaches the save when the stored
+// candidate carries that same type.
+func applyCandidateFixtureOfType(t *testing.T, r *Router, svc *artist.Service, dir string, body []byte, imageType string) (*artist.Artist, string) {
+	t.Helper()
 	ctx := context.Background()
 
 	a := &artist.Artist{Name: "Apply Candidate", SortName: "Apply Candidate", Path: dir}
@@ -497,7 +506,7 @@ func applyCandidateFixture(t *testing.T, r *Router, svc *artist.Service, dir str
 		Status:     rule.ViolationStatusPendingChoice,
 		Candidates: []rule.ImageCandidate{{
 			URL: candidateURL, Width: 1920, Height: 1080,
-			Source: "candidate-provider", ImageType: "fanart",
+			Source: "candidate-provider", ImageType: imageType,
 		}},
 	}
 	if err := r.ruleService.UpsertViolation(ctx, v); err != nil {
@@ -510,8 +519,15 @@ func applyCandidateFixture(t *testing.T, r *Router, svc *artist.Service, dir str
 
 func applyCandidate(t *testing.T, r *Router, violationID, candidateURL string) *httptest.ResponseRecorder {
 	t.Helper()
+	return applyCandidateOfType(t, r, violationID, candidateURL, "fanart")
+}
+
+// applyCandidateOfType posts an apply-candidate request for an explicit image
+// type, so the fanart TYPE GATE can be exercised from both sides.
+func applyCandidateOfType(t *testing.T, r *Router, violationID, candidateURL, imageType string) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+violationID+"/apply-candidate",
-		strings.NewReader(`{"url":"`+candidateURL+`","image_type":"fanart"}`))
+		strings.NewReader(`{"url":"`+candidateURL+`","image_type":"`+imageType+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", violationID)
 	w := httptest.NewRecorder()
@@ -633,4 +649,66 @@ func TestApplyViolationCandidate_NoCollisionAppliesSilently(t *testing.T) {
 		t.Errorf("events = %d, raised = %d, want 0 and 0: the artist's own fanart is not a cross-artist collision",
 			len(pub.events), *raised)
 	}
+}
+
+// TestApplyViolationCandidate_NonFanartTypeDoesNotRunTheCheck pins the fanart
+// TYPE GATE on the apply-candidate path.
+//
+// The cross-artist registry holds fanart rows exclusively, so a thumb, logo or
+// banner candidate has nothing to compare against. Without the gate such an apply
+// would (a) pay for a whole-library BuildFanartIdentityIndex scan it can never use,
+// and (b) be able to raise a BACKDROP collision violation whose auto-fix BACKS
+// ARTWORK OUT of the artist -- a destructive remediation aimed at a write that was
+// never a backdrop at all.
+//
+// This is the THIRD appearance of this defect class in this feature (it was caught
+// on the bulk path and again on saveBestImage), so the type dimension is treated
+// here as a standing axis rather than a one-off.
+//
+// A genuine cross-artist collision is seeded, so the ONLY thing suppressing the
+// notification is the gate: remove it and a thumb apply hashes the colliding bytes,
+// reaches a verdict, and notifies. That is what these assertions catch.
+//
+// The wasted-scan half of the cost is NOT separately asserted, because on this path
+// it is not observable. The trick the other chokepoint tests use -- hide
+// artist_images so any index build announces itself -- cannot work here: this
+// handler's own artist lookup hydrates images from that same table, so hiding it
+// returns 404 before the collision check is ever reached. Rather than assert a
+// weaker proxy and imply the stronger claim, the scan cost is left to the gate's
+// own doc comment, and the destructive half (a backdrop violation raised against a
+// non-backdrop write) is what is pinned here.
+func TestApplyViolationCandidate_NonFanartTypeDoesNotRunTheCheck(t *testing.T) {
+	jpegBytes, phash := decodableBackdropJPEG(t)
+
+	for _, imageType := range []string{"thumb", "logo"} {
+		t.Run(imageType+": a genuine collision is present but the gate stops the check", func(t *testing.T) {
+			r, svc := newImageHandlerTestServer(t)
+			// A real cross-artist collision IS in the registry, so the ONLY thing
+			// suppressing the notification below is the fanart type gate.
+			seedCollidingArtist(t, r, phash)
+			pub, raised := wireCollisionNotifier(r)
+
+			dir := t.TempDir()
+			_, violationID := applyCandidateFixtureOfType(t, r, svc, dir, jpegBytes, imageType)
+			w := applyCandidateOfType(t, r, violationID, "https://8.8.8.8/chosen.jpg", imageType)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+			}
+			// Precondition: the apply really happened, so "no notification" reflects
+			// the gate rather than a write that never occurred.
+			// Any file: the canonical name for thumb is platform-dependent
+			// (folder.jpg and friends), not the type string.
+			if entries, _ := os.ReadDir(dir); len(entries) == 0 {
+				t.Fatalf("nothing on disk: the %s candidate must still be applied", imageType)
+			}
+
+			if len(pub.events) != 0 || *raised != 0 {
+				t.Errorf("events = %d, raised = %d, want 0 and 0: the registry holds fanart only, so a %s "+
+					"apply must never raise a backdrop collision -- whose auto-fix backs artwork out of the artist",
+					len(pub.events), *raised, imageType)
+			}
+		})
+	}
+
 }
