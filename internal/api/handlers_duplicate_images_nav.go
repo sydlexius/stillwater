@@ -290,6 +290,24 @@ func (r *Router) handleDuplicateImagesNav(w http.ResponseWriter, req *http.Reque
 	// Cheap indexed COUNT against the foreign-file repo -- the same call the
 	// conflict banner already makes on every poll. Not part of the cached
 	// snapshot because it is not a scan.
+	//
+	// ACCEPTED FAILURE MODE (decided by the maintainer, #2608). If this count
+	// FAILS -- a DB lock, a closed DB, a migration window -- foreignSummaryForBanner
+	// logs a Warn and returns 0. With the duplicate counts also zero, the view
+	// is Empty, the body is empty, and the ENTIRE Images section disappears:
+	// indistinguishable, on screen, from "everything is clean".
+	//
+	// This is the direct consequence of the hide-when-zero spec, not an
+	// oversight. Hiding the section at a zero count necessarily means hiding it
+	// when the count cannot be determined, because the two states produce the
+	// same number here. The alternative -- an error state, a banner, or a retry
+	// -- was considered and rejected: it puts infrastructure noise into the
+	// nav on every transient DB blip.
+	//
+	// The Warn from foreignSummaryForBanner is therefore the ONLY operator
+	// signal that the section vanished because of a failure rather than because
+	// the library is clean. Pinned by
+	// TestDupImagesNav_UnmatchedCountFailureHidesSectionAndWarns.
 	unmatched := r.foreignSummaryForBanner(req.Context())
 
 	view := r.buildImagesNavView(req, counts, unmatched)

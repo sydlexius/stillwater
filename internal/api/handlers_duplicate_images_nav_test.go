@@ -26,7 +26,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -111,6 +113,22 @@ func embyCount(n int) dupimages.PlatformCount {
 
 func jellyfinCount(n int) dupimages.PlatformCount {
 	return dupimages.PlatformCount{Type: "jellyfin", Label: "Jellyfin", Count: n}
+}
+
+// dupNavStubSources installs stub count sources that SURVIVE the handler.
+//
+// Necessary because the handler calls r.dupImageCache(), which re-installs the
+// ROUTER's own sources (r.libraryDupCount / r.platformDupCounts) on first use,
+// guarded by r.dupImageOnce. A test that only calls dupimages.Shared().SetSources
+// has its stubs silently replaced on the first request, so the stub can never
+// be invoked -- which makes an assertion that the stub was NOT called pass
+// vacuously, and an assertion that it WAS called impossible.
+//
+// Consuming the Once with a no-op first leaves the stubs in place.
+func dupNavStubSources(t *testing.T, r *Router, library dupimages.LibraryCountFn, platform dupimages.PlatformCountFn) {
+	t.Helper()
+	r.dupImageOnce.Do(func() {})
+	dupimages.Shared().SetSources(library, platform)
 }
 
 // seedCounts primes the cache exactly as a completed background refresh would.
@@ -466,6 +484,136 @@ func TestDupImagesNav_ColdCacheAnswersEmptyAndDoesNotBlock(t *testing.T) {
 	}
 }
 
+// THE POSITIVE HALF of the lazy-refresh contract: a cold cache must actually
+// KICK the background scan, exactly once.
+//
+// This is deliberately separate from the two tests above, neither of which
+// pins it. ColdCacheAnswersEmptyAndDoesNotBlock asserts only that the body is
+// empty and the handler does not wait -- a handler that never called
+// TriggerRefresh at all would satisfy both of those identically.
+// CleanCacheDoesNotRetriggerScan asserts the NEGATIVE (zero refreshes once the
+// cache is computed). Without this test, deleting cache.TriggerRefresh() from
+// the handler leaves the whole package suite green.
+//
+// What that regression would cost: TriggerRefresh is the ONLY thing that fills
+// the duplicate rows on a fresh boot. Lose it and the section stays empty until
+// the 12h maintenance refresh lands.
+//
+// "Exactly once" is the other half of the contract: TriggerRefresh is
+// single-flight, so a burst of 60s sidebar polls against a still-cold cache
+// must produce ONE scan, not one per poll.
+func TestDupImagesNav_ColdCacheTriggersExactlyOneBackgroundRefresh(t *testing.T) {
+	r := dupNavRouter(t)
+
+	var libCalls atomic.Int32
+	started := make(chan struct{}, 16)
+	release := make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce)
+
+	dupNavStubSources(t, r,
+		func(context.Context) (int, error) {
+			libCalls.Add(1)
+			started <- struct{}{}
+			// Hold the scan open so every poll below sees a cache that is
+			// still un-computed. Otherwise a fast first refresh would flip
+			// Computed and the single-flight claim would go untested.
+			<-release
+			return 7, nil
+		},
+		nil,
+	)
+
+	// Precondition: the cache really is cold. Without this the assertions
+	// below could pass vacuously against an already-computed snapshot.
+	if dupimages.Shared().Get().Computed {
+		t.Fatal("precondition: the cache must start un-computed")
+	}
+
+	const polls = 5
+	for range polls {
+		w := httptest.NewRecorder()
+		r.handleDuplicateImagesNav(w, dupNavReq(t, "administrator"))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+	}
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a cold cache never invoked the count source: the lazy refresh did not fire, " +
+			"so the duplicate rows would stay empty until the 12h maintenance refresh")
+	}
+	if n := libCalls.Load(); n != 1 {
+		t.Fatalf("count source invoked %d times across %d cold polls; want exactly 1 (TriggerRefresh is single-flight)", n, polls)
+	}
+
+	// Drain the background refresh before returning so no straggler goroutine
+	// writes into the process-wide cache during a later test.
+	releaseOnce()
+	deadline := time.Now().Add(5 * time.Second)
+	for !dupimages.Shared().Get().Computed {
+		if time.Now().After(deadline) {
+			t.Fatal("background refresh never completed after release")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// ACCEPTED FAILURE MODE (#2608, maintainer's explicit call). When the
+// unmatched count cannot be read, foreignSummaryForBanner logs a Warn and
+// returns 0; with the duplicate counts also zero the view is Empty and the
+// handler emits an empty body, so the ENTIRE Images section disappears --
+// visually identical to "everything is clean".
+//
+// That is the direct, unavoidable consequence of the hide-when-zero spec:
+// hiding at a zero count necessarily means hiding when the count is unknown.
+// It is not a defect to fix here; the Warn is the operator's only signal.
+//
+// This test exists so the accepted behavior cannot drift silently -- it is the
+// nav endpoint's counterpart to TestHandleForeignFilesCount_CountError, which
+// pins the same fail-safe on the older count endpoint.
+func TestDupImagesNav_UnmatchedCountFailureHidesSectionAndWarns(t *testing.T) {
+	r, db := dupNavRouterWithForeign(t)
+	readLogs := captureLogs(t, r)
+
+	// Seed real rows FIRST. seedUnmatched asserts the repo genuinely reports
+	// them, so an empty body below can only come from the injected failure and
+	// never from a repo that was vacuously empty all along.
+	seedUnmatched(t, r, db, 3)
+	// A computed-clean duplicate cache: the duplicate rows are legitimately
+	// zero, leaving the unmatched count as the only thing that could keep the
+	// section alive.
+	seedCounts(0)
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r.handleDuplicateImagesNav(w, dupNavReq(t, "administrator"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (the failure degrades to a hidden section, not an error)", w.Code)
+	}
+	if got := w.Body.String(); got != "" {
+		t.Fatalf("body = %q, want empty: a failed unmatched count renders as an ABSENT section", got)
+	}
+
+	var warned bool
+	for _, rec := range readLogs() {
+		if rec["level"] == "WARN" && rec["msg"] == "foreign-file banner count failed" {
+			warned = true
+			break
+		}
+	}
+	if !warned {
+		t.Error("no warning logged for the failed unmatched count; the Warn is the operator's " +
+			"ONLY signal that the section is hidden by a failure rather than by cleanliness")
+	}
+}
+
 // stubPlatformDupScanner is a platformBackdropDupScanner whose report the test
 // dictates. The Router's publisher field is a concrete *publish.Publisher, so
 // this narrow interface is what makes the partial-sweep guard reachable
@@ -621,18 +769,57 @@ func TestBucketByPlatformType_CollapsesConnectionsOfSameType(t *testing.T) {
 		typeResolver(map[string]string{"c1": "emby", "c2": "emby", "c3": "jellyfin"}),
 		bucketTestLogger())
 
-	if len(got) != 2 {
-		t.Fatalf("got %d rows, want 2 (emby, jellyfin): %+v", len(got), got)
+	// Assert the WHOLE slice, not got[0]/got[1] individually: with two map
+	// entries, indexing is a coin flip on Go's randomized iteration order and
+	// passes half the time even with the sort deleted. Row ORDER is pinned
+	// separately and deterministically by
+	// TestBucketByPlatformType_OrdersRowsByTypeAcrossRepeatedRuns; what this
+	// test owns is the COLLAPSE -- 3+4+1 into one Emby row, labeled with the
+	// brand name rather than any user-chosen connection name.
+	want := []dupimages.PlatformCount{
+		{Type: "emby", Label: "Emby", Count: 8},
+		{Type: "jellyfin", Label: "Jellyfin", Count: 2},
 	}
-	// Sorted by type so the sidebar order is stable across polls.
-	if got[0].Type != "emby" || got[0].Count != 8 {
-		t.Errorf("emby row = %+v, want type=emby count=8 (3+4+1)", got[0])
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rows = %+v, want %+v (two Emby connections collapse into one row of 3+4+1)", got, want)
 	}
-	if got[0].Label != "Emby" {
-		t.Errorf("emby label = %q, want the brand name, not a connection name", got[0].Label)
+}
+
+// ROW ORDER IS THE CONTRACT the sort exists for: the sidebar re-fetches this
+// section every 60 seconds, and rows that reshuffle between polls would make
+// the nav visibly jitter.
+//
+// Two properties make this test worth its repetition. Go's map iteration order
+// is randomized, so a SINGLE assertion against an unsorted implementation
+// passes by chance a large fraction of the time -- that is both a mutation that
+// survives and a latent CI flake. Repeating the call drives the chance of an
+// accidental pass to nil: four types over 30 rounds. A correct implementation
+// passes all 30 deterministically.
+func TestBucketByPlatformType_OrdersRowsByTypeAcrossRepeatedRuns(t *testing.T) {
+	// Insertion order deliberately NOT the expected order.
+	report := publish.PlatformBackdropDupReport{PerArtist: []publish.ArtistPlatformBackdropDup{
+		{ConnectionID: "c-plex", Connection: "Plex Box", Redundant: 4},
+		{ConnectionID: "c-emby", Connection: "Living Room Emby", Redundant: 1},
+		{ConnectionID: "c-lidarr", Connection: "Lidarr", Redundant: 3},
+		{ConnectionID: "c-jellyfin", Connection: "Jellyfin", Redundant: 2},
+	}}
+	resolve := typeResolver(map[string]string{
+		"c-plex": "plex", "c-emby": "emby", "c-lidarr": "lidarr", "c-jellyfin": "jellyfin",
+	})
+	want := []dupimages.PlatformCount{
+		{Type: "emby", Label: "Emby", Count: 1},
+		{Type: "jellyfin", Label: "Jellyfin", Count: 2},
+		{Type: "lidarr", Label: "Lidarr", Count: 3},
+		{Type: "plex", Label: "Plex", Count: 4},
 	}
-	if got[1].Type != "jellyfin" || got[1].Count != 2 {
-		t.Errorf("jellyfin row = %+v, want type=jellyfin count=2", got[1])
+
+	const rounds = 30
+	for i := range rounds {
+		got := bucketByPlatformType(report, resolve, bucketTestLogger())
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("round %d/%d: rows = %+v, want %+v; sidebar row order must not depend on map iteration order",
+				i+1, rounds, got, want)
+		}
 	}
 }
 
