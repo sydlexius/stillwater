@@ -31,11 +31,11 @@ func writeOversizedSparse(t *testing.T, path string) {
 		t.Fatalf("creating oversized fixture: %v", err)
 	}
 	defer func() { _ = f.Close() }()
-	// 25 MB is image.MaxDecodeBytes; +1 puts it just past the bound. The
-	// literal is unavoidable here -- the constant is unexported in package
-	// image -- but it is pinned by TestOversizedBoundMatchesHashFile below,
-	// which fails if the two ever drift.
-	if err := f.Truncate(25<<20 + 1); err != nil {
+	// +1 puts the fixture just past image.MaxDecodeBytes, the bound HashFile
+	// enforces. Derived from the exported constant rather than a literal so
+	// the fixture cannot drift; TestOversizedBoundMatchesHashFile below still
+	// pins the behavioral end of that contract.
+	if err := f.Truncate(image.MaxDecodeBytes + 1); err != nil {
 		t.Fatalf("truncating oversized fixture: %v", err)
 	}
 }

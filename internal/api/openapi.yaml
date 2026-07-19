@@ -13835,7 +13835,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "413":
-          description: The logo file exceeds the 25MB decode limit; it was not read into memory and the original was left untouched.
+          description: The logo file exceeds the 25MB decode limit; it was rejected without unbounded reading or processing, and the original was left untouched.
           content:
             application/json:
               schema:

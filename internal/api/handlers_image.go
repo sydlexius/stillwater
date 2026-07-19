@@ -2187,6 +2187,10 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	data, readErr := io.ReadAll(io.LimitReader(f, img.MaxDecodeBytes+1))
 	_ = f.Close()
 	if readErr != nil {
+		r.logger.Error("reading logo for trim",
+			slog.String("artist_id", artistID),
+			slog.String("path", filePath),
+			slog.String("error", readErr.Error()))
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read logo"})
 		return
 	}
