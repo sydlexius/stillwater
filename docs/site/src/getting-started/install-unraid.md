@@ -39,6 +39,28 @@ Optional knobs:
 - **Log level / format.** `info` and `json` are the defaults. Switch the format to `text` during initial setup if you want easier-to-read logs in the Docker tab.
 - **`SW_BASE_PATH`.** Set this only if you plan to reach Stillwater through a reverse proxy at a subpath like `https://example.com/stillwater`. Leave blank for the typical "Stillwater on its own port or subdomain" setup.
 
+## Resource Limits
+
+The Community Applications template does not set resource limits. If Stillwater shares your server with other containers, you can bound what it consumes by switching the template to **Advanced View** and adding the following to **Extra Parameters**:
+
+```text
+--cpus=2.0 --pids-limit=512 --ulimit nofile=8192:8192
+```
+
+Then add one variable alongside your other environment variables:
+
+- **`GOMAXPROCS`** = `2`
+
+Why these numbers:
+
+- **CPU (`--cpus=2.0` plus `GOMAXPROCS=2`).** Two cores matches `SW_RULE_ENGINE_ARTIST_WORKERS`, which defaults to 2 and is the widest deliberate concurrency in Stillwater. Reaching the limit throttles rather than fails: rules passes and scans take longer, nothing errors. `GOMAXPROCS` must match, because the CPU limit constrains the container through the kernel scheduler without informing the Go runtime, which would otherwise run more work in parallel than the quota can absorb. Raise both together if sweeps feel slow.
+
+- **Processes (`--pids-limit=512`).** A backstop against a runaway, not a working ceiling. Stillwater's normal thread count is far below this, and unlike the other two limits, exhausting it is fatal to the container rather than degrading, so leave it high.
+
+- **File descriptors (`--ulimit nofile=8192:8192`).** Set well above any healthy peak on purpose. A meaningful share of Stillwater's descriptors are sockets to Emby, Jellyfin, and Lidarr, and how many are open at once depends partly on how those services behave rather than only on what Stillwater is doing. Exhaustion degrades: file opens are logged and skipped, outbound connections surface as a request error, and the filesystem watcher falls back to polling. Do not go below `2048`.
+
+Deliberately absent: a memory limit. Unraid exposes one, but a container memory cap is enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. With Unraid restarting the container afterwards, anything that reliably exceeds the cap restarts into the same condition and loops. On a memory-constrained server, prefer a cap you do not expect to reach over a snug one.
+
 ## Apply and first run
 
 Click **Apply** at the bottom of the template page. Unraid pulls the image and starts the container. After a few seconds:

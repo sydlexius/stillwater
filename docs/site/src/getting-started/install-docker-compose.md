@@ -45,12 +45,20 @@ services:
       - PGID=1000
       - SW_LOG_LEVEL=info
       - SW_LOG_FORMAT=json
+      # Keep this equal to the `cpus` value below.
+      - GOMAXPROCS=2
       # SW_ENCRYPTION_KEY is auto-generated on first run if not set.
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy.
     volumes:
       - stillwater-data:/config
       - /path/to/your/music:/music:rw
     restart: unless-stopped
+    cpus: "2.0"
+    pids_limit: 512
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
 
 volumes:
   stillwater-data:
@@ -79,6 +87,24 @@ Other knobs you may not need to touch:
 - **Port.** If `1973` is taken on your host, change the left side of the port mapping (for example, `"3000:1973"` to expose Stillwater on port 3000).
 - **`SW_LOG_FORMAT`.** `json` is right for log aggregators; switch to `text` for friendlier console output during setup.
 - **`SW_ENCRYPTION_KEY`.** Stillwater encrypts third-party API keys at rest. On first run it generates a key into `/config/encryption.key` and uses it from then on. You only need to set this env var if you're restoring from a backup that was encrypted with a known key.
+
+## Resource Limits
+
+The compose file bounds what the container can consume. All three keys are plain Compose Spec service keys, so `docker compose up` applies them; the `deploy.resources` form you may have seen elsewhere only takes effect under Swarm.
+
+| Key | Value | What it bounds |
+|---|---|---|
+| `cpus` + `GOMAXPROCS` | `2.0` / `2` | CPU time |
+| `pids_limit` | `512` | Processes and OS threads |
+| `ulimits.nofile` | `8192` | Open file descriptors |
+
+- **CPU.** Two cores matches `SW_RULE_ENGINE_ARTIST_WORKERS`, which defaults to 2 and is the widest deliberate concurrency in Stillwater. Reaching the limit throttles rather than fails: a rules pass or a scan takes longer, and nothing errors. Set `GOMAXPROCS` to the same number, because `cpus` on its own constrains the container through the kernel scheduler without informing the Go runtime, which then runs more work in parallel than the quota can absorb. If sweeps feel slow on a machine with cores to spare, raise both together (`4.0` and `4`).
+
+- **Processes.** `512` is a backstop against a runaway, not a working ceiling. Stillwater's steady-state thread count is far below it, so you should never approach this number in normal operation. Leave it high: unlike the other two limits, exhausting the process limit is fatal to the container rather than degrading.
+
+- **File descriptors.** `8192` sits well above any healthy peak. It is set generously on purpose, because a meaningful share of Stillwater's descriptors are sockets to Emby, Jellyfin, and Lidarr, and how many of those are open at once depends partly on how those services behave rather than only on what Stillwater is doing. Running out degrades: file opens are logged and skipped, outbound connections surface as a request error, and the filesystem watcher falls back to polling. If you tune it, do not go below `2048`.
+
+There is deliberately no memory limit. A container memory cap is enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. Combined with `restart: unless-stopped`, anything that reliably exceeds the cap would restart into the same condition and loop. If you need to bound memory on a shared box, prefer giving Stillwater its own host or a generous cap you do not expect to reach.
 
 ## Bring it up
 

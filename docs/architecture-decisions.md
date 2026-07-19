@@ -79,3 +79,17 @@ The `/next/*` URL namespace is hard-gated by `middleware.UX`: when `SW_UX=stable
 The policy is: an explicit `/next/` path with the stable opt-out header always returns 404 across all next/ handlers, regardless of whether a stable equivalent exists. Five handlers previously delegated to the stable equivalent instead (`handleNextDashboardPage`, `handleNextArtistsPage`, `handleNextArtistDetailPage`, `handleNextForeignFilesPage`, `handleNextForeignAllowlistPage`); that inconsistency was corrected in #1933 to match the documented policy.
 
 **Promotion path:** Set `SW_UX=next` to make the next/ lane the default (a `sw_ux=stable` cookie opts a user back). The `middleware.UX` gate is lifted automatically; no code change is required (#1757).
+
+## Container resource limits (decision 13)
+
+The shipped compose file bounds CPU, process count, and file descriptors, and deliberately does not bound memory.
+
+**Why these three and not memory:** The first three degrade when reached. The CPU quota throttles, so work takes longer and nothing errors. The file-descriptor cap is set an order of magnitude above any healthy peak, and the paths that can hit `EMFILE` already handle it: file opens log and skip, dials surface a request error, and `fsnotify` watcher creation falls back to poll-only mode. A memory limit does not degrade. It is enforced by the cgroup OOM killer, which `SIGKILL`s the process with no deferred cleanup and no flush, and paired with `restart: unless-stopped` any input that reliably exceeds the cap restarts into the same condition and loops. That is strictly worse than the unbounded growth the cap was meant to contain, so a memory limit stays deferred until the unbounded read tracked in issue #2620 is fixed. The safe ordering when adding one is `GOMEMLIMIT` at roughly 80% of the intended `mem_limit` first, then `mem_limit`.
+
+**Why `pids_limit` is set far above the working value:** Unlike the other two, exceeding it is fatal (`fatal error: newosproc`). At 512 against a steady-state thread count well under 50, it is only reachable during a genuine thread-explosion bug, where failing fast is the correct outcome. Set near the working value it would be a liability rather than a backstop.
+
+**Why `GOMAXPROCS` is pinned alongside `cpus`:** `cpus` constrains the container through the kernel CFS quota without informing the Go runtime, which then schedules more parallel work and GC workers than the quota can run, adding scheduling latency on top of the throttling. The two values must move together. `2` matches `SW_RULE_ENGINE_ARTIST_WORKERS`, the widest deliberate fan-out in the application.
+
+**Why service-level compose keys, not `deploy.resources`:** The `deploy.resources.limits` form only takes effect under Swarm and is silently ignored by plain `docker compose up`, which is how the documented install path runs. A limit that is silently ignored is indistinguishable from a limit that works, so the keys are placed where the documented runtime honors them.
+
+**Unraid:** The Community Applications template is maintained outside this repository, so the equivalent values are documented in the Unraid install guide as **Extra Parameters** (`--cpus`, `--pids-limit`, `--ulimit nofile`) plus a `GOMAXPROCS` variable.
