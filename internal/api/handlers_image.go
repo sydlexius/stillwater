@@ -1202,7 +1202,7 @@ func (r *Router) processAndSaveImage(ctx context.Context, scope *imageWriteScope
 
 		saved, saveErr := r.saveFanartSlotProtected(ctx, dir, naming, converted, meta)
 		if saveErr != nil {
-			return nil, saveErr
+			return nil, fmt.Errorf("saving fanart to %s: %w", dir, saveErr)
 		}
 		if len(saved) == 0 {
 			// No file on disk means no artwork for a back-out fix to act on, so

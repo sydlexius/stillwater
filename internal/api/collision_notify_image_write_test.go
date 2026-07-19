@@ -46,6 +46,34 @@ func seedOwnFanart(t *testing.T, r *Router, artistID string, phash uint64) {
 	}
 }
 
+// breakFanartRegistry renames the table BuildFanartIdentityIndex reads
+// (artist_images), so the NEXT index build fails. restoreFanartRegistry puts it
+// back, so builds succeed again.
+//
+// This pair is the seam these tests use to prove the once-per-scope caching
+// contract BEHAVIORALLY rather than by inspecting a counter on the production
+// object. Because the fault is reversible, "the index was cached" and "the index
+// was rebuilt" produce OPPOSITE observable outcomes: with the registry broken
+// after a successful build, a reused index still yields collisions while a
+// rebuilt one yields none -- and with the registry repaired after a FAILED
+// build, a cached failure still yields no collision while a retried build
+// suddenly finds one.
+func breakFanartRegistry(t *testing.T, r *Router) {
+	t.Helper()
+	if _, err := r.db.ExecContext(context.Background(),
+		`ALTER TABLE artist_images RENAME TO artist_images_hidden`); err != nil {
+		t.Fatalf("hiding artist_images: %v", err)
+	}
+}
+
+func restoreFanartRegistry(t *testing.T, r *Router) {
+	t.Helper()
+	if _, err := r.db.ExecContext(context.Background(),
+		`ALTER TABLE artist_images_hidden RENAME TO artist_images`); err != nil {
+		t.Fatalf("restoring artist_images: %v", err)
+	}
+}
+
 // TestProcessAndAppendFanart_CollisionNotifiesOnlyAfterSaveSucceeds pins the
 // notify-after-confirmed-save ordering on the fanart APPEND chokepoint.
 //
@@ -62,15 +90,29 @@ func TestProcessAndAppendFanart_CollisionNotifiesOnlyAfterSaveSucceeds(t *testin
 		seedCollidingArtist(t, r, phash)
 		pub, raised := wireCollisionNotifier(r)
 
-		// A read-only directory: still scannable (so the collision IS evaluated),
-		// but img.Save cannot write into it.
-		dir := t.TempDir()
-		if err := os.Chmod(dir, 0o500); err != nil {
-			t.Fatalf("chmod: %v", err)
+		// A destination UNDER a regular file. Every write into it fails with
+		// ENOTDIR, which is a STRUCTURAL failure rather than a permission one: root
+		// cannot treat a file as a directory either, so this behaves identically
+		// whatever uid the suite runs as. (An earlier version chmod'd the directory
+		// read-only, which a root container silently ignores.) The collision check
+		// runs on the converted bytes well before the destination is touched, so it
+		// is still fully evaluated here.
+		blocker := filepath.Join(t.TempDir(), "regular-file")
+		if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+			t.Fatalf("writing blocker file: %v", err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+		dir := filepath.Join(blocker, "artist")
 
 		a := &artist.Artist{ID: "append-save-fail", Name: "Append Fails", Path: dir}
+
+		// Precondition: a genuine cross-artist collision really is reachable for
+		// these bytes, so "no notification" below reflects the failed write and not
+		// an absent verdict. Probed on a THROWAWAY scope so the scope under test
+		// starts cold.
+		if v := r.newImageWriteScope(a).collisionVerdict(context.Background(), jpegBytes); v == nil {
+			t.Fatal("no collision verdict for these bytes; the assertions below would pass for the wrong reason")
+		}
+
 		saved, err := r.processAndAppendFanart(context.Background(), r.newImageWriteScope(a), dir, jpegBytes, nil)
 
 		// Preconditions: the write really did fail and left nothing behind. Without
@@ -81,12 +123,18 @@ func TestProcessAndAppendFanart_CollisionNotifiesOnlyAfterSaveSucceeds(t *testin
 		if len(saved) != 0 {
 			t.Fatalf("saved = %v, want none", saved)
 		}
-		entries, readErr := os.ReadDir(dir)
-		if readErr != nil {
-			t.Fatalf("reading artist dir: %v", readErr)
+		// Nothing was created: the destination is still unreachable (ENOTDIR), and
+		// the blocker is still the untouched regular file that makes it so.
+		if _, statErr := os.Stat(dir); statErr == nil {
+			t.Fatalf("destination %s exists; nothing should have been created", dir)
 		}
-		if len(entries) != 0 {
-			t.Fatalf("expected no files written, got %v", entries)
+		blockerContent, readErr := os.ReadFile(blocker)
+		if readErr != nil {
+			t.Fatalf("reading blocker file: %v", readErr)
+		}
+		if string(blockerContent) != "x" {
+			t.Fatalf("blocker file content = %q, want %q: the write path was not structurally blocked",
+				blockerContent, "x")
 		}
 
 		if len(pub.events) != 0 {
@@ -240,10 +288,28 @@ func TestProcessAndSaveImage_CollisionNotifiesOnlyAfterSaveSucceeds(t *testing.T
 			t.Errorf("events = %d, raised = %d, want 0 and 0: the registry holds fanart only, so a thumb "+
 				"write must not raise a backdrop collision", len(pub.events), *raised)
 		}
-		// And it must not even have paid for the whole-library scan.
-		if scope.builds != 0 {
-			t.Errorf("identity index builds = %d, want 0: a non-fanart write must not build the registry",
-				scope.builds)
+
+		// And it must not even have paid for the whole-library scan. Proven
+		// observably: break the registry's source AFTER the thumb write, then push a
+		// FANART image through the SAME scope. A scope that never built still has to
+		// build now -- and now the build fails, so nothing collides. Had the thumb
+		// write built and cached the (colliding) index, that cached index would be
+		// reused here and WOULD notify.
+		if scope.built {
+			t.Error("scope reports an index build after a non-fanart write")
+		}
+		breakFanartRegistry(t, r)
+
+		fanartSaved, err := r.processAndAppendFanart(context.Background(), scope, dir, jpegBytes, nil)
+		if err != nil {
+			t.Fatalf("processAndAppendFanart: %v", err)
+		}
+		if len(fanartSaved) == 0 {
+			t.Fatal("no fanart saved: fail-open must never cost the write")
+		}
+		if len(pub.events) != 0 || *raised != 0 {
+			t.Errorf("events = %d, raised = %d, want 0 and 0: the thumb write built and cached the registry, "+
+				"which a non-fanart write must never do", len(pub.events), *raised)
 		}
 	})
 }
@@ -302,10 +368,9 @@ func TestImageWriteScope_CheckFailureNeverBlocksTheWrite(t *testing.T) {
 		scope := r.newImageWriteScope(a)
 
 		// Break the registry at its source: BuildFanartIdentityIndex is a whole-library
-		// DB scan, so a closed handle is the transient-DB-failure case in miniature.
-		if err := r.db.Close(); err != nil {
-			t.Fatalf("closing db: %v", err)
-		}
+		// scan of artist_images, so hiding that table is the transient-DB-failure case
+		// in miniature.
+		breakFanartRegistry(t, r)
 
 		saved, err := r.processAndAppendFanart(context.Background(), scope, dir, jpegBytes, nil)
 		if err != nil {
@@ -320,8 +385,8 @@ func TestImageWriteScope_CheckFailureNeverBlocksTheWrite(t *testing.T) {
 		}
 
 		// Precondition: the build was ATTEMPTED (and failed) rather than skipped.
-		if scope.builds != 1 {
-			t.Errorf("identity index builds = %d, want 1: the build must have been attempted", scope.builds)
+		if !scope.built {
+			t.Error("scope reports no index build; the build must have been attempted")
 		}
 		if len(pub.events) != 0 {
 			t.Errorf("SSE collision events = %d, want 0: a verdict was announced without a registry to reach it",
@@ -330,6 +395,24 @@ func TestImageWriteScope_CheckFailureNeverBlocksTheWrite(t *testing.T) {
 		if *raised != 0 {
 			t.Errorf("durable violations raised = %d, want 0: a back-out fix was armed on a check that never ran",
 				*raised)
+		}
+
+		// And that FAILED build is cached, not retried once per image. Proven
+		// observably: repair the registry, then push a second image through the SAME
+		// scope. A cached failure keeps yielding no verdict; a per-image retry would
+		// now succeed and surface the seeded cross-artist collision.
+		restoreFanartRegistry(t, r)
+
+		second, err := r.processAndAppendFanart(context.Background(), scope, dir, jpegBytes, nil)
+		if err != nil {
+			t.Fatalf("second append: %v", err)
+		}
+		if len(second) == 0 {
+			t.Fatal("no file saved on the second append")
+		}
+		if len(pub.events) != 0 || *raised != 0 {
+			t.Errorf("events = %d, raised = %d, want 0 and 0: the failed index build was retried per image "+
+				"instead of being cached for the scope", len(pub.events), *raised)
 		}
 	})
 
@@ -432,9 +515,6 @@ func TestImageWriteScope_CheckFailureNeverBlocksTheWrite(t *testing.T) {
 
 		// Precondition: the registry was built and IS populated, so "no collision"
 		// reflects the zero-hash guard rather than an empty index.
-		if scope.builds != 1 {
-			t.Errorf("identity index builds = %d, want 1", scope.builds)
-		}
 		if len(scope.idx) == 0 {
 			t.Fatal("registry is empty; this assertion would pass for the wrong reason")
 		}
@@ -523,22 +603,35 @@ func TestImageWriteScope_IdentityIndexBuiltOncePerScope(t *testing.T) {
 		t.Fatal("newImageWriteScope returned nil with the seam fully wired")
 	}
 
+	// Image 1 builds the index and finds the seeded cross-artist collision.
+	if _, err := r.processAndAppendFanart(context.Background(), scope, dir, jpegBytes, nil); err != nil {
+		t.Fatalf("first append: %v", err)
+	}
+	if len(pub.events) != 1 || *raised != 1 {
+		t.Fatalf("events = %d, raised = %d after the first image, want 1 each: the check did not run",
+			len(pub.events), *raised)
+	}
+
+	// Now make any REBUILD fail. This is what makes the assertion below a real
+	// test of reuse rather than an inspection of a counter: from here on, a scope
+	// that reuses its cached index keeps colliding, while a scope that rebuilds
+	// per image gets a nil index and silently stops colliding. The two hypotheses
+	// have opposite observable outcomes.
+	breakFanartRegistry(t, r)
+
 	const images = 4
-	for i := 0; i < images; i++ {
+	for i := 1; i < images; i++ {
 		if _, err := r.processAndAppendFanart(context.Background(), scope, dir, jpegBytes, nil); err != nil {
 			t.Fatalf("append %d: %v", i, err)
 		}
 	}
 
-	if scope.builds != 1 {
-		t.Errorf("identity index builds = %d across %d images, want exactly 1: the whole-library scan "+
-			"is being repeated per image", scope.builds, images)
-	}
-
-	// Precondition on the above: the check really did run every time, so builds==1
-	// reflects caching rather than the check being skipped.
+	// Every later image still collided, so every one of them saw the index built
+	// for image 1. A per-image build would have yielded nil here and left the
+	// counts pinned at 1.
 	if len(pub.events) != images || *raised != images {
-		t.Errorf("events = %d, raised = %d, want %d each: the per-image check did not run every time",
+		t.Errorf("events = %d, raised = %d, want %d each: images after the first saw no registry, so the "+
+			"whole-library scan is being repeated per image instead of cached for the scope",
 			len(pub.events), *raised, images)
 	}
 }

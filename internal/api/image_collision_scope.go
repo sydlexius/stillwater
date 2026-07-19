@@ -58,12 +58,6 @@ type imageWriteScope struct {
 	// (which legitimately yields a nil index) is not retried once per image.
 	built bool
 	idx   []img.FanartIdentityEntry
-
-	// builds counts completed build attempts. It exists so tests can assert the
-	// once-per-scope contract directly on the production object rather than
-	// inferring it from a fake, and it is what makes the "index is built once,
-	// not once per image" regression test non-vacuous.
-	builds int
 }
 
 // newImageWriteScope builds the collision scope for a write targeting a. It
@@ -92,7 +86,6 @@ func (s *imageWriteScope) identityIndex(ctx context.Context) []img.FanartIdentit
 		return s.idx
 	}
 	s.built = true
-	s.builds++
 
 	idx, err := s.r.artistService.BuildFanartIdentityIndex(ctx)
 	if err != nil {
