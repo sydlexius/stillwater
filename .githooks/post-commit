@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# post-commit hook: report a commit that was just created WITHOUT a signature.
+#
+# Why this exists alongside the pre-commit check (#2625):
+#
+# .githooks/pre-commit (section 0a) runs BEFORE the commit object exists. It can
+# prove the signer works, but it cannot see `git commit --no-gpg-sign` -- that is
+# a command-line flag, not config, and git does not expose it to hooks in any
+# form. So the pre-commit check reads commit.gpgsign=true, signs its probe
+# successfully, prints PASS, and the commit being created is unsigned anyway.
+#
+# That flag is the actual mechanism behind #2624. A layer whose stated purpose is
+# "catch it where the fix is free" that misses the real mechanism is not doing its
+# job. Only a stage where the commit OBJECT exists can see it, and this is that
+# stage.
+#
+# IMPORTANT: git IGNORES this hook's exit status. The commit is already written
+# and returning non-zero will not undo it. Being LOUD is therefore the entire
+# mechanism -- the message has to be impossible to scroll past and has to carry
+# the one-line fix. (The script still exits non-zero so the check is directly
+# testable and so anything else that calls it gets a real status.)
+#
+# The fix is still free here: the commit is local and unpushed, so
+# `git commit --amend -S --no-edit` costs nothing. The same defect discovered at
+# the merge gate costs a force-push on a reviewed PR, which orphans every fix SHA
+# cited in review replies and empties CodeRabbit's incremental-review delta.
+#
+# Note what the commit bypass flag does and does not reach. `git commit
+# --no-verify` bypasses the pre-commit and commit-msg hooks only -- post-commit
+# is not in that set, so THIS hook still runs. That is deliberate on git's part
+# and useful here: it means the signing-disabled-plus-hook-bypassed combination,
+# which defeats every earlier layer, is still caught and reported at this stage.
+# Neither flag should be used, but the bypass does not buy silence from this one.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SIGNING_CHECK="$REPO_ROOT/scripts/check-commit-signing.sh"
+
+if [ ! -x "$SIGNING_CHECK" ]; then
+    echo "post-commit: $SIGNING_CHECK is missing or not executable" >&2
+    echo "Fix: run 'make hooks' from this worktree" >&2
+    exit 1
+fi
+
+exec bash "$SIGNING_CHECK" --head
