@@ -86,14 +86,19 @@ func ContentHash(data []byte) string {
 }
 
 // ErrImageTooLarge reports that a file exceeded the read bound and was not
-// hashed. It is a sentinel so callers CAN distinguish "too big to be worth
-// reading" (skip this file, keep going) from "unreadable" (a real I/O
-// fault), should a future caller need to act on that difference; today's
-// three production callers log-and-skip both cases identically. The bound
-// is maxDecodeBytes -- the same constant decodeWithLimit enforces,
-// deliberately reused rather than duplicated so the read bound and the decode
-// bound cannot drift apart.
-var ErrImageTooLarge = errors.New("image file too large to hash")
+// read into memory. It is a sentinel so callers CAN distinguish "too big to
+// be worth reading" from "unreadable" (a real I/O fault) -- a distinction
+// that now has two different consumers: the background hashing callers
+// log-and-skip both cases identically, while the logo-trim REQUEST handler
+// maps this case to HTTP 413 and a genuine I/O fault to 500. The bound is
+// MaxDecodeBytes -- the same constant decodeWithLimit enforces, deliberately
+// reused rather than duplicated so the read bound and the decode bound cannot
+// drift apart.
+//
+// The wording is deliberately free of "hash": this error is no longer
+// hashing-specific, and a message naming the wrong operation would be
+// actively misleading in the trim handler's logs.
+var ErrImageTooLarge = errors.New("image file too large")
 
 // FileHashes carries the hashes computed from a single read of one image file.
 // Perceptual is zero when the caller did not ask for it (see HashFile), which
@@ -122,7 +127,7 @@ type FileHashes struct {
 // ReadProvenance: callers construct paths from trusted sources (database rows,
 // filesystem discovery, fixed naming patterns), never from request input.
 //
-// The read is bounded at maxDecodeBytes. That bound is a hard requirement, not
+// The read is bounded at MaxDecodeBytes. That bound is a hard requirement, not
 // a nicety: the path is trusted but its CONTENTS are not sized by us -- these
 // are operator-supplied library directories, and an arbitrarily large file
 // sitting in one used to be read whole into memory here. Go has no
@@ -131,7 +136,7 @@ type FileHashes struct {
 // SIGKILL and a restart loop, not something a caller can recover from.
 //
 // Files over the bound return ErrImageTooLarge; the read never allocates
-// more than maxDecodeBytes+1 (26,214,401 bytes) regardless of file size --
+// more than MaxDecodeBytes+1 (26,214,401 bytes) regardless of file size --
 // that fixed cap, not "zero allocation" for an oversized file, is the actual
 // guarantee. The realized peak is higher still: io.ReadAll grows its buffer
 // by repeated append, and append's growslice keeps the old backing array
@@ -152,12 +157,12 @@ func HashFile(path string, needPerceptual bool) (FileHashes, error) {
 	// bounds the ALLOCATION itself, which is the thing that has to be
 	// bounded. Reading one byte past the limit is what distinguishes
 	// "exactly at the limit" from "over it".
-	data, err := io.ReadAll(io.LimitReader(f, maxDecodeBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, MaxDecodeBytes+1))
 	if err != nil {
 		return FileHashes{}, fmt.Errorf("reading image for hashing: %w", err)
 	}
-	if int64(len(data)) > maxDecodeBytes {
-		return FileHashes{}, fmt.Errorf("hashing %s: %w (max %d bytes)", path, ErrImageTooLarge, maxDecodeBytes)
+	if int64(len(data)) > MaxDecodeBytes {
+		return FileHashes{}, fmt.Errorf("hashing %s: %w (max %d bytes)", path, ErrImageTooLarge, MaxDecodeBytes)
 	}
 
 	h := FileHashes{Content: ContentHash(data)}
