@@ -623,6 +623,13 @@
     "covered": false
   },
   {
+    "operationId": "getDuplicateImagesNav",
+    "method": "GET",
+    "path": "/reports/duplicate-images/nav",
+    "handler": "handleDuplicateImagesNav",
+    "covered": true
+  },
+  {
     "operationId": "getDuplicates",
     "method": "GET",
     "path": "/artists/duplicates",

@@ -1011,10 +1011,11 @@ func TestHandleForeignFilesCount_NonAdmin(t *testing.T) {
 	}
 }
 
-// TestHandleForeignFilesCount_StableChannel asserts the stable-sidebar branch:
-// when count > 0 and ?ch=next is absent, the link uses the canonical
+// TestHandleForeignFilesCount_StableChannel asserts the stable-sidebar branch,
+// which #2608 left UNCHANGED: at count > 0 the link uses the canonical
 // /reports/foreign-files path (M55 #1757 PR-6a) and the sw-sidebar-badge-pill
-// class (no icon).
+// class (no icon). This is now the endpoint's only rendering path -- the
+// promoted sidebar gets its Unmatched row from the Images section fragment.
 func TestHandleForeignFilesCount_StableChannel(t *testing.T) {
 	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
@@ -1042,44 +1043,6 @@ func TestHandleForeignFilesCount_StableChannel(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q\nfull body: %s", want, body)
-		}
-	}
-}
-
-// TestHandleForeignFilesCount_NextChannel asserts the next/-sidebar branch:
-// when count > 0 and ?ch=next is set, the handler returns only the count pill
-// span (the sidebar entry is static; no full link is generated).
-func TestHandleForeignFilesCount_NextChannel(t *testing.T) {
-	t.Parallel()
-	r, db := newTestRouterWithForeign(t)
-	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
-	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
-		ArtistID: "a1", FilePath: "/m/Aretha/backdrop.jpg", FileName: "backdrop.jpg",
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	req := withI18nCtx(t, httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count?ch=next", nil))
-	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
-	ctx = middleware.WithTestRole(ctx, "administrator")
-	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
-	r.handleForeignFilesCount(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	for _, want := range []string{
-		`sw-sidebar-count-pill`,
-		`>1<`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("body missing %q\nfull body: %s", want, body)
-		}
-	}
-	// Sidebar entry is static; handler must NOT generate the full link.
-	for _, absent := range []string{`href=`, `data-path=`, `<svg`} {
-		if strings.Contains(body, absent) {
-			t.Errorf("body should not contain %q (entry is static); full body: %s", absent, body)
 		}
 	}
 }
@@ -1147,62 +1110,6 @@ func TestResolveForeignHash_BackfillsFromDisk(t *testing.T) {
 	got, err = resolveForeignHash(&foreign.Entry{FilePath: filepath.Join(dir, "missing.jpg")})
 	if err == nil {
 		t.Errorf("expected error for empty hash with missing file; got hash %q", got)
-	}
-}
-
-// TestHandleForeignFilesCount_NextChannelSidebarZeroClearsPill asserts the
-// zero-count convention for the next/-sidebar Reports entry: when no foreign
-// files are detected the handler returns an empty 200 body so the HTMX
-// hx-swap="innerHTML" clears the pill span; the static <li>/<a> stays visible.
-// This deliberately diverges from the compliance/duplicates hide-at-zero
-// convention because the allowlist must remain reachable even at count==0.
-func TestHandleForeignFilesCount_NextChannelSidebarZeroClearsPill(t *testing.T) {
-	t.Parallel()
-	r, _ := newTestRouterWithForeign(t) // empty repo: count == 0
-	req := withI18nCtx(t, httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count?ch=next", nil))
-	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
-	ctx = middleware.WithTestRole(ctx, "administrator")
-	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
-	r.handleForeignFilesCount(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	if body := rec.Body.String(); body != "" {
-		t.Errorf("zero count: want pill-only/empty pill (static entry stays), got %q", body)
-	}
-}
-
-// TestHandleForeignFilesCount_NextChannelSidebarPill asserts that when foreign
-// files are detected the handler returns a sw-sidebar-count-pill span (the
-// sidebar entry is static; only the pill is injected into the placeholder span).
-func TestHandleForeignFilesCount_NextChannelSidebarPill(t *testing.T) {
-	t.Parallel()
-	r, db := newTestRouterWithForeign(t)
-	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('b1','Miles','/m/Miles')`)
-	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
-		ArtistID: "b1", FilePath: "/m/Miles/extra.jpg", FileName: "extra.jpg",
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	req := withI18nCtx(t, httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count?ch=next", nil))
-	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
-	ctx = middleware.WithTestRole(ctx, "administrator")
-	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
-	r.handleForeignFilesCount(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("next-channel sidebar pill: status: want 200, got %d", rec.Code)
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `sw-sidebar-count-pill`) {
-		t.Errorf("next-channel sidebar pill: body missing sw-sidebar-count-pill\nfull body: %s", body)
-	}
-	// Entry is static; link markup must not appear in the pill-only response.
-	for _, absent := range []string{`href=`, `data-path=`} {
-		if strings.Contains(body, absent) {
-			t.Errorf("next-channel sidebar pill: should not contain %q\nfull body: %s", absent, body)
-		}
 	}
 }
 

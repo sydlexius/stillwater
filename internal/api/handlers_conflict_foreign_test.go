@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/foreign"
 )
@@ -69,33 +68,27 @@ func TestHandleGetConflictBanner_NoForeignFilesStateWhenFilesPresent(t *testing.
 		t.Errorf("banner state should be clean with foreign files present and no conflict; body:\n%s", body)
 	}
 
-	// Companion: the sidebar pill (next channel) still renders the count, so
-	// foreign-file presence remains discoverable -- just not via the banner.
-	// Apply the same three-step context chain used by sibling tests in
-	// handlers_foreign_files_test.go: i18n first, then user ID, then role.
-	pillReq := withI18nCtx(t, httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count?ch=next", nil))
-	pillCtx := middleware.WithTestUserID(pillReq.Context(), "admin-1")
-	pillCtx = middleware.WithTestRole(pillCtx, "administrator")
-	pillReq = pillReq.WithContext(pillCtx)
-	pillRec := httptest.NewRecorder()
-	r.handleForeignFilesCount(pillRec, pillReq)
-	if pillRec.Code != http.StatusOK {
-		t.Fatalf("pill status = %d, want 200", pillRec.Code)
+	// Companion: foreign-file presence stays DISCOVERABLE even though the
+	// banner ignores it -- the Unmatched row in the sidebar's Images section
+	// carries the count. #2608 moved that row out of this endpoint's
+	// ?ch=next branch (deleted) and into the Images section fragment, so the
+	// discoverability assertion follows it to the endpoint that now serves it.
+	navReq := dupNavReq(t, "administrator")
+	navRec := httptest.NewRecorder()
+	r.handleDuplicateImagesNav(navRec, navReq)
+	if navRec.Code != http.StatusOK {
+		t.Fatalf("images nav status = %d, want 200", navRec.Code)
 	}
-	// data-count carries the same value so swForeignPillSwap (sidebar.js) can
-	// detect a count increase across HTMX swaps and fire the one-shot pulse.
-	pillBody := pillRec.Body.String()
-	if !strings.Contains(pillBody, `class="sw-sidebar-count-pill" data-count="3"`) ||
-		!strings.Contains(pillBody, `>3</span>`) {
-		t.Errorf("sidebar pill should show count 3 with data-count; got %q", pillBody)
+	navBody := navRec.Body.String()
+	// data-count carries the value so swImagesNavSwap (sidebar.js) can detect a
+	// count increase across HTMX swaps and fire the one-shot pulse.
+	if !strings.Contains(navBody, `class="sw-sidebar-count-pill" data-count="3"`) ||
+		!strings.Contains(navBody, `>3</span>`) {
+		t.Errorf("Unmatched row should show count 3 with data-count; got %q", navBody)
 	}
-	// data-aria is the localized, count-bearing accessible name the JS folds onto
-	// the nav link so screen-reader users hear the count (not a count-less label).
-	if !strings.Contains(pillBody, `data-aria="3 unrecognized images`) {
-		t.Errorf("sidebar pill data-aria should carry the count; got %q", pillBody)
-	}
-	// title supplies the calm hover tooltip.
-	if !strings.Contains(pillBody, `title="Unrecognized images`) {
-		t.Errorf("sidebar pill should carry the calm title tooltip; got %q", pillBody)
+	// The count-bearing accessible name is rendered directly on the row's
+	// aria-label, so screen-reader users hear the number.
+	if !strings.Contains(navBody, `aria-label="3 unrecognized images`) {
+		t.Errorf("Unmatched row aria-label should carry the count; got %q", navBody)
 	}
 }

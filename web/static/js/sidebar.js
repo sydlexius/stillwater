@@ -330,74 +330,65 @@
     }
   }
 
-  // Foreign Files pill: fire a one-shot pulse when the unmatched-file count
-  // RISES (never on the initial render), and keep the parent nav link's
-  // accessible name in sync with the live count. Wired from the pill's
-  // hx-on::after-swap in next/sidebar.templ, so it runs after every HTMX
-  // refresh of the count.
+  // Unmatched pill: fire a one-shot pulse when the unmatched-image count RISES
+  // (never on the initial render). Wired from the Images section container's
+  // hx-on::after-swap in sidebar.templ, so it runs after every HTMX refresh of
+  // the section.
   //
-  // The outer #sidebar-foreign-pill span (display:contents) persists across
-  // innerHTML swaps and carries data-prev-count + data-initialized. The inner
-  // .sw-sidebar-count-pill (present only when count > 0) is server-rendered with
-  // data-count, a localized count-bearing data-aria, and a calm title tooltip.
-  function swForeignPillSwap() {
-    var pill = document.getElementById('sidebar-foreign-pill');
-    if (!pill) return;
+  // #2608 moved the state anchor. The whole Images section -- header, Unmatched
+  // row and pill included -- is now swapped as one fragment, so nothing INSIDE
+  // it survives a swap and none of it can hold the baseline. The persistent
+  // element is the container itself, which HTMX only ever fills, so
+  // data-prev-count + data-initialized live there. Anchoring them on the pill
+  // (as before, when only the pill swapped) would reset the baseline every 60s
+  // and the pulse would never fire again after the first poll.
+  //
+  // The count-bearing accessible name is now rendered server-side directly on
+  // the row's aria-label, so there is no aria to fold on here.
+  function swImagesNavSwap() {
+    var host = document.getElementById('sidebar-images-section');
+    if (!host) return;
 
-    // The nav link keeps a static aria-label so it stays named when the visible
-    // label is hidden in the icon-only / hidden sidebar states. Stash that base
-    // name once so we can fold the live count into it and restore it on clear.
-    var link = pill.closest('a');
-    if (link && link.getAttribute('data-aria-base') === null) {
-      link.setAttribute('data-aria-base', link.getAttribute('aria-label') || '');
-    }
-
-    var inner = pill.querySelector('.sw-sidebar-count-pill');
-    if (!inner) {
-      // Count is 0: the pill cleared. Restore the link's base name, reset the
-      // baseline, and mark initialized so a later 0 -> N still pulses.
-      if (link) link.setAttribute('aria-label', link.getAttribute('data-aria-base') || '');
-      pill.setAttribute('data-prev-count', '0');
-      pill.setAttribute('data-initialized', 'true');
+    // Present only when the unmatched count is > 0; the whole row (and possibly
+    // the whole section) is absent otherwise.
+    var pill = host.querySelector('#sidebar-foreign-next .sw-sidebar-count-pill');
+    if (!pill) {
+      // Count is 0: reset the baseline and mark initialized so a later 0 -> N
+      // still pulses.
+      host.setAttribute('data-prev-count', '0');
+      host.setAttribute('data-initialized', 'true');
       return;
     }
 
-    // Fold the localized, count-bearing accessible name (rendered server-side on
-    // the swapped pill) onto the nav link so screen-reader users hear the number.
-    // The link's own aria-label otherwise overrides the descendant pill per the
-    // ARIA name-from-content rules, and the pill is display:none when collapsed.
-    var aria = inner.getAttribute('data-aria');
-    if (link && aria) link.setAttribute('aria-label', aria);
-
-    var count = parseInt(inner.getAttribute('data-count') || '0', 10);
+    var count = parseInt(pill.getAttribute('data-count') || '0', 10);
     if (isNaN(count)) count = 0;
 
     // First swap (the initial `load` fetch) only establishes the baseline: a
-    // fresh render with existing foreign files must NOT pulse. Pulse only on a
-    // later increase (the 60s poll or a swFFCountChanged refresh).
-    if (pill.getAttribute('data-initialized') !== 'true') {
-      pill.setAttribute('data-initialized', 'true');
-      pill.setAttribute('data-prev-count', String(count));
+    // fresh render with existing unmatched images must NOT pulse. Pulse only on
+    // a later increase (the 60s poll or a swFFCountChanged refresh).
+    if (host.getAttribute('data-initialized') !== 'true') {
+      host.setAttribute('data-initialized', 'true');
+      host.setAttribute('data-prev-count', String(count));
       return;
     }
 
-    var prev = parseInt(pill.getAttribute('data-prev-count') || '0', 10);
+    var prev = parseInt(host.getAttribute('data-prev-count') || '0', 10);
     if (isNaN(prev)) prev = 0;
 
     if (count > prev && count > 0) {
       // Re-arm the single-run animation: remove the class, force a reflow, then
       // re-add so a repeated increase replays it. animationend also clears the
       // class as a backstop in case the element is re-rendered mid-animation.
-      inner.classList.remove('sw-ff-pulse');
-      void inner.offsetWidth;
-      inner.classList.add('sw-ff-pulse');
-      inner.addEventListener('animationend', function handler() {
-        inner.classList.remove('sw-ff-pulse');
-        inner.removeEventListener('animationend', handler);
+      pill.classList.remove('sw-ff-pulse');
+      void pill.offsetWidth;
+      pill.classList.add('sw-ff-pulse');
+      pill.addEventListener('animationend', function handler() {
+        pill.classList.remove('sw-ff-pulse');
+        pill.removeEventListener('animationend', handler);
       });
     }
 
-    pill.setAttribute('data-prev-count', String(count));
+    host.setAttribute('data-prev-count', String(count));
   }
 
   // Expose public API.
@@ -406,7 +397,7 @@
     cycle: cycle,
     cycleTheme: cycleTheme,
     refreshUpdateBadge: refreshUpdateBadge,
-    swForeignPillSwap: swForeignPillSwap
+    swImagesNavSwap: swImagesNavSwap
   };
 
   // Refresh the badge when the Updates tab finishes a manual check. The

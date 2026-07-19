@@ -23,11 +23,18 @@
 // hide-when-unknown behavior from the issue: a not-yet-computed count is
 // indistinguishable from clean, and the steady state is clean anyway.
 //
-// SCOPE: these counts gate the three DUPLICATE ROWS only (Library Duplicates,
-// <Platform> Duplicates). The Images section itself is always rendered for
-// admins because it also carries the Unmatched item, whose allowlist has to
-// stay reachable at a zero count. Nothing here may be used to hide the
-// section.
+// SCOPE: these counts cover the DUPLICATE ROWS only (Library Duplicates and one
+// row per offending platform). They say nothing about the Unmatched row, whose
+// count is not part of this snapshot.
+//
+// So these counts are NECESSARY BUT NOT SUFFICIENT for hiding the Images
+// section. The section hides only when the unmatched count is zero too; the
+// whole-section test is templates.ImagesNavView.Empty, not anything here (#2608).
+//
+// An earlier revision pinned the section open for admins so the allowlist behind
+// the Unmatched row stayed reachable at a zero count. That guarantee was
+// deliberately withdrawn: the maintainer chose full hide-when-clean, accepting
+// that at a zero unmatched count the allowlist is reachable only by direct URL.
 package dupimages
 
 import (
@@ -135,10 +142,11 @@ type Counts struct {
 // Empty reports whether no duplicate row has anything to show. An un-computed
 // snapshot is Empty.
 //
-// NOTE this governs only the DUPLICATE ROWS. The sidebar's Images section
-// itself is always rendered for admins, because it also carries the Unmatched
-// item, whose allowlist must stay reachable at a zero count (#2608). Never
-// use Empty to decide whether to render the section.
+// NOTE this governs only the DUPLICATE ROWS -- it knows nothing about the
+// Unmatched row, whose count is not part of this snapshot. The sidebar's
+// Images section hides entirely only when the unmatched count is zero TOO, so
+// this is a necessary but not sufficient condition for hiding it; the
+// whole-section test is templates.ImagesNavView.Empty (#2608).
 func (c Counts) Empty() bool { return c.Library <= 0 && len(c.Platforms) == 0 }
 
 // PlatformTotal is the summed redundant-backdrop count across every offending

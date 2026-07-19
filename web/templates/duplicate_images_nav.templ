@@ -1,0 +1,138 @@
+// Package templates -- duplicate_images_nav.templ
+//
+// The ENTIRE "Images" section of the sidebar (#2608), served by
+// GET /api/v1/reports/duplicate-images/nav and swapped into the
+// <div id="sidebar-images-section"> hydration container in sidebar.templ:
+//
+//	IMAGES                                                    (section header)
+//	  Unmatched             -> /reports/foreign-files
+//	  Library Duplicates    -> /reports/backdrop-duplicates
+//	  <Platform> Duplicates -> /reports/platform-backdrop-duplicates  (one per
+//	                           offending platform type: Emby, Jellyfin, ...)
+//
+// HIDE SEMANTICS -- read this before changing the render conditions.
+// Every row renders only when its OWN count is > 0, and when ALL counts are
+// zero the section HEADER disappears with them: an empty response means "no
+// section", and the container in sidebar.templ collapses to nothing. There is
+// no empty-section and no bare-header state.
+//
+// The accepted consequence: at a zero unmatched count the Unmatched row is
+// gone, so the foreign-file ALLOWLIST behind it is reachable only by direct
+// URL (/reports/foreign-files/allowlist). The allowlist did not move. This
+// trade-off was put to the maintainer explicitly and the hiding behavior was
+// chosen anyway -- do not "fix" it by pinning the section or the Unmatched row
+// open without checking with him first.
+//
+// This is why the section is rendered HERE rather than server-rendered in
+// sidebar.templ: the hide decision needs all three counts at once, and the
+// duplicate halves are only known from the cached snapshot.
+package templates
+
+import "strconv"
+import "github.com/sydlexius/stillwater/web/components"
+
+// ImagesNavView is the fragment's input. The duplicate counts come from the
+// cached snapshot (internal/dupimages); the handler never scans to build this.
+type ImagesNavView struct {
+	// BasePath is the app's URL prefix (reverse-proxy subpath support).
+	BasePath string
+
+	// SectionLabel is the visible section header ("Images").
+	SectionLabel string
+
+	// UnmatchedCount is the number of unrecognized images in the library. The
+	// Unmatched row renders only when this is > 0.
+	UnmatchedCount int
+	// UnmatchedLabel is the visible row label ("Unmatched").
+	UnmatchedLabel string
+	// UnmatchedAria is the descriptive, count-bearing accessible name.
+	UnmatchedAria string
+
+	// LibraryCount is the number of redundant within-artist fanart images on
+	// disk. The Library Duplicates row renders only when this is > 0.
+	LibraryCount int
+	// LibraryLabel is the visible row label ("Library Duplicates").
+	LibraryLabel string
+	// LibraryAria is the descriptive, count-bearing accessible name. Visible
+	// labels stay terse so they cannot truncate; the meaning lives here.
+	LibraryAria string
+
+	// Platforms holds one row per OFFENDING platform type. A platform appears
+	// only when it is actually connected AND has duplicates, so every entry
+	// here renders a row -- there is no zero-count case to filter at render.
+	Platforms []ImagesNavPlatformRow
+}
+
+// ImagesNavPlatformRow is one "<Platform> Duplicates" row.
+type ImagesNavPlatformRow struct {
+	// Type is the connection type key ("emby", "jellyfin"), used for the row's
+	// DOM id so tests and CSS can target a specific platform.
+	Type string
+	// Label is the full visible label, already composed ("Emby Duplicates").
+	Label string
+	// Aria is the descriptive, count-bearing accessible name.
+	Aria string
+	// Count is the redundant-backdrop tally across every connection of this
+	// platform type.
+	Count int
+}
+
+// Empty reports whether the section has nothing to show and must therefore not
+// render AT ALL -- header included. See the hide semantics above: this is the
+// whole-section test, not a rows-only test.
+func (v ImagesNavView) Empty() bool {
+	return v.UnmatchedCount <= 0 && v.LibraryCount <= 0 && len(v.Platforms) == 0
+}
+
+// ImagesNav renders the Images section, or nothing when every count is zero.
+templ ImagesNav(v ImagesNavView) {
+	if !v.Empty() {
+		<div class="sw-sidebar-section">
+			<span class="sw-sidebar-section-label" aria-hidden="true">{ v.SectionLabel }</span>
+			<ul role="list" class="sw-sidebar-nav-list">
+				if v.UnmatchedCount > 0 {
+					<li id="sidebar-foreign-next">
+						<a
+							href={ templ.SafeURL(v.BasePath + "/reports/foreign-files") }
+							class="sw-sidebar-link sw-sidebar-subnav-link"
+							data-path="/reports/foreign-files"
+							aria-label={ v.UnmatchedAria }
+						>
+							@components.IconPhoto("sw-sidebar-icon")
+							<span class="sw-sidebar-label">{ v.UnmatchedLabel }</span>
+							<span class="sw-sidebar-count-pill" data-count={ strconv.Itoa(v.UnmatchedCount) }>{ strconv.Itoa(v.UnmatchedCount) }</span>
+						</a>
+					</li>
+				}
+				if v.LibraryCount > 0 {
+					<li id="sidebar-image-duplicates-library">
+						<a
+							href={ templ.SafeURL(v.BasePath + "/reports/backdrop-duplicates") }
+							class="sw-sidebar-link sw-sidebar-subnav-link"
+							data-path="/reports/backdrop-duplicates"
+							aria-label={ v.LibraryAria }
+						>
+							@components.IconPhotoStack("sw-sidebar-icon")
+							<span class="sw-sidebar-label">{ v.LibraryLabel }</span>
+							<span class="sw-sidebar-count-pill">{ strconv.Itoa(v.LibraryCount) }</span>
+						</a>
+					</li>
+				}
+				for _, p := range v.Platforms {
+					<li id={ "sidebar-image-duplicates-" + p.Type }>
+						<a
+							href={ templ.SafeURL(v.BasePath + "/reports/platform-backdrop-duplicates") }
+							class="sw-sidebar-link sw-sidebar-subnav-link"
+							data-path="/reports/platform-backdrop-duplicates"
+							aria-label={ p.Aria }
+						>
+							@components.IconPhotoStack("sw-sidebar-icon")
+							<span class="sw-sidebar-label">{ p.Label }</span>
+							<span class="sw-sidebar-count-pill">{ strconv.Itoa(p.Count) }</span>
+						</a>
+					</li>
+				}
+			</ul>
+		</div>
+	}
+}

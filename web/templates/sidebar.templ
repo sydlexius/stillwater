@@ -22,7 +22,8 @@ type SidebarData struct {
 // kills the old Reports/Compliance duplication):
 //
 //	brand+version -> Dashboard/Artists (with HTMX count pills)
-//	-> REPORTS header { Compliance, Duplicates*, Unmatched Images* }
+//	-> REPORTS header { Compliance, Duplicates* }
+//	-> IMAGES header* { Unmatched, Library Duplicates, <Platform> Duplicates }  (#2608)
 //	-> Activity
 //	-> spacer
 //	-> low-freq: Logs, Settings (admin), Preferences
@@ -31,18 +32,28 @@ type SidebarData struct {
 // The Reports section is visible to ALL roles. The workspace link and the
 // Compliance report page are non-admin-reachable (wrapOptionalAuth), so
 // non-admins see the workspace link plus a plain Compliance link. Compliance's
-// count pill, Duplicates, and Unmatched Images (*) are admin-only because their
-// count endpoints return 403 for non-admins, so those placeholders are omitted
-// for non-admin sessions (no poll-and-403, no lying markup).
+// count pill and Duplicates (*) are admin-only because their count endpoints
+// return 403 for non-admins, so those placeholders are omitted for non-admin
+// sessions (no poll-and-403, no lying markup).
 //
-// (*) The admin Compliance/Duplicates/Foreign items are HTMX-hydrated: the
-// placeholder <li> is filled by /api/v1/reports/{compliance,duplicates}/count?ch=next
-// and /api/v1/foreign-files/count?ch=next when count>0.
+// (*) The admin Compliance/Duplicates items are HTMX-hydrated: the placeholder
+// <li> is filled by /api/v1/reports/{compliance,duplicates}/count?ch=next when
+// count>0.
+//
+// Images (#2608) is admin-only and hydrates AS A WHOLE -- header, Unmatched row
+// and duplicate rows together -- from
+// /api/v1/reports/duplicate-images/nav?ch=next into the #sidebar-images-section
+// container. A section without violations HIDES: each row renders only when its
+// own count is > 0, and when all three are zero the header goes too, so an
+// empty response there means "no section". Unmatched MOVED here out of Reports
+// and its label shortens to just "Unmatched" (the header already says Images);
+// the two flat backdrop-duplicate links it joins were removed because their
+// labels truncated.
 //
 // Nav hrefs point at CANONICAL routes (/, /artists, /reports,
 // /reports/foreign-files, /reports/duplicates, /activity, /settings,
 // /preferences, /logs) since this is now the default chrome on every page. The
-// Compliance/Duplicates/Foreign count pills keep their ?ch=next source, which
+// Compliance/Duplicates/Images count pills keep their ?ch=next source, which
 // selects the promoted glyph-led pill markup (the ?ch=next param now only
 // selects markup style -- every hydrated href targets a canonical route).
 //
@@ -116,12 +127,10 @@ templ Sidebar(data SidebarData) {
 		     Reports/Compliance to non-admins). The workspace link and the
 		     Compliance report page are reachable by non-admins (wrapOptionalAuth),
 		     so they render for everyone. The admin-only Reports entries are the
-		     Compliance/Duplicates count pills, a static Backdrop Duplicates link
-		     (no count pill, since its count needs a full from-disk scan that is too
-		     expensive to poll), and the Unmatched Images item; their endpoints 403 for
-		     non-admins, so non-admins get a plain Compliance link (no polling pill)
-		     and the admin-only items are omitted (no lying markup, no
-		     poll-and-403). -->
+		     Compliance/Duplicates count pills; their endpoints 403 for non-admins,
+		     so non-admins get a plain Compliance link (no polling pill) and the
+		     admin-only items are omitted (no lying markup, no poll-and-403).
+		     The image-hygiene entries moved to the Images section (#2608). -->
 		<div class="sw-sidebar-section">
 			<span class="sw-sidebar-section-label" aria-hidden="true">{ t(ctx, "nav.reports") }</span>
 			<ul role="list" class="sw-sidebar-nav-list">
@@ -157,62 +166,10 @@ templ Sidebar(data SidebarData) {
 						hx-trigger="load, every 60s"
 						hx-swap="innerHTML"
 					></li>
-					<!-- Backdrop Duplicates: admin-only within-artist fanart
-					     duplicate report + remediation. Static link with no count
-					     pill: the count needs a full from-disk scan of every artist's
-					     fanart, too expensive to poll on every sidebar render. -->
-					<li id="sidebar-backdrop-duplicates-nav">
-						<a
-							href={ templ.SafeURL(data.BasePath + "/reports/backdrop-duplicates") }
-							class="sw-sidebar-link sw-sidebar-subnav-link"
-							data-path="/reports/backdrop-duplicates"
-							aria-label={ t(ctx, "nav.reports.backdrop_duplicates") }
-						>
-							@components.IconPhoto("sw-sidebar-icon")
-							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.backdrop_duplicates") }</span>
-						</a>
-					</li>
-					<!-- Platform Backdrop Duplicates: admin-only cross-platform
-					     fanart duplicate report + prune (dedup within the images a
-					     connected platform mirrors, distinct from the local
-					     within-artist report above). Static link with no count
-					     pill: the scan requires querying every connected platform,
-					     too expensive to poll on every sidebar render. -->
-					<li id="sidebar-platform-backdrop-duplicates-nav">
-						<a
-							href={ templ.SafeURL(data.BasePath + "/reports/platform-backdrop-duplicates") }
-							class="sw-sidebar-link sw-sidebar-subnav-link"
-							data-path="/reports/platform-backdrop-duplicates"
-							aria-label={ t(ctx, "nav.reports.platform_backdrop_duplicates") }
-						>
-							@components.IconPhoto("sw-sidebar-icon")
-							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.platform_backdrop_duplicates") }</span>
-						</a>
-					</li>
-					<!-- Unmatched Images: admin-only (count endpoint 403s for non-admins;
-					     not present in the v1 non-admin sidebar). ALWAYS visible to
-					     admins even at zero count (allowlist must stay reachable);
-					     only the count pill is HTMX-conditional. -->
-					<li id="sidebar-foreign-next">
-						<a
-							href={ templ.SafeURL(data.BasePath + "/reports/foreign-files") }
-							class="sw-sidebar-link sw-sidebar-subnav-link"
-							data-path="/reports/foreign-files"
-							aria-label={ t(ctx, "nav.reports.foreign") }
-						>
-							@components.IconPhoto("sw-sidebar-icon")
-							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.foreign") }</span>
-							<span
-								id="sidebar-foreign-pill"
-								class="contents"
-								data-prev-count="0"
-								hx-get="/api/v1/foreign-files/count?ch=next"
-								hx-trigger="load, every 60s, swFFCountChanged from:body"
-								hx-swap="innerHTML"
-								hx-on::after-swap="swSidebar.swForeignPillSwap()"
-							></span>
-						</a>
-					</li>
+					<!-- Backdrop Duplicates, Platform Backdrop Duplicates and
+					     Unmatched Images MOVED OUT of Reports into the Images
+					     section below (#2608). Their long labels truncated here,
+					     and they are all image hygiene rather than reports. -->
 				} else {
 					<!-- Compliance (non-admin): plain link to the compliance report
 					     page (wrapOptionalAuth), WITHOUT the admin-only count pill so
@@ -232,6 +189,40 @@ templ Sidebar(data SidebarData) {
 				}
 			</ul>
 		</div>
+		// Images (#2608): admin-only section directly below Reports, collecting
+		// every image-hygiene destination. Unmatched MOVED here out of Reports
+		// (the section header already says Images, so its label shortens to
+		// just "Unmatched"); the duplicate rows replace the two flat
+		// backdrop-duplicate links, whose long labels truncated.
+		//
+		// THE WHOLE SECTION HYDRATES FROM ONE ENDPOINT, header included. That
+		// is deliberate: a section without violations HIDES, and when all
+		// three counts are zero the header goes with them. The hide decision
+		// therefore needs all three counts at once, which rules out
+		// server-rendering the wrapper here -- the duplicate halves are only
+		// known from the cached snapshot.
+		//
+		// Accepted consequence: at a zero unmatched count the Unmatched row is
+		// gone, so the foreign-file allowlist is reachable only by direct URL.
+		// The maintainer was shown that trade-off and chose hiding anyway.
+		//
+		// The endpoint serves CACHED counts (internal/dupimages) plus one
+		// cheap indexed COUNT -- it never scans on the request path. See
+		// handlers_duplicate_images_nav.go.
+		//
+		// The container is a BARE div: .sw-sidebar-section carries vertical
+		// padding, so the class belongs on the fragment's own wrapper. An
+		// empty response must leave zero height, not a phantom gap.
+		if data.IsAdmin {
+			<div
+				id="sidebar-images-section"
+				hx-get="/api/v1/reports/duplicate-images/nav?ch=next"
+				hx-trigger="load, every 60s, swFFCountChanged from:body"
+				hx-swap="innerHTML"
+				data-prev-count="0"
+				hx-on::after-swap="swSidebar.swImagesNavSwap()"
+			></div>
+		}
 		<!-- Activity: live pulse of library events -->
 		<div class="sw-sidebar-section">
 			<ul role="list" class="sw-sidebar-nav-list">
