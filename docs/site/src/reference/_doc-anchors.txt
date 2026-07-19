@@ -197,6 +197,7 @@ getting-started/install-docker-compose#customize-the-compose-file
 getting-started/install-docker-compose#day-to-day-operations
 getting-started/install-docker-compose#install-with-docker-compose
 getting-started/install-docker-compose#just-want-docker-run
+getting-started/install-docker-compose#resource-limits
 getting-started/install-docker-compose#the-compose-file
 getting-started/install-docker-compose#troubleshooting
 getting-started/install-docker-compose#upgrading
@@ -207,6 +208,7 @@ getting-started/install-unraid#before-you-start
 getting-started/install-unraid#configure-the-template
 getting-started/install-unraid#install
 getting-started/install-unraid#install-on-unraid
+getting-started/install-unraid#resource-limits
 getting-started/install-unraid#troubleshooting
 getting-started/install-unraid#updating
 getting-started/install-unraid#what-about-docker-compose
