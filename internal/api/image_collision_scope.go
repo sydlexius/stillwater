@@ -13,20 +13,20 @@ package api
 // artist.Service.BuildFanartIdentityIndex, and collision.Notifier. This file
 // only packages them for reuse at those call sites.
 //
-// NOT covered by this PR: the slot-targeted variants
-// handleImageFetchFanartSlot and handleImageCropFanartSlot
-// (handlers_image.go), and handleFanartSlotAssign (handlers_backdrop.go),
-// which writes a platform backdrop into a fanart slot. These are unwired and
-// tracked as follow-up under #2540. That gap matters because the
-// cross_artist_backdrop_collision rule checker is a deliberate no-op (see
-// engine.go's RuleCrossArtistBackdropCollision registration) -- detection
-// happens ONLY at write chokepoints like this one. A write path that isn't
-// wired here is never checked for collision: not late, not on the next rule
-// sweep. Never.
+// #2622 closed the remaining gap: the three SLOT-TARGETED writes
+// (handleImageFetchFanartSlot and handleImageCropFanartSlot in handlers_image.go,
+// and handleFanartSlotAssign in handlers_backdrop.go, which writes a PLATFORM
+// backdrop straight into a fanart slot). They now share saveFanartSlotChecked
+// below. That gap mattered because the cross_artist_backdrop_collision rule
+// checker is a deliberate no-op (see engine.go's
+// RuleCrossArtistBackdropCollision registration) -- detection happens ONLY at
+// write chokepoints like this one. A write path that isn't wired here is never
+// checked for collision: not late, not on the next rule sweep. Never.
 
 import (
 	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/collision"
@@ -160,4 +160,49 @@ func (s *imageWriteScope) notifyCollision(ctx context.Context, res *img.Identity
 		return
 	}
 	s.r.collisionNotifier.Notify(ctx, s.artist.ID, s.artist.Name, *res)
+}
+
+// saveFanartSlotChecked writes data into an EXPLICIT fanart slot with the #2540
+// cross-artist collision check wired in (#2622). It is the slot-targeted peer of
+// processAndAppendFanart (append-next) and processAndSaveImage (overwrite-primary),
+// and it holds the same notify-after-confirmed-write ordering they do.
+//
+// ONE byte slice serves BOTH the hash and the write, and that is the entire point
+// of routing all three slot writes through here rather than repeating the check at
+// each of them. The three call sites do not agree on what bytes they write:
+// handleFanartSlotAssign converts platform bytes first and writes the CONVERTED
+// result, while handleImageFetchFanartSlot and handleImageCropFanartSlot write
+// their bytes RAW. Taking the written bytes as the only input makes a divergence
+// between "hashed" and "written" unrepresentable at the call sites.
+//
+// Honest scope of that guarantee: today it is HYGIENE, not a live bug fix.
+// img.ConvertFormat is pixel-preserving in every branch (byte passthrough for
+// non-WebP, lossless PNG re-encode for WebP) and a perceptual hash reads only the
+// decoded pixels, so hashing a conversion of these bytes would currently produce
+// the IDENTICAL verdict -- measured against a real lossy WebP, both sides hashed
+// 0xe7cf8f9f3f3f7f7f. The single-slice shape is what keeps that true if a future
+// step ever transforms pixels (a resize, a crop, an alpha trim) between the check
+// and the write, which is exactly when a re-derived hash would start describing a
+// file that was never written.
+//
+// Fail-open, notify-only: the verdict never gates the write. A save failure
+// returns before notifyCollision, because the durable half of the notification
+// carries an auto-fix that BACKS ARTWORK OUT of the artist -- see notifyCollision.
+func (r *Router) saveFanartSlotChecked(ctx context.Context, scope *imageWriteScope, dir string, naming []string, data []byte, meta *img.ExifMeta) ([]string, error) {
+	// Decided HERE, while the bytes are in hand, but HELD until the save confirms.
+	collisionResult := scope.collisionVerdict(ctx, data)
+
+	saved, err := r.saveFanartSlotProtected(ctx, dir, naming, data, meta)
+	if err != nil {
+		return nil, err
+	}
+	if len(saved) == 0 {
+		// Save reported success but produced no file. Treat it as a failed write:
+		// a back-out fix must never be armed on artwork that is not on disk.
+		return nil, fmt.Errorf("saving fanart slot: produced no files in %s", dir)
+	}
+
+	// Write confirmed -- safe to announce.
+	scope.notifyCollision(ctx, collisionResult)
+	return saved, nil
 }

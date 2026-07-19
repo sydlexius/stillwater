@@ -461,7 +461,11 @@ func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Requ
 	slotMeta.Mode = "user"
 	slotMeta.DHash = "" // Force recomputation from the cropped image data.
 
-	saved, saveErr := r.saveFanartSlotProtected(req.Context(), dir, []string{targetName}, imgData, slotMeta)
+	// #2622: routed through saveFanartSlotChecked for the #2540 cross-artist
+	// collision check. imgData is written RAW here -- this path has no
+	// ConvertFormat step of its own (the crop already produced encoded bytes) --
+	// so imgData is exactly what the verdict must hash and what lands on disk.
+	saved, saveErr := r.saveFanartSlotChecked(req.Context(), r.newImageWriteScope(a), dir, []string{targetName}, imgData, slotMeta)
 	if saveErr != nil {
 		r.logger.Error("saving cropped fanart slot",
 			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
@@ -503,7 +507,13 @@ func (r *Router) handleImageFetchFanartSlot(w http.ResponseWriter, req *http.Req
 	targetName := img.FanartFilename(primary, slot, kodiNumbering)
 	slotMeta := &img.ExifMeta{Source: artist.ImageSourceUser, Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
 
-	saved, saveErr := r.saveFanartSlotProtected(req.Context(), dir, []string{targetName}, data, slotMeta)
+	// #2622: routed through saveFanartSlotChecked for the #2540 cross-artist
+	// collision check. NOTE the byte selection: unlike every other fanart write in
+	// this file, this path saves the RAW fetched data and never calls
+	// ConvertFormat. So data -- not a conversion of it -- is both what the verdict
+	// hashes and what lands on disk, because the helper takes a single slice and
+	// uses it for both.
+	saved, saveErr := r.saveFanartSlotChecked(req.Context(), r.newImageWriteScope(a), dir, []string{targetName}, data, slotMeta)
 	if saveErr != nil {
 		r.logger.Error("saving fetched fanart slot",
 			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
@@ -2165,10 +2175,42 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read logo"})
 		return
 	}
-	data, readErr := io.ReadAll(f)
+	// Bound the read (#2620, same defect class as #2618). The PATH is trusted
+	// -- it comes from FindExistingImage over naming patterns -- but the
+	// file's CONTENTS are not sized by us: this is an operator-supplied
+	// library directory, and an arbitrarily large file sitting in one used to
+	// be read whole into memory right here, on a REQUEST-reachable path. Go
+	// has no allocation-failure path, so an over-budget allocation is a fatal
+	// runtime error rather than an error value: under a container memory
+	// limit that is a SIGKILL and a restart loop, not something this handler
+	// could recover from.
+	//
+	// io.LimitReader, not os.Stat: a Stat-then-read has a TOCTOU window in
+	// which the file can grow between the size check and the read, so it
+	// bounds a MEASUREMENT while the read stays unbounded. LimitReader bounds
+	// the allocation itself. Reading one byte PAST the bound is what
+	// distinguishes "exactly at the bound" from "over it" -- without the +1
+	// an oversized file reads exactly MaxDecodeBytes, LimitReader returns a
+	// clean EOF, and a truncated prefix gets trimmed and SAVED OVER the
+	// original as though it were the whole logo. That silent-corruption
+	// failure mode is worse than the unbounded read this guard replaces.
+	data, readErr := io.ReadAll(io.LimitReader(f, img.MaxDecodeBytes+1))
 	_ = f.Close()
 	if readErr != nil {
+		r.logger.Error("reading logo for trim",
+			slog.String("artist_id", artistID),
+			slog.String("path", filePath),
+			slog.String("error", readErr.Error()))
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read logo"})
+		return
+	}
+	if int64(len(data)) > img.MaxDecodeBytes {
+		r.logger.Error("logo exceeds the decode bound; trim aborted before any read of the full file",
+			slog.String("artist_id", artistID),
+			slog.String("path", filePath),
+			slog.Int64("max_bytes", img.MaxDecodeBytes),
+			slog.String("error", img.ErrImageTooLarge.Error()))
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "logo exceeds 25MB limit; not trimmed"})
 		return
 	}
 
