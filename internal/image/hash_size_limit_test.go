@@ -14,7 +14,7 @@ import (
 // writeSparseFile creates a file of exactly size bytes without writing size
 // bytes: Truncate leaves a sparse hole, so the fixture costs no real disk and
 // no test-side allocation. This is what lets the test exercise the REAL
-// maxDecodeBytes bound instead of a lowered test-only constant -- there is no
+// MaxDecodeBytes bound instead of a lowered test-only constant -- there is no
 // production/test skew to reason about, and no multi-GB fixture.
 func writeSparseFile(t *testing.T, path string, size int64) {
 	t.Helper()
@@ -35,7 +35,7 @@ func writeSparseFile(t *testing.T, path string, size int64) {
 // asserted "err != nil" would pass with the guard removed.
 func TestHashFile_OverLimit_ReturnsSentinel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "oversized.jpg")
-	writeSparseFile(t, path, maxDecodeBytes+1)
+	writeSparseFile(t, path, MaxDecodeBytes+1)
 
 	got, err := HashFile(path, true)
 	if err == nil {
@@ -52,12 +52,12 @@ func TestHashFile_OverLimit_ReturnsSentinel(t *testing.T) {
 	}
 }
 
-// The boundary itself is not an error: a file of exactly maxDecodeBytes is
+// The boundary itself is not an error: a file of exactly MaxDecodeBytes is
 // within budget. This pins the comparison as > rather than >=, which an
 // off-by-one in the guard would flip.
 func TestHashFile_AtLimit_NotRejectedForSize(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "atlimit.jpg")
-	writeSparseFile(t, path, maxDecodeBytes)
+	writeSparseFile(t, path, MaxDecodeBytes)
 
 	got, err := HashFile(path, false)
 	if err != nil {
