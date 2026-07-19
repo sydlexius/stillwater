@@ -3,10 +3,25 @@
 # check-commit-signing.sh -- refuse to create an unsigned commit in a repository
 # that requires signed commits.
 #
-# Called by .githooks/pre-commit (section 0a). Runs BEFORE the commit object
-# exists, so it cannot inspect the commit itself; instead it proves that the
-# signing path configured for this repository actually works right now, by
-# performing a real signature in a throwaway repository (the "probe" below).
+# Two modes, for the two stages at which the question can be asked:
+#
+#   (default, --probe)  Called by .githooks/pre-commit. Runs BEFORE the commit
+#       object exists, so it cannot inspect the commit itself; instead it proves
+#       that the signing path configured for this repository actually works right
+#       now, by performing a real signature in a throwaway repository (the
+#       "probe" below).
+#
+#   --head              Called by .githooks/post-commit. Runs AFTER the commit
+#       object exists and reads the signature straight off it. This is the only
+#       stage that can catch `git commit --no-gpg-sign`: that is a command-line
+#       flag, not config, and git does not expose it to hooks in any form, so the
+#       pre-commit mode sees commit.gpgsign=true, proves the signer works, and
+#       passes while the commit being created is unsigned. That flag is the
+#       actual mechanism behind #2624, so the pair is not optional -- the probe
+#       mode alone misses the very case this check exists for.
+#
+# The modes are complements, not alternatives: --probe explains WHY signing will
+# fail before it costs anything, --head proves whether it actually did.
 #
 # Why this exists (#2625): main is protected by a `required_signatures` ruleset,
 # but nothing local enforced it. An unsigned commit committed, pushed, and passed
@@ -25,6 +40,16 @@
 
 set -euo pipefail
 
+MODE="probe"
+case "${1:-}" in
+    "" | --probe) ;;
+    --head) MODE="head" ;;
+    *)
+        echo "check-commit-signing.sh: unknown argument '$1' (expected --probe or --head)" >&2
+        exit 1
+        ;;
+esac
+
 # Colors (disabled if not a terminal) -- matches .githooks/pre-commit.
 if [ -t 1 ]; then
     RED='\033[0;31m'
@@ -42,6 +67,16 @@ remedies() {
     echo ""
     echo "Remedies, in the order worth trying:"
     echo ""
+    if [ "$MODE" = "head" ]; then
+        echo "  0. Re-sign the commit that was just created. It is local and"
+        echo "     unpushed, so this costs one command and nothing else:"
+        echo "       git commit --amend -S --no-edit"
+        echo "     Then confirm it took:"
+        echo "       git cat-file commit HEAD | sed -n '1,/^\$/p' | grep '^gpgsig'"
+        echo "     If the amend still lands unsigned, work through the steps below"
+        echo "     first -- something in the signing setup is genuinely broken."
+        echo ""
+    fi
     echo "  1. Confirm this repository is configured to sign:"
     echo "       git config commit.gpgsign true"
     echo "       git config --get user.signingkey"
@@ -106,6 +141,34 @@ if [ "$REQUIRED" -eq 0 ]; then
 fi
 
 # --------------------------------------------------------------------------
+# 1h. --head: the commit object exists -- does it actually carry a signature?
+# --------------------------------------------------------------------------
+# The authoritative answer, and the only one that survives `--no-gpg-sign`.
+# Nothing here reads commit.gpgsign: config describes intent, the object records
+# what happened, and the whole point of this mode is that the two can disagree.
+#
+# Read via the RAW COMMIT OBJECT for the same reason the probe does -- see the
+# long note on `%G?` further down.
+if [ "$MODE" = "head" ]; then
+    if ! git rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
+        fail "asked to inspect HEAD, but this repository has no commits." \
+            "This mode is meant to run from post-commit, where HEAD always exists."
+    fi
+    HEAD_SHA=$(git rev-parse --short HEAD)
+    if git cat-file commit HEAD | sed -n '1,/^$/p' | grep -q '^gpgsig'; then
+        echo -e "${GREEN}PASS${RESET} signed-commits (HEAD $HEAD_SHA carries a signature)"
+        exit 0
+    fi
+    fail "the commit you just created ($HEAD_SHA) has NO signature." \
+        "This repository requires signed commits, so it cannot merge as-is." \
+        "" \
+        "commit.gpgsign is '$(git config --get commit.gpgsign || echo unset)', so the" \
+        "most likely cause is that signing was disabled for this one call --" \
+        "'git commit --no-gpg-sign' or '-c commit.gpgsign=false'. Neither is" \
+        "visible to a pre-commit hook, which is why this check runs here instead."
+fi
+
+# --------------------------------------------------------------------------
 # 2. Is this clone configured to sign at all?
 # --------------------------------------------------------------------------
 # This is the #2624 case: signing silently off for one commit. Checked before the
@@ -158,10 +221,36 @@ mkdir -p "$PROBE_DIR/nohooks" "$PROBE_DIR/repo"
 # the real branch. Observed while building this check: the probe silently
 # committed the entire staged changeset as "signing probe".
 #
-# So: strip every inherited GIT_* variable, then point GIT_DIR, GIT_WORK_TREE and
-# GIT_INDEX_FILE at the probe repository by ABSOLUTE path. Nothing about the
-# calling environment can redirect the probe after this. GIT_EXEC_PATH is kept --
-# it locates git's own subcommands, and dropping it can break git entirely.
+# So: strip the inherited GIT_* variables, then point GIT_DIR, GIT_WORK_TREE and
+# GIT_INDEX_FILE at the probe repository by ABSOLUTE path.
+#
+# But "strip everything GIT_*" is too blunt, because that namespace holds two
+# unrelated kinds of variable and this check needs opposite things from them:
+#
+#   LOCATION vars (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_PREFIX, ...)
+#       decide WHICH REPOSITORY git touches. These are the contamination vector,
+#       and they must be stripped and re-pinned. ISOLATION.
+#
+#   CONFIG-RESOLUTION vars (GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM, GIT_CONFIG_COUNT,
+#       GIT_CONFIG_KEY_*/VALUE_*, GIT_CONFIG_PARAMETERS) decide WHICH SETTINGS git
+#       reads. These must be PRESERVED: the probe's entire job is to reproduce the
+#       caller's resolved signing configuration, and a caller who masked their
+#       global config must see a probe that is masked the same way. FIDELITY.
+#
+# Stripping the second group is a real defect, not a theoretical one: with
+# GIT_CONFIG_GLOBAL=/dev/null and gpg.ssh.program unset in the repo, this script
+# reported `gpg.ssh.program = (unset)` while the probe went on to invoke
+# op-ssh-sign out of the masked ~/.gitconfig. The probe was answering a question
+# about a configuration the caller was not using.
+#
+# Preserving them does not reopen the contamination hole. The location vars are
+# still stripped, and the explicit GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE below
+# outrank anything a config file or GIT_CONFIG_PARAMETERS could say about where
+# the repository lives (core.worktree, core.hooksPath). Isolation is enforced by
+# the location pinning; the config vars only affect which settings are read.
+#
+# GIT_EXEC_PATH is kept for a third reason -- it locates git's own subcommands,
+# and dropping it can break git entirely.
 #
 # The cleaning must cover `git init` too, not only the commit: with an inherited
 # GIT_DIR, `git init <path>` initializes into GIT_DIR and ignores <path>, so the
@@ -171,6 +260,9 @@ CLEAN_ENV=(env)
 while IFS='=' read -r name _; do
     case "$name" in
         GIT_EXEC_PATH) ;;
+        GIT_CONFIG_GLOBAL | GIT_CONFIG_SYSTEM | GIT_CONFIG_NOSYSTEM) ;;
+        GIT_CONFIG_COUNT | GIT_CONFIG_KEY_* | GIT_CONFIG_VALUE_*) ;;
+        GIT_CONFIG_PARAMETERS) ;;
         GIT_*) CLEAN_ENV+=(-u "$name") ;;
     esac
 done < <(env)
@@ -185,8 +277,16 @@ PROBE_ENV=(
 )
 
 # Carry over every config key that participates in signing. Values are read from
-# THIS repository, so local-over-global precedence is already resolved; passing
-# them explicitly means the probe cannot accidentally sign via some other config.
+# THIS repository, so local-over-global precedence is already resolved.
+#
+# This does NOT by itself pin the probe's configuration, and an earlier version of
+# this comment wrongly claimed it did. Only NON-EMPTY values are carried, so a key
+# the caller resolves as UNSET is passed as nothing at all -- and the probe then
+# falls back to whatever its own config resolution turns up for it. Absence is not
+# transmissible this way. What actually makes the probe faithful is preserving the
+# caller's GIT_CONFIG_* variables above, so that its fallback resolves against the
+# same files the caller used. This list sits on top of that: it pins the values
+# that repo-local config overrides, which the env vars alone would not convey.
 PROBE_ARGS=(-C "$PROBE_DIR/repo" -c "core.hooksPath=$PROBE_DIR/nohooks")
 for key in gpg.format user.signingkey gpg.program gpg.ssh.program \
     gpg.ssh.defaultKeyCommand gpg.openpgp.program gpg.x509.program; do

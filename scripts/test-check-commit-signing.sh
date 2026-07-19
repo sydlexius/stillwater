@@ -21,6 +21,7 @@ set -euo pipefail
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CHECK="$REPO_ROOT/scripts/check-commit-signing.sh"
 HOOK="$REPO_ROOT/.githooks/pre-commit"
+POST_HOOK="$REPO_ROOT/.githooks/post-commit"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -293,10 +294,17 @@ if require "[ -z \"\$(git -C '$R7' config --get user.signingkey || true)\" ]"; t
     if OUT=$(run_check "$R7" SW_REQUIRE_SIGNED_COMMITS=1); then
         bad "allowed a repo with no signing key" "$OUT"
     else
-        if grep -q 'user.signingkey' <<< "$OUT"; then
-            ok "blocked, naming user.signingkey"
+        # Match the headline of THIS branch, not the bare string "user.signingkey".
+        # That string also appears in the generic remedies footer printed by every
+        # failure, so asserting on it alone passes whenever the check blocks for
+        # ANY reason -- including the probe failing for want of a key, which is
+        # exactly what happens if this branch is deleted. The assertion has to
+        # distinguish "blocked by the missing-key check" from "blocked at all".
+        if grep -q 'user.signingkey is unset' <<< "$OUT"; then
+            ok "blocked by the missing-key check specifically, before the probe"
         else
-            bad "blocked but did not name user.signingkey" "$OUT"
+            bad "blocked, but not by the missing-key check" \
+                "(if this now fails at the probe instead, the early check is gone)" "$OUT"
         fi
     fi
 fi
@@ -421,6 +429,194 @@ if require "[ '$BEFORE' -eq 1 ]" "exactly one baseline commit expected"; then
         else
             bad "commit created but real.txt is missing -- the index was consumed" \
                 "$(git -C "$R9" show --name-only --format= HEAD)"
+        fi
+    fi
+fi
+
+# --------------------------------------------------------------------------
+# Case 10: the probe replays the CALLER'S resolved config, not the machine's
+# --------------------------------------------------------------------------
+# Regression test for a real defect: the probe stripped every inherited GIT_*
+# variable, which swept up GIT_CONFIG_GLOBAL / GIT_CONFIG_SYSTEM / GIT_CONFIG_COUNT
+# / GIT_CONFIG_KEY_*. Those do not decide WHERE git writes, they decide WHICH
+# SETTINGS git reads -- so stripping them made the probe re-resolve config against
+# the machine's real ~/.gitconfig even when the caller had deliberately masked it.
+# Observed: the script printed `gpg.ssh.program = (unset)` while the probe went on
+# to invoke op-ssh-sign out of the masked global config.
+#
+# The carry list of signing keys does not cover this, and that is the crux: only
+# NON-EMPTY values are carried, so a key the caller resolves as UNSET is passed as
+# nothing and the probe silently falls back to its own resolution. Absence cannot
+# be transmitted by passing values.
+#
+# The fixture makes the leak deterministic instead of depending on the developer's
+# real dotfiles: HOME points at a throwaway home whose .gitconfig names a BROKEN
+# signer, and the caller masks it with GIT_CONFIG_GLOBAL. A faithful probe honours
+# the mask and signs; a probe that strips it reads the fake home and dies.
+echo
+echo "Case 10: the probe honours the caller's masked global config"
+R10=$(new_repo config-fidelity)
+git -C "$R10" config commit.gpgsign true
+git -C "$R10" config gpg.format ssh
+git -C "$R10" config user.signingkey "$SIGNING_KEY"
+# gpg.ssh.program is deliberately NOT set locally, so the caller resolves it from
+# whichever global config is in effect. That is what makes the mask observable.
+FAKE_HOME="$WORK/fidelity-home"
+mkdir -p "$FAKE_HOME"
+cat > "$FAKE_HOME/.gitconfig" << 'EOF'
+[gpg "ssh"]
+	program = /nonexistent/leaked-signer
+EOF
+MASKED_GLOBAL="$WORK/fidelity-masked-global"
+: > "$MASKED_GLOBAL"
+
+# Precondition 1: the fake home's config is genuinely poisonous. If it were not,
+# a probe that leaked into it would still pass and the case would prove nothing.
+if env HOME="$FAKE_HOME" GIT_CONFIG_GLOBAL="$FAKE_HOME/.gitconfig" \
+    git -C "$R10" commit -q --allow-empty -S -m "must not exist" 2>/dev/null; then
+    bad "PRECONDITION FAILED: the 'leaked' global config still produced a commit" \
+        "Case 10 cannot distinguish a faithful probe from a leaking one."
+# Precondition 2: with the mask in place the caller's own config really does sign,
+# so a check failure below can only mean the probe diverged from the caller.
+elif ! env HOME="$FAKE_HOME" GIT_CONFIG_GLOBAL="$MASKED_GLOBAL" \
+    git -C "$R10" commit -q --allow-empty -S -m "masked baseline" 2>/dev/null; then
+    bad "PRECONDITION FAILED: signing failed even with the global config masked" \
+        "The fixture's own config is broken; the case is invalid."
+elif require "[ \"\$(git -C '$R10' cat-file commit HEAD | sed -n '1,/^\$/p' | grep -c '^gpgsig')\" -eq 1 ]" \
+    "the masked baseline commit must actually carry a signature"; then
+    if OUT=$(run_check "$R10" SW_REQUIRE_SIGNED_COMMITS=1 \
+        HOME="$FAKE_HOME" GIT_CONFIG_GLOBAL="$MASKED_GLOBAL"); then
+        ok "probe resolved config the caller's way (mask honoured, no leak to \$HOME)"
+    else
+        bad "the probe diverged from the caller's resolved config" \
+            "The caller signs fine under this config, but the probe did not." \
+            "Most likely GIT_CONFIG_* is being stripped from the probe env again." \
+            "$OUT"
+    fi
+fi
+
+# --------------------------------------------------------------------------
+# Case 11: a signer that reports success but emits no signature
+# --------------------------------------------------------------------------
+# Pins the post-probe assertion that the probe commit actually carries a gpgsig
+# header. Nothing else reaches that branch: every other broken-signer fixture
+# makes git fail outright, which is caught one step earlier as "signer
+# unreachable or failed". Before this case, deleting that assertion left the
+# whole suite green -- the one branch named after the originating defect (#2624)
+# was the one branch nothing pinned.
+#
+# The fixture must be openpgp, not ssh. An ssh signer that exits 0 without
+# writing anything makes git abort ("failed reading ssh signing data buffer"), so
+# it cannot reach this branch. A gpg that announces SIG_CREATED on the status fd
+# while emitting an EMPTY signature on stdout does: git exits 0 and writes a
+# commit with no gpgsig header. That is the silent-unsigned-commit shape exactly.
+echo
+echo "Case 11: signer exits 0 but produces no signature -> blocked"
+R11=$(new_repo silent-unsigned)
+FAKE_GPG="$WORK/fake-gpg-silent"
+cat > "$FAKE_GPG" << 'EOF'
+#!/bin/sh
+# Claim a signature was made, emit none.
+echo "[GNUPG:] SIG_CREATED B 1 8 00 0 deadbeef" >&2
+exit 0
+EOF
+chmod +x "$FAKE_GPG"
+git -C "$R11" config commit.gpgsign true
+git -C "$R11" config gpg.format openpgp
+git -C "$R11" config user.signingkey DEADBEEF
+git -C "$R11" config gpg.program "$FAKE_GPG"
+# Precondition: git must genuinely COMMIT here (not fail), and the commit must
+# genuinely lack a signature. If git rejected this config the case would be
+# re-testing Case 6's "signer unreachable" path instead of this branch.
+if ! git -C "$R11" commit -q --allow-empty -S -m "silently unsigned" 2>/dev/null; then
+    bad "PRECONDITION FAILED: the fake signer made git fail, so this case" \
+        "exercises the 'signer unreachable' branch, not the missing-header one."
+elif require "[ \"\$(git -C '$R11' cat-file commit HEAD | sed -n '1,/^\$/p' | grep -c '^gpgsig')\" -eq 0 ]" \
+    "the fixture must produce a commit that is genuinely unsigned"; then
+    if OUT=$(run_check "$R11" SW_REQUIRE_SIGNED_COMMITS=1); then
+        bad "PASSED although the signer produces no signature" \
+            "This is the silent-unsigned-commit failure mode from #2624." "$OUT"
+    else
+        if grep -q 'no signature' <<< "$OUT"; then
+            ok "blocked, naming the signer-succeeded-but-unsigned failure mode"
+        else
+            bad "blocked, but not by the missing-signature assertion" "$OUT"
+        fi
+    fi
+fi
+
+# --------------------------------------------------------------------------
+# Case 12: --no-gpg-sign is caught after the fact by post-commit
+# --------------------------------------------------------------------------
+# The headline gap this hook pair exists to close. `--no-gpg-sign` is a
+# command-line flag, not config, and git does not expose it to hooks in any form.
+# A pre-commit hook therefore reads commit.gpgsign=true, signs its probe fine,
+# prints PASS -- and the commit created is unsigned. That flag is the actual
+# mechanism behind #2624, so the layer that misses it misses the defect.
+#
+# This case asserts BOTH halves, because the second is only meaningful given the
+# first: pre-commit passes (it structurally cannot see the flag), AND post-commit
+# catches the unsigned object anyway.
+#
+# It also asserts the success path, so a post-commit hook that simply always
+# complains cannot pass this case.
+echo
+echo "Case 12: post-commit catches a commit made with --no-gpg-sign"
+R12=$(new_repo no-gpg-sign-bypass)
+mkdir -p "$R12/.githooks" "$R12/scripts"
+cp "$HOOK" "$R12/.githooks/pre-commit"
+cp "$POST_HOOK" "$R12/.githooks/post-commit"
+cp "$CHECK" "$R12/scripts/check-commit-signing.sh"
+chmod +x "$R12/.githooks/pre-commit" "$R12/.githooks/post-commit" \
+    "$R12/scripts/check-commit-signing.sh"
+touch "$R12/.githooks/signed-commits-required"
+# The hooks run all the way through, so the fixture needs what the pre-commit
+# hook's later sections read unconditionally (same as Case 9).
+cp "$REPO_ROOT/.markdownlint-cli2-version" "$R12/.markdownlint-cli2-version"
+git -C "$R12" config core.hooksPath "$R12/.githooks"
+enable_working_signer "$R12"
+echo "bypass" > "$R12/file.txt"
+git -C "$R12" add file.txt
+if require "[ -x '$R12/.githooks/post-commit' ]" "post-commit must be installed and executable"; then
+    set +e
+    C12_OUT=$(git -C "$R12" commit --no-gpg-sign -m "bypass via --no-gpg-sign" 2>&1)
+    C12_STATUS=$?
+    set -e
+    C12_SIGS=$(git -C "$R12" cat-file commit HEAD 2>/dev/null | sed -n '1,/^$/p' | grep -c '^gpgsig' || true)
+    # Precondition: the bypass must genuinely have happened. If git created a
+    # SIGNED commit here, --no-gpg-sign did not take and the case is vacuous.
+    if [ "$C12_STATUS" -ne 0 ]; then
+        bad "the commit was refused outright; --no-gpg-sign never produced an object" "$C12_OUT"
+    elif [ "$C12_SIGS" -ne 0 ]; then
+        bad "PRECONDITION FAILED: --no-gpg-sign still produced a SIGNED commit" \
+            "git's behavior changed; re-derive what the bypass flag now does."
+    elif ! grep -q 'PASS signed-commits' <<< "$C12_OUT"; then
+        bad "pre-commit did not pass, so this case is not exercising the gap it names" \
+            "(the gap is specifically: pre-commit PASSES and the commit is unsigned)" \
+            "$C12_OUT"
+    elif grep -q 'has NO signature' <<< "$C12_OUT" &&
+        grep -q 'commit --amend -S' <<< "$C12_OUT"; then
+        ok "unsigned commit reported after the fact, naming the amend remedy"
+    else
+        bad "an unsigned commit was created and NOTHING reported it" \
+            "This is the --no-gpg-sign gap: the pre-commit hook cannot see the flag," \
+            "so a post-commit inspection of the object is the only thing that can." \
+            "$C12_OUT"
+    fi
+
+    # And the success path: a normally signed commit must NOT be reported. Without
+    # this, a post-commit hook that always fails would pass the assertion above.
+    echo "clean" > "$R12/clean.txt"
+    git -C "$R12" add clean.txt
+    set +e
+    C12B_OUT=$(git -C "$R12" commit -m "normally signed commit" 2>&1)
+    set -e
+    C12B_SIGS=$(git -C "$R12" cat-file commit HEAD 2>/dev/null | sed -n '1,/^$/p' | grep -c '^gpgsig' || true)
+    if require "[ '$C12B_SIGS' -eq 1 ]" "the control commit must genuinely be signed"; then
+        if grep -q 'has NO signature' <<< "$C12B_OUT"; then
+            bad "post-commit reported a correctly SIGNED commit as unsigned" "$C12B_OUT"
+        else
+            ok "a correctly signed commit is not reported (no false positive)"
         fi
     fi
 fi

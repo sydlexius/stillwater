@@ -29,6 +29,18 @@ on:
       - opened
       - synchronize
       - reopened
+      # `edited` fires when a PR's BASE BRANCH is retargeted, which changes the
+      # set of commits in the PR without moving its head SHA. The recorded result
+      # is keyed to that head SHA, so without this the check keeps reporting a
+      # pass it earned against a different commit set until the next push. On a
+      # check whose whole job is to be the unforgeable layer, a stale pass is the
+      # one failure mode worth paying for.
+      #
+      # The price is that `edited` also fires on title and body edits, which are
+      # frequent (bots rewrite PR bodies), so both jobs re-run for no new signal.
+      # Accepted: the verify job is a single API call, and the test job is a few
+      # seconds of bash. Correctness of the backstop beats the runner minutes.
+      - edited
 
 permissions: {}
 
@@ -53,6 +65,13 @@ jobs:
 
           # --paginate: PRs with more than 30 commits would otherwise be checked
           # only as far as the first page, and silently pass on the rest.
+          #
+          # Known ceiling: this endpoint returns at most 250 commits even with
+          # --paginate, so a PR with more than 250 would have its tail unchecked.
+          # Deliberately not engineered around -- the repo's PR size gate (~800
+          # hand-written LOC / 10 files) puts that far out of reach, and the
+          # machinery to walk the compare API instead would cost more than the
+          # case is worth. Revisit if that gate ever goes away.
           COMMITS=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits") || {
             echo "::error::Failed to fetch PR commits from the GitHub API."
             echo "Refusing to pass: an unverifiable result is not a verified one."
@@ -120,7 +139,14 @@ jobs:
           persist-credentials: false
 
       - name: Test scripts/check-commit-signing.sh
-        # The suite is hermetic: it generates its own ephemeral ssh key, isolates
-        # itself from global git config, and needs no agent or secrets. Nothing
-        # here depends on the runner having a signing identity.
+        # The suite is hermetic: it generates its own ephemeral ssh key, points
+        # every fixture at throwaway config (and, where a case needs to observe
+        # config resolution, at a throwaway HOME), and needs no agent or secrets.
+        # Nothing here depends on the runner having a signing identity.
+        #
+        # Note it is NOT true that the suite is isolated from global git config by
+        # GIT_CONFIG_GLOBAL alone -- the check script deliberately preserves the
+        # caller's GIT_CONFIG_* variables so its probe resolves config the way the
+        # caller does. Cases that care construct their own HOME rather than
+        # assuming the ambient one is empty.
         run: bash scripts/test-check-commit-signing.sh

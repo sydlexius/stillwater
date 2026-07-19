@@ -12,7 +12,7 @@ if [ "$hooks_path" != ".githooks" ]; then
     exit 1
 fi
 
-for h in pre-commit pre-push; do
+for h in pre-commit post-commit pre-push; do
     if [ ! -x ".githooks/$h" ]; then
         echo "FAIL: .githooks/$h missing or not executable" >&2
         echo "Fix: run 'make hooks' from this worktree" >&2
@@ -20,4 +20,4 @@ for h in pre-commit pre-push; do
     fi
 done
 
-echo "OK: hooks configured -- core.hooksPath=.githooks, pre-commit + pre-push executable"
+echo "OK: hooks configured -- core.hooksPath=.githooks, pre-commit + post-commit + pre-push executable"
