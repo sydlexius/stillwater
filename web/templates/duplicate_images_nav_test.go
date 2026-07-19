@@ -210,6 +210,18 @@ func TestImagesNav_BasePathPrefixesEveryHref(t *testing.T) {
 
 // A platform row renders from its own Count, so a platform type the code has
 // never heard of still gets a correctly shaped row.
+//
+// "Correctly shaped" is the WHOLE contract on this path, so it is asserted in
+// full rather than by id and label alone: an unknown platform must reach the
+// same destination, carry its count in the pill, and expose the same
+// descriptive accessible name as a known one. Checking only the id and the
+// visible text would let the unknown-platform row lose its href or drop its
+// count entirely and still pass -- and this is precisely the path with no
+// hard-coded knowledge of the platform to fall back on.
+//
+// The known platforms (emby, jellyfin) get the identical treatment in
+// TestImagesNav_AllRowsWhenPopulated, which already asserts their href, pill
+// and aria-label.
 func TestImagesNav_UnknownPlatformStillRenders(t *testing.T) {
 	v := ImagesNavView{
 		SectionLabel: "Images",
@@ -218,11 +230,20 @@ func TestImagesNav_UnknownPlatformStillRenders(t *testing.T) {
 		},
 	}
 
+	// The view renders this ONE row and nothing else, so a whole-document
+	// match is unambiguously a match against the plex row.
 	html := renderImagesNav(t, v)
-	if !strings.Contains(html, `id="sidebar-image-duplicates-plex"`) {
-		t.Error("unknown platform row did not render")
-	}
-	if !strings.Contains(html, `>Plex Duplicates<`) {
-		t.Error("unknown platform label did not render")
+	for _, tc := range []struct {
+		want, why string
+	}{
+		{`id="sidebar-image-duplicates-plex"`, "unknown platform row did not render"},
+		{`>Plex Duplicates<`, "unknown platform visible label did not render"},
+		{`href="/reports/platform-backdrop-duplicates"`, "unknown platform row lost its destination; the row is a link to the platform report, not decoration"},
+		{`class="sw-sidebar-count-pill">9<`, "unknown platform row did not render its count in the pill"},
+		{`aria-label="9 duplicate images on Plex"`, "unknown platform row lost its accessible name; the count-bearing description lives here, not in the terse visible label"},
+	} {
+		if !strings.Contains(html, tc.want) {
+			t.Errorf("%s (missing %q)\n%s", tc.why, tc.want, html)
+		}
 	}
 }
