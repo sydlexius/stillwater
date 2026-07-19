@@ -23,6 +23,11 @@ services:
       - PGID=100
       - SW_LOG_LEVEL=info
       - SW_LOG_FORMAT=json
+      # Keep GOMAXPROCS equal to the `cpus` value below. `cpus` alone throttles
+      # through the kernel CFS quota without telling the Go runtime, which then
+      # schedules more parallel goroutines and GC workers than the quota can run,
+      # adding latency on top of the throttling. Bump both together or neither.
+      - GOMAXPROCS=2
       # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
       # Direct TLS (see docs/how-to/direct-tls-setup):
@@ -35,6 +40,51 @@ services:
       - stillwater-data:/config
       - /path/to/your/music:/music:rw
     restart: unless-stopped
+
+    # --- Resource limits ---
+    # These are service-level Compose Spec keys, honored by plain
+    # `docker compose up`. Do not move them under a `deploy.resources` block:
+    # that form only takes effect under Swarm and is silently ignored otherwise.
+
+    # 2 cores matches SW_RULE_ENGINE_ARTIST_WORKERS (default 2), the widest
+    # deliberate fan-out in the application, so the quota sits at what Stillwater
+    # actually asks for rather than at an arbitrary round number. Hitting it
+    # throttles: a rules pass takes longer and nothing errors. Raise it (and
+    # GOMAXPROCS above, together) if sweeps feel slow on a larger box.
+    cpus: "2.0"
+
+    # Runaway-thread backstop, not a working ceiling. Goroutines are multiplexed
+    # onto OS threads rather than mapped 1:1, so the steady-state thread count is
+    # well under 50; 512 leaves roughly an order of magnitude of headroom.
+    # Deliberately not set closer to the working value: exceeding this limit
+    # surfaces as `fatal error: newosproc`, which is not recoverable, so the
+    # limit is only worth having where reaching it means a real thread-explosion
+    # bug and dying is the correct outcome.
+    pids_limit: 512
+
+    ulimits:
+      # File-descriptor ceiling. Sockets to peers (Emby, Jellyfin, Lidarr) are a
+      # significant share of this number and are driven by how those peers
+      # behave, not only by Stillwater's own workload, so the cap is set far
+      # above any healthy peak (a few hundred, counting SQLite handles, library
+      # scanning, HTTP keep-alives, and filesystem watches) instead of snugly
+      # above it. Exhaustion here degrades rather than crashes: file opens log
+      # and skip, dials surface a request error, and the filesystem watcher falls
+      # back to polling. Do not lower this below 2048.
+      nofile:
+        soft: 8192
+        hard: 8192
+
+    # No `mem_limit` here, and that omission is deliberate. `mem_limit` is
+    # enforced by the cgroup OOM killer, which SIGKILLs the process: no deferred
+    # cleanup, no flush, no graceful shutdown. Paired with `restart:
+    # unless-stopped`, a request that reliably blows the cap turns a single kill
+    # into a crash loop, which is worse than the unbounded growth the cap was
+    # meant to contain. A memory limit stays deferred until the unbounded read
+    # tracked in issue #2620 is fixed. When adding one, set GOMEMLIMIT to about
+    # 80% of the intended mem_limit first, so the Go garbage collector gets a
+    # chance to reclaim before the kernel intervenes, and only then set
+    # mem_limit itself.
 
 volumes:
   stillwater-data:

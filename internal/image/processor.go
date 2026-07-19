@@ -578,22 +578,28 @@ func Crop(src io.Reader, x, y, w, h int) ([]byte, string, error) {
 // crafted images (decompression-bomb style: a tiny file that declares an
 // enormous pixel count). Applied uniformly via decodeWithLimit.
 const (
-	maxDecodeBytes  int64 = 25 << 20    // 25 MB (matches upload limit)
+	// MaxDecodeBytes is exported because callers OUTSIDE this package must be
+	// able to bound their own reads at the same number. A caller that reads a
+	// file into memory before handing it to TrimAlpha/decodeWithLimit has
+	// already made the allocation this constant exists to prevent, so the
+	// bound has to be applied at that read -- and it has to be THIS bound, not
+	// a copy, so the read limit and the decode limit cannot drift apart.
+	MaxDecodeBytes  int64 = 25 << 20    // 25 MB (matches upload limit)
 	maxDecodePixels int64 = 100_000_000 // 100 megapixels
 )
 
-// decodeWithLimit reads up to maxDecodeBytes from r, checks the declared
+// decodeWithLimit reads up to MaxDecodeBytes from r, checks the declared
 // pixel dimensions via image.DecodeConfig (before any pixel buffer is
 // allocated), and only then fully decodes the image. This rejects
 // decompression-bomb style inputs (a small file declaring huge dimensions)
 // before the expensive allocation happens.
 func decodeWithLimit(r io.Reader) (image.Image, error) {
-	data, err := io.ReadAll(io.LimitReader(r, maxDecodeBytes+1))
+	data, err := io.ReadAll(io.LimitReader(r, MaxDecodeBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading image data: %w", err)
 	}
-	if int64(len(data)) > maxDecodeBytes {
-		return nil, fmt.Errorf("image too large (%d bytes, max %d)", len(data), maxDecodeBytes)
+	if int64(len(data)) > MaxDecodeBytes {
+		return nil, fmt.Errorf("image too large (%d bytes, max %d)", len(data), MaxDecodeBytes)
 	}
 
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
