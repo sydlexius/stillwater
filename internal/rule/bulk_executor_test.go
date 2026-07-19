@@ -103,7 +103,7 @@ func TestBulkExecutor_SaveBestImage_PlatformNaming(t *testing.T) {
 		httpClient:      &http.Client{Timeout: fetchTimeout},
 	}
 
-	saved := executor.saveBestImage(ctx, a, "fanart", fetchResult)
+	saved := executor.saveBestImage(ctx, a, "fanart", fetchResult, nil)
 	if saved == "" {
 		t.Fatal("saveBestImage returned empty path; expected the image to be saved successfully")
 	}

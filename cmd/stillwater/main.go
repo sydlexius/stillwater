@@ -930,11 +930,19 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	// slice, so the fixer is wired with a late SetRemediator setter below.
 	collisionFixer := rule.NewCrossArtistBackdropCollisionFixer(logger)
 
+	// #2565: the rule-engine image fixer is one of the two internal/rule write
+	// chokepoints that needs the #2540 collision seam. Hold the reference here
+	// so it can be late-wired below -- it must be constructed as part of this
+	// fixer slice (the pipeline is built from it), but the collision.Notifier
+	// does not exist until after the pipeline, so constructor injection is
+	// impossible. Same shape as collisionFixer.SetRemediator below.
+	imageFixer := rule.NewImageFixer(a.orchestrator, a.platformService, a.fsCheck, logger)
+
 	fixers := []rule.Fixer{
 		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites, a.publisher, a.platformService),
 		rule.NewMetadataFixer(a.orchestrator, logger),
 		rule.NewNameLanguageFixer(a.orchestrator, logger),
-		rule.NewImageFixer(a.orchestrator, a.platformService, a.fsCheck, logger),
+		imageFixer,
 		rule.NewExtraneousImagesFixer(a.platformService, a.fsCheck, logger),
 		logoPaddingFixer,
 		rule.NewDirectoryRenameFixer(a.fsCheck, a.artistService, logger),
@@ -967,6 +975,9 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		logger,
 	)
 	a.publisher.SetCollisionNotifier(a.collisionNotifier, a.artistService)
+	// #2565: extend the same seam to the rule-engine write chokepoint. The
+	// notifier exists only now, so this is a late wire (see imageFixer above).
+	imageFixer.SetCollisionGuard(a.collisionNotifier, a.artistService)
 	a.pipeline.SetHistoryService(a.historyService)
 	// Push a live activity row on every successful auto-fix (single Fix and
 	// Run-rules) so the next/ dashboard rail updates without a manual reload
@@ -987,6 +998,10 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 
 	a.bulkService = rule.NewBulkService(db)
 	a.bulkExecutor = rule.NewBulkExecutor(a.bulkService, a.artistService, a.orchestrator, a.pipeline, a.nfoSnapshotService, a.platformService, a.expectedWrites, a.publisher, logger)
+	// #2565: the bulk auto-fix path is the other internal/rule chokepoint. It is
+	// built after the notifier, but its constructor already takes nine arguments,
+	// so it takes the same setter shape as SetEventBus.
+	a.bulkExecutor.SetCollisionGuard(a.collisionNotifier, a.artistService)
 
 	// Overlay UI-persisted operational settings (#1746, #1753) now that the
 	// scanner and rule pipeline are wired. Env-wins; see applyPersistedOpsSettings.
