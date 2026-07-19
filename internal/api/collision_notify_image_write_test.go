@@ -14,14 +14,17 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/platform"
 )
 
 // seedOwnFanart plants a fanart row with the given phash under artistID ITSELF.
@@ -71,6 +74,83 @@ func restoreFanartRegistry(t *testing.T, r *Router) {
 	}
 }
 
+// unwritableFanartName activates a platform profile whose fanart primary name is
+// a LEGAL but maximum-length filename, so the write itself is the first thing
+// that fails while the destination directory stays perfectly ordinary.
+//
+// Placement is the whole point. Both chokepoints do real work between computing
+// the collision verdict and saving -- the append path scans the directory for the
+// next free fanart index, the overwrite path backs the existing slot up -- and a
+// fault planted on the DIRECTORY (a destination under a regular file, say) fires
+// at one of those instead, which guards a step this test does not claim to guard.
+//
+// A 254-byte name clears every one of them: MaxFanartIndex just reads the
+// directory, and BackupSlot's widest probe is the ".jpeg" variant at 255 bytes,
+// exactly POSIX NAME_MAX. img.Save then appends a uniquifying ".<random>.tmp" to
+// build its atomic temp file, overshoots NAME_MAX, and fails at the write.
+//
+// Structural rather than a permission check, so it holds whatever uid the suite
+// runs as -- unlike chmod, which a root container silently ignores.
+func unwritableFanartName(t *testing.T, r *Router) {
+	t.Helper()
+	p := &platform.Profile{
+		Name:        "Unwritable Fanart Name",
+		ImageNaming: platform.ImageNaming{Fanart: []string{strings.Repeat("f", 250) + ".jpg"}},
+	}
+	if err := r.platformService.Create(context.Background(), p); err != nil {
+		t.Fatalf("creating platform profile: %v", err)
+	}
+	if err := r.platformService.SetActive(context.Background(), p.ID); err != nil {
+		t.Fatalf("activating platform profile: %v", err)
+	}
+}
+
+// assertFailedAtSave pins WHICH step failed, not merely that something did.
+//
+// Every "no notification after a failed write" assertion below is satisfied just
+// as well by a fault that fires BEFORE the save is ever attempted -- err is
+// non-nil, the directory is empty, nothing notified -- so without this check the
+// test silently degrades into guarding an earlier step while still claiming to
+// guard img.Save. That is not hypothetical: this test previously blocked the
+// destination directory, which tripped the fanart index scan, and it read as
+// passing for a full review round.
+//
+// upstreamMarkers name the wrapping text of the steps that must NOT have failed.
+func assertFailedAtSave(t *testing.T, err error, upstreamMarkers ...string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("no error; the save was expected to fail")
+	}
+	msg := err.Error()
+	// img.Save wraps its write as "writing <path>: ..." and WriteFileAtomic's
+	// temp-file step as "creating temp file: ...".
+	if !strings.Contains(msg, "writing ") || !strings.Contains(msg, "creating temp file") {
+		t.Fatalf("error %q is not img.Save's write failure; the injected fault fired somewhere else", msg)
+	}
+	for _, marker := range upstreamMarkers {
+		if strings.Contains(msg, marker) {
+			t.Fatalf("error %q came from the %q step, which runs BEFORE img.Save; this test must fail AT the save", msg, marker)
+		}
+	}
+}
+
+// assertNothingOnDisk fails unless dir is an existing, empty directory: the
+// failed write left no file, and no half-written temp file either.
+func assertNothingOnDisk(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading destination directory: %v", err)
+	}
+	if len(entries) != 0 {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("destination holds %v, want nothing: the save was supposed to leave no artwork behind", names)
+	}
+}
+
 // TestProcessAndAppendFanart_CollisionNotifiesOnlyAfterSaveSucceeds pins the
 // notify-after-confirmed-save ordering on the fanart APPEND chokepoint.
 //
@@ -87,16 +167,12 @@ func TestProcessAndAppendFanart_CollisionNotifiesOnlyAfterSaveSucceeds(t *testin
 		seedCollidingArtist(t, r, phash)
 		pub, raised := wireCollisionNotifier(r)
 
-		// A destination UNDER a regular file: every write fails with ENOTDIR. That
-		// is STRUCTURAL rather than a permission check, so it holds whatever uid the
-		// suite runs as -- unlike chmod, which a root container silently ignores.
-		// The collision check runs on the converted bytes long before the
-		// destination is touched, so it is still fully evaluated.
-		blocker := filepath.Join(t.TempDir(), "regular-file")
-		if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
-			t.Fatalf("writing blocker file: %v", err)
-		}
-		dir := filepath.Join(blocker, "artist")
+		// An ORDINARY destination directory with a fanart name img.Save cannot write
+		// atomically. The directory has to stay valid: the append path scans it for
+		// the next free fanart index first, and a broken directory would fail THERE,
+		// leaving the save untested. See unwritableFanartName.
+		dir := t.TempDir()
+		unwritableFanartName(t, r)
 
 		a := &artist.Artist{ID: "append-save-fail", Name: "Append Fails", Path: dir}
 
@@ -110,7 +186,8 @@ func TestProcessAndAppendFanart_CollisionNotifiesOnlyAfterSaveSucceeds(t *testin
 
 		saved, err := r.processAndAppendFanart(context.Background(), r.newImageWriteScope(a), dir, jpegBytes, nil)
 
-		// Preconditions: the write really did fail and left nothing behind. Without
+		// Preconditions: the write really did fail, it failed AT img.Save rather
+		// than at the index scan ahead of it, and it left nothing behind. Without
 		// these the "no notification" assertions below would prove nothing.
 		if err == nil {
 			t.Fatalf("processAndAppendFanart returned nil error; the save was expected to fail (saved=%v)", saved)
@@ -118,19 +195,8 @@ func TestProcessAndAppendFanart_CollisionNotifiesOnlyAfterSaveSucceeds(t *testin
 		if len(saved) != 0 {
 			t.Fatalf("saved = %v, want none", saved)
 		}
-		// Nothing was created: the destination is still unreachable (ENOTDIR), and
-		// the blocker is still the untouched regular file that makes it so.
-		if _, statErr := os.Stat(dir); statErr == nil {
-			t.Fatalf("destination %s exists; nothing should have been created", dir)
-		}
-		blockerContent, readErr := os.ReadFile(blocker)
-		if readErr != nil {
-			t.Fatalf("reading blocker file: %v", readErr)
-		}
-		if string(blockerContent) != "x" {
-			t.Fatalf("blocker file content = %q, want %q: the write path was not structurally blocked",
-				blockerContent, "x")
-		}
+		assertFailedAtSave(t, err, "scanning fanart")
+		assertNothingOnDisk(t, dir)
 
 		if len(pub.events) != 0 {
 			t.Errorf("SSE collision events = %d, want 0: notified for an append that never landed", len(pub.events))
@@ -207,15 +273,14 @@ func TestProcessAndSaveImage_CollisionNotifiesOnlyAfterSaveSucceeds(t *testing.T
 		seedCollidingArtist(t, r, phash)
 		pub, raised := wireCollisionNotifier(r)
 
-		// A regular FILE used as the destination directory: every write into it
-		// fails, while the collision check ahead of it still runs on the bytes.
-		fileAsDir := filepath.Join(t.TempDir(), "not-a-dir")
-		if err := os.WriteFile(fileAsDir, []byte("x"), 0o600); err != nil {
-			t.Fatalf("writing blocker file: %v", err)
-		}
+		// Same fault as the append case, and for the same reason: this path takes a
+		// BACKUP of the existing slot before it writes, so a broken destination
+		// directory fails at the backup and never reaches img.Save at all.
+		dir := t.TempDir()
+		unwritableFanartName(t, r)
 
-		a := &artist.Artist{ID: "overwrite-save-fail", Name: "Overwrite Fails", Path: fileAsDir}
-		saved, err := r.processAndSaveImage(context.Background(), r.newImageWriteScope(a), fileAsDir, "fanart", jpegBytes, nil)
+		a := &artist.Artist{ID: "overwrite-save-fail", Name: "Overwrite Fails", Path: dir}
+		saved, err := r.processAndSaveImage(context.Background(), r.newImageWriteScope(a), dir, "fanart", jpegBytes, nil)
 
 		if err == nil {
 			t.Fatalf("processAndSaveImage returned nil error; the save was expected to fail (saved=%v)", saved)
@@ -223,6 +288,8 @@ func TestProcessAndSaveImage_CollisionNotifiesOnlyAfterSaveSucceeds(t *testing.T
 		if len(saved) != 0 {
 			t.Fatalf("saved = %v, want none", saved)
 		}
+		assertFailedAtSave(t, err, "backing up")
+		assertNothingOnDisk(t, dir)
 
 		if len(pub.events) != 0 {
 			t.Errorf("SSE collision events = %d, want 0: notified for a save that never landed", len(pub.events))
@@ -583,8 +650,71 @@ func TestImageWriteScope_NilScopeIsASafeNoOp(t *testing.T) {
 // caching of its own, so honoring "once per scope" is this guard's job. The
 // batch fanart-append handler pushes up to 20 images through a single scope; a
 // per-image build would repeat that scan for every one of them.
+//
+// "Once" has two halves and they fail differently. The index must be REUSED
+// across the images that follow the first, and it must be built AT MOST ONCE
+// while serving any single one of them. A guard that caches correctly but builds
+// twice on the way there still doubles the scan the contract exists to prevent,
+// so both halves are pinned below.
 func TestImageWriteScope_IdentityIndexBuiltOncePerScope(t *testing.T) {
 	jpegBytes, phash := decodableBackdropJPEG(t)
+
+	t.Run("the index is reused for every later image in the scope", func(t *testing.T) {
+		testIdentityIndexReusedAcrossImages(t, jpegBytes, phash)
+	})
+
+	// The reuse case above cannot see a scope that builds the index more than once
+	// while serving ONE image: both builds would succeed, the second would overwrite
+	// the first with an identical result, and every count would still line up.
+	//
+	// A build that FAILS does announce itself -- identityIndex warns once per
+	// attempt, an operator-facing log line rather than a counter bolted onto the
+	// production object -- so breaking the registry turns build attempts into
+	// something observable and counts them.
+	t.Run("the index is built at most once while serving a single image", func(t *testing.T) {
+		r := testRouterForLibraryOps(t)
+		seedCollidingArtist(t, r, phash)
+		pub, raised := wireCollisionNotifier(r)
+
+		var logs bytes.Buffer
+		r.logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+		breakFanartRegistry(t, r)
+
+		dir := t.TempDir()
+		a := &artist.Artist{ID: "single-image-build", Name: "Single Image Build", Path: dir}
+		scope := r.newImageWriteScope(a)
+
+		saved, err := r.processAndAppendFanart(context.Background(), scope, dir, jpegBytes, nil)
+		if err != nil {
+			t.Fatalf("processAndAppendFanart: %v", err)
+		}
+		if len(saved) == 0 {
+			t.Fatal("no file saved: a failed collision check must never cost the operator their write")
+		}
+
+		// Precondition: the scope did attempt a build, so a count of 1 below means
+		// "built exactly once" and not "the warning never reached the buffer".
+		if !scope.built {
+			t.Fatal("scope reports no index build; this count would be meaningless")
+		}
+		// Matched on the clause unique to the LOG MESSAGE. The bare
+		// "building fanart identity index" prefix also appears in the wrapped error
+		// this same line carries, so counting that would count every attempt twice.
+		const buildAttempt = "skipping cross-artist collision check for this write"
+		if n := strings.Count(logs.String(), buildAttempt); n != 1 {
+			t.Errorf("whole-library index builds while writing one image = %d, want exactly 1: the scan is "+
+				"being repeated within a single write instead of built once and cached", n)
+		}
+		if len(pub.events) != 0 || *raised != 0 {
+			t.Errorf("events = %d, raised = %d, want 0 and 0: a verdict was announced with no registry to reach it",
+				len(pub.events), *raised)
+		}
+	})
+}
+
+func testIdentityIndexReusedAcrossImages(t *testing.T, jpegBytes []byte, phash uint64) {
+	t.Helper()
 
 	r := testRouterForLibraryOps(t)
 	seedCollidingArtist(t, r, phash)
