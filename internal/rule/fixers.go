@@ -435,6 +435,22 @@ type ImageFixer struct {
 	// the download path against httptest.NewServer (which binds to 127.0.0.1)
 	// must override this field with a plain *http.Client after construction.
 	httpClient *http.Client
+	// collisionGuard is the #2540 cross-artist backdrop check for
+	// downloadAndPersist. It is LATE-WIRED via SetCollisionGuard rather than
+	// taken as a constructor argument because main.go builds the ImageFixer as
+	// part of the fixer slice that the pipeline is built from, while the
+	// collision.Notifier is constructed AFTER the pipeline (it needs the
+	// pipeline-adjacent rule.Service). Nil here is a fully supported state: a
+	// nil *collisionGuard is a no-op at every method, so every existing
+	// construction (tests, headless) keeps its previous behavior.
+	collision *collisionGuard
+}
+
+// SetCollisionGuard late-wires the #2540 cross-artist backdrop-collision seam.
+// See the collision field comment for why this is a setter and not a
+// constructor parameter. Passing a nil notifier or indexer disables the check.
+func (f *ImageFixer) SetCollisionGuard(notifier backdropCollisionNotifier, indexer fanartIdentityIndexer) {
+	f.collision = newCollisionGuard(notifier, indexer, f.logger)
 }
 
 // NewImageFixer creates an ImageFixer.
@@ -695,6 +711,18 @@ func (f *ImageFixer) candidateListResult(v *Violation, fctx *imageFixContext, ca
 // downstream UpdateImageProvenance call.
 func (f *ImageFixer) downloadAndPersist(ctx context.Context, a *artist.Artist, v *Violation, fctx *imageFixContext, candidates []provider.ImageResult) *FixResult {
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
+
+	// #2540 (#2565): build the cross-artist fanart registry ONCE for this fix,
+	// outside the candidate loop -- it is a whole-library read, so rebuilding it
+	// per candidate would re-scan the library on every download attempt. This is
+	// the "once per scope" contract; for a single-artist rule fix the scope is
+	// this call. Nil when the guard is unwired or the type is not fanart, and
+	// nil on a build failure (fail-open).
+	var identityIdx []img.FanartIdentityEntry
+	if f.collision.active(fctx.imageType) {
+		identityIdx = f.collision.buildIndex(ctx)
+	}
+
 	var downloadFails, dimGateFails, saveFails int
 	for _, c := range candidates {
 		data, err := fetchImageURL(ctx, f.httpClient, c.URL)
@@ -709,6 +737,36 @@ func (f *ImageFixer) downloadAndPersist(ctx context.Context, a *artist.Artist, v
 			continue
 		}
 
+		// #2540 NOTIFY-ONLY: decide the collision verdict HERE, on the CONVERTED
+		// bytes (what SaveImageFromData will actually put on disk -- WebP becomes
+		// PNG), but HOLD it. The notification is emitted only after the save below
+		// is confirmed, because its durable half is a fixable Action Queue entry
+		// whose auto-fix backs artwork OUT of the artist: raising it for a save
+		// that then failed would point a destructive remediation at a file that
+		// was never created. A conversion failure here is not fatal to the fix --
+		// SaveImageFromData will surface the same error a moment later -- so it
+		// just skips the check, fail-open.
+		//
+		// The conversion is hoisted out of the guard's own branch and its result is
+		// handed to the save below, so the bytes are converted ONCE rather than
+		// here and again inside SaveImageFromData. ConvertFormat is idempotent (it
+		// emits JPEG or PNG and passes both through untouched), so what lands on
+		// disk is byte-for-byte identical -- a WebP source just stops being decoded
+		// and re-encoded twice per candidate. On a conversion failure saveData
+		// stays as the raw bytes, so SaveImageFromData still surfaces the same
+		// error it always did.
+		var collisionResult *img.IdentityResult
+		saveData := data
+		if converted, _, convErr := img.ConvertFormat(bytes.NewReader(data)); convErr == nil {
+			saveData = converted
+			if len(identityIdx) > 0 {
+				collisionResult = f.collision.verdict(a.ID, converted, identityIdx)
+			}
+		} else {
+			f.logger.Debug("converting image failed; skipping the collision check",
+				"source", c.Source, "error", convErr)
+		}
+
 		saveMeta := &img.ExifMeta{
 			Source:  c.Source,
 			Fetched: time.Now().UTC(),
@@ -717,13 +775,18 @@ func (f *ImageFixer) downloadAndPersist(ctx context.Context, a *artist.Artist, v
 			Mode:    "auto",
 		}
 
-		saved, err := SaveImageFromData(ctx, a, fctx.imageType, data, nil, useSymlinks, saveMeta, f.platformService, f.logger)
+		saved, err := SaveImageFromData(ctx, a, fctx.imageType, saveData, nil, useSymlinks, saveMeta, f.platformService, f.logger)
 		if err != nil {
 			// Source identifies the provider without leaking the signed URL.
 			f.logger.Debug("image save failed", "source", c.Source, "error", err)
 			saveFails++
 			continue
 		}
+
+		// The save returned no error, so the image the verdict was computed on
+		// genuinely exists on disk now. Only here is it correct to notify. The fix
+		// itself is never blocked -- this runs after the write, not instead of it.
+		f.collision.notify(ctx, a.ID, a.Name, collisionResult)
 
 		savedPath := ""
 		if len(saved) > 0 && a.Path != "" {

@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -40,6 +41,10 @@ type BulkExecutor struct {
 	// compromised provider response. Tests override this field with a plain
 	// *http.Client when exercising the loopback-bound httptest path.
 	httpClient *http.Client
+	// collision is the #2540 cross-artist backdrop check for saveBestImage.
+	// Late-wired via SetCollisionGuard (mirroring SetEventBus) rather than added
+	// to the already-nine-parameter constructor. Nil is a supported no-op state.
+	collision *collisionGuard
 
 	mu        sync.Mutex
 	cancelFn  context.CancelFunc
@@ -49,6 +54,12 @@ type BulkExecutor struct {
 // SetEventBus sets the event bus for publishing bulk job events.
 func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 	e.eventBus = bus
+}
+
+// SetCollisionGuard late-wires the #2540 cross-artist backdrop-collision seam
+// for the bulk auto-fix path. Passing a nil notifier or indexer disables it.
+func (e *BulkExecutor) SetCollisionGuard(notifier backdropCollisionNotifier, indexer fanartIdentityIndexer) {
+	e.collision = newCollisionGuard(notifier, indexer, e.logger)
 }
 
 // NewBulkExecutor creates a BulkExecutor.
@@ -165,6 +176,41 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 	job.TotalItems = len(artists)
 	_ = e.bulkService.UpdateJob(ctx, job)
 
+	// #2540 (#2565) BULK SCOPE DECISION: build the cross-artist fanart identity
+	// registry ONCE PER JOB, here, and thread it down to saveBestImage.
+	//
+	// The other #2540 chokepoints are single-artist, so "once per scope" and
+	// "once per artist" coincide. A bulk job is different: it walks the WHOLE
+	// library. BuildFanartIdentityIndex is a full artist_images fanart read, so
+	// rebuilding it per artist would be N whole-library scans across N artists --
+	// quadratic, on the unattended auto-fix path this guard exists to protect.
+	// That cost is not affordable, so the index is built once and reused.
+	//
+	// A once-per-job index is stale the moment the job writes its first fanart, so
+	// it is also GROWN IN PLACE: saveBestImage appends each CONFIRMED fanart write
+	// (fanartIndex.add), O(1) per write with no extra database read.
+	//
+	// That append covers the primary bulk threat. fetchImages holds the
+	// misresolution source itself: for an artist with no MBID in auto mode it
+	// name-searches and takes the first result carrying one, so N artists can
+	// resolve to the same wrong MBID in one run and all receive the same backdrop.
+	// If the TRUE OWNER is not in the library (or is itself missing that fanart)
+	// the pre-run index contains that hash ZERO times, so without the append NONE
+	// of the N is flagged and the guard stays silent through the exact event it
+	// exists to catch. With it, artists 2..N are flagged against artist 1.
+	//
+	// WHAT IS STILL NOT COVERED: the FIRST write of a given backdrop in a job whose
+	// pre-run library does not already contain it. Nothing exists to compare it
+	// against at that moment, so it is written silently and only becomes a
+	// reference for the writes after it. The #2564 detector sweep is the backstop
+	// for that residue; this guard is not.
+	//
+	// Nil when the guard is unwired, and empty on a build failure (fail-open).
+	var identityIdx *fanartIndex
+	if e.collision.active("fanart") {
+		identityIdx = &fanartIndex{entries: e.collision.buildIndex(ctx)}
+	}
+
 	for i := range artists {
 		if ctx.Err() != nil {
 			e.finishJob(ctx, job, BulkStatusCanceled, "")
@@ -179,7 +225,7 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 			Status:     BulkItemPending,
 		}
 
-		status, message := e.processArtist(ctx, a, job)
+		status, message := e.processArtist(ctx, a, job, identityIdx)
 		item.Status = status
 		item.Message = message
 
@@ -206,12 +252,12 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 	e.finishJob(ctx, job, BulkStatusCompleted, "")
 }
 
-func (e *BulkExecutor) processArtist(ctx context.Context, a *artist.Artist, job *BulkJob) (string, string) {
+func (e *BulkExecutor) processArtist(ctx context.Context, a *artist.Artist, job *BulkJob, identityIdx *fanartIndex) (string, string) {
 	switch job.Type {
 	case BulkTypeFetchMetadata:
 		return e.fetchMetadata(ctx, a, job.Mode)
 	case BulkTypeFetchImages:
-		return e.fetchImages(ctx, a, job.Mode)
+		return e.fetchImages(ctx, a, job.Mode, identityIdx)
 	default:
 		return BulkItemFailed, fmt.Sprintf("unknown job type: %s", job.Type)
 	}
@@ -253,7 +299,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 	return BulkItemFixed, "metadata updated"
 }
 
-func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode string) (string, string) {
+func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode string, identityIdx *fanartIndex) (string, string) {
 	if a.MusicBrainzID == "" {
 		if mode == BulkModeManual || mode == BulkModeDisambiguate {
 			return BulkItemSkipped, "no MBID"
@@ -304,7 +350,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 
 	fixed := 0
 	for imageType := range needed {
-		if path := e.saveBestImage(ctx, a, imageType, imgResult); path != "" {
+		if path := e.saveBestImage(ctx, a, imageType, imgResult, identityIdx); path != "" {
 			fixed++
 			savedImages = append(savedImages, savedImage{imageType, path})
 		}
@@ -332,7 +378,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 
 // saveBestImage saves the best candidate image for the given type. Returns the
 // full file path of the saved image, or empty string if no candidate succeeded.
-func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imageType string, result *provider.FetchResult) string {
+func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imageType string, result *provider.FetchResult, identityIdx *fanartIndex) string {
 	var candidates []provider.ImageResult
 	for _, im := range result.Images {
 		if string(im.Type) == imageType {
@@ -361,11 +407,65 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 			Rule:    "",
 			Mode:    "auto",
 		}
-		saved, err := SaveImageFromURL(ctx, e.httpClient, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger)
+		// #2540 NOTIFY-ONLY. SaveImageFromURL is a thin fetch-then-delegate wrapper
+		// around the already-exported SaveImageFromData, whose doc comment exists
+		// precisely to serve callers that need to inspect the downloaded bytes. So
+		// this site splits the wrapper open rather than changing any signature:
+		// fetch, convert (what actually lands on disk -- ConvertFormat re-encodes
+		// WebP to PNG), decide the verdict, then save the same bytes.
+		//
+		// The verdict is computed here but HELD until the save is confirmed below.
+		// Its durable half is a fixable Action Queue entry whose auto-fix backs
+		// artwork OUT of the artist; raising it for a save that then failed would
+		// aim a destructive remediation at a file that never existed. This path is
+		// bulk Mode "auto" -- unattended and library-wide -- so getting that
+		// ordering right matters more here than anywhere else.
+		//
+		// The gate is collision.active(imageType), NOT a bare index check. The index
+		// is job-scoped but FANART-ONLY (BuildFanartIdentityIndex deliberately loads
+		// only fanart rows), while this function runs once per NEEDED type -- thumb,
+		// fanart, logo. Gating on the index alone hashes a thumb or logo candidate
+		// against the fanart registry: a meaningless comparison that can raise a
+		// BACKDROP collision, and its artwork-back-out auto-fix, for a write that
+		// was never a backdrop. This mirrors the type gate in fixers.go.
+		//
+		// Fail-open: with no guard wired or a non-fanart type this takes the
+		// untouched SaveImageFromURL branch. An empty index still enters here -- it
+		// yields no verdict, but it does seed the in-run index for later writes.
+		var collisionResult *img.IdentityResult
+		var phash uint64
+		var saved []string
+		var err error
+		if e.collision.active(imageType) {
+			var data []byte
+			if data, err = fetchImageURL(ctx, e.httpClient, c.URL); err == nil {
+				var converted []byte
+				if converted, _, err = img.ConvertFormat(bytes.NewReader(data)); err == nil {
+					collisionResult, phash = e.collision.verdictAndHash(a.ID, converted, identityIdx.list())
+					// Pass the CONVERTED bytes: SaveImageFromData converts again, and
+					// ConvertFormat is idempotent (its output is always JPEG or PNG,
+					// both of which it passes through untouched), so the file on disk
+					// is byte-for-byte identical either way -- but a WebP source is
+					// decoded and re-encoded once instead of twice.
+					saved, err = SaveImageFromData(ctx, a, imageType, converted, naming, useSymlinks, meta, e.platformService, e.logger)
+				}
+			}
+		} else {
+			saved, err = SaveImageFromURL(ctx, e.httpClient, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger)
+		}
 		if err != nil {
-			e.logger.Debug("image candidate failed", "url", c.URL, "error", err)
+			// Source identifies the provider without leaking the signed URL.
+			e.logger.Debug("image candidate failed", "source", c.Source, "error", err)
 			continue
 		}
+		// The save returned no error, so the image the verdict was computed on is
+		// genuinely on disk. Only now is it correct to notify -- and only now is it
+		// correct to add this fanart to the in-run index, for the same reason: an
+		// entry for a failed write would poison every later comparison in the job.
+		// phash is non-zero only on the fanart branch above, so this is inert for
+		// thumb and logo.
+		e.collision.notify(ctx, a.ID, a.Name, collisionResult)
+		identityIdx.add(a.ID, phash)
 		if len(saved) > 0 && a.Path != "" {
 			return filepath.Join(a.Path, saved[0])
 		}
