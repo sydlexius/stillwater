@@ -104,7 +104,7 @@ The compose file bounds what the container can consume. All three keys are plain
 
 - **File descriptors.** `8192` sits well above any healthy peak. It is set generously on purpose, because a meaningful share of Stillwater's descriptors are sockets to Emby, Jellyfin, and Lidarr, and how many of those are open at once depends partly on how those services behave rather than only on what Stillwater is doing. Running out degrades: file opens are logged and skipped, outbound connections surface as a request error, and the filesystem watcher falls back to polling. If you tune it, do not go below `2048`.
 
-There is deliberately no memory limit. A container memory cap is enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. Combined with `restart: unless-stopped`, anything that reliably exceeds the cap would restart into the same condition and loop. If you need to bound memory on a shared box, prefer giving Stillwater its own host or a generous cap you do not expect to reach.
+There is deliberately no memory limit. A container memory cap is enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. Combined with `restart: unless-stopped`, anything that reliably exceeds the cap would restart into the same condition and loop. If you need to bound memory on a shared box, prefer giving Stillwater its own host or a generous cap you do not expect to reach. If you do add one, set `GOMEMLIMIT` to about 80% of the intended `mem_limit` first, so the Go garbage collector gets a chance to reclaim before the kernel intervenes, and only then set `mem_limit` itself.
 
 ## Bring it up
 

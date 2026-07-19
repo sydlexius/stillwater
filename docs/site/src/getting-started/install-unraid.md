@@ -59,7 +59,7 @@ Why these numbers:
 
 - **File descriptors (`--ulimit nofile=8192:8192`).** Set well above any healthy peak on purpose. A meaningful share of Stillwater's descriptors are sockets to Emby, Jellyfin, and Lidarr, and how many are open at once depends partly on how those services behave rather than only on what Stillwater is doing. Exhaustion degrades: file opens are logged and skipped, outbound connections surface as a request error, and the filesystem watcher falls back to polling. Do not go below `2048`.
 
-Deliberately absent: a memory limit. Unraid exposes one, but a container memory cap is enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. With Unraid restarting the container afterwards, anything that reliably exceeds the cap restarts into the same condition and loops. On a memory-constrained server, prefer a cap you do not expect to reach over a snug one.
+Deliberately absent: a memory limit. Unraid exposes one, but a container memory cap is enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. With Unraid restarting the container afterwards, anything that reliably exceeds the cap restarts into the same condition and loops. On a memory-constrained server, prefer a cap you do not expect to reach over a snug one. If you set the field anyway, add a `GOMEMLIMIT` variable at about 80% of that figure first, so the Go garbage collector gets a chance to reclaim before the kernel intervenes, and only then fill in the memory limit itself.
 
 ## Apply and first run
 
