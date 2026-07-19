@@ -59,10 +59,17 @@ services:
     environment:
       - PUID=99
       - PGID=100
+      - GOMAXPROCS=2  # keep equal to `cpus` below
     volumes:
       - stillwater-data:/config
       - /path/to/your/music:/music:rw
     restart: unless-stopped
+    cpus: "2.0"
+    pids_limit: 512
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
 
 volumes:
   stillwater-data:
