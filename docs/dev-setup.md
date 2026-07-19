@@ -168,6 +168,30 @@ make test         # or: go test -race -count=1 ./...
 
 Pre-commit hooks enforce formatting and linting automatically. Run `make hooks` to install the project hook; see `.githooks/pre-commit` for the full list of checks.
 
+### Signed Commits
+
+`main` requires signed commits. Two checks enforce this, and they fail in opposite directions on purpose.
+
+**Locally, at commit time.** `.githooks/pre-commit` runs `scripts/check-commit-signing.sh`, which refuses to create an unsigned commit. It verifies two separate things: that this clone is configured to sign (`commit.gpgsign` is true and `user.signingkey` is set), and that the configured signer actually works right now. The second part is a live probe: it signs a throwaway commit using this repository's resolved signing config and confirms the result carries a signature. An unreachable signer is reported as an error, never as a fallback to an unsigned commit.
+
+The requirement itself comes from the tracked file `.githooks/signed-commits-required`. It is deliberately not inferred from `commit.gpgsign`, because a check that reads the requirement from the setting would conclude "signing is not required here" in exactly the case it exists to catch. Set `SW_REQUIRE_SIGNED_COMMITS=0` to override.
+
+**In CI, as a required check.** `.github/workflows/signed-commits.yml` asks GitHub whether every commit in the PR is `verified`, and names any that are not. The local hook is earlier and cheaper but advisory -- it can be skipped with `--no-verify` or never installed. The CI check runs where the committer has no say, so it is the layer that actually holds.
+
+Fix an unsigned commit while it is still local. Once it is on a reviewed PR, the only remedy is rewriting shared history, which orphans any commit SHA cited in review replies.
+
+**Verifying a signature by hand.** Check the raw commit object:
+
+```bash
+git cat-file commit HEAD | sed -n '1,/^$/p' | grep '^gpgsig'
+```
+
+Do not use `git log --format=%G?` for this. It reports `N` -- "no signature" -- for genuinely signed commits whenever `gpg.ssh.allowedSignersFile` is unset, because it answers "can I verify this signature", not "is there one". That is the default state on a fresh clone.
+
+**If signing fails.** This repository signs through 1Password (`gpg.ssh.program` is `op-ssh-sign`), which reaches the desktop app over its own IPC. If signing breaks, confirm the 1Password app is running and unlocked. Note that `op-ssh-sign` does *not* use `SSH_AUTH_SOCK` -- that variable matters for pushing over SSH, not for signing. On a plain `ssh-agent` setup instead of 1Password, an empty `SSH_AUTH_SOCK` is the usual cause; non-interactive shells frequently get one. Export it and confirm with `ssh-add -L`.
+
+Run `bash scripts/test-check-commit-signing.sh` to exercise the local check. Case 9 there guards a subtle constraint worth knowing if you modify the probe: git exports `GIT_INDEX_FILE` (and in a linked worktree, an absolute `GIT_DIR`) into its hooks, and those outrank `git -C`. Any git command the hook runs against another repository must first clear the inherited `GIT_*` environment, or it operates on the real index instead. Because this project works in worktrees, the contaminating case is the normal one here.
+
 ### API Testing
 
 Use Bruno collections in `api/bruno/` to test endpoints:

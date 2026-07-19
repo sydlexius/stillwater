@@ -1,0 +1,126 @@
+# Verify every commit in a pull request is signed and verified by GitHub.
+#
+# main is protected by a `required_signatures` ruleset. Without this check an
+# unsigned commit passes every other job, gets fully reviewed, and only surfaces
+# at the merge gate as mergeStateStatus=BLOCKED with no stated reason -- at which
+# point the fix is a force-push on a reviewed PR, orphaning any fix SHA cited in
+# review replies and emptying CodeRabbit's incremental-review delta (#2624).
+#
+# This is the unforgeable half of the pair. .githooks/pre-commit catches the same
+# defect roughly a day earlier and for free, but it is advisory: it lives on the
+# developer's machine and can be skipped with --no-verify or never installed. This
+# job runs on infrastructure the committer does not control, so it closes the
+# "someone bypassed the hook" case that the local check structurally cannot.
+#
+# Authority is GitHub's own `verification.verified`, not any local git command.
+# In particular it is NOT `git log --format=%G?`, which reports N -- "no
+# signature" -- for genuinely signed commits whenever gpg.ssh.allowedSignersFile
+# is unset. That is the default on a fresh CI checkout, so a %G?-based check would
+# fail every correctly signed PR.
+#
+# Make this a REQUIRED status check on main. Unrequired, it reports the problem
+# without preventing it, which is the status quo this issue exists to change.
+
+name: Signed Commits
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions: {}
+
+jobs:
+  verify:
+    name: Signed Commits
+    runs-on: ubuntu-latest
+    permissions:
+      # Reading PR commits and their verification status. No checkout: the API is
+      # the source of truth here, and the working tree would tell us nothing
+      # GitHub has not already decided.
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Verify all commits are signed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # --paginate: PRs with more than 30 commits would otherwise be checked
+          # only as far as the first page, and silently pass on the rest.
+          COMMITS=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits") || {
+            echo "::error::Failed to fetch PR commits from the GitHub API."
+            echo "Refusing to pass: an unverifiable result is not a verified one."
+            exit 1
+          }
+
+          TOTAL=$(jq -s 'add | length' <<< "$COMMITS")
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "::error::The GitHub API returned zero commits for PR #$PR_NUMBER."
+            echo "A pull request always has at least one commit, so this is a fault,"
+            echo "not an empty-and-therefore-fine result."
+            exit 1
+          fi
+
+          # Name every offending SHA, with the reason GitHub gives, so the failure
+          # is self-explanatory without a second round-trip to the API.
+          UNVERIFIED=$(jq -rs '
+            add
+            | map(select(.commit.verification.verified != true))
+            | .[]
+            | "  \(.sha[0:12])  \(.commit.verification.reason)  \(.commit.message | split("\n")[0])"
+          ' <<< "$COMMITS")
+
+          if [ -n "$UNVERIFIED" ]; then
+            COUNT=$(printf '%s\n' "$UNVERIFIED" | wc -l | tr -d ' ')
+            echo "::error::$COUNT of $TOTAL commit(s) in this PR are not verified by GitHub."
+            echo ""
+            echo "Unverified commits (sha, reason, subject):"
+            printf '%s\n' "$UNVERIFIED"
+            echo ""
+            echo "main requires signed commits, so this PR cannot merge as-is."
+            echo ""
+            echo "To fix, from the PR branch:"
+            echo "  1. Make signing work locally first, and prove it:"
+            echo "       git config commit.gpgsign true"
+            echo "       git commit --allow-empty -S -m probe"
+            echo "       git cat-file commit HEAD | sed -n '1,/^\$/p' | grep '^gpgsig'"
+            echo "     (Do not use 'git log --format=%G?' -- it reports N for"
+            echo "      genuinely signed commits when gpg.ssh.allowedSignersFile"
+            echo "      is unset.)"
+            echo "  2. Re-sign the branch:"
+            echo "       git rebase --exec 'git commit --amend --no-edit -S' <base>"
+            echo "  3. Force-push. Note this orphans any fix SHA cited in review"
+            echo "     replies, so re-cite them after."
+            echo ""
+            echo "Preventing this next time: run 'make hooks' so .githooks/pre-commit"
+            echo "blocks the unsigned commit at creation, where the fix is free."
+            exit 1
+          fi
+
+          echo "All $TOTAL commit(s) in PR #$PR_NUMBER are signed and verified by GitHub."
+
+  # Separate job, not a step in `verify`, so a test regression reads as a test
+  # regression rather than muddying the "are this PR's commits signed" signal.
+  # Without this the local check's tests would never run anywhere, and a test
+  # nothing executes protects nothing.
+  test-local-check:
+    name: Signed Commits / local check tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Test scripts/check-commit-signing.sh
+        # The suite is hermetic: it generates its own ephemeral ssh key, isolates
+        # itself from global git config, and needs no agent or secrets. Nothing
+        # here depends on the runner having a signing identity.
+        run: bash scripts/test-check-commit-signing.sh

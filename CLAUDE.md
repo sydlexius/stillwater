@@ -195,6 +195,8 @@ See `docs/milestone-protocol.md`. Start with scope assessment, create `~/.claude
 - `scripts/smoke-provider-failure.sh` -- fault-injection smoke harness for provider failure surfaces
 - `scripts/check-generated.sh` -- verify `*_templ.go` was regenerated after `.templ` changes
 - `scripts/check-css-comments.sh` -- fail on a self-terminating CSS comment (a `*/` in comment prose closes the comment, so the rest is parsed as CSS; #2525). Called by pre-push-gate; mirrored by the `CSS Comments` job in `gate.yml`
+- `scripts/check-commit-signing.sh` -- refuse to create an unsigned commit when `.githooks/signed-commits-required` is present (#2625). Called by `.githooks/pre-commit`; probes the real signer, verifies the raw commit object (never `git log --format=%G?`, which reports `N` for genuinely signed commits when `gpg.ssh.allowedSignersFile` is unset). Backed by the required `Signed Commits` CI check
+- `scripts/test-check-commit-signing.sh` -- hermetic tests for the above (`bash scripts/test-check-commit-signing.sh`)
 - `scripts/check-hooks.sh` -- verify `core.hooksPath` points at `.githooks` and the hook files are executable
 - `~/.claude/scripts/cleanup-worktree.sh <suffix>` -- remove worktree, delete local/remote branches, prune refs (repo-agnostic; auto-detects the main worktree's basename as the prefix). In Stillwater, prefer `make remove-worktree NAME=<slug>` (see Worktrees section); the make target wraps this script and additionally strips the Active-table row in `worktrees.md`.
 - `~/.claude/scripts/pr-unreplied-comments.sh [--allow-stale] [--pending-only] [--count-only] [--coverage-only] [--wait] [--latest-per-reviewer] [--check-resolved] <PR>` -- unreplied bot comments + codecov advisory

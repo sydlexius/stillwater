@@ -1,0 +1,12 @@
+# Presence of this file declares: every commit in this repository must be signed.
+#
+# It is TRACKED in git on purpose. The requirement is a property of the repository,
+# not of any one clone, so it must not be expressible as local git config that a
+# fresh worktree can silently miss -- that is precisely how #2624 shipped an
+# unsigned commit while `commit.gpgsign` looked correct everywhere else.
+#
+# Read by scripts/check-commit-signing.sh, which .githooks/pre-commit invokes.
+# Deleting this file turns the local pre-commit check into a no-op. It does NOT
+# relax the `required_signatures` ruleset on main, and it does NOT relax the
+# required "Signed Commits" CI check -- both live on infrastructure the committer
+# does not control. See docs/dev-setup.md.

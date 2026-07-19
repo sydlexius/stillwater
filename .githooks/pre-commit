@@ -3,6 +3,7 @@
 # pre-commit hook: mirrors the CI lint job so issues are caught before push.
 #
 # Checks (in order, fast-fail):
+#   0a. signed commits -- the commit about to be created will carry a signature
 #   1. typos -- spell check staged files (uses .typos.toml config)
 #   2. gofmt -- staged .go files are correctly formatted
 #   3. templ freshness -- generated _templ.go files match their .templ sources
@@ -66,6 +67,22 @@ if git diff --cached --name-only --diff-filter=ACMR -- | grep -q .; then
 else
     warn "conflict-markers (no staged files)"
 fi
+
+# --------------------------------------------------------------------------
+# 0a. signed commits -- refuse to create an unsigned commit (#2625)
+# --------------------------------------------------------------------------
+# Runs early and unconditionally: it does not depend on what is staged, and an
+# unsigned commit is the one failure here whose cost grows after the fact. Every
+# later check can be satisfied by amending; an unsigned commit that reaches a
+# reviewed PR can only be fixed by rewriting shared history (#2624).
+#
+# The check itself lives in scripts/check-commit-signing.sh so it can be tested
+# without driving the whole hook -- see scripts/test-check-commit-signing.sh.
+SIGNING_CHECK="$(git rev-parse --show-toplevel)/scripts/check-commit-signing.sh"
+if [ ! -x "$SIGNING_CHECK" ]; then
+    fail "signed-commits: $SIGNING_CHECK is missing or not executable"
+fi
+bash "$SIGNING_CHECK"
 
 # --------------------------------------------------------------------------
 # 1. typos -- spell check staged files
