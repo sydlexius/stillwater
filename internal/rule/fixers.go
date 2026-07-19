@@ -929,6 +929,21 @@ func setImageFlag(a *artist.Artist, imageType string) {
 	}
 }
 
+// FetchImageURL is the exported form of fetchImageURL, for callers that must
+// hold the downloaded bytes before the save rather than let SaveImageFromURL do
+// both in one step.
+//
+// It exists for the #2540 collision seam (#2626). The API's apply-candidate
+// handler has to compute a cross-artist collision verdict over the CONVERTED
+// bytes that will land on disk, which means it needs the download and the
+// conversion as separate steps it can interpose on. Routing it through this
+// wrapper rather than a Router-side downloader keeps that endpoint's fetch
+// semantics -- SSRF-safe client, size limit, status handling -- byte-for-byte
+// identical to what SaveImageFromURL did before.
+func FetchImageURL(ctx context.Context, client *http.Client, rawURL string) ([]byte, error) {
+	return fetchImageURL(ctx, client, rawURL)
+}
+
 // SaveImageFromURL downloads an image from rawURL and saves it to the artist's
 // directory using platform-aware naming. It handles the full pipeline:
 //

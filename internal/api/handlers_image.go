@@ -461,7 +461,11 @@ func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Requ
 	slotMeta.Mode = "user"
 	slotMeta.DHash = "" // Force recomputation from the cropped image data.
 
-	saved, saveErr := r.saveFanartSlotProtected(req.Context(), dir, []string{targetName}, imgData, slotMeta)
+	// #2622: routed through saveFanartSlotChecked for the #2540 cross-artist
+	// collision check. imgData is written RAW here -- this path has no
+	// ConvertFormat step of its own (the crop already produced encoded bytes) --
+	// so imgData is exactly what the verdict must hash and what lands on disk.
+	saved, saveErr := r.saveFanartSlotChecked(req.Context(), r.newImageWriteScope(a), dir, []string{targetName}, imgData, slotMeta)
 	if saveErr != nil {
 		r.logger.Error("saving cropped fanart slot",
 			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
@@ -503,7 +507,13 @@ func (r *Router) handleImageFetchFanartSlot(w http.ResponseWriter, req *http.Req
 	targetName := img.FanartFilename(primary, slot, kodiNumbering)
 	slotMeta := &img.ExifMeta{Source: artist.ImageSourceUser, Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
 
-	saved, saveErr := r.saveFanartSlotProtected(req.Context(), dir, []string{targetName}, data, slotMeta)
+	// #2622: routed through saveFanartSlotChecked for the #2540 cross-artist
+	// collision check. NOTE the byte selection: unlike every other fanart write in
+	// this file, this path saves the RAW fetched data and never calls
+	// ConvertFormat. So data -- not a conversion of it -- is both what the verdict
+	// hashes and what lands on disk, because the helper takes a single slice and
+	// uses it for both.
+	saved, saveErr := r.saveFanartSlotChecked(req.Context(), r.newImageWriteScope(a), dir, []string{targetName}, data, slotMeta)
 	if saveErr != nil {
 		r.logger.Error("saving fetched fanart slot",
 			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
