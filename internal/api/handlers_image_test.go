@@ -2792,7 +2792,7 @@ func TestProcessAndSaveImage_BackupFailureAborts(t *testing.T) {
 	}
 
 	crop := encodeImageFmt(t, "jpeg", 120, 120)
-	if _, err := r.processAndSaveImage(context.Background(), dir, "thumb", crop, nil); err == nil {
+	if _, err := r.processAndSaveImage(context.Background(), nil, dir, "thumb", crop, nil); err == nil {
 		t.Fatal("processAndSaveImage must abort when the backup cannot be written")
 	}
 	// The original must be intact (the destructive Save never ran).
@@ -2838,7 +2838,7 @@ func TestProcessAndSaveImage_FirstUploadSaveFailureNoFalseManualRecovery(t *test
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 
 	crop := encodeImageFmt(t, "jpeg", 120, 120)
-	_, err := r.processAndSaveImage(context.Background(), dir, "thumb", crop, nil)
+	_, err := r.processAndSaveImage(context.Background(), nil, dir, "thumb", crop, nil)
 	_ = os.Chmod(dir, 0o755)
 
 	if err == nil {

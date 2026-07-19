@@ -47,7 +47,7 @@ func TestProcessAndSaveImage_FanartOverwrite_BacksUpTheOriginal(t *testing.T) {
 
 	// Overwrite it with JPEG data. The canonical name becomes fanart.jpg, so the
 	// original fanart.png is DELETED as a conflicting format.
-	saved, err := r.processAndSaveImage(context.Background(), dir, "fanart", jpegBytes(t, 120, 90), nil)
+	saved, err := r.processAndSaveImage(context.Background(), nil, dir, "fanart", jpegBytes(t, 120, 90), nil)
 	if err != nil {
 		t.Fatalf("processAndSaveImage: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestProcessAndSaveImage_FanartOverwrite_UndecodableDataDestroysNothing(t *t
 	// Undecodable bytes: ConvertFormat rejects them before img.Save runs, so nothing is
 	// written -- and, crucially, nothing is deleted either, because the destructive
 	// CleanupConflictingFormats is never reached.
-	_, err := r.processAndSaveImage(context.Background(), dir, "fanart", []byte("not an image"), nil)
+	_, err := r.processAndSaveImage(context.Background(), nil, dir, "fanart", []byte("not an image"), nil)
 	if err == nil {
 		t.Fatal("expected undecodable data to fail")
 	}
@@ -373,7 +373,7 @@ func TestPrimaryOverwriteDoesNotWipeNumberedSlotBackups(t *testing.T) {
 	}
 
 	// Now overwrite the PRIMARY through the main entry point.
-	if _, err := r.processAndSaveImage(context.Background(), dir, "fanart", jpegBytes(t, 300, 150), nil); err != nil {
+	if _, err := r.processAndSaveImage(context.Background(), nil, dir, "fanart", jpegBytes(t, 300, 150), nil); err != nil {
 		t.Fatalf("overwriting the primary: %v", err)
 	}
 

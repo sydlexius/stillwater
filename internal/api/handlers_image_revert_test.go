@@ -308,7 +308,7 @@ func TestHandleImageRevert_CropRoundTrip(t *testing.T) {
 
 			// Crop: process+save a different-content image of the crop format.
 			cropData := encodeImageFmt(t, tc.cropFmt, 120, 120)
-			if _, err := r.processAndSaveImage(context.Background(), dir, "thumb", cropData, nil); err != nil {
+			if _, err := r.processAndSaveImage(context.Background(), nil, dir, "thumb", cropData, nil); err != nil {
 				t.Fatalf("crop save: %v", err)
 			}
 
@@ -357,14 +357,14 @@ func TestHandleImageRevert_OneDeep(t *testing.T) {
 
 	// First crop: backs up the original; canonical becomes crop1.
 	crop1 := encodeImageFmt(t, "jpeg", 100, 100)
-	if _, err := r.processAndSaveImage(context.Background(), dir, "thumb", crop1, nil); err != nil {
+	if _, err := r.processAndSaveImage(context.Background(), nil, dir, "thumb", crop1, nil); err != nil {
 		t.Fatalf("crop1: %v", err)
 	}
 	intermediate, _ := os.ReadFile(origPath)
 
 	// Second crop: backs up crop1 (one-deep replaces the original backup).
 	crop2 := encodeImageFmt(t, "jpeg", 140, 140)
-	if _, err := r.processAndSaveImage(context.Background(), dir, "thumb", crop2, nil); err != nil {
+	if _, err := r.processAndSaveImage(context.Background(), nil, dir, "thumb", crop2, nil); err != nil {
 		t.Fatalf("crop2: %v", err)
 	}
 

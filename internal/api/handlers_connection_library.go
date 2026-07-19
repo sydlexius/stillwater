@@ -1098,7 +1098,11 @@ func (p *platformImagePipeline) downloadNamedImage(ctx context.Context, stillwat
 	}
 
 	meta := &img.ExifMeta{Source: p.connType, Fetched: time.Now().UTC(), Mode: "user"}
-	if _, err := r.processAndSaveImage(ctx, p.dir, stillwaterType, data, meta); err != nil {
+	// nil collision scope: this path handles NAMED image types only (thumb, logo,
+	// banner -- see platformToStillwaterType), never fanart, so #2565's
+	// fanart-gated check would be a no-op here anyway. Backdrops arriving from a
+	// platform go through downloadBackdrop, which #2613 already wired.
+	if _, err := r.processAndSaveImage(ctx, nil, p.dir, stillwaterType, data, meta); err != nil {
 		r.logger.Warn("saving downloaded image", "artist", a.Name, "type", stillwaterType, "error", err)
 		return
 	}
