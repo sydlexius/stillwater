@@ -622,6 +622,51 @@ if require "[ -x '$R12/.githooks/post-commit' ]" "post-commit must be installed 
 fi
 
 # --------------------------------------------------------------------------
+# Case 13: the documented amend remedy actually clears the report
+# --------------------------------------------------------------------------
+# Case 12 proves --head CATCHES the --no-gpg-sign commit. This case proves the
+# way out that both the hook message and docs/dev-setup.md hand the developer --
+# `git commit --amend -S --no-edit` -- genuinely works, and that --head then
+# passes on the amended object.
+#
+# Worth pinning separately because the remedy is the whole reason the post-commit
+# layer is worth having: it is what makes catching the bypass here cheaper than
+# catching it at the merge gate. A remedy printed in an error message and never
+# executed by anything is exactly the kind of claim that rots silently.
+#
+# Runs the check DIRECTLY rather than through the hook, so it pins --head's own
+# contract independently of the post-commit wiring Case 12 covers.
+echo
+echo "Case 13: --head blocks the bypassed commit and passes after the amend"
+R13=$(new_repo amend-remedy)
+enable_working_signer "$R13"
+echo "bypass" > "$R13/file.txt"
+git -C "$R13" add file.txt
+git -C "$R13" commit -q --no-gpg-sign -m "bypass via --no-gpg-sign"
+C13_SIGS=$(git -C "$R13" cat-file commit HEAD | sed -n '1,/^$/p' | grep -c '^gpgsig' || true)
+# Precondition: the bypass must genuinely have produced an UNSIGNED object, or
+# the "blocked" assertion below proves nothing about --head.
+if require "[ '$C13_SIGS' -eq 0 ]" "--no-gpg-sign must produce an unsigned commit"; then
+    if OUT=$(cd "$R13" && env SW_REQUIRE_SIGNED_COMMITS=1 bash "$CHECK" --head 2>&1); then
+        bad "--head PASSED on a commit with no signature" "$OUT"
+    elif ! grep -q 'commit --amend -S' <<< "$OUT"; then
+        bad "--head blocked but did not name the amend remedy" "$OUT"
+    else
+        # Now run the remedy exactly as printed and re-inspect the same way.
+        git -C "$R13" commit -q --amend -S --no-edit
+        C13_AMENDED=$(git -C "$R13" cat-file commit HEAD | sed -n '1,/^$/p' | grep -c '^gpgsig' || true)
+        if require "[ '$C13_AMENDED' -eq 1 ]" "the amend must produce a signed object"; then
+            if OUT2=$(cd "$R13" && env SW_REQUIRE_SIGNED_COMMITS=1 bash "$CHECK" --head 2>&1); then
+                ok "amend remedy clears it: --head passes on the amended commit"
+            else
+                bad "--head still reports the commit after the documented amend" \
+                    "The remedy printed to developers does not resolve the check." "$OUT2"
+            fi
+        fi
+    fi
+fi
+
+# --------------------------------------------------------------------------
 echo
 echo "----------------------------------------"
 echo "passed: $PASSED  failed: $FAILED"
