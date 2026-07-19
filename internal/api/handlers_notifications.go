@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -359,14 +360,57 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 		Mode:    "manual",
 	}
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), body.ImageType)
-	saved, err := rule.SaveImageFromURL(req.Context(), r.ssrfClient, a, body.ImageType, body.URL, naming, useSymlinks, candidateMeta, r.platformService, r.logger)
+
+	// #2626: this is the FOURTH fanart-reaching-disk path, and it used to call
+	// rule.SaveImageFromURL (download + convert + save in one step), which meant no
+	// point in the flow ever held the bytes the collision check needs. The download
+	// and the conversion are split out here so the #2540 verdict can be computed
+	// over the CONVERTED bytes -- exactly what SaveImageFromData writes, since
+	// ConvertFormat is a passthrough for the already-converted JPEG/PNG handed back
+	// to it. FetchImageURL keeps the original fetch semantics unchanged.
+	data, err := rule.FetchImageURL(req.Context(), r.ssrfClient, body.URL)
+	if err == nil {
+		var converted []byte
+		converted, _, err = img.ConvertFormat(bytes.NewReader(data))
+		if err == nil {
+			data = converted
+		}
+	}
 	if err != nil {
 		r.logger.Error("applying image candidate", "artist_id", a.ID, "image_type", body.ImageType, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to apply image candidate")
 		return
 	}
 
-	// Persist artist update (image flag set by SaveImageFromURL) before recording
+	// NOTIFY-ONLY, FANART ONLY: the cross-artist registry holds fanart rows
+	// exclusively, so a thumb/logo/banner candidate must not pay for a
+	// whole-library scan. The verdict is decided HERE, while the bytes are in hand,
+	// and HELD until the save below confirms -- see notifyCollision for why
+	// announcing a write that failed would aim a destructive back-out fix at a file
+	// that never existed.
+	var collisionScope *imageWriteScope
+	var collisionResult *img.IdentityResult
+	if body.ImageType == "fanart" {
+		collisionScope = r.newImageWriteScope(a)
+		collisionResult = collisionScope.collisionVerdict(req.Context(), data)
+	}
+
+	saved, err := rule.SaveImageFromData(req.Context(), a, body.ImageType, data, naming, useSymlinks, candidateMeta, r.platformService, r.logger)
+	if err != nil {
+		r.logger.Error("applying image candidate", "artist_id", a.ID, "image_type", body.ImageType, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to apply image candidate")
+		return
+	}
+
+	// The save is confirmed (no error, at least one file written), so the image the
+	// collision was detected on genuinely exists. Only now is it correct to raise
+	// the notification, whose durable half carries a back-out auto-fix. The apply
+	// itself was never blocked -- this runs after the write, not instead of it.
+	if len(saved) > 0 {
+		collisionScope.notifyCollision(req.Context(), collisionResult)
+	}
+
+	// Persist artist update (image flag set by SaveImageFromData) before recording
 	// provenance, because Update creates the artist_images row via UpsertAll and
 	// UpdateImageProvenance requires the row to exist.
 	if err := r.artistService.Update(req.Context(), a); err != nil {
