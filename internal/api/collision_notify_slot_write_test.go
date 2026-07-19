@@ -712,3 +712,126 @@ func TestApplyViolationCandidate_NonFanartTypeDoesNotRunTheCheck(t *testing.T) {
 	}
 
 }
+
+// TestApplyViolationCandidate_LogsTheFailingStage pins the STAGE WRAPPING on the
+// two steps #2626 split out of rule.SaveImageFromURL.
+//
+// SaveImageFromURL used to distinguish a fetch failure ("downloading image: ...")
+// from a convert failure ("converting image format: ..."). Splitting the call
+// apart put both stages behind a SINGLE log line in this handler, so without the
+// explicit wrapping the two become indistinguishable in the logs -- and
+// TestApplyViolationCandidate_NoNotificationWhenSaveFails, which proves its
+// failure landed at img.Save by asserting those two markers are ABSENT, silently
+// degrades into a test that can no longer tell the stages apart.
+//
+// So this is not a coverage exercise: the markers are load-bearing for another
+// test's guard. Each subtest asserts the CLIENT-FACING behavior is unchanged (a
+// 500 carrying the generic message, nothing written) AND that the logged error
+// names the stage that actually failed. The status assertion alone would pass
+// identically with the wrapping removed and would prove nothing.
+func TestApplyViolationCandidate_LogsTheFailingStage(t *testing.T) {
+	jpegBytes, _ := decodableBackdropJPEG(t)
+
+	// The fetch and convert stages fail differently, so each gets its own
+	// injected fault and its own expectations about what the log must say.
+	cases := []struct {
+		name string
+		// transport replaces the fixture's SSRF client so the fault lands at the
+		// intended stage.
+		transport http.RoundTripper
+		// wantStage is the marker the wrapping must add.
+		wantStage string
+		// wantOtherStage is the OTHER stage's marker, which must be absent -- the
+		// assertion that keeps the two distinguishable.
+		wantOtherStage string
+		// wantCause proves the stage genuinely RAN and failed on its own terms,
+		// rather than the handler bailing out earlier and being mislabeled.
+		wantCause string
+	}{
+		{
+			// The transport errors, so client.Do fails inside fetchImageURL.
+			name:           "fetch fails",
+			transport:      errorRoundTripper{},
+			wantStage:      "downloading image",
+			wantOtherStage: "converting image format",
+			wantCause:      "unexpected EOF",
+		},
+		{
+			// The download SUCCEEDS and hands back bytes that are not an image, so
+			// img.ConvertFormat fails at DetectFormat -- the next stage along.
+			name:           "convert fails",
+			transport:      &stubRoundTripper{body: []byte("<html>not an image</html>")},
+			wantStage:      "converting image format",
+			wantOtherStage: "downloading image",
+			wantCause:      "detecting format",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, svc := newImageHandlerTestServer(t)
+			pub, raised := wireCollisionNotifier(r)
+
+			// This handler swallows both stage errors into the same generic 500, so
+			// the stage is only observable in the log.
+			var logs bytes.Buffer
+			r.logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError}))
+
+			dir := t.TempDir()
+			// The fixture seeds a VALID pending-choice fanart candidate and a
+			// matching artist, so every check ahead of the download passes and the
+			// request genuinely reaches the fetch stage. jpegBytes are the fixture's
+			// stand-in body; the transport below replaces the client outright.
+			_, violationID := applyCandidateFixture(t, r, svc, dir, jpegBytes)
+			r.ssrfClient = &http.Client{Transport: tc.transport}
+
+			// applyCandidateOfType rather than applyCandidate: identical request,
+			// but naming the type here keeps it visible that this is the FANART
+			// path, the only one that reaches the collision seam below.
+			w := applyCandidateOfType(t, r, violationID, "https://8.8.8.8/chosen.jpg", "fanart")
+
+			// UNCHANGED CLIENT BEHAVIOR: the stage wrapping is a LOGGING
+			// distinction and must never leak the internal cause to the caller.
+			if w.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500; body: %s", w.Code, w.Body.String())
+			}
+			if body := w.Body.String(); !strings.Contains(body, "failed to apply image candidate") {
+				t.Errorf("body = %s, want the generic apply-candidate failure message", body)
+			}
+
+			logged := logs.String()
+
+			// PRECONDITION: the handler really got as far as this stage. Without
+			// this, a request rejected earlier (bad candidate, missing artist,
+			// locked artist) would also produce a non-200 and the stage assertion
+			// below could pass for the wrong reason -- or never run at all.
+			if !strings.Contains(logged, "applying image candidate") {
+				t.Fatalf("log %q carries no apply-candidate error; the request failed BEFORE the download stage, "+
+					"so this test proves nothing about the stage wrapping", logged)
+			}
+			if !strings.Contains(logged, tc.wantCause) {
+				t.Fatalf("log %q does not carry %q; the injected fault fired somewhere other than the %s stage",
+					logged, tc.wantCause, tc.name)
+			}
+
+			// THE LOAD-BEARING ASSERTION: the log names WHICH stage failed.
+			if !strings.Contains(logged, tc.wantStage) {
+				t.Errorf("log %q does not identify the failing stage %q: both stages now share one log line, so "+
+					"a fetch failure and a convert failure are indistinguishable in the logs",
+					logged, tc.wantStage)
+			}
+			if strings.Contains(logged, tc.wantOtherStage) {
+				t.Errorf("log %q carries the %q marker for a %s: the stages are mislabeled",
+					logged, tc.wantOtherStage, tc.name)
+			}
+
+			// Neither stage reaches img.Save, so nothing may land on disk and the
+			// collision seam -- which runs after the conversion -- must be silent.
+			assertNothingOnDisk(t, dir)
+			if len(pub.events) != 0 || *raised != 0 {
+				t.Errorf("events = %d, raised = %d, want 0 and 0: notified for an apply that never got past the %s stage",
+					len(pub.events), *raised, tc.name)
+			}
+		})
+	}
+}
