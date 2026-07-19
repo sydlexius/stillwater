@@ -13834,6 +13834,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          description: The logo file exceeds the 25MB decode limit; it was not read into memory and the original was left untouched.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "422":
           description: Trim produced no usable image; the original logo was left untouched.
           content:
