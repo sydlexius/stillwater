@@ -140,6 +140,11 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 	t.Parallel()
 	r := testRouterForLibraryOps(t)
 
+	// Mirrors the wording runLibraryScan emits on success. The count is artists
+	// mapped to a platform ID, not artists changed (#2637). Seed and assertion
+	// share this one binding so the two cannot drift apart.
+	const wantMessage = "Scan complete: 5 artists mapped to platform IDs in Test Library"
+
 	now := time.Now().UTC()
 	r.libraryOpsMu.Lock()
 	r.libraryOps["test-lib-456"] = &LibraryOpResult{
@@ -147,7 +152,7 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 		LibraryName: "Test Library",
 		Operation:   "scan",
 		Status:      "completed",
-		Message:     "Scan complete: 5 artists updated in Test Library",
+		Message:     wantMessage,
 		StartedAt:   now.Add(-10 * time.Second),
 		CompletedAt: &now,
 	}
@@ -170,8 +175,8 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 	if resp.Status != "completed" {
 		t.Errorf("status = %q, want %q", resp.Status, "completed")
 	}
-	if resp.Message != "Scan complete: 5 artists updated in Test Library" {
-		t.Errorf("message = %q, want expected completion message", resp.Message)
+	if resp.Message != wantMessage {
+		t.Errorf("message = %q, want %q", resp.Message, wantMessage)
 	}
 }
 
@@ -2459,12 +2464,12 @@ func TestScanFromEmby_BackdropImageTagsDoNotSetLocalFanart(t *testing.T) {
 	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 
-	matched, err := router.scanFromEmby(ctx, client, lib)
+	mapped, err := router.scanFromEmby(ctx, client, lib)
 	if err != nil {
 		t.Fatalf("scanFromEmby: %v", err)
 	}
-	if matched != 1 {
-		t.Errorf("matched = %d, want 1", matched)
+	if mapped != 1 {
+		t.Errorf("mapped = %d, want 1", mapped)
 	}
 
 	got, err := router.artistService.GetByMBID(ctx, "mbid-scan-001")
@@ -2538,12 +2543,12 @@ func TestScanFromJellyfin_BackdropImageTagsDoNotSetLocalFanart(t *testing.T) {
 	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 
-	matched, err := router.scanFromJellyfin(ctx, client, lib)
+	mapped, err := router.scanFromJellyfin(ctx, client, lib)
 	if err != nil {
 		t.Fatalf("scanFromJellyfin: %v", err)
 	}
-	if matched != 1 {
-		t.Errorf("matched = %d, want 1", matched)
+	if mapped != 1 {
+		t.Errorf("mapped = %d, want 1", mapped)
 	}
 
 	got, err := router.artistService.GetByMBID(ctx, "mbid-scan-002")

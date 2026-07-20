@@ -219,12 +219,12 @@ func TestScanFromEmby_DoesNotClearLocalImageRegistry(t *testing.T) {
 	a := seedArtistWithLocalArtwork(t, router, lib, "Portishead", "mbid-2637-emby", artistDir, fanartSlots)
 
 	client := emby.NewWithHTTPClient(srv.URL, "key", "", srv.Client(), quietTestLogger())
-	matched, err := router.scanFromEmby(ctx, client, lib)
+	mapped, err := router.scanFromEmby(ctx, client, lib)
 	if err != nil {
 		t.Fatalf("scanFromEmby: %v", err)
 	}
-	if matched != 1 {
-		t.Fatalf("matched = %d, want 1", matched)
+	if mapped != 1 {
+		t.Fatalf("mapped = %d, want 1", mapped)
 	}
 
 	assertPlatformIDStored(t, router, a.ID, "conn-emby-2637", "emby-2637-001")
@@ -523,12 +523,12 @@ func TestScanFromJellyfin_DoesNotClearLocalImageRegistry(t *testing.T) {
 	a := seedArtistWithLocalArtwork(t, router, lib, "Zero 7", "mbid-2637-jf", artistDir, fanartSlots)
 
 	client := jellyfin.NewWithHTTPClient(srv.URL, "key", "", srv.Client(), quietTestLogger())
-	matched, err := router.scanFromJellyfin(ctx, client, lib)
+	mapped, err := router.scanFromJellyfin(ctx, client, lib)
 	if err != nil {
 		t.Fatalf("scanFromJellyfin: %v", err)
 	}
-	if matched != 1 {
-		t.Fatalf("matched = %d, want 1", matched)
+	if mapped != 1 {
+		t.Fatalf("mapped = %d, want 1", mapped)
 	}
 
 	assertPlatformIDStored(t, router, a.ID, "conn-jf-2637", "jf-2637-001")
@@ -575,12 +575,12 @@ func TestScanFromLidarr_DoesNotClearLocalImageRegistry(t *testing.T) {
 	a := seedArtistWithLocalArtwork(t, router, lib, "Boards of Canada", "mbid-2637-lidarr", artistDir, fanartSlots)
 
 	client := lidarr.NewWithHTTPClient(srv.URL, "key", srv.Client(), quietTestLogger())
-	matched, err := router.scanFromLidarr(ctx, client, lib)
+	mapped, err := router.scanFromLidarr(ctx, client, lib)
 	if err != nil {
 		t.Fatalf("scanFromLidarr: %v", err)
 	}
-	if matched != 1 {
-		t.Fatalf("matched = %d, want 1", matched)
+	if mapped != 1 {
+		t.Fatalf("mapped = %d, want 1", mapped)
 	}
 
 	assertPlatformIDStored(t, router, a.ID, "conn-lidarr-2637", "77")

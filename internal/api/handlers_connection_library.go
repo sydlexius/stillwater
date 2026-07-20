@@ -530,21 +530,21 @@ func (r *Router) runLibraryScan(ctx context.Context, conn *connection.Connection
 		}
 	}()
 
-	var matched int
+	var mapped int
 	var scanErr error
 
 	switch conn.Type {
 	case connection.TypeEmby:
 		client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
-		matched, scanErr = r.scanFromEmby(ctx, client, lib)
+		mapped, scanErr = r.scanFromEmby(ctx, client, lib)
 
 	case connection.TypeJellyfin:
 		client := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
-		matched, scanErr = r.scanFromJellyfin(ctx, client, lib)
+		mapped, scanErr = r.scanFromJellyfin(ctx, client, lib)
 
 	case connection.TypeLidarr:
 		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
-		matched, scanErr = r.scanFromLidarr(ctx, client, lib)
+		mapped, scanErr = r.scanFromLidarr(ctx, client, lib)
 
 	default:
 		scanErr = fmt.Errorf("unsupported connection type: %s", conn.Type)
@@ -559,7 +559,11 @@ func (r *Router) runLibraryScan(ctx context.Context, conn *connection.Connection
 		r.logger.Error("library scan failed", "library", lib.Name, "error", scanErr)
 	} else {
 		op.Status = "completed"
-		op.Message = fmt.Sprintf("Scan complete: %d artists matched in %s", matched, lib.Name)
+		// The count is every artist the scan resolved to a local row and stored a
+		// platform ID mapping for, not a count of artists whose data changed. Word
+		// it as "mapped to platform IDs" so an operator cannot read a large number
+		// here as a large number of modifications (#2637).
+		op.Message = fmt.Sprintf("Scan complete: %d artists mapped to platform IDs in %s", mapped, lib.Name)
 	}
 	r.libraryOpsMu.Unlock()
 
@@ -1678,7 +1682,8 @@ func (r *Router) lookupByNameInLibrary(ctx context.Context, name, libraryID stri
 
 // scanFromEmby pages through Emby artists and resolves each one to a local
 // artist row, storing the platform ID mapping. It returns the number of
-// artists that were matched and mapped.
+// artists it mapped to a platform ID, which is every artist it resolved: this
+// is not a count of artists whose data changed.
 //
 // This scan deliberately does NOT touch the artist's image-existence flags
 // (#2637). Those flags, and the artist_images rows behind them, describe files
@@ -1697,13 +1702,13 @@ func (r *Router) lookupByNameInLibrary(ctx context.Context, name, libraryID stri
 // pushes are unaffected by this scan not writing anything.
 func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *library.Library) (int, error) {
 	manualLibs := r.manualLibraries(ctx)
-	matched := 0
+	mapped := 0
 	startIndex := 0
 	pageSize := 100
 	for {
 		resp, err := client.GetArtists(ctx, lib.ExternalID, startIndex, pageSize)
 		if err != nil {
-			return matched, fmt.Errorf("fetching artists from emby: %w", err)
+			return mapped, fmt.Errorf("fetching artists from emby: %w", err)
 		}
 
 		for i := range resp.Items {
@@ -1714,7 +1719,7 @@ func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *lib
 			if a == nil {
 				continue
 			}
-			matched++
+			mapped++
 		}
 
 		startIndex += pageSize
@@ -1722,22 +1727,22 @@ func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *lib
 			break
 		}
 	}
-	return matched, nil
+	return mapped, nil
 }
 
 // scanFromJellyfin pages through Jellyfin artists and resolves each one to a
 // local artist row, storing the platform ID mapping. It returns the number of
-// artists that were matched and mapped. Like scanFromEmby it never writes local
+// artists it mapped to a platform ID. Like scanFromEmby it never writes local
 // image-existence state from the platform's inventory (see scanFromEmby, #2637).
 func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, lib *library.Library) (int, error) {
 	manualLibs := r.manualLibraries(ctx)
-	matched := 0
+	mapped := 0
 	startIndex := 0
 	pageSize := 100
 	for {
 		resp, err := client.GetArtists(ctx, lib.ExternalID, startIndex, pageSize)
 		if err != nil {
-			return matched, fmt.Errorf("fetching artists from jellyfin: %w", err)
+			return mapped, fmt.Errorf("fetching artists from jellyfin: %w", err)
 		}
 
 		for i := range resp.Items {
@@ -1748,7 +1753,7 @@ func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, 
 			if a == nil {
 				continue
 			}
-			matched++
+			mapped++
 		}
 
 		startIndex += pageSize
@@ -1756,12 +1761,12 @@ func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, 
 			break
 		}
 	}
-	return matched, nil
+	return mapped, nil
 }
 
 // scanFromLidarr gets all Lidarr artists and resolves each one to a local
 // artist row, storing the platform ID mapping. It returns the number of artists
-// that were matched and mapped. Like scanFromEmby it never writes local
+// it mapped to a platform ID. Like scanFromEmby it never writes local
 // image-existence state from the platform's inventory (see scanFromEmby, #2637).
 func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib *library.Library) (int, error) {
 	manualLibs := r.manualLibraries(ctx)
@@ -1770,7 +1775,7 @@ func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib 
 		return 0, fmt.Errorf("fetching artists from lidarr: %w", err)
 	}
 
-	matched := 0
+	mapped := 0
 	for _, la := range artists {
 		a := r.resolveAndBackfillPlatformID(ctx,
 			la.ForeignArtistID, la.ArtistName,
@@ -1778,9 +1783,9 @@ func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib 
 		if a == nil {
 			continue
 		}
-		matched++
+		mapped++
 	}
-	return matched, nil
+	return mapped, nil
 }
 
 // checkSyncMtimeEvidence performs Tier 2 shared-FS detection after a library
