@@ -1528,7 +1528,7 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 		}
 	}
 
-	if err := r.artistService.Update(ctx, a); err != nil {
+	if err := r.persistImageFlag(ctx, a, imageType, exists); err != nil {
 		r.logger.Warn("setting artist image flag",
 			slog.String("artist_id", a.ID),
 			slog.String("image_type", imageType),
@@ -1549,6 +1549,32 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 	if resolvedPath != "" {
 		r.recordImageProvenanceSlot0(ctx, a.ID, imageType, resolvedPath)
 	}
+}
+
+// persistImageFlag writes the artist row, then states a CLEARED flag to the
+// image registry outright.
+//
+// The second step is load-bearing because Update is declarative: it acts only
+// on the slots the Artist names (issue #2635), and extractImageMetadata emits
+// no row at all for a type whose Exists, LowRes, and Placeholder are all
+// empty. An exists=false call would therefore leave the stored row still
+// reading exists_flag=1, with the UI showing artwork that is gone. This used
+// to work only as a side effect of the shared write path deleting every absent
+// slot -- the behavior that destroyed the registry.
+//
+// It clears the flag rather than deleting the row: this caller probed one
+// image type and learned only that its file is missing, which is grounds for
+// marking the slot empty, not for discarding the row's provenance. Slot 0 is
+// correct for the same reason documented at the provenance call in
+// setArtistImageFlag.
+func (r *Router) persistImageFlag(ctx context.Context, a *artist.Artist, imageType string, exists bool) error {
+	if err := r.artistService.Update(ctx, a); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return r.artistService.ClearImageFlag(ctx, a.ID, imageType, 0)
 }
 
 // updateArtistImageFlag sets the image existence flag to true and persists it.

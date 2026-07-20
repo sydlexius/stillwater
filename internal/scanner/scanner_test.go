@@ -19,6 +19,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/event"
+	swimage "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -1103,7 +1104,7 @@ func setupScannerWithDB(t *testing.T, libraryPath string) (*Service, *artist.Ser
 // persistNormalized path: hydrateImages reads the now-empty registry, sets
 // existing.FanartExists=false; detectFiles sees fanart.jpg on disk and sets
 // detected.FanartExists=true; the disagreement triggers Update() which calls
-// persistNormalized -> images.UpsertAll, repopulating the row. This test
+// persistNormalized -> images.MergeAll, repopulating the row. This test
 // pins that end-to-end recovery as a regression for #1225.
 func TestScan_ReconcilesArtistImagesRegistry(t *testing.T) {
 	t.Parallel()
@@ -1260,7 +1261,7 @@ func TestArtistService_ReconcileImages_IdempotentConvergence(t *testing.T) {
 	// the call must report the registry was repaired.
 	a.FanartExists = true
 	a.FanartCount = 1
-	repaired, err := artistSvc.ReconcileImages(ctx, a)
+	repaired, err := artistSvc.ReconcileImages(ctx, a, canonicalEnumerationFor(a))
 	if err != nil {
 		t.Fatalf("ReconcileImages (add fanart): %v", err)
 	}
@@ -1283,7 +1284,7 @@ func TestArtistService_ReconcileImages_IdempotentConvergence(t *testing.T) {
 
 	// Idempotent replay: same model should leave the row intact and report
 	// no repair.
-	repaired, err = artistSvc.ReconcileImages(ctx, a)
+	repaired, err = artistSvc.ReconcileImages(ctx, a, canonicalEnumerationFor(a))
 	if err != nil {
 		t.Fatalf("ReconcileImages (replay): %v", err)
 	}
@@ -1302,7 +1303,7 @@ func TestArtistService_ReconcileImages_IdempotentConvergence(t *testing.T) {
 	// must report a repair.
 	a.FanartExists = false
 	a.FanartCount = 0
-	repaired, err = artistSvc.ReconcileImages(ctx, a)
+	repaired, err = artistSvc.ReconcileImages(ctx, a, canonicalEnumerationFor(a))
 	if err != nil {
 		t.Fatalf("ReconcileImages (remove fanart): %v", err)
 	}
@@ -2230,5 +2231,552 @@ func TestPostScanHook_PanicIsRecovered(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Shutdown did not return: scanWg was not released after a panicking hook")
+	}
+}
+
+// canonicalEnumerationFor models a caller that walked the artist directory for
+// every canonical image type and found what the Artist's flat fields describe.
+// Test-only: production code builds its enumeration from the directory walk's
+// own output (see imageEnumeration), never from the Artist struct, because the
+// struct is a lossy re-derivation of that walk.
+func canonicalEnumerationFor(a *artist.Artist) []artist.ImageEnumeration {
+	count := func(exists bool) int {
+		if exists {
+			return 1
+		}
+		return 0
+	}
+	return []artist.ImageEnumeration{
+		{ImageType: "thumb", FoundSlots: count(a.ThumbExists)},
+		{ImageType: "fanart", FoundSlots: a.FanartCount},
+		{ImageType: "logo", FoundSlots: count(a.LogoExists)},
+		{ImageType: "banner", FoundSlots: count(a.BannerExists)},
+	}
+}
+
+// TestDetectFiles_OrphanNumberedFanart is the detection half of the #2635
+// amplification.
+//
+// Fanart existence used to be decided by the PRIMARY patterns alone
+// (fanart.jpg, backdrop.jpg, ...), so an artist holding only fanart1.jpg
+// reported FanartExists=false and FanartCount=0. That was already wrong -- the
+// artwork is on disk and the UI hid it -- but once the scanner gained a
+// destructive reconcile it became data loss, because a count of zero is a
+// POSITIVE claim that every stored fanart row is stale.
+//
+// The state is reachable in normal operation: a slot delete that fails partway
+// skips renumbering and leaves exactly this shape (#2644).
+func TestDetectFiles_OrphanNumberedFanart(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Deliberately NO fanart.jpg: only the numbered variant survives.
+	for _, name := range []string{"fanart1.jpg", "fanart2.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644); err != nil {
+			t.Fatalf("writing %s fixture: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fanart.jpg")); !os.IsNotExist(err) {
+		t.Fatalf("precondition: fanart.jpg must be absent, stat err = %v", err)
+	}
+
+	d, err := detectFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("detectFiles: %v", err)
+	}
+
+	if !d.FanartExists {
+		t.Error("FanartExists = false with two fanart files on disk; the scanner " +
+			"reports no artwork and a reconcile then deletes the rows for files " +
+			"that are sitting right there")
+	}
+	if d.FanartCount != 2 {
+		t.Errorf("FanartCount = %d, want 2; the count bounds deletion, so an "+
+			"under-count destroys rows for real files", d.FanartCount)
+	}
+}
+
+// TestDetectFilesExistenceOnly_OrphanNumberedFanart holds the mtime fast path
+// to the same answer as the full probe. A fast path that disagreed with a full
+// re-probe would make the destruction intermittent -- present or absent
+// depending on whether a directory's mtime happened to move -- which is the
+// hardest possible shape to diagnose from an incident report.
+func TestDetectFilesExistenceOnly_OrphanNumberedFanart(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	for _, name := range []string{"fanart1.jpg", "fanart2.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644); err != nil {
+			t.Fatalf("writing %s fixture: %v", name, err)
+		}
+	}
+
+	// The fast path only engages when nothing has been touched since the last
+	// scan, so the fixture's write time must predate it.
+	future := time.Now().Add(time.Hour)
+	d, err := detectFilesExistenceOnly(dir, &artist.Artist{LastScannedAt: &future})
+	if err != nil {
+		t.Fatalf("detectFilesExistenceOnly: %v", err)
+	}
+
+	if !d.FanartExists || d.FanartCount != 2 {
+		t.Errorf("fast path reported FanartExists=%v FanartCount=%d, want true/2; "+
+			"it must not disagree with detectFiles or the registry damage becomes "+
+			"dependent on directory mtime", d.FanartExists, d.FanartCount)
+	}
+}
+
+// TestImageEnumeration_DerivesFromDetectionNotArtist pins where the delete
+// bound comes from.
+//
+// The enumeration MUST be built from the directory walk's own output. Deriving
+// it from the Artist struct would route the bound back through
+// extractImageMetadata's slot-0 gating -- the very lossiness the bound exists
+// to defend against -- and a lossy read would then be authorizing destruction.
+func TestImageEnumeration_DerivesFromDetectionNotArtist(t *testing.T) {
+	t.Parallel()
+	// The orphan shape: files on disk, but no PRIMARY, so an Artist-derived
+	// enumeration would report zero.
+	d := detectedFiles{FanartExists: true, FanartCount: 3, ThumbExists: true}
+
+	got := make(map[string]int)
+	for _, e := range imageEnumeration(d) {
+		got[e.ImageType] = e.FoundSlots
+	}
+
+	if got["fanart"] != 3 {
+		t.Errorf("fanart FoundSlots = %d, want 3", got["fanart"])
+	}
+	if got["thumb"] != 1 {
+		t.Errorf("thumb FoundSlots = %d, want 1", got["thumb"])
+	}
+	// Every canonical type must be present, including the absent ones: "probed
+	// and found none" is what lets a genuinely-emptied type converge, and it is
+	// a different statement from omitting the type.
+	for _, ty := range []string{"thumb", "fanart", "logo", "banner"} {
+		if _, ok := got[ty]; !ok {
+			t.Errorf("image type %q missing from the enumeration; an omitted type "+
+				"can never converge and its rows strand forever", ty)
+		}
+	}
+	if got["logo"] != 0 || got["banner"] != 0 {
+		t.Errorf("logo/banner FoundSlots = %d/%d, want 0/0", got["logo"], got["banner"])
+	}
+}
+
+// TestScan_PrimaryFanartDeletionDoesNotWipeSurvivingSlots is the #2635
+// incident, reproduced end to end through real scans against a real
+// filesystem and a real database.
+//
+// Sequence: an artist has fanart.jpg + fanart1.jpg and is scanned, so the
+// registry holds fanart ordinals 0 and 1. The operator then deletes ONLY the
+// primary -- the shape a slot delete leaves behind when it fails before
+// renumbering (#2644) -- and the library is rescanned.
+//
+// Before the fix the rescan detected fanart via the PRIMARY patterns alone,
+// found none, and reported FanartExists=false / FanartCount=0.
+// extractImageMetadata gates the whole fanart tail behind slot 0, so the
+// desired set contained no fanart rows at all, and a type-bounded reconcile
+// read that as "every fanart row is stale" and deleted BOTH -- including the
+// one describing fanart1.jpg, which was never touched and is still on disk.
+// That is amplification: one deleted file destroying the registry for a file
+// that still exists.
+//
+// The assertion is on stored DB rows, not on a counter or a return value,
+// because the failure being guarded is a scan that reports success while
+// destroying data.
+func TestScan_PrimaryFanartDeletionDoesNotWipeSurvivingSlots(t *testing.T) {
+	t.Parallel()
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Amplified", "fanart.jpg", "fanart1.jpg")
+	svc, artistSvc, _ := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	artistDir := filepath.Join(libDir, "Amplified")
+	a, _ := artistSvc.GetByPath(ctx, artistDir)
+	if a == nil {
+		t.Fatal("artist not found after first scan")
+	}
+
+	// Precondition: both ordinals really are stored. Without this the test
+	// would pass vacuously against a scan that never wrote the tail.
+	if got := fanartSlots(t, artistSvc, a.ID); len(got) != 2 {
+		t.Fatalf("precondition: want 2 stored fanart slots after the first scan, got %v; "+
+			"nothing below would prove anything", got)
+	}
+
+	// Delete ONLY the primary. fanart1.jpg is untouched and still on disk.
+	if err := os.Remove(filepath.Join(artistDir, "fanart.jpg")); err != nil {
+		t.Fatalf("removing primary fanart: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart1.jpg")); err != nil {
+		t.Fatalf("precondition: fanart1.jpg must still be on disk: %v", err)
+	}
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	// Exactly one fanart row must survive, at ordinal 0, describing the one
+	// file that is still there. Zero rows is the amplification. Two rows would
+	// mean the deleted file was never retired, which is the opposite failure
+	// and equally wrong -- so this assertion pins convergence in BOTH
+	// directions rather than merely proving nothing was deleted.
+	got := fanartSlots(t, artistSvc, a.ID)
+	if len(got) == 0 {
+		t.Fatalf("all fanart rows were destroyed, but fanart1.jpg is still on disk: " +
+			"deleting one file wiped the registry entry for a file that survived")
+	}
+	if len(got) != 1 || !got[0] {
+		t.Errorf("stored fanart slots = %v, want exactly ordinal 0 present: one file "+
+			"remains on disk, so the registry must hold exactly one row for it", got)
+	}
+}
+
+// fanartSlots returns the artist's stored fanart rows as a slot-index -> exists
+// map, read back from the database.
+func fanartSlots(t *testing.T, svc *artist.Service, artistID string) map[int]bool {
+	t.Helper()
+	imgs, err := svc.GetImagesForArtist(context.Background(), artistID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+	out := make(map[int]bool)
+	for _, im := range imgs {
+		if im.ImageType == "fanart" {
+			out[im.SlotIndex] = im.Exists
+		}
+	}
+	return out
+}
+
+// TestScan_ReconcileFailureStillPublishesAndCounts pins the ordering around a
+// failing image reconcile.
+//
+// processDirectory used to return the reconcile error immediately, BEFORE
+// publishArtistUpdated and result.UpdatedArtists++. But Update() has already
+// committed by that point, so the artist genuinely was updated: the early
+// return suppressed the SSE fanout for a write that landed, leaving every UI
+// subscriber showing stale data with no event ever coming to correct it, and
+// it under-counted the scan's own work in the summary the operator reads.
+//
+// The failure is injected with a trigger that refuses row deletion on
+// artist_images. That is surgical: it fails ONLY the reconcile's delete, while
+// leaving the artist-row Update free to commit, which is precisely the state
+// the ordering bug lives in.
+func TestScan_ReconcileFailureStillPublishesAndCounts(t *testing.T) {
+	t.Parallel()
+	libDir := t.TempDir()
+	artistDir := filepath.Join(libDir, "Reconcile Failure")
+	createArtistDir(t, libDir, "Reconcile Failure", "fanart.jpg", "fanart1.jpg")
+	svc, artistSvc, db := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	bus := event.NewBus(logger, 64)
+	go bus.Start()
+	t.Cleanup(bus.Stop)
+
+	var updates atomic.Int64
+	bus.Subscribe(event.ArtistUpdated, func(event.Event) {
+		updates.Add(1)
+	})
+	svc.SetEventBus(bus)
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, artistDir)
+	if a == nil {
+		t.Fatal("artist not found after first scan")
+	}
+	if got := fanartSlots(t, artistSvc, a.ID); len(got) != 2 {
+		t.Fatalf("precondition: want 2 fanart slots after the first scan, got %v", got)
+	}
+
+	// Remove a file so the rescan has a row to delete, then make that delete
+	// fail. Both are required: without the removal the reconcile has nothing
+	// to do and would succeed regardless of the trigger, so the test would
+	// pass vacuously.
+	if err := os.Remove(filepath.Join(artistDir, "fanart1.jpg")); err != nil {
+		t.Fatalf("removing fanart1.jpg: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TRIGGER block_image_delete BEFORE DELETE ON artist_images
+		BEGIN SELECT RAISE(ABORT, 'injected reconcile failure'); END;`); err != nil {
+		t.Fatalf("installing delete-blocking trigger: %v", err)
+	}
+
+	before := updates.Load()
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	finished := waitForScan(t, svc, 5*time.Second)
+	if finished == nil {
+		t.Fatal("waitForScan returned nil after Run 2")
+	}
+
+	// Precondition: the reconcile really did fail. If the trigger silently did
+	// not fire, both assertions below would pass for the wrong reason.
+	if got := fanartSlots(t, artistSvc, a.ID); len(got) != 2 {
+		t.Fatalf("precondition: the delete-blocking trigger did not fire (fanart slots = %v); "+
+			"this test proves nothing unless the reconcile genuinely failed", got)
+	}
+
+	if finished.UpdatedArtists != 1 {
+		t.Errorf("UpdatedArtists = %d, want 1: Update() committed, so the artist WAS "+
+			"updated and the scan summary must say so even though the reconcile failed",
+			finished.UpdatedArtists)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for updates.Load() == before && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if updates.Load() == before {
+		t.Error("no ArtistUpdated event published: the artist row was committed, so " +
+			"subscribers are now showing stale data with no event coming to correct it")
+	}
+}
+
+// readDirListing returns the raw os.ReadDir entries, which is what the
+// detection paths hand to discoverFanartFiles. Tests use it to hold a listing
+// that was genuinely read while the directory was still readable.
+func readDirListing(t *testing.T, dir string) []os.DirEntry {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	return entries
+}
+
+// makeUnreadable strips every permission bit from dir and skips the test if the
+// process can still read it. Running as root (containers, some CI images)
+// ignores the mode bits entirely, and a test that cannot deny the read would
+// otherwise pass without ever exercising the failure it exists to pin.
+func makeUnreadable(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Skipf("cannot chmod %s: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if _, err := os.ReadDir(dir); err == nil {
+		t.Skip("chmod 000 does not deny this process (running as root?); " +
+			"the unreadable-directory failure cannot be reproduced here")
+	}
+}
+
+// TestDiscoverFanartFiles_UnreadableDirectoryIsNotAZeroCount pins the #2635
+// swallowed-error defect at its source.
+//
+// discoverFanartFiles used to call image.DiscoverFanart, which performed a
+// SECOND os.ReadDir of a directory its caller had already read successfully.
+// That second read is an independent chance to fail -- an SMB/NFS blip, fd
+// exhaustion mid-scan, a permission change -- and its error was logged at Warn
+// and swallowed into nil. nil is indistinguishable from "no fanart on disk", so
+// the caller reported FanartCount=0 and imageEnumeration published
+// {fanart, FoundSlots: 0}: a positive claim that zero fanart files exist, which
+// licenses deleting every fanart row while the files sit untouched on disk.
+//
+// The fixture holds the listing from a read that SUCCEEDED and then makes the
+// directory unreadable, which is exactly the interleaving production hits. The
+// count must come from the listing actually in hand.
+func TestDiscoverFanartFiles_UnreadableDirectoryIsNotAZeroCount(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644); err != nil {
+			t.Fatalf("writing %s fixture: %v", name, err)
+		}
+	}
+
+	// The listing the caller already holds, read while the directory was fine.
+	files := readDirListing(t, dir)
+	if got := discoverFanartFiles(dir, files); len(got) != 3 {
+		t.Fatalf("precondition: readable directory discovered %d fanart files, want 3 (%v); "+
+			"nothing below would prove anything", len(got), got)
+	}
+
+	makeUnreadable(t, dir)
+
+	got := discoverFanartFiles(dir, files)
+	if len(got) != 3 {
+		t.Errorf("unreadable directory discovered %d fanart files, want 3 (%v); "+
+			"three files are on disk and the caller's own listing names all three, so "+
+			"any smaller number is a count that was never measured -- and a count of 0 "+
+			"is a positive claim of absence that authorizes deleting every fanart row",
+			len(got), got)
+	}
+}
+
+// TestReconcile_UnreadableDirectoryDoesNotDestroyFanartRows is the same defect
+// carried to its consequence: stored registry rows.
+//
+// It runs the production chain from scanner.go's re-scan path --
+// discoverFanartFiles -> detectedFiles -> imageEnumeration -> ReconcileImages --
+// against a directory that became unreadable after the caller's own ReadDir
+// succeeded. The assertion is on rows read back from the database, not on a
+// counter, a return value, or the absence of an error, because the failure being
+// guarded is code that reports success while destroying data.
+func TestReconcile_UnreadableDirectoryDoesNotDestroyFanartRows(t *testing.T) {
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Unreadable", "fanart.jpg", "fanart1.jpg", "fanart2.jpg")
+	svc, artistSvc, _ := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	artistDir := filepath.Join(libDir, "Unreadable")
+	a, _ := artistSvc.GetByPath(ctx, artistDir)
+	if a == nil {
+		t.Fatal("artist not found after the first scan")
+	}
+	if got := fanartSlots(t, artistSvc, a.ID); len(got) != 3 {
+		t.Fatalf("precondition: want 3 stored fanart slots after the first scan, got %v; "+
+			"nothing below would prove anything", got)
+	}
+
+	// The listing the scan's own ReadDir returned, captured while readable.
+	files := readDirListing(t, artistDir)
+	makeUnreadable(t, artistDir)
+
+	// The re-scan's remaining chain, mirroring processExistingArtist.
+	var detected detectedFiles
+	if paths := discoverFanartFiles(artistDir, files); len(paths) > 0 {
+		detected.FanartExists = true
+		detected.FanartCount = len(paths)
+	}
+	// processExistingArtist overwrites the artist's image fields from `detected`
+	// BEFORE reconciling, and that step is load-bearing here rather than
+	// incidental: ReconcileImages derives its "incoming" set from these flat
+	// fields, so leaving them at their pre-rescan values would keep every slot
+	// named and the reconcile could not delete anything whatever the
+	// enumeration said. Omitting it makes this test pass against the unfixed
+	// code -- it must reproduce the state the scanner actually reconciles in.
+	a.FanartExists = detected.FanartExists
+	a.FanartCount = detected.FanartCount
+	if _, err := artistSvc.ReconcileImages(ctx, a, imageEnumeration(detected)); err != nil {
+		t.Fatalf("ReconcileImages: %v", err)
+	}
+
+	got := fanartSlots(t, artistSvc, a.ID)
+	if len(got) != 3 {
+		t.Errorf("stored fanart slots = %v, want all 3 to survive; the directory could "+
+			"not be re-read, so the reconcile had no measured count and must destroy "+
+			"nothing -- the three files are still on disk", got)
+	}
+}
+
+// TestDiscoverFanartFiles_MatchesDiscoverFanart is the drift alarm for
+// answering discovery from memory.
+//
+// fanartVariants reimplements image.DiscoverFanart's matching rules -- the
+// extension allowlist, the base/numbered-suffix split, the ordinal ordering and
+// the same-ordinal dedupe -- against a listing already in hand. Two copies of
+// one algorithm drift, and a drift here is not cosmetic: the count feeds
+// deleteStaleSlots' delete bound. This pins them against a shared fixture set
+// so a change to either side fails loudly rather than silently widening or
+// narrowing what the scanner believes is on disk.
+func TestDiscoverFanartFiles_MatchesDiscoverFanart(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		files []string
+	}{
+		{"primary only", []string{"fanart.jpg"}},
+		{"primary and numbered", []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"}},
+		{"orphan numbered, no primary", []string{"fanart1.jpg", "fanart2.jpg"}},
+		{"gap in numbering", []string{"fanart.jpg", "fanart3.jpg"}},
+		{"png primary", []string{"fanart.png", "fanart1.png"}},
+		{"jpeg extension", []string{"fanart.jpeg"}},
+		{"mixed extensions at one ordinal", []string{"fanart.jpg", "fanart.png"}},
+		{"backdrop convention", []string{"backdrop.jpg", "backdrop1.jpg"}},
+		{"excluded extension", []string{"fanart.gif", "fanart.webp", "fanart.bmp"}},
+		{"non-numeric suffix", []string{"fanart.jpg", "fanartx.jpg", "fanart-alt.jpg"}},
+		{"zero suffix is not a variant", []string{"fanart.jpg", "fanart0.jpg"}},
+		{"unrelated images", []string{"fanart.jpg", "folder.jpg", "logo.png", "banner.jpg"}},
+		{"no fanart at all", []string{"folder.jpg", "artist.nfo"}},
+		{"uppercase on disk", []string{"Fanart.JPG", "FANART1.jpg"}},
+		// Two files differing ONLY in case. This is the case that motivated
+		// taking raw entries instead of the lowercased filename map, which
+		// collapses the pair into one. It cannot be constructed on a
+		// case-insensitive filesystem (macOS APFS), so the fixture writer skips
+		// it there -- but Stillwater ships in a Linux container where it is real.
+		{"case collision at one ordinal", []string{"fanart.jpg", "Fanart1.jpg", "fanart1.jpg"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			for _, name := range tc.files {
+				path := filepath.Join(dir, name)
+				// A fixture list holding two names that differ only in case
+				// needs a case-sensitive filesystem; on APFS the second write
+				// silently overwrites the first and the case would test nothing.
+				if _, err := os.Stat(path); err == nil {
+					t.Skipf("filesystem is case-insensitive: %q collides with an "+
+						"earlier fixture, so this case cannot be constructed here", name)
+				}
+				if err := os.WriteFile(path, []byte("test"), 0o644); err != nil {
+					t.Fatalf("writing %s fixture: %v", name, err)
+				}
+			}
+			listing := readDirListing(t, dir)
+
+			// The reference answer: whichever pattern the two-pass resolution
+			// selects, resolved by the package this one mirrors.
+			var want []string
+			for _, p := range fanartPatterns {
+				primaryPresent := false
+				for _, e := range listing {
+					if !e.IsDir() && strings.EqualFold(e.Name(), p) {
+						primaryPresent = true
+						break
+					}
+				}
+				if primaryPresent {
+					var err error
+					if want, err = swimage.DiscoverFanart(dir, p); err != nil {
+						t.Fatalf("DiscoverFanart(%s): %v", p, err)
+					}
+					break
+				}
+			}
+			if len(want) == 0 {
+				for _, p := range fanartPatterns {
+					paths, err := swimage.DiscoverFanart(dir, p)
+					if err != nil {
+						t.Fatalf("DiscoverFanart(%s): %v", p, err)
+					}
+					if len(paths) > 0 {
+						want = paths
+						break
+					}
+				}
+			}
+
+			got := discoverFanartFiles(dir, listing)
+			if len(got) != len(want) {
+				t.Fatalf("discoverFanartFiles = %v (%d), DiscoverFanart = %v (%d): the two "+
+					"matching implementations disagree, and this count is the bound "+
+					"deleteStaleSlots deletes by", got, len(got), want, len(want))
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Errorf("ordinal %d: discoverFanartFiles = %s, DiscoverFanart = %s; "+
+						"slot_index is a DiscoverFanart ordinal, so a different file at "+
+						"an ordinal mismaps every stored row", i, got[i], want[i])
+				}
+			}
+		})
 	}
 }

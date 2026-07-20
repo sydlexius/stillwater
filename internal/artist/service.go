@@ -942,11 +942,20 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 
 // persistNormalized writes provider IDs and image metadata to the normalized
 // tables for the given artist.
+//
+// The image write is MergeAll, never ReconcileAll. This path is reached from
+// Update and Create with whatever Artist the caller happened to build, and
+// extractImageMetadata derives its slice purely from that struct's flat image
+// fields. A caller that never populated them -- a partial hydrate, a
+// field-level edit, a lock toggle -- yields an empty or truncated slice that
+// says nothing about the filesystem. Treating those absences as deletions is
+// what destroyed the registry in #2635. Convergence to filesystem truth is
+// ReconcileImages' job and belongs only to callers that enumerated disk.
 func (s *Service) persistNormalized(ctx context.Context, a *Artist) error {
 	if err := s.providers.UpsertAll(ctx, a.ID, extractProviderIDs(a)); err != nil {
 		return err
 	}
-	return s.images.UpsertAll(ctx, a.ID, extractImageMetadata(a))
+	return s.images.MergeAll(ctx, a.ID, extractImageMetadata(a))
 }
 
 // UpdateImageProvenance updates the provenance-related fields (phash,
@@ -992,21 +1001,37 @@ func (s *Service) ClearImageFlag(ctx context.Context, artistID, imageType string
 }
 
 // ReconcileImages converges the artist_images registry to match the image
-// fields on the provided Artist. The caller is responsible for populating the
-// Artist's *Exists, *LowRes, *Placeholder, *Width, *Height, and FanartCount
-// fields from filesystem-truth (e.g. the scanner's detectFiles output) before
-// calling this method.
+// fields on the provided Artist, DELETING stored slots the caller's
+// enumeration proves are gone. It is the only image path in the service that
+// destroys rows.
+//
+// PRECONDITION: `enumerated` must be the RESULT of a filesystem walk the
+// caller actually performed -- one entry per image type probed, carrying the
+// number of files found for it. It is not a declaration of intent and not a
+// list of types the caller cares about; it is evidence, and it is the only
+// thing licensing a delete.
+//
+// That precondition used to be enforced by a comment alone, which is how
+// #2635 happened: Update shared a single repository method with this path, so
+// any under-populated Artist reaching Update destroyed rows. The repository
+// now splits the two contracts into MergeAll and ReconcileAll, and only this
+// method calls the destructive one. A caller that has not enumerated the
+// filesystem wants Update, which cannot reach deletion at all.
+//
+// Passing CanonicalImageTypes-shaped counts is correct ONLY for a caller that
+// probed all four types (the scanner). A caller that walked the directory for
+// fanart alone passes fanart alone, and thereby cannot touch a thumb row.
 //
 // Unlike Update(), ReconcileImages performs ONLY the artist_images upsert and
 // stale-row removal, without touching any other artist columns or normalized
 // tables. The scanner calls this on every directory visit so the registry
 // stays in sync with disk even when the artist row's flags would otherwise
 // show "no change" (issue #1225). Idempotent: replaying with the same Artist
-// is a no-op.
+// and the same enumeration is a no-op.
 //
 // Returns true when the registry was actually mutated so the caller can
 // mirror Update()'s ArtistUpdated event fanout only on real repairs.
-func (s *Service) ReconcileImages(ctx context.Context, a *Artist) (bool, error) {
+func (s *Service) ReconcileImages(ctx context.Context, a *Artist, enumerated []ImageEnumeration) (bool, error) {
 	if a == nil || a.ID == "" {
 		return false, fmt.Errorf("ReconcileImages: artist ID is required")
 	}
@@ -1015,20 +1040,38 @@ func (s *Service) ReconcileImages(ctx context.Context, a *Artist) (bool, error) 
 	if err != nil {
 		return false, fmt.Errorf("loading current images for reconciliation: %w", err)
 	}
-	if !imageRegistryDrift(current, desired) {
+	if !imageRegistryDrift(current, desired, enumerated) {
 		return false, nil
 	}
-	if err := s.images.UpsertAll(ctx, a.ID, desired); err != nil {
+	if err := s.images.ReconcileAll(ctx, a.ID, desired, enumerated); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-// imageRegistryDrift reports whether the writable fields of `desired` differ
-// from `current`. Provenance columns (PHash, Source, FileFormat,
-// LastWrittenAt) are intentionally ignored because UpsertAll preserves them
-// and they cannot drift from filesystem detection alone.
-func imageRegistryDrift(current, desired []ArtistImage) bool {
+// imageRegistryDrift reports whether a ReconcileAll with these arguments would
+// change anything. Provenance columns (PHash, Source, FileFormat,
+// LastWrittenAt) are intentionally ignored because the image write path
+// preserves them and they cannot drift from filesystem detection alone.
+//
+// It must model what ReconcileAll can ACT on, not merely what differs, or the
+// "no drift" short-circuit stops being a short-circuit. Comparing every stored
+// row against a canonical-only desired set reported drift forever for any
+// artist holding an out-of-scope row (a "poster"), because ReconcileAll
+// correctly refuses to delete it and the next call sees the same difference
+// again. That made ReconcileImages non-idempotent in flat contradiction of its
+// own docstring, and it made the scanner publish an ArtistUpdated event plus a
+// full write transaction on EVERY quiet rescan of such an artist -- precisely
+// the subscriber flood the `repaired` return value exists to prevent.
+//
+// So drift is exactly two things:
+//
+//   - a desired row that is missing or different (the upsert would write it);
+//   - a stored row the enumeration proves is gone (the delete would remove it).
+//
+// A stored row that is out of the enumeration's reach is neither, and is
+// deliberately not drift however different it looks.
+func imageRegistryDrift(current, desired []ArtistImage, enumerated []ImageEnumeration) bool {
 	type key struct {
 		imageType string
 		slot      int
@@ -1055,12 +1098,24 @@ func imageRegistryDrift(current, desired []ArtistImage) bool {
 		return out
 	}
 	c, d := index(current), index(desired)
-	if len(c) != len(d) {
-		return true
-	}
+
 	for k, want := range d {
 		got, ok := c[k]
 		if !ok || got != want {
+			return true
+		}
+	}
+
+	found := make(map[string]int, len(enumerated))
+	for _, e := range enumerated {
+		found[e.ImageType] = e.FoundSlots
+	}
+	for k := range c {
+		if _, ok := d[k]; ok {
+			continue
+		}
+		n, probed := found[k.imageType]
+		if probed && k.slot >= n {
 			return true
 		}
 	}
@@ -1508,7 +1563,7 @@ func (s *Service) RemoveLockedField(ctx context.Context, id, field string) error
 }
 
 // UpsertImage writes or updates a single image row. Exposed primarily for
-// tests and tooling; production code paths use UpsertAll via scanning flows.
+// tests and tooling; production code paths use MergeAll/ReconcileAll via scanning flows.
 func (s *Service) UpsertImage(ctx context.Context, img *ArtistImage) error {
 	return s.images.Upsert(ctx, img)
 }
@@ -2177,9 +2232,9 @@ func applyImageMetadata(a *Artist, imgs []ArtistImage) {
 // extractImageMetadata builds an ArtistImage slice from the Artist struct's
 // image fields, ready for persistence. Provenance fields (phash, content_hash,
 // source, file_format, last_written_at) are deliberately left zero here and
-// populated separately via UpdateImageProvenance / UpdateImageHashes: UpsertAll
-// never overwrites them on conflict, so a rescan through this path preserves
-// hashes that were computed earlier rather than clearing them.
+// populated separately via UpdateImageProvenance / UpdateImageHashes: neither
+// MergeAll nor ReconcileAll overwrites them on conflict, so a rescan through
+// this path preserves hashes computed earlier rather than clearing them.
 func extractImageMetadata(a *Artist) []ArtistImage {
 	var imgs []ArtistImage
 
