@@ -144,80 +144,6 @@ func TestCopyFile_SourceIsDirectory(t *testing.T) {
 	}
 }
 
-// --- renameSafe tests ---
-
-func TestRenameSafe_SameFilesystem(t *testing.T) {
-	dir := t.TempDir()
-	old := filepath.Join(dir, "old.txt")
-	new := filepath.Join(dir, "new.txt")
-
-	data := []byte("rename safe content")
-	if err := os.WriteFile(old, data, 0o644); err != nil {
-		t.Fatalf("writing old: %v", err)
-	}
-
-	if err := renameSafe(old, new, 0o644); err != nil {
-		t.Fatalf("renameSafe: %v", err)
-	}
-
-	// Old path should be gone.
-	if _, err := os.Stat(old); !os.IsNotExist(err) {
-		t.Error("old file should not exist after rename")
-	}
-
-	// New path should have the content.
-	got, err := os.ReadFile(new)
-	if err != nil {
-		t.Fatalf("reading new: %v", err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Errorf("content = %q, want %q", got, data)
-	}
-}
-
-// TestRenameSafe_EXDEVCopyFallbackFails covers the error branch inside
-// renameSafe where the copy fallback itself fails (line 83-84 in atomic.go).
-// The test injects an EXDEV error via osRename so the copy path is taken,
-// then points the destination at a read-only directory so os.OpenFile fails
-// inside copyFile, causing renameSafe to return a "copy fallback" error.
-func TestRenameSafe_EXDEVCopyFallbackFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod is not effective on Windows NTFS")
-	}
-	if os.Getuid() == 0 {
-		t.Skip("chmod restrictions do not apply to root")
-	}
-
-	// Mutates package-level osRename; must not run in parallel.
-	orig := osRename
-	t.Cleanup(func() { osRename = orig })
-	osRename = func(old, new string) error { return exdevError(old, new) }
-
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src.txt")
-	if err := os.WriteFile(src, []byte("payload"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Destination is inside a directory the process cannot write to. copyFile
-	// will fail at os.OpenFile(dst, O_WRONLY|O_CREATE|...) with EACCES.
-	roDir := filepath.Join(dir, "readonly")
-	if err := os.MkdirAll(roDir, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	// Restore write permission so TempDir cleanup can remove the directory.
-	t.Cleanup(func() { os.Chmod(roDir, 0o755) })
-
-	dst := filepath.Join(roDir, "dst.txt")
-	err := renameSafe(src, dst, 0o644)
-	if err == nil {
-		t.Fatal("expected error from renameSafe when copy fallback destination is unwritable")
-	}
-	if !strings.Contains(err.Error(), "copy fallback") {
-		t.Errorf("error = %q, want it to contain 'copy fallback'", err.Error())
-	}
-}
-
 // --- WriteFileAtomic error path tests ---
 
 func TestWriteFileAtomic_EmptyContent(t *testing.T) {
@@ -282,7 +208,7 @@ func TestWriteFileAtomic_CleansUpTmpOnOverwriteSuccess(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "cleanup.txt")
 
-	// Pre-create the file so the backup path is exercised.
+	// Pre-create the file so the overwrite path is exercised.
 	if err := os.WriteFile(target, []byte("existing"), 0o644); err != nil {
 		t.Fatalf("writing existing: %v", err)
 	}
@@ -291,7 +217,8 @@ func TestWriteFileAtomic_CleansUpTmpOnOverwriteSuccess(t *testing.T) {
 		t.Fatalf("WriteFileAtomic: %v", err)
 	}
 
-	// Neither .tmp nor .bak should remain.
+	// Neither .tmp nor .bak should remain (the single-rename design no longer
+	// creates a .bak at all).
 	for _, suffix := range []string{".tmp", ".bak"} {
 		if _, err := os.Stat(target + suffix); !os.IsNotExist(err) {
 			t.Errorf("unexpected %s file remains", suffix)
@@ -796,6 +723,71 @@ func TestWriteFileAtomic_WriteTempFileFails(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Errorf("expected temp file to be cleaned up, dir has %d entries", len(entries))
+	}
+}
+
+// TestWriteFileAtomic_SyncFails covers the fsync error branch in writeTempFile
+// (#2661). The f.Sync() before the promoting rename is what makes the atomic
+// replace crash-durable; if it fails, the write must abort BEFORE the rename so
+// a partially-flushed temp is never promoted onto the target. fsync failures
+// are real (I/O errors, ENOSPC on some filesystems) but impractical to provoke
+// on a tmpfs, so the failure is injected via the syncFile hook -- exercising
+// the real writeTempFile, not a stand-in.
+//
+// Asserts the OUTCOME of a crash-path failure, not that a line ran:
+//   - WriteFileAtomic returns the sync error (wrapped as "writing temp file");
+//   - the pre-existing target is left byte-for-byte UNTOUCHED -- a failed sync
+//     must never promote the temp, so the old content survives;
+//   - no temp file is left behind in the target directory.
+func TestWriteFileAtomic_SyncFails(t *testing.T) {
+	orig := syncFile
+	t.Cleanup(func() { syncFile = orig })
+	syncErr := errors.New("simulated fsync failure")
+	syncFile = func(*os.File) error { return syncErr }
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "test.txt")
+
+	// Seed an existing target so the assertion can prove it was untouched, not
+	// merely that a new file was never created.
+	original := []byte("original content that must survive a failed write")
+	if err := os.WriteFile(target, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := WriteFileAtomic(target, []byte("new content that never lands"), 0o644)
+	if err == nil {
+		t.Fatal("expected error from simulated fsync failure")
+	}
+	if !errors.Is(err, syncErr) {
+		t.Errorf("error = %v, want it to wrap the injected fsync error", err)
+	}
+	if !strings.Contains(err.Error(), "writing temp file") {
+		t.Errorf("error = %q, want it to contain 'writing temp file'", err.Error())
+	}
+
+	// The target must still hold its ORIGINAL bytes: a failed sync aborts before
+	// the rename, so nothing was promoted.
+	got, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatalf("reading target after failed write: %v", readErr)
+	}
+	if !bytes.Equal(got, original) {
+		t.Errorf("target content = %q, want the original %q left untouched", got, original)
+	}
+
+	// Only the target must remain -- the aborted temp file is cleaned up.
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 1 || entries[0].Name() != filepath.Base(target) {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("dir entries = %v, want only the untouched target %q; a temp was left behind",
+			names, filepath.Base(target))
 	}
 }
 
