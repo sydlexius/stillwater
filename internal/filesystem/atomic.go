@@ -13,15 +13,29 @@ import (
 // by renameFunc in rename.go.
 var osRename = os.Rename
 
-// writeTempFile writes data to f, restricts it to perm, and closes it.
+// writeTempFile writes data to f, restricts it to perm, flushes it to stable
+// storage, and closes it.
 // Extracted into a package-level var (rather than inlined in WriteFileAtomic)
-// so tests can override it to simulate write/chmod/close failures on the
+// so tests can override it to simulate write/chmod/sync/close failures on the
 // temp file, the same injectable-hook pattern osRename uses for the rename.
+//
+// The f.Sync() before Close is what makes the atomic replace crash-durable: a
+// bare write() only lands data in the page cache, so a crash/power-loss between
+// the write and the promoting rename could otherwise leave the renamed-in
+// target zero-length or truncated (the classic ext3/ext4 zero-length-file
+// problem). fsync forces the temp's data to disk before the rename promotes it,
+// upholding this file's guarantee that an interrupted write never corrupts the
+// target. We deliberately do not fsync the parent directory after the rename:
+// that is only needed for database-grade durability of the rename itself and
+// adds complexity for little gain here.
 var writeTempFile = func(f *os.File, data []byte, perm os.FileMode) error {
 	if _, err := f.Write(data); err != nil {
 		return err
 	}
 	if err := f.Chmod(perm); err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
 		return err
 	}
 	return f.Close()

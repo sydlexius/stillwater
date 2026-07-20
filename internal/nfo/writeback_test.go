@@ -743,13 +743,19 @@ func TestWriteNFOAtomic_UnwritablePath(t *testing.T) {
 // rename needs write permission on the parent directory, not on the file), but
 // it cannot preserve discography it was unable to read.
 func TestWriteBackArtistNFO_UnreadableExistingNFO(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses file permission checks, so a 0o000 file is still readable")
-	}
 	dir := t.TempDir()
 	target := filepath.Join(dir, "artist.nfo")
 	if err := os.WriteFile(target, []byte("unreadable existing nfo"), 0o000); err != nil {
 		t.Fatalf("writing unreadable artist.nfo: %v", err)
+	}
+
+	// Probe the target: only proceed if this environment genuinely denies the
+	// read. os.Geteuid()==0 is too narrow -- a non-root user can still read a
+	// 0o000 file via ACLs or elevated capabilities, in which case the test would
+	// silently take the readable path and pass while proving nothing. If the read
+	// succeeds, the readErr branch cannot fire, so skip.
+	if _, err := os.ReadFile(target); err == nil {
+		t.Skip("environment can read a 0o000 file (root/ACL/capabilities); cannot exercise the unreadable-existing-NFO branch")
 	}
 
 	a := &artist.Artist{
