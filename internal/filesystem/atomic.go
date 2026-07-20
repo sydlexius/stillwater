@@ -13,6 +13,12 @@ import (
 // by renameFunc in rename.go.
 var osRename = os.Rename
 
+// syncFile flushes a file's data to stable storage. It defaults to
+// (*os.File).Sync and is a package-level var (same injectable-hook pattern as
+// osRename) so a test can simulate an fsync failure, which real filesystems
+// surface only on I/O errors that are impractical to provoke in a unit test.
+var syncFile = (*os.File).Sync
+
 // writeTempFile writes data to f, restricts it to perm, flushes it to stable
 // storage, and closes it.
 // Extracted into a package-level var (rather than inlined in WriteFileAtomic)
@@ -35,7 +41,7 @@ var writeTempFile = func(f *os.File, data []byte, perm os.FileMode) error {
 	if err := f.Chmod(perm); err != nil {
 		return err
 	}
-	if err := f.Sync(); err != nil {
+	if err := syncFile(f); err != nil {
 		return err
 	}
 	return f.Close()

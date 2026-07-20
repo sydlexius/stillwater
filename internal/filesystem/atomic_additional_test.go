@@ -726,6 +726,71 @@ func TestWriteFileAtomic_WriteTempFileFails(t *testing.T) {
 	}
 }
 
+// TestWriteFileAtomic_SyncFails covers the fsync error branch in writeTempFile
+// (#2661). The f.Sync() before the promoting rename is what makes the atomic
+// replace crash-durable; if it fails, the write must abort BEFORE the rename so
+// a partially-flushed temp is never promoted onto the target. fsync failures
+// are real (I/O errors, ENOSPC on some filesystems) but impractical to provoke
+// on a tmpfs, so the failure is injected via the syncFile hook -- exercising
+// the real writeTempFile, not a stand-in.
+//
+// Asserts the OUTCOME of a crash-path failure, not that a line ran:
+//   - WriteFileAtomic returns the sync error (wrapped as "writing temp file");
+//   - the pre-existing target is left byte-for-byte UNTOUCHED -- a failed sync
+//     must never promote the temp, so the old content survives;
+//   - no temp file is left behind in the target directory.
+func TestWriteFileAtomic_SyncFails(t *testing.T) {
+	orig := syncFile
+	t.Cleanup(func() { syncFile = orig })
+	syncErr := errors.New("simulated fsync failure")
+	syncFile = func(*os.File) error { return syncErr }
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "test.txt")
+
+	// Seed an existing target so the assertion can prove it was untouched, not
+	// merely that a new file was never created.
+	original := []byte("original content that must survive a failed write")
+	if err := os.WriteFile(target, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := WriteFileAtomic(target, []byte("new content that never lands"), 0o644)
+	if err == nil {
+		t.Fatal("expected error from simulated fsync failure")
+	}
+	if !errors.Is(err, syncErr) {
+		t.Errorf("error = %v, want it to wrap the injected fsync error", err)
+	}
+	if !strings.Contains(err.Error(), "writing temp file") {
+		t.Errorf("error = %q, want it to contain 'writing temp file'", err.Error())
+	}
+
+	// The target must still hold its ORIGINAL bytes: a failed sync aborts before
+	// the rename, so nothing was promoted.
+	got, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatalf("reading target after failed write: %v", readErr)
+	}
+	if !bytes.Equal(got, original) {
+		t.Errorf("target content = %q, want the original %q left untouched", got, original)
+	}
+
+	// Only the target must remain -- the aborted temp file is cleaned up.
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 1 || entries[0].Name() != filepath.Base(target) {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("dir entries = %v, want only the untouched target %q; a temp was left behind",
+			names, filepath.Base(target))
+	}
+}
+
 // TestWriteFileAtomic_DoesNotUseThePredictableTempName is the effective
 // regression test for the O_EXCL/unique-name property: it plants a decoy
 // file at the OLD predictable "<target>.tmp" path before calling
