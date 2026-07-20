@@ -85,13 +85,24 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 	// operator intent, changed only via SetLock. Without that omission any
 	// refresh-shaped upsert whose caller left Locked at its zero value would
 	// silently clear an operator's lock, exposing pinned artwork to the
-	// auto-fix rules that delete files.
+	// auto-fix rules that delete files. The omission cuts both ways: a caller
+	// passing Locked: true against an existing row also gets no lock, and no
+	// error. Callers that mean to change a lock in either direction call
+	// SetLock.
 	//
-	// Every other SET column is a full overwrite by design, because the
-	// singular Upsert is a full-write path (unlike UpsertAll, which is fed by
-	// scans carrying only display fields). If a future change needs to guard
+	// Every other SET column except id is a full overwrite by design, because
+	// the singular Upsert is a full-write path (unlike UpsertAll, which is fed
+	// by scans carrying only display fields). If a future change needs to guard
 	// provenance or dimensions here, mirror UpsertAll's approach: exclude the
 	// column outright, or gate it with a CASE WHEN that keeps the stored value.
+	//
+	// id = excluded.id below is NOT part of that design and is a known defect:
+	// because an empty img.ID is filled with a fresh UUID above, a
+	// refresh-shaped Upsert rotates an existing row's primary key. Any ID a
+	// caller still holds then goes stale, including the one SetLock matches on,
+	// so a lock toggle issued against the pre-refresh ID fails with ErrNotFound.
+	// Tracked as its own issue; left in place here to keep this change scoped to
+	// the locked column.
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
 			width, height, phash, content_hash, file_format, source, last_written_at, locked)

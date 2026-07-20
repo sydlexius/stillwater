@@ -163,15 +163,24 @@ type ImageRepository interface {
 	GetForArtist(ctx context.Context, artistID string) ([]ArtistImage, error)
 	GetForArtists(ctx context.Context, artistIDs []string) (map[string][]ArtistImage, error)
 	// Upsert writes a single image row. On insert it persists the supplied
-	// Locked value, but the conflict path does not modify locked: lock state is
-	// owned exclusively by SetLock. A refresh-shaped caller that leaves Locked
-	// at its zero value therefore cannot clear an operator's lock, which would
-	// otherwise expose pinned artwork to the auto-fix rules that delete files.
+	// Locked value, but the conflict path does not modify locked at all: lock
+	// state is owned exclusively by SetLock. The omission is bidirectional. A
+	// refresh-shaped caller that leaves Locked at its zero value cannot clear an
+	// operator's lock, which would otherwise expose pinned artwork to the
+	// auto-fix rules that delete files; equally, a caller passing Locked: true
+	// against an existing row cannot set one, and gets a nil error with the
+	// stored value unchanged. Use SetLock for both directions.
 	//
-	// Every other column in the conflict path is a full overwrite by design,
-	// because Upsert is a full-write path. Future provenance or dimension
-	// guarding should mirror UpsertAll's CASE WHEN and column-exclusion
-	// approach rather than adding special cases here.
+	// Every other column in the conflict path except id is a full overwrite by
+	// design, because Upsert is a full-write path. Future provenance or
+	// dimension guarding should mirror UpsertAll's CASE WHEN and
+	// column-exclusion approach rather than adding special cases here.
+	//
+	// id is the exception and is NOT intended behavior: the conflict path sets
+	// id = excluded.id, so an Upsert with an empty ID rotates the row's primary
+	// key to a freshly generated UUID and invalidates any ID a caller is
+	// holding, including the one SetLock needs. That defect is tracked
+	// separately and is deliberately not addressed here.
 	Upsert(ctx context.Context, img *ArtistImage) error
 	UpsertAll(ctx context.Context, artistID string, images []ArtistImage) error
 	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error

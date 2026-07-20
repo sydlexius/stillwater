@@ -464,7 +464,23 @@ func TestUpsert_PreservesLock(t *testing.T) {
 			got[0].Width, got[0].Height)
 	}
 
-	// The deliberate unlock path must still clear the lock.
+	// PINS A KNOWN DEFECT, not desired behavior. The conflict path sets
+	// id = excluded.id, and Upsert fills an empty ID with a fresh UUID, so the
+	// refresh above rotated this row's primary key out from under any caller
+	// holding the pre-refresh ID -- including SetLock, which matches on id
+	// alone. Asserting the rotation keeps the defect visible: a change to
+	// id = excluded.id in either direction trips this test instead of passing
+	// silently. When the rotation is fixed (tracked separately), invert this to
+	// require got[0].ID == imageID and drop this comment.
+	if got[0].ID == imageID {
+		t.Errorf("image ID did not rotate across the refresh (still %s); "+
+			"if the id = excluded.id rotation was fixed, invert this assertion",
+			imageID)
+	}
+
+	// The deliberate unlock path must still clear the lock. Note this uses the
+	// post-refresh ID; the pre-refresh imageID would fail with ErrNotFound for
+	// the reason pinned above.
 	t.Run("ExplicitUnlock", func(t *testing.T) {
 		if err := repo.SetLock(ctx, got[0].ID, false); err != nil {
 			t.Fatalf("SetLock(false): %v", err)
