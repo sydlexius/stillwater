@@ -374,7 +374,8 @@ clean-uat:
 	rm -rf $(CURDIR)/.uat
 
 ## bruno-ci: Build binary, run ephemeral server, execute Bruno API tests, clean up.
-# Required: npx / @usebruno/cli reachable. Admin credentials are ephemeral and
+# Required: npm reachable to install the pinned CLI from .github/bruno if not
+# already present (see .github/bruno/package.json). Admin credentials are ephemeral and
 # auto-generated; DO NOT set STILLWATER_ADMIN_PASSWORD to a real password here.
 #
 # Environment variables (all optional -- defaults are ephemeral and CI-safe):
@@ -393,6 +394,12 @@ clean-uat:
 # The server PID is tracked in a temp file and cleaned up on exit.
 bruno-ci: build
 	@set -euo pipefail; \
+	BRUNO_CLI_DIR="$(CURDIR)/.github/bruno"; \
+	BRUNO_BIN="$$BRUNO_CLI_DIR/node_modules/.bin/bru"; \
+	if [ ! -x "$$BRUNO_BIN" ]; then \
+	  echo "[bruno-ci] installing pinned Bruno CLI ($$BRUNO_CLI_DIR)"; \
+	  ( cd "$$BRUNO_CLI_DIR" && npm ci --no-audit --no-fund ); \
+	fi; \
 	SW_DB="$${TMPDIR:-/tmp}/stillwater-ci-$$$$.db"; \
 	PID_FILE="$${TMPDIR:-/tmp}/stillwater-ci-$$$$.pid"; \
 	RESULTS_DIR="$${BRUNO_RESULTS_DIR:-$${TMPDIR:-/tmp}/bruno-results}"; \
@@ -471,7 +478,7 @@ bruno-ci: build
 	BRUNO_LOG="$$RESULTS_DIR/bruno-stdout.log"; \
 	echo "[bruno-ci] running Bruno collection (env=ci, port=$$SW_PORT, watchdog=$${BRUNO_TIMEOUT_SEC:-300}s)"; \
 	BRUNO_TIMEOUT_SEC="$${BRUNO_TIMEOUT_SEC:-300}"; \
-	( cd api/bruno && STILLWATER_CSRF_TOKEN="$$CSRF_TOKEN" npx --yes @usebruno/cli@3.4.2 run \
+	( cd api/bruno && STILLWATER_CSRF_TOKEN="$$CSRF_TOKEN" "$$BRUNO_BIN" run \
 	    --env ci \
 	    --env-var "baseUrl=http://127.0.0.1:$$SW_PORT" \
 	    --env-var "sessionToken=$$SESSION_COOKIE" \
