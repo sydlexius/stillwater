@@ -140,6 +140,11 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 	t.Parallel()
 	r := testRouterForLibraryOps(t)
 
+	// Mirrors the wording runLibraryScan emits on success. The count is artists
+	// mapped to a platform ID, not artists changed (#2637). Seed and assertion
+	// share this one binding so the two cannot drift apart.
+	const wantMessage = "Scan complete: 5 artists mapped to platform IDs in Test Library"
+
 	now := time.Now().UTC()
 	r.libraryOpsMu.Lock()
 	r.libraryOps["test-lib-456"] = &LibraryOpResult{
@@ -147,7 +152,7 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 		LibraryName: "Test Library",
 		Operation:   "scan",
 		Status:      "completed",
-		Message:     "Scan complete: 5 artists updated in Test Library",
+		Message:     wantMessage,
 		StartedAt:   now.Add(-10 * time.Second),
 		CompletedAt: &now,
 	}
@@ -170,8 +175,8 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 	if resp.Status != "completed" {
 		t.Errorf("status = %q, want %q", resp.Status, "completed")
 	}
-	if resp.Message != "Scan complete: 5 artists updated in Test Library" {
-		t.Errorf("message = %q, want expected completion message", resp.Message)
+	if resp.Message != wantMessage {
+		t.Errorf("message = %q, want %q", resp.Message, wantMessage)
 	}
 }
 
@@ -2395,7 +2400,12 @@ func TestPopulateFromEmby_PartialBackdropDownloadFailure(t *testing.T) {
 	}
 }
 
-func TestScanFromEmby_FanartExistsFromBackdropImageTags(t *testing.T) {
+// TestScanFromEmby_BackdropImageTagsDoNotSetLocalFanart pins the #2637
+// contract: Emby reporting backdrops says nothing about what is on the local
+// filesystem, so the scan leaves FanartExists alone. It used to copy the
+// platform flag onto the artist, which is the write that also cleared and
+// deleted local rows in the other direction.
+func TestScanFromEmby_BackdropImageTagsDoNotSetLocalFanart(t *testing.T) {
 	t.Parallel()
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
@@ -2454,24 +2464,27 @@ func TestScanFromEmby_FanartExistsFromBackdropImageTags(t *testing.T) {
 	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 
-	updated, err := router.scanFromEmby(ctx, client, lib)
+	mapped, err := router.scanFromEmby(ctx, client, lib)
 	if err != nil {
 		t.Fatalf("scanFromEmby: %v", err)
 	}
-	if updated != 1 {
-		t.Errorf("updated = %d, want 1", updated)
+	if mapped != 1 {
+		t.Errorf("mapped = %d, want 1", mapped)
 	}
 
 	got, err := router.artistService.GetByMBID(ctx, "mbid-scan-001")
 	if err != nil || got == nil {
 		t.Fatalf("looking up artist after scan: %v", err)
 	}
-	if !got.FanartExists {
-		t.Error("FanartExists should be true after scan with non-empty BackdropImageTags")
+	if got.FanartExists {
+		t.Error("FanartExists should stay false: BackdropImageTags describe Emby's " +
+			"inventory, not the local filesystem (#2637)")
 	}
 }
 
-func TestScanFromJellyfin_FanartExistsFromBackdropImageTags(t *testing.T) {
+// TestScanFromJellyfin_BackdropImageTagsDoNotSetLocalFanart is the Jellyfin
+// twin of TestScanFromEmby_BackdropImageTagsDoNotSetLocalFanart (#2637).
+func TestScanFromJellyfin_BackdropImageTagsDoNotSetLocalFanart(t *testing.T) {
 	t.Parallel()
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
@@ -2530,20 +2543,21 @@ func TestScanFromJellyfin_FanartExistsFromBackdropImageTags(t *testing.T) {
 	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 
-	updated, err := router.scanFromJellyfin(ctx, client, lib)
+	mapped, err := router.scanFromJellyfin(ctx, client, lib)
 	if err != nil {
 		t.Fatalf("scanFromJellyfin: %v", err)
 	}
-	if updated != 1 {
-		t.Errorf("updated = %d, want 1", updated)
+	if mapped != 1 {
+		t.Errorf("mapped = %d, want 1", mapped)
 	}
 
 	got, err := router.artistService.GetByMBID(ctx, "mbid-scan-002")
 	if err != nil || got == nil {
 		t.Fatalf("looking up artist after scan: %v", err)
 	}
-	if !got.FanartExists {
-		t.Error("FanartExists should be true after scan with non-empty BackdropImageTags")
+	if got.FanartExists {
+		t.Error("FanartExists should stay false: BackdropImageTags describe Jellyfin's " +
+			"inventory, not the local filesystem (#2637)")
 	}
 }
 
