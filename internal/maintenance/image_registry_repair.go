@@ -1,18 +1,23 @@
-// Image registry repair: rebuild artist_images rows from the files actually
-// on disk, for recovery after rows were destroyed while their files survived.
+// Image registry repair: rebuild missing artist_images rows from the files
+// actually on disk, for recovery after rows were destroyed while their files
+// survived.
 //
-// This file is ADDITIVE ONLY. It holds exactly two write statements: an
-// INSERT ... ON CONFLICT DO NOTHING, and (behind RestoreFlags) a monotone
-// UPDATE that can only set exists_flag 0 -> 1. No DELETE, no os.Remove, no
-// path that overwrites a column a user or another process set.
-// TestRepairIsStructurallyAdditive enforces that mechanically.
+// This file is INSERT-ONLY. It holds exactly one write statement, an
+// INSERT ... ON CONFLICT DO NOTHING that restores a row only where none
+// exists. There is no UPDATE and no DELETE: an existing row is never modified,
+// not even to correct a stale exists_flag (that is a separate opt-in pass), and
+// no row is ever removed. TestRepairIsStructurallyInsertOnly enforces that
+// mechanically by rejecting DELETE, UPDATE, os.Remove, and os.Rename in this
+// file.
 //
 // The incident this repairs was caused by code that asserted a fact it had not
 // measured: a failed directory read became "zero files exist", which licensed
 // deletion. Every read here is three-valued -- present, absent, or unknown --
 // and unknown always means SKIP AND REPORT, never absent. An unreadable
 // directory skips its artist; an undecodable file skips its slot; neither is
-// ever counted as clean.
+// ever counted as clean. The same principle scales up in the mount-down guard
+// (see ErrLibraryUnreachable): a library-wide pass that could read nothing yet
+// saw absences refuses to call that clean.
 package maintenance
 
 import (
