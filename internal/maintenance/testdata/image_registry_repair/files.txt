@@ -1,0 +1,31 @@
+# artist_id_prefix | filename | image_type | slot_index
+# Emby profile, non-Kodi fanart numbering.
+0fc67357|backdrop.jpg|fanart|0
+0fc67357|backdrop2.jpg|fanart|1
+0fc67357|backdrop3.jpg|fanart|2
+0fc67357|backdrop4.jpg|fanart|3
+0fc67357|backdrop5.jpg|fanart|4
+0fc67357|backdrop6.jpg|fanart|5
+0fc67357|backdrop7.jpg|fanart|6
+0fc67357|backdrop8.jpg|fanart|7
+0fc67357|backdrop9.jpg|fanart|8
+0fc67357|banner.jpg|banner|0
+0fc67357|logo.png|logo|0
+0fc67357|folder.jpg|thumb|0
+8d14014a|backdrop.jpg|fanart|0
+8d14014a|backdrop2.jpg|fanart|1
+8d14014a|backdrop3.jpg|fanart|2
+8d14014a|backdrop4.jpg|fanart|3
+8d14014a|banner.jpg|banner|0
+8d14014a|logo.png|logo|0
+8d14014a|folder.jpg|thumb|0
+f02eea6a|backdrop.jpg|fanart|0
+f02eea6a|backdrop2.jpg|fanart|1
+f02eea6a|backdrop3.jpg|fanart|2
+f02eea6a|backdrop4.jpg|fanart|3
+f02eea6a|folder.jpg|thumb|0
+0a34be96|backdrop.jpg|fanart|0
+0a34be96|backdrop2.jpg|fanart|1
+0a34be96|backdrop3.jpg|fanart|2
+0a34be96|logo.png|logo|0
+0a34be96|folder.jpg|thumb|0
