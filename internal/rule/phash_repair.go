@@ -515,7 +515,17 @@ func (p *Pipeline) remediateArtistPHash(
 	// removing the mirrored copy.
 	p.deleteRemovedSlotsOnPlatforms(ctx, a, opID, tolerance, quarantined)
 
-	resyncFanartFields(a, primaryName)
+	// Resolve across every configured convention, not the single primary this
+	// operation renumbered under: the resync feeds a count the operator sees,
+	// and a profile/library convention mismatch would resync it to zero against
+	// a directory that still holds artwork.
+	if names, namesErr := resolveFanartNames(ctx, p.engine.platformService); namesErr != nil {
+		p.logger.Warn("resolving fanart naming convention after phash back-out; artist fields left as-is",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("error", namesErr.Error()))
+	} else {
+		resyncFanartFields(a, names)
+	}
 	if err := p.artistService.Update(ctx, a); err != nil {
 		// The destructive on-disk work is already committed and IRREVERSIBLE
 		// at this point. A metadata sync miss is a cache problem the next scan
@@ -843,7 +853,13 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 		}
 	}
 
-	resyncFanartFields(a, primaryName)
+	if names, namesErr := resolveFanartNames(ctx, p.engine.platformService); namesErr != nil {
+		p.logger.Warn("resolving fanart naming convention after phash restore; artist fields left as-is",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("error", namesErr.Error()))
+	} else {
+		resyncFanartFields(a, names)
+	}
 	if err := p.artistService.Update(ctx, a); err != nil {
 		// The bytes are already back on disk at this point -- the restore
 		// succeeded. A metadata sync miss is a cache problem the next scan

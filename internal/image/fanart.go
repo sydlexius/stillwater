@@ -48,13 +48,28 @@ func DiscoverFanart(dir string, primaryName string) ([]string, error) {
 		return nil, nil
 	}
 
-	base := strings.TrimSuffix(primaryName, filepath.Ext(primaryName))
-	baseLower := strings.ToLower(base)
-
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
+
+	return fanartPaths(fanartMatches(dir, entries, primaryName)), nil
+}
+
+// fanartMatches returns the fanart files among pre-read directory entries that
+// match primaryName or its numbered variants, sorted by index and deduplicated
+// so each index appears once.
+//
+// It takes entries rather than reading the directory itself so that a caller
+// resolving across several naming conventions (ResolveFanart) pays for one
+// os.ReadDir instead of one per convention.
+func fanartMatches(dir string, entries []os.DirEntry, primaryName string) []indexedFile {
+	if primaryName == "" {
+		return nil
+	}
+
+	base := strings.TrimSuffix(primaryName, filepath.Ext(primaryName))
+	baseLower := strings.ToLower(base)
 
 	var files []indexedFile
 
@@ -103,16 +118,91 @@ func DiscoverFanart(dir string, primaryName string) ([]string, error) {
 	})
 
 	// Deduplicate: keep only the first entry per index.
-	paths := make([]string, 0, len(files))
+	out := make([]indexedFile, 0, len(files))
 	lastIdx := -1
 	for _, f := range files {
 		if f.index == lastIdx {
 			continue
 		}
 		lastIdx = f.index
+		out = append(out, f)
+	}
+	return out
+}
+
+// fanartPaths projects a resolved match set down to its absolute paths.
+func fanartPaths(files []indexedFile) []string {
+	if len(files) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(files))
+	for _, f := range files {
 		paths = append(paths, f.path)
 	}
-	return paths, nil
+	return paths
+}
+
+// ResolveFanart discovers an artist directory's fanart across EVERY supplied
+// naming convention, and reports which convention actually matched.
+//
+// It exists because resolving against a single presumed primary name is unsafe
+// wherever the result bounds a DELETE. The active platform profile states which
+// convention Stillwater WRITES; it is not evidence of what the library already
+// HOLDS. An install whose profile says "backdrop.jpg" over a directory of
+// fanart.jpg files gets a clean, error-free count of zero from DiscoverFanart --
+// and a count of zero is a positive claim that every stored fanart row is stale,
+// so the registry rows are deleted while every file is still on disk (#2635).
+//
+// Resolution mirrors the scanner's (scanner.discoverFanartFiles) in two passes,
+// and the second pass is the point:
+//
+//   - Pass 1: the first convention whose PRIMARY file is on disk wins. A primary
+//     present is the strongest available signal of which convention the library
+//     uses, and checking it first keeps a directory holding both fanart.jpg and
+//     backdrop2.jpg from resolving to the orphan.
+//   - Pass 2 runs only when no convention has a primary, and accepts orphan
+//     numbered variants -- fanart1.jpg with no fanart.jpg. That state is not
+//     exotic: a slot delete that fails partway skips renumbering and leaves
+//     exactly this shape.
+//
+// The returned name is the convention that matched, suitable for handing to
+// FanartFilename or RenumberFanart. When nothing matches it is the first
+// non-empty entry of names (the caller's preferred convention for new writes)
+// and the path list is nil -- an honest "successfully looked, found none".
+//
+// A directory read failure is returned as an error and NEVER as an empty
+// result, because the two license opposite actions.
+func ResolveFanart(dir string, names []string) (string, []string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading directory %s: %w", dir, err)
+	}
+
+	preferred := ""
+	matched := make([][]indexedFile, len(names))
+	for i, name := range names {
+		if name == "" {
+			continue
+		}
+		if preferred == "" {
+			preferred = name
+		}
+		matched[i] = fanartMatches(dir, entries, name)
+		// Pass 1: index 0 present means this convention's primary is on disk.
+		if len(matched[i]) > 0 && matched[i][0].index == 0 {
+			return name, fanartPaths(matched[i]), nil
+		}
+	}
+
+	// Pass 2: no primary under any convention, so orphan numbered variants may
+	// still be present. Reusing the pass-1 match sets keeps this free.
+	for i, name := range names {
+		if len(matched[i]) > 0 {
+			return name, fanartPaths(matched[i]), nil
+		}
+	}
+
+	return preferred, nil, nil
 }
 
 // MaxFanartIndex scans an artist directory and returns the highest numeric

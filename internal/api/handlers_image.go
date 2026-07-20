@@ -2475,6 +2475,60 @@ func (r *Router) getActiveFanartPrimary(ctx context.Context) string {
 	return name
 }
 
+// fanartNamesStrict returns EVERY fanart filename that could name this
+// artist's fanart, in preference order, and surfaces a profile lookup failure
+// instead of papering over it.
+//
+// getActiveFanartPrimary substitutes the built-in defaults when GetActive
+// errors, which is fine for the read-only callers that only need a name to
+// display or to write a new file under. It is not fine for enumeration. An
+// enumeration's count is a positive claim about what exists, and a guessed
+// convention that misses produces a confident zero against a directory full of
+// artwork. Refusing is the only safe answer to "we could not determine the
+// naming convention" (#2635).
+func (r *Router) fanartNamesStrict(ctx context.Context) ([]string, error) {
+	profile, err := r.platformService.GetActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolving active platform profile: %w", err)
+	}
+	var configured []string
+	if profile != nil {
+		configured = profile.ImageNaming.NamesForType("fanart")
+	}
+	names := unionFanartNames(configured)
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no fanart naming patterns configured")
+	}
+	return names, nil
+}
+
+// unionFanartNames returns the profile's fanart names followed by every default
+// pattern the profile did not already list.
+//
+// The union, not the profile's list alone, is what makes enumeration
+// convention-agnostic. The profile states what Stillwater WRITES; it is not a
+// statement about what the library already HOLDS. A profile configured with
+// only "backdrop.jpg" over a directory of fanart.jpg files would otherwise
+// enumerate zero. The scanner has always resolved against the fixed default set
+// for this reason (scanner.fanartPatterns); matching it here is what keeps the
+// two from disagreeing about the same directory.
+//
+// Profile names come FIRST so a directory matching two conventions resolves to
+// the one the operator configured.
+func unionFanartNames(configured []string) []string {
+	defaults := img.FileNamesForType(img.DefaultFileNames, "fanart")
+	out := make([]string, 0, len(configured)+len(defaults))
+	seen := make(map[string]bool, len(configured)+len(defaults))
+	for _, n := range append(append([]string{}, configured...), defaults...) {
+		if n == "" || seen[strings.ToLower(n)] {
+			continue
+		}
+		seen[strings.ToLower(n)] = true
+		out = append(out, n)
+	}
+	return out
+}
+
 // isKodiNumbering returns true if the active platform profile uses Kodi-style
 // fanart numbering (fanart1.jpg, fanart2.jpg) instead of the Emby/Jellyfin
 // convention (backdrop2.jpg, backdrop3.jpg).
@@ -2543,8 +2597,14 @@ func (r *Router) processAndAppendFanart(ctx context.Context, scope *imageWriteSc
 // updateArtistFanartCount discovers fanart files and updates both the exists
 // flag and count on the artist record.
 func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) {
-	primary := r.getActiveFanartPrimary(ctx)
-	existing, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	names, namesErr := r.fanartNamesStrict(ctx)
+	if namesErr != nil {
+		r.logger.Error("resolving fanart naming convention for count update; skipping DB update",
+			slog.String("artist_id", a.ID),
+			slog.String("error", namesErr.Error()))
+		return
+	}
+	_, existing, discoverErr := img.ResolveFanart(r.imageDir(a), names)
 	if discoverErr != nil {
 		r.logger.Warn("discovering fanart for count update; skipping DB update",
 			slog.String("artist_id", a.ID),

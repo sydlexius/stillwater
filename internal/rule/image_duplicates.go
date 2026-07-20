@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/image"
@@ -79,6 +80,47 @@ func resolveFanartPrimaryName(ctx context.Context, platformService *platform.Ser
 		return names[0]
 	}
 	return ""
+}
+
+// resolveFanartNames returns EVERY fanart filename that could name an artist's
+// fanart, in preference order, and surfaces a profile lookup failure rather
+// than substituting defaults.
+//
+// resolveFanartPrimaryName above is the right call for choosing a name to WRITE
+// under. It is the wrong call for ENUMERATING what exists, on two counts: it
+// commits to one convention when the library may hold another, and it swallows
+// a GetActive error into a guess. Either way the walk can come up empty against
+// a directory full of artwork, and an empty walk is a positive claim that
+// nothing is there (#2635).
+//
+// The returned list is the profile's names UNIONED with the built-in defaults,
+// profile first, matching the fixed set the scanner resolves against
+// (scanner.fanartPatterns) so the two never disagree about one directory.
+func resolveFanartNames(ctx context.Context, platformService *platform.Service) ([]string, error) {
+	var configured []string
+	if platformService != nil {
+		profile, err := platformService.GetActive(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolving active platform profile: %w", err)
+		}
+		if profile != nil {
+			configured = profile.ImageNaming.NamesForType("fanart")
+		}
+	}
+	defaults := image.FileNamesForType(image.DefaultFileNames, "fanart")
+	out := make([]string, 0, len(configured)+len(defaults))
+	seen := make(map[string]bool, len(configured)+len(defaults))
+	for _, n := range append(append([]string{}, configured...), defaults...) {
+		if n == "" || seen[strings.ToLower(n)] {
+			continue
+		}
+		seen[strings.ToLower(n)] = true
+		out = append(out, n)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no fanart naming patterns configured")
+	}
+	return out, nil
 }
 
 // imageSlotLabel formats a human-readable label for a (type, slot) pair used

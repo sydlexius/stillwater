@@ -2092,7 +2092,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	// subsequent artistService.Update(ctx, a) call (in Pipeline.FixViolation)
 	// writes matching artist_images rows, mirroring the discover/remove/
 	// renumber/resync sequence used by Router.updateArtistFanartCount.
-	resyncFanartFields(a, primaryName)
+	resyncFanartFields(a, fanartNames)
 
 	return &FixResult{
 		RuleID:       ruleID,
@@ -2248,8 +2248,8 @@ func wrapWithRollbackErrs(rollbackErrs []string, err error) error {
 // is a self-contained copy limited to the fields extractImageMetadata reads
 // for fanart (Exists, Count, LowRes); Width/Height are left untouched since
 // slot 0 is never deleted and its dimensions do not change.
-func resyncFanartFields(a *artist.Artist, primaryName string) {
-	existing, err := img.DiscoverFanart(a.Path, primaryName)
+func resyncFanartFields(a *artist.Artist, names []string) {
+	_, existing, err := img.ResolveFanart(a.Path, names)
 	if err != nil {
 		return
 	}
