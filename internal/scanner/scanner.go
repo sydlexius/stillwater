@@ -806,6 +806,15 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 	now := time.Now().UTC()
 	existing.LastScannedAt = &now
 
+	// scanCtx carries source="scan" (issue #2636). Beyond tagging the image
+	// deletion / exists_flag records this call may emit, the tag also reaches
+	// the history layer: metadata_changes rows written by this re-scan now
+	// record source="scan" where they previously fell through to the "manual"
+	// default. That is the accurate value and an accepted one (see the source
+	// validation in artist/history.go), but it is operator-visible: the
+	// Activity and artist History views render and filter on this column, so
+	// an operator filtering for "manual" to isolate human edits will see
+	// scan-driven rows move out of that bucket.
 	if err := s.artistService.Update(scanCtx, existing); err != nil {
 		return fmt.Errorf("updating artist: %w", err)
 	}
