@@ -171,7 +171,9 @@ func fanartPaths(files []indexedFile) []string {
 // and the path list is nil -- an honest "successfully looked, found none".
 //
 // A directory read failure is returned as an error and NEVER as an empty
-// result, because the two license opposite actions.
+// result, because the two outcomes license OPPOSITE actions: an empty result
+// says "looked, nothing is there" and invites deleting stale rows, while an
+// error says "could not look" and must leave everything untouched.
 func ResolveFanart(dir string, names []string) (string, []string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

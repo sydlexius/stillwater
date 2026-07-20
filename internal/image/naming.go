@@ -26,6 +26,44 @@ func FileNamesForType(naming map[string][]string, imageType string) []string {
 	return nil
 }
 
+// ResolveFanartNames returns EVERY fanart filename that could name an artist's
+// fanart, in preference order: the caller's configured names (from the active
+// platform profile, empty if none) UNIONED with the built-in fanart defaults,
+// profile names FIRST, deduplicated case-insensitively.
+//
+// The union, not the configured list alone, is what makes fanart enumeration
+// convention-agnostic. A profile states what Stillwater WRITES; it is not a
+// statement about what the library already HOLDS. A profile configured with
+// only "backdrop.jpg" over a directory of fanart.jpg files would otherwise
+// enumerate zero, and an empty walk is a positive claim that nothing is there,
+// which deletes registry rows for artwork still on disk (#2635). Matching the
+// fixed default set the scanner resolves against keeps the two from disagreeing
+// about the same directory. Profile names come FIRST so a directory matching
+// two conventions resolves to the one the operator configured.
+//
+// An empty union (nothing configured and no defaults) is returned as an error
+// rather than an empty slice, because callers enumerate against the result and
+// an empty list would be indistinguishable from "found nothing on disk". The
+// caller is responsible for propagating any active-profile lookup failure
+// BEFORE calling this (i.e. never pass configured names guessed after a
+// GetActive error).
+func ResolveFanartNames(configured []string) ([]string, error) {
+	defaults := FileNamesForType(DefaultFileNames, "fanart")
+	out := make([]string, 0, len(configured)+len(defaults))
+	seen := make(map[string]bool, len(configured)+len(defaults))
+	for _, n := range append(append([]string{}, configured...), defaults...) {
+		if n == "" || seen[strings.ToLower(n)] {
+			continue
+		}
+		seen[strings.ToLower(n)] = true
+		out = append(out, n)
+	}
+	if len(out) == 0 {
+		return nil, errors.New("no fanart naming patterns configured")
+	}
+	return out, nil
+}
+
 // PrimaryFileName returns the first filename for the given image type,
 // or empty string if none are configured.
 func PrimaryFileName(naming map[string][]string, imageType string) string {

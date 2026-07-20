@@ -2495,38 +2495,12 @@ func (r *Router) fanartNamesStrict(ctx context.Context) ([]string, error) {
 	if profile != nil {
 		configured = profile.ImageNaming.NamesForType("fanart")
 	}
-	names := unionFanartNames(configured)
-	if len(names) == 0 {
-		return nil, fmt.Errorf("no fanart naming patterns configured")
-	}
-	return names, nil
-}
-
-// unionFanartNames returns the profile's fanart names followed by every default
-// pattern the profile did not already list.
-//
-// The union, not the profile's list alone, is what makes enumeration
-// convention-agnostic. The profile states what Stillwater WRITES; it is not a
-// statement about what the library already HOLDS. A profile configured with
-// only "backdrop.jpg" over a directory of fanart.jpg files would otherwise
-// enumerate zero. The scanner has always resolved against the fixed default set
-// for this reason (scanner.fanartPatterns); matching it here is what keeps the
-// two from disagreeing about the same directory.
-//
-// Profile names come FIRST so a directory matching two conventions resolves to
-// the one the operator configured.
-func unionFanartNames(configured []string) []string {
-	defaults := img.FileNamesForType(img.DefaultFileNames, "fanart")
-	out := make([]string, 0, len(configured)+len(defaults))
-	seen := make(map[string]bool, len(configured)+len(defaults))
-	for _, n := range append(append([]string{}, configured...), defaults...) {
-		if n == "" || seen[strings.ToLower(n)] {
-			continue
-		}
-		seen[strings.ToLower(n)] = true
-		out = append(out, n)
-	}
-	return out
+	// The profile-names-UNION-defaults resolution (profile first, case-insensitive
+	// dedup, empty-result-is-an-error) is shared with the rule engine via
+	// img.ResolveFanartNames so the two never disagree about one directory; the
+	// active-profile lookup and its error propagation stay here because they are
+	// platform-coupled.
+	return img.ResolveFanartNames(configured)
 }
 
 // isKodiNumbering returns true if the active platform profile uses Kodi-style
