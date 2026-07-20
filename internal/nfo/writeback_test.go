@@ -3,6 +3,7 @@ package nfo
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -758,8 +759,21 @@ func TestWriteBackArtistNFO_UnreadableExistingNFO(t *testing.T) {
 		Path:     dir,
 	}
 
-	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+	// Capture logs so we can prove the readErr (unreadable-existing) branch ran,
+	// not the benign absent branch. Without this assertion the test passes even
+	// if that branch is deleted, since the write-back completes either way.
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, logger, DefaultFieldMap(), false); err != nil {
 		t.Fatalf("WriteBackArtistNFOWithFieldMap over an unreadable NFO path: %v", err)
+	}
+
+	// The unreadable-existing-NFO branch must have fired its Warn. This is the
+	// whole point of the test: an existing-but-unreadable NFO is NOT treated as
+	// a benign absent file.
+	if got := logBuf.String(); !strings.Contains(got, "could not read existing NFO before write-back") {
+		t.Errorf("expected the unreadable-existing-NFO Warn to be logged; got log output:\n%s", got)
 	}
 
 	// The path is now a regular NFO file carrying the artist metadata.

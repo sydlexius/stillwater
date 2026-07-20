@@ -203,7 +203,12 @@ func TestWriteFileAtomic_OverwriteAppliesNewMode(t *testing.T) {
 		t.Fatalf("pre-creating target: %v", err)
 	}
 
-	const wantPerm os.FileMode = 0o600
+	// wantPerm must NOT be os.CreateTemp's hardcoded 0o600 default: with 0o600
+	// the temp file already carries the target mode before writeTempFile's
+	// f.Chmod(perm) runs, so the test would pass even if the chmod were deleted
+	// (a vacuous mode test). 0o644 (the common nfo/image case) is only reached
+	// via that chmod, so the assertion actually exercises perm threading.
+	const wantPerm os.FileMode = 0o644
 	if err := WriteFileAtomic(target, []byte("new content"), wantPerm); err != nil {
 		t.Fatalf("WriteFileAtomic: %v", err)
 	}
