@@ -167,11 +167,14 @@ jobs:
 
       - name: Compute build/test matrices
         id: matrix
+        env:
+          CODE_CHANGED: ${{ steps.filter.outputs.code }}
+          HARNESS_TOUCHED: ${{ steps.harness.outputs.touched }}
         run: |
-          if [ "${{ steps.filter.outputs.code }}" = "true" ]; then
+          if [ "$CODE_CHANGED" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"},{"goos":"linux","goarch":"arm64"},{"goos":"darwin","goarch":"amd64"},{"goos":"darwin","goarch":"arm64"},{"goos":"windows","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
             echo 'test_matrix={"shard":["api-1","api-2","rule-1","rule-2","services","settingsio","providers","scan","rest"]}' >> "$GITHUB_OUTPUT"
-          elif [ "${{ steps.harness.outputs.touched }}" = "true" ]; then
+          elif [ "$HARNESS_TOUCHED" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
             echo 'test_matrix={"shard":["rest"]}' >> "$GITHUB_OUTPUT"
           else
@@ -324,17 +327,21 @@ jobs:
       # same run, not one-at-a-time across two pushes.
       - name: Verify lint check succeeded
         if: always()
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          LINT_RESULT: ${{ needs.lint.result }}
         run: |
-          if [ "${{ needs.changes.result }}" != "success" ]; then
-            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Detect Changes did not succeed: $CHANGES_RESULT"
             exit 1
           fi
-          if [ "${{ needs.changes.outputs.code }}" != "true" ]; then
+          if [ "$CODE_CHANGED" != "true" ]; then
             echo "No code changes; Lint Check was skipped."
             exit 0
           fi
-          if [ "${{ needs.lint.result }}" != "success" ]; then
-            echo "Lint Check did not succeed: ${{ needs.lint.result }}"
+          if [ "$LINT_RESULT" != "success" ]; then
+            echo "Lint Check did not succeed: $LINT_RESULT"
             exit 1
           fi
 
@@ -539,17 +546,21 @@ jobs:
     if: always()
     steps:
       - name: Verify a11y check succeeded
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          A11Y_CHANGED: ${{ needs.changes.outputs.a11y }}
+          A11Y_RESULT: ${{ needs.a11y-test.result }}
         run: |
-          if [ "${{ needs.changes.result }}" != "success" ]; then
-            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Detect Changes did not succeed: $CHANGES_RESULT"
             exit 1
           fi
-          if [ "${{ needs.changes.outputs.a11y }}" != "true" ]; then
+          if [ "$A11Y_CHANGED" != "true" ]; then
             echo "No a11y-relevant changes; A11y Smoke Tests Check was skipped."
             exit 0
           fi
-          if [ "${{ needs.a11y-test.result }}" != "success" ]; then
-            echo "A11y Smoke Tests Check did not succeed: ${{ needs.a11y-test.result }}"
+          if [ "$A11Y_RESULT" != "success" ]; then
+            echo "A11y Smoke Tests Check did not succeed: $A11Y_RESULT"
             exit 1
           fi
 
@@ -699,15 +710,20 @@ jobs:
       - name: Run tests
         # Partitioned shards (api-*, rule-*) pass a -run bucket regex via $RUN
         # (env, so the large regex cannot break shell quoting); other shards run
-        # their whole package set (RUN empty). The package list is a simple path
-        # string, injected directly as before.
+        # their whole package set (RUN empty). PACKAGES is likewise passed via
+        # env rather than interpolated into the script body; it stays UNQUOTED
+        # at the use site because it is a space-separated package list that the
+        # shell must word-split into separate `go test` arguments.
         env:
           RUN: ${{ steps.shard.outputs.run }}
+          PACKAGES: ${{ steps.shard.outputs.packages }}
         run: |
           if [ -n "$RUN" ]; then
-            go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out -run "$RUN" ${{ steps.shard.outputs.packages }}
+            # shellcheck disable=SC2086  # deliberate word-splitting of the package list
+            go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out -run "$RUN" $PACKAGES
           else
-            go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out ${{ steps.shard.outputs.packages }}
+            # shellcheck disable=SC2086  # deliberate word-splitting of the package list
+            go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out $PACKAGES
           fi
 
       - name: Upload coverage artifact
@@ -732,17 +748,22 @@ jobs:
     if: always()
     steps:
       - name: Verify all shards succeeded
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          HARNESS_TOUCHED: ${{ needs.changes.outputs.harness_touched }}
+          TEST_RESULT: ${{ needs.test.result }}
         run: |
-          if [ "${{ needs.changes.result }}" != "success" ]; then
-            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Detect Changes did not succeed: $CHANGES_RESULT"
             exit 1
           fi
-          if [ "${{ needs.changes.outputs.code }}" != "true" ] && [ "${{ needs.changes.outputs.harness_touched }}" != "true" ]; then
+          if [ "$CODE_CHANGED" != "true" ] && [ "$HARNESS_TOUCHED" != "true" ]; then
             echo "No code or workflow changes; Test shards were skipped."
             exit 0
           fi
-          if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "One or more Test shards did not succeed: ${{ needs.test.result }}"
+          if [ "$TEST_RESULT" != "success" ]; then
+            echo "One or more Test shards did not succeed: $TEST_RESULT"
             exit 1
           fi
 
@@ -863,21 +884,26 @@ jobs:
     if: always()
     steps:
       - name: Verify coverage floor check succeeded
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          TEST_RESULT: ${{ needs.test.result }}
+          COVERAGE_FLOOR_RESULT: ${{ needs.coverage-floor.result }}
         run: |
-          if [ "${{ needs.changes.result }}" != "success" ]; then
-            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Detect Changes did not succeed: $CHANGES_RESULT"
             exit 1
           fi
-          if [ "${{ needs.changes.outputs.code }}" != "true" ]; then
+          if [ "$CODE_CHANGED" != "true" ]; then
             echo "No code changes; Coverage Floor Check was skipped."
             exit 0
           fi
-          if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "Test did not succeed, so Coverage Floor Check did not run: ${{ needs.test.result }}"
+          if [ "$TEST_RESULT" != "success" ]; then
+            echo "Test did not succeed, so Coverage Floor Check did not run: $TEST_RESULT"
             exit 1
           fi
-          if [ "${{ needs.coverage-floor.result }}" != "success" ]; then
-            echo "Coverage Floor Check did not succeed: ${{ needs.coverage-floor.result }}"
+          if [ "$COVERAGE_FLOOR_RESULT" != "success" ]; then
+            echo "Coverage Floor Check did not succeed: $COVERAGE_FLOOR_RESULT"
             exit 1
           fi
 
@@ -942,12 +968,16 @@ jobs:
     if: always()
     steps:
       - name: Check matrix results
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          BUILD_MATRIX_RESULT: ${{ needs.build-matrix.result }}
         run: |
-          if [ "${{ needs.changes.result }}" != "success" ]; then
-            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Detect Changes did not succeed: $CHANGES_RESULT"
             exit 1
           fi
-          result="${{ needs.build-matrix.result }}"
+          result="$BUILD_MATRIX_RESULT"
           if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
             echo "Build matrix failed or was cancelled: $result"
             exit 1
@@ -957,7 +987,7 @@ jobs:
           # real code change for which nothing was actually built, so "skipped"
           # must not silently pass here the way it correctly does for a
           # docs-only PR (code != 'true').
-          if [ "${{ needs.changes.outputs.code }}" = "true" ] && [ "$result" = "skipped" ]; then
+          if [ "$CODE_CHANGED" = "true" ] && [ "$result" = "skipped" ]; then
             echo "Build matrix was skipped for a code change (an upstream dependency did not succeed): $result"
             exit 1
           fi
