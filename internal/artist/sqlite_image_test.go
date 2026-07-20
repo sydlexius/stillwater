@@ -375,6 +375,169 @@ func TestUpsertAll_PreservesProvenance(t *testing.T) {
 	}
 }
 
+// TestUpsert_PreservesLock verifies that the singular Upsert's conflict path
+// leaves the locked column alone. A refresh-shaped caller that leaves Locked
+// at its zero value must not clear an operator's lock: a cleared lock exposes
+// pinned artwork to the auto-fix rules that delete files. The deliberate
+// unlock path through SetLock must still work.
+func TestUpsert_PreservesLock(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	svc := NewService(db)
+	a := testArtist("Lock Preservation", "/music/Lock Preservation")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Seed the row via Upsert.
+	img := &ArtistImage{
+		ArtistID:  a.ID,
+		ImageType: "fanart",
+		SlotIndex: 0,
+		Exists:    true,
+		Width:     1920,
+		Height:    1080,
+	}
+	if err := repo.Upsert(ctx, img); err != nil {
+		t.Fatalf("Upsert (seed): %v", err)
+	}
+
+	// Confirm the precondition: the seeded row starts unlocked, so a later
+	// "still locked" assertion cannot pass vacuously.
+	seeded, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist (seed): %v", err)
+	}
+	if len(seeded) != 1 {
+		t.Fatalf("expected 1 image after seed, got %d", len(seeded))
+	}
+	if seeded[0].Locked {
+		t.Fatal("seeded row should start unlocked")
+	}
+	imageID := seeded[0].ID
+
+	// The operator locks the image.
+	if err := repo.SetLock(ctx, imageID, true); err != nil {
+		t.Fatalf("SetLock(true): %v", err)
+	}
+	locked, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist (after lock): %v", err)
+	}
+	if !locked[0].Locked {
+		t.Fatal("precondition failed: SetLock(true) did not lock the row")
+	}
+
+	// A refresh-shaped Upsert: same slot, Locked left at its zero value.
+	// This is the shape that used to silently clear the lock.
+	refresh := &ArtistImage{
+		ArtistID:  a.ID,
+		ImageType: "fanart",
+		SlotIndex: 0,
+		Exists:    true,
+		Width:     3840,
+		Height:    2160,
+	}
+	if err := repo.Upsert(ctx, refresh); err != nil {
+		t.Fatalf("Upsert (refresh): %v", err)
+	}
+
+	got, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist (after refresh): %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 image, got %d", len(got))
+	}
+	if !got[0].Locked {
+		t.Error("Locked = false after a refresh-shaped Upsert, want true: " +
+			"the conflict path must not clear an operator-set lock")
+	}
+	// The rest of the row is a full overwrite by design, so the refresh's
+	// dimensions must have landed. This also proves the Upsert actually took
+	// effect rather than silently no-opping.
+	if got[0].Width != 3840 || got[0].Height != 2160 {
+		t.Errorf("dimensions = %dx%d, want 3840x2160 (refresh should overwrite)",
+			got[0].Width, got[0].Height)
+	}
+
+	// PINS A KNOWN DEFECT, not desired behavior. The conflict path sets
+	// id = excluded.id, and Upsert fills an empty ID with a fresh UUID, so the
+	// refresh above rotated this row's primary key out from under any caller
+	// holding the pre-refresh ID -- including SetLock, which matches on id
+	// alone. Asserting the rotation keeps the defect visible: a change to
+	// id = excluded.id in either direction trips this test instead of passing
+	// silently. When the rotation is fixed (tracked separately), invert this to
+	// require got[0].ID == imageID and drop this comment.
+	if got[0].ID == imageID {
+		t.Errorf("image ID did not rotate across the refresh (still %s); "+
+			"if the id = excluded.id rotation was fixed, invert this assertion",
+			imageID)
+	}
+
+	// The deliberate unlock path must still clear the lock. Note this uses the
+	// post-refresh ID; the pre-refresh imageID would fail with ErrNotFound for
+	// the reason pinned above.
+	t.Run("ExplicitUnlock", func(t *testing.T) {
+		if err := repo.SetLock(ctx, got[0].ID, false); err != nil {
+			t.Fatalf("SetLock(false): %v", err)
+		}
+		after, err := repo.GetForArtist(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetForArtist (after unlock): %v", err)
+		}
+		if after[0].Locked {
+			t.Error("Locked = true after SetLock(false), want false")
+		}
+	})
+
+	// The omission of locked from the conflict SET list cuts BOTH ways: the
+	// conflict path can no longer clear a lock, and equally can no longer set
+	// one. A caller passing Locked: true against an existing row gets a nil
+	// error and no lock, which is easy to mistake for success. Pinning it here
+	// keeps the asymmetry with the INSERT path (which does honor Locked: true)
+	// an asserted contract rather than an undocumented surprise.
+	t.Run("CannotSetLockOnExistingRow", func(t *testing.T) {
+		before, err := repo.GetForArtist(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetForArtist (before set attempt): %v", err)
+		}
+		if before[0].Locked {
+			t.Fatal("precondition failed: row should be unlocked entering this subtest")
+		}
+
+		if err := repo.Upsert(ctx, &ArtistImage{
+			ArtistID:  a.ID,
+			ImageType: "fanart",
+			SlotIndex: 0,
+			Exists:    true,
+			Width:     1280,
+			Height:    720,
+			Locked:    true,
+		}); err != nil {
+			t.Fatalf("Upsert (lock attempt): %v", err)
+		}
+
+		after, err := repo.GetForArtist(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetForArtist (after set attempt): %v", err)
+		}
+		if after[0].Locked {
+			t.Error("Locked = true after an Upsert carrying Locked: true; " +
+				"the conflict path must not set a lock either -- SetLock owns both directions")
+		}
+		// Proves the Upsert genuinely executed, so the unlocked result above
+		// is the conflict path declining to set the lock rather than a no-op.
+		if after[0].Width != 1280 || after[0].Height != 720 {
+			t.Errorf("dimensions = %dx%d, want 1280x720 (the lock-attempt Upsert should have landed)",
+				after[0].Width, after[0].Height)
+		}
+	})
+}
+
 // TestReconcileImages verifies that ReconcileImages converges the
 // artist_images registry to filesystem-truth without touching other artist
 // columns, and rejects a nil/empty-ID Artist.
