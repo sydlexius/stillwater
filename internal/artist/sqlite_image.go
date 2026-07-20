@@ -80,6 +80,18 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 		img.ID = uuid.New().String()
 	}
 
+	// The INSERT persists the caller-supplied locked value for a brand-new row,
+	// but ON CONFLICT deliberately omits locked from the SET list: a lock is
+	// operator intent, changed only via SetLock. Without that omission any
+	// refresh-shaped upsert whose caller left Locked at its zero value would
+	// silently clear an operator's lock, exposing pinned artwork to the
+	// auto-fix rules that delete files.
+	//
+	// Every other SET column is a full overwrite by design, because the
+	// singular Upsert is a full-write path (unlike UpsertAll, which is fed by
+	// scans carrying only display fields). If a future change needs to guard
+	// provenance or dimensions here, mirror UpsertAll's approach: exclude the
+	// column outright, or gate it with a CASE WHEN that keeps the stored value.
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
 			width, height, phash, content_hash, file_format, source, last_written_at, locked)
@@ -95,8 +107,7 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 			content_hash = excluded.content_hash,
 			file_format = excluded.file_format,
 			source = excluded.source,
-			last_written_at = excluded.last_written_at,
-			locked = excluded.locked`,
+			last_written_at = excluded.last_written_at`,
 		img.ID, img.ArtistID, img.ImageType, img.SlotIndex,
 		dbutil.BoolToInt(img.Exists), dbutil.BoolToInt(img.LowRes), img.Placeholder,
 		img.Width, img.Height, img.PHash, img.ContentHash, img.FileFormat, img.Source, img.LastWrittenAt,

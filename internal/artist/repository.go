@@ -162,6 +162,16 @@ type AliasRepository interface {
 type ImageRepository interface {
 	GetForArtist(ctx context.Context, artistID string) ([]ArtistImage, error)
 	GetForArtists(ctx context.Context, artistIDs []string) (map[string][]ArtistImage, error)
+	// Upsert writes a single image row. On insert it persists the supplied
+	// Locked value, but the conflict path does not modify locked: lock state is
+	// owned exclusively by SetLock. A refresh-shaped caller that leaves Locked
+	// at its zero value therefore cannot clear an operator's lock, which would
+	// otherwise expose pinned artwork to the auto-fix rules that delete files.
+	//
+	// Every other column in the conflict path is a full overwrite by design,
+	// because Upsert is a full-write path. Future provenance or dimension
+	// guarding should mirror UpsertAll's CASE WHEN and column-exclusion
+	// approach rather than adding special cases here.
 	Upsert(ctx context.Context, img *ArtistImage) error
 	UpsertAll(ctx context.Context, artistID string, images []ArtistImage) error
 	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error
