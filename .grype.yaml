@@ -4,4 +4,16 @@
 # Remove entries once the upstream fix lands in Alpine stable.
 # The grype-ignore-expiry job in security.yml fails when entries expire.
 
-ignore: []
+ignore:
+  # golang.org/x/crypto/openpgp GO-2026-5932 -- the advisory targets the openpgp
+  # sub-package (unmaintained, "unsafe by design", no fixed version). stillwater
+  # does NOT import x/crypto/openpgp: the only x/crypto sub-packages used are
+  # acme, acme/autocert, bcrypt, and pbkdf2 (verify: git grep 'x/crypto/' -- '*.go').
+  # Unreachable + no upstream fix, so nothing to bump. Re-check whether x/crypto
+  # drops the openpgp package or a still-imported sub-package gains a real CVE.
+  - vulnerability: GO-2026-5932
+    package:
+      name: golang.org/x/crypto
+      type: go-module
+    review-by: "2026-10-20"
+    reason: "openpgp sub-package unused (only acme/autocert/bcrypt/pbkdf2 imported); no fixed version exists"
