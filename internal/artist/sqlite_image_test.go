@@ -493,6 +493,49 @@ func TestUpsert_PreservesLock(t *testing.T) {
 			t.Error("Locked = true after SetLock(false), want false")
 		}
 	})
+
+	// The omission of locked from the conflict SET list cuts BOTH ways: the
+	// conflict path can no longer clear a lock, and equally can no longer set
+	// one. A caller passing Locked: true against an existing row gets a nil
+	// error and no lock, which is easy to mistake for success. Pinning it here
+	// keeps the asymmetry with the INSERT path (which does honor Locked: true)
+	// an asserted contract rather than an undocumented surprise.
+	t.Run("CannotSetLockOnExistingRow", func(t *testing.T) {
+		before, err := repo.GetForArtist(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetForArtist (before set attempt): %v", err)
+		}
+		if before[0].Locked {
+			t.Fatal("precondition failed: row should be unlocked entering this subtest")
+		}
+
+		if err := repo.Upsert(ctx, &ArtistImage{
+			ArtistID:  a.ID,
+			ImageType: "fanart",
+			SlotIndex: 0,
+			Exists:    true,
+			Width:     1280,
+			Height:    720,
+			Locked:    true,
+		}); err != nil {
+			t.Fatalf("Upsert (lock attempt): %v", err)
+		}
+
+		after, err := repo.GetForArtist(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetForArtist (after set attempt): %v", err)
+		}
+		if after[0].Locked {
+			t.Error("Locked = true after an Upsert carrying Locked: true; " +
+				"the conflict path must not set a lock either -- SetLock owns both directions")
+		}
+		// Proves the Upsert genuinely executed, so the unlocked result above
+		// is the conflict path declining to set the lock rather than a no-op.
+		if after[0].Width != 1280 || after[0].Height != 720 {
+			t.Errorf("dimensions = %dx%d, want 1280x720 (the lock-attempt Upsert should have landed)",
+				after[0].Width, after[0].Height)
+		}
+	})
 }
 
 // TestReconcileImages verifies that ReconcileImages converges the
