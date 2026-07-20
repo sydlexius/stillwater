@@ -195,7 +195,7 @@ func TestPersistHealthAfterRun_ScopedResultNeverPersistsSubsetScore(t *testing.T
 			scoped.HealthScore, scoped.Scoped)
 	}
 
-	if ok := p.persistHealthAfterRun(ctx, a, scoped, false); !ok {
+	if ok := p.persistHealthAfterRun(ctx, a, scoped, false, false); !ok {
 		t.Fatal("persistHealthAfterRun reported the run non-authoritative; the " +
 			"evaluation succeeded, so it should be authoritative")
 	}
@@ -303,7 +303,7 @@ func TestPersistHealthAfterRun_FailedEvaluationIsNotAuthoritative(t *testing.T) 
 	a := &artist.Artist{Name: "Eval Failed", Path: t.TempDir()}
 
 	// A nil postEval is exactly what the callers pass when EvaluateScoped errored.
-	if ok := p.persistHealthAfterRun(ctx, a, nil, false); ok {
+	if ok := p.persistHealthAfterRun(ctx, a, nil, false, false); ok {
 		t.Error("persistHealthAfterRun reported a FAILED evaluation as authoritative. " +
 			"The caller will stamp rules_evaluated_at and the artist will leave the " +
 			"dirty set with stale rule_results, never to be re-evaluated.")

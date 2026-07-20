@@ -526,7 +526,11 @@ func (p *Pipeline) remediateArtistPHash(
 			"the removal is committed and must not be re-run",
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("artist", a.Name), slog.String("error", err.Error()))
+		return nil
 	}
+	// The back-out REMOVED files, so the persist must retire their rows.
+	// Update is declarative and deletes nothing (#2635).
+	p.reconcileAfterFix(ctx, a, true)
 	return nil
 }
 
