@@ -52,6 +52,28 @@ func TestResolveFanartNames(t *testing.T) {
 		}
 		assertNames(t, got, []string{"art.jpg", "fanart.jpg", "fanart.png", "backdrop.jpg", "backdrop.png"})
 	})
+
+	t.Run("GetActive failure is surfaced, not swallowed into defaults", func(t *testing.T) {
+		// A profile lookup failure must propagate as an error. Substituting the
+		// built-in defaults here would let a walk built from the wrong name set
+		// report a confident count against a directory it never understood --
+		// the "swallow a GetActive error into a guess" failure this function
+		// refuses (#2635). The failure hook is a service over a CLOSED database:
+		// GetActive then errors instead of returning a profile.
+		closedDB := setupTestDB(t)
+		if err := closedDB.Close(); err != nil {
+			t.Fatalf("closing platform DB: %v", err)
+		}
+		svc := platform.NewService(closedDB)
+
+		got, err := resolveFanartNames(ctx, svc)
+		if err == nil {
+			t.Fatalf("resolveFanartNames: expected an error when GetActive fails, got names=%v", got)
+		}
+		if got != nil {
+			t.Errorf("names = %v, want nil on a GetActive failure (no default substitution)", got)
+		}
+	})
 }
 
 // activeProfileWithFanart returns a platform service whose active profile names
