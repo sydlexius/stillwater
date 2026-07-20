@@ -733,16 +733,22 @@ func TestWriteNFOAtomic_UnwritablePath(t *testing.T) {
 
 // TestWriteBackArtistNFO_UnreadableExistingNFO verifies the write-back
 // distinguishes a genuinely-absent NFO from one that exists but cannot be read.
-// Here the artist.nfo path is a directory, so os.ReadFile fails with a
-// non-os.ErrNotExist error: the new readErr branch logs a Warn instead of
-// treating the failure as a benign "no existing NFO". The write-back stays
-// best-effort and still completes (WriteFileAtomic moves the unreadable path
-// aside), but it cannot preserve discography it was unable to read.
+// Here the artist.nfo is a regular file with no read permission (0o000), so
+// os.ReadFile fails with a non-os.ErrNotExist error (EACCES) -- the production
+// scenario the readErr branch guards ("a permission or I/O error means an NFO
+// very likely exists"). That branch logs a Warn instead of treating the failure
+// as a benign "no existing NFO". The write-back stays best-effort and still
+// completes: WriteFileAtomic replaces the unreadable file in place (the atomic
+// rename needs write permission on the parent directory, not on the file), but
+// it cannot preserve discography it was unable to read.
 func TestWriteBackArtistNFO_UnreadableExistingNFO(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permission checks, so a 0o000 file is still readable")
+	}
 	dir := t.TempDir()
 	target := filepath.Join(dir, "artist.nfo")
-	if err := os.Mkdir(target, 0o755); err != nil {
-		t.Fatalf("mkdir artist.nfo: %v", err)
+	if err := os.WriteFile(target, []byte("unreadable existing nfo"), 0o000); err != nil {
+		t.Fatalf("writing unreadable artist.nfo: %v", err)
 	}
 
 	a := &artist.Artist{

@@ -1,22 +1,22 @@
 package filesystem
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 )
 
-// osRename is the rename function used by renameSafe. It defaults to os.Rename
-// and can be overridden in tests to simulate cross-device (EXDEV) errors,
-// following the same injectable-hook pattern used by renameFunc in rename.go.
+// osRename is the rename function used by WriteFileAtomic to promote the temp
+// file onto the target. It defaults to os.Rename and can be overridden in tests
+// to simulate rename failures, following the same injectable-hook pattern used
+// by renameFunc in rename.go.
 var osRename = os.Rename
 
 // writeTempFile writes data to f, restricts it to perm, and closes it.
 // Extracted into a package-level var (rather than inlined in WriteFileAtomic)
 // so tests can override it to simulate write/chmod/close failures on the
-// temp file, the same injectable-hook pattern osRename uses for renameSafe.
+// temp file, the same injectable-hook pattern osRename uses for the rename.
 var writeTempFile = func(f *os.File, data []byte, perm os.FileMode) error {
 	if _, err := f.Write(data); err != nil {
 		return err
@@ -27,17 +27,28 @@ var writeTempFile = func(f *os.File, data []byte, perm os.FileMode) error {
 	return f.Close()
 }
 
-// WriteFileAtomic writes data to the target path using the tmp/bak/rename pattern.
-// This prevents data corruption if the process is interrupted during the write.
+// WriteFileAtomic writes data to the target path atomically: it stages the new
+// content in a temp file and installs it with a single rename, so an
+// interrupted write never corrupts the target and, crucially, a concurrent
+// reader never observes the target absent while a write is in progress.
 //
 // Steps:
-//  1. Write data to a uniquely-named temp file created via os.CreateTemp (O_EXCL),
-//     so concurrent writers targeting the same path never collide on the temp name
-//  2. If <target> exists, rename it to <target>.bak
-//  3. Rename the temp file to <target>
-//  4. Remove <target>.bak
+//  1. Write data to a uniquely-named temp file created via os.CreateTemp (O_EXCL)
+//     in the TARGET'S OWN DIRECTORY, so concurrent writers targeting the same
+//     path never collide on the temp name and the promoting rename below stays
+//     on one filesystem
+//  2. Rename the temp file onto <target>. POSIX rename(2) is an atomic replace
+//     when source and destination share a filesystem, so any existing target is
+//     swapped for the new inode in a single step -- the target is never missing
+//     at any instant (see #2661)
 //
-// If rename fails (e.g., cross-mount point), falls back to copy+delete with fsync.
+// The old target inode is dropped by the rename itself, so no separate backup
+// file is created or removed. Crash/failure recovery is structural: if the
+// promoting rename fails, the target is left untouched with its original
+// content (only the orphaned temp file is cleaned up), which is a stronger
+// guarantee than restoring a moved-away .bak. The earlier design renamed the
+// existing target OUT to a .bak before renaming the temp IN, which left a
+// window in which the canonical target did not exist -- the bug this fixes.
 func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 	TraceFSWrite("WriteFileAtomic", target, 0)
 
@@ -49,47 +60,32 @@ func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 
 	// Step 1: Write to a uniquely-named temp file (O_EXCL via os.CreateTemp),
 	// then chmod to the caller's intended perm since CreateTemp always creates
-	// the file 0o600 regardless of perm.
+	// the file 0o600 regardless of perm. The temp file lives in dir (the
+	// target's directory), so the promoting rename below is same-filesystem and
+	// cannot degrade to a non-atomic cross-device copy.
 	tmpFile, err := os.CreateTemp(dir, filepath.Base(target)+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	// The backup name is derived from the unique temp name (not the shared
-	// "<target>.bak") so two writers racing on the same target never collide
-	// on one .bak path -- otherwise the second writer would clobber or trip
-	// over the first's backup, leaving a leftover file or a spurious failure.
-	bakPath := tmpPath + ".bak"
 	if err := writeTempFile(tmpFile, data, perm); err != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("writing temp file: %w", err)
 	}
 
-	// Step 2: Backup existing file if it exists. A concurrent writer racing on
-	// the same target may move or replace it between this Stat and the rename;
-	// if the target has vanished (os.ErrNotExist) there is nothing to back up
-	// and our own tmp->target rename below still installs our content
-	// atomically, so that race is benign. Any other backup failure is real.
-	if _, err := os.Stat(target); err == nil {
-		if err := renameSafe(target, bakPath, perm); err != nil && !errors.Is(err, os.ErrNotExist) {
-			_ = os.Remove(tmpPath)
-			return fmt.Errorf("backing up existing file: %w", err)
-		}
-	}
-
-	// Step 3: Move .tmp to target
-	if err := renameSafe(tmpPath, target, perm); err != nil {
-		// Attempt to restore backup
-		if _, bakErr := os.Stat(bakPath); bakErr == nil {
-			_ = renameSafe(bakPath, target, perm)
-		}
+	// Step 2: Promote the temp file onto the target with a single atomic rename.
+	// Because tmp and target are in the same directory (same filesystem), this
+	// is a true rename that replaces any existing target in place -- the target
+	// is never absent, and osRename never returns EXDEV here. We deliberately do
+	// NOT wrap this in a copy-based cross-device fallback: a copy fallback
+	// truncates-then-writes the destination, which is NOT atomic and would
+	// reintroduce the very absence window this function must avoid. On failure
+	// the target keeps its original content untouched; only the temp is removed.
+	if err := osRename(tmpPath, target); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp to target: %w", err)
 	}
-
-	// Step 4: Clean up .bak
-	_ = os.Remove(bakPath)
 
 	return nil
 }
@@ -101,29 +97,6 @@ func WriteReaderAtomic(target string, r io.Reader, perm os.FileMode) error {
 		return fmt.Errorf("reading source data: %w", err)
 	}
 	return WriteFileAtomic(target, data, perm)
-}
-
-// renameSafe attempts osRename first, then falls back to copy+delete.
-// perm is passed to copyFile so the destination inherits the intended file mode
-// even on the cross-device fallback path (where os.Rename would drop the perm).
-func renameSafe(oldPath, newPath string, perm os.FileMode) error {
-	err := osRename(oldPath, newPath)
-	if err == nil {
-		return nil
-	}
-	// If the source vanished (e.g. a concurrent writer already moved it),
-	// there is nothing to copy; propagate the original error so callers can
-	// detect the race via errors.Is(err, os.ErrNotExist) instead of masking it
-	// behind a doomed copy-fallback attempt.
-	if errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	// Rename may fail on cross-device moves (EXDEV). Fall back to copy+delete.
-	if copyErr := copyFile(oldPath, newPath, perm); copyErr != nil {
-		return fmt.Errorf("copy fallback: %w (rename error: %w)", copyErr, err)
-	}
-	_ = os.Remove(oldPath)
-	return nil
 }
 
 // RemoveFileSafe deletes a single file using a "rename to .removing then

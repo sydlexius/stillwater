@@ -144,80 +144,6 @@ func TestCopyFile_SourceIsDirectory(t *testing.T) {
 	}
 }
 
-// --- renameSafe tests ---
-
-func TestRenameSafe_SameFilesystem(t *testing.T) {
-	dir := t.TempDir()
-	old := filepath.Join(dir, "old.txt")
-	new := filepath.Join(dir, "new.txt")
-
-	data := []byte("rename safe content")
-	if err := os.WriteFile(old, data, 0o644); err != nil {
-		t.Fatalf("writing old: %v", err)
-	}
-
-	if err := renameSafe(old, new, 0o644); err != nil {
-		t.Fatalf("renameSafe: %v", err)
-	}
-
-	// Old path should be gone.
-	if _, err := os.Stat(old); !os.IsNotExist(err) {
-		t.Error("old file should not exist after rename")
-	}
-
-	// New path should have the content.
-	got, err := os.ReadFile(new)
-	if err != nil {
-		t.Fatalf("reading new: %v", err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Errorf("content = %q, want %q", got, data)
-	}
-}
-
-// TestRenameSafe_EXDEVCopyFallbackFails covers the error branch inside
-// renameSafe where the copy fallback itself fails (line 83-84 in atomic.go).
-// The test injects an EXDEV error via osRename so the copy path is taken,
-// then points the destination at a read-only directory so os.OpenFile fails
-// inside copyFile, causing renameSafe to return a "copy fallback" error.
-func TestRenameSafe_EXDEVCopyFallbackFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod is not effective on Windows NTFS")
-	}
-	if os.Getuid() == 0 {
-		t.Skip("chmod restrictions do not apply to root")
-	}
-
-	// Mutates package-level osRename; must not run in parallel.
-	orig := osRename
-	t.Cleanup(func() { osRename = orig })
-	osRename = func(old, new string) error { return exdevError(old, new) }
-
-	dir := t.TempDir()
-	src := filepath.Join(dir, "src.txt")
-	if err := os.WriteFile(src, []byte("payload"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Destination is inside a directory the process cannot write to. copyFile
-	// will fail at os.OpenFile(dst, O_WRONLY|O_CREATE|...) with EACCES.
-	roDir := filepath.Join(dir, "readonly")
-	if err := os.MkdirAll(roDir, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	// Restore write permission so TempDir cleanup can remove the directory.
-	t.Cleanup(func() { os.Chmod(roDir, 0o755) })
-
-	dst := filepath.Join(roDir, "dst.txt")
-	err := renameSafe(src, dst, 0o644)
-	if err == nil {
-		t.Fatal("expected error from renameSafe when copy fallback destination is unwritable")
-	}
-	if !strings.Contains(err.Error(), "copy fallback") {
-		t.Errorf("error = %q, want it to contain 'copy fallback'", err.Error())
-	}
-}
-
 // --- WriteFileAtomic error path tests ---
 
 func TestWriteFileAtomic_EmptyContent(t *testing.T) {
@@ -282,7 +208,7 @@ func TestWriteFileAtomic_CleansUpTmpOnOverwriteSuccess(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "cleanup.txt")
 
-	// Pre-create the file so the backup path is exercised.
+	// Pre-create the file so the overwrite path is exercised.
 	if err := os.WriteFile(target, []byte("existing"), 0o644); err != nil {
 		t.Fatalf("writing existing: %v", err)
 	}
@@ -291,7 +217,8 @@ func TestWriteFileAtomic_CleansUpTmpOnOverwriteSuccess(t *testing.T) {
 		t.Fatalf("WriteFileAtomic: %v", err)
 	}
 
-	// Neither .tmp nor .bak should remain.
+	// Neither .tmp nor .bak should remain (the single-rename design no longer
+	// creates a .bak at all).
 	for _, suffix := range []string{".tmp", ".bak"} {
 		if _, err := os.Stat(target + suffix); !os.IsNotExist(err) {
 			t.Errorf("unexpected %s file remains", suffix)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -122,28 +123,17 @@ func TestWriteFileAtomic_LargeFile(t *testing.T) {
 	}
 }
 
-// TestWriteFileAtomic_EXDEVFallbackPreservesMode verifies that when the rename
-// step fails with EXDEV (cross-device move), the copy fallback preserves the
-// requested file mode on the destination. This is the regression test for the
-// bug where copyFile used os.Create (mode 0666) instead of os.OpenFile with
-// the caller-specified perm, causing sensitive files (e.g. encryption.key
-// written with 0600) to end up world-readable on cross-device setups.
+// TestWriteFileAtomic_PromotionFailureLeavesTargetIntact verifies the
+// structural crash/failure-recovery guarantee of the single-rename design: if
+// the promoting rename fails, the pre-existing target is left untouched with
+// its original content and only the orphaned temp file is cleaned up.
 //
-// Notes:
-//
-//	(1) This tests the EXDEV copy fallback path by injecting an error via the
-//	    package-level osRename hook.
-//	(2) The mode == perm assertion is POSIX-only: on Windows, Go synthesizes
-//	    FileMode values from FILE_ATTRIBUTE_READONLY and does not enforce Unix
-//	    permission bits, so stat.Mode()&0o777 does not round-trip.
-//	(3) EXDEV (cross-device link) is a Unix/Linux kernel concept; Windows uses
-//	    a different mechanism for cross-volume moves and os.Rename does not
-//	    return syscall.EXDEV.
-func TestWriteFileAtomic_EXDEVFallbackPreservesMode(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("EXDEV and Unix permission semantics are POSIX-only")
-	}
-
+// This replaces the former EXDEV copy-fallback test. WriteFileAtomic now
+// promotes with a single osRename onto the target (tmp is created in the
+// target's own directory, so the rename is always same-filesystem and never
+// falls back to a non-atomic copy). We inject an osRename failure to exercise
+// the promotion-error branch.
+func TestWriteFileAtomic_PromotionFailureLeavesTargetIntact(t *testing.T) {
 	// This test mutates the package-level osRename hook; must not run in parallel.
 	orig := osRename
 	t.Cleanup(func() { osRename = orig })
@@ -153,74 +143,66 @@ func TestWriteFileAtomic_EXDEVFallbackPreservesMode(t *testing.T) {
 			Op:  "rename",
 			Old: oldPath,
 			New: newPath,
-			Err: syscall.EXDEV,
+			Err: syscall.EIO,
 		}
 	}
 
 	dir := t.TempDir()
-	target := filepath.Join(dir, "secret.key")
-	data := []byte("sensitive data")
-
-	// Request a restrictive 0600 mode (owner read/write only).
-	const wantPerm os.FileMode = 0o600
-	if err := WriteFileAtomic(target, data, wantPerm); err != nil {
-		t.Fatalf("WriteFileAtomic: %v", err)
+	target := filepath.Join(dir, "config.toml")
+	original := []byte("original content")
+	if err := os.WriteFile(target, original, 0o644); err != nil {
+		t.Fatalf("seeding target: %v", err)
 	}
 
-	info, err := os.Stat(target)
+	if err := WriteFileAtomic(target, []byte("new content"), 0o644); err == nil {
+		t.Fatal("WriteFileAtomic: expected an error when the promoting rename fails, got nil")
+	}
+
+	// The target must still hold its original content -- the failed write must
+	// not have destroyed or truncated it.
+	got, err := os.ReadFile(target)
 	if err != nil {
-		t.Fatalf("stat: %v", err)
+		t.Fatalf("reading target after failed write: %v", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Errorf("target content = %q, want %q (a failed promotion must not disturb the existing file)", got, original)
 	}
 
-	// Confirm the file mode survived the cross-device copy fallback.
-	if gotPerm := info.Mode().Perm(); gotPerm != wantPerm {
-		t.Errorf("file mode = %04o, want %04o (perm lost on cross-device copy fallback)", gotPerm, wantPerm)
+	// No orphaned temp file should be left behind in the directory.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading dir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("orphaned temp file left behind: %s", e.Name())
+		}
 	}
 }
 
-// TestWriteFileAtomic_EXDEVFallbackPreservesMode_Overwrite is the overwrite
-// variant of the EXDEV perm regression test. It pre-creates the target with a
-// different mode (0o400, read-only), then calls WriteFileAtomic with perm=0o600
-// under the EXDEV osRename hook. Both the backup-rename step (target -> .bak)
-// and the promotion step (.tmp -> target) travel the copyFile fallback path,
-// and the final file must carry the new perm (0o600), not the pre-existing one.
+// TestWriteFileAtomic_OverwriteAppliesNewMode verifies that overwriting an
+// existing file installs the caller's requested mode, not the pre-existing one.
+// The temp file is chmod'd to perm before the promoting rename, and the rename
+// swaps that inode into place, so the new mode wins even when the previous file
+// had a different (here, more restrictive) mode.
 //
-// This ensures that perm-threading is correct on BOTH renameSafe call sites
-// inside WriteFileAtomic, not just the new-file path.
-func TestWriteFileAtomic_EXDEVFallbackPreservesMode_Overwrite(t *testing.T) {
+// The mode == perm assertion is POSIX-only: on Windows, Go synthesizes
+// FileMode from FILE_ATTRIBUTE_READONLY and does not enforce Unix permission
+// bits, so stat.Mode().Perm() does not round-trip.
+func TestWriteFileAtomic_OverwriteAppliesNewMode(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("EXDEV and Unix permission semantics are POSIX-only")
-	}
-
-	// This test mutates the package-level osRename hook; must not run in parallel.
-	orig := osRename
-	t.Cleanup(func() { osRename = orig })
-
-	osRename = func(oldPath, newPath string) error {
-		return &os.LinkError{
-			Op:  "rename",
-			Old: oldPath,
-			New: newPath,
-			Err: syscall.EXDEV,
-		}
+		t.Skip("Unix permission semantics are POSIX-only")
 	}
 
 	dir := t.TempDir()
 	target := filepath.Join(dir, "secret.key")
 
-	// Pre-create the target with a deliberately different mode so we can
-	// verify the new perm wins, not the pre-existing one.
+	// Pre-create the target with a deliberately different (restrictive) mode so
+	// we can verify the new perm wins, not the pre-existing one.
 	if err := os.WriteFile(target, []byte("old content"), 0o400); err != nil {
 		t.Fatalf("pre-creating target: %v", err)
 	}
 
-	// Write with a new, more-permissive mode. The backup rename path
-	// (target -> .bak) and the promotion path (.tmp -> target) both hit the
-	// copyFile fallback; both must use the caller-supplied perm=0o600.
-	//
-	// Invariant: copyFile uses O_CREATE so the perm is applied at creation
-	// time; subsequent writes to the same fd do not alter the mode, making
-	// this the only place the mode can be enforced.
 	const wantPerm os.FileMode = 0o600
 	if err := WriteFileAtomic(target, []byte("new content"), wantPerm); err != nil {
 		t.Fatalf("WriteFileAtomic: %v", err)
@@ -233,7 +215,15 @@ func TestWriteFileAtomic_EXDEVFallbackPreservesMode_Overwrite(t *testing.T) {
 
 	// The final file must carry the new perm, not the pre-existing 0o400.
 	if gotPerm := info.Mode().Perm(); gotPerm != wantPerm {
-		t.Errorf("file mode = %04o, want %04o (perm lost on cross-device overwrite fallback)", gotPerm, wantPerm)
+		t.Errorf("file mode = %04o, want %04o (new perm not applied on overwrite)", gotPerm, wantPerm)
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("reading target: %v", err)
+	}
+	if string(got) != "new content" {
+		t.Errorf("content = %q, want %q", got, "new content")
 	}
 }
 
