@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/database"
 )
 
 const fixtureDir = "testdata/image_registry_repair"
@@ -826,6 +828,116 @@ func TestRepairIsStructurallyInsertOnly(t *testing.T) {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("image_registry_repair.go contains %q; this pass must be insert-only", forbidden)
 		}
+	}
+}
+
+// TestRepairAbortsWhenArtistQueryFails proves the pass fails loudly, not
+// silently, when it cannot even enumerate the artists to repair. A failed
+// artist query makes the whole pass meaningless -- there is nothing to
+// reconcile against -- so RepairImageRegistry must return the wrapped error and
+// a nil result rather than reporting a clean, empty run.
+func TestRepairAbortsWhenArtistQueryFails(t *testing.T) {
+	// A DB with no artists table at all: the initial SELECT fails outright.
+	db, dbPath := setupTestDB(t)
+	res, err := newRepairService(t, db, dbPath, "").RepairImageRegistry(
+		context.Background(), ImageRepairOpts{Commit: true})
+	if err == nil {
+		t.Fatal("RepairImageRegistry returned nil error when the artist query failed")
+	}
+	if !strings.Contains(err.Error(), "querying artists for image repair") {
+		t.Errorf("error = %v, want it to wrap the artist-query failure", err)
+	}
+	if res != nil {
+		t.Errorf("result = %+v, want nil when the pass could not start", res)
+	}
+}
+
+// TestRepairReportsRegistryReadFailure covers the per-artist path where the
+// artist's existing rows cannot be read. This is NOT definitive absence and NOT
+// a directory error -- the registry itself is unreadable -- so the artist must
+// be counted as failed with reason registry_read_failed, and the pass must NOT
+// abort: one artist whose rows cannot be read must not stop the rest of the
+// library. Because nothing scanned and nothing was absent, the mount-down guard
+// stays disarmed and the overall pass still returns nil.
+func TestRepairReportsRegistryReadFailure(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	const id = "eeee0000-0000-0000-0000-000000000001"
+	seedArtist(t, db, id, filepath.Join(t.TempDir(), "artist-eeee0000"))
+
+	// Drop the table existingSlots reads so the per-artist registry read fails
+	// while artist enumeration still succeeds.
+	if _, err := db.Exec(`DROP TABLE artist_images`); err != nil {
+		t.Fatalf("dropping artist_images: %v", err)
+	}
+
+	res, err := newRepairService(t, db, dbPath, "").RepairImageRegistry(
+		context.Background(), ImageRepairOpts{Commit: true})
+	if err != nil {
+		t.Fatalf("a single unreadable registry must not abort the pass: %v", err)
+	}
+	if res.ArtistsFailed != 1 {
+		t.Errorf("ArtistsFailed = %d, want 1", res.ArtistsFailed)
+	}
+	if res.ArtistsScanned != 0 {
+		t.Errorf("ArtistsScanned = %d, want 0 -- an unreadable registry is not a clean scan", res.ArtistsScanned)
+	}
+	if !hasOutcome(res, id, "failed", "registry_read_failed") {
+		t.Errorf("no failed/registry_read_failed outcome; got %+v", res.Outcomes)
+	}
+}
+
+// TestRepairReportsUnconfirmedWrites is the "reports success while doing
+// nothing" guard. When the writes silently fail -- here because the database is
+// read-only, so every INSERT errors -- the pass must not credit them. It plans
+// the inserts, the writes fail, the post-write re-read confirms nothing landed,
+// and the result says RowsPlanned>0 with RowsInserted=0 rather than claiming the
+// planned rows as inserted.
+func TestRepairReportsUnconfirmedWrites(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses the read-only-database write barrier")
+	}
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	// Build the DB in the default rollback-journal mode (no WAL) so a read-only
+	// reopen needs no -shm/-wal side files, then seed an artist with images on
+	// disk whose registry rows are missing -- the inserts a healthy pass would
+	// perform.
+	rw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("opening seed db: %v", err)
+	}
+	if err := database.Migrate(rw); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+	const id = "ffff0000-0000-0000-0000-000000000001"
+	artistDir := filepath.Join(dir, "artist-ffff0000")
+	if _, err := rw.Exec(`INSERT INTO artists (id, name, path) VALUES (?, ?, ?)`,
+		id, "artist-ffff0000", artistDir); err != nil {
+		t.Fatalf("seeding artist: %v", err)
+	}
+	writeImage(t, filepath.Join(artistDir, "backdrop.jpg"), 1920, 1080)
+	if err := rw.Close(); err != nil {
+		t.Fatalf("closing seed db: %v", err)
+	}
+
+	// Reopen read-only: every read succeeds, every INSERT fails.
+	ro, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	if err != nil {
+		t.Fatalf("opening read-only db: %v", err)
+	}
+	t.Cleanup(func() { _ = ro.Close() })
+
+	res, err := newRepairService(t, ro, dbPath, "").RepairImageRegistry(
+		context.Background(), ImageRepairOpts{Commit: true})
+	if err != nil {
+		t.Fatalf("a failed write must be reported, not aborted: %v", err)
+	}
+	if res.RowsPlanned == 0 {
+		t.Fatal("RowsPlanned = 0, want > 0 -- the test needs a real planned insert to fail")
+	}
+	if res.RowsInserted != 0 {
+		t.Errorf("RowsInserted = %d, want 0 -- unconfirmed writes must never be credited", res.RowsInserted)
 	}
 }
 
