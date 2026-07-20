@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -123,6 +125,42 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 	}
 	incoming := make(map[slotKey]struct{}, len(images))
 
+	// Read the pre-upsert state of every row this artist already has. This read
+	// MUST happen before the upsert loop below: the upsert overwrites
+	// exists_flag unconditionally, so once it has run a 1 -> 0 transition is no
+	// longer detectable. The same snapshot also drives the stale-row delete diff
+	// further down. Moving the read earlier does not change which rows the diff
+	// selects: every row the upsert loop inserts or updates has its key in
+	// `incoming` by construction, so such rows could never have been selected
+	// for removal by a post-upsert read either.
+	priorExists := make(map[slotKey]bool)
+	priorRows, err := tx.QueryContext(ctx,
+		`SELECT image_type, slot_index, exists_flag FROM artist_images WHERE artist_id = ?`, artistID)
+	if err != nil {
+		return fmt.Errorf("querying existing image slots: %w", err)
+	}
+	defer priorRows.Close() //nolint:errcheck // Close error not actionable on cleanup
+	for priorRows.Next() {
+		var k slotKey
+		var existsFlag int
+		if err := priorRows.Scan(&k.imageType, &k.slotIndex, &existsFlag); err != nil {
+			return fmt.Errorf("scanning existing image slot: %w", err)
+		}
+		priorExists[k] = existsFlag == 1
+	}
+	if err := priorRows.Err(); err != nil {
+		return fmt.Errorf("iterating existing image slots: %w", err)
+	}
+	if err := priorRows.Close(); err != nil {
+		return fmt.Errorf("closing existing image slot rows: %w", err)
+	}
+
+	// source identifies the calling path (scan, manual, rule:<id>, ...). It is
+	// attached to every destructive record below so a row deletion or an
+	// exists_flag clear can be attributed to the code path that decided it
+	// (issue #2636).
+	source := sourceFromContext(ctx)
+
 	// Upsert each incoming image row. ON CONFLICT updates only display fields,
 	// leaving provenance columns (phash, content_hash, source, file_format,
 	// last_written_at) untouched so that UpdateProvenance and UpdateHashes data
@@ -150,7 +188,18 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 		if id == "" {
 			id = uuid.New().String()
 		}
-		incoming[slotKey{img.ImageType, img.SlotIndex}] = struct{}{}
+		key := slotKey{img.ImageType, img.SlotIndex}
+		incoming[key] = struct{}{}
+		// Record every exists_flag 1 -> 0 transition. A cleared flag hides the
+		// image in the UI and makes the artist look unarted, so the deciding
+		// path has to be attributable after the fact (issue #2636).
+		if priorExists[key] && !img.Exists {
+			slog.Info("artist image exists flag cleared",
+				"artist_id", artistID,
+				"image_type", img.ImageType,
+				"slot_index", img.SlotIndex,
+				"source", source)
+		}
 		if _, err := upsertStmt.ExecContext(ctx,
 			id, artistID, img.ImageType, img.SlotIndex,
 			dbutil.BoolToInt(img.Exists), dbutil.BoolToInt(img.LowRes), img.Placeholder,
@@ -161,30 +210,25 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 	}
 
 	// Delete rows for slots that are no longer in the incoming set (e.g., an
-	// image type was removed). We fetch existing rows and compare against the
+	// image type was removed). We compare the pre-upsert snapshot against the
 	// incoming set, then delete stale rows individually rather than using a
 	// broad DELETE that could race with UpdateProvenance.
-	existing, err := tx.QueryContext(ctx,
-		`SELECT image_type, slot_index FROM artist_images WHERE artist_id = ?`, artistID)
-	if err != nil {
-		return fmt.Errorf("querying existing image slots: %w", err)
-	}
-	defer existing.Close() //nolint:errcheck // Close error not actionable on cleanup
 	var toRemove []slotKey
-	for existing.Next() {
-		var k slotKey
-		if err := existing.Scan(&k.imageType, &k.slotIndex); err != nil {
-			return fmt.Errorf("scanning existing image slot: %w", err)
-		}
+	for k := range priorExists {
 		if _, ok := incoming[k]; !ok {
 			toRemove = append(toRemove, k)
 		}
 	}
-	if err := existing.Err(); err != nil {
-		return fmt.Errorf("iterating existing image slots: %w", err)
-	}
 
 	if len(toRemove) > 0 {
+		// Map iteration order is randomized; sort so deletions (and the records
+		// they emit) are emitted in a stable, readable order.
+		sort.Slice(toRemove, func(i, j int) bool {
+			if toRemove[i].imageType != toRemove[j].imageType {
+				return toRemove[i].imageType < toRemove[j].imageType
+			}
+			return toRemove[i].slotIndex < toRemove[j].slotIndex
+		})
 		delStmt, err := tx.PrepareContext(ctx,
 			`DELETE FROM artist_images WHERE artist_id = ? AND image_type = ? AND slot_index = ?`)
 		if err != nil {
@@ -195,6 +239,14 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 			if _, err := delStmt.ExecContext(ctx, artistID, k.imageType, k.slotIndex); err != nil {
 				return fmt.Errorf("deleting removed slot %s/%d: %w", k.imageType, k.slotIndex, err)
 			}
+			// One record per deleted slot. Deletions are rare, so the volume is
+			// negligible, and per-row attributability is the whole point: the
+			// #2636 incident destroyed rows that no log could account for.
+			slog.Info("artist image row deleted",
+				"artist_id", artistID,
+				"image_type", k.imageType,
+				"slot_index", k.slotIndex,
+				"source", source)
 		}
 	}
 

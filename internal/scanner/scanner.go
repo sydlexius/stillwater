@@ -698,6 +698,15 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 		}
 	}
 
+	// Tag the context so every mutation this function drives is attributed to
+	// the scanner rather than falling back to the "manual" default. Two things
+	// depend on it: the destructive-image records emitted by the artist_images
+	// upsert (issue #2636), which are useless without a calling path, and the
+	// metadata history rows written by Update, which previously recorded
+	// scan-driven edits as manual ones. "scan" is one of the canonical source
+	// values validated in artist.HistoryService.Record.
+	scanCtx := artist.ContextWithSource(ctx, "scan")
+
 	// Protect existing placeholders from transient I/O failures: if the image
 	// file still exists on disk but placeholder generation failed (returned
 	// empty), preserve the existing placeholder.
@@ -738,7 +747,7 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 		// when nothing else about the artist looks different. Mirror the
 		// Update() path's event fanout only when reconciliation actually
 		// repaired drift, so quiet rescans do not flood subscribers.
-		repaired, err := s.artistService.ReconcileImages(ctx, existing)
+		repaired, err := s.artistService.ReconcileImages(scanCtx, existing)
 		if err != nil {
 			return fmt.Errorf("reconciling artist images: %w", err)
 		}
@@ -797,7 +806,7 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 	now := time.Now().UTC()
 	existing.LastScannedAt = &now
 
-	if err := s.artistService.Update(ctx, existing); err != nil {
+	if err := s.artistService.Update(scanCtx, existing); err != nil {
 		return fmt.Errorf("updating artist: %w", err)
 	}
 

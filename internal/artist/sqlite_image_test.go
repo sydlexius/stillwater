@@ -2,7 +2,9 @@ package artist
 
 import (
 	"context"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -488,4 +490,242 @@ func TestClearExistsFlag(t *testing.T) {
 	if !foundFanart {
 		t.Error("expected fanart image slot 0 to be present")
 	}
+}
+
+// --- destructive-image record capture (issue #2636) ---------------------------
+//
+// The image repository logs row deletions and exists_flag clears through the
+// package-level slog default so the destructive paths are attributable after
+// the fact. These helpers install a capturing handler for the duration of a
+// test and expose the records for assertion. Tests using them must NOT call
+// t.Parallel(): slog.SetDefault is process-global, and Go only runs parallel
+// tests after every sequential test in the package has finished, so a
+// sequential test is the only way to own the default logger exclusively.
+
+type imageLogEntry struct {
+	level slog.Level
+	msg   string
+	attrs map[string]string
+}
+
+type imageLogState struct {
+	mu      sync.Mutex
+	entries []imageLogEntry
+}
+
+type imageLogHandler struct {
+	state *imageLogState
+}
+
+func (h *imageLogHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+
+func (h *imageLogHandler) Handle(_ context.Context, r slog.Record) error {
+	entry := imageLogEntry{level: r.Level, msg: r.Message, attrs: map[string]string{}}
+	r.Attrs(func(a slog.Attr) bool {
+		entry.attrs[a.Key] = a.Value.String()
+		return true
+	})
+	h.state.mu.Lock()
+	h.state.entries = append(h.state.entries, entry)
+	h.state.mu.Unlock()
+	return nil
+}
+
+func (h *imageLogHandler) WithAttrs(_ []slog.Attr) slog.Handler {
+	return &imageLogHandler{state: h.state}
+}
+func (h *imageLogHandler) WithGroup(_ string) slog.Handler { return h }
+
+// captureImageLogs redirects the default logger into a fresh state for the
+// remainder of the test and restores the previous default on cleanup.
+func captureImageLogs(t *testing.T) *imageLogState {
+	t.Helper()
+	state := &imageLogState{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(&imageLogHandler{state: state}))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return state
+}
+
+// matching returns every captured entry with the given message that also
+// carries the given artist_id, so assertions cannot be satisfied by an
+// unrelated record emitted elsewhere in the same test.
+func (s *imageLogState) matching(msg, artistID string) []imageLogEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []imageLogEntry
+	for _, e := range s.entries {
+		if e.msg == msg && e.attrs["artist_id"] == artistID {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// requireOne asserts exactly one record with the given message/artist exists
+// and that its level, image_type, slot_index and source match exactly. Every
+// attribute is checked, so an empty source or a wrong slot index fails.
+func requireOne(t *testing.T, s *imageLogState, msg, artistID, imageType, slotIndex, source string) {
+	t.Helper()
+	got := s.matching(msg, artistID)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 %q record for artist %s, got %d (all entries: %+v)",
+			msg, artistID, len(got), s.entries)
+	}
+	e := got[0]
+	if e.level != slog.LevelInfo {
+		t.Errorf("%s: level = %v, want INFO", msg, e.level)
+	}
+	if e.attrs["image_type"] != imageType {
+		t.Errorf("%s: image_type = %q, want %q", msg, e.attrs["image_type"], imageType)
+	}
+	if e.attrs["slot_index"] != slotIndex {
+		t.Errorf("%s: slot_index = %q, want %q", msg, e.attrs["slot_index"], slotIndex)
+	}
+	if e.attrs["source"] != source {
+		t.Errorf("%s: source = %q, want %q", msg, e.attrs["source"], source)
+	}
+}
+
+// seedImageSlots installs an exact set of image rows for an artist via
+// UpsertAll, discarding any records the seeding itself emits.
+func seedImageSlots(t *testing.T, repo *sqliteImageRepo, artistID string, images []ArtistImage) {
+	t.Helper()
+	if err := repo.UpsertAll(context.Background(), artistID, images); err != nil {
+		t.Fatalf("seeding image slots: %v", err)
+	}
+}
+
+func img(imageType string, slot int, exists bool) ArtistImage {
+	return ArtistImage{ImageType: imageType, SlotIndex: slot, Exists: exists, Width: 100, Height: 100}
+}
+
+// TestUpsertAll_LogsStaleRowDeletion asserts that dropping a slot from the
+// incoming set emits exactly one attributable deletion record for that slot,
+// and no record for the slots that survive.
+func TestUpsertAll_LogsStaleRowDeletion(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Deletion Probe", "/music/DeletionProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		img("thumb", 0, true), img("fanart", 0, true), img("fanart", 1, true),
+	})
+
+	// Capture only the second call: fanart slot 1 disappears from the incoming
+	// set, so its row must be deleted and recorded.
+	state := captureImageLogs(t)
+	if err := repo.UpsertAll(ctx, a.ID, []ArtistImage{
+		img("thumb", 0, true), img("fanart", 0, true),
+	}); err != nil {
+		t.Fatalf("UpsertAll: %v", err)
+	}
+
+	requireOne(t, state, "artist image row deleted", a.ID, "fanart", "1", "manual")
+
+	// The surviving slots must not be reported as deleted, and no exists_flag
+	// clear happened on this call.
+	if n := len(state.matching("artist image row deleted", a.ID)); n != 1 {
+		t.Errorf("expected 1 deletion record total, got %d", n)
+	}
+	if n := len(state.matching("artist image exists flag cleared", a.ID)); n != 0 {
+		t.Errorf("expected no exists-flag records, got %d", n)
+	}
+
+	// The record must describe reality: the row is actually gone.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != 2 {
+		t.Fatalf("expected 2 surviving rows, got %d", len(images))
+	}
+	for _, im := range images {
+		if im.ImageType == "fanart" && im.SlotIndex == 1 {
+			t.Error("fanart slot 1 should have been deleted")
+		}
+	}
+}
+
+// TestUpsertAll_LogsExistsFlagCleared asserts that a 1 -> 0 exists_flag
+// transition is recorded with the exact slot that flipped, and that slots
+// which stay true or were already false emit nothing.
+func TestUpsertAll_LogsExistsFlagCleared(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Flag Probe", "/music/FlagProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		img("thumb", 0, true), img("fanart", 0, true), img("banner", 0, false),
+	})
+
+	state := captureImageLogs(t)
+	// fanart/0 flips true -> false. thumb/0 stays true. banner/0 stays false,
+	// so it is not a transition and must not be recorded.
+	if err := repo.UpsertAll(ctx, a.ID, []ArtistImage{
+		img("thumb", 0, true), img("fanart", 0, false), img("banner", 0, false),
+	}); err != nil {
+		t.Fatalf("UpsertAll: %v", err)
+	}
+
+	requireOne(t, state, "artist image exists flag cleared", a.ID, "fanart", "0", "manual")
+	if n := len(state.matching("artist image row deleted", a.ID)); n != 0 {
+		t.Errorf("expected no deletion records, got %d", n)
+	}
+
+	// Assert the DB agrees: only fanart/0 is now false among the two that
+	// started true, and nothing was deleted.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(images))
+	}
+	for _, im := range images {
+		wantExists := im.ImageType == "thumb"
+		if im.Exists != wantExists {
+			t.Errorf("%s/%d exists = %v, want %v", im.ImageType, im.SlotIndex, im.Exists, wantExists)
+		}
+	}
+}
+
+// TestUpsertAll_RecordsSourceFromContext proves the source attribute reflects
+// the context tag rather than the "manual" default, which is what makes the
+// records attributable to the scanner in production.
+func TestUpsertAll_RecordsSourceFromContext(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Source Probe", "/music/SourceProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		img("thumb", 0, true), img("fanart", 2, true),
+	})
+
+	state := captureImageLogs(t)
+	scanCtx := ContextWithSource(ctx, "scan")
+	// thumb/0 clears its flag; fanart/2 is dropped entirely.
+	if err := repo.UpsertAll(scanCtx, a.ID, []ArtistImage{img("thumb", 0, false)}); err != nil {
+		t.Fatalf("UpsertAll: %v", err)
+	}
+
+	requireOne(t, state, "artist image exists flag cleared", a.ID, "thumb", "0", "scan")
+	// slot_index 2 (not 0) is the deleted slot: a record that reported the
+	// wrong slot would fail here.
+	requireOne(t, state, "artist image row deleted", a.ID, "fanart", "2", "scan")
 }
