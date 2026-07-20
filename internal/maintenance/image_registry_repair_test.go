@@ -941,6 +941,55 @@ func TestRepairReportsUnconfirmedWrites(t *testing.T) {
 	}
 }
 
+// TestRepairVerifyHonorsCancellation guards finding 1: verifyImageFile must
+// short-circuit on a canceled context instead of running the os.Open + full
+// pixel decode. The file on disk is perfectly valid, so a verifier that ignored
+// the context would return a candidate with a nil error; asserting the context
+// error is returned instead is the outcome that proves the decode was skipped.
+func TestRepairVerifyHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "backdrop.jpg")
+	writeImage(t, path, 1920, 1080)
+
+	if _, err := verifyImageFile(ctx, slotKey{"fanart", 0}, path, true); !errors.Is(err, context.Canceled) {
+		t.Fatalf("verifyImageFile with a canceled context = %v, want context.Canceled (the decode must be skipped)", err)
+	}
+}
+
+// TestRepairApplyInsertsRollsBackOnCancel guards finding 2: a canceled context
+// must abort the batched insert transaction with the context error and leave
+// nothing written. The candidates name real slots whose rows are missing, so a
+// batch that ignored the context would commit them; asserting the context error
+// AND that no row landed proves the transaction rolled back rather than
+// half-writing.
+func TestRepairApplyInsertsRollsBackOnCancel(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	const id = "abcdef01-0000-0000-0000-000000000001"
+	seedArtist(t, db, id, filepath.Join(t.TempDir(), "artist-abcdef01"))
+	svc := newRepairService(t, db, dbPath, "")
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	inserts := []candidate{
+		{key: slotKey{"fanart", 0}, fileName: "backdrop.jpg"},
+		{key: slotKey{"thumb", 0}, fileName: "folder.jpg"},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := svc.applyInserts(ctx, log, id, inserts); !errors.Is(err, context.Canceled) {
+		t.Fatalf("applyInserts with a canceled context = %v, want context.Canceled", err)
+	}
+	for _, c := range inserts {
+		if rowExists(t, db, id, c.key.imageType, c.key.slotIndex) {
+			t.Errorf("canceled applyInserts wrote %s/%d; the transaction must roll back and write nothing",
+				c.key.imageType, c.key.slotIndex)
+		}
+	}
+}
+
 // stripComments removes // comments so the structural test reads the code
 // rather than the prose about the code -- the file's doc comment names every
 // forbidden token.

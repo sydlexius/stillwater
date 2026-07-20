@@ -151,7 +151,13 @@ func (s *Service) RepairImageRegistry(ctx context.Context, opts ImageRepairOpts)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		s.repairOneArtist(ctx, log, opts, a.id, a.path, res)
+		if err := s.repairOneArtist(ctx, log, opts, a.id, a.path, res); err != nil {
+			// The only error repairOneArtist returns is a context
+			// cancellation propagated from mid-artist discovery or the insert
+			// loop -- per-artist read/decode failures are reported in res and
+			// return nil. Abort the whole pass immediately.
+			return nil, err
+		}
 	}
 
 	// Mount-down guard. On a library-wide pass, if not one artist directory
@@ -213,8 +219,11 @@ func (s *Service) repairArtists(ctx context.Context, artistID string) ([]repairA
 }
 
 // repairOneArtist runs discover -> verify -> plan -> write -> confirm for one
-// artist, accumulating into res.
-func (s *Service) repairOneArtist(ctx context.Context, log *slog.Logger, opts ImageRepairOpts, artistID, artistPath string, res *ImageRepairResult) {
+// artist, accumulating into res. The only non-nil error it returns is a context
+// cancellation surfaced mid-artist (from discovery or the insert loop), which
+// aborts the whole pass; every per-artist read/decode failure is reported in
+// res and returns nil so one bad artist never stops the rest of the library.
+func (s *Service) repairOneArtist(ctx context.Context, log *slog.Logger, opts ImageRepairOpts, artistID, artistPath string, res *ImageRepairResult) error {
 	log = log.With(slog.String("artist_id", artistID))
 
 	dir := s.artistImageDir(artistPath, artistID)
@@ -223,7 +232,7 @@ func (s *Service) repairOneArtist(ctx context.Context, log *slog.Logger, opts Im
 		res.ArtistsSkipped++
 		res.Outcomes = append(res.Outcomes, ImageRepairOutcome{
 			ArtistID: artistID, Action: "skipped", Reason: "no_image_dir"})
-		return
+		return nil
 	}
 
 	existing, err := s.existingSlots(ctx, artistID)
@@ -232,11 +241,18 @@ func (s *Service) repairOneArtist(ctx context.Context, log *slog.Logger, opts Im
 		res.ArtistsFailed++
 		res.Outcomes = append(res.Outcomes, ImageRepairOutcome{
 			ArtistID: artistID, Action: "failed", Reason: "registry_read_failed"})
-		return
+		return nil
 	}
 
-	found, err := s.discover(log, artistID, dir, res)
+	found, err := s.discover(ctx, log, artistID, dir, res)
 	if err != nil {
+		// A context cancellation surfaced from within the fanart decode loop.
+		// It is not a fact about this directory, so it is neither absent nor
+		// unreadable: propagate it to abort the pass immediately rather than
+		// mislabeling the artist as failed.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		// Two different facts, deliberately kept apart. Conflating them is the
 		// exact mistake that caused the incident, so the repair must not repeat
 		// it in its own reporting.
@@ -249,7 +265,7 @@ func (s *Service) repairOneArtist(ctx context.Context, log *slog.Logger, opts Im
 			res.ArtistsAbsent++
 			res.Outcomes = append(res.Outcomes, ImageRepairOutcome{
 				ArtistID: artistID, Action: "skipped", Reason: "dir_absent"})
-			return
+			return nil
 		}
 		// EACCES, ESTALE, an unmounted share. We genuinely cannot tell what is
 		// in this directory, so we touch nothing. Downgrading this to "zero
@@ -259,16 +275,23 @@ func (s *Service) repairOneArtist(ctx context.Context, log *slog.Logger, opts Im
 		res.ArtistsFailed++
 		res.Outcomes = append(res.Outcomes, ImageRepairOutcome{
 			ArtistID: artistID, Action: "failed", Reason: "dir_unreadable"})
-		return
+		return nil
 	}
 	res.ArtistsScanned++
 
 	inserts := plan(artistID, found, existing, opts, res)
 	if !opts.Commit || len(inserts) == 0 {
-		return
+		return nil
 	}
-	s.applyInserts(ctx, log, artistID, inserts)
+	// A mid-loop cancellation rolls the insert transaction back (nothing
+	// half-written) and aborts the pass; a re-run completes the repair because
+	// it is idempotent. On the non-canceled path confirm() re-reads the table
+	// to count what actually landed.
+	if err := s.applyInserts(ctx, log, artistID, inserts); err != nil {
+		return err
+	}
 	s.confirm(ctx, log, artistID, inserts, existing, res)
+	return nil
 }
 
 // existingSlots reads the artist's current rows, mapping each key to its
@@ -295,11 +318,12 @@ func (s *Service) existingSlots(ctx context.Context, artistID string) (map[slotK
 	return out, rows.Err()
 }
 
-// discover enumerates the verified image files in dir. An error means the
-// directory could not be read, which the caller must treat as unknown rather
-// than empty. Files present but failing verification are counted in
-// res.FilesSkipped and omitted.
-func (s *Service) discover(log *slog.Logger, artistID, dir string, res *ImageRepairResult) ([]candidate, error) {
+// discover enumerates the verified image files in dir. An error means either
+// the directory could not be read (which the caller must treat as unknown
+// rather than empty) or the context was canceled mid-scan (which aborts the
+// pass). Files present but failing verification are counted in res.FilesSkipped
+// and omitted.
+func (s *Service) discover(ctx context.Context, log *slog.Logger, artistID, dir string, res *ImageRepairResult) ([]candidate, error) {
 	fanart, err := img.ResolveFanartFiles(dir, img.DefaultFileNames["fanart"])
 	if err != nil {
 		return nil, err
@@ -311,7 +335,10 @@ func (s *Service) discover(log *slog.Logger, artistID, dir string, res *ImageRep
 		// extractImageMetadata, so their dimensions stay zero. They are still
 		// fully decoded: verification is about whether the file is real, not
 		// about what gets stored.
-		out = appendVerified(log, out, artistID, slotKey{"fanart", i}, p, i == 0, res)
+		out, err = appendVerified(ctx, log, out, artistID, slotKey{"fanart", i}, p, i == 0, res)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	for _, t := range singleSlotTypes {
@@ -328,17 +355,27 @@ func (s *Service) discover(log *slog.Logger, artistID, dir string, res *ImageRep
 			continue
 		}
 		if ok {
-			out = appendVerified(log, out, artistID, slotKey{t, 0}, path, true, res)
+			out, err = appendVerified(ctx, log, out, artistID, slotKey{t, 0}, path, true, res)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return out, nil
 }
 
 // appendVerified decodes the file at path and appends it to out, or records a
-// skip. withMetadata controls whether dimensions and a placeholder are kept.
-func appendVerified(log *slog.Logger, out []candidate, artistID string, key slotKey, path string, withMetadata bool, res *ImageRepairResult) []candidate {
-	c, err := verifyImageFile(key, path, withMetadata)
+// skip. withMetadata controls whether dimensions and a placeholder are kept. A
+// non-nil error means the context was canceled before this file was processed;
+// it is propagated to abort the pass and is never recorded as a decode skip.
+func appendVerified(ctx context.Context, log *slog.Logger, out []candidate, artistID string, key slotKey, path string, withMetadata bool, res *ImageRepairResult) ([]candidate, error) {
+	c, err := verifyImageFile(ctx, key, path, withMetadata)
 	if err != nil {
+		// A cancellation is not a bad file: propagate it rather than counting
+		// the slot as a failed decode.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return out, ctxErr
+		}
 		log.Warn("image repair: file failed verification, skipping slot",
 			slog.String("image_type", key.imageType),
 			slog.Int("slot_index", key.slotIndex),
@@ -347,9 +384,9 @@ func appendVerified(log *slog.Logger, out []candidate, artistID string, key slot
 		res.Outcomes = append(res.Outcomes, ImageRepairOutcome{
 			ArtistID: artistID, ImageType: key.imageType, SlotIndex: key.slotIndex,
 			FileName: filepath.Base(path), Action: "skipped", Reason: "decode_failed"})
-		return out
+		return out, nil
 	}
-	return append(out, c)
+	return append(out, c), nil
 }
 
 // verifyImageFile proves a file is a displayable image before any row is
@@ -362,8 +399,16 @@ func appendVerified(log *slog.Logger, out []candidate, artistID string, key slot
 // displayed. Not HashFile either: it returns a usable content hash ALONGSIDE a
 // perceptual-hash error, so a caller checking the value rather than the error
 // would accept an undecodable file.
-func verifyImageFile(key slotKey, path string, withMetadata bool) (candidate, error) {
+func verifyImageFile(ctx context.Context, key slotKey, path string, withMetadata bool) (candidate, error) {
 	c := candidate{key: key, fileName: filepath.Base(path)}
+
+	// Cancellation check before the os.Open + full pixel decode: a canceled or
+	// timed-out pass must not keep decoding the current artist's remaining
+	// files. Returning the context error propagates the cancellation up through
+	// appendVerified and discover.
+	if err := ctx.Err(); err != nil {
+		return c, err
+	}
 
 	f, err := os.Open(path) //nolint:gosec // path comes from a listing of the artist's own image dir
 	if err != nil {
@@ -421,14 +466,43 @@ func outcomeFor(artistID string, c candidate, commit bool, committed, preview, r
 	}
 }
 
-// applyInserts writes the missing rows. ON CONFLICT DO NOTHING carries two
-// requirements in one clause: idempotency (a second pass writes nothing) and
-// lock safety (on a conflict `locked` is untouched because nothing is). Both
-// are enforced by the database, not by a Go branch a later edit could bypass.
-func (s *Service) applyInserts(ctx context.Context, log *slog.Logger, artistID string, inserts []candidate) {
+// applyInserts writes the missing rows in a single transaction. ON CONFLICT DO
+// NOTHING carries two requirements in one clause: idempotency (a second pass
+// writes nothing) and lock safety (on a conflict `locked` is untouched because
+// nothing is). Both are enforced by the database, not by a Go branch a later
+// edit could bypass. Batching the inserts into one transaction replaces N
+// autocommit writes (N WAL syncs on modernc.org/sqlite) with one, without
+// changing any of that: the same conflict clause runs per row, and confirm()
+// still re-reads the committed table rather than trusting RowsAffected.
+//
+// A non-nil return means the context was canceled mid-batch: the transaction
+// is rolled back so nothing is half-written, and the caller aborts the pass.
+// Because the repair is idempotent, a re-run completes it. Ordinary per-row
+// write failures are NOT returned as errors -- they are logged and the pass
+// continues, so confirm() can report the divergence (planned > inserted)
+// instead of the write silently claiming success.
+func (s *Service) applyInserts(ctx context.Context, log *slog.Logger, artistID string, inserts []candidate) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		// A canceled context fails BeginTx too: propagate it so the pass
+		// aborts. Any other begin failure means nothing could be written; log
+		// it and let confirm() report zero inserted rather than aborting.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		log.Error("image repair: begin transaction failed, no rows written", slog.Any("error", err))
+		return nil
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, c := range inserts {
-		_, err := s.db.ExecContext(ctx, `
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Error("image repair: rolling back after cancellation failed", slog.Any("error", rbErr))
+			}
+			return ctxErr
+		}
+		_, err := tx.ExecContext(ctx, `
 			INSERT INTO artist_images
 			  (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
 			   width, height, phash, content_hash, file_format, source, last_written_at, locked)
@@ -442,6 +516,14 @@ func (s *Service) applyInserts(ctx context.Context, log *slog.Logger, artistID s
 				slog.Int("slot_index", c.key.slotIndex), slog.Any("error", err))
 		}
 	}
+
+	if err := tx.Commit(); err != nil {
+		// The writes did not land. confirm() re-reads the table and will report
+		// zero inserted, so surface the failure in the log but do not abort the
+		// pass -- the same posture as a per-row failure above.
+		log.Error("image repair: committing inserts failed, rows remain missing", slog.Any("error", err))
+	}
+	return nil
 }
 
 // confirm re-reads the artist's rows and counts what actually landed. This is
