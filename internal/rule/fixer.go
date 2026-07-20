@@ -208,6 +208,31 @@ type Pipeline struct {
 	// number of artists a process repairs.
 	phashArtistMu sync.Map // map[string]*sync.Mutex
 
+	// reconcileArtistMu holds one mutex per artist id, serializing
+	// reconcileAfterFix for a single artist so two concurrent fixes of the
+	// same artist cannot interleave their image-registry reconciliation.
+	//
+	// reconcileAfterFix walks the artist directory (DiscoverFanart) and then
+	// converges the image registry to that snapshot (ReconcileImages). Two
+	// concurrent calls for the same artist can each walk, then each commit,
+	// their own snapshot -- a read-modify-write lost update that leaves the
+	// registry describing neither run's final on-disk state. The two operations
+	// touch the same rows through the artist service, not shared Go memory, so
+	// -race is blind to the hazard. Serializing per artist makes the walk and
+	// the persist describe the same instant.
+	//
+	// Distinct from phashArtistMu (a SEPARATE lock) on purpose: the phash
+	// back-out path already holds phashArtistMu across remediateArtistPHash,
+	// which itself calls reconcileAfterFix, so reusing phashArtistMu here would
+	// self-deadlock (sync.Mutex is not reentrant). This lock is always taken
+	// strictly INSIDE phashArtistMu on that path (phashArtistMu -> this), and
+	// reconcileAfterFix never acquires phashArtistMu, so there is no lock-order
+	// inversion. Keyed by artist id so different artists still reconcile in
+	// parallel; entries are never evicted -- one mutex per artist ever
+	// reconciled, a few bytes each, the same unbounded sync.Map shape
+	// phashArtistMu uses.
+	reconcileArtistMu sync.Map // map[string]*sync.Mutex
+
 	// orchestratorMu guards orchestrator. SetOrchestrator is the
 	// canonical wiring path (main.go installs it after construction),
 	// kept symmetric with SetWriteGate / SetHistoryService so the
@@ -1900,6 +1925,17 @@ func (p *Pipeline) reconcileAfterFix(ctx context.Context, a *artist.Artist, remo
 	if !removed || p.artistService == nil {
 		return
 	}
+
+	// Serialize this artist's reconciliation against a concurrent
+	// reconcileAfterFix for the same artist: each walks the directory then
+	// converges the registry to its own snapshot, a read-modify-write lost
+	// update over the same rows that -race cannot see. Held across the walk
+	// AND the persist so the two describe one instant. See
+	// Pipeline.reconcileArtistMu (and why it is a separate lock from
+	// phashArtistMu). Keyed by artist id so other artists proceed in parallel.
+	mu := p.reconcileArtistMutex(a.ID)
+	mu.Lock()
+	defer mu.Unlock()
 
 	var platformService *platform.Service
 	if p.engine != nil {

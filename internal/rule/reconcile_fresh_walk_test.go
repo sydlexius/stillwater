@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -208,6 +209,93 @@ func TestReconcileAfterFix_PersistErrorLeavesRegistryIntact(t *testing.T) {
 		t.Errorf("stored fanart slots = %v, want both rows untouched: a reconcile whose "+
 			"registry write fails must swallow the error and leave the stored rows "+
 			"exactly as they were", got)
+	}
+}
+
+// TestReconcileAfterFix_SerializesPerArtist is the concurrency guard.
+//
+// reconcileAfterFix walks the artist directory and then converges the registry
+// to that snapshot. Two concurrent runs for the SAME artist can each walk, then
+// each commit, their own snapshot -- a read-modify-write lost update over the
+// same rows that leaves the registry describing neither run's final on-disk
+// state. The operations touch the same rows through the artist service, not
+// shared Go memory, so -race is blind to the hazard. reconcileAfterFix must take
+// a per-artist mutex across the walk AND the persist so the two describe one
+// instant.
+//
+// This test stands in for the concurrent run by holding the artist's reconcile
+// mutex itself, then asserting a concurrent reconcileAfterFix for the same
+// artist BLOCKS until the lock is released -- proving the walk-then-persist is
+// serialized per artist. With the lock removed the call runs straight through
+// while the mutex is held, and the first select fails (verified RED by
+// revert-and-rerun).
+func TestReconcileAfterFix_SerializesPerArtist(t *testing.T) {
+	p, svc := newReconcilePipeline(t)
+	ctx := t.Context()
+
+	a, dir := seedArtistWithFanart(t, svc, "Serialized",
+		"fanart.jpg", "fanart1.jpg", "fanart2.jpg")
+
+	// A genuine removal so the removed=true path does real reconcile work.
+	if err := os.Remove(filepath.Join(dir, "fanart2.jpg")); err != nil {
+		t.Fatalf("removing fanart2.jpg: %v", err)
+	}
+
+	// Hold the artist's reconcile mutex ourselves, standing in for a concurrent
+	// reconcileAfterFix already inside its critical section for this artist.
+	// LoadOrStore guarantees the call under test gets this very mutex.
+	mu := p.reconcileArtistMutex(a.ID)
+	mu.Lock()
+
+	done := make(chan struct{})
+	go func() {
+		p.reconcileAfterFix(ctx, a, true)
+		close(done)
+	}()
+
+	// While we hold the lock the call must NOT complete: it is blocked acquiring
+	// the same per-artist mutex.
+	select {
+	case <-done:
+		mu.Unlock()
+		t.Fatal("reconcileAfterFix completed while the artist's reconcile mutex was held; " +
+			"it is not serializing the walk-then-persist per artist")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// Releasing the lock lets it proceed and finish.
+	mu.Unlock()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconcileAfterFix did not complete after releasing the artist's reconcile mutex")
+	}
+
+	// Positive control: once unblocked it still did its job -- slot 2's row,
+	// whose file was removed, is retired.
+	if got := storedFanartSlots(t, svc, a.ID); len(got) != 2 {
+		t.Errorf("stored fanart slots = %v, want [0 1] after the blocked reconcile completed: "+
+			"serialization must not change what the reconcile does, only when it runs", got)
+	}
+}
+
+// TestReconcileArtistMutex_SameArtistSameMutex pins the keying: one mutex per
+// artist id, and different artists get different mutexes so they still reconcile
+// in parallel.
+func TestReconcileArtistMutex_SameArtistSameMutex(t *testing.T) {
+	p, _ := newReconcilePipeline(t)
+
+	a1 := p.reconcileArtistMutex("art-a")
+	a2 := p.reconcileArtistMutex("art-a")
+	b := p.reconcileArtistMutex("art-b")
+
+	if a1 != a2 {
+		t.Error("reconcileArtistMutex returned different mutexes for the same artist id; " +
+			"concurrent reconciles of one artist would not serialize")
+	}
+	if a1 == b {
+		t.Error("reconcileArtistMutex returned the same mutex for different artist ids; " +
+			"unrelated artists would serialize against each other")
 	}
 }
 

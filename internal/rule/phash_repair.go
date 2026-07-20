@@ -118,6 +118,17 @@ func (p *Pipeline) phashArtistMutex(artistID string) *sync.Mutex {
 	return mu.(*sync.Mutex)
 }
 
+// reconcileArtistMutex returns the one mutex serializing reconcileAfterFix for
+// an artist id. LoadOrStore guarantees every caller for a given artist id gets
+// the SAME mutex even when several arrive at once. See Pipeline.reconcileArtistMu
+// for why this serialization is load-bearing, invisible to -race, and a separate
+// lock from phashArtistMu (reusing that one would self-deadlock on the phash
+// back-out path, which holds it while calling reconcileAfterFix).
+func (p *Pipeline) reconcileArtistMutex(artistID string) *sync.Mutex {
+	mu, _ := p.reconcileArtistMu.LoadOrStore(artistID, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
 // phashTombSuffix marks a slot staged for removal but not yet committed.
 // Distinct from the duplicate fixer's ".dup_pending_delete.tmp" so a crashed
 // run of either operation is attributable to the operation that made it, and so
