@@ -2,7 +2,10 @@ package artist
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -650,5 +653,633 @@ func TestClearExistsFlag(t *testing.T) {
 	}
 	if !foundFanart {
 		t.Error("expected fanart image slot 0 to be present")
+	}
+}
+
+// --- destructive-image record capture (issue #2636) ---------------------------
+//
+// The image repository logs row deletions and exists_flag clears through the
+// package-level slog default so the destructive paths are attributable after
+// the fact. These helpers install a capturing handler for the duration of a
+// test and expose the records for assertion. Tests using them must NOT call
+// t.Parallel(): slog.SetDefault is process-global, and Go only runs parallel
+// tests after every sequential test in the package has finished, so a
+// sequential test is the only way to own the default logger exclusively.
+
+type imageLogEntry struct {
+	level slog.Level
+	msg   string
+	attrs map[string]string
+}
+
+type imageLogState struct {
+	mu      sync.Mutex
+	entries []imageLogEntry
+}
+
+type imageLogHandler struct {
+	state *imageLogState
+}
+
+func (h *imageLogHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+
+func (h *imageLogHandler) Handle(_ context.Context, r slog.Record) error {
+	entry := imageLogEntry{level: r.Level, msg: r.Message, attrs: map[string]string{}}
+	r.Attrs(func(a slog.Attr) bool {
+		entry.attrs[a.Key] = a.Value.String()
+		return true
+	})
+	h.state.mu.Lock()
+	h.state.entries = append(h.state.entries, entry)
+	h.state.mu.Unlock()
+	return nil
+}
+
+func (h *imageLogHandler) WithAttrs(_ []slog.Attr) slog.Handler {
+	return &imageLogHandler{state: h.state}
+}
+func (h *imageLogHandler) WithGroup(_ string) slog.Handler { return h }
+
+// captureImageLogs redirects the default logger into a fresh state for the
+// remainder of the test and restores the previous default on cleanup.
+func captureImageLogs(t *testing.T) *imageLogState {
+	t.Helper()
+	state := &imageLogState{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(&imageLogHandler{state: state}))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return state
+}
+
+// matching returns every captured entry with the given message that also
+// carries the given artist_id, so assertions cannot be satisfied by an
+// unrelated record emitted elsewhere in the same test.
+func (s *imageLogState) matching(msg, artistID string) []imageLogEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []imageLogEntry
+	for _, e := range s.entries {
+		if e.msg == msg && e.attrs["artist_id"] == artistID {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// requireOne asserts exactly one record with the given message/artist exists
+// and that its level, image_type, slot_index and source match exactly. Every
+// attribute is checked, so an empty source or a wrong slot index fails.
+func requireOne(t *testing.T, s *imageLogState, msg, artistID, imageType, slotIndex, source string) {
+	t.Helper()
+	got := s.matching(msg, artistID)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 %q record for artist %s, got %d (all entries: %+v)",
+			msg, artistID, len(got), s.entries)
+	}
+	e := got[0]
+	// Warn, not Info: Info is silenceable by a routine operator log-level bump,
+	// which would disable the whole attribution mechanism (issue #2636).
+	if e.level != slog.LevelWarn {
+		t.Errorf("%s: level = %v, want WARN", msg, e.level)
+	}
+	if e.attrs["image_type"] != imageType {
+		t.Errorf("%s: image_type = %q, want %q", msg, e.attrs["image_type"], imageType)
+	}
+	if e.attrs["slot_index"] != slotIndex {
+		t.Errorf("%s: slot_index = %q, want %q", msg, e.attrs["slot_index"], slotIndex)
+	}
+	if e.attrs["source"] != source {
+		t.Errorf("%s: source = %q, want %q", msg, e.attrs["source"], source)
+	}
+}
+
+// seedImageSlots installs an exact set of image rows for an artist via
+// UpsertAll. Any records the seeding emits go to whatever logger is installed
+// at call time; call this BEFORE captureImageLogs so the seeding noise lands
+// outside the captured state.
+func seedImageSlots(t *testing.T, repo *sqliteImageRepo, artistID string, images []ArtistImage) {
+	t.Helper()
+	if err := repo.UpsertAll(context.Background(), artistID, images); err != nil {
+		t.Fatalf("seeding image slots: %v", err)
+	}
+}
+
+// imageSlot builds an ArtistImage for one (image_type, slot_index) pair. Named
+// to avoid shadowing confusion with the `img` loop variable in UpsertAll.
+func imageSlot(imageType string, slot int, exists bool) ArtistImage {
+	return ArtistImage{ImageType: imageType, SlotIndex: slot, Exists: exists, Width: 100, Height: 100}
+}
+
+// TestUpsertAll_LogsStaleRowDeletion asserts that dropping a slot from the
+// incoming set emits exactly one attributable deletion record for that slot,
+// and no record for the slots that survive.
+func TestUpsertAll_LogsStaleRowDeletion(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Deletion Probe", "/music/DeletionProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, true), imageSlot("fanart", 0, true), imageSlot("fanart", 1, true),
+	})
+
+	// Capture only the second call: fanart slot 1 disappears from the incoming
+	// set, so its row must be deleted and recorded.
+	state := captureImageLogs(t)
+	if err := repo.UpsertAll(ctx, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, true), imageSlot("fanart", 0, true),
+	}); err != nil {
+		t.Fatalf("UpsertAll: %v", err)
+	}
+
+	requireOne(t, state, "artist image row deleted", a.ID, "fanart", "1", unattributedSource)
+
+	// The surviving slots must not be reported as deleted, and no exists_flag
+	// clear happened on this call.
+	if n := len(state.matching("artist image row deleted", a.ID)); n != 1 {
+		t.Errorf("expected 1 deletion record total, got %d", n)
+	}
+	if n := len(state.matching("artist image exists flag cleared", a.ID)); n != 0 {
+		t.Errorf("expected no exists-flag records, got %d", n)
+	}
+
+	// The record must describe reality: the row is actually gone.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != 2 {
+		t.Fatalf("expected 2 surviving rows, got %d", len(images))
+	}
+	for _, im := range images {
+		if im.ImageType == "fanart" && im.SlotIndex == 1 {
+			t.Error("fanart slot 1 should have been deleted")
+		}
+	}
+}
+
+// TestUpsertAll_LogsExistsFlagCleared asserts that a 1 -> 0 exists_flag
+// transition is recorded with the exact slot that flipped, and that slots
+// which stay true or were already false emit nothing.
+func TestUpsertAll_LogsExistsFlagCleared(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Flag Probe", "/music/FlagProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, true), imageSlot("fanart", 0, true), imageSlot("banner", 0, false),
+	})
+
+	state := captureImageLogs(t)
+	// fanart/0 flips true -> false. thumb/0 stays true. banner/0 stays false,
+	// so it is not a transition and must not be recorded.
+	if err := repo.UpsertAll(ctx, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, true), imageSlot("fanart", 0, false), imageSlot("banner", 0, false),
+	}); err != nil {
+		t.Fatalf("UpsertAll: %v", err)
+	}
+
+	requireOne(t, state, "artist image exists flag cleared", a.ID, "fanart", "0", unattributedSource)
+	if n := len(state.matching("artist image row deleted", a.ID)); n != 0 {
+		t.Errorf("expected no deletion records, got %d", n)
+	}
+
+	// Assert the DB agrees: only fanart/0 is now false among the two that
+	// started true, and nothing was deleted.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(images))
+	}
+	for _, im := range images {
+		wantExists := im.ImageType == "thumb"
+		if im.Exists != wantExists {
+			t.Errorf("%s/%d exists = %v, want %v", im.ImageType, im.SlotIndex, im.Exists, wantExists)
+		}
+	}
+}
+
+// TestUpsertAll_RecordsSourceFromContext proves the source attribute reflects
+// the context tag rather than the "manual" default, which is what makes the
+// records attributable to the scanner in production.
+func TestUpsertAll_RecordsSourceFromContext(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Source Probe", "/music/SourceProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, true), imageSlot("fanart", 2, true),
+	})
+
+	state := captureImageLogs(t)
+	scanCtx := ContextWithSource(ctx, "scan")
+	// thumb/0 clears its flag; fanart/2 is dropped entirely.
+	if err := repo.UpsertAll(scanCtx, a.ID, []ArtistImage{imageSlot("thumb", 0, false)}); err != nil {
+		t.Fatalf("UpsertAll: %v", err)
+	}
+
+	requireOne(t, state, "artist image exists flag cleared", a.ID, "thumb", "0", "scan")
+	// slot_index 2 (not 0) is the deleted slot: a record that reported the
+	// wrong slot would fail here.
+	requireOne(t, state, "artist image row deleted", a.ID, "fanart", "2", "scan")
+}
+
+// TestUpsertAll_NoRecordsWhenTransactionRollsBack is the anti-phantom
+// regression test. Records describe destruction, so they must share the
+// transaction's atomicity: if the transaction rolls back, nothing was
+// destroyed and nothing may be recorded. A record that outlives its rollback
+// is worse than no record at all, because the next incident investigation
+// will believe it.
+//
+// The failure is induced with a duplicate artist_images.id in the incoming
+// slice: the second row carrying that id violates the primary-key UNIQUE
+// constraint, so UpsertAll returns an error and the whole transaction is
+// rolled back -- but only AFTER the thumb/0 exists-flag clear has already
+// been decided.
+func TestUpsertAll_NoRecordsWhenTransactionRollsBack(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Rollback Probe", "/music/RollbackProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, true), imageSlot("fanart", 0, true),
+	})
+
+	// thumb/0 clears its flag (a record would be decided here) and fanart/0 is
+	// dropped from the incoming set (a deletion would be decided later). The
+	// two fanart/5 and fanart/6 rows share one id, so the second one fails.
+	dup1 := imageSlot("fanart", 5, true)
+	dup1.ID = "duplicate-row-id"
+	dup2 := imageSlot("fanart", 6, true)
+	dup2.ID = "duplicate-row-id"
+
+	state := captureImageLogs(t)
+	err := repo.UpsertAll(ctx, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, false), dup1, dup2,
+	})
+	if err == nil {
+		t.Fatal("UpsertAll should have failed on the duplicate row id; " +
+			"without a failure this test proves nothing")
+	}
+	if !strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		t.Fatalf("expected a UNIQUE constraint failure, got: %v", err)
+	}
+
+	if n := len(state.matching("artist image exists flag cleared", a.ID)); n != 0 {
+		t.Errorf("emitted %d exists-flag record(s) for a rolled-back transaction, want 0 (all entries: %+v)",
+			n, state.entries)
+	}
+	if n := len(state.matching("artist image row deleted", a.ID)); n != 0 {
+		t.Errorf("emitted %d deletion record(s) for a rolled-back transaction, want 0 (all entries: %+v)",
+			n, state.entries)
+	}
+
+	// The DB must agree that nothing was destroyed: both seeded rows survive
+	// with exists_flag intact. This is what makes any emitted record a lie.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != 2 {
+		t.Fatalf("expected the 2 seeded rows to survive the rollback, got %d", len(images))
+	}
+	for _, im := range images {
+		if !im.Exists {
+			t.Errorf("%s/%d exists = false after rollback, want true", im.ImageType, im.SlotIndex)
+		}
+	}
+}
+
+// TestUpsertAll_UntaggedContextRecordsUnattributed pins the distinction that
+// makes the records trustworthy: an untagged context must record
+// "unattributed", never "manual". Most automated callers (provider refresh,
+// notification and identify handlers) reach UpsertAll via Service.Update
+// without tagging a source, so a "manual" default would positively assert
+// that a human cleared the flag. For an incident investigation that false
+// claim is strictly worse than an explicit unknown (issue #2636).
+func TestUpsertAll_UntaggedContextRecordsUnattributed(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Unattributed Probe", "/music/UnattributedProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, true), imageSlot("fanart", 3, true),
+	})
+
+	state := captureImageLogs(t)
+	// Deliberately an untagged context: thumb/0 clears, fanart/3 is dropped.
+	if err := repo.UpsertAll(ctx, a.ID, []ArtistImage{imageSlot("thumb", 0, false)}); err != nil {
+		t.Fatalf("UpsertAll: %v", err)
+	}
+
+	requireOne(t, state, "artist image exists flag cleared", a.ID, "thumb", "0", "unattributed")
+	requireOne(t, state, "artist image row deleted", a.ID, "fanart", "3", "unattributed")
+
+	// Spelled out rather than deferred to requireOne: "manual" is the specific
+	// wrong answer this test exists to prevent regressing to.
+	for _, msg := range []string{"artist image exists flag cleared", "artist image row deleted"} {
+		for _, e := range state.matching(msg, a.ID) {
+			if e.attrs["source"] == "manual" {
+				t.Errorf("%s: source = \"manual\" for an untagged context; "+
+					"an automated path must not be recorded as a human edit", msg)
+			}
+		}
+	}
+}
+
+// TestUpsertAll_CanceledContextDestroysNothing is the non-destruction
+// guarantee under cancellation. The #2636 incident's damage window is dense
+// with "context canceled" events, and mass mid-flight cancellation across the
+// Update/UpsertAll path has never been ruled out as a contributor to the row
+// loss. UpsertAll is the only code path that both deletes artist_images rows
+// and clears exists_flag, so if cancellation can leave a partially-applied
+// destruction behind, this is where it happens.
+//
+// The contract asserted here is total: a canceled call must fail, must leave
+// every seeded row byte-for-byte intact, and must emit no destructive record.
+// Assertions read the database directly rather than trusting UpsertAll's own
+// return value, because a path that reports failure while having already
+// destroyed rows is exactly the failure mode being guarded against.
+func TestUpsertAll_CanceledContextDestroysNothing(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Cancellation Probe", "/music/CancellationProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// A full registry spanning several types, with one slot already false so
+	// the assertion below distinguishes "unchanged" from "all true".
+	seeded := []ArtistImage{
+		imageSlot("banner", 0, true),
+		imageSlot("fanart", 0, true),
+		imageSlot("fanart", 1, true),
+		imageSlot("logo", 0, false),
+		imageSlot("thumb", 0, true),
+	}
+	seedImageSlots(t, repo, a.ID, seeded)
+
+	canceledCtx, cancel := context.WithCancel(ContextWithSource(ctx, "scan"))
+	cancel()
+
+	state := captureImageLogs(t)
+	// The incoming set would, if applied, clear thumb/0 and delete every other
+	// slot. Cancellation must prevent all of it.
+	err := repo.UpsertAll(canceledCtx, a.ID, []ArtistImage{imageSlot("thumb", 0, false)})
+	if err == nil {
+		t.Fatal("UpsertAll returned nil for a canceled context; a canceled " +
+			"destructive write must fail rather than silently proceed")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("UpsertAll error = %v, want one wrapping context.Canceled; "+
+			"callers distinguish cancellation from real failures", err)
+	}
+
+	// No record may be emitted, because nothing was destroyed. A record here
+	// would be a phantom that a future investigation would trust.
+	if n := len(state.matching("artist image row deleted", a.ID)); n != 0 {
+		t.Errorf("emitted %d deletion record(s) for a canceled call, want 0 (all entries: %+v)",
+			n, state.entries)
+	}
+	if n := len(state.matching("artist image exists flag cleared", a.ID)); n != 0 {
+		t.Errorf("emitted %d exists-flag record(s) for a canceled call, want 0 (all entries: %+v)",
+			n, state.entries)
+	}
+
+	// The authoritative check: every seeded row still exists with its original
+	// exists_flag. Read with an uncanceled context so this observes the
+	// database rather than the cancellation.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != len(seeded) {
+		t.Fatalf("expected all %d seeded rows to survive cancellation, got %d", len(seeded), len(images))
+	}
+	want := make(map[slotKey]bool, len(seeded))
+	for _, im := range seeded {
+		want[slotKey{im.ImageType, im.SlotIndex}] = im.Exists
+	}
+	for _, im := range images {
+		k := slotKey{im.ImageType, im.SlotIndex}
+		wantExists, ok := want[k]
+		if !ok {
+			t.Errorf("unexpected row %s/%d after cancellation", im.ImageType, im.SlotIndex)
+			continue
+		}
+		if im.Exists != wantExists {
+			t.Errorf("%s/%d exists = %v after cancellation, want %v (original value)",
+				im.ImageType, im.SlotIndex, im.Exists, wantExists)
+		}
+		delete(want, k)
+	}
+	for k := range want {
+		t.Errorf("row %s/%d was destroyed by a canceled call", k.imageType, k.slotIndex)
+	}
+}
+
+// TestUpsertAll_StaleDeletionOrderIsStableAcrossTypes covers the reason
+// deleteStaleSlots sorts at all. The removal set is built by ranging over a
+// map, and Go randomizes map iteration order, so without the sort the emitted
+// records would arrive in a different order on every run. That matters because
+// the records exist to be read by a human reconstructing an incident: an
+// unstable order makes two log excerpts of the same event impossible to
+// compare.
+//
+// The existing deletion tests all drop a single slot, which never invokes the
+// comparator. This one drops five slots spanning four image types, which is
+// the only shape that exercises the cross-type branch, and asserts the exact
+// emitted sequence. Run with -count=5 to confirm the order does not vary.
+func TestUpsertAll_StaleDeletionOrderIsStableAcrossTypes(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Ordering Probe", "/music/OrderingProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Seeded deliberately out of sorted order so a pass-through implementation
+	// that preserved insertion order would not accidentally match.
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, true),
+		imageSlot("fanart", 1, true),
+		imageSlot("logo", 0, true),
+		imageSlot("banner", 0, true),
+		imageSlot("fanart", 0, true),
+		imageSlot("poster", 0, true),
+	})
+
+	state := captureImageLogs(t)
+	// poster/0 is the sole survivor; the other five slots go stale at once.
+	if err := repo.UpsertAll(ctx, a.ID, []ArtistImage{imageSlot("poster", 0, true)}); err != nil {
+		t.Fatalf("UpsertAll: %v", err)
+	}
+
+	// Sorted by image_type, then slot_index.
+	wantOrder := []struct {
+		imageType string
+		slotIndex string
+	}{
+		{"banner", "0"},
+		{"fanart", "0"},
+		{"fanart", "1"},
+		{"logo", "0"},
+		{"thumb", "0"},
+	}
+
+	got := state.matching("artist image row deleted", a.ID)
+	if len(got) != len(wantOrder) {
+		t.Fatalf("expected %d deletion records, got %d (all entries: %+v)",
+			len(wantOrder), len(got), state.entries)
+	}
+	for i, want := range wantOrder {
+		if got[i].attrs["image_type"] != want.imageType || got[i].attrs["slot_index"] != want.slotIndex {
+			t.Errorf("record %d = %s/%s, want %s/%s (records must be sorted by type then slot)",
+				i, got[i].attrs["image_type"], got[i].attrs["slot_index"], want.imageType, want.slotIndex)
+		}
+	}
+
+	// The records must describe reality: only the survivor is left.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != 1 || images[0].ImageType != "poster" {
+		t.Fatalf("expected only poster/0 to survive, got %d rows: %+v", len(images), images)
+	}
+}
+
+// TestUpsertAll_StaleDeletionFailureRollsBackEverything covers the recovery
+// path for a delete that the database refuses. deleteStaleSlots runs last,
+// after the upserts have already been applied inside the transaction and after
+// exists-flag records have already been decided, so a failure there is the
+// case most likely to leave the database half-changed and the log describing a
+// destruction that did not happen.
+//
+// The refusal is induced with a BEFORE DELETE trigger that aborts, which is
+// how a real schema-level guard (a foreign key, a protective trigger) would
+// present. Nothing in production code is stubbed or restructured.
+func TestUpsertAll_StaleDeletionFailureRollsBackEverything(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Delete Refusal Probe", "/music/DeleteRefusalProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, true),
+		imageSlot("fanart", 0, true),
+		imageSlot("logo", 0, true),
+	})
+
+	// Installed after seeding so the seed itself is unaffected.
+	if _, err := db.ExecContext(ctx, `
+		CREATE TRIGGER refuse_image_delete BEFORE DELETE ON artist_images
+		BEGIN
+			SELECT RAISE(ABORT, 'image row deletion refused');
+		END`); err != nil {
+		t.Fatalf("creating refusal trigger: %v", err)
+	}
+
+	state := captureImageLogs(t)
+	// thumb/0 clears its flag (a record is decided early), and fanart/0 plus
+	// logo/0 go stale (the delete that will be refused). The refusal must undo
+	// the flag clear too.
+	err := repo.UpsertAll(ctx, a.ID, []ArtistImage{imageSlot("thumb", 0, false)})
+	if err == nil {
+		t.Fatal("UpsertAll should have failed on the refused delete; " +
+			"without a failure this test proves nothing")
+	}
+	if !strings.Contains(err.Error(), "image row deletion refused") {
+		t.Fatalf("expected the trigger's abort to surface, got: %v", err)
+	}
+
+	if n := len(state.matching("artist image row deleted", a.ID)); n != 0 {
+		t.Errorf("emitted %d deletion record(s) for a refused delete, want 0 (all entries: %+v)",
+			n, state.entries)
+	}
+	// The flag clear was decided before the failure, so this is the assertion
+	// that proves records are buffered until commit rather than emitted inline.
+	if n := len(state.matching("artist image exists flag cleared", a.ID)); n != 0 {
+		t.Errorf("emitted %d exists-flag record(s) for a rolled-back transaction, want 0 (all entries: %+v)",
+			n, state.entries)
+	}
+
+	// Every seeded row survives with exists_flag intact, including the thumb
+	// whose clear was rolled back.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != 3 {
+		t.Fatalf("expected the 3 seeded rows to survive the rollback, got %d", len(images))
+	}
+	for _, im := range images {
+		if !im.Exists {
+			t.Errorf("%s/%d exists = false after rollback, want true", im.ImageType, im.SlotIndex)
+		}
+	}
+}
+
+// TestLogSourceFromContext_DoesNotAlterHistoryDefault guards the constraint
+// that the two source helpers stay independent. The history layer's "manual"
+// default is load-bearing -- metadata_changes validates against a source set
+// that does not contain "unattributed" -- so widening the shared helper would
+// corrupt history rows. The logging helper must diverge only on the untagged
+// case, and agree everywhere else.
+func TestLogSourceFromContext_DoesNotAlterHistoryDefault(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	if got := sourceFromContext(ctx); got != "manual" {
+		t.Errorf("sourceFromContext(untagged) = %q, want %q (history default must be unchanged)", got, "manual")
+	}
+	if got := logSourceFromContext(ctx); got != unattributedSource {
+		t.Errorf("logSourceFromContext(untagged) = %q, want %q", got, unattributedSource)
+	}
+
+	// An explicitly tagged context must read identically through both helpers,
+	// so records and history rows never disagree about a known source.
+	for _, source := range []string{"scan", "manual", "import", "revert", "provider:musicbrainz", "rule:r-42"} {
+		tagged := ContextWithSource(ctx, source)
+		if got := sourceFromContext(tagged); got != source {
+			t.Errorf("sourceFromContext(%q) = %q", source, got)
+		}
+		if got := logSourceFromContext(tagged); got != source {
+			t.Errorf("logSourceFromContext(%q) = %q", source, got)
+		}
 	}
 }

@@ -698,6 +698,15 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 		}
 	}
 
+	// Tag the context so every mutation this function drives is attributed to
+	// the scanner rather than falling back to the "manual" default. Two things
+	// depend on it: the destructive-image records emitted by the artist_images
+	// upsert (issue #2636), which are useless without a calling path, and the
+	// metadata history rows written by Update, which previously recorded
+	// scan-driven edits as manual ones. "scan" is one of the canonical source
+	// values validated in artist.HistoryService.Record.
+	scanCtx := artist.ContextWithSource(ctx, "scan")
+
 	// Protect existing placeholders from transient I/O failures: if the image
 	// file still exists on disk but placeholder generation failed (returned
 	// empty), preserve the existing placeholder.
@@ -738,7 +747,7 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 		// when nothing else about the artist looks different. Mirror the
 		// Update() path's event fanout only when reconciliation actually
 		// repaired drift, so quiet rescans do not flood subscribers.
-		repaired, err := s.artistService.ReconcileImages(ctx, existing)
+		repaired, err := s.artistService.ReconcileImages(scanCtx, existing)
 		if err != nil {
 			return fmt.Errorf("reconciling artist images: %w", err)
 		}
@@ -797,7 +806,16 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 	now := time.Now().UTC()
 	existing.LastScannedAt = &now
 
-	if err := s.artistService.Update(ctx, existing); err != nil {
+	// scanCtx carries source="scan" (issue #2636). Beyond tagging the image
+	// deletion / exists_flag records this call may emit, the tag also reaches
+	// the history layer: metadata_changes rows written by this re-scan now
+	// record source="scan" where they previously fell through to the "manual"
+	// default. That is the accurate value and an accepted one (see the source
+	// validation in artist/history.go), but it is operator-visible: the
+	// Activity and artist History views render and filter on this column, so
+	// an operator filtering for "manual" to isolate human edits will see
+	// scan-driven rows move out of that bucket.
+	if err := s.artistService.Update(scanCtx, existing); err != nil {
 		return fmt.Errorf("updating artist: %w", err)
 	}
 
