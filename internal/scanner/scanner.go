@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -747,7 +749,7 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 		// when nothing else about the artist looks different. Mirror the
 		// Update() path's event fanout only when reconciliation actually
 		// repaired drift, so quiet rescans do not flood subscribers.
-		repaired, err := s.artistService.ReconcileImages(scanCtx, existing)
+		repaired, err := s.artistService.ReconcileImages(scanCtx, existing, imageEnumeration(detected))
 		if err != nil {
 			return fmt.Errorf("reconciling artist images: %w", err)
 		}
@@ -819,12 +821,33 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 		return fmt.Errorf("updating artist: %w", err)
 	}
 
+	// Update is declarative: it writes the slots `existing` names and leaves
+	// slots it does not mention alone (issue #2635). Converging the registry
+	// with disk therefore needs an explicit reconcile, and this call site has
+	// earned one -- every image field on `existing` was overwritten from
+	// `detected` a few lines above, so it carries filesystem truth. The bound
+	// comes from `detected` rather than from `existing` for the reason
+	// imageEnumeration documents. Without this, deleting artwork on disk would
+	// leave its registry row behind forever.
+	_, reconcileErr := s.artistService.ReconcileImages(scanCtx, existing, imageEnumeration(detected))
+
+	// The event and the counter are NOT gated on the reconcile succeeding.
+	// Update() has already committed by this point, so the artist genuinely
+	// was updated; returning early on a reconcile failure used to suppress the
+	// SSE fanout and the UpdatedArtists tally for a write that landed, leaving
+	// the UI showing stale data with no event ever coming to correct it and a
+	// scan summary that under-counted its own work. A reconcile failure is
+	// reported, but it does not retroactively un-update the artist.
 	s.publishArtistUpdated(existing.ID)
 
 	s.mu.Lock()
 	result.UpdatedArtists++
 	s.mu.Unlock()
 	s.logger.Debug("artist updated", "name", existing.Name, "path", dirPath)
+
+	if reconcileErr != nil {
+		return fmt.Errorf("reconciling artist images after update: %w", reconcileErr)
+	}
 	return nil
 }
 
@@ -1316,31 +1339,15 @@ func detectFilesExistenceOnly(dirPath string, existing *artist.Artist) (detected
 		d.ThumbPlaceholder = existing.ThumbPlaceholder
 		break
 	}
-	for _, p := range fanartPatterns {
-		actual, ok := files[strings.ToLower(p)]
-		if !ok {
-			continue
-		}
+	// Same ordinal-based resolution as the full path, so the fast path can
+	// never report a different fanart shape than a full re-probe would.
+	if fanartPaths := discoverFanartFiles(dirPath, entries); len(fanartPaths) > 0 {
 		d.FanartExists = true
+		d.FanartCount = len(fanartPaths)
 		d.FanartWidth = existing.FanartWidth
 		d.FanartHeight = existing.FanartHeight
 		d.FanartLowRes = existing.FanartLowRes
 		d.FanartPlaceholder = existing.FanartPlaceholder
-		// Count fanart variants from the same ReadDir result the
-		// full path uses via img.DiscoverFanart. Cheap: pure
-		// string-pattern matching against the already-built map.
-		fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
-		if fanartErr != nil {
-			slog.Warn("discovering fanart variants during scan",
-				slog.String("dir", dirPath),
-				slog.String("error", fanartErr.Error()))
-		}
-		if len(fanartPaths) > 0 {
-			d.FanartCount = len(fanartPaths)
-		} else {
-			d.FanartCount = 1
-		}
-		break
 	}
 	for _, p := range logoPatterns {
 		if _, ok := files[strings.ToLower(p)]; !ok {
@@ -1409,27 +1416,13 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 			break
 		}
 	}
-	for _, p := range fanartPatterns {
-		actual, ok := files[strings.ToLower(p)]
-		if !ok {
-			continue
-		}
-		fp := filepath.Join(dirPath, actual)
+	// Fanart is resolved by ORDINAL, not by primary filename: slot_index is a
+	// DiscoverFanart position, so the file at ordinal 0 is whatever discovery
+	// returns first, primary or not.
+	if fanartPaths := discoverFanartFiles(dirPath, entries); len(fanartPaths) > 0 {
 		d.FanartExists = true
-		d.FanartWidth, d.FanartHeight, d.FanartLowRes, d.FanartPlaceholder = probeImageFileFn(fp, "fanart", existFanartPH)
-		// Count all fanart files (primary + numbered variants).
-		fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
-		if fanartErr != nil {
-			slog.Warn("discovering fanart variants during scan",
-				slog.String("dir", dirPath),
-				slog.String("error", fanartErr.Error()))
-		}
-		if len(fanartPaths) > 0 {
-			d.FanartCount = len(fanartPaths)
-		} else {
-			d.FanartCount = 1
-		}
-		break
+		d.FanartCount = len(fanartPaths)
+		d.FanartWidth, d.FanartHeight, d.FanartLowRes, d.FanartPlaceholder = probeImageFileFn(fanartPaths[0], "fanart", existFanartPH)
 	}
 	for _, p := range logoPatterns {
 		if actual, ok := files[strings.ToLower(p)]; ok {
@@ -1449,6 +1442,191 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 	}
 
 	return d, nil
+}
+
+// imageEnumeration reports what this directory walk actually found, in the
+// form ReconcileImages requires before it will delete anything.
+//
+// It is built from `detected` and never from the Artist struct, deliberately.
+// The Artist's flat image fields are a lossy re-derivation of the same walk
+// (extractImageMetadata gates the fanart tail behind slot 0), so deriving the
+// delete bound from them would let a lossy read authorize destruction --
+// exactly the coupling #2635 was about. `detected` is the walk's own output.
+//
+// The single-slot types report 1 or 0 because their registry holds at most
+// ordinal 0; fanart reports the real file count from discoverFanartFiles.
+func imageEnumeration(d detectedFiles) []artist.ImageEnumeration {
+	count := func(exists bool) int {
+		if exists {
+			return 1
+		}
+		return 0
+	}
+	return []artist.ImageEnumeration{
+		{ImageType: "thumb", FoundSlots: count(d.ThumbExists)},
+		{ImageType: "fanart", FoundSlots: d.FanartCount},
+		{ImageType: "logo", FoundSlots: count(d.LogoExists)},
+		{ImageType: "banner", FoundSlots: count(d.BannerExists)},
+	}
+}
+
+// discoverFanartFiles returns the artist directory's fanart files in
+// DiscoverFanart ordinal order, or nil when there are none. `files` maps
+// lowercased filenames to their on-disk casing, as both detection paths build.
+//
+// It resolves in two passes, and the second pass is the point of the function.
+//
+// Pass 1 reproduces the historical behavior exactly: the first fanart pattern
+// whose PRIMARY file is on disk wins, and discovery runs from that name. Pass 2
+// runs only when pass 1 found nothing, and looks for orphan numbered variants
+// -- fanart1.jpg with no fanart.jpg.
+//
+// Without pass 2 the scanner reported FanartExists=false for such an artist,
+// because existence was decided by the primary patterns alone. That was already
+// wrong (the artwork is on disk and the UI hid it), but the destructive
+// reconcile path turned it into data loss: a "no fanart here" detection became
+// an enumeration count of zero, which is a positive claim that every stored
+// fanart row is stale, and the rows for files still sitting in the directory
+// were deleted. The state is not exotic -- a slot delete that fails partway
+// skips renumbering and leaves exactly this shape (#2635, #2644).
+//
+// Pass 2 cannot change any artist that pass 1 resolves, so it is strictly
+// additive: it only ever fires where the old code had already concluded there
+// was no fanart at all.
+// It takes the RAW os.ReadDir entries rather than the lowercased filename map
+// the detection paths also build. That map keys on strings.ToLower(name), so on
+// a case-sensitive filesystem Fanart1.jpg and fanart1.jpg collapse to a single
+// entry while DiscoverFanart, walking entries directly, sees both. The COUNT
+// survives that collapse (colliding names share a base, so they share an
+// ordinal, and the same-ordinal dedupe below keeps one either way), but WHICH
+// file wins does not: the map keeps whichever entry ReadDir happened to insert
+// last, where DiscoverFanart breaks the tie deterministically on path. Since
+// slot_index is a DiscoverFanart ordinal and ordinal 0's path is what gets
+// probed for dimensions, taking the same input the reference implementation
+// takes removes the divergence instead of arguing it is harmless. It cannot be
+// reproduced on a case-insensitive filesystem such as macOS APFS, but Stillwater
+// ships in a Linux container where it can.
+func discoverFanartFiles(dirPath string, entries []os.DirEntry) []string {
+	// Pass 1: a primary file on disk decides which naming convention applies.
+	for _, p := range fanartPatterns {
+		for _, e := range entries {
+			if !e.IsDir() && strings.EqualFold(e.Name(), p) {
+				return fanartVariants(dirPath, entries, p)
+			}
+		}
+	}
+	// Pass 2: no primary anywhere, so numbered variants may still be present.
+	for _, p := range fanartPatterns {
+		if paths := fanartVariants(dirPath, entries, p); len(paths) > 0 {
+			return paths
+		}
+	}
+	return nil
+}
+
+// fanartExtensions is the extension allowlist fanart discovery accepts. It
+// mirrors image.DiscoverFanart's, and TestDiscoverFanartFiles_MatchesDiscoverFanart
+// fails if the two ever drift.
+var fanartExtensions = map[string]bool{".jpg": true, ".jpeg": true, ".png": true}
+
+// fanartVariants resolves the fanart files matching primaryName and its
+// numbered variants from an ALREADY-READ directory listing, returning absolute
+// paths in DiscoverFanart ordinal order.
+//
+// This is image.DiscoverFanart's algorithm answered from memory, and answering
+// it from memory is the entire point. DiscoverFanart re-reads the directory the
+// caller has already read successfully, which made discovery a second,
+// independent chance to fail -- and its failure had nowhere to go. The old code
+// logged the error and returned nil, which is indistinguishable from "this
+// artist has no fanart", so the caller set FanartCount=0 and imageEnumeration
+// published {fanart, FoundSlots: 0}: a positive claim that zero fanart files
+// exist. deleteStaleSlots keeps a row only when slotIndex < found, so a
+// fabricated zero licensed deleting EVERY fanart row for the artist while the
+// files sat untouched on disk. An SMB blip, fd exhaustion, or a permission
+// change between the two reads was enough to trigger it (#2635).
+//
+// Sourcing the answer from the listing detectFiles already holds removes the
+// failure rather than routing it: there is no second read, so there is no error
+// to swallow and no path that can report a count it did not measure. If the one
+// remaining read fails, its caller returns an error and the artist is skipped
+// with its registry untouched. It also drops up to 4 redundant os.ReadDir calls
+// per artist from the mtime fast path.
+//
+// Every rule below is load-bearing and each is a potential under-count if
+// dropped, so each is pinned by a case in
+// TestDiscoverFanartFiles_MatchesDiscoverFanart: the extension allowlist
+// (.jpeg is accepted by DiscoverFanart but absent from fanartPatterns, so
+// driving the allowlist off the patterns would silently drop fanart.jpeg), the
+// Atoi-must-succeed-and-be-positive variant parse, the keep-first-per-ordinal
+// dedupe, and the extension preference that stops backdrop.jpg and
+// backdrop.png both claiming ordinal 0.
+func fanartVariants(dirPath string, entries []os.DirEntry, primaryName string) []string {
+	if primaryName == "" {
+		return nil
+	}
+	primaryExt := strings.ToLower(filepath.Ext(primaryName))
+	baseLower := strings.ToLower(strings.TrimSuffix(primaryName, filepath.Ext(primaryName)))
+
+	type indexedFile struct {
+		index int
+		path  string
+	}
+	var found []indexedFile
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if !fanartExtensions[ext] {
+			continue
+		}
+		nameBase := strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name)))
+		switch {
+		case nameBase == baseLower:
+			// Primary: exact base match, ordinal 0.
+			found = append(found, indexedFile{0, filepath.Join(dirPath, name)})
+		case strings.HasPrefix(nameBase, baseLower):
+			// Numbered variant: {base}{N} for a positive integer N.
+			n, err := strconv.Atoi(nameBase[len(baseLower):])
+			if err != nil || n <= 0 {
+				continue
+			}
+			found = append(found, indexedFile{n, filepath.Join(dirPath, name)})
+		}
+	}
+
+	// Sort by ordinal, then prefer the extension matching primaryName so that
+	// when both backdrop.jpg and backdrop.png sit at ordinal 0, only one is
+	// returned. The final path comparison breaks the remaining ties the same way
+	// DiscoverFanart does, so two files differing only in case resolve
+	// identically here and there.
+	sort.Slice(found, func(i, j int) bool {
+		if found[i].index != found[j].index {
+			return found[i].index < found[j].index
+		}
+		ei := strings.ToLower(filepath.Ext(found[i].path))
+		ej := strings.ToLower(filepath.Ext(found[j].path))
+		if (ei == primaryExt) != (ej == primaryExt) {
+			return ei == primaryExt
+		}
+		return found[i].path < found[j].path
+	})
+
+	// Deduplicate: keep only the first entry per ordinal.
+	paths := make([]string, 0, len(found))
+	lastIdx := -1
+	for _, f := range found {
+		if f.index == lastIdx {
+			continue
+		}
+		lastIdx = f.index
+		paths = append(paths, f.path)
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	return paths
 }
 
 // probeImageFileFn is the package-level seam through which detectFiles calls

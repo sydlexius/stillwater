@@ -158,6 +158,36 @@ type AliasRepository interface {
 	FindAliasDuplicates(ctx context.Context) ([]DuplicateGroup, error)
 }
 
+// ImageEnumeration is the RESULT of one image type's filesystem walk: the type
+// the caller probed for, and how many slot ordinals it positively found. It is
+// the evidence ReconcileAll requires before it will delete anything.
+//
+// It carries a COUNT rather than only a type name because bounding deletion by
+// type alone is not the property #2635 needs. The issue's contract is that
+// nothing may be destroyed "on the strength of an absence it did not
+// positively verify against the filesystem", and within a single enumerated
+// type the desired-slot slice can still under-report for reasons that have
+// nothing to do with disk. That is not hypothetical: extractImageMetadata
+// gates the whole fanart tail behind slot 0, so an artist holding fanart1.jpg
+// with no primary yields NO fanart rows at all, and a type-bounded delete then
+// wipes every fanart row including the one whose file is sitting on disk --
+// the incident mechanism, reproduced inside the fix for it.
+//
+// A count closes that hole because artist_images.slot_index is a DiscoverFanart
+// ORDINAL, not a filename suffix: the rows for a type occupy ordinals
+// 0..n-1 against the n files found. So "I walked this directory and found N
+// files of this type" IS a positive verification that ordinals >= N do not
+// exist, and it is a claim the caller can only make by having counted.
+type ImageEnumeration struct {
+	// ImageType is the type the caller enumerated (e.g. "fanart").
+	ImageType string
+
+	// FoundSlots is the number of files found on disk for ImageType. Zero is
+	// meaningful and legitimate -- the caller looked and the artwork is gone
+	// -- and is distinct from omitting the type entirely, which says nothing.
+	FoundSlots int
+}
+
 // ImageRepository manages artist image metadata records.
 type ImageRepository interface {
 	GetForArtist(ctx context.Context, artistID string) ([]ArtistImage, error)
@@ -173,7 +203,7 @@ type ImageRepository interface {
 	//
 	// Every other column in the conflict path except id is a full overwrite by
 	// design, because Upsert is a full-write path. Future provenance or
-	// dimension guarding should mirror UpsertAll's CASE WHEN and
+	// dimension guarding should mirror ReconcileAll's CASE WHEN and
 	// column-exclusion approach rather than adding special cases here.
 	//
 	// id is the exception and is NOT intended behavior: the conflict path sets
@@ -182,7 +212,44 @@ type ImageRepository interface {
 	// holding, including the one SetLock needs. That defect is tracked
 	// separately and is deliberately not addressed here.
 	Upsert(ctx context.Context, img *ArtistImage) error
-	UpsertAll(ctx context.Context, artistID string, images []ArtistImage) error
+
+	// MergeAll writes the supplied slots and does NOTHING ELSE. A slot absent
+	// from `images` is left exactly as it was: not deleted, not flag-cleared.
+	//
+	// This is the "declare" half of the split that replaced the former
+	// UpsertAll (issue #2635). Callers reach it holding an Artist whose image
+	// fields may be partially populated or not populated at all -- Update and
+	// Create both route here via persistNormalized -- so an absence carries no
+	// information about the filesystem and must never be acted on. An empty
+	// slice is a well-formed no-op.
+	//
+	// Fields on slots that ARE present are written, including a false Exists:
+	// naming a slot is a positive statement about it. Only absence is ignored.
+	MergeAll(ctx context.Context, artistID string, images []ArtistImage) error
+
+	// ReconcileAll converges the artist's rows toward `images`, deleting
+	// stored slots the caller positively verified are gone. This is the
+	// "reconcile" half of the #2635 split and the ONLY destructive image
+	// write path.
+	//
+	// `enumerated` is the RESULT of the filesystem walk the caller actually
+	// performed, and it BOUNDS the deletion. See ImageEnumeration: each entry
+	// names one image type and the number of slot ordinals found on disk for
+	// it, so a stored row is destroyed only when the caller's own count proves
+	// that ordinal cannot exist. A caller that failed to populate a struct
+	// field cannot fabricate a count it never measured, and one that probed
+	// only some types cannot touch the rest.
+	//
+	// An empty `enumerated` is ALWAYS an error (ErrNoImageEnumeration),
+	// checked before the transaction opens and regardless of whether any row
+	// would have been deleted: a caller that declares nothing has proved
+	// nothing, and it must find that out on a clean registry too, not only on
+	// the unlucky one that happens to hold a stale row. Conversely an empty
+	// `images` with a NON-empty `enumerated` is legitimate and does converge
+	// -- that is an operator who deleted all of an artist's artwork, which the
+	// caller verified by looking.
+	ReconcileAll(ctx context.Context, artistID string, images []ArtistImage, enumerated []ImageEnumeration) error
+
 	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error
 
 	// UpdateHashes writes only phash and content_hash, leaving the other

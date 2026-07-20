@@ -1792,17 +1792,30 @@ func TestSetArtistImageFlag_ClearsProvenance_OnDelete(t *testing.T) {
 		t.Error("ThumbExists should be false after clearing")
 	}
 
-	// Verify provenance was cleared in the database, not just on the struct.
-	// UpsertAll (via Update) deletes rows for image types that no longer exist,
-	// so the thumb row should be gone entirely.
+	// Verify the clear reached the database, not just the struct. The row is
+	// KEPT with exists_flag=0 rather than deleted (issue #2635): this caller
+	// probed one image type and learned only that its file is missing, which
+	// is grounds for marking the slot empty, not for discarding provenance.
+	//
+	// Asserted as "the row is present AND cleared" rather than "no row says
+	// exists": the latter also passes when the row is missing entirely, so it
+	// could not tell a working clear apart from the registry destruction this
+	// guard exists to prevent.
 	imagesAfter, err := artistSvc.GetImagesForArtist(context.Background(), a.ID)
 	if err != nil {
 		t.Fatalf("GetImagesForArtist after clear: %v", err)
 	}
-	for _, im := range imagesAfter {
-		if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
-			t.Errorf("thumb row should not exist after clearing the flag")
+	var thumb *artist.ArtistImage
+	for i := range imagesAfter {
+		if imagesAfter[i].ImageType == "thumb" && imagesAfter[i].SlotIndex == 0 {
+			thumb = &imagesAfter[i]
 		}
+	}
+	if thumb == nil {
+		t.Fatalf("thumb/0 row was destroyed by clearing the flag; it must survive with exists_flag=0 (rows: %+v)", imagesAfter)
+	}
+	if thumb.Exists {
+		t.Errorf("thumb/0 still reports exists=true after the flag was cleared")
 	}
 }
 

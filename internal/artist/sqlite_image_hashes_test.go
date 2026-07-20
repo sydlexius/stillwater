@@ -99,7 +99,7 @@ func TestUpdateHashes_PreservesOtherProvenanceColumns(t *testing.T) {
 	}
 }
 
-// TestUpdateHashes_SurvivesRescan is the durability property. UpsertAll is the
+// TestUpdateHashes_SurvivesRescan is the durability property. ReconcileAll is the
 // path a library rescan takes; it must re-sync the display fields WITHOUT
 // wiping the hashes, or every scan would silently re-arm the recomputation
 // bug.
@@ -122,8 +122,8 @@ func TestUpdateHashes_SurvivesRescan(t *testing.T) {
 	}
 
 	// Simulate a rescan re-syncing the same image set.
-	if err := repo.UpsertAll(ctx, a.ID, extractImageMetadata(a)); err != nil {
-		t.Fatalf("UpsertAll (rescan): %v", err)
+	if err := repo.ReconcileAll(ctx, a.ID, extractImageMetadata(a), canonicalEnumerationFrom(extractImageMetadata(a))); err != nil {
+		t.Fatalf("ReconcileAll (rescan): %v", err)
 	}
 
 	imgs, err := repo.GetForArtist(ctx, a.ID)

@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -93,9 +94,9 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 	// SetLock.
 	//
 	// Every other SET column except id is a full overwrite by design, because
-	// the singular Upsert is a full-write path (unlike UpsertAll, which is fed
-	// by scans carrying only display fields). If a future change needs to guard
-	// provenance or dimensions here, mirror UpsertAll's approach: exclude the
+	// the singular Upsert is a full-write path (unlike MergeAll/ReconcileAll,
+	// which are fed by scans carrying only display fields). If a future change
+	// needs to guard provenance or dimensions here, mirror their approach: exclude the
 	// column outright, or gate it with a CASE WHEN that keeps the stored value.
 	//
 	// id = excluded.id below is NOT part of that design and is a known defect:
@@ -141,7 +142,7 @@ type slotKey struct {
 }
 
 // destructiveImageRecord is one buffered attribution record describing an
-// artist_images row deletion or an exists_flag clear. UpsertAll accumulates
+// artist_images row deletion or an exists_flag clear. writeAll accumulates
 // these while its transaction is open and emits them only once that
 // transaction has committed, so a rolled-back transaction leaves no record
 // behind (issue #2636).
@@ -154,7 +155,7 @@ type destructiveImageRecord struct {
 // unattributedSource is the marker recorded when the calling context carries
 // no explicit source tag. It is deliberately NOT the "manual" default that
 // sourceFromContext applies for history rows: many automated callers reach
-// UpsertAll through Service.Update without tagging a source, and recording
+// the image write path through Service.Update without tagging a source, and recording
 // those as "manual" would be a positive false claim that a human did the
 // destroying. For an incident investigation, an explicit "unknown" is strictly
 // more useful than a confident wrong answer (issue #2636).
@@ -177,10 +178,26 @@ func logSourceFromContext(ctx context.Context) string {
 	return unattributedSource
 }
 
-// deleteStaleSlots removes the rows whose slots are present in the pre-upsert
-// snapshot but absent from the incoming set (e.g. an image type was removed).
-// It compares the two sets and deletes stale rows individually rather than
-// using a broad DELETE that could race with UpdateProvenance.
+// deleteStaleSlots removes the rows the caller's own filesystem enumeration
+// proves cannot exist. It deletes stale rows individually rather than using a
+// broad DELETE that could race with UpdateProvenance.
+//
+// Removal requires BOTH forms of evidence to agree (issue #2635):
+//
+//   - the caller enumerated the row's image type, and its count of files found
+//     on disk puts the row's ordinal past the end (slot_index >= FoundSlots);
+//   - and the incoming slice does not name the slot either.
+//
+// The first clause is the load-bearing one. Bounding by image type alone was
+// not enough: within an enumerated type the incoming slice is re-derived from
+// an Artist's flat fields and can under-report independently of disk, which is
+// how an artist holding only fanart1.jpg lost every fanart row. Counting is a
+// claim the caller can only make by having walked the directory, and it is
+// exact, because slot_index is a DiscoverFanart ordinal.
+//
+// The second clause is deliberate redundancy rather than a second opinion:
+// a slot the caller just wrote is never destroyed in the same call, whatever
+// the count says.
 //
 // It returns one buffered record per deleted row for the caller to emit AFTER
 // the transaction commits; it deliberately emits nothing itself, so a caller
@@ -191,12 +208,26 @@ func deleteStaleSlots(
 	artistID string,
 	priorExists map[slotKey]bool,
 	incoming map[slotKey]struct{},
+	enumerated map[string]int,
 ) ([]destructiveImageRecord, error) {
 	var toRemove []slotKey
 	for k := range priorExists {
-		if _, ok := incoming[k]; !ok {
-			toRemove = append(toRemove, k)
+		if _, ok := incoming[k]; ok {
+			continue
 		}
+		found, probed := enumerated[k.imageType]
+		if !probed {
+			// The caller never looked at this type. Absence here is silence,
+			// not evidence.
+			continue
+		}
+		if k.slotIndex < found {
+			// The caller counted a file at this ordinal. The incoming slice
+			// failing to mention it is the slice being lossy, not the file
+			// being gone -- keep the row.
+			continue
+		}
+		toRemove = append(toRemove, k)
 	}
 	if len(toRemove) == 0 {
 		return nil, nil
@@ -235,7 +266,102 @@ func deleteStaleSlots(
 	return records, nil
 }
 
-func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images []ArtistImage) error {
+// ErrNoImageEnumeration is returned by ReconcileAll when the caller supplied
+// no filesystem enumeration, or supplied a malformed one.
+//
+// Deleting a row asserts that a file is gone. That assertion is only ever
+// backed by a caller that walked the filesystem and looked, so ReconcileAll
+// makes the caller state what it looked at and what it found. A caller that
+// states nothing has looked at nothing, and its empty slot set carries no
+// information -- which is exactly the shape of the #2635 incident, where an
+// Artist struct nobody populated produced an empty slice and wiped the
+// registry.
+//
+// The check is UNCONDITIONAL and runs before the transaction opens. An earlier
+// form only fired when the artist happened to be holding rows that would have
+// been deleted, which made the contract data-dependent: a caller that forgot
+// its enumeration got a silent nil against a clean registry and only found out
+// later, against an unlucky artist, in production. It also fired after every
+// upsert in the transaction had already executed, so the rollback discarded
+// writes that were perfectly legitimate. Validating at the entry point makes
+// the refusal a property of the CALL rather than of the data it happens to
+// meet.
+var ErrNoImageEnumeration = errors.New("refusing to delete artist image rows: caller supplied no filesystem enumeration")
+
+// CanonicalImageTypes are the image types the scanner's filesystem detection
+// covers. A caller holding a fully detected Artist enumerates exactly these.
+//
+// Types outside this list (e.g. "poster") are written by other paths that the
+// artist-directory walk does not probe for, so a scanner-driven reconcile has
+// no evidence about them and must leave their rows alone. It is a list of
+// TYPES, not a ready-made enumeration: an enumeration also needs the count of
+// files found for each type, which only the code that walked the directory
+// can supply.
+var CanonicalImageTypes = []string{"banner", "fanart", "logo", "thumb"}
+
+// MergeAll implements ImageRepository.MergeAll: it writes the named slots and
+// leaves every absent slot untouched.
+func (r *sqliteImageRepo) MergeAll(ctx context.Context, artistID string, images []ArtistImage) error {
+	return r.writeAll(ctx, artistID, images, nil)
+}
+
+// ReconcileAll implements ImageRepository.ReconcileAll: it writes the named
+// slots and deletes stored slots the caller's enumeration proves are gone.
+func (r *sqliteImageRepo) ReconcileAll(ctx context.Context, artistID string, images []ArtistImage, enumerated []ImageEnumeration) error {
+	scope, err := validateEnumeration(artistID, enumerated)
+	if err != nil {
+		return err
+	}
+	return r.writeAll(ctx, artistID, images, scope)
+}
+
+// validateEnumeration converts the caller's enumeration into the type -> count
+// map writeAll consumes, rejecting anything that cannot bound a delete.
+//
+// Every rejection here is ErrNoImageEnumeration because they are all the same
+// caller error wearing different clothes: an enumeration that does not
+// describe a real filesystem walk. It is checked before any transaction opens
+// so the refusal costs nothing and discards nothing (issue #2635).
+func validateEnumeration(artistID string, enumerated []ImageEnumeration) (map[string]int, error) {
+	if len(enumerated) == 0 {
+		// Unlike the rejections below, this one cannot describe itself from the
+		// enumeration -- there is no entry to name. The artist ID is the only
+		// handle an operator has on which reconcile went wrong, and this is the
+		// rejection most likely to actually fire in production, so it is the one
+		// that most needs to say who asked and for what.
+		return nil, fmt.Errorf("%w: artist %q supplied an empty enumeration", ErrNoImageEnumeration, artistID)
+	}
+	scope := make(map[string]int, len(enumerated))
+	for _, e := range enumerated {
+		if e.ImageType == "" {
+			return nil, fmt.Errorf("%w: entry with empty image type", ErrNoImageEnumeration)
+		}
+		if e.FoundSlots < 0 {
+			return nil, fmt.Errorf("%w: image type %q reports %d found slots", ErrNoImageEnumeration, e.ImageType, e.FoundSlots)
+		}
+		if prior, dup := scope[e.ImageType]; dup {
+			// Two counts for one type means the caller walked the directory
+			// twice and got different answers, or assembled the slice wrongly.
+			// Either way there is no single count to bound a delete with, and
+			// silently picking one would delete on an arbitrary choice.
+			if prior != e.FoundSlots {
+				return nil, fmt.Errorf("%w: image type %q enumerated twice with conflicting counts (%d and %d)",
+					ErrNoImageEnumeration, e.ImageType, prior, e.FoundSlots)
+			}
+			continue
+		}
+		scope[e.ImageType] = e.FoundSlots
+	}
+	return scope, nil
+}
+
+// writeAll is the shared body of MergeAll and ReconcileAll. A nil enumeration
+// selects the declarative contract (absence means nothing, delete nothing); a
+// non-nil one selects the destructive contract, bounded by the per-type counts
+// the caller measured on disk. MergeAll passes nil; ReconcileAll passes a map
+// that validateEnumeration has already proved non-empty and well-formed, so
+// "declared nothing" can never reach this far as an empty map.
+func (r *sqliteImageRepo) writeAll(ctx context.Context, artistID string, images []ArtistImage, enumerated map[string]int) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -342,11 +468,20 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 		}
 	}
 
-	deleted, err := deleteStaleSlots(ctx, tx, artistID, priorExists, incoming)
-	if err != nil {
-		return err
+	// Absence is only actionable under the reconcile contract, where the
+	// caller has enumerated the filesystem. Under MergeAll (enumerated == nil)
+	// an absent slot means the caller said nothing about it, so the row stands.
+	//
+	// The delete runs inside the transaction, against the snapshot read above,
+	// so the rows it acts on are exactly the rows that were there when the
+	// diff was computed.
+	if enumerated != nil {
+		deleted, err := deleteStaleSlots(ctx, tx, artistID, priorExists, incoming, enumerated)
+		if err != nil {
+			return err
+		}
+		pending = append(pending, deleted...)
 	}
-	pending = append(pending, deleted...)
 
 	if err := tx.Commit(); err != nil {
 		return err
@@ -455,14 +590,61 @@ func (r *sqliteImageRepo) ClearHashesForType(ctx context.Context, artistID, imag
 // This is a best-effort update used when a previously existing image file is
 // confirmed missing on disk, so that subsequent UI renders show a placeholder
 // instead of a broken image.
+//
+// A 1 -> 0 transition emits the same attributed record the writeAll path emits
+// for the same event (issue #2636). It has to, because the two paths are
+// reachable from ONE operator action: persistImageFlag routes an exists=false
+// write here, but routes it through writeAll instead whenever the artist
+// happens to carry a non-empty placeholder, since that makes
+// extractImageMetadata emit a row. Without this the attribution for "the UI
+// stopped showing this artwork" depended on whether a placeholder string was
+// set -- present for some artists, absent for others, for reasons unrelated to
+// the deletion. An incident timeline with holes of unpredictable shape is
+// worse than one with none, because the holes read as evidence of absence.
+//
+// The read and the write share a transaction so the transition is decided on
+// the same row the update lands on, and the record is emitted only after the
+// commit makes it true.
 func (r *sqliteImageRepo) ClearExistsFlag(ctx context.Context, artistID, imageType string, slotIndex int) error {
-	_, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx clearing exists flag for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+	defer tx.Rollback() //nolint:errcheck // Rollback after a successful commit is a no-op; on the error path the original error is what callers act on
+
+	var priorExists int
+	err = tx.QueryRowContext(ctx, `
+		SELECT exists_flag FROM artist_images
+		WHERE artist_id = ? AND image_type = ? AND slot_index = ?`,
+		artistID, imageType, slotIndex,
+	).Scan(&priorExists)
+	if errors.Is(err, sql.ErrNoRows) {
+		// No row to clear. Not an error: the caller is asserting a file is
+		// missing, and no row already agrees with that.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading exists flag for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE artist_images SET exists_flag = 0
 		WHERE artist_id = ? AND image_type = ? AND slot_index = ?`,
 		artistID, imageType, slotIndex,
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("clearing exists flag for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing exists flag clear for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+
+	if priorExists == 1 {
+		slog.Warn("artist image exists flag cleared",
+			"artist_id", artistID,
+			"image_type", imageType,
+			"slot_index", slotIndex,
+			"source", logSourceFromContext(ctx))
 	}
 	return nil
 }
