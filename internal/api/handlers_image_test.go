@@ -2335,6 +2335,67 @@ func TestHandleServeImage_PreservesFlagOnStatError(t *testing.T) {
 	}
 }
 
+// TestHandleServeImage_PreservesFlagOnMissingDir verifies that when the
+// artist's image directory itself has vanished (e.g. an unmounted library
+// share or cache volume), the serve handler does NOT clear the exists_flag.
+//
+// Before #2686's guard reached this call site, FindExistingImageStrict only
+// stats dir/<file>: a missing parent directory makes every child stat return
+// ENOENT, which collapses into the same clean "not found" shape as "dir
+// present, file genuinely absent" -- so an ordinary page load against an
+// unmounted share would silently clear a flag for artwork the handler never
+// actually got to look at. This is the destructive path the #2686 hostile
+// review found still open in handleServeImage after the maintenance-package
+// fix; it is distinct from TestHandleServeImage_PreservesFlagOnStatError,
+// which covers a present-but-unreadable directory (EACCES), not an absent one.
+func TestHandleServeImage_PreservesFlagOnMissingDir(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	ctx := context.Background()
+
+	// A path that resolves but was never created: distinct from EACCES, this
+	// is the ENOENT-on-dir-itself case.
+	vanished := filepath.Join(t.TempDir(), "vanished-artist-dir")
+	a := &artist.Artist{Name: "Vanished Dir", SortName: "Vanished Dir", Path: vanished}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// The flag is set even though the directory does not exist, modeling a
+	// row whose backing volume unmounted after the flag was last verified.
+	r.setArtistImageFlag(ctx, a, "thumb", true)
+	if !a.ThumbExists {
+		t.Fatal("ThumbExists should be true after setting flag")
+	}
+
+	url := fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", a.ID)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+	r.handleServeImage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 when the image dir is missing, got %d", w.Code)
+	}
+
+	// The serve handler clears stale flags from a goroutine; poll well past
+	// its deadline so a buggy code path that schedules the clear with extra
+	// latency cannot pass this check by accident.
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		updated, err := artistSvc.GetByID(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if !updated.ThumbExists {
+			t.Fatal("ThumbExists must remain true when the image directory itself is missing; " +
+				"a vanished directory is unverifiable, not definitive absence (#2686)")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // TestHandleDeleteImage_PreservesFlagOnStatError verifies that when the delete
 // path's post-delete probe encounters a non-ENOENT stat error (here EACCES from
 // an unreadable parent directory), the exists_flag is NOT cleared. Without the
@@ -2401,6 +2462,52 @@ func TestHandleDeleteImage_PreservesFlagOnStatError(t *testing.T) {
 	}
 }
 
+// TestHandleDeleteImage_PreservesFlagOnMissingDir verifies that when the
+// artist's image directory has vanished entirely (not merely a permission
+// error), the delete handler's post-delete probe does NOT clear the
+// exists_flag. requireImageDir only MkdirAll's the cache-dir fallback
+// (a.Path == ""); a library-path artist (a.Path != "") whose share unmounted
+// passes that guard untouched, so the post-delete FindExistingImageStrict
+// probe used to collapse the missing directory into the same clean miss as
+// "file genuinely deleted" and clear a flag for artwork the request never
+// actually reached. See issue #2686.
+func TestHandleDeleteImage_PreservesFlagOnMissingDir(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	ctx := context.Background()
+
+	vanished := filepath.Join(t.TempDir(), "vanished-delete-dir")
+	a := &artist.Artist{Name: "Vanished Delete Dir", SortName: "Vanished Delete Dir", Path: vanished}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	r.setArtistImageFlag(ctx, a, "thumb", true)
+	if !a.ThumbExists {
+		t.Fatal("ThumbExists should be true after setting flag")
+	}
+
+	url := fmt.Sprintf("/api/v1/artists/%s/images/thumb", a.ID)
+	req := httptest.NewRequest(http.MethodDelete, url, nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+	r.handleDeleteImage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	updated, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !updated.ThumbExists {
+		t.Error("ThumbExists must remain true when the image directory itself is missing; " +
+			"a vanished directory is unverifiable, not definitive absence (#2686)")
+	}
+}
+
 // TestHandleRandomBackdrop_PreservesFlagOnStatError verifies that the random
 // backdrop endpoint does not clear the fanart exists_flag when probing the
 // artist directory hits a non-ENOENT stat error (EACCES). Without the strict
@@ -2463,6 +2570,59 @@ func TestHandleRandomBackdrop_PreservesFlagOnStatError(t *testing.T) {
 			sawFanart = true
 			if !im.Exists {
 				t.Error("fanart exists_flag must remain true after a non-ENOENT stat error")
+			}
+		}
+	}
+	if !sawFanart {
+		t.Error("expected to find fanart row in artist_images")
+	}
+}
+
+// TestHandleRandomBackdrop_PreservesFlagOnMissingDir verifies that the random
+// backdrop endpoint does not clear an artist's fanart exists_flag when that
+// artist's image directory has vanished entirely, as opposed to merely being
+// unreadable (EACCES, covered by TestHandleRandomBackdrop_PreservesFlagOnStatError).
+// Before the #2686 guard reached this call site, an unmounted library share
+// mid-rotation would silently clear the flag for every artist under it on
+// each ambient-backdrop request.
+func TestHandleRandomBackdrop_PreservesFlagOnMissingDir(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	ctx := context.Background()
+
+	vanished := filepath.Join(t.TempDir(), "vanished-backdrop-dir")
+	a := &artist.Artist{Name: "Vanished Backdrop Dir", SortName: "Vanished Backdrop Dir", Path: vanished}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	if _, err := r.db.ExecContext(ctx,
+		`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag)
+		 VALUES (lower(hex(randomblob(16))), ?, 'fanart', 0, 1)
+		 ON CONFLICT (artist_id, image_type, slot_index) DO UPDATE SET exists_flag = 1`,
+		a.ID); err != nil {
+		t.Fatalf("seeding artist_images: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/images/random-backdrop", nil)
+	w := httptest.NewRecorder()
+	r.handleRandomBackdrop(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 when the only candidate's dir is missing, got %d", w.Code)
+	}
+
+	images, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+	var sawFanart bool
+	for _, im := range images {
+		if im.ImageType == "fanart" && im.SlotIndex == 0 {
+			sawFanart = true
+			if !im.Exists {
+				t.Error("fanart exists_flag must remain true when the image directory itself is missing; " +
+					"a vanished directory is unverifiable, not definitive absence (#2686)")
 			}
 		}
 	}

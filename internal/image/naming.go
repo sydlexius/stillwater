@@ -2,6 +2,7 @@ package image
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -186,4 +187,36 @@ func FindExistingImageStrict(dir string, patterns []string) (string, bool, error
 		}
 	}
 	return "", false, nil
+}
+
+// FindExistingImageStrictVerifyDir is FindExistingImageStrict with one added
+// guard: it stats dir itself before probing for files in it.
+//
+// FindExistingImageStrict only ever stats dir/<pattern>. If dir does not
+// exist, every one of those child stats returns ENOENT, which
+// FindExistingImageStrict's own errors.Is(err, fs.ErrNotExist) handling
+// collapses into a clean ("", false, nil) miss -- the exact same shape as
+// "directory present, file genuinely absent". A caller that cannot tell
+// those two cases apart cannot tell "the library share is unmounted" from
+// "this artist genuinely has no artwork".
+//
+// That collapse is harmless for ADDITIVE callers (deciding whether to save a
+// new file over an existing one: "no directory yet" and "directory present,
+// file absent" both correctly mean "nothing to overwrite"), which is why
+// FindExistingImage and FindExistingImageStrict are left unchanged and most
+// callers keep using them directly.
+//
+// It is not harmless for DESTRUCTIVE callers: anything that clears an
+// exists_flag, deletes a file, or otherwise acts on "not found" as
+// definitive absence. For those, a missing directory must be unverifiable
+// -- surfaced as an error, exactly like the existing EACCES/EIO/ESTALE
+// handling -- rather than read as "confirmed gone". A transient unmount of
+// a shared cache or library volume must degrade to "skip and retry next
+// cycle", never to "the artwork is gone, clear the flag" or "the artwork is
+// gone, delete the row". See issue #2686.
+func FindExistingImageStrictVerifyDir(dir string, patterns []string) (string, bool, error) {
+	if _, err := os.Stat(dir); err != nil {
+		return "", false, fmt.Errorf("stat image dir %s: %w", dir, err)
+	}
+	return FindExistingImageStrict(dir, patterns)
 }
