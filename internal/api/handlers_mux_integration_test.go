@@ -20,6 +20,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/auth"
 )
 
 // loginPageMarker is present in every login page response. The rendered login
@@ -239,5 +241,51 @@ func TestWrapOptionalAuthRoutes_AuthenticatedAdmin(t *testing.T) {
 					tc.path, tc.wantBody, body)
 			}
 		})
+	}
+}
+
+// TestRegistryRepairRoute_IsRegistered pins that the registry-repair remediate
+// endpoint is actually wired onto the mux.
+//
+// Every functional test in handlers_registry_repair_test.go calls
+// r.handleRegistryRepairRemediate directly, which bypasses routing entirely.
+// Measured: deleting the mux.HandleFunc line in router.go left all of them
+// passing, so the endpoint could ship returning 404 to every real client and
+// the gate would stay green. TestRegistryRepair_CSRFRejected does not cover it
+// either -- the CSRF middleware wraps the whole mux and answers 403 before
+// routing happens, identically for a registered and an unregistered path.
+//
+// Bypassing CSRF is what makes the mux reachable here. isAPITokenRequest treats
+// a request with a Bearer token and NO session cookie as an API call and skips
+// the CSRF handler, and it checks only the token's PREFIX, not its validity --
+// so a deliberately invalid token routes to the mux and is then rejected by the
+// auth middleware. The rejection status is the secondary assertion; the
+// load-bearing one is that the response is not a 404.
+func TestRegistryRepairRoute_IsRegistered(t *testing.T) {
+	t.Parallel()
+
+	r, _ := testRouter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mux := r.Handler(ctx)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/reports/registry-repair/remediate", strings.NewReader(`{"commit":false}`))
+	req.Header.Set("Authorization", "Bearer "+auth.APITokenPrefix+"definitely-not-a-real-token")
+	req.Header.Set("Content-Type", "application/json")
+	// Deliberately no session cookie: isAPITokenRequest is true, CSRF is
+	// skipped, and the request reaches the mux.
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code == http.StatusNotFound {
+		t.Fatal("POST /api/v1/reports/registry-repair/remediate is not registered on the mux; " +
+			"the handler-level tests all call the handler directly and would not catch this")
+	}
+	// Tightening: an invalid token must be rejected by the auth middleware
+	// rather than reaching the handler.
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401 from the auth middleware for an invalid token; body: %.200s",
+			w.Code, w.Body.String())
 	}
 }

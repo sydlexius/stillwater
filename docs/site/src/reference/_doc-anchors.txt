@@ -443,6 +443,13 @@ how-to/refresh-metadata#what-a-refresh-does
 how-to/refresh-metadata#what-a-refresh-doesnt-do
 how-to/refresh-metadata#when-you-get-the-disambiguation-prompt
 how-to/refresh-metadata#why-a-field-didnt-update
+how-to/repair-image-registry#confirming-the-result
+how-to/repair-image-registry#preview-first-then-apply
+how-to/repair-image-registry#reading-the-report
+how-to/repair-image-registry#repair-a-single-artist
+how-to/repair-image-registry#repair-the-image-registry
+how-to/repair-image-registry#responses
+how-to/repair-image-registry#what-it-cannot-fix
 how-to/reverse-proxy#1-http-forwarding-to-stillwater1973
 how-to/reverse-proxy#2-server-sent-events-sse-without-buffering
 how-to/reverse-proxy#3-body-size-limit-at-least-25-mb
