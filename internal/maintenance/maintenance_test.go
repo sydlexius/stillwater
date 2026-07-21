@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -900,8 +901,26 @@ func TestRestoreExistsFlags(t *testing.T) {
 	seedArtist(t, db, alreadyID, alreadyDir)
 	seedImageRow(t, db, alreadyID, "thumb", 0, 1, 0) // stays 1
 
-	if err := svc.RestoreExistsFlags(ctx); err != nil {
+	res, err := svc.RestoreExistsFlags(ctx, ExistsFlagRestoreOpts{Commit: true})
+	if err != nil {
 		t.Fatalf("RestoreExistsFlags: %v", err)
+	}
+	// The structured result (#2669) must describe the SAME pass the row
+	// assertions below verify, so assert its counters against the fixture:
+	// 9 cleared rows are examined, 4 are confirmed present and restored, 2 are
+	// probed and unanswerable (the EACCES directory, and the fanart slot under
+	// the absent directory, whose fanart resolution errors rather than
+	// reporting a clean miss), and 1 is unresolvable (the pathless artist, for
+	// which no directory could be derived so no probe was ever attempted).
+	// Skipped and Unresolvable are both held apart from the confirmed-absent
+	// single-slot row, which is counted only in Checked -- "definitively
+	// absent" is not "cannot tell", and "could not answer" is not "never
+	// asked".
+	if res.DryRun {
+		t.Error("Commit:true must not report a dry run")
+	}
+	if res.Checked != 9 || res.Restored != 4 || res.Skipped != 2 || res.Unresolvable != 1 || res.Failed != 0 {
+		t.Errorf("result = %+v; want checked 9 restored 4 skipped 2 unresolvable 1 failed 0", *res)
 	}
 
 	assertFlag := func(id, typ string, slot, wantFlag, wantLocked int) {
@@ -925,13 +944,86 @@ func TestRestoreExistsFlags(t *testing.T) {
 	assertFlag(alreadyID, "thumb", 0, 1, 0)    // already set -> untouched
 }
 
+// TestRestoreExistsFlagsPreview is the pass-level half of #2669's byte-identical
+// guarantee: Commit:false must run the identical scan and on-disk confirmation
+// and report what WOULD be restored, without flipping a single flag.
+//
+// It asserts BOTH halves, because either one alone is satisfiable by a bug: a
+// pass that returned early and did nothing would leave the flags untouched
+// (passing a flags-only assertion) while reporting a useless zero, and a pass
+// that computed the right number while still writing would report correctly
+// (passing a counts-only assertion) while destroying the guarantee.
+//
+// The ArtistID scoping is asserted here too, on the same fixture: the second
+// artist's confirmable row must NOT appear in a scoped pass's Checked count,
+// or a scoped request would silently do library-wide work.
+func TestRestoreExistsFlagsPreview(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	ctx := context.Background()
+	libRoot := t.TempDir()
+
+	// Two artists, each with one cleared row whose file IS on disk, so a commit
+	// pass would restore both.
+	const aID = "aaaaaaaa-0000-0000-0000-000000000001"
+	const bID = "bbbbbbbb-0000-0000-0000-000000000001"
+	for id, name := range map[string]string{aID: "a", bID: "b"} {
+		dir := filepath.Join(libRoot, name)
+		writeImage(t, filepath.Join(dir, "folder.jpg"), 64, 64)
+		seedArtist(t, db, id, dir)
+		seedImageRow(t, db, id, "thumb", 0, 0, 0)
+	}
+
+	res, err := svc.RestoreExistsFlags(ctx, ExistsFlagRestoreOpts{Commit: false})
+	if err != nil {
+		t.Fatalf("RestoreExistsFlags preview: %v", err)
+	}
+	if !res.DryRun {
+		t.Error("Commit:false must report a dry run")
+	}
+	// The preview computed the real plan...
+	if res.Checked != 2 || res.Restored != 2 || res.Failed != 0 {
+		t.Errorf("preview result = %+v; want checked 2 restored 2 failed 0", *res)
+	}
+	// ...and wrote nothing.
+	for _, id := range []string{aID, bID} {
+		if flag, _ := slotFlags(t, db, id, "thumb", 0); flag != 0 {
+			t.Errorf("%s thumb/0 = %d after a preview; a preview must not write", id[:8], flag)
+		}
+	}
+
+	// Scoped preview: only artist a is in scope.
+	scoped, err := svc.RestoreExistsFlags(ctx, ExistsFlagRestoreOpts{ArtistID: aID})
+	if err != nil {
+		t.Fatalf("scoped preview: %v", err)
+	}
+	if scoped.Checked != 1 || scoped.Restored != 1 {
+		t.Errorf("scoped preview = %+v; want checked 1 restored 1", *scoped)
+	}
+
+	// Scoped COMMIT writes exactly the scoped artist and leaves the other alone.
+	if _, err := svc.RestoreExistsFlags(ctx, ExistsFlagRestoreOpts{Commit: true, ArtistID: aID}); err != nil {
+		t.Fatalf("scoped commit: %v", err)
+	}
+	if flag, _ := slotFlags(t, db, aID, "thumb", 0); flag != 1 {
+		t.Errorf("scoped artist thumb/0 = %d after commit; want 1", flag)
+	}
+	if flag, _ := slotFlags(t, db, bID, "thumb", 0); flag != 0 {
+		t.Errorf("out-of-scope artist thumb/0 = %d; a scoped commit must not touch it", flag)
+	}
+}
+
 // TestRestoreExistsFlagsEmpty verifies RestoreExistsFlags succeeds on an empty
 // table (nothing to restore).
 func TestRestoreExistsFlagsEmpty(t *testing.T) {
 	db, dbPath := setupTestDBWithImages(t)
 	svc := NewService(db, dbPath, "", slog.Default())
-	if err := svc.RestoreExistsFlags(context.Background()); err != nil {
+	res, err := svc.RestoreExistsFlags(context.Background(), ExistsFlagRestoreOpts{Commit: true})
+	if err != nil {
 		t.Fatalf("RestoreExistsFlags on empty table: %v", err)
+	}
+	if res.Checked != 0 || res.Restored != 0 || res.Skipped != 0 || res.Failed != 0 {
+		t.Errorf("empty table result = %+v; want all zero", *res)
 	}
 }
 
@@ -945,12 +1037,93 @@ func TestRestoreExistsFlagsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := svc.RestoreExistsFlags(ctx)
+	_, err := svc.RestoreExistsFlags(ctx, ExistsFlagRestoreOpts{Commit: true})
 	if err == nil {
 		t.Fatal("expected error from canceled context, got nil")
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestRestoreExistsFlagsCanceledMidLoopAborts pins that a context canceled
+// once the pass has reached its UPDATE loop ABORTS the pass, rather than
+// letting every remaining ExecContext fail on the dead context and reporting
+// the result as N write failures.
+//
+// The scenario is an operator issuing commit:true against a large library whose
+// client then disconnects. Without the loop's ctx.Err() check the function
+// returns (res, nil) -- a NIL error -- with Failed equal to the number of
+// remaining rows, so the endpoint answers HTTP 200 with a report that is silent
+// about hundreds of writes that never landed. A canceled context is one aborted
+// pass, not N data-write failures, and the caller must be told which.
+//
+// Distinct from TestRestoreExistsFlagsCanceledContext, which cancels before the
+// call and is satisfied by the initial QueryContext failing; that test never
+// reaches the UPDATE loop and so does not guard this.
+//
+// CONSTRUCTION. A plain canceled context cannot exercise this: database/sql
+// would fail the opening QueryContext and the pass would abort long before the
+// loop, so the test would pass with the loop check removed and guard nothing.
+// errNoDoneCtx instead reports Err() == context.Canceled while leaving Done()
+// nil, which is what context.Background() already returns. database/sql only
+// consults Done() on its fast paths, so every statement in the pass still
+// executes normally and the pass's OWN explicit ctx.Err() check is the single
+// thing that can observe the cancellation. That is exactly the code under test:
+// with the check removed, all three UPDATE statements succeed and the function returns
+// (res, nil).
+type errNoDoneCtx struct{ context.Context }
+
+func (errNoDoneCtx) Err() error { return context.Canceled }
+
+func TestRestoreExistsFlagsCanceledMidLoopAborts(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	libRoot := t.TempDir()
+
+	// Several artists, each with a cleared row whose file IS on disk, so the
+	// confirmation phase yields a multi-entry present set and the UPDATE loop
+	// would iterate more than once.
+	ids := []string{
+		"c1111111-0000-0000-0000-000000000001",
+		"c2222222-0000-0000-0000-000000000001",
+		"c3333333-0000-0000-0000-000000000001",
+	}
+	for i, id := range ids {
+		dir := filepath.Join(libRoot, fmt.Sprintf("artist%d", i))
+		writeImage(t, filepath.Join(dir, "folder.jpg"), 64, 64)
+		seedArtist(t, db, id, dir)
+		seedImageRow(t, db, id, "thumb", 0, 0, 0)
+	}
+
+	// Sanity-check the fixture BEFORE asserting the abort: a preview over the
+	// same rows must report a non-empty present set, or the UPDATE loop would
+	// never have been entered and the assertions below would pass vacuously.
+	plan, err := svc.RestoreExistsFlags(context.Background(), ExistsFlagRestoreOpts{})
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if plan.Restored != len(ids) {
+		t.Fatalf("preview would restore %d of %d rows; the abort assertions need a "+
+			"multi-row UPDATE loop to abort", plan.Restored, len(ids))
+	}
+
+	res, err := svc.RestoreExistsFlags(errNoDoneCtx{context.Background()}, ExistsFlagRestoreOpts{Commit: true})
+	if err == nil {
+		t.Fatalf("canceled commit returned nil error; result = %+v", res)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v; want it to wrap context.Canceled", err)
+	}
+	if res != nil {
+		t.Errorf("canceled commit returned a result %+v; an aborted pass must not hand back "+
+			"a report that reads like a completed one", *res)
+	}
+	// The artifact, not the counters: nothing was written.
+	for _, id := range ids {
+		if flag, _ := slotFlags(t, db, id, "thumb", 0); flag != 0 {
+			t.Errorf("%s thumb/0 = %d after an aborted pass; want 0", id[:8], flag)
+		}
 	}
 }
 

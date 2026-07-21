@@ -374,6 +374,58 @@ func confirmSlotOnDisk(dir, imageType string, slotIndex int) (bool, error) {
 	return found, err
 }
 
+// ExistsFlagRestoreOpts controls a RestoreExistsFlags pass.
+//
+// It mirrors ImageRepairOpts field-for-field, deliberately: the two passes are
+// composed by one operator endpoint (#2669), so a single request body threads
+// the same Commit/ArtistID pair into both. There is no DryRun field for the
+// same reason ImageRepairOpts has none -- a Go bool zero-values to false, so a
+// DryRun field would mean a request that omitted it WRITES. Commit is
+// affirmative, so a malformed body or a dropped field previews instead.
+type ExistsFlagRestoreOpts struct {
+	// Commit must be true for any flag to be written. False runs the identical
+	// scan and on-disk confirmation and reports what WOULD be restored.
+	Commit bool
+	// ArtistID scopes the pass to one artist; empty means every artist.
+	ArtistID string
+}
+
+// ExistsFlagRestoreResult reports what a RestoreExistsFlags pass measured.
+//
+// Before #2669 these counters existed only as slog fields and were
+// discarded, which made the pass unusable as the "restored" half of an
+// operator report. Every counter is established independently: Checked counts
+// rows examined, Skipped counts rows whose on-disk probe was ATTEMPTED and
+// could not answer (permission denied, I/O error), Unresolvable counts rows for
+// which no probe was possible at all because no directory could be derived, and
+// neither is the count of rows whose file is genuinely absent -- a
+// confirmed-absent file is a clean, expected outcome that leaves the flag
+// cleared and is counted only in Checked. Conflating "absent" with "cannot
+// tell" is the exact mistake the whole image registry repair feature exists to
+// prevent.
+type ExistsFlagRestoreResult struct {
+	// DryRun is true when the pass ran with Commit false: every counter below
+	// describes what WOULD have happened, and no UPDATE was issued.
+	DryRun bool `json:"dry_run"`
+	// Checked counts cleared rows examined by the pass.
+	Checked int `json:"checked"`
+	// Restored counts flags flipped 0 -> 1. On a dry run it counts the rows
+	// that would have been flipped (confirmed present on disk).
+	Restored int `json:"restored"`
+	// Skipped counts rows whose on-disk probe was attempted and could not
+	// answer (permission denied, I/O error). Unverifiable is never restored,
+	// and is held apart from definitive absence.
+	Skipped int `json:"skipped"`
+	// Unresolvable counts rows whose artist has no resolvable image directory
+	// at all (no path, no cache fallback). Held apart from Skipped because no
+	// filesystem probe was attempted for these rows -- there was no location
+	// to probe. Skipped means a probe was attempted and could not answer.
+	Unresolvable int `json:"unresolvable"`
+	// Failed counts confirmed-present rows whose UPDATE errored, leaving the
+	// flag stale. Always 0 on a dry run: no UPDATE is issued.
+	Failed int `json:"failed"`
+}
+
 // RestoreExistsFlags walks all artist_images rows where exists_flag=0, re-probes
 // each slot's file on disk, and restores the flag to 1 ONLY for rows whose file
 // is positively confirmed present. It is the exact inverse of ScanExistsFlags
@@ -392,14 +444,29 @@ func confirmSlotOnDisk(dir, imageType string, slotIndex int) (bool, error) {
 //     Only a positive on-disk confirmation flips a flag; absence and
 //     unverifiability never do. Inserting rows for files that have no registry
 //     row at all is #2670 (already shipped) and out of scope here.
-func (s *Service) RestoreExistsFlags(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, `
+//
+// PREVIEW (opts.Commit false, #2669). Discovery and on-disk confirmation run
+// IDENTICALLY in both modes -- the only branch is whether the UPDATE loop runs
+// at all -- so the preview's Restored count IS the commit plan rather than an
+// approximation of it. A preview issues no statement that can write, which is
+// what makes the endpoint's byte-identical guarantee provable rather than
+// argued.
+func (s *Service) RestoreExistsFlags(ctx context.Context, opts ExistsFlagRestoreOpts) (*ExistsFlagRestoreResult, error) {
+	res := &ExistsFlagRestoreResult{DryRun: !opts.Commit}
+
+	query := `
 		SELECT ai.artist_id, ai.image_type, ai.slot_index, a.path
 		FROM artist_images ai
 		JOIN artists a ON ai.artist_id = a.id
-		WHERE ai.exists_flag = 0`)
+		WHERE ai.exists_flag = 0`
+	var args []any
+	if opts.ArtistID != "" {
+		query += ` AND ai.artist_id = ?`
+		args = append(args, opts.ArtistID)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("querying cleared exists_flag rows: %w", err)
+		return nil, fmt.Errorf("querying cleared exists_flag rows: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // read-only cursor, no actionable close error
 
@@ -414,15 +481,14 @@ func (s *Service) RestoreExistsFlags(ctx context.Context) error {
 	// requirement under the pure-Go driver, not an optimization (mirrors
 	// ScanExistsFlags).
 	var present []presentRow
-	checked, skipped := 0, 0
 
 	for rows.Next() {
 		var artistID, imageType, artistPath string
 		var slotIndex int
 		if err := rows.Scan(&artistID, &imageType, &slotIndex, &artistPath); err != nil {
-			return fmt.Errorf("scanning cleared exists_flag row: %w", err)
+			return nil, fmt.Errorf("scanning cleared exists_flag row: %w", err)
 		}
-		checked++
+		res.Checked++
 
 		dir := s.artistImageDir(artistPath, artistID)
 		if dir == "" {
@@ -431,7 +497,7 @@ func (s *Service) RestoreExistsFlags(ctx context.Context) error {
 			s.logger.Warn("exists_flag restore: unresolvable image dir, skipping",
 				slog.String("artist_id", artistID),
 				slog.String("image_type", imageType))
-			skipped++
+			res.Unresolvable++
 			continue
 		}
 
@@ -445,7 +511,7 @@ func (s *Service) RestoreExistsFlags(ctx context.Context) error {
 				slog.Int("slot_index", slotIndex),
 				slog.String("dir", dir),
 				slog.Any("error", confErr))
-			skipped++
+			res.Skipped++
 			continue
 		}
 		if found {
@@ -453,11 +519,39 @@ func (s *Service) RestoreExistsFlags(ctx context.Context) error {
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterating cleared exists_flag rows: %w", err)
+		return nil, fmt.Errorf("iterating cleared exists_flag rows: %w", err)
 	}
 
-	restored, failed := 0, 0
+	// PREVIEW SHORT-CIRCUIT. Every confirmed-present row is a row the commit
+	// pass WOULD flip, so the preview reports len(present) and returns before
+	// the UPDATE loop. The early return -- rather than an `if opts.Commit`
+	// guard INSIDE the loop -- is deliberate: it puts the only statement in
+	// this function that can write behind a branch a dry run never enters, so
+	// "a preview issues no write" is a structural property, not a per-iteration
+	// condition a later edit could slip past. Failed stays 0 because no UPDATE
+	// ran; it is not "0 failures observed", it is "nothing was attempted".
+	if !opts.Commit {
+		res.Restored = len(present)
+		s.logger.Info("exists_flag restore preview complete",
+			slog.Bool("dry_run", true),
+			slog.Int("checked", res.Checked),
+			slog.Int("would_restore", res.Restored),
+			slog.Int("skipped", res.Skipped),
+			slog.Int("unresolvable", res.Unresolvable))
+		return res, nil
+	}
+
 	for _, r := range present {
+		if err := ctx.Err(); err != nil {
+			// A canceled context is not N write failures -- it is one aborted
+			// pass. Counting each remaining row as Failed would misreport a
+			// client disconnect as mass data-write failure. Rows already
+			// flipped stay flipped; the repair is idempotent, so a re-run
+			// completes it. Mirrors the rebuild pass, which likewise checks
+			// ctx.Err() per artist and aborts the whole pass.
+			return nil, fmt.Errorf("exists_flag restore canceled after %d restored, %d remaining: %w",
+				res.Restored, len(present)-res.Restored-res.Failed, err)
+		}
 		// Monotone, lock-preserving restore: the AND exists_flag = 0 guard keeps
 		// the write idempotent against a concurrent change, and locked is absent
 		// from the SET list so a locked row's content ownership is untouched.
@@ -474,18 +568,19 @@ func (s *Service) RestoreExistsFlags(ctx context.Context) error {
 				slog.String("image_type", r.imageType),
 				slog.Int("slot_index", r.slotIndex),
 				slog.Any("error", err))
-			failed++
+			res.Failed++
 			continue
 		}
-		restored++
+		res.Restored++
 	}
 
 	s.logger.Info("exists_flag restore scan complete",
-		slog.Int("checked", checked),
-		slog.Int("restored", restored),
-		slog.Int("skipped", skipped),
-		slog.Int("failed", failed))
-	return nil
+		slog.Int("checked", res.Checked),
+		slog.Int("restored", res.Restored),
+		slog.Int("skipped", res.Skipped),
+		slog.Int("unresolvable", res.Unresolvable),
+		slog.Int("failed", res.Failed))
+	return res, nil
 }
 
 // FanartPrimaryFn reports the primary fanart filename of the ACTIVE platform
