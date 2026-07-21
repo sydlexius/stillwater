@@ -68,6 +68,10 @@ The **Backdrop Duplicates** report finds cases where the *same* backdrop picture
 
 The report scans every artist's backdrops on disk and finds **exact duplicates**: byte-for-byte identical files, matched by a content hash. Because a removed copy is identical to the one kept, collapsing them loses nothing.
 
+That scan reads every backdrop file in the library, so it runs in the background on a schedule rather than each time you open the page. The report shows the result of the most recent scan, with the time it was taken, so the numbers are a recent snapshot rather than a live count. The alternative would be re-reading the whole library on every page load, which on a large or network-stored library takes minutes.
+
+If no scan has completed yet -- on a first run, or before the first scheduled refresh -- the page says the report is still being prepared and starts a scan in the background. Reopen the page once it finishes. The page deliberately does not show zeros in that state, because "nothing has been measured yet" and "your library is clean" are different answers.
+
 The page summarizes how many artists are affected and how many exact redundant slots exist, with a per-artist breakdown. If some artists could not be scanned, a **Partial Scan** notice reports how many were skipped, so a partial result is never mistaken for a clean library.
 
 ### Collapse exact duplicates

@@ -242,9 +242,21 @@ func TestBackdropDuplicatesPage_ColdCacheTriggersBackgroundScanAndShowsPendingNo
 		t.Fatal("a cold-cache GET must trigger a real background scan (TriggerRefresh -> libraryDupCount -> ScanFanartDuplicates), but ScanFanartDuplicates was never invoked")
 	}
 
-	report, _, ok := r.backdropDupReportSnapshot()
-	if !ok {
-		t.Fatal("the background scan must land in the cache via storeBackdropDupReport")
+	// Poll for the CACHE WRITE, not just the scan. `scanned` closes when
+	// ScanFanartDuplicates returns, but storeBackdropDupReport runs after that
+	// inside libraryDupCount, so asserting on the snapshot immediately races the
+	// write and flakes. Wait for the observable end state instead.
+	var report rule.FanartDupReport
+	var ok bool
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if report, _, ok = r.backdropDupReportSnapshot(); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the background scan must land in the cache via storeBackdropDupReport")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if report.ExactRedundantSlots != 1 {
 		t.Errorf("cached report ExactRedundantSlots = %d, want 1 (from the real scan, not a stub)", report.ExactRedundantSlots)
