@@ -227,13 +227,22 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          # Exact key: cache hit restores the most recent warm build.
-          # Restore-key: cache miss on a go.sum/go.mod change warms from the
-          # last compatible entry instead of forcing a cold rebuild.
+          # Key carries a per-commit ${{ github.sha }} suffix because
+          # actions/cache NEVER overwrites an existing key: without it, the
+          # first commit for a given go.sum hash would own the entry forever
+          # and every later commit's post-job save would be a silent no-op,
+          # leaving the race-instrumented build cache stale. A fresh key per
+          # commit means each commit publishes its own warm entry (and a
+          # re-run of the same commit gets an exact hit on it).
+          # Restore-keys (most-specific first): the go.sum-hash prefix warms
+          # from the last entry built against the same dependencies, then a
+          # bare Go prefix warms from any Go cache, so a go.sum/go.mod change
+          # degrades to a partial warm rather than a cold rebuild.
           # go.mod is hashed too so a toolchain-directive bump that leaves
           # go.sum untouched still invalidates the stale build cache.
-          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-
             ${{ runner.os }}-go-
 
       # Populate the module cache so shards avoid redundant downloads.
@@ -590,21 +599,29 @@ jobs:
         with:
           go-version-file: go.mod
           # Disable built-in cache; read-only restore from the primer's
-          # shared entry below.  Shards do not save (actions/cache/restore),
-          # so all shards write to the SAME key without racing.
+          # shared entry below.  The primer job owns the cache SAVE; shards
+          # are read-only consumers (actions/cache/restore), so they only
+          # read that key and never write it -- no save races between shards.
           cache: false
 
       # Restore Go cache from the shared primer entry (read-only).
-      # restore-keys ensures a go.sum change still warms from the last
-      # compatible entry rather than cold-building.
+      # Key/restore-keys are byte-identical to the primer's save step so the
+      # per-commit ${{ github.sha }} suffix scores an EXACT hit on the entry
+      # the primer just published in this same workflow run (that suffix is
+      # what keeps the build cache fresh commit-to-commit, since
+      # actions/cache never overwrites an existing key).
+      # Restore-keys (most-specific first): the go.sum-hash prefix falls back
+      # to the last entry with the same dependencies, then any Go cache, so a
+      # go.sum change still warms rather than cold-builds.
       - name: Restore Go module + build cache (read-only)
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-
             ${{ runner.os }}-go-
 
       # Resolve the package list (and optional -run bucket regex) for this
