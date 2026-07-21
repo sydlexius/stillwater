@@ -2586,11 +2586,13 @@ func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) 
 		return
 	}
 	count := len(existing)
-	a.FanartExists = count > 0
-	a.FanartCount = count
 
-	// Update low-res flag from primary fanart
-	a.FanartLowRes = false
+	// Compute the new values into locals and publish them to the artist only
+	// once the DB has accepted them. Callers of this function go on to serve
+	// a.FanartCount in their response body, so mutating the struct before the
+	// Update made a REJECTED write observable to the API as though it had
+	// succeeded -- the client saw a count the database refused (#2635).
+	lowRes := false
 	if count > 0 {
 		if f, err := os.Open(existing[0]); err == nil {
 			w, h, dimErr := img.GetDimensions(f)
@@ -2601,7 +2603,7 @@ func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) 
 					slog.String("path", existing[0]),
 					slog.String("error", dimErr.Error()))
 			}
-			a.FanartLowRes = img.IsLowResolution(w, h, "fanart")
+			lowRes = img.IsLowResolution(w, h, "fanart")
 		} else {
 			r.logger.Warn("opening primary fanart for dimension check",
 				slog.String("artist_id", a.ID),
@@ -2610,7 +2612,15 @@ func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) 
 		}
 	}
 
+	// Update reads the fields off the struct, so they have to be set before the
+	// call and restored if it fails.
+	priorExists, priorCount, priorLowRes := a.FanartExists, a.FanartCount, a.FanartLowRes
+	a.FanartExists = count > 0
+	a.FanartCount = count
+	a.FanartLowRes = lowRes
+
 	if err := r.artistService.Update(ctx, a); err != nil {
+		a.FanartExists, a.FanartCount, a.FanartLowRes = priorExists, priorCount, priorLowRes
 		r.logger.Warn("updating fanart count",
 			slog.String("artist_id", a.ID),
 			slog.String("error", err.Error()))
