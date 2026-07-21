@@ -271,6 +271,13 @@ type ImageRepository interface {
 	// Used to mark stale image entries when the file is confirmed missing on disk.
 	ClearExistsFlag(ctx context.Context, artistID, imageType string, slotIndex int) error
 
+	// RestoreExistsFlag sets exists_flag=1 for the given artist/image_type/slot,
+	// but ONLY when the row currently reads exists_flag=0. It is the monotone
+	// inverse of ClearExistsFlag: used to correct a stale "missing" flag after
+	// the caller has confirmed the slot's file is present on disk. It never
+	// touches the locked column and never flips a flag from 1.
+	RestoreExistsFlag(ctx context.Context, artistID, imageType string, slotIndex int) error
+
 	// SetLock toggles the lock flag for a single image row identified by its
 	// primary key id.
 	SetLock(ctx context.Context, imageID string, locked bool) error

@@ -316,6 +316,178 @@ func (s *Service) StartExistsFlagScanner(ctx context.Context, interval, startupD
 	}
 }
 
+// confirmSlotOnDisk reports whether the file backing ONE specific image slot is
+// present in dir. It is the slot-aware disk check RestoreExistsFlags needs, and
+// the deliberate counterpart to ScanExistsFlags' type-level probe: clearing a
+// flag may safely act on "no file of this type exists", but RESTORING one must
+// prove the exact ordinal is on disk, or a present slot-0 fanart would wrongly
+// resurrect the flags of empty slots 1..n.
+//
+// The three return shapes carry three distinct meanings, and the caller acts on
+// only one of them:
+//
+//   - (true, nil):  the slot's file is confirmed present -- restore is allowed.
+//   - (false, nil): the directory was read and the slot's file is definitively
+//     absent -- leave the flag cleared.
+//   - (false, err): the directory could not be examined (permission denied,
+//     I/O error, unresolvable) -- UNVERIFIABLE, so skip rather than restore.
+//     This mirrors ScanExistsFlags' refusal to act on a stat error, in the
+//     conservative direction: an unverifiable slot is never restored.
+//
+// Fanart is resolved convention-agnostically via ResolveFanart over the default
+// naming set (the same union ScanExistsFlags probes), because slot_index is a
+// DiscoverFanart ORDINAL: the file backing slot N is the Nth resolved fanart
+// path, whatever numbering convention the library uses. Single-slot types
+// (thumb, logo, banner) occupy slot 0 only; a row claiming slot_index > 0 for
+// such a type has no on-disk naming and is reported absent, never restored.
+func confirmSlotOnDisk(dir, imageType string, slotIndex int) (bool, error) {
+	if imageType == "fanart" {
+		names, err := img.ResolveFanartNames(nil)
+		if err != nil {
+			// No fanart naming patterns at all: cannot verify, so do not restore.
+			return false, err
+		}
+		_, paths, err := img.ResolveFanart(dir, names)
+		if err != nil {
+			// Directory unreadable/absent -- unverifiable, skip.
+			return false, err
+		}
+		return slotIndex >= 0 && slotIndex < len(paths), nil
+	}
+
+	// Single-slot types live at slot 0. A row past slot 0 for one of them has no
+	// filesystem naming to confirm against, so it is definitively unconfirmable
+	// (not an error) and must stay cleared.
+	if slotIndex != 0 {
+		return false, nil
+	}
+	patterns := img.FileNamesForType(img.DefaultFileNames, imageType)
+	if len(patterns) == 0 {
+		// Unknown image type: no candidates to probe. FindExistingImageStrict
+		// would report a clean miss without ever touching disk, so treat it as
+		// definitively unconfirmable and leave the flag cleared.
+		return false, nil
+	}
+	// Strict variant: a non-ENOENT stat error means "cannot tell", which must
+	// NOT be read as "file present". Restore only on a confirmed hit.
+	_, found, err := img.FindExistingImageStrict(dir, patterns)
+	return found, err
+}
+
+// RestoreExistsFlags walks all artist_images rows where exists_flag=0, re-probes
+// each slot's file on disk, and restores the flag to 1 ONLY for rows whose file
+// is positively confirmed present. It is the exact inverse of ScanExistsFlags
+// and the batch remediation for issue #2668, where a prior incident left
+// surviving rows flagged missing while their files were still on disk, so the
+// operator saw "no artwork" for images the platform was serving.
+//
+// It is deliberately conservative and monotone:
+//
+//   - It only ever sets 0 -> 1, via a guarded UPDATE (AND exists_flag = 0), and
+//     never touches the locked column -- exists_flag is a physical fact, the
+//     lock governs content, so a locked row whose file IS present is restored
+//     while its lock is left untouched (design-lock #3).
+//   - A pathless row with no cache-dir fallback, a row whose directory cannot be
+//     examined, and a row whose file is genuinely absent are ALL left cleared.
+//     Only a positive on-disk confirmation flips a flag; absence and
+//     unverifiability never do. Inserting rows for files that have no registry
+//     row at all is #2670 (already shipped) and out of scope here.
+func (s *Service) RestoreExistsFlags(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ai.artist_id, ai.image_type, ai.slot_index, a.path
+		FROM artist_images ai
+		JOIN artists a ON ai.artist_id = a.id
+		WHERE ai.exists_flag = 0`)
+	if err != nil {
+		return fmt.Errorf("querying cleared exists_flag rows: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only cursor, no actionable close error
+
+	type presentRow struct {
+		artistID  string
+		imageType string
+		slotIndex int
+	}
+	// Drain the cursor before issuing any UPDATE. modernc.org/sqlite is
+	// single-writer, so holding this SELECT open across writes on the same
+	// *sql.DB serializes badly or deadlocks. Two-phase is a correctness
+	// requirement under the pure-Go driver, not an optimization (mirrors
+	// ScanExistsFlags).
+	var present []presentRow
+	checked, skipped := 0, 0
+
+	for rows.Next() {
+		var artistID, imageType, artistPath string
+		var slotIndex int
+		if err := rows.Scan(&artistID, &imageType, &slotIndex, &artistPath); err != nil {
+			return fmt.Errorf("scanning cleared exists_flag row: %w", err)
+		}
+		checked++
+
+		dir := s.artistImageDir(artistPath, artistID)
+		if dir == "" {
+			// No resolvable path and no cache-dir fallback: cannot verify, so
+			// leave the flag cleared rather than restoring on an assumption.
+			s.logger.Warn("exists_flag restore: unresolvable image dir, skipping",
+				slog.String("artist_id", artistID),
+				slog.String("image_type", imageType))
+			skipped++
+			continue
+		}
+
+		found, confErr := confirmSlotOnDisk(dir, imageType, slotIndex)
+		if confErr != nil {
+			// Unverifiable (permission denied, I/O error, unreadable dir). Skip:
+			// a flag is restored only on positive confirmation, never on a guess.
+			s.logger.Warn("exists_flag restore: cannot verify slot on disk, skipping",
+				slog.String("artist_id", artistID),
+				slog.String("image_type", imageType),
+				slog.Int("slot_index", slotIndex),
+				slog.String("dir", dir),
+				slog.Any("error", confErr))
+			skipped++
+			continue
+		}
+		if found {
+			present = append(present, presentRow{artistID, imageType, slotIndex})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating cleared exists_flag rows: %w", err)
+	}
+
+	restored, failed := 0, 0
+	for _, r := range present {
+		// Monotone, lock-preserving restore: the AND exists_flag = 0 guard keeps
+		// the write idempotent against a concurrent change, and locked is absent
+		// from the SET list so a locked row's content ownership is untouched.
+		_, err := s.db.ExecContext(ctx, `
+			UPDATE artist_images SET exists_flag = 1
+			WHERE artist_id = ? AND image_type = ? AND slot_index = ? AND exists_flag = 0`,
+			r.artistID, r.imageType, r.slotIndex)
+		if err != nil {
+			// A failed UPDATE leaves a confirmed-present slot still flagged
+			// missing, which is the exact defect this scan exists to repair.
+			// Surface at Error, not Warn (mirrors ScanExistsFlags).
+			s.logger.Error("exists_flag restore: UPDATE failed, flag remains stale",
+				slog.String("artist_id", r.artistID),
+				slog.String("image_type", r.imageType),
+				slog.Int("slot_index", r.slotIndex),
+				slog.Any("error", err))
+			failed++
+			continue
+		}
+		restored++
+	}
+
+	s.logger.Info("exists_flag restore scan complete",
+		slog.Int("checked", checked),
+		slog.Int("restored", restored),
+		slog.Int("skipped", skipped),
+		slog.Int("failed", failed))
+	return nil
+}
+
 // FanartPrimaryFn reports the primary fanart filename of the ACTIVE platform
 // profile (e.g. "backdrop.jpg" for Emby, "fanart.jpg" for Kodi).
 //

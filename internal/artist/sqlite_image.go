@@ -649,6 +649,87 @@ func (r *sqliteImageRepo) ClearExistsFlag(ctx context.Context, artistID, imageTy
 	return nil
 }
 
+// RestoreExistsFlag sets exists_flag=1 for the given artist/image_type/slot,
+// but ONLY when the row currently reads exists_flag=0. It is the monotone
+// inverse of ClearExistsFlag (issue #2668): the caller has confirmed the slot's
+// file is present on disk, so a stale exists_flag=0 -- which hides live artwork
+// behind a placeholder -- is corrected to 1.
+//
+// The restore is deliberately monotone (0 -> 1 only, via the AND exists_flag = 0
+// clause) and locked is deliberately ABSENT from the SET list. exists_flag is a
+// PHYSICAL fact about the filesystem; a lock governs a row's CONTENT, not its
+// physical existence. Restoring the physical fact on a locked row is therefore
+// correct and required -- the lock is not evidence the file is gone -- and the
+// restore must fire on a locked row while never touching the locked column or
+// any other field (design-lock #3). Leaving locked out of the write is what
+// keeps those two concerns separate.
+//
+// A genuine 0 -> 1 transition emits an attributed record mirroring the clear
+// path's forensic record (issue #2636). RowsAffected -- not the pre-read value
+// -- gates the record: the monotone WHERE clause means the UPDATE changes a row
+// only when it was 0, so exactly one row affected IS the transition. Nothing is
+// emitted when the row already reads 1 (the guard makes the UPDATE a no-op) or
+// when no such row exists.
+//
+// The read and the write share a transaction so the decision lands on the same
+// row the update mutates, and the record is emitted only after the commit makes
+// it true. sql.ErrNoRows is a no-op returning nil: the caller is asserting a
+// file is present, and there is no row to carry that fact (inserting one is
+// #2670, out of scope here).
+func (r *sqliteImageRepo) RestoreExistsFlag(ctx context.Context, artistID, imageType string, slotIndex int) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx restoring exists flag for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+	defer tx.Rollback() //nolint:errcheck // Rollback after a successful commit is a no-op; on the error path the original error is what callers act on
+
+	// SELECT first so a missing row is a clean no-op rather than an error, and
+	// so the decision is made against the same row the UPDATE lands on. Mirrors
+	// ClearExistsFlag.
+	var priorExists int
+	err = tx.QueryRowContext(ctx, `
+		SELECT exists_flag FROM artist_images
+		WHERE artist_id = ? AND image_type = ? AND slot_index = ?`,
+		artistID, imageType, slotIndex,
+	).Scan(&priorExists)
+	if errors.Is(err, sql.ErrNoRows) {
+		// No row to restore. Not an error: the caller is asserting a file is
+		// present, and no row exists to carry that fact.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading exists flag for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE artist_images SET exists_flag = 1
+		WHERE artist_id = ? AND image_type = ? AND slot_index = ? AND exists_flag = 0`,
+		artistID, imageType, slotIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("restoring exists flag for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+	restored, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading rows affected restoring exists flag for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing exists flag restore for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+
+	// restored == 1 is the genuine 0 -> 1 transition (the monotone guard cannot
+	// affect a row that was already 1), so the record describes a real change.
+	if restored == 1 {
+		slog.Info("artist image exists flag restored",
+			"artist_id", artistID,
+			"image_type", imageType,
+			"slot_index", slotIndex,
+			"source", logSourceFromContext(ctx))
+	}
+	return nil
+}
+
 // SetLock toggles the lock flag for a single image row identified by its
 // primary key. Returns an error if no matching row exists.
 func (r *sqliteImageRepo) SetLock(ctx context.Context, imageID string, locked bool) error {
