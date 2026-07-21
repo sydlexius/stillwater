@@ -2098,6 +2098,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 		RuleID:       ruleID,
 		Fixed:        true,
 		SlotsRemoved: len(removedNames),
+		RemovedFiles: true,
 		Message:      fmt.Sprintf("removed %d duplicate fanart file(s) for %s: %s", len(removedNames), a.Name, strings.Join(removedNames, ", ")),
 	}, nil
 }
