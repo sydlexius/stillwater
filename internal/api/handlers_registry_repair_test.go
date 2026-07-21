@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -833,5 +834,148 @@ func TestRegistryRepair_SlotReleasedAfterRun(t *testing.T) {
 	}
 	if code, _, body := postRepair(t, f.router, `{"commit":false}`); code != http.StatusOK {
 		t.Fatalf("second run status = %d, want 200; body: %s", code, body)
+	}
+}
+
+// deadlineRecorder is a ResponseWriter that satisfies the interface
+// http.NewResponseController looks for, and records every SetWriteDeadline
+// call. httptest.ResponseRecorder alone does NOT implement SetWriteDeadline,
+// so a controller built over a bare recorder reports ErrNotSupported and the
+// handler's call would be unobservable -- the guard below would pass whether
+// or not the deadline was ever lifted.
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+	// db, when set, is sampled at each SetWriteDeadline call so a test can
+	// assert WHEN the deadline was set relative to the passes' writes. Asserting
+	// only THAT it was set lets a regression move the call after both passes --
+	// which is the original bug's shape, a deadline dealt with too late to
+	// matter.
+	db        *sql.DB
+	rowsAtSet []int
+}
+
+func (d *deadlineRecorder) SetWriteDeadline(t time.Time) error {
+	d.deadlines = append(d.deadlines, t)
+	if d.db != nil {
+		var n int
+		if err := d.db.QueryRow(`SELECT COUNT(*) FROM artist_images`).Scan(&n); err == nil {
+			d.rowsAtSet = append(d.rowsAtSet, n)
+		}
+	}
+	return nil
+}
+
+// TestRegistryRepair_LiftsWriteDeadline pins the fix for #2685.
+//
+// The server sets a 180s WriteTimeout, which is a deadline on the CONNECTION,
+// not a cancellation of the handler. A library-wide repair is a filesystem
+// walk over every artist directory and runs for minutes (measured at 5m23s
+// against a 1226-artist library), so without lifting the deadline the run
+// completes normally and only THEN finds it can no longer write: the operator
+// gets an empty body after every write has already been performed, and has no
+// receipt for what changed.
+//
+// The deadline must be lifted to the ZERO time (no deadline), not merely
+// pushed out, because no finite extension is correct for a walk whose duration
+// scales with library size.
+func TestRegistryRepair_LiftsWriteDeadline(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
+		"/api/v1/reports/registry-repair/remediate", strings.NewReader(`{"commit":false}`))
+	w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	f.router.handleRegistryRepairRemediate(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if len(w.deadlines) == 0 {
+		t.Fatal("handler never called SetWriteDeadline: a library-wide run will " +
+			"complete and then fail to return its report (#2685)")
+	}
+	// FINITE, and far enough out to clear a slow library. A zero deadline means
+	// NO deadline, which removes the only bound on the final write: a client
+	// that stops reading without closing its socket would block the handler
+	// forever, and the repair slot -- freed by `defer release()` -- would stay
+	// claimed for the life of the process.
+	got := w.deadlines[0]
+	if got.IsZero() {
+		t.Fatal("SetWriteDeadline(zero) removes the deadline entirely; an " +
+			"unresponsive client can then wedge the repair slot permanently")
+	}
+	if remaining := time.Until(got); remaining < 10*time.Minute {
+		t.Errorf("write deadline is %v out, want a generous finite extension: "+
+			"too short and a large library still loses its report", remaining)
+	}
+}
+
+// TestRegistryRepair_SurvivesUnsupportedDeadline: a ResponseWriter that cannot
+// carry a deadline (the bare recorder every other test here uses) must not
+// break the request. The handler logs the failure loudly -- silent-failure
+// capability guards are forbidden -- but a scoped run still completes well
+// inside the deadline, so the repair stays useful rather than becoming
+// unreachable.
+func TestRegistryRepair_SurvivesUnsupportedDeadline(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+
+	code, _, body := postRepair(t, f.router, `{"commit":false}`)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 when the writer cannot carry a deadline; body: %s", code, body)
+	}
+}
+
+// TestRegistryRepair_DeadlineIsSetBeforeTheWork pins the PLACEMENT of the
+// write-deadline extension, not merely its existence.
+//
+// A hostile review of the original fix proved the gap: moving the identical
+// SetWriteDeadline call to just before the final writeJSON -- after both passes
+// had run -- still satisfied a test that only asserted the call happened. That
+// is precisely the defect's own shape: a deadline dealt with too late to help
+// the slow run it exists for.
+//
+// The database is the witness. In commit mode the rebuild pass inserts rows, so
+// if the deadline is set BEFORE the passes, the row count sampled at that
+// moment still equals the pre-request count; if it is set after, the sample has
+// already grown. The final count is asserted to have grown too, so the test
+// cannot pass vacuously against a run that wrote nothing.
+func TestRegistryRepair_DeadlineIsSetBeforeTheWork(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+
+	var before int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM artist_images`).Scan(&before); err != nil {
+		t.Fatalf("counting rows before: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
+		"/api/v1/reports/registry-repair/remediate", strings.NewReader(`{"commit":true}`))
+	w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder(), db: f.db}
+	f.router.handleRegistryRepairRemediate(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if len(w.rowsAtSet) == 0 {
+		t.Fatal("handler never called SetWriteDeadline")
+	}
+
+	var after int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM artist_images`).Scan(&after); err != nil {
+		t.Fatalf("counting rows after: %v", err)
+	}
+	// Precondition: without this the placement assertion below is vacuous,
+	// because before == after would satisfy it no matter when the call happened.
+	if after <= before {
+		t.Fatalf("fixture wrote no rows (before=%d after=%d); the placement "+
+			"assertion would pass vacuously", before, after)
+	}
+	if w.rowsAtSet[0] != before {
+		t.Errorf("deadline was set with %d rows present, want %d (the pre-request "+
+			"count): it is being set AFTER the repair passes have already written, "+
+			"which is too late to keep a slow run's report deliverable",
+			w.rowsAtSet[0], before)
 	}
 }
