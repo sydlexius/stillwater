@@ -876,9 +876,13 @@ func (d *deadlineRecorder) SetWriteDeadline(t time.Time) error {
 // gets an empty body after every write has already been performed, and has no
 // receipt for what changed.
 //
-// The deadline must be lifted to the ZERO time (no deadline), not merely
-// pushed out, because no finite extension is correct for a walk whose duration
-// scales with library size.
+// The deadline must be extended to a generous FINITE value, not cleared. A zero
+// deadline means NO deadline, which removes the only bound on the final write:
+// a client that stops reading without closing its socket could then block the
+// handler forever, and because the repair slot is freed by a deferred release
+// that cannot run until the handler returns, the singleton would stay claimed
+// for the life of the process. That earlier unbounded design was rejected in
+// review; this comment is what stops a future change from restoring it.
 func TestRegistryRepair_LiftsWriteDeadline(t *testing.T) {
 	t.Parallel()
 	f := newRegistryRepairFixture(t)
