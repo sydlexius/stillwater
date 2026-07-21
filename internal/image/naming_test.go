@@ -388,3 +388,59 @@ func TestDefaultFileNames(t *testing.T) {
 		t.Error("DefaultFileNames should have logo entries")
 	}
 }
+
+func TestResolveFanartNames(t *testing.T) {
+	// The built-in fanart defaults, in order. ResolveFanartNames appends these
+	// after the caller's configured names.
+	defaults := []string{"fanart.jpg", "fanart.png", "backdrop.jpg", "backdrop.png"}
+
+	tests := []struct {
+		name       string
+		configured []string
+		want       []string
+	}{
+		{
+			name:       "no configured names yields the built-in defaults",
+			configured: nil,
+			want:       defaults,
+		},
+		{
+			name: "configured name that is also a default is deduped to the front",
+			// "backdrop.jpg" is both configured AND a default: the union lists it
+			// once, in the configured leading position, not twice.
+			configured: []string{"backdrop.jpg"},
+			want:       []string{"backdrop.jpg", "fanart.jpg", "fanart.png", "backdrop.png"},
+		},
+		{
+			name: "configured name absent from the defaults leads the union",
+			// A convention the defaults do not know about must still be enumerated,
+			// ahead of the defaults.
+			configured: []string{"art.jpg"},
+			want:       []string{"art.jpg", "fanart.jpg", "fanart.png", "backdrop.jpg", "backdrop.png"},
+		},
+		{
+			name: "empty and case-variant configured entries are skipped",
+			// An empty entry is dropped, and a case-variant duplicate of a default
+			// is deduped case-insensitively (not re-listed).
+			configured: []string{"", "FANART.JPG"},
+			want:       []string{"FANART.JPG", "fanart.png", "backdrop.jpg", "backdrop.png"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveFanartNames(tt.configured)
+			if err != nil {
+				t.Fatalf("ResolveFanartNames: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("names = %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("names[%d] = %q, want %q (full: %v)", i, got[i], tt.want[i], got)
+				}
+			}
+		})
+	}
+}
