@@ -1652,10 +1652,15 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	// Strict variant: a non-ENOENT stat error must NOT clear the exists_flag.
-	// A permission-denied or unmounted-filesystem hiccup that returned EACCES
-	// or EIO would otherwise drop a flag that is still correct on disk. See #1161.
-	filePath, found, statErr := img.FindExistingImageStrict(dir, patterns)
+	// Directory-verifying strict variant: a non-ENOENT stat error, or the
+	// image directory itself being missing (e.g. an unmounted library share
+	// or cache volume), must NOT clear the exists_flag. Plain
+	// FindExistingImageStrict would collapse a missing dir into the same
+	// clean "not found" shape as "dir present, file genuinely absent" and
+	// clear a flag for artwork this request never actually got to look at
+	// -- this is the destructive path measured in #2686. See also #1161 for
+	// the original non-ENOENT stat-error guard this extends.
+	filePath, found, statErr := img.FindExistingImageStrictVerifyDir(dir, patterns)
 	if statErr != nil {
 		r.logger.Warn("serve image: stat error probing artist dir; preserving exists_flag",
 			slog.String("artist_id", a.ID),
@@ -1909,10 +1914,13 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
 	deleted, deleteFailed := deleteImageFiles(r.fileRemover, r.imageDir(a), patterns, r.logger)
 
-	// Strict variant: only clear the exists_flag when every probe returned
-	// ENOENT (file genuinely gone). A transient stat error means we cannot
-	// confirm absence and must leave the flag alone. See #1161.
-	if _, found, statErr := img.FindExistingImageStrict(r.imageDir(a), patterns); statErr != nil {
+	// Directory-verifying strict variant: only clear the exists_flag when
+	// dir was confirmed present and every probe inside it returned ENOENT
+	// (file genuinely gone). A transient stat error, or the directory itself
+	// having vanished between the delete attempt above and this check
+	// (e.g. the library share unmounted mid-request), means we cannot
+	// confirm absence and must leave the flag alone. See #1161 and #2686.
+	if _, found, statErr := img.FindExistingImageStrictVerifyDir(r.imageDir(a), patterns); statErr != nil {
 		r.logger.Warn("delete image: post-delete stat error; preserving exists_flag",
 			slog.String("artist_id", a.ID),
 			slog.String("image_type", imageType),
@@ -3053,10 +3061,13 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 			continue
 		}
 
-		// Strict variant: only clear the exists_flag when every probe returned
-		// ENOENT. A transient stat error must skip this artist without
-		// touching the flag (see #1161).
-		filePath, found, statErr := img.FindExistingImageStrict(dir, patterns)
+		// Directory-verifying strict variant: only clear the exists_flag when
+		// dir was confirmed to exist AND every probe inside it returned
+		// ENOENT. A transient stat error, or dir itself being missing (e.g.
+		// an unmounted library share mid-rotation), must skip this artist
+		// without touching the flag -- see #1161 for the stat-error guard
+		// and #2686 for the missing-directory extension.
+		filePath, found, statErr := img.FindExistingImageStrictVerifyDir(dir, patterns)
 		if statErr != nil {
 			r.logger.Warn("random backdrop: stat error probing artist dir; preserving exists_flag",
 				slog.String("artist_id", a.ID),

@@ -211,11 +211,13 @@ func (s *Service) ScanExistsFlags(ctx context.Context) error {
 			continue
 		}
 
-		// Use the strict variant: a transient stat error (EACCES on a
-		// permission-denied dir, EIO/ESTALE on an unmounted NFS share) means
-		// "we don't know whether the file is absent" and must NOT be treated
-		// as a clean miss. Without this distinction, a single flaky filesystem
-		// could clear every exists_flag under it. See issue #1161.
+		// Use the strict, directory-verifying variant: a transient stat error
+		// (EACCES on a permission-denied dir, EIO/ESTALE on an unmounted NFS
+		// share) OR a vanished directory itself (ENOENT on dir, e.g. an
+		// unmounted cache volume) means "we don't know whether the file is
+		// absent" and must NOT be treated as a clean miss. Without this
+		// distinction, a single flaky or unmounted filesystem could clear
+		// every exists_flag under it. See issues #1161 and #2686.
 		patterns := img.FileNamesForType(img.DefaultFileNames, imageType)
 		if len(patterns) == 0 {
 			// Unknown imageType: FindExistingImageStrict(dir, nil) reports
@@ -228,7 +230,7 @@ func (s *Service) ScanExistsFlags(ctx context.Context) error {
 			skipped++
 			continue
 		}
-		_, found, statErr := img.FindExistingImageStrict(dir, patterns)
+		_, found, statErr := img.FindExistingImageStrictVerifyDir(dir, patterns)
 		if statErr != nil {
 			s.logger.Warn("exists_flag scan: stat error probing artist dir, skipping",
 				slog.String("artist_id", artistID),
@@ -368,9 +370,12 @@ func confirmSlotOnDisk(dir, imageType string, slotIndex int) (bool, error) {
 		// definitively unconfirmable and leave the flag cleared.
 		return false, nil
 	}
-	// Strict variant: a non-ENOENT stat error means "cannot tell", which must
-	// NOT be read as "file present". Restore only on a confirmed hit.
-	_, found, err := img.FindExistingImageStrict(dir, patterns)
+	// Directory-verifying strict variant: a non-ENOENT stat error, OR dir
+	// itself being missing, means "cannot tell", which must NOT be read as
+	// "file present" (nor collapsed into "definitively absent" the way
+	// plain FindExistingImageStrict would on a vanished directory -- see
+	// #2686). Restore only on a confirmed hit.
+	_, found, err := img.FindExistingImageStrictVerifyDir(dir, patterns)
 	return found, err
 }
 

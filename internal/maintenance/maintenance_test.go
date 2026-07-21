@@ -218,17 +218,23 @@ func TestScanExistsFlags(t *testing.T) {
 		t.Fatalf("creating real image file: %v", err)
 	}
 
+	// Directory exists but is empty: this is the still-legitimate clear path
+	// (directory confirmed present, file confirmed absent).
+	emptyDir := t.TempDir()
+
 	// Build a deterministic missing-path under t.TempDir() rather than a
 	// hardcoded absolute path: the latter would flake on any host that happens
 	// to have "/tmp/does-not-exist-in-tests" present.
 	missingPath := filepath.Join(t.TempDir(), "missing")
 
-	// Seed artists: real path, missing path, and no path (cache-dir fallback).
+	// Seed artists: real path, empty-dir path, missing path, and no path
+	// (cache-dir fallback).
 	for _, a := range []struct {
 		id   string
 		path string
 	}{
 		{"artist-real", realDir},
+		{"artist-emptydir", emptyDir},
 		{"artist-missing", missingPath},
 		{"artist-nocache", ""},
 	} {
@@ -240,12 +246,20 @@ func TestScanExistsFlags(t *testing.T) {
 	}
 
 	// Seed artist_images rows.
-	// Row 1: real file exists      -- flag must NOT be cleared.
-	// Row 2: missing path (ENOENT) -- flag MUST be cleared.
-	// Row 3: cache dir miss        -- flag MUST be cleared (cache dir
-	//                                 exists but artist subdir doesn't,
-	//                                 so FindExistingImage sees ENOENT).
-	// Row 4: exists_flag=0         -- must remain untouched (not even checked).
+	// Row 1: real file exists         -- flag must NOT be cleared.
+	// Row 2: dir exists, file absent  -- flag MUST be cleared (the still-
+	//                                    legitimate definitive-absence path).
+	// Row 3: missing dir (ENOENT)     -- flag MUST be PRESERVED and counted
+	//                                    skipped (issue #2686: a vanished
+	//                                    directory is unverifiable, not
+	//                                    definitive absence).
+	// Row 4: cache dir miss           -- flag MUST be PRESERVED and counted
+	//                                    skipped (cache dir exists but the
+	//                                    artist subdir under it doesn't;
+	//                                    same #2686 asymmetry, reached via
+	//                                    the cache-dir fallback branch).
+	// Row 5: exists_flag=0            -- must remain untouched (not even
+	//                                    checked).
 	for _, row := range []struct {
 		id        string
 		artistID  string
@@ -253,6 +267,7 @@ func TestScanExistsFlags(t *testing.T) {
 		exists    int
 	}{
 		{"img-real", "artist-real", "thumb", 1},
+		{"img-emptydir", "artist-emptydir", "banner", 1},
 		{"img-missing", "artist-missing", "thumb", 1},
 		{"img-nocache", "artist-nocache", "fanart", 1},
 		{"img-zero", "artist-real", "fanart", 0},
@@ -284,13 +299,20 @@ func TestScanExistsFlags(t *testing.T) {
 	if got := flagFor("img-real"); got != 1 {
 		t.Errorf("img-real: expected exists_flag=1 (file present), got %d", got)
 	}
-	// Missing path: flag must be cleared to 0.
-	if got := flagFor("img-missing"); got != 0 {
-		t.Errorf("img-missing: expected exists_flag=0 (file absent), got %d", got)
+	// Dir exists, file absent: flag must be cleared to 0 (still-legitimate
+	// definitive-absence path).
+	if got := flagFor("img-emptydir"); got != 0 {
+		t.Errorf("img-emptydir: expected exists_flag=0 (dir present, file absent), got %d", got)
 	}
-	// Cache dir miss: flag must be cleared to 0.
-	if got := flagFor("img-nocache"); got != 0 {
-		t.Errorf("img-nocache: expected exists_flag=0 (no cache dir), got %d", got)
+	// Missing dir: flag must be PRESERVED (unverifiable, not definitive
+	// absence). See issue #2686.
+	if got := flagFor("img-missing"); got != 1 {
+		t.Errorf("img-missing: expected exists_flag=1 (dir missing, unverifiable), got %d", got)
+	}
+	// Cache dir miss (artist subdir under cacheDir doesn't exist): flag must
+	// be PRESERVED, same #2686 asymmetry.
+	if got := flagFor("img-nocache"); got != 1 {
+		t.Errorf("img-nocache: expected exists_flag=1 (cache subdir missing, unverifiable), got %d", got)
 	}
 	// Already-zero row: must remain 0 and not have been re-touched.
 	if got := flagFor("img-zero"); got != 0 {
@@ -338,6 +360,48 @@ func TestScanExistsFlagsUnresolvableDirSkips(t *testing.T) {
 	}
 	if flag != 1 {
 		t.Errorf("unresolvable-dir row: expected exists_flag=1 (skipped), got %d", flag)
+	}
+}
+
+// TestScanExistsFlagsMissingDirSkips verifies that a row whose RESOLVED
+// artist directory does not exist on disk is SKIPPED (flag preserved), not
+// cleared. Before the #2686 fix, FindExistingImageStrict only stats
+// dir/<file>: a missing parent directory makes every child stat return
+// ENOENT, which the strict variant's own errors.Is(err, fs.ErrNotExist)
+// handling collapses into a clean ("", false, nil) miss -- indistinguishable
+// from "directory present, file absent" -- so the scanner would clear the
+// flag for artwork it never actually looked at. This is distinct from
+// TestScanExistsFlagsUnresolvableDirSkips, which covers a path that never
+// resolves to a directory at all (empty path, no cache-dir fallback); here
+// the path DOES resolve, it just points at nothing.
+func TestScanExistsFlagsMissingDirSkips(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.Default())
+	ctx := context.Background()
+
+	missingDir := filepath.Join(t.TempDir(), "vanished-artist-dir")
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, path) VALUES ('a-missingdir', 'a-missingdir', ?)`, missingDir); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag)
+		 VALUES ('i-missingdir', 'a-missingdir', 'thumb', 0, 1)`); err != nil {
+		t.Fatalf("seed image: %v", err)
+	}
+
+	if err := svc.ScanExistsFlags(ctx); err != nil {
+		t.Fatalf("ScanExistsFlags: %v", err)
+	}
+
+	var flag int
+	if err := db.QueryRowContext(ctx,
+		`SELECT exists_flag FROM artist_images WHERE id = 'i-missingdir'`).Scan(&flag); err != nil {
+		t.Fatalf("reading flag: %v", err)
+	}
+	if flag != 1 {
+		t.Errorf("missing-dir row: expected exists_flag=1 (skipped), got %d; a vanished directory is unverifiable, not definitive absence", flag)
 	}
 }
 
@@ -471,13 +535,14 @@ func TestStartExistsFlagScanner_RunsStartupAndTick(t *testing.T) {
 	svc := NewService(db, dbPath, "", slog.Default())
 	ctx := context.Background()
 
-	// Seed one artist with a path under t.TempDir() that we never create;
-	// exists_flag=1 should be cleared by the first scan. Using t.TempDir()
-	// instead of a hardcoded absolute path keeps the test deterministic
-	// regardless of host filesystem state.
-	missingPath := filepath.Join(t.TempDir(), "missing")
+	// Seed one artist with a path that exists but holds no image file, so the
+	// scan takes the still-legitimate definitive-absence clear path (a
+	// directory that never exists is unverifiable per #2686 and would no
+	// longer be cleared, which would make this test about the loop mechanics
+	// indistinguishable from a #2686 regression).
+	presentDir := t.TempDir()
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO artists (id, name, path) VALUES ('a1', 'a1', ?)`, missingPath); err != nil {
+		`INSERT INTO artists (id, name, path) VALUES ('a1', 'a1', ?)`, presentDir); err != nil {
 		t.Fatalf("seed artist: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
@@ -546,18 +611,21 @@ func TestStartExistsFlagScanner_RunsStartupAndTick(t *testing.T) {
 // Proving prompt exit is not sufficient: a regression that runs an immediate
 // scan and then exited on cancel would also satisfy that. To guard the
 // "startup delay must block all scanning" contract, seed a stale exists_flag=1
-// row pointing at a missing path and assert it is still 1 after the scanner
-// exits. If any scan had run, the row would have been cleared.
+// row whose directory exists but whose file does not (the definitive-absence
+// clear path) and assert it is still 1 after the scanner exits. If any scan
+// had run, the row would have been cleared. A row pointing at a MISSING
+// directory would not distinguish this: per #2686 that row is skipped (not
+// cleared) whether or not a scan ran, so it would pass vacuously here.
 func TestStartExistsFlagScanner_CanceledDuringStartupDelay(t *testing.T) {
 	db, dbPath := setupTestDBWithImages(t)
 	svc := NewService(db, dbPath, "", slog.Default())
 	ctx := context.Background()
 
-	// Seed a stale row whose image directory does not exist, so any scan that
-	// did run would clear the flag.
-	missingPath := filepath.Join(t.TempDir(), "missing")
+	// Seed a stale row whose image directory exists but holds no file, so any
+	// scan that did run would clear the flag.
+	presentDir := t.TempDir()
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO artists (id, name, path) VALUES ('a-startup', 'a-startup', ?)`, missingPath); err != nil {
+		`INSERT INTO artists (id, name, path) VALUES ('a-startup', 'a-startup', ?)`, presentDir); err != nil {
 		t.Fatalf("seed artist: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
@@ -907,20 +975,27 @@ func TestRestoreExistsFlags(t *testing.T) {
 	}
 	// The structured result (#2669) must describe the SAME pass the row
 	// assertions below verify, so assert its counters against the fixture:
-	// 9 cleared rows are examined, 4 are confirmed present and restored, 2 are
-	// probed and unanswerable (the EACCES directory, and the fanart slot under
-	// the absent directory, whose fanart resolution errors rather than
-	// reporting a clean miss), and 1 is unresolvable (the pathless artist, for
+	// 9 cleared rows are examined, 4 are confirmed present and restored, 3 are
+	// probed and unanswerable, and 1 is unresolvable (the pathless artist, for
 	// which no directory could be derived so no probe was ever attempted).
-	// Skipped and Unresolvable are both held apart from the confirmed-absent
-	// single-slot row, which is counted only in Checked -- "definitively
-	// absent" is not "cannot tell", and "could not answer" is not "never
-	// asked".
+	//
+	// The 3 unanswerable rows are the EACCES directory, and BOTH slots under
+	// the absent directory -- fanart and thumb alike. The thumb slot moved into
+	// this bucket in #2686: a MISSING DIRECTORY is not evidence that the file is
+	// absent, it is evidence that we could not look. Before that fix the
+	// single-slot probe collapsed the directory's own ENOENT into a clean miss
+	// and this row was counted only in Checked, i.e. treated as definitively
+	// absent -- the exact asymmetry that let an unmounted cache volume clear
+	// flags for artwork that was intact. The fanart slot was already correct
+	// because fanart resolution reads the directory and errors on a missing one.
+	//
+	// Skipped and Unresolvable stay distinct: "could not answer" is not "never
+	// asked", and neither is "definitively absent".
 	if res.DryRun {
 		t.Error("Commit:true must not report a dry run")
 	}
-	if res.Checked != 9 || res.Restored != 4 || res.Skipped != 2 || res.Unresolvable != 1 || res.Failed != 0 {
-		t.Errorf("result = %+v; want checked 9 restored 4 skipped 2 unresolvable 1 failed 0", *res)
+	if res.Checked != 9 || res.Restored != 4 || res.Skipped != 3 || res.Unresolvable != 1 || res.Failed != 0 {
+		t.Errorf("result = %+v; want checked 9 restored 4 skipped 3 unresolvable 1 failed 0", *res)
 	}
 
 	assertFlag := func(id, typ string, slot, wantFlag, wantLocked int) {
@@ -1172,7 +1247,14 @@ func TestConfirmSlotOnDisk(t *testing.T) {
 		{"fanart slot 0 present", dir, "fanart", 0, true, false},
 		{"fanart slot 1 absent", dir, "fanart", 1, false, false},
 		{"fanart slot 1 present", multiDir, "fanart", 1, true, false},
-		{"thumb absent dir (clean miss)", filepath.Join(t.TempDir(), "nope"), "thumb", 0, false, false},
+		// Both single-slot and fanart types must treat a missing directory as
+		// unverifiable (an error), not as a definitive clean miss. Before
+		// #2686 the single-slot branch called FindExistingImageStrict
+		// directly, whose own ENOENT-collapse made a missing dir
+		// indistinguishable from "dir present, file absent"; the fanart
+		// branch (via ResolveFanart's os.ReadDir) already got this right,
+		// which is why these two rows were asymmetric before the fix.
+		{"thumb absent dir (unverifiable)", filepath.Join(t.TempDir(), "nope"), "thumb", 0, false, true},
 		{"fanart absent dir (read error)", filepath.Join(t.TempDir(), "nope"), "fanart", 0, false, true},
 		{"single-slot type at slot > 0 has no naming", dir, "thumb", 1, false, false},
 		{"unknown image type", dir, "poster", 0, false, false},
