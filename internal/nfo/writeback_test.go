@@ -3,6 +3,7 @@ package nfo
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -733,16 +734,28 @@ func TestWriteNFOAtomic_UnwritablePath(t *testing.T) {
 
 // TestWriteBackArtistNFO_UnreadableExistingNFO verifies the write-back
 // distinguishes a genuinely-absent NFO from one that exists but cannot be read.
-// Here the artist.nfo path is a directory, so os.ReadFile fails with a
-// non-os.ErrNotExist error: the new readErr branch logs a Warn instead of
-// treating the failure as a benign "no existing NFO". The write-back stays
-// best-effort and still completes (WriteFileAtomic moves the unreadable path
-// aside), but it cannot preserve discography it was unable to read.
+// Here the artist.nfo is a regular file with no read permission (0o000), so
+// os.ReadFile fails with a non-os.ErrNotExist error (EACCES) -- the production
+// scenario the readErr branch guards ("a permission or I/O error means an NFO
+// very likely exists"). That branch logs a Warn instead of treating the failure
+// as a benign "no existing NFO". The write-back stays best-effort and still
+// completes: WriteFileAtomic replaces the unreadable file in place (the atomic
+// rename needs write permission on the parent directory, not on the file), but
+// it cannot preserve discography it was unable to read.
 func TestWriteBackArtistNFO_UnreadableExistingNFO(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "artist.nfo")
-	if err := os.Mkdir(target, 0o755); err != nil {
-		t.Fatalf("mkdir artist.nfo: %v", err)
+	if err := os.WriteFile(target, []byte("unreadable existing nfo"), 0o000); err != nil {
+		t.Fatalf("writing unreadable artist.nfo: %v", err)
+	}
+
+	// Probe the target: only proceed if this environment genuinely denies the
+	// read. os.Geteuid()==0 is too narrow -- a non-root user can still read a
+	// 0o000 file via ACLs or elevated capabilities, in which case the test would
+	// silently take the readable path and pass while proving nothing. If the read
+	// succeeds, the readErr branch cannot fire, so skip.
+	if _, err := os.ReadFile(target); err == nil {
+		t.Skip("environment can read a 0o000 file (root/ACL/capabilities); cannot exercise the unreadable-existing-NFO branch")
 	}
 
 	a := &artist.Artist{
@@ -752,8 +765,21 @@ func TestWriteBackArtistNFO_UnreadableExistingNFO(t *testing.T) {
 		Path:     dir,
 	}
 
-	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, DefaultFieldMap(), false); err != nil {
+	// Capture logs so we can prove the readErr (unreadable-existing) branch ran,
+	// not the benign absent branch. Without this assertion the test passes even
+	// if that branch is deleted, since the write-back completes either way.
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, logger, DefaultFieldMap(), false); err != nil {
 		t.Fatalf("WriteBackArtistNFOWithFieldMap over an unreadable NFO path: %v", err)
+	}
+
+	// The unreadable-existing-NFO branch must have fired its Warn. This is the
+	// whole point of the test: an existing-but-unreadable NFO is NOT treated as
+	// a benign absent file.
+	if got := logBuf.String(); !strings.Contains(got, "could not read existing NFO before write-back") {
+		t.Errorf("expected the unreadable-existing-NFO Warn to be logged; got log output:\n%s", got)
 	}
 
 	// The path is now a regular NFO file carrying the artist metadata.
