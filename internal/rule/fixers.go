@@ -2092,7 +2092,21 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	// subsequent artistService.Update(ctx, a) call (in Pipeline.FixViolation)
 	// writes matching artist_images rows, mirroring the discover/remove/
 	// renumber/resync sequence used by Router.updateArtistFanartCount.
-	resyncFanartFields(a, primaryName)
+	//
+	// Resolve the enumeration names via the convention-agnostic union rather
+	// than fanartNames (profile-names-OR-defaults). fanartNames commits to the
+	// active profile's write convention; if the fanart already on disk uses a
+	// different convention, resyncing against fanartNames alone would count zero
+	// and zero the FanartCount for artwork that still exists -- the exact
+	// convention-mismatch undercount this fix closes (#2635). On a resolver
+	// error, warn and leave the artist's fanart fields as-is rather than
+	// substitute a guessed count (matches Router.updateArtistFanartCount).
+	if names, namesErr := resolveFanartNames(ctx, f.platformService); namesErr != nil {
+		f.logger.Warn("resolving fanart naming convention after duplicate fix; artist fields left as-is",
+			slog.String("artist_id", a.ID), slog.String("error", namesErr.Error()))
+	} else {
+		resyncFanartFields(a, names)
+	}
 
 	return &FixResult{
 		RuleID:       ruleID,
@@ -2249,8 +2263,8 @@ func wrapWithRollbackErrs(rollbackErrs []string, err error) error {
 // is a self-contained copy limited to the fields extractImageMetadata reads
 // for fanart (Exists, Count, LowRes); Width/Height are left untouched since
 // slot 0 is never deleted and its dimensions do not change.
-func resyncFanartFields(a *artist.Artist, primaryName string) {
-	existing, err := img.DiscoverFanart(a.Path, primaryName)
+func resyncFanartFields(a *artist.Artist, names []string) {
+	_, existing, err := img.ResolveFanart(a.Path, names)
 	if err != nil {
 		return
 	}

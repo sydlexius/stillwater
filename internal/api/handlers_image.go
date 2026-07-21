@@ -2475,6 +2475,34 @@ func (r *Router) getActiveFanartPrimary(ctx context.Context) string {
 	return name
 }
 
+// fanartNamesStrict returns EVERY fanart filename that could name this
+// artist's fanart, in preference order, and surfaces a profile lookup failure
+// instead of papering over it.
+//
+// getActiveFanartPrimary substitutes the built-in defaults when GetActive
+// errors, which is fine for the read-only callers that only need a name to
+// display or to write a new file under. It is not fine for enumeration. An
+// enumeration's count is a positive claim about what exists, and a guessed
+// convention that misses produces a confident zero against a directory full of
+// artwork. Refusing is the only safe answer to "we could not determine the
+// naming convention" (#2635).
+func (r *Router) fanartNamesStrict(ctx context.Context) ([]string, error) {
+	profile, err := r.platformService.GetActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolving active platform profile: %w", err)
+	}
+	var configured []string
+	if profile != nil {
+		configured = profile.ImageNaming.NamesForType("fanart")
+	}
+	// The profile-names-UNION-defaults resolution (profile first, case-insensitive
+	// dedup, empty-result-is-an-error) is shared with the rule engine via
+	// img.ResolveFanartNames so the two never disagree about one directory; the
+	// active-profile lookup and its error propagation stay here because they are
+	// platform-coupled.
+	return img.ResolveFanartNames(configured)
+}
+
 // isKodiNumbering returns true if the active platform profile uses Kodi-style
 // fanart numbering (fanart1.jpg, fanart2.jpg) instead of the Emby/Jellyfin
 // convention (backdrop2.jpg, backdrop3.jpg).
@@ -2543,8 +2571,14 @@ func (r *Router) processAndAppendFanart(ctx context.Context, scope *imageWriteSc
 // updateArtistFanartCount discovers fanart files and updates both the exists
 // flag and count on the artist record.
 func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) {
-	primary := r.getActiveFanartPrimary(ctx)
-	existing, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	names, namesErr := r.fanartNamesStrict(ctx)
+	if namesErr != nil {
+		r.logger.Error("resolving fanart naming convention for count update; skipping DB update",
+			slog.String("artist_id", a.ID),
+			slog.String("error", namesErr.Error()))
+		return
+	}
+	_, existing, discoverErr := img.ResolveFanart(r.imageDir(a), names)
 	if discoverErr != nil {
 		r.logger.Warn("discovering fanart for count update; skipping DB update",
 			slog.String("artist_id", a.ID),

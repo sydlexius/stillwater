@@ -170,7 +170,7 @@ func TestResyncFanartFields_NoFanart(t *testing.T) {
 		Name: "Empty Fanart Artist", Path: t.TempDir(),
 		FanartExists: true, FanartCount: 5, FanartLowRes: true,
 	}
-	resyncFanartFields(a, "fanart.jpg")
+	resyncFanartFields(a, []string{"fanart.jpg"})
 	if a.FanartExists {
 		t.Error("FanartExists = true; want false when no fanart files exist")
 	}
@@ -192,7 +192,7 @@ func TestResyncFanartFields_CountsAndReadsSlot0(t *testing.T) {
 	createGradientJPEG(t, filepath.Join(dir, "fanart2.jpg"), 3)
 
 	a := &artist.Artist{Name: "Fanart Artist", Path: dir}
-	resyncFanartFields(a, "fanart.jpg")
+	resyncFanartFields(a, []string{"fanart.jpg"})
 	if !a.FanartExists {
 		t.Error("FanartExists = false; want true when fanart files exist")
 	}
