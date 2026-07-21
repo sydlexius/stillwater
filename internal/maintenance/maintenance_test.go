@@ -975,20 +975,27 @@ func TestRestoreExistsFlags(t *testing.T) {
 	}
 	// The structured result (#2669) must describe the SAME pass the row
 	// assertions below verify, so assert its counters against the fixture:
-	// 9 cleared rows are examined, 4 are confirmed present and restored, 2 are
-	// probed and unanswerable (the EACCES directory, and the fanart slot under
-	// the absent directory, whose fanart resolution errors rather than
-	// reporting a clean miss), and 1 is unresolvable (the pathless artist, for
+	// 9 cleared rows are examined, 4 are confirmed present and restored, 3 are
+	// probed and unanswerable, and 1 is unresolvable (the pathless artist, for
 	// which no directory could be derived so no probe was ever attempted).
-	// Skipped and Unresolvable are both held apart from the confirmed-absent
-	// single-slot row, which is counted only in Checked -- "definitively
-	// absent" is not "cannot tell", and "could not answer" is not "never
-	// asked".
+	//
+	// The 3 unanswerable rows are the EACCES directory, and BOTH slots under
+	// the absent directory -- fanart and thumb alike. The thumb slot moved into
+	// this bucket in #2686: a MISSING DIRECTORY is not evidence that the file is
+	// absent, it is evidence that we could not look. Before that fix the
+	// single-slot probe collapsed the directory's own ENOENT into a clean miss
+	// and this row was counted only in Checked, i.e. treated as definitively
+	// absent -- the exact asymmetry that let an unmounted cache volume clear
+	// flags for artwork that was intact. The fanart slot was already correct
+	// because fanart resolution reads the directory and errors on a missing one.
+	//
+	// Skipped and Unresolvable stay distinct: "could not answer" is not "never
+	// asked", and neither is "definitively absent".
 	if res.DryRun {
 		t.Error("Commit:true must not report a dry run")
 	}
-	if res.Checked != 9 || res.Restored != 4 || res.Skipped != 2 || res.Unresolvable != 1 || res.Failed != 0 {
-		t.Errorf("result = %+v; want checked 9 restored 4 skipped 2 unresolvable 1 failed 0", *res)
+	if res.Checked != 9 || res.Restored != 4 || res.Skipped != 3 || res.Unresolvable != 1 || res.Failed != 0 {
+		t.Errorf("result = %+v; want checked 9 restored 4 skipped 3 unresolvable 1 failed 0", *res)
 	}
 
 	assertFlag := func(id, typ string, slot, wantFlag, wantLocked int) {
