@@ -76,9 +76,23 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/maintenance"
 )
+
+// registryRepairWriteTimeout is the write deadline this route substitutes for
+// the server's 180s default (internal/server/listeners.go), which a
+// library-wide repair blows through: 5m23s measured against a 1226-artist
+// library on a network mount.
+//
+// Finite ON PURPOSE. It has to clear the slowest legitimate run on a library
+// far larger than the one measured, while still guaranteeing the handler
+// returns -- and therefore that `defer release()` frees the repair slot -- even
+// against a client that stops reading without closing its socket. No deadline
+// at all would let such a client wedge the endpoint for the life of the
+// process. 30 minutes is ~5x the measured worst case.
+const registryRepairWriteTimeout = 30 * time.Minute
 
 // registryRepairRequest is the POST body for the repair endpoint. Both fields
 // are optional: the zero value is a library-wide PREVIEW.
@@ -221,6 +235,47 @@ func (r *Router) handleRegistryRepairRemediate(w http.ResponseWriter, req *http.
 		return
 	}
 	defer release()
+
+	// EXTEND this response's write deadline, before either pass runs. The server
+	// sets a 180s WriteTimeout (internal/server/listeners.go) sized for ordinary
+	// requests, but a library-wide repair is a filesystem walk over every artist
+	// directory and runs for MINUTES: measured at 5m23s against a 1226-artist
+	// library on a network mount. WriteTimeout is a deadline on the CONNECTION,
+	// not a cancellation of the handler, so without this the run completes
+	// normally and only THEN discovers it can no longer write: the operator
+	// receives an empty body while every write has already been performed,
+	// leaving them no receipt for what changed. Extending it for this route only
+	// keeps the 180s default protecting every other endpoint.
+	//
+	// EXTENDED, NOT CLEARED, and this is load-bearing. A zero deadline means NO
+	// deadline, which removes the only bound on the final response write. A
+	// client that stops reading WITHOUT closing the socket (a hung proxy, a
+	// network partition that drops packets without a RST) would then block the
+	// final Write forever -- and because the slot is released by `defer
+	// release()`, which cannot run until this handler returns, the repair
+	// singleton would stay claimed for the life of the process and every later
+	// repair would 409. Reproduced against a real TCP client during review.
+	//
+	// The context does NOT provide that bound either: RepairImageRegistry checks
+	// ctx.Err() per artist (internal/maintenance/image_registry_repair.go), but
+	// RestoreExistsFlags' preview scan does NOT check it at all -- its only
+	// cancellation check sits in the commit-only UPDATE loop, which a preview
+	// never reaches. So for `{"commit":false}` the deadline below is the only
+	// thing that can end a wedged request.
+	//
+	// The value is sized to be generous against a much larger library than the
+	// one measured while still guaranteeing the slot is eventually released.
+	if err := http.NewResponseController(w).
+		SetWriteDeadline(time.Now().Add(registryRepairWriteTimeout)); err != nil {
+		// Fail loud rather than silently proceeding into a run whose report
+		// cannot be delivered. Not fatal -- a short scoped run still completes
+		// well inside the default deadline, so the repair remains useful -- but
+		// a library-wide run is now known to be at risk, and this repo forbids
+		// silent-failure capability guards.
+		r.logger.Error("could not extend write deadline for registry repair; "+
+			"a long run may complete but fail to return its report",
+			slog.Any("error", err))
+	}
 
 	ctx := req.Context()
 
