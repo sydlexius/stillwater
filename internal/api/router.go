@@ -196,6 +196,18 @@ type Router struct {
 	// TOCTOU surface requiring cross-singleton exclusion.
 	platformPruneMu      sync.Mutex
 	platformPruneRunning bool
+	// registryRepairRunning guards the singleton image-registry repair run
+	// (#2669): only one rebuild+restore may be in flight, so a concurrent
+	// POST /api/v1/reports/registry-repair/remediate gets 409 instead of two
+	// runs each scanning and then writing the same artist_images rows.
+	// Deliberately a dedicated mutex/flag pair (not shared with
+	// bulkActionMu/backdropRepairRunning), for the same reason platformPruneMu
+	// is separate: this repair writes no files at all -- it reads the
+	// filesystem and inserts/updates registry rows -- so it shares none of the
+	// on-disk fanart TOCTOU surface those destructive passes exclude each
+	// other over.
+	registryRepairMu      sync.Mutex
+	registryRepairRunning bool
 	// discographyFetchInFlight holds the artist IDs that currently have a
 	// discography fetch running. A concurrent fetch for the same artist is
 	// rejected with 409: the fetch is a read-modify-write of artist.nfo, so
@@ -996,6 +1008,14 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// via requireForeignAdmin. Both are singletons sharing r.backdropRepairRunning.
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/phash-mismatch/remediate", wrapAuth(r.handlePHashMismatchRemediate, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/phash-mismatch/restore", wrapAuth(r.handlePHashMismatchRestore, authMw))
+	// Image registry repair (#2669): rebuild missing artist_images rows from
+	// the files on disk, then restore exists_flag for rows whose file is
+	// confirmed present. Registered as a plain /api/v1 POST alongside the
+	// remediate endpoints above since the admin gate is enforced in-handler
+	// via requireForeignAdmin. Its own singleton (r.registryRepairRunning),
+	// NOT the destructive-fanart one -- see handlers_registry_repair.go.
+	// Previews unless the body sets commit:true.
+	mux.HandleFunc("POST "+bp+"/api/v1/reports/registry-repair/remediate", wrapAuth(r.handleRegistryRepairRemediate, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		target := r.basePath + "/reports/duplicates"
 		if raw := req.URL.RawQuery; raw != "" {

@@ -1,0 +1,97 @@
+meta {
+  name: Registry Repair Remediate
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{apiBase}}/reports/registry-repair/remediate
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "commit": false
+  }
+}
+
+docs {
+  Image registry repair (#2669): rebuilds artist_images rows for files that are
+  on disk but have no registry row, then restores exists_flag for existing rows
+  whose file is positively confirmed present. POST
+  /api/v1/reports/registry-repair/remediate with {commit?, artist_id?}
+  (snake_case).
+
+  commit is AFFIRMATIVE, not dry_run: a Go bool zero-values to false, so a
+  dry_run field would mean a request that omitted it WRITES. With commit
+  omitted or false the request PREVIEWS -- both passes run identical discovery
+  and verification and report the plan without issuing a single write, leaving
+  artist_images byte-identical. This request deliberately sends commit:false so
+  it is safe to run against any collection target, CI or otherwise.
+
+  Admin-gated: the gate is in-handler (requireForeignAdmin), not on the route,
+  so an unauthenticated caller gets 401 and an authenticated non-admin gets 403.
+  The CI session is the bootstrap admin (ci-admin), so the admin gate passes and
+  the request reaches the handler body.
+
+  Singleton: this endpoint claims its OWN slot (registryRepairRunning), NOT the
+  destructive-fanart slot the phash back-out and fanart-duplicate remediation
+  share. It writes no files at all -- it reads the filesystem and INSERTS or
+  updates registry rows -- so it has no on-disk TOCTOU surface to exclude those
+  passes over. A second concurrent registry repair gets 409.
+
+  Empty-CI-DB expectation asserted here: with no artists seeded, both passes
+  have nothing in scope, so the run returns 200 with every counter at zero. The
+  mount-down guard (503) cannot fire on an empty library -- it requires at least
+  one artist in scope reporting absent -- so 200 is deterministic here.
+
+  The absent and unreadable counters are asserted as separate fields rather than
+  a single "problem" count: keeping "definitively gone" apart from "could not be
+  examined" is the contract this endpoint exists to uphold, so the shape is
+  pinned even where both are zero.
+}
+
+tests {
+  test("preview returns 200 on an empty library", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("content-type is application/json", function() {
+    expect(res.headers['content-type']).to.include('application/json');
+  });
+
+  test("commit:false is reported as a dry run", function() {
+    // The mode must round-trip: a report detached from its request must still
+    // say whether anything was written.
+    expect(res.body).to.be.an("object");
+    expect(res.body.commit).to.equal(false);
+    expect(res.body.dry_run).to.equal(true);
+  });
+
+  test("absent and unreadable are distinct counters", function() {
+    // Both are zero on an empty CI database; what is pinned here is that they
+    // are two separate fields and neither has been folded into the other.
+    expect(res.body.absent).to.equal(0);
+    expect(res.body.unreadable).to.equal(0);
+  });
+
+  test("every counter is zero with nothing in scope", function() {
+    expect(res.body.scanned).to.equal(0);
+    expect(res.body.rebuilt).to.equal(0);
+    expect(res.body.restored).to.equal(0);
+  });
+
+  test("both nested per-pass results are present", function() {
+    // The rollup is a summary, not a replacement: each pass's own detail must
+    // still be reachable for anyone who needs to drill in.
+    expect(res.body.rebuild).to.be.an("object");
+    expect(res.body.restore).to.be.an("object");
+    expect(res.body.rebuild.dry_run).to.equal(true);
+    expect(res.body.restore.dry_run).to.equal(true);
+  });
+}

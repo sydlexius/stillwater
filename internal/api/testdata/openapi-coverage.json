@@ -1407,6 +1407,13 @@
     "covered": true
   },
   {
+    "operationId": "remediateRegistryRepair",
+    "method": "POST",
+    "path": "/reports/registry-repair/remediate",
+    "handler": "handleRegistryRepairRemediate",
+    "covered": true
+  },
+  {
     "operationId": "removeAlias",
     "method": "DELETE",
     "path": "/artists/{id}/aliases/{aliasId}",
