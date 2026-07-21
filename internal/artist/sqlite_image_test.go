@@ -1399,3 +1399,259 @@ func TestClearExistsFlag_MissingRowIsNotAnError(t *testing.T) {
 		t.Errorf("got %d clear records for a row that does not exist, want 0", n)
 	}
 }
+
+// requireOneRestore asserts exactly one "artist image exists flag restored"
+// record exists for the artist and that its level, image_type, slot_index and
+// source match exactly. It is the Info-level sibling of requireOne (the restore
+// path is a non-destructive correction, so it logs at Info rather than the
+// clear path's forensic Warn).
+func requireOneRestore(t *testing.T, s *imageLogState, artistID, imageType, slotIndex, source string) {
+	t.Helper()
+	const msg = "artist image exists flag restored"
+	got := s.matching(msg, artistID)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 %q record for artist %s, got %d (all entries: %+v)",
+			msg, artistID, len(got), s.entries)
+	}
+	e := got[0]
+	if e.level != slog.LevelInfo {
+		t.Errorf("%s: level = %v, want INFO", msg, e.level)
+	}
+	if e.attrs["image_type"] != imageType {
+		t.Errorf("%s: image_type = %q, want %q", msg, e.attrs["image_type"], imageType)
+	}
+	if e.attrs["slot_index"] != slotIndex {
+		t.Errorf("%s: slot_index = %q, want %q", msg, e.attrs["slot_index"], slotIndex)
+	}
+	if e.attrs["source"] != source {
+		t.Errorf("%s: source = %q, want %q", msg, e.attrs["source"], source)
+	}
+}
+
+// TestRestoreExistsFlag_PreservesLock is the design-lock #3 guard (issue #2668):
+// the monotone restore MUST flip exists_flag 0 -> 1 even on a LOCKED row --
+// exists_flag is a physical fact, the lock governs content, not physical
+// existence -- while touching NEITHER the locked column NOR any other field, and
+// NEITHER a sibling row. A second, untouched slot proves there is no cross-row
+// leakage.
+func TestRestoreExistsFlag_PreservesLock(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Restore Lock", "/music/RestoreLock")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Target: thumb/0 stale-missing (exists_flag=0). Sibling: fanart/0 also
+	// exists_flag=0, and must be left cleared -- it proves the restore touches
+	// only the exact slot it was asked for.
+	seedImageSlots(t, repo, a.ID, []ArtistImage{
+		imageSlot("thumb", 0, false), imageSlot("fanart", 0, false),
+	})
+
+	// Lock the target row. The restore must fire regardless of the lock.
+	before, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	var thumbID string
+	for _, im := range before {
+		if im.ImageType == "thumb" && im.SlotIndex == 0 {
+			thumbID = im.ID
+		}
+	}
+	if thumbID == "" {
+		t.Fatal("precondition: thumb/0 row not seeded")
+	}
+	if err := repo.SetLock(ctx, thumbID, true); err != nil {
+		t.Fatalf("SetLock(true): %v", err)
+	}
+
+	if err := repo.RestoreExistsFlag(ctx, a.ID, "thumb", 0); err != nil {
+		t.Fatalf("RestoreExistsFlag: %v", err)
+	}
+
+	after, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist after restore: %v", err)
+	}
+	var sawThumb, sawFanart bool
+	for _, im := range after {
+		switch {
+		case im.ImageType == "thumb" && im.SlotIndex == 0:
+			sawThumb = true
+			if !im.Exists {
+				t.Error("thumb/0 exists_flag not restored to true")
+			}
+			if !im.Locked {
+				t.Error("thumb/0 lock was cleared; the restore must never touch the locked column")
+			}
+			// Other fields must be byte-identical to the seeded row: only
+			// exists_flag may change. imageSlot seeds Width/Height = 100.
+			if im.Width != 100 || im.Height != 100 {
+				t.Errorf("thumb/0 dimensions changed: got %dx%d, want 100x100", im.Width, im.Height)
+			}
+			if im.ID != thumbID {
+				t.Errorf("thumb/0 id changed from %q to %q; the restore must not rotate the primary key", thumbID, im.ID)
+			}
+			if im.Placeholder != "" {
+				t.Errorf("thumb/0 placeholder changed to %q, want empty", im.Placeholder)
+			}
+		case im.ImageType == "fanart" && im.SlotIndex == 0:
+			sawFanart = true
+			if im.Exists {
+				t.Error("sibling fanart/0 was restored; the restore leaked across rows")
+			}
+			if im.Locked {
+				t.Error("sibling fanart/0 became locked; the restore leaked across rows")
+			}
+		}
+	}
+	if !sawThumb {
+		t.Error("thumb/0 row missing after restore")
+	}
+	if !sawFanart {
+		t.Error("sibling fanart/0 row missing after restore")
+	}
+}
+
+// TestRestoreExistsFlag_RecordsAttributedRestore proves a genuine 0 -> 1
+// transition emits exactly one attributed Info record carrying the context
+// source, mirroring the clear path's forensic record so a "the UI started
+// showing this artwork again" event is attributable after the fact.
+func TestRestoreExistsFlag_RecordsAttributedRestore(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Restore Probe", "/music/RestoreProbe")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{imageSlot("thumb", 0, false)})
+
+	state := captureImageLogs(t)
+	scanCtx := ContextWithSource(ctx, "scan")
+	if err := repo.RestoreExistsFlag(scanCtx, a.ID, "thumb", 0); err != nil {
+		t.Fatalf("RestoreExistsFlag: %v", err)
+	}
+
+	requireOneRestore(t, state, a.ID, "thumb", "0", "scan")
+
+	// The record must describe reality: the flag is actually set now.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != 1 || !images[0].Exists {
+		t.Fatalf("expected the row's exists_flag restored to true, got %+v", images)
+	}
+}
+
+// TestRestoreExistsFlag_NoRecordWhenAlreadySet keeps the record meaning
+// "something changed" and pins the no-op contract: restoring a flag that is
+// already 1 changes nothing, so the guarded UPDATE affects no row and no record
+// is emitted. It is idempotent.
+func TestRestoreExistsFlag_NoRecordWhenAlreadySet(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Restore Idempotent", "/music/RestoreIdempotent")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Seed the row already present (exists_flag=1).
+	seedImageSlots(t, repo, a.ID, []ArtistImage{imageSlot("thumb", 0, true)})
+
+	state := captureImageLogs(t)
+	if err := repo.RestoreExistsFlag(ctx, a.ID, "thumb", 0); err != nil {
+		t.Fatalf("RestoreExistsFlag: %v", err)
+	}
+
+	if n := len(state.matching("artist image exists flag restored", a.ID)); n != 0 {
+		t.Errorf("got %d restore records for a flag that was already set, want 0", n)
+	}
+	// Idempotent: still present, nothing corrupted.
+	images, err := repo.GetForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetForArtist: %v", err)
+	}
+	if len(images) != 1 || !images[0].Exists {
+		t.Fatalf("expected the already-set row unchanged, got %+v", images)
+	}
+}
+
+// TestRestoreExistsFlag_MissingRowIsNotAnError pins the no-row case. The caller
+// is asserting a file is present; a registry with no row for it has nothing to
+// restore (inserting one is #2670, out of scope), so the call is a clean no-op,
+// not an error, and emits no record.
+func TestRestoreExistsFlag_MissingRowIsNotAnError(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Restore Missing", "/music/RestoreMissing")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	state := captureImageLogs(t)
+	if err := repo.RestoreExistsFlag(ctx, a.ID, "thumb", 0); err != nil {
+		t.Fatalf("RestoreExistsFlag on an absent row: %v", err)
+	}
+	if n := len(state.matching("artist image exists flag restored", a.ID)); n != 0 {
+		t.Errorf("got %d restore records for a row that does not exist, want 0", n)
+	}
+}
+
+// TestRestoreImageFlag_ServiceWrapper covers the Service.RestoreImageFlag
+// pass-through: a cleared flag on a confirmed slot is restored through the
+// service surface the operator endpoint (#2669) will call.
+func TestRestoreImageFlag_ServiceWrapper(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	repo := newSQLiteImageRepo(db)
+
+	a := testArtist("Restore Wrapper", "/music/RestoreWrapper")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seedImageSlots(t, repo, a.ID, []ArtistImage{imageSlot("thumb", 0, false)})
+
+	if err := svc.RestoreImageFlag(ctx, a.ID, "thumb", 0); err != nil {
+		t.Fatalf("RestoreImageFlag: %v", err)
+	}
+
+	images, err := svc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+	if len(images) != 1 || !images[0].Exists {
+		t.Fatalf("expected thumb/0 restored to exists=true, got %+v", images)
+	}
+}
+
+// TestRestoreExistsFlag_BeginTxError covers the transaction-open failure branch:
+// a closed DB cannot begin a transaction, and the error must be surfaced, not
+// swallowed. This is a recovery-path guard -- a restore that silently no-ops on
+// a DB failure would leave the operator believing the repair ran.
+func TestRestoreExistsFlag_BeginTxError(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	repo := newSQLiteImageRepo(db)
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+	if err := repo.RestoreExistsFlag(context.Background(), "any", "thumb", 0); err == nil {
+		t.Fatal("expected an error restoring against a closed DB, got nil")
+	}
+}

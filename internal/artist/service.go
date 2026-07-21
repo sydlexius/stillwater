@@ -1000,6 +1000,15 @@ func (s *Service) ClearImageFlag(ctx context.Context, artistID, imageType string
 	return s.images.ClearExistsFlag(ctx, artistID, imageType, slotIndex)
 }
 
+// RestoreImageFlag sets the exists flag back to true for a single image slot,
+// but only when it currently reads false. It is the monotone inverse of
+// ClearImageFlag: called after a slot's file has been confirmed present on disk
+// so a stale "missing" flag no longer hides live artwork behind a placeholder.
+// It never flips a lock and never overwrites an already-set flag.
+func (s *Service) RestoreImageFlag(ctx context.Context, artistID, imageType string, slotIndex int) error {
+	return s.images.RestoreExistsFlag(ctx, artistID, imageType, slotIndex)
+}
+
 // ReconcileImages converges the artist_images registry to match the image
 // fields on the provided Artist, DELETING stored slots the caller's
 // enumeration proves are gone. It is the only image path in the service that

@@ -818,3 +818,202 @@ func TestStatus_LastOptimizeAt_DBError(t *testing.T) {
 		t.Errorf("Status DB error: expected 'reading last_optimize_at' warn, got %q", logged)
 	}
 }
+
+// TestRestoreExistsFlags is the batch-remediation test for issue #2668. It
+// asserts the traversal restores exists_flag=1 ONLY for slots whose file is
+// positively confirmed on disk, and leaves every other row cleared: a slot with
+// no file, a slot whose directory is absent or unreadable, and a pathless row
+// with no cache-dir fallback. It also pins design-lock #3 -- a LOCKED row whose
+// file is present IS restored, with its lock untouched -- and the slot-aware
+// guard, that a present fanart slot 0 does not resurrect an empty slot 1 --
+// paired with its positive counterpart, that a fanart slot 1 whose ordinal file
+// IS on disk does get restored.
+func TestRestoreExistsFlags(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions, so the unreadable-dir case cannot fire")
+	}
+	db, dbPath := setupTestDBWithImages(t)
+	// cacheDir="" so a pathless artist is genuinely unresolvable.
+	svc := NewService(db, dbPath, "", slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	ctx := context.Background()
+	libRoot := t.TempDir()
+
+	// present: thumb/0 and fanart/0 files on disk; fanart/1 has NO file.
+	presentDir := filepath.Join(libRoot, "present")
+	writeImage(t, filepath.Join(presentDir, "folder.jpg"), 100, 100)
+	writeImage(t, filepath.Join(presentDir, "backdrop.jpg"), 100, 100)
+	const presentID = "11111111-0000-0000-0000-000000000001"
+	seedArtist(t, db, presentID, presentDir)
+	seedImageRow(t, db, presentID, "thumb", 0, 0, 0)  // confirmed -> restore
+	seedImageRow(t, db, presentID, "fanart", 0, 0, 0) // confirmed -> restore
+	seedImageRow(t, db, presentID, "fanart", 1, 0, 0) // no backdrop2.jpg -> stays 0
+
+	// multi-fanart: TWO fanart files on disk, so the UPPER ordinal is genuinely
+	// backed. This is the positive counterpart to presentDir's slot-1 case and
+	// the core claim for multi-fanart libraries: slot_index is a DiscoverFanart
+	// ordinal, so slot 1 resolves to backdrop2.jpg and must be restored.
+	multiDir := filepath.Join(libRoot, "multi")
+	writeImage(t, filepath.Join(multiDir, "backdrop.jpg"), 100, 100)
+	writeImage(t, filepath.Join(multiDir, "backdrop2.jpg"), 100, 100)
+	const multiID = "77777777-0000-0000-0000-000000000001"
+	seedArtist(t, db, multiID, multiDir)
+	seedImageRow(t, db, multiID, "fanart", 1, 0, 0) // ordinal 1 on disk -> restore
+
+	// locked: file present, row locked and stale-missing -> restored, lock kept.
+	lockedDir := filepath.Join(libRoot, "locked")
+	writeImage(t, filepath.Join(lockedDir, "folder.jpg"), 100, 100)
+	const lockedID = "22222222-0000-0000-0000-000000000001"
+	seedArtist(t, db, lockedID, lockedDir)
+	seedImageRow(t, db, lockedID, "thumb", 0, 0, 1) // restore -> flag 1, locked stays 1
+
+	// missing dir: single-slot reads a clean ENOENT miss, fanart reads a dir
+	// read error; both must leave the flag cleared.
+	const missingID = "33333333-0000-0000-0000-000000000001"
+	seedArtist(t, db, missingID, filepath.Join(libRoot, "does-not-exist"))
+	seedImageRow(t, db, missingID, "thumb", 0, 0, 0)  // stays 0
+	seedImageRow(t, db, missingID, "fanart", 0, 0, 0) // stays 0 (unverifiable)
+
+	// unreadable dir (EACCES): the definitive "cannot tell" case -- must skip,
+	// never restore on an unverifiable read.
+	unreadableDir := filepath.Join(libRoot, "unreadable")
+	if err := os.MkdirAll(unreadableDir, 0o755); err != nil {
+		t.Fatalf("mkdir unreadable: %v", err)
+	}
+	writeImage(t, filepath.Join(unreadableDir, "folder.jpg"), 100, 100)
+	if err := os.Chmod(unreadableDir, 0o000); err != nil {
+		t.Fatalf("chmod unreadable: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadableDir, 0o755) })
+	const unreadableID = "44444444-0000-0000-0000-000000000001"
+	seedArtist(t, db, unreadableID, unreadableDir)
+	seedImageRow(t, db, unreadableID, "thumb", 0, 0, 0) // unverifiable -> stays 0
+
+	// pathless: no path, no cache dir -> unresolvable -> left cleared.
+	const pathlessID = "55555555-0000-0000-0000-000000000001"
+	seedArtist(t, db, pathlessID, "")
+	seedImageRow(t, db, pathlessID, "thumb", 0, 0, 0) // stays 0
+
+	// already-set: exists_flag=1 is not even selected and must remain 1.
+	alreadyDir := filepath.Join(libRoot, "already")
+	writeImage(t, filepath.Join(alreadyDir, "folder.jpg"), 100, 100)
+	const alreadyID = "66666666-0000-0000-0000-000000000001"
+	seedArtist(t, db, alreadyID, alreadyDir)
+	seedImageRow(t, db, alreadyID, "thumb", 0, 1, 0) // stays 1
+
+	if err := svc.RestoreExistsFlags(ctx); err != nil {
+		t.Fatalf("RestoreExistsFlags: %v", err)
+	}
+
+	assertFlag := func(id, typ string, slot, wantFlag, wantLocked int) {
+		t.Helper()
+		flag, locked := slotFlags(t, db, id, typ, slot)
+		if flag != wantFlag || locked != wantLocked {
+			t.Errorf("%s %s/%d = flag %d locked %d; want flag %d locked %d",
+				id[:8], typ, slot, flag, locked, wantFlag, wantLocked)
+		}
+	}
+
+	assertFlag(presentID, "thumb", 0, 1, 0)    // confirmed on disk -> restored
+	assertFlag(presentID, "fanart", 0, 1, 0)   // confirmed on disk -> restored
+	assertFlag(presentID, "fanart", 1, 0, 0)   // slot-aware: no file -> left cleared
+	assertFlag(multiID, "fanart", 1, 1, 0)     // ordinal 1 backed by backdrop2.jpg -> restored
+	assertFlag(lockedID, "thumb", 0, 1, 1)     // design-lock #3: restored, lock kept
+	assertFlag(missingID, "thumb", 0, 0, 0)    // absent single-slot -> left cleared
+	assertFlag(missingID, "fanart", 0, 0, 0)   // unverifiable fanart -> left cleared
+	assertFlag(unreadableID, "thumb", 0, 0, 0) // EACCES -> never restored
+	assertFlag(pathlessID, "thumb", 0, 0, 0)   // unresolvable -> left cleared
+	assertFlag(alreadyID, "thumb", 0, 1, 0)    // already set -> untouched
+}
+
+// TestRestoreExistsFlagsEmpty verifies RestoreExistsFlags succeeds on an empty
+// table (nothing to restore).
+func TestRestoreExistsFlagsEmpty(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.Default())
+	if err := svc.RestoreExistsFlags(context.Background()); err != nil {
+		t.Fatalf("RestoreExistsFlags on empty table: %v", err)
+	}
+}
+
+// TestRestoreExistsFlagsCanceledContext verifies a canceled context fails the
+// top-level SELECT and RestoreExistsFlags returns that error rather than
+// proceeding with an incomplete scan.
+func TestRestoreExistsFlagsCanceledContext(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.Default())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := svc.RestoreExistsFlags(ctx)
+	if err == nil {
+		t.Fatal("expected error from canceled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestConfirmSlotOnDisk exercises the slot-aware disk-confirmation helper's
+// three return shapes directly: confirmed present, definitively absent, and
+// unverifiable. It covers single-slot and fanart types plus the "slot > 0 for a
+// single-slot type has no naming" and "unknown type" edge cases, and both
+// directions of the fanart ORDINAL mapping: an upper slot with no backing file
+// stays unconfirmed, while an upper slot whose ordinal file IS on disk confirms.
+func TestConfirmSlotOnDisk(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+	dir := t.TempDir()
+	writeImage(t, filepath.Join(dir, "folder.jpg"), 100, 100)   // thumb slot 0
+	writeImage(t, filepath.Join(dir, "backdrop.jpg"), 100, 100) // fanart slot 0
+
+	// Separate directory holding TWO fanart files under the same convention, so
+	// the positive upper-ordinal case has somewhere to live without disturbing
+	// the single-file "fanart slot 1 absent" case above. backdrop2.jpg is the
+	// name Stillwater writes for fanart index 1 under the backdrop convention
+	// (FanartFilename, non-Kodi numbering), so ResolveFanart returns it as the
+	// SECOND path -- DiscoverFanart ordinal 1.
+	multiDir := t.TempDir()
+	writeImage(t, filepath.Join(multiDir, "backdrop.jpg"), 100, 100)  // fanart slot 0
+	writeImage(t, filepath.Join(multiDir, "backdrop2.jpg"), 100, 100) // fanart slot 1
+
+	unreadable := filepath.Join(t.TempDir(), "blind")
+	if err := os.MkdirAll(unreadable, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Chmod(unreadable, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o755) })
+
+	cases := []struct {
+		name      string
+		dir       string
+		imageType string
+		slot      int
+		wantFound bool
+		wantErr   bool
+	}{
+		{"thumb present", dir, "thumb", 0, true, false},
+		{"fanart slot 0 present", dir, "fanart", 0, true, false},
+		{"fanart slot 1 absent", dir, "fanart", 1, false, false},
+		{"fanart slot 1 present", multiDir, "fanart", 1, true, false},
+		{"thumb absent dir (clean miss)", filepath.Join(t.TempDir(), "nope"), "thumb", 0, false, false},
+		{"fanart absent dir (read error)", filepath.Join(t.TempDir(), "nope"), "fanart", 0, false, true},
+		{"single-slot type at slot > 0 has no naming", dir, "thumb", 1, false, false},
+		{"unknown image type", dir, "poster", 0, false, false},
+		{"thumb unverifiable dir (EACCES)", unreadable, "thumb", 0, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			found, err := confirmSlotOnDisk(tc.dir, tc.imageType, tc.slot)
+			if found != tc.wantFound {
+				t.Errorf("found = %v, want %v", found, tc.wantFound)
+			}
+			if (err != nil) != tc.wantErr {
+				t.Errorf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
