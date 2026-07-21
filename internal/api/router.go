@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -185,6 +186,33 @@ type Router struct {
 	// makes that exclusion atomic with a single lock and no lock-ordering or
 	// deadlock risk.
 	backdropRepairRunning bool
+	// backdropDupReportMu guards the cached within-artist fanart duplicate
+	// report backing GET /reports/backdrop-duplicates (#2684). The page used
+	// to run ScanFanartDuplicates synchronously on every render -- an
+	// unbounded full-library from-disk rehash that contended with any other
+	// consumer of the single SQLite connection and could hang the response
+	// past the server's WriteTimeout. It now reads this cache instead of
+	// scanning, mirroring the sidebar's dupimages.Cache (#2608): the cache is
+	// populated by libraryDupCount, the SAME background scan (periodic via
+	// maintenance.StartDuplicateImageCountRefresh, plus a lazy TriggerRefresh
+	// kicked by either handler when the cache has never been computed) that
+	// already feeds dupimages.Cache's library count, and by
+	// handleBackdropDuplicatesRemediate's post-collapse rescan. A zero
+	// backdropDupReportAt means "never computed".
+	backdropDupReportMu sync.RWMutex
+	backdropDupReport   rule.FanartDupReport
+	backdropDupReportAt time.Time
+	// backdropDupReportStartedAt is when the scan that produced the cached
+	// report BEGAN, and it is what makes the cache safe against out-of-order
+	// completion. Scans overlap in practice (a periodic refresh can still be
+	// walking the library when an operator remediates), and they finish in
+	// whatever order the filesystem allows -- so "last writer wins" lets a scan
+	// that started BEFORE a remediation land AFTER it and silently restore the
+	// pre-remediation duplicate counts. Keyed on start rather than completion
+	// because that is the ordering that actually determines whose data is
+	// older. Mirrors the compare-and-swap dupimages.Cache already applies to
+	// the sidebar counts.
+	backdropDupReportStartedAt time.Time
 	// platformPruneRunning guards the singleton platform backdrop prune run
 	// (#2540 Task 7): only one prune may be in flight at a time, so a
 	// concurrent POST /api/v1/reports/platform-backdrop-duplicates/prune
