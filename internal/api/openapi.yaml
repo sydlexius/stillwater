@@ -3471,6 +3471,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               description: >-
                 Both fields are optional; the zero value is a library-wide
                 preview. Unknown fields are rejected, so a misspelled key is a
@@ -3558,12 +3559,19 @@ paths:
                   unverifiable_rows:
                     type: integer
                     description: >-
-                      Individual registry rows the restore pass could not
-                      verify either way (unresolvable directory, permission
-                      denied, or an I/O error on the probe). A ROW count: one
-                      unreadable directory can account for many unverifiable
-                      rows, which is why this is reported separately from
-                      unreadable rather than added to it.
+                      Individual registry rows whose existence the restore pass
+                      PROBED but could not settle either way -- permission
+                      denied, or an I/O error while reading the directory. A
+                      ROW count: one unreadable directory can account for many
+                      unverifiable rows, which is why this is reported
+                      separately from unreadable rather than added to it.
+                      Rows belonging to an artist with no resolvable directory
+                      are NOT counted here: nothing was probed, so no probe
+                      failed. Those appear as restore.unresolvable, and their
+                      artists in skipped. The distinction is deliberate --
+                      an unverifiable row means "fix the permissions", an
+                      unresolvable one means "fix the recorded path", and
+                      summing them yields a number that implies neither.
                   write_failures:
                     type: integer
                     description: >-
