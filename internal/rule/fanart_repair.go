@@ -183,6 +183,10 @@ func (p *Pipeline) remediateOneArtistFanart(ctx context.Context, a *artist.Artis
 		result.Failures = append(result.Failures, FanartRepairFailure{ArtistID: a.ID, Err: msg})
 		return
 	}
+	// This path exists to DELETE duplicate fanart files, so the persist has to
+	// retire their rows. Update cannot: it is declarative and acts on no
+	// absence (#2635).
+	p.reconcileAfterFix(ctx, a, fr.RemovedFiles)
 	result.ArtistsProcessed++
 	result.SlotsRemoved += fr.SlotsRemoved
 	p.logger.Info("fanart duplicates collapsed",

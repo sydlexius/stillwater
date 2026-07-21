@@ -12,6 +12,8 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
+	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/publish"
 )
 
@@ -42,6 +44,22 @@ type FixResult struct {
 	SavedPath    string           `json:"-"`                    // set by image fixers for post-Update provenance recording
 	ImageType    string           `json:"-"`                    // image type for provenance recording (matches SavedPath)
 	SlotsRemoved int              `json:"-"`                    // ACTUAL count of image slots this fix deleted (set by ImageDuplicateFixer); 0 for non-deleting fixers
+
+	// RemovedFiles reports that this fix deleted image files from disk. It is
+	// what tells the pipeline to retire the registry rows those files backed:
+	// the persist step is Update, which is declarative and deletes nothing
+	// (#2635), so without a follow-up reconcile the removed files' rows survive
+	// forever.
+	//
+	// It is deliberately a bare flag rather than the fixer's own enumeration of
+	// what it found on disk. A fixer's walk happens mid-run and is stale by the
+	// time the run persists: one fixer counts two files, a later fixer in the
+	// same run adds a third, and replaying the first fixer's count deletes the
+	// third file's row while the file is on disk. The count that bounds the
+	// delete is therefore taken fresh, at persist time, by reconcileAfterFix.
+	// This flag only answers "is a reconcile warranted at all", which a fixer
+	// CAN know for certain about its own actions.
+	RemovedFiles bool `json:"-"`
 }
 
 // RunScope controls which artists "Run Rules" walks. Incremental (the
@@ -189,6 +207,31 @@ type Pipeline struct {
 	// sync.Map shape image.repairOpMu uses, and bounded in practice by the
 	// number of artists a process repairs.
 	phashArtistMu sync.Map // map[string]*sync.Mutex
+
+	// reconcileArtistMu holds one mutex per artist id, serializing
+	// reconcileAfterFix for a single artist so two concurrent fixes of the
+	// same artist cannot interleave their image-registry reconciliation.
+	//
+	// reconcileAfterFix walks the artist directory (DiscoverFanart) and then
+	// converges the image registry to that snapshot (ReconcileImages). Two
+	// concurrent calls for the same artist can each walk, then each commit,
+	// their own snapshot -- a read-modify-write lost update that leaves the
+	// registry describing neither run's final on-disk state. The two operations
+	// touch the same rows through the artist service, not shared Go memory, so
+	// -race is blind to the hazard. Serializing per artist makes the walk and
+	// the persist describe the same instant.
+	//
+	// Distinct from phashArtistMu (a SEPARATE lock) on purpose: the phash
+	// back-out path already holds phashArtistMu across remediateArtistPHash,
+	// which itself calls reconcileAfterFix, so reusing phashArtistMu here would
+	// self-deadlock (sync.Mutex is not reentrant). This lock is always taken
+	// strictly INSIDE phashArtistMu on that path (phashArtistMu -> this), and
+	// reconcileAfterFix never acquires phashArtistMu, so there is no lock-order
+	// inversion. Keyed by artist id so different artists still reconcile in
+	// parallel; entries are never evicted -- one mutex per artist ever
+	// reconciled, a few bytes each, the same unbounded sync.Map shape
+	// phashArtistMu uses.
+	reconcileArtistMu sync.Map // map[string]*sync.Mutex
 
 	// orchestratorMu guards orchestrator. SetOrchestrator is the
 	// canonical wiring path (main.go installs it after construction),
@@ -512,7 +555,7 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 		postEval = nil
 	}
 
-	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty)
+	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles)
 	if !persistOKHealth {
 		acc.persistOK = false
 	}
@@ -602,6 +645,17 @@ type runForArtistAccum struct {
 	artistDirty     bool
 	resolvedRows    []*RuleViolation
 	persistOK       bool
+
+	// removedFiles is true once any fixer in this run deleted image files.
+	// persistHealthAfterRun passes it to reconcileAfterFix so the run retires
+	// their registry rows; without it the run path persists via
+	// UpdateAfterRuleEvaluation, which is declarative and strands them (#2635).
+	//
+	// A flag, not a folded per-type count: the count that bounds the delete is
+	// measured fresh at persist time, so there is nothing here to fold and no
+	// way for one fixer's mid-run count to outlive a file another fixer added
+	// after it.
+	removedFiles bool
 }
 
 // mergeOutcome folds one violation's delta into the accumulator and the
@@ -612,6 +666,7 @@ func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResu
 	if out.fr != nil {
 		result.Results = append(result.Results, *out.fr)
 		result.FixesAttempted++
+		acc.removedFiles = acc.removedFiles || out.fr.RemovedFiles
 	}
 	if out.persistFailed {
 		acc.persistOK = false
@@ -638,6 +693,7 @@ func (acc *runForArtistAccum) mergeIntoContrib(out violationOutcome, contrib *ar
 	if out.fr != nil {
 		contrib.results = append(contrib.results, *out.fr)
 		contrib.fixesAttempted++
+		acc.removedFiles = acc.removedFiles || out.fr.RemovedFiles
 	}
 	if out.persistFailed {
 		acc.persistOK = false
@@ -813,7 +869,7 @@ func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, rule
 		postEval = nil
 	}
 
-	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty)
+	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles)
 	if !persistOKHealth {
 		acc.persistOK = false
 	}
@@ -1096,7 +1152,7 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 
 	// Issue #699: derive pass/fail from the POST-fix evaluation so rules
 	// repaired during this pass are recorded as passed=1 in the same run.
-	postEval, persistOKHealth := p.updateHealthScore(ctx, a, acc.artistDirty)
+	postEval, persistOKHealth := p.updateHealthScore(ctx, a, acc.artistDirty, acc.removedFiles)
 	if !persistOKHealth {
 		acc.persistOK = false
 	}
@@ -1520,6 +1576,9 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		if err := p.artistService.Update(ctx, a); err != nil {
 			return nil, fmt.Errorf("updating artist after fix: %w", err)
 		}
+		// Update is declarative and deletes nothing, so a fixer that removed
+		// files needs a reconcile to retire their rows (#2635).
+		p.reconcileAfterFix(ctx, a, fr.RemovedFiles)
 		// Record image provenance after Update() creates the artist_images row.
 		if fr.SavedPath != "" {
 			recordSavedImageProvenance(ctx, p.artistService, a.ID, fr.ImageType, fr.SavedPath, p.logger)
@@ -1550,7 +1609,10 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 				"artist", a.Name, "rule_id", rv.RuleID, "error", err)
 			postEval = nil
 		}
-		_ = p.persistHealthAfterRun(ctx, a, postEval, false)
+		// removedFiles=false: the reconcile for this fix already ran above,
+		// right after the artist Update. Passing it again would walk and
+		// reconcile a second time for no additional convergence.
+		_ = p.persistHealthAfterRun(ctx, a, postEval, false, false)
 		p.publishAfterFix(ctx, a, fr)
 	}
 
@@ -1833,6 +1895,76 @@ func (p *Pipeline) publishAfterFix(ctx context.Context, a *artist.Artist, fr *Fi
 	}
 }
 
+// reconcileAfterFix converges the image registry to the artist directory's
+// CURRENT contents, after the artist row has been persisted.
+//
+// removed gates the whole thing: it is a no-op unless a fix in this run
+// actually deleted image files. That is the common case -- most fixers never
+// touch the filesystem, and one that did not must not be able to delete
+// anything.
+//
+// The count that bounds the delete comes from a walk performed HERE, at
+// persist time, not from a walk a fixer performed earlier and handed back.
+// The distinction is the defect this shape exists to prevent: fixers run in
+// sequence, so a count captured by one fixer is stale the moment a later fixer
+// in the same run adds a file. Replaying the earlier count then deletes the
+// newer file's row while the file sits on disk. Walking last means the
+// enumeration and the persist describe the same instant.
+//
+// A failed walk enumerates NOTHING rather than zero. "Found no files" and
+// "could not look" are opposite claims and only the first licenses a delete,
+// so a read error returns without touching the registry -- leaving the type
+// unprobed, which deleteStaleSlots already treats as silence rather than
+// evidence.
+//
+// Failures are warn-logged rather than propagated. The fix itself is already
+// committed to disk and to the artist row by the time this runs, so returning
+// an error would report a successful repair as a failure and invite an
+// operator to re-run it; the next scan re-derives the registry regardless.
+func (p *Pipeline) reconcileAfterFix(ctx context.Context, a *artist.Artist, removed bool) {
+	if !removed || p.artistService == nil {
+		return
+	}
+
+	// Serialize this artist's reconciliation against a concurrent
+	// reconcileAfterFix for the same artist: each walks the directory then
+	// converges the registry to its own snapshot, a read-modify-write lost
+	// update over the same rows that -race cannot see. Held across the walk
+	// AND the persist so the two describe one instant. See
+	// Pipeline.reconcileArtistMu (and why it is a separate lock from
+	// phashArtistMu). Keyed by artist id so other artists proceed in parallel.
+	mu := p.reconcileArtistMutex(a.ID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	var platformService *platform.Service
+	if p.engine != nil {
+		platformService = p.engine.platformService
+	}
+	primaryName := resolveFanartPrimaryName(ctx, platformService)
+	if primaryName == "" {
+		p.logger.Error("no fanart naming convention available to reconcile after fix; skipping reconcile",
+			"artist", a.Name, "artist_id", a.ID)
+		return
+	}
+
+	paths, walkErr := img.DiscoverFanart(a.Path, primaryName)
+	if walkErr != nil {
+		p.logger.Warn("walking artist directory to reconcile after fix; skipping reconcile",
+			"artist", a.Name, "artist_id", a.ID, "error", walkErr)
+		return
+	}
+
+	// Fanart-scoped because fanart is the only type this walk probed. It has
+	// no evidence about thumb, logo, or banner and must not be able to touch
+	// their rows.
+	enumerated := []artist.ImageEnumeration{{ImageType: "fanart", FoundSlots: len(paths)}}
+	if _, err := p.artistService.ReconcileImages(ctx, a, enumerated); err != nil {
+		p.logger.Warn("reconciling image registry after fix",
+			"artist", a.Name, "artist_id", a.ID, "error", err)
+	}
+}
+
 // publishAccumulated publishes metadata and/or image changes to platforms
 // after processing all violations for an artist. Used by RunForArtist and
 // RunAll to batch publishing per-artist rather than per-violation.
@@ -1878,7 +2010,7 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 // false whenever this run cannot vouch for the artist's post-fix state, which is
 // what stops the caller from stamping rules_evaluated_at, resolving violation
 // rows, or writing pass rows on the strength of a run that did not complete.
-func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, postEval *EvaluationResult, mustPersist bool) bool {
+func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, postEval *EvaluationResult, mustPersist, removedFiles bool) bool {
 	// A FAILED post-fix evaluation is never authoritative. The old
 	// updateHealthScore encoded this by returning a nil result with
 	// authoritative=false, and callers leaned on the nil to gate their writes.
@@ -1892,6 +2024,8 @@ func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, 
 			// run was authoritative.
 			if err := p.artistService.UpdateAfterRuleEvaluation(ctx, a); err != nil {
 				p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
+			} else {
+				p.reconcileAfterFix(ctx, a, removedFiles)
 			}
 		}
 		return false
@@ -1929,6 +2063,10 @@ func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, 
 		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
 		return false
 	}
+	// UpdateAfterRuleEvaluation is declarative like Update, so a run whose
+	// fixers deleted files needs a reconcile to retire the rows (#2635).
+	// No-op when nothing was removed.
+	p.reconcileAfterFix(ctx, a, removedFiles)
 	return true
 }
 
@@ -2022,7 +2160,7 @@ func freshResultsFrom(eval *EvaluationResult) map[string]bool {
 	return fresh
 }
 
-func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist bool) (*EvaluationResult, bool) {
+func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist, removedFiles bool) (*EvaluationResult, bool) {
 	eval, err := p.engine.Evaluate(ctx, a)
 	// authoritative is only true when the post-fix evaluation succeeded;
 	// returning true after a failed Evaluate would let callers stamp
@@ -2053,5 +2191,8 @@ func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, must
 		// 4144589645). rule_results must not lead the stored artist.
 		return nil, false
 	}
+	// Declarative persist, so replay the reconcile to retire rows for files the
+	// run deleted (#2635). No-op when nothing was removed.
+	p.reconcileAfterFix(ctx, a, removedFiles)
 	return eval, authoritative
 }
