@@ -41,7 +41,7 @@ jobs:
       # ${{ matrix.goarch }})" check name.) Workflow-only PRs get the same
       # single leg but run for real (no skip flag) as the representative build.
       build_matrix: ${{ steps.matrix.outputs.build_matrix }}
-      # Full 9-shard matrix for code changes; a single representative shard
+      # Full test-shard matrix for code changes; a single representative shard
       # for workflow-only PRs (exercises checkout/setup-go/cache/upload-artifact
       # for real without paying for the full fan-out); unused otherwise.
       test_matrix: ${{ steps.matrix.outputs.test_matrix }}
@@ -173,7 +173,7 @@ jobs:
         run: |
           if [ "$CODE_CHANGED" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"},{"goos":"linux","goarch":"arm64"},{"goos":"darwin","goarch":"amd64"},{"goos":"darwin","goarch":"arm64"},{"goos":"windows","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
-            echo 'test_matrix={"shard":["api-1","api-2","rule-1","rule-2","services","settingsio","providers","scan","rest"]}' >> "$GITHUB_OUTPUT"
+            echo 'test_matrix={"shard":["api-1","api-2","rule-1","rule-2","services","settingsio","providers","scan","maintenance","rest"]}' >> "$GITHUB_OUTPUT"
           elif [ "$HARNESS_TOUCHED" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
             echo 'test_matrix={"shard":["rest"]}' >> "$GITHUB_OUTPUT"
@@ -185,23 +185,23 @@ jobs:
   # ---------------------------------------------------------------------------
   # Go module + build cache primer (D3 -- shard cache consolidation)
   #
-  # Before the 9 test shards run, this job warms BOTH halves of the Go
+  # Before the test shards run, this job warms BOTH halves of the Go
   # cache and saves them under one cache entry:
   #   1. go mod download         -> populates the module cache (~/go/pkg/mod)
   #   2. go test -race -run='^$'  -> compiles every test binary + dep WITH
   #      race instrumentation (running zero tests) so the build cache
   #      (~/.cache/go-build) holds the exact race-instrumented objects the
   #      shards' `go test -v -race` needs.  Without this step the build
-  #      cache would be empty and all 9 read-only shards would cold-compile
+  #      cache would be empty and all read-only shards would cold-compile
   #      -race on every run (a regression vs main's per-shard cache: true).
   # Shards restore that entry read-only (actions/cache/restore, no post-job
-  # save) to avoid 9 concurrent writes that race to save the same key.
+  # save) to avoid concurrent writes that race to save the same key.
   #
   # D2 (restore-keys): the explicit actions/cache step here carries a
   # restore-keys fallback so a go.sum change warms from the last matching
   # cache instead of cold-building.  Other Go jobs (lint, coverage, build)
   # keep setup-go cache:true; they each have at most 1-2 concurrent
-  # instances so the multiplier effect is small compared to the 9-shard
+  # instances so the multiplier effect is small compared to the test-shard
   # case, and fewer changes lower the diff risk.
   # ---------------------------------------------------------------------------
   go-cache-primer:
@@ -227,25 +227,34 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          # Exact key: cache hit restores the most recent warm build.
-          # Restore-key: cache miss on a go.sum/go.mod change warms from the
-          # last compatible entry instead of forcing a cold rebuild.
+          # Key carries a per-commit ${{ github.sha }} suffix because
+          # actions/cache NEVER overwrites an existing key: without it, the
+          # first commit for a given go.sum hash would own the entry forever
+          # and every later commit's post-job save would be a silent no-op,
+          # leaving the race-instrumented build cache stale. A fresh key per
+          # commit means each commit publishes its own warm entry (and a
+          # re-run of the same commit gets an exact hit on it).
+          # Restore-keys (most-specific first): the go.sum-hash prefix warms
+          # from the last entry built against the same dependencies, then a
+          # bare Go prefix warms from any Go cache, so a go.sum/go.mod change
+          # degrades to a partial warm rather than a cold rebuild.
           # go.mod is hashed too so a toolchain-directive bump that leaves
           # go.sum untouched still invalidates the stale build cache.
-          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-
             ${{ runner.os }}-go-
 
       # Populate the module cache so shards avoid redundant downloads.
       # go mod download is fast (~5-30s) and its output is the shared
-      # ~/go/pkg/mod tree that all 9 shards will restore read-only.
+      # ~/go/pkg/mod tree that all shards will restore read-only.
       - name: Warm Go module cache
         run: go mod download
 
       # Warm the build cache (~/.cache/go-build) with race-instrumented
       # objects.  -run='^$' matches no tests, so this compiles every test
       # binary + dependency with -race but executes zero tests.  The
-      # post-job actions/cache save then captures these objects so the 9
+      # post-job actions/cache save then captures these objects so the
       # read-only shards restore them instead of cold-compiling -race.
       - name: Warm Go build cache (race-instrumented)
         run: go test -race -count=1 -run='^$' ./...
@@ -577,7 +586,7 @@ jobs:
       # One shard's failure should not cancel the others -- a flake in one
       # shard hides real failures in the others if fail-fast is on.
       fail-fast: false
-      # Full 9-shard set for code changes; a single representative shard
+      # Full test-shard set for code changes; a single representative shard
       # (`rest`) for workflow-only/workflow-touched diffs -- see
       # changes.outputs.test_matrix.
       matrix: ${{ fromJson(needs.changes.outputs.test_matrix) }}
@@ -590,21 +599,29 @@ jobs:
         with:
           go-version-file: go.mod
           # Disable built-in cache; read-only restore from the primer's
-          # shared entry below.  Shards do not save (actions/cache/restore),
-          # so all 9 write to the SAME key without racing.
+          # shared entry below.  The primer job owns the cache SAVE; shards
+          # are read-only consumers (actions/cache/restore), so they only
+          # read that key and never write it -- no save races between shards.
           cache: false
 
       # Restore Go cache from the shared primer entry (read-only).
-      # restore-keys ensures a go.sum change still warms from the last
-      # compatible entry rather than cold-building.
+      # Key/restore-keys are byte-identical to the primer's save step so the
+      # per-commit ${{ github.sha }} suffix scores an EXACT hit on the entry
+      # the primer just published in this same workflow run (that suffix is
+      # what keeps the build cache fresh commit-to-commit, since
+      # actions/cache never overwrites an existing key).
+      # Restore-keys (most-specific first): the go.sum-hash prefix falls back
+      # to the last entry with the same dependencies, then any Go cache, so a
+      # go.sum change still warms rather than cold-builds.
       - name: Restore Go module + build cache (read-only)
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-
             ${{ runner.os }}-go-
 
       # Resolve the package list (and optional -run bucket regex) for this
@@ -632,6 +649,7 @@ jobs:
             [settingsio]="internal/settingsio"
             [providers]="internal/provider internal/connection"
             [scan]="internal/scanner internal/library internal/database internal/scraper internal/foreign internal/watcher"
+            [maintenance]="internal/maintenance"
           )
           shard="${{ matrix.shard }}"
           run=""
