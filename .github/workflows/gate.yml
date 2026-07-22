@@ -135,7 +135,7 @@ jobs:
 
       # SHA verified against live tag via:
       #   gh api repos/actions/setup-go/git/ref/tags/v6 --jq '.object.sha'
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.filter.outputs.relevant == 'true'
         with:
           go-version-file: go.mod
@@ -428,7 +428,7 @@ jobs:
               - 'go.mod'
               - 'go.sum'
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.filter.outputs.relevant == 'true'
         with:
           go-version-file: go.mod
