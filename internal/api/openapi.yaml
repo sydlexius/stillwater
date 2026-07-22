@@ -14062,11 +14062,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: Rule evaluation failed (non-HTMX callers only; HTMX callers receive a 200 with an inline error fragment)
+          description: >
+            Rule evaluation failed, or the run completed but its results could not be
+            persisted (non-HTMX callers only; HTMX callers receive a 200 with an inline
+            error fragment). The persist-failure body carries persist_failures so a
+            caller can distinguish "nothing ran" from "it ran and the writes were lost".
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                oneOf:
+                  - $ref: "#/components/schemas/Error"
+                  - type: object
+                    description: The run executed but one or more artists could not be fully written.
+                    required: [error, persist_failures]
+                    properties:
+                      error:
+                        type: string
+                        description: Human-readable failure summary
+                      violations_found:
+                        type: integer
+                        description: Number of violations detected for this artist
+                      persist_failures:
+                        type: integer
+                        description: >
+                          Number of artists whose run could not be fully written. Non-zero
+                          means the database does not reflect what the run reported.
+                      dashboard_url:
+                        type: string
+                        description: Dashboard URL pre-filtered to this artist's violations
         "503":
           description: Rule pipeline not configured (non-HTMX callers only; HTMX callers receive a 200 with an inline error fragment)
           content:

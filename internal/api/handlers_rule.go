@@ -499,6 +499,17 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		// client polling this endpoint reads "completed" for a run that lost
 		// every write -- the exact symptom the issue describes.
 		r.ruleRun.PersistFailures = result.PersistFailures
+		if result.PersistFailures > 0 {
+			// This run is unattended, so the status endpoint is the only
+			// other place the failure surfaces. Log it too: a run that lost
+			// writes must not be observable solely by polling.
+			r.logger.Error("rule run could not persist all results",
+				"scope", result.Scope,
+				"rule_id", r.ruleRun.RuleID,
+				"persist_failures", result.PersistFailures,
+				"artists_processed", result.ArtistsProcessed,
+			)
+		}
 		r.ruleRunMu.Unlock()
 	}()
 
@@ -759,6 +770,17 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		// client polling this endpoint reads "completed" for a run that lost
 		// every write -- the exact symptom the issue describes.
 		r.ruleRun.PersistFailures = result.PersistFailures
+		if result.PersistFailures > 0 {
+			// This run is unattended, so the status endpoint is the only
+			// other place the failure surfaces. Log it too: a run that lost
+			// writes must not be observable solely by polling.
+			r.logger.Error("rule run could not persist all results",
+				"scope", result.Scope,
+				"rule_id", r.ruleRun.RuleID,
+				"persist_failures", result.PersistFailures,
+				"artists_processed", result.ArtistsProcessed,
+			)
+		}
 		r.ruleRun.ViolationsFound = violationsFound
 		r.ruleRun.ViolationsAutoFixed = violationsAutoFixed
 		r.ruleRun.ViolationsRemaining = violationsRemaining
