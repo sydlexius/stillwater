@@ -34,15 +34,38 @@ type clobberUploader struct {
 	// indices records the platform index each fanart upload was sent to, so a
 	// test can prove slot numbers are not compacted.
 	indices *[]int
+	// received records what the peer was actually HANDED, per call. Without it
+	// these tests would prove only that the file is restored, and a corruption
+	// of the payload or content-type on the way out would pass silently: the
+	// restored file would still match, because the restore uses the same bytes
+	// the upload was built from.
+	received *[]uploadedPayload
 }
 
-func (c *clobberUploader) UploadImage(_ context.Context, _, _ string, _ []byte, _ string) error {
+// uploadedPayload is one upload as the peer saw it.
+type uploadedPayload struct {
+	imageType   string
+	index       int // -1 for the single-image (non-indexed) path
+	data        []byte
+	contentType string
+}
+
+func (c *clobberUploader) record(imageType string, idx int, data []byte, ct string) {
 	*c.calls++
+	if c.received != nil {
+		// Copy: the caller owns data and the publisher may reuse the slice.
+		cp := append([]byte(nil), data...)
+		*c.received = append(*c.received, uploadedPayload{imageType: imageType, index: idx, data: cp, contentType: ct})
+	}
+}
+
+func (c *clobberUploader) UploadImage(_ context.Context, _, imageType string, data []byte, ct string) error {
+	c.record(imageType, -1, data, ct)
 	return c.clobber()
 }
 
-func (c *clobberUploader) UploadImageAtIndex(_ context.Context, _, _ string, idx int, _ []byte, _ string) error {
-	*c.calls++
+func (c *clobberUploader) UploadImageAtIndex(_ context.Context, _, imageType string, idx int, data []byte, ct string) error {
+	c.record(imageType, idx, data, ct)
 	if c.indices != nil {
 		*c.indices = append(*c.indices, idx)
 	}
@@ -77,6 +100,30 @@ func (c *clobberUploader) clobber() error {
 // t.Parallel() here without reworking both.
 var uploadedIndices []int
 
+// uploadedPayloads records what the fake peer was handed, reset by each
+// clobberHarness call. Same serial-tests caveat as uploadedIndices.
+var uploadedPayloads []uploadedPayload
+
+// assertHandedToPeer checks the peer received the operator's exact bytes under
+// the right content type. CR flagged that asserting only the restored file
+// leaves the outbound payload unverified.
+func assertHandedToPeer(t *testing.T, want []byte, wantType, wantCT string) {
+	t.Helper()
+	if len(uploadedPayloads) == 0 {
+		t.Fatal("precondition failed: the peer was handed nothing")
+	}
+	got := uploadedPayloads[0]
+	if got.imageType != wantType {
+		t.Errorf("peer received image type %q, want %q", got.imageType, wantType)
+	}
+	if string(got.data) != string(want) {
+		t.Errorf("peer received %q, want the operator's bytes %q", got.data, want)
+	}
+	if got.contentType != wantCT {
+		t.Errorf("peer received content type %q, want %q", got.contentType, wantCT)
+	}
+}
+
 // clobberHarness wires a Publisher whose uploader destroys victim during the
 // push. It returns the publisher and the artist rooted at a temp library dir.
 func clobberHarness(t *testing.T, victimName, mode string, calls *int) (*Publisher, *artist.Artist, string) {
@@ -91,7 +138,8 @@ func clobberHarness(t *testing.T, victimName, mode string, calls *int) (*Publish
 
 	victim := filepath.Join(dir, victimName)
 	uploadedIndices = nil
-	up := &clobberUploader{victim: victim, mode: mode, calls: calls, indices: &uploadedIndices}
+	uploadedPayloads = nil
+	up := &clobberUploader{victim: victim, mode: mode, calls: calls, indices: &uploadedIndices, received: &uploadedPayloads}
 
 	origSingle := newImageUploader
 	origIndexed := newIndexedImageUploader
@@ -147,6 +195,7 @@ func TestSyncImage_PeerDeletesLocalFile_Restored(t *testing.T) {
 	if calls == 0 {
 		t.Fatal("precondition failed: the uploader never ran, so nothing was destroyed and this test proves nothing")
 	}
+	assertHandedToPeer(t, want, "banner", "image/jpeg")
 	if got := mustRead(t, filepath.Join(dir, "banner.jpg")); string(got) != string(want) {
 		t.Errorf("restored bytes = %q, want the operator's original %q", got, want)
 	}
@@ -201,6 +250,28 @@ func TestSyncImage_PeerOverwritesLocalFile_Restored(t *testing.T) {
 	}
 }
 
+// TestSyncImage_PngUsesPngContentType proves the content type follows the file
+// extension rather than being hardcoded. A peer handed image/jpeg for a PNG can
+// reject or transcode it, and the restored-file assertions alone would not
+// notice because the restore reuses the same bytes.
+func TestSyncImage_PngUsesPngContentType(t *testing.T) {
+	calls := 0
+	p, a, dir := clobberHarness(t, "logo.png", "delete", &calls)
+
+	want := []byte("OPERATOR-LOGO-BYTES")
+	writeFile(t, filepath.Join(dir, "logo.png"), want)
+
+	p.SyncImageToPlatforms(context.Background(), a, "logo")
+
+	if calls == 0 {
+		t.Fatal("precondition failed: the uploader never ran")
+	}
+	assertHandedToPeer(t, want, "logo", "image/png")
+	if got := mustRead(t, filepath.Join(dir, "logo.png")); string(got) != string(want) {
+		t.Errorf("restored bytes = %q, want %q", got, want)
+	}
+}
+
 // TestSyncAllFanart_PeerDeletesDifferentSlot_Restored is the cross-file case
 // found in UAT: uploading slot 0 made the peer delete slot 1's file, before the
 // loop had read it. A per-file check after each upload cannot repair that --
@@ -220,6 +291,7 @@ func TestSyncAllFanart_PeerDeletesDifferentSlot_Restored(t *testing.T) {
 	if calls == 0 {
 		t.Fatal("precondition failed: the uploader never ran")
 	}
+	assertHandedToPeer(t, wantPrimary, "fanart", "image/jpeg")
 	if got := mustRead(t, filepath.Join(dir, "fanart1.jpg")); string(got) != string(wantSecond) {
 		t.Errorf("restored slot-1 bytes = %q, want %q", got, wantSecond)
 	}
