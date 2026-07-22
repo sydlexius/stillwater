@@ -1,4 +1,5 @@
 {
+  "name": "stillwater",
   "type": "module",
   "scripts": {
     "test": "node --test tests/unit/*.test.js",
