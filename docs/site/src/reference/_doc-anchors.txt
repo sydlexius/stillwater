@@ -338,6 +338,7 @@ how-to/enable-and-configure-rules#tune-a-rules-thresholds
 how-to/enable-and-configure-rules#turn-a-rule-on-or-off
 how-to/enable-and-configure-rules#when-a-rule-has-a-conflict-gated-chip
 how-to/enable-and-configure-rules#when-a-rule-is-skipped-for-an-artist
+how-to/enable-and-configure-rules#when-a-run-cant-save-its-results
 how-to/export-import-settings#backing-up-configuration-before-risky-changes
 how-to/export-import-settings#cloning-prod-into-staging
 how-to/export-import-settings#common-workflows
