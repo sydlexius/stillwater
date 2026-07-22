@@ -173,7 +173,7 @@ jobs:
         run: |
           if [ "$CODE_CHANGED" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"},{"goos":"linux","goarch":"arm64"},{"goos":"darwin","goarch":"amd64"},{"goos":"darwin","goarch":"arm64"},{"goos":"windows","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
-            echo 'test_matrix={"shard":["api-1","api-2","rule-1","rule-2","services","settingsio","providers","scan","maintenance","rest"]}' >> "$GITHUB_OUTPUT"
+            echo 'test_matrix={"shard":["api-1","api-2","rule-1","rule-2","services","settingsio","providers","scan","maintenance-1","maintenance-2","rest"]}' >> "$GITHUB_OUTPUT"
           elif [ "$HARNESS_TOUCHED" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
             echo 'test_matrix={"shard":["rest"]}' >> "$GITHUB_OUTPUT"
@@ -626,12 +626,24 @@ jobs:
 
       # Resolve the package list (and optional -run bucket regex) for this
       # shard. Named shards (services / settingsio / providers / scan) come from the SHARDS
-      # map below. The partitioned bases (api / rule) are each split into two
-      # buckets -- shards api-1/api-2 and rule-1/rule-2 -- by a round-robin over
-      # their test names; both were verified isolation-safe under that split
-      # (each bucket passes run alone, shuffled, with -race). The `rest` shard
-      # is the dynamic remainder, so new packages auto-fall into it. Wall time =
-      # max(shards) + runner overhead.
+      # map below. The partitioned bases (api / rule / maintenance) are each split
+      # into two buckets -- api-1/api-2, rule-1/rule-2, maintenance-1/maintenance-2
+      # -- by a round-robin over their test names; each was verified isolation-safe
+      # under that split (every bucket passes run alone, shuffled, with -race).
+      # The `rest` shard is the dynamic remainder, so new packages auto-fall into
+      # it. Wall time = max(shards) + runner overhead.
+      #
+      # maintenance was partitioned because it was the matrix LONG POLE: measured
+      # 321/322/309/324s across four successful runs, ~80s clear of the next
+      # shard. Its cost is -race instrumentation (8.1s -> 145s locally, ~18x),
+      # not coverage -- `-race` and `-race -coverpkg=./...` timed within 0.5s of
+      # each other, because only 13 of the module's 76 packages link into that
+      # test binary. Round-robin by NAME leaves the two buckets uneven by
+      # duration (~58s/~90s locally, since the two heaviest tests sort into the
+      # same bucket), which is fine here: even the heavy bucket lands under the
+      # next shard. NOTE the ceiling -- once maintenance drops below `rest`
+      # (~234s), `rest` becomes the pole and splitting maintenance further buys
+      # nothing.
       - name: Resolve shard package list
         id: shard
         run: |
