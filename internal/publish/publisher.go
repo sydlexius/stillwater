@@ -795,18 +795,20 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		warnings = append(warnings, "platform sync skipped: failed to read image for upload")
 		return warnings
 	}
+	snapMod := fileModTime(filePath)
 
 	ct := "image/jpeg"
 	if strings.EqualFold(filepath.Ext(filePath), ".png") {
 		ct = "image/png"
 	}
 
-	// #2533: the managed pre-push write-back disable only matters when the
-	// artist's library shares its filesystem with a platform peer (the clobber
-	// precondition). Resolve it once, and only on the operator push path -- the
-	// background reconciler (respectWriteGate=true) is excluded, so it pays no
-	// lookup and its behavior is unchanged.
-	operatorPushOnSharedFS := !respectWriteGate && p.artistOnSharedFS(ctx, a)
+	// Peers this push HANDED THE IMAGE TO, named in the restore log below.
+	//
+	// Deliberately recorded BEFORE the upload result is known, not after a
+	// success. A peer that deletes the file and THEN fails the request (500, a
+	// context deadline, a reset connection) is the variant most likely to lose
+	// data, and gating the repair on upload success skipped exactly that case.
+	var uploadedTo []string
 
 	for _, pid := range platformIDs {
 		conn, connErr := p.connectionService.GetByID(ctx, pid.ConnectionID)
@@ -821,16 +823,12 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 			continue
 		}
 
-		// #2533: for a linked MANAGED connection whose library is on a shared
-		// filesystem, make the peer's server-side artwork write-back OFF before
-		// uploading, so a shared-volume peer cannot rewrite the operator's
-		// authoritative file out from under Stillwater. Every other case pushes
-		// unchanged: unmanaged connections, and any non-shared/dedicated-volume
-		// library (operatorPushOnSharedFS is false), see zero behavior change.
-		if operatorPushOnSharedFS && conn.FeatureManageServerFiles {
-			p.ensurePeerWritebackDisabled(ctx, conn)
-		}
-
+		// #2698: the #2533 pre-push write-back disable used to live here and is
+		// removed. Measured on Emby 4.10, the peer deletes the operator's library
+		// file with its image saver either ON or OFF, so the pre-disable prevented
+		// nothing and cost a round trip per push. The post-upload re-assertion
+		// below covers both outcomes the peer can produce -- a missing file and
+		// altered bytes -- which is why the disable is no longer needed.
 		uploader := newImageUploader(conn, p.logger)
 		if uploader == nil {
 			p.logger.Warn("unsupported connection type for image sync", "type", conn.Type)
@@ -838,13 +836,206 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 			continue
 		}
 
+		uploadedTo = append(uploadedTo, conn.Name)
 		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
 			p.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
 			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type)))
 			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
 		}
 	}
+
+	// #2698: the local file is AUTHORITATIVE and the platform copy is DERIVED, so
+	// the invariant after a push is simply that what we uploaded is still on disk,
+	// byte for byte. A peer can violate it: Emby deletes the operator's library
+	// file during the very upload it was handed (proven in production, twice).
+	//
+	// TIMING, stated as measured rather than as a guarantee: in every observed
+	// case the peer's delete completed BEFORE UploadImage returned (204ms before,
+	// in the production capture on the issue), so this check lands behind the
+	// damage. That is an observation about two processes with no synchronization
+	// between them, NOT a happens-before relation -- a peer that schedules the
+	// delete during the upload but performs it after responding would defeat a
+	// point-in-time check like this one. A late delete of that shape WAS observed
+	// on the fanart path (~15ms after the call returned), so the window is real
+	// and this repair does not close it. Anything left after the window is caught
+	// by the next push or by the exists-flag reconciler, not here.
+	//
+	// It runs after the whole loop, not per connection, because an operator may
+	// run several peers and any one of them can be the deleter -- and `data` was
+	// read once before the loop, so one restoration repairs whichever peer did it.
+	//
+	// Content is compared, not merely existence: a peer can OVERWRITE rather than
+	// delete (the original #2533 concern), and an existence check would call that
+	// clean.
+	if len(uploadedTo) > 0 {
+		p.reassertLocalImage(a, imageType, filePath, data, snapMod, uploadedTo)
+	}
 	return warnings
+}
+
+// fanartSnapshot is one fanart file's path, its TRUE slot index, and the bytes
+// it held before any upload ran, which is what a restoration puts back.
+//
+// index is carried explicitly and is NOT the position in the snapshot slice. A
+// file that could not be read is kept in the set with nil data so the files
+// after it keep their real slot numbers. Compacting instead -- dropping the
+// unreadable entry and letting the loop's own counter supply the index --
+// shifts every later backdrop down one on the platform, and because this sync
+// only ever adds indices (it never deletes surplus ones), the stale image at
+// the tail index then survives indefinitely. Both handler call sites already
+// refuse to sync when renumbering fails, for exactly this reason.
+type fanartSnapshot struct {
+	path  string
+	index int
+	data  []byte
+	// mod is the file's mtime when data was captured, reported in the restore
+	// log so an operator can see how stale a restored copy is. Nothing branches
+	// on it -- see reassertLocalImage on why newness cannot arbitrate here.
+	mod time.Time
+}
+
+// snapshotFanart reads EVERY fanart file BEFORE the first upload, returning the
+// captured set plus a warning per file that could not be read.
+//
+// This is not an optimization to avoid re-reading per connection -- it is the
+// only arrangement that can repair the damage. A peer does NOT necessarily
+// delete the file it was just handed: it deletes whatever it currently holds as
+// that slot's previous image, which can be ANY file in the set. Measured on Emby
+// 4.10, uploading slot 0 deleted the slot-1 file, which the caller's loop had
+// not reached yet. Reading lazily per iteration meant the later read simply
+// failed ("no such file or directory") and the file was gone with nothing to
+// restore from, because the bytes had never been held.
+//
+// So the bytes must be captured while every file still exists. Cost: the whole
+// fanart set is resident for the duration of the push (one production artist
+// holds 42 backdrops). That is the price of being able to restore a file that is
+// already deleted -- a hash-only snapshot could DETECT the loss but never repair
+// it.
+func (p *Publisher) snapshotFanart(fanartPaths []string) ([]fanartSnapshot, []string) {
+	snapshot := make([]fanartSnapshot, 0, len(fanartPaths))
+	var warnings []string
+	for i, fp := range fanartPaths {
+		data, readErr := os.ReadFile(fp) //nolint:gosec // path from trusted fanart discovery
+		if readErr != nil {
+			p.logger.Error("reading fanart for platform sync",
+				slog.String("path", fp),
+				slog.String("error", readErr.Error()))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("failed to read fanart %d", i)))
+			// Kept with nil data so the slots AFTER this one keep their real
+			// index; the upload loop skips nil entries.
+			snapshot = append(snapshot, fanartSnapshot{path: fp, index: i})
+			continue
+		}
+		snapshot = append(snapshot, fanartSnapshot{path: fp, index: i, data: data, mod: fileModTime(fp)})
+	}
+	return snapshot, warnings
+}
+
+// hasReadableFanart reports whether any snapshot entry actually captured bytes.
+// A set where every read failed has nothing to upload and nothing to restore.
+func hasReadableFanart(snapshot []fanartSnapshot) bool {
+	for _, sf := range snapshot {
+		if sf.data != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// reassertLocalImage restores the operator's local image when a platform peer
+// removed or rewrote it during the push, and reports when that happened.
+//
+// It deliberately LOGS AT ERROR on every repair. A silent self-heal would hide a
+// platform quietly eating library files -- the same "unknown rendered as clean"
+// failure this codebase has already had to fix in several places. The repair
+// keeps the operator's data; the log is what makes the peer's behavior visible.
+//
+// Best-effort: every failure path leaves the push result unchanged, because the
+// upload itself already succeeded and the caller's warnings describe the sync,
+// not the local filesystem.
+//
+// ATTRIBUTION IS THE HARD PART, and getting it wrong destroys operator data in
+// the opposite direction. This function knows only "the bytes I read before the
+// push"; it cannot see WHO changed the file. Nothing serializes an in-flight
+// push against a concurrent operator action -- a background rule fixer can be
+// pushing artist X while the operator saves or deletes that same slot. A naive
+// "restore whenever the bytes differ" therefore:
+//
+//   - REVERTS A NEWER SAVE. Operator re-crops mid-push; the older push's repair
+//     writes the previous image back over it and blames the peer.
+//   - RESURRECTS A DELETED IMAGE. Operator deletes the slot mid-push; the repair
+//     reads ENOENT and puts the artwork the operator just threw away back on
+//     disk. That is the exact failure this repo already fixed once, where a
+//     stale backup restored over a deliberately deleted slot.
+//
+// NEITHER DIRECTION IS ARBITRATED, because no signal available here can do it.
+// The exists flag looks like the answer and is not: it is DERIVED FROM DISK
+// (handleServeImage clears it on a 404, the scanner recomputes it from a walk),
+// so a fresh read is poisoned by the peer's own deletion -- and the value
+// captured before the push is stale for a first-ever image, where the flag is
+// still false while the file is already written. Gating on it therefore refuses
+// the repair either for a routine save or for the exact case #2698 describes.
+// mtime cannot separate the peer from the operator either; both writes land in
+// the same window.
+//
+// ACCEPTED RISK, stated plainly: if the operator DELETES a slot while a push for
+// that same slot is in flight, the repair will put the image back. That needs
+// the delete to land inside one push (30s), and the operator can delete again.
+// The alternative -- refusing repairs on an unreliable signal -- silently loses
+// artwork to the original bug, which is worse and far more likely. A real fix
+// needs a signal that records INTENT rather than disk state (an explicit
+// delete marker); that is follow-up work, not something to fake here.
+//
+// The OVERWRITE direction is NOT refused, and that is a deliberate, documented
+// trade rather than an oversight. mtime cannot separate "the peer rewrote it"
+// from "the operator saved again" -- both land between the snapshot and the
+// check -- so a guard on newness would disable the crop-clobber repair (#2533),
+// which is the case this fix exists to serve. RESIDUAL RISK, accepted: if the
+// operator saves the same slot twice inside one push window, the older push's
+// repair can write the earlier image back. That needs the two saves to overlap
+// within a single 30s push; the losing outcome is a stale image, recoverable by
+// saving again. Resurrecting a deleted image or leaving a peer's artwork in the
+// library are both worse, and both are prevented.
+//
+// snapMod is the file's mtime when its bytes were captured. Retained for the
+// restore log so an operator can see how stale the restored copy was.
+func (p *Publisher) reassertLocalImage(a *artist.Artist, imageType, filePath string, data []byte, snapMod time.Time, uploadedTo []string) {
+	current, readErr := os.ReadFile(filePath) //nolint:gosec // filePath came from FindExistingImage over trusted naming patterns
+	switch {
+	case readErr == nil && bytes.Equal(current, data):
+		return // untouched: the common and correct case
+	case readErr != nil && !errors.Is(readErr, os.ErrNotExist):
+		// Cannot tell whether the file survived. Do NOT rewrite on an unknown
+		// state -- an unreadable file is not a known-absent one (absent !=
+		// unreadable), and blind restoration could clobber a concurrent write.
+		p.logger.Warn("could not verify the local image after platform push; leaving it untouched",
+			"artist", a.Name, "type", imageType, "path", filePath, "error", readErr.Error())
+		return
+	}
+
+	outcome := "rewrote"
+	if errors.Is(readErr, os.ErrNotExist) {
+		outcome = "deleted"
+	}
+	p.logger.Error("a platform peer "+outcome+" the local image during push; restoring it",
+		"artist", a.Name, "type", imageType, "path", filePath,
+		"peers", strings.Join(uploadedTo, ","), "captured_at", snapMod.Format(time.RFC3339Nano))
+
+	if writeErr := filesystem.WriteFileAtomic(filePath, data, 0o644); writeErr != nil {
+		p.logger.Error("restoring the local image after a peer removed it FAILED; the artwork is now lost locally",
+			"artist", a.Name, "type", imageType, "path", filePath, "error", writeErr.Error())
+	}
+}
+
+// fileModTime returns a path's mtime, or the zero time when it cannot be
+// stat'ed. It is recorded purely so the restore log can say how stale the
+// bytes being put back are; nothing branches on it.
+func fileModTime(path string) time.Time {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
 }
 
 // SyncAllFanartToPlatforms uploads all local fanart files to every connected
@@ -902,10 +1093,37 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	fanartIdentityIdx := p.fanartIdentityIndex(ctx, a)
 	collisionNotified := make(map[string]bool)
 
-	// #2533: same shared-FS precondition as the primary path -- resolve once,
-	// operator push only (the reconciler passes respectWriteGate=true and is
-	// excluded), so a shared-volume peer cannot clobber the operator's backdrop.
-	operatorPushOnSharedFS := !respectWriteGate && p.artistOnSharedFS(ctx, a)
+	snapshot, snapWarnings := p.snapshotFanart(fanartPaths)
+	warnings = append(warnings, snapWarnings...)
+	if !hasReadableFanart(snapshot) {
+		return warnings
+	}
+
+	// Peers this push handed a backdrop to, named in the restore log below.
+	var uploadedTo []string
+
+	// Restore any snapshot file a peer removed or rewrote during the push. Runs
+	// once after ALL uploads to ALL peers, so it covers cross-file deletion and an
+	// operator running several peers alike.
+	//
+	// Gated on uploadedTo: with no peer reached, nothing external touched these
+	// files and the only thing a repair could do is revert a concurrent operator
+	// write. The primary path applies the same guard.
+	// No context is consulted: the repair reads the local filesystem and the
+	// pre-push artist snapshot only, so it still runs correctly when the push
+	// itself was canceled or timed out -- precisely when a peer may have destroyed
+	// a file and nothing else will put it back.
+	defer func() {
+		if len(uploadedTo) == 0 {
+			return
+		}
+		for _, sf := range snapshot {
+			if sf.data == nil {
+				continue // never captured; there is nothing to put back
+			}
+			p.reassertLocalImage(a, "fanart", sf.path, sf.data, sf.mod, uploadedTo)
+		}
+	}()
 
 	for _, pid := range platformIDs {
 		conn, connErr := p.connectionService.GetByID(ctx, pid.ConnectionID)
@@ -924,13 +1142,16 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			continue
 		}
 
-		// #2533: the operator can crop/set/reorder a backdrop too, and the same
-		// shared-volume write-back clobbers fanart. Reuse the primary path's
-		// gated pre-disable at this operator-fanart choke point.
-		if operatorPushOnSharedFS && conn.FeatureManageServerFiles {
-			p.ensurePeerWritebackDisabled(ctx, conn)
-		}
-
+		// #2698: the #2533 pre-disable was here too and is removed for the same
+		// reason as on the primary path -- it is what turns the peer's overwrite
+		// into a DELETE. Measured on Emby 4.10: a fanart reorder pushes both
+		// backdrops, and the peer logs
+		//   Saving image to <emby-config>/metadata/musicartists/<artist>/fanart.jpg
+		//   Deleting previous image <artist-dir>/backdrop.jpg
+		// destroying the operator's file. The deferred re-assertion registered
+		// above -- one pass over the whole snapshot after every peer -- restores
+		// it. It is deliberately NOT per-file-after-its-own-upload: the peer was
+		// measured deleting a file this loop had not reached yet.
 		indexedUploader := newIndexedImageUploader(conn, p.logger)
 		if indexedUploader == nil {
 			p.logger.Warn("unsupported connection type for fanart sync",
@@ -939,34 +1160,66 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			continue
 		}
 
-		for i, fp := range fanartPaths {
-			data, readErr := os.ReadFile(fp) //nolint:gosec // path from trusted fanart discovery
-			if readErr != nil {
-				p.logger.Error("reading fanart for platform sync",
-					slog.String("path", fp),
-					slog.String("error", readErr.Error()))
-				warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: failed to read fanart %d", conn.Name, i)))
-				continue
-			}
+		// Recorded before the uploads, not after a success: a peer that destroys a
+		// backdrop and then fails the request still needs the repair to run.
+		uploadedTo = append(uploadedTo, conn.Name)
+		warnings = append(warnings, p.uploadFanartSet(ctx, fanartUpload{
+			artist:      a,
+			conn:        conn,
+			pid:         pid,
+			uploader:    indexedUploader,
+			snapshot:    snapshot,
+			identityIdx: fanartIdentityIdx,
+			notified:    collisionNotified,
+		})...)
+	}
+	return warnings
+}
 
-			ct := "image/jpeg"
-			if strings.EqualFold(filepath.Ext(fp), ".png") {
-				ct = "image/png"
-			}
+// fanartUpload carries one peer's worth of fanart-push state. It exists to keep
+// syncAllFanartToPlatforms under the cognitive-complexity budget rather than to
+// model anything: the fields are exactly the loop variables the extracted body
+// used to close over.
+type fanartUpload struct {
+	artist      *artist.Artist
+	conn        *connection.Connection
+	pid         artist.PlatformID
+	uploader    connection.IndexedImageUploader
+	snapshot    []fanartSnapshot
+	identityIdx []img.FanartIdentityEntry
+	notified    map[string]bool
+}
 
-			// #2540 NOTIFY-ONLY: notifies on a cross-artist collision but never
-			// blocks; the upload below ALWAYS proceeds.
-			p.notifyFanartCollision(ctx, a, fp, data, fanartIdentityIdx, collisionNotified)
+// uploadFanartSet pushes every captured backdrop to ONE peer, at its TRUE slot
+// index, and returns the per-file warnings.
+func (p *Publisher) uploadFanartSet(ctx context.Context, u fanartUpload) []string {
+	var warnings []string
+	for _, sf := range u.snapshot {
+		// A slot whose bytes could not be captured is skipped, but its index is
+		// still spent, so the surviving files keep their true slot numbers on the
+		// platform. Compacting here would shift the whole gallery down one.
+		if sf.data == nil {
+			continue
+		}
+		fp, data, idx := sf.path, sf.data, sf.index
 
-			if uploadErr := indexedUploader.UploadImageAtIndex(ctx, pid.PlatformArtistID, "fanart", i, data, ct); uploadErr != nil {
-				p.logger.Error("syncing fanart to platform",
-					slog.String("artist", a.Name),
-					slog.String("connection", conn.Name),
-					slog.Int("index", i),
-					slog.String("error", uploadErr.Error()))
-				warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart %d upload failed", conn.Name, conn.Type, i)))
-				p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
-			}
+		ct := "image/jpeg"
+		if strings.EqualFold(filepath.Ext(fp), ".png") {
+			ct = "image/png"
+		}
+
+		// #2540 NOTIFY-ONLY: notifies on a cross-artist collision but never
+		// blocks; the upload below ALWAYS proceeds.
+		p.notifyFanartCollision(ctx, u.artist, fp, data, u.identityIdx, u.notified)
+
+		if uploadErr := u.uploader.UploadImageAtIndex(ctx, u.pid.PlatformArtistID, "fanart", idx, data, ct); uploadErr != nil {
+			p.logger.Error("syncing fanart to platform",
+				slog.String("artist", u.artist.Name),
+				slog.String("connection", u.conn.Name),
+				slog.Int("index", idx),
+				slog.String("error", uploadErr.Error()))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart %d upload failed", u.conn.Name, u.conn.Type, idx)))
+			p.notifyPushFailure(u.pid.ConnectionID, u.conn.Name, classifyPushErr(uploadErr), u.artist.ID, artistDisplayName(u.artist), pushOpImageUpload, uploadErr)
 		}
 	}
 	return warnings
@@ -1078,97 +1331,14 @@ func (p *Publisher) getActiveFanartPrimary(ctx context.Context) string {
 	return name
 }
 
-// writebackController is the subset of a platform client needed to make a
-// managed peer's server-side artwork write-back OFF before Stillwater pushes
-// an operator's image. Emby and Jellyfin clients both satisfy it; the factory
-// below returns nil for types without this control (e.g. Lidarr).
-type writebackController interface {
-	CheckImageSaverEnabled(ctx context.Context) (enabled bool, libName string, err error)
-	DisableFileWriteBack(ctx context.Context) error
-}
-
-// newWritebackControllerFn builds the write-back controller for a connection.
-// A package-level var (mirroring the injectable-hook pattern used elsewhere)
-// so tests can substitute a recording stub without standing up an HTTP peer.
-var newWritebackControllerFn = func(conn *connection.Connection, logger *slog.Logger) writebackController {
-	switch conn.Type {
-	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
-	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
-	default:
-		return nil
-	}
-}
-
-// artistOnSharedFS reports whether the artist's library shares its filesystem
-// with a platform peer -- the #2533 clobber precondition. Fail-closed: an
-// unresolvable or not-yet-evaluated library is treated as shared so the managed
-// pre-push write-back disable still fires rather than risk the peer overwriting
-// the operator's file. A library explicitly evaluated as not-shared
-// (SharedFSStatus "none") returns false, so dedicated-volume setups see zero
-// behavior change.
-func (p *Publisher) artistOnSharedFS(ctx context.Context, a *artist.Artist) bool {
-	if p.libraryService == nil || a == nil || a.Path == "" {
-		return true
-	}
-	lib, err := p.libraryService.FindForArtistPath(ctx, a.Path)
-	if err != nil {
-		p.logger.Warn("shared-FS lookup failed for pre-push write-back gate; assuming shared to protect the operator image",
-			"artist", a.ID, "error", err)
-		return true
-	}
-	if lib == nil {
-		return true
-	}
-	// Only an explicitly-evaluated not-shared status is safe to treat as
-	// dedicated-volume. An empty status means the conflict detector has not
-	// evaluated this library yet -- fail closed and treat it as shared so the
-	// pre-disable still fires during that window, rather than using
-	// lib.IsSharedFS() (false for "" as well as "none").
-	return lib.SharedFSStatus != library.SharedFSNone
-}
-
-// ensurePeerWritebackDisabled proactively turns OFF a managed peer's
-// server-side artwork write-back BEFORE Stillwater pushes the operator's image
-// (#2533). A shared-volume peer with SaveLocalMetadata on rewrites artwork
-// into the media folder under its own naming convention, which deletes the
-// operator's authoritative file (e.g. folder.jpg) moments after a manual crop.
-// detector.go only re-disables the saver reactively on the periodic conflict
-// refresh, leaving a drift window; this closes that window by enforcing the
-// managed contract at the exact moment of the push.
-//
-// Idempotent: it checks first and only issues the disable when the saver is on,
-// avoiding a redundant peer round-trip on the common already-off path. On a
-// check failure it disables defensively (fail toward preserving the operator's
-// file). Best-effort throughout: a check/disable error is logged but never
-// fails the push -- the local file is already the source of truth.
-func (p *Publisher) ensurePeerWritebackDisabled(ctx context.Context, conn *connection.Connection) {
-	ctrl := newWritebackControllerFn(conn, p.logger)
-	if ctrl == nil {
-		return
-	}
-	on, lib, err := ctrl.CheckImageSaverEnabled(ctx)
-	switch {
-	case err != nil:
-		p.logger.Warn("pre-push image-saver check failed; disabling peer write-back defensively",
-			"connection", conn.Name, "error", err)
-	case !on:
-		// Already off: nothing to do, and no redundant disable round-trip.
-		return
-	}
-	if disableErr := ctrl.DisableFileWriteBack(ctx); disableErr != nil {
-		p.logger.Error("pre-push disable of managed peer write-back failed; the mirror may clobber the operator's image",
-			"connection", conn.Name, "library", lib, "error", disableErr)
-		return
-	}
-	p.logger.Info("disabled managed peer write-back before operator image push",
-		"connection", conn.Name, "library", lib)
-}
-
 // newImageUploader constructs an ImageUploader for the given connection type.
 // Returns nil for connection types that do not support image upload.
-func newImageUploader(conn *connection.Connection, logger *slog.Logger) connection.ImageUploader {
+//
+// A package-level var (the injectable-hook pattern used throughout this repo)
+// so a test can substitute an uploader that DELETES the local file mid-upload,
+// which is exactly what a real peer does (#2698) and cannot otherwise be
+// exercised without standing up an Emby.
+var newImageUploader = func(conn *connection.Connection, logger *slog.Logger) connection.ImageUploader {
 	switch conn.Type {
 	case connection.TypeEmby:
 		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
@@ -1180,8 +1350,9 @@ func newImageUploader(conn *connection.Connection, logger *slog.Logger) connecti
 }
 
 // newIndexedImageUploader constructs an IndexedImageUploader for the given
-// connection type. Returns nil for unsupported types.
-func newIndexedImageUploader(conn *connection.Connection, logger *slog.Logger) connection.IndexedImageUploader {
+// connection type. Returns nil for unsupported types. Injectable for the same
+// reason as newImageUploader above.
+var newIndexedImageUploader = func(conn *connection.Connection, logger *slog.Logger) connection.IndexedImageUploader {
 	switch conn.Type {
 	case connection.TypeEmby:
 		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
