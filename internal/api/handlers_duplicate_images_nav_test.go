@@ -711,6 +711,41 @@ func TestLibraryDupCount_CompleteScanReturnsTheCount(t *testing.T) {
 	}
 }
 
+// TestLibraryDupCount_CachesFullReportForBackdropDuplicatesPage pins the
+// #2684 wiring that lets GET /reports/backdrop-duplicates stop scanning on
+// its own request path: libraryDupCount -- the same background scan that
+// feeds the sidebar's aggregate library-duplicate count -- must ALSO stash
+// the full per-artist report via storeBackdropDupReport, even on a PARTIAL
+// scan (ScanErrors > 0). The page surfaces ScanErrors explicitly, so a
+// partial report is still worth caching, unlike the sidebar's single
+// aggregate count which must not show an undercount as fact.
+func TestLibraryDupCount_CachesFullReportForBackdropDuplicatesPage(t *testing.T) {
+	r := dupNavRouter(t)
+	r.pipeline = &fanartCapablePipeline{
+		stubPipeline: &stubPipeline{},
+		scanFn: func(context.Context) (rule.FanartDupReport, error) {
+			return rule.FanartDupReport{
+				ExactRedundantSlots: 3,
+				ArtistsAffected:     1,
+				ScanErrors:          19,
+				PerArtist:           []rule.ArtistFanartDup{{ArtistID: "a1", Name: "A", ExactDrops: 3}},
+			}, nil
+		},
+	}
+
+	if _, err := r.libraryDupCount(context.Background()); !errors.Is(err, dupimages.ErrPartialScan) {
+		t.Fatalf("libraryDupCount err = %v, want ErrPartialScan", err)
+	}
+
+	report, _, ok := r.backdropDupReportSnapshot()
+	if !ok {
+		t.Fatal("libraryDupCount must cache the full report via storeBackdropDupReport even when the scan is partial")
+	}
+	if report.ExactRedundantSlots != 3 || report.ScanErrors != 19 || len(report.PerArtist) != 1 {
+		t.Errorf("cached report = %+v, want the full (partial) scan result surfaced, not dropped", report)
+	}
+}
+
 // The scan sources must be installed when the Router is CONSTRUCTED, not
 // lazily on the first sidebar request.
 //

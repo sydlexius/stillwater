@@ -47,6 +47,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"time"
 	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -83,10 +84,22 @@ func (r *Router) libraryDupCount(ctx context.Context) (int, error) {
 		r.logger.Error("pipeline does not implement fanartDuplicateRepairer; library duplicate-image count unavailable")
 		return 0, errLibraryDupScanUnavailable
 	}
+	// Stamp the scan's START, not its completion: storeBackdropDupReport orders
+	// overlapping scans by when they began, so a long scan that finishes after a
+	// newer one cannot overwrite the newer result.
+	scanStartedAt := time.Now()
 	report, err := repairer.ScanFanartDuplicates(ctx)
 	if err != nil {
 		return 0, err
 	}
+	// Cache the full report for GET /reports/backdrop-duplicates (#2684):
+	// this is now that page's ONLY source of data -- it no longer scans on
+	// render -- so this background scan (periodic + lazy-triggered, same as
+	// the aggregate count below) is what keeps it current. Stored even when
+	// partial: the page surfaces ScanErrors explicitly rather than silently
+	// truncating, unlike the single aggregate count below which must not
+	// show an undercount as an established fact.
+	r.storeBackdropDupReport(report, scanStartedAt)
 	if report.ScanErrors > 0 {
 		// PARTIAL scan -- report.ScanErrors artists could not be re-hashed (a
 		// dropped NFS/SMB mount is the ordinary cause) and were SKIPPED, yet
@@ -371,21 +384,11 @@ func interpolate(tmpl, key string, args ...any) string {
 	return fmt.Sprintf(tmpl, args...)
 }
 
-// storeLibraryDupCount records a library count the caller already computed,
-// leaving the platform rows untouched. Called by the local
-// backdrop-duplicates report page, which pays for the full scan anyway (#2608).
-// It stamps the library half's provenance, which is what makes a periodic
-// Refresh that started BEFORE this store decline to overwrite it on the way out
-// (the scans are minutes long, so a remediation + report-page visit landing
-// mid-scan is ordinary, not exotic).
-func (r *Router) storeLibraryDupCount(count int) {
-	r.dupImageCache().StoreLibrary(count)
-}
-
 // storePlatformDupCounts records per-platform counts the caller already
 // computed, leaving the library count untouched. Called by the platform
 // backdrop-duplicates report page.
-// Same provenance-stamping rationale as storeLibraryDupCount.
+// Stamps the platform half's provenance so a Refresh that started BEFORE
+// this store declines to overwrite it on the way out.
 func (r *Router) storePlatformDupCounts(platforms []dupimages.PlatformCount) {
 	r.dupImageCache().StorePlatforms(platforms)
 }
