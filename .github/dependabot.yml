@@ -74,6 +74,45 @@ updates:
       - ci
     open-pull-requests-limit: 3
 
+  # Root npm project: the CSS linter (stylelint + plugins) and the a11y/UAT
+  # harness (playwright, axe-core, jsdom). Dev-only -- nothing here ships in the
+  # binary or the container.
+  #
+  # This entry buys SCHEDULED VERSION updates, which are config-driven and so
+  # never ran for this tree. It is NOT what makes security alerts reach it:
+  # security updates are alert-driven and already reach unlisted directories
+  # (#2695 bumped /docs/hero/captions, which is likewise unlisted, two minutes
+  # after its advisory landed). The point is to keep the tree current between
+  # advisories rather than letting a CVE be the first thing that moves it.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore"
+    labels:
+      - dependencies
+    open-pull-requests-limit: 3
+
+  # Hero-caption renderer (Remotion + React), used to produce the docs hero
+  # video. Not part of any build or CI path, so updates are informational -- but
+  # it carries a full React/TypeScript tree and was likewise uncovered.
+  - package-ecosystem: npm
+    directory: /docs/hero/captions
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore"
+    labels:
+      - dependencies
+      - documentation
+    open-pull-requests-limit: 2
+
   # Docs site uses pip-compile with --generate-hashes; Dependabot detects the
   # autogen header on requirements.txt and updates both .in and .txt together
   # for direct deps. Transitive security alerts in the lockfile (see #1437)
