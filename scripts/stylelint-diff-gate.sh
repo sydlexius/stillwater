@@ -118,7 +118,15 @@ STYLELINT_JSON="$WORK_DIR/stylelint.json"
 # before we get a chance to tell the two apart below. It also writes the
 # --formatter json report to STDERR (not stdout) whenever it exits non-zero,
 # so both streams must be captured or the report is lost.
-npx --no-install stylelint --formatter json "$CSS_GLOB" > "$STYLELINT_JSON" 2>&1 || true
+#
+# --silent is load-bearing, not cosmetic. Because the line above merges stderr
+# into stdout, ANY banner npm itself writes to EITHER stream lands in the
+# report file and makes the jq parse below fail. npm 12 added an unconditional
+# "npm notice run <cmd>" banner, which prefixed two lines to the capture and
+# turned every run into the "config or plugin resolution error" branch -- a
+# hard FAIL that blocked all local pushes while stylelint was in fact working
+# fine. --silent suppresses npm's own output without touching stylelint's.
+npx --silent --no-install stylelint --formatter json "$CSS_GLOB" > "$STYLELINT_JSON" 2>&1 || true
 
 # A clean or violations-found run produces a valid JSON array on stdout. A
 # config/plugin resolution failure (bad regex, missing plugin, malformed
