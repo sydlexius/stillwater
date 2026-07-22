@@ -116,6 +116,31 @@ Skipped is not a quiet failure, and it is not a pass:
 
 If you see a rule skipped across many artists, that is a signal about missing data rather than a problem with the rule. Duplicate detection skipped for platform-only artists usually means their images have not been fingerprinted yet.
 
+## When a run can't save its results
+
+A rule run has two halves: working out what is wrong, and writing down what it
+found and fixed. The second half can fail on its own -- most often because the
+database is momentarily locked by another operation.
+
+When that happens the run tells you so rather than reporting a clean result:
+
+- **In the browser**, the run reports that its results could not be saved
+  instead of showing a violation count.
+- **Through the API**, the request fails rather than returning success, and the
+  response carries a `persist_failures` count -- how many artists could not be
+  fully written.
+- **For a background run** (Run Rules across the library, or a single rule
+  across all artists), the count appears in the run status you poll, and the
+  failure is written to the log.
+
+Treat a non-zero `persist_failures` as "this run's results are not in the
+database". Nothing was corrupted and no fix was half-applied -- a run that
+cannot record its work leaves the artist marked for re-evaluation, so running
+it again is the correct response.
+
+If it keeps happening, that points at the database rather than the rules: check
+the log for the underlying write error.
+
 ## Don't reach for "disable" first
 
 When a rule is producing too much noise, the right response is usually:
