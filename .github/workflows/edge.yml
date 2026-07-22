@@ -108,14 +108,24 @@ jobs:
           pkg="${GITHUB_REPOSITORY##*/}"
           echo "Pruning edge-* versions of container package '${OWNER}/${pkg}' (keep ${KEEP})"
 
-          # List version ids whose tags include an immutable edge-* tag, newest
-          # first. Untagged and the moving 'edge' tag are excluded.
-          mapfile -t ids < <(
-            gh api --paginate \
-              "/users/${OWNER}/packages/container/${pkg}/versions" \
-              --jq '.[] | select(.metadata.container.tags | any(startswith("edge-"))) | "\(.created_at)\t\(.id)"' \
-              2>/dev/null | sort -r | cut -f2
-          ) || { echo "warning: could not list package versions; skipping prune"; exit 0; }
+          # List version ids whose tags include an immutable edge-* tag. Capture
+          # the API call's exit status DIRECTLY (a pipe into mapfile would mask
+          # a gh failure behind mapfile's own success, misreporting a request
+          # error as "Nothing to prune"). Distinguish three cases explicitly:
+          # request failed -> warn + skip; genuinely empty -> nothing to prune;
+          # otherwise -> sort newest-first and prune the tail.
+          if ! raw="$(gh api --paginate \
+            "/users/${OWNER}/packages/container/${pkg}/versions" \
+            --jq '.[] | select(.metadata.container.tags | any(startswith("edge-"))) | "\(.created_at)\t\(.id)"' \
+            2>/dev/null)"; then
+            echo "warning: could not list package versions; skipping prune"
+            exit 0
+          fi
+          if [ -z "${raw}" ]; then
+            echo "No immutable edge-* versions found; nothing to prune."
+            exit 0
+          fi
+          mapfile -t ids < <(printf '%s\n' "${raw}" | sort -r | cut -f2)
 
           total=${#ids[@]}
           echo "Immutable edge-* versions found: ${total}"
