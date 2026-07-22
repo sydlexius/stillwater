@@ -21,21 +21,25 @@ import (
 // between POST /rules/run-all and POST /rules/{id}/run. Single-rule runs
 // populate RuleID so the 202 response identifies which rule is running.
 type ruleRunStatus struct {
-	Running             bool      `json:"running"`
-	Status              string    `json:"status"`            // idle, running, completed, failed
-	Scope               string    `json:"scope,omitempty"`   // incremental or all (#698)
-	RuleID              string    `json:"rule_id,omitempty"` // set for single-rule runs only
-	ArtistsProcessed    int       `json:"artists_processed"`
-	ArtistsTotal        int       `json:"artists_total"`             // eligible artist count (#698)
-	ArtistsSkipped      int       `json:"artists_skipped,omitempty"` // ArtistsTotal - ArtistsProcessed (#698)
-	ViolationsFound     int       `json:"violations_found"`
-	ViolationsAutoFixed int       `json:"violations_auto_fixed"`
-	ViolationsRemaining int       `json:"violations_remaining"`
-	FixesAttempted      int       `json:"fixes_attempted"`
-	FixesSucceeded      int       `json:"fixes_succeeded"`
-	StartedAt           time.Time `json:"started_at,omitempty"`
-	CompletedAt         time.Time `json:"completed_at,omitempty"`
-	Error               string    `json:"error,omitempty"`
+	Running             bool   `json:"running"`
+	Status              string `json:"status"`            // idle, running, completed, failed
+	Scope               string `json:"scope,omitempty"`   // incremental or all (#698)
+	RuleID              string `json:"rule_id,omitempty"` // set for single-rule runs only
+	ArtistsProcessed    int    `json:"artists_processed"`
+	ArtistsTotal        int    `json:"artists_total"`             // eligible artist count (#698)
+	ArtistsSkipped      int    `json:"artists_skipped,omitempty"` // ArtistsTotal - ArtistsProcessed (#698)
+	ViolationsFound     int    `json:"violations_found"`
+	ViolationsAutoFixed int    `json:"violations_auto_fixed"`
+	ViolationsRemaining int    `json:"violations_remaining"`
+	FixesAttempted      int    `json:"fixes_attempted"`
+	FixesSucceeded      int    `json:"fixes_succeeded"`
+	// PersistFailures counts artists whose run could not be fully written
+	// (#2724). A non-zero value means the database does not reflect what this
+	// run reported, so "status: completed" must not be read as success.
+	PersistFailures int       `json:"persist_failures,omitempty"`
+	StartedAt       time.Time `json:"started_at,omitempty"`
+	CompletedAt     time.Time `json:"completed_at,omitempty"`
+	Error           string    `json:"error,omitempty"`
 	// LastEvaluationAt mirrors the scheduler's lastRunAt stamp taken by
 	// MarkEvaluated() for a run-all completion, captured under ruleRunMu in
 	// the SAME critical section that flips Status to "completed" (#2152).
@@ -491,6 +495,10 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.ViolationsRemaining = violationsRemaining
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
+		// #2724: carry the write-failure count into the polled status, or a
+		// client polling this endpoint reads "completed" for a run that lost
+		// every write -- the exact symptom the issue describes.
+		r.ruleRun.PersistFailures = result.PersistFailures
 		r.ruleRunMu.Unlock()
 	}()
 
@@ -584,18 +592,51 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 	// inline, which is more direct than navigating to the dashboard.
 	dashboardURL := r.basePath + "/?search=" + url.QueryEscape(a.Name)
 
+	// #2724: a run whose writes did not land must not read as a clean success.
+	// Before this, every persist failure was a WARN in the log behind a 200,
+	// which is how a fix pipeline losing every write went unnoticed in
+	// production for an entire soak. Log at ERROR (this is data not reaching
+	// the database, not a transient warning) and tell the operator.
+	persistFailed := result.PersistFailures > 0
+	if persistFailed {
+		r.logger.Error("run-rules could not persist its results",
+			"artist_id", artistID,
+			"artist", a.Name,
+			"persist_failures", result.PersistFailures,
+		)
+	}
+
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		var fragment string
-		if result.ViolationsFound == 0 {
+		switch {
+		case persistFailed:
+			fragment = `<div class="text-sm text-red-600 dark:text-red-400">` +
+				`Rules ran, but some results could not be saved. Please try again.</div>`
+		case result.ViolationsFound == 0:
 			fragment = `<div class="text-sm text-green-600 dark:text-green-400">No violations found.</div>`
-		} else {
+		default:
 			fragment = `<div class="text-sm text-gray-700 dark:text-gray-300">Found ` +
 				strconv.Itoa(result.ViolationsFound) + ` violation(s).</div>`
 		}
 		if _, werr := io.WriteString(w, fragment); werr != nil {
 			r.logger.Warn("writing HTMX run-rules fragment", "artist_id", artistID, "error", werr)
 		}
+		return
+	}
+
+	// #2724: the JSON path must not report success when the writes did not
+	// land. Returning 200 here is exactly the symptom the issue describes --
+	// an operator (or a script polling this endpoint) was told the run
+	// succeeded while the database had nothing. 500 is correct: the request
+	// did not achieve what it was asked to do.
+	if persistFailed {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error":            "rules ran but the results could not be saved",
+			"violations_found": result.ViolationsFound,
+			"persist_failures": result.PersistFailures,
+			"dashboard_url":    dashboardURL,
+		})
 		return
 	}
 
@@ -714,6 +755,10 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.Scope = result.Scope
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
+		// #2724: carry the write-failure count into the polled status, or a
+		// client polling this endpoint reads "completed" for a run that lost
+		// every write -- the exact symptom the issue describes.
+		r.ruleRun.PersistFailures = result.PersistFailures
 		r.ruleRun.ViolationsFound = violationsFound
 		r.ruleRun.ViolationsAutoFixed = violationsAutoFixed
 		r.ruleRun.ViolationsRemaining = violationsRemaining

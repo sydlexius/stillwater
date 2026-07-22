@@ -1066,6 +1066,14 @@ components:
         fixes_succeeded:
           type: integer
           description: Number of automated fixes that succeeded.
+        persist_failures:
+          type: integer
+          description: >
+            Number of artists whose run could not be fully written (a
+            violation upsert, health-score persist, or resolved-row write
+            failed). Omitted when zero. A non-zero value means the database
+            does not reflect what this run reported, so the run must not be
+            treated as successful.
         started_at:
           type: string
           format: date-time

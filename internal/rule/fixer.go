@@ -108,6 +108,14 @@ type RunResult struct {
 	FixesAttempted   int         `json:"fixes_attempted"`
 	FixesSucceeded   int         `json:"fixes_succeeded"`
 	Results          []FixResult `json:"results"`
+	// PersistFailures counts artists whose run could not be fully written
+	// (a violation upsert, health-score persist, or resolved-row write
+	// failed). It exists so callers can stop reporting success on a run that
+	// did not stick: before #2724 every write failure was a WARN in the log
+	// and a 200 to the operator, which is how a fix pipeline silently losing
+	// every write went unnoticed in production. A non-zero value means the
+	// database does not reflect what the run reported.
+	PersistFailures int `json:"persist_failures,omitempty"`
 }
 
 // PipelineRunner abstracts the rule pipeline so consumers can be tested
@@ -532,6 +540,12 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 		return contrib, false
 	}
 
+	// Shield this artist's fix-and-persist phase from cancellation (#2724),
+	// matching runForArtistFiltered and processArtistForRunAll. Evaluation
+	// above stays cancelable; a canceled run still stops at an artist
+	// boundary rather than leaving an artist half-written.
+	ctx = context.WithoutCancel(ctx)
+
 	// No RuleID filter here on purpose: the evaluation considered only ruleID,
 	// so every violation it returned belongs to it. Re-filtering would mask a
 	// regression in the scoping rather than catch it.
@@ -586,6 +600,11 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 		}
 	}
 	p.publishAccumulated(ctx, a, acc.metadataFixed, acc.fixedImageTypes)
+	// #2724: report a WRITE failure distinctly from an evaluation bail-out.
+	// acc.persistOK is only ever cleared by a failed write, so it is the
+	// honest source for this signal; the returned bool also covers evaluation
+	// errors and must not be reused for it.
+	contrib.persistFailed = !acc.persistOK
 	return contrib, acc.persistOK
 }
 
@@ -765,8 +784,35 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	// post-filter pass-row writer share a single set of DB reads.
 	ruleCache := map[string]*Rule{}
 
-	p.dispatchViolations(evalCtx, a, eval.Violations, categoryFilter, ruleCache, acc, result)
-	p.finalizeArtistRun(evalCtx, a, ruleCache, acc, categoryFilter, scope, startedAt)
+	// Shield the fix-and-persist phase from cancellation (#2724). Evaluation
+	// above is legitimately cancelable -- it is read-only and provider-backed,
+	// so a caller that goes away should not keep it running. Once evaluation
+	// has produced violations, though, the fix-and-persist sequence must run
+	// to completion: on production a page reload canceled the in-flight
+	// run-rules request and every subsequent write failed
+	// ("beginning upsert-violation transaction: context canceled",
+	// "listing rules: context canceled") while the handler still returned 200,
+	// so the operator was told the run succeeded and nothing was written.
+	//
+	// context.WithoutCancel keeps the context's VALUES -- the per-artist
+	// EvaluationContext installed by withEvalContext above, and the metadata
+	// languages injected by the API layer -- while dropping cancellation, so
+	// the shared-provider-payload optimisation still works here.
+	//
+	// Same invariant, and the same primitive, as api.executeRefreshCtx:
+	// "Shield write phase from cancellation to prevent half-applied metadata."
+	writeCtx := context.WithoutCancel(evalCtx)
+
+	p.dispatchViolations(writeCtx, a, eval.Violations, categoryFilter, ruleCache, acc, result)
+	p.finalizeArtistRun(writeCtx, a, ruleCache, acc, categoryFilter, scope, startedAt)
+
+	// #2724: report a run that did not fully persist. The shield above removes
+	// the cancellation cause, but any other write failure (a locked DB, a
+	// constraint violation) must still reach the operator rather than being
+	// logged as a WARN behind a 200.
+	if !acc.persistOK {
+		result.PersistFailures++
+	}
 	return result, nil
 }
 
@@ -1136,6 +1182,16 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 		return contrib, false
 	}
 
+	// Shield this artist's fix-and-persist phase from cancellation (#2724),
+	// exactly as runForArtistFiltered does for the single-artist path.
+	// Evaluation above stays cancelable; everything below writes.
+	//
+	// Scoping the shield to ONE artist is deliberate: a canceled run-all
+	// still stops, it just stops at an artist boundary rather than midway
+	// through an artist's writes. That is the difference between "the
+	// operator stopped the pass" and "the pass left an artist half-written".
+	ctx = context.WithoutCancel(ctx)
+
 	for j := range eval.Violations {
 		v := &eval.Violations[j]
 		contrib.violationsFound++
@@ -1176,6 +1232,11 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 		}
 	}
 	p.publishAccumulated(ctx, a, acc.metadataFixed, acc.fixedImageTypes)
+	// #2724: report a WRITE failure distinctly from an evaluation bail-out.
+	// acc.persistOK is only ever cleared by a failed write, so it is the
+	// honest source for this signal; the returned bool also covers evaluation
+	// errors and must not be reused for it.
+	contrib.persistFailed = !acc.persistOK
 	return contrib, acc.persistOK
 }
 
@@ -1278,6 +1339,12 @@ type artistContribution struct {
 	fixesAttempted  int
 	fixesSucceeded  int
 	results         []FixResult
+	// persistFailed is true when a WRITE for this artist failed (a violation
+	// upsert, health-score persist, or resolved-row write). It is deliberately
+	// separate from the walker's ok bool: ok=false also covers an evaluation
+	// error, where nothing was ever written. Conflating the two reports a
+	// persist failure for a run that never attempted one (#2724 review).
+	persistFailed bool
 }
 
 // dispatchArtist sends a single artist to fn either directly (sequential) or
@@ -1412,6 +1479,14 @@ func mergeContribution(mu *sync.Mutex, processed *int, result *RunResult, contri
 	if ok {
 		*processed++
 	}
+	// #2724: surface a WRITE failure instead of only logging it. This is
+	// deliberately NOT keyed on ok: ok=false also covers an evaluation error
+	// (fn bailed before attempting any write), and counting that as a persist
+	// failure would tell the operator a run lost data when nothing was ever
+	// written.
+	if contrib.persistFailed {
+		result.PersistFailures++
+	}
 	mu.Unlock()
 }
 
@@ -1470,7 +1545,16 @@ func (p *Pipeline) walkArtistsWithMark(ctx context.Context, scope RunScope, resu
 		contrib, ok := fn(a)
 		mergeContribution(&mu, &processed, result, contrib, ok)
 		if ok {
-			p.markArtistEvaluated(ctx, a, startedAt)
+			// #2724: the rules-evaluated stamp is the LAST write of this
+			// artist's run and must be shielded like the rest of it. fn
+			// shields its own fix-and-persist phase internally, but this
+			// call sits outside fn and would otherwise run on the walker's
+			// cancelable ctx -- so a caller that went away left the artist
+			// fixed-but-unstamped, silently, because markArtistEvaluated
+			// only warn-logs. Shield here rather than hoisting the walker's
+			// ctx: the ENUMERATION below must stay cancelable so an operator
+			// can still stop the pass at an artist boundary.
+			p.markArtistEvaluated(context.WithoutCancel(ctx), a, startedAt)
 		}
 	}
 
