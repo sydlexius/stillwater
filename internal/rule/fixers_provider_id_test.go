@@ -134,20 +134,30 @@ func TestProviderIDBackfill_NoDerivableRelationsIsNoOp(t *testing.T) {
 	}
 }
 
-// TestProviderIDBackfill_CoalescesFetchMetadata proves the backfill fixer routes
-// its MusicBrainz fetch through the per-artist EvaluationContext coalescer
-// (#1133/#1134/#1135) instead of issuing its own duplicate FetchMetadata call.
-// Two fixer invocations on the same artist within one evaluation pass must share
-// a SINGLE upstream FetchMetadata call. This mirrors
-// TestImageFixer_FetchImages_Cached, which pins the same invariant for the image
-// fixer's four-rule fanout.
+// TestProviderIDBackfill_CoalescesFetchMetadata proves a repeat Fix call on the
+// same artist within one evaluation pass issues at most one upstream
+// FetchMetadata call.
+//
+// Two mechanisms cooperate here, in order: (1) issue #2699 -- Fix mutates the
+// artist's flat provider-ID fields in place immediately after a successful
+// backfill (see Fix's UpdateProviderField loop), which is what lets the
+// pipeline's same-pass post-fix re-evaluation see the corrected artist instead
+// of re-deriving a stale violation. Once mbURLMetadata's three IDs are all
+// filled by the first call, the second call's own needs-fill guard short-circuits
+// before any fetch is attempted -- so this test's "1 call" no longer depends on
+// cache coalescing to hold. (2) For the general case where a fetch IS still
+// needed twice (e.g. two DIFFERENT metadata fixers sharing one artist in a
+// pass), the fixer still routes through the per-artist EvaluationContext
+// coalescer (#1133/#1134/#1135) rather than issuing its own duplicate
+// FetchMetadata call; that plumbing is unchanged and still load-bearing, it is
+// just not what this particular scenario exercises anymore. This mirrors
+// TestImageFixer_FetchImages_Cached, which pins the coalescing invariant for
+// the image fixer's four-rule fanout.
 //
 // The fixer's own fetcher and the EvaluationContext's orchestrator are the same
 // countingEvalProvider, so the coalesced (EC) path and the reverted (direct
-// f.fetcher) path both land on one counter. REVERT-AND-RERUN: reverting the
-// EvaluationContext routing in Fix (back to a direct f.fetcher.FetchMetadata)
-// makes this go RED at calls=2.
-func TestProviderIDBackfill_CoalescesFetchMetadata(t *testing.T) {
+// f.fetcher) path both land on one counter.
+func TestProviderIDBackfill_SecondPassSkipsFetchOnceFilled(t *testing.T) {
 	count := &countingEvalProvider{
 		metaResult: &provider.FetchResult{Metadata: mbURLMetadata()},
 	}
@@ -157,8 +167,15 @@ func TestProviderIDBackfill_CoalescesFetchMetadata(t *testing.T) {
 	a := &artist.Artist{ID: "a1", Name: "Test Artist", MusicBrainzID: "mbid-abc"}
 	ctx := WithEvaluationContext(context.Background(), NewEvaluationContext(a, count, testLogger()))
 
-	// Two fixer passes on the same artist within one evaluation -- the second
-	// must reuse the first's cached fetch rather than dispatch a fresh one.
+	// Two backfill passes on the same artist within one evaluation. The first
+	// derives every in-scope ID and writes it onto the in-memory artist (#2699);
+	// the second then hits the "every in-scope ID already set" early-exit and
+	// must NOT dispatch a fetch at all -- so exactly one fetch total.
+	//
+	// This does NOT test pass-level fetch coalescing: because the first pass
+	// mutates the artist, providerIDFingerprint's cache key deliberately
+	// changes, so a genuine second fetch would not coalesce anyway. Coalescing
+	// is covered directly by TestEvaluationContext_CoalescesMetadataAndField.
 	for i := 0; i < 2; i++ {
 		if _, err := f.Fix(ctx, a, &Violation{RuleID: RuleProviderIDMissing}); err != nil {
 			t.Fatalf("Fix %d: %v", i, err)
@@ -166,7 +183,7 @@ func TestProviderIDBackfill_CoalescesFetchMetadata(t *testing.T) {
 	}
 
 	if got := count.fetchMetaCalls.Load(); got != 1 {
-		t.Errorf("FetchMetadata dispatched %d times; want 1 (coalesced across the pass)", got)
+		t.Errorf("FetchMetadata dispatched %d times; want 1 (second pass short-circuits at the all-filled early-exit)", got)
 	}
 }
 

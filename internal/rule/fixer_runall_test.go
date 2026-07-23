@@ -142,3 +142,82 @@ func TestMergeIntoContrib(t *testing.T) {
 		}
 	})
 }
+
+// TestProcessArtistForRunAll_ProviderIDBackfill_PersistsResultRow is the
+// issue #2699 regression: a same-pass auto-fix of provider_id_missing must
+// leave the artist with a rule_results row for that rule (pass or fail),
+// exactly like every other auto-fixable rule does.
+//
+// Before the fix, ProviderIDBackfillFixer.Fix wrote the backfilled Discogs/
+// Deezer/Spotify ID only to the database (via UpdateProviderField) and never
+// updated the in-memory *artist.Artist the pipeline goes on to re-evaluate in
+// the same pass (Pipeline.updateHealthScore's postEval := engine.Evaluate(ctx,
+// a)). That stale re-read kept reporting the artist as violating
+// provider_id_missing, so persistPassResults (which only writes a pass row for
+// rules postEval does NOT consider violated) skipped it -- and because the
+// violation had already been dispatched-and-resolved, nothing else wrote a row
+// either. The artist ended up with a fresh rules_evaluated_at (the pass
+// otherwise succeeded) but literally no rule_results row for the rule,
+// which is exactly the "no complete evaluation baseline" freeze
+// offlineHealthScore logs (fixer.go:2237, first_missing_rule=provider_id_missing).
+func TestProcessArtistForRunAll_ProviderIDBackfill_PersistsResultRow(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding default rules: %v", err)
+	}
+
+	// provider_id_missing seeds disabled (service.go); enable it in auto mode
+	// so the pipeline both evaluates and auto-fixes it, matching the reported
+	// prod configuration.
+	r, err := ruleSvc.GetByID(ctx, RuleProviderIDMissing)
+	if err != nil {
+		t.Fatalf("loading provider_id_missing rule: %v", err)
+	}
+	r.Enabled = true
+	r.AutomationMode = AutomationModeAuto
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("enabling provider_id_missing: %v", err)
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	// Discogs and Deezer are "available" (configured), matching the prod rule
+	// row's dynamic-default resolution with no RequiredProviderIDs override.
+	engine.SetProviderAvailability(&stubProviderAvailability{available: allThreeAvailable()})
+
+	fetcher := &stubMetadataProvider{metadata: mbURLMetadata()}
+	fixer := NewProviderIDBackfillFixer(fetcher, artistSvc, testLogger())
+	p := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	// An artist with an MBID and no provider IDs: the checker flags it, and
+	// the backfill fixer can derive all three from the MusicBrainz relations
+	// mbURLMetadata() carries, so the fix succeeds in this same pass.
+	a := &artist.Artist{Name: "Backfill Artist", SortName: "Backfill Artist", MusicBrainzID: "mbid-abc", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	if _, ok := p.processArtistForRunAll(ctx, a); !ok {
+		t.Fatal("processArtistForRunAll reported a persist failure")
+	}
+
+	rows, err := ruleSvc.GetRuleResultsForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetRuleResultsForArtist: %v", err)
+	}
+	var found *RuleResult
+	for i := range rows {
+		if rows[i].RuleID == RuleProviderIDMissing {
+			found = &rows[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("no rule_results row for %s after a same-pass auto-fix; rows: %+v", RuleProviderIDMissing, rows)
+	}
+	if !found.Passed {
+		t.Errorf("rule_results row for %s has passed=false after the backfill fixed every in-scope ID", RuleProviderIDMissing)
+	}
+}
