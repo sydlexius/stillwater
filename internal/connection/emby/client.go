@@ -72,14 +72,7 @@ func New(baseURL, apiKey, userID string, logger *slog.Logger) *Client {
 
 // NewWithHTTPClient creates an Emby client with a custom HTTP client (for testing).
 func NewWithHTTPClient(baseURL, apiKey, userID string, httpClient *http.Client, logger *slog.Logger) *Client {
-	mb, err := mediabrowser.New(mediabrowser.PlatformEmby, baseURL, apiKey, userID, httpClient, logger)
-	if err != nil {
-		// Unreachable: the platform is a compile-time constant that
-		// mediabrowser.ProfileFor is guaranteed to know. Logged loudly
-		// rather than swallowed so a future rename of the constant
-		// cannot fail silently.
-		logger.Error("emby: unknown platform profile", "error", err)
-	}
+	mb := mediabrowser.NewWithProfile(mediabrowser.EmbyProfile, baseURL, apiKey, userID, httpClient, logger)
 	return &Client{Client: mb}
 }
 

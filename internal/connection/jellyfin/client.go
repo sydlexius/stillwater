@@ -59,14 +59,7 @@ func New(baseURL, apiKey, userID string, logger *slog.Logger) *Client {
 
 // NewWithHTTPClient creates a Jellyfin client with a custom HTTP client (for testing).
 func NewWithHTTPClient(baseURL, apiKey, userID string, httpClient *http.Client, logger *slog.Logger) *Client {
-	mb, err := mediabrowser.New(mediabrowser.PlatformJellyfin, baseURL, apiKey, userID, httpClient, logger)
-	if err != nil {
-		// Unreachable: the platform is a compile-time constant that
-		// mediabrowser.ProfileFor is guaranteed to know. Logged loudly
-		// rather than swallowed so a future rename of the constant
-		// cannot fail silently.
-		logger.Error("jellyfin: unknown platform profile", "error", err)
-	}
+	mb := mediabrowser.NewWithProfile(mediabrowser.JellyfinProfile, baseURL, apiKey, userID, httpClient, logger)
 	return &Client{Client: mb}
 }
 

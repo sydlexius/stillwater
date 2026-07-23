@@ -48,22 +48,36 @@ type Profile struct {
 	ApplyAuth func(req *http.Request, apiKey string)
 }
 
-// profiles holds the built-in capability profile for each supported
-// platform. Kept unexported so the set of platforms cannot be mutated at
-// runtime; callers resolve through ProfileFor.
-var profiles = map[string]Profile{
-	PlatformEmby: {
+// EmbyProfile and JellyfinProfile are the built-in capability profiles for
+// each supported platform, exported so a caller holding a compile-time
+// platform literal (the emby and jellyfin package constructors) can pass
+// the profile value directly to NewWithProfile instead of round-tripping
+// through the string-keyed, error-returning ProfileFor. That makes an
+// unauthenticated client from a misspelled platform string impossible at
+// compile time for those two callers, rather than merely unreachable at
+// runtime.
+var (
+	EmbyProfile = Profile{
 		Integration: PlatformEmby,
 		ApplyAuth: func(req *http.Request, apiKey string) {
 			req.Header.Set("X-Emby-Token", apiKey)
 		},
-	},
-	PlatformJellyfin: {
+	}
+	JellyfinProfile = Profile{
 		Integration: PlatformJellyfin,
 		ApplyAuth: func(req *http.Request, apiKey string) {
 			req.Header.Set("Authorization", fmt.Sprintf(`MediaBrowser Token="%s"`, apiKey))
 		},
-	},
+	}
+)
+
+// profiles holds the built-in capability profile for each supported
+// platform, keyed by the platform string. Kept unexported so the set of
+// platforms cannot be mutated at runtime; callers resolve through
+// ProfileFor.
+var profiles = map[string]Profile{
+	PlatformEmby:     EmbyProfile,
+	PlatformJellyfin: JellyfinProfile,
 }
 
 // ProfileFor returns the built-in capability profile for a
@@ -124,6 +138,26 @@ func New(platform, baseURL, apiKey, userID string, httpClient *http.Client, logg
 		profile.ApplyAuth(req, c.APIKey)
 	}
 	return c, nil
+}
+
+// NewWithProfile builds a shared client from an already-resolved Profile,
+// with no error return. It exists for callers that hold a Profile value at
+// compile time (EmbyProfile, JellyfinProfile) rather than a platform
+// string: those callers cannot produce ErrUnknownPlatform, so unlike New,
+// there is no error branch for them to carry (and no way to leave it
+// unreachable-but-present). ProfileFor and New remain the right API for a
+// caller keyed off a runtime platform string, such as
+// library_options.go's plain `platform string` convention.
+func NewWithProfile(profile Profile, baseURL, apiKey, userID string, httpClient *http.Client, logger *slog.Logger) *Client {
+	c := &Client{
+		BaseClient: httpclient.NewBase(baseURL, apiKey, httpClient, logger, profile.Integration),
+		UserID:     userID,
+		Profile:    profile,
+	}
+	c.AuthFunc = func(req *http.Request) {
+		profile.ApplyAuth(req, c.APIKey)
+	}
+	return c
 }
 
 // ClassifyAuthError wraps a 401/403 httpclient.StatusError with the

@@ -101,6 +101,67 @@ func TestNewSetsIdentityAndProfile(t *testing.T) {
 	}
 }
 
+// TestNewWithProfile pins the no-error constructor used by the emby and
+// jellyfin package constructors: given an exported Profile value directly,
+// it must apply that profile's auth scheme and identity exactly as New
+// does when resolving the same platform by string.
+func TestNewWithProfile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		profile    Profile
+		apiKey     string
+		wantHeader string
+		wantValue  string
+	}{
+		{
+			name:       "EmbyProfile applies the X-Emby-Token header",
+			profile:    EmbyProfile,
+			apiKey:     "emby-secret",
+			wantHeader: "X-Emby-Token",
+			wantValue:  "emby-secret",
+		},
+		{
+			name:       "JellyfinProfile applies the MediaBrowser Authorization scheme",
+			profile:    JellyfinProfile,
+			apiKey:     "jf-secret",
+			wantHeader: "Authorization",
+			wantValue:  `MediaBrowser Token="jf-secret"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got http.Header
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Clone()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer srv.Close()
+
+			c := NewWithProfile(tt.profile, srv.URL, tt.apiKey, "user-7", srv.Client(), testLogger())
+			if c.UserID != "user-7" {
+				t.Errorf("UserID = %q, want %q", c.UserID, "user-7")
+			}
+			if c.Profile.Integration != tt.profile.Integration {
+				t.Errorf("Profile.Integration = %q, want %q", c.Profile.Integration, tt.profile.Integration)
+			}
+
+			var out map[string]any
+			if err := c.Get(context.Background(), "/System/Info", &out); err != nil {
+				t.Fatalf("Get returned error: %v", err)
+			}
+			if v := got.Get(tt.wantHeader); v != tt.wantValue {
+				t.Errorf("%s header = %q, want %q", tt.wantHeader, v, tt.wantValue)
+			}
+		})
+	}
+}
+
 // TestProfileForUnknownPlatform verifies the resolver fails loudly rather
 // than returning a zero Profile whose nil ApplyAuth would produce a client
 // issuing unauthenticated requests.
