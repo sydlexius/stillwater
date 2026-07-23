@@ -680,6 +680,7 @@ templ BulkProgressPill() {
 		data-i18n-verb-re-identify-review={ t(ctx, "artists.bulk.progress.re_identify_review") }
 		data-i18n-verb-scan={ t(ctx, "artists.bulk.progress.scan") }
 		data-i18n-verb-fetch-images={ t(ctx, "artists.bulk.progress.fetch_images") }
+		data-i18n-verb-refresh-metadata={ t(ctx, "artists.bulk.progress.refresh_metadata") }
 		data-i18n-verb-lock={ t(ctx, "artists.bulk.progress.lock") }
 		data-i18n-verb-unlock={ t(ctx, "artists.bulk.progress.unlock") }
 		data-i18n-template={ t(ctx, "artists.bulk.progress.template") }
@@ -1597,7 +1598,7 @@ templ ArtistsPageScripts() {
 					// only use it for actions that actually hit them. Local
 					// actions (scan, run_rules) get the plain small template
 					// regardless of count to avoid misleading warnings.
-					var usesExternalProviders = action === 're_identify_auto' || action === 're_identify_review' || action === 'fetch_images';
+					var usesExternalProviders = action === 're_identify_auto' || action === 're_identify_review' || action === 'fetch_images' || action === 'refresh_metadata';
 					var tpl;
 					if (count > 500 && usesExternalProviders) {
 						tpl = (pill && pill.getAttribute('data-i18n-confirm-large')) || 'You are about to apply {action} to {count} artists. This may take a while and will hit external provider APIs (MusicBrainz, Fanart.tv, etc.). Continue?';

@@ -7247,12 +7247,16 @@ paths:
         Only one bulk action may run at a time; concurrent starts are rejected
         with 409 Conflict. The accepted actions are run_rules,
         re_identify_auto (legacy alias: re_identify), scan,
-        fetch_images, lock, and unlock. The review flow is started separately
+        fetch_images, refresh_metadata, lock, and unlock. The review flow is
+        started separately
         via POST /artists/re-identify/wizard. Progress is reported via
         GET /artists/bulk-actions/status and a bulk.completed SSE event is
         published when the run finishes. lock / unlock are idempotent:
         already-locked artists count as Skipped on lock, and not-locked
-        artists count as Skipped on unlock.
+        artists count as Skipped on unlock. refresh_metadata is the bulk
+        equivalent of POST /artists/{id}/refresh; artists with no MusicBrainz
+        ID count as Skipped rather than prompting for disambiguation, as do
+        locked and excluded artists.
       requestBody:
         required: true
         content:
@@ -7263,7 +7267,7 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [run_rules, re_identify, re_identify_auto, scan, fetch_images, lock, unlock]
+                  enum: [run_rules, re_identify, re_identify_auto, scan, fetch_images, refresh_metadata, lock, unlock]
                   description: >
                     Action to apply to each artist in the list. The legacy
                     value re_identify is an alias for re_identify_auto; the
@@ -7271,6 +7275,8 @@ paths:
                     separately via POST /artists/re-identify/wizard.
                     lock / unlock set source="user" via the artist service
                     and are idempotent (no-op calls report as Skipped).
+                    refresh_metadata runs the same provider fetch as the
+                    per-artist refresh endpoint.
                 ids:
                   type: array
                   minItems: 1
@@ -7293,7 +7299,7 @@ paths:
                     enum: [running]
                   action:
                     type: string
-                    enum: [run_rules, re_identify_auto, scan, fetch_images, lock, unlock]
+                    enum: [run_rules, re_identify_auto, scan, fetch_images, refresh_metadata, lock, unlock]
                     description: >
                       Canonical action value as emitted by the handler.
                       The legacy alias re_identify is normalized to
@@ -7345,7 +7351,7 @@ paths:
                     enum: [idle, running, completed, failed, canceled]
                   action:
                     type: string
-                    enum: [run_rules, re_identify_auto, scan, fetch_images, lock, unlock]
+                    enum: [run_rules, re_identify_auto, scan, fetch_images, refresh_metadata, lock, unlock]
                     description: >
                       Canonical emitted action value. The legacy alias
                       re_identify is normalized on entry by

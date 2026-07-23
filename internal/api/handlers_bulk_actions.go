@@ -40,6 +40,13 @@ const (
 	// pipeline so they require only the artist service to be configured.
 	BulkActionLock   = "lock"
 	BulkActionUnlock = "unlock"
+	// BulkActionRefreshMetadata is the bulk equivalent of
+	// POST /api/v1/artists/{id}/refresh (#2283). It runs the same
+	// executeRefreshCtx path as the per-artist button, so an artist without a
+	// MusicBrainz ID -- which the single-artist handler answers with the
+	// disambiguation UI -- is counted as Skipped here rather than prompting;
+	// bulk has no interactive surface to disambiguate on.
+	BulkActionRefreshMetadata = "refresh_metadata"
 )
 
 // idPattern accepts UUIDs and other plausible artist ID encodings used in the
@@ -127,7 +134,8 @@ func validActions(s string) bool {
 		BulkActionScan,
 		BulkActionFetchImages,
 		BulkActionLock,
-		BulkActionUnlock:
+		BulkActionUnlock,
+		BulkActionRefreshMetadata:
 		return true
 	}
 	return false
@@ -157,13 +165,19 @@ func validActions(s string) bool {
 //     each candidate; orchestrator presence is checked deeper down).
 //   - lock, unlock: artist service only (no rule pipeline hop).
 //   - scan: artist service + pipeline (scan reuses RunForArtist).
+//   - refresh_metadata: artist service + orchestrator. The rule pipeline is
+//     deliberately NOT required: the single-artist refresh handler runs
+//     post-refresh rules only when a pipeline is wired (runRulesAfterRefresh
+//     returns early on nil) and completes the refresh regardless, so
+//     requiring one here would 503 a request the per-artist button serves.
 //
 // Unknown actions return "" because validActions() upstream already
 // rejected them with a 400 before this gate runs.
 func (r *Router) requireServicesForBulkAction(action string) string {
 	const (
-		msgArtistMissing   = "artist service not configured"
-		msgPipelineMissing = "rule pipeline not configured"
+		msgArtistMissing       = "artist service not configured"
+		msgPipelineMissing     = "rule pipeline not configured"
+		msgOrchestratorMissing = "provider orchestrator not configured"
 	)
 	switch action {
 	case BulkActionRunRules, BulkActionFetchImages:
@@ -187,6 +201,13 @@ func (r *Router) requireServicesForBulkAction(action string) string {
 		}
 		if r.pipeline == nil {
 			return msgPipelineMissing
+		}
+	case BulkActionRefreshMetadata:
+		if r.artistService == nil {
+			return msgArtistMissing
+		}
+		if r.orchestrator == nil {
+			return msgOrchestratorMissing
 		}
 	}
 	return ""
@@ -584,7 +605,16 @@ func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.A
 	// Rule pipeline short-circuits locked/excluded artists to a nil no-op.
 	// Mirror that here so the bulk summary counts them as skipped rather
 	// than inflating Succeeded for actions that didn't actually run.
-	if (action == BulkActionRunRules || action == BulkActionFetchImages || action == BulkActionScan) && (a.IsExcluded || a.Locked) {
+	//
+	// refresh_metadata joins that set because the artist-lock contract the UI
+	// states is explicit -- "This artist is locked. Provider refreshes and
+	// rule fixers will not make automated changes" (artist.help.locked_chip).
+	// The per-artist Refresh button is a deliberate manual act on one artist
+	// and is not gated; a bulk sweep is exactly the automated change the lock
+	// promises to skip.
+	if (action == BulkActionRunRules || action == BulkActionFetchImages ||
+		action == BulkActionScan || action == BulkActionRefreshMetadata) &&
+		(a.IsExcluded || a.Locked) {
 		return bulkOutcomeSkipped
 	}
 	switch action {
@@ -625,6 +655,13 @@ func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.A
 		default:
 			return bulkOutcomeFailed
 		}
+
+	case BulkActionRefreshMetadata:
+		// Bulk equivalent of the per-artist Refresh button (#2283). The
+		// whole body lives in refreshArtistForBulk so this switch stays
+		// under the gocognit cap; see that function for the MBID gate and
+		// the post-refresh follow-ups it shares with handleArtistRefresh.
+		return r.refreshArtistForBulk(ctx, a)
 
 	case BulkActionScan:
 		// Per-artist "scan" reparses the NFO state and refreshes derived
