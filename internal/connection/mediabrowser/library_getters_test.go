@@ -19,6 +19,7 @@ type rawTransport struct {
 	rawBytes   []byte
 	rawType    string
 	rawErr     error
+	gotRawPath string
 }
 
 func (r *rawTransport) Get(_ context.Context, path string, result any) error {
@@ -32,7 +33,8 @@ func (r *rawTransport) Get(_ context.Context, path string, result any) error {
 	return assignInto(result, v)
 }
 
-func (r *rawTransport) GetRaw(_ context.Context, _ string) ([]byte, string, error) {
+func (r *rawTransport) GetRaw(_ context.Context, path string) ([]byte, string, error) {
+	r.gotRawPath = path
 	return r.rawBytes, r.rawType, r.rawErr
 }
 
@@ -96,6 +98,9 @@ func TestGetArtistBackdropRaw(t *testing.T) {
 	if string(data) != "abc" || ct != "image/jpeg" {
 		t.Errorf("got data=%q ct=%q", data, ct)
 	}
+	if want := "/Items/artist1/Images/Backdrop/2"; tr.gotRawPath != want {
+		t.Errorf("got path=%q want=%q", tr.gotRawPath, want)
+	}
 }
 
 func TestGetArtistBackdropRaw_Error(t *testing.T) {
@@ -115,6 +120,9 @@ func TestGetArtistImageRaw_Success(t *testing.T) {
 	}
 	if string(data) != "xyz" || ct != "image/png" {
 		t.Errorf("got data=%q ct=%q", data, ct)
+	}
+	if want := "/Items/artist1/Images/Primary"; tr.gotRawPath != want {
+		t.Errorf("got path=%q want=%q", tr.gotRawPath, want)
 	}
 }
 
