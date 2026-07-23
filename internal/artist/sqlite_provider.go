@@ -113,7 +113,23 @@ func (r *sqliteProviderIDRepo) UpsertAll(ctx context.Context, artistID string, i
 	}
 	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM artist_provider_ids WHERE artist_id = ?`, artistID); err != nil {
+	// Scope the delete-and-replace to the struct-modeled providers only
+	// (modeledProviders). Rows for orphan providers such as allmusic or
+	// fanarttv carry only fetched_at bookkeeping, have no Artist struct field,
+	// and would never be re-inserted below -- an unconditional delete here
+	// destroyed them on every ordinary Update (#2725). The IN-list is built
+	// from the canonical list so the delete scope and extractProviderIDs's
+	// emit set cannot drift.
+	delArgs := make([]any, 0, len(modeledProviders)+1)
+	delArgs = append(delArgs, artistID)
+	placeholders := make([]string, len(modeledProviders))
+	for i, p := range modeledProviders {
+		placeholders[i] = "?"
+		delArgs = append(delArgs, string(p))
+	}
+	delQuery := `DELETE FROM artist_provider_ids WHERE artist_id = ? AND provider IN (` + //nolint:gosec // G202: placeholders are "?" literals; values are bound parameters
+		strings.Join(placeholders, ",") + `)`
+	if _, err := tx.ExecContext(ctx, delQuery, delArgs...); err != nil {
 		return fmt.Errorf("deleting old provider IDs: %w", err)
 	}
 
