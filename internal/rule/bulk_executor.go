@@ -283,6 +283,9 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 		return BulkItemSkipped, "manual mode: skipped MBID assignment"
 	}
 
+	// The operator's per-field locks are enforced here: ApplyMetadata reads
+	// a.LockedFields off the artist itself, so a pinned field is not filled by
+	// this bulk fetch even when it is currently empty (issue #2749).
 	changed := artist.ApplyMetadata(a, u, artist.FillEmpty, artist.MergeOptions{})
 	if !changed {
 		return BulkItemSkipped, "no new metadata to apply"

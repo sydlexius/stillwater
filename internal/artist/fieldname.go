@@ -57,3 +57,32 @@ const (
 	// used throughout the UI and the FieldDisplay switch.
 	FieldAudioDBID FieldName = "audiodb_id"
 )
+
+// AllLockableFields enumerates every field name that may legitimately appear
+// in Artist.LockedFields. It is the authority used to decide whether a stored
+// lock token is meaningful: a token outside this set (plus the provider-ID
+// keys the merge engine understands) locks nothing anywhere in the codebase,
+// which is a silent failure of the operator's intent, so ApplyMetadata reports
+// it loudly rather than ignoring it.
+//
+// Keep in sync with the constants above when adding a lockable field.
+var AllLockableFields = []FieldName{
+	FieldArtistName,
+	FieldSortName,
+	FieldBiography,
+	FieldGenres,
+	FieldStyles,
+	FieldMoods,
+	FieldMembers,
+	FieldType,
+	FieldGender,
+	FieldOrigin,
+	FieldDisambiguation,
+	FieldFormed,
+	FieldBorn,
+	FieldDied,
+	FieldDisbanded,
+	FieldYearsActive,
+	FieldDiscogsID,
+	FieldAudioDBID,
+}
