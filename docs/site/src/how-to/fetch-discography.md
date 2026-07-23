@@ -47,7 +47,7 @@ The `include` parameter accepts any comma-separated release-type names. They are
 
 When new albums are found, Stillwater:
 
-1. Takes a snapshot of the existing NFO. The snapshot panel on the artist's page lists earlier versions; see [Discard accidental edits](edit-artist.md#discard-accidental-edits) for how to restore one.
+1. Takes a snapshot of the existing NFO, stored in the database as a safety copy. There is no in-app way to browse or restore these snapshots yet; to undo a metadata change, use the per-field prior values described in [Discard accidental edits](edit-artist.md#discard-accidental-edits).
 2. Writes the updated NFO atomically using the same temp/rename pattern as all other NFO writes.
 3. Stamps the NFO with the current Stillwater version and a write timestamp.
 

@@ -140,8 +140,8 @@ A shortcut legend with the same keys is printed at the bottom of the page.
 
 There's no global "undo." Two ways to recover:
 
+- **Prior values** -- click the clock icon next to the field and pick the value you want back. This is the per-field path described above, and it is the usual way to undo an edit.
 - **Refresh** -- pulls fresh values from providers, overwriting your unsaved changes (only on unlocked fields). Use when the original came from providers anyway.
-- **Snapshot restore** -- if a snapshot exists from before the edit (Stillwater takes one before fix-all runs), the snapshot panel lets you restore it.
 
 ## What edits don't do
 

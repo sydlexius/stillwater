@@ -129,13 +129,16 @@ func TestOverwriteAttempted_OriginNeverCleared(t *testing.T) {
 func TestOverwriteAttempted_TypeGenderOverwriteWhenNonEmpty(t *testing.T) {
 	t.Parallel()
 	a := &Artist{Type: "person", Gender: "male"}
-	u := &MetadataUpdate{Type: "group", Gender: "female"}
+	// The incoming type stays individual so the gender assertion below is
+	// about the non-empty overwrite and not about the post-merge
+	// type-consistency pass (see TestTypeConsistency_GenderClearedForGroup).
+	u := &MetadataUpdate{Type: "solo", Gender: "female"}
 	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
 	if !changed {
 		t.Error("expected change")
 	}
-	if a.Type != "group" {
-		t.Errorf("type = %q, want %q", a.Type, "group")
+	if a.Type != "solo" {
+		t.Errorf("type = %q, want %q", a.Type, "solo")
 	}
 	if a.Gender != "female" {
 		t.Errorf("gender = %q, want %q", a.Gender, "female")
@@ -477,7 +480,7 @@ func TestFillEmpty_SkipsNameSortNameDisambiguation(t *testing.T) {
 func TestFillEmpty_ReturnsFalseWhenNothingChanged(t *testing.T) {
 	t.Parallel()
 	a := &Artist{
-		Type: "group", Gender: "mixed", MusicBrainzID: "mbid",
+		Type: "solo", Gender: "mixed", MusicBrainzID: "mbid",
 		Biography: "bio", Genres: []string{"rock"}, Born: "1980",
 	}
 	u := &MetadataUpdate{
@@ -558,45 +561,102 @@ func TestNFOImport_ProviderIDsPreservedWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestNFOImport_ClassificationUnconditional(t *testing.T) {
+// TestNFOImport_ClassificationPreservedWhenAbsent is the re-pointed form of the
+// former TestNFOImport_ClassificationUnconditional. That test asserted the bug:
+// an NFO that omits <type>/<gender>/<disambiguation> erased the operator's
+// stored values. With MergeOptions.Clobber defaulting to false, an absent
+// element now preserves the stored value; a present one still overwrites.
+func TestNFOImport_ClassificationPreservedWhenAbsent(t *testing.T) {
 	t.Parallel()
+
 	a := &Artist{Type: "person", Gender: "male", Disambiguation: "UK"}
 	u := &MetadataUpdate{Type: "", Gender: "", Disambiguation: ""}
 	changed := ApplyMetadata(a, u, NFOImport, MergeOptions{})
-	if !changed {
-		t.Error("expected change")
+	if changed {
+		t.Error("changed = true; an NFO that omits every classification element changes nothing")
 	}
-	if a.Type != "" {
-		t.Errorf("type should be cleared unconditionally, got %q", a.Type)
+	if a.Type != "person" {
+		t.Errorf("type = %q, want %q (absent element must not clear)", a.Type, "person")
 	}
-	if a.Gender != "" {
-		t.Errorf("gender should be cleared unconditionally, got %q", a.Gender)
+	if a.Gender != "male" {
+		t.Errorf("gender = %q, want %q (absent element must not clear)", a.Gender, "male")
 	}
-	if a.Disambiguation != "" {
-		t.Errorf("disambiguation should be cleared unconditionally, got %q", a.Disambiguation)
+	if a.Disambiguation != "UK" {
+		t.Errorf("disambiguation = %q, want %q (absent element must not clear)", a.Disambiguation, "UK")
+	}
+
+	// Anti-regression half: a present, non-empty value still overwrites, so
+	// this change did not simply disable classification import.
+	// The incoming type stays individual: a group type would legitimately clear
+	// gender via the post-merge type-consistency pass, which would mask whether
+	// the incoming gender overwrote anything.
+	b := &Artist{Type: "person", Gender: "male", Disambiguation: "UK"}
+	v := &MetadataUpdate{Type: "solo", Gender: "female", Disambiguation: "US"}
+	if !ApplyMetadata(b, v, NFOImport, MergeOptions{}) {
+		t.Error("changed = false; a non-empty incoming classification must still overwrite")
+	}
+	if b.Type != "solo" {
+		t.Errorf("type = %q, want %q", b.Type, "solo")
+	}
+	if b.Gender != "female" {
+		t.Errorf("gender = %q, want %q", b.Gender, "female")
+	}
+	if b.Disambiguation != "US" {
+		t.Errorf("disambiguation = %q, want %q", b.Disambiguation, "US")
 	}
 }
 
-func TestNFOImport_ListsAndDatesUnconditional(t *testing.T) {
+// TestNFOImport_ListsAndDatesPreservedWhenAbsent is the re-pointed form of the
+// former TestNFOImport_ListsAndDatesUnconditional, which asserted that an
+// all-empty NFO cleared genres/born/years_active. It now asserts the inverse,
+// and asserts all eight fields the fixture sets rather than the three the
+// original spot-checked.
+func TestNFOImport_ListsAndDatesPreservedWhenAbsent(t *testing.T) {
 	t.Parallel()
+
 	a := &Artist{
 		Genres: []string{"rock"}, Styles: []string{"grunge"}, Moods: []string{"angry"},
 		Born: "1970", Formed: "1980", Died: "2020", Disbanded: "2000", YearsActive: "1980-2000",
 	}
-	u := &MetadataUpdate{} // all zero values
+	u := &MetadataUpdate{} // all zero values: an NFO omitting every element
 	changed := ApplyMetadata(a, u, NFOImport, MergeOptions{})
-	if !changed {
-		t.Error("expected change")
+	if changed {
+		t.Error("changed = true; an NFO that omits every list and date element changes nothing")
 	}
-	if a.Genres != nil {
-		t.Errorf("genres should be cleared, got %v", a.Genres)
+	assertStrings(t, map[string][2]string{
+		"born":         {a.Born, "1970"},
+		"formed":       {a.Formed, "1980"},
+		"died":         {a.Died, "2020"},
+		"disbanded":    {a.Disbanded, "2000"},
+		"years_active": {a.YearsActive, "1980-2000"},
+	})
+	assertSlice(t, "genres", a.Genres, []string{"rock"})
+	assertSlice(t, "styles", a.Styles, []string{"grunge"})
+	assertSlice(t, "moods", a.Moods, []string{"angry"})
+
+	// Anti-regression half: present non-empty values still overwrite, including
+	// a whole-slice replacement.
+	b := &Artist{
+		Genres: []string{"rock"}, Styles: []string{"grunge"}, Moods: []string{"angry"},
+		Born: "1970", Formed: "1980", Died: "2020", Disbanded: "2000", YearsActive: "1980-2000",
 	}
-	if a.Born != "" {
-		t.Errorf("born should be cleared, got %q", a.Born)
+	v := &MetadataUpdate{
+		Genres: []string{"jazz", "funk"}, Styles: []string{"bebop"}, Moods: []string{"calm"},
+		Born: "1971", Formed: "1981", Died: "2021", Disbanded: "2001", YearsActive: "1981-2001",
 	}
-	if a.YearsActive != "" {
-		t.Errorf("years_active should be cleared, got %q", a.YearsActive)
+	if !ApplyMetadata(b, v, NFOImport, MergeOptions{}) {
+		t.Error("changed = false; non-empty incoming lists and dates must still overwrite")
 	}
+	assertStrings(t, map[string][2]string{
+		"born":         {b.Born, "1971"},
+		"formed":       {b.Formed, "1981"},
+		"died":         {b.Died, "2021"},
+		"disbanded":    {b.Disbanded, "2001"},
+		"years_active": {b.YearsActive, "1981-2001"},
+	})
+	assertSlice(t, "genres", b.Genres, []string{"jazz", "funk"})
+	assertSlice(t, "styles", b.Styles, []string{"bebop"})
+	assertSlice(t, "moods", b.Moods, []string{"calm"})
 }
 
 // --- SnapshotRestore tests ---
