@@ -203,3 +203,92 @@ func TestFromArtist_Discography(t *testing.T) {
 		t.Errorf("album differs: %+v vs %+v", out.Albums[0], want)
 	}
 }
+
+// TestRoundTrip_GenderSurvivesNFOImport is the operator-journey proof for
+// issue #2748: an NFO that carries no <gender> element must not erase the
+// operator's stored Gender. Before the fix the import cleared the field simply
+// because the file was silent about it.
+//
+// The artist here is a solo type, so the NFO's silence is the ONLY reason
+// gender is absent. That matters: for a group type the gender would be cleared
+// anyway by the post-merge type-consistency pass, and this test could then pass
+// without proving anything about absence
+// (TestRoundTrip_GroupGenderClearedOnNFOImport covers that case instead).
+func TestRoundTrip_GenderSurvivesNFOImport(t *testing.T) {
+	stored := &artist.Artist{
+		Name:   "Some Singer",
+		Type:   "solo",
+		Gender: "female",
+	}
+
+	written := FromArtist(stored)
+	// Precondition: the writer keeps gender for an individual type, so the
+	// silence below is something this test creates deliberately rather than
+	// something the writer did for us.
+	if written.Gender != "female" {
+		t.Fatalf("precondition failed: FromArtist dropped gender %q for a solo type",
+			written.Gender)
+	}
+
+	// A third-party NFO that simply has no <gender> element.
+	written.Gender = ""
+
+	reimported := ToMetadataUpdate(written)
+	if reimported.Gender != "" {
+		t.Fatalf("precondition failed: re-imported update carries gender %q, want empty",
+			reimported.Gender)
+	}
+	if reimported.Type != "solo" {
+		t.Fatalf("precondition failed: re-imported type = %q, want %q; a non-individual "+
+			"type would clear gender for a different reason", reimported.Type, "solo")
+	}
+
+	if artist.ApplyMetadata(stored, reimported, artist.NFOImport, artist.MergeOptions{}) {
+		t.Error("changed = true; re-importing an NFO that adds nothing must be a no-op")
+	}
+	if stored.Gender != "female" {
+		t.Errorf("gender = %q, want %q; the NFO was silent about gender and the "+
+			"import erased the stored value", stored.Gender, "female")
+	}
+}
+
+// TestRoundTrip_GroupGenderClearedOnNFOImport guards the other meaning of an
+// empty Gender on the wire. Stillwater's own NFO writer suppresses <gender> for
+// non-individual types, and ToMetadataUpdate does the same, so a group's update
+// carries Gender: "" whether or not the source said anything. That blank is a
+// deliberate "a group has no gender", and it must still take effect even though
+// the #2748 fix made absence non-destructive in general.
+//
+// Without the post-merge gender pass this artist ends up type="group" with a
+// gender still set -- a state IsIndividualType's callers treat as impossible.
+func TestRoundTrip_GroupGenderClearedOnNFOImport(t *testing.T) {
+	stored := &artist.Artist{
+		Name:   "Some Singer",
+		Type:   "solo",
+		Gender: "female",
+	}
+
+	// The incoming NFO reclassifies the artist as a group and, correctly,
+	// carries no <gender>.
+	incoming := &ArtistNFO{Name: "Some Group", Type: "group"}
+
+	update := ToMetadataUpdate(incoming)
+	if update.Type != "group" {
+		t.Fatalf("precondition failed: update type = %q, want %q", update.Type, "group")
+	}
+	if update.Gender != "" {
+		t.Fatalf("precondition failed: update carries gender %q; this test is about "+
+			"the empty-gender case", update.Gender)
+	}
+
+	if !artist.ApplyMetadata(stored, update, artist.NFOImport, artist.MergeOptions{}) {
+		t.Error("changed = false; the type change and the gender clear are both changes")
+	}
+	if stored.Type != "group" {
+		t.Errorf("type = %q, want %q", stored.Type, "group")
+	}
+	if stored.Gender != "" {
+		t.Errorf("gender = %q, want empty; a %s cannot carry a gender",
+			stored.Gender, stored.Type)
+	}
+}

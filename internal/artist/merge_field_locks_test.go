@@ -19,9 +19,16 @@ import (
 // passed it through.
 
 // TestApplyMetadata_ArtistLock_NFOImport_OmittedElement is the exact
-// production failure. Under NFOImport, years_active is modeUnconditional, so
-// an NFO that omits <yearsactive> merges an empty string over the operator's
-// value. The lock must stop that.
+// production failure. Under NFOImport, years_active's table cell is
+// modeUnconditional, so an NFO that omits <yearsactive> merged an empty string
+// over the operator's value. The lock must stop that.
+//
+// Issue #2748 later added a second, independent guarantee: MergeOptions.Clobber
+// defaults to false, which demotes that cell to modeNonEmpty for this call, so
+// the omitted element preserves the value even for an UNLOCKED field. The lock
+// remains the stronger of the two -- it is checked before mode resolution and
+// so holds even under Clobber: true (see TestLockedFieldSurvivesClobberTrue) --
+// and every assertion below is unchanged.
 func TestApplyMetadata_ArtistLock_NFOImport_OmittedElement(t *testing.T) {
 	t.Parallel()
 	a := &Artist{

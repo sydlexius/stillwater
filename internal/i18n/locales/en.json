@@ -118,7 +118,7 @@
   "artist.help.images_tab.label": "Image slots",
   "artist.help.locked_chip": "This artist is locked. Provider refreshes and rule fixers will not make automated changes. Manual edits are still allowed. Click Actions to unlock.",
   "artist.help.locked_chip.label": "Artist lock",
-  "artist.help.locked_fields_panel": "These fields are individually pinned. Even on an unlocked artist, pinned fields are skipped by provider refreshes, fill-empty merges, NFO imports, and snapshot restores. Unlocking the artist does not clear field pins -- they are independent.",
+  "artist.help.locked_fields_panel": "These fields are individually pinned. Even on an unlocked artist, pinned fields are skipped by provider refreshes, fill-empty merges, and NFO imports. Unlocking the artist does not clear field pins -- they are independent.",
   "artist.help.locked_fields_panel.label": "Locked fields",
   "artist.help.refresh_metadata": "Pulls current metadata from your configured providers and merges it into this artist record. Locked fields are skipped. Provider priority and merge rules apply -- a refresh does not change which provider supplies which field.",
   "artist.help.refresh_metadata.label": "Refresh metadata",
