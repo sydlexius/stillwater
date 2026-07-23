@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
-	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 	"github.com/sydlexius/stillwater/internal/version"
 )
@@ -30,22 +29,19 @@ var ErrInvalidCredentials = errors.New("invalid credentials")
 var ErrAuthRequired = errors.New("jellyfin: authentication required")
 
 // wrapAuthIfStatusAuth wraps 401/403 StatusError with ErrAuthRequired; see
-// emby.wrapAuthIfStatusAuth for rationale.
+// emby.wrapAuthIfStatusAuth for rationale. The classification is shared
+// with Emby, so this binds only the Jellyfin sentinel.
 func wrapAuthIfStatusAuth(err error) error {
-	if err == nil {
-		return nil
-	}
-	var se *httpclient.StatusError
-	if errors.As(err, &se) && se.IsAuth() {
-		return fmt.Errorf("%w: %w", ErrAuthRequired, err)
-	}
-	return err
+	return mediabrowser.ClassifyAuthError(err, ErrAuthRequired)
 }
 
-// Client communicates with a Jellyfin server.
+// Client communicates with a Jellyfin server. The HTTP transport, the
+// MediaBrowser Authorization auth scheme, and the peer user identity live
+// on the embedded shared mediabrowser.Client; everything BaseClient
+// exposed before (Get, GetRaw, Post, PostJSON, PutJSON, BaseURL, APIKey,
+// Logger, HTTPClient, AuthFunc) is still reachable here by promotion.
 type Client struct {
-	httpclient.BaseClient
-	userID string
+	*mediabrowser.Client
 }
 
 // New creates a Jellyfin client with default HTTP settings.
@@ -63,12 +59,15 @@ func New(baseURL, apiKey, userID string, logger *slog.Logger) *Client {
 
 // NewWithHTTPClient creates a Jellyfin client with a custom HTTP client (for testing).
 func NewWithHTTPClient(baseURL, apiKey, userID string, httpClient *http.Client, logger *slog.Logger) *Client {
-	c := &Client{
-		BaseClient: httpclient.NewBase(baseURL, apiKey, httpClient, logger, "jellyfin"),
-		userID:     userID,
+	mb, err := mediabrowser.New(mediabrowser.PlatformJellyfin, baseURL, apiKey, userID, httpClient, logger)
+	if err != nil {
+		// Unreachable: the platform is a compile-time constant that
+		// mediabrowser.ProfileFor is guaranteed to know. Logged loudly
+		// rather than swallowed so a future rename of the constant
+		// cannot fail silently.
+		logger.Error("jellyfin: unknown platform profile", "error", err)
 	}
-	c.AuthFunc = c.setAuth
-	return c
+	return &Client{Client: mb}
 }
 
 // TestConnection verifies connectivity by calling GET /System/Info.
@@ -300,10 +299,10 @@ func (c *Client) GetFirstUserID(ctx context.Context) (string, error) {
 
 // GetArtistDetail fetches the current state of an artist from Jellyfin by platform artist ID.
 func (c *Client) GetArtistDetail(ctx context.Context, platformArtistID string) (*connection.ArtistPlatformState, error) {
-	if c.userID == "" {
+	if c.UserID == "" {
 		return nil, fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
 	}
-	path := fmt.Sprintf("/Users/%s/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", c.userID, platformArtistID)
+	path := fmt.Sprintf("/Users/%s/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", c.UserID, platformArtistID)
 	var item ArtistDetailItem
 	if err := c.Get(ctx, path, &item); err != nil {
 		return nil, fmt.Errorf("getting artist detail: %w", err)
@@ -655,8 +654,4 @@ func (c *Client) ListLibraryArtists(ctx context.Context) ([]connection.PeerArtis
 		}
 	}
 	return out, nil
-}
-
-func (c *Client) setAuth(req *http.Request) {
-	req.Header.Set("Authorization", fmt.Sprintf(`MediaBrowser Token="%s"`, c.APIKey))
 }

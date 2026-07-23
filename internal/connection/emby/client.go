@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
-	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 	"github.com/sydlexius/stillwater/internal/version"
 )
@@ -42,21 +41,20 @@ var ErrAuthRequired = errors.New("emby: authentication required")
 // original error is preserved (still %w-wrapped) so the existing
 // classifyPushErr substring contract on err.Error() continues to match the
 // "HTTP 401" / "status 401" surface.
+//
+// The classification itself is shared with Jellyfin; only the sentinel
+// differs, so this stays as a one-line binding of the Emby sentinel.
 func wrapAuthIfStatusAuth(err error) error {
-	if err == nil {
-		return nil
-	}
-	var se *httpclient.StatusError
-	if errors.As(err, &se) && se.IsAuth() {
-		return fmt.Errorf("%w: %w", ErrAuthRequired, err)
-	}
-	return err
+	return mediabrowser.ClassifyAuthError(err, ErrAuthRequired)
 }
 
-// Client communicates with an Emby server.
+// Client communicates with an Emby server. The HTTP transport, the
+// X-Emby-Token auth scheme, and the peer user identity live on the
+// embedded shared mediabrowser.Client; everything BaseClient exposed
+// before (Get, GetRaw, Post, PostJSON, PutJSON, BaseURL, APIKey, Logger,
+// HTTPClient, AuthFunc) is still reachable here by promotion.
 type Client struct {
-	httpclient.BaseClient
-	userID string
+	*mediabrowser.Client
 }
 
 // New creates an Emby client with default HTTP settings.
@@ -74,12 +72,15 @@ func New(baseURL, apiKey, userID string, logger *slog.Logger) *Client {
 
 // NewWithHTTPClient creates an Emby client with a custom HTTP client (for testing).
 func NewWithHTTPClient(baseURL, apiKey, userID string, httpClient *http.Client, logger *slog.Logger) *Client {
-	c := &Client{
-		BaseClient: httpclient.NewBase(baseURL, apiKey, httpClient, logger, "emby"),
-		userID:     userID,
+	mb, err := mediabrowser.New(mediabrowser.PlatformEmby, baseURL, apiKey, userID, httpClient, logger)
+	if err != nil {
+		// Unreachable: the platform is a compile-time constant that
+		// mediabrowser.ProfileFor is guaranteed to know. Logged loudly
+		// rather than swallowed so a future rename of the constant
+		// cannot fail silently.
+		logger.Error("emby: unknown platform profile", "error", err)
 	}
-	c.AuthFunc = c.setAuth
-	return c
+	return &Client{Client: mb}
 }
 
 // TestConnection verifies connectivity by calling GET /System/Info.
@@ -308,10 +309,10 @@ func (c *Client) GetFirstUserID(ctx context.Context) (string, error) {
 
 // GetArtistDetail fetches the current state of an artist from Emby by platform artist ID.
 func (c *Client) GetArtistDetail(ctx context.Context, platformArtistID string) (*connection.ArtistPlatformState, error) {
-	if c.userID == "" {
+	if c.UserID == "" {
 		return nil, fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
 	}
-	path := fmt.Sprintf("/Users/%s/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", c.userID, platformArtistID)
+	path := fmt.Sprintf("/Users/%s/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", c.UserID, platformArtistID)
 	var item ArtistDetailItem
 	if err := c.Get(ctx, path, &item); err != nil {
 		return nil, fmt.Errorf("getting artist detail: %w", err)
@@ -494,13 +495,13 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 // and LockedFields overwritten. Other properties are preserved verbatim to
 // avoid clobbering fields Stillwater does not manage.
 func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string, lockData bool, lockedFields []string) error {
-	if c.userID == "" {
+	if c.UserID == "" {
 		return fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
 	}
 	// Fetch the full item payload as Emby returns it. Emby's POST /Items/{id}
 	// treats the body as a full replacement, so we must preserve unrelated
 	// fields to avoid dropping them.
-	getPath := fmt.Sprintf("/Users/%s/Items/%s", c.userID, platformArtistID)
+	getPath := fmt.Sprintf("/Users/%s/Items/%s", c.UserID, platformArtistID)
 	var item map[string]any
 	if err := c.Get(ctx, getPath, &item); err != nil {
 		return fmt.Errorf("fetching artist for lock update: %w", err)
@@ -547,7 +548,7 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	if strings.TrimSpace(newPath) == "" {
 		return fmt.Errorf("newPath is required")
 	}
-	if c.userID == "" {
+	if c.UserID == "" {
 		return fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
 	}
 	// PathEscape the platform ID so an ID containing reserved characters
@@ -555,7 +556,7 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	// Jellyfin's push.go already does this; bringing Emby into parity
 	// closes the same class of bug here.
 	escapedID := url.PathEscape(platformArtistID)
-	getPath := fmt.Sprintf("/Users/%s/Items/%s", url.PathEscape(c.userID), escapedID)
+	getPath := fmt.Sprintf("/Users/%s/Items/%s", url.PathEscape(c.UserID), escapedID)
 	var item map[string]any
 	if err := c.Get(ctx, getPath, &item); err != nil {
 		return fmt.Errorf("fetching artist for path update: %w", err)
@@ -598,11 +599,11 @@ func (c *Client) GetArtistPath(ctx context.Context, platformArtistID string) (st
 	if strings.TrimSpace(platformArtistID) == "" {
 		return "", fmt.Errorf("platformArtistID is required")
 	}
-	if c.userID == "" {
+	if c.UserID == "" {
 		return "", fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
 	}
 	getPath := fmt.Sprintf("/Users/%s/Items/%s",
-		url.PathEscape(c.userID), url.PathEscape(platformArtistID))
+		url.PathEscape(c.UserID), url.PathEscape(platformArtistID))
 	var item map[string]any
 	if err := c.Get(ctx, getPath, &item); err != nil {
 		return "", fmt.Errorf("fetching artist for path read-back: %w", wrapAuthIfStatusAuth(err))
@@ -784,8 +785,4 @@ func (c *Client) DisableFileWriteBack(ctx context.Context) error {
 // raw-JSON round-trip rationale and the null-key sanitization the POST needs.
 func (c *Client) RestoreLibraryOptions(ctx context.Context, snapshotJSON string) error {
 	return mediabrowser.RestoreLibraryOptions(ctx, c, c.Logger, "emby", snapshotJSON)
-}
-
-func (c *Client) setAuth(req *http.Request) {
-	req.Header.Set("X-Emby-Token", c.APIKey)
 }
