@@ -17,6 +17,7 @@ type stubScrapeAll struct {
 	calls  int
 }
 
+// ScrapeAll records that it was called and returns the configured fetch result.
 func (s *stubScrapeAll) ScrapeAll(_ context.Context, _, _, _ string, _ map[provider.ProviderName]string) (*provider.FetchResult, error) {
 	s.calls++
 	return s.result, nil
