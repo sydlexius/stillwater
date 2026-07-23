@@ -172,7 +172,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 // clobber every prior lock. An empty fetched list is fine: the
 // addition still wins and the body carries it alone.
 func (c *Client) fetchAndMergeLockedFields(ctx context.Context, platformArtistID, addition string) ([]string, error) {
-	if c.userID == "" {
+	if c.UserID == "" {
 		return nil, fmt.Errorf("no user ID configured for this connection")
 	}
 	// Escape both path segments: Emby user IDs and artist IDs can include
@@ -184,7 +184,7 @@ func (c *Client) fetchAndMergeLockedFields(ctx context.Context, platformArtistID
 	// already applies to other Emby write paths (see emby/client.go).
 	getPath := fmt.Sprintf(
 		"/Users/%s/Items/%s?Fields=LockedFields",
-		url.PathEscape(c.userID),
+		url.PathEscape(c.UserID),
 		url.PathEscape(platformArtistID),
 	)
 	var item map[string]any
