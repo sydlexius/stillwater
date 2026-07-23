@@ -934,6 +934,10 @@ func (s *Service) populateFromNFO(dirPath string, a *artist.Artist) bool {
 	}
 
 	u := nfo.ToMetadataUpdate(parsed)
+	// The operator's per-field locks are enforced here: ApplyMetadata reads
+	// a.LockedFields off the artist itself, so a pinned field survives this
+	// NFO import whether the incoming NFO omits the element or carries a
+	// different value (issue #2749).
 	artist.ApplyMetadata(a, u, artist.NFOImport, artist.MergeOptions{})
 	return parsed.LockData
 }
