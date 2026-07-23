@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -1204,3 +1205,239 @@ func TestHandleArtistDiscographyTab_SortYear_EmptyYearSortsLast_Desc(t *testing.
 
 // Silence unused import for errors package (used in tests that may be added).
 var _ = errors.New
+
+// --- Artist-level lock gate on the discography fetch path (#2754) ------------
+//
+// This is the sixth provider-writing surface the artist lock governs; the other
+// five (single refresh, refresh/link, and the deezer / discogs / audiodb /
+// bulk-identify / wizard link handlers via autoLinkAndRefresh) are covered in
+// handlers_refresh_test.go and the per-provider link test files. Read all of
+// them together: one contract, six entry points.
+//
+// handleFetchDiscography is the strongest place to prove the contract because
+// its side effect is a FILE. The tests below assert non-invocation two ways --
+// the MusicBrainz adapter was never called, and the bytes of artist.nfo on disk
+// are byte-identical afterwards -- so a "returns the right status but still
+// does the work" implementation cannot pass them.
+
+// lockedDiscographyNFO is the on-disk artist.nfo used by the locked tests. It
+// deliberately contains ONE album that the stub provider does NOT return, so a
+// fetch that actually ran would provably rewrite the file.
+const lockedDiscographyNFO = `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Locked Discography</name>
+  <album>
+    <title>Only Existing Album</title>
+    <year>1980</year>
+  </album>
+</artist>
+`
+
+// countingDiscographyRouter builds a discography-fetch router whose MusicBrainz
+// stub records how many times it was queried. The counter is the direct
+// non-invocation probe: a gate that runs the fetch anyway increments it.
+func countingDiscographyRouter(t *testing.T, groups []provider.ReleaseGroupInfo) (*Router, *artist.Service, *atomic.Int64) {
+	t.Helper()
+	var calls atomic.Int64
+	r, artistSvc := discographyFetchRouter(t, func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+		calls.Add(1)
+		return groups, nil
+	})
+	return r, artistSvc, &calls
+}
+
+// lockedDiscographyArtist seeds an artist that satisfies every precondition
+// handleFetchDiscography needs BEFORE the lock gate could possibly matter -- an
+// MBID, a filesystem path, an existing artist.nfo -- and then locks it,
+// asserting each precondition. Without the MBID and path assertions the tests
+// below would pass vacuously through the 400 branches, which also perform no
+// fetch and no write.
+func lockedDiscographyArtist(t *testing.T, svc *artist.Service, name string) (*artist.Artist, string) {
+	t.Helper()
+	dir := writeArtistNFO(t, lockedDiscographyNFO)
+	a := &artist.Artist{Name: name, Path: dir, MusicBrainzID: "mbid-" + name, NFOExists: true}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := svc.Lock(context.Background(), a.ID, "user"); err != nil {
+		t.Fatalf("locking artist: %v", err)
+	}
+	locked, err := svc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if !locked.Locked {
+		t.Fatal("precondition failed: artist is not locked after Lock")
+	}
+	if locked.MusicBrainzID == "" {
+		t.Fatal("precondition failed: artist has no MusicBrainz ID, so a skip would prove nothing")
+	}
+	if locked.Path == "" {
+		t.Fatal("precondition failed: artist has no path, so a skip would prove nothing")
+	}
+	return locked, filepath.Join(dir, "artist.nfo")
+}
+
+// readFileBytes returns the raw bytes of a file, failing the test on error.
+func readFileBytes(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	return b
+}
+
+// TestHandleFetchDiscography_LockedArtistSkipped is the guard for the sixth
+// ungated surface found in review of #2754: the Discography tab's Fetch button
+// ran a MusicBrainz query and rewrote artist.nfo on an artist the operator had
+// explicitly locked.
+//
+// The load-bearing assertions are the provider call count and the on-disk
+// bytes, not the status code. An implementation that answered "skipped_locked"
+// and then fetched and wrote anyway fails both.
+func TestHandleFetchDiscography_LockedArtistSkipped(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, calls := countingDiscographyRouter(t, []provider.ReleaseGroupInfo{
+		{ID: "mbid-new", Title: "Album That Must Not Land", PrimaryType: "Album", FirstReleaseDate: "1991"},
+	})
+	a, nfoPath := lockedDiscographyArtist(t, artistSvc, "Locked Discography Fetch")
+	before := readFileBytes(t, nfoPath)
+
+	ctx := testI18nCtx(t, context.Background())
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/api/v1/artists/"+a.ID+"/discography/fetch", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleFetchDiscography(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["status"] != "skipped_locked" {
+		t.Errorf("status = %v, want skipped_locked; body = %v", resp["status"], resp)
+	}
+
+	// Non-invocation proof 1: MusicBrainz was never asked.
+	if n := calls.Load(); n != 0 {
+		t.Errorf("MusicBrainz release-group calls = %d, want 0; a locked artist must not trigger a provider fetch", n)
+	}
+	// Non-invocation proof 2: the file on disk is byte-identical.
+	if after := readFileBytes(t, nfoPath); !bytes.Equal(before, after) {
+		t.Errorf("artist.nfo was rewritten on a locked artist:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// TestHandleFetchDiscography_UnlockedArtistStillFetches is the positive control
+// for the test above. Without it, the locked test would pass just as happily if
+// the fetch endpoint were broken for every artist -- the provider count would
+// be 0 and the file unchanged for the wrong reason.
+func TestHandleFetchDiscography_UnlockedArtistStillFetches(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, calls := countingDiscographyRouter(t, []provider.ReleaseGroupInfo{
+		{ID: "mbid-new", Title: "Album That Must Land", PrimaryType: "Album", FirstReleaseDate: "1991"},
+	})
+
+	dir := writeArtistNFO(t, lockedDiscographyNFO)
+	nfoPath := filepath.Join(dir, "artist.nfo")
+	a := &artist.Artist{Name: "Unlocked Discography Fetch", Path: dir,
+		MusicBrainzID: "mbid-unlocked", NFOExists: true}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Precondition: the artist is genuinely NOT locked, so success here really
+	// does exercise the ungated path.
+	if a.Locked {
+		t.Fatal("precondition failed: artist is locked; this test covers the unlocked path")
+	}
+	before := readFileBytes(t, nfoPath)
+
+	ctx := testI18nCtx(t, context.Background())
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/api/v1/artists/"+a.ID+"/discography/fetch", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleFetchDiscography(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	var result DiscographyFetchResult
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if result.Added != 1 {
+		t.Errorf("Added = %d, want 1; the unlocked fetch did not merge the new release group", result.Added)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("MusicBrainz release-group calls = %d, want 1; the unlocked path must query the provider", n)
+	}
+	after := readFileBytes(t, nfoPath)
+	if bytes.Equal(before, after) {
+		t.Fatal("artist.nfo unchanged on the unlocked path; the file-identity assertion in the locked test would be vacuous")
+	}
+	if !bytes.Contains(after, []byte("Album That Must Land")) {
+		t.Errorf("artist.nfo missing the fetched album:\n%s", after)
+	}
+}
+
+// TestHandleFetchDiscography_LockedArtistHTMX covers the branch the operator
+// actually sees. The Fetch button swaps this response over
+// #discography-tab-content, so the status must be 200 (a 4xx skips the HTMX
+// swap and fires the generic error toast) and the body must be the tab
+// partial, carrying the skip explanation and the unchanged album list.
+func TestHandleFetchDiscography_LockedArtistHTMX(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, calls := countingDiscographyRouter(t, []provider.ReleaseGroupInfo{
+		{ID: "mbid-new", Title: "Album That Must Not Land", PrimaryType: "Album", FirstReleaseDate: "1991"},
+	})
+	a, nfoPath := lockedDiscographyArtist(t, artistSvc, "Locked Discography HTMX")
+	before := readFileBytes(t, nfoPath)
+
+	ctx := testI18nCtx(t, context.Background())
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/api/v1/artists/"+a.ID+"/discography/fetch", nil)
+	req.SetPathValue("id", a.ID)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	r.handleFetchDiscography(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html so HTMX swaps the partial", ct)
+	}
+	body := w.Body.String()
+	// The swap target must be present or HTMX replaces the tab with nothing.
+	if !strings.Contains(body, "discography-tab-content") {
+		t.Errorf("body missing discography-tab-content id:\n%s", body)
+	}
+	if !strings.Contains(body, "Discography fetch skipped: this artist is locked.") {
+		t.Errorf("body missing the locked-skip explanation:\n%s", body)
+	}
+	// The success summary must NOT appear: rendering both would mean the gate
+	// returned the locked partial but still ran the merge.
+	if strings.Contains(body, "Fetched") {
+		t.Errorf("body contains the fetch summary on a locked artist:\n%s", body)
+	}
+	// The existing on-disk album list still renders, so the operator does not
+	// lose the tab contents to the skip.
+	if !strings.Contains(body, "Only Existing Album") {
+		t.Errorf("body missing the existing on-disk album:\n%s", body)
+	}
+	if strings.Contains(body, "Album That Must Not Land") {
+		t.Errorf("body contains a provider album on a locked artist:\n%s", body)
+	}
+
+	if n := calls.Load(); n != 0 {
+		t.Errorf("MusicBrainz release-group calls = %d, want 0", n)
+	}
+	if after := readFileBytes(t, nfoPath); !bytes.Equal(before, after) {
+		t.Errorf("artist.nfo was rewritten on a locked artist:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}

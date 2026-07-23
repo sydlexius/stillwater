@@ -18,6 +18,37 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
+// respondRefreshSkippedLocked answers a refresh request that was suppressed by
+// the artist-level lock. It is the single statement of that response shape for
+// every interactive refresh entry point.
+//
+// The status is 200, not 409, on purpose. HTMX only swaps a response body into
+// hx-target on a 2xx; the Refresh button targets #refresh-panel, so a 4xx would
+// fire the generic htmx:responseError toast and skip the swap, leaving the
+// operator with a vague failure instead of a clear explanation. The handler
+// already has a non-error non-success precedent in exactly this shape: the
+// no-MBID branch returns 200 with status "disambiguation_required".
+//
+// No event is published and no sync-warning trigger is set: nothing changed,
+// and the panel fragment is the operator signal. That is the deliberate
+// difference from autoLinkAndRefresh's skip path, which DOES publish
+// event.ArtistUpdated -- there, the provider ID genuinely changed before the
+// refresh was suppressed, so subscribers have something to re-read.
+func (r *Router) respondRefreshSkippedLocked(w http.ResponseWriter, req *http.Request, a *artist.Artist) {
+	// Info, not Warn: this is the lock contract working, not a fault.
+	r.logger.Info("refresh skipped: artist is locked", "artist_id", a.ID)
+
+	if isHTMXRequest(req) {
+		renderTempl(w, req, templates.RefreshSkippedLocked())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "skipped_locked",
+		"artist":  a.Name,
+		"message": "This artist is locked. Unlock it to refresh metadata from providers.",
+	})
+}
+
 // handleArtistRefresh triggers a full metadata refresh for a single artist.
 // If the artist has no MusicBrainz ID, returns the disambiguation search UI
 // so the user can link the correct entry first.
@@ -28,6 +59,16 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+
+	// Artist-level lock gate. This sits ahead of the disambiguation branch so a
+	// locked artist is never invited to link an MBID that would then refresh
+	// nothing. Gate on a.Locked ONLY: per-field locks (a.LockedFields) are an
+	// independent layer enforced inside artist.ApplyMetadata, and a fully
+	// field-pinned artist is still refreshable.
+	if a.Locked {
+		r.respondRefreshSkippedLocked(w, req, a)
 		return
 	}
 
@@ -205,6 +246,16 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		slog.String("discogs_id", a.DiscogsID),
 		slog.String("source", body.Source),
 	)
+
+	// Artist-level lock gate, placed AFTER the provider-ID persist above: the
+	// user explicitly choosing an identity is a manual edit, which the lock
+	// allows. The automated fetch/merge that normally follows is the exact
+	// "automated change" the lock promises to skip.
+	if a.Locked {
+		r.InvalidateHealthCache()
+		r.respondRefreshSkippedLocked(w, req, a)
+		return
+	}
 
 	// Now run the full refresh with the linked MBID
 	result, err := r.executeRefresh(req, a)

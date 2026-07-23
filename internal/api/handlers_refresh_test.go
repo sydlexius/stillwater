@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -937,4 +939,343 @@ func TestApplyProviderName_RespectsLocks(t *testing.T) {
 			t.Errorf("nil meta should not modify artist, got %q", a.Name)
 		}
 	})
+}
+
+// --- Artist-level lock gate on the single-artist refresh path (#2754) --------
+//
+// The paired BULK-path lock tests live in handlers_bulk_refresh_test.go
+// (TestBulkAction_RefreshMetadata_LockedSkipped and
+// TestBulkAction_RefreshMetadata_FieldLocksSkipOnlyThoseFields). Both paths
+// state one contract, so the two sets are meant to be read together; the
+// helpers below (bulkRefreshRouter, addRefreshableArtist) come from that file,
+// which is in this same package.
+
+// lockedRefreshSentinel is the biography a stubbed provider offers on every
+// test in this group. It must never reach the database on a locked artist, so
+// asserting the persisted biography is the proof that no refresh ran -- a much
+// stronger assertion than the response status alone.
+const lockedRefreshSentinel = "Should never be applied."
+
+// lockedRefreshFetchResult is the stub provider payload shared by the tests
+// below: one attempted-and-populated field so ApplyMetadata would definitely
+// write something if it were ever reached.
+func lockedRefreshFetchResult() *provider.FetchResult {
+	return &provider.FetchResult{
+		Metadata:        &provider.ArtistMetadata{Biography: lockedRefreshSentinel},
+		AttemptedFields: []string{"biography"},
+		PopulatedFields: []string{"biography"},
+	}
+}
+
+// attachSentinelOrchestrator wires a real provider.Orchestrator onto an
+// existing Router, stubbed to return lockedRefreshSentinel as the biography.
+//
+// It exists for the link-handler tests (deezer / discogs / audiodb), which need
+// testRouter's fuller wiring -- conflict detector, publisher, i18n bundle,
+// provider settings -- and so cannot use bulkRefreshRouter. Without an
+// orchestrator, r.orchestrator is nil, autoLinkAndRefresh's refresh branch is
+// unreachable, and any "the refresh did not run" assertion passes vacuously:
+// an implementation that set the skip flag AND called executeRefreshCtx
+// unconditionally would still be green. With it, the persisted biography is
+// real proof of non-invocation.
+func attachSentinelOrchestrator(t *testing.T, r *Router) {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := provider.NewOrchestrator(nil, nil, logger, nil)
+	orch.SetExecutor(&stubScraperExecutor{result: lockedRefreshFetchResult()})
+	r.orchestrator = orch
+}
+
+// assertSentinelBiographyAbsent reloads the artist and fails if the stubbed
+// provider biography was persisted. This is the non-invocation assertion the
+// locked-link tests turn on: the sentinel can only reach the database by way of
+// executeRefreshCtx, which the artist lock must have suppressed.
+func assertSentinelBiographyAbsent(t *testing.T, svc *artist.Service, artistID string) {
+	t.Helper()
+	saved, err := svc.GetByID(context.Background(), artistID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if saved.Biography != "" {
+		t.Errorf("biography = %q, want empty; the refresh that follows the link must be skipped on a locked artist", saved.Biography)
+	}
+}
+
+// assertSentinelBiographyPresent is the positive-control half: it proves the
+// stubbed orchestrator really would land the sentinel when the lock is absent,
+// so the "absent" assertion above is not passing for the wrong reason.
+func assertSentinelBiographyPresent(t *testing.T, svc *artist.Service, artistID string) {
+	t.Helper()
+	saved, err := svc.GetByID(context.Background(), artistID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if saved.Biography != lockedRefreshSentinel {
+		t.Errorf("biography = %q, want the provider sentinel; the unlocked link path did not run the refresh, so the locked test's absence assertion proves nothing", saved.Biography)
+	}
+}
+
+// postRefresh drives handleArtistRefresh directly with the {id} path value set,
+// mirroring what the router does for POST /api/v1/artists/{id}/refresh.
+func postRefresh(t *testing.T, r *Router, artistID string, htmx bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+artistID+"/refresh", nil)
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	req.SetPathValue("id", artistID)
+	if htmx {
+		req.Header.Set("HX-Request", "true")
+	}
+	w := httptest.NewRecorder()
+	r.handleArtistRefresh(w, req)
+	return w
+}
+
+// decodeRefreshStatus decodes the JSON body and returns its "status" field,
+// failing the test if the body is not the expected shape.
+func decodeRefreshStatus(t *testing.T, w *httptest.ResponseRecorder) string {
+	t.Helper()
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response body: %v", err)
+	}
+	status, ok := resp["status"].(string)
+	if !ok {
+		t.Fatalf("response has no string status field: %v", resp)
+	}
+	return status
+}
+
+// lockRefreshableArtist seeds an artist that satisfies BOTH preconditions the
+// gate test depends on -- it carries a MusicBrainz ID and it is artist-locked --
+// and asserts each one. Without the MBID assertion the test would pass
+// vacuously through the no-MBID disambiguation branch, which also answers 200
+// and also performs no refresh; without the lock assertion it would pass
+// against an artist that was never locked at all.
+func lockRefreshableArtist(t *testing.T, svc *artist.Service, name string) *artist.Artist {
+	t.Helper()
+	a := addRefreshableArtist(t, svc, name)
+	if err := svc.Lock(context.Background(), a.ID, "user"); err != nil {
+		t.Fatalf("locking artist: %v", err)
+	}
+	locked, err := svc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if !locked.Locked {
+		t.Fatal("precondition failed: artist is not locked after Lock")
+	}
+	if locked.MusicBrainzID == "" {
+		t.Fatal("precondition failed: artist has no MusicBrainz ID, so a 200 would prove nothing")
+	}
+	return locked
+}
+
+// TestHandleArtistRefresh_LockedArtistSkipped is the guard for #2754: the
+// per-artist Refresh button used to bypass the artist-level lock entirely,
+// running a full provider fetch, merge, DB write and NFO publish on an artist
+// the operator had explicitly locked.
+//
+// The load-bearing assertion is the persisted biography, not the status: it is
+// the only one that proves executeRefresh was never reached.
+func TestHandleArtistRefresh_LockedArtistSkipped(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := bulkRefreshRouter(t, lockedRefreshFetchResult())
+	a := lockRefreshableArtist(t, artistSvc, "Locked Single Refresh")
+
+	w := postRefresh(t, r, a.ID, false)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if got := decodeRefreshStatus(t, w); got != "skipped_locked" {
+		t.Errorf("status = %q, want skipped_locked", got)
+	}
+
+	saved, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if saved.Biography != "" {
+		t.Errorf("biography = %q, want empty; a locked artist must not be refreshed", saved.Biography)
+	}
+}
+
+// TestHandleArtistRefresh_UnlockedArtistStillRefreshes is the positive control
+// for the test above. Without it, the locked test would pass just as happily if
+// the refresh path were broken for every artist, locked or not.
+func TestHandleArtistRefresh_UnlockedArtistStillRefreshes(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := bulkRefreshRouter(t, lockedRefreshFetchResult())
+	a := addRefreshableArtist(t, artistSvc, "Unlocked Single Refresh")
+
+	// Precondition: the artist is genuinely NOT locked, so a successful
+	// refresh here really does exercise the ungated path.
+	if a.Locked {
+		t.Fatal("precondition failed: artist is locked; this test covers the unlocked path")
+	}
+
+	w := postRefresh(t, r, a.ID, false)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if got := decodeRefreshStatus(t, w); got != "refreshed" {
+		t.Errorf("status = %q, want refreshed", got)
+	}
+
+	saved, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if saved.Biography != lockedRefreshSentinel {
+		t.Errorf("biography = %q, want the provider value; the refresh reported success without persisting anything", saved.Biography)
+	}
+}
+
+// TestHandleArtistRefresh_FieldLockedArtistStillRefreshes pins the precedence
+// rule between the two kinds of lock on the single-artist path, mirroring
+// TestBulkAction_RefreshMetadata_FieldLocksSkipOnlyThoseFields on the bulk one:
+//
+//   - The ARTIST lock suppresses the whole refresh.
+//   - FIELD locks suppress only the pinned fields; the refresh still runs.
+//
+// There is no "every field is pinned, so treat the artist as locked" inference,
+// and this test is what stops a future change from adding one.
+func TestHandleArtistRefresh_FieldLockedArtistStillRefreshes(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := bulkRefreshRouter(t, &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			Biography: "Provider biography that must NOT land.",
+			Origin:    "Provider origin that MUST land.",
+		},
+		AttemptedFields: []string{"biography", "origin"},
+		PopulatedFields: []string{"biography", "origin"},
+	})
+
+	a := addRefreshableArtist(t, artistSvc, "Field Locked Single Refresh")
+	a.Biography = "User-curated biography."
+	a.Origin = "Old origin."
+	if err := artistSvc.Update(context.Background(), a); err != nil {
+		t.Fatalf("seeding fields: %v", err)
+	}
+	if err := artistSvc.SetLockedFields(context.Background(), a.ID, []string{string(artist.FieldBiography)}); err != nil {
+		t.Fatalf("pinning biography: %v", err)
+	}
+
+	// Preconditions: a field lock is present and the artist is NOT
+	// artist-locked. Without both, a "refreshed" result would prove nothing
+	// about which layer did the work.
+	pre, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if pre.Locked {
+		t.Fatal("precondition failed: artist is artist-locked; this test covers FIELD locks")
+	}
+	if !slices.Contains(pre.LockedFields, string(artist.FieldBiography)) {
+		t.Fatalf("precondition failed: biography not pinned; LockedFields = %v", pre.LockedFields)
+	}
+
+	w := postRefresh(t, r, a.ID, false)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if got := decodeRefreshStatus(t, w); got != "refreshed" {
+		t.Errorf("status = %q, want refreshed; a field-locked artist still refreshes", got)
+	}
+
+	saved, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if saved.Biography != "User-curated biography." {
+		t.Errorf("pinned biography overwritten: got %q", saved.Biography)
+	}
+	if saved.Origin != "Provider origin that MUST land." {
+		t.Errorf("unpinned origin not updated: got %q; the refresh must still apply unlocked fields", saved.Origin)
+	}
+}
+
+// TestHandleArtistRefresh_LockedArtistHTMX covers the branch the operator
+// actually sees. The status is 200 rather than 409 precisely so HTMX swaps this
+// fragment into #refresh-panel; a 4xx would fire the generic error toast and
+// skip the swap, leaving the operator with no explanation.
+func TestHandleArtistRefresh_LockedArtistHTMX(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := bulkRefreshRouter(t, lockedRefreshFetchResult())
+	a := lockRefreshableArtist(t, artistSvc, "Locked HTMX Refresh")
+
+	w := postRefresh(t, r, a.ID, true)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want an HTML fragment", ct)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "Refresh skipped: artist is locked") {
+		t.Errorf("fragment missing the locked heading; body: %s", body)
+	}
+	// The success summary must NOT be present: rendering both would mean the
+	// gate returned the locked fragment but still ran the refresh render.
+	if strings.Contains(body, "Metadata Refreshed") {
+		t.Errorf("fragment contains the success summary; body: %s", body)
+	}
+
+	saved, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if saved.Biography != "" {
+		t.Errorf("biography = %q, want empty; a locked artist must not be refreshed", saved.Biography)
+	}
+}
+
+// TestHandleRefreshLink_LockedArtistSkipsRefresh pins the split contract on the
+// disambiguation-continuation path, which autoLinkAndRefresh implements
+// identically for the deezer / discogs / audiodb / bulk-identify / wizard link
+// handlers: choosing an identity is a MANUAL edit, which the artist lock
+// permits, so the provider ID is persisted; the automated fetch and merge that
+// normally follow it are exactly what the lock suppresses.
+func TestHandleRefreshLink_LockedArtistSkipsRefresh(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := bulkRefreshRouter(t, lockedRefreshFetchResult())
+	a := lockRefreshableArtist(t, artistSvc, "Locked Refresh Link")
+
+	const chosenMBID = "chosen-mbid-for-locked-artist"
+	// Precondition: the MBID the request carries differs from the seeded one,
+	// so "was it persisted?" is a real question rather than a tautology.
+	if a.MusicBrainzID == chosenMBID {
+		t.Fatal("precondition failed: seeded MBID already equals the chosen MBID")
+	}
+
+	body := fmt.Sprintf(`{"mbid":%q,"source":"musicbrainz"}`, chosenMBID)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/refresh/link", strings.NewReader(body))
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleRefreshLink(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if got := decodeRefreshStatus(t, w); got != "skipped_locked" {
+		t.Errorf("status = %q, want skipped_locked", got)
+	}
+
+	saved, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if saved.MusicBrainzID != chosenMBID {
+		t.Errorf("MusicBrainzID = %q, want %q; the user's identity choice is a manual edit the lock allows", saved.MusicBrainzID, chosenMBID)
+	}
+	if saved.Biography != "" {
+		t.Errorf("biography = %q, want empty; the refresh that follows the link must be skipped", saved.Biography)
+	}
 }

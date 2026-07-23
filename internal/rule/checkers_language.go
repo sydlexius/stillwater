@@ -111,7 +111,7 @@ func (e *Engine) makeNameLanguagePrefChecker() Checker {
 // values. Returns empty strings when the provider is unwired, the MBID is
 // missing, or the lookup fails or times out.
 func (e *Engine) lookupPreferredAlias(ctx context.Context, a *artist.Artist) (aliasName, aliasSort string) {
-	prov := e.metadataProviderFor(RuleNameLanguagePref)
+	prov := e.metadataProviderFor(RuleNameLanguagePref, a)
 	if a.MusicBrainzID == "" || prov == nil {
 		return "", ""
 	}

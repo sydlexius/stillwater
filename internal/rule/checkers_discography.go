@@ -105,9 +105,11 @@ func (e *Engine) makeDiscographyChecker() Checker {
 		}
 
 		// Signal 2: coverage comparison. Only attempted when a release-group
-		// fetcher is wired AND this rule declares the capability to reach it;
-		// otherwise a non-empty discography is accepted.
-		if e.releaseGroupFetcherFor(RuleDiscographyPopulated) == nil {
+		// fetcher is wired, this rule declares the capability to reach it, AND
+		// the artist is not locked (#2754 -- no outbound fetch on behalf of an
+		// artist the operator has declared finished); otherwise a non-empty
+		// discography is accepted, matching the mbCount <= 0 branch below.
+		if e.releaseGroupFetcherFor(RuleDiscographyPopulated, a) == nil {
 			return nil
 		}
 
@@ -150,10 +152,11 @@ func (e *Engine) makeDiscographyChecker() Checker {
 
 // countMBReleaseGroups fetches the artist's MusicBrainz release groups and
 // returns the count after applying the rule's release-type filter. Returns 0
-// when the fetcher is unwired, the artist has no MBID, or the lookup fails or
-// times out -- the caller treats 0 as "skip the coverage check".
+// when the fetcher is unwired, the artist is locked, the artist has no MBID, or
+// the lookup fails or times out -- the caller treats 0 as "skip the coverage
+// check".
 func (e *Engine) countMBReleaseGroups(ctx context.Context, a *artist.Artist, cfg RuleConfig) int {
-	fetcher := e.releaseGroupFetcherFor(RuleDiscographyPopulated)
+	fetcher := e.releaseGroupFetcherFor(RuleDiscographyPopulated, a)
 	if fetcher == nil || a.MusicBrainzID == "" {
 		return 0
 	}

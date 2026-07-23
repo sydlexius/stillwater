@@ -153,8 +153,13 @@ func TestBulkAction_RefreshMetadata_NoMBIDSkipped(t *testing.T) {
 // TestBulkAction_RefreshMetadata_LockedSkipped holds the artist-lock contract
 // the UI states verbatim: "Provider refreshes and rule fixers will not make
 // automated changes." A bulk sweep is exactly such an automated change, so a
-// locked artist must be skipped even though the per-artist Refresh button --
-// a deliberate manual act -- is not gated.
+// locked artist must be skipped.
+//
+// The single-artist path states the same contract and is covered by the paired
+// tests in handlers_refresh_test.go (TestHandleArtistRefresh_LockedArtistSkipped
+// and its positive control TestHandleArtistRefresh_UnlockedArtistStillRefreshes).
+// Read the two groups together; #2754 was the gap where this path was gated and
+// that one was not.
 func TestBulkAction_RefreshMetadata_LockedSkipped(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := bulkRefreshRouter(t, &provider.FetchResult{

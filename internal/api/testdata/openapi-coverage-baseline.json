@@ -44,8 +44,6 @@
   "providerFetch",
   "providerSearch",
   "pushMetadata",
-  "refreshArtist",
-  "refreshLink",
   "removeAlias",
   "resetConnectionScraperConfig",
   "resolveViolation",

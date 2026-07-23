@@ -15,7 +15,7 @@ There are two layers of locks, plus a library-wide switch. Each protects against
 
 The simplest lock: an entire artist is locked or not. When an artist is locked:
 
-- **Provider refreshes** skip the artist entirely.
+- **Provider refreshes** skip the artist entirely -- the per-artist **Refresh** button, a bulk refresh sweep, and the Discography tab's **Fetch discography**.
 - **Rule fixers** see the lock and decline to apply changes.
 - **The NFO** Stillwater writes for the artist asks Kodi/Emby/Jellyfin not to overwrite it during their own metadata scans (via `<lockdata>true</lockdata>`).
 
@@ -30,7 +30,7 @@ Manual edits remain allowed when locked -- the lock blocks *automated* overwrite
 
 Sometimes you want most of an artist's metadata to refresh from providers, but two or three fields you've curated by hand should stay put. That's a per-field lock.
 
-You pin a field (biography, sort name, born year, ...) and Stillwater's refresh, fill-empty, NFO-import, and snapshot-restore paths all skip that field. Pinned date fields also survive the post-merge "this date doesn't apply to this artist type" cleanup -- if you've pinned a born year on a band, it stays.
+You pin a field (biography, sort name, born year, ...) and Stillwater's refresh, fill-empty, and NFO-import paths all skip that field. Pinned date fields also survive the post-merge "this date doesn't apply to this artist type" cleanup -- if you've pinned a born year on a band, it stays.
 
 Field locks coexist with the artist-level lock. Unlocking the artist doesn't clear field locks; they're independent layers.
 

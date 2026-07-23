@@ -47,26 +47,7 @@ func (r *Router) handleArtistDiscographyTab(w http.ResponseWriter, req *http.Req
 		return
 	}
 
-	// Parse the on-disk NFO directly so the tab reflects persisted state.
-	// The cached artist.NFOExists flag is intentionally not consulted here:
-	// if the file was added or restored out-of-band, the tab should still
-	// reflect reality rather than waiting for a separate scan to refresh
-	// the DB flag. ErrNotExist is treated as an empty-state signal; all
-	// other read/parse errors are warned so operators can diagnose.
-	var albums []artist.DiscographyAlbum
-	if a.Path != "" {
-		nfoPath := filepath.Join(a.Path, "artist.nfo")
-		parsed, err := parseNFOFile(nfoPath)
-		switch {
-		case err == nil:
-			albums = discographyFromNFO(parsed)
-		case errors.Is(err, os.ErrNotExist):
-			// No file on disk: render empty state silently.
-		default:
-			r.logger.Warn("failed to parse artist.nfo for discography tab",
-				"artist_id", artistID, "path", nfoPath, "error", err)
-		}
-	}
+	albums := r.discographyAlbumsOnDisk(a)
 
 	// Parse search/sort/order query params for client-side filtering.
 	// Defaults: no search, no sort (NFO order), ascending.
@@ -131,6 +112,67 @@ func (r *Router) handleArtistDiscographyTab(w http.ResponseWriter, req *http.Req
 	}))
 }
 
+// discographyAlbumsOnDisk parses the artist's on-disk artist.nfo and returns
+// its album entries.
+//
+// The cached artist.NFOExists flag is intentionally not consulted: if the file
+// was added or restored out-of-band, callers should still see reality rather
+// than waiting for a separate scan to refresh the DB flag. ErrNotExist is
+// treated as an empty-state signal; all other read/parse errors are warned so
+// operators can diagnose, and yield no albums.
+func (r *Router) discographyAlbumsOnDisk(a *artist.Artist) []artist.DiscographyAlbum {
+	if a.Path == "" {
+		return nil
+	}
+	nfoPath := filepath.Join(a.Path, "artist.nfo")
+	parsed, err := parseNFOFile(nfoPath)
+	switch {
+	case err == nil:
+		return discographyFromNFO(parsed)
+	case errors.Is(err, os.ErrNotExist):
+		// No file on disk: empty state.
+		return nil
+	default:
+		r.logger.Warn("failed to parse artist.nfo for discography",
+			"artist_id", a.ID, "path", nfoPath, "error", err)
+		return nil
+	}
+}
+
+// respondDiscographySkippedLocked answers a discography fetch that the
+// artist-level lock suppressed.
+//
+// The status is 200, not 409, for the same reason respondRefreshSkippedLocked
+// uses 200: HTMX only swaps a response body into hx-target on a 2xx, and the
+// Fetch button swaps this response over #discography-tab-content
+// (hx-swap="outerHTML"). A 4xx would fire the generic htmx:responseError toast
+// and skip the swap, leaving the operator with a vague failure instead of an
+// explanation.
+//
+// The HTMX branch therefore re-renders the whole tab (the swap target) with
+// SkippedLocked set, which puts the explanation in the tab's existing
+// aria-live status line and leaves the album list exactly as it was on disk.
+func (r *Router) respondDiscographySkippedLocked(w http.ResponseWriter, req *http.Request, a *artist.Artist) {
+	// Info, not Warn: this is the lock contract working, not a fault.
+	r.logger.Info("discography fetch skipped: artist is locked", "artist_id", a.ID)
+
+	if req.Header.Get("HX-Request") == "true" {
+		renderTempl(w, req, templates.ArtistDiscographyTab(templates.DiscographyTabData{
+			ArtistID:      a.ID,
+			MusicBrainzID: a.MusicBrainzID,
+			Albums:        r.discographyAlbumsOnDisk(a),
+			SkippedLocked: true,
+		}))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "skipped_locked",
+		"artist":  a.Name,
+		"message": "This artist is locked. Unlock it to fetch discography from MusicBrainz.",
+	})
+}
+
 // DiscographyFetchResult is the JSON response for POST /api/v1/artists/{id}/discography/fetch.
 type DiscographyFetchResult struct {
 	Added   int `json:"added"`
@@ -162,6 +204,20 @@ func (r *Router) handleFetchDiscography(w http.ResponseWriter, req *http.Request
 		}
 		r.logger.Error("loading artist for discography fetch", "artist_id", artistID, "error", err)
 		writeDiscographyJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	// Artist-level lock gate (#2754). A discography fetch is a provider query
+	// (MusicBrainz release groups) followed by an artist.nfo rewrite -- exactly
+	// the "automated change" the artist lock promises to skip, and the same
+	// contract the refresh and link paths in this package enforce.
+	//
+	// The gate sits here, ahead of the MBID/path validation, the in-flight
+	// claim and the provider call, so a locked artist produces no outbound
+	// request and no disk write. Gate on a.Locked ONLY: per-field locks are an
+	// independent layer over metadata fields and do not cover the album list.
+	if a.Locked {
+		r.respondDiscographySkippedLocked(w, req, a)
 		return
 	}
 

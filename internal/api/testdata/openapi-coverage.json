@@ -1369,14 +1369,14 @@
     "method": "POST",
     "path": "/artists/{id}/refresh",
     "handler": "handleArtistRefresh",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "refreshLink",
     "method": "POST",
     "path": "/artists/{id}/refresh/link",
     "handler": "handleRefreshLink",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "refreshSearch",

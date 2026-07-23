@@ -314,7 +314,8 @@ func (r *Router) handleBulkIdentifyLink(w http.ResponseWriter, req *http.Request
 		a.DiscogsID = body.DiscogsID
 	}
 
-	if err := r.autoLinkAndRefresh(req.Context(), a); err != nil {
+	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a)
+	if err != nil {
 		r.logger.Error("bulk-identify link: updating artist", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to update artist")
 		return
@@ -335,11 +336,18 @@ func (r *Router) handleBulkIdentifyLink(w http.ResponseWriter, req *http.Request
 		progress.mu.Unlock()
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":    "linked",
 		"artist_id": a.ID,
 		"mbid":      a.MusicBrainzID,
-	})
+	}
+	if refreshSkipped {
+		// The provider IDs were persisted (a manual edit the lock allows) but
+		// the provider refresh that normally follows was suppressed by the
+		// artist-level lock.
+		resp["refresh_skipped_locked"] = true
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // runBulkIdentify processes unidentified artists through the 3-tier pipeline
@@ -450,7 +458,10 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 				if discogsID != "" {
 					a.DiscogsID = discogsID
 				}
-				if err := r.autoLinkAndRefresh(ctx, a); err != nil {
+				// The lock was already handled upstream: identifyArtist
+				// returns outcomeSkipped for a locked artist, so the skip
+				// flag can never be true here.
+				if _, err := r.autoLinkAndRefresh(ctx, a); err != nil {
 					return identifyResult{Outcome: outcomeFailed}
 				}
 				return identifyResult{Outcome: outcomeAutoLinked}
@@ -519,7 +530,8 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 	// Single high-confidence result: auto-link.
 	if len(results) == 1 && results[0].Score >= 90 {
 		a.MusicBrainzID = results[0].MusicBrainzID
-		if err := r.autoLinkAndRefresh(ctx, a); err != nil {
+		// Lock already handled upstream (see identifyArtist's a.Locked guard).
+		if _, err := r.autoLinkAndRefresh(ctx, a); err != nil {
 			return identifyResult{Outcome: outcomeFailed}
 		}
 		return identifyResult{Outcome: outcomeAutoLinked}
@@ -630,7 +642,8 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 	// Exactly 1 candidate with >= 70%: auto-link.
 	if len(above70) == 1 {
 		a.MusicBrainzID = above70[0].MusicBrainzID
-		if err := r.autoLinkAndRefresh(ctx, a); err != nil {
+		// Lock already handled upstream (see identifyArtist's a.Locked guard).
+		if _, err := r.autoLinkAndRefresh(ctx, a); err != nil {
 			return identifyResult{Outcome: outcomeFailed}
 		}
 		return identifyResult{Outcome: outcomeAutoLinked}
@@ -654,15 +667,26 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 	return identifyResult{Outcome: outcomeUnmatched}
 }
 
-// autoLinkAndRefresh sets the MBID on the artist, persists it, runs a full
-// metadata refresh, and evaluates health. Returns an error only if the
+// autoLinkAndRefresh sets the provider ID on the artist, persists it, runs a
+// full metadata refresh, and evaluates health. Returns an error only if the
 // initial Update fails (refresh failures are logged but not fatal).
-func (r *Router) autoLinkAndRefresh(ctx context.Context, a *artist.Artist) error {
+//
+// Returns refreshSkipped=true when the artist-level lock suppressed the
+// provider refresh: the caller-chosen provider ID is a manual edit and is
+// still persisted, but the automated fetch/merge that normally follows is the
+// exact "automated change" the artist lock promises to skip (see
+// applyBulkAction and Pipeline.runForArtistFiltered for the same rule).
+func (r *Router) autoLinkAndRefresh(ctx context.Context, a *artist.Artist) (refreshSkipped bool, err error) {
 	if err := r.artistService.Update(ctx, a); err != nil {
 		r.logger.Warn("bulk-identify: update failed", "artist", a.Name, "error", err)
-		return err
+		return false, err
 	}
-	if r.orchestrator != nil {
+	if a.Locked {
+		// Info, not Warn: the lock contract working, not a fault. The provider
+		// ID above genuinely changed, so the event below still publishes.
+		r.logger.Info("link: refresh skipped, artist is locked", "artist_id", a.ID)
+		refreshSkipped = true
+	} else if r.orchestrator != nil {
 		if _, err := r.executeRefreshCtx(ctx, a); err != nil {
 			r.logger.Warn("bulk-identify: refresh failed after linking",
 				"artist", a.Name, "error", err)
@@ -674,7 +698,7 @@ func (r *Router) autoLinkAndRefresh(ctx context.Context, a *artist.Artist) error
 			Data: map[string]any{"artist_id": a.ID},
 		})
 	}
-	return nil
+	return refreshSkipped, nil
 }
 
 // buildConnectionIndex builds an in-memory index of artists from connection

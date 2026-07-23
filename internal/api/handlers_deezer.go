@@ -144,7 +144,8 @@ func (r *Router) handleDeezerLink(w http.ResponseWriter, req *http.Request) {
 
 	a.DeezerID = deezerID
 
-	if err := r.autoLinkAndRefresh(req.Context(), a); err != nil {
+	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a)
+	if err != nil {
 		r.logger.Error("deezer link: updating artist", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to link Deezer ID")
 		return
@@ -182,11 +183,18 @@ func (r *Router) handleDeezerLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":    "linked",
 		"artist_id": a.ID,
 		"deezer_id": a.DeezerID,
-	})
+	}
+	if refreshSkipped {
+		// The Deezer ID was persisted (a manual edit the lock allows) but the
+		// provider refresh that normally follows was suppressed by the
+		// artist-level lock.
+		resp["refresh_skipped_locked"] = true
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // enrichDeezerCandidates scores Deezer search results by album-discography
