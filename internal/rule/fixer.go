@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -32,6 +33,36 @@ type Fixer interface {
 // NFOFixer, ExtraneousImagesFixer) must NOT implement it.
 type CandidateDiscoverer interface {
 	SupportsCandidateDiscovery() bool
+}
+
+// StateProducer is implemented by a Fixer whose Fix mutates fields on the
+// in-memory *artist.Artist that another rule's checker or fixer reads during
+// the same pass (e.g. MusicBrainzID, provider IDs). ProducerPriority reports
+// the dispatch tier for one violation: lower runs earlier. A Fixer that does
+// not implement this interface is tier 0.
+//
+// Issue #2738: Engine.EvaluateScoped computes every violation up front, before
+// any fixer runs, so checker order never mattered. What DOES matter is the
+// order Fix is invoked in: a producer's Fix mutates the shared *artist.Artist
+// in place (nfo_has_mbid sets MusicBrainzID; provider_id_missing's backfill
+// sets DiscogsID/DeezerID/SpotifyID), and a consumer dispatched earlier in the
+// same pass reads the pre-mutation, stale value. The violation list is
+// otherwise ordered "category, name" for display/API stability, which put
+// several metadata-category consumers ahead of the nfo-category producer
+// alphabetically. orderForDispatch stable-sorts a per-pass COPY of the
+// violation list by this tier before dispatch, leaving the display/API
+// ordering (EvaluationResult.Violations, RulesConsidered, the cachedRules SQL
+// order) untouched.
+//
+// A future Fixer that mutates shared artist state during Fix MUST implement
+// this interface so downstream consumers see the fresh value in the same
+// pass; omitting it silently reintroduces the #2738 class of bug.
+type StateProducer interface {
+	// ProducerPriority reports the dispatch tier for violation v. Lower runs
+	// earlier. Tier 0 (the implicit default for any Fixer not implementing
+	// this interface) is reserved for rules with no producer/consumer
+	// relationship to another rule in this pass.
+	ProducerPriority(v *Violation) int
 }
 
 // FixResult describes the outcome of a fix attempt.
@@ -885,8 +916,13 @@ func (p *Pipeline) logPassCounters(pc *PassContext) {
 // not match categoryFilter), looks up each rule, hands off to the
 // automation-mode strategy, and merges the outcome into acc and result.
 func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, violations []Violation, categoryFilter string, ruleCache map[string]*Rule, acc *runForArtistAccum, result *RunResult) {
-	for j := range violations {
-		v := &violations[j]
+	// Issue #2738: dispatch in producer-before-consumer order (StateProducer
+	// tier), not the "category, name" order violations arrive in. See
+	// orderForDispatch's doc for why a category-scoped run needs this too --
+	// a producer and its consumer can both live in the same category.
+	ordered := orderForDispatch(p, violations)
+	for j := range ordered {
+		v := &ordered[j]
 		if categoryFilter != "" && v.Category != categoryFilter {
 			continue
 		}
@@ -1203,8 +1239,13 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 	// operator stopped the pass" and "the pass left an artist half-written".
 	ctx = context.WithoutCancel(ctx)
 
-	for j := range eval.Violations {
-		v := &eval.Violations[j]
+	// Issue #2738: dispatch in producer-before-consumer order (StateProducer
+	// tier) rather than the "category, name" order Evaluate returns. This
+	// reorders only the local dispatch copy -- eval.Violations itself, and
+	// anything display/API facing derived from it, is untouched.
+	ordered := orderForDispatch(p, eval.Violations)
+	for j := range ordered {
+		v := &ordered[j]
 		contrib.violationsFound++
 		// getCachedRule is pipeline-level and RWMutex-guarded, safe for
 		// concurrent artist workers (issue #1730).
@@ -1877,6 +1918,44 @@ func (p *Pipeline) findFixer(v *Violation) Fixer {
 func supportsCandidateDiscovery(f Fixer) bool {
 	cd, ok := f.(CandidateDiscoverer)
 	return ok && cd.SupportsCandidateDiscovery()
+}
+
+// dispatchPriority reports the StateProducer tier for violation v: the tier
+// its registered fixer reports, or 0 when no fixer is found or the fixer does
+// not implement StateProducer. Mirrors supportsCandidateDiscovery's shape --
+// look up the fixer via findFixer, then type-assert the optional interface.
+func dispatchPriority(p *Pipeline, v *Violation) int {
+	f := p.findFixer(v)
+	if f == nil {
+		return 0
+	}
+	sp, ok := f.(StateProducer)
+	if !ok {
+		return 0
+	}
+	return sp.ProducerPriority(v)
+}
+
+// orderForDispatch returns a stably-sorted COPY of violations, ordered by
+// ascending StateProducer tier (issue #2738). It never mutates the input
+// slice, so callers may keep using the original for anything display/API
+// facing (EvaluationResult.Violations, RulesConsidered) -- only the pipeline's
+// internal dispatch copy is reordered.
+//
+// sort.SliceStable is required, not sort.Slice: two tier-0 rules (the common
+// case -- most rules have no producer/consumer relationship) must keep their
+// exact current relative dispatch order, which is where callers rely on the
+// existing "category, name" ordering for anything observable beyond pure
+// pass/fail (e.g. tie-breaking log noise, incidental fix-history ordering).
+// An unstable sort would silently reshuffle that relative order for every
+// tier-0 pair sharing a priority, not just the tiers this issue introduces.
+func orderForDispatch(p *Pipeline, violations []Violation) []Violation {
+	ordered := make([]Violation, len(violations))
+	copy(ordered, violations)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return dispatchPriority(p, &ordered[i]) < dispatchPriority(p, &ordered[j])
+	})
+	return ordered
 }
 
 // attemptFix tries each registered fixer for the violation.

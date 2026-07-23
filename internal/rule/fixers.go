@@ -254,6 +254,20 @@ func (f *MetadataFixer) CanFix(v *Violation) bool {
 		v.RuleID == RuleMetadataQuality || v.RuleID == RuleOriginMissing
 }
 
+// ProducerPriority implements StateProducer (issue #2738). fixMBID sets
+// a.MusicBrainzID, which provider_id_missing's Fix requires and several
+// checkers/fixers (bio, origin, discography, name_language_pref) read; it
+// must dispatch before every other producer/consumer in this pass, so it gets
+// the lowest tier. The other three rules this fixer handles (bio_exists,
+// metadata_quality, origin_missing) do not mutate any field another rule
+// reads, so they stay at the tier-0 default.
+func (f *MetadataFixer) ProducerPriority(v *Violation) int {
+	if v.RuleID == RuleNFOHasMBID {
+		return -2
+	}
+	return 0
+}
+
 // Fix searches providers and populates the missing metadata.
 func (f *MetadataFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	switch v.RuleID {

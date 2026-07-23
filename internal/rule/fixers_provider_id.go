@@ -82,6 +82,16 @@ func (f *ProviderIDBackfillFixer) CanFix(v *Violation) bool {
 	return v.RuleID == RuleProviderIDMissing
 }
 
+// ProducerPriority implements StateProducer (issue #2738). Fix requires
+// a.MusicBrainzID (set by MetadataFixer.fixMBID, tier -2) and mutates
+// a.DiscogsID/DeezerID/SpotifyID in place via setProviderIDForName, which
+// other rules read (directly, or through a.ProviderIDMap()). It must
+// dispatch after nfo_has_mbid but before any tier-0 consumer, so it sits one
+// tier above the MBID producer.
+func (f *ProviderIDBackfillFixer) ProducerPriority(_ *Violation) int {
+	return -1
+}
+
 // fetchMetadata routes the MusicBrainz metadata fetch through the per-artist
 // EvaluationContext coalescer when one is attached to ctx (the canonical
 // pipeline path), so several metadata fixers firing on the same artist share a
