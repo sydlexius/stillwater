@@ -13044,6 +13044,18 @@ paths:
                       "refreshed" (the refresh ran), "disambiguation_required"
                       (the artist has no MusicBrainz ID) or "skipped_locked"
                       (the artist is locked, so no provider work was done).
+                  artist:
+                    type: string
+                    description: >
+                      Artist name. Present on the "disambiguation_required" and
+                      "skipped_locked" results, which explain a non-outcome to
+                      the operator; absent on "refreshed".
+                  message:
+                    type: string
+                    description: >
+                      Operator-facing explanation. Present on the
+                      "disambiguation_required" and "skipped_locked" results;
+                      absent on "refreshed".
                   sources:
                     type: array
                     items:
@@ -13184,6 +13196,17 @@ paths:
                       Result status. "linked_and_refreshed" when the refresh
                       ran, or "skipped_locked" when the artist lock suppressed
                       it (the provider ID is persisted either way).
+                  artist:
+                    type: string
+                    description: >
+                      Artist name. Present only on the "skipped_locked" result,
+                      which shares one response body with the plain refresh
+                      route's locked-skip; absent on "linked_and_refreshed".
+                  message:
+                    type: string
+                    description: >
+                      Operator-facing explanation of the skip. Present only on
+                      the "skipped_locked" result.
                   sources:
                     type: array
                     items:
@@ -13909,7 +13932,7 @@ paths:
                         type: integer
                         description: Total release groups returned by MusicBrainz before filtering.
                   - type: object
-                    required: [status]
+                    required: [status, artist, message]
                     properties:
                       status:
                         type: string

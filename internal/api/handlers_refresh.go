@@ -29,11 +29,14 @@ import (
 // already has a non-error non-success precedent in exactly this shape: the
 // no-MBID branch returns 200 with status "disambiguation_required".
 //
-// No event is published and no sync-warning trigger is set: nothing changed,
-// and the panel fragment is the operator signal. That is the deliberate
-// difference from autoLinkAndRefresh's skip path, which DOES publish
-// event.ArtistUpdated -- there, the provider ID genuinely changed before the
-// refresh was suppressed, so subscribers have something to re-read.
+// This helper itself publishes no event and sets no sync-warning trigger: it
+// only writes the response. Publishing is the CALLER's job, because only the
+// caller knows whether anything changed before the lock intervened.
+// handleArtistRefresh gates before it touches the artist, so nothing changed
+// and it publishes nothing. handleRefreshLink gates AFTER persisting the
+// user's chosen provider ID, so it publishes event.ArtistUpdated before
+// calling this -- the same split autoLinkAndRefresh makes for the deezer /
+// discogs / audiodb / bulk-identify link paths.
 func (r *Router) respondRefreshSkippedLocked(w http.ResponseWriter, req *http.Request, a *artist.Artist) {
 	// Info, not Warn: this is the lock contract working, not a fault.
 	r.logger.Info("refresh skipped: artist is locked", "artist_id", a.ID)
@@ -251,7 +254,31 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	// user explicitly choosing an identity is a manual edit, which the lock
 	// allows. The automated fetch/merge that normally follows is the exact
 	// "automated change" the lock promises to skip.
+	//
+	// The gate sitting after the Update is why this branch still publishes:
+	// the provider ID on the row GENUINELY CHANGED, so invalidating the health
+	// cache alone would leave nothing to recompute it and rules keyed on
+	// local state (MBID presence, for one) would keep reporting the
+	// pre-link violation until some unrelated trigger fired. Publishing
+	// event.ArtistUpdated is what drives that recompute, via the
+	// HealthSubscriber, which evaluates and scores. Evaluation applies no
+	// automated change to the artist: it calls engine.Evaluate and writes
+	// only health/violation bookkeeping rows, never a fixer. That is the
+	// lock's actual promise, and it is exactly what autoLinkAndRefresh
+	// (handlers_identify.go) already does on its own locked-skip path for the
+	// deezer / discogs / audiodb / bulk-identify link handlers.
+	//
+	// runRulesAfterRefresh is deliberately NOT called here: it delegates to
+	// Pipeline.RunForArtist, which returns immediately for a locked artist by
+	// design (rule.runForArtistFiltered's IsExcluded/Locked guard), so the
+	// call would be a no-op that only implied otherwise.
 	if a.Locked {
+		if r.eventBus != nil {
+			r.eventBus.Publish(event.Event{
+				Type: event.ArtistUpdated,
+				Data: map[string]any{"artist_id": a.ID},
+			})
+		}
 		r.InvalidateHealthCache()
 		r.respondRefreshSkippedLocked(w, req, a)
 		return
