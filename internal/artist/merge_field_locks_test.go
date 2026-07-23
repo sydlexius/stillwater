@@ -248,6 +248,13 @@ func TestApplyMetadata_KnownLocksLogNothing(t *testing.T) {
 // TestAllLockableFields_CoversFieldNameConstants keeps the vocabulary list
 // honest: every FieldName constant must appear in AllLockableFields, or a
 // newly added lockable field would be reported as unknown at runtime.
+//
+// The set under test is built directly from AllLockableFields, not from
+// lockableFieldNames (the union of AllLockableFields with the merge-table
+// vocabulary). Asserting against the union would pass vacuously for any
+// field that also happens to appear in the merge tables -- which is every
+// field except "members" -- because the union backfills the omission. Only
+// AllLockableFields itself is the thing this test claims to guard.
 func TestAllLockableFields_CoversFieldNameConstants(t *testing.T) {
 	t.Parallel()
 	// Enumerated by hand rather than by reflection: the point is to fail when
@@ -262,9 +269,19 @@ func TestAllLockableFields_CoversFieldNameConstants(t *testing.T) {
 		t.Fatalf("AllLockableFields has %d entries, want %d -- add the new constant to the slice",
 			len(AllLockableFields), len(want))
 	}
+
+	got := make(map[string]struct{}, len(AllLockableFields))
+	for _, f := range AllLockableFields {
+		name := strings.ToLower(string(f))
+		if _, dup := got[name]; dup {
+			t.Errorf("AllLockableFields contains duplicate entry %q -- inflates the length check and can mask an omission", f)
+		}
+		got[name] = struct{}{}
+	}
+
 	for _, f := range want {
-		if _, ok := lockableFieldNames[strings.ToLower(string(f))]; !ok {
-			t.Errorf("lockable field %q missing from the lock vocabulary", f)
+		if _, ok := got[strings.ToLower(string(f))]; !ok {
+			t.Errorf("lockable field %q missing from AllLockableFields", f)
 		}
 	}
 }
