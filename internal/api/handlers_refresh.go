@@ -250,6 +250,61 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// refreshArtistForBulk performs the bulk-action equivalent of
+// handleArtistRefresh for a single artist (#2283) and reports the outcome as a
+// bulkOutcome. It lives here, beside executeRefreshCtx and the follow-up
+// helpers it reuses, so the two refresh paths stay visibly in sync.
+//
+// Differences from the interactive handler, all forced by the absence of a
+// user to answer questions:
+//
+//   - No MusicBrainz ID: the handler answers with the disambiguation search UI.
+//     Bulk has nowhere to render it and must not guess a link, so the artist is
+//     counted as Skipped and the run continues.
+//   - A failed provider-name write is a warning in the handler (HX-Trigger
+//     toast) on an otherwise successful refresh. Here it is logged and the
+//     artist still counts as Succeeded, because the metadata refresh itself
+//     committed.
+//   - InvalidateHealthCache is NOT called per artist; runBulkAction invalidates
+//     once when the whole run finishes.
+//
+// The lock/exclusion gate lives in applyBulkAction, not here, so every
+// pipeline-touching bulk action shares one statement of that rule.
+func (r *Router) refreshArtistForBulk(ctx context.Context, a *artist.Artist) bulkOutcome {
+	if a.MusicBrainzID == "" {
+		return bulkOutcomeSkipped
+	}
+
+	// executeRefreshCtx re-runs injectMetadataLanguages on this context even
+	// though runBulkAction already injected once. The second call is a
+	// cheap idempotent overwrite of the same values; forking the shared
+	// helper to skip it would put the two refresh paths out of sync for no
+	// meaningful saving.
+	result, err := r.executeRefreshCtx(ctx, a)
+	if err != nil {
+		// executeRefreshCtx already logged the underlying cause.
+		return bulkOutcomeFailed
+	}
+
+	// result.Metadata carries any language-promoted name; applyProviderName
+	// is a no-op on nil metadata, which is the correct behavior when the
+	// providers returned nothing to promote.
+	if r.applyProviderName(ctx, a, result.Metadata) {
+		r.logger.Warn("bulk refresh: provider name update failed", "artist_id", a.ID)
+	}
+
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
+
+	r.runRulesAfterRefresh(ctx, a)
+
+	return bulkOutcomeSucceeded
+}
+
 // executeRefresh runs the orchestrator's FetchMetadata and applies results to the artist.
 // It is a thin wrapper around executeRefreshCtx that extracts the context from the request.
 func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.FetchResult, error) {
