@@ -121,6 +121,29 @@ func semverCompare(a, b semver) int {
 // "-1" and "+1" are alphanumeric (strconv.Atoi would accept both), and
 // "01" is invalid as numeric. We detect digits-only ourselves and fall
 // back to lexicographic comparison for anything else.
+//
+// DELIBERATE DEVIATION from strict spec 11.4 (issue #2732): this project's
+// release tags use a single, undotted prerelease identifier of the form
+// "rc11", "rc9" -- not the dotted "rc.11" / "rc.9" the spec assumes for
+// numeric ordering. Spec 11.4.1 says a single alphanumeric identifier like
+// "rc11" is compared purely lexicographically (ASCII), which ranks
+// "rc11" < "rc9" (the digit '1' sorts before '9') even though the project
+// means rc11 to be numerically after rc9. That misranking is the exact bug:
+// the updater picked rc9 as "newer" than rc11 and offered it as an upgrade,
+// silently downgrading an operator on rc11.
+//
+// Fix: when two identifiers at the same dot-separated position are both
+// alphanumeric, share an identical alpha prefix, AND both have a trailing
+// digit run (e.g. "rc11"/"rc9" -> prefix "rc", suffixes "11"/"9"), compare
+// the alpha prefix (equal, so a no-op) and then the numeric suffix
+// NUMERICALLY instead of lexicographically. Every other case -- dotted
+// identifiers ("rc.11" vs "rc.9", handled by the aNum/bNum branches below
+// since "11" and "9" are themselves numeric identifiers), identifiers with
+// no trailing digits ("alpha" vs "beta"), identifiers with different alpha
+// prefixes ("alpha2" vs "beta1"), and one identifier with a prefix but no
+// digits ("rc" vs "rc9") -- keeps the spec-correct lexicographic path. Do
+// NOT "correct" this back to spec: the project's tag convention is rcN
+// (never zero-padded, never dotted) and this is intentional.
 func comparePrerelease(a, b string) int {
 	ap := strings.Split(a, ".")
 	bp := strings.Split(b, ".")
@@ -156,7 +179,19 @@ func comparePrerelease(a, b string) int {
 			// Alphanumeric has higher precedence than numeric.
 			return 1
 		default:
-			// Both alphanumeric: lexicographic comparison.
+			// Both alphanumeric. If they share an identical alpha prefix and
+			// both carry a trailing digit run (e.g. "rc11"/"rc9"), compare
+			// the numeric suffix numerically -- see the deviation note on
+			// comparePrerelease. Otherwise fall back to spec-correct
+			// lexicographic comparison.
+			aPrefix, aDigits, aHasDigits := splitTrailingDigits(ap[i])
+			bPrefix, bDigits, bHasDigits := splitTrailingDigits(bp[i])
+			if aHasDigits && bHasDigits && aPrefix == bPrefix {
+				if c := cmpDigitRun(aDigits, bDigits); c != 0 {
+					return c
+				}
+				continue
+			}
 			if ap[i] < bp[i] {
 				return -1
 			}
@@ -188,6 +223,45 @@ func isSemverNumeric(s string) bool {
 		return false
 	}
 	return true
+}
+
+// splitTrailingDigits splits an identifier into its alpha prefix and
+// trailing run of ASCII digits, e.g. "rc11" -> ("rc", "11", true). ok is
+// false when the identifier has no trailing digit run at all (e.g. "rc",
+// "alpha"), in which case prefix is the whole identifier and digits is
+// empty. Used only to detect the "rc11 vs rc9" undotted-tag shape; see the
+// deviation note on comparePrerelease.
+func splitTrailingDigits(s string) (prefix, digits string, ok bool) {
+	i := len(s)
+	for i > 0 && s[i-1] >= '0' && s[i-1] <= '9' {
+		i--
+	}
+	if i == len(s) {
+		return s, "", false
+	}
+	return s[:i], s[i:], true
+}
+
+// cmpDigitRun numerically compares two digit runs (as produced by
+// splitTrailingDigits) without parsing them into an int, to avoid overflow
+// on pathologically long digit strings. Unlike SemVer numeric identifiers,
+// these runs are not guaranteed free of leading zeros (they are an
+// alphanumeric identifier's suffix, not a standalone numeric identifier),
+// so leading zeros are stripped before comparing.
+func cmpDigitRun(a, b string) int {
+	a = strings.TrimLeft(a, "0")
+	b = strings.TrimLeft(b, "0")
+	if len(a) != len(b) {
+		return cmpInt(len(a), len(b))
+	}
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func cmpInt(a, b int) int {

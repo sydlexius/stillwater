@@ -97,6 +97,102 @@ func TestComparePrerelease_SemverSpec(t *testing.T) {
 	}
 }
 
+// TestComparePrerelease_UndottedRcN covers issue #2732: this project tags
+// releases with a single undotted prerelease identifier ("rc11", not
+// "rc.11"), which the plain spec-11.4 lexicographic path misranks
+// ("rc11" < "rc9", since '1' < '9') even though the tag means rc11 is
+// numerically after rc9. comparePrerelease special-cases identical
+// alpha-prefix + trailing-digit-run identifiers to compare the digit run
+// numerically instead. See the deviation note on comparePrerelease.
+func TestComparePrerelease_UndottedRcN(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b string
+		want int
+	}{
+		// The reported bug: rc11 must be newer than rc9.
+		{"rc11 > rc9", "rc11", "rc9", 1},
+		{"rc9 < rc11", "rc9", "rc11", -1},
+
+		// Numeric ordering holds across the digit-count boundary.
+		{"rc9 < rc10", "rc9", "rc10", -1},
+		{"rc10 > rc9", "rc10", "rc9", 1},
+		{"rc2 < rc10", "rc2", "rc10", -1},
+		{"rc10 > rc2", "rc10", "rc2", 1},
+
+		// Equality.
+		{"rc9 == rc9", "rc9", "rc9", 0},
+
+		// Dotted identifiers still use the existing spec-correct path:
+		// "11" and "9" are themselves numeric identifiers (aNum && bNum),
+		// so they compare numerically regardless of this fix.
+		{"rc.11 > rc.9 (dotted)", "rc.11", "rc.9", 1},
+		{"rc.9 < rc.11 (dotted)", "rc.9", "rc.11", -1},
+
+		// No trailing digits at all: plain lexicographic per spec.
+		{"alpha < beta", "alpha", "beta", -1},
+		{"beta > alpha", "beta", "alpha", 1},
+
+		// Same alpha prefix, one identifier has no trailing digit run at
+		// all ("rc") and the other does ("rc9"). Decision: this does NOT
+		// qualify for numeric comparison (both sides must have a digit
+		// run), so it falls back to plain lexicographic string comparison,
+		// where "rc" < "rc9" because "rc" is a proper prefix of "rc9".
+		{"rc < rc9 (bare prefix)", "rc", "rc9", -1},
+		{"rc9 > rc (bare prefix)", "rc9", "rc", 1},
+
+		// Different alpha prefixes with digits: the prefix decides, not
+		// the number ("alpha2" has a lexicographically smaller prefix
+		// than "beta1" regardless of 2 vs 1).
+		{"alpha2 < beta1 (prefix decides)", "alpha2", "beta1", -1},
+		{"beta1 > alpha2 (prefix decides)", "beta1", "alpha2", 1},
+
+		// Purely numeric identifiers still follow the existing numeric
+		// path (aNum && bNum in comparePrerelease), unaffected by this fix.
+		{"1 < 9 (pure numeric)", "1", "9", -1},
+		{"9 > 1 (pure numeric)", "9", "1", 1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := comparePrerelease(tc.a, tc.b); got != tc.want {
+				t.Errorf("comparePrerelease(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestComparePrerelease_RcSequenceSorts verifies the full real tag sequence
+// sorts correctly end to end: rc1 < rc2 < rc9 < rc10 < rc11.
+func TestComparePrerelease_RcSequenceSorts(t *testing.T) {
+	seq := []string{"rc1", "rc2", "rc9", "rc10", "rc11"}
+	for i := 0; i < len(seq)-1; i++ {
+		lo, hi := seq[i], seq[i+1]
+		if got := comparePrerelease(lo, hi); got != -1 {
+			t.Errorf("comparePrerelease(%q, %q) = %d, want -1", lo, hi, got)
+		}
+		if got := comparePrerelease(hi, lo); got != 1 {
+			t.Errorf("comparePrerelease(%q, %q) = %d, want 1", hi, lo, got)
+		}
+	}
+}
+
+// TestSemverCompare_ReleaseOutranksPrereleaseOfSameVersion is a focused
+// regression for issue #2732's context: a release version must still
+// outrank any prerelease of that same version, independent of the rc11-vs-
+// rc9 fix (this is the a.PreRelease == "" branch in semverCompare, not
+// comparePrerelease).
+func TestSemverCompare_ReleaseOutranksPrereleaseOfSameVersion(t *testing.T) {
+	release := semver{1, 6, 0, ""}
+	rc11 := semver{1, 6, 0, "rc11"}
+	if got := semverCompare(release, rc11); got != 1 {
+		t.Errorf("semverCompare(1.6.0, 1.6.0-rc11) = %d, want 1", got)
+	}
+	if got := semverCompare(rc11, release); got != -1 {
+		t.Errorf("semverCompare(1.6.0-rc11, 1.6.0) = %d, want -1", got)
+	}
+}
+
 func TestSemverCompare(t *testing.T) {
 	cases := []struct {
 		a    semver
