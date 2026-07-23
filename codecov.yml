@@ -1,26 +1,29 @@
-codecov:
-  notify:
-    # Hold every status notification until the merged coverage upload arrives.
-    #
-    # CI runs an 11-way test-shard matrix, but the shards do NOT upload -- the
-    # `coverage-upload` job waits for all of them, merges the profiles with
-    # gocovmerge, and performs exactly ONE upload (.github/workflows/ci.yml).
-    # Without this setting codecov posts `codecov/patch` as soon as the commit
-    # is seen, long before that upload lands, so the check reports a failing
-    # 0% for most of the run and only becomes meaningful at the very end.
-    #
-    # 1 is exact rather than a guess: it is the number of uploads this repo
-    # performs, and it stays correct however the shard matrix changes (the
-    # matrix is path-filtered down to a single shard for non-code changes,
-    # but the upload count is 1 either way).
-    after_n_builds: 1
+# NOTE ON codecov/patch TIMING -- do not "fix" this by adding after_n_builds.
+#
+# Codecov posts its commit status once `after_n_builds` uploads have arrived,
+# and that key DEFAULTS TO 1. Setting it to 1 explicitly is a no-op; an earlier
+# attempt to do exactly that changed nothing.
+#
+# The premature red 0% was caused by there being TWO uploaders, not by the
+# threshold: bruno-ci.yml uploaded Bruno coverage minutes before ci.yml's merged
+# Go profile, so the first upload to arrive carried almost no coverage of a Go
+# diff. That upload has been removed, so this repo now performs AT MOST ONE
+# upload and never more than one, and the default is correct.
+#
+# "At most one", not "exactly one": ci.yml's coverage-upload job is gated on
+# `changes.outputs.code == 'true'` and a successful test job, so a docs-only or
+# workflow-only PR produces ZERO uploads and no patch status at all. That is
+# expected. Do not "fix" a missing status on a docs-only PR.
+#
+# Raising the value is NOT the fix if a second uploader is ever reintroduced:
+# a conditional uploader makes the count variable (1 or 2), and a fixed
+# after_n_builds: 2 would leave the status pending FOREVER on any run where the
+# conditional upload is skipped -- worse than firing early. Keep the upload
+# count deterministic instead.
 
 flag_management:
   default_rules:
     carryforward: false
-  individual_flags:
-    - name: bruno
-      carryforward: true
 
 coverage:
   status:
