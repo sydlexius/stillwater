@@ -402,6 +402,30 @@ func TestPickLatestPrerelease(t *testing.T) {
 	}
 }
 
+// TestPickLatestPrereleaseUndottedRcSequence is the end-to-end regression
+// for issue #2732: pickLatest must select rc11 as newest over a realistic
+// tag set including rc9/rc10/rc11, not just the comparePrerelease unit in
+// isolation. The reported symptom was in selection (the updater told an
+// operator on rc11 that rc9 was an available "update"), so this exercises
+// the actual selector rather than only the comparator it depends on.
+func TestPickLatestPrereleaseUndottedRcSequence(t *testing.T) {
+	releases := []githubRelease{
+		{TagName: "v1.6.0-rc1", Prerelease: true},
+		{TagName: "v1.6.0-rc9", Prerelease: true},
+		{TagName: "v1.6.0-rc2", Prerelease: true},
+		{TagName: "v1.6.0-rc11", Prerelease: true},
+		{TagName: "v1.6.0-rc10", Prerelease: true},
+	}
+
+	got := pickLatest(releases, ChannelPrerelease)
+	if got == nil {
+		t.Fatal("expected a release")
+	}
+	if got.TagName != "v1.6.0-rc11" {
+		t.Errorf("prerelease latest = %q, want v1.6.0-rc11 (not rc9 -- issue #2732)", got.TagName)
+	}
+}
+
 // TestPickLatestNightly verifies that the nightly channel picks the
 // lexicographically largest "nightly-YYYYMMDD" tag and ignores semver
 // releases even when those are newer by publish order.
