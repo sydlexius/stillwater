@@ -1,3 +1,20 @@
+codecov:
+  notify:
+    # Hold every status notification until the merged coverage upload arrives.
+    #
+    # CI runs an 11-way test-shard matrix, but the shards do NOT upload -- the
+    # `coverage-upload` job waits for all of them, merges the profiles with
+    # gocovmerge, and performs exactly ONE upload (.github/workflows/ci.yml).
+    # Without this setting codecov posts `codecov/patch` as soon as the commit
+    # is seen, long before that upload lands, so the check reports a failing
+    # 0% for most of the run and only becomes meaningful at the very end.
+    #
+    # 1 is exact rather than a guess: it is the number of uploads this repo
+    # performs, and it stays correct however the shard matrix changes (the
+    # matrix is path-filtered down to a single shard for non-code changes,
+    # but the upload count is 1 either way).
+    after_n_builds: 1
+
 flag_management:
   default_rules:
     carryforward: false
