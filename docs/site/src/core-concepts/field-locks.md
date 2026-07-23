@@ -15,7 +15,7 @@ There are two layers of locks, plus a library-wide switch. Each protects against
 
 The simplest lock: an entire artist is locked or not. When an artist is locked:
 
-- **Provider refreshes** skip the artist entirely.
+- **Provider refreshes** skip the artist entirely -- the per-artist **Refresh** button, a bulk refresh sweep, and the Discography tab's **Fetch discography**.
 - **Rule fixers** see the lock and decline to apply changes.
 - **The NFO** Stillwater writes for the artist asks Kodi/Emby/Jellyfin not to overwrite it during their own metadata scans (via `<lockdata>true</lockdata>`).
 

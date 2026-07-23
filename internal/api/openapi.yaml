@@ -7563,6 +7563,12 @@ paths:
                   mbid:
                     type: string
                     description: MusicBrainz ID that was linked.
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the provider ID was persisted but
+                      the follow-up metadata refresh was suppressed because the
+                      artist is locked. Omitted otherwise.
         "400":
           description: Invalid request body or missing required fields
           content:
@@ -13009,7 +13015,8 @@ paths:
       summary: Refresh artist metadata from providers
       description: >
         Triggers a full metadata refresh. If the artist has no MusicBrainz ID,
-        returns a disambiguation prompt instead.
+        returns a disambiguation prompt instead. If the artist is locked, no
+        provider work is performed and the locked-skip result is returned.
       operationId: refreshArtist
       parameters:
         - name: id
@@ -13019,7 +13026,12 @@ paths:
             type: string
       responses:
         "200":
-          description: Refresh result or disambiguation prompt (returns HTML fragment when HX-Request header is set)
+          description: >
+            Refresh result, disambiguation prompt, or locked-skip result
+            (returns an HTML fragment when the HX-Request header is set). A
+            locked artist returns status "skipped_locked" with no provider
+            fetch, no merge and no NFO publish; the artist-level lock is
+            honored here exactly as it is on the bulk refresh path.
           content:
             application/json:
               schema:
@@ -13027,7 +13039,23 @@ paths:
                 properties:
                   status:
                     type: string
-                    description: Result status of the metadata refresh.
+                    description: >
+                      Result status of the metadata refresh. One of
+                      "refreshed" (the refresh ran), "disambiguation_required"
+                      (the artist has no MusicBrainz ID) or "skipped_locked"
+                      (the artist is locked, so no provider work was done).
+                  artist:
+                    type: string
+                    description: >
+                      Artist name. Present on the "disambiguation_required" and
+                      "skipped_locked" results, which explain a non-outcome to
+                      the operator; absent on "refreshed".
+                  message:
+                    type: string
+                    description: >
+                      Operator-facing explanation. Present on the
+                      "disambiguation_required" and "skipped_locked" results;
+                      absent on "refreshed".
                   sources:
                     type: array
                     items:
@@ -13150,7 +13178,13 @@ paths:
                   type: string
       responses:
         "200":
-          description: Linked and refreshed (returns HTML fragment when HX-Request header is set)
+          description: >
+            Linked and refreshed, or linked with the refresh skipped (returns
+            an HTML fragment when the HX-Request header is set). The chosen
+            provider ID is always persisted, because selecting an identity is
+            a manual edit that the artist lock permits. When the artist is
+            locked the follow-up refresh is suppressed and the response
+            carries status "skipped_locked".
           content:
             application/json:
               schema:
@@ -13158,7 +13192,21 @@ paths:
                 properties:
                   status:
                     type: string
-                    description: Result status of the metadata refresh.
+                    description: >
+                      Result status. "linked_and_refreshed" when the refresh
+                      ran, or "skipped_locked" when the artist lock suppressed
+                      it (the provider ID is persisted either way).
+                  artist:
+                    type: string
+                    description: >
+                      Artist name. Present only on the "skipped_locked" result,
+                      which shares one response body with the plain refresh
+                      route's locked-skip; absent on "linked_and_refreshed".
+                  message:
+                    type: string
+                    description: >
+                      Operator-facing explanation of the skip. Present only on
+                      the "skipped_locked" result.
                   sources:
                     type: array
                     items:
@@ -13353,6 +13401,12 @@ paths:
                     type: string
                   deezer_id:
                     type: string
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the provider ID was persisted but
+                      the follow-up metadata refresh was suppressed because the
+                      artist is locked. Omitted otherwise.
             text/html:
               schema:
                 type: string
@@ -13555,6 +13609,12 @@ paths:
                     type: string
                   discogs_id:
                     type: string
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the provider ID was persisted but
+                      the follow-up metadata refresh was suppressed because the
+                      artist is locked. Omitted otherwise.
             text/html:
               schema:
                 type: string
@@ -13766,6 +13826,12 @@ paths:
                     type: string
                   audiodb_id:
                     type: string
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the provider ID was persisted but
+                      the follow-up metadata refresh was suppressed because the
+                      artist is locked. Omitted otherwise.
             text/html:
               schema:
                 type: string
@@ -13820,6 +13886,9 @@ paths:
         them into the on-disk artist.nfo, and writes the result atomically. The
         merge preserves existing entries and user-added albums. Returns counts
         of added, kept, skipped, and total release groups. Requires admin role.
+
+        If the artist is locked, no MusicBrainz query is made and artist.nfo is
+        not written; the locked-skip result is returned instead.
       parameters:
         - name: id
           in: path
@@ -13840,29 +13909,51 @@ paths:
             Defaults to "Album,EP" when omitted.
       responses:
         "200":
-          description: Fetch completed; returns counts for the merge operation.
+          description: >
+            Fetch completed (returns counts for the merge operation), or the
+            fetch was skipped because the artist is locked.
           content:
             application/json:
               schema:
-                type: object
-                required: [added, kept, skipped, total]
-                properties:
-                  added:
-                    type: integer
-                    description: Number of new release groups written to the NFO.
-                  kept:
-                    type: integer
-                    description: Number of existing NFO entries matched and preserved.
-                  skipped:
-                    type: integer
-                    description: Number of release groups filtered out (wrong type) or already present.
-                  total:
-                    type: integer
-                    description: Total release groups returned by MusicBrainz before filtering.
+                oneOf:
+                  - type: object
+                    required: [added, kept, skipped, total]
+                    properties:
+                      added:
+                        type: integer
+                        description: Number of new release groups written to the NFO.
+                      kept:
+                        type: integer
+                        description: Number of existing NFO entries matched and preserved.
+                      skipped:
+                        type: integer
+                        description: Number of release groups filtered out (wrong type) or already present.
+                      total:
+                        type: integer
+                        description: Total release groups returned by MusicBrainz before filtering.
+                  - type: object
+                    required: [status, artist, message]
+                    properties:
+                      status:
+                        type: string
+                        enum: [skipped_locked]
+                        description: >
+                          "skipped_locked" when the artist-level lock suppressed
+                          the fetch. No MusicBrainz query was made and
+                          artist.nfo was not written.
+                      artist:
+                        type: string
+                        description: Name of the locked artist.
+                      message:
+                        type: string
+                        description: Operator-facing explanation of the skip.
             text/html:
               schema:
                 type: string
-                description: Re-rendered Discography tab partial returned to HTMX callers.
+                description: >
+                  Re-rendered Discography tab partial returned to HTMX callers.
+                  On the locked-skip path the same partial is returned with the
+                  album list unchanged and the status line explaining the skip.
         "400":
           description: >
             Bad request. Possible reasons: artist has no MusicBrainz ID, or

@@ -203,6 +203,21 @@ templ RefreshResultSummary(artistID string, sources []provider.FieldSource) {
 	</div>
 }
 
+// RefreshSkippedLocked reports that the artist-level lock suppressed a refresh.
+// It is deliberately shaped like RefreshError (heading + one line of body copy)
+// but styled amber/warn to match the hero's lock chip, because a locked artist
+// is the contract working rather than a failure.
+//
+// It takes no artist argument: the fragment is swapped into #refresh-panel on
+// the artist's own detail page, so the name is already on screen. (The JSON
+// branch does carry "artist" because a non-HTMX caller has no such context.)
+templ RefreshSkippedLocked() {
+	<div class="rounded-lg p-4" style="border:1px solid var(--swd-warn);background:var(--swd-warn-soft);color:var(--swd-warn)">
+		<h3 class="font-semibold text-sm mb-1">{ t(ctx, "artist.refresh_skipped_locked") }</h3>
+		<p class="text-sm">{ t(ctx, "artist.locked_banner") }</p>
+	</div>
+}
+
 // RefreshError shows an error from a failed refresh attempt.
 templ RefreshError(message string) {
 	<div class="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-4">

@@ -733,3 +733,90 @@ func TestHandleDiscogsIdentify_ServiceUnavailable(t *testing.T) {
 		t.Fatalf("status = %d, want 503; body=%s", w.Code, w.Body.String())
 	}
 }
+
+// postDiscogsLink drives handleDiscogsLink with the {id} path value set.
+func postDiscogsLink(t *testing.T, r *Router, artistID, discogsID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+artistID+"/discogs/link",
+		strings.NewReader(`{"discogs_id":"`+discogsID+`"}`))
+	req.SetPathValue("id", artistID)
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+	r.handleDiscogsLink(w, req)
+	return w
+}
+
+// TestHandleDiscogsLink_LockedArtistSkipsRefresh is the Discogs half of the
+// artist-lock split described on TestHandleDeezerLink_LockedArtistSkipsRefresh:
+// the provider ID persists, the follow-up refresh does not run (#2754).
+//
+// As there, the sentinel-biography assertion (not the response flag) is what
+// proves the refresh was never invoked; see attachSentinelOrchestrator.
+func TestHandleDiscogsLink_LockedArtistSkipsRefresh(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	attachSentinelOrchestrator(t, r)
+	a := addTestArtist(t, artistSvc, "Locked Link DG")
+	if err := artistSvc.Lock(context.Background(), a.ID, "user"); err != nil {
+		t.Fatalf("locking artist: %v", err)
+	}
+	locked, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !locked.Locked {
+		t.Fatal("precondition failed: artist is not locked after Lock")
+	}
+	if locked.Biography != "" {
+		t.Fatalf("precondition failed: artist already has a biography (%q), so its absence would prove nothing", locked.Biography)
+	}
+
+	w := postDiscogsLink(t, r, a.ID, "3840")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["refresh_skipped_locked"] != true {
+		t.Errorf("refresh_skipped_locked = %v, want true; body=%v", resp["refresh_skipped_locked"], resp)
+	}
+
+	reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.DiscogsID != "3840" {
+		t.Errorf("DiscogsID = %q, want 3840; the ID is a manual edit the lock allows", reloaded.DiscogsID)
+	}
+	assertSentinelBiographyAbsent(t, artistSvc, a.ID)
+}
+
+// TestHandleDiscogsLink_UnlockedArtistStillRefreshes is the positive control for
+// the test above.
+func TestHandleDiscogsLink_UnlockedArtistStillRefreshes(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	attachSentinelOrchestrator(t, r)
+	a := addTestArtist(t, artistSvc, "Unlocked Link DG")
+	if a.Locked {
+		t.Fatal("precondition failed: artist is locked; this test covers the unlocked path")
+	}
+
+	w := postDiscogsLink(t, r, a.ID, "3840")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if _, present := resp["refresh_skipped_locked"]; present {
+		t.Errorf("refresh_skipped_locked present on an unlocked artist; body=%v", resp)
+	}
+	assertSentinelBiographyPresent(t, artistSvc, a.ID)
+}

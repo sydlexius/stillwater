@@ -684,3 +684,101 @@ func TestHandleDeezerIdentify_ServiceUnavailable(t *testing.T) {
 		t.Fatalf("status = %d, want 503; body=%s", w.Code, w.Body.String())
 	}
 }
+
+// postDeezerLink drives handleDeezerLink with the {id} path value set.
+func postDeezerLink(t *testing.T, r *Router, artistID, deezerID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+artistID+"/deezer/link",
+		strings.NewReader(`{"deezer_id":"`+deezerID+`"}`))
+	req.SetPathValue("id", artistID)
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+	r.handleDeezerLink(w, req)
+	return w
+}
+
+// TestHandleDeezerLink_LockedArtistSkipsRefresh covers the artist-lock split on
+// the Deezer link path (#2754), which autoLinkAndRefresh implements once for
+// every link handler: the caller-chosen provider ID is a manual edit the lock
+// permits and is still persisted, while the automated refresh that normally
+// follows is suppressed and reported as refresh_skipped_locked.
+//
+// The load-bearing assertion is the ABSENT sentinel biography, not the response
+// flag. A router with no orchestrator cannot refresh at all, so a flag-only
+// test would stay green against an implementation that set the flag and then
+// ran executeRefreshCtx anyway; attachSentinelOrchestrator is what closes that
+// hole. Its paired positive control is
+// TestHandleDeezerLink_UnlockedArtistStillRefreshes.
+func TestHandleDeezerLink_LockedArtistSkipsRefresh(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	attachSentinelOrchestrator(t, r)
+	a := addTestArtist(t, artistSvc, "Locked Link DZ")
+	if err := artistSvc.Lock(context.Background(), a.ID, "user"); err != nil {
+		t.Fatalf("locking artist: %v", err)
+	}
+	// Precondition: the lock actually stuck. Without it the assertions below
+	// would describe the ordinary success path, not the locked one.
+	locked, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !locked.Locked {
+		t.Fatal("precondition failed: artist is not locked after Lock")
+	}
+	if locked.Biography != "" {
+		t.Fatalf("precondition failed: artist already has a biography (%q), so its absence would prove nothing", locked.Biography)
+	}
+
+	w := postDeezerLink(t, r, a.ID, "4050205")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["refresh_skipped_locked"] != true {
+		t.Errorf("refresh_skipped_locked = %v, want true; body=%v", resp["refresh_skipped_locked"], resp)
+	}
+
+	reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.DeezerID != "4050205" {
+		t.Errorf("DeezerID = %q, want 4050205; the ID is a manual edit the lock allows", reloaded.DeezerID)
+	}
+	assertSentinelBiographyAbsent(t, artistSvc, a.ID)
+}
+
+// TestHandleDeezerLink_UnlockedArtistStillRefreshes is the positive control for
+// the test above: it proves the stubbed orchestrator genuinely lands the
+// sentinel biography when no lock intervenes, so the locked test's "biography
+// is empty" assertion is a real observation rather than a broken-for-everyone
+// no-op.
+func TestHandleDeezerLink_UnlockedArtistStillRefreshes(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	attachSentinelOrchestrator(t, r)
+	a := addTestArtist(t, artistSvc, "Unlocked Link DZ")
+	if a.Locked {
+		t.Fatal("precondition failed: artist is locked; this test covers the unlocked path")
+	}
+
+	w := postDeezerLink(t, r, a.ID, "4050205")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if _, present := resp["refresh_skipped_locked"]; present {
+		t.Errorf("refresh_skipped_locked present on an unlocked artist; body=%v", resp)
+	}
+	assertSentinelBiographyPresent(t, artistSvc, a.ID)
+}

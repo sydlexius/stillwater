@@ -169,7 +169,8 @@ func (r *Router) handleAudioDBLink(w http.ResponseWriter, req *http.Request) {
 
 	a.AudioDBID = audiodbID
 
-	if err := r.autoLinkAndRefresh(req.Context(), a); err != nil {
+	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a)
+	if err != nil {
 		r.logger.Error("audiodb link: updating artist", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to link TheAudioDB ID")
 		return
@@ -209,11 +210,18 @@ func (r *Router) handleAudioDBLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":     "linked",
 		"artist_id":  a.ID,
 		"audiodb_id": a.AudioDBID,
-	})
+	}
+	if refreshSkipped {
+		// The TheAudioDB ID was persisted (a manual edit the lock allows) but
+		// the provider refresh that normally follows was suppressed by the
+		// artist-level lock.
+		resp["refresh_skipped_locked"] = true
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // enrichAudioDBCandidates scores TheAudioDB search results by album-discography

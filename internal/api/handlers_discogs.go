@@ -163,7 +163,8 @@ func (r *Router) handleDiscogsLink(w http.ResponseWriter, req *http.Request) {
 
 	a.DiscogsID = discogsID
 
-	if err := r.autoLinkAndRefresh(req.Context(), a); err != nil {
+	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a)
+	if err != nil {
 		r.logger.Error("discogs link: updating artist", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to link Discogs ID")
 		return
@@ -203,11 +204,18 @@ func (r *Router) handleDiscogsLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":     "linked",
 		"artist_id":  a.ID,
 		"discogs_id": a.DiscogsID,
-	})
+	}
+	if refreshSkipped {
+		// The Discogs ID was persisted (a manual edit the lock allows) but the
+		// provider refresh that normally follows was suppressed by the
+		// artist-level lock.
+		resp["refresh_skipped_locked"] = true
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // enrichDiscogsCandidates scores Discogs search results by album-discography

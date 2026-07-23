@@ -1,6 +1,10 @@
 package rule
 
-import "log/slog"
+import (
+	"log/slog"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+)
 
 // providerCapability enumerates the provider-access capabilities a rule must
 // declare before its checker can reach a provider handle. It is the structural
@@ -75,39 +79,83 @@ func (e *Engine) denyProvider(ruleID string, capability providerCapability, hand
 		slog.String("handle", handle))
 }
 
+// providerDeniedByLock reports whether a is locked, and logs the denial when it
+// is. A locked artist is one the operator has declared finished: Stillwater must
+// not reach out to a provider on its behalf, because any answer it gets back is
+// something it is forbidden to act on. The lock explicitly still permits manual
+// edits, and a manual edit publishes ArtistUpdated, which the rule-health
+// subscriber turns into a full Evaluate -- so without this gate a locked artist
+// generates unrequested outbound provider traffic in the background with no
+// operator action at all (#2754).
+//
+// The gate lives HERE, on the shared accessors, rather than inside any one
+// checker, so it covers the whole CLASS: every present and future checker
+// reaches a provider through these three functions and nowhere else (that is the
+// #2476 structural guarantee), so a new provider-backed checker inherits the
+// lock gate without its author having to remember it.
+//
+// Deliberately narrow: this suppresses the provider FETCH only. It does not
+// touch rule eligibility, so a locked artist is still fully evaluated by every
+// local-state rule and still receives a real health score. Gating at eligibility
+// instead would blank the health score of every locked artist.
+//
+// a may be nil at call sites that have no artist in hand; a nil artist cannot be
+// locked, so the fetch proceeds.
+func (e *Engine) providerDeniedByLock(ruleID string, a *artist.Artist, handle string) bool {
+	if a == nil || !a.Locked {
+		return false
+	}
+	e.logger.Debug("skipping provider fetch: artist is locked",
+		slog.String("rule_id", ruleID),
+		slog.String("artist_id", a.ID),
+		slog.String("artist", a.Name),
+		slog.String("handle", handle))
+	return true
+}
+
 // metadataProviderFor is the SOLE path to e.metadataProvider. It returns the
-// provider only when ruleID declares capExternalProvider; otherwise it logs an
-// error and returns nil so an undeclared checker cannot reach a third-party
-// metadata API. A returned nil may also simply mean the provider is unwired
-// (SetMetadataProvider never called) -- both are handled identically by the
+// provider only when ruleID declares capExternalProvider AND the artist is not
+// locked; otherwise it returns nil (logging the reason) so an undeclared checker
+// cannot reach a third-party metadata API and a locked artist generates no
+// outbound traffic. A returned nil may also simply mean the provider is unwired
+// (SetMetadataProvider never called) -- all three are handled identically by the
 // caller, which degrades to a no-op.
-func (e *Engine) metadataProviderFor(ruleID string) MetadataProvider {
+func (e *Engine) metadataProviderFor(ruleID string, a *artist.Artist) MetadataProvider {
 	if !e.ruleHasProviderCapability(ruleID, capExternalProvider) {
 		e.denyProvider(ruleID, capExternalProvider, "metadata_provider")
+		return nil
+	}
+	if e.providerDeniedByLock(ruleID, a, "metadata_provider") {
 		return nil
 	}
 	return e.metadataProvider
 }
 
 // releaseGroupFetcherFor is the SOLE path to e.releaseGroupFetcher. It returns
-// the fetcher only when ruleID declares capExternalProvider; otherwise it logs
-// an error and returns nil.
-func (e *Engine) releaseGroupFetcherFor(ruleID string) ReleaseGroupFetcher {
+// the fetcher only when ruleID declares capExternalProvider and the artist is
+// not locked; otherwise it returns nil after logging the reason.
+func (e *Engine) releaseGroupFetcherFor(ruleID string, a *artist.Artist) ReleaseGroupFetcher {
 	if !e.ruleHasProviderCapability(ruleID, capExternalProvider) {
 		e.denyProvider(ruleID, capExternalProvider, "release_group_fetcher")
+		return nil
+	}
+	if e.providerDeniedByLock(ruleID, a, "release_group_fetcher") {
 		return nil
 	}
 	return e.releaseGroupFetcher
 }
 
 // platformImageFetcherFor is the SOLE path to e.imageFetcher. It returns the
-// fetcher only when ruleID declares capNetworkDependent; otherwise it logs an
-// error and returns nil. capExternalProvider rules also satisfy this (the
-// subset relationship), but none of the current provider-dependent rules need
-// both handles.
-func (e *Engine) platformImageFetcherFor(ruleID string) PlatformImageFetcher {
+// fetcher only when ruleID declares capNetworkDependent and the artist is not
+// locked; otherwise it returns nil after logging the reason. capExternalProvider
+// rules also satisfy the capability side (the subset relationship), but none of
+// the current provider-dependent rules need both handles.
+func (e *Engine) platformImageFetcherFor(ruleID string, a *artist.Artist) PlatformImageFetcher {
 	if !e.ruleHasProviderCapability(ruleID, capNetworkDependent) {
 		e.denyProvider(ruleID, capNetworkDependent, "platform_image_fetcher")
+		return nil
+	}
+	if e.providerDeniedByLock(ruleID, a, "platform_image_fetcher") {
 		return nil
 	}
 	return e.imageFetcher

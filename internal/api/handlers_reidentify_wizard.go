@@ -489,7 +489,10 @@ func (r *Router) handleReIdentifyWizardAccept(w http.ResponseWriter, req *http.R
 	if body.DiscogsID != "" {
 		a.DiscogsID = body.DiscogsID
 	}
-	if err := r.autoLinkAndRefresh(req.Context(), a); err != nil {
+	// The wizard advances to the next step either way; the skip flag is
+	// reported by the link endpoints that answer with their own JSON, not by
+	// this navigation response.
+	if _, err := r.autoLinkAndRefresh(req.Context(), a); err != nil {
 		r.logger.Error("reidentify wizard: accept failed", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to link artist")
 		return

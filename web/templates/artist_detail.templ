@@ -361,6 +361,16 @@ templ artistHero(assets AssetPaths, data ArtistDetailPageData) {
 				// in-flight indicator it looked like "nothing happens" (UAT). hx-indicator
 				// reveals a spinner and hx-disabled-elt disables the button for the
 				// duration; failures surface via the global htmx:responseError toast.
+				//
+				// A locked artist gets the NATIVE disabled attribute, not
+				// aria-disabled alone: the "r" shortcut resolves
+				// [data-sw-shortcut="r"] and calls .click() with no disabled
+				// check of its own, and only a natively-disabled button
+				// swallows that click. aria-disabled is set alongside it for
+				// assistive tech, and the title explains why. The element stays
+				// in the DOM so the layout and the shortcut registry are
+				// stable. This is a courtesy only -- the server-side gate in
+				// handleArtistRefresh is the authority.
 				<button
 					id="next-hero-refresh-btn"
 					type="button"
@@ -373,6 +383,11 @@ templ artistHero(assets AssetPaths, data ArtistDetailPageData) {
 					hx-disabled-elt="this"
 					data-sw-shortcut="r"
 					data-sw-shortcut-label={ t(ctx, "artist.refresh_metadata") }
+					disabled?={ a.Locked }
+					if a.Locked {
+						aria-disabled="true"
+						title={ t(ctx, "artist.help.locked_chip") }
+					}
 				>
 					@components.IconArrowPath("sw-next-refresh-icon h-4 w-4")
 					{ t(ctx, "common.refresh") }

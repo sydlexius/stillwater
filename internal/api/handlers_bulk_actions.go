@@ -609,9 +609,12 @@ func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.A
 	// refresh_metadata joins that set because the artist-lock contract the UI
 	// states is explicit -- "This artist is locked. Provider refreshes and
 	// rule fixers will not make automated changes" (artist.help.locked_chip).
-	// The per-artist Refresh button is a deliberate manual act on one artist
-	// and is not gated; a bulk sweep is exactly the automated change the lock
-	// promises to skip.
+	// The per-artist Refresh button honors the same rule (#2754): the gate in
+	// handleArtistRefresh answers a locked artist with status "skipped_locked"
+	// and performs no provider work, so both paths now state one contract.
+	// Note the difference in scope: this gate also skips excluded artists,
+	// because exclusion is a bulk-sweep concept; the single-artist gate is on
+	// a.Locked alone.
 	if (action == BulkActionRunRules || action == BulkActionFetchImages ||
 		action == BulkActionScan || action == BulkActionRefreshMetadata) &&
 		(a.IsExcluded || a.Locked) {

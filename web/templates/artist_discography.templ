@@ -12,6 +12,12 @@ type DiscographyTabData struct {
 	// the count summary into #discography-fetch-msg. Both zero means no message.
 	FetchAdded int
 	FetchTotal int
+	// SkippedLocked is set when a fetch was requested but the artist-level lock
+	// suppressed it. It renders the explanation into the same aria-live status
+	// line the count summary uses, so the operator gets an answer in place
+	// rather than a silent no-op. It is mutually exclusive with FetchAdded /
+	// FetchTotal: the locked path never reaches the merge that produces them.
+	SkippedLocked bool
 }
 
 // ArtistDiscographyTab renders the discography list for the artist detail page.
@@ -23,13 +29,21 @@ templ ArtistDiscographyTab(data DiscographyTabData) {
 		class="space-y-4"
 	>
 		<div class="flex items-center justify-between">
+			// The locked-skip message is amber, matching the hero's lock chip and
+			// the refresh panel's locked fragment: a locked artist is the contract
+			// working, so it reads as a warning rather than a neutral count.
 			<p
 				id="discography-fetch-msg"
 				role="status"
 				aria-live="polite"
 				class="text-xs text-gray-500 dark:text-gray-400"
+				if data.SkippedLocked {
+					style="color:var(--swd-warn)"
+				}
 			>
-				if data.FetchAdded > 0 || data.FetchTotal > 0 {
+				if data.SkippedLocked {
+					{ t(ctx, "artist.discography.fetch.skipped_locked") }
+				} else if data.FetchAdded > 0 || data.FetchTotal > 0 {
 					{ tf(ctx, "artist.discography.fetch.summary", data.FetchAdded, data.FetchTotal) }
 				}
 			</p>
