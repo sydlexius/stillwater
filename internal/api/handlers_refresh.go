@@ -341,13 +341,16 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 	}
 
 	// Apply fetched metadata to the artist using the shared merge helper.
+	// a.LockedFields is deliberately not passed: ApplyMetadata reads the
+	// artist's per-field locks off the artist itself on every path, so passing
+	// them here would be a no-op duplicate and would re-teach the "each caller
+	// must remember" pattern that caused issue #2749.
 	if u := artist.FetchResultToUpdate(result); u != nil {
 		artist.ApplyMetadata(a, u, artist.OverwriteAttempted, artist.MergeOptions{
 			AttemptedFields:   result.AttemptedFields,
 			PopulatedFields:   result.PopulatedFields,
 			FilterDatesByType: true,
 			Sources:           result.Sources,
-			LockedFields:      a.LockedFields,
 		})
 	}
 

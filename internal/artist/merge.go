@@ -1,6 +1,7 @@
 package artist
 
 import (
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -87,9 +88,15 @@ type MergeOptions struct {
 	// populates a.MetadataSources.
 	Sources []provider.FieldSource
 
-	// LockedFields lists field names that must not be overwritten regardless
-	// of strategy. Compared case-insensitively. Used by the refresh path so a
-	// user's pinned values survive provider refetches.
+	// LockedFields lists ADDITIONAL field names that must not be overwritten,
+	// regardless of strategy. Compared case-insensitively.
+	//
+	// Callers do NOT need to populate this to honor an operator's per-field
+	// locks: ApplyMetadata always reads Artist.LockedFields off the artist it
+	// is merging into and unions it with this slice (issue #2749). Leaving
+	// this nil is the safe default -- the artist's own persisted locks are
+	// still enforced. Use it only for locks that exist for the duration of one
+	// call and are not persisted on the artist.
 	LockedFields []string
 }
 
@@ -295,22 +302,31 @@ func isLocked(locked map[string]struct{}, field string) bool {
 	return ok
 }
 
-// buildLockedSet normalizes a locked-fields slice to a lowercase lookup set.
-// Blank and whitespace-only tokens are dropped so a slice like []{"", " "}
-// produces a nil set rather than one that would match a lookup for "".
-// Returns nil when no valid tokens remain so isLocked can short-circuit on
-// len==0 without allocating.
-func buildLockedSet(fields []string) map[string]struct{} {
-	if len(fields) == 0 {
+// buildLockedSet normalizes one or more locked-fields slices into a single
+// lowercase lookup set. Blank and whitespace-only tokens are dropped so a
+// slice like []{"", " "} produces a nil set rather than one that would match a
+// lookup for "". Returns nil when no valid tokens remain so isLocked can
+// short-circuit on len==0 without allocating.
+//
+// It takes multiple slices because ApplyMetadata unions the artist's own
+// persisted Artist.LockedFields with any per-call MergeOptions.LockedFields.
+func buildLockedSet(fieldSets ...[]string) map[string]struct{} {
+	total := 0
+	for _, fields := range fieldSets {
+		total += len(fields)
+	}
+	if total == 0 {
 		return nil
 	}
-	out := make(map[string]struct{}, len(fields))
-	for _, f := range fields {
-		key := strings.ToLower(strings.TrimSpace(f))
-		if key == "" {
-			continue
+	out := make(map[string]struct{}, total)
+	for _, fields := range fieldSets {
+		for _, f := range fields {
+			key := strings.ToLower(strings.TrimSpace(f))
+			if key == "" {
+				continue
+			}
+			out[key] = struct{}{}
 		}
-		out[key] = struct{}{}
 	}
 	if len(out) == 0 {
 		return nil
@@ -318,17 +334,85 @@ func buildLockedSet(fields []string) map[string]struct{} {
 	return out
 }
 
+// mergeableFieldNames is the set of field names the merge tables above can
+// actually gate on. Built once at init from the same tables that drive
+// applyFields, so it can never drift from them.
+var mergeableFieldNames = func() map[string]struct{} {
+	out := make(map[string]struct{}, len(mergeStrFields)+len(mergeSliceFields))
+	for _, f := range mergeStrFields {
+		out[f.name] = struct{}{}
+	}
+	for _, f := range mergeSliceFields {
+		out[f.name] = struct{}{}
+	}
+	return out
+}()
+
+// lockableFieldNames is the full vocabulary of meaningful lock tokens: every
+// field the merge engine can gate, plus every field the rest of the app treats
+// as lockable (e.g. "members", which is a separate relation rather than a
+// merge-table column, so a lock on it is honored elsewhere and must not be
+// reported as unknown here).
+var lockableFieldNames = func() map[string]struct{} {
+	out := make(map[string]struct{}, len(mergeableFieldNames)+len(AllLockableFields))
+	for name := range mergeableFieldNames {
+		out[name] = struct{}{}
+	}
+	for _, f := range AllLockableFields {
+		out[strings.ToLower(string(f))] = struct{}{}
+	}
+	return out
+}()
+
+// reportUnenforceableLocks logs an error for any lock token that matches no
+// known lockable field. Such a token protects nothing anywhere in the
+// codebase -- the operator asked for a guarantee the system cannot deliver --
+// so per the no-silent-failure rule it fails loudly instead of being dropped
+// on the floor. Callers still proceed: the enforceable locks in the same set
+// are honored normally.
+func reportUnenforceableLocks(a *Artist, locked map[string]struct{}) {
+	var unknown []string
+	for name := range locked {
+		if _, ok := lockableFieldNames[name]; !ok {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) == 0 {
+		return
+	}
+	slices.Sort(unknown) // stable output; map iteration order is random
+	artistID := ""
+	if a != nil {
+		artistID = a.ID
+	}
+	slog.Error("locked field name is not a recognized field; this lock cannot be enforced and the value is unprotected",
+		"artist_id", artistID,
+		"unknown_locked_fields", unknown)
+}
+
 // ApplyMetadata merges incoming metadata into an Artist using the specified
 // strategy. Returns true if any field was modified.
+//
+// Per-field locks are enforced on EVERY path and for EVERY strategy. The
+// enforced set is the union of the artist's own persisted Artist.LockedFields
+// and any per-call MergeOptions.LockedFields, so a caller cannot accidentally
+// opt an operator's pinned values out of protection by passing a zero
+// MergeOptions (issue #2749: the scan and bulk-rule paths did exactly that,
+// and a lock the operator had applied was silently overwritten on the next
+// scan). Safe behavior is what you get by doing nothing.
 func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts MergeOptions) bool {
-	if u == nil {
+	if a == nil || u == nil {
 		return false
 	}
 	if strategy < OverwriteAttempted || strategy > SnapshotRestore {
 		return false
 	}
 
-	locked := buildLockedSet(opts.LockedFields)
+	// Derived from the artist itself, not from the caller: this is what makes
+	// the lock contract hold on every call site rather than only the ones that
+	// remembered to populate opts.
+	locked := buildLockedSet(a.LockedFields, opts.LockedFields)
+	reportUnenforceableLocks(a, locked)
 
 	attempted := make(map[string]bool, len(opts.AttemptedFields))
 	for _, f := range opts.AttemptedFields {
