@@ -539,22 +539,84 @@ echo "OK"
 
 echo ""
 echo "=== OpenAPI breaking changes ==="
-if command -v oasdiff &>/dev/null; then
+# Pinned to v1.25.1: the previously-installed "main" dev build cannot parse
+# this spec's OpenAPI 3.1 dialect at all -- it models exclusiveMinimum as a
+# bool (3.0 semantics) and hard-fails on the numeric form 3.1 requires (see
+# internal/api/openapi.yaml's exclusiveMinimum comment, and #2759). v1.25.1
+# was confirmed to parse this spec cleanly and to correctly flag a real
+# breaking change (verified by deliberately removing a path and confirming
+# the tool reports it, then reverting).
+#
+# The previous version of this step folded stderr into stdout (`2>&1`) and
+# discarded the exit code (`|| true`), so a hard parser failure -- output on
+# stderr, but nothing "breaking" was ever actually computed -- was announced
+# to the operator as "WARNING: Breaking OpenAPI changes detected", i.e. a
+# tool crash reported as a finding (#2759). Fixed by capturing stdout and
+# stderr separately and branching on the real exit code, giving three
+# distinct, unambiguous outcomes: tool failed to run at all (FAIL, loud),
+# ran clean, or ran and found a real breaking change.
+# SKIP_OPENAPI_BREAKING three-state gate, mirroring the RUN_RACE pattern
+# above and the RUN_A11Y pattern further down:
+#   - SKIP_OPENAPI_BREAKING truthy (1/true/yes/on): skip this entire step
+#     (install + diff), unconditionally. This is an explicit operator
+#     override for a DELIBERATE breaking change -- it suppresses not just a
+#     real breaking-change FAIL but also a tool-crash or go-not-installed
+#     FAIL, since the whole point is "let me push anyway, I've verified this
+#     intentionally". CI's spectral lint (openapi.yml) still validates the
+#     spec independently; this only bypasses the LOCAL breaking-change diff.
+#   - SKIP_OPENAPI_BREAKING unset/falsy (the DEFAULT): run the step exactly
+#     as before -- rc=0 clean, rc=1 hard FAIL exit 1, rc!=0/1 (tool crash) or
+#     go missing hard FAIL exit 1.
+openapi_skip_flag="$(printf '%s' "${SKIP_OPENAPI_BREAKING:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$openapi_skip_flag" in
+  1 | true | yes | on)
+    echo "Skipped (SKIP_OPENAPI_BREAKING is set; CI does not gate breaking OpenAPI changes, so verify intentional breaks manually)"
+    ;;
+  *)
+if command -v go &>/dev/null; then
   tmp_openapi="$SW_RUN_DIR/openapi-base.yaml"
-  if git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
-    breaking=$(oasdiff breaking "$tmp_openapi" internal/api/openapi.yaml 2>&1 || true)
-    if [ -n "$breaking" ]; then
-      echo "WARNING: Breaking OpenAPI changes detected (may be intentional):"
-      echo "$breaking"
-    else
-      echo "No breaking changes."
+  oasdiff_err="$SW_RUN_DIR/oasdiff-stderr.txt"
+  # Install the pinned binary into the run-dir rather than `go run`: `go run`
+  # wraps the child's real exit code in its own (uniformly 1 on any child
+  # non-zero exit, per `go help run`), which would collapse the "tool
+  # crashed" (real exit 102) and "found breaking changes" (real exit 1)
+  # cases into the same code and defeat the three-way branch below.
+  oasdiff_bin="$SW_RUN_DIR/oasdiff-v1.25.1"
+  if [ ! -x "$oasdiff_bin" ]; then
+    if ! GOBIN="$SW_RUN_DIR" go install github.com/oasdiff/oasdiff@v1.25.1 2>"$oasdiff_err"; then
+      echo "FAIL: could not install oasdiff@v1.25.1 -- breaking-change detection is unavailable:" >&2
+      cat "$oasdiff_err" >&2
+      exit 1
     fi
+    mv "$SW_RUN_DIR/oasdiff" "$oasdiff_bin"
+  fi
+  if git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
+    breaking_out=$("$oasdiff_bin" breaking --fail-on ERR \
+      "$tmp_openapi" internal/api/openapi.yaml 2>"$oasdiff_err") && oasdiff_rc=0 || oasdiff_rc=$?
+    case "$oasdiff_rc" in
+      0)
+        echo "No breaking changes."
+        ;;
+      1)
+        echo "FAIL: Breaking OpenAPI changes detected:"
+        echo "$breaking_out"
+        exit 1
+        ;;
+      *)
+        echo "FAIL: oasdiff could not run against this spec (exit $oasdiff_rc) -- breaking-change detection is unavailable:" >&2
+        cat "$oasdiff_err" >&2
+        exit 1
+        ;;
+    esac
   else
     echo "Skipped (openapi.yaml not yet on main)."
   fi
 else
-  echo "Skipped (oasdiff not installed -- install: go install github.com/oasdiff/oasdiff@latest)"
+  echo "FAIL: go not installed -- oasdiff (go install github.com/oasdiff/oasdiff@v1.25.1) requires the Go toolchain; breaking-change detection is unavailable" >&2
+  exit 1
 fi
+    ;;
+esac
 
 echo ""
 echo "=== Patch coverage ==="
