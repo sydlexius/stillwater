@@ -51,9 +51,12 @@ func TestNewAppliesPlatformAuthScheme(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			var got http.Header
+			// Buffered so the handler never blocks; the receive below is the
+			// happens-before edge between the server goroutine's write and the
+			// test goroutine's reads (.github/instructions/go-tests).
+			gotCh := make(chan http.Header, 1)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				got = r.Header.Clone()
+				gotCh <- r.Header.Clone()
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{}`))
 			}))
@@ -68,6 +71,8 @@ func TestNewAppliesPlatformAuthScheme(t *testing.T) {
 			if err := c.Get(context.Background(), "/System/Info", &out); err != nil {
 				t.Fatalf("Get returned error: %v", err)
 			}
+
+			got := <-gotCh
 
 			if v := got.Get(tt.wantHeader); v != tt.wantValue {
 				t.Errorf("%s header = %q, want %q", tt.wantHeader, v, tt.wantValue)
@@ -135,9 +140,12 @@ func TestNewWithProfile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			var got http.Header
+			// Buffered so the handler never blocks; the receive below is the
+			// happens-before edge between the server goroutine's write and the
+			// test goroutine's reads (.github/instructions/go-tests).
+			gotCh := make(chan http.Header, 1)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				got = r.Header.Clone()
+				gotCh <- r.Header.Clone()
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{}`))
 			}))
@@ -155,6 +163,9 @@ func TestNewWithProfile(t *testing.T) {
 			if err := c.Get(context.Background(), "/System/Info", &out); err != nil {
 				t.Fatalf("Get returned error: %v", err)
 			}
+
+			got := <-gotCh
+
 			if v := got.Get(tt.wantHeader); v != tt.wantValue {
 				t.Errorf("%s header = %q, want %q", tt.wantHeader, v, tt.wantValue)
 			}
