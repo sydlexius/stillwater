@@ -145,9 +145,18 @@ artists are selected. To select more than one page of results at once:
 With a selection active, choose a verb from the bulk-action dropdown in the
 toolbar and click **Apply**. The actions are **Run rules**, **Auto
 re-identify**, **Re-identify (review each)**, **Scan**, **Fetch images**,
-**Lock**, and **Unlock**. **Lock** and **Unlock** are short-circuited for any
-selected artist that is already in the target state, and the completion summary
-reports those as skipped.
+**Refresh metadata**, **Lock**, and **Unlock**. **Lock** and **Unlock** are
+short-circuited for any selected artist that is already in the target state,
+and the completion summary reports those as skipped.
+
+**Refresh metadata** re-fetches artist details from the metadata providers, the
+same as the **Refresh** button on an artist page. Two kinds of artist are
+skipped rather than refreshed, and both are reported in the completion summary:
+an artist with no MusicBrainz ID (the single-artist Refresh button asks you to
+pick the right match, and a bulk run has no way to ask), and a locked artist
+(the lock suppresses automated changes). Locking individual *fields* is
+different: the artist still refreshes, and only the pinned fields keep their
+values.
 
 The cross-page selection is capped at 1000 artists. If the filter matches more
 than that, Stillwater selects the first 1000 and tells you so, and any bulk
