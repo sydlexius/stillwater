@@ -26,6 +26,25 @@ var providerIDBackfillField = map[provider.ProviderName]string{
 	provider.NameSpotify: "spotify_id",
 }
 
+// setProviderIDForName writes value onto the in-scope flat field of a that
+// providerIDForName reads. It is the write-side counterpart to that accessor,
+// used so a successful backfill is reflected on the same in-memory Artist the
+// pipeline goes on to re-evaluate this pass (see the Fix doc comment for why
+// this matters -- issue #2699).
+func setProviderIDForName(a *artist.Artist, name provider.ProviderName, value string) {
+	switch name {
+	case provider.NameDiscogs:
+		a.DiscogsID = value
+	case provider.NameDeezer:
+		a.DeezerID = value
+	case provider.NameSpotify:
+		a.SpotifyID = value
+	default:
+		// Out-of-scope provider: nothing to write. Mirrors providerIDForName's
+		// default branch above.
+	}
+}
+
 // ProviderIDBackfillFixer resolves provider_id_missing violations by deriving
 // the missing Discogs/Deezer/Spotify IDs from an artist's MusicBrainz URL
 // relations and filling only the empty ones (issue #2457).
@@ -108,6 +127,28 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		}, nil
 	}
 
+	// Nothing to derive when every in-scope ID is already set -- most often
+	// this fixer running a second time in the same pass immediately after its
+	// own successful backfill (Fix mutates a's flat fields in place, see
+	// below), but it also covers an artist a human already filled in by hand.
+	// Skipping the fetch here is what keeps a repeat call cheap: a filled
+	// artist no longer needs a MusicBrainz round-trip to learn that, and
+	// nothing this fixer does depends on data currently in `res`.
+	needsFill := false
+	for _, name := range inScopeProviderIDs {
+		if strings.TrimSpace(providerIDForName(a, name)) == "" {
+			needsFill = true
+			break
+		}
+	}
+	if !needsFill {
+		return &FixResult{
+			RuleID:  RuleProviderIDMissing,
+			Fixed:   false,
+			Message: fmt.Sprintf("no provider IDs are missing for %s", a.Name),
+		}, nil
+	}
+
 	res, err := f.fetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
 		return nil, fmt.Errorf("fetching MusicBrainz relations for %s: %w", a.Name, err)
@@ -156,6 +197,23 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		if err := f.updater.UpdateProviderField(ctx, a.ID, field, derived); err != nil {
 			return nil, fmt.Errorf("setting %s for %s: %w", field, a.Name, err)
 		}
+		// Mirror the write onto the in-memory artist immediately (issue #2699).
+		// UpdateProviderField only persists to the DB; without this, the flat
+		// field the checker reads (providerIDForName) stays stale for the rest
+		// of this pass. The pipeline's post-fix re-evaluation
+		// (Pipeline.updateHealthScore) re-runs Evaluate on this SAME *artist.Artist,
+		// so a stale field makes the checker report the just-fixed violation as
+		// still open. persistPassResults then treats the rule as "still
+		// violated" and skips writing any rule_results row for it -- and
+		// because the violation was already dispatched-and-resolved, nothing
+		// else writes one either, so the artist is left with NO rule_results
+		// row for provider_id_missing despite being freshly, correctly
+		// evaluated. That is exactly the "no complete evaluation baseline"
+		// freeze offlineHealthScore logs. Every other auto-fixer that mutates
+		// artist state (fixMBID, fixBio, fixOrigin in fixers.go) sets the
+		// field on `a` for this same reason; this fixer was the one place that
+		// didn't.
+		setProviderIDForName(a, name, derived)
 		filled = append(filled, string(name))
 	}
 
