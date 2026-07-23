@@ -20,10 +20,11 @@ import (
 )
 
 // Transport abstracts the per-client HTTP plumbing the helpers need.
-// emby.Client and jellyfin.Client satisfy this implicitly via the Get
-// and PostJSON methods they inherit from httpclient.BaseClient.
+// emby.Client and jellyfin.Client satisfy this implicitly via the Get,
+// GetRaw, and PostJSON methods they inherit from httpclient.BaseClient.
 type Transport interface {
 	Get(ctx context.Context, path string, result any) error
+	GetRaw(ctx context.Context, path string) ([]byte, string, error)
 	PostJSON(ctx context.Context, path string, body io.Reader, result any) error
 }
 

@@ -57,6 +57,10 @@ func (f *fakeTransport) Get(_ context.Context, path string, result any) error {
 	return json.Unmarshal(buf, result)
 }
 
+func (f *fakeTransport) GetRaw(_ context.Context, path string) ([]byte, string, error) {
+	return nil, "", fmt.Errorf("GetRaw not stubbed for path %s", path)
+}
+
 func (f *fakeTransport) PostJSON(_ context.Context, path string, body io.Reader, _ any) error {
 	buf, err := io.ReadAll(body)
 	if err != nil {
@@ -422,6 +426,10 @@ func (p *statefulPeer) Get(_ context.Context, path string, result any) error {
 		return err
 	}
 	return json.Unmarshal(buf, result)
+}
+
+func (p *statefulPeer) GetRaw(_ context.Context, path string) ([]byte, string, error) {
+	return nil, "", fmt.Errorf("GetRaw not stubbed for path %s", path)
 }
 
 func (p *statefulPeer) PostJSON(_ context.Context, _ string, body io.Reader, _ any) error {
