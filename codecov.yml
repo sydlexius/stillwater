@@ -7,8 +7,13 @@
 # The premature red 0% was caused by there being TWO uploaders, not by the
 # threshold: bruno-ci.yml uploaded Bruno coverage minutes before ci.yml's merged
 # Go profile, so the first upload to arrive carried almost no coverage of a Go
-# diff. That upload has been removed, so this repo now performs exactly ONE
-# upload on every path and the default is correct.
+# diff. That upload has been removed, so this repo now performs AT MOST ONE
+# upload and never more than one, and the default is correct.
+#
+# "At most one", not "exactly one": ci.yml's coverage-upload job is gated on
+# `changes.outputs.code == 'true'` and a successful test job, so a docs-only or
+# workflow-only PR produces ZERO uploads and no patch status at all. That is
+# expected. Do not "fix" a missing status on a docs-only PR.
 #
 # Raising the value is NOT the fix if a second uploader is ever reintroduced:
 # a conditional uploader makes the count variable (1 or 2), and a fixed

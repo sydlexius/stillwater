@@ -33,8 +33,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      # Required for Codecov OIDC token exchange (use_oidc: true).
-      id-token: write
     # Belt-and-braces against an inadvertently hanging Bruno request or stuck
     # ephemeral server. The full pipeline (build + 4 tools + Bruno + cleanup)
     # comfortably finishes inside 10 min; 15 leaves headroom for runner cold
@@ -345,16 +343,25 @@ jobs:
       # 05:13:39Z, codecov/patch fired 05:13:46Z.
       #
       # Raising after_n_builds is not a fix: the upload count is variable. This
-      # step is conditional, so a PR where Bruno is not relevant produces only
+      # step was conditional, so a PR where Bruno is not relevant produced only
       # ONE upload, and after_n_builds: 2 would leave the status pending forever
-      # -- worse than firing early. Removing this upload makes the count
-      # deterministically 1 on every path, so the default is correct and no
-      # tuning is needed.
+      # -- worse than firing early. Removing this upload leaves AT MOST ONE
+      # upload and never more than one, so the default is correct and no tuning
+      # is needed. (Not "exactly one": ci.yml's coverage-upload job is itself
+      # gated on `changes.outputs.code == 'true'` and a successful test job, so
+      # a docs-only PR produces ZERO uploads and therefore no patch status at
+      # all. That is expected, not a regression.)
       #
       # Nothing gated on this upload: codecov.yml has no flag-scoped status
       # (nothing keys on `flags:`), and the required Coverage Floor check reads
       # ci.yml's merged profile, which never included Bruno. The Bruno suite
       # itself still runs and still gates -- only the coverage upload is gone.
+      #
+      # The coverage COLLECTION above (the -cover build, GOCOVERDIR, and the
+      # "Convert Bruno coverage" step) is deliberately retained even though
+      # nothing consumes bruno-coverage.out today: it is cheap, and keeping it
+      # means reinstating the upload is a one-step change rather than
+      # re-plumbing the instrumentation. Delete it too if that is not wanted.
 
       - name: Upload test results on failure
         if: failure() && (steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch')
