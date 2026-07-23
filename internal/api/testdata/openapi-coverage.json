@@ -1390,7 +1390,7 @@
     "method": "POST",
     "path": "/artists/{id}/reidentify",
     "handler": "handleReidentify",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "remediateBackdropDuplicates",
