@@ -1655,6 +1655,38 @@ func TestUpdateArtistPath_EmbySilentlyDiscardsPath(t *testing.T) {
 	}
 }
 
+// TestGetArtistPath_AlwaysEmpty is the dedicated positive-control test for
+// GetArtistPath's always-"" contract: Emby artists are virtual, name-keyed
+// items with no on-disk path, so a fetch that returns a real Path value must
+// still surface as "" -- Emby never reports one for an artist in practice,
+// but this pins the read straight through (item["Path"] read as string)
+// rather than any special-cased always-blank behavior. The negative case
+// (peer silently discarding a written Path) is already covered by
+// TestUpdateArtistPath_EmbySilentlyDiscardsPath; this test isolates
+// GetArtistPath on its own so a future refactor that breaks it in isolation
+// (rather than only via the UpdateArtistPath round-trip) is caught directly.
+func TestGetArtistPath_AlwaysEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// A real Emby artist item reports no Path at all.
+		_, _ = w.Write([]byte(`{"Id":"a1","Name":"Radiohead"}`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	got, err := c.GetArtistPath(context.Background(), "a1")
+	if err != nil {
+		t.Fatalf("GetArtistPath: %v", err)
+	}
+	if got != "" {
+		t.Errorf("GetArtistPath = %q, want \"\" (Emby artists are virtual and report no path)", got)
+	}
+}
+
 // TestUpdateArtistPath_NoUserID mirrors TestUpdateArtistLocks_NoUserID:
 // without a userID the Get path cannot be constructed, so the call must
 // fail fast with a non-empty error message.

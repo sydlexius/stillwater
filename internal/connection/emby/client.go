@@ -452,14 +452,9 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 	// treats the body as a full replacement, so we must preserve unrelated
 	// fields to avoid dropping them.
 	getPath := fmt.Sprintf("/Users/%s/Items/%s", c.UserID, platformArtistID)
-	var item map[string]any
-	if err := c.Get(ctx, getPath, &item); err != nil {
+	item, err := mediabrowser.FetchUserScopedItemRaw(ctx, c, getPath)
+	if err != nil {
 		return fmt.Errorf("fetching artist for lock update: %w", err)
-	}
-	// Guard against a JSON null / empty body that would leave item as a
-	// nil map; assigning to a nil map panics.
-	if item == nil {
-		item = make(map[string]any)
 	}
 	item["LockData"] = lockData
 	canonLocks, dropped := canonicalizeLockedFieldsDrops(lockedFields)
@@ -469,12 +464,8 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 			"artist_id", platformArtistID, "field", d)
 	}
 
-	body, err := json.Marshal(item)
-	if err != nil {
-		return fmt.Errorf("encoding lock update body: %w", err)
-	}
 	path := fmt.Sprintf("/Items/%s", platformArtistID)
-	if err := c.PostJSON(ctx, path, bytes.NewReader(body), nil); err != nil {
+	if err := mediabrowser.PostUserScopedItemRaw(ctx, c, path, item); err != nil {
 		return fmt.Errorf("posting artist lock update: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
@@ -507,21 +498,14 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	// closes the same class of bug here.
 	escapedID := url.PathEscape(platformArtistID)
 	getPath := fmt.Sprintf("/Users/%s/Items/%s", url.PathEscape(c.UserID), escapedID)
-	var item map[string]any
-	if err := c.Get(ctx, getPath, &item); err != nil {
+	item, err := mediabrowser.FetchUserScopedItemRaw(ctx, c, getPath)
+	if err != nil {
 		return fmt.Errorf("fetching artist for path update: %w", err)
-	}
-	if item == nil {
-		item = make(map[string]any)
 	}
 	item["Path"] = newPath
 
-	body, err := json.Marshal(item)
-	if err != nil {
-		return fmt.Errorf("encoding path update body: %w", err)
-	}
 	postPath := fmt.Sprintf("/Items/%s", escapedID)
-	if err := c.PostJSON(ctx, postPath, bytes.NewReader(body), nil); err != nil {
+	if err := mediabrowser.PostUserScopedItemRaw(ctx, c, postPath, item); err != nil {
 		return fmt.Errorf("posting artist path update: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
@@ -554,8 +538,8 @@ func (c *Client) GetArtistPath(ctx context.Context, platformArtistID string) (st
 	}
 	getPath := fmt.Sprintf("/Users/%s/Items/%s",
 		url.PathEscape(c.UserID), url.PathEscape(platformArtistID))
-	var item map[string]any
-	if err := c.Get(ctx, getPath, &item); err != nil {
+	item, err := mediabrowser.FetchUserScopedItemRaw(ctx, c, getPath)
+	if err != nil {
 		return "", fmt.Errorf("fetching artist for path read-back: %w", wrapAuthIfStatusAuth(err))
 	}
 	path, _ := item["Path"].(string)
