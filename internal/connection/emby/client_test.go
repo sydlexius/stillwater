@@ -1670,9 +1670,11 @@ func TestUpdateArtistPath_EmbySilentlyDiscardsPath(t *testing.T) {
 // round-trip) is caught directly.
 func TestGetArtistPath_AlwaysEmpty(t *testing.T) {
 	tests := []struct {
-		name string
-		body string
-		want string
+		name    string
+		status  int
+		body    string
+		want    string
+		wantErr bool
 	}{
 		{
 			name: "no Path key reads back empty",
@@ -1684,12 +1686,26 @@ func TestGetArtistPath_AlwaysEmpty(t *testing.T) {
 			body: `{"Id":"a1","Name":"Radiohead","Path":"/music/Radiohead"}`,
 			want: "/music/Radiohead",
 		},
+		{
+			name:    "server 5xx surfaces an error",
+			status:  http.StatusInternalServerError,
+			wantErr: true,
+		},
+		{
+			name:    "malformed JSON surfaces an error",
+			body:    `{"Id":`,
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodGet {
 					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				if tt.status != 0 {
+					w.WriteHeader(tt.status)
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
@@ -1699,6 +1715,12 @@ func TestGetArtistPath_AlwaysEmpty(t *testing.T) {
 
 			c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
 			got, err := c.GetArtistPath(context.Background(), "a1")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("GetArtistPath: %v", err)
 			}
