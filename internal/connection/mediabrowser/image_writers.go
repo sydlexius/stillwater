@@ -29,6 +29,31 @@ import (
 // sentinel-wrapped errors the hand-rolled per-package methods did.
 type AuthErrorClassifier func(error) error
 
+// doImageRequest executes the shared Do -> status-check -> classify ->
+// drain shape common to all four image write/delete operations below. It
+// does not log; each caller logs on success with its own message and
+// fields, since the log content varies per operation (upload vs delete,
+// with/without index). opDesc must match the caller's exact operation name
+// so the wrapped error strings stay byte-identical to the pre-refactor
+// per-function implementations ("executing image upload", "image upload
+// failed with status %d", etc.).
+func doImageRequest(ctx context.Context, t Transport, method, path string, body io.Reader, contentType, opDesc string, classifyAuth AuthErrorClassifier) error {
+	resp, err := t.Do(ctx, method, path, body, contentType)
+	if err != nil {
+		return fmt.Errorf("executing %s: %w", opDesc, err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
+
+	if resp.StatusCode >= 300 {
+		statusErr := httpclient.ReadBoundedStatusError(resp)
+		formatted := fmt.Errorf("%s failed with status %d: %s", opDesc, statusErr.StatusCode, statusErr.Body)
+		return classifyAuth(errors.Join(formatted, statusErr))
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
 // UploadImageRaw uploads image bytes to the peer for the given artist and
 // platform-mapped image type. POST /Items/{artistID}/Images/{platformType}.
 // Callers map their own Stillwater image-type string (thumb, fanart, logo,
@@ -48,21 +73,12 @@ func UploadImageRaw(ctx context.Context, t Transport, logger *slog.Logger, platf
 	encoded := base64.StdEncoding.EncodeToString(data)
 	path := fmt.Sprintf("/Items/%s/Images/%s", artistID, platformType)
 
-	resp, err := t.Do(ctx, http.MethodPost, path, strings.NewReader(encoded), contentType)
-	if err != nil {
-		return fmt.Errorf("executing image upload: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("image upload failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
-		return classifyAuth(errors.Join(formatted, statusErr))
+	if err := doImageRequest(ctx, t, http.MethodPost, path, strings.NewReader(encoded), contentType, "image upload", classifyAuth); err != nil {
+		return err
 	}
 
-	_, _ = io.Copy(io.Discard, resp.Body)
 	if logger != nil {
-		logger.Debug("image uploaded to "+platform, "artist_id", artistID, "type", platformType)
+		logger.Debug("image uploaded", "platform", platform, "artist_id", artistID, "type", platformType)
 	}
 	return nil
 }
@@ -82,21 +98,12 @@ func UploadImageAtIndexRaw(ctx context.Context, t Transport, logger *slog.Logger
 	encoded := base64.StdEncoding.EncodeToString(data)
 	path := fmt.Sprintf("/Items/%s/Images/%s/%d", artistID, platformType, index)
 
-	resp, err := t.Do(ctx, http.MethodPost, path, strings.NewReader(encoded), contentType)
-	if err != nil {
-		return fmt.Errorf("executing indexed image upload: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("indexed image upload failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
-		return classifyAuth(errors.Join(formatted, statusErr))
+	if err := doImageRequest(ctx, t, http.MethodPost, path, strings.NewReader(encoded), contentType, "indexed image upload", classifyAuth); err != nil {
+		return err
 	}
 
-	_, _ = io.Copy(io.Discard, resp.Body)
 	if logger != nil {
-		logger.Debug("image uploaded to "+platform+" at index", "artist_id", artistID, "type", platformType, "index", index)
+		logger.Debug("image uploaded at index", "platform", platform, "artist_id", artistID, "type", platformType, "index", index)
 	}
 	return nil
 }
@@ -111,21 +118,12 @@ func DeleteImageRaw(ctx context.Context, t Transport, logger *slog.Logger, platf
 
 	path := fmt.Sprintf("/Items/%s/Images/%s", artistID, platformType)
 
-	resp, err := t.Do(ctx, http.MethodDelete, path, nil, "")
-	if err != nil {
-		return fmt.Errorf("executing image delete: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("image delete failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
-		return classifyAuth(errors.Join(formatted, statusErr))
+	if err := doImageRequest(ctx, t, http.MethodDelete, path, nil, "", "image delete", classifyAuth); err != nil {
+		return err
 	}
 
-	_, _ = io.Copy(io.Discard, resp.Body)
 	if logger != nil {
-		logger.Debug("image deleted from "+platform, "artist_id", artistID, "type", platformType)
+		logger.Debug("image deleted", "platform", platform, "artist_id", artistID, "type", platformType)
 	}
 	return nil
 }
@@ -146,21 +144,12 @@ func DeleteImageAtIndexRaw(ctx context.Context, t Transport, logger *slog.Logger
 
 	path := fmt.Sprintf("/Items/%s/Images/%s/%d", artistID, platformType, index)
 
-	resp, err := t.Do(ctx, http.MethodDelete, path, nil, "")
-	if err != nil {
-		return fmt.Errorf("executing indexed image delete: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("indexed image delete failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
-		return classifyAuth(errors.Join(formatted, statusErr))
+	if err := doImageRequest(ctx, t, http.MethodDelete, path, nil, "", "indexed image delete", classifyAuth); err != nil {
+		return err
 	}
 
-	_, _ = io.Copy(io.Discard, resp.Body)
 	if logger != nil {
-		logger.Debug("image deleted from "+platform+" at index", "artist_id", artistID, "type", platformType, "index", index)
+		logger.Debug("image deleted at index", "platform", platform, "artist_id", artistID, "type", platformType, "index", index)
 	}
 	return nil
 }
