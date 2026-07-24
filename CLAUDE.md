@@ -37,7 +37,7 @@ internal/database/    - SQLite database and migrations
 internal/dbutil/      - Shared database helpers (type conversions, nullable handling)
 internal/encryption/  - AES-256-GCM encryption for secrets
 internal/event/       - Channel-based event bus
-internal/filesystem/  - Atomic file writes (tmp/bak/rename pattern)
+internal/filesystem/  - Atomic file writes (write to a temp file, then a single rename onto the target)
 internal/foreign/     - Foreign artist scanner and model
 internal/i18n/        - Internationalization support
 internal/image/       - Image processing (fetch, crop, compare)

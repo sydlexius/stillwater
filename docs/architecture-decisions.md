@@ -10,7 +10,7 @@ When MBIDs are available (from Lidarr, NFO, embedded tags), use them directly. S
 
 ## Atomic filesystem writes
 
-All file writes (NFO, images) use a shared utility in `internal/filesystem/`: write to .tmp, rename existing to .bak, rename .tmp to target, delete .bak. Fall back to copy+delete with fsync for cross-mount/network shares.
+All file writes (NFO, images) use a shared utility in `internal/filesystem/`: write to a temp file in the target's own directory, flush it to stable storage, then promote it onto the target with a single rename. POSIX rename is an atomic replace, so the target is never observed missing mid-write, and a failed rename leaves the original content untouched. Fall back to copy+delete with fsync for cross-mount/network shares.
 
 *Where it lives: [Scanner pipeline](architecture/scanner-pipeline.md).*
 

@@ -66,7 +66,7 @@ they do not overwrite Stillwater's files.
 | `internal/dbutil` | Shared database helpers (type conversions, nullable handling) |
 | `internal/encryption` | AES-256-GCM encryption for stored API keys |
 | `internal/event` | Channel-based in-process event bus |
-| `internal/filesystem` | Atomic file writes using a tmp/bak/rename pattern |
+| `internal/filesystem` | Atomic file writes: write to a temp file, then a single rename onto the target |
 | `internal/foreign` | Foreign artist file scanner and model |
 | `internal/i18n` | Internationalization support |
 | `internal/image` | Image fetch, crop, compare, and EXIF metadata |
