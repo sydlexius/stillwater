@@ -15,17 +15,26 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 )
 
 // Transport abstracts the per-client HTTP plumbing the helpers need.
 // emby.Client and jellyfin.Client satisfy this implicitly via the Get,
-// GetRaw, and PostJSON methods they inherit from httpclient.BaseClient.
+// GetRaw, PostJSON, and Do methods they inherit from httpclient.BaseClient.
+//
+// Do is the one raw primitive in this set: the image upload/delete free
+// functions in image_writers.go build a base64-encoded plain-text POST body
+// (not JSON) and a bodyless DELETE, neither of which fits Get/GetRaw/
+// PostJSON's contracts. It returns the unconsumed *http.Response so callers
+// keep full control of status-code handling and body draining, matching
+// what the hand-rolled per-package methods this replaces did directly.
 type Transport interface {
 	Get(ctx context.Context, path string, result any) error
 	GetRaw(ctx context.Context, path string) ([]byte, string, error)
 	PostJSON(ctx context.Context, path string, body io.Reader, result any) error
+	Do(ctx context.Context, method, path string, body io.Reader, contentType string) (*http.Response, error)
 }
 
 // LibraryWriteBackSnapshot is the persisted form of a peer's

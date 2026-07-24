@@ -237,6 +237,99 @@ func TestPostJSON_ErrorStatus(t *testing.T) {
 	}
 }
 
+// TestDo_SetsMethodPathAuthAndContentType exercises the raw primitive the
+// mediabrowser image write/delete free functions build on: unlike Get/
+// GetRaw/PostJSON, Do does not interpret the response status or decode a
+// body -- it just issues the request and hands back the unconsumed
+// response, leaving status handling to the caller.
+func TestDo_SetsMethodPathAuthAndContentType(t *testing.T) {
+	var gotMethod, gotPath, gotAuth, gotContentType string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		gotAuth = r.Header.Get("X-Test-Key")
+		gotContentType = r.Header.Get("Content-Type")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv, "key")
+	resp, err := c.Do(context.Background(), http.MethodPost, "/images/thumb", strings.NewReader("payload"), "text/plain")
+	if err != nil {
+		t.Fatalf("Do failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if gotMethod != http.MethodPost {
+		t.Errorf("method = %s, want POST", gotMethod)
+	}
+	if gotPath != "/images/thumb" {
+		t.Errorf("path = %s, want /images/thumb", gotPath)
+	}
+	if gotAuth != "key" {
+		t.Errorf("auth header = %q, want %q", gotAuth, "key")
+	}
+	if gotContentType != "text/plain" {
+		t.Errorf("Content-Type = %q, want text/plain", gotContentType)
+	}
+	if string(gotBody) != "payload" {
+		t.Errorf("body = %q, want %q", gotBody, "payload")
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+// TestDo_NilBodyBecomesNoBody covers the DELETE-with-no-body path: a nil
+// io.Reader must not panic and must reach the server as an empty body,
+// matching what DeleteImageRaw/DeleteImageAtIndexRaw pass.
+func TestDo_NilBodyBecomesNoBody(t *testing.T) {
+	var gotMethod string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv, "key")
+	resp, err := c.Do(context.Background(), http.MethodDelete, "/images/thumb", nil, "")
+	if err != nil {
+		t.Fatalf("Do failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if gotMethod != http.MethodDelete {
+		t.Errorf("method = %s, want DELETE", gotMethod)
+	}
+	if len(gotBody) != 0 {
+		t.Errorf("body = %q, want empty", gotBody)
+	}
+}
+
+// TestDo_DoesNotInterpretStatus proves Do's contract: it never turns a
+// non-2xx response into an error. Callers (the mediabrowser free functions)
+// own reading resp.StatusCode themselves, unlike Get/PostJSON/PutJSON.
+func TestDo_DoesNotInterpretStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv, "key")
+	resp, err := c.Do(context.Background(), http.MethodPost, "/x", nil, "")
+	if err != nil {
+		t.Fatalf("Do returned an error for a 500 response; it should only surface transport errors: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
 func TestNewBase_InvalidURL(t *testing.T) {
 	bc := NewBase("not-a-url", "key", http.DefaultClient, testLogger(), "test")
 	bc.AuthFunc = func(*http.Request) {}

@@ -217,6 +217,44 @@ func (b *BaseClient) PutJSON(ctx context.Context, path string, body io.Reader, r
 	return nil
 }
 
+// Do issues a request with the given method, path, and body, setting the
+// Content-Type header only when contentType is non-empty. Unlike Get,
+// GetRaw, PostJSON, and PutJSON, it does not interpret the response status
+// or decode a body -- the caller owns closing resp.Body and reading the
+// status. This is the lower-level primitive the image upload/delete free
+// functions in mediabrowser use: their bodies are a base64-encoded plain
+// string (not JSON) and DeleteImage/DeleteImageAtIndex send no body at all,
+// so neither fits PostJSON's JSON-only contract. A nil body is normalized to
+// http.NoBody, matching the convention used elsewhere in this file.
+//
+// Unlike Get, GetRaw, PostJSON, and PutJSON, Do returns request-construction
+// and transport errors UNWRAPPED (no "creating request"/"executing request"
+// prefix of its own). Its only callers are the mediabrowser image
+// upload/delete free functions, which apply their own single, method-specific
+// wrap (e.g. "executing image upload: %w") to match the message the old
+// per-package (pre-collapse) code produced. Adding a second Do-level prefix
+// here would double that wrap into "executing image upload: executing
+// request: <err>", a behavior regression from the old single-prefix message.
+func (b *BaseClient) Do(ctx context.Context, method, path string, body io.Reader, contentType string) (*http.Response, error) {
+	if body == nil {
+		body = http.NoBody
+	}
+	req, err := http.NewRequestWithContext(ctx, method, connection.BuildRequestURL(b.BaseURL, path), body)
+	if err != nil {
+		return nil, err
+	}
+	b.AuthFunc(req)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	resp, err := b.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 // PostJSON performs a POST request with Content-Type application/json and decodes the response.
 // Returns an error if the status is >= 300.
 func (b *BaseClient) PostJSON(ctx context.Context, path string, body io.Reader, result any) error {
