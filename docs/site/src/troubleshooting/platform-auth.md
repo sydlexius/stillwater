@@ -2,7 +2,7 @@
 description: Diagnose Emby, Jellyfin, and Lidarr connection failures -- 401/403 errors, image fetcher conflicts, refresh issues.
 ---
 
-<!-- code: internal/connection/emby/client.go (StatusUnauthorized handling), internal/connection/jellyfin/client.go (StatusUnauthorized handling), internal/connection/state.go (ImageFetcherWarning RiskLevel "warn"/"critical"), internal/conflict/gate.go (gate reasons: shared library paths, server-side image saving, server-side NFO saving), internal/api/handlers_shared_filesystem.go (ImageFetcherWarning collection), internal/connection/pathinfer.go (InferPathMappings). -->
+<!-- code: internal/connection/emby/client.go (StatusUnauthorized handling; UpdateArtistPath, GetArtistPath), internal/connection/jellyfin/client.go (StatusUnauthorized handling; UpdateArtistPath, GetArtistPath), internal/connection/state.go (ImageFetcherWarning RiskLevel "warn"/"critical"), internal/conflict/gate.go (gate reasons: shared library paths, server-side image saving, server-side NFO saving), internal/api/handlers_shared_filesystem.go (ImageFetcherWarning collection), internal/connection/pathinfer.go (InferPathMappings). -->
 
 # Platform authentication
 
@@ -109,6 +109,20 @@ Stillwater and Lidarr can mount the same library under different root paths (Sti
 - Try **Re-infer** on the connection -- Stillwater re-derives the mapping from artists it can match to Lidarr by MusicBrainz ID. If it reports "no mappings inferred," too few matched artists agree on a single prefix, and you'll need to enter the mapping manually.
 
 **Fix:** correct or add the path mapping, then re-trigger the rename or a Lidarr library refresh. See [Connect Lidarr](../getting-started/connect-lidarr.md#path-mapping-when-stillwater-and-lidarr-disagree-on-paths) for how the mapping and inference work.
+
+## Jellyfin keeps a leftover artist after a merge or rename
+
+After you [merge duplicate artists](../how-to/merge-duplicate-artists.md) or rename an artist's directory, Jellyfin can be left with a second, metadata-only artist entry that no longer points at any real folder. This is a Jellyfin limitation, not a Stillwater bug, and it can't be fixed from Stillwater's side.
+
+**Why this happens:** Jellyfin does not let a client change an item's path. Its item-update endpoint accepts a path field in the request and returns success, but the server silently ignores that field -- the item's path never changes. (This is confirmed by directly reading the path back after the update; the API documentation says the field is settable, which is why the behavior is surprising.) Jellyfin only learns an item's path by scanning the filesystem itself. When Stillwater renames a directory or merges one artist into another, the old directory is gone by the time Jellyfin next scans, so Jellyfin drops the old item from the library folder and creates a brand new item at the new location. The old item can survive as a leftover entry with metadata but no library folder behind it.
+
+Stillwater cannot remove that leftover entry automatically. The only Jellyfin endpoint that deletes an item also deletes the underlying media files from disk, and Stillwater will never call a destructive endpoint like that against your library on your behalf.
+
+**Fix:** open Jellyfin directly and remove the leftover artist entry yourself (it will show no episodes, tracks, or files, since its folder is gone). Stillwater's own record and your files on disk are already correct after the merge or rename; only Jellyfin's leftover index entry needs manual cleanup.
+
+**Emby:** Emby's artists are virtual entries derived from track tags rather than backed by a folder, and Emby reports no path at all for an artist item. Emby's path-update endpoint has the same "accepts the field, silently ignores it" shape as Jellyfin's, so the same limitation likely applies, but this has not been confirmed against a live Emby server. Treat Emby as unverified rather than assuming it behaves identically.
+
+**Lidarr, by contrast, gets this right.** Lidarr genuinely stores the path Stillwater sends it, and Stillwater reads it back to confirm the update took. That's why this leftover-entry problem is specific to Jellyfin (and possibly Emby), not something you'll see with a Lidarr connection.
 
 ## Re-sync Artists returns nothing new
 
