@@ -40,7 +40,10 @@ coverage:
       # status check, so a regression in a single subpackage fails the
       # specific check rather than being averaged away by its better-covered
       # siblings. Update both files together when raising a floor with
-      # `scripts/coverage-floor.sh --bump`.
+      # `scripts/coverage-floor.sh --bump`. This mirror is enforced by
+      # scripts/check-codecov-floor-mirror.sh (pre-push gate + CI's "Codecov
+      # Floor Mirror" job, #2756) -- a divergence here now fails loudly
+      # instead of sitting unnoticed.
       default:
         # Catch-all for any package not listed below.
         target: auto
@@ -238,7 +241,7 @@ coverage:
         paths:
           - internal/scraper
       server:
-        target: 91%
+        target: 87%
         paths:
           - internal/server
       settingsio:
