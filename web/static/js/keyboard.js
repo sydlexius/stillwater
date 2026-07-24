@@ -686,9 +686,16 @@
     }
   };
 
-  // Register global shortcuts (#1775) on next/ only: these are genuinely
-  // channel-gated (g-leader nav, the '?' cheat sheet, Esc-close) and absent on
-  // stable, so the cheat sheet should not advertise them on stable pages.
+  // Register global shortcuts (#1775) on next/ only: the g-leader nav and the
+  // Esc-close handler below are genuinely channel-gated by isNextPage(), so
+  // advertising them on stable would promise keys that do nothing there.
+  //
+  // NOTE on '?': the cheat-sheet MODAL is in fact mounted on both channels (by
+  // the canonical Layout), and '?' does open it on stable via the ungated
+  // handler in LayoutGlobalChrome. It stays in this next/-only list only
+  // because its Esc-close counterpart is still gated -- see the KNOWN GAP note
+  // in web/components/cheat_sheet_modal.templ. Widening it belongs with the fix
+  // for that gap, not with #2768.
   if (isNextPage()) {
     window.swKeyboardShortcuts.register('global', [
       { key: 'g d', label: 'Go to Dashboard' },
