@@ -256,6 +256,45 @@ describe('keyboard.js: Esc closes cheat sheet on the stable channel (#2768 fold-
   });
 });
 
+describe('keyboard.js: Esc only lets the command palette claim Escape while open (#2768 isOpen fix)', () => {
+  // Mirrors the real window.swCommandPalette shape (hide + isOpen), which the
+  // jsdom harness does NOT define by default -- a test that omits this setup
+  // can never enter the guard under test and passes vacuously.
+  function setupWithPaletteAndModal(paletteOpen) {
+    const modalHtml = '<div id="cheat-sheet-modal"></div>'; // no .hidden class = open
+    const { win } = setup(modalHtml);
+    const modal = win.document.getElementById('cheat-sheet-modal');
+    const hideCalls = [];
+    win.swCommandPalette = {
+      hide: () => { hideCalls.push(1); },
+      isOpen: () => paletteOpen,
+    };
+    // Precondition: fail loudly if the harness shape does not match reality,
+    // rather than passing without ever entering the isOpen() guard.
+    assert.equal(typeof win.swCommandPalette.isOpen, 'function',
+      'precondition: window.swCommandPalette.isOpen must be a function');
+    win.hideCheatSheet = () => modal.classList.add('hidden');
+    return { win, modal, hideCalls };
+  }
+
+  it('palette CLOSED (isOpen() false): Esc falls through and closes the open cheat sheet', () => {
+    const { win, modal } = setupWithPaletteAndModal(false);
+    assert.ok(!modal.classList.contains('hidden'), 'precondition: cheat sheet must start open');
+    fire(win, 'Escape');
+    assert.ok(modal.classList.contains('hidden'),
+      'Esc must close the cheat sheet when the palette is closed (fallthrough restored)');
+  });
+
+  it('palette OPEN (isOpen() true): Esc is claimed by the palette and the cheat sheet stays open', () => {
+    const { win, modal, hideCalls } = setupWithPaletteAndModal(true);
+    assert.ok(!modal.classList.contains('hidden'), 'precondition: cheat sheet must start open');
+    fire(win, 'Escape');
+    assert.equal(hideCalls.length, 1, 'swCommandPalette.hide() must be called when the palette is open');
+    assert.ok(!modal.classList.contains('hidden'),
+      'cheat sheet must remain open -- an open palette still wins Escape precedence');
+  });
+});
+
 describe('keyboard.js: "s" focuses the secondary search (#1757 PR-4)', () => {
   it('s focuses the [data-sw-shortcut="s"] target when present', () => {
     const railHtml = '<input id="rep-rail-filter" type="search" data-sw-shortcut="s" data-sw-shortcut-label="Search reports">';

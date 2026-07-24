@@ -382,8 +382,13 @@
     // filtered results) are PRESERVED. Returns so Esc here is a dedicated "leave
     // search" action and does not also clear a bulk selection in the same press.
     if (e.key === 'Escape') {
-      // PR2 hook: command palette (existence-guarded no-op until PR2 ships).
-      if (window.swCommandPalette && typeof window.swCommandPalette.hide === 'function') {
+      // Command palette wins Escape ONLY while it is actually open (#2768). This
+      // guard used to test mere existence, which was harmless when the palette
+      // was next/-only -- but this PR mounts it on both channels, so an
+      // existence check would swallow every Escape and strand the cheat-sheet,
+      // search-box, and bulk-select branches below.
+      if (window.swCommandPalette && typeof window.swCommandPalette.isOpen === 'function'
+          && window.swCommandPalette.isOpen()) {
         window.swCommandPalette.hide();
         return;
       }
