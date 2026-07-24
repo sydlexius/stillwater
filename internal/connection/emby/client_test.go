@@ -1704,6 +1704,12 @@ func TestGetArtistPath_AlwaysEmpty(t *testing.T) {
 					w.WriteHeader(http.StatusMethodNotAllowed)
 					return
 				}
+				if r.URL.Path != "/Users/user-1/Items/a1" {
+					t.Errorf("unexpected path: %s", r.URL.Path)
+				}
+				if r.Header.Get("X-Emby-Token") != "test-key" {
+					t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
+				}
 				if tt.status != 0 {
 					w.WriteHeader(tt.status)
 					return
