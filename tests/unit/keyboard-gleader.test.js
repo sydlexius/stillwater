@@ -213,10 +213,13 @@ describe('keyboard.js: channel gate - stable page (#1775 B2)', () => {
     assert.equal(calls.length, 0, 'Esc must not call hideCheatSheet on stable channel');
   });
 
-  it('global shortcuts not registered on stable', () => {
+  it('next/-only global shortcuts (g-leader, cheat sheet, Esc) not registered on stable, but Cmd-K is (#2768)', () => {
     const { win } = setup('', { isNextPage: false });
     const globals = win.swKeyboardShortcuts.list().filter(e => e.scope === 'global');
-    assert.equal(globals.length, 0, 'global shortcuts must not be registered on stable channel');
+    // Cmd-K now works on both channels (#2768), so it is the one global entry
+    // still registered on stable; the rest remain next/-only.
+    assert.deepEqual([...globals.map(e => e.key)], ['⌘K'],
+      'only Cmd-K should be registered as a global shortcut on stable channel');
   });
 });
 

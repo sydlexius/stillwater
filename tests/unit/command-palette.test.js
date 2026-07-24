@@ -231,4 +231,45 @@ describe('Cmd-K keyboard integration (#1775)', () => {
     const keys = dom.window.swKeyboardShortcuts.list().map((e) => e.key);
     assert.ok(keys.includes('⌘K'));
   });
+
+  // #2768: the palette DOM and window.swCommandPalette are mounted
+  // unconditionally by Layout, so Cmd-K must also fire on stable-channel
+  // (non-next/) pages -- the isNextPage() conjunct that used to gate it was
+  // stale. Assert the observable effect (the #sw-cmdk hidden class), not an
+  // internal call count.
+  it('Cmd-K toggles the palette on stable-channel (non-next/) pages', () => {
+    const dom = createDom({
+      html: '<!doctype html><html><head><meta name="htmx-base-path" content=""></head>' +
+        '<body><div id="sw-cmdk" class="hidden"></div></body></html>',
+      modules: [],
+    });
+    dom.window.SW_IS_NEXT_PAGE = false;
+    dom.window.eval(readFileSync(KEYBOARD_PATH, 'utf-8'));
+
+    const cmdk = dom.window.document.getElementById('sw-cmdk');
+    dom.window.swCommandPalette = {
+      toggle() { cmdk.classList.toggle('hidden'); },
+    };
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'k', metaKey: true }));
+    assert.equal(cmdk.classList.contains('hidden'), false);
+  });
+
+  // #2768: when the palette controller is absent or malformed, the guard must
+  // fail loudly (console.error), never silently swallow the keystroke.
+  it('logs a console.error when window.swCommandPalette.toggle is unavailable', () => {
+    const dom = createDom({
+      html: '<!doctype html><html><head><meta name="htmx-base-path" content=""></head><body></body></html>',
+      modules: [],
+    });
+    dom.window.SW_IS_NEXT_PAGE = false;
+    dom.window.eval(readFileSync(KEYBOARD_PATH, 'utf-8'));
+
+    const errors = [];
+    dom.window.console.error = (...args) => errors.push(args.join(' '));
+    // window.swCommandPalette deliberately left undefined.
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'k', metaKey: true }));
+
+    assert.ok(errors.some((e) => e.includes('[swKbd]')),
+      'missing command-palette capability is a loud console.error, not a silent no-op');
+  });
 });
