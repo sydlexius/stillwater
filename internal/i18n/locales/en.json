@@ -218,8 +218,6 @@
   "artist_duplicates.disambiguation_conflict_badge": "Disambiguation Conflict",
   "artist_duplicates.empty_state": "No suspected duplicates detected.",
   "artist_duplicates.empty_state_dismissed": "All suspected duplicates have been ignored.",
-  "artist_duplicates.help": "Merging cleans up Stillwater and your files on disk. Jellyfin may keep a leftover metadata-only artist that you'll need to remove yourself in Jellyfin.",
-  "artist_duplicates.help.label": "What merging changes on connected servers",
   "artist_duplicates.ignore_http_error": "Could not ignore this group ({status}). Please try again.",
   "artist_duplicates.ignore_network_error": "Network error while ignoring this group. Please try again.",
   "artist_duplicates.ignore_read_error": "Could not read group members to ignore.",

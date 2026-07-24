@@ -1,7 +1,5 @@
 package templates
 
-import "github.com/sydlexius/stillwater/web/components"
-
 // ArtistDuplicateMember is one artist record in a near-duplicate group.
 // Declared here (not in internal/artist) so the template never imports
 // the artist domain package -- the handler constructs these from the
@@ -64,15 +62,7 @@ templ ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) {
 					<div class="min-w-0">
 						// Visible <h1> doubles as the page's document-outline heading so
 						// screen readers get a top-level landmark.
-						<h1 class="text-xs font-semibold leading-tight inline-flex items-center gap-1">
-							{ t(ctx, "artist_duplicates.title") }
-							@components.ContextHelp(
-								"help-artist-duplicates",
-								t(ctx, "artist_duplicates.help.label"),
-								t(ctx, "artist_duplicates.help"),
-								"troubleshooting/platform-auth#jellyfin-keeps-a-leftover-artist-after-a-merge-or-rename",
-							)
-						</h1>
+						<h1 class="text-xs font-semibold leading-tight">{ t(ctx, "artist_duplicates.title") }</h1>
 						<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug">
 							{ t(ctx, "artist_duplicates.subtitle") }
 						</p>
@@ -94,7 +84,6 @@ templ ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) {
 		</div>
 		@ArtistMergeModal()
 		@artistDuplicatesIgnoreScript()
-		@components.ContextHelpScript()
 	}
 }
 
