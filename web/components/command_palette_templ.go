@@ -8,9 +8,10 @@ package components
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// CommandPalette is the Cmd-K global command palette shell for next/. The DOM
-// is static; command-palette.js populates [data-cmdk-list] and toggles the
-// hidden class. Mounted once in LayoutNext (next/-only). Raycast layout.
+// CommandPalette is the Cmd-K global command palette shell, shared by both
+// channels. The DOM is static; command-palette.js populates [data-cmdk-list]
+// and toggles the hidden class. Mounted once in the canonical Layout, which
+// LayoutNext delegates to. Raycast layout.
 func CommandPalette() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

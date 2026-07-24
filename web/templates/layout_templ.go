@@ -40,8 +40,8 @@ type AssetPaths struct {
 	SidebarJS      string
 	FilterFlyoutJS string
 	KeyboardJS     string
-	// CommandPaletteJS is the next/-only command palette controller (#1775).
-	// Loaded on LayoutNext after KeyboardJS so window.swKeyboardShortcuts
+	// CommandPaletteJS is the command palette controller (#1775), shared by
+	// both channels. Loaded on Layout after KeyboardJS so window.swKeyboardShortcuts
 	// exists first.
 	CommandPaletteJS string
 	// PrefsDrawerJS is the preferences flyout drawer controller (M55 #1774).

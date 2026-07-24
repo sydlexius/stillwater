@@ -404,13 +404,16 @@
       }
     }
 
-    // Cmd-K / Ctrl-K: open the command palette (next/ only).
+    // Cmd-K / Ctrl-K: open the command palette (both channels -- the palette DOM
+    // and window.swCommandPalette are mounted unconditionally by Layout, #2768).
     if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
-      if (isNextPage() && window.swCommandPalette && typeof window.swCommandPalette.toggle === 'function') {
-        e.preventDefault();
+      e.preventDefault();
+      if (window.swCommandPalette && typeof window.swCommandPalette.toggle === 'function') {
         window.swCommandPalette.toggle();
-        return;
+      } else if (window.console && console.error) {
+        console.error('[swKbd] Cmd-K pressed but window.swCommandPalette.toggle is unavailable');
       }
+      return;
     }
 
     if (isTyping(document.activeElement)) return;
@@ -683,9 +686,9 @@
     }
   };
 
-  // Register global shortcuts (#1775) on next/ only: these shortcuts are
-  // channel-gated and absent on stable, so the cheat sheet (also next/-only)
-  // should not advertise them on stable pages.
+  // Register global shortcuts (#1775) on next/ only: these are genuinely
+  // channel-gated (g-leader nav, the '?' cheat sheet, Esc-close) and absent on
+  // stable, so the cheat sheet should not advertise them on stable pages.
   if (isNextPage()) {
     window.swKeyboardShortcuts.register('global', [
       { key: 'g d', label: 'Go to Dashboard' },
@@ -694,9 +697,14 @@
       { key: 'g l', label: 'Go to Logs' },
       { key: 'g f', label: 'Go to Findings' },
       { key: 'g s', label: 'Go to Settings' },
-      { key: '⌘K', label: 'Command palette (Ctrl-K)' },
       { key: '?',   label: 'Show Keyboard Shortcuts' },
       { key: 'Esc', label: 'Close / clear focus' }
     ]);
   }
+  // Cmd-K is registered unconditionally (#2768): the palette now works on both
+  // channels (the isNextPage() gate above it was the stale part), so the
+  // cheat sheet should advertise it everywhere it fires.
+  window.swKeyboardShortcuts.register('global', [
+    { key: '⌘K', label: 'Command palette (Ctrl-K)' }
+  ]);
 })();
