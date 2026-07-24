@@ -80,21 +80,13 @@ func (c *Client) TestConnection(ctx context.Context) error {
 // conflict banner.
 func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error) {
 	var folders []VirtualFolder
-	if err := c.Get(ctx, "/Library/VirtualFolders", &folders); err != nil {
-		return nil, fmt.Errorf("getting virtual folders: %w", err)
+	if err := mediabrowser.GetMusicLibrariesRaw2(ctx, c, &folders); err != nil {
+		return nil, err
 	}
-
-	var music []VirtualFolder
-	for i := range folders {
-		f := &folders[i]
-		ct := strings.TrimSpace(strings.ToLower(f.CollectionType))
-		include := ct == "music" || ct == ""
-		c.Logger.Debug("jellyfin virtual folder discovered", "name", f.Name, "collection_type", f.CollectionType, "included_as_music", include)
-		if include {
-			music = append(music, *f)
-		}
-	}
-	return music, nil
+	return mediabrowser.FilterMusicLibraries(folders, c.Logger, mediabrowser.PlatformJellyfin,
+		func(f VirtualFolder) string { return f.CollectionType },
+		func(f VirtualFolder) string { return f.Name },
+	), nil
 }
 
 // CheckNFOWriterEnabled reports whether any Jellyfin music library has an NFO
@@ -168,10 +160,9 @@ func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherS
 
 // GetArtists returns album artists from a specific library with pagination.
 func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, limit int) (*ItemsResponse, error) {
-	path := fmt.Sprintf("/Artists/AlbumArtists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true&Fields=Path,ProviderIds,ImageTags,BackdropImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate", libraryID, startIndex, limit)
 	var resp ItemsResponse
-	if err := c.Get(ctx, path, &resp); err != nil {
-		return nil, fmt.Errorf("getting artists: %w", err)
+	if err := mediabrowser.GetArtistsRaw(ctx, c, libraryID, startIndex, limit, &resp); err != nil {
+		return nil, err
 	}
 	return &resp, nil
 }
@@ -246,17 +237,12 @@ func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID string) erro
 // imageType uses Stillwater naming (thumb, fanart, logo, banner).
 func (c *Client) GetArtistImage(ctx context.Context, artistID, imageType string) ([]byte, string, error) {
 	platformType := mapImageType(imageType)
-	if platformType == "" {
-		return nil, "", fmt.Errorf("unsupported image type: %s", imageType)
-	}
-	path := fmt.Sprintf("/Items/%s/Images/%s", artistID, platformType)
-	return c.GetRaw(ctx, path)
+	return mediabrowser.GetArtistImageRaw(ctx, c, artistID, platformType, imageType)
 }
 
 // GetArtistBackdrop downloads a backdrop image at the given 0-based index.
 func (c *Client) GetArtistBackdrop(ctx context.Context, artistID string, index int) ([]byte, string, error) {
-	path := fmt.Sprintf("/Items/%s/Images/Backdrop/%d", artistID, index)
-	return c.GetRaw(ctx, path)
+	return mediabrowser.GetArtistBackdropRaw(ctx, c, artistID, index)
 }
 
 // GetServerID fetches the Jellyfin server's identity from GET /System/Info
@@ -292,31 +278,24 @@ func (c *Client) GetFirstUserID(ctx context.Context) (string, error) {
 
 // GetArtistDetail fetches the current state of an artist from Jellyfin by platform artist ID.
 func (c *Client) GetArtistDetail(ctx context.Context, platformArtistID string) (*connection.ArtistPlatformState, error) {
-	if c.UserID == "" {
-		return nil, fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
-	}
-	path := fmt.Sprintf("/Users/%s/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", c.UserID, platformArtistID)
 	var item ArtistDetailItem
-	if err := c.Get(ctx, path, &item); err != nil {
-		return nil, fmt.Errorf("getting artist detail: %w", err)
+	if err := mediabrowser.GetArtistDetailRaw(ctx, c, c.UserID, platformArtistID, &item); err != nil {
+		return nil, err
 	}
-	return &connection.ArtistPlatformState{
-		Name:          item.Name,
-		SortName:      item.SortName,
-		Biography:     item.Overview,
-		Genres:        item.Genres,
-		Tags:          item.Tags,
-		PremiereDate:  item.PremiereDate,
-		EndDate:       item.EndDate,
-		MusicBrainzID: item.ProviderIDs.MusicBrainzArtist,
-		HasThumb:      item.ImageTags["Primary"] != "",
-		HasFanart:     len(item.BackdropImageTags) > 0,
-		BackdropCount: len(item.BackdropImageTags),
-		HasLogo:       item.ImageTags["Logo"] != "",
-		HasBanner:     item.ImageTags["Banner"] != "",
-		IsLocked:      item.IsLocked,
-		LockedFields:  item.LockedFields,
-	}, nil
+	return mediabrowser.BuildArtistPlatformState(mediabrowser.ArtistDetailFields{
+		Name:              item.Name,
+		SortName:          item.SortName,
+		Overview:          item.Overview,
+		Genres:            item.Genres,
+		Tags:              item.Tags,
+		PremiereDate:      item.PremiereDate,
+		EndDate:           item.EndDate,
+		MusicBrainzID:     item.ProviderIDs.MusicBrainzArtist,
+		ImageTags:         item.ImageTags,
+		BackdropImageTags: item.BackdropImageTags,
+		Locked:            item.IsLocked,
+		LockedFields:      item.LockedFields,
+	}), nil
 }
 
 // AuthenticateByName authenticates a user against a Jellyfin server using
@@ -601,19 +580,6 @@ func (c *Client) GetArtistPath(ctx context.Context, platformArtistID string) (st
 	return path, nil
 }
 
-// listArtistsPageLimit bounds each GetArtists page during a full library
-// enumeration. Jellyfin and Emby both page the AlbumArtists endpoint; 500 keeps
-// the request count low on a large library without producing a response body
-// big enough to matter.
-const listArtistsPageLimit = 500
-
-// listArtistsPageCap bounds the number of pages a single enumeration will walk.
-// A peer that misreports TotalRecordCount (or returns a full page forever)
-// would otherwise spin here indefinitely inside a rename. 200 pages x 500 = 100k
-// artists, far past any real library, so the cap can only be hit by a
-// misbehaving peer - which is exactly when a bounded loop matters.
-const listArtistsPageCap = 200
-
 // ListLibraryArtists enumerates every artist that lives in one of this peer's
 // MUSIC LIBRARIES, together with the peer's own path for each.
 //
@@ -626,25 +592,20 @@ func (c *Client) ListLibraryArtists(ctx context.Context) ([]connection.PeerArtis
 	if err != nil {
 		return nil, fmt.Errorf("listing music libraries: %w", err)
 	}
-	var out []connection.PeerArtist
+	libraryIDs := make([]string, len(libs))
 	for i := range libs {
-		libID := libs[i].ItemID
-		if libID == "" {
-			continue
-		}
-		for page := 0; page < listArtistsPageCap; page++ {
-			resp, err := c.GetArtists(ctx, libID, page*listArtistsPageLimit, listArtistsPageLimit)
-			if err != nil {
-				return nil, fmt.Errorf("listing artists in library %s: %w", libID, err)
-			}
-			for j := range resp.Items {
-				it := &resp.Items[j]
-				out = append(out, connection.PeerArtist{ID: it.ID, Name: it.Name, Path: it.Path})
-			}
-			if len(resp.Items) < listArtistsPageLimit {
-				break
-			}
-		}
+		libraryIDs[i] = libs[i].ItemID
 	}
-	return out, nil
+	return mediabrowser.ListLibraryArtistsRaw(ctx, libraryIDs, func(ctx context.Context, libraryID string, startIndex, limit int) ([]connection.PeerArtist, int, error) {
+		resp, err := c.GetArtists(ctx, libraryID, startIndex, limit)
+		if err != nil {
+			return nil, 0, err
+		}
+		items := make([]connection.PeerArtist, len(resp.Items))
+		for j := range resp.Items {
+			it := &resp.Items[j]
+			items[j] = connection.PeerArtist{ID: it.ID, Name: it.Name, Path: it.Path}
+		}
+		return items, len(resp.Items), nil
+	})
 }
