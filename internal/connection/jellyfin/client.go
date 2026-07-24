@@ -470,13 +470,11 @@ func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, erro
 	if err != nil {
 		return false, "", fmt.Errorf("checking jellyfin image saver settings: %w", err)
 	}
-	for i := range libs {
-		lib := &libs[i]
-		if lib.LibraryOptions.SaveLocalMetadata {
-			return true, lib.Name, nil
-		}
-	}
-	return false, "", nil
+	found, name := mediabrowser.CheckImageSaverEnabledRaw(libs,
+		func(l VirtualFolder) bool { return l.LibraryOptions.SaveLocalMetadata },
+		func(l VirtualFolder) string { return l.Name },
+	)
+	return found, name, nil
 }
 
 // SnapshotLibraryOptions captures the current saver state for every Jellyfin
@@ -488,21 +486,12 @@ func (c *Client) SnapshotLibraryOptions(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("getting music libraries for snapshot: %w", err)
 	}
-	entries := make([]mediabrowser.LibrarySaverSnapshotEntry, 0, len(libs))
-	for i := range libs {
-		lib := &libs[i]
-		savers := lib.LibraryOptions.MetadataSavers
-		if savers == nil {
-			savers = []string{}
-		}
-		entries = append(entries, mediabrowser.LibrarySaverSnapshotEntry{
-			LibraryID:         lib.ItemID,
-			LibraryName:       lib.Name,
-			SaveLocalMetadata: lib.LibraryOptions.SaveLocalMetadata,
-			MetadataSavers:    savers,
-		})
-	}
-	return mediabrowser.BuildSnapshot(entries)
+	return mediabrowser.SnapshotLibraryOptionsRaw(libs,
+		func(l VirtualFolder) string { return l.ItemID },
+		func(l VirtualFolder) string { return l.Name },
+		func(l VirtualFolder) bool { return l.LibraryOptions.SaveLocalMetadata },
+		func(l VirtualFolder) []string { return l.LibraryOptions.MetadataSavers },
+	)
 }
 
 // DisableFileWriteBack clears SaveLocalMetadata on every Jellyfin music
