@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -115,41 +117,15 @@ func TestTriggerArtistRefreshRaw_EmptyArtistID(t *testing.T) {
 // parsed query param rather than a raw substring match, matching the
 // rigor of the pre-existing emby/jellyfin client_test.go query assertions.
 func extractQueryValue(pathWithQuery, key string) string {
-	for i := 0; i < len(pathWithQuery); i++ {
-		if pathWithQuery[i] == '?' {
-			q := pathWithQuery[i+1:]
-			for _, pair := range splitAmp(q) {
-				k, v := splitEq(pair)
-				if k == key {
-					return v
-				}
-			}
-			return ""
-		}
+	i := strings.IndexByte(pathWithQuery, '?')
+	if i < 0 {
+		return ""
 	}
-	return ""
-}
-
-func splitAmp(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '&' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
+	values, err := url.ParseQuery(pathWithQuery[i+1:])
+	if err != nil {
+		return ""
 	}
-	out = append(out, s[start:])
-	return out
-}
-
-func splitEq(s string) (string, string) {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '=' {
-			return s[:i], s[i+1:]
-		}
-	}
-	return s, ""
+	return values.Get(key)
 }
 
 // TestFetchItemRaw_IssuesGetWithFields is the revert-and-rerun canary for
