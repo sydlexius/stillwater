@@ -9,9 +9,11 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 // CheatSheetModal renders the global keyboard-shortcut reference overlay (#1775).
-// Mounted in LayoutNext only (not in the shared LayoutGlobalChrome), so it is
-// absent from stable pages entirely. window.showCheatSheet is only defined on
-// next/ pages; the stable `?` handler falls back to toggleHelpOverlay().
+// Mounted unconditionally by the canonical templates.Layout (which LayoutNext
+// delegates to), so it is present on BOTH channels and window.showCheatSheet is
+// defined on every page rendered through Layout. The `?` handler's
+// toggleHelpOverlay() fallback therefore only covers pages rendered outside
+// Layout (login/register/setup/onboarding).
 //
 // window.showCheatSheet() / window.hideCheatSheet() are the public API.
 // The modal reads window.swKeyboardShortcuts.list() on every open so it always

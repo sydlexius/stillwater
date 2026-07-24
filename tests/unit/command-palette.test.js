@@ -231,4 +231,93 @@ describe('Cmd-K keyboard integration (#1775)', () => {
     const keys = dom.window.swKeyboardShortcuts.list().map((e) => e.key);
     assert.ok(keys.includes('⌘K'));
   });
+
+  // #2768: the palette DOM and window.swCommandPalette are mounted
+  // unconditionally by Layout, so Cmd-K must also fire on stable-channel
+  // (non-next/) pages -- the isNextPage() conjunct that used to gate it was
+  // stale. Assert the observable effect (the #sw-cmdk hidden class), not an
+  // internal call count.
+  //
+  // The event MUST be constructed with cancelable:true. A KeyboardEvent built
+  // without it reports defaultPrevented === false no matter what the handler
+  // does, so the preventDefault() assertion below would pass vacuously against
+  // a build that never called it at all (verified by mutation: deleting the
+  // preventDefault() left the whole suite green before this flag was added).
+  it('Cmd-K toggles the palette on stable-channel (non-next/) pages and claims the key', () => {
+    const dom = createDom({
+      html: '<!doctype html><html><head><meta name="htmx-base-path" content=""></head>' +
+        '<body><div id="sw-cmdk" class="hidden"></div></body></html>',
+      modules: [],
+    });
+    dom.window.SW_IS_NEXT_PAGE = false;
+    dom.window.eval(readFileSync(KEYBOARD_PATH, 'utf-8'));
+
+    const cmdk = dom.window.document.getElementById('sw-cmdk');
+    // Precondition: the palette starts hidden, so the assertion below measures
+    // a real transition rather than an already-satisfied state.
+    assert.equal(cmdk.classList.contains('hidden'), true,
+      'precondition: palette must start hidden');
+    dom.window.swCommandPalette = {
+      toggle() { cmdk.classList.toggle('hidden'); },
+    };
+    const ev = new dom.window.KeyboardEvent('keydown', { key: 'k', metaKey: true, cancelable: true });
+    dom.window.document.dispatchEvent(ev);
+    assert.equal(cmdk.classList.contains('hidden'), false);
+    assert.equal(ev.defaultPrevented, true,
+      'the browser native Cmd-K must be suppressed once we act on the key');
+  });
+
+  // #2768: when the palette cannot open, the keystroke must fail loudly
+  // (console.error), never silently swallow the key. There are TWO doors into
+  // that state and both are covered here, because keyboard.js calls
+  // preventDefault() before either is reached -- so a silent failure on either
+  // path costs the user the browser's native Cmd-K with nothing in its place:
+  //   (a) the controller never loaded  -> keyboard.js's own guard  ([swKbd])
+  //   (b) the controller loaded but the #sw-cmdk root is absent from the DOM,
+  //       so keyboard.js's capability check PASSES and open() bails ([swCmdk])
+  it('fails loudly when the palette cannot open, on both the missing-controller and missing-root paths', () => {
+    // (a) controller absent entirely.
+    const noCtrl = createDom({
+      html: '<!doctype html><html><head><meta name="htmx-base-path" content=""></head><body></body></html>',
+      modules: [],
+    });
+    noCtrl.window.SW_IS_NEXT_PAGE = false;
+    noCtrl.window.eval(readFileSync(KEYBOARD_PATH, 'utf-8'));
+
+    const ctrlErrors = [];
+    noCtrl.window.console.error = (...args) => ctrlErrors.push(args.join(' '));
+    // window.swCommandPalette deliberately left undefined.
+    const evA = new noCtrl.window.KeyboardEvent('keydown', { key: 'k', metaKey: true, cancelable: true });
+    noCtrl.window.document.dispatchEvent(evA);
+
+    assert.ok(ctrlErrors.some((e) => e.includes('swCommandPalette')),
+      'missing command-palette controller is a loud console.error, not a silent no-op');
+    assert.equal(evA.defaultPrevented, true,
+      'the key is claimed even on the failure path, which is exactly why it must be loud');
+
+    // (b) controller loaded, but the palette root is missing from the DOM.
+    // keyboard.js's typeof-toggle check passes here, so this path is invisible
+    // to guard (a) and needs its own diagnostic inside open().
+    const noRoot = createDom({
+      html: '<!doctype html><html><head><meta name="htmx-base-path" content=""></head><body></body></html>',
+      modules: ['command-palette'],
+    });
+    noRoot.window.SW_IS_NEXT_PAGE = false;
+    noRoot.window.eval(readFileSync(KEYBOARD_PATH, 'utf-8'));
+
+    assert.equal(typeof noRoot.window.swCommandPalette.toggle, 'function',
+      'precondition: the controller IS loaded, so keyboard.js\'s capability guard passes');
+    assert.equal(noRoot.window.document.getElementById('sw-cmdk'), null,
+      'precondition: the palette root is genuinely absent');
+
+    const rootErrors = [];
+    noRoot.window.console.error = (...args) => rootErrors.push(args.join(' '));
+    const evB = new noRoot.window.KeyboardEvent('keydown', { key: 'k', metaKey: true, cancelable: true });
+    noRoot.window.document.dispatchEvent(evB);
+
+    assert.ok(rootErrors.some((e) => e.includes('sw-cmdk')),
+      'a missing palette root must also fail loudly: the native Cmd-K was already suppressed');
+    assert.equal(noRoot.window.swCommandPalette.isOpen(), false,
+      'precondition check: nothing actually opened, so the keystroke really was lost');
+  });
 });

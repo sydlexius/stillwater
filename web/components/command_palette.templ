@@ -1,8 +1,9 @@
 package components
 
-// CommandPalette is the Cmd-K global command palette shell for next/. The DOM
-// is static; command-palette.js populates [data-cmdk-list] and toggles the
-// hidden class. Mounted once in LayoutNext (next/-only). Raycast layout.
+// CommandPalette is the Cmd-K global command palette shell, shared by both
+// channels. The DOM is static; command-palette.js populates [data-cmdk-list]
+// and toggles the hidden class. Mounted once in the canonical Layout, which
+// LayoutNext delegates to. Raycast layout.
 templ CommandPalette() {
 	<div id="sw-cmdk" class="fixed inset-0 z-50 hidden sw-cmdk" role="dialog" aria-modal="true" aria-labelledby="sw-cmdk-title">
 		<h2 id="sw-cmdk-title" class="sr-only">Command palette</h2>
