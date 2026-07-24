@@ -57,7 +57,7 @@ Kodi, Emby, and Jellyfin honor a `<lockdata>true</lockdata>` element as a reques
 - **On read,** if the file has lockdata set, the artist is marked as locked.
 - **On write,** Stillwater includes lockdata only when the artist is locked OR when the artist's library has the per-library lockdata switch turned on. The intent: the per-library switch means "every NFO this library writes asks platforms to leave it alone," whereas per-artist locks express the same wish on a single record without library-wide opt-in.
 
-A locked NFO is the strongest defence against an external platform overwriting your edits. It does not stop *you* -- Stillwater still writes the file when you save. It signals "ignore me" to the other tool.
+A locked NFO is the strongest defense against an external platform overwriting your edits. It does not stop *you* -- Stillwater still writes the file when you save. It signals "ignore me" to the other tool.
 
 ## Per-platform variations
 
@@ -79,7 +79,7 @@ Every NFO Stillwater writes carries a small Stillwater stamp near the end -- a s
 
 - **Encoding.** Stillwater always writes UTF-8 with a leading XML declaration; you don't need to set anything.
 - **File location.** The NFO goes next to the other files in the artist directory, named `artist.nfo`. Pathless libraries skip the write entirely.
-- **Atomicity.** The temp/backup/rename dance is automatic and fast; you'll never see the intermediate files unless something crashes mid-write.
+- **Atomicity.** Stillwater writes the new content to a temp file, then renames it onto the target in a single step, so the file is never visible in a half-written state. If a crash interrupts the write, the previous content is left untouched.
 - **Album discovery.** Stillwater reads album entries into the artist's discography view but doesn't write them back.
 
 What you *do* think about: which platform profile a library uses (the field map), whether to lock individual artists or whole libraries, and whether you trust the conflict gate's verdict when it pauses writes. The rest takes care of itself.
