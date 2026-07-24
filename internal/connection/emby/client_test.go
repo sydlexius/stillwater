@@ -1656,34 +1656,56 @@ func TestUpdateArtistPath_EmbySilentlyDiscardsPath(t *testing.T) {
 }
 
 // TestGetArtistPath_AlwaysEmpty is the dedicated positive-control test for
-// GetArtistPath's always-"" contract: Emby artists are virtual, name-keyed
-// items with no on-disk path, so a fetch that returns a real Path value must
-// still surface as "" -- Emby never reports one for an artist in practice,
-// but this pins the read straight through (item["Path"] read as string)
-// rather than any special-cased always-blank behavior. The negative case
-// (peer silently discarding a written Path) is already covered by
-// TestUpdateArtistPath_EmbySilentlyDiscardsPath; this test isolates
-// GetArtistPath on its own so a future refactor that breaks it in isolation
-// (rather than only via the UpdateArtistPath round-trip) is caught directly.
+// GetArtistPath: the method itself is a straight read of the fetched item's
+// Path value, with no special-casing to blank it out. Emby artists are
+// virtual, name-keyed items, and Emby simply never reports a Path for one in
+// practice, so the real-world result is "" -- that is a property of what
+// Emby sends, not of the method. The two cases below pin both halves: the
+// no-Path fixture (the real-world shape) reads back as "", and a fixture
+// that does carry a Path reads back that exact value, proving the method
+// does not hardcode a blank. The negative case (peer silently discarding a
+// written Path) is already covered by TestUpdateArtistPath_EmbySilentlyDiscardsPath;
+// this test isolates GetArtistPath on its own so a future refactor that
+// breaks it in isolation (rather than only via the UpdateArtistPath
+// round-trip) is caught directly.
 func TestGetArtistPath_AlwaysEmpty(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		// A real Emby artist item reports no Path at all.
-		_, _ = w.Write([]byte(`{"Id":"a1","Name":"Radiohead"}`))
-	}))
-	defer srv.Close()
-
-	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
-	got, err := c.GetArtistPath(context.Background(), "a1")
-	if err != nil {
-		t.Fatalf("GetArtistPath: %v", err)
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "no Path key reads back empty",
+			body: `{"Id":"a1","Name":"Radiohead"}`,
+			want: "",
+		},
+		{
+			name: "Path value reads through unchanged",
+			body: `{"Id":"a1","Name":"Radiohead","Path":"/music/Radiohead"}`,
+			want: "/music/Radiohead",
+		},
 	}
-	if got != "" {
-		t.Errorf("GetArtistPath = %q, want \"\" (Emby artists are virtual and report no path)", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+			got, err := c.GetArtistPath(context.Background(), "a1")
+			if err != nil {
+				t.Fatalf("GetArtistPath: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("GetArtistPath = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
