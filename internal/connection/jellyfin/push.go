@@ -3,7 +3,6 @@ package jellyfin
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/httpclient"
+	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 )
 
 // PushMetadata updates metadata for an artist item on the Jellyfin server.
@@ -321,106 +321,22 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	if jfType == "" {
 		return fmt.Errorf("unsupported image type: %s", imageType)
 	}
-
-	// Jellyfin 10.x expects the image body to be base64-encoded plain text.
-	// The Content-Type header still declares the image format (image/jpeg or
-	// image/png); Jellyfin uses it to determine the save format after decoding.
-	encoded := base64.StdEncoding.EncodeToString(data)
-
-	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), jfType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
-	if err != nil {
-		return fmt.Errorf("creating image upload request: %w", err)
-	}
-	c.AuthFunc(req)
-	req.Header.Set("Content-Type", contentType)
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("executing image upload: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("image upload failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
-		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
-	}
-
-	_, _ = io.Copy(io.Discard, resp.Body)
-	c.Logger.Debug("image uploaded to jellyfin", "artist_id", platformArtistID, "type", jfType)
-	return nil
+	return mediabrowser.UploadImageRaw(ctx, c.Client, c.Logger, "jellyfin", url.PathEscape(platformArtistID), jfType, imageType, data, contentType, wrapAuthIfStatusAuth)
 }
 
 // UploadImageAtIndex uploads an image at a specific index to the Jellyfin server.
 // POST /Items/{id}/Images/{type}/{index}
 // This is used for backdrop images where Jellyfin supports multiple images per artist.
 func (c *Client) UploadImageAtIndex(ctx context.Context, platformArtistID string, imageType string, index int, data []byte, contentType string) error {
-	if index < 0 {
-		return fmt.Errorf("invalid image index: %d", index)
-	}
 	jfType := mapImageType(imageType)
-	if jfType == "" {
-		return fmt.Errorf("unsupported image type: %s", imageType)
-	}
-
-	encoded := base64.StdEncoding.EncodeToString(data)
-
-	path := fmt.Sprintf("/Items/%s/Images/%s/%d", url.PathEscape(platformArtistID), jfType, index)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
-	if err != nil {
-		return fmt.Errorf("creating indexed image upload request: %w", err)
-	}
-	c.AuthFunc(req)
-	req.Header.Set("Content-Type", contentType)
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("executing indexed image upload: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("indexed image upload failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
-		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
-	}
-
-	_, _ = io.Copy(io.Discard, resp.Body)
-	c.Logger.Debug("image uploaded to jellyfin at index", "artist_id", platformArtistID, "type", jfType, "index", index)
-	return nil
+	return mediabrowser.UploadImageAtIndexRaw(ctx, c.Client, c.Logger, "jellyfin", url.PathEscape(platformArtistID), jfType, imageType, index, data, contentType, wrapAuthIfStatusAuth)
 }
 
 // DeleteImage deletes an image from the Jellyfin server for the given artist.
 // DELETE /Items/{id}/Images/{type}
 func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, imageType string) error {
 	jfType := mapImageType(imageType)
-	if jfType == "" {
-		return fmt.Errorf("unsupported image type: %s", imageType)
-	}
-
-	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), jfType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), http.NoBody)
-	if err != nil {
-		return fmt.Errorf("creating image delete request: %w", err)
-	}
-	c.AuthFunc(req)
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("executing image delete: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("image delete failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
-		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
-	}
-
-	_, _ = io.Copy(io.Discard, resp.Body)
-	c.Logger.Debug("image deleted from jellyfin", "artist_id", platformArtistID, "type", jfType)
-	return nil
+	return mediabrowser.DeleteImageRaw(ctx, c.Client, c.Logger, "jellyfin", url.PathEscape(platformArtistID), jfType, imageType, wrapAuthIfStatusAuth)
 }
 
 // DeleteImageAtIndex deletes the image at a specific index for the given
@@ -429,36 +345,8 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 // remaining backdrops after a delete, so callers pruning multiple indices
 // MUST delete high-index-first.
 func (c *Client) DeleteImageAtIndex(ctx context.Context, platformArtistID string, imageType string, index int) error {
-	if index < 0 {
-		return fmt.Errorf("invalid image index: %d", index)
-	}
 	jfType := mapImageType(imageType)
-	if jfType == "" {
-		return fmt.Errorf("unsupported image type: %s", imageType)
-	}
-
-	path := fmt.Sprintf("/Items/%s/Images/%s/%d", url.PathEscape(platformArtistID), jfType, index)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), http.NoBody)
-	if err != nil {
-		return fmt.Errorf("creating indexed image delete request: %w", err)
-	}
-	c.AuthFunc(req)
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("executing indexed image delete: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("indexed image delete failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
-		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
-	}
-
-	_, _ = io.Copy(io.Discard, resp.Body)
-	c.Logger.Debug("image deleted from jellyfin at index", "artist_id", platformArtistID, "type", jfType, "index", index)
-	return nil
+	return mediabrowser.DeleteImageAtIndexRaw(ctx, c.Client, c.Logger, "jellyfin", url.PathEscape(platformArtistID), jfType, imageType, index, wrapAuthIfStatusAuth)
 }
 
 // logDateNormalization logs the result of normalizing a date field for push.

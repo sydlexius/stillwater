@@ -1,9 +1,11 @@
 package mediabrowser
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -20,6 +22,17 @@ type rawTransport struct {
 	rawType    string
 	rawErr     error
 	gotRawPath string
+
+	// doStatus/doBody/doErr configure Do's canned response; gotDoMethod/
+	// gotDoPath/gotDoBody/gotDoContentType record what the caller passed so
+	// image_writers_test.go can assert the request shape non-vacuously.
+	doStatus         int
+	doBody           string
+	doErr            error
+	gotDoMethod      string
+	gotDoPath        string
+	gotDoBody        string
+	gotDoContentType string
 }
 
 func (r *rawTransport) Get(_ context.Context, path string, result any) error {
@@ -40,6 +53,31 @@ func (r *rawTransport) GetRaw(_ context.Context, path string) ([]byte, string, e
 
 func (r *rawTransport) PostJSON(_ context.Context, _ string, _ io.Reader, _ any) error {
 	return nil
+}
+
+// Do records the request shape and returns a canned response, matching the
+// real BaseClient.Do primitive that the image_writers.go free functions
+// call. Defaults to 200 OK with an empty body when doStatus is unset (zero
+// value), so tests that don't care about the response can omit it.
+func (r *rawTransport) Do(_ context.Context, method, path string, body io.Reader, contentType string) (*http.Response, error) {
+	r.gotDoMethod = method
+	r.gotDoPath = path
+	r.gotDoContentType = contentType
+	if body != nil {
+		b, _ := io.ReadAll(body)
+		r.gotDoBody = string(b)
+	}
+	if r.doErr != nil {
+		return nil, r.doErr
+	}
+	status := r.doStatus
+	if status == 0 {
+		status = http.StatusOK
+	}
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(bytes.NewReader([]byte(r.doBody))),
+	}, nil
 }
 
 // assignInto copies v (a pointer-shaped value the test constructs) into

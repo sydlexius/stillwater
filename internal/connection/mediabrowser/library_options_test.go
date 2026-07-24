@@ -1,12 +1,14 @@
 package mediabrowser
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"reflect"
 	"sort"
 	"strings"
@@ -72,6 +74,14 @@ func (f *fakeTransport) PostJSON(_ context.Context, path string, body io.Reader,
 		return f.postErrs[idx]
 	}
 	return nil
+}
+
+// Do is not exercised by this file's library-options tests (none of them
+// touch the image write/delete paths), so it returns a fixed 200 OK with an
+// empty body -- satisfying the Transport interface without pretending to
+// model behavior nothing here asserts on.
+func (f *fakeTransport) Do(_ context.Context, _, _ string, _ io.Reader, _ string) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(nil))}, nil
 }
 
 func testLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -450,6 +460,14 @@ func (p *statefulPeer) PostJSON(_ context.Context, _ string, body io.Reader, _ a
 	// The real endpoint REPLACES LibraryOptions wholesale.
 	p.libs[wrapper.ID] = wrapper.LibraryOptions
 	return nil
+}
+
+// Do is not exercised by the #2420 save-back scenario this double models
+// (it only drives the library-options snapshot/disable/restore flow via
+// Get/PostJSON), so it returns a fixed 200 OK -- satisfying the Transport
+// interface without pretending to model behavior nothing here asserts on.
+func (p *statefulPeer) Do(_ context.Context, _, _ string, _ io.Reader, _ string) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(nil))}, nil
 }
 
 // wouldWriteNFO reports whether this peer would still write an NFO into the
