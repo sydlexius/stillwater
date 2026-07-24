@@ -184,6 +184,44 @@ func PostLibraryOptionsRaw(ctx context.Context, t Transport, logger *slog.Logger
 	return t.PostJSON(ctx, path, bytes.NewReader(body), nil)
 }
 
+// CheckImageSaverEnabledRaw reports whether any library in libs has its
+// SaveLocalMetadata flag set, returning that library's name. Generic over T
+// because the Emby and Jellyfin typed VirtualFolder DTOs are separate types;
+// getSaveLocalMetadata/getName read the two fields the check needs out of
+// either one. Byte-identical CheckImageSaverEnabled body on both platforms --
+// see emby.Client.CheckImageSaverEnabled / jellyfin.Client.CheckImageSaverEnabled.
+func CheckImageSaverEnabledRaw[T any](libs []T, getSaveLocalMetadata func(T) bool, getName func(T) string) (bool, string) {
+	for i := range libs {
+		if getSaveLocalMetadata(libs[i]) {
+			return true, getName(libs[i])
+		}
+	}
+	return false, ""
+}
+
+// SnapshotLibraryOptionsRaw builds the versioned snapshot envelope from a
+// caller's typed library slice. Generic over T for the same reason as
+// CheckImageSaverEnabledRaw; nil MetadataSavers is normalized to an empty
+// slice so restore always has a concrete list to work with. Byte-identical
+// SnapshotLibraryOptions body on both platforms -- see
+// emby.Client.SnapshotLibraryOptions / jellyfin.Client.SnapshotLibraryOptions.
+func SnapshotLibraryOptionsRaw[T any](libs []T, getItemID, getName func(T) string, getSaveLocalMetadata func(T) bool, getMetadataSavers func(T) []string) (string, error) {
+	entries := make([]LibrarySaverSnapshotEntry, 0, len(libs))
+	for i := range libs {
+		savers := getMetadataSavers(libs[i])
+		if savers == nil {
+			savers = []string{}
+		}
+		entries = append(entries, LibrarySaverSnapshotEntry{
+			LibraryID:         getItemID(libs[i]),
+			LibraryName:       getName(libs[i]),
+			SaveLocalMetadata: getSaveLocalMetadata(libs[i]),
+			MetadataSavers:    savers,
+		})
+	}
+	return BuildSnapshot(entries)
+}
+
 // DisableFileWriteBack disarms a peer's local-metadata writers on every
 // music library via a lossless raw-JSON round-trip. The peer's
 // LibraryOptions response carries many fields our Go struct doesn't model;

@@ -147,22 +147,22 @@ func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherS
 		return nil, fmt.Errorf("checking emby image fetcher settings: %w", err)
 	}
 
+	entries := mediabrowser.CollectImageFetcherEntriesRaw(libs,
+		func(VirtualFolder) bool { return true }, // Emby has no library-level internet-providers gate.
+		func(l VirtualFolder) string { return l.Name },
+		func(l VirtualFolder) string { return l.ItemID },
+		func(l VirtualFolder) []TypeOption { return l.LibraryOptions.TypeOptions },
+		func(o TypeOption) string { return o.Type },
+		func(o TypeOption) []string { return o.ImageFetchers },
+	)
 	var results []ImageFetcherStatus
-	for i := range libs {
-		lib := &libs[i]
-		for _, opt := range lib.LibraryOptions.TypeOptions {
-			if !strings.EqualFold(opt.Type, "MusicArtist") {
-				continue
-			}
-			if len(opt.ImageFetchers) > 0 {
-				results = append(results, ImageFetcherStatus{
-					LibraryName:  lib.Name,
-					LibraryID:    lib.ItemID,
-					FetcherNames: opt.ImageFetchers,
-					RiskLevel:    "warn",
-				})
-			}
-		}
+	for _, e := range entries {
+		results = append(results, ImageFetcherStatus{
+			LibraryName:  e.LibraryName,
+			LibraryID:    e.LibraryID,
+			FetcherNames: e.FetcherNames,
+			RiskLevel:    "warn",
+		})
 	}
 	return results, nil
 }
@@ -378,27 +378,17 @@ func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatu
 	results := make([]LibrarySettingsStatus, 0, len(libs))
 	for i := range libs {
 		lib := &libs[i]
+		imageFetchers, metadataFetchers := mediabrowser.FindMusicArtistOptionRaw(lib.LibraryOptions.TypeOptions,
+			func(o TypeOption) string { return o.Type },
+			func(o TypeOption) []string { return o.ImageFetchers },
+			func(o TypeOption) []string { return o.MetadataFetchers },
+		)
 		status := LibrarySettingsStatus{
-			LibraryID:      lib.ItemID,
-			LibraryName:    lib.Name,
-			MetadataSavers: lib.LibraryOptions.MetadataSavers,
-		}
-		for _, opt := range lib.LibraryOptions.TypeOptions {
-			if strings.EqualFold(opt.Type, "MusicArtist") {
-				status.ImageFetchers = opt.ImageFetchers
-				status.MetadataFetchers = opt.MetadataFetchers
-				break
-			}
-		}
-		// Normalize nil slices to empty so JSON serializes as [] not null.
-		if status.ImageFetchers == nil {
-			status.ImageFetchers = []string{}
-		}
-		if status.MetadataFetchers == nil {
-			status.MetadataFetchers = []string{}
-		}
-		if status.MetadataSavers == nil {
-			status.MetadataSavers = []string{}
+			LibraryID:        lib.ItemID,
+			LibraryName:      lib.Name,
+			ImageFetchers:    mediabrowser.NormalizeStrings(imageFetchers),
+			MetadataFetchers: mediabrowser.NormalizeStrings(metadataFetchers),
+			MetadataSavers:   mediabrowser.NormalizeStrings(lib.LibraryOptions.MetadataSavers),
 		}
 		// A library has conflicts if any fetcher/saver is active.
 		status.HasConflicts = len(status.ImageFetchers) > 0 ||
@@ -462,14 +452,9 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 	// treats the body as a full replacement, so we must preserve unrelated
 	// fields to avoid dropping them.
 	getPath := fmt.Sprintf("/Users/%s/Items/%s", c.UserID, platformArtistID)
-	var item map[string]any
-	if err := c.Get(ctx, getPath, &item); err != nil {
+	item, err := mediabrowser.FetchUserScopedItemRaw(ctx, c, getPath)
+	if err != nil {
 		return fmt.Errorf("fetching artist for lock update: %w", err)
-	}
-	// Guard against a JSON null / empty body that would leave item as a
-	// nil map; assigning to a nil map panics.
-	if item == nil {
-		item = make(map[string]any)
 	}
 	item["LockData"] = lockData
 	canonLocks, dropped := canonicalizeLockedFieldsDrops(lockedFields)
@@ -479,12 +464,8 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 			"artist_id", platformArtistID, "field", d)
 	}
 
-	body, err := json.Marshal(item)
-	if err != nil {
-		return fmt.Errorf("encoding lock update body: %w", err)
-	}
 	path := fmt.Sprintf("/Items/%s", platformArtistID)
-	if err := c.PostJSON(ctx, path, bytes.NewReader(body), nil); err != nil {
+	if err := mediabrowser.PostUserScopedItemRaw(ctx, c, path, item); err != nil {
 		return fmt.Errorf("posting artist lock update: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
@@ -517,21 +498,14 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	// closes the same class of bug here.
 	escapedID := url.PathEscape(platformArtistID)
 	getPath := fmt.Sprintf("/Users/%s/Items/%s", url.PathEscape(c.UserID), escapedID)
-	var item map[string]any
-	if err := c.Get(ctx, getPath, &item); err != nil {
+	item, err := mediabrowser.FetchUserScopedItemRaw(ctx, c, getPath)
+	if err != nil {
 		return fmt.Errorf("fetching artist for path update: %w", err)
-	}
-	if item == nil {
-		item = make(map[string]any)
 	}
 	item["Path"] = newPath
 
-	body, err := json.Marshal(item)
-	if err != nil {
-		return fmt.Errorf("encoding path update body: %w", err)
-	}
 	postPath := fmt.Sprintf("/Items/%s", escapedID)
-	if err := c.PostJSON(ctx, postPath, bytes.NewReader(body), nil); err != nil {
+	if err := mediabrowser.PostUserScopedItemRaw(ctx, c, postPath, item); err != nil {
 		return fmt.Errorf("posting artist path update: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
@@ -564,8 +538,8 @@ func (c *Client) GetArtistPath(ctx context.Context, platformArtistID string) (st
 	}
 	getPath := fmt.Sprintf("/Users/%s/Items/%s",
 		url.PathEscape(c.UserID), url.PathEscape(platformArtistID))
-	var item map[string]any
-	if err := c.Get(ctx, getPath, &item); err != nil {
+	item, err := mediabrowser.FetchUserScopedItemRaw(ctx, c, getPath)
+	if err != nil {
 		return "", fmt.Errorf("fetching artist for path read-back: %w", wrapAuthIfStatusAuth(err))
 	}
 	path, _ := item["Path"].(string)
@@ -681,13 +655,11 @@ func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, erro
 	if err != nil {
 		return false, "", fmt.Errorf("checking emby image saver settings: %w", err)
 	}
-	for i := range libs {
-		lib := &libs[i]
-		if lib.LibraryOptions.SaveLocalMetadata {
-			return true, lib.Name, nil
-		}
-	}
-	return false, "", nil
+	found, name := mediabrowser.CheckImageSaverEnabledRaw(libs,
+		func(l VirtualFolder) bool { return l.LibraryOptions.SaveLocalMetadata },
+		func(l VirtualFolder) string { return l.Name },
+	)
+	return found, name, nil
 }
 
 // SnapshotLibraryOptions captures the current SaveLocalMetadata + MetadataSavers
@@ -701,21 +673,12 @@ func (c *Client) SnapshotLibraryOptions(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("getting music libraries for snapshot: %w", err)
 	}
-	entries := make([]mediabrowser.LibrarySaverSnapshotEntry, 0, len(libs))
-	for i := range libs {
-		lib := &libs[i]
-		savers := lib.LibraryOptions.MetadataSavers
-		if savers == nil {
-			savers = []string{}
-		}
-		entries = append(entries, mediabrowser.LibrarySaverSnapshotEntry{
-			LibraryID:         lib.ItemID,
-			LibraryName:       lib.Name,
-			SaveLocalMetadata: lib.LibraryOptions.SaveLocalMetadata,
-			MetadataSavers:    savers,
-		})
-	}
-	return mediabrowser.BuildSnapshot(entries)
+	return mediabrowser.SnapshotLibraryOptionsRaw(libs,
+		func(l VirtualFolder) string { return l.ItemID },
+		func(l VirtualFolder) string { return l.Name },
+		func(l VirtualFolder) bool { return l.LibraryOptions.SaveLocalMetadata },
+		func(l VirtualFolder) []string { return l.LibraryOptions.MetadataSavers },
+	)
 }
 
 // DisableFileWriteBack clears SaveLocalMetadata on every Emby music library.

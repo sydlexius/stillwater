@@ -131,29 +131,26 @@ func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherS
 		return nil, fmt.Errorf("checking jellyfin image fetcher settings: %w", err)
 	}
 
+	// If internet providers are globally disabled for a library, its image
+	// fetchers are inactive regardless of TypeOptions.
+	entries := mediabrowser.CollectImageFetcherEntriesRaw(libs,
+		func(l VirtualFolder) bool { return l.LibraryOptions.EnableInternetProviders },
+		func(l VirtualFolder) string { return l.Name },
+		func(l VirtualFolder) string { return l.ItemID },
+		func(l VirtualFolder) []TypeOption { return l.LibraryOptions.TypeOptions },
+		func(o TypeOption) string { return o.Type },
+		func(o TypeOption) []string { return o.ImageFetchers },
+	)
 	var results []ImageFetcherStatus
-	for i := range libs {
-		lib := &libs[i]
-		// If internet providers are globally disabled for this library,
-		// image fetchers are inactive regardless of TypeOptions.
-		if !lib.LibraryOptions.EnableInternetProviders {
-			continue
-		}
-		for _, opt := range lib.LibraryOptions.TypeOptions {
-			if !strings.EqualFold(opt.Type, "MusicArtist") {
-				continue
-			}
-			if len(opt.ImageFetchers) > 0 {
-				// Jellyfin can replace existing images and strip EXIF
-				// provenance data, so the risk level is always "critical".
-				results = append(results, ImageFetcherStatus{
-					LibraryName:  lib.Name,
-					LibraryID:    lib.ItemID,
-					FetcherNames: opt.ImageFetchers,
-					RiskLevel:    "critical",
-				})
-			}
-		}
+	for _, e := range entries {
+		// Jellyfin can replace existing images and strip EXIF provenance
+		// data, so the risk level is always "critical".
+		results = append(results, ImageFetcherStatus{
+			LibraryName:  e.LibraryName,
+			LibraryID:    e.LibraryID,
+			FetcherNames: e.FetcherNames,
+			RiskLevel:    "critical",
+		})
 	}
 	return results, nil
 }
@@ -370,28 +367,18 @@ func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatu
 	results := make([]LibrarySettingsStatus, 0, len(libs))
 	for i := range libs {
 		lib := &libs[i]
+		imageFetchers, metadataFetchers := mediabrowser.FindMusicArtistOptionRaw(lib.LibraryOptions.TypeOptions,
+			func(o TypeOption) string { return o.Type },
+			func(o TypeOption) []string { return o.ImageFetchers },
+			func(o TypeOption) []string { return o.MetadataFetchers },
+		)
 		status := LibrarySettingsStatus{
 			LibraryID:               lib.ItemID,
 			LibraryName:             lib.Name,
-			MetadataSavers:          lib.LibraryOptions.MetadataSavers,
+			ImageFetchers:           mediabrowser.NormalizeStrings(imageFetchers),
+			MetadataFetchers:        mediabrowser.NormalizeStrings(metadataFetchers),
+			MetadataSavers:          mediabrowser.NormalizeStrings(lib.LibraryOptions.MetadataSavers),
 			EnableInternetProviders: lib.LibraryOptions.EnableInternetProviders,
-		}
-		for _, opt := range lib.LibraryOptions.TypeOptions {
-			if strings.EqualFold(opt.Type, "MusicArtist") {
-				status.ImageFetchers = opt.ImageFetchers
-				status.MetadataFetchers = opt.MetadataFetchers
-				break
-			}
-		}
-		// Normalize nil slices to empty so JSON serializes as [] not null.
-		if status.ImageFetchers == nil {
-			status.ImageFetchers = []string{}
-		}
-		if status.MetadataFetchers == nil {
-			status.MetadataFetchers = []string{}
-		}
-		if status.MetadataSavers == nil {
-			status.MetadataSavers = []string{}
 		}
 		// Lockdata is needed only while the NFO saver is still ARMED. This used to
 		// be hardcoded true, on the claim that "Jellyfin MetadataSavers=[] does NOT
@@ -470,13 +457,11 @@ func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, erro
 	if err != nil {
 		return false, "", fmt.Errorf("checking jellyfin image saver settings: %w", err)
 	}
-	for i := range libs {
-		lib := &libs[i]
-		if lib.LibraryOptions.SaveLocalMetadata {
-			return true, lib.Name, nil
-		}
-	}
-	return false, "", nil
+	found, name := mediabrowser.CheckImageSaverEnabledRaw(libs,
+		func(l VirtualFolder) bool { return l.LibraryOptions.SaveLocalMetadata },
+		func(l VirtualFolder) string { return l.Name },
+	)
+	return found, name, nil
 }
 
 // SnapshotLibraryOptions captures the current saver state for every Jellyfin
@@ -488,21 +473,12 @@ func (c *Client) SnapshotLibraryOptions(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("getting music libraries for snapshot: %w", err)
 	}
-	entries := make([]mediabrowser.LibrarySaverSnapshotEntry, 0, len(libs))
-	for i := range libs {
-		lib := &libs[i]
-		savers := lib.LibraryOptions.MetadataSavers
-		if savers == nil {
-			savers = []string{}
-		}
-		entries = append(entries, mediabrowser.LibrarySaverSnapshotEntry{
-			LibraryID:         lib.ItemID,
-			LibraryName:       lib.Name,
-			SaveLocalMetadata: lib.LibraryOptions.SaveLocalMetadata,
-			MetadataSavers:    savers,
-		})
-	}
-	return mediabrowser.BuildSnapshot(entries)
+	return mediabrowser.SnapshotLibraryOptionsRaw(libs,
+		func(l VirtualFolder) string { return l.ItemID },
+		func(l VirtualFolder) string { return l.Name },
+		func(l VirtualFolder) bool { return l.LibraryOptions.SaveLocalMetadata },
+		func(l VirtualFolder) []string { return l.LibraryOptions.MetadataSavers },
+	)
 }
 
 // DisableFileWriteBack clears SaveLocalMetadata on every Jellyfin music

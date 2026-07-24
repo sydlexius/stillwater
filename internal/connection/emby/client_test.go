@@ -1655,6 +1655,88 @@ func TestUpdateArtistPath_EmbySilentlyDiscardsPath(t *testing.T) {
 	}
 }
 
+// TestGetArtistPath_AlwaysEmpty is the dedicated positive-control test for
+// GetArtistPath: the method itself is a straight read of the fetched item's
+// Path value, with no special-casing to blank it out. Emby artists are
+// virtual, name-keyed items, and Emby simply never reports a Path for one in
+// practice, so the real-world result is "" -- that is a property of what
+// Emby sends, not of the method. The two cases below pin both halves: the
+// no-Path fixture (the real-world shape) reads back as "", and a fixture
+// that does carry a Path reads back that exact value, proving the method
+// does not hardcode a blank. The negative case (peer silently discarding a
+// written Path) is already covered by TestUpdateArtistPath_EmbySilentlyDiscardsPath;
+// this test isolates GetArtistPath on its own so a future refactor that
+// breaks it in isolation (rather than only via the UpdateArtistPath
+// round-trip) is caught directly.
+func TestGetArtistPath_AlwaysEmpty(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "no Path key reads back empty",
+			body: `{"Id":"a1","Name":"Radiohead"}`,
+			want: "",
+		},
+		{
+			name: "Path value reads through unchanged",
+			body: `{"Id":"a1","Name":"Radiohead","Path":"/music/Radiohead"}`,
+			want: "/music/Radiohead",
+		},
+		{
+			name:    "server 5xx surfaces an error",
+			status:  http.StatusInternalServerError,
+			wantErr: true,
+		},
+		{
+			name:    "malformed JSON surfaces an error",
+			body:    `{"Id":`,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				if r.URL.Path != "/Users/user-1/Items/a1" {
+					t.Errorf("unexpected path: %s", r.URL.Path)
+				}
+				if r.Header.Get("X-Emby-Token") != "test-key" {
+					t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
+				}
+				if tt.status != 0 {
+					w.WriteHeader(tt.status)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+			got, err := c.GetArtistPath(context.Background(), "a1")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetArtistPath: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("GetArtistPath = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestUpdateArtistPath_NoUserID mirrors TestUpdateArtistLocks_NoUserID:
 // without a userID the Get path cannot be constructed, so the call must
 // fail fast with a non-empty error message.
