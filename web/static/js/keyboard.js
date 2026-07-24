@@ -382,19 +382,22 @@
     // filtered results) are PRESERVED. Returns so Esc here is a dedicated "leave
     // search" action and does not also clear a bulk selection in the same press.
     if (e.key === 'Escape') {
-      // PR2 hook: command palette (existence-guarded no-op until PR2 ships).
-      if (window.swCommandPalette && typeof window.swCommandPalette.hide === 'function') {
+      // Command palette wins Escape ONLY while it is actually open (#2768). This
+      // guard used to test mere existence, which was harmless when the palette
+      // was next/-only -- but this PR mounts it on both channels, so an
+      // existence check would swallow every Escape and strand the cheat-sheet,
+      // search-box, and bulk-select branches below.
+      if (window.swCommandPalette && typeof window.swCommandPalette.isOpen === 'function'
+          && window.swCommandPalette.isOpen()) {
         window.swCommandPalette.hide();
         return;
       }
-      // Close the cheat sheet modal when open (#1775). next/ only: the modal
-      // is absent from stable pages (mounted in LayoutNext, not LayoutGlobalChrome).
-      if (isNextPage()) {
-        var cheatModal = document.getElementById('cheat-sheet-modal');
-        if (cheatModal && !cheatModal.classList.contains('hidden')) {
-          if (typeof window.hideCheatSheet === 'function') window.hideCheatSheet();
-          return;
-        }
+      // Close the cheat sheet modal when open (#1775). Both channels: Layout
+      // mounts the modal unconditionally, and LayoutNext delegates to Layout.
+      var cheatModal = document.getElementById('cheat-sheet-modal');
+      if (cheatModal && !cheatModal.classList.contains('hidden')) {
+        if (typeof window.hideCheatSheet === 'function') window.hideCheatSheet();
+        return;
       }
       var searchBox = actionTarget('/');
       if (searchBox && document.activeElement === searchBox) {
@@ -404,13 +407,16 @@
       }
     }
 
-    // Cmd-K / Ctrl-K: open the command palette (next/ only).
+    // Cmd-K / Ctrl-K: open the command palette (both channels -- the palette DOM
+    // and window.swCommandPalette are mounted unconditionally by Layout, #2768).
     if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
-      if (isNextPage() && window.swCommandPalette && typeof window.swCommandPalette.toggle === 'function') {
-        e.preventDefault();
+      e.preventDefault();
+      if (window.swCommandPalette && typeof window.swCommandPalette.toggle === 'function') {
         window.swCommandPalette.toggle();
-        return;
+      } else if (window.console && console.error) {
+        console.error('[swKbd] Cmd-K pressed but window.swCommandPalette.toggle is unavailable');
       }
+      return;
     }
 
     if (isTyping(document.activeElement)) return;
@@ -683,9 +689,16 @@
     }
   };
 
-  // Register global shortcuts (#1775) on next/ only: these shortcuts are
-  // channel-gated and absent on stable, so the cheat sheet (also next/-only)
-  // should not advertise them on stable pages.
+  // Register global shortcuts (#1775) on next/ only: the g-leader nav and the
+  // Esc-close handler below are genuinely channel-gated by isNextPage(), so
+  // advertising them on stable would promise keys that do nothing there.
+  //
+  // NOTE on '?': the cheat-sheet MODAL is in fact mounted on both channels (by
+  // the canonical Layout), and '?' does open it on stable via the ungated
+  // handler in LayoutGlobalChrome. It stays in this next/-only list only
+  // because its Esc-close counterpart is still gated -- see the KNOWN GAP note
+  // in web/components/cheat_sheet_modal.templ. Widening it belongs with the fix
+  // for that gap, not with #2768.
   if (isNextPage()) {
     window.swKeyboardShortcuts.register('global', [
       { key: 'g d', label: 'Go to Dashboard' },
@@ -694,9 +707,14 @@
       { key: 'g l', label: 'Go to Logs' },
       { key: 'g f', label: 'Go to Findings' },
       { key: 'g s', label: 'Go to Settings' },
-      { key: '⌘K', label: 'Command palette (Ctrl-K)' },
       { key: '?',   label: 'Show Keyboard Shortcuts' },
       { key: 'Esc', label: 'Close / clear focus' }
     ]);
   }
+  // Cmd-K is registered unconditionally (#2768): the palette now works on both
+  // channels (the isNextPage() gate above it was the stale part), so the
+  // cheat sheet should advertise it everywhere it fires.
+  window.swKeyboardShortcuts.register('global', [
+    { key: '⌘K', label: 'Command palette (Ctrl-K)' }
+  ]);
 })();

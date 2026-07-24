@@ -204,19 +204,22 @@ describe('keyboard.js: channel gate - stable page (#1775 B2)', () => {
     assert.equal(calls.length, 0, '? must not call showCheatSheet on stable channel');
   });
 
-  it('Esc does not call hideCheatSheet when on stable even with modal element present', () => {
-    const modalHtml = '<div id="cheat-sheet-modal"></div>';
+  it('Esc calls hideCheatSheet on stable now that the modal is unconditionally mounted (#2768)', () => {
+    const modalHtml = '<div id="cheat-sheet-modal"></div>'; // no .hidden class = open
     const { win } = setup(modalHtml, { isNextPage: false });
     const calls = [];
     win.hideCheatSheet = () => calls.push(1);
     fire(win, 'Escape');
-    assert.equal(calls.length, 0, 'Esc must not call hideCheatSheet on stable channel');
+    assert.equal(calls.length, 1, 'Esc must call hideCheatSheet on stable channel');
   });
 
-  it('global shortcuts not registered on stable', () => {
+  it('next/-only global shortcuts (g-leader, cheat sheet, Esc) not registered on stable, but Cmd-K is (#2768)', () => {
     const { win } = setup('', { isNextPage: false });
     const globals = win.swKeyboardShortcuts.list().filter(e => e.scope === 'global');
-    assert.equal(globals.length, 0, 'global shortcuts must not be registered on stable channel');
+    // Cmd-K now works on both channels (#2768), so it is the one global entry
+    // still registered on stable; the rest remain next/-only.
+    assert.deepEqual([...globals.map(e => e.key)], ['⌘K'],
+      'only Cmd-K should be registered as a global shortcut on stable channel');
   });
 });
 
@@ -236,6 +239,59 @@ describe('keyboard.js: M1 - g-leader suppressed while cheat sheet is open', () =
     fire(win, 'd');
     assert.equal(navigated.length, 1, 'g+d must navigate when cheat-sheet modal is closed');
     assert.ok(navigated[0].endsWith('/next/'), `expected /next/, got ${navigated[0]}`);
+  });
+});
+
+describe('keyboard.js: Esc closes cheat sheet on the stable channel (#2768 fold-in)', () => {
+  it('Esc closes an open cheat-sheet modal on a stable-channel page (isNextPage: false)', () => {
+    const modalHtml = '<div id="cheat-sheet-modal"></div>'; // no .hidden class = open
+    const { win } = setup(modalHtml, { isNextPage: false });
+    const modal = win.document.getElementById('cheat-sheet-modal');
+    // Precondition: the modal must start open, otherwise the assertion below
+    // would pass vacuously against an already-closed modal.
+    assert.ok(!modal.classList.contains('hidden'), 'precondition: modal must start open');
+    win.hideCheatSheet = () => modal.classList.add('hidden');
+    fire(win, 'Escape');
+    assert.ok(modal.classList.contains('hidden'), 'Esc must close the cheat sheet on the stable channel');
+  });
+});
+
+describe('keyboard.js: Esc only lets the command palette claim Escape while open (#2768 isOpen fix)', () => {
+  // Mirrors the real window.swCommandPalette shape (hide + isOpen), which the
+  // jsdom harness does NOT define by default -- a test that omits this setup
+  // can never enter the guard under test and passes vacuously.
+  function setupWithPaletteAndModal(paletteOpen) {
+    const modalHtml = '<div id="cheat-sheet-modal"></div>'; // no .hidden class = open
+    const { win } = setup(modalHtml);
+    const modal = win.document.getElementById('cheat-sheet-modal');
+    const hideCalls = [];
+    win.swCommandPalette = {
+      hide: () => { hideCalls.push(1); },
+      isOpen: () => paletteOpen,
+    };
+    // Precondition: fail loudly if the harness shape does not match reality,
+    // rather than passing without ever entering the isOpen() guard.
+    assert.equal(typeof win.swCommandPalette.isOpen, 'function',
+      'precondition: window.swCommandPalette.isOpen must be a function');
+    win.hideCheatSheet = () => modal.classList.add('hidden');
+    return { win, modal, hideCalls };
+  }
+
+  it('palette CLOSED (isOpen() false): Esc falls through and closes the open cheat sheet', () => {
+    const { win, modal } = setupWithPaletteAndModal(false);
+    assert.ok(!modal.classList.contains('hidden'), 'precondition: cheat sheet must start open');
+    fire(win, 'Escape');
+    assert.ok(modal.classList.contains('hidden'),
+      'Esc must close the cheat sheet when the palette is closed (fallthrough restored)');
+  });
+
+  it('palette OPEN (isOpen() true): Esc is claimed by the palette and the cheat sheet stays open', () => {
+    const { win, modal, hideCalls } = setupWithPaletteAndModal(true);
+    assert.ok(!modal.classList.contains('hidden'), 'precondition: cheat sheet must start open');
+    fire(win, 'Escape');
+    assert.equal(hideCalls.length, 1, 'swCommandPalette.hide() must be called when the palette is open');
+    assert.ok(!modal.classList.contains('hidden'),
+      'cheat sheet must remain open -- an open palette still wins Escape precedence');
   });
 });
 

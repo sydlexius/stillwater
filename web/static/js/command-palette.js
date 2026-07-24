@@ -303,7 +303,21 @@
 
   function open() {
     ensureEls();
-    if (!root) return;
+    // Fail loudly (#2768): keyboard.js claims Cmd-K with preventDefault() BEFORE
+    // calling toggle(), so a missing #sw-cmdk root here means the browser's
+    // native Cmd-K was suppressed and nothing opened in its place. That is the
+    // exact silent no-op #2768 set out to kill, reached via a different door
+    // than the missing-controller guard in keyboard.js: the controller IS
+    // loaded (so that guard passes), only its DOM is absent. hide() deliberately
+    // stays quiet on the same condition -- keyboard.js calls it speculatively on
+    // every Escape, so a diagnostic there would fire constantly on pages that
+    // never mounted the palette.
+    if (!root) {
+      if (window.console && console.error) {
+        console.error('[swCmdk] command palette open() called but the #sw-cmdk root element is missing from the DOM');
+      }
+      return;
+    }
     opener = document.activeElement;
     root.classList.remove('hidden');
     if (input) {

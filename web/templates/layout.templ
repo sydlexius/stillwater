@@ -32,8 +32,8 @@ type AssetPaths struct {
 	SidebarJS      string
 	FilterFlyoutJS string
 	KeyboardJS     string
-	// CommandPaletteJS is the next/-only command palette controller (#1775).
-	// Loaded on LayoutNext after KeyboardJS so window.swKeyboardShortcuts
+	// CommandPaletteJS is the command palette controller (#1775), shared by
+	// both channels. Loaded on Layout after KeyboardJS so window.swKeyboardShortcuts
 	// exists first.
 	CommandPaletteJS string
 	// PrefsDrawerJS is the preferences flyout drawer controller (M55 #1774).
@@ -1301,8 +1301,12 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 						if (document.activeElement && document.activeElement.isContentEditable) return;
 						e.preventDefault();
-						// CheatSheetModal is mounted in LayoutNext only, so window.showCheatSheet
-						// is defined exclusively on next/ pages. On stable the fallback fires.
+						// CheatSheetModal is mounted unconditionally by Layout (see the
+						// @components.CheatSheetModal() call above), which LayoutNext delegates
+						// to, so window.showCheatSheet is defined on BOTH channels and this
+						// branch takes the showCheatSheet() arm everywhere. The
+						// toggleHelpOverlay() fallback now only covers pages that render
+						// outside Layout entirely (login/register/setup/onboarding).
 						if (typeof window.showCheatSheet === 'function') {
 							window.showCheatSheet();
 						} else {
