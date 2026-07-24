@@ -1,18 +1,11 @@
 package jellyfin
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
-	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 )
 
@@ -205,54 +198,19 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 
 // postFullItem strips read-only fields from item, marshals it, and POSTs the
 // full body to /Items/{platformArtistID}. Jellyfin's POST /Items/{id} requires
-// a complete item body (not a delta), so both PushMetadata and
-// UpdateArtistLocks share this request/response cycle. The op label appears in
+// a complete item body (not a delta), so PushMetadata, UpdateArtistLocks, and
+// UpdateArtistPath share this request/response cycle. The op label appears in
 // error messages so callers can distinguish failures (e.g. "push failed with
 // status 500", "lock update failed with status 500") without each call site
 // re-implementing the request boilerplate.
+//
+// Thin wrapper over the shared mediabrowser.PostFullItemRaw (promoted from
+// this method's former hand-rolled body, migrated onto Transport.Do). Kept as
+// a method here -- rather than inlining the shared call at each call site --
+// so UpdateArtistLocks (a separate, not-yet-collapsed PR) keeps compiling and
+// behaving unchanged against this same private name.
 func (c *Client) postFullItem(ctx context.Context, platformArtistID string, item map[string]any, op string) error {
-	// Strip read-only fields that Jellyfin rejects in a POST. Done here (not
-	// at each call site) so a future addition to jellyfinReadOnlyFields cannot
-	// silently slip through one path while protecting the other.
-	//
-	// Operate on a shallow copy so callers that retain `item` after this call
-	// (for example to log it on error or pass it to a retry) see their
-	// original map unchanged.
-	cleanItem := make(map[string]any, len(item))
-	for k, v := range item {
-		cleanItem[k] = v
-	}
-	for _, key := range jellyfinReadOnlyFields {
-		delete(cleanItem, key)
-	}
-
-	payload, err := json.Marshal(cleanItem)
-	if err != nil {
-		return fmt.Errorf("marshaling %s body: %w", op, err)
-	}
-
-	path := fmt.Sprintf("/Items/%s", url.PathEscape(platformArtistID))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("creating %s request: %w", op, err)
-	}
-	c.AuthFunc(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("executing %s request: %w", op, err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("%s failed with status %d: %s", op, statusErr.StatusCode, statusErr.Body)
-		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
-	}
-
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return nil
+	return mediabrowser.PostFullItemRaw(ctx, c.Client, platformArtistID, item, jellyfinReadOnlyFields, op, wrapAuthIfStatusAuth)
 }
 
 // jellyfinReadOnlyFields are item fields that Jellyfin rejects in POST
@@ -262,56 +220,16 @@ var jellyfinReadOnlyFields = []string{
 	"LocationType", "MediaType", "ChannelId",
 }
 
-// fetchItem retrieves a single item from Jellyfin by ID, returning the
-// full item body as a generic map. Uses /Items?Ids={id}&Fields=... to
-// ensure metadata fields are populated. LockData and LockedFields are NOT
-// returned by default on Jellyfin's item endpoints; they must be listed
-// explicitly or the subsequent full-replacement POST from UpdateArtistLocks
-// / PushMetadata will silently clear server-side locks.
+// fetchItem retrieves a single item from Jellyfin by ID, returning the full
+// item body as a generic map.
+//
+// Thin wrapper over the shared mediabrowser.FetchItemRaw (promoted from this
+// method's former hand-rolled body, migrated onto Transport.Do). Kept as a
+// method here -- rather than inlining the shared call at each call site -- so
+// UpdateArtistLocks (a separate, not-yet-collapsed PR) keeps compiling and
+// behaving unchanged against this same private name.
 func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, error) {
-	// Empty or whitespace-only itemID would build "Ids=" which Jellyfin
-	// accepts and returns the library's first item. Returning the wrong
-	// artist here corrupts every downstream write (including lock state),
-	// so reject at the boundary before issuing the request.
-	if strings.TrimSpace(itemID) == "" {
-		return nil, fmt.Errorf("item id is required")
-	}
-	path := fmt.Sprintf("/Items?Ids=%s&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags,LockData,LockedFields", url.QueryEscape(itemID))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, path), http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating fetch request: %w", err)
-	}
-	c.AuthFunc(req)
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing fetch request: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	if resp.StatusCode >= 300 {
-		statusErr := httpclient.ReadBoundedStatusError(resp)
-		formatted := fmt.Errorf("fetch failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
-		return nil, wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
-	}
-
-	var result struct {
-		Items []map[string]any `json:"Items"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding fetch response: %w", err)
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	if len(result.Items) == 0 {
-		return nil, fmt.Errorf("item %s not found", itemID)
-	}
-	// Jellyfin can legitimately return a null Items[0] for tombstoned or
-	// access-denied records. Treat it as "not found" rather than returning
-	// a nil map that would panic on the caller's first write.
-	if result.Items[0] == nil {
-		return nil, fmt.Errorf("item %s returned null payload", itemID)
-	}
-	return result.Items[0], nil
+	return mediabrowser.FetchItemRaw(ctx, c.Client, itemID, jellyfinFetchFields, wrapAuthIfStatusAuth)
 }
 
 // UploadImage uploads an image to the Jellyfin server for the given artist.

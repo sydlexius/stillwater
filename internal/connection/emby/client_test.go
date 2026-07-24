@@ -174,6 +174,9 @@ func TestTriggerArtistRefresh(t *testing.T) {
 		if got := q.Get("ReplaceAllMetadata"); got != "true" {
 			t.Errorf("ReplaceAllMetadata = %q, want true (query=%q)", got, r.URL.RawQuery)
 		}
+		if got := q.Get("ImageRefreshMode"); got != "Default" {
+			t.Errorf("ImageRefreshMode = %q, want Default (query=%q)", got, r.URL.RawQuery)
+		}
 		if got := q.Get("ReplaceAllImages"); got != "false" {
 			t.Errorf("ReplaceAllImages = %q, want false (query=%q)", got, r.URL.RawQuery)
 		}
