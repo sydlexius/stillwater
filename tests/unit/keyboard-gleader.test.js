@@ -204,13 +204,13 @@ describe('keyboard.js: channel gate - stable page (#1775 B2)', () => {
     assert.equal(calls.length, 0, '? must not call showCheatSheet on stable channel');
   });
 
-  it('Esc does not call hideCheatSheet when on stable even with modal element present', () => {
-    const modalHtml = '<div id="cheat-sheet-modal"></div>';
+  it('Esc calls hideCheatSheet on stable now that the modal is unconditionally mounted (#2768)', () => {
+    const modalHtml = '<div id="cheat-sheet-modal"></div>'; // no .hidden class = open
     const { win } = setup(modalHtml, { isNextPage: false });
     const calls = [];
     win.hideCheatSheet = () => calls.push(1);
     fire(win, 'Escape');
-    assert.equal(calls.length, 0, 'Esc must not call hideCheatSheet on stable channel');
+    assert.equal(calls.length, 1, 'Esc must call hideCheatSheet on stable channel');
   });
 
   it('next/-only global shortcuts (g-leader, cheat sheet, Esc) not registered on stable, but Cmd-K is (#2768)', () => {
@@ -239,6 +239,20 @@ describe('keyboard.js: M1 - g-leader suppressed while cheat sheet is open', () =
     fire(win, 'd');
     assert.equal(navigated.length, 1, 'g+d must navigate when cheat-sheet modal is closed');
     assert.ok(navigated[0].endsWith('/next/'), `expected /next/, got ${navigated[0]}`);
+  });
+});
+
+describe('keyboard.js: Esc closes cheat sheet on the stable channel (#2768 fold-in)', () => {
+  it('Esc closes an open cheat-sheet modal on a stable-channel page (isNextPage: false)', () => {
+    const modalHtml = '<div id="cheat-sheet-modal"></div>'; // no .hidden class = open
+    const { win } = setup(modalHtml, { isNextPage: false });
+    const modal = win.document.getElementById('cheat-sheet-modal');
+    // Precondition: the modal must start open, otherwise the assertion below
+    // would pass vacuously against an already-closed modal.
+    assert.ok(!modal.classList.contains('hidden'), 'precondition: modal must start open');
+    win.hideCheatSheet = () => modal.classList.add('hidden');
+    fire(win, 'Escape');
+    assert.ok(modal.classList.contains('hidden'), 'Esc must close the cheat sheet on the stable channel');
   });
 });
 

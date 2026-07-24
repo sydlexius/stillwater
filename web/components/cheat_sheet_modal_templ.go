@@ -15,11 +15,6 @@ import templruntime "github.com/a-h/templ/runtime"
 // toggleHelpOverlay() fallback therefore only covers pages rendered outside
 // Layout (login/register/setup/onboarding).
 //
-// KNOWN GAP (pre-dates #2768, tracked separately): on stable pages `?` opens
-// this modal but Esc does not close it -- keyboard.js gates its hideCheatSheet()
-// call behind isNextPage(). The close button and backdrop click still work, so
-// the modal is not a trap.
-//
 // window.showCheatSheet() / window.hideCheatSheet() are the public API.
 // The modal reads window.swKeyboardShortcuts.list() on every open so it always
 // reflects the current page's shortcut set (page-actions + roving + global).

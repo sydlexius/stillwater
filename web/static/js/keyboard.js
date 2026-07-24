@@ -387,14 +387,12 @@
         window.swCommandPalette.hide();
         return;
       }
-      // Close the cheat sheet modal when open (#1775). next/ only: the modal
-      // is absent from stable pages (mounted in LayoutNext, not LayoutGlobalChrome).
-      if (isNextPage()) {
-        var cheatModal = document.getElementById('cheat-sheet-modal');
-        if (cheatModal && !cheatModal.classList.contains('hidden')) {
-          if (typeof window.hideCheatSheet === 'function') window.hideCheatSheet();
-          return;
-        }
+      // Close the cheat sheet modal when open (#1775). Both channels: Layout
+      // mounts the modal unconditionally, and LayoutNext delegates to Layout.
+      var cheatModal = document.getElementById('cheat-sheet-modal');
+      if (cheatModal && !cheatModal.classList.contains('hidden')) {
+        if (typeof window.hideCheatSheet === 'function') window.hideCheatSheet();
+        return;
       }
       var searchBox = actionTarget('/');
       if (searchBox && document.activeElement === searchBox) {
