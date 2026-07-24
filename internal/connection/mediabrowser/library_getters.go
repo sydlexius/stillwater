@@ -161,6 +161,80 @@ func GetArtistsRaw(ctx context.Context, t Transport, libraryID string, startInde
 	return nil
 }
 
+// FetcherEntry is the shared per-library result CollectImageFetcherEntriesRaw
+// produces. Callers wrap each entry in their own platform ImageFetcherStatus
+// type (adding the platform's RiskLevel constant) since the two
+// ImageFetcherStatus DTOs stay separate types.
+type FetcherEntry struct {
+	LibraryName  string
+	LibraryID    string
+	FetcherNames []string
+}
+
+// CollectImageFetcherEntriesRaw shares the library/TypeOption iteration
+// common to CheckImageFetchersEnabled on both platforms: walk every library
+// that passes includeLibrary, find its "MusicArtist" TypeOption(s), and
+// collect one entry per option with a non-empty image-fetcher list. The
+// per-platform divergence -- Jellyfin additionally gates on
+// EnableInternetProviders, Emby does not -- is expressed entirely through
+// includeLibrary; the RiskLevel label stays with the caller since it is not
+// part of this shared shape. Generic over T (library) and O (type option)
+// because the two platforms' VirtualFolder/TypeOption DTOs are separate
+// types.
+func CollectImageFetcherEntriesRaw[T any, O any](
+	libs []T,
+	includeLibrary func(T) bool,
+	getName, getItemID func(T) string,
+	getTypeOptions func(T) []O,
+	getOptType func(O) string,
+	getImageFetchers func(O) []string,
+) []FetcherEntry {
+	var out []FetcherEntry
+	for i := range libs {
+		lib := libs[i]
+		if !includeLibrary(lib) {
+			continue
+		}
+		for _, opt := range getTypeOptions(lib) {
+			if !strings.EqualFold(getOptType(opt), "MusicArtist") {
+				continue
+			}
+			if fetchers := getImageFetchers(opt); len(fetchers) > 0 {
+				out = append(out, FetcherEntry{
+					LibraryName:  getName(lib),
+					LibraryID:    getItemID(lib),
+					FetcherNames: fetchers,
+				})
+			}
+		}
+	}
+	return out
+}
+
+// FindMusicArtistOptionRaw returns the ImageFetchers/MetadataFetchers of the
+// first TypeOption whose Type is "MusicArtist" (case-insensitive), matching
+// the break-on-first-match semantics both platforms' GetLibrarySettings use.
+// Returns (nil, nil) when no MusicArtist option exists. Generic over O
+// because the two platforms' TypeOption DTOs are separate types.
+func FindMusicArtistOptionRaw[O any](opts []O, getOptType func(O) string, getImageFetchers, getMetadataFetchers func(O) []string) (imageFetchers, metadataFetchers []string) {
+	for _, opt := range opts {
+		if strings.EqualFold(getOptType(opt), "MusicArtist") {
+			return getImageFetchers(opt), getMetadataFetchers(opt)
+		}
+	}
+	return nil, nil
+}
+
+// NormalizeStrings converts a nil slice to an empty, non-nil slice so JSON
+// serializes as [] rather than null. Both platforms' GetLibrarySettings
+// apply this to every string-slice field on the result.
+func NormalizeStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 // listArtistsPageLimit bounds each page during a full library enumeration;
 // matches the per-package constants it replaces on both platforms.
 const listArtistsPageLimit = 500
