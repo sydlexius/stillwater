@@ -178,10 +178,7 @@ func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, l
 
 // TriggerLibraryScan triggers a full library scan.
 func (c *Client) TriggerLibraryScan(ctx context.Context) error {
-	if err := c.Post(ctx, "/Library/Refresh", nil); err != nil {
-		return fmt.Errorf("triggering library scan: %w", wrapAuthIfStatusAuth(err))
-	}
-	return nil
+	return mediabrowser.TriggerLibraryScanRaw(ctx, c, wrapAuthIfStatusAuth)
 }
 
 // rescanQuery drives a non-destructive item refresh: Recursive=true so a
@@ -231,16 +228,7 @@ const reimportRefreshQuery = "MetadataRefreshMode=FullRefresh&ReplaceAllMetadata
 // publish-layer dispatcher (publish.RefreshArtistOnPlatforms) is the sole caller
 // and enforces that gate.
 func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID string) error {
-	if strings.TrimSpace(artistID) == "" {
-		return fmt.Errorf("artistID is required")
-	}
-	// PathEscape the ID so a value containing reserved characters cannot break
-	// out of the URL segment; the query string carries the re-import mode.
-	path := fmt.Sprintf("/Items/%s/Refresh?%s", url.PathEscape(artistID), reimportRefreshQuery)
-	if err := c.Post(ctx, path, nil); err != nil {
-		return fmt.Errorf("triggering artist refresh: %w", wrapAuthIfStatusAuth(err))
-	}
-	return nil
+	return mediabrowser.TriggerArtistRefreshRaw(ctx, c, artistID, reimportRefreshQuery, wrapAuthIfStatusAuth)
 }
 
 // GetArtistImage downloads the raw image bytes for the given artist and image type.
