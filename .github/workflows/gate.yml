@@ -522,6 +522,44 @@ jobs:
           echo "$output"
 
   # ---------------------------------------------------------------------------
+  # Codecov/floor mirror (#2756)
+  #
+  # Replicates the '=== Codecov/floor mirror ===' check in
+  # scripts/pre-push-gate.sh. codecov.yml's coverage.status.project targets
+  # claim, in their own comment, to mirror testdata/coverage-floor.json
+  # exactly. Nothing enforced that claim: internal/server sat at 91% in
+  # codecov.yml while the floor was lowered to 87% in #2066, and the drift
+  # went unnoticed because codecov/project statuses are not among this repo's
+  # required checks. Grep/awk-only guard, no Go toolchain needed.
+  # ---------------------------------------------------------------------------
+  codecov-floor-mirror:
+    name: Codecov Floor Mirror
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Check codecov.yml mirrors coverage-floor.json
+        run: |
+          output=$(bash scripts/check-codecov-floor-mirror.sh 2>&1) || {
+            echo "$output"
+            {
+              echo "## Codecov Floor Mirror -- FAILED"
+              echo ""
+              echo "codecov.yml's per-package coverage.status.project targets have drifted from testdata/coverage-floor.json. Reconcile them -- usually by copying the floor JSON's value into the matching codecov.yml target."
+              echo ""
+              echo "Details:"
+              echo '```'
+              echo "$output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          echo "$output"
+
+  # ---------------------------------------------------------------------------
   # CSS Comments (#2525)
   #
   # Mirrors the "CSS comments" step in scripts/pre-push-gate.sh. Asserts that no

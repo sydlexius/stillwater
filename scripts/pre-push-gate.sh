@@ -466,6 +466,14 @@ echo "=== Doc facts ==="
 bash "$SCRIPT_DIR/check-doc-facts.sh"
 
 echo ""
+echo "=== Codecov/floor mirror ==="
+# Assert codecov.yml's per-package project targets mirror
+# testdata/coverage-floor.json exactly. Catches the silent drift documented in
+# #2756 (internal/server sat at 91% in codecov.yml while the floor had been
+# lowered to 87% in #2066, with nothing enforcing the two stay in sync).
+bash "$SCRIPT_DIR/check-codecov-floor-mirror.sh"
+
+echo ""
 echo "=== ProperDocs config YAML ==="
 # Catch syntax errors (incl. residual conflict markers, indentation slips,
 # duplicate keys) in the properdocs config before CI's "Build site" job does.
