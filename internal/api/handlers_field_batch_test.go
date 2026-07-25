@@ -41,6 +41,17 @@ func (s *spyHistoryRepo) List(ctx context.Context, artistID string, limit, offse
 	return s.delegate.List(ctx, artistID, limit, offset)
 }
 
+// ListBlastRadius and CountBlastRadius delegate unchanged: this spy exists to
+// count ListGlobal calls, and the blast-radius report is not part of the
+// field-edit path under test here.
+func (s *spyHistoryRepo) ListBlastRadius(ctx context.Context, f artist.BlastRadiusFilter) ([]artist.BlastRadiusRow, error) {
+	return s.delegate.ListBlastRadius(ctx, f)
+}
+
+func (s *spyHistoryRepo) CountBlastRadius(ctx context.Context, f artist.BlastRadiusFilter) (artist.BlastRadiusCounts, error) {
+	return s.delegate.CountBlastRadius(ctx, f)
+}
+
 func (s *spyHistoryRepo) ListGlobal(ctx context.Context, filter artist.GlobalHistoryFilter) ([]artist.MetadataChangeWithArtist, int, error) {
 	s.listGlobalCalls.Add(1)
 	return s.delegate.ListGlobal(ctx, filter)
