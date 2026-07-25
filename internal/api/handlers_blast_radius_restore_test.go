@@ -678,6 +678,163 @@ func TestBlastRestore_RequiresAdmin(t *testing.T) {
 	}
 }
 
+// TestBlastRestore_RefusesUntrackedField pins the OTHER arm of the
+// validateRevertable switch: the default branch that maps a non-trackable
+// field to blastRefuseNotRevertible.
+//
+// The revert-of-revert arm is already covered by
+// TestBlastRestore_RefusesNonRestorableRows/revert_row_cannot_be_restored.
+// This one matters for the same reason: refuse_reason is in the OpenAPI
+// contract and a client renders it, so a test that asserted only "refused"
+// would pass even if both arms collapsed to a single reason.
+//
+// The row is inserted directly rather than through the artist service because
+// no service path will record history for an untracked field -- that is the
+// very property being tested. "name" is a real editable field that is
+// deliberately absent from trackableFields, so there is no recorded old value
+// the restore could trust.
+func TestBlastRestore_RefusesUntrackedField(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, _ := restoreTestRouter(t)
+	a := addTestArtist(t, artistSvc, "Untracked Field Artist")
+
+	// Precondition: the field really is outside history tracking. Without
+	// this the test would silently stop exercising the default arm the day
+	// "name" became trackable, and would keep passing for the wrong reason.
+	if artist.IsTrackableField("name") {
+		t.Fatal("precondition: \"name\" is now a trackable field; " +
+			"pick another untracked field or this test no longer covers the default arm")
+	}
+
+	const changeID = "untracked-field-change"
+	if _, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+		 VALUES (?, ?, 'name', 'Operator Name', 'Scanner Name', 'scan', ?)`,
+		changeID, a.ID, damageBase.Format(time.RFC3339)); err != nil {
+		t.Fatalf("seeding untracked-field change: %v", err)
+	}
+
+	nameBefore, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID before: %v", err)
+	}
+
+	w, resp := postRestore(t, r, `{"change_ids":["`+changeID+`"],"commit":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if resp.Refused != 1 || resp.Restored != 0 {
+		t.Fatalf("refused=%d restored=%d, want 1/0; items: %+v", resp.Refused, resp.Restored, resp.Items)
+	}
+	// The SPECIFIC reason, not merely "refused".
+	if resp.Items[0].Reason != blastRefuseNotRevertible {
+		t.Errorf("reason = %q, want %q", resp.Items[0].Reason, blastRefuseNotRevertible)
+	}
+
+	// And the untracked field was not written.
+	nameAfter, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after: %v", err)
+	}
+	if nameAfter.Name != nameBefore.Name {
+		t.Errorf("name = %q, want %q unchanged: a refused restore must not write",
+			nameAfter.Name, nameBefore.Name)
+	}
+}
+
+// TestBlastRestore_UnchangedWhenFieldAlreadyHoldsValue pins the "unchanged"
+// status, which exists so a restore count never includes rows nothing happened
+// to.
+//
+// The setup makes the damage row genuinely current (so it passes every
+// eligibility check and reaches the write) while the artist field ALREADY
+// holds the value being restored. performRevert's UpdateField then short-
+// circuits on its no-op check, returning changed=false without recording
+// history.
+//
+// The load-bearing assertion is the last one: metadata_changes gained no row.
+// That is what distinguishes "correctly skipped the write" from "wrote a
+// no-op history row and reported it as unchanged anyway".
+func TestBlastRestore_UnchangedWhenFieldAlreadyHoldsValue(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := restoreTestRouter(t)
+	a := addTestArtist(t, artistSvc, "Already Restored Artist")
+
+	changeID := damageField(t, r, artistSvc, historySvc, a.ID, "biography", "the once-lost bio", "")
+
+	// Put the value back WITHOUT going through history, so the damage row
+	// stays the newest recorded change and therefore stays eligible. Writing
+	// it via the service would record a new change and make the row stale,
+	// which would refuse at check 3 and never reach the write path.
+	if _, err := r.db.ExecContext(context.Background(),
+		`UPDATE artists SET biography = ? WHERE id = ?`, "the once-lost bio", a.ID); err != nil {
+		t.Fatalf("pre-setting the field: %v", err)
+	}
+
+	// Precondition A: the field already holds the restore value, so the write
+	// is genuinely a no-op rather than the test having set up a real change.
+	before, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID before: %v", err)
+	}
+	if before.Biography != "the once-lost bio" {
+		t.Fatalf("precondition: biography = %q, want it to already hold the restore value",
+			before.Biography)
+	}
+
+	// Precondition B: the row is still eligible. If it were not, the handler
+	// would refuse at check 3 and this test would pass while never reaching
+	// the branch it exists to cover.
+	f := artist.BlastRadiusFilter{ArtistID: a.ID, Field: "biography"}
+	f.Validate()
+	rows, err := historySvc.ListBlastRadius(context.Background(), f)
+	if err != nil {
+		t.Fatalf("ListBlastRadius: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != changeID {
+		t.Fatalf("precondition: report rows = %+v, want the damage row %s still current", rows, changeID)
+	}
+
+	changesBefore, _, err := historySvc.List(context.Background(), a.ID, 200, 0)
+	if err != nil {
+		t.Fatalf("listing history before: %v", err)
+	}
+
+	w, resp := postRestore(t, r, `{"change_ids":["`+changeID+`"],"commit":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	if len(resp.Items) != 1 || resp.Items[0].Status != blastRestoreUnchanged {
+		t.Fatalf("items = %+v, want one item with status %q", resp.Items, blastRestoreUnchanged)
+	}
+	// It counts as eligible but NOT as restored: folding it into restored
+	// would report a recovery that did not happen.
+	if resp.Restored != 0 {
+		t.Errorf("restored = %d, want 0: a no-op must not inflate the restore count", resp.Restored)
+	}
+	if resp.Unchanged != 1 {
+		t.Errorf("unchanged = %d, want 1", resp.Unchanged)
+	}
+	if resp.Eligible != 1 {
+		t.Errorf("eligible = %d, want 1", resp.Eligible)
+	}
+	if resp.Items[0].RestoreChangeID != "" {
+		t.Errorf("restore_change_id = %q, want empty: nothing was written",
+			resp.Items[0].RestoreChangeID)
+	}
+
+	// THE ASSERTION WITH TEETH: no history row was added.
+	changesAfter, _, err := historySvc.List(context.Background(), a.ID, 200, 0)
+	if err != nil {
+		t.Fatalf("listing history after: %v", err)
+	}
+	if len(changesAfter) != len(changesBefore) {
+		t.Errorf("history rows = %d, want %d unchanged: a no-op restore must record nothing",
+			len(changesAfter), len(changesBefore))
+	}
+}
+
 // TestDedupeChangeIDs covers the request-normalization helper directly: blanks
 // and repeats drop, order is preserved.
 func TestDedupeChangeIDs(t *testing.T) {
