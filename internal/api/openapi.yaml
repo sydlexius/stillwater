@@ -11469,7 +11469,9 @@ paths:
       summary: Download the blast-radius report as CSV
       operationId: getReportBlastRadiusExport
       description: >
-        Streams the same report as CSV, honoring the same query parameters.
+        Streams the same report as CSV, honoring the same filter and sort
+        parameters. page and page_size are ignored: an export always walks the
+        whole filtered result set up to the cap.
         Trailing note rows restate the attribution limit, both coverage lists,
         and the retention boundary, so a spreadsheet detached from the
         application still says what it does not cover. Cell values that begin
@@ -11488,6 +11490,12 @@ paths:
         - name: artist_id
           in: query
           schema: {type: string}
+        - name: sort
+          in: query
+          schema: {type: string, enum: [created_at, artist_name, field], default: created_at}
+        - name: order
+          in: query
+          schema: {type: string, enum: [asc, desc], default: desc}
       responses:
         "200":
           description: CSV attachment.

@@ -548,7 +548,7 @@ func TestBlastRadiusFilterFromRequest_CoercesUnrecognizedValues(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius"+tc.query, nil)
 			req = req.WithContext(adminContext())
 
-			f := r.blastRadiusFilterFromRequest(req)
+			f := r.blastRadiusPagedFilterFromRequest(req)
 
 			if f.Class != artist.BlastScopeAll {
 				t.Errorf("Class = %q, want the coerced default %q", f.Class, artist.BlastScopeAll)
@@ -594,7 +594,7 @@ func TestBlastRadiusFilterFromRequest_PageAndPageSize(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius"+tc.query, nil)
 			req = req.WithContext(adminContext())
 
-			f := r.blastRadiusFilterFromRequest(req)
+			f := r.blastRadiusPagedFilterFromRequest(req)
 
 			if f.Limit != tc.wantLimit {
 				t.Errorf("Limit = %d, want %d", f.Limit, tc.wantLimit)
@@ -723,12 +723,13 @@ func TestHandleReportBlastRadiusExport_ServiceUnavailableWithoutHistory(t *testi
 	}
 }
 
-// TestHandleReportBlastRadiusExport_TruncationNoteAppendedAtCap seeds more
+// TestHandleReportBlastRadiusExport_MultiPageWalkCollectsAllRows seeds more
 // rows than blastRadiusExportPageSize (200) so the pagination loop inside
-// handleReportBlastRadiusExport actually iterates more than once, and caps
-// well below blastRadiusExportCap is not tested here (10000 rows is too slow
-// for a unit test and the truncation branch's boundary condition is a
-// separate, deliberately-not-chased line; see the report to the lead).
+// handleReportBlastRadiusExport actually iterates more than once and every
+// page ends up in the CSV. The cap itself is not exercised here: seeding
+// blastRadiusExportCap (10000) rows is too slow for a unit test, so the
+// truncation flag is pinned by TestBlastRadiusExportTruncation below, which
+// drives the same decision against the cap arithmetic directly.
 func TestHandleReportBlastRadiusExport_MultiPageWalkCollectsAllRows(t *testing.T) {
 	t.Parallel()
 	r, _, _ := testRouterWithHistory(t)
@@ -776,5 +777,111 @@ func TestHandleReportBlastRadiusExport_MultiPageWalkCollectsAllRows(t *testing.T
 	}
 	if strings.Contains(w.Body.String(), "truncated at the row cap") {
 		t.Errorf("truncation note present at %d rows, well under the %d cap", rowCount, blastRadiusExportCap)
+	}
+}
+
+// TestCollectBlastRadiusExportRows_TruncationBoundary pins the one decision the
+// export makes about its own completeness: whether to tell the operator rows
+// were left behind.
+//
+// The boundary matters because blastRadiusExportPageSize divides
+// blastRadiusExportCap exactly. The obvious formulation of the flag,
+// "len(collected) >= cap", cannot tell "the cap cut the result set short" apart
+// from "the result set happened to end exactly at the cap", and reports a
+// truncation for both. On a report whose entire premise is not misleading the
+// operator about what it captured, that is a false claim of incompleteness.
+//
+// The page query is a stub rather than seeded rows: the interesting cases sit
+// at 10000 and 10001 rows, and seeding those is far too slow for a unit test.
+// The stub serves whole pages of the requested size, exactly as the real query
+// does, so the arithmetic under test is the production arithmetic.
+func TestCollectBlastRadiusExportRows_TruncationBoundary(t *testing.T) {
+	t.Parallel()
+
+	// pagerOver returns a listPage stub backed by a result set of `total` rows.
+	pagerOver := func(total int) func(context.Context, artist.BlastRadiusFilter) ([]artist.BlastRadiusRow, error) {
+		return func(_ context.Context, f artist.BlastRadiusFilter) ([]artist.BlastRadiusRow, error) {
+			if f.Offset >= total {
+				return nil, nil
+			}
+			end := f.Offset + f.Limit
+			if end > total {
+				end = total
+			}
+			page := make([]artist.BlastRadiusRow, 0, end-f.Offset)
+			for i := f.Offset; i < end; i++ {
+				var row artist.BlastRadiusRow
+				row.ID = fmt.Sprintf("row-%d", i)
+				page = append(page, row)
+			}
+			return page, nil
+		}
+	}
+
+	cases := []struct {
+		name          string
+		total         int
+		wantRows      int
+		wantTruncated bool
+	}{
+		{"well under the cap", 450, 450, false},
+		{"one row under the cap", blastRadiusExportCap - 1, blastRadiusExportCap - 1, false},
+		// The regression case: an exact multiple of the page size that lands
+		// exactly on the cap. Every row was captured, so no truncation note.
+		{"exactly the cap", blastRadiusExportCap, blastRadiusExportCap, false},
+		{"one row over the cap", blastRadiusExportCap + 1, blastRadiusExportCap, true},
+		{"far over the cap", blastRadiusExportCap * 2, blastRadiusExportCap, true},
+		{"empty result set", 0, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := artist.BlastRadiusFilter{Limit: blastRadiusExportPageSize}
+			rows, truncated, err := collectBlastRadiusExportRows(context.Background(), f, pagerOver(tc.total))
+			if err != nil {
+				t.Fatalf("collectBlastRadiusExportRows: %v", err)
+			}
+			if len(rows) != tc.wantRows {
+				t.Errorf("collected %d rows, want %d", len(rows), tc.wantRows)
+			}
+			if truncated != tc.wantTruncated {
+				t.Errorf("truncated = %v, want %v (result set of %d rows, cap %d)",
+					truncated, tc.wantTruncated, tc.total, blastRadiusExportCap)
+			}
+			if len(rows) > blastRadiusExportCap {
+				t.Errorf("collected %d rows, which exceeds the cap of %d", len(rows), blastRadiusExportCap)
+			}
+		})
+	}
+}
+
+// TestCollectBlastRadiusExportRows_PropagatesQueryError pins that a failing
+// page query aborts the walk rather than returning a short, silently-incomplete
+// export. A partial CSV here would be the worst possible outcome: it reads as a
+// complete accounting of the damage.
+func TestCollectBlastRadiusExportRows_PropagatesQueryError(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("history store unavailable")
+	calls := 0
+	listPage := func(_ context.Context, f artist.BlastRadiusFilter) ([]artist.BlastRadiusRow, error) {
+		calls++
+		if calls == 1 {
+			page := make([]artist.BlastRadiusRow, f.Limit)
+			return page, nil
+		}
+		return nil, wantErr
+	}
+
+	f := artist.BlastRadiusFilter{Limit: blastRadiusExportPageSize}
+	rows, truncated, err := collectBlastRadiusExportRows(context.Background(), f, listPage)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+	if rows != nil {
+		t.Errorf("rows = %d rows, want nil so a failed walk cannot be written as a complete export", len(rows))
+	}
+	if truncated {
+		t.Error("truncated = true on an error return, want false")
 	}
 }

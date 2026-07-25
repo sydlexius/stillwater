@@ -37,6 +37,7 @@
 package api
 
 import (
+	"context"
 	"encoding/csv"
 	"net/http"
 	"strings"
@@ -56,15 +57,40 @@ const blastRadiusExportCap = 10000
 // large library into memory in a single query.
 const blastRadiusExportPageSize = 200
 
-// blastRadiusFilterFromRequest builds the query filter from query params.
+// blastRadiusFilterFromRequest builds the narrowing half of the query filter:
+// everything except the page window. Both the JSON report and the CSV export
+// narrow and sort identically; only their pagination differs, so the export
+// path can reuse this without paying for a per-user page-size preference read
+// it would immediately discard.
+//
+// It still calls Validate, so the returned filter is always safe to send to
+// SQL on its own; that leaves Limit at Validate's own default, which every
+// caller here overwrites with its own page window.
 //
 // Unrecognized class/attribution/sort/order values are coerced to their
 // defaults by BlastRadiusFilter.Validate rather than rejected with a 400. That
 // is deliberate and differs from the compliance report: this is a read-only
 // damage report, and a malformed query param should show the operator the
 // unnarrowed report, never an error page that hides how much was destroyed.
-func (r *Router) blastRadiusFilterFromRequest(req *http.Request) artist.BlastRadiusFilter {
+func blastRadiusFilterFromRequest(req *http.Request) artist.BlastRadiusFilter {
 	q := req.URL.Query()
+	f := artist.BlastRadiusFilter{
+		Class:       q.Get("class"),
+		Attribution: q.Get("attribution"),
+		Field:       q.Get("field"),
+		ArtistID:    q.Get("artist_id"),
+		Sort:        q.Get("sort"),
+		Order:       q.Get("order"),
+	}
+	f.Validate()
+	return f
+}
+
+// blastRadiusPagedFilterFromRequest adds the caller's page window on top of
+// blastRadiusFilterFromRequest, resolving page_size against the per-user
+// preference. Only the paginated JSON report calls this; the export walks the
+// whole result set with its own fixed page size.
+func (r *Router) blastRadiusPagedFilterFromRequest(req *http.Request) artist.BlastRadiusFilter {
 	userID := middleware.UserIDFromContext(req.Context())
 	pageSize := r.getUserPageSize(req.Context(), userID, intQuery(req, "page_size", 0))
 
@@ -73,16 +99,9 @@ func (r *Router) blastRadiusFilterFromRequest(req *http.Request) artist.BlastRad
 		page = 1
 	}
 
-	f := artist.BlastRadiusFilter{
-		Class:       q.Get("class"),
-		Attribution: q.Get("attribution"),
-		Field:       q.Get("field"),
-		ArtistID:    q.Get("artist_id"),
-		Sort:        q.Get("sort"),
-		Order:       q.Get("order"),
-		Limit:       pageSize,
-		Offset:      (page - 1) * pageSize,
-	}
+	f := blastRadiusFilterFromRequest(req)
+	f.Limit = pageSize
+	f.Offset = (page - 1) * pageSize
 	f.Validate()
 	return f
 }
@@ -159,7 +178,7 @@ type blastRadiusCoverageInfo struct {
 // JSON handler and the CSV export so the two cannot disagree.
 func (r *Router) loadBlastRadius(req *http.Request) (blastRadiusView, error) {
 	ctx := req.Context()
-	f := r.blastRadiusFilterFromRequest(req)
+	f := r.blastRadiusPagedFilterFromRequest(req)
 
 	rows, err := r.historyService.ListBlastRadius(ctx, f)
 	if err != nil {
@@ -228,6 +247,42 @@ func (r *Router) handleReportBlastRadius(w http.ResponseWriter, req *http.Reques
 	})
 }
 
+// collectBlastRadiusExportRows walks the whole filtered result set a page at a
+// time, stopping at blastRadiusExportCap, and reports whether rows were left
+// behind. listPage is the paging query, taken as a parameter so the cap
+// arithmetic can be tested without seeding blastRadiusExportCap real rows.
+//
+// truncated is deliberately NOT "we reached the cap". blastRadiusExportPageSize
+// divides blastRadiusExportCap exactly, so a result set of precisely
+// blastRadiusExportCap rows would reach the cap on its final page with nothing
+// behind it and claim a truncation that never happened. The flag may only be
+// set when a page actually carried rows PAST the cap, which is why the surplus
+// is detected before the slice rather than inferred from the total afterwards.
+// This report's whole premise is not misleading the operator about what it
+// captured, and an unearned "your export was cut short" misleads in the
+// under-confident direction.
+func collectBlastRadiusExportRows(
+	ctx context.Context,
+	f artist.BlastRadiusFilter,
+	listPage func(context.Context, artist.BlastRadiusFilter) ([]artist.BlastRadiusRow, error),
+) (rows []artist.BlastRadiusRow, truncated bool, err error) {
+	for {
+		page, err := listPage(ctx, f)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(rows)+len(page) > blastRadiusExportCap {
+			page = page[:blastRadiusExportCap-len(rows)]
+			truncated = true
+		}
+		rows = append(rows, page...)
+		if len(page) < f.Limit || truncated {
+			return rows, truncated, nil
+		}
+		f.Offset += f.Limit
+	}
+}
+
 // handleReportBlastRadiusExport streams the report as CSV.
 // GET /api/v1/reports/blast-radius/export
 //
@@ -242,25 +297,16 @@ func (r *Router) handleReportBlastRadiusExport(w http.ResponseWriter, req *http.
 	}
 	ctx := req.Context()
 
-	f := r.blastRadiusFilterFromRequest(req)
+	f := blastRadiusFilterFromRequest(req)
 	f.Offset = 0
 	f.Limit = blastRadiusExportPageSize
 
-	var all []artist.BlastRadiusRow
-	for {
-		page, err := r.historyService.ListBlastRadius(ctx, f)
-		if err != nil {
-			r.logger.Error("listing rows for blast-radius export", "error", err)
-			writeError(w, req, http.StatusInternalServerError, "failed to load blast-radius report")
-			return
-		}
-		all = append(all, page...)
-		if len(page) < f.Limit || len(all) >= blastRadiusExportCap {
-			break
-		}
-		f.Offset += f.Limit
+	all, truncated, err := collectBlastRadiusExportRows(ctx, f, r.historyService.ListBlastRadius)
+	if err != nil {
+		r.logger.Error("listing rows for blast-radius export", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to load blast-radius report")
+		return
 	}
-	truncated := len(all) >= blastRadiusExportCap
 
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", `attachment; filename="blast-radius-report.csv"`)
