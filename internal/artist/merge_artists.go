@@ -4,18 +4,28 @@ package artist
 // by physically moving each loser's album subdirectories under the survivor
 // directory and then deleting the loser artist rows.
 //
-// A DB-only merge would be futile: deleting one row leaves a directory on
-// disk that the next scan re-promotes into a fresh artist row. The merge has
-// to touch the filesystem, and the filesystem operations have to be atomic
-// at a per-child granularity so a SIGKILL mid-flight leaves a recoverable
-// state.
+// For a loser that HAS a directory, a DB-only merge would be futile: deleting
+// the row leaves a directory on disk that the next scan re-promotes into a
+// fresh artist row. So the merge has to touch the filesystem, and the
+// filesystem operations have to be atomic at a per-child granularity so a
+// SIGKILL mid-flight leaves a recoverable state.
+//
+// A PLATFORM-ONLY loser (empty path, #2730) has no directory, so its merge is
+// database-only by nature: the filesystem phase is skipped and the row's
+// identity is carried onto the survivor (see carryLoserIdentity). What stops
+// THAT duplicate resurrecting is not the filesystem but the platform mapping:
+// the survivor inherits the loser's artist_platform_ids row, and the
+// post-merge SyncMergeRefresh evicts the stale peer item.
 //
 // Crash-safety contract: each album subdirectory move is an atomic rename
 // (filesystem.RenameDirAtomic). The loser artist row is the LAST thing
 // deleted. A process that dies between the first child rename and the loser
 // row deletion leaves the remaining children on disk under the loser path
 // and the loser row intact; the next MergeArtists call sees the same group
-// in DetectDuplicates and resumes where the previous one left off.
+// in DetectDuplicates and resumes where the previous one left off. The
+// identity carry runs inside the same transaction as the row delete, so a
+// crash mid-carry rolls both back and the pair simply reappears in the
+// duplicates report -- never a half-carried row.
 
 import (
 	"context"
@@ -71,6 +81,24 @@ var (
 	// the resolved group. Handlers map this to HTTP 422 alongside the
 	// stale-group case (same recovery: reload the duplicates view).
 	ErrMergeSurvivorMissing = errors.New("survivor id is not a member of the duplicate group")
+
+	// ErrMergeSurvivorPathless is returned when the chosen survivor has no
+	// filesystem path while some other group member does. Handlers map this
+	// to HTTP 422; the recovery is to pick the path-bearing member instead.
+	//
+	// This is a DATA-LOSS guard, not a preference (#2730). Every filesystem
+	// operation in the commit phase joins a child name onto survivor.Path. A
+	// path-less survivor makes filepath.Join("", child) produce a RELATIVE
+	// path, so RenameDirAtomic moves the losers' album directories into the
+	// server process working directory -- outside every library, with the
+	// loser row deleted and no record of where the albums went. A probe run
+	// against an isolated working directory reproduced exactly that: the
+	// merge returned success and the album landed in the process CWD.
+	//
+	// Keeping the path-bearing row also avoids a second failure: deleting a
+	// local row leaves its directory on disk, which the filesystem scanner
+	// re-promotes into a THIRD artist row on the next scan.
+	ErrMergeSurvivorPathless = errors.New("survivor has no filesystem path while another group member does")
 )
 
 // MergeRequest describes one user-initiated merge. The survivor keeps its
@@ -306,17 +334,44 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		return nil, err
 	}
 
-	// Locked-member check. A locked artist opts out of automated and
-	// destructive operations; merging is destructive (we delete the
-	// loser row and unlink its directory), so any lock anywhere in the
-	// group refuses.
-	if err := refuseIfLocked(ctx, s.artists, members); err != nil {
-		return nil, err
-	}
-
 	survivor := pickMember(members, req.SurvivorID)
 	if survivor == nil {
 		return nil, ErrMergeSurvivorMissing
+	}
+
+	// Both checks below are scoped to the survivor plus the REQUESTED losers,
+	// never the whole group (#2730). Since detection stopped excluding
+	// platform-only rows, a group can contain members the operator did not ask
+	// to merge -- a three-member group of one local row and two platform-only
+	// rows is realistic. Judging a request by the state of a bystander member
+	// refuses merges that are perfectly safe.
+	affected := affectedMembers(members, req.SurvivorID, req.LoserIDs)
+
+	// Locked-member check. A locked artist opts out of automated and
+	// destructive operations; merging is destructive (we delete the loser row
+	// and unlink its directory), so a lock on the survivor or on any requested
+	// loser refuses. A locked BYSTANDER must not: platform-only rows are
+	// exactly the population LockSync locks from a peer's IsLocked state, so
+	// scanning the whole group let an Emby-locked ghost row block a
+	// local-to-local merge that has nothing to do with it.
+	if err := refuseIfLocked(ctx, s.artists, affected); err != nil {
+		return nil, err
+	}
+
+	// Path-less-survivor guard (#2730). The condition is deliberately narrow in
+	// one direction and absolute in the other:
+	//   - It must NOT fire when nothing being merged has a path. An
+	//     all-path-less merge has no filesystem phase at all (executeLoserMerge
+	//     returns early), so it is safe, and refusing it would make those pairs
+	//     permanently unmergeable -- reintroducing #2730 by another route.
+	//   - It MUST fire whenever a REQUESTED loser has a path and the survivor
+	//     does not. That is the album-escape data loss: filepath.Join("", child)
+	//     is relative, so the commit phase moves the loser's albums into the
+	//     server process working directory. See ErrMergeSurvivorPathless.
+	// Scoping to `affected` narrows only the first direction; a path-bearing
+	// loser is always in `affected`, so the second is untouched.
+	if survivor.Path == "" && anyMemberHasPath(affected) {
+		return nil, ErrMergeSurvivorPathless
 	}
 
 	// Survivor-override detection: ChooseSurvivor returns the
@@ -491,6 +546,14 @@ func (s *Service) reconcileSurvivorPeerPaths(ctx context.Context, result *MergeR
 // effort: a rename error is recorded as a warning and the merged-but-non-
 // canonical state is left for the directory-name rule to flag later.
 func (s *Service) reconcileSurvivorCanonicalPath(ctx context.Context, articleMode string, result *MergeResult) {
+	// A path-less survivor has no directory to make canonical (#2730). Without
+	// this, an all-platform-only merge -- which succeeds -- still reached
+	// RenameDirectory, got ErrRenameNoPath back, and reported "could not move
+	// survivor to canonical directory" in the modal: a failure warning on an
+	// operation that was never applicable.
+	if result.SurvivorPath == "" {
+		return
+	}
 	canonicalDir := CanonicalDirName(result.SurvivorName, articleMode)
 	if canonicalDir == "" || strings.EqualFold(filepath.Base(result.SurvivorPath), canonicalDir) {
 		return // cannot compute, or already canonical (case-insensitive).
@@ -651,6 +714,41 @@ func refuseIfLocked(ctx context.Context, repo Repository, members []NearDuplicat
 	return nil
 }
 
+// affectedMembers returns the group members this request actually touches: the
+// survivor plus every requested loser. Callers use it instead of the full
+// member slice so a bystander member -- one in the same near-duplicate group
+// but not part of this merge -- cannot veto the operation (#2730).
+//
+// Order follows the group's, and unknown IDs are skipped; the caller has
+// already validated membership via resolveGroupMembers.
+func affectedMembers(members []NearDuplicateArtist, survivorID string, loserIDs []string) []NearDuplicateArtist {
+	wanted := make(map[string]struct{}, len(loserIDs)+1)
+	wanted[survivorID] = struct{}{}
+	for _, id := range loserIDs {
+		wanted[id] = struct{}{}
+	}
+	out := make([]NearDuplicateArtist, 0, len(wanted))
+	for _, m := range members {
+		if _, ok := wanted[m.ID]; ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// anyMemberHasPath reports whether at least one of the given members is backed
+// by a filesystem directory. Used by the path-less-survivor guard to tell a
+// merge that touches a real directory from one that is pure database work.
+// Callers pass the AFFECTED members, not the whole group -- see affectedMembers.
+func anyMemberHasPath(members []NearDuplicateArtist) bool {
+	for _, m := range members {
+		if m.Path != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // pickMember returns the group member with the given ID, or nil if missing.
 func pickMember(members []NearDuplicateArtist, id string) *NearDuplicateArtist {
 	for i := range members {
@@ -681,12 +779,17 @@ func lookupLosers(members []NearDuplicateArtist, loserIDs []string) []NearDuplic
 //
 //	a. MB-canonical basename: filepath.Base(path) == CanonicalDirName(name, articleMode).
 //	b. Platform-mapped: tie-broken alphabetically by ID for determinism. (At this
-//	   layer we only have NearDuplicateArtist, which carries no platform info, so
-//	   this fallback degrades to "any member with a non-empty Path that isn't
-//	   MB-canonical"; the duplicates surface already excludes platform-only
-//	   artists in DetectDuplicates, so all members are filesystem-backed by
-//	   construction. The platform-mapped check therefore collapses into the
-//	   alphabetic tiebreak.)
+//	   layer we only have NearDuplicateArtist, which carries no platform-mapping
+//	   detail, so this fallback degrades to "any member with a non-empty Path
+//	   that isn't MB-canonical" and collapses into the alphabetic tiebreak.)
+//
+// Since #2730 a group MAY contain platform-only members (empty Path); the
+// earlier "all members are filesystem-backed by construction" invariant no
+// longer holds. Both path-driven precedence rules already skip empty-Path
+// members, so they naturally recommend a path-bearing survivor whenever one
+// exists -- which is what ErrMergeSurvivorPathless then enforces. A group whose
+// members are ALL platform-only falls through to the ID fallback.
+//
 //	c. Most content: highest album-subdirectory count under the artist path.
 //
 // Returns ("", "") when the group is empty. The caller computes override
@@ -868,6 +971,20 @@ func preflightAllLosers(losers []NearDuplicateArtist, survivorPath string, resul
 // during the commit phase and returns removed=true so the DB cleanup
 // still runs.
 func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *MergeResult) error {
+	// Platform-only loser (#2730): no directory exists, so there is nothing to
+	// walk and nothing can collide.
+	//
+	// Stated explicitly rather than leaning on os.Lstat("") returning ENOENT
+	// below, which reaches the same outcome by accident -- that branch is for
+	// crash recovery (a dir unlinked by a previous attempt), and a refactor
+	// that hardened the empty-path case would silently break every
+	// platform-only merge. Being equivalent today, removing this line alone is
+	// a no-op that no test can detect; what IS pinned is the BEHAVIOR (see
+	// TestPreflightOneLoser_PathlessSkipsFilesystem), so the harden-the-empty-
+	// path refactor fails the suite whichever line it touches.
+	if loser.Path == "" {
+		return nil
+	}
 	if _, statErr := os.Lstat(loser.Path); os.IsNotExist(statErr) {
 		return nil
 	}
@@ -1000,6 +1117,16 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 // leaving an orphan loser row whose .Path points at a now-missing dir. The
 // caller can proceed to delete the loser row.
 func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *MergeResult) (removed bool, err error) {
+	// Platform-only loser (#2730): nothing on disk to move or unlink. Report
+	// removed=true so the DB phase proceeds to delete the row and carry its
+	// identity -- the whole point of merging a platform-only duplicate.
+	// Explicit for the same reason as the preflight counterpart above, and
+	// pinned the same way by TestExecuteLoserMerge_PathlessReportsRemoved:
+	// the return VALUE is the contract, since commitMergeDB gates the delete
+	// and the identity carry on it.
+	if loser.Path == "" {
+		return true, nil
+	}
 	if _, statErr := os.Lstat(loser.Path); os.IsNotExist(statErr) {
 		// Crash-recovery: dir was unlinked by a previous attempt; nothing
 		// to move, nothing to remove, nothing to warn about. The DB tx
@@ -1371,9 +1498,155 @@ func (s *Service) collectAffectedConnectionIDs(ctx context.Context, survivorID s
 	return out, loserPlatformIDs
 }
 
+// carryLoserIdentity moves the identity a loser row carries onto the survivor,
+// inside the caller's transaction and immediately before the loser row is
+// deleted (#2730).
+//
+// The problem it solves: artist_provider_ids, artist_platform_ids,
+// artist_libraries and metadata_changes all declare
+// `REFERENCES artists(id) ON DELETE CASCADE`, so deleting the loser row
+// silently destroys them. For a platform-only duplicate that is fatal, because
+// its artist_platform_ids row is the only thing linking Stillwater to the
+// Emby/Jellyfin item. Destroy it and the next populate finds no mapping and
+// recreates the duplicate -- the merge undoes itself.
+//
+// Applies to EVERY deleted loser, not just platform-only ones: a path-bearing
+// loser lost its platform mapping the same way, which was a latent defect in
+// the ordinary merge.
+//
+// Conflict policy per table is spelled out at each statement below. The
+// unifying rule is that the SURVIVOR'S OWN DATA ALWAYS WINS; the loser only
+// ever fills a gap. A carried row that the survivor already has an answer for
+// is dead identity attached to a row about to disappear, not data to preserve.
+// droppedPlatformMapping is one loser platform mapping the carry could not move
+// onto the survivor, because the survivor already occupies that connection.
+// The item still exists on the peer with nothing pointing at it, so it is
+// surfaced to the operator rather than discarded.
+type droppedPlatformMapping struct {
+	ConnectionID     string
+	PlatformArtistID string
+}
+
+// findUncarryablePlatformIDs returns the loser's platform mappings that the
+// carry UPDATE will refuse, i.e. those on a connection where the survivor is
+// already mapped. Must be called BEFORE the UPDATE: afterwards a re-pointed row
+// and a refused row both read as belonging to the survivor.
+func findUncarryablePlatformIDs(ctx context.Context, tx *sql.Tx, survivorID, loserID string) ([]droppedPlatformMapping, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT l.connection_id, l.platform_artist_id
+		   FROM artist_platform_ids l
+		   JOIN artist_platform_ids s
+		     ON s.connection_id = l.connection_id AND s.artist_id = ?
+		  WHERE l.artist_id = ?
+		  ORDER BY l.connection_id, l.platform_artist_id`,
+		survivorID, loserID)
+	if err != nil {
+		return nil, fmt.Errorf("finding uncarryable platform ids for loser %s: %w", loserID, err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only query
+	var out []droppedPlatformMapping
+	for rows.Next() {
+		var d droppedPlatformMapping
+		if err := rows.Scan(&d.ConnectionID, &d.PlatformArtistID); err != nil {
+			return nil, fmt.Errorf("scanning uncarryable platform id: %w", err)
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating uncarryable platform ids: %w", err)
+	}
+	return out, nil
+}
+
+func carryLoserIdentity(ctx context.Context, tx *sql.Tx, survivorID, loserID string) ([]droppedPlatformMapping, error) {
+	// Provider IDs: fill-empty. PRIMARY KEY (artist_id, provider), so at most
+	// one row per provider can move. The WHERE guard on the UPDATE arm makes
+	// the upsert a no-op when the survivor already holds a non-empty value --
+	// the same shape as the MBID fill-empty above, generalized past
+	// musicbrainz so discogs/spotify/etc. carry too.
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO artist_provider_ids (artist_id, provider, provider_id)
+		 SELECT ?, provider, provider_id FROM artist_provider_ids WHERE artist_id = ?
+		 ON CONFLICT(artist_id, provider) DO UPDATE SET provider_id = excluded.provider_id
+		 WHERE artist_provider_ids.provider_id = ''`,
+		survivorID, loserID); err != nil {
+		return nil, fmt.Errorf("carrying provider ids from loser %s: %w", loserID, err)
+	}
+
+	// Platform IDs: re-point, skip-existing.
+	//
+	// The table has two unique constraints, but only ONE of them can refuse
+	// this statement:
+	//   - PRIMARY KEY (artist_id, connection_id) CAN be violated: the survivor
+	//     may already be mapped on the connection the loser is mapped on. This
+	//     is the case OR IGNORE exists for; the survivor's mapping wins.
+	//   - UNIQUE (connection_id, platform_artist_id) from #1076 CANNOT be newly
+	//     violated: artist_id is not part of that index, so changing only
+	//     artist_id leaves every row's indexed tuple untouched. The index holds
+	//     afterwards exactly when it held before.
+	// This is why the statement must keep updating artist_id ALONE. Re-keying
+	// the rows any other way (INSERT ... SELECT, or touching connection_id)
+	// would put the #1076 index back in play.
+	//
+	// A REFUSED ROW IS NOT HARMLESS, and must never be dropped silently.
+	// Because (connection_id, platform_artist_id) is UNIQUE, a survivor and a
+	// loser mapped on the SAME connection are necessarily mapped to two
+	// DIFFERENT platform items, and BOTH items exist on the peer. That is the
+	// reported shape of #2730: one Emby item resolved to the local artist, the
+	// other became the platform-only row. So the refused row is a LIVE peer
+	// item that is about to be mapped to nothing.
+	//
+	// Stillwater cannot fix that automatically here:
+	//   - It cannot keep both mappings. The PK allows exactly one row per
+	//     (artist_id, connection_id), so the survivor physically cannot hold
+	//     two items on one connection.
+	//   - The post-merge refresh cannot evict it either. SyncMergeRefresh drops
+	//     loser items whose on-disk directory was removed, and a platform-only
+	//     loser never had a directory, so the peer keeps the item.
+	// Left silent, the next populate finds no mapping for that item, creates a
+	// fresh artist row, and the merge undoes itself. So capture the dropped
+	// mappings and report them; the operator resolves the leftover item on the
+	// peer. Collected BEFORE the UPDATE, because afterwards the rows that were
+	// re-pointed are indistinguishable from the rows that were refused.
+	dropped, err := findUncarryablePlatformIDs(ctx, tx, survivorID, loserID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE OR IGNORE artist_platform_ids SET artist_id = ? WHERE artist_id = ?`,
+		survivorID, loserID); err != nil {
+		return nil, fmt.Errorf("carrying platform ids from loser %s: %w", loserID, err)
+	}
+
+	// Library membership: re-point, skip-existing. PRIMARY KEY
+	// (artist_id, library_id); a survivor already in that library keeps its
+	// own row. This is what makes the merged artist appear in the platform's
+	// library view afterwards, which is the operator-visible point of merging
+	// a platform-only row at all.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE OR IGNORE artist_libraries SET artist_id = ? WHERE artist_id = ?`,
+		survivorID, loserID); err != nil {
+		return nil, fmt.Errorf("carrying library membership from loser %s: %w", loserID, err)
+	}
+
+	// Change history: re-point unconditionally. metadata_changes has an id
+	// primary key and no unique constraint on artist_id, so nothing can
+	// conflict. Worth carrying because on the reported incident the loser's
+	// history holds the wrong-MBID rule fix that caused the fork in the first
+	// place -- the audit trail for the defect being repaired.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE metadata_changes SET artist_id = ? WHERE artist_id = ?`,
+		survivorID, loserID); err != nil {
+		return nil, fmt.Errorf("carrying change history from loser %s: %w", loserID, err)
+	}
+
+	return dropped, nil
+}
+
 // commitMergeDB runs the final DB transaction: fill-empty MBID forward from
-// any loser that has one (when the survivor does not), then delete every
-// loser artist row. FK CASCADE handles the dependent rows.
+// any loser that has one (when the survivor does not), carry each deleted
+// loser's identity onto the survivor, then delete the loser rows. FK CASCADE
+// handles whatever was deliberately not carried.
 func (s *Service) commitMergeDB(ctx context.Context, survivor *NearDuplicateArtist, losers []NearDuplicateArtist, result *MergeResult) error {
 	db, err := s.artistDB()
 	if err != nil {
@@ -1439,10 +1712,24 @@ func (s *Service) commitMergeDB(ctx context.Context, survivor *NearDuplicateArti
 	// successful commit so a failed commit does not falsely advertise
 	// loser-row deletions that never persisted.
 	var deletedIDs []string
+	var droppedMappings []droppedPlatformMapping
 	for _, l := range losers {
 		if !removedSet[l.ID] {
 			continue
 		}
+		// Carry the loser's identity onto the survivor BEFORE deleting the row
+		// (#2730). Every one of these tables has ON DELETE CASCADE on
+		// artists(id), so the delete below would otherwise destroy them. Gated
+		// on the same removedSet as the delete: a loser whose row survives
+		// keeps its own identity.
+		dropped, err := carryLoserIdentity(ctx, tx, survivor.ID, l.ID)
+		if err != nil {
+			return err
+		}
+		// Deferred to post-commit alongside the inherited-MBID warning, for the
+		// same reason: a rolled-back tx must not leave the operator holding a
+		// warning about a drop that never happened.
+		droppedMappings = append(droppedMappings, dropped...)
 		if _, err := tx.ExecContext(ctx, `DELETE FROM artists WHERE id = ?`, l.ID); err != nil {
 			return fmt.Errorf("deleting loser %s: %w", l.ID, err)
 		}
@@ -1456,6 +1743,19 @@ func (s *Service) commitMergeDB(ctx context.Context, survivor *NearDuplicateArti
 	result.LosersDeleted = append(result.LosersDeleted, deletedIDs...)
 	if inheritedMBIDWarning != "" {
 		result.Warnings = append(result.Warnings, inheritedMBIDWarning)
+	}
+	// Report every loser platform mapping the carry could not move (#2730).
+	// The peer item still exists with nothing pointing at it, and neither the
+	// schema nor the post-merge refresh can resolve that automatically -- see
+	// carryLoserIdentity. Naming the connection and item is what lets the
+	// operator clean it up before the next populate recreates the duplicate.
+	for _, d := range droppedMappings {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"connection %s: item %s was mapped to a merged-away artist and could not be moved to the "+
+				"survivor, which is already mapped to a different item on that connection. The item is "+
+				"now unlinked; remove or merge it on the server, otherwise the next library import will "+
+				"recreate it as a duplicate artist.",
+			d.ConnectionID, d.PlatformArtistID))
 	}
 	// Backfill the inherited MBID onto the in-memory result snapshot. The
 	// SurvivorMBID captured in MergeArtists (from survivor.MBID) is "" for a

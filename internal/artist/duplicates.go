@@ -13,8 +13,11 @@ package artist
 // the name key from colliding, as long as at least one record carries the MBID.
 //
 // Groups with two or more members are returned sorted by the first member's
-// name.  Platform-only artists (path = '') are excluded because they have no
-// on-disk representation that a merge could act on.
+// name.  Platform-only artists (path = '') ARE included (#2730): they carry
+// real identity (platform mappings, library membership, provider IDs) that a
+// merge must consolidate, even though there is no directory to move.  Members
+// are flagged via NearDuplicateArtist.PlatformOnly so callers can route the
+// filesystem half of the merge accordingly.
 //
 // The detection runs fully in Go from two queries (artists + their MBIDs), so
 // it does NOT touch the sqlite_artist.go List / buildWhereClause path and
@@ -68,6 +71,14 @@ type NearDuplicateArtist struct {
 	Path string
 	MBID string // empty when no MusicBrainz provider row exists
 
+	// PlatformOnly is true when the artist has no filesystem path: it exists
+	// only as a platform (Emby / Jellyfin / Lidarr) record.  Such a member has
+	// no directory to move, so the merge skips the filesystem phase for it and
+	// carries its identity in the database instead (#2730).  It is also the
+	// signal that gates survivor selection: a path-less row must never survive
+	// a merge that has a path-bearing member (see ErrMergeSurvivorPathless).
+	PlatformOnly bool
+
 	// Disambiguation is the artist's disambiguation text ('' when unset).
 	Disambiguation string
 
@@ -88,11 +99,11 @@ type artistRow struct {
 	disamb string // artists.disambiguation; NOT NULL DEFAULT '' so never NULL
 }
 
-// DetectDuplicates loads all path-bearing artists and their MusicBrainz IDs,
-// then groups them by normalized name key and MBID, merging overlapping groups
-// via union-find.  Artists whose path column is empty (platform-only / API-
-// imported) are excluded because they have no filesystem directory to merge.
-// The returned slice contains only groups with 2 or more members.
+// DetectDuplicates loads every artist and their MusicBrainz IDs, then groups
+// them by normalized name key and MBID, merging overlapping groups via
+// union-find.  Platform-only artists (empty path) participate on equal footing
+// and are flagged with PlatformOnly (#2730).  The returned slice contains only
+// groups with 2 or more members.
 //
 // db is the raw *sql.DB handle; use the artist repo's DB() accessor to obtain
 // it from the service layer without coupling detection to the Service struct.
@@ -110,8 +121,15 @@ func DetectDuplicates(ctx context.Context, db *sql.DB) ([]NearDuplicateGroup, er
 
 // queryDuplicateCandidates issues a single SQL query joining artists with their
 // MusicBrainz provider ID (LEFT JOIN so artists without an MBID are included).
-// Only rows with a non-empty path are returned -- platform-only artists cannot
-// be merged on disk and are not useful in the duplicate view.
+//
+// EVERY artist row is returned, including platform-only ones (#2730).  This
+// deliberately reverses the original `WHERE a.path <> ”` filter from #1625.
+// That filter was correct when a merge was purely a filesystem operation, but a
+// platform-only row carries identity -- platform mappings, library membership,
+// provider IDs -- that a merge must consolidate rather than let ON DELETE
+// CASCADE destroy.  Excluding those rows made the pair invisible in the report
+// and made the merge endpoint answer HTTP 422 "merge target is stale" for a
+// group that structurally could not exist.
 func queryDuplicateCandidates(ctx context.Context, db *sql.DB) ([]artistRow, error) {
 	// a.disambiguation is NOT NULL DEFAULT '' (001_initial_schema.sql), so it
 	// scans straight into a string without a COALESCE.  It feeds the Defect-2
@@ -126,7 +144,6 @@ func queryDuplicateCandidates(ctx context.Context, db *sql.DB) ([]artistRow, err
 		FROM artists a
 		LEFT JOIN artist_provider_ids p
 			ON p.artist_id = a.id AND p.provider = 'musicbrainz'
-		WHERE a.path <> ''
 		ORDER BY a.name
 	`
 	sqlRows, err := db.QueryContext(ctx, q)
@@ -340,6 +357,7 @@ func collectGroups(rows []artistRow, find func(string) string, finalEdges map[st
 			Name:           r.name,
 			Path:           r.path,
 			MBID:           r.mbid,
+			PlatformOnly:   r.path == "",
 			Disambiguation: r.disamb,
 		})
 	}

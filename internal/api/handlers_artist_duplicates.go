@@ -263,6 +263,7 @@ type mergeResultPayload struct {
 //	409 ErrMergeCollisions       (pre-flight collision halt; conflicts in body)
 //	422 ErrMergeStaleGroup       (IDs no longer co-resolve to one group)
 //	422 ErrMergeSurvivorMissing  (survivor id absent from the group)
+//	422 ErrMergeSurvivorPathless (survivor has no folder while a member does)
 //	423 ErrMergeLocked           (a group member is locked)
 //	500 anything else            (server-side failure; details in logs)
 func (r *Router) handleArtistsMerge(w http.ResponseWriter, req *http.Request) {
@@ -394,6 +395,13 @@ func (r *Router) respondMergeError(w http.ResponseWriter, err error, result *art
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 			"error":   "survivor_missing",
 			"message": "survivor id is not a member of the duplicate group; refresh duplicates and retry",
+		})
+	case errors.Is(err, artist.ErrMergeSurvivorPathless):
+		r.logger.Info("artist merge: path-less survivor refused", "error", err)
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"error": "survivor_pathless",
+			"message": "the artist you chose to keep has no folder on disk; " +
+				"choose the entry that does, so its albums stay where they are",
 		})
 	case errors.Is(err, artist.ErrMergeStaleGroup):
 		r.logger.Info("artist merge: stale group", "error", err)
@@ -622,6 +630,7 @@ func buildArtistDuplicatesView(groups []artist.NearDuplicateGroup, articleMode s
 				Name:                   m.Name,
 				Path:                   m.Path,
 				MBID:                   m.MBID,
+				PlatformOnly:           m.PlatformOnly,
 				Disambiguation:         m.Disambiguation,
 				DisambiguationConflict: m.DisambiguationConflict,
 			}

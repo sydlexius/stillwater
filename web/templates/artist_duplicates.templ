@@ -14,6 +14,7 @@ type ArtistDuplicateMember struct {
 	Name              string
 	Path              string
 	MBID              string // empty when no MusicBrainz ID is known
+	PlatformOnly      bool   // true when Path is empty: the artist exists only on a platform (#2730)
 	Recommended       bool   // true on exactly one member per group; mirrors artist.ChooseSurvivor
 	RecommendedReason string // "canonical_basename" | "most_content" | "fallback" | ""
 
@@ -174,7 +175,17 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 											</span>
 										}
 									</td>
-									<td class="px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400">{ m.Path }</td>
+									<td class="px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400">
+										if m.PlatformOnly {
+											// No folder on disk: this row exists only on a
+											// connected platform (#2730). Same italic muted
+											// placeholder shape the MBID and disambiguation
+											// cells below use for their absent case.
+											<span class="italic text-gray-400 dark:text-gray-500">{ t(ctx, "artist_duplicates.platform_only") }</span>
+										} else {
+											{ m.Path }
+										}
+									</td>
 									<td class="px-4 py-2 text-xs">
 										if m.Disambiguation != "" {
 											if m.DisambiguationConflict {
@@ -660,10 +671,19 @@ templ ArtistMergeModal() {
 
 			lastFocused = document.activeElement;
 			current.members = members;
-			var rec = members.find(function(m) { return m.recommended; });
-			current.survivorId = rec ? rec.id : members[0].id;
 			current.dryRunOK = false;
+			// Cleared BEFORE the survivor is chosen: isSelectableSurvivor reads
+			// excludedIds, so a stale exclusion from the previously opened group
+			// would otherwise steer this group's default selection.
 			excludedIds.clear();
+			// A folder-less row must not be the default survivor when something
+			// being merged into it has a folder (#2730): the server refuses that
+			// with survivor_pathless. Mirror the rule so the default selection is
+			// always submittable.
+			var rec = members.find(function(m) { return m.recommended; });
+			var selectable = members.filter(function(m) { return isSelectableSurvivor(m); });
+			current.survivorId = (rec && isSelectableSurvivor(rec)) ? rec.id
+				: (selectable.length ? selectable[0].id : members[0].id);
 
 			// Reveal the soft gate for this group and reset the override, so an
 			// acknowledgement never carries over from a previously merged group.
@@ -720,11 +740,31 @@ templ ArtistMergeModal() {
 			lastFocused = null;
 		}
 
+		// isSelectableSurvivor mirrors the server's ErrMergeSurvivorPathless
+		// guard (#2730): a folder-less member can only be kept when nothing
+		// being MERGED INTO it has a folder, otherwise the merge would leave
+		// real albums with no artist row pointing at them.
+		//
+		// Scoped to the members this merge actually touches -- the candidate
+		// plus the losers still included -- not the whole group. A group can
+		// contain a folder-bearing bystander the operator excluded, and the
+		// server judges the request, not the group, so a whole-group rule here
+		// would grey out a row the server would happily accept.
+		function isSelectableSurvivor(m) {
+			if (m.path) return true;
+			return !current.members.some(function(o) {
+				return o.id !== m.id && !excludedIds.has(o.id) && !!o.path;
+			});
+		}
+
 		function renderSurvivorOptions() {
 			optionsRoot.innerHTML = '';
 			rowControls = [];
 			current.members.forEach(function(m) {
 				var row = document.createElement('div');
+				// Declared before first use below: a folder-less member in a
+				// mixed group cannot be kept (#2730).
+				var selectable = isSelectableSurvivor(m);
 				// FIX D (#1894): the WHOLE row selects this artist as survivor and is
 				// the tap target (touch-friendly, big hit area vs a ~20px dial). The
 				// native radio stays in the DOM but sr-only (visually hidden) so the
@@ -733,14 +773,16 @@ templ ArtistMergeModal() {
 				// preserved; only the visible dial is dropped. The left accent border +
 				// "Keeping" badge remain the selection indicator, and :focus-within on
 				// the row gives keyboard users a visible focus ring.
-				row.className = 'sw-merge-row flex items-start gap-3 p-2 cursor-pointer';
+				row.className = 'sw-merge-row flex items-start gap-3 p-2 '
+					+ (selectable ? 'cursor-pointer' : 'cursor-default');
 
 				// Accessible name folds in the path (#1894 F2 a11y): near-duplicate
 				// rows frequently share the same display name, so the path is what
 				// lets a screen-reader user tell two rows apart on this
 				// duplicate-resolution screen. Used by both the survivor radio and the
 				// include toggle below.
-				var accLabel = (m.name || m.id) + (m.path ? ' (' + m.path + ')' : '');
+				var accLabel = (m.name || m.id)
+					+ (m.path ? ' (' + m.path + ')' : ' (' + tx('platform_only') + ')');
 
 				var radio = document.createElement('input');
 				radio.type = 'radio';
@@ -750,6 +792,10 @@ templ ArtistMergeModal() {
 				// radio carries its own aria-label so no wrapping <label> is needed.
 				radio.className = 'sw-merge-radio sr-only';
 				radio.setAttribute('aria-label', accLabel);
+				// A folder-less row in a mixed group cannot be kept (#2730). The
+				// server refuses it either way; disabling here means the operator
+				// never picks a choice that is going to come back as a 422.
+				radio.disabled = !selectable;
 				radio.checked = (m.id === current.survivorId);
 				radio.addEventListener('change', function() {
 					current.survivorId = m.id;
@@ -780,8 +826,10 @@ templ ArtistMergeModal() {
 				keepingBadge.hidden = true;
 				name.appendChild(keepingBadge);
 				var path = document.createElement('div');
-				path.className = 'text-xs font-mono text-gray-600 dark:text-gray-400 truncate';
-				path.textContent = m.path;
+				path.className = m.path
+					? 'text-xs font-mono text-gray-600 dark:text-gray-400 truncate'
+					: 'text-xs italic text-gray-500 dark:text-gray-400 truncate';
+				path.textContent = m.path || tx('platform_only');
 				body.appendChild(name);
 				body.appendChild(path);
 				// Surface this member's disambiguation next to its path so the
@@ -862,6 +910,9 @@ templ ArtistMergeModal() {
 				// re-clicking the current survivor is a no-op (no redundant dry-run).
 				row.addEventListener('click', function(ev) {
 					if (ev.target.closest('.sw-merge-include-toggle')) return;
+					// Re-evaluated per click, not captured at render: excluding a
+					// folder-bearing loser can make a folder-less row selectable.
+					if (!isSelectableSurvivor(m)) return;
 					if (!radio.checked) {
 						radio.checked = true;
 						radio.dispatchEvent(new Event('change', { bubbles: true }));
@@ -872,7 +923,7 @@ templ ArtistMergeModal() {
 				row.appendChild(body);
 				row.appendChild(includeWrap);
 				optionsRoot.appendChild(row);
-				rowControls.push({ id: m.id, row: row, include: include, keepingBadge: keepingBadge, discardNote: discardNote });
+				rowControls.push({ id: m.id, member: m, row: row, radio: radio, include: include, keepingBadge: keepingBadge, discardNote: discardNote });
 			});
 			applySurvivorState();
 		}
@@ -886,6 +937,16 @@ templ ArtistMergeModal() {
 		// "Will be removed" note; a row additionally excluded via its checkbox
 		// is dimmed further on top of the discard treatment.
 		function applySurvivorState() {
+			// Survivor eligibility depends on which losers are still included
+			// (#2730), so refresh it here rather than at render time: excluding
+			// the folder-bearing member makes a folder-less row selectable, and
+			// re-including it takes that back.
+			rowControls.forEach(function(rc) {
+				var ok = isSelectableSurvivor(rc.member);
+				rc.radio.disabled = !ok;
+				rc.row.classList.toggle('cursor-pointer', ok);
+				rc.row.classList.toggle('cursor-default', !ok);
+			});
 			rowControls.forEach(function(rc) {
 				if (rc.id === current.survivorId) {
 					excludedIds.delete(rc.id);
@@ -1119,6 +1180,8 @@ templ ArtistMergeModal() {
 				msg = tx('error_stale_group');
 			} else if (body && body.error === 'survivor_missing') {
 				msg = tx('error_survivor_missing');
+			} else if (body && body.error === 'survivor_pathless') {
+				msg = tx('error_survivor_pathless');
 			} else if (body && body.message) {
 				msg = body.message;
 			} else {

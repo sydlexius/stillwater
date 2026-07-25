@@ -52,7 +52,9 @@ func TestDetectDuplicates(t *testing.T) {
 	// --- Solo: no duplicate (Radiohead is unique) ---
 	_ = insert("Radiohead", "/music/Radiohead", "")
 
-	// --- Platform-only artist (path='') must be excluded ---
+	// --- Platform-only artist (path='') joins pair 2's group (#2730) ---
+	// Before #2730 this row was excluded from detection entirely. It now
+	// participates on equal footing, so pair 2 becomes a THREE-member group.
 	repo := newSQLiteArtistRepo(db)
 	platformOnly := &Artist{Name: "The Cure", Path: ""} // same name as pair 2
 	if err := repo.Create(ctx, platformOnly); err != nil {
@@ -105,12 +107,13 @@ func TestDetectDuplicates(t *testing.T) {
 		t.Errorf("apostrophe pair reason = %q, want name_key", g1.reason)
 	}
 
-	// --- Assert pair 2 (The Cure / Cure, The) found ---
-	g2 := findGroup(byMembers(id2a, id2b))
+	// --- Assert pair 2 (The Cure / Cure, The) found, now WITH the
+	// platform-only "The Cure" swept into the same name-key group (#2730) ---
+	g2 := findGroup(byMembers(id2a, id2b, platformOnly.ID))
 	if g2 == nil {
-		t.Errorf("The Cure / Cure, The pair not found in groups")
+		t.Errorf("The Cure / Cure, The / platform-only trio not found in groups")
 	} else if g2.reason != "name_key" {
-		t.Errorf("Cure article pair reason = %q, want name_key", g2.reason)
+		t.Errorf("Cure article group reason = %q, want name_key", g2.reason)
 	}
 
 	// --- Assert pair 3 (ACDC / AC_DC via MBID) found ---
@@ -130,13 +133,21 @@ func TestDetectDuplicates(t *testing.T) {
 		}
 	}
 
-	// --- Assert platform-only "The Cure" is NOT in any group ---
+	// --- Assert the platform-only "The Cure" IS grouped and IS flagged (#2730) ---
+	var sawPlatformOnly bool
 	for _, g := range groups {
 		for _, m := range g.Members {
-			if m.ID == platformOnly.ID {
-				t.Errorf("platform-only artist (id=%s) unexpectedly appears in a duplicate group", platformOnly.ID)
+			if m.ID != platformOnly.ID {
+				continue
+			}
+			sawPlatformOnly = true
+			if !m.PlatformOnly {
+				t.Errorf("platform-only artist (id=%s) has PlatformOnly = false, want true", m.ID)
 			}
 		}
+	}
+	if !sawPlatformOnly {
+		t.Errorf("platform-only artist (id=%s) is missing from every duplicate group", platformOnly.ID)
 	}
 
 	// --- Total group count ---
@@ -648,9 +659,12 @@ func TestDetectDuplicates_EmptyDB(t *testing.T) {
 	}
 }
 
-// TestDetectDuplicates_PathEmpty ensures platform-only rows (path=”) are
-// never included in a duplicate group even when they share a name with a
-// filesystem-backed artist.
+// TestDetectDuplicates_PathEmpty pins the INVERSION of this test's original
+// assertion. It used to require that a platform-only row (path=”) never appear
+// in a group; #2730 established that the exclusion was the defect, because a
+// platform-only row carries identity a merge must consolidate. The pair is now
+// required to group, and the path-less member must be flagged PlatformOnly so
+// the survivor guard and the report can route on it.
 func TestDetectDuplicates_PathEmpty(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
@@ -672,9 +686,36 @@ func TestDetectDuplicates_PathEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DetectDuplicates: %v", err)
 	}
-	// "Ghost" appears only once as a filesystem artist so there should be no group.
-	if len(groups) != 0 {
-		t.Errorf("expected 0 groups (platform-only excluded), got %d", len(groups))
+	if len(groups) != 1 {
+		t.Fatalf("len(groups) = %d, want 1 (the platform-only row must group with "+
+			"the filesystem artist sharing its name)", len(groups))
+	}
+	// Assert membership EXPLICITLY before reading any flag. A map[string]bool
+	// returns false for an ABSENT key as readily as for a present-and-false
+	// one, so a detector that emitted a singleton group holding only the
+	// platform-only row would satisfy a bare flags[fsArtist.ID] == false check.
+	// Pinning the exact member set closes that.
+	if len(groups[0].Members) != 2 {
+		t.Fatalf("len(Members) = %d, want 2 (the platform-only row and the filesystem artist)",
+			len(groups[0].Members))
+	}
+	flags := make(map[string]bool, 2)
+	for _, m := range groups[0].Members {
+		flags[m.ID] = m.PlatformOnly
+	}
+	platformOnlyFlag, ok := flags[pOnly.ID]
+	if !ok {
+		t.Fatalf("platform-only artist %s is not a member of the group", pOnly.ID)
+	}
+	fsFlag, ok := flags[fsArtist.ID]
+	if !ok {
+		t.Fatalf("filesystem artist %s is not a member of the group", fsArtist.ID)
+	}
+	if !platformOnlyFlag {
+		t.Errorf("platform-only member %s PlatformOnly = false, want true", pOnly.ID)
+	}
+	if fsFlag {
+		t.Errorf("filesystem member %s PlatformOnly = true, want false", fsArtist.ID)
 	}
 }
 

@@ -481,6 +481,41 @@ func TestRespondMergeError_StaleGroupDistinct(t *testing.T) {
 	}
 }
 
+// TestRespondMergeError_SurvivorPathless pins the third 422 code (#2730).
+// A path-less survivor is refused because keeping a row with no folder would
+// relocate the losers' album directories out of every library; the operator's
+// recovery is to keep the member that HAS a folder, so the code must be
+// distinct from stale_group and survivor_missing, whose recovery is "reload
+// and retry" and would send the operator in the wrong direction.
+//
+// Tested at the handler directly, matching the sibling 422 tests above: the
+// error-to-status mapping is the unit under test, and the orchestrator-level
+// refusal is covered by TestMergeArtists_RefusesPathlessSurvivor.
+func TestRespondMergeError_SurvivorPathless(t *testing.T) {
+	t.Parallel()
+	r, _, _ := mergeTestRouter(t)
+
+	rec := httptest.NewRecorder()
+	r.respondMergeError(rec, artist.ErrMergeSurvivorPathless, nil)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", rec.Code)
+	}
+	var got map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got["error"] != "survivor_pathless" {
+		t.Errorf("error = %q, want survivor_pathless (must NOT conflate with stale_group "+
+			"or survivor_missing: the recovery is different)", got["error"])
+	}
+	// The message has to tell the operator what to do instead. A blank or
+	// generic body here would leave the modal showing an unactionable 422.
+	if got["message"] == "" {
+		t.Error("message is empty; the operator needs to be told to keep the entry that has a folder")
+	}
+}
+
 // TestRespondMergeError_CollisionsAlwaysHasConflicts pins the 409
 // collisions contract: the `conflicts` array MUST be present even when
 // the orchestrator returns a nil result. The schema's oneOf requires

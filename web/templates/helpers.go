@@ -298,6 +298,8 @@ func mergeI18nJSON(ctx context.Context) string {
 		"error_locked":              t(ctx, "artist_duplicates.merge_modal.error_locked"),
 		"error_stale_group":         t(ctx, "artist_duplicates.merge_modal.error_stale_group"),
 		"error_survivor_missing":    t(ctx, "artist_duplicates.merge_modal.error_survivor_missing"),
+		"error_survivor_pathless":   t(ctx, "artist_duplicates.merge_modal.error_survivor_pathless"),
+		"platform_only":             t(ctx, "artist_duplicates.platform_only"),
 		"error_unknown":             t(ctx, "artist_duplicates.merge_modal.error_unknown"),
 		"exclude_label":             t(ctx, "artist_duplicates.merge_modal.exclude_label"),
 		"no_sources_selected":       t(ctx, "artist_duplicates.merge_modal.no_sources_selected"),
@@ -334,6 +336,7 @@ func DuplicateGroupMembersJSON(members []ArtistDuplicateMember) string {
 		Name                   string `json:"name"`
 		Path                   string `json:"path"`
 		MBID                   string `json:"mbid"`
+		PlatformOnly           bool   `json:"platform_only"`
 		Recommended            bool   `json:"recommended"`
 		RecommendedReason      string `json:"recommended_reason"`
 		Disambiguation         string `json:"disambiguation"`

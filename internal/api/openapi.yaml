@@ -4082,14 +4082,16 @@ paths:
                 $ref: "#/components/schemas/MergeCollisionsResponse"
         "422":
           description: >-
-            The supplied IDs no longer co-resolve into a single duplicate
-            group. The `error` field distinguishes the two recovery paths:
-            `stale_group` (the loser/survivor combination no longer forms
-            a group, typically a concurrent edit between page load and
-            submit; reload the duplicates view and resubmit) and
-            `survivor_missing` (the survivor_id is not a member of the
-            resolved group; pick a different survivor from the
-            reloaded group).
+            The merge cannot proceed as submitted. The `error` field
+            distinguishes the recovery paths: `stale_group` (the
+            loser/survivor combination no longer forms a group, typically a
+            concurrent edit between page load and submit; reload the
+            duplicates view and resubmit), `survivor_missing` (the
+            survivor_id is not a member of the resolved group; pick a
+            different survivor from the reloaded group), and
+            `survivor_pathless` (the chosen survivor has no folder on disk
+            while another group member does; keep the member that has one,
+            so its albums stay where they are).
           content:
             application/json:
               schema:
