@@ -440,18 +440,17 @@ echo "=== CSS lint (diff-scoped ratchet, #2402) ==="
 # Design-token layer stylelint gate. The token migration is not complete
 # (input.css still carries ~135 pre-existing literal-value violations), so
 # this is a ratchet: only violations on lines this diff ADDED can fail the
-# build, matching coverage-floor.sh's one-way-ratchet shape. Hard-fail (not
-# SKIP) when stylelint/jq are missing, same rationale as the golangci-lint
-# check above -- this closes a `--no-verify` bypass, so a missing tool must
-# not silently reopen it.
-if ! command -v jq >/dev/null 2>&1; then
-  echo "FAIL: jq not in PATH" >&2
-  exit 1
-fi
-if [ ! -d node_modules/stylelint ]; then
-  echo "FAIL: stylelint not installed (run: npm ci)" >&2
-  exit 1
-fi
+# build, matching coverage-floor.sh's one-way-ratchet shape.
+#
+# The jq/stylelint precondition lives inside stylelint-diff-gate.sh itself,
+# not here, because it can only be evaluated correctly after looking at the
+# diff: a diff that touches no CSS has nothing to check and must SKIP even
+# with the tools absent (a fresh `make worktree` has no node_modules), while
+# a diff that DOES touch CSS with the tools missing must hard-fail (not
+# SKIP), same rationale as the golangci-lint check above -- this closes a
+# `--no-verify` bypass, so a missing tool must not silently reopen it. Do not
+# duplicate that check here; a copy that runs before the diff is examined is
+# exactly the bug this ordering fixes.
 "$SCRIPT_DIR/stylelint-diff-gate.sh" "$BASE"
 
 echo ""
