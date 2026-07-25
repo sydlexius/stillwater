@@ -441,6 +441,10 @@ func TestMergeI18nJSON(t *testing.T) {
 		"error_locked",
 		"error_stale_group",
 		"error_survivor_missing",
+		// #2730: the merge modal reports the path-less-survivor refusal and
+		// labels folder-less members, so both keys must reach the JS.
+		"error_survivor_pathless",
+		"platform_only",
 		"error_unknown",
 		"exclude_label",
 		"no_sources_selected",
