@@ -1,0 +1,52 @@
+meta {
+  name: Blast Radius Report
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{apiBase}}/reports/blast-radius?page=1&page_size=50
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Lists metadata values an automated writer destroyed and that have not been
+  put back. Read-only; this route writes nothing.
+
+  On an empty CI database there are no rows, so the assertions below check the
+  envelope rather than the contents. The two caveat blocks are asserted because
+  they must be present even when the report is empty: an empty row list with no
+  statement of what the report cannot see would read as a clean bill of health,
+  which is the exact defect this report exists to avoid.
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("rows is an array, never null", function() {
+    expect(res.body.rows).to.be.an("array");
+    expect(res.body.total).to.be.a("number");
+  });
+
+  test("both attribution buckets are always reported", function() {
+    expect(res.body.attribution.automated).to.be.a("number");
+    expect(res.body.attribution.unknown).to.be.a("number");
+    expect(res.body.attribution.cutoff_date).to.be.a("string");
+  });
+
+  test("coverage names the fields the report cannot see", function() {
+    expect(res.body.coverage.covered_fields).to.be.an("array");
+    expect(res.body.coverage.uncovered_fields).to.be.an("array");
+    // disambiguation keeps no change history, so damage to it is invisible
+    // here and the response has to say so rather than let its absence from
+    // rows read as evidence it is undamaged.
+    expect(res.body.coverage.uncovered_fields).to.include("disambiguation");
+  });
+}
