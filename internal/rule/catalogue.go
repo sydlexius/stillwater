@@ -58,7 +58,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 	},
 	RuleNFOHasMBID: {
 		Fields:      []string{"musicbrainz_id"},
-		FixBehavior: "Searches configured providers for a result that includes an MBID and writes the highest-confidence match to the NFO.",
+		FixBehavior: "Searches configured providers for a result that includes an MBID and writes the top match to the NFO, but only when that match is confident enough: it must score at least 85, its name must be at least an 85% match for the artist's name, and it must lead any rival MusicBrainz ID in the results by at least 10 points. A match that fails any of those is not written, and the artist stays flagged so you can identify it yourself. The reason the match was declined is recorded in the log.",
 		Guards:      "The MusicBrainz Artist ID (MBID) is the stable cross-provider key that lets Stillwater retrieve biography, images, and aliases from MusicBrainz, Last.fm, Fanart.tv, and TheAudioDB. Without an MBID, those lookups cannot run and the artist is limited to whatever the initial scan produced. The rule reads the MBID field inside the existing artist.nfo file.",
 		Examples: []string{
 			"An artist whose NFO was generated from a filesystem scan that found no MBID in a pre-existing nfo.",

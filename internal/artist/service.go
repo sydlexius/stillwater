@@ -1369,6 +1369,17 @@ func ValidateFieldUpdate(field, value string) error {
 	return nil
 }
 
+// IsValidMBID reports whether s is a syntactically valid MusicBrainz
+// identifier (a UUID).
+//
+// This is a SHAPE check only. It says nothing about whether the ID resolves to
+// a real MusicBrainz artist, let alone the right one, so a caller adopting an
+// ID from an automated source must apply its own confidence check on top (see
+// the nfo_has_mbid fixer in internal/rule, issue #2715). It exists so those
+// callers can reject a provider payload that is not even a UUID without
+// duplicating the parser.
+func IsValidMBID(s string) bool { return isValidMBID(s) }
+
 // isValidMBID reports whether s is a syntactically valid UUID, as used by
 // MusicBrainz for all entity identifiers.
 func isValidMBID(s string) bool {

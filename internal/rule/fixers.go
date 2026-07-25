@@ -284,6 +284,51 @@ func (f *MetadataFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation)
 	}
 }
 
+// Confidence gates the nfo_has_mbid fixer applies before adopting a name-search
+// hit as an artist's MusicBrainz ID (issue #2715).
+//
+// A wrong MBID is strictly worse than no MBID. Nothing in Stillwater resolves a
+// stored MBID against MusicBrainz or cross-checks it against the artist's album
+// catalogue; artist.IsValidMBID only checks that the string is a UUID. So once
+// this fixer writes an ID, every downstream consumer treats it as fact. These
+// constants are deliberately not operator-configurable: they are a correctness
+// floor, not a matching preference, and an operator who dialed them to zero
+// would silently restore the defect.
+const (
+	// mbidMinProviderScore is the minimum provider-reported search score the
+	// top hit must carry. Providers populate ArtistSearchResult.Score either
+	// from their own relevance ranking (MusicBrainz) or from
+	// provider.NameSimilarity (every other adapter), so it is the only
+	// cross-provider confidence signal that exists.
+	mbidMinProviderScore = 85
+
+	// mbidMinNameSimilarity is the minimum locally-computed similarity between
+	// the artist's stored name and the hit's name. This is checked SEPARATELY
+	// from the provider score because MusicBrainz's score is a relevance rank
+	// that folds in popularity and tag matches, so a well-known artist can be
+	// returned at score 100 for a name that barely resembles the query. The
+	// local comparison cannot be inflated that way.
+	mbidMinNameSimilarity = 85
+
+	// mbidAmbiguityMargin is how far the top hit must outscore the best hit
+	// carrying a DIFFERENT MBID. Two distinct artists sharing a name both come
+	// back as exact matches at score 100, and a floor alone happily adopts
+	// whichever the provider happened to list first. When the search cannot
+	// discriminate between two identities, neither is evidence.
+	mbidAmbiguityMargin = 10
+)
+
+// mbidRejection describes why an MBID candidate was not adopted. A zero value
+// means the candidate cleared every gate.
+type mbidRejection struct {
+	reason string
+}
+
+// fixMBID adopts a MusicBrainz ID for the artist from a provider name search,
+// but only when the top hit clears every gate in the constants above. On
+// failure it leaves the artist untouched and returns Fixed=false, so the
+// violation stays open for the operator rather than being silently closed over
+// a guess. See evaluateMBIDCandidate for the gate logic.
 func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResult, error) {
 	results, err := coalescedSearch(ctx, f.orchestrator, a.Name)
 	if err != nil {
@@ -298,32 +343,123 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 		}, nil
 	}
 
-	// Pick the best match with an MBID
-	var best *provider.ArtistSearchResult
-	for i := range results {
-		if results[i].MusicBrainzID == "" {
-			continue
-		}
-		if best == nil || results[i].Score > best.Score {
-			best = &results[i]
-		}
-	}
-
+	best, runnerUp := bestMBIDCandidates(results)
 	if best == nil {
 		return &FixResult{
 			RuleID:  RuleNFOHasMBID,
 			Fixed:   false,
-			Message: "no results with MusicBrainz ID found",
+			Message: "no results with a usable MusicBrainz ID found",
+		}, nil
+	}
+
+	if rej := evaluateMBIDCandidate(a.Name, best, runnerUp); rej != nil {
+		// Not adopting is the safe outcome, so this is not an error and not a
+		// warning: log it at info with the rejected candidate so an operator
+		// investigating "why is this artist still flagged" can see exactly what
+		// was considered and what it scored.
+		f.log().Info("declined to adopt MusicBrainz ID from search",
+			slog.String("rule_id", RuleNFOHasMBID),
+			slog.String("artist", a.Name),
+			slog.String("candidate_mbid", best.MusicBrainzID),
+			slog.String("candidate_name", best.Name),
+			slog.String("candidate_source", best.Source),
+			slog.Int("candidate_score", best.Score),
+			slog.String("reason", rej.reason))
+		return &FixResult{
+			RuleID:  RuleNFOHasMBID,
+			Fixed:   false,
+			Message: fmt.Sprintf("declined to set MusicBrainz ID for %s: %s", a.Name, rej.reason),
 		}, nil
 	}
 
 	a.MusicBrainzID = best.MusicBrainzID
 
+	// The message is the provenance record. The pipeline's recordRuleFixHistory
+	// writes it verbatim into metadata_changes.new_value under the canonical
+	// source "rule:nfo_has_mbid", which is what lets a later reader tell an
+	// operator-typed ID from one a rule adopted, and see how strong the match
+	// was when it did. Keep the shape stable: it is the audit trail.
 	return &FixResult{
-		RuleID:  RuleNFOHasMBID,
-		Fixed:   true,
-		Message: fmt.Sprintf("set MBID to %s for %s", best.MusicBrainzID, a.Name),
+		RuleID: RuleNFOHasMBID,
+		Fixed:  true,
+		Message: fmt.Sprintf("set MusicBrainz ID %s for %s (matched %q via %s, confidence %d, %s)",
+			best.MusicBrainzID, a.Name, best.Name, best.Source, best.Score, describeRunnerUp(runnerUp)),
 	}, nil
+}
+
+// describeRunnerUp renders the ambiguity side of the provenance message: the
+// next-best hit carrying a different MBID, or a statement that none existed.
+// Recording "no rival" explicitly matters as much as recording a rival's score,
+// because "uncontested" is the strongest form of this signal and must not be
+// indistinguishable from "we forgot to look".
+func describeRunnerUp(runnerUp *provider.ArtistSearchResult) string {
+	if runnerUp == nil {
+		return "no rival MusicBrainz ID in results"
+	}
+	return fmt.Sprintf("next rival %s at confidence %d", runnerUp.MusicBrainzID, runnerUp.Score)
+}
+
+// bestMBIDCandidates returns the highest-scoring search hit carrying a
+// syntactically valid MusicBrainz ID, plus the highest-scoring hit carrying a
+// DIFFERENT valid MBID (nil when every usable hit agrees on one ID).
+//
+// Splitting on the ID rather than on list position is load-bearing: several
+// providers return the same artist, so the raw second-place row is usually a
+// duplicate of the winner and treating it as a rival would reject every
+// well-corroborated match.
+func bestMBIDCandidates(results []provider.ArtistSearchResult) (best, runnerUp *provider.ArtistSearchResult) {
+	for i := range results {
+		r := &results[i]
+		if !artist.IsValidMBID(r.MusicBrainzID) {
+			continue
+		}
+		if best == nil || r.Score > best.Score {
+			best = r
+		}
+	}
+	if best == nil {
+		return nil, nil
+	}
+	for i := range results {
+		r := &results[i]
+		if !artist.IsValidMBID(r.MusicBrainzID) || r.MusicBrainzID == best.MusicBrainzID {
+			continue
+		}
+		if runnerUp == nil || r.Score > runnerUp.Score {
+			runnerUp = r
+		}
+	}
+	return best, runnerUp
+}
+
+// evaluateMBIDCandidate applies the confidence gates to a candidate. It returns
+// nil when the candidate may be adopted, or the reason it was rejected.
+func evaluateMBIDCandidate(artistName string, best, runnerUp *provider.ArtistSearchResult) *mbidRejection {
+	if best.Score < mbidMinProviderScore {
+		return &mbidRejection{reason: fmt.Sprintf(
+			"top hit %q scored %d, below the %d confidence floor",
+			best.Name, best.Score, mbidMinProviderScore)}
+	}
+	if sim := provider.NameSimilarity(artistName, best.Name); sim < mbidMinNameSimilarity {
+		return &mbidRejection{reason: fmt.Sprintf(
+			"top hit %q matches the artist name only %d%%, below the %d%% floor",
+			best.Name, sim, mbidMinNameSimilarity)}
+	}
+	if runnerUp != nil && best.Score-runnerUp.Score < mbidAmbiguityMargin {
+		return &mbidRejection{reason: fmt.Sprintf(
+			"ambiguous: %q (%d) and %q (%d) are different artists within %d points",
+			best.Name, best.Score, runnerUp.Name, runnerUp.Score, mbidAmbiguityMargin)}
+	}
+	return nil
+}
+
+// log returns the fixer's logger, falling back to the default when the fixer
+// was constructed without one (several tests build a bare MetadataFixer).
+func (f *MetadataFixer) log() *slog.Logger {
+	if f.logger != nil {
+		return f.logger
+	}
+	return slog.Default()
 }
 
 func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResult, error) {
