@@ -36,18 +36,28 @@ import (
 //     JSON error envelope (API) naming the existing artist and pointing at the
 //     duplicates report.
 //
-//     The response deliberately does NOT promise that the two records can be
-//     merged there. DetectDuplicates refuses to group artists bound to
-//     different non-empty MusicBrainz IDs (makeGuardedUnion, the #2527
-//     data-loss guard), while this check considers only the name key -- so a
-//     conflicting-MBID pair is refused here and absent from the report. The
-//     guard still refuses that rename on purpose: nothing in this repo
-//     verifies a stored MBID is correct (validation checks UUID shape only,
-//     and #2715 records that some are adopted from an unscored name-search
-//     hit), so exempting on "different MBIDs" would defer to a signal that may
-//     itself be the defect. The wording therefore covers BOTH outcomes rather
-//     than detecting which one applies -- determining that would mean
-//     consulting MBIDs here, which is exactly what the guard must not do.
+//     The response deliberately does NOT promise that the report will DISPLAY
+//     the pair. There are two distinct ways it will not, with an identical
+//     operator experience. First, conflicting MBIDs: DetectDuplicates refuses
+//     to group artists bound to different non-empty MusicBrainz IDs
+//     (makeGuardedUnion, the #2527 data-loss guard), while this check
+//     considers only the name key, so such a pair is refused here and never
+//     forms a group. Second, an ignored group (#2798): the page filters
+//     server-side ignores (FilterIgnoredGroups), so the pair exists but is
+//     hidden from the very operator who ignored it.
+//
+//     The guard still refuses the conflicting-MBID rename on purpose: nothing
+//     in this repo verifies a stored MBID is correct (validation checks UUID
+//     shape only, and #2715 records that some are adopted from an unscored
+//     name-search hit), so exempting on "different MBIDs" would defer to a
+//     signal that may itself be the defect.
+//
+//     The copy is therefore written to be true in ALL THREE outcomes rather
+//     than detecting which applies -- distinguishing case 1 would mean
+//     consulting MBIDs here, which is exactly what the guard must not do. What
+//     it always promises is the OTHER ARTIST'S IDENTITY, which is always known
+//     and always useful; what it never promises unconditionally is that a
+//     merge affordance is waiting on the report.
 //
 //   - the check itself failed -> 500. A guard that could not run is NOT
 //     evidence that the rename is safe, so we refuse rather than fall through
@@ -109,9 +119,9 @@ func (r *Router) guardNameCollision(w http.ResponseWriter, req *http.Request, ar
 		"error":              artist.ErrNameCollision.Error(),
 		"existing_artist_id": collision.ArtistID,
 		"existing_name":      collision.Name,
-		"detail": "If Stillwater reads the two as the same artist, they can be combined " +
-			"from the duplicates report. If they are not listed there, Stillwater is " +
-			"holding them apart as separate artists and they cannot be combined.",
+		"detail": "To put both under one name, combine them from the duplicates report. " +
+			"If the pair is not listed there, check the groups you have ignored; " +
+			"otherwise Stillwater is treating the two as separate artists.",
 	})
 	return false
 }

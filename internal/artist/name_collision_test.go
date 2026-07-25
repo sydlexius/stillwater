@@ -9,6 +9,7 @@ package artist
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -282,6 +283,17 @@ type noDBAccessorRepo struct {
 	Repository
 }
 
+// nilDBRepo DOES satisfy the DB() accessor but hands back a nil handle. That is
+// a different failure from noDBAccessorRepo above: artistDB succeeds, so the
+// nil-handle check is the only thing standing between the caller and a nil
+// pointer dereference on the query. Covering both proves the two guards are
+// independent rather than one masking the other.
+type nilDBRepo struct {
+	Repository
+}
+
+func (r *nilDBRepo) DB() *sql.DB { return nil }
+
 // TestFindNameCollision_LookupFailureIsAnError pins the fail-closed contract at
 // the source: when the artist's own row cannot be read, the check must report
 // an error and NOT a nil collision.
@@ -416,5 +428,51 @@ func TestFindNameCollision_MultiplePartnersIsDeterministic(t *testing.T) {
 				"depend on row order, or an operator retrying the same rename sees a different artist",
 				i, got.ArtistID, want)
 		}
+	}
+}
+
+// TestFindNameCollision_NilDBHandleIsAnError covers the nil-handle guard: a
+// repository that satisfies the DB() accessor but returns nil must produce an
+// error, not a nil collision.
+//
+// Without the guard this is not a silent "no collision" but a nil-pointer
+// dereference on QueryContext -- a panic in the middle of a name edit. Either
+// way the operator's write must not proceed, which is what this asserts.
+func TestFindNameCollision_NilDBHandleIsAnError(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	// Seed through a real service so GetByID succeeds and execution reaches the
+	// nil-handle check rather than failing earlier.
+	seedSvc := NewService(db)
+	a := testArtist("Southgate Winds", "")
+	if err := seedSvc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	artists, providers, members, aliases, images, platformIDs, completeness := NewDefaultRepos(db)
+	svc := NewServiceWithRepos(&nilDBRepo{Repository: artists},
+		providers, members, aliases, images, platformIDs, completeness)
+
+	// Precondition: this decorator DOES expose DB(), so the failure under test
+	// is the nil handle and not the missing-accessor path already covered by
+	// TestFindNameCollision_MissingDBAccessorIsAnError.
+	acc, ok := svc.artists.(interface{ DB() *sql.DB })
+	if !ok {
+		t.Fatal("precondition: nilDBRepo must satisfy the DB() accessor, or this test " +
+			"duplicates the missing-accessor case instead of covering the nil handle")
+	}
+	if acc.DB() != nil {
+		t.Fatal("precondition: nilDBRepo.DB() must return nil")
+	}
+
+	got, err := svc.FindNameCollision(ctx, a.ID, "Northfield Chorale")
+	if err == nil {
+		t.Fatal("FindNameCollision returned nil error with a nil database handle; " +
+			"the check cannot have run, so it must not read as 'no collision'")
+	}
+	if got != nil {
+		t.Errorf("collision = %+v, want nil alongside the error", got)
 	}
 }

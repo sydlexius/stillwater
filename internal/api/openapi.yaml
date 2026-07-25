@@ -13161,10 +13161,12 @@ paths:
             artist's stored name may differ from the requested one.
 
             The two records can USUALLY be combined from the duplicates report,
-            but not always: duplicate detection refuses to group artists bound
-            to different non-empty MusicBrainz IDs, while this check considers
-            only the name. Such a pair is refused here and absent from the
-            report. Clients must not present the merge flow as guaranteed.
+            but the report may not display the pair at all. Two cases: duplicate
+            detection refuses to group artists bound to different non-empty
+            MusicBrainz IDs (this check considers only the name, so such a pair
+            is refused here yet never forms a group), and the report hides
+            groups the operator previously ignored. Clients must not present
+            the merge flow as guaranteed.
           content:
             application/json:
               schema:

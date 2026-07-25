@@ -6,25 +6,36 @@ package templates
 // Rendered instead of the generic ErrorToast because a bare "another artist
 // already uses this name" leaves the operator with no next step.
 //
-// THE COPY IS DELIBERATELY CONDITIONAL, and this is the subtle part. The
-// obvious wording -- "merge them on the duplicates report" -- is a promise the
-// report cannot always keep. DetectDuplicates REFUSES to group two artists
-// bound to different non-empty MusicBrainz IDs (makeGuardedUnion in
-// internal/artist/duplicates.go, the #2527 data-loss guard). The rename guard
-// has no such condition, so a same-name-key pair with conflicting MBIDs is
-// refused here AND absent from the report: the operator would click through to
-// an empty page with no way forward.
+// THE COPY IS DELIBERATELY NON-COMMITTAL ABOUT THE MERGE, and this is the
+// subtle part. The obvious wording -- "merge them on the duplicates report" --
+// is a promise the report cannot always keep. It fails in TWO unrelated ways
+// that look identical to the operator:
 //
-// The guard intentionally still refuses that rename. Nothing in this repo
-// verifies that a stored MBID is CORRECT -- validation checks UUID shape only,
-// and #2715 records that some stored MBIDs come from an unscored name-search
-// hit -- so exempting on "different MBIDs" would defer to a signal that may
-// itself be wrong. The report's refusal is a conservative stance about an
-// irreversible merge, not an assertion that the two artists are distinct.
+//  1. Conflicting MBIDs. DetectDuplicates REFUSES to group two artists bound
+//     to different non-empty MusicBrainz IDs (makeGuardedUnion in
+//     internal/artist/duplicates.go, the #2527 data-loss guard). This guard has
+//     no such condition, so such a pair is refused here and never forms a
+//     group at all.
+//  2. An ignored group (#2798). The duplicates page filters server-side
+//     ignores (FilterIgnoredGroups), so the pair DOES exist as a group but is
+//     hidden from the operator who ignored it.
 //
-// So the copy states both outcomes without making the operator reason about
-// MBIDs: the pair MAY be combinable from the report, and if it is not listed
-// there, Stillwater is holding the two apart on purpose.
+// Either way the operator clicks through to a page that does not show the pair.
+//
+// The guard intentionally still refuses the conflicting-MBID rename. Nothing
+// in this repo verifies that a stored MBID is CORRECT -- validation checks
+// UUID shape only, and #2715 records that some stored MBIDs come from an
+// unscored name-search hit -- so exempting on "different MBIDs" would defer to
+// a signal that may itself be wrong. The report's refusal is a conservative
+// stance about an irreversible merge, not an assertion that the two artists
+// are distinct.
+//
+// So the copy promises only what is ALWAYS true: that a collision exists and
+// WHICH artist it is with. It points at the report as the place to combine
+// them, names the ignored-groups list as the next place to look, and otherwise
+// says Stillwater is treating the two as separate -- true in all three cases,
+// and stated without the operator needing to know what an MBID is or to recall
+// having ignored anything.
 //
 // Styling reuses the ClobberWarnings warning-banner treatment verbatim (same
 // amber palette, same rounded-md/px-4/py-3 box, same role="alert"). No new

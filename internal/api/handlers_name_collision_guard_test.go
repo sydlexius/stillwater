@@ -379,3 +379,65 @@ func TestHandleFieldUpdate_NameCollision_ReportsStoredNameNotTypedName(t *testin
 		}
 	})
 }
+
+// TestHandleFieldUpdate_NameCollision_DoesNotPromiseAMerge pins the copy fix
+// for the two cases where the 409 points at a report that will not show the
+// pair (#2730 review, #2798).
+//
+// The duplicates report fails to display a colliding pair in two unrelated
+// ways that look identical to the operator:
+//
+//  1. Conflicting MBIDs -- DetectDuplicates refuses to group artists bound to
+//     different non-empty MusicBrainz IDs, so no group ever forms.
+//  2. An ignored group -- the page filters server-side ignores, so the group
+//     exists but is hidden from the operator who ignored it.
+//
+// The guard cannot detect either without reading data it is deliberately kept
+// away from, so the copy must be true WITHOUT distinguishing them. This test
+// asserts the message does not make the unconditional promise, and still
+// carries the part that is always true (which artist the collision is with).
+//
+// It is a copy guard, not a mechanism guard: it does not seed an MBID conflict
+// or an ignore record, because the point is that the SAME message must serve
+// every case. Reverting to "Merge them on the duplicates report" turns it RED.
+func TestHandleFieldUpdate_NameCollision_DoesNotPromiseAMerge(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	addTestArtist(t, artistSvc, "Northfield Chorale")
+	subject := addPlatformOnlyArtist(t, artistSvc, "Southgate Winds")
+
+	w := patchName(t, r, subject.ID, "Northfield Chorale", true)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+	body := w.Body.String()
+
+	// Always true and always useful: WHICH artist holds the name.
+	if !strings.Contains(body, "Northfield Chorale") {
+		t.Errorf("message no longer names the colliding artist, which is the one fact that "+
+			"holds in every case:\n%s", body)
+	}
+
+	// The unconditional promise must be gone. "Merge them on the duplicates
+	// report" asserts an affordance that may not be displayed.
+	if strings.Contains(body, "Merge them on") {
+		t.Errorf("message promises a merge on the duplicates report unconditionally; the report "+
+			"will not display the pair when the two carry conflicting MusicBrainz IDs, nor when "+
+			"the group was previously ignored:\n%s", body)
+	}
+
+	// The operator is given somewhere else to look when the pair is absent.
+	// Without this the message is accurate but leaves a dead end.
+	if !strings.Contains(body, "ignored") {
+		t.Errorf("message does not point at the ignored groups, so an operator whose pair is "+
+			"hidden by a prior ignore has no next step:\n%s", body)
+	}
+
+	// Mechanics must stay out of operator-facing copy: nobody should need to
+	// know what an MBID is to read this.
+	for _, jargon := range []string{"MusicBrainz", "MBID", "identity key", "normalized"} {
+		if strings.Contains(body, jargon) {
+			t.Errorf("message exposes internal mechanics (%q) to the operator:\n%s", jargon, body)
+		}
+	}
+}
