@@ -236,6 +236,17 @@ type Router struct {
 	// other over.
 	registryRepairMu      sync.Mutex
 	registryRepairRunning bool
+	// blastRestoreRunning guards the singleton blast-radius restore run
+	// (#2750): only one restore may be in flight, so a concurrent
+	// POST /api/v1/reports/blast-radius/restore gets 409 instead of two runs
+	// racing each other's writes to the same (artist, field) pair from two
+	// separately-assembled selections. Its own mutex/flag pair rather than a
+	// shared one, for the same reason registryRepairMu and platformPruneMu are
+	// separate: a restore writes artist metadata columns and history rows, and
+	// touches no image bytes on disk, so it shares no TOCTOU surface with the
+	// destructive-fanart singletons.
+	blastRestoreMu      sync.Mutex
+	blastRestoreRunning bool
 	// discographyFetchInFlight holds the artist IDs that currently have a
 	// discography fetch running. A concurrent fetch for the same artist is
 	// rejected with 409: the fetch is a read-modify-write of artist.nfo, so
@@ -838,11 +849,14 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance/export", wrapAuth(r.handleReportComplianceExport, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/metadata-completeness", wrapAuth(r.handleReportMetadataCompleteness, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/rule-pass-rates", wrapAuth(r.handleReportRulePassRates, authMw))
-	// Blast-radius report (#2750): read-only. Both routes are GETs and neither
-	// writes. Recovery of the reported values is a separate, destructive
-	// surface and is deliberately not registered here.
+	// Blast-radius report (#2750). The two GETs are read-only and write
+	// nothing. The POST is the recovery half: it puts destroyed values back,
+	// previews unless the body sets commit:true, is admin-gated in-handler via
+	// requireForeignAdmin (mirroring the remediate endpoints below), and is a
+	// singleton on r.blastRestoreRunning.
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/blast-radius", wrapAuth(r.handleReportBlastRadius, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/blast-radius/export", wrapAuth(r.handleReportBlastRadiusExport, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/reports/blast-radius/restore", wrapAuth(r.handleBlastRadiusRestore, authMw))
 
 	// History routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/history", wrapAuth(r.handleListArtistHistory, authMw))

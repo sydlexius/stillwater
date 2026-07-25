@@ -1491,6 +1491,13 @@
     "covered": false
   },
   {
+    "operationId": "restoreBlastRadius",
+    "method": "POST",
+    "path": "/reports/blast-radius/restore",
+    "handler": "handleBlastRadiusRestore",
+    "covered": true
+  },
+  {
     "operationId": "restoreIgnoredDuplicateGroup",
     "method": "DELETE",
     "path": "/artists/duplicates/ignored/{id}",

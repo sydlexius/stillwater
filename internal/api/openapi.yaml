@@ -11516,6 +11516,188 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /reports/blast-radius/restore:
+    post:
+      tags: [Reports]
+      summary: Restore values the blast-radius report lists as destroyed
+      operationId: restoreBlastRadius
+      description: >
+        Puts back operator values that an automated writer cleared or replaced.
+        Accepts one change id or many; a single restore is a bulk restore of
+        one row, so both use this endpoint.
+
+
+        PREVIEWS UNLESS commit IS TRUE. The field is affirmative rather than a
+        dry_run flag so that an omitted, malformed, or proxy-dropped key
+        results in a preview and never in a write. A preview runs the identical
+        eligibility pass and reports exactly what would be written, changing
+        nothing: no artist field is modified and no history row is added.
+
+
+        A row is restorable only when all of the following are affirmatively
+        true: the change id resolves exactly to a metadata_changes row; that
+        row is history-tracked and is not itself a revert; it is STILL the row
+        the blast-radius report lists for its artist and field; and the
+        artist's LIVE field value is still either the value that change left
+        behind or the value about to be written. The last two checks are what
+        stop a stale selection from overwriting a newer value with an older
+        one, and both refuse with reason no_longer_current rather than writing
+        on the assumption that the row is probably still valid.
+
+
+        The live-value check is re-run immediately before each write, not only
+        when the plan is built, so a field edited between the preview and the
+        commit is refused rather than overwritten.
+
+
+        Each restore is recorded in the artist's change history with source
+        "revert", so the restore is itself auditable, and the restored artist
+        and field drop out of this report. Restoring deliberately does not
+        re-publish the artist to connected platforms or emit an
+        artist-updated event, because either would hand the recovered value
+        back to the rule pipeline or provider refresh that destroyed it.
+
+
+        Administrator role required. Only one restore may run at a time; a
+        concurrent request gets 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [change_ids]
+              properties:
+                change_ids:
+                  type: array
+                  description: >
+                    Metadata change ids taken from the blast-radius report.
+                    Blank and repeated ids are dropped. At least one is
+                    required; at most 500 per request, matching the report's
+                    maximum page size.
+                  items: {type: string}
+                  minItems: 1
+                  maxItems: 500
+                commit:
+                  type: boolean
+                  default: false
+                  description: >
+                    Must be true for anything to be written. False previews.
+      responses:
+        "200":
+          description: >
+            The plan (preview) or the outcome (commit). A 200 does not mean
+            every row succeeded; check refused and the per-item restore_status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  commit:
+                    type: boolean
+                    description: The mode this response was produced in.
+                  dry_run:
+                    type: boolean
+                    description: Negation of commit, carried explicitly.
+                  requested:
+                    type: integer
+                    description: Ids received, after de-duplication.
+                  eligible:
+                    type: integer
+                    description: Ids that passed every eligibility check.
+                  restored:
+                    type: integer
+                    description: >
+                      Writes that landed. Always 0 on a preview, by
+                      construction.
+                  unchanged:
+                    type: integer
+                    description: >
+                      Eligible rows whose field already held the value being
+                      restored, so nothing was written. Held apart from
+                      restored so that count never includes rows nothing
+                      happened to.
+                  refused:
+                    type: integer
+                    description: >
+                      Rows that failed eligibility or whose write errored.
+                      Non-zero after a commit means the restore is incomplete;
+                      it is safe to re-run.
+                  items:
+                    type: array
+                    description: Every requested id, in request order.
+                    items:
+                      type: object
+                      properties:
+                        change_id: {type: string}
+                        artist_id: {type: string}
+                        artist_name: {type: string}
+                        field: {type: string}
+                        current_value:
+                          type: string
+                          description: >
+                            What the field holds now, read live at plan time.
+                            On a committed write that landed this is updated to
+                            the restored value; on a row refused by the
+                            pre-write live-value re-check it is the value that
+                            caused the refusal.
+                        restore_value:
+                          type: string
+                          description: The operator value that would be put back.
+                        restore_status:
+                          type: string
+                          enum: [planned, restored, unchanged, refused]
+                        refuse_reason:
+                          type: string
+                          enum:
+                            - change_not_found
+                            - not_revertible
+                            - revert_of_revert
+                            - no_longer_current
+                            - restore_failed
+                          description: Set only when restore_status is refused.
+                        restore_change_id:
+                          type: string
+                          description: >
+                            History id of the row this restore wrote, so the
+                            restore itself can be looked up. Set only on a
+                            committed write that landed.
+        "400":
+          description: change_ids was empty, too large, or the body was malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            (requireForeignAdmin) via http.Error, so the body is plain text
+            rather than the JSON Error schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "409":
+          description: >-
+            A restore is already in progress. The singleton responds with its
+            own {status, message} object, not the Error schema, matching the
+            registry-repair remediate endpoint.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        "503":
+          description: The history store is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Inbound webhooks ---
 
   /webhooks/inbound/lidarr:
