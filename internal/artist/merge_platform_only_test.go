@@ -158,12 +158,28 @@ func TestDetectDuplicates_TwoPlatformOnlyRowsGroup(t *testing.T) {
 	if len(groups) != 1 {
 		t.Fatalf("len(groups) = %d, want 1 (two platform-only rows sharing a name key)", len(groups))
 	}
+	// Pin the exact membership, not just the count of groups. "one group whose
+	// members are all platform-only" is also satisfied by a singleton group, or
+	// by a group listing the same row twice -- both malformed results the
+	// seeded IDs are needed to rule out.
+	if len(groups[0].Members) != 2 {
+		t.Fatalf("len(Members) = %d, want 2", len(groups[0].Members))
+	}
+	seen := make(map[string]bool, 2)
 	for _, m := range groups[0].Members {
+		if seen[m.ID] {
+			t.Errorf("member %s appears twice in the group", m.ID)
+		}
+		seen[m.ID] = true
 		if !m.PlatformOnly {
 			t.Errorf("member %s PlatformOnly = false, want true", m.ID)
 		}
 	}
-	_ = ids
+	for _, id := range ids {
+		if !seen[id] {
+			t.Errorf("seeded platform-only artist %s is missing from the group", id)
+		}
+	}
 }
 
 // --- The path-less survivor refusal ------------------------------------------
@@ -863,8 +879,17 @@ func TestMergeArtists_PathlessGuardIgnoresBystander(t *testing.T) {
 // album-escape data loss, where filepath.Join("", child) is relative and the
 // commit phase moves albums into the server's working directory.
 func TestMergeArtists_PathlessGuardStillRefusesRequestedLoser(t *testing.T) {
-	svc, _, localID, pOnly := seedTrioOneLocalTwoPlatformOnly(t)
+	svc, db, localID, pOnly := seedTrioOneLocalTwoPlatformOnly(t)
 	ctx := context.Background()
+
+	// Capture the album directory up front so the post-refusal check compares
+	// against a known path rather than re-deriving it from a row the merge may
+	// have altered.
+	local, err := svc.GetByID(ctx, localID)
+	if err != nil {
+		t.Fatalf("loading local artist: %v", err)
+	}
+	albumDir := filepath.Join(local.Path, "Album One")
 
 	sandbox := t.TempDir()
 	orig, err := os.Getwd()
@@ -892,6 +917,24 @@ func TestMergeArtists_PathlessGuardStillRefusesRequestedLoser(t *testing.T) {
 	if len(entries) != 0 {
 		t.Errorf("working directory is not empty after the refused merge: album content escaped")
 	}
+
+	// The sentinel alone is not enough. An implementation that deleted rows and
+	// only then returned the refusal would satisfy every check above, and a
+	// refusal that has already destroyed something is worse than no refusal at
+	// all -- the operator cannot even retry. Assert the world is untouched.
+	for _, id := range append([]string{localID}, pOnly...) {
+		var n int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM artists WHERE id = ?`, id).Scan(&n); err != nil {
+			t.Fatalf("counting artist %s: %v", id, err)
+		}
+		if n != 1 {
+			t.Errorf("artist %s row count = %d, want 1: a refused merge must delete nothing", id, n)
+		}
+	}
+	if _, statErr := os.Stat(albumDir); statErr != nil {
+		t.Errorf("album directory %s missing after the refused merge: %v: "+
+			"a refused merge must not move or remove content", albumDir, statErr)
+	}
 }
 
 // TestMergeArtists_LockedBystanderDoesNotBlockMerge is the regression guard for
@@ -912,6 +955,16 @@ func TestMergeArtists_LockedBystanderDoesNotBlockMerge(t *testing.T) {
 	}
 	if err := repo.SetLock(ctx, ghost.ID, true, "platform"); err != nil {
 		t.Fatalf("locking ghost: %v", err)
+	}
+	// Precondition: the ghost is ACTUALLY locked. SetLock is conditional on the
+	// prior lock state, so a silent no-op is possible; without this readback a
+	// pass would prove only that an UNLOCKED bystander does not block a merge,
+	// which is not the property under test.
+	if ghostRow, err := repo.GetByID(ctx, ghost.ID); err != nil {
+		t.Fatalf("re-reading ghost: %v", err)
+	} else if !ghostRow.Locked {
+		t.Fatalf("precondition failed: ghost %s is not locked, so this test would pass "+
+			"vacuously without exercising the locked-bystander path", ghost.ID)
 	}
 	// Precondition: the ghost really is in the same group, otherwise this test
 	// passes vacuously without ever exercising the bystander path.
@@ -962,12 +1015,45 @@ func TestMergeArtists_LockedRequestedMemberStillRefuses(t *testing.T) {
 	if err := repo.SetLock(ctx, loserID, true, "user"); err != nil {
 		t.Fatalf("locking loser: %v", err)
 	}
+	// Precondition: the loser is ACTUALLY locked, so the refusal below is
+	// attributable to the lock rather than to some unrelated guard.
+	loser, err := repo.GetByID(ctx, loserID)
+	if err != nil {
+		t.Fatalf("re-reading loser: %v", err)
+	}
+	if !loser.Locked {
+		t.Fatalf("precondition failed: loser %s is not locked", loserID)
+	}
+	survivor, err := repo.GetByID(ctx, survivorID)
+	if err != nil {
+		t.Fatalf("loading survivor: %v", err)
+	}
+
 	if _, err := svc.MergeArtists(ctx, MergeRequest{
 		SurvivorID:  survivorID,
 		LoserIDs:    []string{loserID},
 		ArticleMode: "prefix",
 	}); !errors.Is(err, ErrMergeLocked) {
 		t.Fatalf("MergeArtists error = %v, want ErrMergeLocked (a locked REQUESTED loser must refuse)", err)
+	}
+
+	// As with the path-less refusal, the sentinel alone would also be returned
+	// by an implementation that deleted or moved something first. A lock exists
+	// precisely to keep destructive operations off this artist, so the refusal
+	// has to leave both rows and both directories untouched.
+	for _, id := range []string{survivorID, loserID} {
+		var n int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM artists WHERE id = ?`, id).Scan(&n); err != nil {
+			t.Fatalf("counting artist %s: %v", id, err)
+		}
+		if n != 1 {
+			t.Errorf("artist %s row count = %d, want 1: a locked-refusal must delete nothing", id, n)
+		}
+	}
+	for _, p := range []string{survivor.Path, loser.Path} {
+		if _, statErr := os.Stat(p); statErr != nil {
+			t.Errorf("directory %s missing after the locked refusal: %v", p, statErr)
+		}
 	}
 }
 

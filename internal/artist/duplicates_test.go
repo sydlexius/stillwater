@@ -690,14 +690,31 @@ func TestDetectDuplicates_PathEmpty(t *testing.T) {
 		t.Fatalf("len(groups) = %d, want 1 (the platform-only row must group with "+
 			"the filesystem artist sharing its name)", len(groups))
 	}
+	// Assert membership EXPLICITLY before reading any flag. A map[string]bool
+	// returns false for an ABSENT key as readily as for a present-and-false
+	// one, so a detector that emitted a singleton group holding only the
+	// platform-only row would satisfy a bare flags[fsArtist.ID] == false check.
+	// Pinning the exact member set closes that.
+	if len(groups[0].Members) != 2 {
+		t.Fatalf("len(Members) = %d, want 2 (the platform-only row and the filesystem artist)",
+			len(groups[0].Members))
+	}
 	flags := make(map[string]bool, 2)
 	for _, m := range groups[0].Members {
 		flags[m.ID] = m.PlatformOnly
 	}
-	if !flags[pOnly.ID] {
+	platformOnlyFlag, ok := flags[pOnly.ID]
+	if !ok {
+		t.Fatalf("platform-only artist %s is not a member of the group", pOnly.ID)
+	}
+	fsFlag, ok := flags[fsArtist.ID]
+	if !ok {
+		t.Fatalf("filesystem artist %s is not a member of the group", fsArtist.ID)
+	}
+	if !platformOnlyFlag {
 		t.Errorf("platform-only member %s PlatformOnly = false, want true", pOnly.ID)
 	}
-	if flags[fsArtist.ID] {
+	if fsFlag {
 		t.Errorf("filesystem member %s PlatformOnly = true, want false", fsArtist.ID)
 	}
 }
