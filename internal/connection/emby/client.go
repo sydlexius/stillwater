@@ -161,6 +161,7 @@ func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherS
 
 	entries := mediabrowser.CollectImageFetcherEntriesRaw(libs,
 		func(VirtualFolder) bool { return true }, // Emby has no library-level internet-providers gate.
+		func(l VirtualFolder) bool { return mediabrowser.DeclaredMusicCollectionType(l.CollectionType) },
 		func(l VirtualFolder) string { return l.Name },
 		func(l VirtualFolder) string { return l.ItemID },
 		func(l VirtualFolder) []TypeOption { return l.LibraryOptions.TypeOptions },

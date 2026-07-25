@@ -191,3 +191,65 @@ func TestCheckImageFetchersEnabled_PresentNonEmptyIsNotDefaulted(t *testing.T) {
 		t.Error("Defaulted = true, want false for an explicitly configured fetcher list")
 	}
 }
+
+// TestCheckImageFetchersEnabled_BlankCollectionTypeAbsentEntryIsClean mirrors
+// the Emby guard: a blank-CollectionType library has no MusicArtist entry
+// because it is not a music library, so the defaulted rule must not fire.
+// Internet providers are ON here to isolate the CollectionType axis -- the
+// providers gate is already covered separately, and leaving it off would let
+// this test pass for the wrong reason.
+func TestCheckImageFetchersEnabled_BlankCollectionTypeAbsentEntryIsClean(t *testing.T) {
+	srv := virtualFoldersServer(t, `[
+		{
+			"Name":"Home Videos","CollectionType":"","ItemId":"lib-003",
+			"LibraryOptions":{
+				"SaveLocalMetadata":false,"MetadataSavers":[],
+				"EnableInternetProviders":true,
+				"TypeOptions":[
+					{"Type":"HomeVideos","ImageFetchers":["TheMovieDb"],"MetadataFetchers":[]}
+				]
+			}
+		}
+	]`)
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	statuses, err := c.CheckImageFetchersEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckImageFetchersEnabled: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Errorf("got %d statuses, want 0. Internet providers are ON, so this is isolating "+
+			"the CollectionType axis: a non-music library must not produce an artist-image "+
+			"warning: %+v", len(statuses), statuses)
+	}
+}
+
+// TestCheckImageFetchersEnabled_BlankCollectionTypeExplicitFetchersStillWarns
+// guards against over-correcting into a false negative, as on Emby.
+func TestCheckImageFetchersEnabled_BlankCollectionTypeExplicitFetchersStillWarns(t *testing.T) {
+	srv := virtualFoldersServer(t, `[
+		{
+			"Name":"Unlabeled Music","CollectionType":"","ItemId":"lib-004",
+			"LibraryOptions":{
+				"SaveLocalMetadata":false,"MetadataSavers":[],
+				"EnableInternetProviders":true,
+				"TypeOptions":[
+					{"Type":"MusicArtist","ImageFetchers":["TheAudioDb"],"MetadataFetchers":[]}
+				]
+			}
+		}
+	]`)
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	statuses, err := c.CheckImageFetchersEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckImageFetchersEnabled: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("got %d statuses, want 1 (an explicit fetcher list on a blank-labeled "+
+			"library is a real conflict and must not go silent)", len(statuses))
+	}
+	if statuses[0].Defaulted {
+		t.Error("Defaulted = true, want false")
+	}
+}

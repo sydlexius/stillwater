@@ -1189,7 +1189,10 @@ components:
           type: array
           items:
             type: string
-          description: Names of enabled image fetchers (e.g., "TheAudioDb", "FanArt"). Empty when defaulted is true, because the platform does not report which fetchers its defaults use.
+          description: >-
+            Names of enabled image fetchers (e.g., "TheAudioDb", "FanArt"). Always an
+            array, never null. It is empty when defaulted is true, because the platform
+            does not report which fetchers its defaults use.
         risk_level:
           type: string
           description: Risk level of the image fetcher conflict. "warn" for Emby (adds missing images only), "critical" for Jellyfin (can replace existing images and strip EXIF data).

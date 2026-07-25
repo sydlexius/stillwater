@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -149,6 +150,46 @@ func assertDefaultedCopyIsSubstantive(t *testing.T, platform, defaultedMsg, expl
 				"none: %q", platform, required, defaultedMsg)
 		}
 	}
+
+	// THE ACTIONABLE HALF. Everything above pins what the message must NOT
+	// say plus two topic keywords, and that combination is satisfiable by
+	// keyword soup: a message reduced to "<platform> has no artist image
+	// settings saved for library 'X'. defaults" passes every assertion above
+	// while telling the operator nothing to DO. Diagnosis without remediation
+	// is exactly what the defaulted state cannot afford, because unlike the
+	// explicit case there is no named fetcher to go find. Pin the imperative
+	// itself.
+	if !strings.Contains(defaultedMsg, "settings in "+platform) {
+		t.Errorf("%s: defaulted copy does not tell the operator WHERE to go (expected it to "+
+			"direct them to the library's settings in %s). A message that names the problem "+
+			"and omits the remedy leaves them stuck: %q", platform, platform, defaultedMsg)
+	}
+	if !strings.Contains(defaultedMsg, "turn the artist image fetchers off") {
+		t.Errorf("%s: defaulted copy does not tell the operator WHAT to do. The instruction "+
+			"to turn the artist image fetchers off is the substance of this warning: %q",
+			platform, defaultedMsg)
+	}
+	// Saving is the non-obvious step and the reason the warning exists at
+	// all: an unsaved library keeps running the platform's defaults even if
+	// the operator eyeballs the toggles and thinks they are off.
+	if !strings.Contains(defaultedMsg, "save") && !strings.Contains(defaultedMsg, "stored") {
+		t.Errorf("%s: defaulted copy never tells the operator to SAVE an explicit choice. "+
+			"That is the whole point -- looking at the settings page is not enough, the "+
+			"value has to be stored or the defaults keep applying: %q", platform, defaultedMsg)
+	}
+
+	// The copy must be about THIS platform. Rendering Jellyfin's message from
+	// the Emby path would warn about EXIF stripping and offer an
+	// internet-providers switch that does not exist on Emby, sending the
+	// operator to look for a control their server does not have.
+	if !strings.Contains(defaultedMsg, platform) {
+		t.Errorf("%s: defaulted copy never names %s. Cross-wired platform copy sends the "+
+			"operator hunting for controls their server does not have: %q",
+			platform, platform, defaultedMsg)
+	}
+	if !strings.Contains(explicitMsg, platform) {
+		t.Errorf("%s: explicit copy never names %s: %q", platform, platform, explicitMsg)
+	}
 }
 
 // TestJellyfinWarning_DefaultedCopyDiffersFromExplicitCopy mirrors the Emby
@@ -217,5 +258,62 @@ func TestEmbyWarning_ConfiguredEmptyLibraryProducesNoWarning(t *testing.T) {
 		t.Errorf("got %d warnings, want 0 for a deliberately configured library with no "+
 			"fetchers. Warning here would penalize operators who did exactly the right "+
 			"thing: %+v", len(warnings), warnings)
+	}
+}
+
+// TestWarning_FetcherNamesSerializeAsArrayNotNull pins the wire shape.
+//
+// A defaulted warning has no fetcher names, and a nil Go slice marshals to
+// JSON null. The OpenAPI schema declares fetcher_names as type: array with no
+// nullable: true, so a strict client generated from that spec rejects null
+// where it expects []. The two must agree, and an empty array is the honest
+// value: the list is genuinely a list in every state, only its length varies.
+func TestWarning_FetcherNamesSerializeAsArrayNotNull(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		connType string
+		body     string
+		check    func(*Router, *connection.Connection) []connection.ImageFetcherWarning
+	}{
+		{
+			name: "emby defaulted", connType: "emby", body: unconfiguredLibrary(""),
+			check: func(r *Router, c *connection.Connection) []connection.ImageFetcherWarning {
+				return r.checkEmbyImageFetchers(context.Background(), c)
+			},
+		},
+		{
+			name: "jellyfin defaulted", connType: "jellyfin",
+			body: unconfiguredLibrary(`"EnableInternetProviders":true,`),
+			check: func(r *Router, c *connection.Connection) []connection.ImageFetcherWarning {
+				return r.checkJellyfinImageFetchers(context.Background(), c)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, conn := peerServing(t, tc.connType, tc.body)
+			warnings := tc.check(r, conn)
+			if len(warnings) != 1 {
+				t.Fatalf("got %d warnings, want 1", len(warnings))
+			}
+			// Precondition: this must actually be the defaulted case, or the
+			// test passes against an explicit warning that has names anyway.
+			if !warnings[0].Defaulted {
+				t.Fatal("precondition: expected the DEFAULTED case, which is the one with " +
+					"no fetcher names and therefore the one that can serialize as null")
+			}
+
+			buf, err := json.Marshal(warnings[0])
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if strings.Contains(string(buf), `"fetcher_names":null`) {
+				t.Errorf("fetcher_names serialized as null: %s\nThe OpenAPI schema declares "+
+					"it type: array without nullable: true, so a strict generated client "+
+					"rejects this response", buf)
+			}
+			if !strings.Contains(string(buf), `"fetcher_names":[]`) {
+				t.Errorf("fetcher_names is not an empty array: %s", buf)
+			}
+		})
 	}
 }

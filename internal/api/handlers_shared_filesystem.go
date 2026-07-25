@@ -59,6 +59,14 @@ func (r *Router) handleSharedFilesystemStatus(w http.ResponseWriter, req *http.R
 		// Collect image fetcher warnings for shared libraries. Skip when the bar
 		// is dismissed because the template renders nothing and the network calls
 		// to Emby/Jellyfin would be wasted.
+		//
+		// Defaulted is deliberately NOT carried into the template. The
+		// defaulted-vs-explicit distinction is already fully expressed in
+		// Message (the two states render different remediation prose), and
+		// the bar styles itself on RiskLevel, not on this axis. Passing it
+		// through would add a field the template has no use for. If a future
+		// change wants to style defaulted warnings differently, add it then
+		// -- it is absent by decision, not by oversight.
 		if len(sharedLibs) > 0 && !status.Dismissed {
 			for _, w := range r.collectImageFetcherWarnings(req.Context(), sharedLibs) {
 				data.ImageFetcherWarnings = append(data.ImageFetcherWarnings, templates.SharedFSBarWarning{
@@ -229,6 +237,20 @@ func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []l
 	return warnings
 }
 
+// normalizeFetcherNames converts a nil fetcher list into an empty slice so it
+// serializes as [] rather than null. The defaulted case always has no names
+// (the platform does not report which fetchers its defaults use), and the
+// OpenAPI schema declares fetcher_names as an array with no nullable:true --
+// a strict client generated from that spec rejects null. Applied at every
+// construction site rather than to the JSON tag, because the field is
+// genuinely a list in every state; only its length varies.
+func normalizeFetcherNames(names []string) []string {
+	if names == nil {
+		return []string{}
+	}
+	return names
+}
+
 // checkEmbyImageFetchers queries an Emby connection for image fetcher settings.
 func (r *Router) checkEmbyImageFetchers(ctx context.Context, conn *connection.Connection) []connection.ImageFetcherWarning {
 	client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
@@ -264,7 +286,7 @@ func (r *Router) checkEmbyImageFetchers(ctx context.Context, conn *connection.Co
 		warnings = append(warnings, connection.ImageFetcherWarning{
 			Platform:     "emby",
 			LibraryName:  s.LibraryName,
-			FetcherNames: s.FetcherNames,
+			FetcherNames: normalizeFetcherNames(s.FetcherNames),
 			RiskLevel:    s.RiskLevel,
 			Message:      msg,
 			Defaulted:    s.Defaulted,
@@ -308,7 +330,7 @@ func (r *Router) checkJellyfinImageFetchers(ctx context.Context, conn *connectio
 		warnings = append(warnings, connection.ImageFetcherWarning{
 			Platform:     "jellyfin",
 			LibraryName:  s.LibraryName,
-			FetcherNames: s.FetcherNames,
+			FetcherNames: normalizeFetcherNames(s.FetcherNames),
 			RiskLevel:    s.RiskLevel,
 			Message:      msg,
 			Defaulted:    s.Defaulted,

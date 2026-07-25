@@ -193,3 +193,82 @@ func TestCheckImageFetchersEnabled_NonMusicLibraryNeverDefaulted(t *testing.T) {
 			"in front of every operator who owns films: %+v", len(statuses), statuses)
 	}
 }
+
+// TestCheckImageFetchersEnabled_BlankCollectionTypeAbsentEntryIsClean is the
+// false-positive guard for the defaulted rule.
+//
+// The upstream library filter admits a library whose CollectionType is
+// "music" OR BLANK, because some installs leave it blank on mixed or legacy
+// folders that really do hold music. That leniency was free while absence
+// was silent. Once absence became the TRIGGER it stopped being free: a
+// non-music library (home videos, a mixed folder) has no MusicArtist entry
+// precisely BECAUSE it is not a music library, so the defaulted rule would
+// fire on every one of them.
+//
+// The operator consequence is what makes this worth a dedicated test: they
+// would be told to open their home-video library and switch off artist image
+// fetchers that do not exist there. A banner full of unactionable warnings
+// teaches people to ignore the one that is real.
+func TestCheckImageFetchersEnabled_BlankCollectionTypeAbsentEntryIsClean(t *testing.T) {
+	srv := virtualFoldersServer(t, `[
+		{
+			"Name":"Home Videos","CollectionType":"","ItemId":"lib-003",
+			"LibraryOptions":{
+				"SaveLocalMetadata":false,"MetadataSavers":[],
+				"TypeOptions":[
+					{"Type":"HomeVideos","ImageFetchers":["TheMovieDb"],"MetadataFetchers":[]}
+				]
+			}
+		}
+	]`)
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	statuses, err := c.CheckImageFetchersEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckImageFetchersEnabled: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Errorf("got %d statuses, want 0. A blank-CollectionType library has no MusicArtist "+
+			"entry because it is NOT a music library. Warning here tells the operator to go "+
+			"switch off artist image fetchers in a home-video library, where no such setting "+
+			"exists: %+v", len(statuses), statuses)
+	}
+}
+
+// TestCheckImageFetchersEnabled_BlankCollectionTypeExplicitFetchersStillWarns
+// is the other half, and it is what stops the fix above from over-correcting
+// into a false NEGATIVE.
+//
+// A blank-CollectionType library carrying an actual MusicArtist entry with
+// armed fetchers is a genuinely-music library the operator never labeled.
+// The entry's existence is affirmative proof the peer treats it as holding
+// artists, whatever the label says, and the fetchers really are armed. That
+// must still warn. Suppressing it would trade the false positive above for a
+// silent real conflict, which is the worse of the two.
+func TestCheckImageFetchersEnabled_BlankCollectionTypeExplicitFetchersStillWarns(t *testing.T) {
+	srv := virtualFoldersServer(t, `[
+		{
+			"Name":"Unlabeled Music","CollectionType":"","ItemId":"lib-004",
+			"LibraryOptions":{
+				"SaveLocalMetadata":false,"MetadataSavers":[],
+				"TypeOptions":[
+					{"Type":"MusicArtist","ImageFetchers":["TheAudioDb"],"MetadataFetchers":[]}
+				]
+			}
+		}
+	]`)
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	statuses, err := c.CheckImageFetchersEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckImageFetchersEnabled: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("got %d statuses, want 1. Requiring CollectionType==music for the DEFAULTED "+
+			"case must not suppress an EXPLICIT fetcher list on a blank-labeled library -- "+
+			"that is a real conflict going silent", len(statuses))
+	}
+	if statuses[0].Defaulted {
+		t.Error("Defaulted = true, want false; these fetchers are explicitly configured")
+	}
+}

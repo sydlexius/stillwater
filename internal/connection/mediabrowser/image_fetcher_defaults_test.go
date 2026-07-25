@@ -7,10 +7,15 @@ import "testing"
 // generic helper directly means the three-state logic is pinned once, in the
 // place it actually lives, rather than only through two platform clients.
 type fakeLib struct {
-	name        string
-	id          string
-	internetOn  bool
-	typeOptions []fakeOpt
+	name       string
+	id         string
+	internetOn bool
+	// collectionType drives the declaredMusic gate. Defaults to "" in
+	// fixtures that predate that gate, so every such fixture sets it
+	// explicitly to "music" -- a blank value now means "not declared music"
+	// and would silently suppress the defaulted case.
+	collectionType string
+	typeOptions    []fakeOpt
 }
 
 type fakeOpt struct {
@@ -30,6 +35,7 @@ func collect(libs []fakeLib, gateOnInternet bool) []FetcherEntry {
 	}
 	return CollectImageFetcherEntriesRaw(libs,
 		include,
+		func(l fakeLib) bool { return DeclaredMusicCollectionType(l.collectionType) },
 		func(l fakeLib) string { return l.name },
 		func(l fakeLib) string { return l.id },
 		func(l fakeLib) []fakeOpt { return l.typeOptions },
@@ -82,7 +88,7 @@ func TestCollectImageFetcherEntriesRaw_ThreeStates(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := collect([]fakeLib{{name: "Music", id: "m1", internetOn: true, typeOptions: tc.opts}}, false)
+			got := collect([]fakeLib{{name: "Music", id: "m1", internetOn: true, collectionType: "music", typeOptions: tc.opts}}, false)
 			if len(got) != tc.wantEntries {
 				t.Fatalf("entries = %d, want %d. %s", len(got), tc.wantEntries, tc.why)
 			}
@@ -108,7 +114,7 @@ func TestCollectImageFetcherEntriesRaw_ThreeStates(t *testing.T) {
 // warning.
 func TestCollectImageFetcherEntriesRaw_IncludeLibraryGatesTheDefaultedCase(t *testing.T) {
 	libWithoutArtistEntry := fakeLib{
-		name: "Music", id: "m1",
+		name: "Music", id: "m1", collectionType: "music",
 		typeOptions: []fakeOpt{{optType: "MusicAlbum", fetchers: []string{"TheAudioDb"}}},
 	}
 
@@ -135,7 +141,7 @@ func TestCollectImageFetcherEntriesRaw_IncludeLibraryGatesTheDefaultedCase(t *te
 // name or ID cannot be rendered into a warning that tells the operator WHICH
 // library to go fix.
 func TestCollectImageFetcherEntriesRaw_DefaultedEntryCarriesIdentity(t *testing.T) {
-	got := collect([]fakeLib{{name: "Music", id: "lib-001", internetOn: true}}, false)
+	got := collect([]fakeLib{{name: "Music", id: "lib-001", internetOn: true, collectionType: "music"}}, false)
 	if len(got) != 1 {
 		t.Fatalf("entries = %d, want 1", len(got))
 	}
@@ -155,10 +161,10 @@ func TestCollectImageFetcherEntriesRaw_DefaultedEntryCarriesIdentity(t *testing.
 // siblings. A peer commonly has several music libraries in different states.
 func TestCollectImageFetcherEntriesRaw_MultipleLibrariesReportIndependently(t *testing.T) {
 	got := collect([]fakeLib{
-		{name: "Configured", id: "m1", internetOn: true,
+		{name: "Configured", id: "m1", internetOn: true, collectionType: "music",
 			typeOptions: []fakeOpt{{optType: "MusicArtist", fetchers: []string{}}}},
-		{name: "Unconfigured", id: "m2", internetOn: true},
-		{name: "Explicit", id: "m3", internetOn: true,
+		{name: "Unconfigured", id: "m2", internetOn: true, collectionType: "music"},
+		{name: "Explicit", id: "m3", internetOn: true, collectionType: "music",
 			typeOptions: []fakeOpt{{optType: "MusicArtist", fetchers: []string{"FanArt"}}}},
 	}, false)
 
@@ -178,5 +184,100 @@ func TestCollectImageFetcherEntriesRaw_MultipleLibrariesReportIndependently(t *t
 	}
 	if e, ok := byName["Explicit"]; !ok || e.Defaulted {
 		t.Errorf("Explicit library = %+v, want reported with Defaulted=false", e)
+	}
+}
+
+// TestCollectImageFetcherEntriesRaw_DeclaredMusicGatesOnlyTheDefaultedCase
+// pins the asymmetry between the two evidence standards at the helper level.
+//
+// The defaulted case is triggered by an ABSENCE, so it needs the peer to
+// affirmatively declare the library as music -- blank is not a statement.
+// The explicit case is triggered by a PRESENT entry with armed fetchers,
+// which is itself proof the peer treats the library as holding artists, so
+// blank is fine there.
+//
+// Both rows use the SAME blank CollectionType and differ only in whether the
+// MusicArtist entry exists. If a change ever makes them agree, one of the two
+// real behaviors has been lost.
+func TestCollectImageFetcherEntriesRaw_DeclaredMusicGatesOnlyTheDefaultedCase(t *testing.T) {
+	t.Run("blank type, absent entry -> silent", func(t *testing.T) {
+		got := collect([]fakeLib{{
+			name: "Home Videos", id: "hv1", internetOn: true, collectionType: "",
+			typeOptions: []fakeOpt{{optType: "HomeVideos", fetchers: []string{"TheMovieDb"}}},
+		}}, false)
+		if len(got) != 0 {
+			t.Errorf("got %+v, want none. An absent MusicArtist entry on a library the peer "+
+				"never declared as music means 'not a music library', not 'defaults are "+
+				"running' -- warning here is unactionable noise", got)
+		}
+	})
+
+	t.Run("blank type, explicit fetchers -> reported", func(t *testing.T) {
+		got := collect([]fakeLib{{
+			name: "Unlabeled Music", id: "um1", internetOn: true, collectionType: "",
+			typeOptions: []fakeOpt{{optType: "MusicArtist", fetchers: []string{"FanArt"}}},
+		}}, false)
+		if len(got) != 1 {
+			t.Fatalf("got %+v, want 1. A MusicArtist entry with armed fetchers is affirmative "+
+				"proof the peer treats this library as holding artists, whatever its label "+
+				"says -- suppressing it trades a false positive for a silent real conflict", got)
+		}
+		if got[0].Defaulted {
+			t.Error("Defaulted = true, want false for an explicit fetcher list")
+		}
+	})
+
+	t.Run("declared music, absent entry -> reported", func(t *testing.T) {
+		// The control: same absence as the first row, but declared music.
+		// Without this row the first row could pass because the defaulted
+		// case is broken outright rather than correctly gated.
+		got := collect([]fakeLib{{
+			name: "Music", id: "m1", internetOn: true, collectionType: "music",
+		}}, false)
+		if len(got) != 1 || !got[0].Defaulted {
+			t.Errorf("got %+v, want 1 defaulted entry. This is the control proving the "+
+				"defaulted case still fires when it should", got)
+		}
+	})
+}
+
+// TestCollectImageFetcherEntriesRaw_MusicArtistMatchIsCaseInsensitive guards
+// EqualFold at this call site, where a case regression now has an INVERTED
+// consequence compared with before the defaulted rule existed.
+//
+// Previously a case variant meant a missed dirty report -- bad, but
+// conservative. Now a lowercase "musicartist" entry with an EMPTY list reads
+// as ABSENT, which is interpreted as "defaults are running", producing a
+// false warning against a library the operator configured correctly. The
+// package documents that the peers are inconsistent about TypeOptions casing
+// across versions, so this is a live input rather than a hypothetical.
+func TestCollectImageFetcherEntriesRaw_MusicArtistMatchIsCaseInsensitive(t *testing.T) {
+	for _, casing := range []string{"musicartist", "MUSICARTIST", "MusicArtist"} {
+		t.Run(casing+"/empty list is clean", func(t *testing.T) {
+			got := collect([]fakeLib{{
+				name: "Music", id: "m1", internetOn: true, collectionType: "music",
+				typeOptions: []fakeOpt{{optType: casing, fetchers: []string{}}},
+			}}, false)
+			if len(got) != 0 {
+				t.Errorf("got %+v, want none. A %q entry with an empty list is a configured "+
+					"library; a case-sensitive match would read it as ABSENT and warn that "+
+					"defaults are running against an install that is already correct",
+					got, casing)
+			}
+		})
+
+		t.Run(casing+"/armed list is dirty", func(t *testing.T) {
+			got := collect([]fakeLib{{
+				name: "Music", id: "m1", internetOn: true, collectionType: "music",
+				typeOptions: []fakeOpt{{optType: casing, fetchers: []string{"FanArt"}}},
+			}}, false)
+			if len(got) != 1 {
+				t.Fatalf("got %+v, want 1 reported entry for casing %q", got, casing)
+			}
+			if got[0].Defaulted {
+				t.Errorf("Defaulted = true for casing %q; the entry exists and is armed, so "+
+					"this is an EXPLICIT conflict, not a defaulted one", casing)
+			}
+		})
 	}
 }

@@ -128,8 +128,17 @@ type ImageFetcherStatus struct {
 }
 
 // CheckImageFetchersEnabled returns the image fetcher status for Jellyfin music
-// libraries. Returns nil only when every music library is genuinely clean.
-// Returns a non-nil error if the music library settings cannot be retrieved.
+// libraries. Returns a non-nil error if the music library settings cannot be
+// retrieved.
+//
+// One known gap in what an empty result means, stated rather than implied:
+// EnableInternetProviders is a plain bool, so a peer response that OMITS the
+// key decodes it as false and the library is skipped entirely -- even if it
+// has an explicit fetcher list. That fails OPEN (a real conflict reported as
+// clean) rather than closed. It predates this function's current shape and
+// is not introduced here; fixing it means making the field a *bool
+// defaulting to true, which changes behavior for every install whose peer
+// omits the key, so it is deliberately not done as a drive-by.
 //
 // Libraries with EnableInternetProviders=false are skipped entirely, and that
 // skip is what makes the Defaulted case correct here. A library with no
@@ -149,6 +158,7 @@ func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherS
 	// fetchers are inactive regardless of TypeOptions.
 	entries := mediabrowser.CollectImageFetcherEntriesRaw(libs,
 		func(l VirtualFolder) bool { return l.LibraryOptions.EnableInternetProviders },
+		func(l VirtualFolder) bool { return mediabrowser.DeclaredMusicCollectionType(l.CollectionType) },
 		func(l VirtualFolder) string { return l.Name },
 		func(l VirtualFolder) string { return l.ItemID },
 		func(l VirtualFolder) []TypeOption { return l.LibraryOptions.TypeOptions },
