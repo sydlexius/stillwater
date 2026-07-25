@@ -136,11 +136,23 @@ type ImageFetcherStatus struct {
 	LibraryID    string
 	FetcherNames []string // e.g., ["TheAudioDb", "FanArt"]
 	RiskLevel    string   // "warn" for Emby (adds missing images only)
+	// Defaulted reports a library with NO MusicArtist configuration, where
+	// Emby's own defaults apply and those have image fetchers on.
+	// FetcherNames is empty in this case because the peer never told us
+	// which fetchers its defaults use -- absence of names here means
+	// "unknown but active", not "none".
+	Defaulted bool
 }
 
 // CheckImageFetchersEnabled returns the image fetcher status for music libraries.
-// Returns nil if no image fetchers are enabled. Returns a non-nil error if the
-// music library settings cannot be retrieved.
+// Returns nil only when every music library is genuinely clean. Returns a
+// non-nil error if the music library settings cannot be retrieved.
+//
+// A library with no MusicArtist TypeOption is reported with Defaulted=true
+// rather than omitted: Emby applies its own defaults to an unconfigured
+// type, and those fetch images. Emby has no library-level internet-providers
+// switch, so unlike Jellyfin there is no condition under which an absent
+// configuration is safe.
 func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherStatus, error) {
 	libs, err := c.GetMusicLibraries(ctx)
 	if err != nil {
@@ -162,6 +174,7 @@ func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherS
 			LibraryID:    e.LibraryID,
 			FetcherNames: e.FetcherNames,
 			RiskLevel:    "warn",
+			Defaulted:    e.Defaulted,
 		})
 	}
 	return results, nil

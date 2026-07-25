@@ -165,22 +165,51 @@ func GetArtistsRaw(ctx context.Context, t Transport, libraryID string, startInde
 // produces. Callers wrap each entry in their own platform ImageFetcherStatus
 // type (adding the platform's RiskLevel constant) since the two
 // ImageFetcherStatus DTOs stay separate types.
+//
+// Defaulted distinguishes the two ways a library can be fetching images:
+// explicitly configured fetchers (Defaulted=false, FetcherNames populated)
+// versus no MusicArtist configuration at all, which leaves the peer's own
+// defaults in force (Defaulted=true, FetcherNames empty). They need
+// different remediation copy -- one says "turn these off", the other says
+// "nothing is configured, so the server's defaults are running" -- so the
+// distinction is carried rather than flattened into the name list.
 type FetcherEntry struct {
 	LibraryName  string
 	LibraryID    string
 	FetcherNames []string
+	Defaulted    bool
 }
 
 // CollectImageFetcherEntriesRaw shares the library/TypeOption iteration
 // common to CheckImageFetchersEnabled on both platforms: walk every library
-// that passes includeLibrary, find its "MusicArtist" TypeOption(s), and
-// collect one entry per option with a non-empty image-fetcher list. The
-// per-platform divergence -- Jellyfin additionally gates on
-// EnableInternetProviders, Emby does not -- is expressed entirely through
-// includeLibrary; the RiskLevel label stays with the caller since it is not
-// part of this shared shape. Generic over T (library) and O (type option)
-// because the two platforms' VirtualFolder/TypeOption DTOs are separate
-// types.
+// that passes includeLibrary and report each one that would fetch artist
+// images. The RiskLevel label stays with the caller since it is not part of
+// this shared shape. Generic over T (library) and O (type option) because
+// the two platforms' VirtualFolder/TypeOption DTOs are separate types.
+//
+// THREE INPUT STATES, and conflating any two of them misreports the peer:
+//
+//   - MusicArtist option PRESENT with a non-empty fetcher list -> reported,
+//     Defaulted=false. The operator turned these on.
+//   - MusicArtist option PRESENT with an EMPTY fetcher list -> NOT reported.
+//     A genuine clean: the operator configured this library and chose no
+//     fetchers.
+//   - MusicArtist option ABSENT entirely -> reported, Defaulted=true. This
+//     is the case that used to be silently clean and is the #2719 defect.
+//     An absent option does not mean "off", it means the peer has no stored
+//     configuration for this type and therefore applies its OWN DEFAULTS --
+//     and those have image fetchers ON. Reporting nothing here told the
+//     operator they were safe while the peer was actively fetching.
+//
+// The per-platform divergence is expressed entirely through includeLibrary
+// and is load-bearing for the absent case specifically: Jellyfin passes its
+// EnableInternetProviders flag, Emby passes a constant true because it has
+// no library-level equivalent. A library that fails includeLibrary is
+// skipped WHOLE, which is what keeps "absent option means defaults apply"
+// from firing on a Jellyfin library whose internet providers are switched
+// off -- there the defaults cannot run, so silence is a TRUE clean rather
+// than a false one. Do not hoist the absent-entry check above the
+// includeLibrary gate; that inverts a false negative into a false positive.
 func CollectImageFetcherEntriesRaw[T any, O any](
 	libs []T,
 	includeLibrary func(T) bool,
@@ -195,10 +224,12 @@ func CollectImageFetcherEntriesRaw[T any, O any](
 		if !includeLibrary(lib) {
 			continue
 		}
+		var sawMusicArtist bool
 		for _, opt := range getTypeOptions(lib) {
-			if !strings.EqualFold(getOptType(opt), "MusicArtist") {
+			if !strings.EqualFold(getOptType(opt), TypeMusicArtist) {
 				continue
 			}
+			sawMusicArtist = true
 			if fetchers := getImageFetchers(opt); len(fetchers) > 0 {
 				out = append(out, FetcherEntry{
 					LibraryName:  getName(lib),
@@ -206,6 +237,13 @@ func CollectImageFetcherEntriesRaw[T any, O any](
 					FetcherNames: fetchers,
 				})
 			}
+		}
+		if !sawMusicArtist {
+			out = append(out, FetcherEntry{
+				LibraryName: getName(lib),
+				LibraryID:   getItemID(lib),
+				Defaulted:   true,
+			})
 		}
 	}
 	return out
