@@ -83,6 +83,83 @@ func TestFixMBID_AdoptsConfidentUncontestedMatch(t *testing.T) {
 	}
 }
 
+// TestFixMBID_StampsMachinePickedProvenance is the enumerability half of #2715.
+// The audit message records how strong a given match was; this marker is what
+// makes the SET of machine-picked artists findable, which is the recovery path
+// for anything this rule already misidentified. Asserts the map entry the
+// artist carries into persistence, not a flag.
+func TestFixMBID_StampsMachinePickedProvenance(t *testing.T) {
+	f := mbidFixer(
+		provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 100, Source: "musicbrainz"},
+	)
+	a := &artist.Artist{Name: "Radiohead"}
+
+	fr := fixMBIDFor(t, f, a)
+
+	if !fr.Fixed {
+		t.Fatalf("expected Fixed=true, got false (%q)", fr.Message)
+	}
+	got := a.MetadataSources[artist.SourceKeyMusicBrainzID]
+	if got != artist.SourceMachinePicked {
+		t.Errorf("MetadataSources[%q] = %q, want %q: an adopted MBID must be enumerable as machine-picked",
+			artist.SourceKeyMusicBrainzID, got, artist.SourceMachinePicked)
+	}
+}
+
+// TestFixMBID_DoesNotStampProvenanceOnDecline is the negative half, and it is
+// the one that catches an unconditional stamp. A test asserting only the
+// positive case passes just as happily against an implementation that stamps
+// every artist it looks at, including the ones it deliberately refused to
+// touch -- which would poison the very query the marker exists to serve.
+//
+// The fixture is the ambiguous-rivals case: gates 1 and 2 pass, only the
+// ambiguity margin rejects, so the fixer definitely reached the decision point
+// rather than bailing early for some unrelated reason.
+func TestFixMBID_DoesNotStampProvenanceOnDecline(t *testing.T) {
+	f := mbidFixer(
+		provider.ArtistSearchResult{Name: "Nirvana", MusicBrainzID: mbidRadiohead, Score: 100, Source: "musicbrainz"},
+		provider.ArtistSearchResult{Name: "Nirvana", MusicBrainzID: mbidRival, Score: 98, Source: "musicbrainz"},
+	)
+	a := &artist.Artist{Name: "Nirvana"}
+
+	fr := fixMBIDFor(t, f, a)
+
+	if fr.Fixed {
+		t.Fatalf("fixture precondition failed: expected a decline, got Fixed=true (%q)", fr.Message)
+	}
+	if _, ok := a.MetadataSources[artist.SourceKeyMusicBrainzID]; ok {
+		t.Errorf("MetadataSources[%q] = %q, want ABSENT: a declined artist must not be marked machine-picked",
+			artist.SourceKeyMusicBrainzID, a.MetadataSources[artist.SourceKeyMusicBrainzID])
+	}
+}
+
+// TestFixMBID_ProvenanceStampPreservesOtherSources guards the map write itself.
+// MetadataSources is shared with ApplyMetadata, which stores a provider name
+// per metadata field; stamping the identity key must not clobber or replace
+// that map. A naive implementation assigning a fresh map passes every other
+// test here and silently destroys the artist's field-level source record.
+func TestFixMBID_ProvenanceStampPreservesOtherSources(t *testing.T) {
+	f := mbidFixer(
+		provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 100, Source: "musicbrainz"},
+	)
+	a := &artist.Artist{
+		Name:            "Radiohead",
+		MetadataSources: map[string]string{"biography": "lastfm", "genres": "audiodb"},
+	}
+
+	fixMBIDFor(t, f, a)
+
+	if got := a.MetadataSources["biography"]; got != "lastfm" {
+		t.Errorf("MetadataSources[biography] = %q, want %q: the stamp must not disturb field sources", got, "lastfm")
+	}
+	if got := a.MetadataSources["genres"]; got != "audiodb" {
+		t.Errorf("MetadataSources[genres] = %q, want %q", got, "audiodb")
+	}
+	if got := a.MetadataSources[artist.SourceKeyMusicBrainzID]; got != artist.SourceMachinePicked {
+		t.Errorf("MetadataSources[%q] = %q, want %q", artist.SourceKeyMusicBrainzID, got, artist.SourceMachinePicked)
+	}
+}
+
 // TestFixMBID_RejectsBelowScoreFloor covers the core defect: a low-confidence
 // top hit used to be adopted verbatim. The fixture's name is an EXACT match, so
 // the name-similarity gate cannot fire; only the score floor can reject it, and
@@ -354,5 +431,67 @@ func TestBestMBIDCandidates_PicksHighestPerIdentity(t *testing.T) {
 	if runnerUp.MusicBrainzID != mbidRival || runnerUp.Score != 80 {
 		t.Errorf("runnerUp = %s at %d, want %s at 80 (the strongest rival, not the next row)",
 			runnerUp.MusicBrainzID, runnerUp.Score, mbidRival)
+	}
+}
+
+// TestFixMBID_ProvenanceMarkerPersistsThroughPipeline is the end-to-end proof.
+// Every other marker test asserts the in-memory Artist struct, which says
+// nothing about whether the value survives the write. MetadataSources is
+// persisted as a marshaled string map on the artists row, so a marker that
+// the pipeline's writeback drops would leave the enumeration query returning
+// nothing while all the unit tests stayed green.
+//
+// This runs the real pipeline against real SQLite, then RELOADS the artist and
+// asserts the marker came back off the row.
+func TestFixMBID_ProvenanceMarkerPersistsThroughPipeline(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding default rules: %v", err)
+	}
+	// RuleNFOHasMBID seeds enabled+auto already; isolate it so nothing else
+	// mutates the artist during the pass.
+	disableAllRulesExcept(t, db, RuleNFOHasMBID)
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	engine.SetProviderAvailability(&stubProviderAvailability{available: allThreeAvailable()})
+
+	metadataFixer := NewMetadataFixer(nil, testLogger())
+	metadataFixer.orchestrator = &stubMBIDSearchOrchestrator{
+		results: []provider.ArtistSearchResult{
+			{Name: "Persisted Artist", MusicBrainzID: mbidRadiohead, Score: 100, Source: "musicbrainz"},
+		},
+	}
+	p := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{metadataFixer}, nil, testLogger())
+
+	a := &artist.Artist{
+		Name:     "Persisted Artist",
+		SortName: "Persisted Artist",
+		Path:     t.TempDir(),
+		// No MusicBrainzID: nfo_has_mbid must fire.
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	if _, err := p.RunAllScoped(ctx, RunScopeAll); err != nil {
+		t.Fatalf("RunAllScoped: %v", err)
+	}
+
+	reloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	// Precondition: without this the marker assertion below could pass
+	// vacuously on an artist the fixer never actually touched.
+	if reloaded.MusicBrainzID != mbidRadiohead {
+		t.Fatalf("precondition failed: MusicBrainzID = %q, want %q (the fix did not run)",
+			reloaded.MusicBrainzID, mbidRadiohead)
+	}
+	if got := reloaded.MetadataSources[artist.SourceKeyMusicBrainzID]; got != artist.SourceMachinePicked {
+		t.Errorf("reloaded MetadataSources[%q] = %q, want %q: the marker must survive persistence or the re-review query finds nothing",
+			artist.SourceKeyMusicBrainzID, got, artist.SourceMachinePicked)
 	}
 }

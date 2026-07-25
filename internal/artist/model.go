@@ -89,6 +89,40 @@ type Artist struct {
 	UpdatedAt   time.Time          `json:"updated_at"`
 }
 
+// MetadataSources keys and values that record HOW an identifier was obtained,
+// as opposed to which provider supplied a metadata field's value.
+//
+// The rest of the map is written by ApplyMetadata, which stores a provider name
+// per metadata field ("biography" -> "musicbrainz"). These constants extend the
+// same map to the identity question: an MBID is not a metadata value that can
+// be re-fetched and compared, it is the key everything else is fetched WITH, so
+// what matters about it is whether a human confirmed it or a machine guessed.
+//
+// Issue #2715: the nfo_has_mbid rule adopted the top name-search hit with no
+// confidence check, and nothing recorded that it had done so. Without a
+// machine-readable marker there is no way to enumerate the artists it may have
+// misidentified, which is the point of recording this at all: a wrong MBID
+// stays invisible until it produces a duplicate artist row days later.
+const (
+	// SourceKeyMusicBrainzID keys the provenance of the artist's MusicBrainz ID.
+	// It is deliberately distinct from every field name ApplyMetadata writes
+	// (formed, born, died, disbanded, years_active, origin, genres, biography,
+	// members, type, gender), so the two writers cannot collide.
+	SourceKeyMusicBrainzID = "musicbrainz_id"
+
+	// SourceMachinePicked marks an MBID a rule adopted from a provider name
+	// search. It means "no human confirmed this identity" and is the value an
+	// operator-facing re-review query filters on.
+	SourceMachinePicked = "machine-picked"
+
+	// SourceOperatorConfirmed marks an MBID a human set or approved. Nothing
+	// writes it yet -- the operator-facing field-edit path does not record
+	// identifier provenance today -- but the machine-picked marker is only
+	// meaningful against a named alternative, and a future writer must use this
+	// spelling rather than inventing one.
+	SourceOperatorConfirmed = "operator-confirmed"
+)
+
 // ArtistRef is the minimal artist record exposed by ListRefsByLibrary --
 // id, display name, filesystem path. Used by the scanner's per-library
 // removal sweep so the hot path can resolve "directory disappeared" by

@@ -373,6 +373,19 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 	}
 
 	a.MusicBrainzID = best.MusicBrainzID
+	// Stamp the ID as machine-picked. This is the ENUMERABLE half of provenance:
+	// the audit message below says how strong this particular match was, but only
+	// a structured marker lets an operator ask "show me every artist whose MBID a
+	// rule guessed" and get an answer. That query is the recovery path for
+	// anything this rule already misidentified in the field.
+	//
+	// Written only here, on the adopt path. A declined candidate must NOT be
+	// stamped: the artist keeps whatever provenance it had, and stamping on
+	// decline would mark artists this rule deliberately refused to touch.
+	if a.MetadataSources == nil {
+		a.MetadataSources = make(map[string]string)
+	}
+	a.MetadataSources[artist.SourceKeyMusicBrainzID] = artist.SourceMachinePicked
 
 	// The message is the provenance record. The pipeline's recordRuleFixHistory
 	// writes it verbatim into metadata_changes.new_value under the canonical
