@@ -76,9 +76,10 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if a.MusicBrainzID == "" {
-		// No MBID -- show disambiguation UI
+		// No MBID -- show disambiguation UI. Non-destructive by construction:
+		// there is no identity here to discard, so clearIDs is false.
 		if isHTMXRequest(req) {
-			renderTempl(w, req, templates.RefreshDisambiguationForm(a.ID, a.Name))
+			renderTempl(w, req, templates.RefreshDisambiguationForm(a.ID, a.Name, false))
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -138,11 +139,18 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 	artistID := req.PathValue("id")
 
-	query := extractFormOrJSONField(req, "query")
+	// Both fields come off ONE body read: a JSON body is not re-readable, so
+	// two separate extractFormOrJSONField calls would silently lose clear_ids.
+	fields := extractFormOrJSONFields(req, "query", "clear_ids")
+	query := fields["query"]
 	if query == "" {
 		writeError(w, req, http.StatusBadRequest, "search query is required")
 		return
 	}
+	// Carry the destructive intent from the re-identify entry point onto each
+	// candidate card, so the wipe travels with the flow rather than being
+	// persisted up front (#2714).
+	clearIDs := fields["clear_ids"] == "true"
 
 	// Search only MusicBrainz and Discogs for disambiguation
 	linkProviders := []provider.ProviderName{
@@ -171,6 +179,7 @@ func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 			ArtistID:        artistID,
 			Candidates:      candidates,
 			FailedProviders: failedProviders,
+			ClearIDs:        clearIDs,
 		}))
 		return
 	}
@@ -205,6 +214,7 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		MBID      string `json:"mbid"`
 		DiscogsID string `json:"discogs_id"`
 		Source    string `json:"source"`
+		ClearIDs  string `json:"clear_ids"`
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -215,12 +225,42 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		body.MBID = req.FormValue("mbid")
 		body.DiscogsID = req.FormValue("discogs_id")
 		body.Source = req.FormValue("source")
+		body.ClearIDs = req.FormValue("clear_ids")
 	}
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
+	}
+
+	// The destructive half of re-identify (#2714). Two conditions must BOTH
+	// hold, and both are positive assertions -- an allow-list, never a negated
+	// safe-list, because this decides a DELETE:
+	//
+	//  1. the request carries the re-identify intent (clear_ids == "true"),
+	//     forwarded from handleReidentify through the search form and the
+	//     candidate card; and
+	//  2. a replacement MusicBrainz ID is actually present in THIS request.
+	//
+	// Condition 2 is what makes the artist un-strandable. The old code cleared
+	// in handleReidentify, before any candidate existed, so an abandoned flow
+	// left nothing behind. Here the discard and the replacement are applied to
+	// the same in-memory artist and committed by the single Update below, so
+	// the row never observes an identity-less state -- and if the operator
+	// walks away, no write happened at all.
+	//
+	// Anything unrecognized (a missing field, "1", "TRUE", an empty body) falls
+	// through to the non-destructive path and preserves the existing IDs, which
+	// is the safe direction for an ambiguous signal.
+	clearIDs := body.ClearIDs == "true" && body.MBID != ""
+	if clearIDs {
+		r.logger.Info("re-identify: discarding previous provider identity",
+			slog.String("artist_id", a.ID),
+			slog.String("previous_mbid", a.MusicBrainzID),
+			slog.String("replacement_mbid", body.MBID),
+		)
+		clearProviderIdentity(a)
 	}
 
 	// Store the selected ID(s). This handler is only invoked from the
@@ -248,6 +288,7 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		slog.String("mbid", a.MusicBrainzID),
 		slog.String("discogs_id", a.DiscogsID),
 		slog.String("source", body.Source),
+		slog.Bool("cleared_previous", clearIDs),
 	)
 
 	// Artist-level lock gate, placed AFTER the provider-ID persist above: the
@@ -554,10 +595,47 @@ func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, 
 	}
 }
 
+// clearProviderIdentity blanks every struct-modeled provider ID on the artist
+// plus the fetched-at stamps that only make sense alongside them. It mutates
+// the in-memory artist ONLY; persisting is the caller's job, and the caller
+// must not persist until a replacement identity is in hand (#2714).
+//
+// This is the single statement of "what re-identify discards". It is called
+// from exactly one place -- handleRefreshLink, immediately before the chosen
+// replacement IDs are applied and the pair committed in one Update.
+func clearProviderIdentity(a *artist.Artist) {
+	a.MusicBrainzID = ""
+	a.AudioDBID = ""
+	a.DiscogsID = ""
+	a.WikidataID = ""
+	a.DeezerID = ""
+	a.SpotifyID = ""
+	a.AudioDBIDFetchedAt = nil
+	a.DiscogsIDFetchedAt = nil
+	a.WikidataIDFetchedAt = nil
+	a.LastFMFetchedAt = nil
+}
+
 // handleReidentify returns the disambiguation form so the user can link (or
-// re-link) a MusicBrainz entry. When clear_ids=true is passed, all provider
-// IDs are wiped first (the destructive "Re-identify" flow). Without that
-// parameter the existing IDs are preserved (the non-destructive "Identify" flow).
+// re-link) a MusicBrainz entry. When clear_ids=true is passed, this is the
+// destructive "Re-identify" flow; without it, the non-destructive "Identify"
+// flow.
+//
+// This handler PERSISTS NOTHING (#2714). It used to wipe the artist's provider
+// IDs and commit that wipe before the operator had chosen a replacement, so
+// abandoning the flow -- closing the tab, a failed lookup, no acceptable
+// candidate -- left the artist with no identity at all, strictly worse than
+// where it started and with no path back short of a re-scan. The wipe is now
+// deferred to handleRefreshLink, where a replacement is in hand and the discard
+// plus the replacement commit as one Update. Nothing between here and there
+// touches the database, so abandonment at any point is a no-op.
+//
+// The clear_ids intent travels with the flow instead of with the row: it is
+// echoed into the search form as a hidden field, carried through the search
+// response onto each candidate card's hx-vals, and read back by
+// handleRefreshLink. That keeps the intent request-scoped, so a second operator
+// (or a second tab) doing a plain non-destructive Identify on the same artist
+// cannot inherit this one's destructive intent.
 // POST /api/v1/artists/{id}/reidentify
 func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 	artistID := req.PathValue("id")
@@ -568,50 +646,25 @@ func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Log the action for the audit trail.
-	r.logger.Info("re-identifying artist",
+	clearIDs := req.FormValue("clear_ids") == "true"
+
+	// Log the action for the audit trail. "requested", not "cleared": no write
+	// happens on this path.
+	r.logger.Info("re-identify requested",
 		slog.String("artist_id", a.ID),
 		slog.String("artist_name", a.Name),
 		slog.String("previous_mbid", a.MusicBrainzID),
-		slog.Bool("clear_ids", req.FormValue("clear_ids") == "true"),
+		slog.Bool("clear_ids", clearIDs),
 	)
 
-	// Only clear provider IDs when explicitly requested (the "Re-identify"
-	// flow). The "Identify" flow skips this so existing Discogs/Spotify/etc
-	// IDs are preserved while the user links a MusicBrainz entry.
-	if req.FormValue("clear_ids") == "true" {
-		a.MusicBrainzID = ""
-		a.AudioDBID = ""
-		a.DiscogsID = ""
-		a.WikidataID = ""
-		a.DeezerID = ""
-		a.SpotifyID = ""
-		a.AudioDBIDFetchedAt = nil
-		a.DiscogsIDFetchedAt = nil
-		a.WikidataIDFetchedAt = nil
-		a.LastFMFetchedAt = nil
-
-		if err := r.artistService.Update(req.Context(), a); err != nil {
-			r.logger.Warn("failed to clear provider IDs",
-				"artist_id", a.ID,
-				"error", err,
-			)
-			writeError(w, req, http.StatusInternalServerError, "failed to clear provider IDs")
-			return
-		}
-
-		// Clearing provider IDs affects health scores (e.g. missing-MBID rules).
-		r.InvalidateHealthCache()
-	}
-
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.RefreshDisambiguationForm(a.ID, a.Name))
+		renderTempl(w, req, templates.RefreshDisambiguationForm(a.ID, a.Name, clearIDs))
 		return
 	}
 
 	msg := "Search to find and link the correct artist."
-	if req.FormValue("clear_ids") == "true" {
-		msg = "Provider IDs cleared. " + msg
+	if clearIDs {
+		msg = "Existing provider IDs are kept until you choose a replacement. " + msg
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "disambiguation_required",
@@ -766,12 +819,26 @@ func (r *Router) runRulesAfterRefresh(ctx context.Context, a *artist.Artist) {
 
 // extractFormOrJSONField reads a named value from either a JSON body or form data.
 func extractFormOrJSONField(req *http.Request, name string) string {
+	return extractFormOrJSONFields(req, name)[name]
+}
+
+// extractFormOrJSONFields reads several named values in ONE pass over the body.
+// A JSON request body can only be decoded once, so calling
+// extractFormOrJSONField twice on the same request would return "" for the
+// second field. Callers that need more than one value must use this.
+func extractFormOrJSONFields(req *http.Request, names ...string) map[string]string {
+	out := make(map[string]string, len(names))
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		var body map[string]string
 		if err := json.NewDecoder(req.Body).Decode(&body); err == nil {
-			return body[name]
+			for _, n := range names {
+				out[n] = body[n]
+			}
 		}
-		return ""
+		return out
 	}
-	return req.FormValue(name)
+	for _, n := range names {
+		out[n] = req.FormValue(n)
+	}
+	return out
 }

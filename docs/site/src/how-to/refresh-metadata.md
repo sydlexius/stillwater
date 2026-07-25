@@ -30,6 +30,12 @@ If the artist has no MusicBrainz ID yet, Stillwater needs to pick the right one 
 
 This only happens once per artist -- after the link, future refreshes go straight through.
 
+### Re-identifying an artist that is already linked
+
+If an artist is linked to the wrong entry, use **Actions** > **Re-identify Artist**. You get the same search and the same candidate list, and the provider IDs Stillwater already holds are replaced with the ones from the entry you pick.
+
+The replacement happens at the moment you pick a match, not before. Until then the artist keeps its existing IDs, so you can search, change the query, find nothing usable, or close the page entirely and the artist is left exactly as it was. There is no intermediate state where the artist has no identity at all.
+
 ## Refresh many artists
 
 To run refreshes across a saved view or a whole library:

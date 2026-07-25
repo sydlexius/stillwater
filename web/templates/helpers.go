@@ -669,10 +669,19 @@ func obConflictWarnBody(ctx context.Context, axis string) string {
 }
 
 // disambiguationHxVals builds the hx-vals JSON string for a disambiguation result card.
-func disambiguationHxVals(r provider.ArtistSearchResult) string {
+//
+// clearIDs forwards the destructive "Re-identify" intent to the link endpoint.
+// It is only emitted when the card actually carries a MusicBrainz ID: the link
+// handler will not discard an identity without a replacement, so sending the
+// flag on a card that cannot supply one would state an intent the server is
+// right to refuse (#2714).
+func disambiguationHxVals(r provider.ArtistSearchResult, clearIDs bool) string {
 	m := map[string]string{"source": r.Source}
 	if r.MusicBrainzID != "" {
 		m["mbid"] = r.MusicBrainzID
+		if clearIDs {
+			m["clear_ids"] = "true"
+		}
 	}
 	if r.Source == "discogs" && r.ProviderID != "" {
 		m["discogs_id"] = r.ProviderID

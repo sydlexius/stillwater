@@ -93,7 +93,7 @@ Common buttons and their exact wording in the UI:
 | Start a metadata refresh for one artist | Refresh Metadata |
 | Run rule evaluation for one artist | Run Rules |
 | Link an artist to a MusicBrainz entry | Identify Artist |
-| Re-link an artist (clear existing IDs) | Re-identify Artist |
+| Re-link an artist (existing IDs are replaced once you pick a new match) | Re-identify Artist |
 | Lock an artist from automated changes | Lock Artist |
 | Fetch images from providers (single slot) | Find (on the slot row) |
 | Fetch images across many artists | Bulk actions > Fetch images |

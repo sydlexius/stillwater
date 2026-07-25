@@ -13520,6 +13520,14 @@ paths:
               properties:
                 query:
                   type: string
+                clear_ids:
+                  type: string
+                  enum: ["true"]
+                  description: >
+                    Forwarded from the re-identify entry point. Carried onto
+                    each returned candidate so the eventual /refresh/link call
+                    knows to discard the previous identity. Nothing is written
+                    by this endpoint.
               required: [query]
           application/x-www-form-urlencoded:
             schema:
@@ -13527,6 +13535,14 @@ paths:
               properties:
                 query:
                   type: string
+                clear_ids:
+                  type: string
+                  enum: ["true"]
+                  description: >
+                    Forwarded from the re-identify entry point. Carried onto
+                    each returned candidate so the eventual /refresh/link call
+                    knows to discard the previous identity. Nothing is written
+                    by this endpoint.
               required: [query]
       responses:
         "200":
@@ -13585,6 +13601,16 @@ paths:
                   type: string
                 source:
                   type: string
+                clear_ids:
+                  type: string
+                  enum: ["true"]
+                  description: >
+                    Re-identify intent, forwarded from the disambiguation
+                    flow. When "true" AND mbid is non-empty, the artist's
+                    previous provider IDs and fetch timestamps are discarded
+                    in the same write that stores the chosen replacement, so
+                    the artist is never left without an identity. Ignored
+                    without an mbid.
           application/x-www-form-urlencoded:
             schema:
               type: object
@@ -13595,6 +13621,16 @@ paths:
                   type: string
                 source:
                   type: string
+                clear_ids:
+                  type: string
+                  enum: ["true"]
+                  description: >
+                    Re-identify intent, forwarded from the disambiguation
+                    flow. When "true" AND mbid is non-empty, the artist's
+                    previous provider IDs and fetch timestamps are discarded
+                    in the same write that stores the chosen replacement, so
+                    the artist is never left without an identity. Ignored
+                    without an mbid.
       responses:
         "200":
           description: >
@@ -14490,10 +14526,12 @@ paths:
       tags: [Artists]
       summary: Identify or re-identify an artist via MusicBrainz
       description: >
-        Returns the disambiguation form so the user can link (or re-link)
-        a MusicBrainz entry. When clear_ids is true, all provider IDs are
-        wiped first (destructive "Re-identify" flow). Without it, existing
-        IDs are preserved (non-destructive "Identify" flow).
+        Returns the disambiguation form so the user can link (or re-link) a
+        MusicBrainz entry. This endpoint PERSISTS NOTHING: clear_ids marks the
+        destructive "Re-identify" intent, but the artist's existing provider
+        IDs are kept until a replacement is chosen, and are discarded only by
+        the subsequent /refresh/link call that supplies one. Abandoning the
+        flow leaves the artist exactly as it was.
       operationId: reidentifyArtist
       parameters:
         - name: id
@@ -14512,12 +14550,15 @@ paths:
                   type: string
                   enum: ["true"]
                   description: >
-                    When set to "true", clears all provider IDs and fetch
-                    timestamps before returning the disambiguation form.
-                    Omit for the non-destructive identify flow.
+                    When set to "true", marks this as the destructive
+                    "Re-identify" flow. No provider ID is cleared here; the
+                    flag is echoed into the returned form and carried to
+                    /refresh/link, which discards the previous identity in the
+                    same write that applies the chosen replacement. Omit for
+                    the non-destructive identify flow.
       responses:
         "200":
-          description: Disambiguation form returned (provider IDs cleared only when clear_ids=true; returns HTML disambiguation form when HX-Request header is set)
+          description: Disambiguation form returned (no provider IDs are modified on this endpoint, whatever clear_ids says; returns HTML disambiguation form when HX-Request header is set)
           content:
             application/json:
               schema:

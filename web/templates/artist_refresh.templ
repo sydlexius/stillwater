@@ -26,7 +26,13 @@ type RefreshOOBData struct {
 
 // RefreshDisambiguationForm renders the MusicBrainz search form when an artist
 // has no MBID. Pre-filled with the artist name for immediate search.
-templ RefreshDisambiguationForm(artistID, artistName string) {
+//
+// clearIDs marks this as the destructive "Re-identify" flow rather than the
+// non-destructive "Identify" one. It is carried as a hidden form field, not
+// persisted anywhere, so an abandoned flow leaves the artist untouched (#2714);
+// the search handler forwards it onto each candidate card and the link handler
+// applies the discard together with the chosen replacement.
+templ RefreshDisambiguationForm(artistID, artistName string, clearIDs bool) {
 	<div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4">
 		<div class="flex items-center gap-1.5 mb-2">
 			<h3 class="font-semibold text-sm">{ t(ctx, "image.mbid_required") }</h3>
@@ -47,6 +53,12 @@ templ RefreshDisambiguationForm(artistID, artistName string) {
 			hx-trigger="load, submit"
 			hx-indicator="#search-spinner"
 		>
+			if clearIDs {
+				// Round-trips the destructive intent through the search POST so
+				// the eventual link request can apply the discard. Nothing is
+				// written until then.
+				<input type="hidden" name="clear_ids" value="true"/>
+			}
 			<div class="flex gap-2">
 				<input
 					name="query"
@@ -95,10 +107,16 @@ templ disambiguationProviderErrorBanner(failed []string) {
 // template renders a warning banner above the results so the user can tell
 // "providers errored, results may be incomplete" apart from the legitimate
 // "providers all succeeded, no matches exist" empty state.
+// ClearIDs marks the destructive "Re-identify" flow. When set, each candidate
+// card posts clear_ids=true alongside its chosen provider ID, and the link
+// handler discards the artist's previous identity in the same write that
+// applies the replacement (#2714). It is deliberately per-request state: no
+// wipe is persisted while the operator is still choosing.
 type DisambiguationResultsData struct {
 	ArtistID        string
 	Candidates      []DisambiguationCandidate
 	FailedProviders []string
+	ClearIDs        bool
 }
 
 // DisambiguationResults renders the list of search result cards for MBID linking.
@@ -115,7 +133,7 @@ templ DisambiguationResults(data DisambiguationResultsData) {
 					type="button"
 					class="group/link relative w-full text-left rounded border border-gray-200 dark:border-gray-700 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors [&.htmx-request]:border-blue-400 [&.htmx-request]:dark:border-blue-600"
 					hx-post={ "/api/v1/artists/" + data.ArtistID + "/refresh/link" }
-					hx-vals={ disambiguationHxVals(c.Result) }
+					hx-vals={ disambiguationHxVals(c.Result, data.ClearIDs) }
 					hx-target="#refresh-panel"
 					hx-swap="innerHTML"
 					hx-on::after-request="hideFieldProviderModal()"
