@@ -209,11 +209,15 @@ func TestJellyfinRestoreAppliesSnapshot(t *testing.T) {
 	}
 }
 
+// Re-pointed from version 2 to 99 when v2 became a SUPPORTED snapshot
+// version (the envelope now optionally carries per-library image fetchers).
+// Left at 2 this test would have gone on passing for the wrong reason and
+// stopped guarding the unknown-version path entirely.
 func TestJellyfinRestoreRejectsUnknownVersion(t *testing.T) {
 	srv, _ := newFakeJellyfinServer(nil)
 	defer srv.Close()
 	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
-	err := c.RestoreLibraryOptions(context.Background(), `{"version":2,"libraries":[]}`)
+	err := c.RestoreLibraryOptions(context.Background(), `{"version":99,"libraries":[]}`)
 	if err == nil || !strings.Contains(err.Error(), "unsupported snapshot version") {
 		t.Errorf("want version error, got %v", err)
 	}

@@ -37,6 +37,12 @@ type Transport interface {
 	Do(ctx context.Context, method, path string, body io.Reader, contentType string) (*http.Response, error)
 }
 
+// TypeMusicArtist is the peer's TypeOptions discriminator for artist-level
+// metadata and artwork settings. Matched case-insensitively everywhere it is
+// compared, since the two servers have not been consistent about its casing
+// across versions.
+const TypeMusicArtist = "MusicArtist"
+
 // LibraryWriteBackSnapshot is the persisted form of a peer's
 // pre-Stillwater saver configuration. Stored on the connection row so
 // opt-out can replay the original state. Version bumps if the shape
@@ -51,12 +57,43 @@ type LibraryWriteBackSnapshot struct {
 // LibrarySaverSnapshotEntry holds one library's saver state at snapshot
 // time. LibraryName is informational only (UI rendering); LibraryID is
 // the authoritative key used during restore.
+//
+// ImageFetchers records the MusicArtist TypeOption's image-fetcher list and
+// is only meaningful in a version 2 snapshot. In a version 1 snapshot the
+// field is always absent, because v1 predates Stillwater managing the
+// fetcher lever at all -- see SnapshotVersion for why the envelope version,
+// not the field's own emptiness, is what decides whether restore replays it.
 type LibrarySaverSnapshotEntry struct {
 	LibraryID         string   `json:"library_id"`
 	LibraryName       string   `json:"library_name"`
 	SaveLocalMetadata bool     `json:"save_local_metadata"`
 	MetadataSavers    []string `json:"metadata_savers"`
+	ImageFetchers     []string `json:"image_fetchers,omitempty"`
 }
+
+// Snapshot envelope versions.
+//
+// The version is the ONLY discriminator restore uses to decide whether an
+// entry's ImageFetchers list is authoritative. That is deliberate, and the
+// alternative is a trap worth spelling out: an empty ImageFetchers list is
+// genuinely ambiguous on its own. It could mean "this library had no image
+// fetchers, restore it to none" or it could mean "nobody recorded this
+// field". Those demand opposite actions, and a nil-vs-empty check cannot
+// tell them apart once the value has been through a JSON round-trip.
+//
+// Keying on the version removes the ambiguity entirely: a v1 snapshot never
+// recorded fetchers, so restore must not touch them; a v2 snapshot always
+// records them, so an empty list means exactly what it says. No tri-state
+// pointer, no companion "was this recorded" flag.
+const (
+	// SnapshotVersionSavers is the original envelope: SaveLocalMetadata and
+	// MetadataSavers only. Restore leaves TypeOptions untouched.
+	SnapshotVersionSavers = 1
+	// SnapshotVersionWithFetchers additionally records each library's
+	// MusicArtist image-fetcher list, so opt-out can hand the fetchers back
+	// as well as the savers.
+	SnapshotVersionWithFetchers = 2
+)
 
 // RawMusicLibrary is the lossless shape DisableFileWriteBack and
 // RestoreLibraryOptions thread through. Options is the library's full
@@ -92,8 +129,27 @@ func SanitizeLibraryOptions(in map[string]any) map[string]any {
 // entries to LibrarySaverSnapshotEntry slices and pass them here for
 // version stamping and JSON encoding.
 func BuildSnapshot(entries []LibrarySaverSnapshotEntry) (string, error) {
+	return buildSnapshotAtVersion(entries, SnapshotVersionSavers)
+}
+
+// BuildSnapshotV2 stamps the same entries as a version 2 envelope, declaring
+// that each entry's ImageFetchers list is authoritative and should be
+// replayed on restore.
+//
+// Separate from BuildSnapshot rather than a version argument on it because
+// the two carry different PROMISES, not just different numbers. Calling this
+// asserts that every entry's ImageFetchers was actually read off the peer;
+// stamping v2 onto entries whose fetcher lists were never populated would
+// tell restore to clear fetchers that the operator still has configured.
+// The caller that reads fetchers off the peer is the only one entitled to
+// use this.
+func BuildSnapshotV2(entries []LibrarySaverSnapshotEntry) (string, error) {
+	return buildSnapshotAtVersion(entries, SnapshotVersionWithFetchers)
+}
+
+func buildSnapshotAtVersion(entries []LibrarySaverSnapshotEntry, version int) (string, error) {
 	snap := LibraryWriteBackSnapshot{
-		Version:       1,
+		Version:       version,
 		SnapshottedAt: time.Now().UTC(),
 		Libraries:     entries,
 	}
@@ -102,6 +158,183 @@ func BuildSnapshot(entries []LibrarySaverSnapshotEntry) (string, error) {
 		return "", fmt.Errorf("encoding snapshot: %w", err)
 	}
 	return string(buf), nil
+}
+
+// MergeTypeOptionRaw sets fields on the TypeOptions entry whose "Type"
+// matches typeName (case-insensitive), leaving every other entry exactly as
+// the peer sent it. When no entry matches, one is CREATED carrying typeName
+// plus fields.
+//
+// ALIASING. The function does not mutate its input: a matched entry is
+// cloned before the fields are applied, so the caller's map is untouched.
+// The RESULT still aliases, though, and the clone is SHALLOW. Non-target
+// entries are carried over by reference, and a cloned entry's nested values
+// (an "ImageOptions" map, a fetcher slice) are the same objects the input
+// holds. Mutating out[i]["ImageOptions"]["MinWidth"] therefore DOES reach
+// the caller's input. Nothing in this package does that -- callers build a
+// merged list and POST it -- and a deep clone would cost a full copy of
+// every library's options on every call to defend against a pattern no
+// caller uses. Stated rather than fixed, so a future caller who wants to
+// mutate the result knows to copy first.
+//
+// DUPLICATE ENTRIES. A peer sending two entries whose Type both match gets
+// BOTH merged; there is no break. That is deliberate. These fields are
+// levers being disarmed, and a peer that reads the second entry while we
+// only disarmed the first would leave the lever half-pulled -- the write
+// side must be exhaustive because it cannot know which entry the peer
+// honors. Note this makes the write side deliberately ASYMMETRIC with
+// FindTypeOptionRaw, which returns the first match only; see that
+// function's comment for why the read side cannot simply follow suit.
+//
+// WHY MERGE RATHER THAN REPLACE. The obvious implementation -- build the
+// MusicArtist entry we want and POST TypeOptions as a one-element list -- is
+// silently destructive. /Library/VirtualFolders/LibraryOptions performs a
+// full REPLACE (see PostLibraryOptionsRaw), so any entry we omit is deleted
+// on the peer. An operator's MusicVideo and MusicAlbum configuration lives in
+// that same list and has nothing to do with the artist metadata Stillwater
+// manages. Dropping it would be an unannounced, unlogged reconfiguration of
+// their server, and unlike a cleared saver list it is not covered by the
+// opt-out snapshot.
+//
+// WHY CREATE ON ABSENT. An absent entry does not mean "this type is
+// configured off" -- it means the peer has never had these options written,
+// so its DEFAULTS apply, and the defaults have fetchers ON. Leaving the entry
+// absent would leave the lever unpulled while the caller believes it pulled
+// it. Creating the entry is what makes the setting explicit and therefore
+// enforceable.
+//
+// Entries the peer sent that are not JSON objects are passed through
+// untouched rather than skipped or coerced: they are not shapes this helper
+// understands, and preserving them is the same round-trip promise the rest of
+// this file keeps.
+func MergeTypeOptionRaw(typeOptions []any, typeName string, fields map[string]any) []any {
+	out := make([]any, 0, len(typeOptions)+1)
+	merged := false
+	for _, entry := range typeOptions {
+		opt, ok := entry.(map[string]any)
+		if !ok {
+			out = append(out, entry)
+			continue
+		}
+		name, _ := opt["Type"].(string)
+		if !strings.EqualFold(name, typeName) {
+			out = append(out, entry)
+			continue
+		}
+		// Copy before mutating so a caller reusing the peer's decoded
+		// options map (the snapshot path does) never sees our edits.
+		clone := make(map[string]any, len(opt)+len(fields))
+		for k, v := range opt {
+			clone[k] = v
+		}
+		for k, v := range fields {
+			clone[k] = v
+		}
+		out = append(out, clone)
+		merged = true
+	}
+	if !merged {
+		created := make(map[string]any, len(fields)+1)
+		created["Type"] = typeName
+		for k, v := range fields {
+			created[k] = v
+		}
+		out = append(out, created)
+	}
+	return out
+}
+
+// TypeOptionsFrom reads a library's "TypeOptions" as a raw []any. The peer
+// may send it absent, null, or as a non-array; all three yield an empty
+// slice, which MergeTypeOptionRaw then turns into a single created entry.
+// Returning a nil-safe empty slice keeps every caller off the type-assertion
+// dance.
+func TypeOptionsFrom(opts map[string]any) []any {
+	raw, _ := opts["TypeOptions"].([]any)
+	return raw
+}
+
+// FindTypeOptionRaw returns the FIRST TypeOptions entry whose "Type" matches
+// typeName (case-insensitive), and whether one was found. The bool is the
+// point: an ABSENT entry and a PRESENT entry with an empty fetcher list are
+// different states that demand different handling (absent means the peer's
+// defaults apply), and a nil-map return alone cannot express the difference.
+//
+// Matching is case-insensitive because the two servers have not been
+// consistent about TypeOptions casing across versions -- see TypeMusicArtist.
+// A case-SENSITIVE match against a peer sending "musicartist" would report
+// the entry ABSENT, and absent is interpreted as "defaults apply", so the
+// caller would take the wrong branch on a library that is in fact
+// configured.
+//
+// FIRST-MATCH IS ASYMMETRIC WITH THE WRITE SIDE, deliberately, and the
+// asymmetry has a known edge. MergeTypeOptionRaw merges EVERY matching
+// entry because a write must be exhaustive to fully disarm a lever. A read
+// cannot be exhaustive in the same way: it has to return ONE answer, and
+// which entry a peer actually honors when it sent duplicates is not
+// something this package can know. First-match matches what both platforms'
+// GetLibrarySettings already do, so this stays consistent with existing
+// behavior rather than inventing a new rule.
+//
+// The residual hazard, stated so it is not rediscovered as a mystery: if a
+// peer ever sends duplicate MusicArtist entries where the FIRST has no
+// fetchers and a LATER one does, a fetcher-status read through this
+// function reports clean while the peer may still fetch. No peer has been
+// observed doing this, and the write side already disarms all of them, so
+// the window is narrow -- but it is a genuine false-clean shape and belongs
+// in a follow-up if duplicates are ever seen in the wild.
+func FindTypeOptionRaw(typeOptions []any, typeName string) (map[string]any, bool) {
+	for _, entry := range typeOptions {
+		opt, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if name, _ := opt["Type"].(string); strings.EqualFold(name, typeName) {
+			return opt, true
+		}
+	}
+	return nil, false
+}
+
+// StringsFromRaw converts a string list out of a LibraryOptions map into a
+// []string, dropping non-string members. Always returns a non-nil slice so a
+// caller serializing it back gets [] rather than null -- a null list is one
+// of the shapes the peer rejects.
+//
+// BOTH slice shapes are handled, and that is not defensive padding -- the
+// map genuinely holds either, depending on who last wrote the key:
+//
+//   - []any, when the value came from the peer via json.Unmarshal, which
+//     decodes every JSON array into []any.
+//   - []string, when Stillwater wrote it. DisableFileWriteBack assigns
+//     opts["MetadataSavers"] = []string{}, and MergeTypeOptionRaw copies
+//     caller-supplied field values verbatim, so a caller passing a Go
+//     []string stores one.
+//
+// Handling only []any made this silently report an EMPTY list for a
+// Stillwater-written value of any length: the type assertion failed, raw
+// came back nil, and the loop ran zero times. Harmless where nothing reads
+// back before the POST, but a false "no fetchers configured" is
+// indistinguishable from a genuine clean, which is precisely the
+// false-clean class of bug this package exists to eliminate. Read-side
+// normalization is the right place to resolve it because the ambiguity is
+// created by multiple writers, not by one.
+func StringsFromRaw(v any) []string {
+	switch raw := v.(type) {
+	case []string:
+		out := make([]string, 0, len(raw))
+		return append(out, raw...)
+	case []any:
+		out := make([]string, 0, len(raw))
+		for _, item := range raw {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return []string{}
+	}
 }
 
 // GetMusicLibrariesRaw fetches /Library/VirtualFolders as an array of
@@ -295,14 +528,27 @@ func DisableFileWriteBack(ctx context.Context, t Transport, logger *slog.Logger,
 // Sanitized before the POST to avoid the same null-key crash
 // DisableFileWriteBack works around -- the server's POST handler chokes
 // on explicit-null values that the GET response happily returns.
+//
+// Both snapshot versions are accepted. A version 2 snapshot additionally
+// replays each library's MusicArtist image-fetcher list; a version 1
+// snapshot leaves TypeOptions untouched, because v1 predates Stillwater
+// recording that lever and an empty list there means "not recorded", not
+// "the operator had none" (see SnapshotVersion). Restoring a v1 snapshot
+// therefore hands back exactly what v1 captured and no more -- it never
+// clears a fetcher list it has no record of.
 func RestoreLibraryOptions(ctx context.Context, t Transport, logger *slog.Logger, platform, snapshotJSON string) error {
 	var snap LibraryWriteBackSnapshot
 	if err := json.Unmarshal([]byte(snapshotJSON), &snap); err != nil {
 		return fmt.Errorf("decoding snapshot: %w", err)
 	}
-	if snap.Version != 1 {
+	if snap.Version != SnapshotVersionSavers && snap.Version != SnapshotVersionWithFetchers {
 		return fmt.Errorf("unsupported snapshot version %d", snap.Version)
 	}
+	// Exactly v2, not ">= v2". Identical behavior today because the gate
+	// above admits only v1 and v2, but a future v3 added to that gate would
+	// be opted into fetcher-replay by a >= comparison without anyone
+	// deciding it should be. Each version states its own semantics.
+	restoreFetchers := snap.Version == SnapshotVersionWithFetchers
 	libs, err := GetMusicLibrariesRaw(ctx, t, logger, platform)
 	if err != nil {
 		return fmt.Errorf("getting music libraries: %w", err)
@@ -330,6 +576,20 @@ func RestoreLibraryOptions(ctx context.Context, t Transport, logger *slog.Logger
 			savers = []string{}
 		}
 		opts["MetadataSavers"] = savers
+		// v2 only: hand the operator's MusicArtist image fetchers back.
+		// Merged by Type so the peer's MusicVideo/MusicAlbum entries
+		// survive the round-trip untouched.
+		if restoreFetchers {
+			fetchers := entry.ImageFetchers
+			if fetchers == nil {
+				fetchers = []string{}
+			}
+			opts["TypeOptions"] = MergeTypeOptionRaw(
+				TypeOptionsFrom(opts),
+				TypeMusicArtist,
+				map[string]any{"ImageFetchers": fetchers},
+			)
+		}
 		if err := PostLibraryOptionsRaw(ctx, t, logger, platform, lib.ID, opts); err != nil {
 			if firstErr == nil {
 				firstErr = err

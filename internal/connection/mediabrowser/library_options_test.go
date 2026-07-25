@@ -278,9 +278,14 @@ func TestDisableFileWriteBack_ReturnsFirstErrorButContinues(t *testing.T) {
 	}
 }
 
+// Re-pointed from version 2 to 99 when v2 became a SUPPORTED version. Left
+// at 2 this test would have gone on passing for the wrong reason -- asserting
+// that a version we now accept is rejected -- and quietly stopped guarding
+// the unknown-version path at all. See snapshot_version_test.go for the
+// v1/v2 accept cases and the v3/v0 reject cases.
 func TestRestoreLibraryOptions_RejectsUnknownVersion(t *testing.T) {
 	tr := newFakeTransport()
-	err := RestoreLibraryOptions(context.Background(), tr, testLogger(), "emby", `{"version":2,"libraries":[]}`)
+	err := RestoreLibraryOptions(context.Background(), tr, testLogger(), "emby", `{"version":99,"libraries":[]}`)
 	if err == nil || !strings.Contains(err.Error(), "unsupported snapshot version") {
 		t.Errorf("expected version error, got %v", err)
 	}
