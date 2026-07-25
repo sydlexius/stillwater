@@ -991,3 +991,403 @@ func TestDedupeChangeIDs(t *testing.T) {
 		}
 	}
 }
+
+// forceChangeIdentity rewrites one history row's id AND created_at in a single
+// statement so a fixture can pin exactly where that row lands in the report's
+// `ORDER BY created_at DESC, id DESC` ranking.
+//
+// Both columns move together because that ordering is the thing under test:
+// setting one without the other leaves the tie half-constructed and the test
+// would pass or fail on whichever random UUID the service happened to mint.
+func forceChangeIdentity(t *testing.T, r *Router, oldID, newID string, ts time.Time) {
+	t.Helper()
+	res, err := r.db.ExecContext(context.Background(),
+		`UPDATE metadata_changes SET id = ?, created_at = ? WHERE id = ?`,
+		newID, ts.UTC().Format(time.RFC3339), oldID)
+	if err != nil {
+		t.Fatalf("forcing identity of change %s: %v", oldID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		t.Fatalf("forcing identity of change %s: rows affected: %v", oldID, err)
+	}
+	if n != 1 {
+		t.Fatalf("forcing identity of change %s affected %d rows, want 1", oldID, n)
+	}
+}
+
+// TestBlastRestore_SameSecondTieDoesNotClobberNewerValue is the regression test
+// for the data-loss defect this endpoint shipped with.
+//
+// THE DEFECT. Eligibility check 3 asks the blast-radius report whether the
+// requested row is still the row it would list for that (artist, field). That
+// question is answered by the report's ranking, which is
+// `ORDER BY mc.created_at DESC, mc.id DESC`, and every production history write
+// stamps created_at at RFC 3339 SECOND resolution. When a newer operator edit
+// and the damage row land inside the SAME SECOND, created_at TIES and the
+// tiebreak compares two random UUIDs. About half the time the STALE damage row
+// sorts first, check 3 passes, and the restore writes the old value over the
+// operator's newer one -- returning 200 restored=1, so the operator has no
+// signal that they just lost an edit. A one-second window needs only an
+// operator editing a field while a scan or a bulk rule pass touches it.
+//
+// THE FIXTURE makes that coin-flip deterministic rather than hoping for it: it
+// stamps both rows to the same second and forces the newer row's id to sort
+// BELOW the damage row's, so the damage row provably wins the tiebreak every
+// run. The precondition below asserts that it does; without it this test would
+// silently stop exercising the defect the day the ranking changed.
+//
+// THE ASSERTION is the operator's value in the database afterwards, not a
+// status code. A handler that refused for the wrong reason would still pass a
+// status assertion; only reading the field back proves the edit survived.
+func TestBlastRestore_SameSecondTieDoesNotClobberNewerValue(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := restoreTestRouter(t)
+	a := addTestArtist(t, artistSvc, "Same Second Tie Artist")
+
+	const (
+		olderValue = "old operator bio"
+		newerValue = "NEWER deliberate bio"
+	)
+
+	damageID := damageField(t, r, artistSvc, historySvc, a.ID, "biography", olderValue, "")
+
+	// The operator edits the field again, moments later. In production this is
+	// an ordinary manual write racing a scan.
+	manualCtx := artist.ContextWithSource(context.Background(), "manual")
+	if _, err := artistSvc.UpdateField(manualCtx, a.ID, "biography", newerValue); err != nil {
+		t.Fatalf("writing the newer operator value: %v", err)
+	}
+	newerID := latestChangeID(t, historySvc, a.ID, "biography")
+
+	// Collapse the two rows into one second and force the newer row's id to
+	// lose the `id DESC` tiebreak. "0000..." sorts below any hex UUID, and the
+	// damage row keeps the UUID the service minted for it.
+	tie := damageBase.Add(time.Duration(damageSeq.Add(1)) * time.Second)
+	backdateChange(t, r, damageID, tie)
+	forceChangeIdentity(t, r, newerID, "00000000-0000-0000-0000-000000000000", tie)
+
+	// PRECONDITION: the ranking really does put the STALE row first, so
+	// eligibility check 3 passes and this test reaches check 4. If the report
+	// already refused this row, the assertion below would pass vacuously
+	// against the very bug it exists to catch.
+	f := artist.BlastRadiusFilter{ArtistID: a.ID, Field: "biography"}
+	f.Validate()
+	rows, err := historySvc.ListBlastRadius(context.Background(), f)
+	if err != nil {
+		t.Fatalf("ListBlastRadius (precondition): %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != damageID {
+		t.Fatalf("precondition: report ranked %+v first, want the STALE damage row %s; "+
+			"the same-second tie is not constructed, so this test would not exercise the defect",
+			rows, damageID)
+	}
+
+	// PRECONDITION: the newer value is really in the field right now.
+	before, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID before: %v", err)
+	}
+	if before.Biography != newerValue {
+		t.Fatalf("precondition: biography = %q, want %q", before.Biography, newerValue)
+	}
+
+	// The PREVIEW must refuse too, and it is asserted separately from the
+	// commit: the preview is what an operator reads before deciding, so a plan
+	// that offers to write this row is already wrong even if the commit path
+	// later catches it. Asserting only the commit would leave the plan-time
+	// check untested, because the pre-write re-check would cover for it.
+	_, preview := postRestore(t, r, `{"change_ids":["`+damageID+`"]}`)
+	if preview.Eligible != 0 || preview.Refused != 1 {
+		t.Fatalf("preview: eligible=%d refused=%d, want 0/1; a plan that lists this row as "+
+			"restorable tells the operator a stale write is safe; items: %+v",
+			preview.Eligible, preview.Refused, preview.Items)
+	}
+	if preview.Items[0].Reason != blastRefuseNotCurrent {
+		t.Errorf("preview reason = %q, want %q", preview.Items[0].Reason, blastRefuseNotCurrent)
+	}
+
+	w, resp := postRestore(t, r, `{"change_ids":["`+damageID+`"],"commit":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	// THE ARTIFACT, read back from the database: the operator's newer edit
+	// survived. This is the assertion that fails against the shipped defect.
+	after, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after: %v", err)
+	}
+	if after.Biography != newerValue {
+		t.Fatalf("biography = %q, want %q: the restore overwrote a NEWER operator value "+
+			"with a stale one because the two history rows tied on created_at",
+			after.Biography, newerValue)
+	}
+
+	if resp.Refused != 1 || resp.Restored != 0 {
+		t.Fatalf("refused=%d restored=%d, want 1/0; items: %+v", resp.Refused, resp.Restored, resp.Items)
+	}
+	if resp.Items[0].Reason != blastRefuseNotCurrent {
+		t.Errorf("reason = %q, want %q", resp.Items[0].Reason, blastRefuseNotCurrent)
+	}
+}
+
+// TestBlastRestore_RefusesAnOlderDamageRowForTheSamePair pins the
+// `rows[0].ID == change.ID` clause of eligibility check 3 specifically.
+//
+// The existing superseded-row test does not reach that clause: its newer edit
+// recovers the pair, so the report returns NO row at all and the len(rows)==1
+// half of the predicate already refuses. Deleting the id comparison therefore
+// leaves that test green.
+//
+// This fixture damages the SAME (artist, field) TWICE. The report still lists
+// the pair, so len(rows)==1 holds, but the row it lists is the SECOND damage
+// row. Requesting the FIRST one is what only the id comparison can catch.
+//
+// The two damage rows deliberately share a new_value (both blank the field),
+// so the live-value check 4 passes for either row and cannot mask the clause
+// under test: check 3's id comparison is the ONLY thing refusing here.
+func TestBlastRestore_RefusesAnOlderDamageRowForTheSamePair(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := restoreTestRouter(t)
+	a := addTestArtist(t, artistSvc, "Twice Damaged Artist")
+
+	firstDamageID := damageField(t, r, artistSvc, historySvc, a.ID, "biography", "first operator bio", "")
+	secondDamageID := damageField(t, r, artistSvc, historySvc, a.ID, "biography", "second operator bio", "")
+
+	if firstDamageID == secondDamageID {
+		t.Fatalf("fixture: both damage rows have id %s; there is no older row to request", firstDamageID)
+	}
+
+	// PRECONDITION A: the report DOES still list this pair, so len(rows)==1 is
+	// satisfied and the id comparison is the only clause left to do the work.
+	f := artist.BlastRadiusFilter{ArtistID: a.ID, Field: "biography"}
+	f.Validate()
+	rows, err := historySvc.ListBlastRadius(context.Background(), f)
+	if err != nil {
+		t.Fatalf("ListBlastRadius (precondition): %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("precondition: report rows = %+v, want exactly one; with no row the "+
+			"len() clause would refuse and this test would not cover the id comparison", rows)
+	}
+	if rows[0].ID != secondDamageID {
+		t.Fatalf("precondition: report lists %s, want the SECOND damage row %s", rows[0].ID, secondDamageID)
+	}
+
+	// PRECONDITION B: the live value equals BOTH damage rows' new_value, so
+	// check 4 would accept the older row. Only the id comparison refuses it.
+	before, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID before: %v", err)
+	}
+	if before.Biography != "" {
+		t.Fatalf("precondition: biography = %q, want empty (both damage rows blanked it)",
+			before.Biography)
+	}
+
+	w, resp := postRestore(t, r, `{"change_ids":["`+firstDamageID+`"],"commit":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if resp.Refused != 1 || resp.Restored != 0 {
+		t.Fatalf("refused=%d restored=%d, want 1/0; an older damage row for a pair the report "+
+			"still lists must be refused: items: %+v", resp.Refused, resp.Restored, resp.Items)
+	}
+	if resp.Items[0].Reason != blastRefuseNotCurrent {
+		t.Errorf("reason = %q, want %q", resp.Items[0].Reason, blastRefuseNotCurrent)
+	}
+
+	// THE ARTIFACT: the superseded operator value was NOT written back.
+	after, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after: %v", err)
+	}
+	if after.Biography != "" {
+		t.Errorf("biography = %q, want empty: restoring the FIRST damage row would resurrect "+
+			"a value two writes out of date", after.Biography)
+	}
+}
+
+// listBlastErrHistoryRepo delegates every history operation to a real repo
+// except ListBlastRadius, which always fails. Isolating that one method is
+// what makes the eligibility query's error path reachable while check 1
+// (GetByID) still resolves the row normally, so the refusal provably comes
+// from the currency check rather than from an id that stopped resolving.
+//
+// This uses artist.NewHistoryServiceWithRepo, an existing exported seam that
+// three other test files in this package already decorate the same way. No
+// production code was added to make this branch reachable.
+type listBlastErrHistoryRepo struct {
+	delegate artist.HistoryRepository
+}
+
+// errForcedBlastQuery is the sentinel the decorator returns. The handler logs
+// it and refuses the row, so assertions are on the response and the database,
+// never on this value reaching the caller.
+var errForcedBlastQuery = errors.New("forced blast-radius query failure")
+
+func (l listBlastErrHistoryRepo) Record(ctx context.Context, c *artist.MetadataChange) error {
+	return l.delegate.Record(ctx, c)
+}
+
+func (l listBlastErrHistoryRepo) GetByID(ctx context.Context, id string) (*artist.MetadataChange, error) {
+	return l.delegate.GetByID(ctx, id)
+}
+
+func (l listBlastErrHistoryRepo) List(ctx context.Context, artistID string, limit, offset int) (
+	[]artist.MetadataChange, int, error,
+) {
+	return l.delegate.List(ctx, artistID, limit, offset)
+}
+
+func (l listBlastErrHistoryRepo) ListGlobal(ctx context.Context, filter artist.GlobalHistoryFilter) (
+	[]artist.MetadataChangeWithArtist, int, error,
+) {
+	return l.delegate.ListGlobal(ctx, filter)
+}
+
+func (l listBlastErrHistoryRepo) ListBlastRadius(_ context.Context, _ artist.BlastRadiusFilter) (
+	[]artist.BlastRadiusRow, error,
+) {
+	return nil, errForcedBlastQuery
+}
+
+func (l listBlastErrHistoryRepo) CountBlastRadius(ctx context.Context, f artist.BlastRadiusFilter) (
+	artist.BlastRadiusCounts, error,
+) {
+	return l.delegate.CountBlastRadius(ctx, f)
+}
+
+// TestBlastRestore_EligibilityQueryErrorRefuses pins the documented safety
+// property of isCurrentBlastRow: when the eligibility query cannot be answered,
+// the row is REFUSED, never written.
+//
+// This is the predicate's default DIRECTION, and it is the whole reason the
+// function returns (false, err) instead of an error the caller might read as
+// "assume current". Inverting that one line to `return true, nil` leaves every
+// other test in the suite green while turning an unreadable database into an
+// unconditional license to overwrite operator data -- on the one endpoint whose
+// entire purpose is recovery.
+//
+// The row is otherwise fully eligible: it resolves, it is trackable, it is not
+// a revert, and the live field still holds the damage. The ONLY thing wrong is
+// that the currency check cannot run.
+func TestBlastRestore_EligibilityQueryErrorRefuses(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := restoreTestRouter(t)
+	a := addTestArtist(t, artistSvc, "Query Failure Artist")
+
+	changeID := damageField(t, r, artistSvc, historySvc, a.ID, "biography", "bio behind a broken query", "")
+
+	// PRECONDITION: with the real repo this exact request RESTORES. Without
+	// this the test could pass against a fixture that was never eligible, and
+	// "refused" would prove nothing about the error path.
+	_, okResp := postRestore(t, r, `{"change_ids":["`+changeID+`"]}`)
+	if okResp.Eligible != 1 {
+		t.Fatalf("precondition: eligible = %d with a healthy query, want 1; items: %+v",
+			okResp.Eligible, okResp.Items)
+	}
+
+	failing := artist.NewHistoryServiceWithRepo(listBlastErrHistoryRepo{delegate: historySvc.Repo()})
+	r.historyService = failing
+
+	// PRECONDITION: the decorator really does fail the eligibility query while
+	// leaving id resolution intact, so the refusal below cannot come from the
+	// row simply ceasing to exist.
+	f := artist.BlastRadiusFilter{ArtistID: a.ID, Field: "biography"}
+	f.Validate()
+	if _, err := failing.ListBlastRadius(context.Background(), f); !errors.Is(err, errForcedBlastQuery) {
+		t.Fatalf("precondition: ListBlastRadius returned %v, want errForcedBlastQuery", err)
+	}
+	if _, err := failing.GetByID(context.Background(), changeID); err != nil {
+		t.Fatalf("precondition: GetByID through the decorator failed: %v", err)
+	}
+
+	w, resp := postRestore(t, r, `{"change_ids":["`+changeID+`"],"commit":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if resp.Refused != 1 || resp.Restored != 0 {
+		t.Fatalf("refused=%d restored=%d, want 1/0: an unreadable eligibility check must "+
+			"refuse, not assume the row is current; items: %+v", resp.Refused, resp.Restored, resp.Items)
+	}
+	if resp.Items[0].Reason != blastRefuseNotCurrent {
+		t.Errorf("reason = %q, want %q", resp.Items[0].Reason, blastRefuseNotCurrent)
+	}
+
+	// THE ARTIFACT: nothing was written.
+	after, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after: %v", err)
+	}
+	if after.Biography != "" {
+		t.Errorf("biography = %q, want empty: a refused restore must not write", after.Biography)
+	}
+}
+
+// TestBlastRestore_CommitRecheckRefusesAWriteRacedAfterPlanning pins the
+// live-value re-check that runs immediately BEFORE each write.
+//
+// A check that runs only while the plan is built cannot close a window that
+// opens after planning. The restore singleton excludes other RESTORES only; it
+// does not exclude the scanner, the rule pipeline, or an ordinary field edit,
+// any of which can land between the plan and the write. Without the re-check
+// the handler writes a plan it verified against state that no longer exists,
+// which on this endpoint means overwriting the very edit an operator made
+// while reviewing the preview.
+//
+// The two phases are driven directly, plan then external write then commit,
+// because that sequence is exactly the window and no HTTP-level fixture can
+// interleave a third-party write inside one request.
+func TestBlastRestore_CommitRecheckRefusesAWriteRacedAfterPlanning(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := restoreTestRouter(t)
+	a := addTestArtist(t, artistSvc, "Raced Commit Artist")
+
+	const racedValue = "written while the operator was reading the preview"
+	changeID := damageField(t, r, artistSvc, historySvc, a.ID, "biography", "bio at plan time", "")
+
+	ctx := context.Background()
+	items := r.planBlastRestore(ctx, []string{changeID})
+
+	// PRECONDITION: the plan really did decide to write. If it had refused,
+	// the commit loop would skip the row and the re-check below would never
+	// run, leaving this test green for the wrong reason.
+	if len(items) != 1 || items[0].Status != blastRestorePlanned {
+		t.Fatalf("precondition: plan = %+v, want one planned item", items)
+	}
+
+	// The race: something else writes the field between the plan and the
+	// commit. A plain operator edit stands in for the scanner or rule pass.
+	manualCtx := artist.ContextWithSource(ctx, "manual")
+	if _, err := artistSvc.UpdateField(manualCtx, a.ID, "biography", racedValue); err != nil {
+		t.Fatalf("racing a write in after the plan: %v", err)
+	}
+
+	r.commitBlastRestore(ctx, items)
+
+	// THE ARTIFACT: the raced-in value survived. This is the assertion that
+	// fails when the commit path trusts the plan.
+	after, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after: %v", err)
+	}
+	if after.Biography != racedValue {
+		t.Fatalf("biography = %q, want %q: a write that landed after planning was "+
+			"overwritten by a plan nobody re-verified", after.Biography, racedValue)
+	}
+
+	if items[0].Status != blastRestoreRefused || items[0].Reason != blastRefuseNotCurrent {
+		t.Errorf("item status=%q reason=%q, want %q/%q",
+			items[0].Status, items[0].Reason, blastRestoreRefused, blastRefuseNotCurrent)
+	}
+	// The refused item reports the value that caused the refusal, so an
+	// operator reading the response sees what is actually in the field.
+	if items[0].CurrentValue != racedValue {
+		t.Errorf("current_value = %q, want %q", items[0].CurrentValue, racedValue)
+	}
+	if items[0].RestoreChangeID != "" {
+		t.Errorf("restore_change_id = %q, want empty: nothing was written", items[0].RestoreChangeID)
+	}
+}

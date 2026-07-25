@@ -39,20 +39,56 @@
 //     (artist, field) pair -- verified by re-running the report's own query,
 //     narrowed to that artist and field, and requiring the top row's id to
 //     equal the requested id.
+//  4. The artist's LIVE field value is still one this restore is allowed to
+//     act on: either the value the damage row left behind (the damage is
+//     still there, so undoing it is exactly what the operator asked for) or
+//     the value about to be written (already recovered, so the write is a
+//     no-op). Anything else means something wrote this field since the damage
+//     landed, and the restore refuses.
 //
-// Check 3 is the load-bearing one and it is deliberately a positive match
-// rather than a "not known to be stale" test. The report ranks one row per
-// (artist_id, field) and keeps it only if it is still damage, so a pair that
-// has since been recovered, overwritten again, or edited by the operator no
-// longer yields that id at the top. Requiring the id to come BACK from the
+// Checks 3 and 4 are the load-bearing ones and they are deliberately positive
+// matches rather than "not known to be stale" tests. The report ranks one row
+// per (artist_id, field) and keeps it only if it is still damage, so a pair
+// that has since been recovered, overwritten again, or edited by the operator
+// no longer yields that id at the top. Requiring the id to come BACK from the
 // report means a stale browser tab, a replayed request, or a bulk selection
 // assembled ten minutes ago cannot write an old value over a newer one. It
 // also makes duplicate ids for one (artist, field) impossible to smuggle in:
 // the report yields at most one row per pair, so at most one can match.
 //
-// Inverting this into a deny-list ("refuse if we can prove it is stale") would
-// mean every unanticipated state defaults to WRITING. On a recovery path that
-// is the wrong default direction.
+// # WHY CHECK 4 EXISTS: RANK POSITION IS NOT A CURRENCY PROOF
+//
+// Check 3 inherits the report's ranking, which is
+// `ORDER BY mc.created_at DESC, mc.id DESC`, and every history write stamps
+// created_at at RFC 3339 SECOND resolution. Two writes to the same
+// (artist, field) inside one second therefore TIE on created_at and fall
+// through to comparing two random UUIDs. Roughly half the time a damage row
+// ranks above a NEWER operator edit that landed in the same second, check 3
+// passes, and the restore overwrites the operator's newer value with the older
+// one -- reporting 200 restored=1, so the operator gets no signal that they
+// just lost an edit. A one-second window needs only an operator editing a
+// field while a scan or a bulk rule pass touches the same field.
+//
+// Check 4 does not infer currency from ranking. It reads the artist's field as
+// it actually is and requires it to still be the value the damage left behind
+// (or, harmlessly, the value being written). A newer write of any kind lands a
+// value that is neither, so the row is refused no matter how the two history
+// rows happen to sort.
+//
+// Check 4 also runs a SECOND time inside commitBlastRestore, immediately
+// before each write, because a check that runs only at plan time cannot close
+// a window that opens after planning. The singleton excludes other RESTORES
+// only; it does not exclude the scanner, the rule pipeline, or an ordinary
+// field edit, any of which can land between the plan and the write. Re-running
+// it per row narrows that window from "the whole request" to the few
+// statements between the check and performRevert. It does NOT reduce the
+// window to zero -- closing it completely would need a conditional UPDATE at
+// the repository layer, which this endpoint does not have -- but it removes
+// the long, operator-visible window in which a plan sits unenforced.
+//
+// Inverting these into a deny-list ("refuse if we can prove it is stale")
+// would mean every unanticipated state defaults to WRITING. On a recovery path
+// that is the wrong default direction.
 //
 // # A RESTORE DOES NOT RE-TRIGGER THE WRITER THAT CAUSED THE DAMAGE
 //
@@ -72,6 +108,22 @@
 // and NOTHING else that could cascade. No PublishMetadata, no ArtistUpdated.
 // The only event emitted is activity.recent, which is a UI notification for
 // the dashboard rail and has no subscriber that writes anything.
+//
+// That is the EVENT-BUS half, and it is the only half this handler controls.
+// It is not the same claim as "the artist is never looked at again". The write
+// goes through artistService.UpdateField / ClearField, which call
+// markDirtyBestEffort (internal/artist/service.go) and stamp dirty_since on
+// the artist row DIRECTLY, bypassing the bus entirely. The artist therefore
+// appears in ListDirtyIDs and the next INCREMENTAL rule pass re-evaluates it,
+// exactly as it would after any other field write.
+//
+// This is inherited from the single-revert endpoint, which has always behaved
+// this way, so it is consistent precedent rather than something this endpoint
+// introduces, and suppressing it here would make a bulk restore behave
+// differently from the single undo it is a bulk version of. What the guard
+// above buys is that the restore does not SYNCHRONOUSLY hand the recovered
+// value back to a subscriber the moment it is written, and does not re-publish
+// it to connected platforms.
 //
 // The write itself still records history (performRevert injects source
 // "revert"), so the restore is auditable and shows up in the artist's history
@@ -290,6 +342,49 @@ func (r *Router) isCurrentBlastRow(ctx context.Context, change *artist.MetadataC
 	return len(rows) == 1 && rows[0].ID == change.ID, nil
 }
 
+// liveValueRestorable reports whether the artist's field, READ AS IT IS RIGHT
+// NOW, is still a value this restore is allowed to act on. It is check 4 of
+// the allow-list and the only check that is not derived from the history
+// table's ordering.
+//
+// Exactly two live values are acceptable:
+//
+//	change.NewValue -- the damage the row describes is still sitting in the
+//	field, so putting the old value back is precisely the operator's request.
+//	change.OldValue -- the field already holds what would be written, so the
+//	write is a no-op. Accepted so an already-recovered pair reports "unchanged"
+//	rather than a refusal, which is what the operator means either way.
+//
+// Any OTHER live value means something wrote this field after the damage
+// landed. That writer is not necessarily recorded in a way the ranking can
+// see: history is best-effort, timestamps have one-second resolution, and a
+// tie between two rows in the same second is broken by comparing random
+// UUIDs. So a rank-position check can say "still current" about a row whose
+// value has already been superseded. Reading the field settles it against the
+// database rather than against an ordering.
+//
+// The comparison is against artist.FieldValueFromArtist, which is the same
+// function the history recorder uses to derive old_value and new_value
+// (internal/artist/service.go), so slice fields are compared in one
+// representation on both sides rather than "Rock, Pop" against "Rock,Pop".
+//
+// A missing artist propagates the fetch error: there is nothing to restore
+// onto, and the caller refuses on any error rather than assuming the value is
+// still restorable.
+//
+// The artist is returned alongside so the caller can use it for display
+// without a second read of the same row.
+func (r *Router) liveValueRestorable(ctx context.Context, change *artist.MetadataChange) (
+	ok bool, live string, a *artist.Artist, err error,
+) {
+	a, err = r.artistService.GetByID(ctx, change.ArtistID)
+	if err != nil {
+		return false, "", nil, err
+	}
+	live = artist.FieldValueFromArtist(a, change.Field)
+	return live == change.NewValue || live == change.OldValue, live, a, nil
+}
+
 // planBlastRestore resolves every requested id into an item with a decided
 // status, WITHOUT writing anything. Both the preview and the commit path call
 // it, so the plan an operator approves is computed by the same code that later
@@ -349,20 +444,29 @@ func (r *Router) planOneBlastRestore(ctx context.Context, id string) blastRestor
 		return item
 	}
 
-	// Read the live artist so the preview shows what is actually in the
-	// database now, not what the change row recorded at the time. A missing
-	// artist is a refusal, not a write against an id that no longer exists.
-	a, err := r.artistService.GetByID(ctx, change.ArtistID)
+	// Check 4: the LIVE field value is still one this restore may act on. This
+	// also reads the artist, so the preview shows what is actually in the
+	// database now rather than what the change row recorded at the time. A
+	// missing artist is a refusal, not a write against an id that no longer
+	// exists.
+	liveOK, live, a, err := r.liveValueRestorable(ctx, change)
 	if err != nil {
 		if !errors.Is(err, artist.ErrNotFound) {
-			r.logger.Error("blast restore: fetching artist",
-				"change_id", id, "artist_id", change.ArtistID, "error", err)
+			r.logger.Error("blast restore: reading live field value",
+				"change_id", id, "artist_id", change.ArtistID, "field", change.Field, "error", err)
 		}
 		item.Reason = blastRefuseNotCurrent
 		return item
 	}
 	item.ArtistName = a.Name
-	item.CurrentValue = artist.FieldValueFromArtist(a, change.Field)
+	item.CurrentValue = live
+	if !liveOK {
+		// Something wrote this field after the damage row. Refused under the
+		// same reason as a stale rank: from the operator's side both mean
+		// "this row no longer describes the field as it is".
+		item.Reason = blastRefuseNotCurrent
+		return item
+	}
 
 	item.Status = blastRestorePlanned
 	item.Reason = ""
@@ -398,6 +502,30 @@ func (r *Router) commitBlastRestore(ctx context.Context, items []blastRestoreIte
 				"change_id", it.ChangeID, "error", err)
 			it.Status = blastRestoreRefused
 			it.Reason = blastRefuseNotFound
+			continue
+		}
+
+		// RE-CHECK the live value immediately before writing. Planning happened
+		// earlier in this request, and the singleton excludes other restores
+		// only -- a scan, a rule pass, or an ordinary field edit can land
+		// between the plan and this line. Without this the handler would write
+		// a plan it verified against state that no longer exists, which on a
+		// recovery path means overwriting the very edit the operator made
+		// while reviewing the preview. See this file's package comment for why
+		// this narrows rather than eliminates the window.
+		liveOK, live, _, err := r.liveValueRestorable(ctx, change)
+		if err != nil {
+			r.logger.Error("blast restore: re-reading live field value before write",
+				"change_id", it.ChangeID, "artist_id", change.ArtistID,
+				"field", change.Field, "error", err)
+			it.Status = blastRestoreRefused
+			it.Reason = blastRefuseNotCurrent
+			continue
+		}
+		if !liveOK {
+			it.Status = blastRestoreRefused
+			it.Reason = blastRefuseNotCurrent
+			it.CurrentValue = live
 			continue
 		}
 

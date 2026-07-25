@@ -11536,12 +11536,18 @@ paths:
 
         A row is restorable only when all of the following are affirmatively
         true: the change id resolves exactly to a metadata_changes row; that
-        row is history-tracked and is not itself a revert; and it is STILL the
-        row the blast-radius report lists for its artist and field. The last
-        check is what stops a stale selection from overwriting a newer value
-        with an older one: an id that no longer comes back from the report is
-        refused with reason no_longer_current, never written on the assumption
-        that it is probably still valid.
+        row is history-tracked and is not itself a revert; it is STILL the row
+        the blast-radius report lists for its artist and field; and the
+        artist's LIVE field value is still either the value that change left
+        behind or the value about to be written. The last two checks are what
+        stop a stale selection from overwriting a newer value with an older
+        one, and both refuse with reason no_longer_current rather than writing
+        on the assumption that the row is probably still valid.
+
+
+        The live-value check is re-run immediately before each write, not only
+        when the plan is built, so a field edited between the preview and the
+        commit is refused rather than overwritten.
 
 
         Each restore is recorded in the artist's change history with source
@@ -11631,6 +11637,10 @@ paths:
                           type: string
                           description: >
                             What the field holds now, read live at plan time.
+                            On a committed write that landed this is updated to
+                            the restored value; on a row refused by the
+                            pre-write live-value re-check it is the value that
+                            caused the refusal.
                         restore_value:
                           type: string
                           description: The operator value that would be put back.
@@ -11659,21 +11669,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Administrator role required.
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            (requireForeignAdmin) via http.Error, so the body is plain text
+            rather than the JSON Error schema.
+          content:
+            text/plain:
+              schema:
+                type: string
         "409":
-          description: A restore is already in progress.
+          description: >-
+            A restore is already in progress. The singleton responds with its
+            own {status, message} object, not the Error schema, matching the
+            registry-repair remediate endpoint.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
         "503":
           description: The history store is unavailable.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "500":
-          description: Internal server error
           content:
             application/json:
               schema:
