@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/library"
 )
 
 // peerServing stands up a fake peer returning the given
@@ -212,6 +214,9 @@ func TestJellyfinWarning_DefaultedCopyDiffersFromExplicitCopy(t *testing.T) {
 	if len(explicit) != 1 {
 		t.Fatalf("got %d warnings, want 1", len(explicit))
 	}
+	if explicit[0].Defaulted {
+		t.Fatal("Defaulted = true for an explicitly configured library")
+	}
 
 	assertDefaultedCopyIsSubstantive(t, "Jellyfin", defaulted[0].Message, explicit[0].Message)
 
@@ -258,6 +263,113 @@ func TestEmbyWarning_ConfiguredEmptyLibraryProducesNoWarning(t *testing.T) {
 		t.Errorf("got %d warnings, want 0 for a deliberately configured library with no "+
 			"fetchers. Warning here would penalize operators who did exactly the right "+
 			"thing: %+v", len(warnings), warnings)
+	}
+}
+
+// peerFailing stands up a fake peer that refuses every request with 500, and
+// a Connection pointing at it. This is what drives the two "could not check"
+// error paths: the client's CheckImageFetchersEnabled returns an error, and
+// the handler builds a warning with no fetcher names at all.
+func peerFailing(t *testing.T, connType string) (*Router, *connection.Connection) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "peer is down", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	r := &Router{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	conn := &connection.Connection{
+		ID: "conn-1", Name: "Test Peer", URL: srv.URL, APIKey: "key",
+		Type: connType,
+	}
+	return r, conn
+}
+
+// TestWarning_ErrorPathsSerializeFetcherNamesAsArray covers the three paths
+// that build a warning WITHOUT ever having a fetcher list to put in it: the
+// connection lookup failing, and the Emby / Jellyfin checks failing against
+// an unreachable peer. They reach exactly the same JSON contract as the
+// success paths -- "always an array, never null" -- and they are the paths a
+// strict generated client is most likely to meet first, because they fire
+// whenever a peer is down.
+//
+// Each case is driven through the real code path rather than by constructing
+// the struct, and asserts on the marshaled bytes. The message precondition
+// is what keeps it honest: without it, a case that quietly took the SUCCESS
+// path would still pass, since the success paths normalize too.
+func TestWarning_ErrorPathsSerializeFetcherNamesAsArray(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// wantMessage identifies the error path. If the code took some
+		// other branch, this fails and the JSON assertion below is not
+		// credited to a path it never exercised.
+		wantMessage string
+		produce     func(*testing.T) []connection.ImageFetcherWarning
+	}{
+		{
+			name:        "connection lookup fails",
+			wantMessage: "Could not load connection settings",
+			produce: func(t *testing.T) []connection.ImageFetcherWarning {
+				t.Helper()
+				db := newTestDB(t)
+				enc, _, err := encryption.NewEncryptor("")
+				if err != nil {
+					t.Fatalf("encryptor: %v", err)
+				}
+				r := &Router{
+					logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+					connectionService: connection.NewService(db, enc),
+				}
+				// No connection row with this ID exists, so GetByID errors.
+				return r.collectImageFetcherWarnings(context.Background(),
+					[]library.Library{{ID: "lib-1", ConnectionID: "does-not-exist"}})
+			},
+		},
+		{
+			name:        "emby check fails",
+			wantMessage: "Could not check Emby image fetcher settings",
+			produce: func(t *testing.T) []connection.ImageFetcherWarning {
+				t.Helper()
+				r, conn := peerFailing(t, "emby")
+				return r.checkEmbyImageFetchers(context.Background(), conn)
+			},
+		},
+		{
+			name:        "jellyfin check fails",
+			wantMessage: "Could not check Jellyfin image fetcher settings",
+			produce: func(t *testing.T) []connection.ImageFetcherWarning {
+				t.Helper()
+				r, conn := peerFailing(t, "jellyfin")
+				return r.checkJellyfinImageFetchers(context.Background(), conn)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			warnings := tc.produce(t)
+			if len(warnings) != 1 {
+				t.Fatalf("got %d warnings, want 1", len(warnings))
+			}
+			// Precondition: confirm this really is the error path. A test
+			// that silently took the success path would assert nothing.
+			if !strings.Contains(warnings[0].Message, tc.wantMessage) {
+				t.Fatalf("precondition: expected the error path (message containing %q), got %q",
+					tc.wantMessage, warnings[0].Message)
+			}
+
+			buf, err := json.Marshal(warnings[0])
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if strings.Contains(string(buf), `"fetcher_names":null`) {
+				t.Errorf("fetcher_names serialized as null on an error path: %s\nThe OpenAPI "+
+					"schema declares it type: array without nullable: true, and the description "+
+					"promises it is always an array. An unreachable peer is the most likely way "+
+					"a client meets this response", buf)
+			}
+			if !strings.Contains(string(buf), `"fetcher_names":[]`) {
+				t.Errorf("fetcher_names is not an empty array: %s", buf)
+			}
+		})
 	}
 }
 

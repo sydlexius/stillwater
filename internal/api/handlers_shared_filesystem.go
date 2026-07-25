@@ -216,6 +216,9 @@ func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []l
 			warnings = append(warnings, connection.ImageFetcherWarning{
 				RiskLevel: "warn",
 				Message:   "Could not load connection settings for a shared-filesystem library. Image fetcher status is unknown.",
+				// The error paths never obtain a fetcher list, but they
+				// reach the same JSON contract as the success paths.
+				FetcherNames: normalizeFetcherNames(nil),
 			})
 			continue
 		}
@@ -261,6 +264,9 @@ func (r *Router) checkEmbyImageFetchers(ctx context.Context, conn *connection.Co
 			Platform:  "emby",
 			RiskLevel: "warn",
 			Message:   fmt.Sprintf("Could not check Emby image fetcher settings for connection '%s'. Verify the connection is reachable.", conn.Name),
+			// Unreachable peer, so no names were ever retrieved -- the
+			// array contract still holds on this path.
+			FetcherNames: normalizeFetcherNames(nil),
 		}}
 	}
 
@@ -305,6 +311,9 @@ func (r *Router) checkJellyfinImageFetchers(ctx context.Context, conn *connectio
 			Platform:  "jellyfin",
 			RiskLevel: "warn",
 			Message:   fmt.Sprintf("Could not check Jellyfin image fetcher settings for connection '%s'. Verify the connection is reachable.", conn.Name),
+			// Unreachable peer, so no names were ever retrieved -- the
+			// array contract still holds on this path.
+			FetcherNames: normalizeFetcherNames(nil),
 		}}
 	}
 
