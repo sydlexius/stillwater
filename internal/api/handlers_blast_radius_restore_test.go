@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -832,6 +833,146 @@ func TestBlastRestore_UnchangedWhenFieldAlreadyHoldsValue(t *testing.T) {
 	if len(changesAfter) != len(changesBefore) {
 		t.Errorf("history rows = %d, want %d unchanged: a no-op restore must record nothing",
 			len(changesAfter), len(changesBefore))
+	}
+}
+
+// oneArtistFailingRepo makes writes fail for ONE artist and behave normally for
+// every other. It exists to prove a per-row failure in a bulk restore does not
+// abandon the remaining rows, which needs exactly one row of a batch to fail.
+//
+// This uses artist.NewDefaultRepos / NewServiceWithRepos, an EXISTING exported
+// seam whose doc comment says it is exported so sibling-package tests can wrap
+// one repository with a decorator and reuse the real implementations for the
+// rest (internal/rule has four test files doing this). No production code was
+// added or reshaped to make this branch reachable.
+//
+// UpdateField is the method to shadow: performRevert calls ClearField only when
+// the recorded OldValue is empty, and the blast-radius report never lists a row
+// whose old_value is empty, so a genuine restore always goes through
+// UpdateField. ClearField is shadowed too so the decorator cannot silently stop
+// failing if that ever changes.
+type oneArtistFailingRepo struct {
+	artist.Repository
+	failArtistID string
+}
+
+// errForcedRestoreWrite is the sentinel this decorator returns. The handler
+// logs it and demotes the row, so the assertions are on the response and on the
+// database, never on this value traveling back to the caller.
+var errForcedRestoreWrite = errors.New("forced restore write failure")
+
+func (r *oneArtistFailingRepo) UpdateField(ctx context.Context, id, field, value string) error {
+	if id == r.failArtistID {
+		return errForcedRestoreWrite
+	}
+	return r.Repository.UpdateField(ctx, id, field, value)
+}
+
+func (r *oneArtistFailingRepo) ClearField(ctx context.Context, id, field string) error {
+	if id == r.failArtistID {
+		return errForcedRestoreWrite
+	}
+	return r.Repository.ClearField(ctx, id, field)
+}
+
+// TestBlastRestore_PerRowWriteFailureDoesNotAbandonBatch pins the safety
+// property of a bulk recovery operation: when one row's write fails, that row
+// is reported as refused with the write-failure reason and EVERY OTHER ROW
+// STILL RESTORES.
+//
+// The failure mode this guards against is a handler that returns on the first
+// error. That leaves the operator with a partially recovered library and no
+// record of which rows were never attempted, which on a recovery path is worse
+// than failing outright, because the response still looks like a 200.
+//
+// The failing row is deliberately in the MIDDLE of the batch so the test
+// distinguishes "continued past the failure" from "happened to process the
+// good rows first".
+func TestBlastRestore_PerRowWriteFailureDoesNotAbandonBatch(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := restoreTestRouter(t)
+
+	good1 := addTestArtist(t, artistSvc, "Batch Good One")
+	bad := addTestArtist(t, artistSvc, "Batch Failing")
+	good2 := addTestArtist(t, artistSvc, "Batch Good Two")
+
+	id1 := damageField(t, r, artistSvc, historySvc, good1.ID, "biography", "good bio one", "")
+	idBad := damageField(t, r, artistSvc, historySvc, bad.ID, "biography", "doomed bio", "")
+	id2 := damageField(t, r, artistSvc, historySvc, good2.ID, "biography", "good bio two", "")
+
+	// Swap in a service whose artist repository fails writes for `bad` only.
+	// Everything else is the real SQLite repo set, so the good rows exercise
+	// the genuine write path.
+	realArtists, providers, members, aliases, images, platformIDs, completeness :=
+		artist.NewDefaultRepos(r.db)
+	failingSvc := artist.NewServiceWithRepos(
+		&oneArtistFailingRepo{Repository: realArtists, failArtistID: bad.ID},
+		providers, members, aliases, images, platformIDs, completeness,
+	)
+	failingSvc.SetHistoryService(historySvc)
+	r.artistService = failingSvc
+
+	// Precondition: the decorator really does fail that artist and really does
+	// let the others through. Without this the test could pass against a
+	// decorator that failed everything or nothing.
+	if _, err := failingSvc.UpdateField(context.Background(), bad.ID, "moods", "Probe"); !errors.Is(err, errForcedRestoreWrite) {
+		t.Fatalf("precondition: write to the failing artist returned %v, want errForcedRestoreWrite", err)
+	}
+	if _, err := failingSvc.UpdateField(context.Background(), good1.ID, "moods", "Probe"); err != nil {
+		t.Fatalf("precondition: write to a healthy artist failed: %v", err)
+	}
+
+	// The failing row sits in the middle of the request.
+	w, resp := postRestore(t, r,
+		`{"change_ids":["`+id1+`","`+idBad+`","`+id2+`"],"commit":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	if resp.Restored != 2 || resp.Refused != 1 {
+		t.Fatalf("restored=%d refused=%d, want 2/1; items: %+v", resp.Restored, resp.Refused, resp.Items)
+	}
+
+	// The failing row carries the write-failure reason specifically, not a
+	// generic refusal: an operator needs to know this row was eligible and the
+	// WRITE failed, which is re-runnable, rather than that it was rejected.
+	byID := make(map[string]blastRestoreItem, len(resp.Items))
+	for _, it := range resp.Items {
+		byID[it.ChangeID] = it
+	}
+	if got := byID[idBad]; got.Status != blastRestoreRefused || got.Reason != blastRefuseWriteFailed {
+		t.Errorf("failing row: status=%q reason=%q, want %q/%q",
+			got.Status, got.Reason, blastRestoreRefused, blastRefuseWriteFailed)
+	}
+	for _, id := range []string{id1, id2} {
+		if got := byID[id]; got.Status != blastRestoreRestored {
+			t.Errorf("row %s: status=%q, want %q", id, got.Status, blastRestoreRestored)
+		}
+	}
+
+	// THE ARTIFACT, both directions: the good rows really were written and the
+	// failing row really was not. Asserting only the response would pass
+	// against a handler that reported outcomes it never performed.
+	gotGood1, err := artistSvc.GetByID(context.Background(), good1.ID)
+	if err != nil {
+		t.Fatalf("GetByID good1: %v", err)
+	}
+	if gotGood1.Biography != "good bio one" {
+		t.Errorf("good1 biography = %q, want restored", gotGood1.Biography)
+	}
+	gotGood2, err := artistSvc.GetByID(context.Background(), good2.ID)
+	if err != nil {
+		t.Fatalf("GetByID good2: %v", err)
+	}
+	if gotGood2.Biography != "good bio two" {
+		t.Errorf("good2 biography = %q, want restored", gotGood2.Biography)
+	}
+	gotBad, err := artistSvc.GetByID(context.Background(), bad.ID)
+	if err != nil {
+		t.Fatalf("GetByID bad: %v", err)
+	}
+	if gotBad.Biography != "" {
+		t.Errorf("failing artist biography = %q, want empty: its write failed", gotBad.Biography)
 	}
 }
 
