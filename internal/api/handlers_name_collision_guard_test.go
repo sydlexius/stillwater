@@ -13,6 +13,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -227,5 +228,75 @@ func TestHandleFieldUpdate_NameCollision_OtherFieldsUnguarded(t *testing.T) {
 	}
 	if got := nameOf(t, artistSvc, subject.ID); got != "Southgate Winds" {
 		t.Errorf("name = %q, want it untouched by a biography edit", got)
+	}
+}
+
+// --- fail-closed guard -------------------------------------------------
+
+// collisionCheckFailingRepo forces GetByID to fail so FindNameCollision cannot
+// complete. Embedding the artist.Repository INTERFACE keeps the decorator to a
+// single overridden method; every other call delegates to the real repository.
+//
+// GetByID is the right lever because it is the FIRST thing FindNameCollision
+// does, and nothing in handleFieldUpdate reads the artist before the guard
+// runs. So the failure lands squarely on the guard rather than on some earlier
+// step, which is what makes the resulting 500 attributable.
+type collisionCheckFailingRepo struct {
+	artist.Repository
+}
+
+func (r *collisionCheckFailingRepo) GetByID(_ context.Context, _ string) (*artist.Artist, error) {
+	return nil, errors.New("simulated repository failure")
+}
+
+// TestHandleFieldUpdate_NameCollision_FailsClosed is the regression guard for
+// the fail-closed contract: when the collision check itself cannot run, the
+// handler must REFUSE the write, not fall through to it.
+//
+// This is the branch most at risk from a well-meaning refactor. Turning the
+// 500 into a logged warning and a fall-through would look like graceful
+// degradation and would keep every other test in this file green, while
+// silently restoring the exact #2730 defect -- because "the guard could not
+// run" is not evidence that the rename is safe.
+//
+// The write assertion is the load-bearing half. A status-only check would pass
+// against a handler that answers 500 AFTER having already written the field.
+func TestHandleFieldUpdate_NameCollision_FailsClosed(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	subject := addTestArtist(t, artistSvc, "Southgate Winds")
+
+	// A second artist whose name is the rename target. Its presence means a
+	// WORKING guard would have refused this write anyway (409), so the test
+	// cannot pass merely because the rename was harmless.
+	addTestArtist(t, artistSvc, "Northfield Chorale")
+
+	// Reader built on the same DB with REAL repos, so the post-condition read
+	// is unaffected by the fault injection below.
+	reader := artist.NewService(r.db)
+
+	// Precondition: the field holds its original value before the attempt.
+	if got := nameOf(t, reader, subject.ID); got != "Southgate Winds" {
+		t.Fatalf("precondition: name = %q, want %q", got, "Southgate Winds")
+	}
+
+	// Swap the router's artist service for one whose repository fails the
+	// lookup the guard depends on.
+	artists, providers, members, aliases, images, platformIDs, completeness := artist.NewDefaultRepos(r.db)
+	r.artistService = artist.NewServiceWithRepos(
+		&collisionCheckFailingRepo{Repository: artists},
+		providers, members, aliases, images, platformIDs, completeness)
+
+	w := patchName(t, r, subject.ID, "Northfield Chorale", false)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d: a collision check that cannot run must refuse the write, "+
+			"never fall through to it; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
+	}
+	// The assertion that actually pins fail-closed behavior.
+	if got := nameOf(t, reader, subject.ID); got != "Southgate Winds" {
+		t.Errorf("stored name = %q, want it unchanged at %q: the write landed despite the guard failing, "+
+			"which is the #2730 defect re-opened through the error path",
+			got, "Southgate Winds")
 	}
 }

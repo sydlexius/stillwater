@@ -9,6 +9,7 @@ package artist
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -244,5 +245,104 @@ func TestFindNameCollision_AgreesWithDetectDuplicates(t *testing.T) {
 		t.Errorf("DetectDuplicates did not group %s with %s after the colliding rename; "+
 			"the 409 points the operator at the duplicates report, so the guard and the report must agree",
 			platformOnlyID, got.ArtistID)
+	}
+}
+
+// --- error-path guards -------------------------------------------------
+//
+// FindNameCollision is a SAFETY check: the API layer refuses the write when it
+// cannot complete. That contract only holds if a failed lookup surfaces as an
+// ERROR rather than as "no collision found" -- the latter would silently
+// re-open the #2730 defect, because a nil collision reads as "safe to rename".
+// These tests pin that direction.
+//
+// Both use the repository-decorator seam (NewDefaultRepos + NewServiceWithRepos)
+// already used by service_rename_test.go's rollback guard, so no production
+// code was reshaped to make a branch reachable.
+
+// getByIDFailingRepo forces GetByID to fail while delegating everything else to
+// the real repository. Embedding the Repository INTERFACE (not the concrete
+// sqlite type) is deliberate and load-bearing in two ways: it keeps the
+// decorator to one overridden method, and it means the decorator does NOT carry
+// the concrete repo's DB() accessor -- which is what noDBAccessorRepo below
+// relies on.
+type getByIDFailingRepo struct {
+	Repository
+}
+
+func (r *getByIDFailingRepo) GetByID(_ context.Context, _ string) (*Artist, error) {
+	return nil, errors.New("simulated repository failure")
+}
+
+// noDBAccessorRepo delegates every Repository method to the real repo but, by
+// embedding the interface, does not expose the concrete DB() accessor that
+// Service.artistDB needs. This is the shape a caller gets from a hand-rolled
+// fake repo, so the branch is reachable without any test-only production seam.
+type noDBAccessorRepo struct {
+	Repository
+}
+
+// TestFindNameCollision_LookupFailureIsAnError pins the fail-closed contract at
+// the source: when the artist's own row cannot be read, the check must report
+// an error and NOT a nil collision.
+//
+// Returning (nil, nil) here would be the dangerous failure: the API guard reads
+// a nil collision as "safe to proceed" and would let the colliding rename
+// through, which is exactly the defect #2730 closes.
+func TestFindNameCollision_LookupFailureIsAnError(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	artists, providers, members, aliases, images, platformIDs, completeness := NewDefaultRepos(db)
+	svc := NewServiceWithRepos(&getByIDFailingRepo{Repository: artists},
+		providers, members, aliases, images, platformIDs, completeness)
+
+	got, err := svc.FindNameCollision(context.Background(), "any-artist-id", "Northfield Chorale")
+	if err == nil {
+		t.Fatal("FindNameCollision returned nil error on a failed artist lookup; " +
+			"the API guard treats a nil collision as 'safe to rename', so a swallowed " +
+			"lookup failure silently re-opens #2730")
+	}
+	if got != nil {
+		t.Errorf("collision = %+v, want nil alongside the error", got)
+	}
+}
+
+// TestFindNameCollision_MissingDBAccessorIsAnError covers the same contract for
+// a repository that cannot hand back a *sql.DB: the scan cannot run, so the
+// check must say so rather than report "no collision".
+func TestFindNameCollision_MissingDBAccessorIsAnError(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	// Seed through a real service so GetByID succeeds and execution reaches the
+	// artistDB() step. Without a real row the test would pass for the wrong
+	// reason (failing at the lookup above instead of at the DB accessor).
+	seedSvc := NewService(db)
+	a := testArtist("Southgate Winds", "")
+	if err := seedSvc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	artists, providers, members, aliases, images, platformIDs, completeness := NewDefaultRepos(db)
+	svc := NewServiceWithRepos(&noDBAccessorRepo{Repository: artists},
+		providers, members, aliases, images, platformIDs, completeness)
+
+	// Precondition: the lookup itself must succeed, so any error below comes
+	// from the missing DB accessor and not from a failed GetByID.
+	if _, err := svc.artists.GetByID(ctx, a.ID); err != nil {
+		t.Fatalf("precondition: GetByID must succeed through this decorator: %v", err)
+	}
+
+	// The new name must differ from the stored one, or the same-key early
+	// return fires before the DB accessor is ever consulted.
+	got, err := svc.FindNameCollision(ctx, a.ID, "Northfield Chorale")
+	if err == nil {
+		t.Fatal("FindNameCollision returned nil error when the repository exposes no DB accessor; " +
+			"an unrunnable check must never read as 'no collision'")
+	}
+	if got != nil {
+		t.Errorf("collision = %+v, want nil alongside the error", got)
 	}
 }
