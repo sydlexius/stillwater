@@ -163,7 +163,28 @@ func buildSnapshotAtVersion(entries []LibrarySaverSnapshotEntry, version int) (s
 // MergeTypeOptionRaw sets fields on the TypeOptions entry whose "Type"
 // matches typeName (case-insensitive), leaving every other entry exactly as
 // the peer sent it. When no entry matches, one is CREATED carrying typeName
-// plus fields. Returns a new slice; the input is not mutated.
+// plus fields.
+//
+// ALIASING. The function does not mutate its input: a matched entry is
+// cloned before the fields are applied, so the caller's map is untouched.
+// The RESULT still aliases, though, and the clone is SHALLOW. Non-target
+// entries are carried over by reference, and a cloned entry's nested values
+// (an "ImageOptions" map, a fetcher slice) are the same objects the input
+// holds. Mutating out[i]["ImageOptions"]["MinWidth"] therefore DOES reach
+// the caller's input. Nothing in this package does that -- callers build a
+// merged list and POST it -- and a deep clone would cost a full copy of
+// every library's options on every call to defend against a pattern no
+// caller uses. Stated rather than fixed, so a future caller who wants to
+// mutate the result knows to copy first.
+//
+// DUPLICATE ENTRIES. A peer sending two entries whose Type both match gets
+// BOTH merged; there is no break. That is deliberate. These fields are
+// levers being disarmed, and a peer that reads the second entry while we
+// only disarmed the first would leave the lever half-pulled -- the write
+// side must be exhaustive because it cannot know which entry the peer
+// honors. Note this makes the write side deliberately ASYMMETRIC with
+// FindTypeOptionRaw, which returns the first match only; see that
+// function's comment for why the read side cannot simply follow suit.
 //
 // WHY MERGE RATHER THAN REPLACE. The obvious implementation -- build the
 // MusicArtist entry we want and POST TypeOptions as a one-element list -- is
@@ -233,11 +254,35 @@ func TypeOptionsFrom(opts map[string]any) []any {
 	return raw
 }
 
-// FindTypeOptionRaw returns the first TypeOptions entry whose "Type" matches
+// FindTypeOptionRaw returns the FIRST TypeOptions entry whose "Type" matches
 // typeName (case-insensitive), and whether one was found. The bool is the
 // point: an ABSENT entry and a PRESENT entry with an empty fetcher list are
 // different states that demand different handling (absent means the peer's
 // defaults apply), and a nil-map return alone cannot express the difference.
+//
+// Matching is case-insensitive because the two servers have not been
+// consistent about TypeOptions casing across versions -- see TypeMusicArtist.
+// A case-SENSITIVE match against a peer sending "musicartist" would report
+// the entry ABSENT, and absent is interpreted as "defaults apply", so the
+// caller would take the wrong branch on a library that is in fact
+// configured.
+//
+// FIRST-MATCH IS ASYMMETRIC WITH THE WRITE SIDE, deliberately, and the
+// asymmetry has a known edge. MergeTypeOptionRaw merges EVERY matching
+// entry because a write must be exhaustive to fully disarm a lever. A read
+// cannot be exhaustive in the same way: it has to return ONE answer, and
+// which entry a peer actually honors when it sent duplicates is not
+// something this package can know. First-match matches what both platforms'
+// GetLibrarySettings already do, so this stays consistent with existing
+// behavior rather than inventing a new rule.
+//
+// The residual hazard, stated so it is not rediscovered as a mystery: if a
+// peer ever sends duplicate MusicArtist entries where the FIRST has no
+// fetchers and a LATER one does, a fetcher-status read through this
+// function reports clean while the peer may still fetch. No peer has been
+// observed doing this, and the write side already disarms all of them, so
+// the window is narrow -- but it is a genuine false-clean shape and belongs
+// in a follow-up if duplicates are ever seen in the wild.
 func FindTypeOptionRaw(typeOptions []any, typeName string) (map[string]any, bool) {
 	for _, entry := range typeOptions {
 		opt, ok := entry.(map[string]any)
@@ -251,19 +296,45 @@ func FindTypeOptionRaw(typeOptions []any, typeName string) (map[string]any, bool
 	return nil, false
 }
 
-// StringsFromRaw converts a raw JSON array of strings into a []string,
-// dropping non-string members. Always returns a non-nil slice so a caller
-// serializing it back gets [] rather than null -- a null list is one of the
-// shapes the peer rejects.
+// StringsFromRaw converts a string list out of a LibraryOptions map into a
+// []string, dropping non-string members. Always returns a non-nil slice so a
+// caller serializing it back gets [] rather than null -- a null list is one
+// of the shapes the peer rejects.
+//
+// BOTH slice shapes are handled, and that is not defensive padding -- the
+// map genuinely holds either, depending on who last wrote the key:
+//
+//   - []any, when the value came from the peer via json.Unmarshal, which
+//     decodes every JSON array into []any.
+//   - []string, when Stillwater wrote it. DisableFileWriteBack assigns
+//     opts["MetadataSavers"] = []string{}, and MergeTypeOptionRaw copies
+//     caller-supplied field values verbatim, so a caller passing a Go
+//     []string stores one.
+//
+// Handling only []any made this silently report an EMPTY list for a
+// Stillwater-written value of any length: the type assertion failed, raw
+// came back nil, and the loop ran zero times. Harmless where nothing reads
+// back before the POST, but a false "no fetchers configured" is
+// indistinguishable from a genuine clean, which is precisely the
+// false-clean class of bug this package exists to eliminate. Read-side
+// normalization is the right place to resolve it because the ambiguity is
+// created by multiple writers, not by one.
 func StringsFromRaw(v any) []string {
-	raw, _ := v.([]any)
-	out := make([]string, 0, len(raw))
-	for _, item := range raw {
-		if s, ok := item.(string); ok {
-			out = append(out, s)
+	switch raw := v.(type) {
+	case []string:
+		out := make([]string, 0, len(raw))
+		return append(out, raw...)
+	case []any:
+		out := make([]string, 0, len(raw))
+		for _, item := range raw {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
 		}
+		return out
+	default:
+		return []string{}
 	}
-	return out
 }
 
 // GetMusicLibrariesRaw fetches /Library/VirtualFolders as an array of
