@@ -882,6 +882,20 @@
     "covered": true
   },
   {
+    "operationId": "getReportBlastRadius",
+    "method": "GET",
+    "path": "/reports/blast-radius",
+    "handler": "handleReportBlastRadius",
+    "covered": true
+  },
+  {
+    "operationId": "getReportBlastRadiusExport",
+    "method": "GET",
+    "path": "/reports/blast-radius/export",
+    "handler": "handleReportBlastRadiusExport",
+    "covered": true
+  },
+  {
     "operationId": "getReportRulePassRates",
     "method": "GET",
     "path": "/reports/rule-pass-rates",
