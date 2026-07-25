@@ -173,7 +173,7 @@ jobs:
         run: |
           if [ "$CODE_CHANGED" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"},{"goos":"linux","goarch":"arm64"},{"goos":"darwin","goarch":"amd64"},{"goos":"darwin","goarch":"arm64"},{"goos":"windows","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
-            echo 'test_matrix={"shard":["api-1","api-2","rule-1","rule-2","services","settingsio","providers","scan","maintenance-1","maintenance-2","rest"]}' >> "$GITHUB_OUTPUT"
+            echo 'test_matrix={"shard":["api-1","api-2","api-3","api-4","rule-1","rule-2","services","settingsio","providers","scan","maintenance-1","maintenance-2","cmd","updater","rest"]}' >> "$GITHUB_OUTPUT"
           elif [ "$HARNESS_TOUCHED" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
             echo 'test_matrix={"shard":["rest"]}' >> "$GITHUB_OUTPUT"
@@ -625,13 +625,20 @@ jobs:
             ${{ runner.os }}-go-
 
       # Resolve the package list (and optional -run bucket regex) for this
-      # shard. Named shards (services / settingsio / providers / scan) come from the SHARDS
-      # map below. The partitioned bases (api / rule / maintenance) are each split
-      # into two buckets -- api-1/api-2, rule-1/rule-2, maintenance-1/maintenance-2
-      # -- by a round-robin over their test names; each was verified isolation-safe
-      # under that split (every bucket passes run alone, shuffled, with -race).
-      # The `rest` shard is the dynamic remainder, so new packages auto-fall into
-      # it. Wall time = max(shards) + runner overhead.
+      # shard. Named shards (services / settingsio / providers / scan / cmd /
+      # updater) come from the SHARDS map below. The partitioned bases (api /
+      # rule / maintenance) are each split into buckets -- api-1..api-4,
+      # rule-1/rule-2, maintenance-1/maintenance-2 -- by a round-robin over
+      # their test names; each was verified isolation-safe under that split
+      # (every bucket passes run alone, shuffled, with -race). The `rest`
+      # shard is the dynamic remainder, so new packages auto-fall into it.
+      # Wall time = max(shards) + runner overhead.
+      #
+      # api was widened from 2 to 4 buckets (#2795): api-1/api-2 measured
+      # 272s/238s, close enough that the round-robin over sorted test names is
+      # distributing cost well rather than being skewed by one dominant test
+      # -- exactly the condition where more buckets helps instead of just
+      # adding runner overhead. Projected ~130s/bucket at 4 buckets.
       #
       # maintenance was partitioned because it was the matrix LONG POLE: measured
       # 321/322/309/324s across four successful runs, ~80s clear of the next
@@ -662,6 +669,13 @@ jobs:
             [providers]="internal/provider internal/connection"
             [scan]="internal/scanner internal/library internal/database internal/scraper internal/foreign internal/watcher"
             [maintenance]="internal/maintenance"
+            # cmd/stillwater and internal/updater are each their own shard: at
+            # 124s and 120s respectively they were 92% of the old `rest` shard
+            # (265s total), so bundling them into one shard would just make
+            # that combined shard (~244s) the new long pole. Split, they land
+            # near 120s each instead.
+            [cmd]="cmd/stillwater"
+            [updater]="internal/updater"
           )
           shard="${{ matrix.shard }}"
           run=""
@@ -680,20 +694,26 @@ jobs:
               done
               pkgs=$(go list ./... | grep -v -E "^${module}/(${excludes})(/|$)" | tr '\n' ' ')
               ;;
-            *-[12])
+            *-[0-9])
               # Partitioned shard "<base>-<n>": run only this bucket's tests via
-              # -run. Round-robin over SORTED test names keeps the two buckets
+              # -run. Round-robin over SORTED test names keeps the buckets
               # balanced regardless of name clustering (an alphabetic split would
               # be lopsided -- most names share a prefix). Names come from grep
               # over *_test.go (no compile); a name that is not a real test is a
-              # harmless no-op in -run.
+              # harmless no-op in -run. Bucket count is derived from how many
+              # "<base>-<n>" entries appear in the matrix (api has 4, rule and
+              # maintenance have 2), so round-robin modulus below matches it.
               base="${shard%-*}"
-              idx=$(( ${shard##*-} - 1 ))           # api-1 -> 0, api-2 -> 1
+              idx=$(( ${shard##*-} - 1 ))           # api-1 -> 0, api-2 -> 1, ...
               if [ -z "${SHARDS[${base}]+x}" ]; then
                 echo "Unknown partition base: ${base}" >&2
                 exit 1
               fi
               dir="${SHARDS[${base}]}"
+              case "${base}" in
+                api) buckets=4 ;;
+                *) buckets=2 ;;
+              esac
               names=$(grep -rhoE '^func (Test|Example|Fuzz)[A-Za-z0-9_]+' \
                         --include='*_test.go' "${dir}" \
                       | sed -E 's/^func //' | grep -vx 'TestMain' | sort -u)
@@ -701,7 +721,7 @@ jobs:
               i=0
               while IFS= read -r t; do
                 [ -z "${t}" ] && continue
-                if [ $(( i % 2 )) -eq "${idx}" ]; then
+                if [ $(( i % buckets )) -eq "${idx}" ]; then
                   sel="${sel:+${sel}|}${t}"
                 fi
                 i=$(( i + 1 ))
