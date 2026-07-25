@@ -204,6 +204,15 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// #2730: a name edit that lands on an identity another artist already
+	// holds must be refused BEFORE the write. Letting it through produced two
+	// same-named records, which the operator only discovered later in the
+	// duplicates report. The guard runs only for the name field; every other
+	// field is identity-neutral.
+	if field == "name" && !r.guardNameCollision(w, req, artistID, value) {
+		return
+	}
+
 	if artist.IsProviderIDField(field) {
 		if err := r.artistService.UpdateProviderField(req.Context(), artistID, field, value); err != nil {
 			writeError(w, req, http.StatusInternalServerError, "failed to update field")

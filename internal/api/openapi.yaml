@@ -13152,6 +13152,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            The requested name would give this artist the same identity as a
+            different existing artist, so the write was refused. Resolve the
+            two records via the duplicates report's merge flow. Only the name
+            field can produce this response; the identity comparison folds
+            case, accents, punctuation, and leading articles, so the colliding
+            artist's stored name may differ from the requested one.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    description: Human-readable reason the write was refused.
+                  existing_artist_id:
+                    type: string
+                    description: ID of the artist that already holds this identity.
+                  existing_name:
+                    type: string
+                    description: Stored name of the artist that already holds this identity.
+            text/html:
+              schema:
+                type: string
     delete:
       tags: [Artists]
       summary: Clear a single metadata field

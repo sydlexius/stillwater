@@ -1,0 +1,44 @@
+package templates
+
+// name_collision_warning.templ -- the 409 response body for a name edit that
+// would collide with an existing artist's identity (#2730).
+//
+// Rendered instead of the generic ErrorToast because a bare "another artist
+// already uses this name" leaves the operator with no next step. The whole
+// point of the guard is that there IS a next step: the duplicates report's
+// merge/reconcile flow, which #2792 made able to resolve platform-only
+// records. So the fragment names the other artist and links to that page.
+//
+// Styling reuses the ClobberWarnings warning-banner treatment verbatim (same
+// amber palette, same rounded-md/px-4/py-3 box, same role="alert"). No new
+// banner color, badge, or affordance is introduced.
+
+// NameCollisionWarningView is the view model for the collision banner. The handler
+// builds it from artist.NameCollision; the template never imports the artist
+// domain package, matching the ArtistDuplicateMember convention above.
+type NameCollisionWarningView struct {
+	// ExistingName is the stored name of the artist that already holds the
+	// identity. Usually equal to AttemptedName, but not always: the identity
+	// key folds case, accents, punctuation, and leading articles, so "the
+	// cure" collides with a stored "The Cure".
+	ExistingName string
+	// ExistingPlatformOnly is true when the colliding artist exists only as a
+	// platform record with no directory on disk.
+	ExistingPlatformOnly bool
+	// DuplicatesURL is the base-path-qualified link to the duplicates report
+	// where the two records can be merged.
+	DuplicatesURL string
+}
+
+templ NameCollisionWarning(w NameCollisionWarningView) {
+	<div class="rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-4 py-3 text-sm text-yellow-700 dark:text-yellow-300" role="alert">
+		{ tf(ctx, "name_collision.already_used", w.ExistingName) }
+		if w.ExistingPlatformOnly {
+			{ t(ctx, "name_collision.existing_platform_only") }
+		}
+		{ " " }
+		<a class="underline font-medium" href={ templ.SafeURL(w.DuplicatesURL) }>
+			{ t(ctx, "name_collision.merge_link") }
+		</a>
+	</div>
+}
