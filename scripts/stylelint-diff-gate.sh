@@ -57,6 +57,20 @@ if ! git rev-parse --verify -q "$BASE^{commit}" >/dev/null; then
   exit 2
 fi
 
+# "Nothing to check" vs "cannot check" (fresh-worktree false failure, see
+# header comment above and the pre-push-gate.sh caller). A worktree fresh
+# from `make worktree` has no node_modules, so stylelint is never installed
+# there. That must not fail a branch whose diff never touched CSS at all --
+# there is nothing for stylelint to have looked at either way. But it must
+# NOT become an unconditional skip: a diff that DOES touch CSS with
+# stylelint/jq missing is "cannot check" and has to fail loudly, or a real
+# violation could ship on any machine that skipped `npm ci`. So this decision
+# is made from the diff alone, before either tool is probed for.
+if [ -z "$(git diff --name-only "$BASE" -- "$CSS_GLOB")" ]; then
+  echo "SKIP: no files under $CSS_GLOB changed since $BASE -- nothing for stylelint to check."
+  exit 0
+fi
+
 if ! command -v jq >/dev/null 2>&1; then
   echo "FAIL: jq not in PATH" >&2
   exit 2
