@@ -838,6 +838,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance/export", wrapAuth(r.handleReportComplianceExport, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/metadata-completeness", wrapAuth(r.handleReportMetadataCompleteness, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/rule-pass-rates", wrapAuth(r.handleReportRulePassRates, authMw))
+	// Blast-radius report (#2750): read-only. Both routes are GETs and neither
+	// writes. Recovery of the reported values is a separate, destructive
+	// surface and is deliberately not registered here.
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/blast-radius", wrapAuth(r.handleReportBlastRadius, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/blast-radius/export", wrapAuth(r.handleReportBlastRadiusExport, authMw))
 
 	// History routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/history", wrapAuth(r.handleListArtistHistory, authMw))

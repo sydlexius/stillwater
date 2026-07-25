@@ -1,8 +1,8 @@
 ---
-description: Browse the two-pane Reports workspace at /reports to view compliance, library health, metadata completeness, and rule pass-rate data across your library.
+description: Browse the two-pane Reports workspace at /reports to view compliance, library health, metadata completeness, and rule pass-rate data across your library, plus the blast-radius report of values an automated change destroyed.
 ---
 
-<!-- code: web/templates/reports_page.templ, internal/api/handlers_report.go -->
+<!-- code: web/templates/reports_page.templ, internal/api/handlers_report.go, internal/api/handlers_blast_radius.go -->
 
 # View reports
 
@@ -42,6 +42,46 @@ Shows field-coverage percentages across your entire library and a table of the t
 ### Rule pass rates
 
 Lists every configured rule with its pass count, evaluation count, and pass percentage for the current library state. Pass rates are color-coded: green at 80% or above, amber between 50-79%, and red below 50%.
+
+## Blast radius (API and CSV)
+
+The blast-radius report answers "which values that I set did an automated change replace or clear". It is available through the API and as a CSV download; a pane in the Reports workspace is coming in a future release.
+
+Request it at `/api/v1/reports/blast-radius`, or download `/api/v1/reports/blast-radius/export` for a spreadsheet.
+
+For each artist and field, the report shows the most recent change, and keeps it only when that change replaced or cleared a value that had been set. Two kinds of damage are reported, because both destroy what you set:
+
+- **Cleared** - a value you had was emptied.
+- **Replaced** - a value you had was overwritten with a different one.
+
+A field whose value has since been put back drops out of the report automatically.
+
+You can narrow the report by damage kind, by source, by field, or to a single artist. Both damage kinds are shown by default.
+
+### What the report can prove about who made a change
+
+Every row is labeled one of two ways:
+
+- **Automated** - written by a scan, an import, a metadata provider, or a rule. The source was recorded, so this is certain.
+- **Source unknown** - anything Stillwater cannot positively identify as an automated writer, so nothing falls outside the two counts. Most of these are recorded as a manual change. Stillwater began recording scan-driven changes separately on 2026-07-19; before that, a scan that changed a value was recorded the same way your own edits are. These rows may be your edits or may be automated changes, and Stillwater cannot tell them apart.
+
+Rows with an unknown source are always listed and always counted separately. Narrowing the report to automated changes hides those rows from the list but does **not** remove them from the counts, so you can always see how many there are. A number that quietly excluded them would understate what was lost.
+
+### What the report covers
+
+Only fields that keep a change history can be reported. The response lists both the covered and the uncovered fields.
+
+Several editable fields keep no change history on the scan path, including disambiguation, name, and sort name. **A field's absence from this report is not evidence it is undamaged** if it is on the uncovered list - it means Stillwater has no record either way.
+
+### How far back it goes
+
+Change history is not deleted on a schedule, so the report reaches back as far as your history goes.
+
+It is not unlimited, though: change history is kept until an artist is deleted or merged into another. Either removes that artist's history along with it, including anything this report would have shown for it. If you are cleaning up duplicate artists, run this report first.
+
+### Downloading the CSV
+
+The CSV carries the same rows plus the source label on each one. Note rows at the end restate the source limit, both field lists, and the retention boundary, so a spreadsheet you open weeks later still says what it does not cover. The export is capped at 10,000 rows and tells you when it was truncated.
 
 ## Additional reports
 
