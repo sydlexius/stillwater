@@ -1189,7 +1189,7 @@ components:
           type: array
           items:
             type: string
-          description: Names of enabled image fetchers (e.g., "TheAudioDb", "FanArt")
+          description: Names of enabled image fetchers (e.g., "TheAudioDb", "FanArt"). Empty when defaulted is true, because the platform does not report which fetchers its defaults use.
         risk_level:
           type: string
           description: Risk level of the image fetcher conflict. "warn" for Emby (adds missing images only), "critical" for Jellyfin (can replace existing images and strip EXIF data).
@@ -1197,6 +1197,14 @@ components:
         message:
           type: string
           description: Human-readable warning message describing the risk and recommended action
+        defaulted:
+          type: boolean
+          description: >-
+            True when the library has no saved artist metadata configuration, so the
+            platform's own defaults apply and its image fetchers are active.
+            Remediation differs from an explicit fetcher list, because there is nothing
+            to switch off yet; the operator must save an explicit choice in the
+            platform's library settings.
     SharedFilesystemEntry:
       type: object
       properties:
