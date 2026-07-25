@@ -97,26 +97,57 @@ func TestEmbyWarning_DefaultedCopyDiffersFromExplicitCopy(t *testing.T) {
 		t.Fatal("Defaulted = true for an explicitly configured library")
 	}
 
-	// The messages must actually DIFFER. Without this the axis could be
-	// plumbed correctly while both states render identical prose, which
-	// leaves the operator no better off than before the fix.
-	if defaulted[0].Message == explicit[0].Message {
-		t.Errorf("defaulted and explicit warnings render IDENTICAL copy:\n%q\n"+
-			"The two states need different remediation: one has named fetchers to switch "+
-			"off, the other has nothing configured at all", defaulted[0].Message)
-	}
+	assertDefaultedCopyIsSubstantive(t, "Emby", defaulted[0].Message, explicit[0].Message)
 
-	// The defaulted message must not name fetchers it does not know.
-	for _, invented := range []string{"TheAudioDb", "FanArt"} {
-		if strings.Contains(defaulted[0].Message, invented) {
-			t.Errorf("defaulted copy names %q, but the peer never reports which fetchers its "+
-				"DEFAULTS use -- that name is fabricated: %q", invented, defaulted[0].Message)
-		}
-	}
-	// And the explicit message must still name them, or the operator cannot
-	// find the setting.
+	// The explicit message must still name the fetchers, or the operator
+	// cannot find the setting to switch off.
 	if !strings.Contains(explicit[0].Message, "TheAudioDb") {
 		t.Errorf("explicit copy does not name the configured fetchers: %q", explicit[0].Message)
+	}
+}
+
+// assertDefaultedCopyIsSubstantive checks the defaulted warning is genuinely
+// its own prose rather than the explicit template run with an empty name
+// list.
+//
+// A bare "the two messages differ" assertion is VACUOUS here, and this was
+// measured rather than guessed: disabling the defaulted branch makes the
+// defaulted case fall through to the explicit template, which formats an
+// empty fetcher list as "image fetchers () are enabled". That string still
+// DIFFERS from the explicit one, so an inequality check passes while the
+// operator is shown a broken sentence naming no fetchers and prescribing a
+// remediation that does not apply. The assertions below pin the substance
+// instead: no empty-parens artifact, no fabricated fetcher names, and the
+// presence of the guidance that only the defaulted branch produces.
+func assertDefaultedCopyIsSubstantive(t *testing.T, platform, defaultedMsg, explicitMsg string) {
+	t.Helper()
+
+	if defaultedMsg == explicitMsg {
+		t.Errorf("%s: defaulted and explicit warnings render IDENTICAL copy:\n%q", platform, defaultedMsg)
+	}
+	// The tell of a collapsed branch: the explicit template's parenthesised
+	// fetcher list rendered with nothing in it.
+	if strings.Contains(defaultedMsg, "()") {
+		t.Errorf("%s: defaulted copy contains an empty fetcher list '()', which means it was "+
+			"rendered by the EXPLICIT template with no names to fill in rather than by the "+
+			"defaulted branch: %q", platform, defaultedMsg)
+	}
+	// It must not name fetchers the peer never reported.
+	for _, invented := range []string{"TheAudioDb", "FanArt"} {
+		if strings.Contains(defaultedMsg, invented) {
+			t.Errorf("%s: defaulted copy names %q, but the peer never reports which fetchers "+
+				"its DEFAULTS use -- that name is fabricated: %q", platform, invented, defaultedMsg)
+		}
+	}
+	// And it must carry the guidance unique to this state: that nothing is
+	// saved, so the defaults are what is running.
+	for _, required := range []string{"no artist image settings saved", "defaults"} {
+		if !strings.Contains(defaultedMsg, required) {
+			t.Errorf("%s: defaulted copy is missing %q. The operator has to be told that "+
+				"NOTHING is configured and the platform's defaults are therefore active; "+
+				"without that they will go looking for a fetcher list to switch off and find "+
+				"none: %q", platform, required, defaultedMsg)
+		}
 	}
 }
 
@@ -141,12 +172,8 @@ func TestJellyfinWarning_DefaultedCopyDiffersFromExplicitCopy(t *testing.T) {
 		t.Fatalf("got %d warnings, want 1", len(explicit))
 	}
 
-	if defaulted[0].Message == explicit[0].Message {
-		t.Errorf("defaulted and explicit warnings render IDENTICAL copy: %q", defaulted[0].Message)
-	}
-	if strings.Contains(defaulted[0].Message, "TheAudioDb") {
-		t.Errorf("defaulted copy names a fetcher the peer never reported: %q", defaulted[0].Message)
-	}
+	assertDefaultedCopyIsSubstantive(t, "Jellyfin", defaulted[0].Message, explicit[0].Message)
+
 	// Jellyfin's defaulted copy offers the internet-providers escape hatch,
 	// which is real on this platform and absent on Emby.
 	if !strings.Contains(defaulted[0].Message, "internet providers") {
