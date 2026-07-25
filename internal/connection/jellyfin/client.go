@@ -119,12 +119,35 @@ type ImageFetcherStatus struct {
 	LibraryID    string
 	FetcherNames []string // e.g., ["TheAudioDb", "FanArt"]
 	RiskLevel    string   // "critical" for Jellyfin (can replace existing images and strip EXIF)
+	// Defaulted reports a library with NO MusicArtist configuration, where
+	// Jellyfin's own defaults apply and those have image fetchers on.
+	// FetcherNames is empty in this case because the peer never told us
+	// which fetchers its defaults use -- absence of names here means
+	// "unknown but active", not "none".
+	Defaulted bool
 }
 
 // CheckImageFetchersEnabled returns the image fetcher status for Jellyfin music
-// libraries. Returns nil if no image fetchers are enabled. Returns a non-nil
-// error if the music library settings cannot be retrieved. Libraries with
-// EnableInternetProviders=false are skipped.
+// libraries. Returns a non-nil error if the music library settings cannot be
+// retrieved.
+//
+// One known gap in what an empty result means, stated rather than implied:
+// EnableInternetProviders is a plain bool, so a peer response that OMITS the
+// key decodes it as false and the library is skipped entirely -- even if it
+// has an explicit fetcher list. That fails OPEN (a real conflict reported as
+// clean) rather than closed. It predates this function's current shape and
+// is not introduced here; fixing it means making the field a *bool
+// defaulting to true, which changes behavior for every install whose peer
+// omits the key, so it is deliberately not done as a drive-by.
+//
+// Libraries with EnableInternetProviders=false are skipped entirely, and that
+// skip is what makes the Defaulted case correct here. A library with no
+// MusicArtist TypeOption would otherwise be reported as running Jellyfin's
+// defaults; with internet providers switched off those defaults cannot fetch
+// anything, so the library is genuinely clean and reporting it would be a
+// false alarm. Emby has no equivalent switch, which is why its absent-config
+// case is unconditional -- see emby.Client.CheckImageFetchersEnabled. This
+// divergence is deliberate; do not unify the two.
 func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherStatus, error) {
 	libs, err := c.GetMusicLibraries(ctx)
 	if err != nil {
@@ -135,6 +158,7 @@ func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherS
 	// fetchers are inactive regardless of TypeOptions.
 	entries := mediabrowser.CollectImageFetcherEntriesRaw(libs,
 		func(l VirtualFolder) bool { return l.LibraryOptions.EnableInternetProviders },
+		func(l VirtualFolder) bool { return mediabrowser.DeclaredMusicCollectionType(l.CollectionType) },
 		func(l VirtualFolder) string { return l.Name },
 		func(l VirtualFolder) string { return l.ItemID },
 		func(l VirtualFolder) []TypeOption { return l.LibraryOptions.TypeOptions },
@@ -150,6 +174,7 @@ func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherS
 			LibraryID:    e.LibraryID,
 			FetcherNames: e.FetcherNames,
 			RiskLevel:    "critical",
+			Defaulted:    e.Defaulted,
 		})
 	}
 	return results, nil

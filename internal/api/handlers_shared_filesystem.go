@@ -59,6 +59,14 @@ func (r *Router) handleSharedFilesystemStatus(w http.ResponseWriter, req *http.R
 		// Collect image fetcher warnings for shared libraries. Skip when the bar
 		// is dismissed because the template renders nothing and the network calls
 		// to Emby/Jellyfin would be wasted.
+		//
+		// Defaulted is deliberately NOT carried into the template. The
+		// defaulted-vs-explicit distinction is already fully expressed in
+		// Message (the two states render different remediation prose), and
+		// the bar styles itself on RiskLevel, not on this axis. Passing it
+		// through would add a field the template has no use for. If a future
+		// change wants to style defaulted warnings differently, add it then
+		// -- it is absent by decision, not by oversight.
 		if len(sharedLibs) > 0 && !status.Dismissed {
 			for _, w := range r.collectImageFetcherWarnings(req.Context(), sharedLibs) {
 				data.ImageFetcherWarnings = append(data.ImageFetcherWarnings, templates.SharedFSBarWarning{
@@ -208,6 +216,9 @@ func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []l
 			warnings = append(warnings, connection.ImageFetcherWarning{
 				RiskLevel: "warn",
 				Message:   "Could not load connection settings for a shared-filesystem library. Image fetcher status is unknown.",
+				// The error paths never obtain a fetcher list, but they
+				// reach the same JSON contract as the success paths.
+				FetcherNames: normalizeFetcherNames(nil),
 			})
 			continue
 		}
@@ -229,6 +240,20 @@ func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []l
 	return warnings
 }
 
+// normalizeFetcherNames converts a nil fetcher list into an empty slice so it
+// serializes as [] rather than null. The defaulted case always has no names
+// (the platform does not report which fetchers its defaults use), and the
+// OpenAPI schema declares fetcher_names as an array with no nullable:true --
+// a strict client generated from that spec rejects null. Applied at every
+// construction site rather than to the JSON tag, because the field is
+// genuinely a list in every state; only its length varies.
+func normalizeFetcherNames(names []string) []string {
+	if names == nil {
+		return []string{}
+	}
+	return names
+}
+
 // checkEmbyImageFetchers queries an Emby connection for image fetcher settings.
 func (r *Router) checkEmbyImageFetchers(ctx context.Context, conn *connection.Connection) []connection.ImageFetcherWarning {
 	client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
@@ -239,21 +264,38 @@ func (r *Router) checkEmbyImageFetchers(ctx context.Context, conn *connection.Co
 			Platform:  "emby",
 			RiskLevel: "warn",
 			Message:   fmt.Sprintf("Could not check Emby image fetcher settings for connection '%s'. Verify the connection is reachable.", conn.Name),
+			// Unreachable peer, so no names were ever retrieved -- the
+			// array contract still holds on this path.
+			FetcherNames: normalizeFetcherNames(nil),
 		}}
 	}
 
 	var warnings []connection.ImageFetcherWarning
 	for _, s := range statuses {
-		msg := fmt.Sprintf(
-			"Emby's image fetchers (%s) are enabled for library '%s' and may download additional images to your music directory. Stillwater's NFOs are protected by lockdata, but image conflicts may occur.",
-			strings.Join(s.FetcherNames, ", "), s.LibraryName,
-		)
+		// Two different situations, two different remediations. An
+		// explicit fetcher list can be switched off by name; an
+		// unconfigured library has nothing to switch off yet, so telling
+		// the operator to "disable these fetchers" would send them
+		// looking for a setting that is not there.
+		var msg string
+		if s.Defaulted {
+			msg = fmt.Sprintf(
+				"Emby has no artist image settings saved for library '%s', so Emby's defaults apply and its image fetchers are active. Open the library's settings in Emby and turn the artist image fetchers off, then save, so the setting is stored rather than left at the default.",
+				s.LibraryName,
+			)
+		} else {
+			msg = fmt.Sprintf(
+				"Emby's image fetchers (%s) are enabled for library '%s' and may download additional images to your music directory. Stillwater's NFOs are protected by lockdata, but image conflicts may occur.",
+				strings.Join(s.FetcherNames, ", "), s.LibraryName,
+			)
+		}
 		warnings = append(warnings, connection.ImageFetcherWarning{
 			Platform:     "emby",
 			LibraryName:  s.LibraryName,
-			FetcherNames: s.FetcherNames,
+			FetcherNames: normalizeFetcherNames(s.FetcherNames),
 			RiskLevel:    s.RiskLevel,
 			Message:      msg,
+			Defaulted:    s.Defaulted,
 		})
 	}
 	return warnings
@@ -269,21 +311,38 @@ func (r *Router) checkJellyfinImageFetchers(ctx context.Context, conn *connectio
 			Platform:  "jellyfin",
 			RiskLevel: "warn",
 			Message:   fmt.Sprintf("Could not check Jellyfin image fetcher settings for connection '%s'. Verify the connection is reachable.", conn.Name),
+			// Unreachable peer, so no names were ever retrieved -- the
+			// array contract still holds on this path.
+			FetcherNames: normalizeFetcherNames(nil),
 		}}
 	}
 
 	var warnings []connection.ImageFetcherWarning
 	for _, s := range statuses {
-		msg := fmt.Sprintf(
-			"Jellyfin's image fetchers (%s) are enabled for library '%s'. Jellyfin can replace existing images and strip EXIF provenance data. Disable image fetchers in Jellyfin's library settings.",
-			strings.Join(s.FetcherNames, ", "), s.LibraryName,
-		)
+		// See checkEmbyImageFetchers for why the defaulted case gets its
+		// own copy. Jellyfin's wording additionally names the internet
+		// providers switch, because a library that reaches this point has
+		// internet providers ENABLED -- that is what makes its defaults
+		// live -- and switching that off is a second, coarser way out.
+		var msg string
+		if s.Defaulted {
+			msg = fmt.Sprintf(
+				"Jellyfin has no artist image settings saved for library '%s', so Jellyfin's defaults apply and its image fetchers are active. Jellyfin can replace existing images and strip EXIF provenance data. Open the library's settings in Jellyfin and turn the artist image fetchers off, or turn off internet providers for the library.",
+				s.LibraryName,
+			)
+		} else {
+			msg = fmt.Sprintf(
+				"Jellyfin's image fetchers (%s) are enabled for library '%s'. Jellyfin can replace existing images and strip EXIF provenance data. Disable image fetchers in Jellyfin's library settings.",
+				strings.Join(s.FetcherNames, ", "), s.LibraryName,
+			)
+		}
 		warnings = append(warnings, connection.ImageFetcherWarning{
 			Platform:     "jellyfin",
 			LibraryName:  s.LibraryName,
-			FetcherNames: s.FetcherNames,
+			FetcherNames: normalizeFetcherNames(s.FetcherNames),
 			RiskLevel:    s.RiskLevel,
 			Message:      msg,
+			Defaulted:    s.Defaulted,
 		})
 	}
 	return warnings

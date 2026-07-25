@@ -165,25 +165,91 @@ func GetArtistsRaw(ctx context.Context, t Transport, libraryID string, startInde
 // produces. Callers wrap each entry in their own platform ImageFetcherStatus
 // type (adding the platform's RiskLevel constant) since the two
 // ImageFetcherStatus DTOs stay separate types.
+//
+// Defaulted distinguishes the two ways a library can be fetching images:
+// explicitly configured fetchers (Defaulted=false, FetcherNames populated)
+// versus no MusicArtist configuration at all, which leaves the peer's own
+// defaults in force (Defaulted=true, FetcherNames empty). They need
+// different remediation copy -- one says "turn these off", the other says
+// "nothing is configured, so the server's defaults are running" -- so the
+// distinction is carried rather than flattened into the name list.
 type FetcherEntry struct {
 	LibraryName  string
 	LibraryID    string
 	FetcherNames []string
+	Defaulted    bool
 }
 
 // CollectImageFetcherEntriesRaw shares the library/TypeOption iteration
 // common to CheckImageFetchersEnabled on both platforms: walk every library
-// that passes includeLibrary, find its "MusicArtist" TypeOption(s), and
-// collect one entry per option with a non-empty image-fetcher list. The
-// per-platform divergence -- Jellyfin additionally gates on
-// EnableInternetProviders, Emby does not -- is expressed entirely through
-// includeLibrary; the RiskLevel label stays with the caller since it is not
-// part of this shared shape. Generic over T (library) and O (type option)
-// because the two platforms' VirtualFolder/TypeOption DTOs are separate
-// types.
+// that passes includeLibrary and report each one that would fetch artist
+// images. The RiskLevel label stays with the caller since it is not part of
+// this shared shape. Generic over T (library) and O (type option) because
+// the two platforms' VirtualFolder/TypeOption DTOs are separate types.
+//
+// declaredMusic gates the DEFAULTED case only, and it is separate from
+// includeLibrary for a reason worth stating. The library filter upstream
+// (FilterMusicLibraries) admits a library whose CollectionType is "music"
+// OR BLANK, because some installs leave it blank on mixed or legacy folders
+// that really do hold music. That leniency is free as long as absence is
+// silent -- but this function makes ABSENCE THE TRIGGER, and a
+// non-music library (home videos, a mixed folder) has no MusicArtist
+// TypeOption precisely because it is not a music library. Emitting the
+// defaulted warning for those tells an operator to go switch off artist
+// image fetchers in their home-video library, where no such setting exists.
+//
+// So the two cases need different evidence:
+//
+//   - EXPLICIT fetchers (a MusicArtist entry with a non-empty list) are
+//     reported for blank CollectionType too. The entry's existence is
+//     affirmative proof the peer treats this library as holding artists,
+//     whatever its label says, and the fetchers really are armed.
+//   - DEFAULTED (no MusicArtist entry) requires declaredMusic. Claiming
+//     "your artist defaults are running" on the strength of an ABSENCE
+//     needs the peer to have affirmatively said this is a music library;
+//     blank is not a statement, it is the lack of one.
+//
+// Getting this wrong does not merely add noise: a banner full of
+// unactionable warnings about home-video libraries trains operators to
+// ignore the one warning that is real.
+//
+// THREE INPUT STATES, and conflating any two of them misreports the peer:
+//
+//   - MusicArtist option PRESENT with a non-empty fetcher list -> reported,
+//     Defaulted=false. The operator turned these on.
+//   - MusicArtist option PRESENT with an EMPTY fetcher list -> NOT reported,
+//     treated as clean. Precisely: the peer sent a MusicArtist entry and the
+//     decoded fetcher list is empty. That is USUALLY an operator who
+//     configured the library and chose no fetchers -- but the DTO decodes a
+//     missing "ImageFetchers" KEY and an explicit "ImageFetchers": [] to the
+//     same empty slice, so this cannot claim more than "the entry exists and
+//     its list came back empty". If a peer is ever observed omitting the key
+//     on an entry it otherwise populates, that shape belongs with the
+//     absent-entry case (defaults apply, hence dirty) and telling the two
+//     apart needs a *[]string or json.RawMessage on both platforms' DTOs.
+//     Not done speculatively: it widens two DTOs and every accessor for an
+//     input shape nobody has seen, and the current classification is the
+//     conservative one for the shape that IS observed.
+//   - MusicArtist option ABSENT entirely -> reported, Defaulted=true. This
+//     is the case that used to be silently clean and is the #2719 defect.
+//     An absent option does not mean "off", it means the peer has no stored
+//     configuration for this type and therefore applies its OWN DEFAULTS --
+//     and those have image fetchers ON. Reporting nothing here told the
+//     operator they were safe while the peer was actively fetching.
+//
+// The per-platform divergence is expressed entirely through includeLibrary
+// and is load-bearing for the absent case specifically: Jellyfin passes its
+// EnableInternetProviders flag, Emby passes a constant true because it has
+// no library-level equivalent. A library that fails includeLibrary is
+// skipped WHOLE, which is what keeps "absent option means defaults apply"
+// from firing on a Jellyfin library whose internet providers are switched
+// off -- there the defaults cannot run, so silence is a TRUE clean rather
+// than a false one. Do not hoist the absent-entry check above the
+// includeLibrary gate; that inverts a false negative into a false positive.
 func CollectImageFetcherEntriesRaw[T any, O any](
 	libs []T,
 	includeLibrary func(T) bool,
+	declaredMusic func(T) bool,
 	getName, getItemID func(T) string,
 	getTypeOptions func(T) []O,
 	getOptType func(O) string,
@@ -195,10 +261,12 @@ func CollectImageFetcherEntriesRaw[T any, O any](
 		if !includeLibrary(lib) {
 			continue
 		}
+		var sawMusicArtist bool
 		for _, opt := range getTypeOptions(lib) {
-			if !strings.EqualFold(getOptType(opt), "MusicArtist") {
+			if !strings.EqualFold(getOptType(opt), TypeMusicArtist) {
 				continue
 			}
+			sawMusicArtist = true
 			if fetchers := getImageFetchers(opt); len(fetchers) > 0 {
 				out = append(out, FetcherEntry{
 					LibraryName:  getName(lib),
@@ -207,8 +275,28 @@ func CollectImageFetcherEntriesRaw[T any, O any](
 				})
 			}
 		}
+		// See the declaredMusic paragraph above: an absent entry only means
+		// "artist defaults are running" if the peer says this is a music
+		// library. On a blank-CollectionType folder it means "this is not a
+		// music library", and warning about it is a false positive.
+		if !sawMusicArtist && declaredMusic(lib) {
+			out = append(out, FetcherEntry{
+				LibraryName: getName(lib),
+				LibraryID:   getItemID(lib),
+				Defaulted:   true,
+			})
+		}
 	}
 	return out
+}
+
+// DeclaredMusicCollectionType reports whether a library's CollectionType is
+// affirmatively "music". Shared so both platforms apply the identical rule
+// to the declaredMusic gate, and kept distinct from FilterMusicLibraries'
+// looser "music or blank" test on purpose -- see CollectImageFetcherEntriesRaw
+// for why an absence-triggered warning needs the stricter evidence.
+func DeclaredMusicCollectionType(collectionType string) bool {
+	return strings.EqualFold(strings.TrimSpace(collectionType), "music")
 }
 
 // FindMusicArtistOptionRaw returns the ImageFetchers/MetadataFetchers of the
