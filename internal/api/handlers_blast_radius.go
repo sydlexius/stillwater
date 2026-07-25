@@ -14,12 +14,16 @@
 // matter more than the ways it can be slow. Two of them are structural, and
 // both are surfaced to the operator rather than buried:
 //
-//  1. ATTRIBUTION. Rows recorded as "manual" cannot be attributed. Scan-driven
-//     changes only started recording source="scan" on 2026-07-19 (commit
-//     5942fa7a, PR #2641, issue #2636); before that they fell through to the
-//     "manual" default and are indistinguishable from an operator's own edit.
-//     Those rows are always listed and always counted separately. The counts
-//     ignore the operator's attribution filter for exactly this reason -- see
+//  1. ATTRIBUTION. Any row whose source does not name a recognized automated
+//     writer cannot be attributed, and "unknown" is the exact complement of
+//     "automated" rather than the single value "manual" -- so a source the
+//     allow-list does not recognize is counted as unknown instead of vanishing
+//     from the totals. Most unknown rows are "manual": scan-driven changes only
+//     started recording source="scan" on 2026-07-19 (commit 5942fa7a, PR #2641,
+//     issue #2636), and before that they fell through to the "manual" default
+//     and are indistinguishable from an operator's own edit. Those rows are
+//     always listed and always counted separately. The counts ignore the
+//     operator's attribution filter for exactly this reason -- see
 //     artist.CountBlastRadius.
 //
 //  2. COVERAGE. The report can only see fields metadata_changes records, which
@@ -132,8 +136,12 @@ type blastRadiusAttributionInfo struct {
 	CutoffDate string `json:"cutoff_date"`
 	// Automated counts rows whose source names an automated writer.
 	Automated int `json:"automated"`
-	// Unknown counts rows recorded as "manual", which may be operator edits or
-	// may be earlier scan damage. Never folded into Automated.
+	// Unknown counts every row whose source does NOT name an automated writer --
+	// the exact complement of Automated, not just source="manual". A source the
+	// allow-list does not recognize is unknown rather than uncounted, so the two
+	// buckets are exhaustive and their sum cannot silently omit rows. Most of
+	// these are "manual", which may be an operator's own edit or may be earlier
+	// scan damage. Never folded into Automated.
 	Unknown int `json:"unknown"`
 }
 

@@ -63,7 +63,7 @@ You can narrow the report by damage kind, by source, by field, or to a single ar
 Every row is labeled one of two ways:
 
 - **Automated** - written by a scan, an import, a metadata provider, or a rule. The source was recorded, so this is certain.
-- **Source unknown** - recorded as a manual change. Stillwater began recording scan-driven changes separately on 2026-07-19; before that, a scan that changed a value was recorded the same way your own edits are. These rows may be your edits or may be automated changes, and Stillwater cannot tell them apart.
+- **Source unknown** - anything Stillwater cannot positively identify as an automated writer, so nothing falls outside the two counts. Most of these are recorded as a manual change. Stillwater began recording scan-driven changes separately on 2026-07-19; before that, a scan that changed a value was recorded the same way your own edits are. These rows may be your edits or may be automated changes, and Stillwater cannot tell them apart.
 
 Rows with an unknown source are always listed and always counted separately. Narrowing the report to automated changes hides those rows from the list but does **not** remove them from the counts, so you can always see how many there are. A number that quietly excluded them would understate what was lost.
 
