@@ -332,20 +332,73 @@ func (r *sqliteHistoryRepo) listGlobalPerFieldCapped(ctx context.Context, filter
 	return changes, 0, nil
 }
 
-// blastRadiusAutomatedSQL matches the source values written by an automated
-// writer. Kept as one string so the row query and the count query cannot
-// disagree about what "automated" means.
+// blastAutomatedExactSources and blastAutomatedSourcePrefixes are the SINGLE
+// definition of "an automated writer made this change". Both the SQL predicates
+// and the Go classifier are derived from these two slices, so there is no second
+// copy that can drift.
 //
-// The prefix matches are literal LIKE patterns rather than dbutil.EscapeLike
-// calls because both prefixes are compile-time constants containing no LIKE
-// wildcards, so there is nothing to escape.
-const blastRadiusAutomatedSQL = `(mc.source IN ('scan', 'import') ` +
-	`OR mc.source LIKE 'provider:%' OR mc.source LIKE 'rule:%')`
+// That drift is not hypothetical: the SQL and the Go classifier previously
+// carried separate hand-written copies, and their "unknown" halves disagreed.
+// SQL called a row unknown only when source was literally "manual", while Go
+// called anything not recognized as automated unknown. A source that is neither
+// (this codebase writes "revert", and a future one could write anything) was
+// therefore listed in the rows but counted in neither bucket, so the operator
+// saw a total that silently omitted rows. See blastAttributionPredicate for how
+// the complement now makes that impossible.
+var (
+	// blastAutomatedExactSources match the source column exactly.
+	blastAutomatedExactSources = []string{"scan", "import"}
+	// blastAutomatedSourcePrefixes match the start of the source column. The
+	// values after the colon vary at runtime (a provider name, a rule id), so
+	// these are prefix matches rather than exact ones.
+	blastAutomatedSourcePrefixes = []string{"provider:", "rule:"}
+)
 
-// blastRadiusUnknownSQL matches rows Stillwater cannot attribute. See
-// BlastAttributionUnknown for why "manual" means unknown rather than
-// "operator edit", and why no date filter belongs here.
-const blastRadiusUnknownSQL = `mc.source = 'manual'`
+// blastRadiusAutomatedSQL builds the "automated writer" predicate over the given
+// source column expression. col varies because the CTE's columns are bare
+// ("source") inside the outer select but qualified ("mc.source") inside the CTE.
+//
+// The values are interpolated rather than bound as query parameters because they
+// are compile-time constants above, containing no quote characters and no LIKE
+// wildcards ("%" or "_"). Nothing caller-supplied reaches this string. The
+// prefixes are likewise literal LIKE patterns rather than dbutil.EscapeLike
+// calls: there is nothing to escape.
+func blastRadiusAutomatedSQL(col string) string {
+	quoted := make([]string, 0, len(blastAutomatedExactSources))
+	for _, s := range blastAutomatedExactSources {
+		quoted = append(quoted, "'"+s+"'")
+	}
+	parts := make([]string, 0, 1+len(blastAutomatedSourcePrefixes))
+	parts = append(parts, col+" IN ("+strings.Join(quoted, ", ")+")")
+	for _, p := range blastAutomatedSourcePrefixes {
+		parts = append(parts, col+" LIKE '"+p+"%'")
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
+}
+
+// blastAttributionPredicate returns the SQL predicate selecting ONE attribution
+// bucket over the given source column, or "" for "both buckets".
+//
+// The unknown predicate is the exact COMPLEMENT of the automated one, mirroring
+// classifyBlastAttribution's default branch. This is the property that keeps the
+// counts and the rows honest: every row that reaches this point falls in exactly
+// one bucket, so no row can appear in the list and be counted in neither. It
+// also means the two buckets are exhaustive, which is why the "both" case adds
+// no clause at all -- "automated OR NOT automated" is true for every row
+// (source is NOT NULL, so there is no third truth value to worry about).
+//
+// See BlastAttributionUnknown for why "cannot prove automated" is reported as
+// unknown rather than assumed to be a clean operator edit.
+func blastAttributionPredicate(attribution, col string) string {
+	switch attribution {
+	case BlastAttributionAutomated:
+		return blastRadiusAutomatedSQL(col)
+	case BlastAttributionUnknown:
+		return "NOT " + blastRadiusAutomatedSQL(col)
+	default:
+		return ""
+	}
+}
 
 // blastRadiusRankedCTE ranks every metadata_changes row within its
 // (artist_id, field) partition, most recent first.
@@ -424,14 +477,13 @@ func blastRadiusDamageWhere(class, attribution string) string {
 		// the recovered one, so it satisfies both predicates above and would
 		// otherwise read as fresh damage.
 		//
-		// This is deliberately REDUNDANT with the attribution allow-list added
-		// below, which also excludes "revert" because that source is neither
-		// automated nor unknown. Either predicate alone is sufficient today
-		// (mutation-tested: removing one keeps the recovery tests green).
-		// Both are kept because they encode different intents -- "a recovery is
-		// not damage" and "only classified sources are reportable" -- and a
-		// future edit that relaxes one, for example to surface an unrecognized
-		// source value, must not silently start listing recoveries as damage.
+		// This is now the ONE AND ONLY place "revert" is excluded, and that is
+		// deliberate. The attribution buckets below are exhaustive (automated
+		// and its complement), so they no longer drop anything on their own: an
+		// unrecognized source lands in the unknown bucket and IS reported,
+		// which is the point. Excluding a source from the report is therefore a
+		// decision that has to be written down here, on purpose, rather than
+		// something that falls out of two predicates happening to disagree.
 		"source != 'revert'",
 	}
 
@@ -442,23 +494,13 @@ func blastRadiusDamageWhere(class, attribution string) string {
 		where = append(where, "new_value != ''")
 	}
 
-	// Note the column prefixes: inside the outer select the CTE's columns are
-	// bare, so the shared source predicates (written against "mc.") are
-	// rewritten here rather than duplicated with different prefixes, which is
-	// how the two definitions would drift apart.
-	automated := strings.ReplaceAll(blastRadiusAutomatedSQL, "mc.", "")
-	unknown := strings.ReplaceAll(blastRadiusUnknownSQL, "mc.", "")
-
-	switch attribution {
-	case BlastAttributionAutomated:
-		where = append(where, automated)
-	case BlastAttributionUnknown:
-		where = append(where, unknown)
-	default:
-		// Both buckets. Still an explicit allow-list rather than "everything
-		// that is not revert": an unrecognized future source value must not
-		// silently land in the report unclassified.
-		where = append(where, "("+automated+" OR "+unknown+")")
+	// Note the bare column name: this clause runs in the OUTER select, where the
+	// CTE has already projected "source" without the "mc." table qualifier.
+	//
+	// An empty predicate means "both buckets", which needs no clause because the
+	// two buckets are exhaustive by construction. See blastAttributionPredicate.
+	if p := blastAttributionPredicate(attribution, "source"); p != "" {
+		where = append(where, p)
 	}
 
 	return "WHERE " + strings.Join(where, " AND ")
@@ -548,27 +590,36 @@ func (r *sqliteHistoryRepo) CountBlastRadius(ctx context.Context, f BlastRadiusF
 	f.Validate()
 	cteWhere, args := blastRadiusRankedWhere(f)
 
-	count := func(attribution string) (int, error) {
-		// Same server-built fragments as ListBlastRadius: cteWhere emits only
-		// "?" placeholders and the damage clause is switch-selected from
-		// validated constants, so no caller-supplied text reaches the string.
-		q := fmt.Sprintf(blastRadiusRankedCTE, cteWhere) + `
-			SELECT COUNT(*) FROM ranked ` + blastRadiusDamageWhere(f.Class, attribution)
-		var n int
-		if err := r.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
-			return 0, err
-		}
-		return n, nil
+	// ONE scan over the ranked rows, splitting the buckets with conditional
+	// aggregation rather than running the same query twice with different
+	// attribution clauses. Two scans could return figures that disagree with
+	// each other (and historically the two clauses did); a single scan cannot
+	// disagree with itself.
+	//
+	// The damage clause is built with BlastScopeAll on purpose: it selects every
+	// damaged row regardless of the operator's attribution filter, which is what
+	// the "both buckets are always reported" contract requires.
+	//
+	// Same server-built fragments as ListBlastRadius: cteWhere emits only "?"
+	// placeholders and the damage clause is switch-selected from validated
+	// constants, so no caller-supplied text reaches the string.
+	automated := blastRadiusAutomatedSQL("source")
+	q := fmt.Sprintf(blastRadiusRankedCTE, cteWhere) + `
+		SELECT
+			SUM(CASE WHEN ` + automated + ` THEN 1 ELSE 0 END),
+			SUM(CASE WHEN ` + automated + ` THEN 0 ELSE 1 END)
+		FROM ranked ` + blastRadiusDamageWhere(f.Class, BlastScopeAll)
+
+	// SUM over zero rows is NULL in SQLite, not 0, so both columns are scanned
+	// as nullable and a NULL is read as an honest zero.
+	var automatedN, unknownN sql.NullInt64
+	if err := r.db.QueryRowContext(ctx, q, args...).Scan(&automatedN, &unknownN); err != nil {
+		return BlastRadiusCounts{}, fmt.Errorf("counting blast-radius rows by attribution: %w", err)
 	}
 
 	var counts BlastRadiusCounts
-	var err error
-	if counts.Automated, err = count(BlastAttributionAutomated); err != nil {
-		return BlastRadiusCounts{}, fmt.Errorf("counting automated blast-radius rows: %w", err)
-	}
-	if counts.Unknown, err = count(BlastAttributionUnknown); err != nil {
-		return BlastRadiusCounts{}, fmt.Errorf("counting unattributable blast-radius rows: %w", err)
-	}
+	counts.Automated = int(automatedN.Int64)
+	counts.Unknown = int(unknownN.Int64)
 
 	// Total follows the ACTIVE filter because pagination needs it; the bucket
 	// counts above do not, because honesty needs them not to.
@@ -599,15 +650,22 @@ func classifyBlastDamage(newValue string) string {
 // classifyBlastAttribution labels a row by who Stillwater can prove made the
 // change. Anything not positively recognized as an automated writer is
 // unknown, never assumed clean.
+//
+// This reads the SAME two collections the SQL predicates are built from, so the
+// classifier that labels a row and the predicate that counts it cannot disagree
+// about what "automated" means.
 func classifyBlastAttribution(source string) string {
-	switch {
-	case source == "scan", source == "import":
-		return BlastAttributionAutomated
-	case strings.HasPrefix(source, "provider:"), strings.HasPrefix(source, "rule:"):
-		return BlastAttributionAutomated
-	default:
-		return BlastAttributionUnknown
+	for _, s := range blastAutomatedExactSources {
+		if source == s {
+			return BlastAttributionAutomated
+		}
 	}
+	for _, p := range blastAutomatedSourcePrefixes {
+		if strings.HasPrefix(source, p) {
+			return BlastAttributionAutomated
+		}
+	}
+	return BlastAttributionUnknown
 }
 
 // parseHistoryTimestamp parses a created_at string from the metadata_changes
