@@ -544,7 +544,11 @@ func RestoreLibraryOptions(ctx context.Context, t Transport, logger *slog.Logger
 	if snap.Version != SnapshotVersionSavers && snap.Version != SnapshotVersionWithFetchers {
 		return fmt.Errorf("unsupported snapshot version %d", snap.Version)
 	}
-	restoreFetchers := snap.Version >= SnapshotVersionWithFetchers
+	// Exactly v2, not ">= v2". Identical behavior today because the gate
+	// above admits only v1 and v2, but a future v3 added to that gate would
+	// be opted into fetcher-replay by a >= comparison without anyone
+	// deciding it should be. Each version states its own semantics.
+	restoreFetchers := snap.Version == SnapshotVersionWithFetchers
 	libs, err := GetMusicLibrariesRaw(ctx, t, logger, platform)
 	if err != nil {
 		return fmt.Errorf("getting music libraries: %w", err)

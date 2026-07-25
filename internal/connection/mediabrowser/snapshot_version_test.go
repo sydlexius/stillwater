@@ -3,6 +3,7 @@ package mediabrowser
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -320,5 +321,127 @@ func TestRestoreLibraryOptions_RejectsVersionZero(t *testing.T) {
 	}
 	if len(tr.posts) != 0 {
 		t.Errorf("a rejected snapshot must not POST anything, got %d posts", len(tr.posts))
+	}
+}
+
+// TestSnapshotVersionSemantics_AreDeclaredPerVersion is a FORCING FUNCTION
+// for the next person who adds a snapshot version, not a guard on the
+// current fetcher-replay comparison.
+//
+// WHAT IT CANNOT DO, stated plainly so nobody mistakes it for more than it
+// is. RestoreLibraryOptions rejects every version except 1 and 2, so for
+// every input that reaches the comparison, `version >= 2` and `version == 2`
+// are the SAME predicate. That is arithmetic, not a gap in coverage: no test
+// driving the public API can tell the two operators apart, and one claiming
+// to would be vacuous. Measured, not assumed -- reverting `==` to `>=` leaves
+// this entire package, and all of internal/connection, green.
+//
+// WHAT IT DOES DO. It pins the two version SETS against each other:
+// the set restore accepts, and the subset that replays fetchers. Those are
+// separate decisions, and today the second is a strict subset of the first.
+// Adding a version 3 to the accept gate without touching this table breaks
+// the "everything else is rejected" row, which is precisely the moment
+// someone must decide whether v3 replays fetchers. A `>=` comparison would
+// have made that decision silently, by inheritance; `==` plus this table
+// makes it a choice someone has to write down.
+func TestSnapshotVersionSemantics_AreDeclaredPerVersion(t *testing.T) {
+	// The peer holds an armed fetcher list, so "replayed" and "left alone"
+	// are observably different outcomes rather than two flavors of nothing.
+	const armedFetcher = "FanArt"
+
+	for _, tc := range []struct {
+		version         int
+		accepted        bool
+		replaysFetchers bool
+		rationale       string
+	}{
+		{
+			version: 0, accepted: false,
+			rationale: "a missing or malformed version field decodes to 0; failing closed " +
+				"is what stops a truncated blob being applied as if it were understood",
+		},
+		{
+			version: SnapshotVersionSavers, accepted: true, replaysFetchers: false,
+			rationale: "v1 predates the fetcher lever, so it has no record to replay and " +
+				"must not clear what it never captured",
+		},
+		{
+			version: SnapshotVersionWithFetchers, accepted: true, replaysFetchers: true,
+			rationale: "v2 records fetchers, so its list is authoritative -- including when " +
+				"it is empty",
+		},
+		{
+			version: 3, accepted: false,
+			rationale: "v3 does not exist yet. When it does, this row must be updated " +
+				"DELIBERATELY, and updating it forces a decision about fetcher replay",
+		},
+		{
+			version: 99, accepted: false,
+			rationale: "a far-future snapshot restored by today's binary would misapply " +
+				"levers it does not model",
+		},
+	} {
+		t.Run(fmt.Sprintf("v%d", tc.version), func(t *testing.T) {
+			peer := newStatefulPeer(map[string]map[string]any{
+				"m1": {
+					"SaveLocalMetadata": false,
+					"TypeOptions": []any{
+						map[string]any{"Type": "MusicArtist", "ImageFetchers": []any{armedFetcher}},
+					},
+				},
+			})
+			// Precondition: the fetcher must start armed, or "left alone"
+			// and "cleared" look identical and every row passes vacuously.
+			if got := musicArtistFetchers(t, peer); len(got) == 0 {
+				t.Fatal("precondition: the peer must start with a fetcher armed")
+			}
+
+			// The snapshot carries an EMPTY fetcher list. Under v2 that is
+			// authoritative and clears the peer's list; under v1 it is
+			// "not recorded" and must leave the list alone. Empty is the
+			// discriminating value: a populated list would be replayed to
+			// the same visible end state either way for some fixtures.
+			buf, err := json.Marshal(LibraryWriteBackSnapshot{
+				Version: tc.version,
+				Libraries: []LibrarySaverSnapshotEntry{{
+					LibraryID: "m1", SaveLocalMetadata: true,
+					MetadataSavers: []string{"Nfo"},
+					ImageFetchers:  []string{},
+				}},
+			})
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+
+			err = RestoreLibraryOptions(context.Background(), peer, testLogger(), "emby", string(buf))
+
+			if !tc.accepted {
+				if err == nil || !strings.Contains(err.Error(), "unsupported snapshot version") {
+					t.Fatalf("v%d was ACCEPTED, want rejected. %s.\nIf this version is now "+
+						"meant to be supported, updating the accept gate is only half the "+
+						"change: decide explicitly whether it replays fetchers and add it to "+
+						"this table with that decision recorded. err = %v",
+						tc.version, tc.rationale, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("v%d was REJECTED, want accepted. %s. err = %v", tc.version, tc.rationale, err)
+			}
+
+			got := musicArtistFetchers(t, peer)
+			if tc.replaysFetchers {
+				if len(got) != 0 {
+					t.Errorf("v%d did NOT replay the snapshot's empty fetcher list "+
+						"(peer still has %v). %s", tc.version, got, tc.rationale)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, []string{armedFetcher}) {
+				t.Errorf("v%d CHANGED the peer's fetcher list to %v, want [%s] untouched. %s",
+					tc.version, got, armedFetcher, tc.rationale)
+			}
+		})
 	}
 }
