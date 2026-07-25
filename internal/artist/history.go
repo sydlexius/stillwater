@@ -67,6 +67,15 @@ type HistoryRepository interface {
 	// ListGlobal returns paginated changes across all artists, ordered by
 	// created_at descending. The filter controls which records are returned.
 	ListGlobal(ctx context.Context, filter GlobalHistoryFilter) ([]MetadataChangeWithArtist, int, error)
+
+	// ListBlastRadius returns the currently-destroyed fields: for each
+	// (artist, field), the most recent change, kept only when it was an
+	// automated writer replacing a value the operator had. Read-only.
+	ListBlastRadius(ctx context.Context, filter BlastRadiusFilter) ([]BlastRadiusRow, error)
+
+	// CountBlastRadius returns how the matching rows split by attribution.
+	// Both bucket counts ignore filter.Attribution so neither can be hidden.
+	CountBlastRadius(ctx context.Context, filter BlastRadiusFilter) (BlastRadiusCounts, error)
 }
 
 // HistoryService provides metadata change tracking for artists.
@@ -175,6 +184,27 @@ func (h *HistoryService) ListGlobal(ctx context.Context, filter GlobalHistoryFil
 		filter.Offset = 0
 	}
 	return h.repo.ListGlobal(ctx, filter)
+}
+
+// ListBlastRadius returns the currently-destroyed fields for the blast-radius
+// report: for each (artist, field), the most recent change, kept only when
+// that change was an automated writer replacing a value the operator had.
+// Already-recovered fields are absent. Read-only; writes nothing.
+//
+// Coverage is bounded by what metadata_changes records at all, which is exactly
+// TrackableFields(). Callers rendering this report must state that limit rather
+// than let an absent field read as an undamaged one.
+func (h *HistoryService) ListBlastRadius(ctx context.Context, filter BlastRadiusFilter) ([]BlastRadiusRow, error) {
+	filter.Validate()
+	return h.repo.ListBlastRadius(ctx, filter)
+}
+
+// CountBlastRadius returns how the matching rows split between attributed
+// automated overwrites and unattributable ones. Both counts are always
+// populated regardless of filter.Attribution.
+func (h *HistoryService) CountBlastRadius(ctx context.Context, filter BlastRadiusFilter) (BlastRadiusCounts, error) {
+	filter.Validate()
+	return h.repo.CountBlastRadius(ctx, filter)
 }
 
 // IsTrackableField reports whether the given field name is tracked by the
