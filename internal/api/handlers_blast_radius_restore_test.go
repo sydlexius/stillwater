@@ -650,6 +650,27 @@ func TestBlastRestore_DoesNotRepublishOrRetriggerWriter(t *testing.T) {
 	}
 }
 
+// TestBlastRestore_ArtistServiceUnavailable pins the artistService guard
+// added alongside the historyService one: the restore path resolves live
+// values and performs writes through artistService (liveValueRestorable,
+// performRevert), so an unconfigured artist service must refuse the request
+// before the singleton slot is claimed, matching the historyService guard and
+// the convention used across the package's other artistService-gated
+// handlers.
+func TestBlastRestore_ArtistServiceUnavailable(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := restoreTestRouter(t)
+	a := addTestArtist(t, artistSvc, "No Artist Service")
+	changeID := damageField(t, r, artistSvc, historySvc, a.ID, "biography", "unreachable bio", "")
+
+	r.artistService = nil
+
+	w, _ := postRestore(t, r, `{"change_ids":["`+changeID+`"],"commit":true}`)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestBlastRestore_RequiresAdmin pins the authorization boundary: a restore
 // writes artist metadata, so a non-admin session must not reach the plan.
 func TestBlastRestore_RequiresAdmin(t *testing.T) {

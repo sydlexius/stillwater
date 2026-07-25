@@ -600,6 +600,10 @@ func (r *Router) handleBlastRadiusRestore(w http.ResponseWriter, req *http.Reque
 		writeError(w, req, http.StatusServiceUnavailable, "history service is not available")
 		return
 	}
+	if r.artistService == nil {
+		writeError(w, req, http.StatusServiceUnavailable, "artist service is not available")
+		return
+	}
 
 	// Parse and validate BEFORE claiming the singleton so a malformed request
 	// cannot hold the slot, matching handleFixAll.
