@@ -43,6 +43,17 @@ func (alwaysErrHistoryRepo) ListGlobal(_ context.Context, _ artist.GlobalHistory
 	return nil, 0, errors.New("simulated history store failure")
 }
 
+// The blast-radius methods fail the same way ListGlobal does, so a handler
+// wired to this stub exercises its error path rather than silently seeing an
+// empty-but-successful report.
+func (alwaysErrHistoryRepo) ListBlastRadius(_ context.Context, _ artist.BlastRadiusFilter) ([]artist.BlastRadiusRow, error) {
+	return nil, errors.New("simulated history store failure")
+}
+
+func (alwaysErrHistoryRepo) CountBlastRadius(_ context.Context, _ artist.BlastRadiusFilter) (artist.BlastRadiusCounts, error) {
+	return artist.BlastRadiusCounts{}, errors.New("simulated history store failure")
+}
+
 // testRouterWithErrHistoryService creates a Router wired with a HistoryService
 // whose ListGlobal always errors. This is used to verify that handleFieldEdit
 // degrades gracefully when the history pre-load step fails.
