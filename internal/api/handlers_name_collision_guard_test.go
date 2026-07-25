@@ -300,3 +300,82 @@ func TestHandleFieldUpdate_NameCollision_FailsClosed(t *testing.T) {
 			got, "Southgate Winds")
 	}
 }
+
+// TestHandleFieldUpdate_NameCollision_ReportsStoredNameNotTypedName pins the
+// one piece of information the 409 message exists to carry: WHICH artist is
+// already using the name.
+//
+// The fixture is built so the REQUESTED name and the STORED name are
+// DIFFERENT strings that share an identity key -- "the northfield chorale"
+// typed against a stored "The Northfield Chorale". Every other fixture in this
+// file uses the same string for both, which makes collision.Name and newName
+// indistinguishable: swapping one for the other passes those tests unchanged.
+//
+// If that regresses, the operator is told *Another artist named "the
+// northfield chorale" already uses this name* -- their own typing echoed back,
+// naming an artist that does not exist under that spelling. They would go
+// looking for a record that is not there. Asserting the ABSENCE of the typed
+// string is what makes this test able to catch the swap; asserting only the
+// presence of the stored name would still pass if both were rendered.
+func TestHandleFieldUpdate_NameCollision_ReportsStoredNameNotTypedName(t *testing.T) {
+	t.Parallel()
+
+	const (
+		storedName = "The Northfield Chorale"
+		typedName  = "the northfield chorale"
+	)
+
+	// Precondition: the two spellings must genuinely differ yet collide, or the
+	// test degenerates into the same-string case it exists to escape.
+	if storedName == typedName {
+		t.Fatal("precondition: fixture names must differ, or collision.Name and newName are indistinguishable")
+	}
+
+	t.Run("json envelope", func(t *testing.T) {
+		t.Parallel()
+		r, artistSvc := testRouter(t)
+		existing := addTestArtist(t, artistSvc, storedName)
+		subject := addPlatformOnlyArtist(t, artistSvc, "Southgate Winds")
+
+		w := patchName(t, r, subject.ID, typedName, false)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+		}
+
+		var body map[string]string
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decoding response body %q: %v", w.Body.String(), err)
+		}
+		if body["existing_name"] != storedName {
+			t.Errorf("existing_name = %q, want the STORED name %q; reporting the typed value names "+
+				"an artist that does not exist under that spelling", body["existing_name"], storedName)
+		}
+		if body["existing_artist_id"] != existing.ID {
+			t.Errorf("existing_artist_id = %q, want %q", body["existing_artist_id"], existing.ID)
+		}
+	})
+
+	t.Run("rendered fragment", func(t *testing.T) {
+		t.Parallel()
+		r, artistSvc := testRouter(t)
+		addTestArtist(t, artistSvc, storedName)
+		subject := addPlatformOnlyArtist(t, artistSvc, "Southgate Winds")
+
+		w := patchName(t, r, subject.ID, typedName, true)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+		}
+
+		body := w.Body.String()
+		if !strings.Contains(body, storedName) {
+			t.Errorf("fragment does not name the STORED artist %q:\n%s", storedName, body)
+		}
+		// The discriminating assertion. templ HTML-escapes its interpolations,
+		// so the typed string would appear verbatim if it were rendered.
+		if strings.Contains(body, typedName) {
+			t.Errorf("fragment echoes the operator's typed name %q back at them instead of naming "+
+				"the existing artist; the message then points at a record that does not exist:\n%s",
+				typedName, body)
+		}
+	})
+}

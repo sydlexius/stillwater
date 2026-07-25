@@ -12,10 +12,27 @@ import templruntime "github.com/a-h/templ/runtime"
 // would collide with an existing artist's identity (#2730).
 //
 // Rendered instead of the generic ErrorToast because a bare "another artist
-// already uses this name" leaves the operator with no next step. The whole
-// point of the guard is that there IS a next step: the duplicates report's
-// merge/reconcile flow, which #2792 made able to resolve platform-only
-// records. So the fragment names the other artist and links to that page.
+// already uses this name" leaves the operator with no next step.
+//
+// THE COPY IS DELIBERATELY CONDITIONAL, and this is the subtle part. The
+// obvious wording -- "merge them on the duplicates report" -- is a promise the
+// report cannot always keep. DetectDuplicates REFUSES to group two artists
+// bound to different non-empty MusicBrainz IDs (makeGuardedUnion in
+// internal/artist/duplicates.go, the #2527 data-loss guard). The rename guard
+// has no such condition, so a same-name-key pair with conflicting MBIDs is
+// refused here AND absent from the report: the operator would click through to
+// an empty page with no way forward.
+//
+// The guard intentionally still refuses that rename. Nothing in this repo
+// verifies that a stored MBID is CORRECT -- validation checks UUID shape only,
+// and #2715 records that some stored MBIDs come from an unscored name-search
+// hit -- so exempting on "different MBIDs" would defer to a signal that may
+// itself be wrong. The report's refusal is a conservative stance about an
+// irreversible merge, not an assertion that the two artists are distinct.
+//
+// So the copy states both outcomes without making the operator reason about
+// MBIDs: the pair MAY be combinable from the report, and if it is not listed
+// there, Stillwater is holding the two apart on purpose.
 //
 // Styling reuses the ClobberWarnings warning-banner treatment verbatim (same
 // amber palette, same rounded-md/px-4/py-3 box, same role="alert"). No new
@@ -25,16 +42,19 @@ import templruntime "github.com/a-h/templ/runtime"
 // builds it from artist.NameCollision; the template never imports the artist
 // domain package, matching the ArtistDuplicateMember convention above.
 type NameCollisionWarningView struct {
-	// ExistingName is the stored name of the artist that already holds the
-	// identity. Usually equal to AttemptedName, but not always: the identity
-	// key folds case, accents, punctuation, and leading articles, so "the
-	// cure" collides with a stored "The Cure".
+	// ExistingName is the STORED name of the artist that already holds the
+	// identity -- never the name the operator typed. The two differ whenever
+	// the identity key folds a difference between them: "the cure" collides
+	// with a stored "The Cure". Echoing the typed value back would name an
+	// artist that does not exist under that spelling and would destroy the
+	// one piece of information this message exists to carry, so
+	// handlers_name_collision_guard_test.go pins it with a fixture whose
+	// requested and stored names differ.
 	ExistingName string
 	// ExistingPlatformOnly is true when the colliding artist exists only as a
 	// platform record with no directory on disk.
 	ExistingPlatformOnly bool
-	// DuplicatesURL is the base-path-qualified link to the duplicates report
-	// where the two records can be merged.
+	// DuplicatesURL is the base-path-qualified link to the duplicates report.
 	DuplicatesURL string
 }
 
@@ -66,7 +86,7 @@ func NameCollisionWarning(w NameCollisionWarningView) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "name_collision.already_used", w.ExistingName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 35, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 55, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -80,7 +100,7 @@ func NameCollisionWarning(w NameCollisionWarningView) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "name_collision.existing_platform_only"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 37, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 57, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -92,41 +112,54 @@ func NameCollisionWarning(w NameCollisionWarningView) templ.Component {
 			}
 		}
 		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(" ")
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "name_collision.resolve_hint"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 39, Col: 7}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 59, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " <a class=\"underline font-medium\" href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var5 templ.SafeURL
-		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(w.DuplicatesURL))
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(" ")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 40, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 60, Col: 7}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " <a class=\"underline font-medium\" href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "name_collision.merge_link"))
+		var templ_7745c5c3_Var6 templ.SafeURL
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(w.DuplicatesURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 41, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 61, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</a></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var7 string
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "name_collision.merge_link"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/name_collision_warning.templ`, Line: 62, Col: 40}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</a></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

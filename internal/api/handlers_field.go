@@ -207,8 +207,15 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 	// #2730: a name edit that lands on an identity another artist already
 	// holds must be refused BEFORE the write. Letting it through produced two
 	// same-named records, which the operator only discovered later in the
-	// duplicates report. The guard runs only for the name field; every other
-	// field is identity-neutral.
+	// duplicates report.
+	//
+	// ONLY the name field is guarded. That is a scope choice, not a claim that
+	// no other field affects identity: DetectDuplicates groups on name key OR
+	// shared MBID, so editing musicbrainz_id through this same handler can also
+	// form a duplicate group. That edit is left to the report deliberately --
+	// pointing two records at one MBID is how an operator legitimately links
+	// them, so refusing it would block the intended workflow rather than
+	// protect it.
 	if field == "name" && !r.guardNameCollision(w, req, artistID, value) {
 		return
 	}

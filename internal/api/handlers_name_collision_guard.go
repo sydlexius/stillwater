@@ -34,7 +34,21 @@ import (
 //
 //   - collision detected -> 409 Conflict, with a warning fragment (HTMX) or a
 //     JSON error envelope (API) naming the existing artist and pointing at the
-//     duplicates report where the two can be merged.
+//     duplicates report.
+//
+//     The response deliberately does NOT promise that the two records can be
+//     merged there. DetectDuplicates refuses to group artists bound to
+//     different non-empty MusicBrainz IDs (makeGuardedUnion, the #2527
+//     data-loss guard), while this check considers only the name key -- so a
+//     conflicting-MBID pair is refused here and absent from the report. The
+//     guard still refuses that rename on purpose: nothing in this repo
+//     verifies a stored MBID is correct (validation checks UUID shape only,
+//     and #2715 records that some are adopted from an unscored name-search
+//     hit), so exempting on "different MBIDs" would defer to a signal that may
+//     itself be the defect. The wording therefore covers BOTH outcomes rather
+//     than detecting which one applies -- determining that would mean
+//     consulting MBIDs here, which is exactly what the guard must not do.
+//
 //   - the check itself failed -> 500. A guard that could not run is NOT
 //     evidence that the rename is safe, so we refuse rather than fall through
 //     to the unguarded write. This is the whole defect #2730 describes.
@@ -87,10 +101,17 @@ func (r *Router) guardNameCollision(w http.ResponseWriter, req *http.Request, ar
 		return false
 	}
 
+	// detail mirrors the guidance the HTMX fragment renders, so an API client
+	// surfaces the same accurate next step. Like the fragment, it states both
+	// outcomes rather than promising a merge that the duplicates report may
+	// structurally refuse to offer (see the doc comment above).
 	writeJSON(w, http.StatusConflict, map[string]string{
 		"error":              artist.ErrNameCollision.Error(),
 		"existing_artist_id": collision.ArtistID,
 		"existing_name":      collision.Name,
+		"detail": "If Stillwater reads the two as the same artist, they can be combined " +
+			"from the duplicates report. If they are not listed there, Stillwater is " +
+			"holding them apart as separate artists and they cannot be combined.",
 	})
 	return false
 }

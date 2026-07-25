@@ -346,3 +346,75 @@ func TestFindNameCollision_MissingDBAccessorIsAnError(t *testing.T) {
 		t.Errorf("collision = %+v, want nil alongside the error", got)
 	}
 }
+
+// TestFindNameCollision_MultiplePartnersIsDeterministic pins the ORDER BY in
+// FindNameCollision's query. When two existing artists share the target
+// identity key, the reported partner must be stable: an operator who retries
+// the same rename must not be told about a different artist each time, and a
+// changing partner would make the 409 message look arbitrary.
+//
+// The fixture is built so ORDERING IS THE ONLY THING THAT DECIDES the answer:
+// both rows share the key, so a query with no ORDER BY (or a reversed one)
+// returns whichever row SQLite happens to yield first. The names and IDs are
+// chosen to disagree deliberately -- "Alpha Chorale"/id z-... sorts first by
+// name, last by id -- so a fixture where both axes coincide cannot make this
+// pass vacuously.
+func TestFindNameCollision_MultiplePartnersIsDeterministic(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Both existing artists normalize to the same key ("northfield chorale"):
+	// one via a leading article, one via case folding.
+	first := &Artist{ID: "aaa-low-id", Name: "The Northfield Chorale", SortName: "Northfield Chorale, The"}
+	if err := svc.Create(ctx, first); err != nil {
+		t.Fatalf("Create first partner: %v", err)
+	}
+	second := &Artist{ID: "zzz-high-id", Name: "northfield chorale", SortName: "northfield chorale"}
+	if err := svc.Create(ctx, second); err != nil {
+		t.Fatalf("Create second partner: %v", err)
+	}
+	subject := &Artist{ID: "mmm-subject", Name: "Southgate Winds", SortName: "Southgate Winds"}
+	if err := svc.Create(ctx, subject); err != nil {
+		t.Fatalf("Create subject: %v", err)
+	}
+
+	// Anti-vacuity: both partners must really share the target key, or the
+	// test degenerates into the single-partner case and proves nothing about
+	// ordering.
+	target := NormalizeIdentityKey("Northfield Chorale")
+	if k := NormalizeIdentityKey(first.Name); k != target {
+		t.Fatalf("precondition: first partner key = %q, want %q", k, target)
+	}
+	if k := NormalizeIdentityKey(second.Name); k != target {
+		t.Fatalf("precondition: second partner key = %q, want %q", k, target)
+	}
+
+	// THE TWO SORT AXES MUST DISAGREE, or this test cannot detect a changed
+	// ORDER BY. Under the production `ORDER BY name, id`, SQLite's default
+	// BINARY collation puts uppercase 'T' (0x54) before lowercase 'n' (0x6E),
+	// so "The Northfield Chorale" (id aaa-low-id) wins. Under any id-descending
+	// order, "northfield chorale" (id zzz-high-id) would win instead. The IDs
+	// are therefore chosen to OPPOSE the name order: a fixture where both axes
+	// happen to select the same row passes vacuously against a reordering
+	// mutation, which is exactly the trap this comment exists to prevent.
+	want := first.ID
+
+	// Repeat: a single call could match by luck. Stability across calls is the
+	// property being asserted.
+	for i := range 5 {
+		got, err := svc.FindNameCollision(ctx, subject.ID, "Northfield Chorale")
+		if err != nil {
+			t.Fatalf("FindNameCollision call %d: %v", i, err)
+		}
+		if got == nil {
+			t.Fatalf("FindNameCollision call %d = nil, want a collision", i)
+		}
+		if got.ArtistID != want {
+			t.Fatalf("call %d reported partner %q, want %q: the reported partner must not "+
+				"depend on row order, or an operator retrying the same rename sees a different artist",
+				i, got.ArtistID, want)
+		}
+	}
+}

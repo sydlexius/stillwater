@@ -108,7 +108,10 @@ func (s *Service) FindNameCollision(ctx context.Context, artistID, newName strin
 	//
 	// ORDER BY makes the reported partner deterministic when more than one
 	// existing artist shares the key, so the operator sees a stable message
-	// and the test asserting it is not order-dependent.
+	// instead of one that changes between identical attempts. Pinned by
+	// TestFindNameCollision_MultiplePartnersIsDeterministic, which seeds two
+	// artists sharing the target key with IDs chosen so a different ordering
+	// would select the other row.
 	const q = `SELECT id, name, path FROM artists WHERE id <> ? ORDER BY name, id`
 	rows, err := db.QueryContext(ctx, q, artistID)
 	if err != nil {
