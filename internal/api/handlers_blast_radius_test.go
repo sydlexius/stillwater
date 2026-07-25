@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -359,5 +361,420 @@ func TestHandleReportBlastRadiusExport_SanitizesFormulaInjection(t *testing.T) {
 
 	if !strings.Contains(w.Body.String(), "'=cmd") {
 		t.Errorf("formula-triggering value was not prefixed; body: %s", w.Body.String())
+	}
+}
+
+// TestHandleReportBlastRadiusExport_SanitizesEveryColumn is the mutation-proof
+// sanitization test: EVERY emitted cell that can carry attacker-influenced
+// text (artist name, field, old value, new value, source) must be sanitized,
+// not just one of them. Each of the four trigger characters (= + - @) is
+// planted in a different column so a sanitizer that only guards one column
+// cannot pass by accident.
+//
+// This test is mutation-proved: with sanitizeCSV's call sites removed (or the
+// function turned into a no-op), this test goes RED. See the companion
+// verification note in the report to the lead for the actual mutation run.
+func TestHandleReportBlastRadiusExport_SanitizesEveryColumn(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+
+	// Plant a distinct trigger character in each attacker-reachable column:
+	// artist name (=), field is fixed by the schema so we use old/new value and
+	// source instead to cover the remaining three triggers.
+	seedAPIBlastChange(t, r, "inj-name", "inj-name-1", "=SUM(A1:A9)", "biography",
+		"old val", "new val", "scan", apiBlastBase)
+	seedAPIBlastChange(t, r, "inj-old", "inj-old-1", "Old Value Artist", "biography",
+		"+cmd|'/c calc'!A1", "harmless new", "scan", apiBlastBase.Add(time.Minute))
+	seedAPIBlastChange(t, r, "inj-new", "inj-new-1", "New Value Artist", "biography",
+		"harmless old", "-cmd|'/c calc'!A1", "scan", apiBlastBase.Add(2*time.Minute))
+	// Source is normally one of a small allow-listed set (manual/scan/provider:*
+	// /rule:*/import/revert), but the column is still written through sanitizeCSV
+	// like every other cell, so prove that too using a value the DB layer does
+	// not validate.
+	seedAPIBlastChange(t, r, "inj-src", "inj-src-1", "Source Artist", "biography",
+		"old", "new", "@cmd|'/c calc'!A1", apiBlastBase.Add(3*time.Minute))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius/export", nil)
+	req = req.WithContext(adminContext())
+	w := httptest.NewRecorder()
+	r.handleReportBlastRadiusExport(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	cr := csv.NewReader(strings.NewReader(w.Body.String()))
+	cr.FieldsPerRecord = -1
+	records, err := cr.ReadAll()
+	if err != nil {
+		t.Fatalf("parsing CSV: %v; body: %s", err, w.Body.String())
+	}
+
+	// Column order: Artist, Field, Previous Value, Current Value, Change,
+	// Source, Attribution, When.
+	const (
+		colArtist = 0
+		colOld    = 2
+		colNew    = 3
+		colSource = 5
+	)
+
+	byArtist := map[string][]string{}
+	for _, rec := range records {
+		if len(rec) < 8 {
+			continue // caveat note rows are single-column
+		}
+		byArtist[rec[colArtist]] = rec
+	}
+
+	nameRow, ok := byArtist["'=SUM(A1:A9)"]
+	if !ok {
+		t.Fatalf("artist-name column was not sanitized; want a row keyed on %q, got artists: %v",
+			"'=SUM(A1:A9)", blastRadiusTestArtistKeys(byArtist))
+	}
+	_ = nameRow
+
+	oldRow, ok := byArtist["Old Value Artist"]
+	if !ok {
+		t.Fatalf("row for Old Value Artist missing entirely")
+	}
+	if !strings.HasPrefix(oldRow[colOld], "'+cmd") {
+		t.Errorf("previous-value column was not sanitized: got %q", oldRow[colOld])
+	}
+
+	newRow, ok := byArtist["New Value Artist"]
+	if !ok {
+		t.Fatalf("row for New Value Artist missing entirely")
+	}
+	if !strings.HasPrefix(newRow[colNew], "'-cmd") {
+		t.Errorf("current-value column was not sanitized: got %q", newRow[colNew])
+	}
+
+	srcRow, ok := byArtist["Source Artist"]
+	if !ok {
+		t.Fatalf("row for Source Artist missing entirely")
+	}
+	if !strings.HasPrefix(srcRow[colSource], "'@cmd") {
+		t.Errorf("source column was not sanitized: got %q", srcRow[colSource])
+	}
+}
+
+func blastRadiusTestArtistKeys(m map[string][]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// TestBlastRadiusCoverage_DerivesFromTrackableFields is a unit-level (no HTTP)
+// check on blastRadiusCoverage itself: the covered list must literally BE
+// artist.TrackableFields() (same length, same members), and the uncovered
+// list must be every artist.EditableFieldsList() member that TrackableFields
+// does not name. A hard-coded list that happens to match today would pass a
+// looser check but silently drift the day a field is added to either side; this
+// asserts the derivation, not just today's snapshot.
+func TestBlastRadiusCoverage_DerivesFromTrackableFields(t *testing.T) {
+	t.Parallel()
+
+	covered, uncovered := blastRadiusCoverage()
+
+	want := artist.TrackableFields()
+	if len(covered) != len(want) {
+		t.Fatalf("covered has %d entries, want %d matching TrackableFields()", len(covered), len(want))
+	}
+	wantSet := make(map[string]bool, len(want))
+	for _, f := range want {
+		wantSet[f] = true
+	}
+	for _, f := range covered {
+		if !wantSet[f] {
+			t.Errorf("covered contains %q, which is not in TrackableFields()", f)
+		}
+	}
+
+	editable := artist.EditableFieldsList()
+	coveredSet := make(map[string]bool, len(covered))
+	for _, f := range covered {
+		coveredSet[f] = true
+	}
+	var wantUncovered []string
+	for _, f := range editable {
+		if !coveredSet[f] {
+			wantUncovered = append(wantUncovered, f)
+		}
+	}
+	if len(uncovered) != len(wantUncovered) {
+		t.Fatalf("uncovered has %d entries, want %d (editable minus covered)", len(uncovered), len(wantUncovered))
+	}
+	uncoveredSet := make(map[string]bool, len(uncovered))
+	for _, f := range uncovered {
+		uncoveredSet[f] = true
+	}
+	for _, f := range wantUncovered {
+		if !uncoveredSet[f] {
+			t.Errorf("uncovered is missing %q", f)
+		}
+	}
+	// No field may appear in both lists.
+	for _, f := range covered {
+		if uncoveredSet[f] {
+			t.Errorf("%q appears in both covered and uncovered", f)
+		}
+	}
+}
+
+// TestBlastRadiusFilterFromRequest_CoercesUnrecognizedValues drives
+// blastRadiusFilterFromRequest directly (rather than through the JSON
+// handler) so the coercion behavior of every query param is pinned
+// independent of what the downstream query does with the filter. Empty
+// string and outright nonsense are both exercised because Validate treats
+// them identically (fall through to the default), and a coercion bug that
+// only shows up for one of the two would otherwise hide.
+func TestBlastRadiusFilterFromRequest_CoercesUnrecognizedValues(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{"empty query", ""},
+		{"nonsense values", "?class=bogus&attribution=bogus&sort=bogus&order=bogus"},
+		{"sql-ish injection attempt", "?class=%27+OR+1%3D1+--&attribution=%27&sort=%27&order=%27"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius"+tc.query, nil)
+			req = req.WithContext(adminContext())
+
+			f := r.blastRadiusFilterFromRequest(req)
+
+			if f.Class != artist.BlastScopeAll {
+				t.Errorf("Class = %q, want the coerced default %q", f.Class, artist.BlastScopeAll)
+			}
+			if f.Attribution != artist.BlastScopeAll {
+				t.Errorf("Attribution = %q, want the coerced default %q", f.Attribution, artist.BlastScopeAll)
+			}
+			if f.Sort != artist.BlastSortCreatedAt {
+				t.Errorf("Sort = %q, want the coerced default %q", f.Sort, artist.BlastSortCreatedAt)
+			}
+			if f.Order != "desc" {
+				t.Errorf("Order = %q, want the coerced default %q", f.Order, "desc")
+			}
+			if f.Limit <= 0 || f.Limit > 500 {
+				t.Errorf("Limit = %d, want a positive value clamped to <=500", f.Limit)
+			}
+		})
+	}
+}
+
+// TestBlastRadiusFilterFromRequest_PageAndPageSize pins the page/offset
+// arithmetic and the page_size query-param path (both go through intQuery,
+// which handlers_blast_radius.go calls directly and which had no coverage
+// under this file).
+func TestBlastRadiusFilterFromRequest_PageAndPageSize(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+
+	cases := []struct {
+		name       string
+		query      string
+		wantLimit  int
+		wantOffset int
+	}{
+		{"default page and page_size", "", 50, 0},
+		{"page 2 with explicit page_size", "?page=2&page_size=20", 20, 20},
+		{"page 0 clamps to page 1", "?page=0&page_size=10", 10, 0},
+		{"negative page clamps to page 1", "?page=-5&page_size=10", 10, 0},
+		{"non-numeric page_size falls back to default", "?page_size=notanumber", 50, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius"+tc.query, nil)
+			req = req.WithContext(adminContext())
+
+			f := r.blastRadiusFilterFromRequest(req)
+
+			if f.Limit != tc.wantLimit {
+				t.Errorf("Limit = %d, want %d", f.Limit, tc.wantLimit)
+			}
+			if f.Offset != tc.wantOffset {
+				t.Errorf("Offset = %d, want %d", f.Offset, tc.wantOffset)
+			}
+		})
+	}
+}
+
+// TestHandleReportBlastRadius_RepositoryErrorSurfacesAs500 exercises the
+// ListBlastRadius error path in handleReportBlastRadius: a repository failure
+// must surface as a 500, never as a 200 with an empty-looking report (which
+// would read as "nothing was destroyed" instead of "we could not check").
+func TestHandleReportBlastRadius_RepositoryErrorSurfacesAs500(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithErrHistoryService(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius", nil)
+	req = req.WithContext(adminContext())
+	w := httptest.NewRecorder()
+	r.handleReportBlastRadius(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 on a repository error; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleReportBlastRadius_CountErrorSurfacesAs500 exercises the second
+// query in loadBlastRadius: even when ListBlastRadius would succeed, a
+// failure from CountBlastRadius must still 500 rather than serve rows with a
+// zeroed-out counts block (which would silently misreport the honesty
+// numbers this feature exists to guarantee).
+func TestHandleReportBlastRadius_CountErrorSurfacesAs500(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	r.historyService = artist.NewHistoryServiceWithRepo(listOKCountErrHistoryRepo{
+		delegate: r.historyService.Repo(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius", nil)
+	req = req.WithContext(adminContext())
+	w := httptest.NewRecorder()
+	r.handleReportBlastRadius(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 when CountBlastRadius fails; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// listOKCountErrHistoryRepo delegates ListBlastRadius (and everything else)
+// to a real repo but always fails CountBlastRadius, isolating the second
+// query's error path in loadBlastRadius from the first's.
+type listOKCountErrHistoryRepo struct {
+	delegate artist.HistoryRepository
+}
+
+func (l listOKCountErrHistoryRepo) Record(ctx context.Context, c *artist.MetadataChange) error {
+	return l.delegate.Record(ctx, c)
+}
+
+func (l listOKCountErrHistoryRepo) GetByID(ctx context.Context, id string) (*artist.MetadataChange, error) {
+	return l.delegate.GetByID(ctx, id)
+}
+
+func (l listOKCountErrHistoryRepo) List(ctx context.Context, artistID string, limit, offset int) ([]artist.MetadataChange, int, error) {
+	return l.delegate.List(ctx, artistID, limit, offset)
+}
+
+func (l listOKCountErrHistoryRepo) ListGlobal(ctx context.Context, filter artist.GlobalHistoryFilter) ([]artist.MetadataChangeWithArtist, int, error) {
+	return l.delegate.ListGlobal(ctx, filter)
+}
+
+func (l listOKCountErrHistoryRepo) ListBlastRadius(ctx context.Context, f artist.BlastRadiusFilter) ([]artist.BlastRadiusRow, error) {
+	return l.delegate.ListBlastRadius(ctx, f)
+}
+
+func (l listOKCountErrHistoryRepo) CountBlastRadius(ctx context.Context, f artist.BlastRadiusFilter) (artist.BlastRadiusCounts, error) {
+	return artist.BlastRadiusCounts{}, errors.New("simulated count failure")
+}
+
+// TestHandleReportBlastRadiusExport_RepositoryErrorAbortsCleanly exercises the
+// export handler's error path when the FIRST page load fails, before any
+// bytes have been written. Unlike the JSON handler, the export path collects
+// all pages into memory before writing anything, so an error on the first
+// (only, here) page still gets to choose its status code: 500, not a
+// half-written CSV.
+func TestHandleReportBlastRadiusExport_RepositoryErrorAbortsCleanly(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithErrHistoryService(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius/export", nil)
+	req = req.WithContext(adminContext())
+	w := httptest.NewRecorder()
+
+	// Must not panic even though ListBlastRadius fails immediately on the
+	// first page.
+	r.handleReportBlastRadiusExport(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; a repository failure before any CSV bytes are "+
+			"written must not read as a successful, if empty, export: body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "NOTE:") || strings.Contains(body, "Artist,Field") {
+		t.Errorf("CSV content was written after a repository error that occurred before "+
+			"any page succeeded; body: %s", body)
+	}
+}
+
+// TestHandleReportBlastRadiusExport_ServiceUnavailableWithoutHistory mirrors
+// the JSON handler's guard for the export path, which had no direct coverage.
+func TestHandleReportBlastRadiusExport_ServiceUnavailableWithoutHistory(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	r.historyService = nil
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius/export", nil)
+	req = req.WithContext(adminContext())
+	w := httptest.NewRecorder()
+	r.handleReportBlastRadiusExport(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503 when history service is unavailable", w.Code)
+	}
+}
+
+// TestHandleReportBlastRadiusExport_TruncationNoteAppendedAtCap seeds more
+// rows than blastRadiusExportPageSize (200) so the pagination loop inside
+// handleReportBlastRadiusExport actually iterates more than once, and caps
+// well below blastRadiusExportCap is not tested here (10000 rows is too slow
+// for a unit test and the truncation branch's boundary condition is a
+// separate, deliberately-not-chased line; see the report to the lead).
+func TestHandleReportBlastRadiusExport_MultiPageWalkCollectsAllRows(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	at := func(m int) time.Time { return apiBlastBase.Add(time.Duration(m) * time.Minute) }
+
+	// blastRadiusExportPageSize is 200; seed 210 rows so the loop's "less than a
+	// full page means we're done" exit condition is exercised on a real second
+	// page rather than trivially on the first. ListBlastRadius keeps only the
+	// MOST RECENT row per (artist_id, field), so each row needs a distinct
+	// field to avoid collapsing into one; the field name itself is not
+	// validated against an enum by this query.
+	const rowCount = 210
+	for i := 0; i < rowCount; i++ {
+		id := fmt.Sprintf("multi-row-%03d", i)
+		field := fmt.Sprintf("field-%03d", i)
+		seedAPIBlastChange(t, r, id, "multi-artist", "Multi Artist", field,
+			"old", "new", "scan", at(i))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/blast-radius/export", nil)
+	req = req.WithContext(adminContext())
+	w := httptest.NewRecorder()
+	r.handleReportBlastRadiusExport(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body excerpt: %.300s", w.Code, w.Body.String())
+	}
+	cr := csv.NewReader(strings.NewReader(w.Body.String()))
+	cr.FieldsPerRecord = -1
+	records, err := cr.ReadAll()
+	if err != nil {
+		t.Fatalf("parsing CSV: %v", err)
+	}
+	// header + rowCount data rows + at least 4 caveat notes, no truncation note
+	// since rowCount < blastRadiusExportCap.
+	dataRows := 0
+	for _, rec := range records[1:] {
+		if len(rec) >= 8 {
+			dataRows++
+		}
+	}
+	if dataRows != rowCount {
+		t.Errorf("CSV has %d data rows, want all %d seeded rows collected across the "+
+			"multi-page walk", dataRows, rowCount)
+	}
+	if strings.Contains(w.Body.String(), "truncated at the row cap") {
+		t.Errorf("truncation note present at %d rows, well under the %d cap", rowCount, blastRadiusExportCap)
 	}
 }
