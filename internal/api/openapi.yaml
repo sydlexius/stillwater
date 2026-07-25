@@ -11292,6 +11292,222 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /reports/blast-radius:
+    get:
+      tags: [Reports]
+      summary: Values an automated change replaced or cleared
+      operationId: getReportBlastRadius
+      description: >
+        Lists metadata values an automated writer destroyed and that have not
+        been put back: for each artist and field, the most recent change, kept
+        only when it replaced or cleared a value that was previously set. A
+        field whose value has since been restored is absent.
+
+
+        Read-only. This endpoint writes nothing.
+
+
+        TWO LIMITS, BOTH RETURNED IN THE RESPONSE. First, attribution: rows
+        recorded as "manual" cannot be attributed to an actor. Stillwater began
+        recording scan-driven changes with their own source on the date given in
+        attribution.cutoff_date; before that a scan that changed a value was
+        recorded the same way an operator edit is, so such rows may be either.
+        They are always listed, always labeled "unknown", and always counted in
+        their own bucket. The attribution.automated and attribution.unknown
+        counts deliberately IGNORE the attribution query parameter, so filtering
+        the list can never zero the other bucket's count.
+
+
+        Second, coverage: only fields with change history can be reported.
+        coverage.covered_fields lists them and coverage.uncovered_fields lists
+        the editable fields that have none. A field's absence from rows is not
+        evidence it is undamaged if it appears in uncovered_fields.
+
+
+        Change history is kept until an artist is deleted or merged into
+        another; either removes that artist's history along with it.
+
+
+        Unrecognized class, attribution, sort, or order values fall back to the
+        defaults and return the unnarrowed report rather than an error, so a
+        malformed parameter cannot hide destroyed values.
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          description: Defaults to the caller's per-user page-size preference.
+          schema: {type: integer, minimum: 1, maximum: 500}
+        - name: class
+          in: query
+          description: >
+            blanked = a set value was cleared; replaced = a set value was
+            overwritten with a different one. Defaults to all, because both are
+            the same class of harm.
+          schema: {type: string, enum: [all, blanked, replaced], default: all}
+        - name: attribution
+          in: query
+          description: >
+            Narrows the returned rows only. The attribution counts always cover
+            both buckets regardless of this value.
+          schema: {type: string, enum: [all, automated, unknown], default: all}
+        - name: field
+          in: query
+          description: Restrict to a single metadata field name.
+          schema: {type: string}
+        - name: artist_id
+          in: query
+          description: Restrict to a single artist.
+          schema: {type: string}
+        - name: sort
+          in: query
+          schema: {type: string, enum: [created_at, artist_name, field], default: created_at}
+        - name: order
+          in: query
+          schema: {type: string, enum: [asc, desc], default: desc}
+      responses:
+        "200":
+          description: The report, with both attribution counts and the coverage statement. rows is always present and is an empty array when nothing matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows, counts, page, page_size, total, attribution, coverage]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, artist_id, artist_name, field, old_value, new_value, source, created_at, class, attribution]
+                      properties:
+                        id:
+                          type: string
+                        artist_id:
+                          type: string
+                        artist_name:
+                          type: string
+                        field:
+                          type: string
+                        old_value:
+                          type: string
+                          description: The value before the change. This is what was destroyed.
+                        new_value:
+                          type: string
+                          description: The value that replaced it. Empty string when the field was cleared.
+                        source:
+                          type: string
+                          description: The raw recorded source, for example scan, import, manual, or provider:musicbrainz.
+                        created_at:
+                          type: string
+                          format: date-time
+                        class:
+                          type: string
+                          enum: [blanked, replaced]
+                        attribution:
+                          type: string
+                          enum: [automated, unknown]
+                  counts:
+                    type: object
+                    required: [automated, unknown, total]
+                    properties:
+                      automated:
+                        type: integer
+                        description: Rows whose source names an automated writer. Not narrowed by the attribution parameter.
+                      unknown:
+                        type: integer
+                        description: Rows recorded as manual, which may be operator edits or earlier automated changes. Not narrowed by the attribution parameter.
+                      total:
+                        type: integer
+                        description: The count for the currently selected attribution scope. This is the pagination denominator, not a headline damage figure.
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+                  total:
+                    type: integer
+                    description: Mirrors counts.total.
+                  attribution:
+                    type: object
+                    required: [cutoff_date, automated, unknown]
+                    properties:
+                      cutoff_date:
+                        type: string
+                        description: The date Stillwater began recording scan-driven changes with their own source. Informational only; no query filters on it.
+                      automated:
+                        type: integer
+                      unknown:
+                        type: integer
+                  coverage:
+                    type: object
+                    required: [covered_fields, uncovered_fields]
+                    properties:
+                      covered_fields:
+                        type: array
+                        description: Fields with change history, which this report can see.
+                        items: {type: string}
+                      uncovered_fields:
+                        type: array
+                        description: Editable fields with no change history. Damage to these cannot be reported here, so their absence from rows proves nothing.
+                        items: {type: string}
+        "503":
+          description: The history store is unavailable. Returned rather than an empty report, so an unreachable store is never mistaken for an absence of damage.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /reports/blast-radius/export:
+    get:
+      tags: [Reports]
+      summary: Download the blast-radius report as CSV
+      operationId: getReportBlastRadiusExport
+      description: >
+        Streams the same report as CSV, honoring the same query parameters.
+        Trailing note rows restate the attribution limit, both coverage lists,
+        and the retention boundary, so a spreadsheet detached from the
+        application still says what it does not cover. Cell values that begin
+        with a spreadsheet formula trigger are prefixed with an apostrophe.
+        Capped at 10000 rows; a truncated export says so in a note row.
+      parameters:
+        - name: class
+          in: query
+          schema: {type: string, enum: [all, blanked, replaced], default: all}
+        - name: attribution
+          in: query
+          schema: {type: string, enum: [all, automated, unknown], default: all}
+        - name: field
+          in: query
+          schema: {type: string}
+        - name: artist_id
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: CSV attachment.
+          content:
+            text/csv:
+              schema:
+                type: string
+        "503":
+          description: The history store is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Inbound webhooks ---
 
   /webhooks/inbound/lidarr:
