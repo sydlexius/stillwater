@@ -414,10 +414,10 @@ func TestEvaluateMBIDCandidate_BoundaryScores(t *testing.T) {
 // this test teeth.
 func TestBestMBIDCandidates_PicksHighestPerIdentity(t *testing.T) {
 	results := []provider.ArtistSearchResult{
-		{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 90},
-		{Name: "Other", MusicBrainzID: mbidThird, Score: 60},
-		{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 95},
-		{Name: "Another", MusicBrainzID: mbidRival, Score: 80},
+		{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 90, Source: "musicbrainz"},
+		{Name: "Other", MusicBrainzID: mbidThird, Score: 60, Source: "musicbrainz"},
+		{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 95, Source: "musicbrainz"},
+		{Name: "Another", MusicBrainzID: mbidRival, Score: 80, Source: "musicbrainz"},
 	}
 
 	best, runnerUp := bestMBIDCandidates(results)
@@ -493,5 +493,136 @@ func TestFixMBID_ProvenanceMarkerPersistsThroughPipeline(t *testing.T) {
 	if got := reloaded.MetadataSources[artist.SourceKeyMusicBrainzID]; got != artist.SourceMachinePicked {
 		t.Errorf("reloaded MetadataSources[%q] = %q, want %q: the marker must survive persistence or the re-review query finds nothing",
 			artist.SourceKeyMusicBrainzID, got, artist.SourceMachinePicked)
+	}
+}
+
+// TestFixMBID_NonMusicBrainzHitIsNotARival is the regression guard for the
+// most common configuration (MusicBrainz + Last.fm both enabled). Every
+// non-MusicBrainz adapter sets Score = provider.NameSimilarity and carries an
+// MBID it did not author, which is routinely stale or points at a merged
+// entity. Here Last.fm reports a DIFFERENT id for the SAME artist at
+// similarity 100; read as a rival that is a zero-point gap and the fix
+// declines with the factually wrong reason "are different artists".
+//
+// The fixture is deliberately worst-case: identical scores, so if the Last.fm
+// row is rival-eligible at all the ambiguity gate MUST reject. Adoption is
+// therefore only possible when the rival filter is source-aware.
+func TestFixMBID_NonMusicBrainzHitIsNotARival(t *testing.T) {
+	f := mbidFixer(
+		provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 100, Source: "musicbrainz"},
+		provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRival, Score: 100, Source: "lastfm"},
+	)
+	a := &artist.Artist{Name: "Radiohead"}
+
+	fr := fixMBIDFor(t, f, a)
+
+	if !fr.Fixed {
+		t.Fatalf("expected Fixed=true: a stale Last.fm MBID for the same artist is not ambiguity evidence (%q)", fr.Message)
+	}
+	if a.MusicBrainzID != mbidRadiohead {
+		t.Errorf("a.MusicBrainzID = %q, want %q (the MusicBrainz-issued id)", a.MusicBrainzID, mbidRadiohead)
+	}
+	if !strings.Contains(fr.Message, "no rival") {
+		t.Errorf("message %q: a non-MusicBrainz hit must not be reported as a rival", fr.Message)
+	}
+}
+
+// TestFixMBID_MusicBrainzRivalStillGatesAmbiguity is the counterweight: the
+// source filter must narrow WHO can be a rival, not disable the gate. Same
+// fixture shape as the test above, but the disagreeing row is MusicBrainz's
+// own -- two genuinely different entries in one relevance ordering -- so the
+// margin gate must still reject. Without this, deleting the rival loop
+// entirely would pass every other test here.
+func TestFixMBID_MusicBrainzRivalStillGatesAmbiguity(t *testing.T) {
+	f := mbidFixer(
+		provider.ArtistSearchResult{Name: "Nirvana", MusicBrainzID: mbidRadiohead, Score: 100, Source: "musicbrainz"},
+		provider.ArtistSearchResult{Name: "Nirvana", MusicBrainzID: mbidRival, Score: 100, Source: "musicbrainz"},
+	)
+	a := &artist.Artist{Name: "Nirvana"}
+
+	fr := fixMBIDFor(t, f, a)
+
+	if fr.Fixed {
+		t.Fatalf("expected Fixed=false: two MusicBrainz entries at the same score are ambiguous (%q)", fr.Message)
+	}
+	if !strings.Contains(fr.Message, "ambiguous") {
+		t.Errorf("message %q should say ambiguity was the reason", fr.Message)
+	}
+}
+
+// TestFixMBID_UppercaseMBIDIsNotItsOwnRival guards the case-sensitivity of the
+// rival compare. artist.IsValidMBID accepts A-F as well as a-f, so a provider
+// returning an uppercase UUID clears the shape filter and then, under a
+// case-SENSITIVE ==, compares unequal to the identical id in lowercase and
+// becomes a rival of itself at a 2-point gap -- declining a match every
+// provider actually agrees on.
+func TestFixMBID_UppercaseMBIDIsNotItsOwnRival(t *testing.T) {
+	f := mbidFixer(
+		provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 100, Source: "musicbrainz"},
+		provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: strings.ToUpper(mbidRadiohead), Score: 98, Source: "musicbrainz"},
+	)
+	a := &artist.Artist{Name: "Radiohead"}
+
+	fr := fixMBIDFor(t, f, a)
+
+	if !fr.Fixed {
+		t.Fatalf("expected Fixed=true: the same id in a different case is the same identity (%q)", fr.Message)
+	}
+	if a.MusicBrainzID != mbidRadiohead {
+		t.Errorf("a.MusicBrainzID = %q, want %q", a.MusicBrainzID, mbidRadiohead)
+	}
+	if !strings.Contains(fr.Message, "no rival") {
+		t.Errorf("message %q: a case variant of the winning id is not a rival", fr.Message)
+	}
+}
+
+// TestFixMBID_RejectsLiteralJustBelowScoreFloor pins mbidMinProviderScore to a
+// LITERAL. The boundary table uses the constant symbolically, so its cases
+// move with any change to it, and the other reject fixture sits at 55 -- far
+// enough below that the floor could be lowered a long way and stay green. 84
+// is one point under the intended floor, so lowering the constant at all makes
+// this test go red. The name is an exact match and there is no rival, so the
+// score floor is the only gate that can fire.
+func TestFixMBID_RejectsLiteralJustBelowScoreFloor(t *testing.T) {
+	f := mbidFixer(
+		provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 84, Source: "musicbrainz"},
+	)
+	a := &artist.Artist{Name: "Radiohead"}
+
+	fr := fixMBIDFor(t, f, a)
+
+	if fr.Fixed {
+		t.Fatalf("expected Fixed=false: 84 is below the intended 85 confidence floor (%q)", fr.Message)
+	}
+	if a.MusicBrainzID != "" {
+		t.Errorf("a.MusicBrainzID = %q, want empty", a.MusicBrainzID)
+	}
+	if !strings.Contains(fr.Message, "confidence floor") {
+		t.Errorf("message %q should say the score floor was the reason", fr.Message)
+	}
+}
+
+// TestBestMBIDCandidates_RivalMustBeMusicBrainzSourced exercises the selector
+// directly: a stronger non-MusicBrainz disagreeing hit must be passed over in
+// favor of a weaker MusicBrainz one, which a mere "skip lastfm" hack that
+// returned the first eligible row would get wrong.
+func TestBestMBIDCandidates_RivalMustBeMusicBrainzSourced(t *testing.T) {
+	results := []provider.ArtistSearchResult{
+		{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 100, Source: "musicbrainz"},
+		{Name: "Radiohead", MusicBrainzID: mbidThird, Score: 95, Source: "audiodb"},
+		{Name: "Radiohead", MusicBrainzID: mbidRival, Score: 60, Source: "musicbrainz"},
+	}
+
+	best, runnerUp := bestMBIDCandidates(results)
+
+	if best == nil || best.MusicBrainzID != mbidRadiohead {
+		t.Fatalf("best = %+v, want the mbidRadiohead row", best)
+	}
+	if runnerUp == nil {
+		t.Fatal("runnerUp = nil, want the MusicBrainz-sourced rival")
+	}
+	if runnerUp.MusicBrainzID != mbidRival || runnerUp.Score != 60 {
+		t.Errorf("runnerUp = %s at %d, want %s at 60: the higher-scoring audiodb row is not rival-eligible",
+			runnerUp.MusicBrainzID, runnerUp.Score, mbidRival)
 	}
 }

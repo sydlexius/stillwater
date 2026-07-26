@@ -413,13 +413,38 @@ func describeRunnerUp(runnerUp *provider.ArtistSearchResult) string {
 }
 
 // bestMBIDCandidates returns the highest-scoring search hit carrying a
-// syntactically valid MusicBrainz ID, plus the highest-scoring hit carrying a
-// DIFFERENT valid MBID (nil when every usable hit agrees on one ID).
+// syntactically valid MusicBrainz ID, plus the highest-scoring MusicBrainz-
+// SOURCED hit carrying a DIFFERENT valid MBID (nil when no such rival exists).
 //
 // Splitting on the ID rather than on list position is load-bearing: several
 // providers return the same artist, so the raw second-place row is usually a
 // duplicate of the winner and treating it as a rival would reject every
 // well-corroborated match.
+//
+// Restricting RIVALS to MusicBrainz is the other half of that. The ambiguity
+// margin exists to catch two genuinely DIFFERENT artists ranked close together
+// within MusicBrainz's own relevance ordering. Every non-MusicBrainz adapter
+// scores on an incomparable scale -- provider.NameSimilarity, not relevance --
+// and carries a MusicBrainzID it did not author, which is routinely stale or
+// points at a since-merged entity. Such a hit cannot meaningfully rival
+// MusicBrainz's ranking: its agreeing or disagreeing about an MBID is not
+// evidence of ambiguity. Left unfiltered, the most common configuration
+// (MusicBrainz + Last.fm) declines constantly, because Last.fm returns a stale
+// ID for the SAME artist at name-similarity 100 and the margin gate reads the
+// two rows as two artists zero points apart.
+//
+// This narrows only who may be the RUNNER-UP. Any provider's hit may still be
+// the best, and the floors are unchanged.
+//
+// Consequence, accepted deliberately: when MusicBrainz is disabled or returned
+// nothing, no hit is rival-eligible, so the ambiguity gate cannot fire and the
+// score floor plus the name-similarity floor are the only gates left. Guarding
+// that case (declining outright when the best hit is not MusicBrainz-sourced)
+// was considered and rejected -- it would stop the rule fixing ANYTHING for
+// operators who do not run MusicBrainz, which is a bigger regression than the
+// one it prevents, and a non-MusicBrainz rival was never trustworthy evidence
+// of ambiguity in the first place. The absent gate is recorded in the
+// provenance message as "no rival MusicBrainz ID in results".
 func bestMBIDCandidates(results []provider.ArtistSearchResult) (best, runnerUp *provider.ArtistSearchResult) {
 	for i := range results {
 		r := &results[i]
@@ -435,7 +460,13 @@ func bestMBIDCandidates(results []provider.ArtistSearchResult) (best, runnerUp *
 	}
 	for i := range results {
 		r := &results[i]
-		if !artist.IsValidMBID(r.MusicBrainzID) || r.MusicBrainzID == best.MusicBrainzID {
+		if !artist.IsValidMBID(r.MusicBrainzID) || !isMusicBrainzSourced(r) {
+			continue
+		}
+		// Case-insensitive: IsValidMBID accepts A-F as well as a-f, so a
+		// provider returning an uppercase UUID would otherwise compare unequal
+		// to the very same ID in lowercase and become a rival of itself.
+		if strings.EqualFold(r.MusicBrainzID, best.MusicBrainzID) {
 			continue
 		}
 		if runnerUp == nil || r.Score > runnerUp.Score {
@@ -443,6 +474,15 @@ func bestMBIDCandidates(results []provider.ArtistSearchResult) (best, runnerUp *
 		}
 	}
 	return best, runnerUp
+}
+
+// isMusicBrainzSourced reports whether a search hit came from the MusicBrainz
+// adapter itself, which is the only source whose Score is a relevance rank
+// comparable with another MusicBrainz row's. Compared case-insensitively for
+// the same reason the MBID compare is: Source is a free-form string on the
+// wire, and a case difference must not silently change gate behavior.
+func isMusicBrainzSourced(r *provider.ArtistSearchResult) bool {
+	return strings.EqualFold(r.Source, string(provider.NameMusicBrainz))
 }
 
 // evaluateMBIDCandidate applies the confidence gates to a candidate. It returns

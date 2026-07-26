@@ -16,7 +16,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | Rule | Category | Default | Fixable |
 |---|---|---|---|
 | [NFO file exists](#nfo-file-exists) | NFO | Enabled, auto | Yes |
-| [NFO has MusicBrainz ID](#nfo-has-musicbrainz-id) | NFO | Enabled, auto | Yes |
+| [NFO has MusicBrainz ID](#nfo-has-musicbrainz-id) | NFO | Enabled, auto | Sometimes |
 | [Biography exists](#biography-exists) | Metadata | Enabled, auto | Yes |
 | [Artist/ID mismatch](#artistid-mismatch) | Metadata | Disabled, manual | Detection-only |
 | [Directory name matches artist](#directory-name-matches-artist) | Metadata | Enabled, manual | Sometimes |
@@ -91,6 +91,12 @@ After:  artist.nfo contains <musicbrainzartistid>f59c5520-5f46-4d2c-b2c4-822eabf
 ```
 
 **Configurable:** Severity only.
+
+**Caveats:**
+
+- Declines rather than guesses. A search that returns no MBID, a low-confidence top hit, a hit whose name does not closely match the artist, or two close-scoring MusicBrainz entries leaves the artist untouched and still flagged.
+- Only MusicBrainz's own results count as competing identities. Other providers score on a different scale and report MBIDs they did not issue, which are often stale, so they are not treated as evidence that a match is ambiguous. With MusicBrainz disabled, the ambiguity check has nothing to compare and only the confidence and name checks apply.
+- An adopted ID is recorded as machine-picked, so IDs this rule chose can be found and reviewed later. IDs you entered yourself are never overwritten by this rule.
 
 ---
 
