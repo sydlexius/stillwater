@@ -729,3 +729,83 @@ func TestCleanBannerBody(t *testing.T) {
 		}
 	})
 }
+
+// TestDisambiguationHxVals_ClearIDsOnEveryCardThatCanReplace pins which
+// candidate cards carry the destructive re-identify intent to the link
+// endpoint.
+//
+// The disambiguation search returns MusicBrainz AND Discogs candidates. A
+// Discogs card carries no MusicBrainz ID, so it supplies no replacement MBID --
+// but it must still send clear_ids, because re-identify is the operator
+// asserting the artist is someone else, which repudiates the old MusicBrainz
+// identity whether or not the chosen candidate replaces it. Withholding the
+// flag here is what left a known-wrong MBID sitting beside the new Discogs ID
+// (#2714).
+//
+// The flag is withheld only from a card that can supply NEITHER ID, because the
+// link handler is right to refuse a discard with no replacement in the same
+// request, and from the non-destructive Identify flow.
+func TestDisambiguationHxVals_ClearIDsOnEveryCardThatCanReplace(t *testing.T) {
+	mb := provider.ArtistSearchResult{Source: "musicbrainz", MusicBrainzID: "mb-1"}
+	discogs := provider.ArtistSearchResult{Source: "discogs", ProviderID: "dc-1"}
+	empty := provider.ArtistSearchResult{Source: "discogs"}
+
+	tests := []struct {
+		name          string
+		result        provider.ArtistSearchResult
+		clearIDs      bool
+		wantClearIDs  bool
+		wantSubstring string // a replacement ID the card must still carry
+	}{
+		{
+			name:          "musicbrainz card in the re-identify flow",
+			result:        mb,
+			clearIDs:      true,
+			wantClearIDs:  true,
+			wantSubstring: `"mbid":"mb-1"`,
+		},
+		{
+			name:          "discogs card in the re-identify flow",
+			result:        discogs,
+			clearIDs:      true,
+			wantClearIDs:  true,
+			wantSubstring: `"discogs_id":"dc-1"`,
+		},
+		{
+			name:          "musicbrainz card in the plain identify flow",
+			result:        mb,
+			clearIDs:      false,
+			wantClearIDs:  false,
+			wantSubstring: `"mbid":"mb-1"`,
+		},
+		{
+			name:          "discogs card in the plain identify flow",
+			result:        discogs,
+			clearIDs:      false,
+			wantClearIDs:  false,
+			wantSubstring: `"discogs_id":"dc-1"`,
+		},
+		{
+			name:         "card that can supply neither ID",
+			result:       empty,
+			clearIDs:     true,
+			wantClearIDs: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := disambiguationHxVals(tc.result, tc.clearIDs)
+			// Precondition: the card really carries its replacement ID, so a
+			// "clear_ids is present" assertion is not measuring a card the
+			// link handler would reject anyway.
+			if tc.wantSubstring != "" && !strings.Contains(got, tc.wantSubstring) {
+				t.Fatalf("precondition: hx-vals %s missing replacement ID %s", got, tc.wantSubstring)
+			}
+			if gotClear := strings.Contains(got, `"clear_ids":"true"`); gotClear != tc.wantClearIDs {
+				t.Errorf("disambiguationHxVals(%+v, %v) = %s; clear_ids present = %v, want %v",
+					tc.result, tc.clearIDs, got, gotClear, tc.wantClearIDs)
+			}
+		})
+	}
+}

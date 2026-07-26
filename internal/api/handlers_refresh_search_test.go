@@ -250,3 +250,67 @@ func TestHandleRefreshSearch_JSONOmitsFailedProvidersWhenAllSucceed(t *testing.T
 		t.Fatalf("expected failed_providers to be omitted when all providers succeed, body=%s", w.Body.String())
 	}
 }
+
+// TestHandleRefreshSearch_CarriesClearIDsOntoCandidates pins the middle hop of
+// the #2714 plumbing. The destructive re-identify intent is no longer persisted
+// on the artist row, so it has to survive as request-scoped state: entry point
+// -> hidden form field -> search POST -> candidate card hx-vals -> link
+// request. If it is dropped here, nothing breaks loudly; re-identify simply
+// stops replacing the old IDs and silently degrades into plain identify. This
+// test is the only place that failure is visible.
+//
+// Both directions are asserted from ONE search fixture, so a card that emits
+// clear_ids unconditionally fails the second case. The rendered HTML is the
+// subject because the attribute IS the contract with the browser.
+func TestHandleRefreshSearch_CarriesClearIDsOntoCandidates(t *testing.T) {
+	t.Parallel()
+
+	searchHTML := func(t *testing.T, body string) string {
+		t.Helper()
+		r, artistSvc := testRouter(t)
+		a := addTestArtist(t, artistSvc, "Clear IDs Carrier "+body)
+		installSearchOrchestrator(t, r,
+			&minimalSearchProvider{
+				name: provider.NameMusicBrainz,
+				searchFn: func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
+					return []provider.ArtistSearchResult{
+						{Name: "Carrier", MusicBrainzID: "mb-carrier", Source: "musicbrainz", Score: 100},
+					}, nil
+				},
+			},
+		)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/refresh/search", strings.NewReader(body))
+		req.SetPathValue("id", a.ID)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("HX-Request", "true")
+		req = req.WithContext(testI18nCtx(t, req.Context()))
+		w := httptest.NewRecorder()
+		r.handleRefreshSearch(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+		}
+		html := w.Body.String()
+		// Precondition: a candidate card really rendered. Without it, an
+		// assertion that clear_ids is absent would pass against empty output.
+		if !strings.Contains(html, "mb-carrier") {
+			t.Fatalf("precondition: no candidate card rendered; body: %s", html)
+		}
+		return html
+	}
+
+	t.Run("re-identify flow forwards the intent", func(t *testing.T) {
+		t.Parallel()
+		html := searchHTML(t, `{"query":"Carrier","clear_ids":"true"}`)
+		if !strings.Contains(html, "clear_ids") {
+			t.Errorf("candidate card omits clear_ids; the re-identify intent was dropped at the search hop, so linking would not replace the old IDs (#2714). body: %s", html)
+		}
+	})
+
+	t.Run("plain identify flow does not", func(t *testing.T) {
+		t.Parallel()
+		html := searchHTML(t, `{"query":"Carrier"}`)
+		if strings.Contains(html, "clear_ids") {
+			t.Errorf("candidate card carries clear_ids on the NON-destructive identify flow; linking would wipe provider IDs the operator never asked to discard. body: %s", html)
+		}
+	})
+}

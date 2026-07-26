@@ -30,6 +30,14 @@ If the artist has no MusicBrainz ID yet, Stillwater needs to pick the right one 
 
 This only happens once per artist -- after the link, future refreshes go straight through.
 
+### Re-identifying an artist that is already linked
+
+If an artist is linked to the wrong entry, use **Actions** > **Re-identify Artist**. You get the same search and the same candidate list.
+
+Picking a match discards the MusicBrainz ID Stillwater currently holds -- you have said this artist is someone else, so that ID is wrong either way -- and stores the IDs from the entry you picked. A MusicBrainz candidate supplies a new MusicBrainz ID; a Discogs candidate supplies a Discogs ID and leaves the artist without a MusicBrainz ID until you link one. Provider IDs that the choice says nothing about (AudioDB, Wikidata, Deezer, Spotify) are kept: a wrong MusicBrainz ID does not make them wrong.
+
+All of that happens at the moment you pick a match, not before. Until then the artist keeps every ID it had, so you can search, change the query, find nothing usable, or close the page entirely and the artist is left exactly as it was. There is no intermediate state where the artist has no identity at all.
+
 ## Refresh many artists
 
 To run refreshes across a saved view or a whole library:

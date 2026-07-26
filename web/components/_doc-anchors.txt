@@ -436,6 +436,7 @@ how-to/quick-actions#quick-actions
 how-to/quick-actions#see-also
 how-to/quick-actions#sidebar-state
 how-to/quick-actions#the-three-actions
+how-to/refresh-metadata#re-identifying-an-artist-that-is-already-linked
 how-to/refresh-metadata#refresh-many-artists
 how-to/refresh-metadata#refresh-metadata
 how-to/refresh-metadata#refresh-one-artist
