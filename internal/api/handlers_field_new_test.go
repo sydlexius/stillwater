@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -124,7 +125,7 @@ func TestHandleFieldUpdate_MusicBrainzID(t *testing.T) {
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
 	validMBID := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
-	body := strings.NewReader("value=" + validMBID)
+	body := strings.NewReader(url.Values{"value": {validMBID}}.Encode())
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/artists/"+a.ID+"/fields/musicbrainz_id", body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetPathValue("id", a.ID)
@@ -280,7 +281,7 @@ func TestHandleFieldUpdate_ProviderIDFields_AllEditable(t *testing.T) {
 
 	for field, value := range providerFields {
 		t.Run(field, func(t *testing.T) {
-			body := strings.NewReader("value=" + value)
+			body := strings.NewReader(url.Values{"value": {value}}.Encode())
 			req := httptest.NewRequest(http.MethodPatch, "/api/v1/artists/"+a.ID+"/fields/"+field, body)
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			req.SetPathValue("id", a.ID)

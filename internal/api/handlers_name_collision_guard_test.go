@@ -16,6 +16,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -26,7 +27,7 @@ import (
 // artist detail page's inline editor sends.
 func patchName(t *testing.T, r *Router, artistID, newName string, htmx bool) *httptest.ResponseRecorder {
 	t.Helper()
-	body := strings.NewReader("value=" + newName)
+	body := strings.NewReader(url.Values{"value": {newName}}.Encode())
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/artists/"+artistID+"/fields/name", body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if htmx {

@@ -13190,6 +13190,16 @@ paths:
             text/html:
               schema:
                 type: string
+        "500":
+          description: >-
+            The update failed on the server: the collision guard could not
+            run, the guarded rename could not commit, or a plain field update
+            failed. The response never echoes the underlying error, only a
+            fixed message.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       tags: [Artists]
       summary: Clear a single metadata field
