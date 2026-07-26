@@ -372,7 +372,17 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 		}, nil
 	}
 
-	a.MusicBrainzID = best.MusicBrainzID
+	// Persist the ID case-normalized (and trimmed, matching the same defensive
+	// shape pathinfer.go uses at its two MBID comparison sites). MBIDs are
+	// used as case-insensitive lookup keys elsewhere in the codebase (see
+	// strings.EqualFold above, added for the same reason), so storing
+	// whatever case a given provider happened to return would silently break
+	// any exact-match lookup keyed on the lowercased form. Trimming costs
+	// nothing here in practice -- a padded value would already fail
+	// isValidMBID's exact-length check before reaching this line -- but it
+	// keeps this write site consistent with the established normalization
+	// form rather than a narrower one.
+	a.MusicBrainzID = strings.ToLower(strings.TrimSpace(best.MusicBrainzID))
 	// Stamp the ID as machine-picked. This is the ENUMERABLE half of provenance:
 	// the audit message below says how strong this particular match was, but only
 	// a structured marker lets an operator ask "show me every artist whose MBID a

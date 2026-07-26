@@ -496,6 +496,66 @@ func TestFixMBID_ProvenanceMarkerPersistsThroughPipeline(t *testing.T) {
 	}
 }
 
+// TestFixMBID_PersistsLowercasedMBID is the case-normalization half of #2715.
+// pathinfer.go keys MBID lookups on strings.ToLower(strings.TrimSpace(...)),
+// so an adopted ID stored in whatever case a provider returned it in would
+// silently fail those lookups. The fixture supplies a mixed-case UUID from
+// the provider and asserts the PERSISTED row -- read back out of SQLite, not
+// the in-memory struct -- comes back lowercased.
+func TestFixMBID_PersistsLowercasedMBID(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding default rules: %v", err)
+	}
+	disableAllRulesExcept(t, db, RuleNFOHasMBID)
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	engine.SetProviderAvailability(&stubProviderAvailability{available: allThreeAvailable()})
+
+	mixedCaseMBID := "A74B1b7F-71a5-4011-9441-D0B5E4122711"
+	if !strings.EqualFold(mixedCaseMBID, mbidRadiohead) || mixedCaseMBID == strings.ToLower(mixedCaseMBID) {
+		t.Fatalf("fixture bug: %q must be a mixed-case variant of %q", mixedCaseMBID, mbidRadiohead)
+	}
+
+	metadataFixer := NewMetadataFixer(nil, testLogger())
+	metadataFixer.orchestrator = &stubMBIDSearchOrchestrator{
+		results: []provider.ArtistSearchResult{
+			{Name: "Cased Artist", MusicBrainzID: mixedCaseMBID, Score: 100, Source: "musicbrainz"},
+		},
+	}
+	p := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{metadataFixer}, nil, testLogger())
+
+	a := &artist.Artist{
+		Name:     "Cased Artist",
+		SortName: "Cased Artist",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	if _, err := p.RunAllScoped(ctx, RunScopeAll); err != nil {
+		t.Fatalf("RunAllScoped: %v", err)
+	}
+
+	reloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	// Precondition: without this the case assertion below could pass
+	// vacuously on an artist the fixer never actually touched.
+	if reloaded.MusicBrainzID == "" {
+		t.Fatalf("precondition failed: MusicBrainzID is empty (the fix did not run)")
+	}
+	if reloaded.MusicBrainzID != mbidRadiohead {
+		t.Errorf("persisted MusicBrainzID = %q, want %q (lowercased): a mixed-case id stored verbatim silently breaks the case-insensitive lookup keys in pathinfer.go",
+			reloaded.MusicBrainzID, mbidRadiohead)
+	}
+}
+
 // TestFixMBID_NonMusicBrainzHitIsNotARival is the regression guard for the
 // most common configuration (MusicBrainz + Last.fm both enabled). Every
 // non-MusicBrainz adapter sets Score = provider.NameSimilarity and carries an
