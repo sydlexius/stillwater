@@ -13525,9 +13525,10 @@ paths:
                   enum: ["true"]
                   description: >
                     Forwarded from the re-identify entry point. Carried onto
-                    each returned candidate so the eventual /refresh/link call
-                    knows to discard the previous identity. Nothing is written
-                    by this endpoint.
+                    each returned candidate that can supply a replacement, so
+                    the eventual /refresh/link call knows to discard the
+                    repudiated MusicBrainz identity. Nothing is written by this
+                    endpoint.
               required: [query]
           application/x-www-form-urlencoded:
             schema:
@@ -13540,9 +13541,10 @@ paths:
                   enum: ["true"]
                   description: >
                     Forwarded from the re-identify entry point. Carried onto
-                    each returned candidate so the eventual /refresh/link call
-                    knows to discard the previous identity. Nothing is written
-                    by this endpoint.
+                    each returned candidate that can supply a replacement, so
+                    the eventual /refresh/link call knows to discard the
+                    repudiated MusicBrainz identity. Nothing is written by this
+                    endpoint.
               required: [query]
       responses:
         "200":
@@ -13606,11 +13608,15 @@ paths:
                   enum: ["true"]
                   description: >
                     Re-identify intent, forwarded from the disambiguation
-                    flow. When "true" AND mbid is non-empty, the artist's
-                    previous provider IDs and fetch timestamps are discarded
-                    in the same write that stores the chosen replacement, so
-                    the artist is never left without an identity. Ignored
-                    without an mbid.
+                    flow. When "true" AND at least one of mbid / discogs_id is
+                    non-empty, the artist's previous MusicBrainz ID is
+                    discarded in the same write that stores the chosen
+                    replacement: an mbid overwrites it, a discogs_id-only pick
+                    clears it, because re-identify repudiates the previous
+                    MusicBrainz identity either way. The discard is scoped to
+                    MusicBrainz -- audiodb, wikidata, deezer and spotify IDs
+                    are kept, since a wrong MusicBrainz ID does not make them
+                    wrong. Ignored when neither ID is supplied.
           application/x-www-form-urlencoded:
             schema:
               type: object
@@ -13626,11 +13632,15 @@ paths:
                   enum: ["true"]
                   description: >
                     Re-identify intent, forwarded from the disambiguation
-                    flow. When "true" AND mbid is non-empty, the artist's
-                    previous provider IDs and fetch timestamps are discarded
-                    in the same write that stores the chosen replacement, so
-                    the artist is never left without an identity. Ignored
-                    without an mbid.
+                    flow. When "true" AND at least one of mbid / discogs_id is
+                    non-empty, the artist's previous MusicBrainz ID is
+                    discarded in the same write that stores the chosen
+                    replacement: an mbid overwrites it, a discogs_id-only pick
+                    clears it, because re-identify repudiates the previous
+                    MusicBrainz identity either way. The discard is scoped to
+                    MusicBrainz -- audiodb, wikidata, deezer and spotify IDs
+                    are kept, since a wrong MusicBrainz ID does not make them
+                    wrong. Ignored when neither ID is supplied.
       responses:
         "200":
           description: >
@@ -14527,11 +14537,12 @@ paths:
       summary: Identify or re-identify an artist via MusicBrainz
       description: >
         Returns the disambiguation form so the user can link (or re-link) a
-        MusicBrainz entry. This endpoint PERSISTS NOTHING: clear_ids marks the
-        destructive "Re-identify" intent, but the artist's existing provider
-        IDs are kept until a replacement is chosen, and are discarded only by
-        the subsequent /refresh/link call that supplies one. Abandoning the
-        flow leaves the artist exactly as it was.
+        MusicBrainz or Discogs entry. This endpoint PERSISTS NOTHING: clear_ids
+        marks the destructive "Re-identify" intent, but the artist's existing
+        provider IDs are kept until a replacement is chosen, and the previous
+        MusicBrainz identity is discarded only by the subsequent /refresh/link
+        call that supplies one. Abandoning the flow leaves the artist exactly
+        as it was.
       operationId: reidentifyArtist
       parameters:
         - name: id
@@ -14553,9 +14564,9 @@ paths:
                     When set to "true", marks this as the destructive
                     "Re-identify" flow. No provider ID is cleared here; the
                     flag is echoed into the returned form and carried to
-                    /refresh/link, which discards the previous identity in the
-                    same write that applies the chosen replacement. Omit for
-                    the non-destructive identify flow.
+                    /refresh/link, which discards the repudiated MusicBrainz
+                    identity in the same write that applies the chosen
+                    replacement. Omit for the non-destructive identify flow.
       responses:
         "200":
           description: Disambiguation form returned (no provider IDs are modified on this endpoint, whatever clear_ids says; returns HTML disambiguation form when HX-Request header is set)

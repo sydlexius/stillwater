@@ -241,7 +241,8 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	//  1. the request carries the re-identify intent (clear_ids == "true"),
 	//     forwarded from handleReidentify through the search form and the
 	//     candidate card; and
-	//  2. a replacement MusicBrainz ID is actually present in THIS request.
+	//  2. a replacement identity is actually present in THIS request -- either
+	//     a MusicBrainz ID or a Discogs ID.
 	//
 	// Condition 2 is what makes the artist un-strandable. The old code cleared
 	// in handleReidentify, before any candidate existed, so an abandoned flow
@@ -250,23 +251,44 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	// the row never observes an identity-less state -- and if the operator
 	// walks away, no write happened at all.
 	//
-	// Anything unrecognized (a missing field, "1", "TRUE", an empty body) falls
-	// through to the non-destructive path and preserves the existing IDs, which
-	// is the safe direction for an ambiguous signal.
-	clearIDs := body.ClearIDs == "true" && body.MBID != ""
-	if clearIDs {
-		r.logger.Info("re-identify: discarding previous provider identity",
+	// Anything unrecognized (a missing field, "1", "TRUE", an empty body, a
+	// body with neither ID) falls through to the non-destructive path and
+	// preserves the existing IDs, which is the safe direction for an ambiguous
+	// signal.
+	reidentify := body.ClearIDs == "true" && (body.MBID != "" || body.DiscogsID != "")
+
+	// The discard is PER-PROVIDER, keyed to what the replacement actually
+	// supplies. Re-identify means "this artist is someone else", so the
+	// repudiated MusicBrainz identity always goes -- but a wrong MBID does not
+	// make a correct AudioDB, Wikidata, Deezer or Spotify ID wrong, so those
+	// are left alone. Wiping every ID as a unit destroys correct data to fix
+	// one incorrect field.
+	//
+	// A MusicBrainz pick supplies its own replacement MBID, which the
+	// overwrite below applies. A Discogs pick supplies none, so the repudiated
+	// MBID has to be cleared explicitly here -- otherwise the operator says
+	// "this is someone else", picks a Discogs candidate, and the artist keeps
+	// the known-wrong MusicBrainz ID alongside its new Discogs one.
+	if reidentify && body.MBID == "" {
+		r.logger.Info("re-identify: discarding repudiated MusicBrainz identity",
 			slog.String("artist_id", a.ID),
 			slog.String("previous_mbid", a.MusicBrainzID),
-			slog.String("replacement_mbid", body.MBID),
+			slog.String("replacement_discogs_id", body.DiscogsID),
 		)
-		clearProviderIdentity(a)
+		a.MusicBrainzID = ""
 	}
 
 	// Store the selected ID(s). This handler is only invoked from the
 	// disambiguation UI where the user explicitly chose an identity, so
 	// we overwrite unconditionally (supports re-identification).
 	if body.MBID != "" {
+		if reidentify {
+			r.logger.Info("re-identify: replacing MusicBrainz identity",
+				slog.String("artist_id", a.ID),
+				slog.String("previous_mbid", a.MusicBrainzID),
+				slog.String("replacement_mbid", body.MBID),
+			)
+		}
 		a.MusicBrainzID = body.MBID
 	}
 	if body.DiscogsID != "" {
@@ -288,7 +310,7 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		slog.String("mbid", a.MusicBrainzID),
 		slog.String("discogs_id", a.DiscogsID),
 		slog.String("source", body.Source),
-		slog.Bool("cleared_previous", clearIDs),
+		slog.Bool("reidentify", reidentify),
 	)
 
 	// Artist-level lock gate, placed AFTER the provider-ID persist above: the
@@ -595,31 +617,10 @@ func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, 
 	}
 }
 
-// clearProviderIdentity blanks every struct-modeled provider ID on the artist
-// plus the fetched-at stamps that only make sense alongside them. It mutates
-// the in-memory artist ONLY; persisting is the caller's job, and the caller
-// must not persist until a replacement identity is in hand (#2714).
-//
-// This is the single statement of "what re-identify discards". It is called
-// from exactly one place -- handleRefreshLink, immediately before the chosen
-// replacement IDs are applied and the pair committed in one Update.
-func clearProviderIdentity(a *artist.Artist) {
-	a.MusicBrainzID = ""
-	a.AudioDBID = ""
-	a.DiscogsID = ""
-	a.WikidataID = ""
-	a.DeezerID = ""
-	a.SpotifyID = ""
-	a.AudioDBIDFetchedAt = nil
-	a.DiscogsIDFetchedAt = nil
-	a.WikidataIDFetchedAt = nil
-	a.LastFMFetchedAt = nil
-}
-
 // handleReidentify returns the disambiguation form so the user can link (or
-// re-link) a MusicBrainz entry. When clear_ids=true is passed, this is the
-// destructive "Re-identify" flow; without it, the non-destructive "Identify"
-// flow.
+// re-link) a MusicBrainz or Discogs entry. When clear_ids=true is passed, this
+// is the destructive "Re-identify" flow; without it, the non-destructive
+// "Identify" flow.
 //
 // This handler PERSISTS NOTHING (#2714). It used to wipe the artist's provider
 // IDs and commit that wipe before the operator had chosen a replacement, so
