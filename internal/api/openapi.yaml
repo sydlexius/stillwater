@@ -13152,6 +13152,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            The requested name would give this artist the same identity as a
+            different existing artist, so the write was refused. Only the name
+            field can produce this response; the identity comparison folds
+            case, accents, punctuation, and leading articles, so the colliding
+            artist's stored name may differ from the requested one.
+
+            The two records can USUALLY be combined from the duplicates report,
+            but the report may not display the pair at all. Two cases: duplicate
+            detection refuses to group artists bound to different non-empty
+            MusicBrainz IDs (this check considers only the name, so such a pair
+            is refused here yet never forms a group), and the report hides
+            groups the operator previously ignored. Clients must not present
+            the merge flow as guaranteed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    description: Human-readable reason the write was refused.
+                  existing_artist_id:
+                    type: string
+                    description: ID of the artist that already holds this identity.
+                  existing_name:
+                    type: string
+                    description: |
+                      STORED name of the artist that already holds this
+                      identity. May differ from the requested value, which the
+                      response never echoes back.
+                  detail:
+                    type: string
+                    description: Operator-facing guidance on how to resolve the collision.
+            text/html:
+              schema:
+                type: string
+        "500":
+          description: >-
+            The update failed on the server: the collision guard could not
+            run, the guarded rename could not commit, or a plain field update
+            failed. The response never echoes the underlying error, only a
+            fixed message.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       tags: [Artists]
       summary: Clear a single metadata field

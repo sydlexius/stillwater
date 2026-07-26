@@ -66,6 +66,20 @@ func open(dbPath, dsnParams string) (*sql.DB, error) {
 	}
 
 	// Single writer connection for SQLite.
+	//
+	// RAISING THIS CAP HAS A NON-OBVIOUS CONSEQUENCE, so read this first.
+	// artist.UpdateNameGuarded (the #2730/#2807 rename collision guard) relies
+	// on transactions not interleaving: it re-checks for a colliding artist
+	// name inside the same transaction that performs the write, and the cap of
+	// 1 is what guarantees a second rename cannot begin its transaction until
+	// the first has committed. With more than one connection available, both
+	// transactions reach SQLite together and the losing writer fails with
+	// SQLITE_BUSY instead of writing. The guard still fails CLOSED (at most one
+	// artist ends up holding the identity), but the refused operator gets a 500
+	// rather than the 409 the handler is written to return.
+	//
+	// So this is not purely a performance knob. If you raise it, revisit that
+	// guard and decide what the busy case should surface.
 	db.SetMaxOpenConns(1)
 
 	return db, nil

@@ -1,0 +1,75 @@
+package templates
+
+// name_collision_warning.templ -- the 409 response body for a name edit that
+// would collide with an existing artist's identity (#2730).
+//
+// Rendered instead of the generic ErrorToast because a bare "another artist
+// already uses this name" leaves the operator with no next step.
+//
+// THE COPY IS DELIBERATELY NON-COMMITTAL ABOUT THE MERGE, and this is the
+// subtle part. The obvious wording -- "merge them on the duplicates report" --
+// is a promise the report cannot always keep. It fails in TWO unrelated ways
+// that look identical to the operator:
+//
+//  1. Conflicting MBIDs. DetectDuplicates REFUSES to group two artists bound
+//     to different non-empty MusicBrainz IDs (makeGuardedUnion in
+//     internal/artist/duplicates.go, the #2527 data-loss guard). This guard has
+//     no such condition, so such a pair is refused here and never forms a
+//     group at all.
+//  2. An ignored group (#2798). The duplicates page filters server-side
+//     ignores (FilterIgnoredGroups), so the pair DOES exist as a group but is
+//     hidden from the operator who ignored it.
+//
+// Either way the operator clicks through to a page that does not show the pair.
+//
+// The guard intentionally still refuses the conflicting-MBID rename. Nothing
+// in this repo verifies that a stored MBID is CORRECT -- validation checks
+// UUID shape only, and #2715 records that some stored MBIDs come from an
+// unscored name-search hit -- so exempting on "different MBIDs" would defer to
+// a signal that may itself be wrong. The report's refusal is a conservative
+// stance about an irreversible merge, not an assertion that the two artists
+// are distinct.
+//
+// So the copy promises only what is ALWAYS true: that a collision exists and
+// WHICH artist it is with. It points at the report as the place to combine
+// them, names the ignored-groups list as the next place to look, and otherwise
+// says Stillwater is treating the two as separate -- true in all three cases,
+// and stated without the operator needing to know what an MBID is or to recall
+// having ignored anything.
+//
+// Styling reuses the ClobberWarnings warning-banner treatment verbatim (same
+// amber palette, same rounded-md/px-4/py-3 box, same role="alert"). No new
+// banner color, badge, or affordance is introduced.
+
+// NameCollisionWarningView is the view model for the collision banner. The handler
+// builds it from artist.NameCollision; the template never imports the artist
+// domain package, matching the ArtistDuplicateMember convention above.
+type NameCollisionWarningView struct {
+	// ExistingName is the STORED name of the artist that already holds the
+	// identity -- never the name the operator typed. The two differ whenever
+	// the identity key folds a difference between them: "the cure" collides
+	// with a stored "The Cure". Echoing the typed value back would name an
+	// artist that does not exist under that spelling and would destroy the
+	// one piece of information this message exists to carry, so
+	// handlers_name_collision_guard_test.go pins it with a fixture whose
+	// requested and stored names differ.
+	ExistingName string
+	// ExistingPlatformOnly is true when the colliding artist exists only as a
+	// platform record with no directory on disk.
+	ExistingPlatformOnly bool
+	// DuplicatesURL is the base-path-qualified link to the duplicates report.
+	DuplicatesURL string
+}
+
+templ NameCollisionWarning(w NameCollisionWarningView) {
+	<div class="rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-4 py-3 text-sm text-yellow-700 dark:text-yellow-300" role="alert">
+		{ tf(ctx, "name_collision.already_used", w.ExistingName) }
+		if w.ExistingPlatformOnly {
+			{ " " }{ t(ctx, "name_collision.existing_platform_only") }
+		}
+		{ " " }{ t(ctx, "name_collision.resolve_hint") }
+		{ " " }<a class="underline font-medium" href={ templ.SafeURL(w.DuplicatesURL) }>
+			{ t(ctx, "name_collision.merge_link") }
+		</a>
+	</div>
+}
