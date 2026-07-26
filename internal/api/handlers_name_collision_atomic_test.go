@@ -208,3 +208,99 @@ func TestHandleFieldUpdate_CleanRenameStillWrites(t *testing.T) {
 		t.Errorf("name = %q, want %q", got, "Harrowdene Ensemble")
 	}
 }
+
+// deadDBRepo answers reads normally but hands back a CLOSED *sql.DB, so
+// anything that opens a transaction fails while ordinary repository lookups
+// still succeed.
+//
+// That split is exactly what this test needs. It stands in for the database
+// becoming unreachable partway through a request (pool shut down, file pulled
+// out from under the process), which is a real failure mode rather than an
+// invented one.
+type deadDBRepo struct {
+	artist.Repository
+	dead *sql.DB
+}
+
+func (r *deadDBRepo) DB() *sql.DB { return r.dead }
+
+// TestHandleFieldUpdate_GuardedRenameError_Returns500 covers the handler's
+// error branch for the transactional rename: when UpdateNameGuarded cannot
+// complete, the operator gets a 500 and the write does not happen.
+//
+// Reaching this branch requires the pre-write guard to PASS and the
+// transactional call to FAIL, which sounds contrived until you look at how the
+// two differ. FindNameCollision short-circuits on a cosmetic self-rename -- a
+// new name whose identity key equals the artist's own -- and returns before it
+// ever asks for a database handle. UpdateNameGuarded always opens a
+// transaction. So a cosmetic rename against a dead database splits them
+// naturally: the guard is satisfied without touching the database, and the
+// transaction is what fails.
+//
+// The 500 is the point. "The write could not be completed" must never be
+// reported as success, and the raw driver error must not reach the client.
+func TestHandleFieldUpdate_GuardedRenameError_Returns500(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	subject := addTestArtist(t, artistSvc, "The Southgate Winds")
+
+	// A reader on the real repos, unaffected by the fault injection below.
+	reader := artist.NewService(r.db)
+
+	// A closed handle. Precondition-checked so a failure below is attributable
+	// to this and not to some other fault.
+	dead := newTestDB(t)
+	if err := dead.Close(); err != nil {
+		t.Fatalf("closing throwaway db: %v", err)
+	}
+	if err := dead.Ping(); err == nil {
+		t.Fatal("precondition: the throwaway database must be closed")
+	}
+
+	artists, providers, members, aliases, images, platformIDs, completeness := artist.NewDefaultRepos(r.db)
+	r.artistService = artist.NewServiceWithRepos(
+		&deadDBRepo{Repository: artists, dead: dead},
+		providers, members, aliases, images, platformIDs, completeness)
+
+	// "The Southgate Winds" -> "Southgate Winds" is a cosmetic self-rename:
+	// same identity key, different bytes. Precondition, because the whole
+	// routing of this test depends on it.
+	const newName = "Southgate Winds"
+	if artist.NormalizeIdentityKey(newName) != artist.NormalizeIdentityKey("The Southgate Winds") {
+		t.Fatal("precondition: the rename must keep the same identity key, " +
+			"or the pre-write guard consults the database and fails first")
+	}
+	if collision, err := r.artistService.FindNameCollision(context.Background(), subject.ID, newName); err != nil {
+		t.Fatalf("precondition: the pre-write guard must SUCCEED here, so the 500 below is "+
+			"attributable to the transactional call: %v", err)
+	} else if collision != nil {
+		t.Fatalf("precondition: the pre-write guard must find no collision, got %+v", collision)
+	}
+
+	w := patchName(t, r, subject.ID, newName, false)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d: a rename whose transaction cannot complete must be "+
+			"reported as a failure; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
+	}
+	// The STATUS ALONE DOES NOT PIN THIS BRANCH, so the message is asserted
+	// too. With the rename error swallowed, the handler carries on to the
+	// post-write re-fetch, which fails against the same dead database and
+	// answers 500 as well -- with "failed to reload artist". A status-only
+	// check passes against that, and would report a branch as covered while
+	// the error was being ignored. Verified by mutation: deleting the error
+	// check leaves the status at 500 and changes only this string.
+	body := w.Body.String()
+	if !strings.Contains(body, "failed to update field") {
+		t.Errorf("body = %s, want the UPDATE failure message: a 500 from the later re-fetch "+
+			"would mean the rename error was swallowed rather than handled", body)
+	}
+	// The raw driver error must not reach the client.
+	if strings.Contains(body, "sql: database is closed") {
+		t.Errorf("response leaks the raw driver error:\n%s", body)
+	}
+	// And the name is untouched.
+	if got := nameOf(t, reader, subject.ID); got != "The Southgate Winds" {
+		t.Errorf("name = %q, want it unchanged at %q", got, "The Southgate Winds")
+	}
+}

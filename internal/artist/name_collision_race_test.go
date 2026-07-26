@@ -16,6 +16,7 @@ package artist
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"testing"
 )
@@ -394,5 +395,194 @@ func TestUpdateNameGuarded_UnrunnableCheckIsAnError(t *testing.T) {
 				t.Errorf("name = %q, want it untouched at %q", got, "Southgate Winds")
 			}
 		})
+	}
+}
+
+// --- guarded-rename error and secondary paths ------------------------------
+
+// closedDBRepo hands back a CLOSED *sql.DB. Every attempt to begin a
+// transaction on it fails, which is what makes it a faithful stand-in for the
+// database becoming unreachable mid-session (file deleted, pool shut down
+// during shutdown) rather than a contrived fault.
+type closedDBRepo struct {
+	Repository
+	db *sql.DB
+}
+
+func (r *closedDBRepo) DB() *sql.DB { return r.db }
+
+// serviceOnClosedDB builds a Service whose repository exposes a closed handle.
+func serviceOnClosedDB(t *testing.T) *Service {
+	t.Helper()
+	db := newTestDB(t)
+	artists, providers, members, aliases, images, platformIDs, completeness := NewDefaultRepos(db)
+
+	closed := newTestDB(t)
+	if err := closed.Close(); err != nil {
+		t.Fatalf("closing probe db: %v", err)
+	}
+	// Precondition: the handle really is unusable, so a failure below is the
+	// closed database and not some other fault.
+	if err := closed.Ping(); err == nil {
+		t.Fatal("precondition: the probe database must be closed")
+	}
+
+	return NewServiceWithRepos(&closedDBRepo{Repository: artists, db: closed},
+		providers, members, aliases, images, platformIDs, completeness)
+}
+
+// TestUpdateNameGuarded_UnusableDatabaseIsAnError covers the fail-closed
+// contract when the database itself is unreachable: the transaction cannot
+// even begin, so the rename must be refused rather than attempted.
+//
+// This is the same contract as the missing-accessor case, but one layer down
+// -- there the repository could not produce a handle, here the handle exists
+// and is dead. Both must refuse; neither may fall through to a write.
+func TestUpdateNameGuarded_UnusableDatabaseIsAnError(t *testing.T) {
+	t.Parallel()
+	svc := serviceOnClosedDB(t)
+
+	collision, wrote, err := svc.UpdateNameGuarded(context.Background(), "any-id", "Harrowdene Ensemble")
+	if err == nil {
+		t.Fatal("err = nil: a rename must be refused when the database is unusable")
+	}
+	if collision != nil || wrote {
+		t.Errorf("collision = %+v, wrote = %t; want (nil, false) alongside the error", collision, wrote)
+	}
+}
+
+// TestUpdateNameGuarded_EmptyIdentityKeySkipsCollisionCheck covers the
+// empty-key branch: a name made only of invisible characters normalizes to
+// "", and an empty key is deliberately NOT treated as a collision.
+//
+// The fixture is a zero-width space, which is the realistic form of this --
+// invisible characters ride along on names pasted from web pages, and
+// NormalizeIdentityKey strips Unicode Cf characters by design. Punctuation
+// does NOT produce an empty key (it survives the fold), so a punctuation-only
+// name would have exercised the ordinary path instead; the precondition below
+// is what pins that distinction.
+//
+// Two artists whose names both normalize away would otherwise be reported as
+// colliding with each other, a confusing refusal for a value that field
+// validation rejects on its own terms. Guarding the value itself is
+// validation's job, not this function's.
+func TestUpdateNameGuarded_EmptyIdentityKeySkipsCollisionCheck(t *testing.T) {
+	t.Parallel()
+	svc, _, platformOnlyID := seedCollisionPair(t, "Southgate Winds", "Northfield Chorale")
+
+	const invisible = "\u200b" // ZERO WIDTH SPACE
+	// Precondition: this really does normalize away, or the test is covering
+	// the ordinary path under a misleading name.
+	if got := NormalizeIdentityKey(invisible); got != "" {
+		t.Fatalf("precondition: NormalizeIdentityKey(%q) = %q, want an empty key", invisible, got)
+	}
+
+	collision, wrote, err := svc.UpdateNameGuarded(context.Background(), platformOnlyID, invisible)
+	if err != nil {
+		t.Fatalf("UpdateNameGuarded: %v", err)
+	}
+	if collision != nil {
+		t.Errorf("collision = %+v, want nil: an empty identity key is not a collision", collision)
+	}
+	if !wrote {
+		t.Error("wrote = false, want true")
+	}
+	if got := nameByID(t, svc, platformOnlyID); got != invisible {
+		t.Errorf("name = %q, want %q", got, invisible)
+	}
+}
+
+// TestUpdateNameGuarded_RecordsHistory covers the history branch, which only
+// runs after a successful commit.
+//
+// The ordering matters and is what this asserts: history must record the
+// PRE-rename name as the old value. Recording the post-write name on both
+// sides would produce a history row claiming the artist was renamed from its
+// new name to itself, silently destroying the audit trail for renames while
+// every other assertion about the write stayed green.
+func TestUpdateNameGuarded_RecordsHistory(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	svc := NewService(db)
+	hsvc := NewHistoryService(db)
+	svc.SetHistoryService(hsvc)
+	ctx := context.Background()
+
+	a := testArtist("Southgate Winds", "")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Precondition: no history for this artist yet, so the row asserted below
+	// is the one this rename produced.
+	if _, total, err := hsvc.List(ctx, a.ID, 10, 0); err != nil {
+		t.Fatalf("List (precondition): %v", err)
+	} else if total != 0 {
+		t.Fatalf("precondition: %d history entries, want 0", total)
+	}
+
+	collision, wrote, err := svc.UpdateNameGuarded(ctx, a.ID, "Harrowdene Ensemble")
+	if err != nil {
+		t.Fatalf("UpdateNameGuarded: %v", err)
+	}
+	if collision != nil || !wrote {
+		t.Fatalf("collision = %+v, wrote = %t; want (nil, true)", collision, wrote)
+	}
+
+	changes, total, err := hsvc.List(ctx, a.ID, 10, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("history entries = %d, want 1", total)
+	}
+	c := changes[0]
+	if c.Field != "name" {
+		t.Errorf("field = %q, want %q", c.Field, "name")
+	}
+	if c.OldValue != "Southgate Winds" {
+		t.Errorf("old value = %q, want the PRE-rename name %q", c.OldValue, "Southgate Winds")
+	}
+	if c.NewValue != "Harrowdene Ensemble" {
+		t.Errorf("new value = %q, want %q", c.NewValue, "Harrowdene Ensemble")
+	}
+}
+
+// TestUpdateNameGuarded_RefusedRenameRecordsNoHistory is the companion: a
+// rename that collides must leave no audit trail, because nothing happened.
+// The history write sits after the commit precisely so a refusal cannot reach
+// it, and this pins that placement.
+func TestUpdateNameGuarded_RefusedRenameRecordsNoHistory(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	svc := NewService(db)
+	hsvc := NewHistoryService(db)
+	svc.SetHistoryService(hsvc)
+	ctx := context.Background()
+
+	existing := testArtist("Southgate Winds", "")
+	if err := svc.Create(ctx, existing); err != nil {
+		t.Fatalf("Create existing: %v", err)
+	}
+	subject := testArtist("Northfield Chorale", "")
+	if err := svc.Create(ctx, subject); err != nil {
+		t.Fatalf("Create subject: %v", err)
+	}
+
+	collision, wrote, err := svc.UpdateNameGuarded(ctx, subject.ID, "Southgate Winds")
+	if err != nil {
+		t.Fatalf("UpdateNameGuarded: %v", err)
+	}
+	if collision == nil {
+		t.Fatal("collision = nil, want the rename refused")
+	}
+	if wrote {
+		t.Error("wrote = true, want false")
+	}
+
+	if _, total, err := hsvc.List(ctx, subject.ID, 10, 0); err != nil {
+		t.Fatalf("List: %v", err)
+	} else if total != 0 {
+		t.Errorf("history entries = %d, want 0: a refused rename must leave no audit trail", total)
 	}
 }
