@@ -13615,8 +13615,11 @@ paths:
                     clears it, because re-identify repudiates the previous
                     MusicBrainz identity either way. The discard is scoped to
                     MusicBrainz -- audiodb, wikidata, deezer and spotify IDs
-                    are kept, since a wrong MusicBrainz ID does not make them
-                    wrong. Ignored when neither ID is supplied.
+                    are kept, as is the artist's discogs_id, which is
+                    overwritten only when a discogs_id is itself supplied as
+                    the replacement, since a wrong MusicBrainz ID does not
+                    make any of them wrong. Ignored when neither ID is
+                    supplied.
           application/x-www-form-urlencoded:
             schema:
               type: object
@@ -13639,8 +13642,11 @@ paths:
                     clears it, because re-identify repudiates the previous
                     MusicBrainz identity either way. The discard is scoped to
                     MusicBrainz -- audiodb, wikidata, deezer and spotify IDs
-                    are kept, since a wrong MusicBrainz ID does not make them
-                    wrong. Ignored when neither ID is supplied.
+                    are kept, as is the artist's discogs_id, which is
+                    overwritten only when a discogs_id is itself supplied as
+                    the replacement, since a wrong MusicBrainz ID does not
+                    make any of them wrong. Ignored when neither ID is
+                    supplied.
       responses:
         "200":
           description: >
@@ -14577,13 +14583,20 @@ paths:
                 properties:
                   status:
                     type: string
-                    description: Result status of the reidentification.
+                    description: >
+                      Always "disambiguation_required"; the flow is awaiting a
+                      selection, so nothing has been applied yet.
                   artist:
                     type: string
-                    description: Artist name after reidentification.
+                    description: >
+                      Current artist name, unchanged -- no selection has been
+                      applied at this point in the flow.
                   message:
                     type: string
-                    description: Human-readable result detail.
+                    description: >
+                      Human-readable next step for the operator, noting that
+                      existing provider IDs are kept until a replacement is
+                      chosen when clear_ids was set.
             text/html:
               schema:
                 type: string
