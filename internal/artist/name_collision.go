@@ -177,29 +177,45 @@ func findCollisionPartner(ctx context.Context, q rowQuerier, artistID, newKey st
 // duplicate the guard exists to prevent (TOCTOU: time-of-check to time-of-use,
 // the gap between validating a condition and acting on it).
 //
-// ORDERING IS THE MECHANISM, and it is deliberate:
+// WHAT MAKES THIS SAFE, precisely, because the obvious answer is wrong:
+//
+// The check and the write are in ONE transaction, and transactions here cannot
+// interleave -- the connection pool is capped at a SINGLE connection
+// (database.go, `db.SetMaxOpenConns(1)`). database/sql therefore blocks a
+// second BeginTx until the first transaction returns its connection, so the
+// second rename's check cannot run until the first has committed and is
+// visible to it. That serialization is the whole mechanism.
+//
+// The step order below is:
 //
 //  1. read the artist's CURRENT name (needed for the self-rename exemption
 //     and for the history record, and must be the pre-write value)
-//  2. WRITE the new name
+//  2. write the new name
 //  3. re-scan for a colliding partner
 //  4. commit, or roll the write back and report the collision
 //
-// The write is issued BEFORE the check on purpose. modernc.org/sqlite begins a
-// DEFERRED transaction unless the DSN carries _txlock=immediate (driver
-// tx.go: `if !opts.ReadOnly && c.beginMode != ""`, and beginMode is only set
-// from that DSN parameter, which this application does not set). A deferred
-// transaction takes only a READ lock, so checking first would leave the same
-// window open one level down. Issuing the UPDATE first forces SQLite to take
-// the write lock, and SQLite permits exactly one writer: from step 2 onward no
-// other transaction can commit a conflicting rename. A racing writer therefore
-// either committed before our step 2 -- in which case our step 3 sees its row
-// and we refuse -- or is blocked until we commit, after which ITS check sees
-// our row and IT refuses. Exactly one of the two renames survives.
+// THE UPDATE-BEFORE-CHECK ORDER IS NOT LOAD-BEARING at the current pool
+// setting. This was measured, not assumed: moving the check ahead of the write
+// leaves TestUpdateNameGuarded_ConcurrentRenamesToSameTarget passing, because
+// the two renames never reach SQLite at the same time and SQLite's locking is
+// never consulted. Do not reorder these statements believing it changes the
+// concurrency behavior -- it does not. (Equally, do not "restore" a rationale
+// about deferred transactions and write locks: which lock the transaction
+// takes is irrelevant while only one transaction can be open at a time.)
 //
-// Rolling the write back on collision is safe: nothing outside this
-// transaction ever observes it, because no other writer can be inside the
-// database while we hold the lock.
+// IF THE POOL CAP IS EVER RAISED, this degrades in a specific way, also
+// measured: with several connections available the two transactions do reach
+// SQLite together, and the losing writer fails with SQLITE_BUSY ("database is
+// locked") instead of writing. The invariant still holds -- at most one artist
+// ends up with the identity -- so it fails CLOSED, but the refused operator
+// sees a 500 rather than the clean 409 this code is written to produce. That
+// is an operator-facing regression, not a correctness one. There is
+// deliberately no retry for it: the case is unreachable at the current cap,
+// and speculative machinery for a configuration we do not run would rot.
+//
+// Rolling the write back on collision is safe: no other transaction is open
+// while ours holds the pool's only connection, so nothing outside this
+// transaction ever observes the write.
 //
 // Returns a non-nil *NameCollision when the rename was refused (nothing was
 // written). The bool reports whether a real write happened, mirroring

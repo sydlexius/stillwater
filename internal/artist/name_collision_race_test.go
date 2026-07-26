@@ -74,11 +74,17 @@ func nameByID(t *testing.T, svc *Service, id string) string {
 // mean shipping test scaffolding inside the guard. What it does is release
 // both renames from a common barrier and assert the INVARIANT on the resulting
 // rows. Repeating that over many independent databases is what gives it teeth:
-// the unsynchronized version of this code loses the invariant readily under
-// -race (verified by reverting the fix; see the package comment on
-// UpdateNameGuarded), because the two operations release the pooled connection
-// between the check and the write and each rename's check runs against a
-// snapshot the other is about to invalidate.
+// the unguarded version of this code loses the invariant on the FIRST round
+// (verified by reverting the fix to a separate FindNameCollision call followed
+// by UpdateField).
+//
+// The reason it loses is specific. Two separate operations each take the
+// pool's single connection, use it, and RELEASE it -- so the other rename's
+// check slots into the gap between them and reads a row the first is about to
+// change. Holding one transaction across both steps removes the gap, because
+// the connection is never released mid-decision. See the doc comment on
+// UpdateNameGuarded for why the statement ORDER inside that transaction is not
+// what does the work.
 //
 // The assertion is deliberately on rows read back from the database, not on
 // returned values alone: a version that reported a collision and wrote anyway
@@ -222,9 +228,9 @@ func TestUpdateNameGuarded_CleanRenameWrites(t *testing.T) {
 
 // TestUpdateNameGuarded_CollisionRefusesAndLeavesRowUntouched is the
 // single-threaded refusal case. The row assertion is the load-bearing half:
-// the transaction writes the name BEFORE it checks (that is how it acquires
-// the write lock), so a rollback that failed to fire would leave the duplicate
-// committed while the caller was told the rename was refused.
+// the transaction writes the name BEFORE it checks, so a rollback that failed
+// to fire would leave the duplicate committed while the caller was told the
+// rename was refused.
 func TestUpdateNameGuarded_CollisionRefusesAndLeavesRowUntouched(t *testing.T) {
 	t.Parallel()
 	svc, localID, platformOnlyID := seedCollisionPair(t, "Southgate Winds", "Northfield Chorale")

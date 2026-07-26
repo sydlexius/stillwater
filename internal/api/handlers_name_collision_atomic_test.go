@@ -97,10 +97,10 @@ func withStaleFastPath(t *testing.T, r *Router, artistID, staleName string) *art
 // guard must still be refused, with the SAME 409 the fast path produces.
 //
 // The stored-name assertion is the load-bearing half. The transaction writes
-// the name before it checks (that is how it takes SQLite's write lock), so a
-// rollback that failed to fire would leave the duplicate committed while the
-// operator was told the rename was refused -- a worse outcome than the
-// original defect, because the response would actively lie about it.
+// the name before it checks, so a rollback that failed to fire would leave the
+// duplicate committed while the operator was told the rename was refused -- a
+// worse outcome than the original defect, because the response would actively
+// lie about it.
 func TestHandleFieldUpdate_TransactionalCollision_RefusesJSON(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
