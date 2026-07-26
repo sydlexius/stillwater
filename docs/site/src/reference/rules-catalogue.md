@@ -16,7 +16,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | Rule | Category | Default | Fixable |
 |---|---|---|---|
 | [NFO file exists](#nfo-file-exists) | NFO | Enabled, auto | Yes |
-| [NFO has MusicBrainz ID](#nfo-has-musicbrainz-id) | NFO | Enabled, auto | Yes |
+| [NFO has MusicBrainz ID](#nfo-has-musicbrainz-id) | NFO | Enabled, auto | Sometimes |
 | [Biography exists](#biography-exists) | Metadata | Enabled, auto | Yes |
 | [Artist/ID mismatch](#artistid-mismatch) | Metadata | Disabled, manual | Detection-only |
 | [Directory name matches artist](#directory-name-matches-artist) | Metadata | Enabled, manual | Sometimes |
@@ -83,7 +83,7 @@ The MusicBrainz Artist ID (MBID) is the stable cross-provider key that lets Stil
 - An NFO written by an older version of Stillwater before MBID population was implemented.
 - An artist name that matches multiple MusicBrainz entries and was imported without a confirmed identity.
 
-**What the fix does:** Searches configured providers for a result that includes an MBID and writes the highest-confidence match to the NFO.
+**What the fix does:** Searches configured providers for a result that includes an MBID and writes the top match to the NFO, but only when that match is confident enough: it must score at least 85, its name must be at least an 85% match for the artist's name, and it must lead any rival MusicBrainz ID in the results by at least 10 points. A match that fails any of those is not written, and the artist stays flagged so you can identify it yourself. The reason the match was declined is recorded in the log.
 
 ```
 Before: artist.nfo has no <musicbrainzartistid> element
@@ -91,6 +91,12 @@ After:  artist.nfo contains <musicbrainzartistid>f59c5520-5f46-4d2c-b2c4-822eabf
 ```
 
 **Configurable:** Severity only.
+
+**Caveats:**
+
+- Declines rather than guesses. A search that returns no MBID, a low-confidence top hit, a hit whose name does not closely match the artist, or two close-scoring MusicBrainz entries leaves the artist untouched and still flagged.
+- Only MusicBrainz's own results count as competing identities. Other providers score on a different scale and report MBIDs they did not issue, which are often stale, so they are not treated as evidence that a match is ambiguous. With MusicBrainz disabled, the ambiguity check has nothing to compare and only the confidence and name checks apply.
+- An adopted ID is recorded as machine-picked, so IDs this rule chose can be found and reviewed later. IDs you entered yourself are never overwritten by this rule.
 
 ---
 

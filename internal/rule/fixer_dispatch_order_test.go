@@ -19,6 +19,13 @@ import (
 // pre-mutation value. This file tests the StateProducer-tier reorder that
 // fixes it.
 
+// mbidChainFixture is the MBID the chain test's stub search returns. It must be
+// a real UUID at a high score under an exact-name match: since #2715 the
+// nfo_has_mbid fixer refuses to adopt anything that is not a syntactically
+// valid MusicBrainz ID clearing the confidence floor, so a placeholder string
+// here would make the fixer decline and the whole chain silently no-op.
+const mbidChainFixture = "c8da2e40-bd28-4d4e-813a-bd2f51958ba8"
+
 // stubSearchOrchestrator is a test-only metadataOrchestrator whose Search
 // always returns one fixed result carrying mbid. Only Search is exercised by
 // MetadataFixer.fixMBID; the other two methods are unused in these tests and
@@ -218,7 +225,7 @@ func TestOrderForDispatch_ChainNFOThenProviderIDThenConsumer(t *testing.T) {
 	engine.SetProviderAvailability(&stubProviderAvailability{available: allThreeAvailable()})
 	engine.checkers[RuleDiscographyPopulated] = consumerChecker(RuleDiscographyPopulated)
 
-	searchOrch := &stubSearchOrchestrator{mbid: "mbid-fresh"}
+	searchOrch := &stubSearchOrchestrator{mbid: mbidChainFixture}
 	metadataFixer := NewMetadataFixer(nil, testLogger())
 	metadataFixer.orchestrator = searchOrch
 	fetcher := &stubMetadataProvider{metadata: mbURLMetadata()}
@@ -252,8 +259,8 @@ func TestOrderForDispatch_ChainNFOThenProviderIDThenConsumer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reloading artist: %v", err)
 	}
-	if reloaded.MusicBrainzID != "mbid-fresh" {
-		t.Errorf("artist.MusicBrainzID = %q, want %q (nfo_has_mbid fix must persist)", reloaded.MusicBrainzID, "mbid-fresh")
+	if reloaded.MusicBrainzID != mbidChainFixture {
+		t.Errorf("artist.MusicBrainzID = %q, want %q (nfo_has_mbid fix must persist)", reloaded.MusicBrainzID, mbidChainFixture)
 	}
 	if reloaded.DiscogsID == "" {
 		t.Error("artist.DiscogsID is empty; provider_id_missing must have backfilled it in the same pass")
