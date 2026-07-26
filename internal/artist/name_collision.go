@@ -23,9 +23,12 @@ package artist
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 )
 
 // ErrNameCollision reports that a requested name change would give the artist
@@ -59,6 +62,13 @@ func (c *NameCollision) PlatformOnly() bool {
 
 // FindNameCollision reports whether renaming artistID to newName would land it
 // on an identity key that a different artist already holds.
+//
+// This is a FAST PATH, not the authority. It answers from a snapshot taken
+// before the write, so a concurrent rename toward the same target can land
+// between this call and the update. UpdateNameGuarded re-runs the same check
+// inside the writing transaction and is what actually decides; this call
+// exists so the ordinary (uncontended) case reports the collision without
+// opening a transaction at all.
 //
 // Returns (nil, nil) when the rename is safe. A non-nil *NameCollision means
 // the write must not proceed. A non-nil error means the check could not be
@@ -99,21 +109,43 @@ func (s *Service) FindNameCollision(ctx context.Context, artistID, newName strin
 		return nil, fmt.Errorf("checking name collision: nil database handle")
 	}
 
-	// Scan every OTHER artist and compare normalized keys in Go. The key is
-	// computed by a Go function (Unicode normalization, punctuation folding,
-	// article stripping), so it cannot be expressed as a SQL predicate and
-	// there is no stored key column to index. This is the same whole-table
-	// approach DetectDuplicates takes, at the same scale (one row per artist),
-	// and it runs once per name edit -- a rare, human-driven action.
-	//
-	// ORDER BY makes the reported partner deterministic when more than one
-	// existing artist shares the key, so the operator sees a stable message
-	// instead of one that changes between identical attempts. Pinned by
-	// TestFindNameCollision_MultiplePartnersIsDeterministic, which seeds two
-	// artists sharing the target key with IDs chosen so a different ordering
-	// would select the other row.
-	const q = `SELECT id, name, path FROM artists WHERE id <> ? ORDER BY name, id`
-	rows, err := db.QueryContext(ctx, q, artistID)
+	// The scan itself is shared with the in-transaction check so both paths
+	// decide "is this a duplicate?" with one implementation.
+	return findCollisionPartner(ctx, db, artistID, newKey)
+}
+
+// rowQuerier is the read surface findCollisionPartner needs. Both *sql.DB and
+// *sql.Tx satisfy it, which is the point: the pre-write guard scans on the
+// pool while UpdateNameGuarded scans INSIDE its own write transaction, and
+// both must reach the identical comparison. Two copies of the scan would be
+// free to drift, and a drift here means "the fast path and the authoritative
+// path disagree about what a duplicate is" -- the exact failure this guard
+// exists to prevent.
+type rowQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// findCollisionPartner scans every artist OTHER than artistID and returns the
+// first whose normalized identity key equals newKey.
+//
+// The key is computed by a Go function (Unicode normalization, punctuation
+// folding, article stripping), so it cannot be expressed as a SQL predicate
+// and there is no stored key column to index. This is the same whole-table
+// approach DetectDuplicates takes, at the same scale (one row per artist), and
+// it runs only on a name edit -- a rare, human-driven action.
+//
+// ORDER BY makes the reported partner deterministic when more than one
+// existing artist shares the key, so the operator sees a stable message
+// instead of one that changes between identical attempts. Pinned by
+// TestFindNameCollision_MultiplePartnersIsDeterministic, which seeds two
+// artists sharing the target key with IDs chosen so a different ordering
+// would select the other row.
+//
+// newKey MUST be a non-empty key already produced by NormalizeIdentityKey;
+// callers handle the empty-key case before calling.
+func findCollisionPartner(ctx context.Context, q rowQuerier, artistID, newKey string) (*NameCollision, error) {
+	const query = `SELECT id, name, path FROM artists WHERE id <> ? ORDER BY name, id`
+	rows, err := q.QueryContext(ctx, query, artistID)
 	if err != nil {
 		return nil, fmt.Errorf("checking name collision: querying artists: %w", err)
 	}
@@ -133,4 +165,108 @@ func (s *Service) FindNameCollision(ctx context.Context, artistID, newName strin
 	}
 
 	return nil, nil
+}
+
+// UpdateNameGuarded writes artistID's name field only if no OTHER artist holds
+// the resulting identity key, deciding both inside ONE transaction.
+//
+// This is the authoritative half of the #2730 guard. FindNameCollision run
+// before the write is a fast path: it answers from a snapshot that is already
+// stale by the time the write lands, so two concurrent renames toward the same
+// target name could both pass it and both write -- producing exactly the
+// duplicate the guard exists to prevent (TOCTOU: time-of-check to time-of-use,
+// the gap between validating a condition and acting on it).
+//
+// ORDERING IS THE MECHANISM, and it is deliberate:
+//
+//  1. read the artist's CURRENT name (needed for the self-rename exemption
+//     and for the history record, and must be the pre-write value)
+//  2. WRITE the new name
+//  3. re-scan for a colliding partner
+//  4. commit, or roll the write back and report the collision
+//
+// The write is issued BEFORE the check on purpose. modernc.org/sqlite begins a
+// DEFERRED transaction unless the DSN carries _txlock=immediate (driver
+// tx.go: `if !opts.ReadOnly && c.beginMode != ""`, and beginMode is only set
+// from that DSN parameter, which this application does not set). A deferred
+// transaction takes only a READ lock, so checking first would leave the same
+// window open one level down. Issuing the UPDATE first forces SQLite to take
+// the write lock, and SQLite permits exactly one writer: from step 2 onward no
+// other transaction can commit a conflicting rename. A racing writer therefore
+// either committed before our step 2 -- in which case our step 3 sees its row
+// and we refuse -- or is blocked until we commit, after which ITS check sees
+// our row and IT refuses. Exactly one of the two renames survives.
+//
+// Rolling the write back on collision is safe: nothing outside this
+// transaction ever observes it, because no other writer can be inside the
+// database while we hold the lock.
+//
+// Returns a non-nil *NameCollision when the rename was refused (nothing was
+// written). The bool reports whether a real write happened, mirroring
+// UpdateField: false with a nil collision means the no-op skip fired because
+// the stored name already equals the requested one.
+func (s *Service) UpdateNameGuarded(ctx context.Context, artistID, newName string) (*NameCollision, bool, error) {
+	db, err := s.artistDB()
+	if err != nil {
+		return nil, false, fmt.Errorf("guarded rename: %w", err)
+	}
+	if db == nil {
+		return nil, false, fmt.Errorf("guarded rename: nil database handle")
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("guarded rename: beginning transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on the error path the original error is what callers act on
+
+	var currentName string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT name FROM artists WHERE id = ?`, artistID).Scan(&currentName); err != nil {
+		return nil, false, fmt.Errorf("guarded rename: loading artist %s: %w", artistID, err)
+	}
+
+	// Same no-op contract as UpdateField: an unchanged value writes nothing
+	// and records no history. normalizeFieldValue compares scalars verbatim,
+	// so a whitespace-correcting edit is still a real write.
+	if normalizeFieldValue("name", newName) == normalizeFieldValue("name", currentName) {
+		return nil, false, nil
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE artists SET name = ?, updated_at = ? WHERE id = ?`,
+		newName, time.Now().UTC().Format(time.RFC3339), artistID); err != nil {
+		return nil, false, fmt.Errorf("guarded rename: writing name: %w", err)
+	}
+
+	// Two cases are NOT collisions, matching FindNameCollision exactly:
+	// an empty key (blank or punctuation-only name, which field validation
+	// rejects separately) and a new name whose key equals the artist's OWN
+	// current key ("The Cure" -> "Cure" is cosmetic, not a second identity).
+	newKey := NormalizeIdentityKey(newName)
+	if newKey != "" && NormalizeIdentityKey(currentName) != newKey {
+		collision, err := findCollisionPartner(ctx, tx, artistID, newKey)
+		if err != nil {
+			return nil, false, fmt.Errorf("guarded rename: %w", err)
+		}
+		if collision != nil {
+			// The deferred Rollback discards the write above.
+			return collision, false, nil
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, false, fmt.Errorf("guarded rename: committing: %w", err)
+	}
+
+	s.markDirtyBestEffort(ctx, artistID)
+
+	if s.history != nil {
+		if err := s.history.Record(ctx, artistID, "name", currentName, newName, sourceFromContext(ctx)); err != nil {
+			slog.Warn("history: failed to record guarded rename",
+				"artist_id", artistID, "error", err)
+		}
+	}
+
+	return nil, true, nil
 }

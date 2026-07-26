@@ -220,14 +220,41 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if artist.IsProviderIDField(field) {
+	switch {
+	case artist.IsProviderIDField(field):
 		if err := r.artistService.UpdateProviderField(req.Context(), artistID, field, value); err != nil {
 			writeError(w, req, http.StatusInternalServerError, "failed to update field")
 			return
 		}
-	} else if _, err := r.artistService.UpdateField(req.Context(), artistID, field, value); err != nil {
-		writeError(w, req, http.StatusInternalServerError, "failed to update field")
-		return
+	case field == "name":
+		// #2807: the guard above and a plain UpdateField are two separate
+		// operations, so two concurrent renames toward the SAME target name
+		// could both pass the guard and both write -- producing exactly the
+		// duplicate #2730 exists to prevent. UpdateNameGuarded re-runs the
+		// check INSIDE the transaction that performs the write, so only one
+		// of a racing pair can commit. The guard above stays as the fast
+		// path for the ordinary uncontended case; this call is the authority.
+		collision, _, err := r.artistService.UpdateNameGuarded(req.Context(), artistID, value)
+		if err != nil {
+			r.logger.Error("guarded artist rename",
+				slog.String("artist_id", artistID),
+				slog.String("new_name", value),
+				slog.String("error", err.Error()))
+			writeError(w, req, http.StatusInternalServerError, "failed to update field")
+			return
+		}
+		if collision != nil {
+			// A rename that raced past the fast-path guard. The operator must
+			// see the SAME 409 either way, so this reuses the guard's own
+			// response writer rather than a second copy of the body.
+			r.writeNameCollisionRefusal(w, req, artistID, value, collision)
+			return
+		}
+	default:
+		if _, err := r.artistService.UpdateField(req.Context(), artistID, field, value); err != nil {
+			writeError(w, req, http.StatusInternalServerError, "failed to update field")
+			return
+		}
 	}
 
 	// Re-fetch the artist to return updated state

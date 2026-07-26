@@ -79,6 +79,24 @@ func (r *Router) guardNameCollision(w http.ResponseWriter, req *http.Request, ar
 		return true
 	}
 
+	r.writeNameCollisionRefusal(w, req, artistID, newName, collision)
+	return false
+}
+
+// writeNameCollisionRefusal writes the complete 409 response (status + body)
+// for a rename the guard refused. It is shared by BOTH refusal paths so they
+// are the same response by construction rather than by inspection:
+//
+//   - guardNameCollision, the pre-write fast path above; and
+//   - handleFieldUpdate's transactional path, where Service.UpdateNameGuarded
+//     re-runs the check inside the writing transaction and refuses a rename
+//     that raced past the fast path (#2807).
+//
+// The operator must not be able to tell which path refused: the two differ
+// only in WHERE the collision was detected, never in what is reported. Giving
+// the second path its own copy of this body would let the two drift, which is
+// how the #2798 rewording came to need applying twice.
+func (r *Router) writeNameCollisionRefusal(w http.ResponseWriter, req *http.Request, artistID, newName string, collision *artist.NameCollision) {
 	r.logger.Warn("artist name change rejected: identity collision",
 		slog.String("artist_id", artistID),
 		slog.String("new_name", newName),
@@ -109,7 +127,7 @@ func (r *Router) guardNameCollision(w http.ResponseWriter, req *http.Request, ar
 				slog.String("artist_id", artistID),
 				slog.String("error", renderErr.Error()))
 		}
-		return false
+		return
 	}
 
 	// detail reuses the SAME translation key the HTMX fragment renders, rather
@@ -127,5 +145,4 @@ func (r *Router) guardNameCollision(w http.ResponseWriter, req *http.Request, ar
 		"existing_name":      collision.Name,
 		"detail":             i18n.TFromCtx(req.Context()).T("name_collision.resolve_hint"),
 	})
-	return false
 }
