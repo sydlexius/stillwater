@@ -170,7 +170,7 @@
   "artist.refresh_metadata": "Refresh Metadata",
   "artist.refresh_skipped_locked": "Refresh skipped: artist is locked",
   "artist.reidentify": "Re-identify Artist",
-  "artist.reidentify_confirm": "This will clear all provider IDs and let you re-link this artist. Continue?",
+  "artist.reidentify_confirm": "Search for a new identity for this artist. Nothing changes until you pick a match: picking one discards the current MusicBrainz ID and stores the IDs from the entry you chose. Continue?",
   "artist.rename_directory": "Rename Directory",
   "artist.rename_directory_failed": "Rename failed: ",
   "artist.rename_directory_prompt": "New directory name (this is separate from the artist Name and may break Emby/Jellyfin image mappings):",
