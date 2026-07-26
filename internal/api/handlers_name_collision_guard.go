@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -111,17 +112,20 @@ func (r *Router) guardNameCollision(w http.ResponseWriter, req *http.Request, ar
 		return false
 	}
 
-	// detail mirrors the guidance the HTMX fragment renders, so an API client
-	// surfaces the same accurate next step. Like the fragment, it states both
-	// outcomes rather than promising a merge that the duplicates report may
-	// structurally refuse to offer (see the doc comment above).
+	// detail reuses the SAME translation key the HTMX fragment renders, rather
+	// than a second hardcoded copy of it. A duplicated literal drifts: the
+	// #2798 rewording had to be applied twice, and nothing would have caught a
+	// miss. Sharing the key also means an API client gets the operator's
+	// locale, and it keeps the "does not promise a merge" copy guard covering
+	// both surfaces at once (see the doc comment above).
+	//
+	// The key carries no leading space -- the template supplies its own
+	// spacing via explicit { " " } nodes -- so it is safe at sentence start.
 	writeJSON(w, http.StatusConflict, map[string]string{
 		"error":              artist.ErrNameCollision.Error(),
 		"existing_artist_id": collision.ArtistID,
 		"existing_name":      collision.Name,
-		"detail": "To put both under one name, combine them from the duplicates report. " +
-			"If the pair is not listed there, check the groups you have ignored; " +
-			"otherwise Stillwater is treating the two as separate artists.",
+		"detail":             i18n.TFromCtx(req.Context()).T("name_collision.resolve_hint"),
 	})
 	return false
 }

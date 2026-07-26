@@ -293,6 +293,14 @@ func TestHandleFieldUpdate_NameCollision_FailsClosed(t *testing.T) {
 		t.Errorf("status = %d, want %d: a collision check that cannot run must refuse the write, "+
 			"never fall through to it; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
 	}
+	// The 500 must not carry the underlying repository error out to the client.
+	// Echoing it would leak internal detail (driver text, SQL, paths) from a
+	// path whose whole job is to say "the guard could not run"; the repo gates
+	// raw-error leaks precisely because that disclosure is easy to reintroduce
+	// while every behavioral assertion above stays green.
+	if body := w.Body.String(); strings.Contains(body, "simulated repository failure") {
+		t.Errorf("response body leaks the raw repository error to the client:\n%s", body)
+	}
 	// The assertion that actually pins fail-closed behavior.
 	if got := nameOf(t, reader, subject.ID); got != "Southgate Winds" {
 		t.Errorf("stored name = %q, want it unchanged at %q: the write landed despite the guard failing, "+

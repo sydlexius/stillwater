@@ -65,11 +65,10 @@ templ NameCollisionWarning(w NameCollisionWarningView) {
 	<div class="rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-4 py-3 text-sm text-yellow-700 dark:text-yellow-300" role="alert">
 		{ tf(ctx, "name_collision.already_used", w.ExistingName) }
 		if w.ExistingPlatformOnly {
-			{ t(ctx, "name_collision.existing_platform_only") }
+			{ " " }{ t(ctx, "name_collision.existing_platform_only") }
 		}
-		{ t(ctx, "name_collision.resolve_hint") }
-		{ " " }
-		<a class="underline font-medium" href={ templ.SafeURL(w.DuplicatesURL) }>
+		{ " " }{ t(ctx, "name_collision.resolve_hint") }
+		{ " " }<a class="underline font-medium" href={ templ.SafeURL(w.DuplicatesURL) }>
 			{ t(ctx, "name_collision.merge_link") }
 		</a>
 	</div>
