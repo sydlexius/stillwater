@@ -7,7 +7,7 @@
 #   sbom              - SBOM generation (Syft) + vulnerability scan (Grype) on releases
 #   dockle            - CIS benchmark check for container images (weekly/manual)
 #   grype-ignore-expiry - Fail when .grype.yaml ignore entries pass their review-by date (push/PR/weekly)
-#   zizmor            - GitHub Actions workflow static analysis, SARIF upload (weekly/manual)
+#   zizmor            - GitHub Actions workflow static analysis, SARIF upload (push to main/weekly/manual)
 #   source-cve-scan   - Source-tree SBOM (Syft) + vulnerability scan (Grype) (weekly/manual)
 
 name: Security
@@ -299,7 +299,34 @@ jobs:
   zizmor:
     name: GitHub Actions Lint (zizmor)
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Also runs on a merge to main so a workflow fix closes its own alerts
+    # promptly. Code-scanning alerts are derived state: an alert closes only
+    # when a NEW analysis for the same tool+category+ref omits it. Under
+    # schedule-only scanning a fix that lands just after the Monday cron leaves
+    # its alerts reading "open" for most of a week with nothing actually wrong.
+    # (#2840 hit a mild form of this: its alerts stayed open ~17h until someone
+    # dispatched the scan by hand. Doing that by hand is the step being removed.)
+    #
+    # Best-effort, not guaranteed: the workflow-level concurrency group above
+    # sets cancel-in-progress, so two merges landing within the job's runtime
+    # cancel the earlier run, and a cancelled run uploads no SARIF. This
+    # converges -- the last merge's scan reflects the final tree -- but an
+    # individual merge is not promised its own scan.
+    #
+    # The `github.ref` check is load-bearing rather than belt-and-braces: this
+    # workflow also triggers on `tags: ['v*.*.*']`, and a tag push is likewise
+    # `event_name == 'push'`. Scanning a tag would upload SARIF against
+    # refs/tags/vX.Y.Z, building a SEPARATE alert set instead of closing the
+    # one on main -- alert state is tracked per-ref.
+    #
+    # Deliberately NOT run on `pull_request`: this stays off the PR path so it
+    # never becomes a required check or a PR-time gate. Post-merge is the
+    # earliest point at which an alert can be closed anyway, since alerts are
+    # tracked against refs/heads/main.
+    if: >-
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     permissions:
       contents: read
       security-events: write

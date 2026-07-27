@@ -37,7 +37,40 @@
 
 name: Merge approved Dependabot PRs
 
-on:
+# `workflow_run` is flagged by zizmor's dangerous-triggers audit (alert 193)
+# because the handler runs in the BASE repository's context -- with base
+# secrets and write scopes -- while being reachable from a fork's pull
+# request. That context inversion is the whole risk.
+#
+# The trigger is kept because dropping it costs sweep latency: the `push: main`
+# path below covers the same ground, but a freshly-green PR would then wait for
+# the next merge to main instead of being armed as soon as its CI finishes. The
+# audit fires on the trigger's presence alone, so no `if:` guard clears it
+# (verified against zizmor 1.27.0 and 1.28.0: still `1 high` with every guard
+# below in place). Suppressing it is therefore a statement about the residual
+# risk, not a dismissal of the finding.
+#
+# What actually closes the risk is the job gate below, which requires
+# `head_repository.full_name == github.repository`. A fork PR cannot satisfy
+# that, so the privileged steps never run for one. Note the branch-name check
+# alone was NOT sufficient: `head_branch` is attacker-controlled string data
+# (anyone can push a fork branch named `dependabot/evil`), so it is a
+# convenience filter, not an identity check.
+#
+# This workflow also checks out no repository code and runs no code from the
+# PR under consideration -- it only calls the `gh` CLI -- so there is no path
+# from fork-authored content to execution here.
+#
+# !! TRIPWIRE -- READ BEFORE ADDING A TRIGGER TO THE `on:` BLOCK BELOW !!
+# The ignore comment suppresses dangerous-triggers for the ENTIRE `on:` mapping,
+# not just `workflow_run`. zizmor's finding spans the whole block, so there is no
+# in-file way to scope it more narrowly (moving the comment onto `workflow_run:`
+# does not help -- measured). Consequence: adding `pull_request_target` here
+# would be silently swallowed -- no finding, no new code-scanning alert, and the
+# post-merge scan would report clean. The usual safety net does NOT fire for a
+# trigger added to this block. Any new trigger must be justified by hand, right
+# here, against the same fork-context reasoning above.
+on: # zizmor: ignore[dangerous-triggers] mitigated by the head_repository gate, see above
   workflow_run:
     workflows: ["CI"]
     types:
@@ -57,9 +90,18 @@ jobs:
       checks: read
     # On workflow_run, only act on a successful CI run for a Dependabot branch.
     # On push to main, always sweep.
+    #
+    # The head_repository clause is the fork boundary -- see the extended note
+    # on the `on:` block above. It is the only condition here that an attacker
+    # cannot satisfy: `head_branch` is fork-controlled string data (a fork
+    # branch can be named `dependabot/anything`), so it filters, it does not
+    # authenticate. The `push` path needs no such guard, as only a write to
+    # this repository's main can produce it.
     if: >-
       github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
        startsWith(github.event.workflow_run.head_branch, 'dependabot/'))
     # Serialize the sweep against itself so two merges landing together cannot
     # both try to update the same PR. Keyed per-branch for the workflow_run
