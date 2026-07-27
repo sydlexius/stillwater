@@ -208,7 +208,24 @@ jobs:
     name: Go Cache Primer
     runs-on: ubuntu-latest
     needs: [changes]
-    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.harness_touched == 'true'
+    # Push-only (#2829). As a PR-path dependency this job was a 105-145s serial
+    # prefix that bought ~0s where it counted: measured within-run against
+    # identical unprimed shards, priming moved the POLE shard from 222s to a
+    # 219-239s band -- i.e. not at all -- because a long shard's time goes to
+    # running -race tests, which no cache avoids. It only helped SHORT shards,
+    # which do not set wall-clock. Two long shards were actually faster unprimed.
+    #
+    # On the PR path it could not help later runs either: github.sha is the MERGE
+    # sha there, so the entry it saves is one nothing outside its own run can hit
+    # by exact key -- later PRs reach it through the go.sum restore-key prefix,
+    # which is what they would do with no primer at all.
+    #
+    # On push-to-main it is off the critical path (nothing gates on it) and
+    # publishes the warm entry PR shards then restore from. Measured end to end:
+    # 493s -> 334s wall-clock, -32%.
+    if: >-
+      github.event_name == 'push' &&
+      (needs.changes.outputs.code == 'true' || needs.changes.outputs.harness_touched == 'true')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -580,7 +597,11 @@ jobs:
     # update at merge time.
     name: Test Shard
     runs-on: ubuntu-latest
-    needs: [changes, go-cache-primer]
+    # No longer gated on go-cache-primer (#2829): the primer is push-only now, so
+    # depending on it here would skip every shard on a PR. Shards warm from the
+    # restore-keys below, which is where their warmth was effectively coming from
+    # on the PR path anyway.
+    needs: [changes]
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.harness_touched == 'true'
     strategy:
       # One shard's failure should not cancel the others -- a flake in one
@@ -598,18 +619,19 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          # Disable built-in cache; read-only restore from the primer's
-          # shared entry below.  The primer job owns the cache SAVE; shards
-          # are read-only consumers (actions/cache/restore), so they only
-          # read that key and never write it -- no save races between shards.
+          # Disable built-in cache; the read-only restore below owns it. Shards
+          # are read-only consumers (actions/cache/restore) and never write the
+          # key, so there are no save races between them.
           cache: false
 
-      # Restore Go cache from the shared primer entry (read-only).
-      # Key/restore-keys are byte-identical to the primer's save step so the
-      # per-commit ${{ github.sha }} suffix scores an EXACT hit on the entry
-      # the primer just published in this same workflow run (that suffix is
-      # what keeps the build cache fresh commit-to-commit, since
-      # actions/cache never overwrites an existing key).
+      # Restore the Go cache read-only. Key/restore-keys stay byte-identical to
+      # the primer's save step, so which entry this lands on depends on the event
+      # (#2829):
+      #   push: the primer runs in this same workflow, so the per-commit
+      #     ${{ github.sha }} suffix scores an EXACT hit on what it just published.
+      #   pull_request: the primer does not run, and github.sha is the MERGE sha,
+      #     so the exact key never hits by design -- the go.sum-hash restore-key
+      #     picks up the entry main's primer published instead.
       # Restore-keys (most-specific first): the go.sum-hash prefix falls back
       # to the last entry with the same dependencies, then any Go cache, so a
       # go.sum change still warms rather than cold-builds.
