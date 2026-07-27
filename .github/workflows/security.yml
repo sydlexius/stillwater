@@ -336,8 +336,29 @@ jobs:
         with:
           persist-credentials: false
 
+      # v0.6.1 exists solely to move the default zizmor from 1.27.0 to 1.28.0.
+      # 1.27.0 is yanked upstream for GHSA-f42p-wjw5-97qh (medium): it prints
+      # any configured GitHub credential in cleartext as part of its debug
+      # representation of the parsed config. It is the only affected release.
+      #
+      # This repo was NOT exposed. The leak requires debug logging, and the
+      # action never enables it: action.sh builds its argument list from the
+      # declared inputs only (persona, format, collect, min-severity,
+      # min-confidence, color, config) and adds no `--verbose`/`-v`, passes no
+      # RUST_LOG into the container, and has no RUNNER_DEBUG passthrough -- so
+      # even re-running a job with GitHub debug logging on cannot reach it.
+      # The default informational log level is unaffected. Bumping anyway,
+      # because running a known-vulnerable version is not a posture worth
+      # holding on a technicality.
+      #
+      # Note the version input defaults to `latest`, which is NOT resolved at
+      # runtime: it is a literal key in the action's own pinned
+      # `support/versions` digest table, so the zizmor image is fixed by this
+      # action SHA. That is exactly why this needs an explicit bump rather than
+      # picking up the fix on its own -- `latest` here means "latest as of the
+      # pinned action", not "latest available".
       - name: Run zizmor
-        uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02 # v0.6.0
+        uses: zizmorcore/zizmor-action@6fc4b006235f201fdab3722e17240ab420d580e5 # v0.6.1
         with:
           advanced-security: "true"
 
