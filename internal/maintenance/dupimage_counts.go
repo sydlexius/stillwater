@@ -1,11 +1,5 @@
 // Package maintenance -- dupimage_counts.go
 //
-// TEMPORARY (stillwater#2829): comment-only edit so paths-filter sets
-// code=true and the FULL 15-shard test matrix runs. A workflow-only diff
-// collapses test_matrix to the single `rest` shard, which leaves the pole
-// shard with no primed counterpart to compare against. REVERTED after the
-// measurement.
-//
 // Periodic refresh of the cached duplicate-image offender counts that back the
 // sidebar's "Duplicate Images" section (#2608).
 //
