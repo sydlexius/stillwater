@@ -69,6 +69,13 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # setup-go caches by default; disabled explicitly (#2257 did the same
+          # across the other workflows). This workflow publishes SBOMs as release
+          # assets on a tag, which is the artifact-publishing context that makes a
+          # poisoned cache entry worth worrying about. The cache earns nothing
+          # here anyway: the scan steps are gated on go.mod/go.sum changes, so the
+          # job normally finishes in under 20s without compiling anything.
+          cache: false
 
       - name: Install govulncheck
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
