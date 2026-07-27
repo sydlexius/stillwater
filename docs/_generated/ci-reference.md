@@ -24,6 +24,7 @@ flowchart TD
     lint["Lint Check"]
     lint_summary["Lint"]
     test["Test Shard"]
+    test_noprimer["NoPrimer Shard"]
     test_summary["Test"]
 
     changes --> a11y_summary
@@ -53,6 +54,7 @@ flowchart TD
     lint --> lint_summary
     changes --> test
     go_cache_primer --> test
+    changes --> test_noprimer
     changes --> test_summary
     test --> test_summary
 ```
