@@ -52,7 +52,6 @@ flowchart TD
     changes --> lint_summary
     lint --> lint_summary
     changes --> test
-    go_cache_primer --> test
     changes --> test_summary
     test --> test_summary
 ```
