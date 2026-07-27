@@ -1,9 +1,5 @@
 // Package maintenance -- dupimage_counts.go
 //
-// TEMPORARY (stillwater#2829): comment-only edit so paths-filter sets
-// code=true and the FULL 15-shard matrix runs, making this run directly
-// comparable to the push-only run (30230986156). REVERTED after.
-//
 // Periodic refresh of the cached duplicate-image offender counts that back the
 // sidebar's "Duplicate Images" section (#2608).
 //
