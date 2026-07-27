@@ -28,7 +28,11 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          # Disabled deliberately, matching the other jobs in this file (#2257).
+          # This workflow publishes release artifacts, so a cache entry poisoned
+          # from a lower-trust context could reach a signed build. The job only
+          # compiles a small probe binary, so a cold build costs little.
+          cache: false
 
       - name: Run version injection smoke test
         # release.yml's own build-binaries job below injects the ldflags
