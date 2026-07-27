@@ -1,11 +1,39 @@
-# Merge approved Dependabot PRs after CI passes.
+# Merge approved Dependabot PRs.
 #
-# Triggers on CI workflow completion for Dependabot branches. Waits for all
-# required checks to finish, then squash-merges the PR if it has been approved
-# by the auto-approve workflow.
+# Arms GitHub's native auto-merge on approved Dependabot PRs and keeps their
+# branches level with main so the strict status-check policy can be satisfied.
 #
-# This avoids the repo-level "Allow auto-merge" setting, which would expose
-# the auto-merge toggle on all PRs including human-authored ones.
+# WHY THIS SHAPE
+#
+# The previous design issued a bare `gh pr merge` inside a 15-minute
+# `gh pr checks --watch`. The main ruleset sets strict_required_status_checks_policy,
+# so a PR must be level with main to merge at all. Dependabot opens its updates
+# in a batch; the moment one merges, every sibling is BEHIND and the bare merge
+# dies with "the head branch is not up to date with the base branch". Nothing
+# retried, because the only trigger was a CI run for that branch and a branch
+# going stale pushes no commit. On 2026-07-27 four approved, fully-green PRs sat
+# wedged that way until a human intervened.
+#
+# Two changes fix that:
+#
+#   1. `--auto` hands the merge to GitHub, so the workflow no longer has to sit
+#      in a watch and no longer fails just for arriving before the checks do.
+#      Auto-merge on its own is NOT sufficient: it waits for requirements but
+#      will not refresh a stale branch, so a BEHIND PR stays BEHIND forever.
+#   2. A `push: main` trigger. Main moving is the event that actually
+#      invalidates these PRs, so it is the correct thing to retry on. Every
+#      merge into main re-sweeps the remaining open Dependabot PRs, updates the
+#      stale ones, and re-arms. A batch therefore drains one at a time.
+#
+# KNOWN RISK, verify on the next batch: pushes made with GITHUB_TOKEN do not
+# start new workflow runs. The branch update below is such a push, so the
+# required checks may not re-run on the updated head, leaving the PR waiting on
+# checks that never arrive. The `push: main` sweep is what makes this
+# self-correcting rather than terminal -- it re-evaluates every open PR on each
+# merge. If the checks do turn out not to re-run, the fix is to replace the
+# update-branch call with an `@dependabot rebase` comment posted with a PAT
+# stored as a Dependabot secret; a bot-authored rebase comment is reportedly
+# ignored, which is why it is not the default here.
 
 name: Merge approved Dependabot PRs
 
@@ -14,6 +42,9 @@ on:
     workflows: ["CI"]
     types:
       - completed
+  push:
+    branches:
+      - main
 
 permissions: {}
 
@@ -24,100 +55,154 @@ jobs:
       contents: write
       pull-requests: write
       checks: read
+    # On workflow_run, only act on a successful CI run for a Dependabot branch.
+    # On push to main, always sweep.
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+      github.event_name == 'push' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'dependabot/'))
+    # Serialize the sweep against itself so two merges landing together cannot
+    # both try to update the same PR. Keyed per-branch for the workflow_run
+    # path, and on a single shared key for the main sweep.
     concurrency:
-      group: dependabot-merge-${{ github.event.workflow_run.head_branch }}
+      group: dependabot-merge-${{ github.event_name == 'push' && 'main-sweep' || github.event.workflow_run.head_branch }}
       cancel-in-progress: false
     steps:
-      - name: Find pull request
-        id: pr
+      - name: Collect candidate pull requests
+        id: candidates
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
-          REPO: ${{ github.repository }}
         run: |
-          PR_NUMBER=$(gh pr list --repo "$REPO" \
-            --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
-          if [ -z "$PR_NUMBER" ]; then
-            echo "::warning::No open PR found for branch $BRANCH (may have been closed or merged already)"
-            exit 0
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            # Sweep every open Dependabot PR. head_ref_name is filtered
+            # client-side because `gh pr list --head` takes an exact branch.
+            NUMBERS=$(gh pr list --repo "$REPO" --state open \
+              --json number,headRefName,author \
+              --jq '[ .[]
+                      | select(.headRefName | startswith("dependabot/"))
+                      | select(.author.login == "dependabot[bot]" or .author.login == "app/dependabot")
+                      | .number ] | join(" ")')
+          else
+            NUMBERS=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+              --json number,author \
+              --jq '[ .[]
+                      | select(.author.login == "dependabot[bot]" or .author.login == "app/dependabot")
+                      | .number ] | join(" ")')
           fi
-          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          if [ -z "$NUMBERS" ]; then
+            echo "No open Dependabot pull requests to process."
+          else
+            echo "Candidates: $NUMBERS"
+          fi
+          echo "numbers=$NUMBERS" >> "$GITHUB_OUTPUT"
 
-      - name: Verify PR author is Dependabot
-        if: steps.pr.outputs.number
-        id: author
+      - name: Update stale branches and arm auto-merge
+        if: steps.candidates.outputs.numbers != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          NUMBERS: ${{ steps.candidates.outputs.numbers }}
+        # The sweep is per-PR sequential, so the ceiling scales with the batch.
+        # Dependabot's limits allow ~26 open PRs across all ecosystems here.
+        timeout-minutes: 30
         run: |
-          AUTHOR=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-            --json author --jq '.author.login')
-          # gh CLI may return "dependabot[bot]" or "app/dependabot" depending
-          # on the CLI version. Accept both formats.
-          if [ "$AUTHOR" != "dependabot[bot]" ] && [ "$AUTHOR" != "app/dependabot" ]; then
-            echo "::warning::PR #$PR_NUMBER author is '$AUTHOR', not dependabot. Skipping."
-            exit 0
-          fi
-          echo "verified=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
 
-      - name: Wait for PR approval
-        if: steps.pr.outputs.number && steps.author.outputs.verified == 'true'
-        id: review
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          # Check for an APPROVED review directly via the reviews API.
-          # This works regardless of whether branch protection requires
-          # pull request reviews (which controls the reviewDecision field).
-          for i in $(seq 1 10); do
-            # Slurp all pages into one array, sort, group by user, and take
-            # only the latest review per user to avoid stale approvals.
-            APPROVED=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
-              | jq -s '
-                add
-                | sort_by(.user.login, .submitted_at)
-                | group_by(.user.login)
-                | map(last)
-                | map(select(.state == "APPROVED"))
-                | length
-              ') || {
-              echo "::warning::Failed to fetch reviews for PR #$PR_NUMBER (attempt $i/10)"
-              if [ "$i" -lt 10 ]; then sleep 30; fi
+          # An approval from the auto-approve workflow may still be in flight
+          # when CI finishes, so give it a short grace period. Only worth doing
+          # for a single freshly-built PR; the main sweep has no race to lose
+          # and unapproved PRs are simply picked up on a later sweep.
+          if [ "$EVENT" = "push" ]; then
+            ATTEMPTS=1
+          else
+            ATTEMPTS=6
+          fi
+
+          # Latest review per user, so a stale APPROVED that was later dismissed
+          # or changed does not count.
+          is_approved() {
+            gh api "repos/$REPO/pulls/$1/reviews" --paginate \
+              | jq -s 'add // []
+                       | sort_by(.user.login, .submitted_at)
+                       | group_by(.user.login)
+                       | map(last)
+                       | map(select(.state == "APPROVED"))
+                       | length'
+          }
+
+          FAILED=0
+          for PR_NUMBER in $NUMBERS; do
+            echo "::group::PR #$PR_NUMBER"
+
+            APPROVED=0
+            for i in $(seq 1 "$ATTEMPTS"); do
+              APPROVED=$(is_approved "$PR_NUMBER") || APPROVED=0
+              if [ "$APPROVED" -gt 0 ]; then break; fi
+              if [ "$i" -lt "$ATTEMPTS" ]; then
+                echo "Attempt $i/$ATTEMPTS: no approval yet, waiting 30s..."
+                sleep 30
+              fi
+            done
+            if [ "$APPROVED" -eq 0 ]; then
+              echo "PR #$PR_NUMBER is not approved (a major version bump needs a human review); skipping."
+              echo "::endgroup::"
               continue
-            }
-            if [ "$APPROVED" -gt 0 ]; then
-              echo "decision=APPROVED" >> "$GITHUB_OUTPUT"
-              exit 0
             fi
-            if [ "$i" -lt 10 ]; then
-              echo "Attempt $i/10: PR #$PR_NUMBER has no approvals yet, waiting 30s..."
-              sleep 30
-            fi
-          done
-          echo "::warning::PR #$PR_NUMBER not approved after ~5 minutes, skipping merge"
-          echo "decision=NOT_APPROVED" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for required checks and merge
-        if: steps.pr.outputs.number && steps.review.outputs.decision == 'APPROVED'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          REPO: ${{ github.repository }}
-        timeout-minutes: 15
-        run: |
-          echo "Waiting for required checks on PR #$PR_NUMBER..."
-          if ! gh pr checks "$PR_NUMBER" --repo "$REPO" --watch --required; then
-            echo "::error::Required checks failed for PR #$PR_NUMBER, cannot merge"
-            exit 1
-          fi
-          if ! gh pr merge "$PR_NUMBER" --repo "$REPO" --squash --delete-branch; then
-            echo "::error::Failed to merge PR #$PR_NUMBER. Check for merge conflicts or branch protection changes."
-            exit 1
-          fi
-          echo "Successfully merged PR #$PR_NUMBER"
+            # mergeStateStatus is computed asynchronously and reads UNKNOWN
+            # until GitHub finishes. Acting on UNKNOWN would misfile a stale PR
+            # as current, so poll for a settled value.
+            STATE=UNKNOWN
+            for i in $(seq 1 6); do
+              STATE=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+                --json mergeStateStatus --jq '.mergeStateStatus')
+              if [ "$STATE" != "UNKNOWN" ]; then break; fi
+              echo "Attempt $i/6: mergeability still being computed, waiting 5s..."
+              sleep 5
+            done
+            if [ "$STATE" = "UNKNOWN" ]; then
+              # Never guess. Treating UNKNOWN as current would arm auto-merge on
+              # a branch that may be stale and never get updated; the next sweep
+              # re-evaluates with a settled answer.
+              echo "::warning::Mergeability for PR #$PR_NUMBER did not settle; deferring to the next sweep."
+              echo "::endgroup::"
+              continue
+            fi
+            echo "PR #$PR_NUMBER merge state: $STATE"
+
+            if [ "$STATE" = "DIRTY" ]; then
+              echo "::warning::PR #$PR_NUMBER has merge conflicts; Dependabot must recreate it. Leaving for manual review."
+              echo "::endgroup::"
+              continue
+            fi
+
+            # Arm auto-merge before updating the branch. Auto-merge can be armed
+            # while the PR is BEHIND, and doing it first means the merge fires as
+            # soon as the update lands rather than waiting for another sweep.
+            if ! gh pr merge "$PR_NUMBER" --repo "$REPO" --squash --delete-branch --auto; then
+              echo "::error::Could not enable auto-merge on PR #$PR_NUMBER. If this reports that auto-merge is disabled, enable Settings > General > Allow auto-merge."
+              FAILED=1
+              echo "::endgroup::"
+              continue
+            fi
+            echo "Auto-merge armed on PR #$PR_NUMBER."
+
+            if [ "$STATE" = "BEHIND" ]; then
+              # The strict status-check policy blocks a stale branch and
+              # auto-merge will not refresh one, so merge main in explicitly.
+              if gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/update-branch" >/dev/null; then
+                echo "Requested branch update for PR #$PR_NUMBER."
+              else
+                echo "::warning::Could not update the branch for PR #$PR_NUMBER; a later sweep will retry."
+              fi
+            fi
+
+            echo "::endgroup::"
+          done
+
+          exit "$FAILED"
