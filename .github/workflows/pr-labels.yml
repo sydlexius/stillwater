@@ -23,7 +23,48 @@
 
 name: Label gate
 
-on:
+# `pull_request_target` is flagged by zizmor's dangerous-triggers audit: it runs
+# in the BASE repository's context, with base secrets and write scopes, while
+# being triggerable by a fork PR. That context inversion is the whole risk.
+#
+# It is required here for two reasons, and the first is the point of the file:
+# the gate must not be redefinable by the PR it is gating (see the header note
+# above), yet under `pull_request` a fork PR supplies the workflow definition
+# itself. The job also needs `pull-requests: write` to apply and remove labels,
+# and GitHub force-downgrades a fork PR's token to read-only under
+# `pull_request` no matter what `permissions:` asks for. The audit fires on the
+# trigger's presence alone, so no `if:` guard clears it.
+#
+# What closes the risk is that this workflow never gives fork-authored content a
+# path to execution. It checks out nothing, so no PR-head code is ever present
+# to run, and there is no `${{ }}` interpolation anywhere in the file. The only
+# PR-controlled input is the PR body, which is regex-matched for issue
+# references and immediately `parseInt`-ed to an integer -- the body text itself
+# never reaches a shell command, a script, or an API path. Job permissions are
+# minimized (`issues: read`, `pull-requests: write`) against a top-level
+# `permissions: {}`.
+#
+# Recorded here rather than as a code-scanning dismissal. A dismissal is keyed
+# to the finding's fingerprint, so editing the file resurrects the alert: that
+# happened on dependabot-merge.yml, where alert 140 was dismissed in July and
+# returned as a new alert 193 after an unrelated edit (#2838), which #2842 then
+# re-recorded in-file. An inline ignore travels with the file and cannot drift
+# from the code it describes.
+#
+# !! TRIPWIRE -- READ BEFORE ADDING A TRIGGER TO THE `on:` BLOCK BELOW !!
+# The ignore below suppresses dangerous-triggers for the ENTIRE `on:` mapping,
+# not just `pull_request_target`. zizmor's finding spans the whole block and
+# there is no way to scope it more narrowly (measured -- moving the comment onto
+# the trigger key does not help). Consequence: another dangerous trigger added
+# here would be silently swallowed -- no finding, no code-scanning alert, and a
+# clean post-merge scan. The usual safety net does NOT fire for a trigger added
+# to this block. scripts/check-zizmor-suppressions.sh is what actually enforces
+# that: it pins the dangerous triggers this block may contain, so adding one
+# fails the gate until you justify it here and update that manifest.
+#
+# Nothing enforces the SINK claims above, though -- so read them before adding a
+# consumer of `context.payload` or a new API call to the script below.
+on: # zizmor: ignore[dangerous-triggers] no checkout, PR body parsed as data only, see above
   pull_request_target:
     types: [opened, reopened, edited, synchronize, labeled, unlabeled]
     branches: [main]

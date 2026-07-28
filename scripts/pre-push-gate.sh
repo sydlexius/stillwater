@@ -436,6 +436,21 @@ echo "=== CSS comments ==="
 bash "$SCRIPT_DIR/check-css-comments.sh"
 
 echo ""
+echo "=== zizmor suppression scope ==="
+# A `# zizmor: ignore[dangerous-triggers]` suppresses the audit for the WHOLE
+# `on:` mapping, not the one trigger it was written for. So a dangerous trigger
+# added to an already-suppressed block raises no finding and no code-scanning
+# alert -- re-running zizmor cannot catch it, because the suppression is exactly
+# what makes it invisible. This pins each suppressed block's allowed trigger set
+# instead. Cheap (no network, parse-only) so it runs unconditionally.
+#
+# The guard's own mutation tests run first: its first implementation passed
+# every smoke test and still had two bypasses, so the self-test is what keeps
+# the guard honest.
+bash "$SCRIPT_DIR/test-check-zizmor-suppressions.sh"
+bash "$SCRIPT_DIR/check-zizmor-suppressions.sh"
+
+echo ""
 echo "=== CSS lint (diff-scoped ratchet, #2402) ==="
 # Design-token layer stylelint gate. The token migration is not complete
 # (input.css still carries ~135 pre-existing literal-value violations), so

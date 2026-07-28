@@ -602,6 +602,65 @@ jobs:
           echo "$output"
 
   # ---------------------------------------------------------------------------
+  # zizmor Suppression Scope (#2843)
+  #
+  # Three workflows suppress zizmor's dangerous-triggers audit in-file, each
+  # with a written justification. The suppression covers the ENTIRE `on:`
+  # mapping rather than the one trigger it was written for, so a dangerous
+  # trigger added to a suppressed block produces no finding and no
+  # code-scanning alert -- and the post-merge zizmor scan reports clean.
+  #
+  # Re-running zizmor cannot detect that: the suppression is precisely what
+  # makes the addition invisible to it. This job compares each suppressed
+  # block against a declared manifest instead, so widening one has to be
+  # deliberate rather than accidental.
+  #
+  # Mirrors the `check-zizmor-suppressions.sh` step in pre-push-gate.sh.
+  #
+  # NOT currently in the `Protect main` ruleset, so per this file's header it is
+  # advisory: it can go red and the PR still merges, and the local hook is
+  # bypassable. That is a gap for a check whose whole premise is that a security
+  # detector was silently disarmed -- adding "zizmor Suppression Scope" to the
+  # required contexts is a maintainer decision, deliberately not made here.
+  # ---------------------------------------------------------------------------
+  zizmor-suppressions:
+    name: zizmor Suppression Scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The guard's own mutation tests. Its first implementation passed every
+      # smoke test its author ran and still had two bypasses (a directive on a
+      # child line of the `on:` block; a quoted trigger key). A guard for a
+      # security suppression that quietly returns OK manufactures confidence, so
+      # the bypasses are pinned and re-checked here rather than trusted.
+      - name: Guard self-test
+        run: bash scripts/test-check-zizmor-suppressions.sh
+
+      - name: Check zizmor suppression scope
+        run: |
+          output=$(bash scripts/check-zizmor-suppressions.sh 2>&1) || {
+            echo "$output"
+            {
+              echo "## zizmor Suppression Scope -- FAILED"
+              echo ""
+              echo "A workflow's \`# zizmor: ignore[dangerous-triggers]\` suppresses the audit for its WHOLE \`on:\` block, not just the trigger it was written for. A dangerous trigger added to a suppressed block raises no zizmor finding and no code-scanning alert, so this guard pins the allowed set instead."
+              echo ""
+              echo "If the change is intended: justify the new trigger in the workflow's \`on:\` block comment, then update \`MANIFEST\` in \`scripts/check-zizmor-suppressions.sh\`."
+              echo ""
+              echo "Details:"
+              echo '```'
+              echo "$output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          echo "$output"
+
+  # ---------------------------------------------------------------------------
   # Shellcheck (#2445)
   #
   # NOT a required status check (new job). Before this, a script-only diff
