@@ -68,8 +68,10 @@ name: Merge approved Dependabot PRs
 # does not help -- measured). Consequence: adding `pull_request_target` here
 # would be silently swallowed -- no finding, no new code-scanning alert, and the
 # post-merge scan would report clean. The usual safety net does NOT fire for a
-# trigger added to this block. Any new trigger must be justified by hand, right
-# here, against the same fork-context reasoning above.
+# trigger added to this block. scripts/check-zizmor-suppressions.sh is what
+# actually enforces that: it pins the dangerous triggers this block may contain,
+# so adding one fails the gate until you justify it here, against the same
+# fork-context reasoning above, and update that manifest.
 on: # zizmor: ignore[dangerous-triggers] mitigated by the head_repository gate, see above
   workflow_run:
     workflows: ["CI"]
