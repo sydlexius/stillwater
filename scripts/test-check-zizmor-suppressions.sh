@@ -445,7 +445,7 @@ run_case "directive on a child line of on:"      1 mut_directive_on_child_line
 run_case "directive on the trigger key"          1 mut_directive_on_trigger_key
 run_case "quoted trigger key"                    1 mut_quoted_trigger_key    "ADDED:    workflow_run"
 run_case "single-quoted trigger key"             1 mut_single_quoted_trigger_key "ADDED:    workflow_run"
-run_case "flow-style on: block"                  1 mut_flow_style
+run_case "flow-style on: block"                  1 mut_flow_style           "ADDED:    workflow_run"
 run_case "sequence-form on: block"               1 mut_sequence_form
 run_case "added dangerous trigger"               1 mut_added_dangerous_trigger "ADDED:    workflow_run"
 run_case "unmanifested suppressing file"         1 mut_unmanifested_file      "not in the manifest"
