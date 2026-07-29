@@ -83,6 +83,46 @@ It is not unlimited, though: change history is kept until an artist is deleted o
 
 The CSV carries the same rows plus the source label on each one. Note rows at the end restate the source limit, both field lists, and the retention boundary, so a spreadsheet you open weeks later still says what it does not cover. The export is capped at 10,000 rows and tells you when it was truncated.
 
+## Rule-Written MusicBrainz IDs (API and CSV)
+
+This report answers "which artists did the automatic NFO rule fix pick a MusicBrainz ID for". It exists so you can find artists that fix may have misidentified. It is available through the API and as a CSV download; a pane in the Reports workspace is coming in a future release.
+
+Request it at `/api/v1/reports/nfo-has-mbid`, or download `/api/v1/reports/nfo-has-mbid/export` for a spreadsheet.
+
+Each row is one ID assignment: the artist, the note the fix recorded at the time, when it happened, and the MusicBrainz ID the artist carries now. If the fix wrote an ID for the same artist twice, you get two rows, because each one was a separate guess worth seeing. You can narrow the report to a single artist and sort by date or artist name.
+
+Read-only. This report does not contact MusicBrainz, does not check whether an ID is correct, and does not change or undo anything. Deciding what to do about a row is yours.
+
+### It filled blanks; it did not overwrite your IDs
+
+This fix only ever ran on artists that had no MusicBrainz ID, so it never replaced an ID you had set. Every row is a blank field filled in with an ID that may be wrong. That is why there is no previous-value column: there was never a previous value.
+
+### What the report cannot see
+
+**This report covers the automatic NFO rule fix only.** Other parts of Stillwater can also assign a MusicBrainz ID without recording a change: the automatic match steps of the Identify flow, and the bulk rule run. IDs assigned that way leave no record anywhere, so they can never appear here, however long the report runs. This is a permanent limit of what is recorded, not a gap waiting to be filled.
+
+Two consequences worth stating plainly:
+
+- This list is **not** the complete set of machine-assigned MusicBrainz IDs.
+- **An artist's absence from this list is not evidence that a person chose its ID.** Stillwater does not yet record operator confirmation of a MusicBrainz ID, so "not on the list" means only that this particular fix did not write it.
+
+### The counts are a minimum
+
+Treat every count as a floor. Change history is kept until an artist is deleted or merged into another; either removes that artist's history along with it, including rows this report would have shown. A known side effect of these misidentifications was duplicate artists, so some affected artists have probably already been merged away and cannot be counted at all. The real number is at least as large as the number shown, and may be larger.
+
+### Reading the recorded note
+
+The note is shown exactly as it was written at the time, and Stillwater never tries to interpret it. Two wordings exist:
+
+- Older entries record only the ID and the artist name.
+- Newer entries also record the matched name, where the match came from, the confidence score, and the runner-up.
+
+When you act on a row, use the current MusicBrainz ID, not the note. The ID in the note is what the fix wrote then; the artist may carry a different one now, or none at all. An artist with no MusicBrainz ID recorded today is shown as "none recorded" rather than left blank, because a blank cell reads as nothing to see.
+
+### Downloading the CSV
+
+The CSV carries the same rows. Note rows at the end restate every limit above, so a spreadsheet you open weeks later still says what it does not cover. The export is capped at 10,000 rows and tells you when it was truncated.
+
 ## Additional reports
 
 Six further reports appear in the rail and are coming in a future release:

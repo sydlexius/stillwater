@@ -1,0 +1,40 @@
+meta {
+  name: Rule-Written MusicBrainz ID Report Export (CSV)
+  type: http
+  seq: 19
+}
+
+get {
+  url: {{apiBase}}/reports/nfo-has-mbid/export
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Streams a CSV download (Content-Disposition: attachment; filename="nfo-has-mbid-report.csv").
+  On an empty CI database the CSV contains the header row plus the trailing
+  caveat note rows. The body is text/csv, not JSON, so no JSON shape assertions
+  are made.
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("Content-Disposition is a CSV attachment", function() {
+    expect(res.headers['content-disposition']).to.match(/^attachment;.*filename="nfo-has-mbid-report\.csv"/i);
+  });
+
+  test("caveat notes travel with the file", function() {
+    // A spreadsheet outlives the page it came from, so the export restates what
+    // it cannot cover. Asserted on an empty database too: the notes are not
+    // conditional on there being rows.
+    expect(res.body).to.match(/automatic NFO rule fix only/);
+    expect(res.body).to.match(/deleted or merged/);
+  });
+}

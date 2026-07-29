@@ -511,8 +511,10 @@ how-to/view-reports#collapse-exact-duplicates
 how-to/view-reports#compliance-overview
 how-to/view-reports#cross-artist-backdrop-pollution
 how-to/view-reports#downloading-the-csv
+how-to/view-reports#downloading-the-csv-1
 how-to/view-reports#duplicate-and-foreign-file-reports
 how-to/view-reports#how-far-back-it-goes
+how-to/view-reports#it-filled-blanks-it-did-not-overwrite-your-ids
 how-to/view-reports#library-health
 how-to/view-reports#live-reports
 how-to/view-reports#metadata-completeness
@@ -520,11 +522,15 @@ how-to/view-reports#one-repair-at-a-time
 how-to/view-reports#open-the-reports-workspace
 how-to/view-reports#platform-backdrop-duplicates
 how-to/view-reports#prune-platform-duplicates
+how-to/view-reports#reading-the-recorded-note
 how-to/view-reports#restore-a-back-out
 how-to/view-reports#rule-pass-rates
+how-to/view-reports#rule-written-musicbrainz-ids-api-and-csv
+how-to/view-reports#the-counts-are-a-minimum
 how-to/view-reports#the-reports-rail
 how-to/view-reports#view-reports
 how-to/view-reports#what-the-report-can-prove-about-who-made-a-change
+how-to/view-reports#what-the-report-cannot-see
 how-to/view-reports#what-the-report-covers
 index#built-to-run-on-your-hardware
 index#get-started

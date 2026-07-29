@@ -857,6 +857,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/blast-radius", wrapAuth(r.handleReportBlastRadius, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/blast-radius/export", wrapAuth(r.handleReportBlastRadiusExport, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/blast-radius/restore", wrapAuth(r.handleBlastRadiusRestore, authMw))
+	// Rule-written MusicBrainz ID report (#2809). Read-only: both routes are
+	// GETs, and neither validates an ID nor reverts one. There is deliberately
+	// no remediate/restore counterpart -- deciding whether a guessed ID is wrong
+	// is the operator's call, not a bulk action's.
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/nfo-has-mbid", wrapAuth(r.handleReportNFOHasMBID, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/nfo-has-mbid/export", wrapAuth(r.handleReportNFOHasMBIDExport, authMw))
 
 	// History routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/history", wrapAuth(r.handleListArtistHistory, authMw))
