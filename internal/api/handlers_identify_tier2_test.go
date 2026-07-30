@@ -546,7 +546,7 @@ func TestIdentifyArtist(t *testing.T) {
 		}
 	})
 
-	t.Run("tier 3 auto-links only with corroborating album evidence", func(t *testing.T) {
+	t.Run("tier 2 auto-links on corroborating album evidence", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
 		// This subtest's PREMISE was inverted by #2828. It used to read "Path is
@@ -556,6 +556,12 @@ func TestIdentifyArtist(t *testing.T) {
 		// check, so the absence of evidence acted as permission. The artist here
 		// now has a real album directory and the candidate a matching catalogue,
 		// so the auto-link is earned rather than reached by falling through.
+		//
+		// It kept the tier 3 NAME after that inversion, which misdescribed it: a
+		// readable directory is exactly what makes TIER 2 reachable, so tier 2
+		// auto-links and tier 3 never runs. The assertions were always real; the
+		// name outlived the fixture and would read as tier 3 coverage that does
+		// not exist. Genuine tier 3 coverage ships with the PR gating tier 3.
 		dir := t.TempDir()
 		for _, alb := range []string{"First Record", "Second Record"} {
 			if err := os.Mkdir(filepath.Join(dir, alb), 0o755); err != nil {
