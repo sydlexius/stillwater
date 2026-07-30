@@ -443,6 +443,7 @@ how-to/refresh-metadata#refresh-one-artist
 how-to/refresh-metadata#refresh-scan-together
 how-to/refresh-metadata#what-a-refresh-does
 how-to/refresh-metadata#what-a-refresh-doesnt-do
+how-to/refresh-metadata#when-local-albums-cant-be-checked
 how-to/refresh-metadata#when-you-get-the-disambiguation-prompt
 how-to/refresh-metadata#why-a-field-didnt-update
 how-to/repair-image-registry#confirming-the-result

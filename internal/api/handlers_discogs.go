@@ -81,10 +81,9 @@ func (r *Router) handleDiscogsSearch(w http.ResponseWriter, req *http.Request) {
 	// "no such artist on Discogs".
 	providerErrored := len(collectFailedProviderDisplayNames(statuses)) > 0
 
-	var localAlbums []string
-	if a.Path != "" {
-		localAlbums = artist.ListLocalAlbums(a.Path)
-	}
+	// The a.Path != "" pre-check that used to guard this call is gone: the
+	// filesystem album source treats a missing path as EvidenceUnknown itself.
+	localAlbums := r.localAlbumSet(req.Context(), a)
 
 	candidates := r.enrichDiscogsCandidates(req.Context(), results, localAlbums)
 
@@ -97,6 +96,9 @@ func (r *Router) handleDiscogsSearch(w http.ResponseWriter, req *http.Request) {
 			ArtistID:      artistID,
 			Candidates:    toDiscogsTemplateCandidates(candidates),
 			ProviderError: providerError,
+			// Say "albums not checked" out loud rather than omitting the badge,
+			// which an operator cannot tell from "matched nothing".
+			AlbumsUnavailable: localAlbums.Evidence == artist.EvidenceUnknown,
 		}))
 		return
 	}
@@ -105,6 +107,7 @@ func (r *Router) handleDiscogsSearch(w http.ResponseWriter, req *http.Request) {
 	if providerErrored {
 		resp["provider_error"] = provider.NameDiscogs.DisplayName()
 	}
+	markAlbumsUnavailable(resp, localAlbums)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -220,24 +223,27 @@ func (r *Router) handleDiscogsLink(w http.ResponseWriter, req *http.Request) {
 
 // enrichDiscogsCandidates scores Discogs search results by album-discography
 // agreement, mirroring enrichDeezerCandidates but keyed on the Discogs provider
-// ID (res.ProviderID). When album enrichment is not possible (no registry, no
-// Discogs provider, or no local albums) candidates fall back to name-only
-// scoring via convertToScoredCandidates.
-func (r *Router) enrichDiscogsCandidates(ctx context.Context, results []provider.ArtistSearchResult, localAlbums []string) []ScoredCandidate {
-	if r.providerRegistry == nil || len(localAlbums) == 0 {
-		return convertToScoredCandidates(results)
+// ID (res.ProviderID).
+//
+// It takes an evidenced artist.AlbumSet rather than a bare []string so the
+// fallback can say WHICH kind of missing album data it hit: a genuinely empty
+// artist folder, or one that could not be read at all.
+func (r *Router) enrichDiscogsCandidates(ctx context.Context, results []provider.ArtistSearchResult, local artist.AlbumSet) []ScoredCandidate {
+	fallbackReason := albumEvidenceReason(local.Evidence)
+	if r.providerRegistry == nil || local.Evidence != artist.EvidenceFound {
+		return convertToScoredCandidatesReason(results, fallbackReason)
 	}
 
 	dgProvider := r.providerRegistry.Get(provider.NameDiscogs)
 	if dgProvider == nil {
-		return convertToScoredCandidates(results)
+		return convertToScoredCandidatesReason(results, fallbackReason)
 	}
 	// Use the broad Main-role title set (master AND release-level, deduped) for
 	// the album match so release-only albums are not undercounted (#1831). This
 	// is distinct from the master-only ReleaseGroupFetcher used elsewhere.
 	fetcher, ok := dgProvider.(provider.MainReleaseTitleFetcher)
 	if !ok {
-		return convertToScoredCandidates(results)
+		return convertToScoredCandidatesReason(results, fallbackReason)
 	}
 
 	scored := make([]ScoredCandidate, len(results))
@@ -263,7 +269,11 @@ func (r *Router) enrichDiscogsCandidates(ctx context.Context, results []provider
 			continue
 		}
 
-		comp := artist.CompareAlbums(localAlbums, remoteTitles)
+		// CompareAlbumSet delegates the arithmetic to CompareAlbums and adds the
+		// local side's evidence state, so a 0% match here is a real disagreement
+		// rather than an unread directory.
+		ev := artist.CompareAlbumSet(local, remoteTitles)
+		comp := ev.AlbumComparison
 		scored[i].AlbumComparison = &comp
 		scored[i].Confidence = float64(comp.MatchPercent) / 100.0
 	}

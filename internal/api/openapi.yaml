@@ -13840,6 +13840,19 @@ paths:
                       provider failed; absent when every provider succeeded
                       (so the legitimate "no matches" state stays distinct
                       from "providers unreachable"). Added in issue #1663.
+                  local_albums_unavailable:
+                    type: boolean
+                    enum: [true]
+                    description: >
+                      Present and true only when the artist's local album set
+                      could not be DETERMINED -- no filesystem path is recorded,
+                      or the path could not be listed (missing mount, permission
+                      denied, a file where a directory was expected). It is
+                      OMITTED when the album lookup succeeded, including when it
+                      succeeded and found nothing. Clients must not read a zero
+                      or absent album_comparison as "this candidate matches no
+                      albums" while this flag is present: no comparison was
+                      performed at all. See issue #2828.
             text/html:
               schema:
                 type: string
@@ -14067,6 +14080,19 @@ paths:
                       Deezer display name, present only when the Deezer search
                       errored (rate limit / outage). Lets clients distinguish a
                       provider failure from a genuine empty result set.
+                  local_albums_unavailable:
+                    type: boolean
+                    enum: [true]
+                    description: >
+                      Present and true only when the artist's local album set
+                      could not be DETERMINED -- no filesystem path is recorded,
+                      or the path could not be listed (missing mount, permission
+                      denied, a file where a directory was expected). It is
+                      OMITTED when the album lookup succeeded, including when it
+                      succeeded and found nothing. Clients must not read a zero
+                      or absent album_comparison as "this candidate matches no
+                      albums" while this flag is present: no comparison was
+                      performed at all. See issue #2828.
             text/html:
               schema:
                 type: string
@@ -14274,6 +14300,19 @@ paths:
                       Discogs display name, present only when the Discogs search
                       errored (rate limit / outage). Lets clients distinguish a
                       provider failure from a genuine empty result set.
+                  local_albums_unavailable:
+                    type: boolean
+                    enum: [true]
+                    description: >
+                      Present and true only when the artist's local album set
+                      could not be DETERMINED -- no filesystem path is recorded,
+                      or the path could not be listed (missing mount, permission
+                      denied, a file where a directory was expected). It is
+                      OMITTED when the album lookup succeeded, including when it
+                      succeeded and found nothing. Clients must not read a zero
+                      or absent album_comparison as "this candidate matches no
+                      albums" while this flag is present: no comparison was
+                      performed at all. See issue #2828.
             text/html:
               schema:
                 type: string
@@ -14491,6 +14530,19 @@ paths:
                       search errored (rate limit / outage / missing API key). Lets
                       clients distinguish a provider failure from a genuine empty
                       result set.
+                  local_albums_unavailable:
+                    type: boolean
+                    enum: [true]
+                    description: >
+                      Present and true only when the artist's local album set
+                      could not be DETERMINED -- no filesystem path is recorded,
+                      or the path could not be listed (missing mount, permission
+                      denied, a file where a directory was expected). It is
+                      OMITTED when the album lookup succeeded, including when it
+                      succeeded and found nothing. Clients must not read a zero
+                      or absent album_comparison as "this candidate matches no
+                      albums" while this flag is present: no comparison was
+                      performed at all. See issue #2828.
             text/html:
               schema:
                 type: string

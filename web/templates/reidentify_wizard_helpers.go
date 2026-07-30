@@ -16,6 +16,13 @@ type WizardCandidateView struct {
 	Origin         string
 	Disambiguation string
 	ConfidencePct  int
+
+	// AlbumsUnavailable reports that this candidate could not be album-scored
+	// because the artist's local albums could not be read at all. The wizard
+	// otherwise shows only a confidence percentage, and a name-only score looks
+	// identical whether the album check was skipped on purpose (empty artist)
+	// or lost to an unreadable directory.
+	AlbumsUnavailable bool
 }
 
 // wizardCandidatesNil reports whether the Candidates field on the step data

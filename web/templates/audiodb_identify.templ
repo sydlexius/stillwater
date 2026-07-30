@@ -34,6 +34,11 @@ type AudioDBCandidatesData struct {
 	ArtistID      string
 	Candidates    []AudioDBCandidate
 	ProviderError string
+
+	// AlbumsUnavailable reports that the artist's local albums could not be
+	// determined (no path recorded, or an unreadable directory), so no candidate
+	// here has an album-match badge for a reason other than "no match".
+	AlbumsUnavailable bool
 }
 
 // AudioDBCandidates renders the TheAudioDB match-by-name search result list into
@@ -50,6 +55,9 @@ templ AudioDBCandidates(data AudioDBCandidatesData) {
 			>
 				{ tf(ctx, "artist.audiodb.provider_error", data.ProviderError) }
 			</div>
+		}
+		if data.AlbumsUnavailable {
+			@albumsUnavailableBanner()
 		}
 		if len(data.Candidates) == 0 && data.ProviderError == "" {
 			<p class="text-sm text-gray-500 dark:text-gray-400 italic py-1">{ t(ctx, "artist.audiodb.no_matches") }</p>

@@ -82,10 +82,9 @@ func (r *Router) handleAudioDBSearch(w http.ResponseWriter, req *http.Request) {
 	// mistaken for "no such artist on TheAudioDB".
 	providerErrored := len(collectFailedProviderDisplayNames(statuses)) > 0
 
-	var localAlbums []string
-	if a.Path != "" {
-		localAlbums = artist.ListLocalAlbums(a.Path)
-	}
+	// The a.Path != "" pre-check that used to guard this call is gone: the
+	// filesystem album source treats a missing path as EvidenceUnknown itself.
+	localAlbums := r.localAlbumSet(req.Context(), a)
 
 	// AudioDB results carry MusicBrainz IDs, so reuse the shared MusicBrainz
 	// album-comparison scorer (keyed on res.MusicBrainzID) rather than a
@@ -101,6 +100,9 @@ func (r *Router) handleAudioDBSearch(w http.ResponseWriter, req *http.Request) {
 			ArtistID:      artistID,
 			Candidates:    toAudioDBTemplateCandidates(candidates),
 			ProviderError: providerError,
+			// Say "albums not checked" out loud rather than omitting the badge,
+			// which an operator cannot tell from "matched nothing".
+			AlbumsUnavailable: localAlbums.Evidence == artist.EvidenceUnknown,
 		}))
 		return
 	}
@@ -109,6 +111,7 @@ func (r *Router) handleAudioDBSearch(w http.ResponseWriter, req *http.Request) {
 	if providerErrored {
 		resp["provider_error"] = provider.NameAudioDB.DisplayName()
 	}
+	markAlbumsUnavailable(resp, localAlbums)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -229,17 +232,13 @@ func (r *Router) handleAudioDBLink(w http.ResponseWriter, req *http.Request) {
 // ID via a provider-specific fetcher), AudioDB results carry a MusicBrainz ID, so
 // scoring delegates to the shared MusicBrainz cross-MBID scorer enrichAndScoreTier2.
 //
-// When there are no local album subdirectories to compare against, the album
-// comparison cannot add signal: this short-circuits to name-only scoring via
-// convertToScoredCandidates (reason "no album data available"), mirroring the
-// len(localAlbums)==0 early-return in enrichDiscogsCandidates / enrichDeezerCandidates.
-// This avoids firing pointless MusicBrainz GetReleaseGroups calls when there is
-// nothing on disk to score against.
-func (r *Router) enrichAudioDBCandidates(ctx context.Context, results []provider.ArtistSearchResult, localAlbums []string) []ScoredCandidate {
-	if len(localAlbums) == 0 {
-		return convertToScoredCandidates(results)
-	}
-	return r.enrichAndScoreTier2(ctx, results, localAlbums)
+// When there is no comparable album set, the album comparison cannot add signal:
+// this short-circuits to name-only scoring and avoids firing pointless
+// MusicBrainz GetReleaseGroups calls when there is nothing to score against. The
+// short-circuit now distinguishes an artist folder that is genuinely empty from
+// one that could not be read, and says so in the candidate's reason.
+func (r *Router) enrichAudioDBCandidates(ctx context.Context, results []provider.ArtistSearchResult, local artist.AlbumSet) []ScoredCandidate {
+	return r.enrichAndScoreTier2Set(ctx, results, local)
 }
 
 // toAudioDBTemplateCandidates adapts the api-package ScoredCandidate values to

@@ -14,6 +14,16 @@ import (
 type DisambiguationCandidate struct {
 	Result          provider.ArtistSearchResult
 	AlbumComparison *artist.AlbumComparison
+
+	// AlbumsUnavailable reports that the artist's local albums could not be
+	// determined at all (no path recorded, or the directory could not be read).
+	//
+	// It exists because a nil AlbumComparison and a zero LocalCount look the
+	// same whether the artist genuinely owns no albums or the mount was down,
+	// and the badge is simply omitted in both cases. Omitting it makes the
+	// candidate look name-scored on purpose, so the operator has no way to know
+	// the album evidence is missing rather than negative.
+	AlbumsUnavailable bool
 }
 
 // RefreshOOBData holds data for OOB-swapped sections after a metadata refresh.
@@ -172,6 +182,12 @@ templ DisambiguationResults(data DisambiguationResultsData) {
 									if hasMatchedAlbums(c.AlbumComparison) {
 										<span class="text-[10px] text-gray-400 truncate">{ joinMatchedNames(ctx, c.AlbumComparison) }</span>
 									}
+								</div>
+							} else if c.AlbumsUnavailable {
+								<div class="mt-1.5 flex items-center gap-2">
+									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" title={ t(ctx, "image.album_match_unavailable_help") }>
+										{ t(ctx, "image.album_match_unavailable") }
+									</span>
 								</div>
 							}
 						</div>

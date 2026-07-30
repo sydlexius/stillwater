@@ -251,6 +251,39 @@ func TestProjectWizardCandidates(t *testing.T) {
 		}
 	})
 
+	t.Run("unreadable_albums_flag_survives_the_projection", func(t *testing.T) {
+		// The wizard step stores only ScoredCandidate, so the reason string is
+		// the sole carrier of the evidence state into the view model. Prove the
+		// two non-comparable cases project DIFFERENTLY, or the badge would show
+		// for a genuinely empty artist too.
+		project := func(t *testing.T, reason string) templates.WizardCandidateView {
+			t.Helper()
+			step := &reIdentifyWizardStep{
+				state: wizardStepReady,
+				Candidates: []ScoredCandidate{{
+					ArtistSearchResult: provider.ArtistSearchResult{Name: "A"},
+					Confidence:         0.4,
+					Reason:             reason,
+				}},
+			}
+			got := projectWizardCandidates(step)
+			if len(got) != 1 {
+				t.Fatalf("len = %d, want 1", len(got))
+			}
+			return got[0]
+		}
+
+		if v := project(t, reasonLocalAlbumsUnreadable); !v.AlbumsUnavailable {
+			t.Errorf("AlbumsUnavailable = false for reason %q, want true", reasonLocalAlbumsUnreadable)
+		}
+		if v := project(t, reasonNoAlbumData); v.AlbumsUnavailable {
+			t.Errorf("AlbumsUnavailable = true for reason %q; a genuinely empty artist must not claim its albums were unreadable", reasonNoAlbumData)
+		}
+		if v := project(t, "name match"); v.AlbumsUnavailable {
+			t.Errorf("AlbumsUnavailable = true for a plain name match")
+		}
+	})
+
 	t.Run("album_comparison_overrides_confidence", func(t *testing.T) {
 		step := &reIdentifyWizardStep{
 			state: wizardStepReady,

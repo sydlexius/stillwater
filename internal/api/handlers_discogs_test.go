@@ -70,7 +70,7 @@ func TestEnrichDiscogsCandidates(t *testing.T) {
 		r, _ := testRouter(t)
 		r.providerRegistry = nil
 		results := []provider.ArtistSearchResult{{Name: "A", ProviderID: "1"}}
-		got := r.enrichDiscogsCandidates(context.Background(), results, []string{"Album One"})
+		got := r.enrichDiscogsCandidates(context.Background(), results, foundAlbums("Album One"))
 		if len(got) != 1 || got[0].Reason != "no album data available" {
 			t.Errorf("got = %+v, want single fallback candidate", got)
 		}
@@ -84,7 +84,7 @@ func TestEnrichDiscogsCandidates(t *testing.T) {
 			return nil, nil
 		})
 		results := []provider.ArtistSearchResult{{Name: "A", ProviderID: "1"}}
-		got := r.enrichDiscogsCandidates(context.Background(), results, nil)
+		got := r.enrichDiscogsCandidates(context.Background(), results, foundNoAlbums())
 		if len(got) != 1 || got[0].Reason != "no album data available" {
 			t.Errorf("got = %+v, want single fallback candidate", got)
 		}
@@ -95,7 +95,7 @@ func TestEnrichDiscogsCandidates(t *testing.T) {
 		r, _ := testRouter(t)
 		r.providerRegistry = provider.NewRegistry() // empty
 		results := []provider.ArtistSearchResult{{Name: "A", ProviderID: "1"}}
-		got := r.enrichDiscogsCandidates(context.Background(), results, []string{"Album One"})
+		got := r.enrichDiscogsCandidates(context.Background(), results, foundAlbums("Album One"))
 		if len(got) != 1 || got[0].Reason != "no album data available" {
 			t.Errorf("got = %+v, want single fallback candidate", got)
 		}
@@ -118,7 +118,7 @@ func TestEnrichDiscogsCandidates(t *testing.T) {
 			{Name: "Perfect", ProviderID: "111", Score: 100},
 			{Name: "Partial", ProviderID: "222", Score: 80},
 		}
-		got := r.enrichDiscogsCandidates(context.Background(), results, []string{"Album One", "Album Two"})
+		got := r.enrichDiscogsCandidates(context.Background(), results, foundAlbums("Album One", "Album Two"))
 		if len(got) != 2 {
 			t.Fatalf("len = %d, want 2", len(got))
 		}
@@ -142,7 +142,7 @@ func TestEnrichDiscogsCandidates(t *testing.T) {
 			return []provider.ReleaseGroupInfo{{Title: "Album One"}}, nil
 		})
 		results := []provider.ArtistSearchResult{{Name: "NoID"}}
-		got := r.enrichDiscogsCandidates(context.Background(), results, []string{"Album One"})
+		got := r.enrichDiscogsCandidates(context.Background(), results, foundAlbums("Album One"))
 		if calls != 0 {
 			t.Errorf("GetReleaseGroups calls = %d, want 0 for empty ProviderID", calls)
 		}
@@ -158,7 +158,7 @@ func TestEnrichDiscogsCandidates(t *testing.T) {
 			return nil, errors.New("discogs boom")
 		})
 		results := []provider.ArtistSearchResult{{Name: "X", ProviderID: "9"}}
-		got := r.enrichDiscogsCandidates(context.Background(), results, []string{"a"})
+		got := r.enrichDiscogsCandidates(context.Background(), results, foundAlbums("a"))
 		if len(got) != 1 || got[0].AlbumComparison != nil {
 			t.Errorf("got = %+v, want candidate with nil AlbumComparison after fetch error", got)
 		}
@@ -179,7 +179,7 @@ func TestEnrichDiscogsCandidates(t *testing.T) {
 			{Name: "4", ProviderID: "4"},
 			{Name: "5", ProviderID: "5"},
 		}
-		got := r.enrichDiscogsCandidates(context.Background(), results, []string{"a"})
+		got := r.enrichDiscogsCandidates(context.Background(), results, foundAlbums("a"))
 		if len(got) != 5 {
 			t.Fatalf("len = %d, want 5", len(got))
 		}

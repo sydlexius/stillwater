@@ -330,6 +330,11 @@ type DeezerCandidatesData struct {
 	ArtistID      string
 	Candidates    []DeezerCandidate
 	ProviderError string
+
+	// AlbumsUnavailable reports that the artist's local albums could not be
+	// determined (no path recorded, or an unreadable directory), so no candidate
+	// here has an album-match badge for a reason other than "no match".
+	AlbumsUnavailable bool
 }
 
 // DeezerCandidates renders the search result list returned by the Deezer
@@ -372,13 +377,19 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.deezer.provider_error", data.ProviderError))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 131, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 136, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if data.AlbumsUnavailable {
+			templ_7745c5c3_Err = albumsUnavailableBanner().Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -391,7 +402,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.deezer.no_matches"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 135, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 143, Col: 103}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -415,7 +426,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 					var templ_7745c5c3_Var21 string
 					templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + data.ArtistID + "/deezer/link")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 145, Col: 67}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 153, Col: 67}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 					if templ_7745c5c3_Err != nil {
@@ -428,7 +439,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 					var templ_7745c5c3_Var22 string
 					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(hxValsJSON(map[string]string{"deezer_id": c.Result.ProviderID}))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 146, Col: 79}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 154, Col: 79}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 					if templ_7745c5c3_Err != nil {
@@ -441,7 +452,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 					var templ_7745c5c3_Var23 string
 					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue("#field-deezer_id-" + data.ArtistID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 147, Col: 53}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 155, Col: 53}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 					if templ_7745c5c3_Err != nil {
@@ -454,7 +465,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 					var templ_7745c5c3_Var24 string
 					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.deezer.linking"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 158, Col: 107}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 166, Col: 107}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 					if templ_7745c5c3_Err != nil {
@@ -467,7 +478,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 					var templ_7745c5c3_Var25 string
 					templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(c.Result.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 162, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 170, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 					if templ_7745c5c3_Err != nil {
@@ -480,7 +491,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 					var templ_7745c5c3_Var26 string
 					templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(c.Result.ProviderID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 163, Col: 94}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 171, Col: 94}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 					if templ_7745c5c3_Err != nil {
@@ -520,7 +531,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 						var templ_7745c5c3_Var29 string
 						templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.album_match_count", c.AlbumComparison.MatchCount, c.AlbumComparison.LocalCount))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 167, Col: 107}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 175, Col: 107}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 						if templ_7745c5c3_Err != nil {
@@ -538,7 +549,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 							var templ_7745c5c3_Var30 string
 							templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(joinMatchedNames(ctx, c.AlbumComparison))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 170, Col: 102}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 178, Col: 102}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 							if templ_7745c5c3_Err != nil {
@@ -566,7 +577,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 						var templ_7745c5c3_Var31 string
 						templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(c.Result.Score))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 177, Col: 75}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 185, Col: 75}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 						if templ_7745c5c3_Err != nil {
@@ -585,7 +596,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 						var templ_7745c5c3_Var32 string
 						templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(provider.NameDeezer)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 180, Col: 56}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 188, Col: 56}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 						if templ_7745c5c3_Err != nil {
@@ -598,7 +609,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 						var templ_7745c5c3_Var33 string
 						templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(string(provider.NameDeezer)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 180, Col: 107}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 188, Col: 107}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 						if templ_7745c5c3_Err != nil {
@@ -611,7 +622,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 						var templ_7745c5c3_Var34 string
 						templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(providerDisplayName(string(provider.NameDeezer)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 180, Col: 189}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 188, Col: 189}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 						if templ_7745c5c3_Err != nil {
@@ -629,7 +640,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 						var templ_7745c5c3_Var35 string
 						templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(provider.NameDeezer)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 182, Col: 56}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 190, Col: 56}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 						if templ_7745c5c3_Err != nil {
@@ -642,7 +653,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 						var templ_7745c5c3_Var36 string
 						templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(providerDisplayName(string(provider.NameDeezer)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 182, Col: 138}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 190, Col: 138}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 						if templ_7745c5c3_Err != nil {
@@ -712,7 +723,7 @@ func DeezerLinkSuccess(a artist.Artist, fieldProviders map[string][]string) temp
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.deezer.linked"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 212, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 220, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 		if templ_7745c5c3_Err != nil {
@@ -751,6 +762,11 @@ type DiscogsCandidatesData struct {
 	ArtistID      string
 	Candidates    []DiscogsCandidate
 	ProviderError string
+
+	// AlbumsUnavailable reports that the artist's local albums could not be
+	// determined (no path recorded, or an unreadable directory), so no candidate
+	// here has an album-match badge for a reason other than "no match".
+	AlbumsUnavailable bool
 }
 
 // DiscogsCandidates renders the Discogs match-by-name search result list into
@@ -790,13 +806,19 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.discogs.provider_error", data.ProviderError))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 266, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 279, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if data.AlbumsUnavailable {
+			templ_7745c5c3_Err = albumsUnavailableBanner().Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -809,7 +831,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.discogs.no_matches"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 270, Col: 104}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 286, Col: 104}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -833,7 +855,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 					var templ_7745c5c3_Var42 string
 					templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + data.ArtistID + "/discogs/link")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 280, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 296, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
 					if templ_7745c5c3_Err != nil {
@@ -846,7 +868,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 					var templ_7745c5c3_Var43 string
 					templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(hxValsJSON(map[string]string{"discogs_id": c.Result.ProviderID}))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 281, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 297, Col: 80}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 					if templ_7745c5c3_Err != nil {
@@ -859,7 +881,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 					var templ_7745c5c3_Var44 string
 					templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue("#field-discogs_id-" + data.ArtistID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 282, Col: 54}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 298, Col: 54}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 					if templ_7745c5c3_Err != nil {
@@ -872,7 +894,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 					var templ_7745c5c3_Var45 string
 					templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.discogs.linking"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 293, Col: 108}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 309, Col: 108}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 					if templ_7745c5c3_Err != nil {
@@ -885,7 +907,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 					var templ_7745c5c3_Var46 string
 					templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(c.Result.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 297, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 313, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 					if templ_7745c5c3_Err != nil {
@@ -898,7 +920,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 					var templ_7745c5c3_Var47 string
 					templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(c.Result.ProviderID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 298, Col: 94}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 314, Col: 94}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 					if templ_7745c5c3_Err != nil {
@@ -938,7 +960,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 						var templ_7745c5c3_Var50 string
 						templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.album_match_count", c.AlbumComparison.MatchCount, c.AlbumComparison.LocalCount))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 302, Col: 107}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 318, Col: 107}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 						if templ_7745c5c3_Err != nil {
@@ -956,7 +978,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 							var templ_7745c5c3_Var51 string
 							templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(joinMatchedNames(ctx, c.AlbumComparison))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 305, Col: 102}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 321, Col: 102}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 							if templ_7745c5c3_Err != nil {
@@ -984,7 +1006,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 						var templ_7745c5c3_Var52 string
 						templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(c.Result.Score))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 312, Col: 75}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 328, Col: 75}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 						if templ_7745c5c3_Err != nil {
@@ -1003,7 +1025,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 						var templ_7745c5c3_Var53 string
 						templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(provider.NameDiscogs)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 315, Col: 57}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 331, Col: 57}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 						if templ_7745c5c3_Err != nil {
@@ -1016,7 +1038,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 						var templ_7745c5c3_Var54 string
 						templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(string(provider.NameDiscogs)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 315, Col: 109}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 331, Col: 109}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 						if templ_7745c5c3_Err != nil {
@@ -1029,7 +1051,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 						var templ_7745c5c3_Var55 string
 						templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(providerDisplayName(string(provider.NameDiscogs)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 315, Col: 192}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 331, Col: 192}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
 						if templ_7745c5c3_Err != nil {
@@ -1047,7 +1069,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 						var templ_7745c5c3_Var56 string
 						templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(provider.NameDiscogs)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 317, Col: 57}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 333, Col: 57}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 						if templ_7745c5c3_Err != nil {
@@ -1060,7 +1082,7 @@ func DiscogsCandidates(data DiscogsCandidatesData) templ.Component {
 						var templ_7745c5c3_Var57 string
 						templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue(providerDisplayName(string(provider.NameDiscogs)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 317, Col: 140}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 333, Col: 140}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
 						if templ_7745c5c3_Err != nil {
@@ -1125,13 +1147,63 @@ func DiscogsLinkSuccess(a artist.Artist, fieldProviders map[string][]string) tem
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.discogs.linked"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 337, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 353, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\" class=\"hidden\"></div><script>\n\t\t(function() {\n\t\t\tvar el = document.querySelector('[data-discogs-toast]');\n\t\t\tif (el) {\n\t\t\t\tvar msg = el.getAttribute('data-discogs-toast');\n\t\t\t\tel.remove();\n\t\t\t\tif (msg && typeof window.showSuccessToast === 'function') {\n\t\t\t\t\twindow.showSuccessToast(msg);\n\t\t\t\t}\n\t\t\t}\n\t\t})();\n\t</script>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// albumsUnavailableBanner reports that the artist's local albums could not be
+// read, so no candidate on this list carries an album-match badge.
+//
+// It exists because the album badge is simply OMITTED when there is nothing to
+// compare, and that omission looks identical whether the artist genuinely owns
+// no albums or the directory could not be listed. Silence is not the same as
+// "we could not check", and an operator picking an identity needs to know which
+// one they are looking at before they trust a name-only score.
+func albumsUnavailableBanner() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var60 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var60 == nil {
+			templ_7745c5c3_Var60 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "<div class=\"rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs\" role=\"status\" aria-live=\"polite\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var61 string
+		templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.album_match_unavailable_help"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/provider_identify.templ`, Line: 382, Col: 48}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
