@@ -355,6 +355,13 @@ func TestImportConnections_EmptySnapshotPreservesStoredSnapshot(t *testing.T) {
 	if got.PreStillwaterConfigJSON != `{"stored":"snapshot"}` {
 		t.Errorf("PreStillwaterConfigJSON was overwritten by an empty incoming snapshot; got %q, want the stored snapshot preserved", got.PreStillwaterConfigJSON)
 	}
+	// The managed flag must still take the envelope's value. The guard above
+	// deliberately protects ONLY the snapshot column, so a change that widened
+	// it to skip the whole carryV14Fields block would leave the seeded true in
+	// place and silently diverge the two coupled columns.
+	if got.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles: got true, want false from the envelope (the snapshot guard must not retain the prior managed state)")
+	}
 	// Other fields still update normally from the envelope.
 	if got.APIKey != "key2" {
 		t.Errorf("APIKey: got %q, want key2 (unrelated fields must still update)", got.APIKey)
