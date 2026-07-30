@@ -29,10 +29,27 @@ type AlbumComparison struct {
 
 // ListLocalAlbums reads subdirectory names from an artist path, skipping hidden
 // directories (those starting with "."). Returns sorted names.
+//
+// It collapses "the directory could not be read" into the same nil result as
+// "the directory holds no albums". Callers that must tell those apart -- and
+// anything gating an MBID write must, because "I could not look" is not
+// evidence of an empty catalogue -- use FilesystemAlbumSource instead, which
+// is built on the error-returning listLocalAlbums below.
 func ListLocalAlbums(artistPath string) []string {
-	entries, err := os.ReadDir(artistPath)
+	albums, err := listLocalAlbums(artistPath)
 	if err != nil {
 		return nil
+	}
+	return albums
+}
+
+// listLocalAlbums is ListLocalAlbums with the read error preserved. The filter
+// and sort live here so there is exactly one copy of the "what counts as an
+// album directory" rule; ListLocalAlbums is the lossy wrapper over it.
+func listLocalAlbums(artistPath string) ([]string, error) {
+	entries, err := os.ReadDir(artistPath)
+	if err != nil {
+		return nil, err
 	}
 
 	var albums []string
@@ -47,7 +64,7 @@ func ListLocalAlbums(artistPath string) []string {
 		albums = append(albums, name)
 	}
 	sort.Strings(albums)
-	return albums
+	return albums, nil
 }
 
 // parenSuffix matches trailing parenthetical text like " (Deluxe Edition)".
