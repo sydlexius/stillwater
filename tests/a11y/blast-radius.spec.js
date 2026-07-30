@@ -1,0 +1,504 @@
+// blast-radius.spec.js - Playwright a11y coverage for the blast-radius report
+// pane (#2750), route /reports/blast-radius.
+//
+// Runs on BOTH projects declared in playwright.config.js:
+//   - firefox-a11y  (authoritative: Firefox is the target browser)
+//   - chromium-a11y (compatibility)
+// Every assertion here is engine-observable on purpose. Focus rings, dialog
+// focus behaviour and computed contrast differ between Gecko and Blink, which
+// is exactly the defect class a single-engine tier cannot see.
+//
+// Surfaces covered:
+//   1. Full-page axe-core scan, dark AND light theme.
+//   2. The destructive restore confirm dialog (window.showConfirmDialog) --
+//      the highest-risk keyboard surface on this pane.
+//   3. Keyboard reachability + VISIBLE focus indicator for the pager.
+//
+// SCOPED TO WHAT THIS INCREMENT SHIPS. The pane's filter controls and its
+// ContextHelp "?" affordance arrive with the filters/copy increment, so their
+// coverage -- reachability across all three control groups, and a test that
+// ContextHelp genuinely TOGGLES rather than merely rendering -- lives on that
+// side. Nothing here is a trimmed-down placeholder: each test below covers a
+// surface this branch actually renders.
+//
+// Auth: the single login from global-setup.js, loaded into every context via
+// `use.storageState` in playwright.config.js. No credential ever appears in
+// this file, on a command line, or in a URL.
+//
+// DESTRUCTIVE-FLOW POLICY: this spec never CONFIRMS a restore. The dialog is
+// always dismissed with Escape or Cancel. The only network call the restore
+// flow makes before confirmation is the commit:false preview, which the
+// handler treats as a dry run and which writes nothing. Nothing here mutates
+// the UAT database.
+
+import { test, expect } from 'playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+
+import { disableTransitions } from './helpers/settle.js';
+
+// The pane route. page_size=1 is used where the pager must exist: the pager
+// only renders when TotalPages > 1, so a database with a handful of rows would
+// otherwise leave the pager assertions silently unexercised (a vacuous pass).
+const PANE_URL = '/reports/blast-radius';
+const PANE_URL_PAGED = '/reports/blast-radius?page_size=1';
+
+// Disable CSS transitions so a synchronous getComputedStyle (axe's
+// color-contrast rule, and our own focus-ring reads) never samples a
+// mid-transition blended value and reports a false result.
+test.beforeEach(async ({ page }) => {
+  await disableTransitions(page);
+});
+
+// ---------------------------------------------------------------------------
+// Shared axe configuration -- same rule set and same exemption as
+// contrast.spec.js / cheat-sheet.spec.js so this pane is held to the tier's
+// existing bar, not a softer one.
+// ---------------------------------------------------------------------------
+function buildAxeBuilder(page) {
+  return new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'best-practice'])
+    .disableRules([
+      // Structural check; Playwright supplies lang via the context.
+      'html-has-lang',
+    ]);
+}
+
+// formatViolations renders rule id, impact, description AND the node targets so
+// a CI failure is actionable on its own. A bare count tells the next reader
+// nothing about what broke.
+function formatViolations(violations) {
+  if (!violations.length) return '(none)';
+  return violations.map(v =>
+    `  [${v.impact}] ${v.id}: ${v.description}\n` +
+    `    help: ${v.helpUrl}\n` +
+    v.nodes.map(n => `    target: ${JSON.stringify(n.target)}\n` +
+      `      ${String(n.failureSummary || '').replace(/\n/g, '\n      ')}`).join('\n'),
+  ).join('\n');
+}
+
+// gotoPane navigates and waits for the pane's own markup. 'networkidle' is
+// never used: the SSE event stream keeps the connection open forever, so it
+// would always time out.
+//
+// It waits on the RESULTS TABLE, which is the pane's core and is present
+// wherever the pane is. It deliberately does NOT wait on the filter form: that
+// is a later increment's markup, and gating the shared helper on it made every
+// test in this file fail on a branch that ships the pane without the filters --
+// one missing selector reported as ten unrelated failures. A shared helper must
+// depend only on what every caller can rely on.
+async function gotoPane(page, url = PANE_URL) {
+  await page.goto(url);
+  await page.waitForLoadState('load');
+  await page.waitForSelector('#blast-radius-tbl', { timeout: 10_000 });
+}
+
+// ---------------------------------------------------------------------------
+// 1. axe-core, full page, both themes.
+//
+// Full page, NOT scoped to the pane: scoping axe to a subtree hides violations
+// in the surrounding chrome that the operator still has to navigate through
+// (the same rule the cheat-sheet spec follows).
+// ---------------------------------------------------------------------------
+
+test('blast-radius pane passes full-page a11y scan (dark theme)', async ({ page }) => {
+  // Dark is the app default. emulateMedia satisfies the 'system' preference
+  // branch in preferences.js; the classList add covers the case where JS
+  // resolved the theme before the media emulation landed.
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await gotoPane(page);
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+
+  const results = await buildAxeBuilder(page).analyze();
+  expect(
+    results.violations,
+    `Blast-radius dark-theme a11y violations:\n${formatViolations(results.violations)}`,
+  ).toHaveLength(0);
+});
+
+test('blast-radius pane passes full-page a11y scan (light theme)', async ({ page }) => {
+  await gotoPane(page);
+
+
+  // Switch to light through the REAL sidebar toggle so the whole preference
+  // path runs (swPreferences.set -> applySingle -> classList + token
+  // recompute). Forcing classList alone would skip the token recompute and
+  // could scan a half-applied theme.
+  await page.waitForFunction(
+    () => !!(window.swPreferences && window.swSidebar
+      && typeof window.swSidebar.cycleTheme === 'function'),
+    { timeout: 10_000 },
+  );
+  // Seed to 'dark' first so a single cycleTheme() call deterministically lands
+  // on 'light' (dark -> light is step 1 of the cycle).
+  //
+  // Then hold it there. preferences.js hydrates from a server fetch during page
+  // init, and that response can land AFTER this switch and flip the page back
+  // to dark -- measured happening on Firefox, where it turned the light scan
+  // into a silent dark measurement. Re-applying until the state STICKS across a
+  // short quiet period outlasts the late hydration without depending on a fixed
+  // sleep. The assertions after the scan are the backstop if it still loses.
+  // Re-apply light until it holds, rather than asserting once.
+  const holdLight = (message) => expect.poll(
+    async () => page.evaluate(() => {
+      if (document.documentElement.classList.contains('dark')) {
+        window.swPreferences.set('theme', 'light');
+        return false;
+      }
+      return true;
+    }),
+    { message, timeout: 15_000, intervals: [200] },
+  ).toBe(true);
+
+  await holdLight('page never settled on the light theme');
+  // Quiet period, then confirm it STAYED light: a late hydration response has
+  // had its chance to undo the switch by now.
+  await page.waitForTimeout(750);
+  await holdLight('theme kept reverting to dark');
+
+  // Reaching light once is not enough to TRUST the scan, so the state is
+  // re-asserted either side of it. If the theme lost the race, this test must
+  // fail rather than report a dark measurement under a light label -- a
+  // vacuous pass would hide exactly the light-mode contrast defects it exists
+  // to find.
+  //
+  // The surface is checked by its RENDERED luminance, not by diffing against a
+  // pre-switch reading: the theme preference is stored server-side and shared
+  // by every test in the run, so the page may already be light on arrival and a
+  // before/after diff would then compare light against light and prove nothing.
+  // Absolute luminance is unambiguous either way.
+  const themeState = () => page.evaluate(() => {
+    const probe = document.querySelector('tbody') || document.body;
+    const bg = getComputedStyle(probe).backgroundColor;
+    // Rasterize through a canvas so oklch()/color() values reduce to sRGB.
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 1;
+    const c = cv.getContext('2d');
+    c.fillStyle = '#ffffff';
+    c.fillRect(0, 0, 1, 1);
+    c.fillStyle = bg;
+    c.fillRect(0, 0, 1, 1);
+    const [r, g, b] = Array.from(c.getImageData(0, 0, 1, 1).data);
+    const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return {
+      dark: document.documentElement.classList.contains('dark'),
+      dataTheme: document.documentElement.getAttribute('data-theme'),
+      bg,
+      luminance: 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b),
+    };
+  });
+
+  const before = await themeState();
+  expect(before.dark, `theme reverted to dark before the light-theme scan: ${JSON.stringify(before)}`).toBe(false);
+
+  const results = await buildAxeBuilder(page).analyze();
+
+  // Re-check AFTER the scan: the preference fetch can land mid-scan and flip
+  // the page back, which would make this a dark measurement wearing a light
+  // label.
+  const after = await themeState();
+  expect(after.dark, `theme reverted to dark DURING the light-theme scan, so the result is not a light-mode measurement: ${JSON.stringify(after)}`).toBe(false);
+  expect(
+    after.luminance,
+    `light-theme scan measured a DARK surface (bg=${after.bg}); the theme switch did not reach the rendered page, so a green result here would be meaningless`,
+  ).toBeGreaterThan(0.5);
+
+  expect(
+    results.violations,
+    `Blast-radius light-theme a11y violations:\n${formatViolations(results.violations)}`,
+  ).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// 2. The destructive restore confirm dialog.
+//
+// Why this test is the important one on this pane: restore WRITES a metadata
+// value back over the current one. A keyboard user who cannot see the dialog
+// (focus never moved into it), cannot escape it, or is stranded with no focus
+// after it closes, is one blind Enter press away from an unintended write.
+// Each assertion below therefore states the DANGEROUS inverse it rules out.
+// ---------------------------------------------------------------------------
+
+test('restore confirm dialog is keyboard-safe (focus in, trapped, Escape out, focus restored)', async ({ page }) => {
+  await gotoPane(page);
+
+  const rowIds = await page.evaluate(() => Array.from(
+    document.querySelectorAll('tr[id^="blast-row-"]'),
+    tr => tr.id.replace(/^blast-row-/, ''),
+  ));
+  if (rowIds.length === 0) {
+    // An empty result set is a DATA condition, not a pass. Fail loudly rather
+    // than skipping quietly: a green run with the dialog never opened would
+    // misreport this surface as verified.
+    throw new Error(
+      'no blast-radius rows on this server, so the restore confirm dialog could not be reached. '
+      + 'This surface is UNVERIFIED -- seed at least one tracked automated field change before trusting a green run.',
+    );
+  }
+
+  // Pick a row the server considers ELIGIBLE. Not every row is: a change the
+  // handler marks "not_revertible" produces eligible=0, and blastRestoreRow
+  // then shows a toast and never opens the dialog at all -- correct product
+  // behaviour, but it would make this test fail for a reason that has nothing
+  // to do with accessibility. Choosing blind (first row / last row) makes the
+  // test's meaning depend on row ordering.
+  //
+  // The probe is the SAME commit:false preview the pane itself issues before
+  // showing the dialog. dry_run writes nothing, so this does not mutate the
+  // database.
+  const eligibleId = await page.evaluate(async (ids) => {
+    const csrf = (document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/) || [])[1] || '';
+    const baseEl = document.querySelector('meta[name="htmx-base-path"]');
+    const base = baseEl ? baseEl.content : '';
+    const resp = await fetch(base + '/api/v1/reports/blast-radius/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ change_ids: ids, commit: false }),
+    });
+    if (!resp.ok) return null;
+    const plan = await resp.json();
+    const ok = (plan.items || []).find(i => i.restore_status === 'planned');
+    return ok ? ok.change_id : null;
+  }, rowIds);
+
+  if (!eligibleId) {
+    throw new Error(
+      `none of the ${rowIds.length} blast-radius rows on this server are restore-eligible, so the `
+      + 'confirm dialog cannot be opened. This surface is UNVERIFIED.',
+    );
+  }
+
+  const restoreBtn = page.locator(`#blast-row-${eligibleId} td:last-child button`);
+  await expect(restoreBtn).toHaveCount(1);
+
+  // Open via the KEYBOARD, not a mouse click: the dialog records
+  // document.activeElement as the element to restore focus to, so a
+  // mouse-driven open would not exercise the path a keyboard user takes.
+  await restoreBtn.focus();
+  await expect(restoreBtn).toBeFocused();
+  await page.keyboard.press('Enter');
+
+  const modal = page.locator('#confirm-modal');
+  // The dialog only appears after the commit:false preview round-trip
+  // resolves, so allow for a server hop.
+  await page.waitForSelector('#confirm-modal:not(.hidden)', { timeout: 15_000 });
+
+  // (a) ROLE. Without a dialog role, assistive tech announces the content as
+  // ordinary page text and the destructive framing is lost.
+  await expect(modal).toHaveAttribute('role', /^(dialog|alertdialog)$/);
+
+  // (b) MODALITY / background inertness. aria-modal="true" is what tells a
+  // screen reader that everything outside this subtree is unavailable. The
+  // functional half of inertness (keyboard focus cannot leave) is asserted at
+  // (d) below; both halves are required, neither substitutes for the other.
+  await expect(modal).toHaveAttribute('aria-modal', 'true');
+
+  // (c) ACCESSIBLE NAME. aria-labelledby must point at a real element with
+  // real text -- a dangling id or an empty heading leaves the dialog unnamed.
+  const accessibleName = await page.evaluate(() => {
+    const el = document.getElementById('confirm-modal');
+    const id = el.getAttribute('aria-labelledby');
+    const target = id ? document.getElementById(id) : null;
+    return target ? target.textContent.trim() : '';
+  });
+  expect(accessibleName, 'confirm dialog has no accessible name').not.toBe('');
+
+  // (d) FOCUS MOVED IN. A dialog that opens while focus stays behind it is
+  // invisible to a keyboard user: they keep tabbing the page underneath and
+  // may never learn a confirmation is pending.
+  const focusStartsInside = await page.evaluate(
+    () => !!document.activeElement.closest('#confirm-modal'),
+  );
+  expect(focusStartsInside, 'focus did not move into the dialog on open').toBe(true);
+
+  // (e) FOCUS TRAPPED. Enough Tab presses to wrap the dialog's own controls
+  // several times over. If even one lands outside, focus has escaped behind a
+  // modal that is still blocking the view -- the dangerous case.
+  const escapedTo = [];
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press('Tab');
+    const where = await page.evaluate(() => {
+      const a = document.activeElement;
+      if (!a || a.closest('#confirm-modal')) return null;
+      return `${a.tagName.toLowerCase()}${a.id ? '#' + a.id : ''}${a.className ? '.' + String(a.className).split(/\s+/)[0] : ''}`;
+    });
+    if (where) escapedTo.push(`step ${i + 1}: ${where}`);
+  }
+  expect(
+    escapedTo,
+    `focus escaped the modal while it was open:\n${escapedTo.join('\n')}`,
+  ).toEqual([]);
+
+  // Also check Shift+Tab, which wraps the other way. A trap implemented only
+  // for forward Tab leaks on the first backward press from the first control.
+  const escapedBack = [];
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press('Shift+Tab');
+    const where = await page.evaluate(() => {
+      const a = document.activeElement;
+      if (!a || a.closest('#confirm-modal')) return null;
+      return `${a.tagName.toLowerCase()}${a.id ? '#' + a.id : ''}`;
+    });
+    if (where) escapedBack.push(`step ${i + 1}: ${where}`);
+  }
+  expect(
+    escapedBack,
+    `focus escaped the modal on Shift+Tab:\n${escapedBack.join('\n')}`,
+  ).toEqual([]);
+
+  // (f) ESCAPE CANCELS. Escape is the only dismissal a keyboard user can reach
+  // without hunting for a control, and on a destructive dialog it must CANCEL,
+  // never confirm. This is also how this spec avoids performing a restore.
+  await page.keyboard.press('Escape');
+  // toBeHidden, not waitForSelector('#confirm-modal.hidden'): waitForSelector
+  // defaults to waiting for the VISIBLE state, and the dismissed dialog is
+  // display:none, so that form can never be satisfied and times out on a
+  // dialog that closed correctly.
+  await expect(modal).toBeHidden({ timeout: 5_000 });
+  await expect(modal).toHaveClass(/\bhidden\b/);
+
+  // (g) FOCUS RETURNED. Focus stranded on <body> after close drops the
+  // keyboard user back at the top of the document, which on this page means
+  // re-tabbing the whole sidebar to get back to the row they were on.
+  await expect(restoreBtn).toBeFocused();
+});
+
+// ---------------------------------------------------------------------------
+// 3. Keyboard reachability + VISIBLE focus indicator.
+//
+// Reachability and visibility are separate failures and are asserted
+// separately. A control that is reachable but shows no ring is a WCAG 2.4.7
+// failure: the user is somewhere, with no way to tell where.
+//
+// The ring is read from the COMPUTED style of the element while it holds focus
+// from a REAL Tab press. A CSS rule existing in a stylesheet is not evidence
+// that its selector matched or that it won the cascade, and :focus-visible in
+// particular does not match on a programmatic .focus() call in every engine --
+// so the walk below drives the keyboard rather than calling focus().
+// ---------------------------------------------------------------------------
+
+// Selectors that must be reachable. Keyed by a human label used in failures.
+//
+// SCOPE: this is the pager only, because the pager is what this increment of
+// the pane ships. The filter controls and the ContextHelp "?" arrive with the
+// filters/copy increment and are covered by the fuller reachability test on
+// that side; this is deliberately narrower, not an incomplete copy of it.
+const REACHABLE_TARGETS = {
+  'pager: next link': 'nav a[href*="/reports/blast-radius?"]',
+};
+
+// The properties sampled at each state. Kept as one list so the unfocused
+// baseline and the focused reading are always directly comparable.
+const FOCUS_PROPS = ['outline', 'outlineStyle', 'outlineWidth', 'outlineColor',
+  'outlineOffset', 'boxShadow', 'borderColor', 'backgroundColor', 'color'];
+
+// focusIndicatorFor reports HOW a control signals focus, by diffing its
+// computed style against its own unfocused baseline.
+//
+// Two mechanisms count, and the codebase uses both deliberately:
+//   - a RING: a drawn outline, or a box-shadow (Tailwind's focus:ring compiles
+//     to box-shadow). This is what the pager links use.
+//   - a STYLE SWAP: some controls set `outline: none` on :focus-visible ON
+//     PURPOSE and signal focus by swapping colour, border colour and
+//     background instead (.sw-context-help-btn does exactly this, on the
+//     filters/copy side). Rejecting that as "no indicator" would be wrong --
+//     WCAG 2.4.7 asks for a visible focus indicator, not for an outline
+//     specifically. Both mechanisms are accepted here so this helper stays
+//     correct for either side.
+//
+// What must NOT pass is the genuinely dangerous case: a control whose rendered
+// appearance is byte-identical focused and unfocused, leaving a keyboard user
+// with no way to tell where they are. That is exactly what an empty diff means.
+function focusIndicatorFor(base, focused) {
+  const ring = (focused.outlineStyle !== 'none' && parseFloat(focused.outlineWidth || '0') > 0)
+    || (focused.boxShadow && focused.boxShadow !== 'none' && focused.boxShadow !== base.boxShadow);
+  const changed = FOCUS_PROPS.filter(p => base[p] !== focused[p]);
+  return { ring: !!ring, changed, visible: !!ring || changed.length > 0 };
+}
+
+test('pager is Tab-reachable with a visible focus ring', async ({ page }) => {
+  // page_size=1 forces more than one page so the pager actually renders.
+  // Without it the pager assertion would pass vacuously on a small database.
+  await gotoPane(page, PANE_URL_PAGED);
+
+  // Confirm each target EXISTS before walking. A missing element would
+  // otherwise read as "not reachable", conflating a template gap with a
+  // keyboard defect.
+  const missing = [];
+  for (const [label, sel] of Object.entries(REACHABLE_TARGETS)) {
+    if (await page.locator(sel).count() === 0) missing.push(`${label} (${sel})`);
+  }
+  expect(missing, `expected pane controls are absent from the DOM:\n${missing.join('\n')}`).toEqual([]);
+
+  // Capture the UNFOCUSED baseline for every target first. The focused reading
+  // is only meaningful as a diff against this.
+  const baseline = await page.evaluate(([targets, props]) => {
+    const out = {};
+    for (const [label, sel] of Object.entries(targets)) {
+      const cs = getComputedStyle(document.querySelector(sel));
+      out[label] = Object.fromEntries(props.map(p => [p, cs[p]]));
+    }
+    return out;
+  }, [REACHABLE_TARGETS, FOCUS_PROPS]);
+
+  // Start the walk from the very top of the document so the tab order is the
+  // real one a keyboard user gets on page load.
+  await page.evaluate(() => {
+    document.activeElement && document.activeElement.blur();
+    document.body.focus();
+  });
+
+  const found = {};      // label -> computed style while focused
+  const MAX_TABS = 250;  // generous: the full page chrome sits ahead of the pane
+
+  for (let i = 0; i < MAX_TABS; i++) {
+    await page.keyboard.press('Tab');
+    const hit = await page.evaluate(([targets, props]) => {
+      const a = document.activeElement;
+      if (!a || a === document.body) return null;
+      for (const [label, sel] of Object.entries(targets)) {
+        if (a.matches(sel)) {
+          const cs = getComputedStyle(a);
+          return {
+            label,
+            focusVisible: a.matches(':focus-visible'),
+            ...Object.fromEntries(props.map(p => [p, cs[p]])),
+          };
+        }
+      }
+      return null;
+    }, [REACHABLE_TARGETS, FOCUS_PROPS]);
+
+    if (hit && !found[hit.label]) found[hit.label] = hit;
+    if (Object.keys(found).length === Object.keys(REACHABLE_TARGETS).length) break;
+  }
+
+  // Reachability. Asserted separately from visibility: "cannot get there" and
+  // "cannot tell you are there" are different defects with different fixes.
+  const unreachable = Object.keys(REACHABLE_TARGETS).filter(l => !found[l]);
+  expect(
+    unreachable,
+    `controls never received focus within ${MAX_TABS} Tab presses (not keyboard reachable):\n  ${unreachable.join('\n  ')}`,
+  ).toEqual([]);
+
+  // Visible indicator, from the computed diff rather than from any assumption
+  // about which CSS property carries it.
+  const indicators = Object.fromEntries(
+    Object.entries(found).map(([label, s]) => [label, focusIndicatorFor(baseline[label], s)]),
+  );
+  const invisible = Object.entries(indicators)
+    .filter(([, ind]) => !ind.visible)
+    .map(([label]) => `${label}: computed style is identical focused and unfocused `
+      + `(outline="${found[label].outline}" box-shadow="${found[label].boxShadow}" `
+      + `:focus-visible=${found[label].focusVisible})`);
+  expect(
+    invisible,
+    `focused controls render no visible focus indicator (WCAG 2.4.7):\n  ${invisible.join('\n  ')}`,
+  ).toEqual([]);
+
+  // Attach the measured values so the numbers are on the record rather than
+  // only implied by a green check.
+  test.info().annotations.push({
+    type: 'focus-indicators',
+    description: JSON.stringify({ baseline, focused: found, verdict: indicators }, null, 2),
+  });
+});

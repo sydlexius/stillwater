@@ -882,18 +882,19 @@ a11y_missing_engines() {
   done
   if [ -z "$roots" ]; then
     # No browsers directory anywhere: every declared engine is missing. Kept in
-    # step with the engine list below -- both must grow together when the
-    # firefox-a11y project lands, or this branch would under-report.
-    echo "chromium"
+    # step with the engine list below -- both grew together when the
+    # firefox-a11y project landed in this change.
+    echo "chromium firefox"
     return
   fi
 
   # Engines this branch's playwright.config.js actually declares a project for.
-  # It declares chromium-a11y only; the firefox-a11y project ships with the
-  # blast-radius a11y spec. ADD firefox HERE IN THAT SAME CHANGE -- the CI
-  # workflow already installs both, so the binary will be present, but until a
-  # project uses it this probe must not gate on it. Gating early would skip the
-  # whole a11y run on a machine that can serve every configured project.
+  # This change adds the firefox-a11y project, so firefox joins the list here
+  # and in the no-browsers-directory return above; the two must always name the
+  # same set. Gating on firefox before a project used it would have skipped the
+  # whole a11y run on a machine that could serve every configured project --
+  # which is why it was chromium-only until now.
+  #
   # Split the accumulator ONCE into the positional parameters, with IFS set to
   # a newline and globbing disabled, then restore both immediately. After this
   # "$@" holds one root per entry and every later use is quoted, so no path is
@@ -908,10 +909,7 @@ a11y_missing_engines() {
   set +f
 
   missing=""
-  # shellcheck disable=SC2043 # single-element today by design; the firefox-a11y
-  # project adds "firefox" to this list, and keeping the loop makes that a
-  # one-word change rather than a restructure.
-  for engine in chromium; do
+  for engine in chromium firefox; do
     found=0
     for root in "$@"; do
       # A matching <engine>-<rev> directory means that engine is installed.
