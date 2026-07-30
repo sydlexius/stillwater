@@ -47,6 +47,22 @@ type ScoredCandidate struct {
 	AlbumComparison *artist.AlbumComparison `json:"album_comparison,omitempty"`
 	Confidence      float64                 `json:"confidence"`
 	Reason          string                  `json:"reason"`
+
+	// releaseCount and releasesKnown record what the scorer learned about the
+	// CANDIDATE's own catalogue, so the album-evidence gate does not have to
+	// re-fetch data enrichAndScoreTier2 already had in hand (#2828).
+	//
+	// They are unexported because they are internal gate plumbing rather than
+	// API surface: adding them to the JSON would commit us to a wire contract
+	// for a number whose only consumer is the write decision.
+	//
+	// The two fields are separate for the same reason artist.AlbumEvidence is a
+	// tri-state: a release-group fetch that FAILED and a candidate that
+	// genuinely has no releases both leave releaseCount at 0, and only one of
+	// those is a determination. releasesKnown false means "not determined",
+	// which the gate declines on.
+	releaseCount  int
+	releasesKnown bool
 }
 
 // identifyOutcome represents the result of processing a single artist.
@@ -458,6 +474,15 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 	}
 
 	// Tier 1: Connection-based matching.
+	//
+	// NOT gated on album evidence, and the ordering makes that structural: the
+	// album set is resolved below, so Tier 1 could not consult it here even if it
+	// wanted to. Tier 1 makes no provider call -- it reads an identity a connected
+	// platform already holds -- so a catalogue gate would require a configured
+	// MusicBrainz provider before a connection-only install could auto-link
+	// anything, and would refuse the EvidenceUnknown majority Tier 1 mostly
+	// serves. Do not "fix" the ordering by hoisting the resolution; that silently
+	// starts gating Tier 1, which is a behavior change this PR did not make.
 	if connIdx != nil {
 		if res, handled := r.evaluateTier1(ctx, a, connIdx); handled {
 			return res
@@ -469,10 +494,30 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 		return identifyResult{Outcome: outcomeUnmatched}
 	}
 
-	// Tier 2: Album comparison (only if artist has local album subdirectories).
-	localAlbums := artist.ListLocalAlbums(a.Path)
-	hasAlbums := len(localAlbums) > 0
-	if hasAlbums {
+	// Album evidence is resolved ONCE per artist, as an evidenced AlbumSet
+	// (#2828). The old code called artist.ListLocalAlbums and branched on
+	// `len(...) > 0`, which cannot tell "this artist has no albums" from "I
+	// could not read the album directory" -- both produce an empty slice. The
+	// AlbumSet carries that difference, so a candidate scored against it can no
+	// longer report a fabricated 0% overlap for an artist nobody looked at.
+	//
+	// Resolving it HERE rather than inside Tier 2 is deliberate: it is where a
+	// later tier can also read it. Routing Tier 3 through the gate is the next
+	// PR in the series; this one stops at Tier 2.
+	localAlbums := r.localAlbumSet(ctx, a)
+
+	// One cache per artist. Tier 2 is its only consumer today; it is created
+	// here rather than inside the Tier 2 branch because a later tier shares it,
+	// so a candidate appearing in both searches costs one GetReleaseGroups call
+	// rather than two.
+	rgCache := r.newReleaseGroupCache()
+
+	// Tier 2: Album comparison. Reachable only on a POSITIVE determination that
+	// the artist has albums -- EvidenceFound. EvidenceNone (a genuinely empty
+	// folder) and EvidenceUnknown (nothing was read) both have nothing to
+	// compare, and both now carry that fact into Tier 3's gate instead of
+	// silently arriving there as "no objection raised".
+	if localAlbums.Evidence == artist.EvidenceFound {
 		searchName := filepath.Base(a.Path)
 		results, statuses, err := r.orchestrator.SearchForLinking(ctx, searchName, []provider.ProviderName{provider.NameMusicBrainz})
 		switch {
@@ -491,8 +536,8 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 				"artist", a.Name,
 				"failed_providers", collectFailedProviderDisplayNames(statuses))
 		case len(results) > 0:
-			scored := r.enrichAndScoreTier2(ctx, results, localAlbums)
-			tier2Result := r.evaluateTier2(ctx, a, scored)
+			scored := r.enrichAndScoreTier2(ctx, results, localAlbums, rgCache)
+			tier2Result := r.evaluateTier2(ctx, a, localAlbums, scored)
 			// If Tier 2 ran album comparison and found no match (< 30%),
 			// do NOT fall through to Tier 3. The album evidence is more
 			// reliable than a name-only search, so respect its verdict.
@@ -764,21 +809,31 @@ func (r *Router) evaluateTier1(ctx context.Context, a *artist.Artist, connIdx *c
 
 // enrichAndScoreTier2 enriches search results with album comparison data and
 // computes confidence scores for Tier 2 candidates.
-func (r *Router) enrichAndScoreTier2(ctx context.Context, results []provider.ArtistSearchResult, localAlbums []string) []ScoredCandidate {
-	// If providerRegistry is nil, skip release group enrichment and return
-	// candidates with scores derived from search results only.
-	if r.providerRegistry == nil {
-		return convertToScoredCandidates(results)
+//
+// It takes an artist.AlbumSet rather than a []string (#2828). The slice form
+// could not express "the album list is not a determination", so a caller that
+// had failed to read the artist's folder handed in an empty slice and every
+// candidate scored 0% -- indistinguishable from a candidate whose catalogue
+// genuinely shares nothing with the artist's. The AlbumSet carries that
+// difference through to the gate.
+//
+// cache may be nil: the candidate-side release counts then read as "not
+// determined", which the gate declines on.
+func (r *Router) enrichAndScoreTier2(ctx context.Context, results []provider.ArtistSearchResult, local artist.AlbumSet, cache *releaseGroupCache) []ScoredCandidate {
+	// No release-group fetcher available (no registry, no MusicBrainz adapter,
+	// or an adapter that does not implement the optional interface): fall back
+	// to name-only candidates. They carry releasesKnown false, so the gate will
+	// not authorize an unattended write off them.
+	if cache == nil {
+		return convertToScoredCandidatesReason(results, albumEvidenceReason(local.Evidence))
 	}
 
-	// Reuse the existing album-enrichment logic (same as disambiguation).
-	mbProvider := r.providerRegistry.Get(provider.NameMusicBrainz)
-	if mbProvider == nil {
-		return convertToScoredCandidates(results)
-	}
-	fetcher, ok := mbProvider.(provider.ReleaseGroupFetcher)
-	if !ok {
-		return convertToScoredCandidates(results)
+	// A set that is not a determination has no titles to compare against, so
+	// scoring it would produce a fabricated 0% for every candidate. Return the
+	// reason instead, exactly as enrichAndScoreTier2Set does for the display
+	// surfaces (#2852).
+	if local.Evidence != artist.EvidenceFound {
+		return convertToScoredCandidatesReason(results, albumEvidenceReason(local.Evidence))
 	}
 
 	scored := make([]ScoredCandidate, len(results))
@@ -790,25 +845,26 @@ func (r *Router) enrichAndScoreTier2(ctx context.Context, results []provider.Art
 			Reason:             "album comparison",
 		}
 
+		// The 3-candidate cap on provider calls is pre-existing behavior kept
+		// unchanged: it bounds the round-trips a single artist can cost. A
+		// candidate past the cap keeps releasesKnown false, so it is never
+		// auto-linked -- the cap costs certainty, never manufactures it.
 		if attempted >= 3 || res.MusicBrainzID == "" {
 			continue
 		}
 		attempted++
 
-		groups, err := fetcher.GetReleaseGroups(ctx, res.MusicBrainzID)
-		if err != nil {
+		remoteTitles, known := cache.titles(ctx, res.MusicBrainzID)
+		if !known {
 			r.logger.Warn("bulk-identify: fetching release groups",
-				"mbid", res.MusicBrainzID, "error", err)
+				"mbid", res.MusicBrainzID)
 			continue
 		}
+		scored[i].releasesKnown = true
+		scored[i].releaseCount = len(remoteTitles)
 
-		remoteTitles := make([]string, len(groups))
-		for j, rg := range groups {
-			remoteTitles[j] = rg.Title
-		}
-
-		comp := artist.CompareAlbums(localAlbums, remoteTitles)
-		scored[i].AlbumComparison = &comp
+		comp := artist.CompareAlbumSet(local, remoteTitles)
+		scored[i].AlbumComparison = &comp.AlbumComparison
 		scored[i].Confidence = float64(comp.MatchPercent) / 100.0
 	}
 
@@ -816,23 +872,33 @@ func (r *Router) enrichAndScoreTier2(ctx context.Context, results []provider.Art
 }
 
 // evaluateTier2 evaluates Tier 2 candidates and returns the appropriate outcome.
-func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []ScoredCandidate) identifyResult {
-	// Count candidates meeting thresholds.
+//
+// local is threaded in so the shared album-evidence gate can read it (#2828).
+// Tier 2 previously read only the computed MatchPercent, which is 0 both when
+// the catalogues genuinely disagree and when there was no local catalogue to
+// compare -- and 0 was safe here only because Tier 2 was unreachable without
+// albums. That routing is exactly what changed, so the evidence state now
+// travels with the scores rather than being implied by the call site.
+func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, local artist.AlbumSet, scored []ScoredCandidate) identifyResult {
+	// Count candidates meeting thresholds. The floors are the shared constants
+	// rather than bare literals so the same numbers govern here and inside
+	// artist.EvaluateAlbumGate; two copies of a threshold is two thresholds.
 	var above70 []ScoredCandidate
 	var above30 []ScoredCandidate
 	for i := range scored {
 		s := &scored[i]
 		if s.AlbumComparison != nil {
-			if s.AlbumComparison.MatchPercent >= 70 {
+			if s.AlbumComparison.MatchPercent >= artist.AlbumOverlapAutoLinkFloor {
 				above70 = append(above70, *s)
 			}
-			if s.AlbumComparison.MatchPercent >= 30 {
+			if s.AlbumComparison.MatchPercent >= artist.AlbumOverlapReviewFloor {
 				above30 = append(above30, *s)
 			}
 		}
 	}
 
-	// Exactly 1 candidate with >= 70%: auto-link, unless that would REPLACE a
+	// Exactly 1 candidate at or above artist.AlbumOverlapAutoLinkFloor:
+	// auto-link, unless that would REPLACE a
 	// stored MusicBrainz ID (#2826).
 	//
 	// This guard is not redundant with applyIdentity's invariant, it is what
@@ -848,9 +914,20 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 	// write" and "written", so the outcome decision belongs here. Falling through
 	// puts the candidate in the review queue (it also cleared 30%), which is the
 	// honest answer.
+	//
+	// The album-evidence gate (#2828) is the fourth condition. It restates the
+	// 70% floor in shared form and adds the two checks this site never made:
+	// that the local album list was a DETERMINATION rather than an empty
+	// placeholder, and that the CANDIDATE carries a catalogue of its own. An
+	// entity with zero release groups scores 0% here and so could never have
+	// reached above70 -- but only because a 0% score also fails the floor for
+	// the ordinary reason, which is a coincidence rather than a check. Asking
+	// the gate makes the refusal deliberate and keeps both tiers refusing for
+	// the same stated reason.
 	if len(above70) == 1 &&
 		artist.IsValidMBID(normalizeMBID(above70[0].MusicBrainzID)) &&
-		!r.identityWouldReplace(a, above70[0].MusicBrainzID) {
+		!r.identityWouldReplace(a, above70[0].MusicBrainzID) &&
+		r.tier2GatePermits(a, local, &above70[0]) {
 		// Lock already handled upstream (see identifyArtist's a.Locked guard).
 		if _, err := r.applyIdentity(ctx, a, identityWrite{
 			MBID:       above70[0].MusicBrainzID,
@@ -862,7 +939,7 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 		return identifyResult{Outcome: outcomeAutoLinked}
 	}
 
-	// Any candidates with >= 30%: review queue.
+	// Any candidates at or above artist.AlbumOverlapReviewFloor: review queue.
 	if len(above30) > 0 {
 		return identifyResult{
 			Outcome: outcomeQueued,
@@ -1169,18 +1246,4 @@ func (r *Router) buildConnectionIndex(ctx context.Context) *connectionIndex {
 	}
 
 	return idx
-}
-
-// convertToScoredCandidates wraps raw search results as ScoredCandidates with
-// zero confidence (used when album enrichment is not possible).
-func convertToScoredCandidates(results []provider.ArtistSearchResult) []ScoredCandidate {
-	scored := make([]ScoredCandidate, len(results))
-	for i := range results {
-		scored[i] = ScoredCandidate{
-			ArtistSearchResult: results[i],
-			Confidence:         0,
-			Reason:             "no album data available",
-		}
-	}
-	return scored
 }

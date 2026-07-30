@@ -127,18 +127,22 @@ func newIdentifyTestServer(t *testing.T, search func(ctx context.Context, name s
 	return r, artistSvc
 }
 
-// TestConvertToScoredCandidates covers handlers_identify.go:703 -- the
-// fallback wrapper used when album enrichment is unavailable. The function
-// should map each provider result one-to-one onto a ScoredCandidate with
-// Confidence=0 and a stable Reason.
+// TestConvertToScoredCandidates covers the fallback wrapper used when album
+// enrichment is unavailable. It maps each provider result one-to-one onto a
+// ScoredCandidate with Confidence=0 and the caller-supplied Reason.
+//
+// The reason-less convertToScoredCandidates was DELETED by #2828: it hardcoded
+// reasonNoAlbumData, which is a positive claim that the artist has no albums,
+// and it was reached from paths where the truth was "we could not look". Every
+// caller now names which of the two it means.
 func TestConvertToScoredCandidates(t *testing.T) {
 	t.Parallel()
 
 	t.Run("empty input returns empty slice", func(t *testing.T) {
 		t.Parallel()
-		got := convertToScoredCandidates(nil)
+		got := convertToScoredCandidatesReason(nil, reasonNoAlbumData)
 		if got == nil {
-			t.Fatal("convertToScoredCandidates(nil) returned nil; want non-nil empty slice")
+			t.Fatal("convertToScoredCandidatesReason(nil) returned nil; want non-nil empty slice")
 		}
 		if len(got) != 0 {
 			t.Errorf("len = %d, want 0", len(got))
@@ -152,7 +156,7 @@ func TestConvertToScoredCandidates(t *testing.T) {
 			{Name: "Second", MusicBrainzID: "mb-2", Score: 75},
 			{Name: "Third", MusicBrainzID: "mb-3", Score: 50},
 		}
-		got := convertToScoredCandidates(in)
+		got := convertToScoredCandidatesReason(in, reasonNoAlbumData)
 		if len(got) != len(in) {
 			t.Fatalf("len = %d, want %d", len(got), len(in))
 		}
@@ -166,8 +170,8 @@ func TestConvertToScoredCandidates(t *testing.T) {
 			if sc.Confidence != 0 {
 				t.Errorf("[%d] Confidence = %v, want 0", i, sc.Confidence)
 			}
-			if sc.Reason != "no album data available" {
-				t.Errorf("[%d] Reason = %q, want %q", i, sc.Reason, "no album data available")
+			if sc.Reason != reasonNoAlbumData {
+				t.Errorf("[%d] Reason = %q, want %q", i, sc.Reason, reasonNoAlbumData)
 			}
 		}
 	})
@@ -189,13 +193,20 @@ func TestEnrichAndScoreTier2(t *testing.T) {
 			{Name: "A", MusicBrainzID: "mb-a"},
 			{Name: "B", MusicBrainzID: "mb-b"},
 		}
-		got := r.enrichAndScoreTier2(context.Background(), results, []string{"Local Album"})
+		got := r.enrichAndScoreTier2(context.Background(), results, foundAlbums("Local Album"), r.newReleaseGroupCache())
 		if len(got) != 2 {
 			t.Fatalf("len = %d, want 2", len(got))
 		}
-		// Conversion path uses Reason="no album data available".
-		if got[0].Reason != "no album data available" {
-			t.Errorf("Reason = %q, want fallback reason", got[0].Reason)
+		// The local albums were READ (EvidenceFound). What is missing is the
+		// release-group fetcher, so the reason must name the candidate side
+		// rather than claim the artist owns no albums.
+		if got[0].Reason != reasonNoCandidateAlbumSource {
+			t.Errorf("Reason = %q, want %q", got[0].Reason, reasonNoCandidateAlbumSource)
+		}
+		// No fetcher means the candidate's catalogue was never retrieved, so the
+		// gate must see "not determined" rather than "zero releases".
+		if got[0].releasesKnown {
+			t.Error("releasesKnown = true with no release-group fetcher available")
 		}
 	})
 
@@ -206,9 +217,9 @@ func TestEnrichAndScoreTier2(t *testing.T) {
 		r.providerRegistry = provider.NewRegistry()
 
 		results := []provider.ArtistSearchResult{{Name: "X", MusicBrainzID: "mb-x"}}
-		got := r.enrichAndScoreTier2(context.Background(), results, nil)
-		if len(got) != 1 || got[0].Reason != "no album data available" {
-			t.Errorf("got = %+v, want single fallback candidate", got)
+		got := r.enrichAndScoreTier2(context.Background(), results, foundAlbums("Local Album"), r.newReleaseGroupCache())
+		if len(got) != 1 || got[0].Reason != reasonNoCandidateAlbumSource {
+			t.Errorf("got = %+v, want a single candidate carrying %q", got, reasonNoCandidateAlbumSource)
 		}
 	})
 
@@ -241,7 +252,8 @@ func TestEnrichAndScoreTier2(t *testing.T) {
 		}
 		got := r.enrichAndScoreTier2(context.Background(),
 			results,
-			[]string{"Album One", "Album Two"},
+			foundAlbums("Album One", "Album Two"),
+			r.newReleaseGroupCache(),
 		)
 		if len(got) != 2 {
 			t.Fatalf("len = %d, want 2", len(got))
@@ -275,12 +287,19 @@ func TestEnrichAndScoreTier2(t *testing.T) {
 			},
 		)
 		results := []provider.ArtistSearchResult{{Name: "X", MusicBrainzID: "mb-x"}}
-		got := r.enrichAndScoreTier2(context.Background(), results, []string{"a"})
+		got := r.enrichAndScoreTier2(context.Background(), results, foundAlbums("a"), r.newReleaseGroupCache())
 		if len(got) != 1 {
 			t.Fatalf("len = %d, want 1", len(got))
 		}
 		if got[0].AlbumComparison != nil {
 			t.Errorf("AlbumComparison = %+v, want nil after fetch error", got[0].AlbumComparison)
+		}
+		// A FAILED fetch and a candidate with an empty catalogue both leave
+		// releaseCount at 0; only releasesKnown tells them apart, and the gate
+		// declines on either. Pinning it here keeps the failure from silently
+		// reading as "this candidate has no releases".
+		if got[0].releasesKnown {
+			t.Error("releasesKnown = true after a release-group fetch error")
 		}
 	})
 
@@ -295,7 +314,7 @@ func TestEnrichAndScoreTier2(t *testing.T) {
 			},
 		)
 		results := []provider.ArtistSearchResult{{Name: "NoID"}} // empty MBID
-		got := r.enrichAndScoreTier2(context.Background(), results, []string{"Album One"})
+		got := r.enrichAndScoreTier2(context.Background(), results, foundAlbums("Album One"), r.newReleaseGroupCache())
 		if calls != 0 {
 			t.Errorf("GetReleaseGroups calls = %d, want 0 for empty MBID", calls)
 		}
@@ -324,7 +343,7 @@ func TestEnrichAndScoreTier2(t *testing.T) {
 			{Name: "4", MusicBrainzID: "mb-4"},
 			{Name: "5", MusicBrainzID: "mb-5"},
 		}
-		got := r.enrichAndScoreTier2(context.Background(), results, []string{"a"})
+		got := r.enrichAndScoreTier2(context.Background(), results, foundAlbums("a"), r.newReleaseGroupCache())
 		if len(got) != 5 {
 			t.Fatalf("len = %d, want 5", len(got))
 		}
@@ -340,13 +359,24 @@ func TestEnrichAndScoreTier2(t *testing.T) {
 func TestEvaluateTier2(t *testing.T) {
 	t.Parallel()
 
+	// releasesKnown/releaseCount are set because the album-evidence gate (#2828)
+	// declines a candidate whose catalogue was never retrieved OR is empty.
+	// These fixtures model a candidate that HAS a catalogue, so the subtests
+	// below keep exercising the threshold arithmetic they were written for;
+	// the zero-catalogue and unknown-catalogue cases get their own tests.
 	mustScored := func(percent int, mbid string) ScoredCandidate {
 		cmp := artist.AlbumComparison{MatchPercent: percent}
 		return ScoredCandidate{
 			ArtistSearchResult: provider.ArtistSearchResult{MusicBrainzID: mbid, Name: "T"},
 			AlbumComparison:    &cmp,
+			releaseCount:       3,
+			releasesKnown:      true,
 		}
 	}
+
+	// Every evaluateTier2 subtest below runs against a POSITIVE local album
+	// determination, which is the only state that reaches Tier 2 at all.
+	local := foundAlbums("Album One", "Album Two")
 
 	t.Run("single above 70 auto-links", func(t *testing.T) {
 		t.Parallel()
@@ -362,7 +392,7 @@ func TestEvaluateTier2(t *testing.T) {
 			mustScored(90, mbidTestWinner),
 			mustScored(20, mbidTestLow),
 		}
-		got := r.evaluateTier2(ctx, a, scored)
+		got := r.evaluateTier2(ctx, a, local, scored)
 		if got.Outcome != outcomeAutoLinked {
 			t.Fatalf("Outcome = %v, want autoLinked", got.Outcome)
 		}
@@ -385,7 +415,7 @@ func TestEvaluateTier2(t *testing.T) {
 			mustScored(75, "mb-a"),
 			mustScored(72, "mb-b"), // two above 70 => queue, not autolink
 		}
-		got := r.evaluateTier2(context.Background(), a, scored)
+		got := r.evaluateTier2(context.Background(), a, local, scored)
 		if got.Outcome != outcomeQueued {
 			t.Fatalf("Outcome = %v, want queued", got.Outcome)
 		}
@@ -408,7 +438,7 @@ func TestEvaluateTier2(t *testing.T) {
 		r, _, _ := testRouterWithLibrary(t)
 		a := &artist.Artist{ID: "queued-2", Name: "Mid", Path: "/m/m"}
 		scored := []ScoredCandidate{mustScored(45, "mb-mid")}
-		got := r.evaluateTier2(context.Background(), a, scored)
+		got := r.evaluateTier2(context.Background(), a, local, scored)
 		if got.Outcome != outcomeQueued {
 			t.Fatalf("Outcome = %v, want queued", got.Outcome)
 		}
@@ -422,7 +452,7 @@ func TestEvaluateTier2(t *testing.T) {
 			mustScored(10, "mb-x"),
 			mustScored(0, "mb-y"),
 		}
-		got := r.evaluateTier2(context.Background(), a, scored)
+		got := r.evaluateTier2(context.Background(), a, local, scored)
 		if got.Outcome != outcomeUnmatched {
 			t.Fatalf("Outcome = %v, want unmatched", got.Outcome)
 		}
@@ -440,7 +470,7 @@ func TestEvaluateTier2(t *testing.T) {
 		scored := []ScoredCandidate{
 			{ArtistSearchResult: provider.ArtistSearchResult{MusicBrainzID: "mb-nil"}},
 		}
-		got := r.evaluateTier2(context.Background(), a, scored)
+		got := r.evaluateTier2(context.Background(), a, local, scored)
 		if got.Outcome != outcomeUnmatched {
 			t.Fatalf("Outcome = %v, want unmatched when no candidate has AlbumComparison", got.Outcome)
 		}
@@ -516,19 +546,36 @@ func TestIdentifyArtist(t *testing.T) {
 		}
 	})
 
-	t.Run("tier 3 high-confidence single result auto-links", func(t *testing.T) {
+	t.Run("tier 3 auto-links only with corroborating album evidence", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
+		// This subtest's PREMISE was inverted by #2828. It used to read "Path is
+		// empty so ListLocalAlbums returns nil and tier 2 is skipped", which
+		// documented the DEFECT as intended behavior: an artist with no readable
+		// album directory was ROUTED to the one tier that performs no catalogue
+		// check, so the absence of evidence acted as permission. The artist here
+		// now has a real album directory and the candidate a matching catalogue,
+		// so the auto-link is earned rather than reached by falling through.
+		dir := t.TempDir()
+		for _, alb := range []string{"First Record", "Second Record"} {
+			if err := os.Mkdir(filepath.Join(dir, alb), 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+		}
 		r, artistSvc := newIdentifyTestServer(t,
 			func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
 				return []provider.ArtistSearchResult{
 					{Name: "Solo", MusicBrainzID: mbidTestSolo, Score: 95, Source: string(provider.NameMusicBrainz)},
 				}, nil
 			},
-			nil,
+			func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+				return []provider.ReleaseGroupInfo{
+					{Title: "First Record"},
+					{Title: "Second Record"},
+				}, nil
+			},
 		)
-		// Path is empty so ListLocalAlbums returns nil and tier 2 is skipped.
-		a := &artist.Artist{Name: "Solo", SortName: "Solo", Type: "person"}
+		a := &artist.Artist{Name: "Solo", SortName: "Solo", Type: "person", Path: dir}
 		if err := artistSvc.Create(ctx, a); err != nil {
 			t.Fatalf("creating artist: %v", err)
 		}

@@ -63,10 +63,103 @@ func TestAlbumEvidenceReasonDistinguishesUnknownFromNone(t *testing.T) {
 	if unknown == none {
 		t.Errorf("Unknown and None share the reason %q; the whole migration is that they differ", unknown)
 	}
-	// EvidenceFound never reaches a fallback, but if it somehow does it must not
-	// claim the albums were unreadable -- they were not.
+
+	// EvidenceFound DOES reach a fallback: the local albums were read fine and
+	// nothing could supply the CANDIDATE's albums (no registry, no adapter, an
+	// adapter without the album-fetching interface). It must say so.
+	//
+	// Both wrong answers are asserted against explicitly, because each is a
+	// different lie: reasonNoAlbumData claims the artist owns no albums when it
+	// may own a shelf full, and reasonLocalAlbumsUnreadable blames a filesystem
+	// read that succeeded. The string must also not claim a FETCH failed -- every
+	// caller reaches it from a missing-fetcher guard, before any call is made.
+	if found != reasonNoCandidateAlbumSource {
+		t.Errorf("Found reason = %q, want %q", found, reasonNoCandidateAlbumSource)
+	}
+	if found == reasonNoAlbumData {
+		t.Errorf("Found reason = %q, must not claim the artist has no albums; what was missing was a source for the candidate's", found)
+	}
 	if found == reasonLocalAlbumsUnreadable {
 		t.Errorf("Found reason = %q, must not claim the albums were unreadable", found)
+	}
+
+	// All three states must be mutually distinct, or a caller reading the string
+	// cannot tell which of the three situations it is in. Asserting the pairs
+	// individually above would still pass if two of them silently converged on a
+	// value neither test named.
+	if found == unknown || found == none {
+		t.Errorf("Found reason %q collides with Unknown (%q) or None (%q); the three cases must be tellable apart", found, unknown, none)
+	}
+}
+
+// TestEnrichAndScoreTier2NilCacheDoesNotFabricateNoAlbumData is the live-path
+// guard for the third reason string.
+//
+// The route in: enrichAndScoreTier2 returns albumEvidenceReason BEFORE it looks
+// at the evidence state, so a nil release-group cache (no provider registry, no
+// MusicBrainz adapter, or an adapter not implementing ReleaseGroupFetcher) hits
+// that line carrying EvidenceFound. Mapping that to reasonNoAlbumData told the
+// operator "no album data available", which album_evidence.go documents as a
+// POSITIVE determination that the artist owns no albums -- while the fixture
+// below owns two.
+//
+// The gate DECISION was never wrong here (releasesKnown stays false, so the
+// gate declines either way), which is exactly why only an assertion on the
+// REASON can catch it. Both halves are asserted so a future change cannot fix
+// the words by loosening the refusal.
+func TestEnrichAndScoreTier2NilCacheDoesNotFabricateNoAlbumData(t *testing.T) {
+	t.Parallel()
+
+	r, _, _ := testRouterWithLibrary(t)
+	r.providerRegistry = nil // forces newReleaseGroupCache to return nil
+
+	// PRECONDITION: the local set really is a determination holding albums, so a
+	// "no album data" reason would be a false claim rather than an accurate one.
+	local := foundAlbums("First Record", "Second Record")
+	if local.Evidence != artist.EvidenceFound || len(local.Titles) == 0 {
+		t.Fatalf("precondition: local = %+v, want EvidenceFound with titles", local)
+	}
+	cache := r.newReleaseGroupCache()
+	if cache != nil {
+		t.Fatalf("precondition: newReleaseGroupCache() = %+v, want nil with no registry", cache)
+	}
+
+	got := r.enrichAndScoreTier2(context.Background(), []provider.ArtistSearchResult{{
+		Name: "Gate Reason", MusicBrainzID: "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+	}}, local, cache)
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	if got[0].Reason == reasonNoAlbumData {
+		t.Errorf("Reason = %q, but the artist HAS albums (%v); that string is a positive determination and this is not one",
+			got[0].Reason, local.Titles)
+	}
+	if got[0].Reason != reasonNoCandidateAlbumSource {
+		t.Errorf("Reason = %q, want %q", got[0].Reason, reasonNoCandidateAlbumSource)
+	}
+	// The refusal itself is unchanged: a candidate catalogue nothing could supply
+	// is not a determination, so the gate must still decline.
+	if got[0].releasesKnown {
+		t.Error("releasesKnown = true with no fetcher available; the gate would then treat an unmade call as a zero-release finding")
+	}
+
+	// THE WORDING INVARIANT, enforced rather than left to the doc comment.
+	//
+	// This string is reached ONLY from missing-fetcher guards, before any
+	// provider call is made, so it must not assert that a retrieval was
+	// ATTEMPTED and failed. An earlier draft ("candidate catalogues could not be
+	// retrieved") did exactly that, which is the same defect class this reason
+	// string was added to fix -- a reason asserting an event that did not
+	// happen. Fetches that ARE attempted and fail never land here: those callers
+	// log and continue, leaving the candidate on "album comparison".
+	// Full words rather than a truncated stem: the repo's typo checker rejects
+	// the stem form as a misspelling. Listing "retrieved" and "retrieval"
+	// separately covers the same ground for any wording a human would write.
+	for _, banned := range []string{"retrieved", "retrieval", "fetch", "failed"} {
+		if strings.Contains(strings.ToLower(got[0].Reason), banned) {
+			t.Errorf("Reason = %q contains %q, which claims a lookup was attempted; "+
+				"this path is reached from a missing-fetcher guard, before any provider call", got[0].Reason, banned)
+		}
 	}
 }
 
@@ -289,10 +382,11 @@ func TestEnrichDeezerCandidatesEvidenceFallbackReason(t *testing.T) {
 		r, _ := testRouter(t)
 		r.providerRegistry = provider.NewRegistry() // Deezer not registered
 		// The albums ARE readable here; the fallback is caused by the missing
-		// provider, so the reason must not accuse the filesystem.
+		// provider, so the reason must accuse neither the filesystem nor the
+		// artist's shelf -- it must name the candidate-side lookup that failed.
 		got := r.enrichDeezerCandidates(context.Background(), results, foundAlbums("Album One"))
-		if got[0].Reason != reasonNoAlbumData {
-			t.Errorf("Reason = %q, want %q (the albums were readable)", got[0].Reason, reasonNoAlbumData)
+		if got[0].Reason != reasonNoCandidateAlbumSource {
+			t.Errorf("Reason = %q, want %q (the albums were readable; the candidate lookup is what failed)", got[0].Reason, reasonNoCandidateAlbumSource)
 		}
 	})
 }
