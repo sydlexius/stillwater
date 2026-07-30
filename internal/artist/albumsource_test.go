@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -382,9 +384,54 @@ func TestChainAlbumSource_TrustsEvidenceOverError(t *testing.T) {
 	}
 	chain := NewChainAlbumSource(partial, noneSource("b"))
 
-	set, _ := chain.LocalAlbums(context.Background(), &Artist{Name: "Radiohead"})
+	set, err := chain.LocalAlbums(context.Background(), &Artist{Name: "Radiohead"})
 	if set.Evidence != EvidenceFound {
 		t.Errorf("Evidence = %v, want EvidenceFound: Evidence is the contract, not the error", set.Evidence)
+	}
+	// The error must SURVIVE the Found short-circuit. Returning a bare nil here
+	// would hide a partially-broken source behind a usable result, which is the
+	// silent-failure shape this error channel exists to prevent.
+	if err == nil {
+		t.Fatal("err = nil, want the source's error preserved alongside the usable result")
+	}
+	if !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Errorf("err = %v, want it to wrap os.ErrDeadlineExceeded", err)
+	}
+	if !strings.Contains(err.Error(), "partial") {
+		t.Errorf("err = %v, want it to name the failing source so a log says which one broke", err)
+	}
+}
+
+// TestChainAlbumSource_PreservesEarlierErrorsOnLaterFound pins the harder half
+// of the same rule: the error that must survive belongs to a source the chain
+// already moved PAST. A fix that only returns the current source's error would
+// pass the test above and still lose this one.
+func TestChainAlbumSource_PreservesEarlierErrorsOnLaterFound(t *testing.T) {
+	broken := stubAlbumSource{
+		name: "broken-primary",
+		set:  AlbumSet{Evidence: EvidenceUnknown},
+		err:  os.ErrPermission,
+	}
+	working := stubAlbumSource{
+		name: "working-fallback",
+		set:  AlbumSet{Evidence: EvidenceFound, Titles: []string{"Kid A"}, Origin: "working-fallback"},
+	}
+	chain := NewChainAlbumSource(broken, working)
+
+	set, err := chain.LocalAlbums(context.Background(), &Artist{Name: "Radiohead"})
+	// Precondition: the fallback really did answer, so the assertion below is
+	// about a surviving diagnostic and not about a chain that simply failed.
+	if set.Evidence != EvidenceFound {
+		t.Fatalf("precondition failed: Evidence = %v, want EvidenceFound from the fallback", set.Evidence)
+	}
+	if err == nil {
+		t.Fatal("err = nil, want the earlier source's failure preserved: a quietly broken primary masked by a working fallback must not vanish")
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Errorf("err = %v, want it to wrap the earlier source's os.ErrPermission", err)
+	}
+	if !strings.Contains(err.Error(), "broken-primary") {
+		t.Errorf("err = %v, want it to name broken-primary", err)
 	}
 }
 

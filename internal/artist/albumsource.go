@@ -212,7 +212,15 @@ func (c *ChainAlbumSource) LocalAlbums(ctx context.Context, a *Artist) (AlbumSet
 			if set.Origin == "" {
 				set.Origin = src.Name()
 			}
-			return set, nil
+			// Return the errors collected so far ALONGSIDE the usable result,
+			// rather than a bare nil. The short-circuit means a determination
+			// was reached, but the failures that came before it are still real
+			// operational problems: a primary source that is quietly broken
+			// while a fallback covers for it would otherwise be invisible,
+			// because the chain would report success with no error at all.
+			// Evidence stays the contract for the DECISION; the error is the
+			// diagnostic channel, and discarding it is a silent failure.
+			return set, errors.Join(errs...)
 		case EvidenceNone:
 			noneCount++
 		case EvidenceUnknown:

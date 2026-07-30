@@ -141,6 +141,15 @@ func isMusicBrainzSourcedResult(r *provider.ArtistSearchResult) bool {
 // EvaluateMBIDCandidate applies the confidence gates to a candidate. It returns
 // nil when the candidate may be adopted, or the reason it was rejected.
 func EvaluateMBIDCandidate(artistName string, best, runnerUp *provider.ArtistSearchResult) *MBIDRejection {
+	// BestMBIDCandidates documents that best may be nil (no search hit carried a
+	// usable MusicBrainz ID), and this function is now reachable from packages
+	// that did not exist when its only caller guarded the nil itself. Rejecting
+	// is the correct answer rather than a panic: no candidate is not a candidate
+	// that passed, and the whole point of this gate is that the absent case must
+	// decline rather than fall through to a write.
+	if best == nil {
+		return &MBIDRejection{Reason: "no candidate carried a usable MusicBrainz ID"}
+	}
 	if best.Score < MBIDMinProviderScore {
 		return &MBIDRejection{Reason: fmt.Sprintf(
 			"top hit %q scored %d, below the %d confidence floor",
