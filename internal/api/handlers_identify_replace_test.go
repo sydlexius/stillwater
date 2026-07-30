@@ -902,3 +902,181 @@ func TestUpdateProviderField_NonMBIDFieldDoesNotStampMBIDProvenance(t *testing.T
 		t.Errorf("MBID provenance = %q, want unset; a Spotify edit must not stamp the MusicBrainz key", got)
 	}
 }
+
+// TestClearProviderField_RemovesMBIDProvenance is the third case the pair above
+// was missing. Both of those pin the FIELD-NAME condition of the provenance
+// rule; neither pins the EMPTY-VALUE condition, which is why a comment claiming
+// the clear path was implemented went unchallenged while the code only ever
+// stamped.
+func TestClearProviderField_RemovesMBIDProvenance(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, _, artistSvc := testRouterWithLibrary(t)
+
+	a := &artist.Artist{Name: "Cleared", SortName: "Cleared", Type: "group"}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.UpdateProviderField(ctx, a.ID, "musicbrainz_id", mbidProposed); err != nil {
+		t.Fatalf("UpdateProviderField: %v", err)
+	}
+	// PRECONDITION: the marker really is present, so "unset afterwards" cannot
+	// pass vacuously against an artist that never had one.
+	before, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading before the clear: %v", err)
+	}
+	if got := before.MetadataSources[artist.SourceKeyMusicBrainzID]; got != artist.SourceOperatorConfirmed {
+		t.Fatalf("precondition failed: provenance = %q, want %q", got, artist.SourceOperatorConfirmed)
+	}
+
+	if err := artistSvc.ClearProviderField(ctx, a.ID, "musicbrainz_id"); err != nil {
+		t.Fatalf("ClearProviderField: %v", err)
+	}
+	after, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading after the clear: %v", err)
+	}
+	if after.MusicBrainzID != "" {
+		t.Fatalf("precondition failed: MBID = %q, the clear did not take effect", after.MusicBrainzID)
+	}
+	// Two-value read: a PRESENT-but-empty key is a different bug and must also
+	// fail here, which an == "" comparison would silently accept.
+	if v, ok := after.MetadataSources[artist.SourceKeyMusicBrainzID]; ok {
+		t.Errorf("provenance key present with value %q, want UNSET; a marker describing "+
+			"an ID that is gone could later protect or mislead about an identity "+
+			"that does not exist", v)
+	}
+}
+
+// --- The validity leg of the chokepoint ---
+
+// TestApplyIdentity_RefusesInvalidMBID pins the leg hoisted into applyIdentity.
+// Before the hoist, validity was checked at Tier 1 and Tier 3 but not at Tier 2
+// nor at the operator link, so two of four writers could store a non-UUID.
+func TestApplyIdentity_RefusesInvalidMBID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r, artistSvc, _ := identifyHistoryRouter(t, nil)
+
+	a := &artist.Artist{Name: "Malformed", SortName: "Malformed", Type: "group"}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if mbid := reloadMBID(t, artistSvc, a.ID); mbid != "" {
+		t.Fatalf("precondition failed: seeded MBID = %q, want blank", mbid)
+	}
+
+	_, err := r.applyIdentity(ctx, a, identityWrite{
+		MBID:       "not-a-uuid",
+		Source:     artist.IdentifySourceAlbum,
+		Provenance: artist.SourceMachinePicked,
+	})
+	if !errors.Is(err, errIdentityInvalidMBID) {
+		t.Fatalf("err = %v, want errIdentityInvalidMBID", err)
+	}
+	if mbid := reloadMBID(t, artistSvc, a.ID); mbid != "" {
+		t.Errorf("stored MBID = %q, want blank; a non-UUID reached the store", mbid)
+	}
+}
+
+// TestApplyIdentity_EmptyMBIDWithDiscogsIDSucceeds is the guard against getting
+// the hoist backwards. An EMPTY MBID means "leave the MusicBrainz ID alone" and
+// is how the Discogs-only link paths reach applyIdentity; if the validity leg
+// treated empty as invalid, every one of those paths would start failing.
+func TestApplyIdentity_EmptyMBIDWithDiscogsIDSucceeds(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r, artistSvc, _ := identifyHistoryRouter(t, nil)
+
+	a := &artist.Artist{Name: "DiscogsOnly", SortName: "DiscogsOnly", Type: "group"}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	if _, err := r.applyIdentity(ctx, a, identityWrite{
+		DiscogsID: "d-12345",
+		Source:    artist.IdentifySourceConnection,
+	}); err != nil {
+		t.Fatalf("applyIdentity refused an empty MBID carrying only a DiscogsID: %v", err)
+	}
+
+	after, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.DiscogsID != "d-12345" {
+		t.Errorf("DiscogsID = %q, want d-12345", after.DiscogsID)
+	}
+	if after.MusicBrainzID != "" {
+		t.Errorf("MBID = %q, want left blank", after.MusicBrainzID)
+	}
+}
+
+// TestEvaluateTier2_MalformedCandidateIsNotAutoLinked: Tier 2 used to write
+// above70[0].MusicBrainzID unchecked, so a candidate with a blank or malformed
+// MBID but a >= 70% album match reported outcomeAutoLinked while applyIdentity
+// treated the empty value as "leave alone" -- a link that linked nothing,
+// reported as success.
+func TestEvaluateTier2_MalformedCandidateIsNotAutoLinked(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	for _, tc := range []struct{ name, mbid string }{
+		{name: "blank", mbid: ""},
+		{name: "malformed", mbid: "not-a-uuid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r, artistSvc, _ := identifyHistoryRouter(t, nil)
+
+			a := &artist.Artist{Name: "T2 " + tc.name, SortName: "T2", Type: "group"}
+			if err := artistSvc.Create(ctx, a); err != nil {
+				t.Fatalf("creating artist: %v", err)
+			}
+			if mbid := reloadMBID(t, artistSvc, a.ID); mbid != "" {
+				t.Fatalf("precondition failed: seeded MBID = %q, want blank", mbid)
+			}
+
+			cmp := artist.AlbumComparison{MatchPercent: 90}
+			scored := []ScoredCandidate{{
+				ArtistSearchResult: provider.ArtistSearchResult{Name: "T2", MusicBrainzID: tc.mbid},
+				AlbumComparison:    &cmp,
+			}}
+
+			got := r.evaluateTier2(ctx, a, scored)
+			if got.Outcome == outcomeAutoLinked {
+				t.Errorf("Outcome = autoLinked, want anything else; nothing was linked")
+			}
+			if mbid := reloadMBID(t, artistSvc, a.ID); mbid != "" {
+				t.Errorf("stored MBID = %q, want blank", mbid)
+			}
+		})
+	}
+}
+
+// TestBulkIdentifyLink_MalformedMBIDIsBadRequest: the operator link is the only
+// AllowReplace caller and wrote body.MBID unchecked. The shape check lives in the
+// handler rather than being left to applyIdentity's sentinel so a bad input is a
+// 400 about the request, not the 500 the handler maps every applyIdentity error
+// to.
+func TestBulkIdentifyLink_MalformedMBIDIsBadRequest(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+
+	a := seedIdentifiedArtist(t, artistSvc, "Operator Target")
+
+	body := strings.NewReader(`{"artist_id":"` + a.ID + `","mbid":"not-a-uuid"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-identify/link", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleBulkIdentifyLink(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+	if mbid := reloadMBID(t, artistSvc, a.ID); mbid != mbidStored {
+		t.Errorf("stored MBID = %q, want %q; a malformed operator MBID reached the store", mbid, mbidStored)
+	}
+}

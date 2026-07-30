@@ -443,7 +443,10 @@ func TestBulkIdentifyLink(t *testing.T) {
 	r.identifyMu.Unlock()
 
 	// Call the link endpoint.
-	body := strings.NewReader(`{"artist_id":"` + a.ID + `","mbid":"test-mbid-1234"}`)
+	// A real UUID: the link handler shape-checks body.MBID and 400s on anything
+	// that is not one, so the old "test-mbid-1234" placeholder can no longer
+	// exercise the success path.
+	body := strings.NewReader(`{"artist_id":"` + a.ID + `","mbid":"` + mbidProposed + `"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-identify/link", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -459,8 +462,8 @@ func TestBulkIdentifyLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getting updated artist: %v", err)
 	}
-	if updated.MusicBrainzID != "test-mbid-1234" {
-		t.Errorf("MusicBrainzID = %q, want %q", updated.MusicBrainzID, "test-mbid-1234")
+	if updated.MusicBrainzID != mbidProposed {
+		t.Errorf("MusicBrainzID = %q, want %q", updated.MusicBrainzID, mbidProposed)
 	}
 
 	// Verify artist was removed from review queue.
@@ -509,7 +512,9 @@ func TestBulkIdentifyLink_ArtistNotFound(t *testing.T) {
 	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
-	body := strings.NewReader(`{"artist_id":"nonexistent","mbid":"test-mbid"}`)
+	// Valid-shaped MBID so the handler reaches the lookup rather than 400ing on
+	// the shape check.
+	body := strings.NewReader(`{"artist_id":"nonexistent","mbid":"` + mbidProposed + `"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-identify/link", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
