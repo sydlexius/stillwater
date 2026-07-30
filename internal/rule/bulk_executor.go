@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +47,14 @@ type BulkExecutor struct {
 	// to the already-nine-parameter constructor. Nil is a supported no-op state.
 	collision *collisionGuard
 
+	// historyServiceMu guards historyService for the same reason
+	// Pipeline.historyServiceMu does (see fixer.go): SetHistoryService can be
+	// called after construction, and the read happens on the bulk fetch-images
+	// hot path (fetchImages, when it self-heals an MBID) which can run
+	// concurrently with a setter during startup wiring. Issue #2825/#2845.
+	historyServiceMu sync.RWMutex
+	historyService   *artist.HistoryService
+
 	mu        sync.Mutex
 	cancelFn  context.CancelFunc
 	currentID string
@@ -60,6 +69,49 @@ func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 // for the bulk auto-fix path. Passing a nil notifier or indexer disables it.
 func (e *BulkExecutor) SetCollisionGuard(notifier backdropCollisionNotifier, indexer fanartIdentityIndexer) {
 	e.collision = newCollisionGuard(notifier, indexer, e.logger)
+}
+
+// SetHistoryService installs (or replaces) the artist history service the
+// bulk executor uses to record a metadata_changes row whenever fetchImages
+// self-heals a missing MusicBrainz ID (issue #2845's bulk_executor half).
+// Passing nil disables history recording -- callers that never configure a
+// history service behave exactly as before. Setter form (rather than a
+// NewBulkExecutor parameter) mirrors SetEventBus/SetCollisionGuard and keeps
+// the already-nine-parameter constructor signature stable for existing test
+// call sites.
+func (e *BulkExecutor) SetHistoryService(h *artist.HistoryService) {
+	e.historyServiceMu.Lock()
+	e.historyService = h
+	e.historyServiceMu.Unlock()
+}
+
+// getHistoryService returns the currently installed HistoryService under the
+// read lock so fetchImages can read it safely without racing a concurrent
+// SetHistoryService.
+func (e *BulkExecutor) getHistoryService() *artist.HistoryService {
+	e.historyServiceMu.RLock()
+	defer e.historyServiceMu.RUnlock()
+	return e.historyService
+}
+
+// recordBulkMBIDHistory records the #2845 audit trail for an MBID the bulk
+// fetch-images job self-healed. Best-effort and never fails the underlying
+// operation: mirrors Pipeline.recordRuleFixHistory's contract in fixer.go,
+// where a missing history entry is a diagnostics gap, not a reason to fail
+// a write that already succeeded. oldValue is always "" here because this
+// path only ever fills a blank MBID (a.MusicBrainzID == "" guards the only
+// caller) -- recording that honestly, rather than a synthesized value, keeps
+// the record consistent with what actually happened.
+func (e *BulkExecutor) recordBulkMBIDHistory(ctx context.Context, artistID, newValue string) {
+	h := e.getHistoryService()
+	if h == nil {
+		return
+	}
+	const source = "rule:bulk_fetch_images_mbid"
+	if err := h.Record(ctx, artistID, "musicbrainz_id", "", newValue, source); err != nil {
+		e.logger.Warn("recording bulk MBID self-heal history",
+			"artist_id", artistID, "error", err)
+	}
 }
 
 // NewBulkExecutor creates a BulkExecutor.
@@ -311,16 +363,30 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		if err != nil || len(results) == 0 {
 			return BulkItemSkipped, "no MBID and provider search found nothing"
 		}
-		for i := range results {
-			if results[i].MusicBrainzID != "" {
-				a.MusicBrainzID = results[i].MusicBrainzID
-				_ = e.artistService.Update(ctx, a)
-				break
-			}
+		// #2825: an operator asking for IMAGES never asked for an identity
+		// decision, so this self-heal may adopt an MBID ONLY when it clears the
+		// same confidence gate the nfo_has_mbid rule fixer applies (fixers.go) --
+		// reused via artist.EvaluateMBIDCandidate, not re-implemented here. A
+		// "first result that happens to carry an MBID" pick (the prior behavior)
+		// read no score at all and was weaker than that fixer's own floor.
+		best, runnerUp := artist.BestMBIDCandidates(results)
+		if rej := artist.EvaluateMBIDCandidate(a.Name, best, runnerUp); rej != nil {
+			e.logger.Info("declined to self-heal MusicBrainz ID for image fetch",
+				slog.String("artist", a.Name),
+				slog.String("reason", rej.Reason))
+			return BulkItemSkipped, fmt.Sprintf("no MBID: declined to adopt one from search: %s", rej.Reason)
 		}
-		if a.MusicBrainzID == "" {
-			return BulkItemSkipped, "no MBID found from providers"
+
+		mbid := strings.ToLower(strings.TrimSpace(best.MusicBrainzID))
+		a.MusicBrainzID = mbid
+		if a.MetadataSources == nil {
+			a.MetadataSources = make(map[string]string)
 		}
+		a.MetadataSources[artist.SourceKeyMusicBrainzID] = artist.SourceMachinePicked
+		if err := e.artistService.Update(ctx, a); err != nil {
+			return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
+		}
+		e.recordBulkMBIDHistory(ctx, a.ID, mbid)
 	}
 
 	needed := make(map[string]bool)
