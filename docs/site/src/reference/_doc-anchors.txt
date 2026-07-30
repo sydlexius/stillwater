@@ -507,7 +507,7 @@ how-to/view-reports#additional-reports
 how-to/view-reports#back-out-polluted-backdrops
 how-to/view-reports#backdrop-duplicates
 how-to/view-reports#background-appearance
-how-to/view-reports#blast-radius-api-and-csv
+how-to/view-reports#blast-radius
 how-to/view-reports#collapse-exact-duplicates
 how-to/view-reports#compliance-overview
 how-to/view-reports#cross-artist-backdrop-pollution

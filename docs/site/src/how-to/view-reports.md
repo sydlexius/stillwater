@@ -43,9 +43,9 @@ Shows field-coverage percentages across your entire library and a table of the t
 
 Lists every configured rule with its pass count, evaluation count, and pass percentage for the current library state. Pass rates are color-coded: green at 80% or above, amber between 50-79%, and red below 50%.
 
-## Blast radius (API and CSV)
+## Blast radius
 
-The blast-radius report answers "which values that I set did an automated change replace or clear". It is available through the API and as a CSV download; a pane in the Reports workspace is coming in a future release.
+The blast-radius report answers "which values that I set did an automated change replace or clear". It is available in the Reports workspace pane, through the API, and as a CSV download.
 
 Request it at `/api/v1/reports/blast-radius`, or download `/api/v1/reports/blast-radius/export` for a spreadsheet.
 
