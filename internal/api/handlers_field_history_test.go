@@ -54,6 +54,17 @@ func (alwaysErrHistoryRepo) CountBlastRadius(_ context.Context, _ artist.BlastRa
 	return artist.BlastRadiusCounts{}, errors.New("simulated history store failure")
 }
 
+// The rule-written-MBID report (#2809) fails the same way, so a handler wired
+// to this stub exercises its error path rather than reading an empty-but-
+// successful report as "no artists were misidentified".
+func (alwaysErrHistoryRepo) ListNFOMBIDWrites(_ context.Context, _ artist.NFOMBIDFilter) ([]artist.NFOMBIDWriteRow, error) {
+	return nil, errors.New("simulated history store failure")
+}
+
+func (alwaysErrHistoryRepo) CountNFOMBIDWrites(_ context.Context, _ artist.NFOMBIDFilter) (artist.NFOMBIDCounts, error) {
+	return artist.NFOMBIDCounts{}, errors.New("simulated history store failure")
+}
+
 // testRouterWithErrHistoryService creates a Router wired with a HistoryService
 // whose ListGlobal always errors. This is used to verify that handleFieldEdit
 // degrades gracefully when the history pre-load step fails.

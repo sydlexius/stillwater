@@ -668,6 +668,147 @@ func classifyBlastAttribution(source string) string {
 	return BlastAttributionUnknown
 }
 
+// nfoMBIDFrom is the shared FROM/WHERE of both rule-written-MBID queries
+// (issue #2809). Formatted with one extra WHERE fragment by the callers.
+//
+// The LEFT JOIN is what makes a row actionable. metadata_changes only holds the
+// audit text the fixer wrote at the time; the ID the artist actually carries
+// today lives in artist_provider_ids. LEFT rather than INNER because an artist
+// whose MusicBrainz ID has since been cleared must still be listed -- an INNER
+// join would silently drop exactly the artists somebody already noticed were
+// wrong, which is the "unknown rendered as clean" failure this report guards
+// against.
+//
+// The provider filter sits in the JOIN condition, not in a WHERE clause. Moved
+// to WHERE it would turn the outer join back into an inner one for every artist
+// with no MusicBrainz row.
+//
+// No ROW_NUMBER windowing here on purpose: every write is reported, not just the
+// most recent per artist. See the comment in nfo_mbid_report.go.
+const nfoMBIDFrom = `
+	FROM metadata_changes mc
+	JOIN artists a ON a.id = mc.artist_id
+	LEFT JOIN artist_provider_ids p
+		ON p.artist_id = mc.artist_id AND p.provider = 'musicbrainz'
+	WHERE mc.source = ?
+	%s`
+
+// nfoMBIDWhere builds the one optional narrowing fragment, appended to
+// nfoMBIDFrom. Values are bound, never interpolated.
+func nfoMBIDWhere(f NFOMBIDFilter) (string, []any) {
+	if f.ArtistID == "" {
+		return "", nil
+	}
+	return "AND mc.artist_id = ?", []any{f.ArtistID}
+}
+
+// nfoMBIDOrderBy maps a validated sort key to a SQL ORDER BY clause. Both keys
+// carry a deterministic tiebreaker (mc.id) so a page boundary cannot show the
+// same row twice or skip one when two rows share a timestamp or an artist name.
+func nfoMBIDOrderBy(sortKey, order string) string {
+	dir := "DESC"
+	if order == "asc" {
+		dir = "ASC"
+	}
+	if sortKey == NFOMBIDSortArtistName {
+		return "ORDER BY a.name " + dir + ", mc.created_at DESC, mc.id DESC"
+	}
+	// created_at is stored RFC3339 (migration 004 normalized the legacy
+	// space-separated rows), so a plain TEXT sort is chronological.
+	return "ORDER BY mc.created_at " + dir + ", mc.id DESC"
+}
+
+// ListNFOMBIDWrites returns every MusicBrainz ID the nfo_has_mbid rule fixer
+// wrote, newest first by default, paginated.
+//
+// One row per write, not per artist. Read-only.
+func (r *sqliteHistoryRepo) ListNFOMBIDWrites(ctx context.Context, f NFOMBIDFilter) ([]NFOMBIDWriteRow, error) {
+	f.Validate()
+
+	extraWhere, extraArgs := nfoMBIDWhere(f)
+	//nolint:gosec // G202: every concatenated fragment is server-built.
+	// extraWhere emits only a "?" placeholder (its value is bound below) and the
+	// order clause is switch-selected from the validated Sort/Order constants, so
+	// no caller-supplied text reaches the string.
+	q := `
+		SELECT mc.id, mc.artist_id, a.name, mc.new_value, mc.source, mc.created_at,
+		       p.provider_id` +
+		fmt.Sprintf(nfoMBIDFrom, extraWhere) + `
+		` + nfoMBIDOrderBy(f.Sort, f.Order) + `
+		LIMIT ? OFFSET ?`
+
+	args := make([]any, 0, len(extraArgs)+3)
+	args = append(args, NFOMBIDReportSource)
+	args = append(args, extraArgs...)
+	args = append(args, f.Limit, f.Offset)
+
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying rule-written MusicBrainz ID rows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]NFOMBIDWriteRow, 0)
+	for rows.Next() {
+		var row NFOMBIDWriteRow
+		var createdAtStr string
+		// Nullable because of the LEFT JOIN: no MusicBrainz row for this artist
+		// yields NULL, which is a different fact from an empty ID and is kept
+		// distinct all the way out to the caller.
+		var currentMBID sql.NullString
+		if err := rows.Scan(
+			&row.ID, &row.ArtistID, &row.ArtistName,
+			&row.Message, &row.Source, &createdAtStr, &currentMBID,
+		); err != nil {
+			return nil, fmt.Errorf("scanning rule-written MusicBrainz ID row: %w", err)
+		}
+		row.CreatedAt = parseHistoryTimestamp(row.ID, createdAtStr)
+		row.CurrentMusicBrainzID = currentMBID.String
+		row.HasCurrentMusicBrainzID = currentMBID.Valid
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rule-written MusicBrainz ID rows: %w", err)
+	}
+	return out, nil
+}
+
+// CountNFOMBIDWrites counts the matching writes and the distinct artists they
+// affect.
+//
+// One scan producing both numbers rather than two queries: two scans could
+// return figures that disagree with each other, and a report whose headline
+// numbers contradict its own row list is worse than no report.
+//
+// The counts ignore Limit/Offset (they describe the whole result set, not the
+// page) and are a FLOOR, never a census -- see NFOMBIDCounts.
+func (r *sqliteHistoryRepo) CountNFOMBIDWrites(ctx context.Context, f NFOMBIDFilter) (NFOMBIDCounts, error) {
+	f.Validate()
+
+	extraWhere, extraArgs := nfoMBIDWhere(f)
+	// No LEFT JOIN fan-out risk: artist_provider_ids is keyed on
+	// (artist_id, provider), so the join contributes at most one row per change
+	// and COUNT(*) still counts writes. The same FROM is reused deliberately so
+	// the counts cannot be computed over a different row set than the list.
+	//
+	// extraWhere emits only a "?" placeholder, so no caller-supplied text reaches
+	// the query string. (No gosec suppression needed here: unlike the list query
+	// this one concatenates no order clause, so G202 does not fire.)
+	q := `SELECT COUNT(*), COUNT(DISTINCT mc.artist_id)` +
+		fmt.Sprintf(nfoMBIDFrom, extraWhere)
+
+	args := make([]any, 0, len(extraArgs)+1)
+	args = append(args, NFOMBIDReportSource)
+	args = append(args, extraArgs...)
+
+	var counts NFOMBIDCounts
+	if err := r.db.QueryRowContext(ctx, q, args...).Scan(&counts.Writes, &counts.Artists); err != nil {
+		return NFOMBIDCounts{}, fmt.Errorf("counting rule-written MusicBrainz ID rows: %w", err)
+	}
+	counts.Total = counts.Writes
+	return counts, nil
+}
+
 // parseHistoryTimestamp parses a created_at string from the metadata_changes
 // table, trying RFC3339 first, then SQLite datetime format. Falls back to
 // current time with a warning if both fail.

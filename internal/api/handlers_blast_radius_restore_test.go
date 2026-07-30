@@ -1280,6 +1280,20 @@ func (l listBlastErrHistoryRepo) CountBlastRadius(ctx context.Context, f artist.
 	return l.delegate.CountBlastRadius(ctx, f)
 }
 
+// The rule-written-MBID methods delegate unchanged: this stub exists to force
+// the blast-radius list query to fail, and #2809's report is not under test here.
+func (l listBlastErrHistoryRepo) ListNFOMBIDWrites(ctx context.Context, f artist.NFOMBIDFilter) (
+	[]artist.NFOMBIDWriteRow, error,
+) {
+	return l.delegate.ListNFOMBIDWrites(ctx, f)
+}
+
+func (l listBlastErrHistoryRepo) CountNFOMBIDWrites(ctx context.Context, f artist.NFOMBIDFilter) (
+	artist.NFOMBIDCounts, error,
+) {
+	return l.delegate.CountNFOMBIDWrites(ctx, f)
+}
+
 // TestBlastRestore_EligibilityQueryErrorRefuses pins the documented safety
 // property of isCurrentBlastRow: when the eligibility query cannot be answered,
 // the row is REFUSED, never written.

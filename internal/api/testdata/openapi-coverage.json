@@ -896,6 +896,20 @@
     "covered": true
   },
   {
+    "operationId": "getReportNFOHasMBID",
+    "method": "GET",
+    "path": "/reports/nfo-has-mbid",
+    "handler": "handleReportNFOHasMBID",
+    "covered": true
+  },
+  {
+    "operationId": "getReportNFOHasMBIDExport",
+    "method": "GET",
+    "path": "/reports/nfo-has-mbid/export",
+    "handler": "handleReportNFOHasMBIDExport",
+    "covered": true
+  },
+  {
     "operationId": "getReportRulePassRates",
     "method": "GET",
     "path": "/reports/rule-pass-rates",

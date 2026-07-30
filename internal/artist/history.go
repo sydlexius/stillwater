@@ -76,6 +76,14 @@ type HistoryRepository interface {
 	// CountBlastRadius returns how the matching rows split by attribution.
 	// Both bucket counts ignore filter.Attribution so neither can be hidden.
 	CountBlastRadius(ctx context.Context, filter BlastRadiusFilter) (BlastRadiusCounts, error)
+
+	// ListNFOMBIDWrites returns every MusicBrainz ID the nfo_has_mbid rule
+	// fixer wrote, one row per write. Read-only.
+	ListNFOMBIDWrites(ctx context.Context, filter NFOMBIDFilter) ([]NFOMBIDWriteRow, error)
+
+	// CountNFOMBIDWrites counts those writes and the distinct artists they
+	// affect. Both figures are a floor; see NFOMBIDCounts.
+	CountNFOMBIDWrites(ctx context.Context, filter NFOMBIDFilter) (NFOMBIDCounts, error)
 }
 
 // HistoryService provides metadata change tracking for artists.
@@ -205,6 +213,26 @@ func (h *HistoryService) ListBlastRadius(ctx context.Context, filter BlastRadius
 func (h *HistoryService) CountBlastRadius(ctx context.Context, filter BlastRadiusFilter) (BlastRadiusCounts, error) {
 	filter.Validate()
 	return h.repo.CountBlastRadius(ctx, filter)
+}
+
+// ListNFOMBIDWrites returns every MusicBrainz ID the nfo_has_mbid rule fixer
+// wrote, so an operator can review artists whose ID a rule guessed. One row per
+// write, newest first by default. Read-only; writes nothing and validates no ID.
+//
+// Coverage is bounded to that one code path. Callers rendering this must state
+// so, because other writers assign a MusicBrainz ID without recording anything
+// and an artist's absence here is not evidence its ID is correct. The caveat
+// texts live alongside the types in nfo_mbid_report.go.
+func (h *HistoryService) ListNFOMBIDWrites(ctx context.Context, filter NFOMBIDFilter) ([]NFOMBIDWriteRow, error) {
+	filter.Validate()
+	return h.repo.ListNFOMBIDWrites(ctx, filter)
+}
+
+// CountNFOMBIDWrites returns the number of such writes and the number of
+// distinct artists they affect. Both are a floor, not a census.
+func (h *HistoryService) CountNFOMBIDWrites(ctx context.Context, filter NFOMBIDFilter) (NFOMBIDCounts, error) {
+	filter.Validate()
+	return h.repo.CountNFOMBIDWrites(ctx, filter)
 }
 
 // IsTrackableField reports whether the given field name is tracked by the

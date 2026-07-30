@@ -11527,6 +11527,229 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /reports/nfo-has-mbid:
+    get:
+      tags: [Reports]
+      summary: MusicBrainz IDs the automatic NFO rule fix assigned
+      operationId: getReportNFOHasMBID
+      description: >
+        Lists every artist whose MusicBrainz ID was written by the automatic NFO
+        rule fix, so an operator can review IDs a rule guessed. One row per
+        write, not per artist: a rule that wrote an ID twice for the same artist
+        produces two rows, because each one is a separate decision worth seeing.
+
+
+        Read-only. This endpoint writes nothing, contacts MusicBrainz for
+        nothing, validates no ID, and reverts nothing.
+
+
+        FOUR LIMITS, ALL RETURNED IN THE RESPONSE UNDER caveats, AND ALL
+        PERMANENT.
+
+
+        Scope. Only the automatic NFO rule fix records a change. Other parts of
+        Stillwater also assign a MusicBrainz ID without recording anything: the
+        automatic match tiers of the Identify flow, and the bulk rule run. IDs
+        assigned that way leave no record at all and can never appear here. This
+        list is therefore not the complete set of machine-assigned IDs, and an
+        artist's absence from it is not evidence that a person chose its ID.
+
+
+        Floor. Every count is a minimum. Rows can be missing for reasons the
+        report cannot detect, so the real number of affected artists is at least
+        as large as the number reported and may be larger.
+
+
+        Retention. Change history is kept until an artist is deleted or merged
+        into another; either removes that artist's history along with it. A known
+        side effect of these misidentifications was duplicate artists, so some
+        affected artists have probably already been merged away and cannot be
+        counted at all.
+
+
+        Not confirmed. An artist not listed here has not been confirmed by
+        anyone. Stillwater does not yet record operator confirmation of a
+        MusicBrainz ID.
+
+
+        This fix only ran on artists that had no MusicBrainz ID, so it never
+        overwrote an ID that had been set; every row is a blank field filled in
+        with an ID that may be wrong. There is deliberately no previous-value
+        field for that reason.
+
+
+        Unrecognized sort or order values fall back to the defaults and return
+        the unnarrowed report rather than an error, so a malformed parameter
+        cannot hide affected artists.
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          description: Defaults to the caller's per-user page-size preference.
+          schema: {type: integer, minimum: 1, maximum: 500}
+        - name: artist_id
+          in: query
+          description: Restrict to a single artist.
+          schema: {type: string}
+        - name: sort
+          in: query
+          schema: {type: string, enum: [created_at, artist_name], default: created_at}
+        - name: order
+          in: query
+          schema: {type: string, enum: [asc, desc], default: desc}
+      responses:
+        "200":
+          description: The report and its caveats. rows is always present and is an empty array when nothing matches; caveats is present whether or not there are rows, because an empty list with no statement of what the report cannot see would read as a clean bill of health.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows, counts, page, page_size, total, caveats]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, artist_id, artist_name, message, source, created_at, current_musicbrainz_id, has_current_musicbrainz_id]
+                      properties:
+                        id:
+                          type: string
+                        artist_id:
+                          type: string
+                        artist_name:
+                          type: string
+                        message:
+                          type: string
+                          description: >
+                            The note the rule fix recorded at the time, shown exactly as
+                            written and never parsed. Two wordings exist: older entries
+                            record only the ID and the artist name, newer ones also record
+                            the matched name, where the match came from, the confidence
+                            score, and the runner-up. Act on current_musicbrainz_id, not on
+                            this text.
+                        source:
+                          type: string
+                          description: The recorded source, always the automatic NFO rule fix. Carried so an exported row is self-describing.
+                        created_at:
+                          type: string
+                          format: date-time
+                        current_musicbrainz_id:
+                          type: string
+                          description: The MusicBrainz ID the artist carries now, which may differ from the one this write assigned. Empty string when none is recorded.
+                        has_current_musicbrainz_id:
+                          type: boolean
+                          description: >
+                            False when the artist has no MusicBrainz ID recorded today, which
+                            is a different fact from an ID that is the empty string. Render the
+                            false case as "none recorded", never as a blank that reads like a
+                            clean value.
+                  counts:
+                    type: object
+                    required: [writes, artists, total]
+                    properties:
+                      writes:
+                        type: integer
+                        description: Individual ID assignments. An artist written twice contributes two. A minimum, not a census.
+                      artists:
+                        type: integer
+                        description: Distinct artists with at least one such write. A minimum, not a census.
+                      total:
+                        type: integer
+                        description: Mirrors writes, under the name pagination uses.
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+                  total:
+                    type: integer
+                    description: Mirrors counts.total.
+                  caveats:
+                    type: object
+                    description: The limits on what this report can see, in operator-facing prose. Always present.
+                    required: [scope, floor, retention, no_prior_value, not_confirmed, message_wording]
+                    properties:
+                      scope:
+                        type: string
+                        description: Names the one path this report can see and states that the others are invisible.
+                      floor:
+                        type: string
+                        description: States that the counts are a minimum.
+                      retention:
+                        type: string
+                        description: States how rows disappear.
+                      no_prior_value:
+                        type: string
+                        description: States that this fix filled a blank rather than overwriting an ID.
+                      not_confirmed:
+                        type: string
+                        description: States that an unlisted artist has not been confirmed by anyone.
+                      message_wording:
+                        type: string
+                        description: Explains why the recorded note varies between rows.
+        "503":
+          description: The history store is unavailable. Returned rather than an empty report, so an unreachable store is never mistaken for an absence of rule-written IDs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /reports/nfo-has-mbid/export:
+    get:
+      tags: [Reports]
+      summary: Download the rule-written MusicBrainz ID report as CSV
+      operationId: getReportNFOHasMBIDExport
+      description: >
+        Streams the same report as CSV, honoring the same filter and sort
+        parameters. page and page_size are ignored: an export always walks the
+        whole filtered result set up to the cap.
+        Trailing note rows restate every caveat the JSON response carries, so a
+        spreadsheet detached from the application still says that it covers the
+        automatic NFO rule fix only, that its counts are a minimum, that history
+        is lost when an artist is deleted or merged, and that an unlisted artist
+        has not been confirmed by anyone.
+        An artist with no MusicBrainz ID recorded today is written as
+        "none recorded" rather than left blank, because a blank cell reads as
+        nothing to see. Cell values that begin with a spreadsheet formula trigger
+        are prefixed with an apostrophe.
+        Capped at 10000 rows; a truncated export says so in a note row.
+      parameters:
+        - name: artist_id
+          in: query
+          schema: {type: string}
+        - name: sort
+          in: query
+          schema: {type: string, enum: [created_at, artist_name], default: created_at}
+        - name: order
+          in: query
+          schema: {type: string, enum: [asc, desc], default: desc}
+      responses:
+        "200":
+          description: CSV attachment.
+          content:
+            text/csv:
+              schema:
+                type: string
+        "503":
+          description: The history store is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /reports/blast-radius/restore:
     post:
       tags: [Reports]

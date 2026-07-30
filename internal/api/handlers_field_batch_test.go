@@ -52,6 +52,14 @@ func (s *spyHistoryRepo) CountBlastRadius(ctx context.Context, f artist.BlastRad
 	return s.delegate.CountBlastRadius(ctx, f)
 }
 
+func (s *spyHistoryRepo) ListNFOMBIDWrites(ctx context.Context, f artist.NFOMBIDFilter) ([]artist.NFOMBIDWriteRow, error) {
+	return s.delegate.ListNFOMBIDWrites(ctx, f)
+}
+
+func (s *spyHistoryRepo) CountNFOMBIDWrites(ctx context.Context, f artist.NFOMBIDFilter) (artist.NFOMBIDCounts, error) {
+	return s.delegate.CountNFOMBIDWrites(ctx, f)
+}
+
 func (s *spyHistoryRepo) ListGlobal(ctx context.Context, filter artist.GlobalHistoryFilter) ([]artist.MetadataChangeWithArtist, int, error) {
 	s.listGlobalCalls.Add(1)
 	return s.delegate.ListGlobal(ctx, filter)
