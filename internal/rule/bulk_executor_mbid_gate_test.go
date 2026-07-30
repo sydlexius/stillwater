@@ -264,6 +264,46 @@ func TestFetchImages_MBIDGate_AdoptsConfidentMatch(t *testing.T) {
 	}
 }
 
+// TestFetchImages_MBIDGate_NormalizesCaseOnPersist pins the
+// strings.ToLower(strings.TrimSpace(...)) normalization at the adopt site: the
+// PERSISTED value (re-read via GetByID, not the in-memory struct, so a bug
+// that normalizes only the local variable cannot pass vacuously) must be
+// lowercase even when the provider returned uppercase hex.
+//
+// This does NOT exercise the TrimSpace half: artist.IsValidMBID requires an
+// exact 36-character UUID, so a value with surrounding whitespace fails that
+// check inside artist.BestMBIDCandidates before ever becoming a candidate --
+// it cannot reach the normalization call through this path at all (the same
+// fact fixers.go's own fixMBID documents at its equivalent trim site). Only
+// the case-folding half is reachable and is what this test pins.
+func TestFetchImages_MBIDGate_NormalizesCaseOnPersist(t *testing.T) {
+	upperMBID := strings.ToUpper(bulkMBIDConfident)
+	if !artist.IsValidMBID(upperMBID) {
+		t.Fatalf("fixture precondition: uppercase fixture MBID must still be syntactically valid")
+	}
+	if upperMBID == bulkMBIDConfident {
+		t.Fatalf("fixture precondition: uppercasing must actually change the fixture (it contains hex letters)")
+	}
+
+	results := []provider.ArtistSearchResult{
+		{Name: "Radiohead", MusicBrainzID: upperMBID, Score: 100, Source: "musicbrainz"},
+	}
+	e, artistSvc, _, a := newBulkGateExecutor(t, results)
+
+	_, _ = e.fetchImages(context.Background(), a, BulkModeYOLO, nil)
+
+	reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("re-reading artist: %v", err)
+	}
+	want := strings.ToLower(bulkMBIDConfident)
+	if reloaded.MusicBrainzID != want {
+		t.Fatalf("persisted a.MusicBrainzID = %q, want %q (lowercased): "+
+			"MusicBrainz IDs are case-sensitive lookup keys elsewhere in the tree",
+			reloaded.MusicBrainzID, want)
+	}
+}
+
 // failingRecordHistoryRepo is an artist.HistoryRepository whose Record always
 // fails. Every other method is unimplemented (nil embed) because
 // recordBulkMBIDHistory's only call into HistoryRepository is Record.
@@ -362,10 +402,27 @@ func TestFetchImages_MBIDGate_UpdateErrorSurfaces(t *testing.T) {
 		{Name: "Radiohead", MusicBrainzID: bulkMBIDConfident, Score: 100, Source: "musicbrainz"},
 	}
 	orch := newBulkGateOrchestrator(t, results)
+	// A REAL history service over the same test DB, so a wrong ordering
+	// (recording the history row BEFORE Update, rather than after) can
+	// actually leave a row behind for this test to catch. A nil history
+	// service would make TestFetchImages_MBIDGate_UpdateErrorSurfaces blind to
+	// that ordering bug: recordBulkMBIDHistory's own nil guard would no-op
+	// either way, so the ordering mistake and the correct ordering would look
+	// identical without a real service wired in.
+	historySvc := artist.NewHistoryService(db)
 	e := &BulkExecutor{
 		artistService: artistSvc,
 		orchestrator:  orch,
 		logger:        testLogger(),
+	}
+	e.SetHistoryService(historySvc)
+
+	// Precondition: the history service is actually installed. Without this,
+	// the "no history row" assertion below would pass vacuously against an
+	// implementation that never wired history at all, which proves nothing
+	// about write ordering.
+	if e.getHistoryService() == nil {
+		t.Fatal("fixture precondition: history service was not installed on the executor")
 	}
 
 	status, msg := e.fetchImages(context.Background(), a, BulkModeYOLO, nil)
@@ -375,5 +432,19 @@ func TestFetchImages_MBIDGate_UpdateErrorSurfaces(t *testing.T) {
 	}
 	if !strings.Contains(msg, "update failed") {
 		t.Errorf("message %q does not surface the update failure", msg)
+	}
+
+	// The load-bearing claim: when the identity write FAILS, no audit row may
+	// exist claiming an MBID was assigned. A history-before-Update ordering
+	// bug would leave exactly such a lying row behind.
+	changes, _, err := historySvc.List(context.Background(), a.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("listing history: %v", err)
+	}
+	for _, c := range changes {
+		if c.Field == "musicbrainz_id" {
+			t.Errorf("unexpected musicbrainz_id history row after a failed Update: %+v -- "+
+				"the audit trail must never claim an assignment that did not actually persist", c)
+		}
 	}
 }
