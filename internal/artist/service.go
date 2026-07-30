@@ -1318,6 +1318,28 @@ func (s *Service) UpdateProviderField(ctx context.Context, id, field, value stri
 	// Apply the field update to the in-memory struct.
 	applyProviderFieldToArtist(a, providerName, value)
 
+	// Stamp operator-confirmed provenance on a MusicBrainz ID a human typed
+	// here. This is the field-edit API behind the operator-facing UI, so an ID
+	// arriving through it is by definition one a person chose.
+	//
+	// Until now nothing in the tree wrote SourceOperatorConfirmed at all, which
+	// made the machine-picked marker only half a signal: an unmarked ID could
+	// equally be operator-set, pre-marker, or platform-imported. Recording the
+	// operator side is what lets a later re-review query separate the two going
+	// forward. It does NOT make unmarked mean machine-picked -- every ID written
+	// before this change is still unmarked, so unmarked must keep being read as
+	// UNKNOWN and protected as operator-set.
+	//
+	// Only on a non-empty value: clearing the field (ClearProviderField routes
+	// here with "") must not leave a provenance marker describing an ID that is
+	// no longer there.
+	if providerName == "musicbrainz" && value != "" {
+		if a.MetadataSources == nil {
+			a.MetadataSources = make(map[string]string)
+		}
+		a.MetadataSources[SourceKeyMusicBrainzID] = SourceOperatorConfirmed
+	}
+
 	return s.Update(ctx, a)
 }
 
