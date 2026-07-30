@@ -3,6 +3,8 @@ package templates
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
@@ -24,6 +26,8 @@ type ReportsPageData struct {
 	MetadataReport *artist.MetadataCompletenessReport
 	// RulePassRates is populated when ActiveReport=="rule-pass-rates".
 	RulePassRates []RulePassRateData
+	// BlastRadiusData is populated when ActiveReport=="blast-radius".
+	BlastRadiusData BlastRadiusData
 }
 
 // repBuiltinReport is a single entry in the reports rail.
@@ -34,10 +38,14 @@ type repBuiltinReport struct {
 }
 
 // repBuiltinReports is the ordered list of built-in reports shown in the rail.
-// IDs match the {name} path segment in /reports/{name}. The first four
+// IDs match the {name} path segment in /reports/{name}. The first five
 // entries have live right-panes; the remaining six render a placeholder.
+// blast-radius is placed second, ahead of the metadata/rule-pass-rate
+// reports, because it is a data-loss report and should not sit below
+// lower-stakes ones (#2750).
 var repBuiltinReports = []repBuiltinReport{
 	{"compliance", "reports.compliance.label", "reports.compliance.desc"},
+	{"blast-radius", "reports.blast_radius.label", "reports.blast_radius.desc"},
 	{"health", "reports.health_report.label", "reports.health_report.desc"},
 	{"metadata-completeness", "reports.metadata_completeness.label", "reports.metadata_completeness.desc"},
 	{"rule-pass-rates", "reports.rule_pass_rates.label", "reports.rule_pass_rates.desc"},
@@ -143,6 +151,8 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 					</button>
 					if data.ActiveReport == "compliance" {
 						@repPaneCompliance(assets, data.ComplianceData)
+					} else if data.ActiveReport == "blast-radius" {
+						@repPaneBlastRadius(data.BlastRadiusData)
 					} else if data.ActiveReport == "health" {
 						@repPaneHealth(data.HealthData)
 					} else if data.ActiveReport == "metadata-completeness" {
@@ -498,6 +508,392 @@ templ repPaneRulePassRates(rates []RulePassRateData) {
 			</ul>
 		}
 	</div>
+}
+
+// BlastRadiusData is the view model for the blast-radius report pane
+// (issue #2750). It is assembled by loadReportsBlastRadiusData, which calls
+// the same r.loadBlastRadius the JSON report and CSV export use, so the
+// three surfaces cannot disagree about what was destroyed.
+type BlastRadiusData struct {
+	Rows       []artist.BlastRadiusRow
+	Counts     artist.BlastRadiusCounts
+	Pagination components.PaginationData
+	// CutoffDate is the date scan-driven changes started recording
+	// source="scan" distinctly (artist.AttributionCutoffDate). Rows before
+	// it fall through to attribution=unknown. Informational prose only.
+	CutoffDate string
+	// CoveredFields and UncoveredFields are computed from
+	// artist.TrackableFields() at request time (blastRadiusCoverage), never
+	// hardcoded here, so the caveat cannot drift from the fields the report
+	// can actually see.
+	CoveredFields   []string
+	UncoveredFields []string
+	// Class, Attribution, Field and ArtistID mirror the active filter so the
+	// pane can reflect current narrowing back to the operator.
+	Class       string
+	Attribution string
+	Field       string
+	ArtistID    string
+	BasePath    string
+}
+
+// blastRadiusRowClassLabel and blastRadiusRowAttributionLabel key i18n
+// lookups for the row-level class/attribution badges.
+func blastRadiusRowClassLabel(ctx context.Context, class string) string {
+	if class == artist.BlastClassReplaced {
+		return t(ctx, "reports.blast_radius.class_replaced")
+	}
+	return t(ctx, "reports.blast_radius.class_blanked")
+}
+
+func blastRadiusRowAttributionLabel(ctx context.Context, attribution string) string {
+	if attribution == artist.BlastAttributionAutomated {
+		return t(ctx, "reports.blast_radius.attribution_automated")
+	}
+	return t(ctx, "reports.blast_radius.attribution_unknown")
+}
+
+// repPaneBlastRadius renders the right pane for the blast-radius report
+// (issue #2750): which fields an automated writer blanked or overwrote, and
+// per-row/bulk restore. Modeled on repPaneCompliance; reuses the
+// .bulk-select checkbox class, toggleSelectAll/updateBulkBar/bulkAction, and
+// the #bulk-action-bar shape from the compliance pane rather than forking
+// them.
+//
+// The unknown-attribution count is always rendered next to the automated
+// count (never hidden by a filter -- BlastRadiusCounts is computed without
+// applying the attribution narrowing), and the coverage caveat is generated
+// from data.CoveredFields/UncoveredFields, which the loader derives from
+// artist.TrackableFields() at request time rather than a value baked into
+// this template.
+templ repPaneBlastRadius(data BlastRadiusData) {
+	<div class="sw-rep-pane-header">
+		<div class="sw-rep-pane-title-block">
+			<p class="sw-rep-pane-title">{ t(ctx, "reports.blast_radius.label") }</p>
+			<p class="sw-rep-pane-desc">{ t(ctx, "reports.blast_radius.desc") }</p>
+		</div>
+	</div>
+	<!-- Attribution + coverage caveat band. Both counts are always shown side
+	     by side (never just the automated headline), and the field lists are
+	     rendered from data.CoveredFields/UncoveredFields, which the loader
+	     computes from artist.TrackableFields() at request time. -->
+	<div class="sw-rep-blast-caveat" role="note">
+		<p class="sw-rep-blast-caveat-line">
+			{ tf(ctx, "reports.blast_radius.attribution_summary",
+				data.Counts.Automated, data.Counts.Unknown, data.CutoffDate) }
+		</p>
+		<p class="sw-rep-blast-caveat-line">
+			{ tf(ctx, "reports.blast_radius.coverage_covered", strings.Join(data.CoveredFields, ", ")) }
+		</p>
+		if len(data.UncoveredFields) > 0 {
+			<p class="sw-rep-blast-caveat-line">
+				{ tf(ctx, "reports.blast_radius.coverage_uncovered", strings.Join(data.UncoveredFields, ", ")) }
+			</p>
+		}
+		<p class="sw-rep-blast-caveat-line">{ t(ctx, "reports.blast_radius.retention_note") }</p>
+	</div>
+	<div class="overflow-x-auto" id="blast-radius-results">
+		<table id="blast-radius-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+			<thead class="bg-gray-50 dark:bg-gray-800">
+				<tr>
+					<th scope="col" class="px-4 py-3 text-center w-10">
+						<input
+							type="checkbox"
+							id="select-all"
+							onchange="toggleSelectAll(this)"
+							class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+							aria-label={ t(ctx, "report.select_all_rows") }
+						/>
+						<span class="sr-only">{ t(ctx, "report.select_column") }</span>
+					</th>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.column_artist") }</th>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_field") }</th>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_change") }</th>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_class") }</th>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_attribution") }</th>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_when") }</th>
+					<th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_restore") }</th>
+				</tr>
+			</thead>
+			<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+				if len(data.Rows) == 0 {
+					<tr>
+						<td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+							{ t(ctx, "reports.blast_radius.empty") }
+						</td>
+					</tr>
+				}
+				for _, row := range data.Rows {
+					@blastRadiusRow(row)
+				}
+			</tbody>
+		</table>
+	</div>
+	@blastRadiusPagination(data.Pagination)
+	<!-- Bulk action bar: reuses the #bulk-action-bar shape from the
+	     compliance pane. bulkAction is not reused here (it targets the
+	     compliance bulk-fetch endpoints); blastRestoreSelected posts to the
+	     blast-radius restore endpoint instead. -->
+	<div
+		id="bulk-action-bar"
+		data-label-n-selected={ t(ctx, "report.n_selected") }
+		class="fixed bottom-0 left-0 right-0 z-30 hidden bg-gray-900 dark:bg-gray-800 border-t border-gray-700 px-6 py-3"
+	>
+		<div class="max-w-7xl mx-auto flex items-center justify-between">
+			<span
+				id="bulk-count"
+				class="text-sm text-white"
+				data-zero-text={ t(ctx, "report.zero_selected") }
+				data-one-text={ t(ctx, "report.one_selected") }
+				data-many-template={ t(ctx, "report.n_selected") }
+			>{ t(ctx, "report.zero_selected") }</span>
+			<div class="flex items-center gap-3">
+				<button
+					type="button"
+					onclick="blastRestoreSelected()"
+					id="blast-preview-btn"
+					class="inline-flex items-center gap-1.5 rounded-md border border-white/25 px-3 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors"
+				>{ t(ctx, "reports.blast_radius.preview_selected") }</button>
+				<button
+					type="button"
+					onclick="clearBulkSelection()"
+					class="inline-flex items-center rounded-md bg-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-600"
+				>{ t(ctx, "common.cancel") }</button>
+			</div>
+		</div>
+	</div>
+	<!-- i18n strings for blastRadiusScript. JS has no access to the request
+	     translator, so every user-facing string the script renders (toasts,
+	     confirm-dialog copy, plan summaries) is passed through this hidden
+	     element rather than hardcoded in the script block. -->
+	<div
+		id="blast-radius-i18n"
+		hidden
+		data-restore-failed={ t(ctx, "reports.blast_radius.js.restore_failed") }
+		data-restore-conflict={ t(ctx, "reports.blast_radius.js.restore_conflict") }
+		data-network-error={ t(ctx, "reports.blast_radius.js.network_error") }
+		data-plan-summary={ t(ctx, "reports.blast_radius.js.plan_summary") }
+		data-plan-refused={ t(ctx, "reports.blast_radius.js.plan_refused") }
+		data-restored-count={ t(ctx, "reports.blast_radius.js.restored_count") }
+		data-confirm-title={ t(ctx, "reports.blast_radius.js.confirm_title") }
+		data-confirm-accept={ t(ctx, "reports.blast_radius.js.confirm_accept") }
+	></div>
+	@blastRadiusScript()
+}
+
+// blastRadiusRow renders one destroyed field: artist, field, old -> new
+// value, damage class, attribution (always shown, per row, so a bulk restore
+// over a mixed selection is a visibly informed choice), timestamp, and a
+// per-row restore action.
+templ blastRadiusRow(row artist.BlastRadiusRow) {
+	<tr id={ "blast-row-" + row.ID } class="hover:bg-gray-50 dark:hover:bg-gray-800">
+		<td class="px-4 py-3 text-center">
+			<input
+				type="checkbox"
+				class="bulk-select rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+				value={ row.ID }
+				onchange="updateBulkBar()"
+				aria-label={ tf(ctx, "report.select_row", row.ArtistName) }
+			/>
+		</td>
+		<td class="px-4 py-3 text-sm">{ row.ArtistName }</td>
+		<td class="px-4 py-3 text-sm">{ historyFieldLabel(ctx, row.Field) }</td>
+		<td class="px-4 py-3 text-sm">
+			if row.OldValue != "" {
+				<span class="line-through text-red-500 dark:text-red-400 mr-1">{ historyTruncate(row.OldValue, 60) }</span>
+			}
+			if row.NewValue != "" {
+				<span class="text-gray-600 dark:text-gray-400">{ historyTruncate(row.NewValue, 60) }</span>
+			} else {
+				<span class="text-gray-600 dark:text-gray-400 italic">{ t(ctx, "history.cleared") }</span>
+			}
+		</td>
+		<td class="px-4 py-3 text-sm">
+			<span class={ "inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(row.Class) }>
+				{ blastRadiusRowClassLabel(ctx, row.Class) }
+			</span>
+		</td>
+		<td class="px-4 py-3 text-sm">
+			<span
+				class={ "inline-block px-2 py-0.5 rounded-full text-xs",
+					templ.KV("bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300", row.Attribution == artist.BlastAttributionUnknown),
+					templ.KV("bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300", row.Attribution != artist.BlastAttributionUnknown) }
+				data-attribution={ row.Attribution }
+			>
+				{ blastRadiusRowAttributionLabel(ctx, row.Attribution) }
+			</span>
+		</td>
+		<td class="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+			<time datetime={ row.CreatedAt.Format(time.RFC3339) } title={ row.CreatedAt.Format("2006-01-02 15:04:05 UTC") }>
+				{ historyTimeAgo(ctx, row.CreatedAt) }
+			</time>
+		</td>
+		<td class="px-4 py-3 text-right">
+			<button
+				type="button"
+				onclick={ templ.JSFuncCall("blastRestoreRow", row.ID) }
+				class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				title={ t(ctx, "reports.blast_radius.restore_row_title") }
+			>
+				{ t(ctx, "reports.blast_radius.restore") }
+			</button>
+		</td>
+	</tr>
+}
+
+// blastRadiusPagination renders a plain (non-HTMX) prev/next pager for the
+// blast-radius pane. components.Pagination is not reused here: its links
+// carry hx-get/hx-target against a fragment endpoint, and /reports/blast-radius
+// has no such fragment handler (unlike /reports/compliance) -- reusing it
+// would target a swap that never responds. A full-page navigation link is
+// correct for this pane's current scope.
+templ blastRadiusPagination(p components.PaginationData) {
+	if p.TotalPages > 1 {
+		<nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3" aria-label={ t(ctx, "reports.page_title") }>
+			<p class="text-sm text-gray-700 dark:text-gray-300">
+				{ tf(ctx, "reports.blast_radius.page_of", p.CurrentPage, p.TotalPages) }
+			</p>
+			<div class="flex gap-2">
+				if p.CurrentPage > 1 {
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("/reports/blast-radius?page=%d", p.CurrentPage-1)) }
+						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+					>{ t(ctx, "common.previous") }</a>
+				}
+				if p.CurrentPage < p.TotalPages {
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("/reports/blast-radius?page=%d", p.CurrentPage+1)) }
+						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+					>{ t(ctx, "common.next") }</a>
+				}
+			</div>
+		</nav>
+	}
+}
+
+// blastRadiusScript renders the JS for the blast-radius pane: single-row and
+// bulk restore against POST {basePath}/api/v1/reports/blast-radius/restore.
+// Every request previews first (commit:false) and shows the plan in a
+// confirm dialog; only an explicit accept re-issues the request with
+// commit:true. Restore does not imply the field will never be looked at
+// again -- the write stamps dirty_since, so the next incremental rule pass
+// re-evaluates the artist (handlers_blast_radius_restore.go) -- so this
+// script never renders copy claiming a stronger guarantee than that.
+templ blastRadiusScript() {
+	<script>
+		function blastRestoreBasePath() {
+			var el = document.querySelector('meta[name="htmx-base-path"]');
+			return el ? el.content : '';
+		}
+
+		function blastRestoreCSRF() {
+			var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+			return m ? m[1] : '';
+		}
+
+		// blastRestoreI18n reads the hidden #blast-radius-i18n element
+		// rendered by repPaneBlastRadius. JS has no access to the request
+		// translator, so every user-facing string this script renders comes
+		// from here rather than a hardcoded English literal.
+		function blastRestoreI18n() {
+			var el = document.getElementById('blast-radius-i18n');
+			return el ? el.dataset : {};
+		}
+
+		// blastRestoreRequest posts to the restore endpoint. commit=false is a
+		// preview that writes nothing; commit=true performs the write. Reports
+		// a plain-language toast summarizing the outcome; a failed request
+		// surfaces via console.error in addition to the toast so a missing
+		// toast container never silently swallows the failure.
+		function blastRestoreRequest(ids, commit, onSuccess) {
+			if (!ids.length) return;
+			var i18n = blastRestoreI18n();
+			fetch(blastRestoreBasePath() + '/api/v1/reports/blast-radius/restore', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': blastRestoreCSRF() },
+				body: JSON.stringify({ change_ids: ids, commit: commit })
+			}).then(function(resp) {
+				if (resp.status === 409) {
+					showToast(i18n.restoreConflict || 'Another restore is already running.');
+					return null;
+				}
+				return resp.json().then(function(data) { return { status: resp.status, body: data }; });
+			}).then(function(result) {
+				if (!result) return;
+				if (result.status < 200 || result.status >= 300) {
+					console.error('blast-radius restore failed', result.status, result.body);
+					showToast((i18n.restoreFailed || 'Restore request failed (HTTP {status})').replace('{status}', result.status));
+					return;
+				}
+				onSuccess(result.body);
+			}).catch(function(err) {
+				console.error('blast-radius restore network error', err);
+				showToast(i18n.networkError || 'Network error while restoring');
+			});
+		}
+
+		// blastRestorePlanSummary turns a plan response into a human-readable
+		// confirmation line, naming refusals explicitly rather than only the
+		// eligible count -- a partial plan must not read as a clean one.
+		function blastRestorePlanSummary(plan) {
+			var i18n = blastRestoreI18n();
+			var msg = (i18n.planSummary || '{eligible} of {requested} selected change(s) can be restored.')
+				.replace('{eligible}', plan.eligible).replace('{requested}', plan.requested);
+			if (plan.refused > 0) {
+				msg += ' ' + (i18n.planRefused || '{refused} cannot be restored.').replace('{refused}', plan.refused);
+			}
+			return msg;
+		}
+
+		// blastRestoreRow previews a single row, then commits on confirmation.
+		function blastRestoreRow(id) {
+			var i18n = blastRestoreI18n();
+			blastRestoreRequest([id], false, function(plan) {
+				if (plan.eligible === 0) {
+					showToast(blastRestorePlanSummary(plan));
+					return;
+				}
+				window.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {
+					blastRestoreRequest([id], true, function(result) {
+						showSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));
+						var row = document.getElementById('blast-row-' + id);
+						if (row) row.remove();
+					});
+				}, { title: i18n.confirmTitle || 'Restore value?', acceptText: i18n.confirmAccept || 'Restore' });
+			});
+		}
+
+		// blastRestoreSelected previews the current bulk selection, then
+		// commits every eligible row on confirmation. Mixed-attribution
+		// selections are not specially gated: attribution is a display axis,
+		// not a write gate (the operator decides whether an unknown-attribution
+		// change is one they recognize), but the preview names the refused
+		// count so a partial restore is never read as complete.
+		function blastRestoreSelected() {
+			var i18n = blastRestoreI18n();
+			var ids = [];
+			document.querySelectorAll('.bulk-select:checked').forEach(function(cb) { ids.push(cb.value); });
+			if (!ids.length) return;
+			blastRestoreRequest(ids, false, function(plan) {
+				if (plan.eligible === 0) {
+					showToast(blastRestorePlanSummary(plan));
+					return;
+				}
+				window.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {
+					blastRestoreRequest(ids, true, function(result) {
+						showSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));
+						(result.items || []).forEach(function(item) {
+							if (item.restore_status === 'restored' || item.restore_status === 'unchanged') {
+								var row = document.getElementById('blast-row-' + item.change_id);
+								if (row) row.remove();
+							}
+						});
+						clearBulkSelection();
+					});
+				}, { title: i18n.confirmTitle || 'Restore values?', acceptText: i18n.confirmAccept || 'Restore' });
+			});
+		}
+	</script>
 }
 
 // repComplianceScript renders the JS for the compliance workspace pane so

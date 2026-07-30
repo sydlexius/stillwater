@@ -1002,6 +1002,12 @@ func (r *Router) serveReportsWorkspace(w http.ResponseWriter, req *http.Request,
 			return
 		}
 		data.RulePassRates = rd
+	case "blast-radius":
+		bd, ok := r.loadReportsBlastRadiusData(w, req)
+		if !ok {
+			return
+		}
+		data.BlastRadiusData = bd
 	}
 
 	renderTempl(w, req, templates.ReportsPage(r.assetsFor(req), data))
@@ -1222,4 +1228,53 @@ func toTemplateRulePassRateData(p rule.RulePassRate) templates.RulePassRateData 
 		Evaluated: p.Evaluated,
 		PassRate:  p.PassRate,
 	}
+}
+
+// loadReportsBlastRadiusData builds a BlastRadiusData value for the reports
+// workspace "blast-radius" report (issue #2750). It calls the existing
+// r.loadBlastRadius, the same shared assembly point the JSON report
+// (handleReportBlastRadius) and the CSV export (handleReportBlastRadiusExport)
+// use, so the pane cannot disagree with either about what was destroyed, its
+// attribution split, or its field coverage.
+func (r *Router) loadReportsBlastRadiusData(w http.ResponseWriter, req *http.Request) (templates.BlastRadiusData, bool) {
+	if r.historyService == nil {
+		http.Error(w, "history service is not available", http.StatusServiceUnavailable)
+		return templates.BlastRadiusData{}, false
+	}
+
+	view, err := r.loadBlastRadius(req)
+	if err != nil {
+		r.logger.Error("loading blast-radius report for reports workspace", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return templates.BlastRadiusData{}, false
+	}
+
+	f := blastRadiusFilterFromRequest(req)
+	totalPages := view.Counts.Total / view.PageSize
+	if view.Counts.Total%view.PageSize > 0 {
+		totalPages++
+	}
+
+	return templates.BlastRadiusData{
+		Rows:   view.Rows,
+		Counts: view.Counts,
+		Pagination: components.PaginationData{
+			CurrentPage: view.Page,
+			TotalPages:  totalPages,
+			PageSize:    view.PageSize,
+			TotalItems:  view.Counts.Total,
+			BaseURL:     "/reports/blast-radius",
+			TargetID:    "blast-radius-results",
+			Filter:      f.Class,
+			Status:      f.Attribution,
+		},
+		CutoffDate:      artist.AttributionCutoffDate,
+		CoveredFields:   view.CoveredFields,
+		UncoveredFields: view.UncoveredFields,
+		Class:           f.Class,
+		Attribution:     f.Attribution,
+		Field:           f.Field,
+		ArtistID:        f.ArtistID,
+		BasePath:        r.basePath,
+	}, true
 }
