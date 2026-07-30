@@ -11,10 +11,39 @@ import (
 // SEARCH-DERIVED automated pass must make before it is allowed to write a
 // MusicBrainz ID.
 //
-// NO CALLER YET. This lands as a pure addition so the decision logic can be
-// reviewed on its own terms, before any write path is rerouted through it. The
-// tiers that consult it, and the scope note recording which write paths do NOT,
-// arrive with those call sites.
+// WHICH WRITE PATHS APPLY IT, stated plainly because a gate is only as good as
+// its coverage and a reader must not have to infer this:
+//
+//   - internal/api Tier 2 (album comparison) -- GATED.
+//   - internal/api Tier 3 (name-only search) -- GATED. This was the hole.
+//   - internal/api Tier 1 (connection-library fill) -- NOT GATED. See the
+//     WHY-NOT note below; this is a deliberate scope decision, not an omission.
+//   - internal/rule fixMBID and internal/rule bulk_executor fetchImages -- NOT
+//     GATED. Both call EvaluateMBIDCandidate with no catalogue leg. That is a
+//     genuine remaining gap, tracked separately rather than fixed here.
+//
+// WHY TIER 1 IS NOT GATED. The gate's two admitting states are the problem: it
+// declines EvidenceUnknown and EvidenceNone outright, and it needs a
+// release-group fetch to judge the candidate. Tier 1 makes no provider call at
+// all -- it reads an identity a connected platform already holds -- so applying
+// this gate there would (a) require a configured MusicBrainz provider before an
+// Emby-only or Jellyfin-only install could auto-link anything, turning a
+// working connection-index fill into a total decline, and (b) refuse the 43% of
+// artists in EvidenceUnknown, which is most of what Tier 1 exists to serve.
+//
+// What makes that acceptable rather than merely cheap is that Tier 1's risk
+// shape is different in kind from the one measured here. The 18/18 wrong
+// adoptions came from a NAME SEARCH landing on an empty MusicBrainz stub -- an
+// entity nobody asserted was this artist. Tier 1's ID is not search-derived: it
+// is an identity a platform the operator deliberately connected already
+// records for an artist it also holds. And per #2856 Tier 1 may only ever FILL
+// a blank, never replace a stored ID, so its worst case is a blank becoming
+// wrong rather than a correct identity being destroyed.
+//
+// That is a smaller risk, NOT no risk: a platform index can carry a namesake,
+// and the name match that selects the entry is normalization-only. Closing it
+// needs a corroboration signal suited to Tier 1's provenance rather than this
+// catalogue gate, which is why it is tracked as its own work.
 //
 // It is the third leg of the identify confidence story and the only one that
 // asks about the artist's catalogue rather than about a name string:

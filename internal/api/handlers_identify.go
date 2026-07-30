@@ -475,14 +475,21 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 
 	// Tier 1: Connection-based matching.
 	//
-	// NOT gated on album evidence, and the ordering makes that structural: the
-	// album set is resolved below, so Tier 1 could not consult it here even if it
-	// wanted to. Tier 1 makes no provider call -- it reads an identity a connected
-	// platform already holds -- so a catalogue gate would require a configured
-	// MusicBrainz provider before a connection-only install could auto-link
-	// anything, and would refuse the EvidenceUnknown majority Tier 1 mostly
-	// serves. Do not "fix" the ordering by hoisting the resolution; that silently
-	// starts gating Tier 1, which is a behavior change this PR did not make.
+	// DELIBERATELY UNGATED BY THE ALBUM-EVIDENCE GATE, and the ordering makes
+	// that structural rather than accidental: localAlbums is resolved below, so
+	// Tier 1 could not consult the gate here even if it wanted to. Do not read
+	// that ordering as an oversight to be "fixed" by hoisting the resolution --
+	// hoisting it would silently START gating Tier 1, which is a behavior change
+	// this PR did not make and did not test.
+	//
+	// The reasoning is in the WHICH WRITE PATHS APPLY IT block at the top of
+	// internal/artist/albumgate.go, and the short form is: Tier 1 makes no
+	// provider call, so gating it would require a configured MusicBrainz
+	// provider before a connection-only install could auto-link anything, and it
+	// would refuse the EvidenceUnknown majority that Tier 1 mostly serves. Its
+	// risk shape is also different -- a connected platform's own record for an
+	// artist it holds, filling a blank only (#2856), rather than a name search
+	// landing on an empty stub. Smaller, not zero; tracked separately.
 	if connIdx != nil {
 		if res, handled := r.evaluateTier1(ctx, a, connIdx); handled {
 			return res
@@ -494,22 +501,20 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 		return identifyResult{Outcome: outcomeUnmatched}
 	}
 
-	// Album evidence is resolved ONCE per artist, as an evidenced AlbumSet
-	// (#2828). The old code called artist.ListLocalAlbums and branched on
-	// `len(...) > 0`, which cannot tell "this artist has no albums" from "I
-	// could not read the album directory" -- both produce an empty slice. The
-	// AlbumSet carries that difference, so a candidate scored against it can no
-	// longer report a fabricated 0% overlap for an artist nobody looked at.
-	//
-	// Resolving it HERE rather than inside Tier 2 is deliberate: it is where a
-	// later tier can also read it. Routing Tier 3 through the gate is the next
-	// PR in the series; this one stops at Tier 2.
+	// Album evidence is resolved ONCE per artist and drives both tiers below
+	// (#2828). Resolving it here rather than inside Tier 2 is the fix: the old
+	// code called artist.ListLocalAlbums and branched on `len(...) > 0`, which
+	// cannot tell "this artist has no albums" from "I could not read the album
+	// directory". Both produced an empty slice, both skipped Tier 2, and both
+	// therefore fell through to Tier 3 -- the ONLY tier that performs no
+	// catalogue check at all. So the absence of evidence did not merely fail to
+	// object to a candidate, it steered the artist to the tier that could not
+	// object, and in the production snapshot 43% of artists have no path and
+	// take that route by default.
 	localAlbums := r.localAlbumSet(ctx, a)
 
-	// One cache per artist. Tier 2 is its only consumer today; it is created
-	// here rather than inside the Tier 2 branch because a later tier shares it,
-	// so a candidate appearing in both searches costs one GetReleaseGroups call
-	// rather than two.
+	// One cache per artist, shared by both tiers, so a candidate appearing in
+	// both searches costs one GetReleaseGroups call rather than two.
 	rgCache := r.newReleaseGroupCache()
 
 	// Tier 2: Album comparison. Reachable only on a POSITIVE determination that
@@ -597,6 +602,14 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 		// (#2826). Fall through to the review queue so a human decides.
 		r.logger.Info("identify: Tier 3 candidate disagrees with the stored MusicBrainz ID, queueing for review",
 			"artist", a.Name, "stored_mbid", a.MusicBrainzID, "proposed_mbid", best.MusicBrainzID)
+	case r.tier3AlbumGateDeclines(ctx, a, localAlbums, results, best, rgCache):
+		// The name gates passed and the ALBUM gate did not (#2828). This is the
+		// case the name gates structurally cannot catch: an empty MusicBrainz
+		// stub matches a name at 100% and owns no catalogue that could
+		// contradict it, which is what all 18 of the measured wrong adoptions
+		// looked like. tier3AlbumGateDeclines logs the specific reason. Fall
+		// through to the review queue -- the candidate is still shown, just not
+		// written unattended.
 	default:
 		// Lock already handled upstream (see identifyArtist's a.Locked guard).
 		if _, err := r.applyIdentity(ctx, a, identityWrite{
@@ -854,10 +867,11 @@ func (r *Router) enrichAndScoreTier2(ctx context.Context, results []provider.Art
 		}
 		attempted++
 
+		// titles logs the CAUSE (#2862). The bare line here named the operation
+		// but not what went wrong, so a broken adapter read like an empty
+		// catalogue -- the conflation this series exists to remove.
 		remoteTitles, known := cache.titles(ctx, res.MusicBrainzID)
 		if !known {
-			r.logger.Warn("bulk-identify: fetching release groups",
-				"mbid", res.MusicBrainzID)
 			continue
 		}
 		scored[i].releasesKnown = true
