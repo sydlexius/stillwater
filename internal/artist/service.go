@@ -1330,14 +1330,21 @@ func (s *Service) UpdateProviderField(ctx context.Context, id, field, value stri
 	// before this change is still unmarked, so unmarked must keep being read as
 	// UNKNOWN and protected as operator-set.
 	//
-	// Only on a non-empty value: clearing the field (ClearProviderField routes
-	// here with "") must not leave a provenance marker describing an ID that is
-	// no longer there.
-	if providerName == "musicbrainz" && value != "" {
-		if a.MetadataSources == nil {
-			a.MetadataSources = make(map[string]string)
+	// The empty case is a DELETE, not a no-op: clearing the field
+	// (ClearProviderField routes here with "") must not leave a provenance marker
+	// describing an ID that is no longer there. A stale operator-confirmed marker
+	// on an absent ID is worse than no marker, because the never-replace policy
+	// reads provenance to decide whether a human chose the identity.
+	if providerName == "musicbrainz" {
+		if value == "" {
+			// Safe on a nil map; no allocation needed just to delete.
+			delete(a.MetadataSources, SourceKeyMusicBrainzID)
+		} else {
+			if a.MetadataSources == nil {
+				a.MetadataSources = make(map[string]string)
+			}
+			a.MetadataSources[SourceKeyMusicBrainzID] = SourceOperatorConfirmed
 		}
-		a.MetadataSources[SourceKeyMusicBrainzID] = SourceOperatorConfirmed
 	}
 
 	return s.Update(ctx, a)

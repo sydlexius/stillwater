@@ -297,6 +297,14 @@ func (r *Router) handleBulkIdentifyLink(w http.ResponseWriter, req *http.Request
 		writeError(w, req, http.StatusBadRequest, "artist_id and mbid are required")
 		return
 	}
+	// Shape-check the operator's MBID HERE so a malformed one is a 400 about the
+	// request, not the 500 that applyIdentity's errIdentityInvalidMBID would map
+	// to below. The chokepoint still enforces validity for every other caller;
+	// this is the same rule stated at the API boundary, where a bad input belongs.
+	if !artist.IsValidMBID(normalizeMBID(body.MBID)) {
+		writeError(w, req, http.StatusBadRequest, "mbid must be a valid MusicBrainz identifier")
+		return
+	}
 
 	a, err := r.artistService.GetByID(req.Context(), body.ArtistID)
 	if err != nil {
@@ -832,7 +840,17 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 	// any tier, so it must not be the tier that trips the bug backstop: without
 	// this check a legitimate Tier 2 disagreement would surface as an ERROR log
 	// and outcomeFailed instead of the review-queue entry the operator needs.
-	if len(above70) == 1 && !r.identityWouldReplace(a, above70[0].MusicBrainzID) {
+	// The validity condition is here as well as in applyIdentity for the same
+	// reason the never-replace condition is: applyIdentity treats an EMPTY MBID as
+	// "leave alone", so a blank candidate would sail through the chokepoint and
+	// still be reported as outcomeAutoLinked -- a link that linked nothing. The
+	// call site is the only place that can tell the difference between "nothing to
+	// write" and "written", so the outcome decision belongs here. Falling through
+	// puts the candidate in the review queue (it also cleared 30%), which is the
+	// honest answer.
+	if len(above70) == 1 &&
+		artist.IsValidMBID(normalizeMBID(above70[0].MusicBrainzID)) &&
+		!r.identityWouldReplace(a, above70[0].MusicBrainzID) {
 		// Lock already handled upstream (see identifyArtist's a.Locked guard).
 		if _, err := r.applyIdentity(ctx, a, identityWrite{
 			MBID:       above70[0].MusicBrainzID,
@@ -892,6 +910,16 @@ func (r *Router) identityWouldReplace(a *artist.Artist, proposed string) bool {
 // means a writer forgot to (issue #2826).
 var errIdentityReplaceRefused = errors.New("refusing to replace a stored MusicBrainz ID without operator consent")
 
+// errIdentityInvalidMBID is returned by applyIdentity when a caller proposed a
+// NON-EMPTY MusicBrainz ID that is not a syntactically valid UUID.
+//
+// Like errIdentityReplaceRefused this is the second leg of the chokepoint, not a
+// routine decline: validity used to be checked at Tier 1 and Tier 3 but not at
+// Tier 2 nor at the operator link handler, which is exactly the per-caller drift
+// applyIdentity exists to eliminate. An EMPTY MBID is not an error -- see
+// identityWrite.MBID.
+var errIdentityInvalidMBID = errors.New("refusing to write a syntactically invalid MusicBrainz ID")
+
 // identityWrite describes a proposed identity assignment for applyIdentity.
 //
 // The zero value refuses to replace anything, which is the whole point: a
@@ -925,9 +953,13 @@ type identityWrite struct {
 }
 
 // applyIdentity is the single chokepoint for every MusicBrainz-ID write in the
-// identify pipeline, and it enforces one invariant: an automated writer may
-// FILL A BLANK MBID or AGREE with the stored one, but it may never REPLACE one
-// (issue #2826).
+// identify pipeline, and it enforces two invariants:
+//
+//   - NEVER-REPLACE: an automated writer may FILL A BLANK MBID or AGREE with the
+//     stored one, but it may never REPLACE one (issue #2826).
+//   - VALIDITY: a non-empty MBID must be a syntactically valid UUID. It was
+//     previously applied at Tier 1 and Tier 3 only, so Tier 2 and the operator
+//     link could each write an unchecked value.
 //
 // Enforcing that here rather than inside each tier is the point. Four writers
 // reach this function -- Tier 1 (connection index), Tier 2 (album comparison),
@@ -944,6 +976,20 @@ type identityWrite struct {
 // value (issue #2845).
 func (r *Router) applyIdentity(ctx context.Context, a *artist.Artist, w identityWrite) (refreshSkipped bool, err error) {
 	old := a.MusicBrainzID
+
+	// VALIDITY LEG. Checked here rather than per-tier so it is as grep-assertable
+	// as the never-replace leg below and no future caller can forget it.
+	//
+	// Only a NON-EMPTY, invalid value is a rejection. An empty MBID legitimately
+	// means "leave the artist's MusicBrainzID alone" (see identityWrite.MBID) and
+	// is how the Discogs-only link paths reach this function, so treating empty as
+	// invalid would break every one of them.
+	if w.MBID != "" && !artist.IsValidMBID(normalizeMBID(w.MBID)) {
+		r.logger.Error("identify: refused a syntactically invalid MusicBrainz ID",
+			"artist_id", a.ID, "artist", a.Name,
+			"proposed_mbid", w.MBID, "source", w.Source)
+		return false, errIdentityInvalidMBID
+	}
 
 	// Compare NORMALIZED forms. Trimming matters as much as case-folding here:
 	// a stored value that arrived padded (a hand-edited NFO, a platform payload
