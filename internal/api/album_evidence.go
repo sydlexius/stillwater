@@ -115,10 +115,11 @@ func convertToScoredCandidatesReason(results []provider.ArtistSearchResult, reas
 // album set to an API client.
 //
 // It exists because the HTML candidate fragments render an album badge only
-// when LocalCount > 0, so Unknown and None both render as "no badge" -- silent
-// rather than false, but still indistinguishable to an operator reading the
-// page. The JSON surface can carry the distinction today without a template
-// change, so it does; making the HTML say it out loud is tracked separately.
+// when LocalCount > 0, so Unknown and None would both render as "no badge" --
+// silent rather than false, but still indistinguishable to an operator reading
+// the page. The HTML surfaces now carry the distinction as a visible notice
+// (see the AlbumsUnavailable view-model fields); this key is the JSON surface's
+// equivalent, for clients that never render the fragment.
 const albumsUnavailableKey = "local_albums_unavailable"
 
 // markAlbumsUnavailable adds albumsUnavailableKey to a JSON response body when
