@@ -111,6 +111,11 @@ type DeezerCandidatesData struct {
 	ArtistID      string
 	Candidates    []DeezerCandidate
 	ProviderError string
+
+	// AlbumsUnavailable reports that the artist's local albums could not be
+	// determined (no path recorded, or an unreadable directory), so no candidate
+	// here has an album-match badge for a reason other than "no match".
+	AlbumsUnavailable bool
 }
 
 // DeezerCandidates renders the search result list returned by the Deezer
@@ -130,6 +135,9 @@ templ DeezerCandidates(data DeezerCandidatesData) {
 			>
 				{ tf(ctx, "artist.deezer.provider_error", data.ProviderError) }
 			</div>
+		}
+		if data.AlbumsUnavailable {
+			@albumsUnavailableBanner()
 		}
 		if len(data.Candidates) == 0 && data.ProviderError == "" {
 			<p class="text-sm text-gray-500 dark:text-gray-400 italic py-1">{ t(ctx, "artist.deezer.no_matches") }</p>
@@ -249,6 +257,11 @@ type DiscogsCandidatesData struct {
 	ArtistID      string
 	Candidates    []DiscogsCandidate
 	ProviderError string
+
+	// AlbumsUnavailable reports that the artist's local albums could not be
+	// determined (no path recorded, or an unreadable directory), so no candidate
+	// here has an album-match badge for a reason other than "no match".
+	AlbumsUnavailable bool
 }
 
 // DiscogsCandidates renders the Discogs match-by-name search result list into
@@ -265,6 +278,9 @@ templ DiscogsCandidates(data DiscogsCandidatesData) {
 			>
 				{ tf(ctx, "artist.discogs.provider_error", data.ProviderError) }
 			</div>
+		}
+		if data.AlbumsUnavailable {
+			@albumsUnavailableBanner()
 		}
 		if len(data.Candidates) == 0 && data.ProviderError == "" {
 			<p class="text-sm text-gray-500 dark:text-gray-400 italic py-1">{ t(ctx, "artist.discogs.no_matches") }</p>
@@ -347,4 +363,22 @@ templ DiscogsLinkSuccess(a artist.Artist, fieldProviders map[string][]string) {
 			}
 		})();
 	</script>
+}
+
+// albumsUnavailableBanner reports that the artist's local albums could not be
+// read, so no candidate on this list carries an album-match badge.
+//
+// It exists because the album badge is simply OMITTED when there is nothing to
+// compare, and that omission looks identical whether the artist genuinely owns
+// no albums or the directory could not be listed. Silence is not the same as
+// "we could not check", and an operator picking an identity needs to know which
+// one they are looking at before they trust a name-only score.
+templ albumsUnavailableBanner() {
+	<div
+		class="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs"
+		role="status"
+		aria-live="polite"
+	>
+		{ t(ctx, "image.album_match_unavailable_help") }
+	</div>
 }

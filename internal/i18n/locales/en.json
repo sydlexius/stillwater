@@ -1195,6 +1195,8 @@
   "history.undo_title": "Undo this change",
   "image.add_type": "Add %s",
   "image.album_match_count": "%d/%d albums",
+  "image.album_match_unavailable": "Albums not checked",
+  "image.album_match_unavailable_help": "This artist's album folder could not be read, so the album match could not be calculated. A missing match here is not evidence that this candidate is wrong.",
   "image.alt_artist_type": "%s %s",
   "image.artist_name_placeholder": "Artist name",
   "image.assign": "Assign",

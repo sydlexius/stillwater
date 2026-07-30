@@ -213,6 +213,9 @@ func projectWizardCandidates(step *reIdentifyWizardStep) []templates.WizardCandi
 			Origin:         c.Origin,
 			Disambiguation: c.Disambiguation,
 			ConfidencePct:  pct,
+			// The reason string is the only place the evidence state survives
+			// into a step's stored candidates, so it is what drives the badge.
+			AlbumsUnavailable: c.Reason == reasonLocalAlbumsUnreadable,
 		})
 	}
 	return out
@@ -784,9 +787,12 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 		// albums so the wizard displays the same match-percent badges the
 		// auto path uses. Falls back to name-only search when no album
 		// data exists.
-		localAlbums := artist.ListLocalAlbums(artistPath)
+		// Resolve against the step's recorded path rather than a.Path so the
+		// search name and the album set agree; the step is the wizard's own copy
+		// of the artist taken when the session was created.
+		localAlbums := r.localAlbumSet(ctx, &artist.Artist{ID: artistID, Name: artistName, Path: artistPath})
 		searchName := artistName
-		if len(localAlbums) > 0 && artistPath != "" {
+		if localAlbums.Evidence == artist.EvidenceFound && artistPath != "" {
 			searchName = filepath.Base(artistPath)
 		}
 		results, statuses, serr := r.orchestrator.SearchForLinking(ctx, searchName, []provider.ProviderName{provider.NameMusicBrainz})
@@ -807,16 +813,24 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 			fetchErr = errors.New("all queried providers errored during candidate lookup")
 			break
 		}
-		if len(localAlbums) > 0 {
-			candidates = r.enrichAndScoreTier2(ctx, results, localAlbums)
+		if localAlbums.Evidence == artist.EvidenceFound {
+			candidates = r.enrichAndScoreTier2(ctx, results, localAlbums.Titles)
 		} else {
+			// No comparable album set, so score on name alone. The reason names
+			// WHICH case this is: a genuinely empty artist folder is a real
+			// determination that a name score is all there is, whereas an
+			// unreadable one means the album evidence is simply missing.
+			reason := "name match"
+			if localAlbums.Evidence == artist.EvidenceUnknown {
+				reason = reasonLocalAlbumsUnreadable
+			}
 			candidates = make([]ScoredCandidate, 0, len(results))
 			for i := range results {
 				res := &results[i]
 				candidates = append(candidates, ScoredCandidate{
 					ArtistSearchResult: *res,
 					Confidence:         float64(res.Score) / 200.0,
-					Reason:             "name match",
+					Reason:             reason,
 				})
 			}
 		}

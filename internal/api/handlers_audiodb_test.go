@@ -309,12 +309,15 @@ func TestHandleAudioDBSearch_AlbumComparisonFromDisk(t *testing.T) {
 	}
 }
 
-// TestHandleAudioDBSearch_NoLocalAlbumsShortCircuit pins the empty-localAlbums
-// short-circuit: when the artist has no local album subdirectories, the search
-// must NOT fire the MusicBrainz release-group fetcher (the album comparison has
-// nothing on disk to score against) and must tag candidates with the name-only
-// "no album data available" reason. Mirrors the len(localAlbums)==0 early-return
-// in the Discogs/Deezer siblings.
+// TestHandleAudioDBSearch_NoLocalAlbumsShortCircuit pins the no-comparable-albums
+// short-circuit: the search must NOT fire the MusicBrainz release-group fetcher
+// (there is nothing on disk to score against) and must tag candidates with a
+// name-only reason.
+//
+// The artist here has NO recorded Path, which is EvidenceUnknown -- nobody
+// looked -- so the reason must say the albums could not be read, NOT that the
+// artist has none. A genuinely empty directory is covered separately below;
+// telling those two apart is the whole point of the evidence migration.
 func TestHandleAudioDBSearch_NoLocalAlbumsShortCircuit(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
@@ -365,8 +368,75 @@ func TestHandleAudioDBSearch_NoLocalAlbumsShortCircuit(t *testing.T) {
 	if resp.Results[0].Confidence != 0 {
 		t.Errorf("confidence = %v, want 0 on the no-local-albums path", resp.Results[0].Confidence)
 	}
-	if resp.Results[0].Reason != "no album data available" {
-		t.Errorf("reason = %q, want %q", resp.Results[0].Reason, "no album data available")
+	if resp.Results[0].Reason != reasonLocalAlbumsUnreadable {
+		t.Errorf("reason = %q, want %q (no path recorded means nobody looked)",
+			resp.Results[0].Reason, reasonLocalAlbumsUnreadable)
+	}
+}
+
+// TestHandleAudioDBSearch_EmptyAlbumDirIsPositiveDetermination is the companion
+// to the test above. Same short-circuit, same zero confidence, but the artist
+// folder EXISTS and was successfully read -- so the operator-facing reason must
+// be the positive "no album data available", never "could not be read".
+//
+// Without this pairing the Unknown assertion above would pass just as well if
+// every case reported "could not be read".
+func TestHandleAudioDBSearch_EmptyAlbumDirIsPositiveDetermination(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	fetcherCalled := false
+	installAudioDBOrchestrator(t, r,
+		func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
+			return []provider.ArtistSearchResult{
+				{Name: "Empty Dir", ProviderID: "778", MusicBrainzID: "mbid-778", Score: 90},
+			}, nil
+		},
+		func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+			fetcherCalled = true
+			return []provider.ReleaseGroupInfo{{Title: "Some Album"}}, nil
+		})
+
+	// A readable directory holding no album subdirectories: EvidenceNone.
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Empty Dir ADB", SortName: "Empty Dir ADB", Type: "group", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/audiodb/search", strings.NewReader(`{"query":"Empty Dir"}`))
+	req.SetPathValue("id", a.ID)
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleAudioDBSearch(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if fetcherCalled {
+		t.Error("release-group fetcher must NOT be called when the artist genuinely has no albums")
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v; body=%s", err, w.Body.String())
+	}
+	// The unavailable marker must be ABSENT: this was a real determination.
+	if _, present := resp[albumsUnavailableKey]; present {
+		t.Errorf("%q must be absent for a readable empty directory; body=%v", albumsUnavailableKey, resp)
+	}
+	results, ok := resp["results"].([]any)
+	if !ok || len(results) != 1 {
+		t.Fatalf("results = %v, want exactly 1 candidate", resp["results"])
+	}
+	first, ok := results[0].(map[string]any)
+	if !ok {
+		t.Fatalf("results[0] = %v, want an object", results[0])
+	}
+	if got := first["reason"]; got != reasonNoAlbumData {
+		t.Errorf("reason = %v, want %q", got, reasonNoAlbumData)
+	}
+	if _, present := first["album_comparison"]; present {
+		t.Errorf("album_comparison must be omitted; got %v", first["album_comparison"])
 	}
 }
 
@@ -386,7 +456,7 @@ func TestEnrichAudioDBCandidates_NoLocalAlbums(t *testing.T) {
 	results := []provider.ArtistSearchResult{
 		{Name: "X", ProviderID: "1", MusicBrainzID: "mbid-1"},
 	}
-	got := r.enrichAudioDBCandidates(context.Background(), results, nil)
+	got := r.enrichAudioDBCandidates(context.Background(), results, foundNoAlbums())
 	if fetcherCalled {
 		t.Error("fetcher must not be called when localAlbums is empty")
 	}

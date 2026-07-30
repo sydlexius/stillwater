@@ -165,10 +165,16 @@ func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Fetch artist to get filesystem path for album comparison.
-	var localAlbums []string
-	if a, err := r.artistService.GetByID(req.Context(), artistID); err == nil && a.Path != "" {
-		localAlbums = artist.ListLocalAlbums(a.Path)
+	// Fetch artist to get filesystem path for album comparison. A load failure
+	// leaves the zero AlbumSet, which is EvidenceUnknown -- correct, because
+	// nobody looked. Unlike the other four surfaces this one does NOT 404 on an
+	// unknown ID, so the artist may legitimately be absent here.
+	var localAlbums artist.AlbumSet
+	if a, err := r.artistService.GetByID(req.Context(), artistID); err == nil {
+		localAlbums = r.localAlbumSet(req.Context(), a)
+	} else {
+		r.logger.Warn("album evidence unknown: could not load artist for album comparison",
+			"artist_id", artistID, "reason", err.Error())
 	}
 
 	candidates := r.enrichWithAlbumComparison(req.Context(), results, localAlbums)
@@ -187,6 +193,7 @@ func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 	if len(failedProviders) > 0 {
 		resp["failed_providers"] = failedProviders
 	}
+	markAlbumsUnavailable(resp, localAlbums)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -675,15 +682,23 @@ func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 }
 
 // enrichWithAlbumComparison wraps search results in DisambiguationCandidate,
-// enriching the top 3 MusicBrainz results with album comparison data when
-// local albums are available.
-func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provider.ArtistSearchResult, localAlbums []string) []templates.DisambiguationCandidate {
+// enriching the top 3 MusicBrainz results with album comparison data when the
+// local album set is a determination that found albums.
+//
+// Only EvidenceFound proceeds. An Unknown set would compare against no titles
+// and stamp every candidate with a 0% match badge -- the exact false claim this
+// migration removes.
+func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provider.ArtistSearchResult, local artist.AlbumSet) []templates.DisambiguationCandidate {
 	candidates := make([]templates.DisambiguationCandidate, len(results))
 	for i := range results {
 		candidates[i].Result = results[i]
+		// Surface the "could not look" state per candidate so the template can
+		// say so rather than silently omitting the badge, which is what a
+		// genuinely empty artist also does.
+		candidates[i].AlbumsUnavailable = local.Evidence == artist.EvidenceUnknown
 	}
 
-	if len(localAlbums) == 0 || r.providerRegistry == nil {
+	if local.Evidence != artist.EvidenceFound || r.providerRegistry == nil {
 		return candidates
 	}
 
@@ -725,7 +740,11 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 			remoteTitles[j] = rg.Title
 		}
 
-		comp := artist.CompareAlbums(localAlbums, remoteTitles)
+		// CompareAlbumSet delegates the arithmetic to CompareAlbums and carries
+		// the local evidence state through, so the percentage cannot be read as
+		// a finding when there was none.
+		ev := artist.CompareAlbumSet(local, remoteTitles)
+		comp := ev.AlbumComparison
 		candidates[i].AlbumComparison = &comp
 	}
 

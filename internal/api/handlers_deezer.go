@@ -79,10 +79,10 @@ func (r *Router) handleDeezerSearch(w http.ResponseWriter, req *http.Request) {
 	// "no such artist on Deezer".
 	providerErrored := len(collectFailedProviderDisplayNames(statuses)) > 0
 
-	var localAlbums []string
-	if a.Path != "" {
-		localAlbums = artist.ListLocalAlbums(a.Path)
-	}
+	// The a.Path != "" pre-check that used to guard this call is gone: the
+	// filesystem album source treats a missing path as EvidenceUnknown itself,
+	// and two places deciding the same thing is how the two drift apart.
+	localAlbums := r.localAlbumSet(req.Context(), a)
 
 	candidates := r.enrichDeezerCandidates(req.Context(), results, localAlbums)
 
@@ -95,6 +95,9 @@ func (r *Router) handleDeezerSearch(w http.ResponseWriter, req *http.Request) {
 			ArtistID:      artistID,
 			Candidates:    toDeezerTemplateCandidates(candidates),
 			ProviderError: providerError,
+			// Say "albums not checked" out loud rather than omitting the badge,
+			// which an operator cannot tell from "matched nothing".
+			AlbumsUnavailable: localAlbums.Evidence == artist.EvidenceUnknown,
 		}))
 		return
 	}
@@ -103,6 +106,7 @@ func (r *Router) handleDeezerSearch(w http.ResponseWriter, req *http.Request) {
 	if providerErrored {
 		resp["provider_error"] = provider.NameDeezer.DisplayName()
 	}
+	markAlbumsUnavailable(resp, localAlbums)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -200,21 +204,25 @@ func (r *Router) handleDeezerLink(w http.ResponseWriter, req *http.Request) {
 // enrichDeezerCandidates scores Deezer search results by album-discography
 // agreement, mirroring enrichAndScoreTier2 but keyed on the Deezer provider ID
 // (res.ProviderID). enrichAndScoreTier2 cannot be reused: it is hardwired to the
-// MusicBrainz provider and res.MusicBrainzID. When album enrichment is not
-// possible (no registry, no Deezer provider, or no local albums) candidates fall
-// back to name-only scoring via convertToScoredCandidates.
-func (r *Router) enrichDeezerCandidates(ctx context.Context, results []provider.ArtistSearchResult, localAlbums []string) []ScoredCandidate {
-	if r.providerRegistry == nil || len(localAlbums) == 0 {
-		return convertToScoredCandidates(results)
+// MusicBrainz provider and res.MusicBrainzID.
+//
+// It takes an evidenced artist.AlbumSet rather than a bare []string so the
+// fallback can say WHICH kind of missing album data it hit. A set that is not
+// EvidenceFound is never compared -- an Unknown set contributes no titles, and
+// comparing against no titles yields a 0% match that reads as a real finding.
+func (r *Router) enrichDeezerCandidates(ctx context.Context, results []provider.ArtistSearchResult, local artist.AlbumSet) []ScoredCandidate {
+	fallbackReason := albumEvidenceReason(local.Evidence)
+	if r.providerRegistry == nil || local.Evidence != artist.EvidenceFound {
+		return convertToScoredCandidatesReason(results, fallbackReason)
 	}
 
 	dzProvider := r.providerRegistry.Get(provider.NameDeezer)
 	if dzProvider == nil {
-		return convertToScoredCandidates(results)
+		return convertToScoredCandidatesReason(results, fallbackReason)
 	}
 	fetcher, ok := dzProvider.(provider.ReleaseGroupFetcher)
 	if !ok {
-		return convertToScoredCandidates(results)
+		return convertToScoredCandidatesReason(results, fallbackReason)
 	}
 
 	scored := make([]ScoredCandidate, len(results))
@@ -245,7 +253,12 @@ func (r *Router) enrichDeezerCandidates(ctx context.Context, results []provider.
 			remoteTitles[j] = rg.Title
 		}
 
-		comp := artist.CompareAlbums(localAlbums, remoteTitles)
+		// CompareAlbumSet rather than CompareAlbums: the arithmetic is identical
+		// (it delegates), but it carries the local side's evidence into the
+		// result, so a 0% here is provably "the catalogues disagree" and not
+		// "we never read the albums".
+		ev := artist.CompareAlbumSet(local, remoteTitles)
+		comp := ev.AlbumComparison
 		scored[i].AlbumComparison = &comp
 		scored[i].Confidence = float64(comp.MatchPercent) / 100.0
 	}
