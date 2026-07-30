@@ -830,9 +830,11 @@ func TestEvaluateTier2_DoesNotReplaceStoredMBID(t *testing.T) {
 	scored := []ScoredCandidate{{
 		ArtistSearchResult: provider.ArtistSearchResult{Name: "Album Keeper", MusicBrainzID: mbidProposed},
 		AlbumComparison:    &cmp,
+		releaseCount:       4,
+		releasesKnown:      true,
 	}}
 
-	got := r.evaluateTier2(ctx, a, scored)
+	got := r.evaluateTier2(ctx, a, foundAlbums("Album One", "Album Two"), scored)
 	if got.Outcome != outcomeQueued {
 		t.Fatalf("Outcome = %v, want queued (not failed: Tier 2 must route to review itself)", got.Outcome)
 	}
@@ -1042,9 +1044,11 @@ func TestEvaluateTier2_MalformedCandidateIsNotAutoLinked(t *testing.T) {
 			scored := []ScoredCandidate{{
 				ArtistSearchResult: provider.ArtistSearchResult{Name: "T2", MusicBrainzID: tc.mbid},
 				AlbumComparison:    &cmp,
+				releaseCount:       4,
+				releasesKnown:      true,
 			}}
 
-			got := r.evaluateTier2(ctx, a, scored)
+			got := r.evaluateTier2(ctx, a, foundAlbums("Album One", "Album Two"), scored)
 			if got.Outcome == outcomeAutoLinked {
 				t.Errorf("Outcome = autoLinked, want anything else; nothing was linked")
 			}

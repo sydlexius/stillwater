@@ -7,7 +7,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
-// Candidate "reason" strings for the two cases that used to be one.
+// Candidate "reason" strings for the cases that used to be one.
 //
 // Before this file existed, every non-comparable case collapsed into
 // reasonNoAlbumData -- an artist whose folder could not be read was reported to
@@ -26,18 +26,57 @@ const (
 	// file where a directory was expected). The candidate's confidence carries
 	// no album signal at all, and MUST NOT be read as "matched nothing".
 	reasonLocalAlbumsUnreadable = "local albums could not be read"
+
+	// reasonNoCandidateAlbumSource is the CANDIDATE-side twin of
+	// reasonLocalAlbumsUnreadable, and it exists for exactly the same reason.
+	//
+	// The local albums were read fine; what is missing is the other half of the
+	// comparison. No provider registry is wired, the provider is not registered,
+	// or the registered adapter does not implement the optional album-fetching
+	// interface -- so nothing could supply the candidate's albums and there was
+	// nothing to compare the local ones AGAINST.
+	//
+	// Reporting that as reasonNoAlbumData would be a lie in the operator's face:
+	// it claims the artist owns no albums when the artist may own a shelf full,
+	// and it is the same could-not-look versus genuinely-none conflation this
+	// file exists to remove -- just moved to the other side of the comparison.
+	//
+	// THE WORDING IS LOAD-BEARING, and an earlier draft of it ("candidate
+	// catalogues could not be retrieved") was WRONG in the same way the bug it
+	// fixed was wrong. Every caller reaches this string from a MISSING-FETCHER
+	// guard, before any provider call is made -- so no retrieval was ever
+	// attempted, and saying one failed asserts an event that did not happen. A
+	// fetch that IS attempted and fails never lands here: those callers log the
+	// error and `continue`, leaving the candidate on "album comparison". So this
+	// string means "nothing could look", never "looking failed".
+	reasonNoCandidateAlbumSource = "no provider available to look up candidate albums"
 )
 
 // albumEvidenceReason maps an evidence state to the operator-facing reason for a
 // candidate that could not be album-scored.
 //
-// EvidenceFound never reaches here: a found set IS comparable, so its callers
-// score it instead of explaining why they did not.
+// All three states reach here. EvidenceFound is the case a reader will not
+// expect, so it is worth spelling out: a caller with a perfectly good local
+// album list still lands in a fallback when nothing can supply the CANDIDATE's
+// albums (no registry, no adapter, an adapter without the album-fetching
+// interface). The local evidence is not what is missing there, so the reason
+// must not blame it -- and no fetch was attempted, so it must not claim one
+// failed either.
 func albumEvidenceReason(e artist.AlbumEvidence) string {
-	if e == artist.EvidenceUnknown {
+	switch e {
+	case artist.EvidenceUnknown:
+		return reasonLocalAlbumsUnreadable
+	case artist.EvidenceFound:
+		return reasonNoCandidateAlbumSource
+	case artist.EvidenceNone:
+		return reasonNoAlbumData
+	default:
+		// An AlbumEvidence value this function does not know is a new state
+		// somebody added without revisiting the reason strings. Claiming "the
+		// artist has no albums" for it would be a fabricated positive
+		// determination, so answer with the honest non-determination instead.
 		return reasonLocalAlbumsUnreadable
 	}
-	return reasonNoAlbumData
 }
 
 // localAlbumSet resolves an artist's local albums through the evidence-aware
@@ -71,34 +110,27 @@ func (r *Router) localAlbumSet(ctx context.Context, a *artist.Artist) artist.Alb
 	return set
 }
 
-// enrichAndScoreTier2Set is the evidence-aware entry point to the shared
+// enrichAndScoreTier2Set is the DISPLAY-surface entry point to the shared
 // MusicBrainz cross-MBID scorer.
 //
-// It deliberately does NOT change enrichAndScoreTier2's signature. That helper
-// is also called by the bulk-identify path in handlers_identify.go, whose
-// hasAlbums gate routes an artist to an ungated auto-link and is therefore
-// migrated separately, under its own replay test. Gating here instead keeps this
-// change confined to display surfaces.
-//
-// The gate is the point: only an EvidenceFound set is ever handed to the
-// []string-based scorer, so a set that carries no determination cannot be
-// laundered into an empty local album list somewhere further down. That is a
-// stronger guarantee than passing the AlbumSet through and trusting the callee
-// to read Evidence.
+// Since #2828 migrated enrichAndScoreTier2 to take an artist.AlbumSet directly,
+// the evidence branch lives inside the scorer and this wrapper adds only the
+// per-request release-group cache. It is kept as a named entry point because
+// the five display surfaces have no cache of their own to thread through and no
+// identity decision to make -- each one scores a single search's worth of
+// candidates and renders them.
 func (r *Router) enrichAndScoreTier2Set(ctx context.Context, results []provider.ArtistSearchResult, local artist.AlbumSet) []ScoredCandidate {
-	if local.Evidence != artist.EvidenceFound {
-		return convertToScoredCandidatesReason(results, albumEvidenceReason(local.Evidence))
-	}
-	return r.enrichAndScoreTier2(ctx, results, local.Titles)
+	return r.enrichAndScoreTier2(ctx, results, local, r.newReleaseGroupCache())
 }
 
 // convertToScoredCandidatesReason wraps raw search results as ScoredCandidates
 // with zero confidence and an explicit reason.
 //
-// convertToScoredCandidates hardcodes reasonNoAlbumData, which is the wrong
-// words for an Unknown album set; this variant lets the caller say which of the
-// two it means. The zero Confidence is identical either way -- the reason string
-// is what tells the two apart.
+// convertToScoredCandidates hardcoded reasonNoAlbumData, which is the wrong
+// words for an Unknown album set and equally wrong for a Found one with no
+// source for the candidate's albums; this variant lets the caller say which of
+// the three it means. The zero Confidence is identical in all three cases --
+// the reason string is the only thing that tells them apart.
 func convertToScoredCandidatesReason(results []provider.ArtistSearchResult, reason string) []ScoredCandidate {
 	scored := make([]ScoredCandidate, len(results))
 	for i := range results {

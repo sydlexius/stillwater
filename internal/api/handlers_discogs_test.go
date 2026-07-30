@@ -71,8 +71,11 @@ func TestEnrichDiscogsCandidates(t *testing.T) {
 		r.providerRegistry = nil
 		results := []provider.ArtistSearchResult{{Name: "A", ProviderID: "1"}}
 		got := r.enrichDiscogsCandidates(context.Background(), results, foundAlbums("Album One"))
-		if len(got) != 1 || got[0].Reason != "no album data available" {
-			t.Errorf("got = %+v, want single fallback candidate", got)
+		// EvidenceFound: the local albums WERE read. What is missing is a source
+		// for the candidate's albums, so the reason must not claim the artist has
+		// none -- this fixture has one.
+		if len(got) != 1 || got[0].Reason != reasonNoCandidateAlbumSource {
+			t.Errorf("got = %+v, want a single candidate carrying %q", got, reasonNoCandidateAlbumSource)
 		}
 	})
 
@@ -96,8 +99,11 @@ func TestEnrichDiscogsCandidates(t *testing.T) {
 		r.providerRegistry = provider.NewRegistry() // empty
 		results := []provider.ArtistSearchResult{{Name: "A", ProviderID: "1"}}
 		got := r.enrichDiscogsCandidates(context.Background(), results, foundAlbums("Album One"))
-		if len(got) != 1 || got[0].Reason != "no album data available" {
-			t.Errorf("got = %+v, want single fallback candidate", got)
+		// EvidenceFound: the local albums WERE read. What is missing is a source
+		// for the candidate's albums, so the reason must not claim the artist has
+		// none -- this fixture has one.
+		if len(got) != 1 || got[0].Reason != reasonNoCandidateAlbumSource {
+			t.Errorf("got = %+v, want a single candidate carrying %q", got, reasonNoCandidateAlbumSource)
 		}
 	})
 

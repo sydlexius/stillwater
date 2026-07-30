@@ -814,12 +814,23 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 			break
 		}
 		if localAlbums.Evidence == artist.EvidenceFound {
-			candidates = r.enrichAndScoreTier2(ctx, results, localAlbums.Titles)
+			candidates = r.enrichAndScoreTier2(ctx, results, localAlbums, r.newReleaseGroupCache())
 		} else {
-			// No comparable album set, so score on name alone. The reason names
-			// WHICH case this is: a genuinely empty artist folder is a real
-			// determination that a name score is all there is, whereas an
-			// unreadable one means the album evidence is simply missing.
+			// No comparable album set, so score on name alone. This branch is
+			// NOT redundant with the scorer's own evidence branch (#2828): the
+			// wizard shows a name-derived confidence (Score/200) so an operator
+			// can still rank the candidates, whereas the scorer's fallback
+			// reports zero confidence. The wizard is a display surface that
+			// makes no write, so ranking is safe there.
+			//
+			// The reason names WHICH case this is: a genuinely empty artist
+			// folder is a real determination that a name score is all there is,
+			// whereas an unreadable one means the album evidence is simply
+			// missing. reasonLocalAlbumsUnreadable is LOAD-BEARING here, not
+			// cosmetic: a wizard step stores only a ScoredCandidate, so the
+			// "albums not checked" pill is driven off this exact string (see
+			// toWizardCandidates). Changing the constant without changing the
+			// badge makes the pill silently vanish.
 			reason := "name match"
 			if localAlbums.Evidence == artist.EvidenceUnknown {
 				reason = reasonLocalAlbumsUnreadable
