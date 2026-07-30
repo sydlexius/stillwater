@@ -18,6 +18,28 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
+// Real 36-character MusicBrainz UUIDs for the identify fixtures.
+//
+// artist.IsValidMBID is a strict UUID shape check, and both the Tier 1
+// connection gate and artist.BestMBIDCandidates (Tier 3) filter candidates
+// through it. A readable placeholder such as "mb-a" therefore never survives
+// either gate, so any ID a test needs to see adopted -- or needs to see
+// REFUSED for a reason other than its shape -- has to be a real UUID.
+// Placeholders remain in the subtests that never reach a gate (the
+// convertToScoredCandidates and enrichAndScoreTier2 unit tests), where the
+// shorter string is easier to read.
+const (
+	mbidTestPinkFloyd = "83d91898-7763-47d7-b03b-b92132375c47"
+	mbidTestA         = "11111111-2222-4333-8444-555555555555"
+	mbidTestB         = "66666666-7777-4888-8999-aaaaaaaaaaaa"
+	mbidTestC         = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"
+	mbidTestD         = "12121212-3434-4565-8787-909090909090"
+	mbidTestSolo      = "0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d"
+	mbidTestWinner    = "feedface-cafe-4bee-8dad-c0ffee123456"
+	mbidTestLow       = "deadbeef-1234-4567-89ab-cdef01234567"
+	mbidTestAlbums    = "abcdef01-2345-4678-89ab-cdef01234567"
+)
+
 // identifyStubProvider is a minimal Provider implementation used by the
 // Tier 2 / Tier 3 identify tests. It also implements ReleaseGroupFetcher
 // so enrichAndScoreTier2 can exercise the album-comparison branch.
@@ -337,8 +359,8 @@ func TestEvaluateTier2(t *testing.T) {
 		}
 
 		scored := []ScoredCandidate{
-			mustScored(90, "mb-clear-winner"),
-			mustScored(20, "mb-low"),
+			mustScored(90, mbidTestWinner),
+			mustScored(20, mbidTestLow),
 		}
 		got := r.evaluateTier2(ctx, a, scored)
 		if got.Outcome != outcomeAutoLinked {
@@ -349,8 +371,8 @@ func TestEvaluateTier2(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reloading: %v", err)
 		}
-		if reloaded.MusicBrainzID != "mb-clear-winner" {
-			t.Errorf("MBID = %q, want %q", reloaded.MusicBrainzID, "mb-clear-winner")
+		if reloaded.MusicBrainzID != mbidTestWinner {
+			t.Errorf("MBID = %q, want %q", reloaded.MusicBrainzID, mbidTestWinner)
 		}
 	})
 
@@ -456,8 +478,8 @@ func TestIdentifyArtist(t *testing.T) {
 
 		idx := &connectionIndex{byName: map[string][]connEntry{
 			"pink floyd": {
-				{Name: "Pink Floyd", MusicBrainzID: "mb-pf", DiscogsID: "d-pf"},
-				{Name: "Pink Floyd", MusicBrainzID: "mb-pf", DiscogsID: "d-pf"},
+				{Name: "Pink Floyd", MusicBrainzID: mbidTestPinkFloyd, DiscogsID: "d-pf"},
+				{Name: "Pink Floyd", MusicBrainzID: mbidTestPinkFloyd, DiscogsID: "d-pf"},
 			},
 		}}
 		got := r.identifyArtist(ctx, a, idx)
@@ -469,8 +491,8 @@ func TestIdentifyArtist(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reloading: %v", err)
 		}
-		if reloaded.MusicBrainzID != "mb-pf" {
-			t.Errorf("MBID = %q, want mb-pf", reloaded.MusicBrainzID)
+		if reloaded.MusicBrainzID != mbidTestPinkFloyd {
+			t.Errorf("MBID = %q, want %q", reloaded.MusicBrainzID, mbidTestPinkFloyd)
 		}
 		if reloaded.DiscogsID != "d-pf" {
 			t.Errorf("DiscogsID = %q, want d-pf", reloaded.DiscogsID)
@@ -483,8 +505,8 @@ func TestIdentifyArtist(t *testing.T) {
 		// No orchestrator wired => tier 2/3 immediately return unmatched.
 		idx := &connectionIndex{byName: map[string][]connEntry{
 			"split": {
-				{Name: "Split", MusicBrainzID: "mb-a"},
-				{Name: "Split", MusicBrainzID: "mb-b"},
+				{Name: "Split", MusicBrainzID: mbidTestA},
+				{Name: "Split", MusicBrainzID: mbidTestB},
 			},
 		}}
 		a := &artist.Artist{Name: "Split"}
@@ -500,7 +522,7 @@ func TestIdentifyArtist(t *testing.T) {
 		r, artistSvc := newIdentifyTestServer(t,
 			func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
 				return []provider.ArtistSearchResult{
-					{Name: "Solo", MusicBrainzID: "mb-solo", Score: 95},
+					{Name: "Solo", MusicBrainzID: mbidTestSolo, Score: 95, Source: string(provider.NameMusicBrainz)},
 				}, nil
 			},
 			nil,
@@ -518,8 +540,8 @@ func TestIdentifyArtist(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reloading: %v", err)
 		}
-		if reloaded.MusicBrainzID != "mb-solo" {
-			t.Errorf("MBID = %q, want mb-solo", reloaded.MusicBrainzID)
+		if reloaded.MusicBrainzID != mbidTestSolo {
+			t.Errorf("MBID = %q, want %q", reloaded.MusicBrainzID, mbidTestSolo)
 		}
 	})
 
@@ -529,8 +551,8 @@ func TestIdentifyArtist(t *testing.T) {
 			func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
 				// Confidence = Score/200, so Score=80 => 0.4, Score=70 => 0.35.
 				return []provider.ArtistSearchResult{
-					{Name: "Cand1", MusicBrainzID: "mb-c1", Score: 80},
-					{Name: "Cand2", MusicBrainzID: "mb-c2", Score: 70},
+					{Name: "Cand1", MusicBrainzID: mbidTestC, Score: 80},
+					{Name: "Cand2", MusicBrainzID: mbidTestD, Score: 70},
 				}, nil
 			},
 			nil,
@@ -557,7 +579,7 @@ func TestIdentifyArtist(t *testing.T) {
 			func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
 				// Score=40 => confidence 0.2, below 0.3 threshold.
 				return []provider.ArtistSearchResult{
-					{Name: "Low", MusicBrainzID: "mb-low", Score: 40},
+					{Name: "Low", MusicBrainzID: mbidTestLow, Score: 40},
 				}, nil
 			},
 			nil,
@@ -618,7 +640,7 @@ func TestIdentifyArtist(t *testing.T) {
 		r, artistSvc := newIdentifyTestServer(t,
 			func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
 				return []provider.ArtistSearchResult{
-					{Name: "Has Albums", MusicBrainzID: "mb-albums", Score: 50},
+					{Name: "Has Albums", MusicBrainzID: mbidTestAlbums, Score: 50},
 				}, nil
 			},
 			func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {

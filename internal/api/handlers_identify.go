@@ -297,6 +297,14 @@ func (r *Router) handleBulkIdentifyLink(w http.ResponseWriter, req *http.Request
 		writeError(w, req, http.StatusBadRequest, "artist_id and mbid are required")
 		return
 	}
+	// Shape-check the operator's MBID HERE so a malformed one is a 400 about the
+	// request, not the 500 that applyIdentity's errIdentityInvalidMBID would map
+	// to below. The chokepoint still enforces validity for every other caller;
+	// this is the same rule stated at the API boundary, where a bad input belongs.
+	if !artist.IsValidMBID(normalizeMBID(body.MBID)) {
+		writeError(w, req, http.StatusBadRequest, "mbid must be a valid MusicBrainz identifier")
+		return
+	}
 
 	a, err := r.artistService.GetByID(req.Context(), body.ArtistID)
 	if err != nil {
@@ -309,12 +317,19 @@ func (r *Router) handleBulkIdentifyLink(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	a.MusicBrainzID = body.MBID
-	if body.DiscogsID != "" {
-		a.DiscogsID = body.DiscogsID
-	}
-
-	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a)
+	// The ONLY call site in the tree that sets AllowReplace, which is what makes
+	// it grep-assertable that nothing automated can replace a stored identity.
+	// A human picked this candidate out of the review queue, so it is both
+	// authorized to replace and recorded as operator-confirmed -- and attributed
+	// to "manual" rather than a provider source, so the blast-radius report does
+	// not file a human decision as machine damage.
+	refreshSkipped, err := r.applyIdentity(req.Context(), a, identityWrite{
+		MBID:         body.MBID,
+		DiscogsID:    body.DiscogsID,
+		Source:       artist.IdentifySourceOperator,
+		Provenance:   artist.SourceOperatorConfirmed,
+		AllowReplace: true,
+	})
 	if err != nil {
 		r.logger.Error("bulk-identify link: updating artist", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to update artist")
@@ -430,7 +445,12 @@ func (r *Router) runBulkIdentify(ctx context.Context, artists []artist.Artist, p
 
 // identifyArtist runs the 3-tier identification pipeline for a single artist.
 //
-//nolint:gocognit // 3-tier identification (connection match, exact MB query, search with disambiguation) requires that each tier's outcome decision -- match, ambiguous, skip, fall through -- be evaluated in order with tier-specific guards; the tier ordering is the function's purpose and cannot be flattened.
+// The gocognit complexity waiver this comment used to carry was deleted rather
+// than retained: extracting the Tier 1 decision into evaluateTier1 dropped this
+// function back under the threshold, so the waiver suppressed nothing and the
+// linter flagged it as dead. A waiver the code no longer needs is worse than
+// none -- it tells a later reader this function is irreducibly complex when it
+// is not.
 func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *connectionIndex) identifyResult {
 	// Skip locked artists -- they should not be auto-modified.
 	if a.Locked {
@@ -438,34 +458,9 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 	}
 
 	// Tier 1: Connection-based matching.
-	// Only auto-link when all connection entries for this name agree on the
-	// same MBID. If multiple entries exist with different MBIDs, skip auto-link
-	// and fall through to Tier 2 for disambiguation.
 	if connIdx != nil {
-		entries := connIdx.lookup(a.Name)
-		if len(entries) > 0 {
-			mbid := entries[0].MusicBrainzID
-			unanimous := mbid != ""
-			discogsID := entries[0].DiscogsID
-			for _, entry := range entries[1:] {
-				if entry.MusicBrainzID != mbid {
-					unanimous = false
-					break
-				}
-			}
-			if unanimous {
-				a.MusicBrainzID = mbid
-				if discogsID != "" {
-					a.DiscogsID = discogsID
-				}
-				// The lock was already handled upstream: identifyArtist
-				// returns outcomeSkipped for a locked artist, so the skip
-				// flag can never be true here.
-				if _, err := r.autoLinkAndRefresh(ctx, a); err != nil {
-					return identifyResult{Outcome: outcomeFailed}
-				}
-				return identifyResult{Outcome: outcomeAutoLinked}
-			}
+		if res, handled := r.evaluateTier1(ctx, a, connIdx); handled {
+			return res
 		}
 	}
 
@@ -527,18 +522,58 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 		return identifyResult{Outcome: outcomeUnmatched}
 	}
 
-	// Single high-confidence result: auto-link.
-	if len(results) == 1 && results[0].Score >= 90 {
-		a.MusicBrainzID = results[0].MusicBrainzID
+	// Auto-link only when the SHARED confidence gate accepts the top candidate
+	// (#2827). What this replaces was `len(results) == 1 && Score >= 90`, which
+	// measured result SCARCITY, not match confidence: a single high-relevance
+	// hit whose name barely resembles the artist auto-linked, while a
+	// well-corroborated match that happened to return two rows never could.
+	//
+	// The gate supplies the name-similarity floor and the ambiguity margin from
+	// artist.MBIDMinNameSimilarity / artist.MBIDAmbiguityMargin, so the
+	// thresholds here are the same ones the nfo_has_mbid rule fixer applies --
+	// shared, not duplicated. It also rejects a candidate whose MBID is not a
+	// valid UUID, which the scarcity clause never checked.
+	//
+	// Worth stating because it reads as load-bearing and is not:
+	// BestMBIDCandidates restricts RUNNER-UP eligibility to MusicBrainz-sourced
+	// hits, and both search calls in this function already request MusicBrainz
+	// exclusively, so that filter is a no-op at this site. It is kept because it
+	// is correct and free, and because the provider list is a parameter that
+	// could widen later.
+	best, runnerUp := artist.BestMBIDCandidates(results)
+	switch rej := artist.EvaluateMBIDCandidate(a.Name, best, runnerUp); {
+	case rej != nil:
+		// Info, matching the rule fixer's decline logging. Fall through to the
+		// review-queue construction below.
+		r.logger.Info("identify: Tier 3 candidate declined by the confidence gate",
+			"artist", a.Name, "reason", rej.Reason)
+	case r.identityWouldReplace(a, best.MusicBrainzID):
+		// Cleared the gate but disagrees with a stored identity: never replace
+		// (#2826). Fall through to the review queue so a human decides.
+		r.logger.Info("identify: Tier 3 candidate disagrees with the stored MusicBrainz ID, queueing for review",
+			"artist", a.Name, "stored_mbid", a.MusicBrainzID, "proposed_mbid", best.MusicBrainzID)
+	default:
 		// Lock already handled upstream (see identifyArtist's a.Locked guard).
-		if _, err := r.autoLinkAndRefresh(ctx, a); err != nil {
+		if _, err := r.applyIdentity(ctx, a, identityWrite{
+			MBID:       best.MusicBrainzID,
+			Source:     artist.IdentifySourceName,
+			Provenance: artist.SourceMachinePicked,
+		}); err != nil {
 			return identifyResult{Outcome: outcomeFailed}
 		}
 		return identifyResult{Outcome: outcomeAutoLinked}
 	}
 
-	// Multiple results or low score: queue only candidates with confidence >= 0.3
-	// to avoid flooding the review queue with low-confidence noise.
+	// Queue only candidates with confidence >= 0.3 to avoid flooding the review
+	// queue with low-confidence noise.
+	//
+	// The Score/200 formula below is NOT a second confidence scale competing
+	// with the gate above (#2827). The gate is now the sole authority for the
+	// auto-link decision; this arithmetic only decides which candidates are
+	// worth SHOWING a human and in what order. It is deliberately left
+	// unchanged: re-expressing a review-queue display filter in the gate's
+	// correctness constants would re-tune what the operator sees, which is a
+	// display change riding along on an overwrite fix.
 	var reviewable []ScoredCandidate
 	for i := range results {
 		res := &results[i]
@@ -567,6 +602,164 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 			Candidates: reviewable,
 		},
 	}
+}
+
+// evaluateTier1 decides what the connected-platform index can say about this
+// artist's identity. handled=false means Tier 1 reached no verdict and the
+// caller should continue to Tier 2/3.
+//
+// THE CRUX (issue #2826, #2827). The shared confidence gate
+// artist.EvaluateMBIDCandidate reads a provider.ArtistSearchResult's Score, and
+// a connEntry has no score to read -- a connection entry is not a scored search
+// hit, it is a claim by a third-party system about an artist it also holds.
+// Wrapping an entry in a synthetic ArtistSearchResult{Score: 100} and calling
+// the gate would launder a fabricated number through it: the score floor would
+// be inert at this site while APPEARING in the diff to have been applied, which
+// is worse than not calling the gate at all because it defeats review.
+//
+// So the gate is applied LEG BY LEG here, reusing its exported constants so
+// there is exactly one definition of each threshold in the tree:
+//
+//   - artist.MBIDMinNameSimilarity applies DIRECTLY. It is the one leg computed
+//     locally rather than read off a provider, so it transfers unchanged.
+//   - artist.MBIDAmbiguityMargin is re-expressed EXACTLY, not re-tuned. Its
+//     meaning is "the evidence does not discriminate between two identities".
+//     With no scores to subtract, the honest form of that is: if the surviving
+//     entries carry more than one distinct MBID, the index cannot discriminate.
+//     That is strictly stricter than a 10-point margin and introduces no new
+//     threshold.
+//   - artist.MBIDMinProviderScore is INAPPLICABLE and deliberately not faked.
+//     There is no relevance rank to floor. Its protection is replaced
+//     STRUCTURALLY: this path may only ever fill a blank (applyIdentity
+//     enforces that), so the worst case of a wrong adoption is a blank becoming
+//     wrong, never a correct identity being destroyed.
+//
+// Plus one leg the previous code omitted entirely: syntactic validity.
+// buildConnectionIndex filters only on MusicBrainzID != "", so a
+// platform-sourced ID was never checked for being a UUID at all.
+//
+// The old "unanimous" guard this replaces was a loop over entries[1:], which
+// never executes for a single entry -- so one platform record whose NAME
+// happened to match overwrote a stored MBID with no confidence evidence
+// whatsoever. That is #2826.
+func (r *Router) evaluateTier1(ctx context.Context, a *artist.Artist, connIdx *connectionIndex) (identifyResult, bool) {
+	entries := connIdx.lookup(a.Name)
+	if len(entries) == 0 {
+		return identifyResult{}, false
+	}
+
+	// Survivors clear BOTH the validity leg and the name-similarity leg.
+	// Similarity is not automatically 100: lookup normalizes case and
+	// whitespace only, so entries whose name merely normalizes equal can still
+	// differ materially.
+	type survivor struct {
+		entry      connEntry
+		mbid       string // normalized
+		similarity int
+	}
+	var surviving []survivor
+	distinct := make(map[string]struct{})
+	for _, entry := range entries {
+		mbid := normalizeMBID(entry.MusicBrainzID)
+		if !artist.IsValidMBID(mbid) {
+			continue
+		}
+		sim := provider.NameSimilarity(a.Name, entry.Name)
+		if sim < artist.MBIDMinNameSimilarity {
+			continue
+		}
+		surviving = append(surviving, survivor{entry: entry, mbid: mbid, similarity: sim})
+		distinct[mbid] = struct{}{}
+	}
+
+	if len(surviving) == 0 {
+		// Info, matching the nfo_has_mbid fixer's decline logging: a declined
+		// candidate is an operator-visible event, not a fault.
+		r.logger.Info("identify: no connection entry cleared the Tier 1 gates",
+			"artist", a.Name, "entries", len(entries))
+		return identifyResult{}, false
+	}
+
+	if a.MusicBrainzID != "" {
+		stored := normalizeMBID(a.MusicBrainzID)
+		if _, only := distinct[stored]; only && len(distinct) == 1 {
+			// CORROBORATION: the platform agrees with what is already stored.
+			// Still route through applyIdentity so the DiscogsID blank-fill and
+			// the metadata refresh happen, preserving the pre-existing
+			// user-visible behavior and the outcomeAutoLinked counter.
+			// AllowReplace stays false and is never exercised: the IDs match, so
+			// this is not a replacement. HistoryService.Record suppresses the
+			// row itself (old == new).
+			if _, err := r.applyIdentity(ctx, a, identityWrite{
+				MBID:       stored,
+				DiscogsID:  surviving[0].entry.DiscogsID,
+				Source:     artist.IdentifySourceConnection,
+				Provenance: a.MetadataSources[artist.SourceKeyMusicBrainzID],
+			}); err != nil {
+				return identifyResult{Outcome: outcomeFailed}, true
+			}
+			return identifyResult{Outcome: outcomeAutoLinked}, true
+		}
+
+		// The platform offers an identity that DISAGREES with the stored one.
+		// Never write it: queue for a human instead (#2826). Do not fall
+		// through -- Tier 2/3 could not write either under the never-replace
+		// invariant, so falling through would spend provider calls to reach the
+		// same refusal.
+		candidates := make([]ScoredCandidate, 0, len(surviving))
+		for _, s := range surviving {
+			candidates = append(candidates, ScoredCandidate{
+				ArtistSearchResult: provider.ArtistSearchResult{
+					Name:          s.entry.Name,
+					MusicBrainzID: s.mbid,
+					Source:        "connection",
+				},
+				Confidence: float64(s.similarity) / 100.0,
+				Reason:     "connection library match",
+			})
+		}
+		r.logger.Info("identify: connection entry disagrees with the stored MusicBrainz ID, queueing for review",
+			"artist", a.Name, "stored_mbid", a.MusicBrainzID, "candidates", len(candidates))
+		return identifyResult{
+			Outcome: outcomeQueued,
+			Candidate: &IdentifyCandidate{
+				ArtistID:   a.ID,
+				ArtistName: a.Name,
+				ArtistPath: a.Path,
+				// "connection" is already the documented first value of the
+				// Tier field; it was simply never emitted before.
+				Tier:       "connection",
+				Candidates: candidates,
+			},
+		}, true
+	}
+
+	// Blank MBID. One distinct surviving identity is a fill; more than one is
+	// the ambiguity leg firing.
+	if len(distinct) == 1 {
+		// The lock was already handled upstream: identifyArtist returns
+		// outcomeSkipped for a locked artist, so the skip flag cannot be true.
+		if _, err := r.applyIdentity(ctx, a, identityWrite{
+			MBID:       surviving[0].mbid,
+			DiscogsID:  surviving[0].entry.DiscogsID,
+			Source:     artist.IdentifySourceConnection,
+			Provenance: artist.SourceMachinePicked,
+		}); err != nil {
+			return identifyResult{Outcome: outcomeFailed}, true
+		}
+		return identifyResult{Outcome: outcomeAutoLinked}, true
+	}
+
+	// Ambiguous and nothing to protect: FALL THROUGH rather than queue. Album
+	// comparison is better evidence than the platform index and can
+	// discriminate where the index cannot, so only queue if Tier 2/3 also
+	// decline. Note there is deliberately no ">= 2 agreeing entries" quorum:
+	// buildConnectionIndex indexes per library, so a single-connection install
+	// genuinely holds exactly one entry per artist and a quorum would stop
+	// Tier 1 linking anything at all.
+	r.logger.Info("identify: connection entries carry distinct MusicBrainz IDs, deferring to later tiers",
+		"artist", a.Name, "distinct_mbids", len(distinct))
+	return identifyResult{}, false
 }
 
 // enrichAndScoreTier2 enriches search results with album comparison data and
@@ -639,11 +832,31 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 		}
 	}
 
-	// Exactly 1 candidate with >= 70%: auto-link.
-	if len(above70) == 1 {
-		a.MusicBrainzID = above70[0].MusicBrainzID
+	// Exactly 1 candidate with >= 70%: auto-link, unless that would REPLACE a
+	// stored MusicBrainz ID (#2826).
+	//
+	// This guard is not redundant with applyIdentity's invariant, it is what
+	// keeps the invariant from firing here. Tier 2 holds the BEST evidence of
+	// any tier, so it must not be the tier that trips the bug backstop: without
+	// this check a legitimate Tier 2 disagreement would surface as an ERROR log
+	// and outcomeFailed instead of the review-queue entry the operator needs.
+	// The validity condition is here as well as in applyIdentity for the same
+	// reason the never-replace condition is: applyIdentity treats an EMPTY MBID as
+	// "leave alone", so a blank candidate would sail through the chokepoint and
+	// still be reported as outcomeAutoLinked -- a link that linked nothing. The
+	// call site is the only place that can tell the difference between "nothing to
+	// write" and "written", so the outcome decision belongs here. Falling through
+	// puts the candidate in the review queue (it also cleared 30%), which is the
+	// honest answer.
+	if len(above70) == 1 &&
+		artist.IsValidMBID(normalizeMBID(above70[0].MusicBrainzID)) &&
+		!r.identityWouldReplace(a, above70[0].MusicBrainzID) {
 		// Lock already handled upstream (see identifyArtist's a.Locked guard).
-		if _, err := r.autoLinkAndRefresh(ctx, a); err != nil {
+		if _, err := r.applyIdentity(ctx, a, identityWrite{
+			MBID:       above70[0].MusicBrainzID,
+			Source:     artist.IdentifySourceAlbum,
+			Provenance: artist.SourceMachinePicked,
+		}); err != nil {
 			return identifyResult{Outcome: outcomeFailed}
 		}
 		return identifyResult{Outcome: outcomeAutoLinked}
@@ -667,9 +880,201 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 	return identifyResult{Outcome: outcomeUnmatched}
 }
 
+// normalizeMBID renders a MusicBrainz ID in the form the tree stores and
+// compares: trimmed and lowercased, matching the nfo_has_mbid fixer and
+// bulk_executor.fetchImages.
+//
+// It exists so the identity comparison and the identity WRITE cannot disagree
+// about what counts as "the same ID". They did once: the write normalized while
+// the comparison read the raw stored string, so a padded stored value read as a
+// replacement of itself and the never-replace invariant refused a corroboration
+// that changed nothing.
+func normalizeMBID(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+// identityWouldReplace reports whether adopting proposed would REPLACE a
+// different MusicBrainz ID already stored on the artist. Tiers call it to route
+// to the review queue themselves rather than letting applyIdentity's backstop
+// turn a legitimate disagreement into an error. It is the same comparison
+// applyIdentity makes, in one place, so the two cannot drift apart.
+func (r *Router) identityWouldReplace(a *artist.Artist, proposed string) bool {
+	return a.MusicBrainzID != "" && proposed != "" &&
+		!strings.EqualFold(normalizeMBID(a.MusicBrainzID), normalizeMBID(proposed))
+}
+
+// errIdentityReplaceRefused is returned by applyIdentity when a caller proposed
+// an MBID that would REPLACE a different stored one without operator consent.
+// It is a bug backstop rather than a routine decline: every tier is expected to
+// make that decision itself and queue for review, so reaching this sentinel
+// means a writer forgot to (issue #2826).
+var errIdentityReplaceRefused = errors.New("refusing to replace a stored MusicBrainz ID without operator consent")
+
+// errIdentityInvalidMBID is returned by applyIdentity when a caller proposed a
+// NON-EMPTY MusicBrainz ID that is not a syntactically valid UUID.
+//
+// Like errIdentityReplaceRefused this is the second leg of the chokepoint, not a
+// routine decline: validity used to be checked at Tier 1 and Tier 3 but not at
+// Tier 2 nor at the operator link handler, which is exactly the per-caller drift
+// applyIdentity exists to eliminate. An EMPTY MBID is not an error -- see
+// identityWrite.MBID.
+var errIdentityInvalidMBID = errors.New("refusing to write a syntactically invalid MusicBrainz ID")
+
+// identityWrite describes a proposed identity assignment for applyIdentity.
+//
+// The zero value refuses to replace anything, which is the whole point: a
+// future writer that forgets to think about AllowReplace gets the safe
+// behavior rather than the destructive one. A destructive action must be
+// authorized by a positive allow-list, never by the absence of a veto.
+type identityWrite struct {
+	// MBID is the proposed MusicBrainz ID. Empty means "leave the artist's
+	// MusicBrainzID alone" -- used by the non-identity provider-link paths.
+	MBID string
+
+	// DiscogsID is applied when non-empty, matching the pre-existing behavior
+	// of the connection and review-queue link paths. The never-replace
+	// invariant deliberately covers the MusicBrainz ID only: #2826 is about the
+	// identity every downstream consumer treats as fact.
+	DiscogsID string
+
+	// Source is the metadata_changes attribution: one of the
+	// artist.IdentifySource* values.
+	Source string
+
+	// Provenance is stamped into MetadataSources["musicbrainz_id"]:
+	// artist.SourceMachinePicked or artist.SourceOperatorConfirmed. Only
+	// written when MBID is non-empty, so a Discogs-only link cannot relabel
+	// the provenance of an MBID it did not touch.
+	Provenance string
+
+	// AllowReplace authorizes replacing a DIFFERENT stored MusicBrainz ID.
+	// ZERO VALUE = REFUSE. Only an operator-driven path may set it.
+	AllowReplace bool
+}
+
+// applyIdentity is the single chokepoint for every MusicBrainz-ID write in the
+// identify pipeline, and it enforces two invariants:
+//
+//   - NEVER-REPLACE: an automated writer may FILL A BLANK MBID or AGREE with the
+//     stored one, but it may never REPLACE one (issue #2826).
+//   - VALIDITY: a non-empty MBID must be a syntactically valid UUID. It was
+//     previously applied at Tier 1 and Tier 3 only, so Tier 2 and the operator
+//     link could each write an unchecked value.
+//
+// Enforcing that here rather than inside each tier is the point. Four writers
+// reach this function -- Tier 1 (connection index), Tier 2 (album comparison),
+// Tier 3 (name search), and the operator's review-queue link -- and a guard
+// repeated in three of them is three chances to drift, plus nothing at all
+// protecting a future Tier 4. One invariant here is grep-assertable: the only
+// assignment to a.MusicBrainzID on the identify path is the one below, and the
+// only caller that sets AllowReplace is the operator link.
+//
+// Taking ownership of the assignment (rather than letting callers mutate the
+// artist first) is also what makes the audit row possible: by the time a
+// caller-mutated artist arrived here the previous ID was already gone, so
+// there was nothing to compare against and nothing to record as the replaced
+// value (issue #2845).
+func (r *Router) applyIdentity(ctx context.Context, a *artist.Artist, w identityWrite) (refreshSkipped bool, err error) {
+	old := a.MusicBrainzID
+
+	// VALIDITY LEG. Checked here rather than per-tier so it is as grep-assertable
+	// as the never-replace leg below and no future caller can forget it.
+	//
+	// Only a NON-EMPTY, invalid value is a rejection. An empty MBID legitimately
+	// means "leave the artist's MusicBrainzID alone" (see identityWrite.MBID) and
+	// is how the Discogs-only link paths reach this function, so treating empty as
+	// invalid would break every one of them.
+	if w.MBID != "" && !artist.IsValidMBID(normalizeMBID(w.MBID)) {
+		r.logger.Error("identify: refused a syntactically invalid MusicBrainz ID",
+			"artist_id", a.ID, "artist", a.Name,
+			"proposed_mbid", w.MBID, "source", w.Source)
+		return false, errIdentityInvalidMBID
+	}
+
+	// Compare NORMALIZED forms. Trimming matters as much as case-folding here:
+	// a stored value that arrived padded (a hand-edited NFO, a platform payload
+	// with stray whitespace) is the SAME identity as its trimmed twin, and
+	// comparing the raw strings made a genuine corroboration read as a
+	// replacement -- which the invariant below then refused, turning a
+	// no-op agreement into outcomeFailed plus a spurious ERROR log.
+	//
+	// EqualFold rather than ==: MBIDs are stored lowercased but providers and
+	// platforms return either case, and an ID differing only in case is the same
+	// identity. Treating either difference as a replacement would both refuse a
+	// legitimate corroboration and record a phantom change.
+	replacing := old != "" && w.MBID != "" &&
+		!strings.EqualFold(normalizeMBID(old), normalizeMBID(w.MBID))
+	if replacing && !w.AllowReplace {
+		// ERROR, not Info: a tier that reaches this line has already failed to
+		// make its own never-replace decision, so this is a defect to
+		// investigate, not a routine "not confident enough" outcome.
+		r.logger.Error("identify: refused to replace a stored MusicBrainz ID",
+			"artist_id", a.ID, "artist", a.Name,
+			"stored_mbid", old, "proposed_mbid", w.MBID, "source", w.Source)
+		return false, errIdentityReplaceRefused
+	}
+
+	if w.MBID != "" {
+		// Normalize on write, matching the nfo_has_mbid fixer and
+		// bulk_executor.fetchImages: MBIDs are used as case-insensitive lookup
+		// keys elsewhere, so storing whatever case a source returned would
+		// silently break an exact-match lookup keyed on the lowercased form.
+		a.MusicBrainzID = normalizeMBID(w.MBID)
+		if w.Provenance != "" {
+			if a.MetadataSources == nil {
+				a.MetadataSources = make(map[string]string)
+			}
+			a.MetadataSources[artist.SourceKeyMusicBrainzID] = w.Provenance
+		}
+	}
+	if w.DiscogsID != "" {
+		a.DiscogsID = w.DiscogsID
+	}
+
+	refreshSkipped, err = r.autoLinkAndRefresh(ctx, a)
+	if err != nil {
+		return refreshSkipped, err
+	}
+
+	// Best-effort audit row, AFTER the write it records succeeded (issue
+	// #2845). Contract copied from Pipeline.recordRuleFixHistory and
+	// BulkExecutor.recordBulkMBIDHistory: a failed audit write is a
+	// diagnostics gap and must never fail an operation that already
+	// completed.
+	r.recordIdentityHistory(ctx, a, old, w.Source)
+
+	return refreshSkipped, nil
+}
+
+// recordIdentityHistory writes the metadata_changes row for an identity write.
+//
+// oldValue carries the REPLACED MBID, which is the entire point of #2845: the
+// existing rule-path recorders hardcode "" because their callers are
+// blank-fill-only, so nothing in the tree could tell an operator what an
+// automated pass destroyed. HistoryService.Record already suppresses a row when
+// oldValue is non-empty and equal to newValue, so a pure corroboration (Tier 1
+// agreeing with the stored ID) writes nothing -- do NOT add a second guard for
+// that here, it is already handled one layer down.
+func (r *Router) recordIdentityHistory(ctx context.Context, a *artist.Artist, oldMBID, source string) {
+	if r.historyService == nil || source == "" {
+		return
+	}
+	if err := r.historyService.Record(ctx, a.ID, artist.SourceKeyMusicBrainzID,
+		oldMBID, a.MusicBrainzID, source); err != nil {
+		r.logger.Warn("identify: recording MusicBrainz ID history",
+			"artist_id", a.ID, "source", source, "error", err)
+	}
+}
+
 // autoLinkAndRefresh sets the provider ID on the artist, persists it, runs a
 // full metadata refresh, and evaluates health. Returns an error only if the
 // initial Update fails (refresh failures are logged but not fatal).
+//
+// Callers that assign a MusicBrainz ID must go through applyIdentity instead,
+// which owns the never-replace invariant and the audit row. This function
+// remains the persist-and-refresh primitive for the provider-link handlers
+// that mutate a NON-identity field (Discogs, TheAudioDB, Deezer) and so have
+// no MBID to protect.
 //
 // Returns refreshSkipped=true when the artist-level lock suppressed the
 // provider refresh: the caller-chosen provider ID is a manual edit and is
