@@ -454,29 +454,45 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
-      # Cache the Playwright browser binary on a key derived from
+      # Cache the Playwright browser binaries on a key derived from
       # package-lock.json (which pins the exact @playwright/* version).
-      # On a cache hit the binary download is skipped; system dependencies
-      # are installed separately below (they are OS packages, not cached).
+      #
+      # The key is namespaced by the ENGINE SET, not just the lockfile hash.
+      # It was "playwright-chromium-<hash>" while chromium was the only engine
+      # installed; keeping that prefix after adding firefox would let a cache
+      # entry written by the chromium-only era restore on its `restore-keys`
+      # prefix match and hand back a browsers directory with NO firefox in it.
+      # The install step below would then be skipped and the firefox project
+      # would fail at launch. Renaming the prefix to "playwright-browsers-"
+      # makes those stale entries unreachable: nothing can match a prefix that
+      # did not exist when they were written. Bump this prefix again on any
+      # future change to the installed engine set.
       - name: Cache Playwright browser binaries
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ hashFiles('package-lock.json') }}
+          key: playwright-browsers-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            playwright-chromium-
+            playwright-browsers-
 
-      - name: Install Playwright Chromium browser binary
-        # Skip binary download on cache hit; the binary is already in
-        # ~/.cache/ms-playwright restored above.
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium
+      # Both engines: firefox is the TARGET browser for this project and
+      # chromium is the compatibility leg (see playwright.config.js). Run
+      # unconditionally rather than gating on the cache hit -- `install` is a
+      # no-op costing well under a second when the binaries are already
+      # present, and that cheapness buys a real guarantee: a partial cache
+      # (restored from a prefix match that predates an engine being added)
+      # is repaired instead of silently leaving that engine missing. The
+      # earlier `if: cache-hit != 'true'` gate is exactly what would turn such
+      # a partial restore into a launch failure.
+      - name: Install Playwright browser binaries (chromium + firefox)
+        run: npx playwright install chromium firefox
 
-      - name: Install Playwright Chromium system dependencies
-        # Always install OS-level deps (libnss3, libgbm, etc.); they are
-        # not included in the cached browser archive.
-        run: npx playwright install-deps chromium
+      - name: Install Playwright browser system dependencies
+        # Always install OS-level deps (libnss3, libgbm, libdbus-glib for
+        # firefox, etc.); they are OS packages, not part of the cached
+        # browser archive.
+        run: npx playwright install-deps chromium firefox
 
       - name: Generate templ
         run: go tool templ generate
