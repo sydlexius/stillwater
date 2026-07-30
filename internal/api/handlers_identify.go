@@ -652,7 +652,7 @@ func (r *Router) evaluateTier1(ctx context.Context, a *artist.Artist, connIdx *c
 	var surviving []survivor
 	distinct := make(map[string]struct{})
 	for _, entry := range entries {
-		mbid := strings.ToLower(strings.TrimSpace(entry.MusicBrainzID))
+		mbid := normalizeMBID(entry.MusicBrainzID)
 		if !artist.IsValidMBID(mbid) {
 			continue
 		}
@@ -673,7 +673,7 @@ func (r *Router) evaluateTier1(ctx context.Context, a *artist.Artist, connIdx *c
 	}
 
 	if a.MusicBrainzID != "" {
-		stored := strings.ToLower(strings.TrimSpace(a.MusicBrainzID))
+		stored := normalizeMBID(a.MusicBrainzID)
 		if _, only := distinct[stored]; only && len(distinct) == 1 {
 			// CORROBORATION: the platform agrees with what is already stored.
 			// Still route through applyIdentity so the DiscogsID blank-fill and
@@ -862,6 +862,19 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 	return identifyResult{Outcome: outcomeUnmatched}
 }
 
+// normalizeMBID renders a MusicBrainz ID in the form the tree stores and
+// compares: trimmed and lowercased, matching the nfo_has_mbid fixer and
+// bulk_executor.fetchImages.
+//
+// It exists so the identity comparison and the identity WRITE cannot disagree
+// about what counts as "the same ID". They did once: the write normalized while
+// the comparison read the raw stored string, so a padded stored value read as a
+// replacement of itself and the never-replace invariant refused a corroboration
+// that changed nothing.
+func normalizeMBID(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
 // identityWouldReplace reports whether adopting proposed would REPLACE a
 // different MusicBrainz ID already stored on the artist. Tiers call it to route
 // to the review queue themselves rather than letting applyIdentity's backstop
@@ -869,7 +882,7 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 // applyIdentity makes, in one place, so the two cannot drift apart.
 func (r *Router) identityWouldReplace(a *artist.Artist, proposed string) bool {
 	return a.MusicBrainzID != "" && proposed != "" &&
-		!strings.EqualFold(a.MusicBrainzID, proposed)
+		!strings.EqualFold(normalizeMBID(a.MusicBrainzID), normalizeMBID(proposed))
 }
 
 // errIdentityReplaceRefused is returned by applyIdentity when a caller proposed
@@ -932,11 +945,19 @@ type identityWrite struct {
 func (r *Router) applyIdentity(ctx context.Context, a *artist.Artist, w identityWrite) (refreshSkipped bool, err error) {
 	old := a.MusicBrainzID
 
-	// EqualFold, not ==: MBIDs are stored lowercased but providers and
-	// platforms return either case, and an ID that differs only in case is the
-	// SAME identity. Treating it as a replacement would both refuse a
+	// Compare NORMALIZED forms. Trimming matters as much as case-folding here:
+	// a stored value that arrived padded (a hand-edited NFO, a platform payload
+	// with stray whitespace) is the SAME identity as its trimmed twin, and
+	// comparing the raw strings made a genuine corroboration read as a
+	// replacement -- which the invariant below then refused, turning a
+	// no-op agreement into outcomeFailed plus a spurious ERROR log.
+	//
+	// EqualFold rather than ==: MBIDs are stored lowercased but providers and
+	// platforms return either case, and an ID differing only in case is the same
+	// identity. Treating either difference as a replacement would both refuse a
 	// legitimate corroboration and record a phantom change.
-	replacing := old != "" && w.MBID != "" && !strings.EqualFold(old, w.MBID)
+	replacing := old != "" && w.MBID != "" &&
+		!strings.EqualFold(normalizeMBID(old), normalizeMBID(w.MBID))
 	if replacing && !w.AllowReplace {
 		// ERROR, not Info: a tier that reaches this line has already failed to
 		// make its own never-replace decision, so this is a defect to
@@ -952,7 +973,7 @@ func (r *Router) applyIdentity(ctx context.Context, a *artist.Artist, w identity
 		// bulk_executor.fetchImages: MBIDs are used as case-insensitive lookup
 		// keys elsewhere, so storing whatever case a source returned would
 		// silently break an exact-match lookup keyed on the lowercased form.
-		a.MusicBrainzID = strings.ToLower(strings.TrimSpace(w.MBID))
+		a.MusicBrainzID = normalizeMBID(w.MBID)
 		if w.Provenance != "" {
 			if a.MetadataSources == nil {
 				a.MetadataSources = make(map[string]string)

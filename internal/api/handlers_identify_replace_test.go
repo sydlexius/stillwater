@@ -465,6 +465,101 @@ func TestApplyIdentity_CorroborationWritesNoHistoryRow(t *testing.T) {
 	}
 }
 
+// TestApplyIdentity_PaddedStoredMBIDStillCorroborates is a regression test for a
+// defect an adversarial pass found in the first cut of this change: the WRITE
+// normalized the MBID (trim + lowercase) while the never-replace COMPARISON read
+// the raw stored string. A stored value that arrived padded -- a hand-edited NFO,
+// a platform payload with stray whitespace -- therefore read as a replacement OF
+// ITSELF, so the invariant refused a corroboration that would have changed
+// nothing, returning outcomeFailed and logging a spurious ERROR.
+//
+// The fixture pads AND changes case at once, so it covers both halves of
+// normalization in one shot.
+func TestApplyIdentity_PaddedStoredMBIDStillCorroborates(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r, artistSvc, histSvc := identifyHistoryRouter(t, nil)
+
+	padded := "  " + strings.ToUpper(mbidStored) + "  "
+	a := &artist.Artist{Name: "Padded", SortName: "Padded", Type: "group", MusicBrainzID: padded}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	stored, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	// Precondition: the padded form really did persist, and really is NOT a
+	// syntactically valid MBID. Without this the test could pass because the
+	// store silently normalized on write, proving nothing about the comparison.
+	if stored.MusicBrainzID != padded {
+		t.Fatalf("precondition failed: stored %q, want the padded form %q", stored.MusicBrainzID, padded)
+	}
+	if artist.IsValidMBID(stored.MusicBrainzID) {
+		t.Fatalf("precondition failed: %q unexpectedly passes IsValidMBID", stored.MusicBrainzID)
+	}
+
+	// The clean, canonical form of the SAME identity.
+	if _, err := r.applyIdentity(ctx, stored, identityWrite{
+		MBID:   mbidStored,
+		Source: artist.IdentifySourceConnection,
+	}); err != nil {
+		t.Fatalf("applyIdentity refused a corroboration of the same identity: %v", err)
+	}
+
+	after, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.MusicBrainzID != mbidStored {
+		t.Errorf("stored MBID = %q, want the normalized %q", after.MusicBrainzID, mbidStored)
+	}
+	// One row is correct and wanted: the persisted string genuinely changed, so
+	// suppressing it would hide a real edit. What must NOT happen is a refusal.
+	rows := mbidHistoryRows(t, histSvc, a.ID)
+	if len(rows) != 1 {
+		t.Fatalf("history rows = %d, want 1 recording the normalization", len(rows))
+	}
+	if rows[0].OldValue != padded || rows[0].NewValue != mbidStored {
+		t.Errorf("row = (%q -> %q), want (%q -> %q)",
+			rows[0].OldValue, rows[0].NewValue, padded, mbidStored)
+	}
+}
+
+// TestIdentifyArtist_Tier1_PaddedStoredMBIDCorroboratesEndToEnd is the same
+// defect at the tier level rather than the chokepoint, because
+// identityWouldReplace carried an identical raw-string comparison: Tier 1 would
+// have routed a self-corroboration to the review queue as a disagreement.
+func TestIdentifyArtist_Tier1_PaddedStoredMBIDCorroboratesEndToEnd(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r, artistSvc, _ := identifyHistoryRouter(t, nil)
+
+	padded := "  " + strings.ToUpper(mbidStored) + "  "
+	a := &artist.Artist{Name: "PaddedTier1", SortName: "PaddedTier1", Type: "group", MusicBrainzID: padded}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	stored, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if stored.MusicBrainzID != padded {
+		t.Fatalf("precondition failed: stored %q, want %q", stored.MusicBrainzID, padded)
+	}
+
+	idx := &connectionIndex{byName: map[string][]connEntry{
+		"paddedtier1": {{Name: "PaddedTier1", MusicBrainzID: mbidStored}},
+	}}
+	got := r.identifyArtist(ctx, stored, idx)
+	if got.Outcome != outcomeAutoLinked {
+		t.Fatalf("Outcome = %v, want autoLinked (the platform agrees with the stored identity)", got.Outcome)
+	}
+	if mbid := reloadMBID(t, artistSvc, a.ID); mbid != mbidStored {
+		t.Errorf("stored MBID = %q, want %q", mbid, mbidStored)
+	}
+}
+
 // --- Tier 1 gate legs ---
 
 // TestIdentifyArtist_Tier1_BelowNameSimilarityFloorFallsThrough exercises the
