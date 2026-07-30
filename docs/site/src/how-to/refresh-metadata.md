@@ -30,6 +30,16 @@ If the artist has no MusicBrainz ID yet, Stillwater needs to pick the right one 
 
 This only happens once per artist -- after the link, future refreshes go straight through.
 
+### When Stillwater couldn't check an artist's local albums
+
+Each candidate in the search results normally shows how well its known albums line up with what's on disk, so you can confirm a match by discography rather than by name alone.
+
+Sometimes Stillwater can't perform that comparison at all -- the artist has no folder path recorded yet, or the folder couldn't be read (a missing mount, a permissions problem, or a file where a directory was expected). When that happens, the candidate list carries a notice that local albums are unavailable, and the album-comparison column is left blank rather than showing a match count.
+
+A blank or missing album comparison in this state means "Stillwater could not look," not "this candidate has no matching albums." Don't read it as a strike against the candidate -- fall back to the artist name, MusicBrainz ID, and any other identifying details you have, and fix the underlying problem (add the artist's folder path, check the mount, check permissions) if you want album comparison back for future searches.
+
+This is different from a candidate that genuinely has zero comparable albums, which Stillwater reports separately as "no local albums to compare" -- that case means the lookup succeeded and simply found nothing on disk, which is still useful signal.
+
 ### Re-identifying an artist that is already linked
 
 If an artist is linked to the wrong entry, use **Actions** > **Re-identify Artist**. You get the same search and the same candidate list.
