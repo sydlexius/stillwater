@@ -700,7 +700,14 @@ templ blastRadiusRow(row artist.BlastRadiusRow) {
 		<td class="px-4 py-3 text-sm">{ historyFieldLabel(ctx, row.Field) }</td>
 		<td class="px-4 py-3 text-sm">
 			if row.OldValue != "" {
-				<span class="line-through text-red-500 dark:text-red-400 mr-1">{ historyTruncate(row.OldValue, 60) }</span>
+				<!-- text-red-600, not text-red-500: on the light-theme white row
+				     background red-500 (#fb2c36) computes to 3.81:1, below the
+				     4.5:1 WCAG AA floor for this 14px body text. red-600
+				     (#e7000b) measures 4.77:1 and clears it. Verified as a
+				     rendered contrast failure by the blast-radius a11y spec in
+				     both Firefox and Chromium; text-red-600 dark:text-red-400 is
+				     also the most common pairing already in these templates. -->
+				<span class="line-through text-red-600 dark:text-red-400 mr-1">{ historyTruncate(row.OldValue, 60) }</span>
 			}
 			if row.NewValue != "" {
 				<span class="text-gray-600 dark:text-gray-400">{ historyTruncate(row.NewValue, 60) }</span>
