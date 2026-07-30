@@ -358,3 +358,56 @@ func TestCandidateRedFlag(t *testing.T) {
 		})
 	}
 }
+
+// TestAlbumGateDecisionString pins the operator-facing label of every decision.
+//
+// This is the string that lands in the identify decline logs, so it is the only
+// record an operator has of WHICH way the gate went. A wrong label there is a
+// wrong answer to "why was this artist not linked", and the log is the one
+// surface where that question gets asked.
+//
+// The exact strings are asserted rather than merely non-empty: a String() that
+// returned "permit" for a decline would satisfy any weaker check while
+// inverting the meaning of every log line it appears in.
+func TestAlbumGateDecisionString(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		in   AlbumGateDecision
+		want string
+	}{
+		{name: "decline", in: AlbumGateDecline, want: "decline"},
+		{name: "review", in: AlbumGateReview, want: "review"},
+		{name: "permit", in: AlbumGatePermit, want: "permit"},
+		{
+			// The default arm, and it matters for the same reason the
+			// EvidenceNone branch does: it is the "I do not recognize this"
+			// case. A future author who adds a decision without extending
+			// String() must get something that names the gap, not a silent
+			// empty string that reads in a log like a decision nobody made.
+			name: "unrecognized value names itself",
+			in:   AlbumGateDecision(99),
+			want: "AlbumGateDecision(99)",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.in.String(); got != tc.want {
+				t.Errorf("AlbumGateDecision(%d).String() = %q, want %q", int(tc.in), got, tc.want)
+			}
+		})
+	}
+
+	// The three real decisions must be mutually distinct. Asserting each label
+	// individually above would still pass if two of them collapsed onto a value
+	// both tests happened to name, and a log that cannot tell a permit from a
+	// decline is worse than no log.
+	seen := map[string]AlbumGateDecision{}
+	for _, d := range []AlbumGateDecision{AlbumGateDecline, AlbumGateReview, AlbumGatePermit} {
+		if prev, dup := seen[d.String()]; dup {
+			t.Errorf("AlbumGateDecision(%d) and AlbumGateDecision(%d) share the label %q", int(prev), int(d), d.String())
+		}
+		seen[d.String()] = d
+	}
+}
