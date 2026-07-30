@@ -1002,6 +1002,10 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	// built after the notifier, but its constructor already takes nine arguments,
 	// so it takes the same setter shape as SetEventBus.
 	a.bulkExecutor.SetCollisionGuard(a.collisionNotifier, a.artistService)
+	// #2825/#2845: record a metadata_changes row whenever the bulk fetch-images
+	// job self-heals a missing MusicBrainz ID, mirroring the pipeline's own
+	// SetHistoryService wiring above.
+	a.bulkExecutor.SetHistoryService(a.historyService)
 
 	// Overlay UI-persisted operational settings (#1746, #1753) now that the
 	// scanner and rule pipeline are wired. Env-wins; see applyPersistedOpsSettings.

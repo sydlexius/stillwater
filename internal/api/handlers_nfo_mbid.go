@@ -13,9 +13,12 @@
 // it can be slow, and every one of them is stated in the response rather than
 // left for the reader to discover:
 //
-//  1. SCOPE. Only the rule-fixer path records a change. Other writers assign a
-//     MusicBrainz ID and record nothing, so their artists can never appear here.
-//     This is permanent, not a gap waiting to be closed.
+//  1. SCOPE. Only the rule-fixer path records a change under the label this
+//     report matches. The Identify flow's automatic match tiers assign a
+//     MusicBrainz ID and record nothing at all, permanently. The bulk rule
+//     executor now records its own assignments too, under a different label,
+//     so it is a scoping choice (not a permanent gap) that this report still
+//     will not list them.
 //  2. FLOOR. The counts under-report by construction and must be read as "at
 //     least this many".
 //  3. RETENTION. Deleting or merging an artist away destroys its history, and
