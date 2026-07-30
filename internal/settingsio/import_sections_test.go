@@ -297,6 +297,204 @@ func TestImportConnections_ManagedWithSnapshotPreservedOnCreate(t *testing.T) {
 	}
 }
 
+// TestImportConnections_EmptySnapshotPreservesStoredSnapshot proves the
+// #2439 guard: an envelope whose snapshot decoded empty (e.g. exported
+// before Stillwater-managed mode was ever enabled on that peer) must not
+// overwrite a non-empty snapshot already on file for the target connection.
+// pre_stillwater_config_json is the only copy of the operator's original
+// peer saver configuration; once cleared it cannot be reconstructed.
+func TestImportConnections_EmptySnapshotPreservesStoredSnapshot(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	// Precondition: seed a target that is currently managed with a real
+	// snapshot on file. If this seed step were skipped or silently failed,
+	// the "preserved" assertion below would pass vacuously (empty stays
+	// empty either way), so assert the seed took effect before importing.
+	seed := &connection.Connection{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key1", Enabled: true,
+		FeatureManageServerFiles: true,
+		PreStillwaterConfigJSON:  `{"stored":"snapshot"}`,
+	}
+	if err := connSvc.Create(ctx, seed); err != nil {
+		t.Fatalf("seeding target connection: %v", err)
+	}
+	seeded, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing after seed: %v", err)
+	}
+	if len(seeded) != 1 || seeded[0].PreStillwaterConfigJSON != `{"stored":"snapshot"}` {
+		t.Fatalf("precondition failed: seed did not store the snapshot, got %+v", seeded)
+	}
+
+	// Incoming envelope: v1.4+ (carryV14Fields=true) but its own snapshot
+	// decoded empty -- the exact "exported before managed mode was ever
+	// enabled" scenario from #2439.
+	conns := []ConnectionExport{{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key2", Enabled: true,
+		FeatureManageServerFiles: false,
+		PreStillwaterConfigJSON:  "",
+	}}
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true); err != nil {
+		t.Fatalf("importConnections: %v", err)
+	}
+
+	all, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(all))
+	}
+	got := all[0]
+	// Assert the snapshot value on disk, not a counter or a flag.
+	if got.PreStillwaterConfigJSON != `{"stored":"snapshot"}` {
+		t.Errorf("PreStillwaterConfigJSON was overwritten by an empty incoming snapshot; got %q, want the stored snapshot preserved", got.PreStillwaterConfigJSON)
+	}
+	// The managed flag must still take the envelope's value. The guard above
+	// deliberately protects ONLY the snapshot column, so a change that widened
+	// it to skip the whole carryV14Fields block would leave the seeded true in
+	// place and silently diverge the two coupled columns.
+	if got.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles: got true, want false from the envelope (the snapshot guard must not retain the prior managed state)")
+	}
+	// Other fields still update normally from the envelope.
+	if got.APIKey != "key2" {
+		t.Errorf("APIKey: got %q, want key2 (unrelated fields must still update)", got.APIKey)
+	}
+}
+
+// TestImportConnections_EmptySnapshotOntoEmptyIsNoop covers the fourth cell
+// of the matrix: an incoming empty snapshot onto an already-empty stored
+// snapshot must remain empty (there is nothing to preserve, and nothing
+// wrongly written either).
+func TestImportConnections_EmptySnapshotOntoEmptyIsNoop(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	seed := &connection.Connection{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key1", Enabled: true,
+	}
+	if err := connSvc.Create(ctx, seed); err != nil {
+		t.Fatalf("seeding target connection: %v", err)
+	}
+
+	conns := []ConnectionExport{{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key2", Enabled: true,
+		FeatureManageServerFiles: false,
+		PreStillwaterConfigJSON:  "",
+	}}
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true); err != nil {
+		t.Fatalf("importConnections: %v", err)
+	}
+
+	all, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(all))
+	}
+	if got := all[0].PreStillwaterConfigJSON; got != "" {
+		t.Errorf("PreStillwaterConfigJSON: got %q, want empty (no-op case)", got)
+	}
+}
+
+// TestImportConnections_NonEmptySnapshotUpdatesStoredEmpty and
+// TestImportConnections_NonEmptySnapshotUpdatesStoredNonEmpty cover the
+// remaining two matrix cells to catch an over-corrected guard that never
+// writes the column at all (which would pass the preserve-test above
+// trivially but silently break ordinary snapshot propagation).
+
+// TestImportConnections_NonEmptySnapshotUpdatesStoredEmpty verifies an
+// incoming non-empty snapshot still updates a target with no snapshot on
+// file (a legitimate first-time managed-mode capture arriving via import).
+func TestImportConnections_NonEmptySnapshotUpdatesStoredEmpty(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	seed := &connection.Connection{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key1", Enabled: true,
+	}
+	if err := connSvc.Create(ctx, seed); err != nil {
+		t.Fatalf("seeding target connection: %v", err)
+	}
+
+	conns := []ConnectionExport{{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key2", Enabled: true,
+		FeatureManageServerFiles: true,
+		PreStillwaterConfigJSON:  `{"incoming":"snapshot"}`,
+	}}
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true); err != nil {
+		t.Fatalf("importConnections: %v", err)
+	}
+
+	all, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(all))
+	}
+	if got := all[0].PreStillwaterConfigJSON; got != `{"incoming":"snapshot"}` {
+		t.Errorf("PreStillwaterConfigJSON: got %q, want the incoming snapshot to be written", got)
+	}
+}
+
+// TestImportConnections_NonEmptySnapshotUpdatesStoredNonEmpty verifies an
+// incoming non-empty snapshot still replaces a different non-empty stored
+// snapshot -- the envelope's snapshot is authoritative whenever it is
+// actually present; only an empty incoming value is refused.
+func TestImportConnections_NonEmptySnapshotUpdatesStoredNonEmpty(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	seed := &connection.Connection{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key1", Enabled: true,
+		FeatureManageServerFiles: true,
+		PreStillwaterConfigJSON:  `{"stored":"old"}`,
+	}
+	if err := connSvc.Create(ctx, seed); err != nil {
+		t.Fatalf("seeding target connection: %v", err)
+	}
+
+	conns := []ConnectionExport{{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key2", Enabled: true,
+		FeatureManageServerFiles: true,
+		PreStillwaterConfigJSON:  `{"incoming":"new"}`,
+	}}
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, true); err != nil {
+		t.Fatalf("importConnections: %v", err)
+	}
+
+	all, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(all))
+	}
+	if got := all[0].PreStillwaterConfigJSON; got != `{"incoming":"new"}` {
+		t.Errorf("PreStillwaterConfigJSON: got %q, want the incoming snapshot to replace the stored one", got)
+	}
+}
+
 // TestImportConnections_PreV14EnvelopePreservesV14Fields proves that when a
 // legacy (pre-1.4) envelope updates an existing target connection, the four
 // v1.4-only fields the envelope cannot carry are NOT overwritten with their
