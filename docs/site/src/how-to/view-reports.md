@@ -85,7 +85,7 @@ The CSV carries the same rows plus the source label on each one. Note rows at th
 
 ## Rule-Written MusicBrainz IDs (API and CSV)
 
-This report answers "which artists did the automatic NFO rule fix pick a MusicBrainz ID for". It exists so you can find artists that fix may have misidentified. It is available through the API and as a CSV download; a pane in the Reports workspace is coming in a future release.
+This report answers "which artists did the automatic NFO rule fix pick a MusicBrainz ID for". It exists so you can find artists that fix may have misidentified. It is available through the API and as a CSV download only; there is no pane for it in the Reports workspace.
 
 Request it at `/api/v1/reports/nfo-has-mbid`, or download `/api/v1/reports/nfo-has-mbid/export` for a spreadsheet.
 
