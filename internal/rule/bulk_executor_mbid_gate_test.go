@@ -448,3 +448,84 @@ func TestFetchImages_MBIDGate_UpdateErrorSurfaces(t *testing.T) {
 		}
 	}
 }
+
+// countingFailingUpdateArtistRepo is failingUpdateArtistRepo plus a call
+// counter, so a test can prove the failing Update was actually invoked
+// rather than the self-heal path being skipped for an unrelated reason.
+type countingFailingUpdateArtistRepo struct {
+	artist.Repository
+	calls int
+}
+
+func (r *countingFailingUpdateArtistRepo) Update(_ context.Context, _ *artist.Artist) error {
+	r.calls++
+	return errBulkForcedUpdate
+}
+
+// TestFetchImages_MBIDGate_UpdateErrorRollsBackInMemoryState proves the
+// second half of the #2825/#2845 self-heal fix: when the write fails, the
+// IN-MEMORY artist struct fetchImages was handed must be rolled back to
+// exactly its pre-adoption shape, not merely that the failure surfaces (that
+// half is TestFetchImages_MBIDGate_UpdateErrorSurfaces). The caller
+// (bulkFixOne) reuses this same pointer after fetchImages returns, so a
+// left-over MBID or a present-but-empty MetadataSources key would read as a
+// real adoption even though nothing persisted.
+func TestFetchImages_MBIDGate_UpdateErrorRollsBackInMemoryState(t *testing.T) {
+	db := setupTestDB(t)
+	realArtists, providers, members, aliases, images, platformIDs, completeness := artist.NewDefaultRepos(db)
+	failingRepo := &countingFailingUpdateArtistRepo{Repository: realArtists}
+	artistSvc := artist.NewServiceWithRepos(failingRepo, providers, members, aliases, images, platformIDs, completeness)
+
+	// Seed the row directly through the real repo so Create (not overridden)
+	// succeeds; only Update is forced to fail.
+	seedSvc := artist.NewServiceWithRepos(realArtists, providers, members, aliases, images, platformIDs, completeness)
+	a := &artist.Artist{Name: "Radiohead", SortName: "Radiohead", Path: t.TempDir()}
+	if err := seedSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("seeding artist: %v", err)
+	}
+
+	// Preconditions: the fixture genuinely starts with no MBID and no
+	// provenance key at all -- not merely an empty one -- so the rollback
+	// assertions below actually exercise the "restore absence" branch rather
+	// than a "restore empty string" branch that would look identical.
+	if a.MusicBrainzID != "" {
+		t.Fatalf("fixture precondition: artist must start with an empty MBID, got %q", a.MusicBrainzID)
+	}
+	if v, ok := a.MetadataSources[artist.SourceKeyMusicBrainzID]; ok {
+		t.Fatalf("fixture precondition: artist must start with no musicbrainz_id provenance key, got %q", v)
+	}
+
+	results := []provider.ArtistSearchResult{
+		{Name: "Radiohead", MusicBrainzID: bulkMBIDConfident, Score: 100, Source: "musicbrainz"},
+	}
+	orch := newBulkGateOrchestrator(t, results)
+	e := &BulkExecutor{
+		artistService: artistSvc,
+		orchestrator:  orch,
+		logger:        testLogger(),
+	}
+	e.SetHistoryService(artist.NewHistoryService(db))
+
+	status, msg := e.fetchImages(context.Background(), a, BulkModeYOLO, nil)
+
+	// Precondition: the failing Update stub was actually reached. Without
+	// this, a fixture that never got past the confidence gate would pass the
+	// rollback assertions below vacuously.
+	if failingRepo.calls != 1 {
+		t.Fatalf("countingFailingUpdateArtistRepo.Update called %d times, want 1 -- "+
+			"the self-heal adopt path was not exercised, so this test proves nothing", failingRepo.calls)
+	}
+	if status != BulkItemFailed {
+		t.Fatalf("status = %q, want %q (message: %q)", status, BulkItemFailed, msg)
+	}
+
+	// The load-bearing claims: the in-memory struct must read exactly as it
+	// did before the failed adopt attempt.
+	if a.MusicBrainzID != "" {
+		t.Errorf("a.MusicBrainzID = %q after failed Update, want restored to empty", a.MusicBrainzID)
+	}
+	if v, ok := a.MetadataSources[artist.SourceKeyMusicBrainzID]; ok {
+		t.Errorf("a.MetadataSources[musicbrainz_id] = %q present after failed Update, want the key ABSENT "+
+			"(a present-but-empty key is the bogus-key bug the delete branch exists to prevent)", v)
+	}
+}

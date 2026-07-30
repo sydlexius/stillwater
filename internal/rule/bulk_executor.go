@@ -377,6 +377,16 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 			return BulkItemSkipped, fmt.Sprintf("no MBID: declined to adopt one from search: %s", rej.Reason)
 		}
 
+		// The in-memory artist is mutated before the write, so a failed write
+		// would otherwise leave `a` claiming an MBID the database never got.
+		// The caller keeps using this same pointer after fetchImages returns
+		// (bulkFixOne at :312 hands it straight on), so the divergence would be
+		// read as a real adoption. Capture enough to undo it, including whether
+		// the provenance key was ABSENT rather than merely different: restoring
+		// an empty string would leave a bogus key behind.
+		prevMBID := a.MusicBrainzID
+		prevSource, hadSource := a.MetadataSources[artist.SourceKeyMusicBrainzID]
+
 		mbid := strings.ToLower(strings.TrimSpace(best.MusicBrainzID))
 		a.MusicBrainzID = mbid
 		if a.MetadataSources == nil {
@@ -384,6 +394,12 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		}
 		a.MetadataSources[artist.SourceKeyMusicBrainzID] = artist.SourceMachinePicked
 		if err := e.artistService.Update(ctx, a); err != nil {
+			a.MusicBrainzID = prevMBID
+			if hadSource {
+				a.MetadataSources[artist.SourceKeyMusicBrainzID] = prevSource
+			} else {
+				delete(a.MetadataSources, artist.SourceKeyMusicBrainzID)
+			}
 			return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
 		}
 		e.recordBulkMBIDHistory(ctx, a.ID, mbid)
