@@ -355,6 +355,12 @@ func TestHandleAudioDBSearch_NoLocalAlbumsShortCircuit(t *testing.T) {
 			Confidence      float64                 `json:"confidence"`
 			Reason          string                  `json:"reason"`
 		} `json:"results"`
+		// LocalAlbumsUnavailable must be a POINTER: the field is omitted from the
+		// wire entirely in the normal case, and only "present and true" reports a
+		// non-determination. A plain bool would collapse "absent" and "present and
+		// false" into the same zero value, which is exactly the ambiguity this
+		// field exists to remove.
+		LocalAlbumsUnavailable *bool `json:"local_albums_unavailable"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v; body=%s", err, w.Body.String())
@@ -371,6 +377,10 @@ func TestHandleAudioDBSearch_NoLocalAlbumsShortCircuit(t *testing.T) {
 	if resp.Results[0].Reason != reasonLocalAlbumsUnreadable {
 		t.Errorf("reason = %q, want %q (no path recorded means nobody looked)",
 			resp.Results[0].Reason, reasonLocalAlbumsUnreadable)
+	}
+	if resp.LocalAlbumsUnavailable == nil || !*resp.LocalAlbumsUnavailable {
+		t.Errorf("local_albums_unavailable = %v, want a present true value on the no-path (Unknown evidence) path",
+			resp.LocalAlbumsUnavailable)
 	}
 }
 
