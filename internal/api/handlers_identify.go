@@ -867,10 +867,11 @@ func (r *Router) enrichAndScoreTier2(ctx context.Context, results []provider.Art
 		}
 		attempted++
 
+		// titles logs the CAUSE (#2862). The bare line here named the operation
+		// but not what went wrong, so a broken adapter read like an empty
+		// catalogue -- the conflation this series exists to remove.
 		remoteTitles, known := cache.titles(ctx, res.MusicBrainzID)
 		if !known {
-			r.logger.Warn("bulk-identify: fetching release groups",
-				"mbid", res.MusicBrainzID)
 			continue
 		}
 		scored[i].releasesKnown = true

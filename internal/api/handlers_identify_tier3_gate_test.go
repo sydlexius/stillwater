@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -451,5 +454,90 @@ func TestIdentifyDeclinesWhenCandidateCatalogueCannotBeFetched(t *testing.T) {
 	}
 	if mbid := reloadMBID(t, artistSvc, a.ID); mbid != "" {
 		t.Errorf("stored MBID = %q, want blank", mbid)
+	}
+}
+
+// TestIdentifyTier3AutoLinksOnCorroboratingCatalogue is the POSITIVE Tier 3
+// case, and it is the test that could not exist before this PR.
+//
+// Every other Tier 3 test in this file asserts that nothing was written, and a
+// pipeline broken into refusing everything would pass all of them. This one
+// pins the other side: Tier 3 still auto-links when the catalogue genuinely
+// corroborates. The gate withholds unattended writes, it does not stop them.
+//
+// WHY IT BELONGS HERE AND NOT IN THE TIER 2 PR. Reaching Tier 3 at all requires
+// the artist to have no comparable local album set, or Tier 2 answers first --
+// and until Tier 3 was gated, a fixture built that way could only assert that
+// an artist nobody looked at gets auto-linked, which is the DEFECT stated as an
+// expectation. The route in is instead a Tier 2 search FAILURE with readable
+// albums on disk: the artist has a real catalogue, the Tier 2 query errors, and
+// Tier 3 picks the candidate up and now judges it on album evidence.
+func TestIdentifyTier3AutoLinksOnCorroboratingCatalogue(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	r, artistSvc := tier2SearchFailsRouter(t, "Gate Tier3 Good",
+		provider.ArtistSearchResult{
+			Name:          "Gate Tier3 Good",
+			MusicBrainzID: mbidGateRealArtist,
+			Score:         100,
+			Source:        string(provider.NameMusicBrainz),
+		},
+		func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+			return []provider.ReleaseGroupInfo{
+				{Title: "First Record"},
+				{Title: "Second Record"},
+			}, nil
+		},
+	)
+
+	a := seedBlankArtist(t, artistSvc, "Gate Tier3 Good", albumDir(t, "First Record", "Second Record"))
+
+	got := r.identifyArtist(ctx, a, nil)
+	if got.Outcome != outcomeAutoLinked {
+		t.Fatalf("Outcome = %v, want autoLinked: a fully corroborated Tier 3 candidate must still be adopted", got.Outcome)
+	}
+	// THE ROW, matching every other test here: the counter and the database can
+	// disagree, and only one of them is what the operator lives with.
+	if mbid := reloadMBID(t, artistSvc, a.ID); mbid != mbidGateRealArtist {
+		t.Errorf("stored MBID = %q, want %q", mbid, mbidGateRealArtist)
+	}
+}
+
+// TestReleaseGroupCacheLogsFetchFailure proves the provider error survives
+// (#2862).
+//
+// known=false was always the right ANSWER -- an unretrievable catalogue is not
+// a determination -- but the error itself was discarded, so a broken adapter
+// and a candidate with a genuinely empty catalogue were indistinguishable to an
+// operator reading the logs. The MBID and the underlying cause are asserted,
+// not merely that something was logged.
+func TestReleaseGroupCacheLogsFetchFailure(t *testing.T) {
+	t.Parallel()
+
+	r, _ := testRouter(t)
+	var buf bytes.Buffer
+	r.logger = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	installAudioDBOrchestrator(t, r, nil, func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+		return nil, errors.New("musicbrainz refused the connection")
+	})
+
+	cache := r.newReleaseGroupCache()
+	if cache == nil {
+		t.Fatal("precondition: nil cache means no fetch is attempted, so nothing could be logged")
+	}
+
+	titles, known := cache.titles(context.Background(), mbidGateRealArtist)
+	// The DECISION is unchanged and asserted alongside the log, so a future
+	// change cannot satisfy the diagnostics by loosening the refusal.
+	if known || titles != nil {
+		t.Fatalf("titles = (%v, %v), want (nil, false): a failed fetch is not a determination", titles, known)
+	}
+
+	logged := buf.String()
+	for _, want := range []string{"level=WARN", mbidGateRealArtist, "musicbrainz refused the connection"} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("log missing %q; got: %s", want, logged)
+		}
 	}
 }

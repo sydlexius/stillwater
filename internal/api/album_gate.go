@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -21,6 +22,12 @@ import (
 // created per artist inside identifyArtist, which processes artists serially.
 type releaseGroupCache struct {
 	fetcher provider.ReleaseGroupFetcher
+
+	// logger records the CAUSE of a failed fetch (#2862). It is held on the
+	// cache rather than threaded through titles' signature because all three
+	// call sites are Router methods that would pass the same r.logger, and a
+	// parameter every caller fills identically is churn rather than choice.
+	logger *slog.Logger
 
 	// entries maps a MusicBrainz ID to what we learned about its catalogue.
 	// A present entry with known=false records a FAILED lookup, so a provider
@@ -59,12 +66,24 @@ func (r *Router) newReleaseGroupCache() *releaseGroupCache {
 	if !ok {
 		return nil
 	}
-	return &releaseGroupCache{fetcher: fetcher, entries: make(map[string]releaseGroupEntry)}
+	return &releaseGroupCache{fetcher: fetcher, logger: r.logger, entries: make(map[string]releaseGroupEntry)}
 }
 
 // titles returns the candidate's release-group titles and whether the lookup
 // was a determination at all. A nil receiver, an empty MBID, or a fetch error
 // all report known=false.
+//
+// A failed fetch is LOGGED here, where the error is in hand (#2862). known=false
+// stays the answer -- an unretrievable catalogue is not a determination, so the
+// gate still declines -- but discarding the error let a broken MusicBrainz
+// adapter degrade every candidate's album signal with no trace. Diagnostic
+// only: it changes no decision, matching ChainAlbumSource's contract.
+//
+// WARN, not ERROR: the request still returns candidates, so this is a degraded
+// result rather than a failure. The message may say the fetch FAILED because a
+// provider call was genuinely ATTEMPTED here -- unlike the missing-fetcher
+// guards feeding albumEvidenceReason, which are reached before any call is made
+// and must never imply one happened.
 func (c *releaseGroupCache) titles(ctx context.Context, mbid string) ([]string, bool) {
 	if c == nil || c.fetcher == nil || mbid == "" {
 		return nil, false
@@ -76,6 +95,10 @@ func (c *releaseGroupCache) titles(ctx context.Context, mbid string) ([]string, 
 	groups, err := c.fetcher.GetReleaseGroups(ctx, mbid)
 	if err != nil {
 		c.entries[mbid] = releaseGroupEntry{known: false}
+		if c.logger != nil {
+			c.logger.Warn("identify: fetching a candidate's release groups failed, so its catalogue cannot corroborate anything",
+				"mbid", mbid, "error", err)
+		}
 		return nil, false
 	}
 
