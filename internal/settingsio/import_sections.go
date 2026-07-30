@@ -119,7 +119,36 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 			existing.Enabled = ce.Enabled
 			if carryV14Fields {
 				existing.FeatureManageServerFiles = ce.FeatureManageServerFiles
-				existing.PreStillwaterConfigJSON = ce.PreStillwaterConfigJSON
+				// snapshotCopyAllowed is a POSITIVE allow-list of when it is safe
+				// to write the incoming envelope's snapshot over the stored one
+				// (#2439). It is deliberately NOT a negated guard ("skip unless
+				// bad") -- a predicate that is safe to consult when deciding
+				// whether to WRITE becomes destructive once inverted to decide
+				// whether to CLEAR, because "unknown"/false must mean "leave the
+				// stored value alone", never "go ahead and act". The two allowed
+				// cases are: the envelope actually carries a snapshot (it is
+				// authoritative and always wins), or the target has no snapshot
+				// to lose (nothing to protect). The one disallowed case is an
+				// empty incoming value about to overwrite a non-empty stored one
+				// -- pre_stillwater_config_json is the ONLY copy of the
+				// operator's original peer saver configuration, so an envelope
+				// exported before Stillwater-managed mode was ever enabled (or
+				// after a since-superseded disable) must not erase a snapshot
+				// that a later, unrelated managed-mode session captured on the
+				// target. FeatureManageServerFiles is still copied verbatim
+				// above: if that leaves managed=true paired with the (now
+				// preserved) non-empty snapshot, that pairing is consistent and
+				// fine; if it leaves managed=true paired with an empty snapshot,
+				// normalizeImportedManagedInvariant below still coerces it, so no
+				// new inconsistent state can result from this guard alone.
+				snapshotCopyAllowed := ce.PreStillwaterConfigJSON != "" || existing.PreStillwaterConfigJSON == ""
+				if snapshotCopyAllowed {
+					existing.PreStillwaterConfigJSON = ce.PreStillwaterConfigJSON
+				} else {
+					slog.Warn("import: preserving existing pre_stillwater_config_json; refusing to overwrite with empty snapshot from envelope",
+						"connection_id", existing.ID, "connection_name", existing.Name,
+						"reason", "incoming snapshot is empty but a non-empty snapshot is already on file")
+				}
 			}
 			// Map the flat envelope's platform-specific fields onto the
 			// type-discriminated sub-config (#1686). existing already carries
@@ -132,6 +161,10 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 		} else {
 			// A fresh row: every envelope field is authoritative (pre-1.4
 			// envelopes simply decoded the newer fields as zero values).
+			// The #2439 snapshot-preservation guard above does not apply here:
+			// there is no existing target row, so there is no stored snapshot
+			// that an empty incoming value could destroy. Whatever the envelope
+			// carries (empty or not) is simply the connection's starting state.
 			c := &connection.Connection{
 				Name:                     ce.Name,
 				Type:                     ce.Type,
