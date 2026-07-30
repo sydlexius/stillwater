@@ -65,7 +65,7 @@ func (r *Router) localAlbumSet(ctx context.Context, a *artist.Artist) artist.Alb
 		attrs = []any{"artist_id", a.ID, "artist", a.Name, "path", a.Path}
 	}
 	if err != nil {
-		attrs = append(attrs, "reason", err.Error())
+		attrs = append(attrs, "reason", err)
 	}
 	r.logger.Warn("album evidence unknown: candidate scoring has no album signal", attrs...)
 	return set

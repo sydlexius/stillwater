@@ -173,8 +173,10 @@ func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 	if a, err := r.artistService.GetByID(req.Context(), artistID); err == nil {
 		localAlbums = r.localAlbumSet(req.Context(), a)
 	} else {
+		// Pass the error VALUE, not its string form: slog renders it, and no
+		// raw error text ever enters a string-building path this way.
 		r.logger.Warn("album evidence unknown: could not load artist for album comparison",
-			"artist_id", artistID, "reason", err.Error())
+			"artist_id", artistID, "reason", err)
 	}
 
 	candidates := r.enrichWithAlbumComparison(req.Context(), results, localAlbums)
