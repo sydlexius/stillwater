@@ -19,19 +19,28 @@ import "time"
 // second guess made after the first, which is exactly the kind of history an
 // operator chasing a misidentification needs.
 //
-// # WHAT THIS REPORT CANNOT SEE (permanent, not a backlog item)
+// # WHAT THIS REPORT CANNOT SEE
 //
-// Only the rule-fixer path records a change. Three other code paths assign a
-// MusicBrainz ID and record nothing at all: the two automatic-match tiers of
-// the identify flow, and the bulk rule executor. The generic artist-update path
+// Only the rule-fixer path records a change under the exact source this
+// report matches (NFOMBIDReportSource). Two other code paths assign a
+// MusicBrainz ID and record nothing at all, permanently: the two
+// automatic-match tiers of the identify flow. The generic artist-update path
 // records nothing either, because the tracked-field list does not include any
-// provider ID. So an artist misidentified by one of those paths leaves no trace
-// anywhere and can NEVER appear here, however long this report runs.
+// provider ID. So an artist misidentified by one of those three paths leaves
+// no trace anywhere and can NEVER appear here, however long this report runs.
 //
-// That is stated to the operator in the response, in the CSV, in the API
-// description, and in the docs. Presenting this list as the complete set of
-// machine-assigned IDs would be the "unknown rendered as clean" defect (#2692,
-// #2686) that the caveats exist to prevent.
+// The bulk rule executor is different (issue #2825/#2845): it now records its
+// own MBID assignments too, under the distinct source
+// "rule:bulk_fetch_images_mbid". That row exists and is visible on the
+// artist's own change history -- it is simply not enumerable by THIS report's
+// exact-match filter. So the bulk path's gap here is a scoping choice, not a
+// missing record: widening the query to match a source prefix instead of one
+// exact value is a real option, not a permanent limit like the other three.
+//
+// That distinction is stated to the operator in the response, in the CSV, in
+// the API description, and in the docs. Presenting this list as the complete
+// set of machine-assigned IDs would be the "unknown rendered as clean" defect
+// that the caveats exist to prevent.
 
 // NFOMBIDReportSource is the exact metadata_changes.source value the
 // nfo_has_mbid rule fixer writes. The query matches on this and nothing else.
@@ -151,11 +160,12 @@ type NFOMBIDCounts struct {
 const (
 	// NFOMBIDCaveatScope is the coverage limit and the most important of these.
 	NFOMBIDCaveatScope = "This report covers MusicBrainz IDs written by the automatic NFO rule fix only. " +
-		"Other parts of Stillwater can also assign a MusicBrainz ID without recording a change: " +
-		"the automatic match tiers of the Identify flow and the bulk rule run. " +
-		"IDs assigned that way leave no record and can never appear here, so this list is not " +
-		"the complete set of machine-assigned IDs and an artist's absence from it is not evidence " +
-		"its ID was chosen by a person."
+		"The automatic match tiers of the Identify flow can also assign a MusicBrainz ID and record " +
+		"no change at all, so an artist they affected can never appear here. The bulk rule run now " +
+		"records its own assignments too, but under a different, more specific label, so this report " +
+		"still will not list them even though a record of them does exist and can be found on the " +
+		"artist's own history. Either way, this list is not the complete set of machine-assigned IDs " +
+		"and an artist's absence from it is not evidence its ID was chosen by a person."
 
 	// NFOMBIDCaveatFloor states that the counts under-report by construction.
 	NFOMBIDCaveatFloor = "Treat every count here as a minimum. Rows can be missing for reasons this " +

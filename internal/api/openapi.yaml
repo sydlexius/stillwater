@@ -11543,15 +11543,17 @@ paths:
         nothing, validates no ID, and reverts nothing.
 
 
-        FOUR LIMITS, ALL RETURNED IN THE RESPONSE UNDER caveats, AND ALL
-        PERMANENT.
+        FOUR LIMITS, ALL RETURNED IN THE RESPONSE UNDER caveats.
 
 
-        Scope. Only the automatic NFO rule fix records a change. Other parts of
-        Stillwater also assign a MusicBrainz ID without recording anything: the
-        automatic match tiers of the Identify flow, and the bulk rule run. IDs
-        assigned that way leave no record at all and can never appear here. This
-        list is therefore not the complete set of machine-assigned IDs, and an
+        Scope. Only the automatic NFO rule fix records a change under the label
+        this report matches. The automatic match tiers of the Identify flow also
+        assign a MusicBrainz ID and record nothing at all, permanently, so an
+        artist they affected can never appear here. The bulk rule run now
+        records its own assignments too, under a different, more specific
+        label, so this report still will not list them even though a record of
+        them does exist and can be found on the artist's own history. Either
+        way, this list is not the complete set of machine-assigned IDs, and an
         artist's absence from it is not evidence that a person chose its ID.
 
 

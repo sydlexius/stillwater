@@ -99,7 +99,7 @@ This fix only ever ran on artists that had no MusicBrainz ID, so it never replac
 
 ### What the report cannot see
 
-**This report covers the automatic NFO rule fix only.** Other parts of Stillwater can also assign a MusicBrainz ID without recording a change: the automatic match steps of the Identify flow, and the bulk rule run. IDs assigned that way leave no record anywhere, so they can never appear here, however long the report runs. This is a permanent limit of what is recorded, not a gap waiting to be filled.
+**This report covers the automatic NFO rule fix only.** The automatic match steps of the Identify flow can also assign a MusicBrainz ID and record no change at all, so artists they affect can never appear here, however long the report runs. The bulk rule run now records its own assignments too, but under a different, more specific label, so this report still will not list them, even though a record of them does exist and can be found on the artist's own history. So for the Identify flow this is a permanent limit of what is recorded; for the bulk rule run it is a scoping choice this report makes, not a gap that cannot be closed.
 
 Two consequences worth stating plainly:
 
