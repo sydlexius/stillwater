@@ -260,7 +260,7 @@ func TestFixMBID_AdoptsWhenRivalIsClearlyBehind(t *testing.T) {
 }
 
 // TestFixMBID_DuplicateIDAcrossProvidersIsNotARival guards the split-by-ID
-// choice in bestMBIDCandidates. Three providers agreeing on ONE id is the
+// choice in artist.BestMBIDCandidates. Three providers agreeing on ONE id is the
 // strongest possible corroboration; if the runner-up were taken by list
 // position instead, the second row would be read as a rival at a 2-point gap
 // and this well-corroborated match would be rejected.
@@ -373,33 +373,33 @@ func TestEvaluateMBIDCandidate_BoundaryScores(t *testing.T) {
 	}{
 		{
 			name: "score exactly at the floor is accepted",
-			best: provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: mbidMinProviderScore},
+			best: provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: artist.MBIDMinProviderScore},
 		},
 		{
 			name:       "score one below the floor is rejected",
-			best:       provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: mbidMinProviderScore - 1},
+			best:       provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: artist.MBIDMinProviderScore - 1},
 			wantReject: true,
 		},
 		{
 			name:     "rival exactly at the margin is accepted",
 			best:     provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 100},
-			runnerUp: &provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRival, Score: 100 - mbidAmbiguityMargin},
+			runnerUp: &provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRival, Score: 100 - artist.MBIDAmbiguityMargin},
 		},
 		{
 			name:       "rival one inside the margin is rejected",
 			best:       provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRadiohead, Score: 100},
-			runnerUp:   &provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRival, Score: 100 - mbidAmbiguityMargin + 1},
+			runnerUp:   &provider.ArtistSearchResult{Name: "Radiohead", MusicBrainzID: mbidRival, Score: 100 - artist.MBIDAmbiguityMargin + 1},
 			wantReject: true,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rej := evaluateMBIDCandidate("Radiohead", &tc.best, tc.runnerUp)
+			rej := artist.EvaluateMBIDCandidate("Radiohead", &tc.best, tc.runnerUp)
 			if tc.wantReject && rej == nil {
 				t.Error("expected a rejection, got nil")
 			}
 			if !tc.wantReject && rej != nil {
-				t.Errorf("expected acceptance, got rejection: %s", rej.reason)
+				t.Errorf("expected acceptance, got rejection: %s", rej.Reason)
 			}
 		})
 	}
@@ -420,7 +420,7 @@ func TestBestMBIDCandidates_PicksHighestPerIdentity(t *testing.T) {
 		{Name: "Another", MusicBrainzID: mbidRival, Score: 80, Source: "musicbrainz"},
 	}
 
-	best, runnerUp := bestMBIDCandidates(results)
+	best, runnerUp := artist.BestMBIDCandidates(results)
 
 	if best == nil || best.MusicBrainzID != mbidRadiohead || best.Score != 95 {
 		t.Fatalf("best = %+v, want the mbidRadiohead row scoring 95", best)
@@ -636,7 +636,7 @@ func TestFixMBID_UppercaseMBIDIsNotItsOwnRival(t *testing.T) {
 	}
 }
 
-// TestFixMBID_RejectsLiteralJustBelowScoreFloor pins mbidMinProviderScore to a
+// TestFixMBID_RejectsLiteralJustBelowScoreFloor pins MBIDMinProviderScore to a
 // LITERAL. The boundary table uses the constant symbolically, so its cases
 // move with any change to it, and the other reject fixture sits at 55 -- far
 // enough below that the floor could be lowered a long way and stay green. 84
@@ -673,7 +673,7 @@ func TestBestMBIDCandidates_RivalMustBeMusicBrainzSourced(t *testing.T) {
 		{Name: "Radiohead", MusicBrainzID: mbidRival, Score: 60, Source: "musicbrainz"},
 	}
 
-	best, runnerUp := bestMBIDCandidates(results)
+	best, runnerUp := artist.BestMBIDCandidates(results)
 
 	if best == nil || best.MusicBrainzID != mbidRadiohead {
 		t.Fatalf("best = %+v, want the mbidRadiohead row", best)
