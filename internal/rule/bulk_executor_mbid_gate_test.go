@@ -264,6 +264,73 @@ func TestFetchImages_MBIDGate_AdoptsConfidentMatch(t *testing.T) {
 	}
 }
 
+// failingRecordHistoryRepo is an artist.HistoryRepository whose Record always
+// fails. Every other method is unimplemented (nil embed) because
+// recordBulkMBIDHistory's only call into HistoryRepository is Record.
+type failingRecordHistoryRepo struct {
+	artist.HistoryRepository
+	calls int
+}
+
+var errBulkForcedHistoryWrite = errors.New("forced history write failure")
+
+func (r *failingRecordHistoryRepo) Record(_ context.Context, _ *artist.MetadataChange) error {
+	r.calls++
+	return errBulkForcedHistoryWrite
+}
+
+// TestFetchImages_MBIDGate_HistoryFailureDoesNotFailAdoption is issue
+// #2845's stated acceptance criterion for recordBulkMBIDHistory: a failed
+// history write is best-effort and must never fail the underlying MBID
+// adoption it is auditing (mirrors recordRuleFixHistory's contract in
+// fixer.go). Without this test, nothing pins that contract -- only the
+// doc comment above recordBulkMBIDHistory asserts it, and an edit that made
+// a Record failure propagate would still pass every other test in this file.
+func TestFetchImages_MBIDGate_HistoryFailureDoesNotFailAdoption(t *testing.T) {
+	results := []provider.ArtistSearchResult{
+		{Name: "Radiohead", MusicBrainzID: bulkMBIDConfident, Score: 100, Source: "musicbrainz"},
+	}
+	e, artistSvc, _, a := newBulkGateExecutor(t, results)
+
+	failingRepo := &failingRecordHistoryRepo{}
+	e.SetHistoryService(artist.NewHistoryServiceWithRepo(failingRepo))
+
+	status, msg := e.fetchImages(context.Background(), a, BulkModeYOLO, nil)
+
+	// Precondition: the failing stub was actually invoked and actually
+	// returned its error. Without this, a stub that fetchImages never called
+	// (e.g. because the adopt path was skipped for an unrelated reason) would
+	// pass this test vacuously.
+	if failingRepo.calls != 1 {
+		t.Fatalf("failingRecordHistoryRepo.Record called %d times, want 1 -- "+
+			"the adopt path was not exercised, so this test proves nothing", failingRepo.calls)
+	}
+
+	// The load-bearing claim: a failed AUDIT write must not fail the
+	// underlying IDENTITY write. BulkItemFailed would mean the history
+	// failure propagated and aborted the operation it was only supposed to
+	// record.
+	if status == BulkItemFailed {
+		t.Fatalf("status = %q, want anything but %q (message: %q): "+
+			"a failed history write must not fail the bulk item outcome",
+			status, BulkItemFailed, msg)
+	}
+
+	// The identity write itself must still have succeeded and persisted,
+	// proving the history failure was contained to the audit trail alone.
+	if a.MusicBrainzID != strings.ToLower(bulkMBIDConfident) {
+		t.Fatalf("a.MusicBrainzID = %q, want %q: the MBID adoption must survive a history-write failure",
+			a.MusicBrainzID, strings.ToLower(bulkMBIDConfident))
+	}
+	reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("re-reading artist: %v", err)
+	}
+	if reloaded.MusicBrainzID != strings.ToLower(bulkMBIDConfident) {
+		t.Fatalf("persisted a.MusicBrainzID = %q, want %q", reloaded.MusicBrainzID, strings.ToLower(bulkMBIDConfident))
+	}
+}
+
 // TestFetchImages_MBIDGate_UpdateErrorSurfaces proves a failing
 // artistService.Update on the self-heal write surfaces as BulkItemFailed
 // rather than silently reading as success -- the discarded-error defect
