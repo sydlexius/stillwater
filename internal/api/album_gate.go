@@ -69,6 +69,23 @@ func (r *Router) newReleaseGroupCache() *releaseGroupCache {
 	return &releaseGroupCache{fetcher: fetcher, logger: r.logger, entries: make(map[string]releaseGroupEntry)}
 }
 
+// holds reports whether this MBID has already been looked up, so a caller
+// rationing PROVIDER CALLS can tell a free cache hit from one that costs a
+// round-trip.
+//
+// It is a method rather than a raw c.entries read at the call site precisely
+// because the receiver can be nil: newReleaseGroupCache returns nil on an
+// install with no MusicBrainz provider, and every other access to the map is
+// already behind a nil guard. Reading the map from outside would turn a
+// no-MusicBrainz install's identify run into a panic.
+func (c *releaseGroupCache) holds(mbid string) bool {
+	if c == nil {
+		return false
+	}
+	_, ok := c.entries[mbid]
+	return ok
+}
+
 // titles returns the candidate's release-group titles and whether the lookup
 // was a determination at all. A nil receiver, an empty MBID, or a fetch error
 // all report known=false.
@@ -214,9 +231,6 @@ const tier3RivalCatalogueBudget = 2
 func (r *Router) tier3RivalClearsOverlapFloor(ctx context.Context, local artist.AlbumSet, results []provider.ArtistSearchResult, best *provider.ArtistSearchResult, cache *releaseGroupCache) bool {
 	fetched := 0
 	for i := range results {
-		if fetched >= tier3RivalCatalogueBudget {
-			return false
-		}
 		res := &results[i]
 
 		// EqualFold, not ==: IsValidMBID accepts either case, so the very same
@@ -232,10 +246,44 @@ func (r *Router) tier3RivalClearsOverlapFloor(ctx context.Context, local artist.
 			continue
 		}
 
-		// The cache dedupes, so a candidate Tier 2 already looked at on the
-		// fall-through path is free and does not consume the budget twice.
+		// The budget rations PROVIDER CALLS, so only a lookup that actually
+		// makes one is charged for -- the same argument the malformed-ID skip
+		// above already makes.
+		//
+		// Which hits are reachable, stated precisely because the obvious answer
+		// is wrong: a candidate Tier 2 already fetched is NOT one of them.
+		// enrichAndScoreTier2 populates this cache, but it sits on the one Tier 2
+		// branch that returns unconditionally (handlers_identify.go), so every
+		// path that actually falls through to Tier 3 leaves the cache empty of
+		// Tier 2 work. What reaches here warm is `best` (skipped by the EqualFold
+		// guard above before this line) and a repeated MBID inside a single
+		// result list. The charge-only-on-fetch rule is the correct semantics
+		// regardless, and it is what keeps the budget honest if Tier 2 ever does
+		// fall through warm -- but it is defensive here, not load-bearing.
+		//
+		// The budget gates the FETCH, not the iteration. It is checked after
+		// cachedAlready is known and only when the lookup would cost a call,
+		// because a cached rival is free to evaluate and evaluating it can only
+		// make the gate STRICTER. Returning at the top of the loop instead --
+		// as this did before -- meant uncached rivals could exhaust the budget
+		// and a later CACHED rival whose catalogue clears the overlap floor was
+		// never consulted, so a contested identity read as uncontested and the
+		// gate permitted an unattended write. That is the dangerous direction,
+		// and it is the same shape as the charge-on-cache-hit bug this function
+		// was already being fixed for: budget accounting that skips rivals.
+		//
+		// holds MUST be asked BEFORE titles: titles writes c.entries on BOTH its
+		// success and failure paths, so asking after would make holds always true,
+		// never increment, and silently render the budget inert.
+		// TestTier3RivalBudgetStopsAtTheBudget pins that bound.
+		cachedAlready := cache.holds(res.MusicBrainzID)
+		if !cachedAlready && fetched >= tier3RivalCatalogueBudget {
+			return false
+		}
 		remote, known := cache.titles(ctx, res.MusicBrainzID)
-		fetched++
+		if !cachedAlready {
+			fetched++
+		}
 		if !known {
 			r.logger.Info("identify: Tier 3 rival catalogue could not be retrieved, treating the best candidate as contested",
 				"rival_mbid", res.MusicBrainzID)
