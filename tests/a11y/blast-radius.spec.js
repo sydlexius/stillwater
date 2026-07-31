@@ -36,11 +36,22 @@ import AxeBuilder from '@axe-core/playwright';
 
 import { disableTransitions } from './helpers/settle.js';
 
-// The pane route. page_size=1 is used where the pager must exist: the pager
-// only renders when TotalPages > 1, so a database with a handful of rows would
-// otherwise leave the pager assertions silently unexercised (a vacuous pass).
+// The pane route. The paged variant asks for the SMALLEST page the server will
+// honor, so the pager renders on the smallest possible database.
+//
+// page_size is clamped server-side to [PageSizeMin, PageSizeMax] = [10, 500]
+// (getUserPageSize), so a smaller number here is silently raised to 10 rather
+// than honored -- asking for 1 and asking for 10 produce the identical request.
+// The value is written as 10 so it states what actually happens; an earlier
+// page_size=1 read as though it forced single-row pages, which it never did.
+//
+// This means the pager renders only with MORE THAN 10 damaged rows in the
+// database. Below that there is no second page and no pager. The test does not
+// pass vacuously in that case -- it asserts every target EXISTS before walking
+// it, so an absent pager fails loudly as a missing control rather than quietly
+// as "nothing to check".
 const PANE_URL = '/reports/blast-radius';
-const PANE_URL_PAGED = '/reports/blast-radius?page_size=1';
+const PANE_URL_PAGED = '/reports/blast-radius?page_size=10';
 
 // Disable CSS transitions so a synchronous getComputedStyle (axe's
 // color-contrast rule, and our own focus-ring reads) never samples a
@@ -416,8 +427,8 @@ function focusIndicatorFor(base, focused) {
 }
 
 test('pager is Tab-reachable with a visible focus ring', async ({ page }) => {
-  // page_size=1 forces more than one page so the pager actually renders.
-  // Without it the pager assertion would pass vacuously on a small database.
+  // The smallest server-honored page size, so the pager renders with as few
+  // damaged rows as possible (>10, per the clamp noted at PANE_URL_PAGED).
   await gotoPane(page, PANE_URL_PAGED);
 
   // Confirm each target EXISTS before walking. A missing element would
