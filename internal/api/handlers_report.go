@@ -1278,6 +1278,12 @@ func (r *Router) loadReportsBlastRadiusData(w http.ResponseWriter, req *http.Req
 		requestedPage := view.Page
 		view.Page = totalPages
 		clamped := r.blastRadiusPagedFilterFromRequest(req)
+		// Pin the limit to the page size the ARITHMETIC used. Rebuilding the
+		// filter re-reads the stored page-size preference, so a preference
+		// changed between the two queries would give this second read a
+		// different limit than the offset was computed for -- landing on a page
+		// that is not the one the caption claims.
+		clamped.Limit = view.PageSize
 		clamped.Offset = (totalPages - 1) * view.PageSize
 		clamped.Validate()
 		rows, listErr := r.historyService.ListBlastRadius(req.Context(), clamped)

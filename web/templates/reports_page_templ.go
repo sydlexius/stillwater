@@ -1648,6 +1648,28 @@ type BlastRadiusData struct {
 	BasePath    string
 }
 
+// blastRadiusClassBadgeClass styles the damage-class badge.
+//
+// The pane previously reused historySourceBadgeClass here, which keys on a
+// CHANGE SOURCE ("revert") and knows nothing about damage classes -- so blanked
+// and replaced both fell through to the same gray and the badge distinguished
+// nothing. The column exists to tell the two apart at a glance, which is what an
+// operator triaging a damage report scans for.
+//
+// Red for blanked and amber for replaced, because they are not equally bad: a
+// blanked field lost its value outright, while a replaced one still holds
+// something (possibly correct). Neither is green -- both are damage.
+//
+// An unrecognized class gets the RED treatment rather than a neutral gray,
+// matching blastRadiusRowClassLabel's own conservative default: on this surface
+// an unknown state must not be styled as the milder one.
+func blastRadiusClassBadgeClass(class string) string {
+	if class == artist.BlastClassReplaced {
+		return "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+	}
+	return "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300"
+}
+
 // blastRadiusNarrowed reports whether any filter is restricting the pane's view.
 //
 // It exists so the empty state can tell "this library has no damage" apart from
@@ -1737,7 +1759,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var97 string
 		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 606, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 628, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
 		if templ_7745c5c3_Err != nil {
@@ -1750,7 +1772,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var98 string
 		templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 607, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 629, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
 		if templ_7745c5c3_Err != nil {
@@ -1764,7 +1786,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.attribution_summary",
 			data.Counts.Automated, data.Counts.Unknown, data.CutoffDate))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 617, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 639, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
 		if templ_7745c5c3_Err != nil {
@@ -1777,7 +1799,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var100 string
 		templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.coverage_covered", strings.Join(data.CoveredFields, ", ")))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 620, Col: 93}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 642, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
 		if templ_7745c5c3_Err != nil {
@@ -1795,7 +1817,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 			var templ_7745c5c3_Var101 string
 			templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.coverage_uncovered", strings.Join(data.UncoveredFields, ", ")))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 624, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 646, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
 			if templ_7745c5c3_Err != nil {
@@ -1813,7 +1835,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var102 string
 		templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.retention_note"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 627, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 649, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 		if templ_7745c5c3_Err != nil {
@@ -1826,7 +1848,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var103 string
 		templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.column_artist"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 633, Col: 145}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 655, Col: 145}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 		if templ_7745c5c3_Err != nil {
@@ -1839,7 +1861,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var104 string
 		templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_field"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 634, Col: 157}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 656, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
 		if templ_7745c5c3_Err != nil {
@@ -1852,7 +1874,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var105 string
 		templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_change"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 635, Col: 158}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 657, Col: 158}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
 		if templ_7745c5c3_Err != nil {
@@ -1865,7 +1887,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var106 string
 		templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_class"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 636, Col: 157}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 658, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
 		if templ_7745c5c3_Err != nil {
@@ -1878,7 +1900,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var107 string
 		templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_attribution"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 637, Col: 163}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 659, Col: 163}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var107))
 		if templ_7745c5c3_Err != nil {
@@ -1891,7 +1913,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var108 string
 		templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_when"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 638, Col: 156}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 660, Col: 156}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
 		if templ_7745c5c3_Err != nil {
@@ -1904,7 +1926,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var109 string
 		templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_restore"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 639, Col: 160}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 661, Col: 160}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
 		if templ_7745c5c3_Err != nil {
@@ -1923,7 +1945,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var110 string
 				templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.empty_filtered", data.Counts.Total))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 657, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 679, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
 				if templ_7745c5c3_Err != nil {
@@ -1933,7 +1955,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var111 string
 				templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.empty"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 659, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 681, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
 				if templ_7745c5c3_Err != nil {
@@ -1966,7 +1988,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var112 string
 		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.restore_failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 678, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 700, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var112)
 		if templ_7745c5c3_Err != nil {
@@ -1979,7 +2001,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var113 string
 		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.restore_conflict"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 679, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 701, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var113)
 		if templ_7745c5c3_Err != nil {
@@ -1992,7 +2014,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var114 string
 		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.network_error"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 680, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 702, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var114)
 		if templ_7745c5c3_Err != nil {
@@ -2005,7 +2027,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var115 string
 		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.plan_summary"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 681, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 703, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var115)
 		if templ_7745c5c3_Err != nil {
@@ -2018,7 +2040,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var116 string
 		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.plan_refused"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 682, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 704, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var116)
 		if templ_7745c5c3_Err != nil {
@@ -2031,7 +2053,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var117 string
 		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.restored_count"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 683, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 705, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var117)
 		if templ_7745c5c3_Err != nil {
@@ -2044,7 +2066,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var118 string
 		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.confirm_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 684, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 706, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var118)
 		if templ_7745c5c3_Err != nil {
@@ -2057,7 +2079,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var119 string
 		templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.confirm_accept"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 685, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 707, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var119)
 		if templ_7745c5c3_Err != nil {
@@ -2107,7 +2129,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var121 string
 		templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.ResolveAttributeValue("blast-row-" + row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 695, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 717, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var121)
 		if templ_7745c5c3_Err != nil {
@@ -2120,7 +2142,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var122 string
 		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.JoinStringErrs(row.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 696, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 718, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var122))
 		if templ_7745c5c3_Err != nil {
@@ -2133,7 +2155,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var123 string
 		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs(historyFieldLabel(ctx, row.Field))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 697, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 719, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var123))
 		if templ_7745c5c3_Err != nil {
@@ -2151,7 +2173,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			var templ_7745c5c3_Var124 string
 			templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.OldValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 707, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 729, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 			if templ_7745c5c3_Err != nil {
@@ -2170,7 +2192,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			var templ_7745c5c3_Var125 string
 			templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.NewValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 710, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 732, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var125))
 			if templ_7745c5c3_Err != nil {
@@ -2188,7 +2210,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			var templ_7745c5c3_Var126 string
 			templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.cleared"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 712, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 734, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var126))
 			if templ_7745c5c3_Err != nil {
@@ -2203,7 +2225,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var127 = []any{"inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(row.Class)}
+		var templ_7745c5c3_Var127 = []any{"inline-block px-2 py-0.5 rounded-full text-xs", blastRadiusClassBadgeClass(row.Class)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var127...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -2228,7 +2250,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var129 string
 		templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowClassLabel(ctx, row.Class))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 717, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 739, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
 		if templ_7745c5c3_Err != nil {
@@ -2265,7 +2287,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var132 string
 		templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.Attribution)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 725, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 747, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var132)
 		if templ_7745c5c3_Err != nil {
@@ -2278,7 +2300,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var133 string
 		templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowAttributionLabel(ctx, row.Attribution))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 727, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 749, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var133))
 		if templ_7745c5c3_Err != nil {
@@ -2291,7 +2313,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var134 string
 		templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format(time.RFC3339))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 731, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 753, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var134)
 		if templ_7745c5c3_Err != nil {
@@ -2304,7 +2326,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var135 string
 		templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 731, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 753, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var135)
 		if templ_7745c5c3_Err != nil {
@@ -2317,7 +2339,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var136 string
 		templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(ctx, row.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 732, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 754, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var136))
 		if templ_7745c5c3_Err != nil {
@@ -2347,7 +2369,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var138 string
 		templ_7745c5c3_Var138, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.restore_row_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 740, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 762, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var138)
 		if templ_7745c5c3_Err != nil {
@@ -2360,7 +2382,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var139 string
 		templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.restore"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 742, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 764, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var139))
 		if templ_7745c5c3_Err != nil {
@@ -2447,7 +2469,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 			var templ_7745c5c3_Var141 string
 			templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.pager_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 794, Col: 160}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 816, Col: 160}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var141)
 			if templ_7745c5c3_Err != nil {
@@ -2460,7 +2482,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 			var templ_7745c5c3_Var142 string
 			templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.page_of", data.Pagination.CurrentPage, data.Pagination.TotalPages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 796, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 818, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var142))
 			if templ_7745c5c3_Err != nil {
@@ -2478,7 +2500,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var143 templ.SafeURL
 				templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(blastRadiusPageURL(data, data.Pagination.CurrentPage-1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 801, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 823, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
 				if templ_7745c5c3_Err != nil {
@@ -2491,7 +2513,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var144 string
 				templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.previous"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 803, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 825, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
 				if templ_7745c5c3_Err != nil {
@@ -2510,7 +2532,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var145 templ.SafeURL
 				templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(blastRadiusPageURL(data, data.Pagination.CurrentPage+1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 807, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 829, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
 				if templ_7745c5c3_Err != nil {
@@ -2523,7 +2545,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var146 string
 				templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.next"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 809, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 831, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var146))
 				if templ_7745c5c3_Err != nil {
@@ -2572,7 +2594,7 @@ func blastRadiusScript() templ.Component {
 			templ_7745c5c3_Var147 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "<script>\n\t\tfunction blastRestoreBasePath() {\n\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\treturn el ? el.content : '';\n\t\t}\n\n\t\tfunction blastRestoreCSRF() {\n\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\treturn m ? m[1] : '';\n\t\t}\n\n\t\t// blastRestoreI18n reads the hidden #blast-radius-i18n element\n\t\t// rendered by repPaneBlastRadius. JS has no access to the request\n\t\t// translator, so every user-facing string this script renders comes\n\t\t// from here rather than a hardcoded English literal.\n\t\tfunction blastRestoreI18n() {\n\t\t\tvar el = document.getElementById('blast-radius-i18n');\n\t\t\treturn el ? el.dataset : {};\n\t\t}\n\n\t\t// blastRestoreRequest posts to the restore endpoint. commit=false is a\n\t\t// preview that writes nothing; commit=true performs the write. Reports\n\t\t// a plain-language toast summarizing the outcome; a failed request\n\t\t// surfaces via console.error in addition to the toast so a missing\n\t\t// toast container never silently swallows the failure.\n\t\tfunction blastRestoreRequest(ids, commit, onSuccess) {\n\t\t\tif (!ids.length) return;\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tfetch(blastRestoreBasePath() + '/api/v1/reports/blast-radius/restore', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': blastRestoreCSRF() },\n\t\t\t\tbody: JSON.stringify({ change_ids: ids, commit: commit })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (resp.status === 409) {\n\t\t\t\t\tshowToast(i18n.restoreConflict || 'Another restore is already running.');\n\t\t\t\t\treturn null;\n\t\t\t\t}\n\t\t\t\treturn resp.json().then(function(data) { return { status: resp.status, body: data }; });\n\t\t\t}).then(function(result) {\n\t\t\t\tif (!result) return;\n\t\t\t\tif (result.status < 200 || result.status >= 300) {\n\t\t\t\t\tconsole.error('blast-radius restore failed', result.status, result.body);\n\t\t\t\t\tshowToast((i18n.restoreFailed || 'Restore request failed (HTTP {status})').replace('{status}', result.status));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tonSuccess(result.body);\n\t\t\t}).catch(function(err) {\n\t\t\t\tconsole.error('blast-radius restore network error', err);\n\t\t\t\tshowToast(i18n.networkError || 'Network error while restoring');\n\t\t\t});\n\t\t}\n\n\t\t// blastRestorePlanSummary turns a plan response into a human-readable\n\t\t// confirmation line, naming refusals explicitly rather than only the\n\t\t// eligible count -- a partial plan must not read as a clean one.\n\t\tfunction blastRestorePlanSummary(plan) {\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tvar msg = (i18n.planSummary || '{eligible} of {requested} selected change(s) can be restored.')\n\t\t\t\t.replace('{eligible}', plan.eligible).replace('{requested}', plan.requested);\n\t\t\tif (plan.refused > 0) {\n\t\t\t\tmsg += ' ' + (i18n.planRefused || '{refused} cannot be restored.').replace('{refused}', plan.refused);\n\t\t\t}\n\t\t\treturn msg;\n\t\t}\n\n\t\t// blastRestoreRow previews a single row, then commits on confirmation.\n\t\tfunction blastRestoreRow(id) {\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tblastRestoreRequest([id], false, function(plan) {\n\t\t\t\tif (plan.eligible === 0) {\n\t\t\t\t\tshowToast(blastRestorePlanSummary(plan));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\twindow.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {\n\t\t\t\t\tblastRestoreRequest([id], true, function(result) {\n\t\t\t\t\t\tshowSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));\n\t\t\t\t\t\tvar row = document.getElementById('blast-row-' + id);\n\t\t\t\t\t\tif (row) row.remove();\n\t\t\t\t\t});\n\t\t\t\t}, { title: i18n.confirmTitle || 'Restore value?', acceptText: i18n.confirmAccept || 'Restore' });\n\t\t\t});\n\t\t}\n\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "<script>\n\t\tfunction blastRestoreBasePath() {\n\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\treturn el ? el.content : '';\n\t\t}\n\n\t\tfunction blastRestoreCSRF() {\n\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\treturn m ? m[1] : '';\n\t\t}\n\n\t\t// blastRestoreI18n reads the hidden #blast-radius-i18n element\n\t\t// rendered by repPaneBlastRadius. JS has no access to the request\n\t\t// translator, so every user-facing string this script renders comes\n\t\t// from here rather than a hardcoded English literal.\n\t\tfunction blastRestoreI18n() {\n\t\t\tvar el = document.getElementById('blast-radius-i18n');\n\t\t\treturn el ? el.dataset : {};\n\t\t}\n\n\t\t// blastRestoreRequest posts to the restore endpoint. commit=false is a\n\t\t// preview that writes nothing; commit=true performs the write. Reports\n\t\t// a plain-language toast summarizing the outcome; a failed request\n\t\t// surfaces via console.error in addition to the toast so a missing\n\t\t// toast container never silently swallows the failure.\n\t\tfunction blastRestoreRequest(ids, commit, onSuccess) {\n\t\t\tif (!ids.length) return;\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tfetch(blastRestoreBasePath() + '/api/v1/reports/blast-radius/restore', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': blastRestoreCSRF() },\n\t\t\t\tbody: JSON.stringify({ change_ids: ids, commit: commit })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (resp.status === 409) {\n\t\t\t\t\tshowToast(i18n.restoreConflict || 'Another restore is already running.');\n\t\t\t\t\treturn null;\n\t\t\t\t}\n\t\t\t\t// Read as TEXT and parse defensively. The restore endpoint answers\n\t\t\t\t// some failures with http.Error, which writes plain text -- and a\n\t\t\t\t// bare resp.json() rejects on that, sending a server-side refusal\n\t\t\t\t// into the .catch below where it is reported as a NETWORK error.\n\t\t\t\t// On a recovery surface that is the wrong diagnosis: it tells the\n\t\t\t\t// operator their connection failed when the server answered.\n\t\t\t\treturn resp.text().then(function(text) {\n\t\t\t\t\tvar data = null;\n\t\t\t\t\ttry {\n\t\t\t\t\t\tdata = text ? JSON.parse(text) : null;\n\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t// Deliberately swallowed: an unparsable body is reported\n\t\t\t\t\t\t// through the status branches below, which say what the\n\t\t\t\t\t\t// server actually returned. Logged, never silent.\n\t\t\t\t\t\tconsole.error('blast-radius restore returned a non-JSON body', resp.status, text);\n\t\t\t\t\t}\n\t\t\t\t\treturn { status: resp.status, body: data };\n\t\t\t\t});\n\t\t\t}).then(function(result) {\n\t\t\t\tif (!result) return;\n\t\t\t\tif (result.status < 200 || result.status >= 300) {\n\t\t\t\t\tconsole.error('blast-radius restore failed', result.status, result.body);\n\t\t\t\t\tshowToast((i18n.restoreFailed || 'Restore request failed (HTTP {status})').replace('{status}', result.status));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\t// A 2xx whose body did not parse is NOT a success to act on: the\n\t\t\t\t// caller counts restored rows from it, and treating an unreadable\n\t\t\t\t// body as an empty result would report \"0 restored\" for a restore\n\t\t\t\t// that may well have happened.\n\t\t\t\tif (!result.body) {\n\t\t\t\t\tconsole.error('blast-radius restore returned an unreadable success body', result.status);\n\t\t\t\t\tshowToast((i18n.restoreFailed || 'Restore request failed (HTTP {status})').replace('{status}', result.status));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tonSuccess(result.body);\n\t\t\t}).catch(function(err) {\n\t\t\t\tconsole.error('blast-radius restore network error', err);\n\t\t\t\tshowToast(i18n.networkError || 'Network error while restoring');\n\t\t\t});\n\t\t}\n\n\t\t// blastRestorePlanSummary turns a plan response into a human-readable\n\t\t// confirmation line, naming refusals explicitly rather than only the\n\t\t// eligible count -- a partial plan must not read as a clean one.\n\t\tfunction blastRestorePlanSummary(plan) {\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tvar msg = (i18n.planSummary || '{eligible} of {requested} selected change(s) can be restored.')\n\t\t\t\t.replace('{eligible}', plan.eligible).replace('{requested}', plan.requested);\n\t\t\tif (plan.refused > 0) {\n\t\t\t\tmsg += ' ' + (i18n.planRefused || '{refused} cannot be restored.').replace('{refused}', plan.refused);\n\t\t\t}\n\t\t\treturn msg;\n\t\t}\n\n\t\t// blastRestoreRow previews a single row, then commits on confirmation.\n\t\tfunction blastRestoreRow(id) {\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tblastRestoreRequest([id], false, function(plan) {\n\t\t\t\tif (plan.eligible === 0) {\n\t\t\t\t\tshowToast(blastRestorePlanSummary(plan));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\twindow.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {\n\t\t\t\t\tblastRestoreRequest([id], true, function(result) {\n\t\t\t\t\t\tshowSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));\n\t\t\t\t\t\tvar row = document.getElementById('blast-row-' + id);\n\t\t\t\t\t\tif (row) row.remove();\n\t\t\t\t\t});\n\t\t\t\t}, { title: i18n.confirmTitle || 'Restore value?', acceptText: i18n.confirmAccept || 'Restore' });\n\t\t\t});\n\t\t}\n\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -539,6 +539,28 @@ type BlastRadiusData struct {
 	BasePath    string
 }
 
+// blastRadiusClassBadgeClass styles the damage-class badge.
+//
+// The pane previously reused historySourceBadgeClass here, which keys on a
+// CHANGE SOURCE ("revert") and knows nothing about damage classes -- so blanked
+// and replaced both fell through to the same gray and the badge distinguished
+// nothing. The column exists to tell the two apart at a glance, which is what an
+// operator triaging a damage report scans for.
+//
+// Red for blanked and amber for replaced, because they are not equally bad: a
+// blanked field lost its value outright, while a replaced one still holds
+// something (possibly correct). Neither is green -- both are damage.
+//
+// An unrecognized class gets the RED treatment rather than a neutral gray,
+// matching blastRadiusRowClassLabel's own conservative default: on this surface
+// an unknown state must not be styled as the milder one.
+func blastRadiusClassBadgeClass(class string) string {
+	if class == artist.BlastClassReplaced {
+		return "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+	}
+	return "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300"
+}
+
 // blastRadiusNarrowed reports whether any filter is restricting the pane's view.
 //
 // It exists so the empty state can tell "this library has no damage" apart from
@@ -713,7 +735,7 @@ templ blastRadiusRow(row artist.BlastRadiusRow) {
 			}
 		</td>
 		<td class="px-4 py-3 text-sm">
-			<span class={ "inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(row.Class) }>
+			<span class={ "inline-block px-2 py-0.5 rounded-full text-xs", blastRadiusClassBadgeClass(row.Class) }>
 				{ blastRadiusRowClassLabel(ctx, row.Class) }
 			</span>
 		</td>
@@ -859,11 +881,37 @@ templ blastRadiusScript() {
 					showToast(i18n.restoreConflict || 'Another restore is already running.');
 					return null;
 				}
-				return resp.json().then(function(data) { return { status: resp.status, body: data }; });
+				// Read as TEXT and parse defensively. The restore endpoint answers
+				// some failures with http.Error, which writes plain text -- and a
+				// bare resp.json() rejects on that, sending a server-side refusal
+				// into the .catch below where it is reported as a NETWORK error.
+				// On a recovery surface that is the wrong diagnosis: it tells the
+				// operator their connection failed when the server answered.
+				return resp.text().then(function(text) {
+					var data = null;
+					try {
+						data = text ? JSON.parse(text) : null;
+					} catch (e) {
+						// Deliberately swallowed: an unparsable body is reported
+						// through the status branches below, which say what the
+						// server actually returned. Logged, never silent.
+						console.error('blast-radius restore returned a non-JSON body', resp.status, text);
+					}
+					return { status: resp.status, body: data };
+				});
 			}).then(function(result) {
 				if (!result) return;
 				if (result.status < 200 || result.status >= 300) {
 					console.error('blast-radius restore failed', result.status, result.body);
+					showToast((i18n.restoreFailed || 'Restore request failed (HTTP {status})').replace('{status}', result.status));
+					return;
+				}
+				// A 2xx whose body did not parse is NOT a success to act on: the
+				// caller counts restored rows from it, and treating an unreadable
+				// body as an empty result would report "0 restored" for a restore
+				// that may well have happened.
+				if (!result.body) {
+					console.error('blast-radius restore returned an unreadable success body', result.status);
 					showToast((i18n.restoreFailed || 'Restore request failed (HTTP {status})').replace('{status}', result.status));
 					return;
 				}
