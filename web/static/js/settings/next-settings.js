@@ -49,25 +49,57 @@
   // `.overflow-x-auto` div. axe `scrollable-region-focusable` requires a scroll
   // container to be keyboard-reachable. We can't add the attribute in the shared
   // template without changing the stable v1 render, so we enhance it here on the
-  // next/ page only: make each scrollable region focusable (tabindex=0) and, when
-  // a section heading is available, expose it as a labelled region (role=region +
-  // localized aria-label from the heading). Idempotent + re-run-safe.
+  // next/ page only. Idempotent + re-run-safe.
+  //
+  // #2874: the original form ALSO labelled the region from the section heading,
+  // which produced a `landmark-unique` violation. The enclosing
+  // `<section data-rail-section>` already carries that exact name (its
+  // aria-label comes from the same heading), so naming the wrapper "Users" too
+  // created two nested `region` landmarks announcing "Users" -- landmark
+  // navigation hit the same name twice.
+  //
+  // The two rules pull in opposite directions and have to be satisfied
+  // together, not in sequence:
+  //
+  //   scrollable-region-focusable -> the container must be keyboard-reachable
+  //   landmark-unique             -> it must not duplicate an existing
+  //                                  role+name pair
+  //
+  // tabindex="0" alone satisfies the first WITHOUT creating a landmark: a
+  // focusable div with no role is still just a div to the accessibility tree.
+  // The landmark only appeared because of the explicit role=region + aria-label.
+  //
+  // So: always make it focusable; give it a name ONLY when that name would be
+  // distinct from the section's. A nested element whose content is already
+  // described by its own labelled table (the Users table carries
+  // aria-label="User accounts") needs no second landmark of its own.
   function swMakeScrollRegionsFocusable(root) {
     var regions = list(root, '.overflow-x-auto, .overflow-auto');
     for (var i = 0; i < regions.length; i++) {
       var el = regions[i];
       if (el.dataset.swScrollA11y === '1') continue;
       el.dataset.swScrollA11y = '1';
+
+      // Keyboard reachability is unconditional -- this is the part that
+      // satisfies scrollable-region-focusable, and it needs no role or name.
       if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
-      if (!el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby')) {
-        var section = el.closest('section[data-rail-section]');
-        var heading = section && section.querySelector('.sw-next-section-heading');
-        var label = heading ? heading.textContent.trim() : '';
-        if (label) {
-          if (!el.getAttribute('role')) el.setAttribute('role', 'region');
-          el.setAttribute('aria-label', label);
-        }
-      }
+
+      if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby')) continue;
+
+      var section = el.closest('section[data-rail-section]');
+      var heading = section && section.querySelector('.sw-next-section-heading');
+      var label = heading ? heading.textContent.trim() : '';
+      if (!label) continue;
+
+      // Would this name collide with the section that contains it? If so, do
+      // NOT promote the wrapper to a landmark; the section already provides
+      // that entry point and a duplicate only adds noise for a screen-reader
+      // user navigating by landmark.
+      var sectionLabel = section ? (section.getAttribute('aria-label') || '').trim() : '';
+      if (sectionLabel && sectionLabel === label) continue;
+
+      if (!el.getAttribute('role')) el.setAttribute('role', 'region');
+      el.setAttribute('aria-label', label);
     }
   }
 
