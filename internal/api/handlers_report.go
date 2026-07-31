@@ -1002,6 +1002,12 @@ func (r *Router) serveReportsWorkspace(w http.ResponseWriter, req *http.Request,
 			return
 		}
 		data.RulePassRates = rd
+	case "blast-radius":
+		bd, ok := r.loadReportsBlastRadiusData(w, req)
+		if !ok {
+			return
+		}
+		data.BlastRadiusData = bd
 	}
 
 	renderTempl(w, req, templates.ReportsPage(r.assetsFor(req), data))
@@ -1222,4 +1228,114 @@ func toTemplateRulePassRateData(p rule.RulePassRate) templates.RulePassRateData 
 		Evaluated: p.Evaluated,
 		PassRate:  p.PassRate,
 	}
+}
+
+// loadReportsBlastRadiusData builds a BlastRadiusData value for the reports
+// workspace "blast-radius" report (issue #2750). It calls the existing
+// r.loadBlastRadius, the same shared assembly point the JSON report
+// (handleReportBlastRadius) and the CSV export (handleReportBlastRadiusExport)
+// use, so the pane cannot disagree with either about what was destroyed, its
+// attribution split, or its field coverage.
+func (r *Router) loadReportsBlastRadiusData(w http.ResponseWriter, req *http.Request) (templates.BlastRadiusData, bool) {
+	if r.historyService == nil {
+		http.Error(w, "history service is not available", http.StatusServiceUnavailable)
+		return templates.BlastRadiusData{}, false
+	}
+
+	view, err := r.loadBlastRadius(req)
+	if err != nil {
+		r.logger.Error("loading blast-radius report for reports workspace", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return templates.BlastRadiusData{}, false
+	}
+
+	f := blastRadiusFilterFromRequest(req)
+	totalPages := view.Counts.Total / view.PageSize
+	if view.Counts.Total%view.PageSize > 0 {
+		totalPages++
+	}
+
+	// Clamp the requested page to the range that exists, and re-fetch the rows
+	// at the clamped offset.
+	//
+	// Reached by the ordinary recovery flow, not just a hand-typed URL: restoring
+	// a value removes its row from the DOM (blastRadiusScript), so an operator
+	// who restores everything on the last page shrinks the result set below the
+	// page they are standing on. Refreshing then asked for a page past the end,
+	// which returned zero rows -- and the template's len(Rows)==0 branch prints
+	// the LIBRARY-WIDE "Nothing recorded. No tracked field has been blanked or
+	// overwritten by an automated writer." directly beneath a caveat band still
+	// reporting real damage. The page contradicted itself and the reassuring
+	// sentence was the one in the table, produced by doing exactly what the
+	// feature is for.
+	//
+	// The rows are re-fetched rather than left empty because clamping the CAPTION
+	// alone would render "Page 2 of 2" above an empty table -- a different false
+	// statement, not a fix. After the re-fetch the caption and the rows agree.
+	// (Unclamped, the pager also read "Page 99 of 2" with Previous walking to 98,
+	// so there was no way back to a real page except editing the URL.)
+	if totalPages > 0 && view.Page > totalPages {
+		requestedPage := view.Page
+		view.Page = totalPages
+		clamped := r.blastRadiusPagedFilterFromRequest(req)
+		// Pin the limit to the page size the ARITHMETIC used. Rebuilding the
+		// filter re-reads the stored page-size preference, so a preference
+		// changed between the two queries would give this second read a
+		// different limit than the offset was computed for -- landing on a page
+		// that is not the one the caption claims.
+		clamped.Limit = view.PageSize
+		clamped.Offset = (totalPages - 1) * view.PageSize
+		clamped.Validate()
+		rows, listErr := r.historyService.ListBlastRadius(req.Context(), clamped)
+		if listErr != nil {
+			r.logger.Error("re-listing blast-radius rows at clamped page", "error", listErr)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return templates.BlastRadiusData{}, false
+		}
+		view.Rows = rows
+
+		// The count and this re-fetch are separate queries with no transaction
+		// between them, so the row set can shrink in the gap -- a concurrent
+		// restore, or the same operator with the pane open twice. When it does,
+		// the clamped offset points past the NEW end and the re-fetch returns
+		// nothing, which would render the library-wide all-clear underneath a
+		// caveat band still quoting the pre-delete total. That is the precise
+		// failure this clamp was written to eliminate, arriving through a
+		// narrower door.
+		//
+		// Refusing is the honest answer. We know the count is stale (it promised
+		// rows this page does not have) but not what replaced it, and a recovery
+		// surface must never resolve "I cannot tell" into "nothing to see". A
+		// second clamp against a fresh count would be racing the same window
+		// again; a reload reads a consistent snapshot.
+		if len(view.Rows) == 0 && view.Counts.Total > 0 {
+			r.logger.Warn("blast-radius report changed while loading; refusing to render a stale empty page",
+				"requested_page", requestedPage, "clamped_page", totalPages, "counted_total", view.Counts.Total)
+			http.Error(w, "the report changed while loading; reload to see the current state", http.StatusConflict)
+			return templates.BlastRadiusData{}, false
+		}
+	}
+
+	return templates.BlastRadiusData{
+		Rows:   view.Rows,
+		Counts: view.Counts,
+		Pagination: components.PaginationData{
+			CurrentPage: view.Page,
+			TotalPages:  totalPages,
+			PageSize:    view.PageSize,
+			TotalItems:  view.Counts.Total,
+			BaseURL:     "/reports/blast-radius",
+			TargetID:    "blast-radius-results",
+			Filter:      f.Class,
+			Status:      f.Attribution,
+		},
+		CutoffDate:      artist.AttributionCutoffDate,
+		CoveredFields:   view.CoveredFields,
+		UncoveredFields: view.UncoveredFields,
+		Class:           f.Class,
+		Attribution:     f.Attribution,
+		Field:           f.Field,
+		ArtistID:        f.ArtistID,
+		BasePath:        r.basePath,
+	}, true
 }

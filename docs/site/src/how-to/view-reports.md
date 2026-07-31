@@ -43,29 +43,31 @@ Shows field-coverage percentages across your entire library and a table of the t
 
 Lists every configured rule with its pass count, evaluation count, and pass percentage for the current library state. Pass rates are color-coded: green at 80% or above, amber between 50-79%, and red below 50%.
 
-## Blast radius (API and CSV)
+## Blast radius
 
-The blast-radius report answers "which values that I set did an automated change replace or clear". It is available through the API and as a CSV download; a pane in the Reports workspace is coming in a future release.
+The blast-radius report answers "which values that I set did an automated change replace or blank". It is available in the Reports workspace pane, through the API, and as a CSV download.
 
 Request it at `/api/v1/reports/blast-radius`, or download `/api/v1/reports/blast-radius/export` for a spreadsheet.
 
-For each artist and field, the report shows the most recent change, and keeps it only when that change replaced or cleared a value that had been set. Two kinds of damage are reported, because both destroy what you set:
+For each artist and field, the report shows the most recent change, and keeps it only when that change replaced or blanked a value that had been set. Two kinds of damage are reported, because both destroy what you set:
 
-- **Cleared** - a value you had was emptied.
+- **Blanked** - a value you had was emptied.
 - **Replaced** - a value you had was overwritten with a different one.
 
 A field whose value has since been put back drops out of the report automatically.
 
-You can narrow the report by damage kind, by source, by field, or to a single artist. Both damage kinds are shown by default.
+You can narrow the report by damage kind, by attribution, by field, or to a single artist. Both damage kinds are shown by default. In the API and the CSV export, pass these as query parameters. The workspace pane reads the same parameters from its URL and honors them, including when you page through results, but does not yet offer on-screen filter controls.
+
+When a filter matches nothing, the pane says so and tells you how many changes the report still holds behind that filter. It does not report an all-clear, because a filter matching nothing says nothing about the rest of your library.
 
 ### What the report can prove about who made a change
 
 Every row is labeled one of two ways:
 
 - **Automated** - written by a scan, an import, a metadata provider, or a rule. The source was recorded, so this is certain.
-- **Source unknown** - anything Stillwater cannot positively identify as an automated writer, so nothing falls outside the two counts. Most of these are recorded as a manual change. Stillwater began recording scan-driven changes separately on 2026-07-19; before that, a scan that changed a value was recorded the same way your own edits are. These rows may be your edits or may be automated changes, and Stillwater cannot tell them apart.
+- **Unknown** - anything Stillwater cannot positively identify as an automated writer, so nothing falls outside the two counts. Most of these are recorded as a manual change. Stillwater began recording scan-driven changes separately on 2026-07-19; before that, a scan that changed a value was recorded the same way your own edits are. These rows may be your edits or may be automated changes, and Stillwater cannot tell them apart.
 
-Rows with an unknown source are always listed and always counted separately. Narrowing the report to automated changes hides those rows from the list but does **not** remove them from the counts, so you can always see how many there are. A number that quietly excluded them would understate what was lost.
+Rows with unknown attribution are always listed and always counted separately. Narrowing the report to automated changes hides those rows from the list but does **not** remove them from the counts, so you can always see how many there are. A number that quietly excluded them would understate what was lost.
 
 ### What the report covers
 
