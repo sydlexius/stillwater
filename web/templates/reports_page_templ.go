@@ -1664,10 +1664,18 @@ func blastRadiusRowAttributionLabel(ctx context.Context, attribution string) str
 
 // repPaneBlastRadius renders the right pane for the blast-radius report
 // (issue #2750): which fields an automated writer blanked or overwrote, and
-// per-row/bulk restore. Modeled on repPaneCompliance; reuses the
-// .bulk-select checkbox class, toggleSelectAll/updateBulkBar/bulkAction, and
-// the #bulk-action-bar shape from the compliance pane rather than forking
-// them.
+// per-row restore. Modeled on repPaneCompliance.
+//
+// Deliberately NO bulk selection. An earlier cut emitted .bulk-select
+// checkboxes, a select-all and a #bulk-action-bar whose handlers
+// (toggleSelectAll/updateBulkBar/clearBulkSelection) are defined only inside
+// repComplianceScript. The pane dispatch is an else-if chain, so on this pane
+// that script never renders and every one of those handlers was an undefined
+// function: ticking a box threw ReferenceError, the bar never unhid, and the
+// "Preview Restore" it contained was unreachable. Shipping an affordance that
+// silently does nothing is worse than not shipping it, so it is gone until the
+// shared script that makes it work lands with it. Per-row Restore is the
+// pane's recovery mechanism and works today.
 //
 // The unknown-attribution count is always rendered next to the automated
 // count (never hidden by a filter -- BlastRadiusCounts is computed without
@@ -1703,7 +1711,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var97 string
 		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 572, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 580, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
 		if templ_7745c5c3_Err != nil {
@@ -1716,7 +1724,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var98 string
 		templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 573, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 581, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
 		if templ_7745c5c3_Err != nil {
@@ -1730,7 +1738,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.attribution_summary",
 			data.Counts.Automated, data.Counts.Unknown, data.CutoffDate))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 583, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 591, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
 		if templ_7745c5c3_Err != nil {
@@ -1743,7 +1751,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var100 string
 		templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.coverage_covered", strings.Join(data.CoveredFields, ", ")))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 586, Col: 93}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 594, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
 		if templ_7745c5c3_Err != nil {
@@ -1761,7 +1769,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 			var templ_7745c5c3_Var101 string
 			templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.coverage_uncovered", strings.Join(data.UncoveredFields, ", ")))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 590, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 598, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
 			if templ_7745c5c3_Err != nil {
@@ -1779,46 +1787,46 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		var templ_7745c5c3_Var102 string
 		templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.retention_note"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 593, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 601, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "</p></div><div class=\"overflow-x-auto\" id=\"blast-radius-results\"><table id=\"blast-radius-tbl\" class=\"min-w-full divide-y divide-gray-200 dark:divide-gray-700\"><thead class=\"bg-gray-50 dark:bg-gray-800\"><tr><th scope=\"col\" class=\"px-4 py-3 text-center w-10\"><input type=\"checkbox\" id=\"select-all\" onchange=\"toggleSelectAll(this)\" class=\"rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "</p></div><div class=\"overflow-x-auto\" id=\"blast-radius-results\"><table id=\"blast-radius-tbl\" class=\"min-w-full divide-y divide-gray-200 dark:divide-gray-700\"><thead class=\"bg-gray-50 dark:bg-gray-800\"><tr><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var103 string
-		templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.select_all_rows"))
+		templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.column_artist"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 605, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 607, Col: 145}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var103)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "\"> <span class=\"sr-only\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "</th><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var104 string
-		templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "report.select_column"))
+		templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_field"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 607, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 608, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "</span></th><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "</th><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var105 string
-		templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.column_artist"))
+		templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_change"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 609, Col: 145}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 609, Col: 158}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
 		if templ_7745c5c3_Err != nil {
@@ -1829,7 +1837,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var106 string
-		templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_field"))
+		templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_class"))
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 610, Col: 157}
 		}
@@ -1842,9 +1850,9 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var107 string
-		templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_change"))
+		templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_attribution"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 611, Col: 158}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 611, Col: 163}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var107))
 		if templ_7745c5c3_Err != nil {
@@ -1855,72 +1863,46 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var108 string
-		templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_class"))
+		templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_when"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 612, Col: 157}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 612, Col: 156}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "</th><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "</th><th scope=\"col\" class=\"px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var109 string
-		templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_attribution"))
+		templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_restore"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 613, Col: 163}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 613, Col: 160}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "</th><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var110 string
-		templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_when"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 614, Col: 156}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "</th><th scope=\"col\" class=\"px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var111 string
-		templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_restore"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 615, Col: 160}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "</th></tr></thead> <tbody class=\"divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "</th></tr></thead> <tbody class=\"divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(data.Rows) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "<tr><td colspan=\"8\" class=\"px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "<tr><td colspan=\"7\" class=\"px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var112 string
-			templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.empty"))
+			var templ_7745c5c3_Var110 string
+			templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.empty"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 622, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 620, Col: 45}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var112))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "</td></tr>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "</td></tr>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1931,7 +1913,7 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "</tbody></table></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "</tbody></table></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1939,202 +1921,111 @@ func repPaneBlastRadius(data BlastRadiusData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "<!-- Bulk action bar: reuses the #bulk-action-bar shape from the\n\t     compliance pane. bulkAction is not reused here (it targets the\n\t     compliance bulk-fetch endpoints); blastRestoreSelected posts to the\n\t     blast-radius restore endpoint instead. --><div id=\"bulk-action-bar\" data-label-n-selected=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "<!-- i18n strings for blastRadiusScript. JS has no access to the request\n\t     translator, so every user-facing string the script renders (toasts,\n\t     confirm-dialog copy, plan summaries) is passed through this hidden\n\t     element rather than hardcoded in the script block. --><div id=\"blast-radius-i18n\" hidden data-restore-failed=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var111 string
+		templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.restore_failed"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 638, Col: 72}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var111)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "\" data-restore-conflict=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var112 string
+		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.restore_conflict"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 639, Col: 76}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var112)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "\" data-network-error=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var113 string
-		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.n_selected"))
+		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.network_error"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 639, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 640, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var113)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\" class=\"fixed bottom-0 left-0 right-0 z-30 hidden bg-gray-900 dark:bg-gray-800 border-t border-gray-700 px-6 py-3\"><div class=\"max-w-7xl mx-auto flex items-center justify-between\"><span id=\"bulk-count\" class=\"text-sm text-white\" data-zero-text=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\" data-plan-summary=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var114 string
-		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.zero_selected"))
+		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.plan_summary"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 646, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 641, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var114)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "\" data-one-text=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "\" data-plan-refused=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var115 string
-		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.one_selected"))
+		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.plan_refused"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 647, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 642, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var115)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\" data-many-template=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\" data-restored-count=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var116 string
-		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.n_selected"))
+		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.restored_count"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 648, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 643, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var116)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "\" data-confirm-title=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var117 string
-		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "report.zero_selected"))
+		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.confirm_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 649, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 644, Col: 70}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var117))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var117)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "</span><div class=\"flex items-center gap-3\"><button type=\"button\" onclick=\"blastRestoreSelected()\" id=\"blast-preview-btn\" class=\"inline-flex items-center gap-1.5 rounded-md border border-white/25 px-3 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "\" data-confirm-accept=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var118 string
-		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.preview_selected"))
+		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.confirm_accept"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 656, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 645, Col: 72}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "</button> <button type=\"button\" onclick=\"clearBulkSelection()\" class=\"inline-flex items-center rounded-md bg-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-600\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var118)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var119 string
-		templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 661, Col: 30}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "</button></div></div></div><!-- i18n strings for blastRadiusScript. JS has no access to the request\n\t     translator, so every user-facing string the script renders (toasts,\n\t     confirm-dialog copy, plan summaries) is passed through this hidden\n\t     element rather than hardcoded in the script block. --><div id=\"blast-radius-i18n\" hidden data-restore-failed=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var120 string
-		templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.restore_failed"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 672, Col: 72}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var120)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "\" data-restore-conflict=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var121 string
-		templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.restore_conflict"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 673, Col: 76}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var121)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "\" data-network-error=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var122 string
-		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.network_error"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 674, Col: 70}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var122)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "\" data-plan-summary=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var123 string
-		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.plan_summary"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 675, Col: 68}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "\" data-plan-refused=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var124 string
-		templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.plan_refused"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 676, Col: 68}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var124)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "\" data-restored-count=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var125 string
-		templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.restored_count"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 677, Col: 72}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var125)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, "\" data-confirm-title=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var126 string
-		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.confirm_title"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 678, Col: 70}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var126)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, "\" data-confirm-accept=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var127 string
-		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.js.confirm_accept"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 679, Col: 72}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var127)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, "\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2166,261 +2057,235 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var128 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var128 == nil {
-			templ_7745c5c3_Var128 = templ.NopComponent
+		templ_7745c5c3_Var119 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var119 == nil {
+			templ_7745c5c3_Var119 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "<tr id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "<tr id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var129 string
-		templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.ResolveAttributeValue("blast-row-" + row.ID)
+		var templ_7745c5c3_Var120 string
+		templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.ResolveAttributeValue("blast-row-" + row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 689, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 655, Col: 31}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var129)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "\" class=\"hover:bg-gray-50 dark:hover:bg-gray-800\"><td class=\"px-4 py-3 text-center\"><input type=\"checkbox\" class=\"bulk-select rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\" value=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var120)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var130 string
-		templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 694, Col: 18}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var130)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "\" class=\"hover:bg-gray-50 dark:hover:bg-gray-800\"><td class=\"px-4 py-3 text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, "\" onchange=\"updateBulkBar()\" aria-label=\"")
+		var templ_7745c5c3_Var121 string
+		templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.JoinStringErrs(row.ArtistName)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 656, Col: 48}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var121))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var131 string
-		templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "report.select_row", row.ArtistName))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 696, Col: 61}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var131)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "</td><td class=\"px-4 py-3 text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "\"></td><td class=\"px-4 py-3 text-sm\">")
+		var templ_7745c5c3_Var122 string
+		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.JoinStringErrs(historyFieldLabel(ctx, row.Field))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 657, Col: 67}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var122))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var132 string
-		templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs(row.ArtistName)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 699, Col: 48}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var132))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, "</td><td class=\"px-4 py-3 text-sm\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var133 string
-		templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.JoinStringErrs(historyFieldLabel(ctx, row.Field))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 700, Col: 67}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var133))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 159, "</td><td class=\"px-4 py-3 text-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "</td><td class=\"px-4 py-3 text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if row.OldValue != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "<!-- text-red-600, not text-red-500: on the light-theme white row\n\t\t\t\t     background red-500 (#fb2c36) computes to 3.81:1, below the\n\t\t\t\t     4.5:1 WCAG AA floor for this 14px body text. red-600\n\t\t\t\t     (#e7000b) measures 4.77:1 and clears it. Verified as a\n\t\t\t\t     rendered contrast failure by the blast-radius a11y spec in\n\t\t\t\t     both Firefox and Chromium; text-red-600 dark:text-red-400 is\n\t\t\t\t     also the most common pairing already in these templates. --> <span class=\"line-through text-red-600 dark:text-red-400 mr-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "<!-- text-red-600, not text-red-500: on the light-theme white row\n\t\t\t\t     background red-500 (#fb2c36) computes to 3.81:1, below the\n\t\t\t\t     4.5:1 WCAG AA floor for this 14px body text. red-600\n\t\t\t\t     (#e7000b) measures 4.77:1 and clears it. Verified as a\n\t\t\t\t     rendered contrast failure by the blast-radius a11y spec in\n\t\t\t\t     both Firefox and Chromium; text-red-600 dark:text-red-400 is\n\t\t\t\t     also the most common pairing already in these templates. --> <span class=\"line-through text-red-600 dark:text-red-400 mr-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var134 string
-			templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.OldValue, 60))
+			var templ_7745c5c3_Var123 string
+			templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.OldValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 710, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 667, Col: 102}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var134))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var123))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 161, "</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if row.NewValue != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "<span class=\"text-gray-600 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, "<span class=\"text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var135 string
-			templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.NewValue, 60))
+			var templ_7745c5c3_Var124 string
+			templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.NewValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 713, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 670, Col: 86}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var135))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 163, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "<span class=\"text-gray-600 dark:text-gray-400 italic\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, "<span class=\"text-gray-600 dark:text-gray-400 italic\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var136 string
-			templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.cleared"))
+			var templ_7745c5c3_Var125 string
+			templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.cleared"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 715, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 672, Col: 85}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var136))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 165, "</span>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var125))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "</td><td class=\"px-4 py-3 text-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "</td><td class=\"px-4 py-3 text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var137 = []any{"inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(row.Class)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var137...)
+		var templ_7745c5c3_Var126 = []any{"inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(row.Class)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var126...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var138 string
-		templ_7745c5c3_Var138, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var137).String())
+		var templ_7745c5c3_Var127 string
+		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var126).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var138)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var127)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 168, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var139 string
-		templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowClassLabel(ctx, row.Class))
+		var templ_7745c5c3_Var128 string
+		templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowClassLabel(ctx, row.Class))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 720, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 677, Col: 46}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var139))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "</span></td><td class=\"px-4 py-3 text-sm\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var140 = []any{"inline-block px-2 py-0.5 rounded-full text-xs",
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, "</span></td><td class=\"px-4 py-3 text-sm\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var129 = []any{"inline-block px-2 py-0.5 rounded-full text-xs",
 			templ.KV("bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300", row.Attribution == artist.BlastAttributionUnknown),
 			templ.KV("bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300", row.Attribution != artist.BlastAttributionUnknown)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var140...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var129...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 159, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var141 string
-		templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var140).String())
+		var templ_7745c5c3_Var130 string
+		templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var129).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var141)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var130)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "\" data-attribution=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "\" data-attribution=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var142 string
-		templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.Attribution)
+		var templ_7745c5c3_Var131 string
+		templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.Attribution)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 728, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 685, Col: 38}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var142)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var131)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var143 string
-		templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowAttributionLabel(ctx, row.Attribution))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 730, Col: 58}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 161, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "</span></td><td class=\"px-4 py-3 text-xs text-gray-600 dark:text-gray-400\"><time datetime=\"")
+		var templ_7745c5c3_Var132 string
+		templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowAttributionLabel(ctx, row.Attribution))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 687, Col: 58}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var132))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var144 string
-		templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format(time.RFC3339))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 734, Col: 54}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var144)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "</span></td><td class=\"px-4 py-3 text-xs text-gray-600 dark:text-gray-400\"><time datetime=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "\" title=\"")
+		var templ_7745c5c3_Var133 string
+		templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format(time.RFC3339))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 691, Col: 54}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var133)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var145 string
-		templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 734, Col: 112}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var145)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 163, "\" title=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "\">")
+		var templ_7745c5c3_Var134 string
+		templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 691, Col: 112}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var134)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var146 string
-		templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(ctx, row.CreatedAt))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 735, Col: 40}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var146))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "</time></td><td class=\"px-4 py-3 text-right\">")
+		var templ_7745c5c3_Var135 string
+		templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(ctx, row.CreatedAt))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 692, Col: 40}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var135))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 165, "</time></td><td class=\"px-4 py-3 text-right\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2428,42 +2293,42 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "<button type=\"button\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "<button type=\"button\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var147 templ.ComponentScript = templ.JSFuncCall("blastRestoreRow", row.ID)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var147.Call)
+		var templ_7745c5c3_Var136 templ.ComponentScript = templ.JSFuncCall("blastRestoreRow", row.ID)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var136.Call)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "\" class=\"text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" title=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "\" class=\"text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" title=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var148 string
-		templ_7745c5c3_Var148, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.restore_row_title"))
+		var templ_7745c5c3_Var137 string
+		templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.restore_row_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 743, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 700, Col: 60}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var148)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var137)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var149 string
-		templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.restore"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 745, Col: 44}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var149))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 168, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "</button></td></tr>")
+		var templ_7745c5c3_Var138 string
+		templ_7745c5c3_Var138, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.restore"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 702, Col: 44}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var138))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "</button></td></tr>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2493,107 +2358,107 @@ func blastRadiusPagination(p components.PaginationData) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var150 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var150 == nil {
-			templ_7745c5c3_Var150 = templ.NopComponent
+		templ_7745c5c3_Var139 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var139 == nil {
+			templ_7745c5c3_Var139 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if p.TotalPages > 1 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "<nav class=\"flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "<nav class=\"flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var151 string
-			templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.page_title"))
+			var templ_7745c5c3_Var140 string
+			templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.page_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 759, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 716, Col: 146}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var151)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "\"><p class=\"text-sm text-gray-700 dark:text-gray-300\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var140)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var152 string
-			templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.page_of", p.CurrentPage, p.TotalPages))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 761, Col: 74}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var152))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "\"><p class=\"text-sm text-gray-700 dark:text-gray-300\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "</p><div class=\"flex gap-2\">")
+			var templ_7745c5c3_Var141 string
+			templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.page_of", p.CurrentPage, p.TotalPages))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 718, Col: 74}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var141))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "</p><div class=\"flex gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if p.CurrentPage > 1 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 184, "<a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "<a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var153 templ.SafeURL
-				templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/reports/blast-radius?page=%d", p.CurrentPage-1)))
+				var templ_7745c5c3_Var142 templ.SafeURL
+				templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/reports/blast-radius?page=%d", p.CurrentPage-1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 766, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 723, Col: 89}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var153))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 185, "\" class=\"relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var142))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var154 string
-				templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.previous"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 768, Col: 33}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var154))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "\" class=\"relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 186, "</a> ")
+				var templ_7745c5c3_Var143 string
+				templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.previous"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 725, Col: 33}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			if p.CurrentPage < p.TotalPages {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "<a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "<a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var155 templ.SafeURL
-				templ_7745c5c3_Var155, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/reports/blast-radius?page=%d", p.CurrentPage+1)))
+				var templ_7745c5c3_Var144 templ.SafeURL
+				templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/reports/blast-radius?page=%d", p.CurrentPage+1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 772, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 729, Col: 89}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var155))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 188, "\" class=\"relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var156 string
-				templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.next"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 774, Col: 29}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "\" class=\"relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 189, "</a>")
+				var templ_7745c5c3_Var145 string
+				templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.next"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 731, Col: 29}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "</a>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 190, "</div></nav>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "</div></nav>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2626,12 +2491,12 @@ func blastRadiusScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var157 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var157 == nil {
-			templ_7745c5c3_Var157 = templ.NopComponent
+		templ_7745c5c3_Var146 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var146 == nil {
+			templ_7745c5c3_Var146 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "<script>\n\t\tfunction blastRestoreBasePath() {\n\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\treturn el ? el.content : '';\n\t\t}\n\n\t\tfunction blastRestoreCSRF() {\n\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\treturn m ? m[1] : '';\n\t\t}\n\n\t\t// blastRestoreI18n reads the hidden #blast-radius-i18n element\n\t\t// rendered by repPaneBlastRadius. JS has no access to the request\n\t\t// translator, so every user-facing string this script renders comes\n\t\t// from here rather than a hardcoded English literal.\n\t\tfunction blastRestoreI18n() {\n\t\t\tvar el = document.getElementById('blast-radius-i18n');\n\t\t\treturn el ? el.dataset : {};\n\t\t}\n\n\t\t// blastRestoreRequest posts to the restore endpoint. commit=false is a\n\t\t// preview that writes nothing; commit=true performs the write. Reports\n\t\t// a plain-language toast summarizing the outcome; a failed request\n\t\t// surfaces via console.error in addition to the toast so a missing\n\t\t// toast container never silently swallows the failure.\n\t\tfunction blastRestoreRequest(ids, commit, onSuccess) {\n\t\t\tif (!ids.length) return;\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tfetch(blastRestoreBasePath() + '/api/v1/reports/blast-radius/restore', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': blastRestoreCSRF() },\n\t\t\t\tbody: JSON.stringify({ change_ids: ids, commit: commit })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (resp.status === 409) {\n\t\t\t\t\tshowToast(i18n.restoreConflict || 'Another restore is already running.');\n\t\t\t\t\treturn null;\n\t\t\t\t}\n\t\t\t\treturn resp.json().then(function(data) { return { status: resp.status, body: data }; });\n\t\t\t}).then(function(result) {\n\t\t\t\tif (!result) return;\n\t\t\t\tif (result.status < 200 || result.status >= 300) {\n\t\t\t\t\tconsole.error('blast-radius restore failed', result.status, result.body);\n\t\t\t\t\tshowToast((i18n.restoreFailed || 'Restore request failed (HTTP {status})').replace('{status}', result.status));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tonSuccess(result.body);\n\t\t\t}).catch(function(err) {\n\t\t\t\tconsole.error('blast-radius restore network error', err);\n\t\t\t\tshowToast(i18n.networkError || 'Network error while restoring');\n\t\t\t});\n\t\t}\n\n\t\t// blastRestorePlanSummary turns a plan response into a human-readable\n\t\t// confirmation line, naming refusals explicitly rather than only the\n\t\t// eligible count -- a partial plan must not read as a clean one.\n\t\tfunction blastRestorePlanSummary(plan) {\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tvar msg = (i18n.planSummary || '{eligible} of {requested} selected change(s) can be restored.')\n\t\t\t\t.replace('{eligible}', plan.eligible).replace('{requested}', plan.requested);\n\t\t\tif (plan.refused > 0) {\n\t\t\t\tmsg += ' ' + (i18n.planRefused || '{refused} cannot be restored.').replace('{refused}', plan.refused);\n\t\t\t}\n\t\t\treturn msg;\n\t\t}\n\n\t\t// blastRestoreRow previews a single row, then commits on confirmation.\n\t\tfunction blastRestoreRow(id) {\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tblastRestoreRequest([id], false, function(plan) {\n\t\t\t\tif (plan.eligible === 0) {\n\t\t\t\t\tshowToast(blastRestorePlanSummary(plan));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\twindow.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {\n\t\t\t\t\tblastRestoreRequest([id], true, function(result) {\n\t\t\t\t\t\tshowSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));\n\t\t\t\t\t\tvar row = document.getElementById('blast-row-' + id);\n\t\t\t\t\t\tif (row) row.remove();\n\t\t\t\t\t});\n\t\t\t\t}, { title: i18n.confirmTitle || 'Restore value?', acceptText: i18n.confirmAccept || 'Restore' });\n\t\t\t});\n\t\t}\n\n\t\t// blastRestoreSelected previews the current bulk selection, then\n\t\t// commits every eligible row on confirmation. Mixed-attribution\n\t\t// selections are not specially gated: attribution is a display axis,\n\t\t// not a write gate (the operator decides whether an unknown-attribution\n\t\t// change is one they recognize), but the preview names the refused\n\t\t// count so a partial restore is never read as complete.\n\t\tfunction blastRestoreSelected() {\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tvar ids = [];\n\t\t\tdocument.querySelectorAll('.bulk-select:checked').forEach(function(cb) { ids.push(cb.value); });\n\t\t\tif (!ids.length) return;\n\t\t\tblastRestoreRequest(ids, false, function(plan) {\n\t\t\t\tif (plan.eligible === 0) {\n\t\t\t\t\tshowToast(blastRestorePlanSummary(plan));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\twindow.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {\n\t\t\t\t\tblastRestoreRequest(ids, true, function(result) {\n\t\t\t\t\t\tshowSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));\n\t\t\t\t\t\t(result.items || []).forEach(function(item) {\n\t\t\t\t\t\t\tif (item.restore_status === 'restored' || item.restore_status === 'unchanged') {\n\t\t\t\t\t\t\t\tvar row = document.getElementById('blast-row-' + item.change_id);\n\t\t\t\t\t\t\t\tif (row) row.remove();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t\tclearBulkSelection();\n\t\t\t\t\t});\n\t\t\t\t}, { title: i18n.confirmTitle || 'Restore values?', acceptText: i18n.confirmAccept || 'Restore' });\n\t\t\t});\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "<script>\n\t\tfunction blastRestoreBasePath() {\n\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\treturn el ? el.content : '';\n\t\t}\n\n\t\tfunction blastRestoreCSRF() {\n\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\treturn m ? m[1] : '';\n\t\t}\n\n\t\t// blastRestoreI18n reads the hidden #blast-radius-i18n element\n\t\t// rendered by repPaneBlastRadius. JS has no access to the request\n\t\t// translator, so every user-facing string this script renders comes\n\t\t// from here rather than a hardcoded English literal.\n\t\tfunction blastRestoreI18n() {\n\t\t\tvar el = document.getElementById('blast-radius-i18n');\n\t\t\treturn el ? el.dataset : {};\n\t\t}\n\n\t\t// blastRestoreRequest posts to the restore endpoint. commit=false is a\n\t\t// preview that writes nothing; commit=true performs the write. Reports\n\t\t// a plain-language toast summarizing the outcome; a failed request\n\t\t// surfaces via console.error in addition to the toast so a missing\n\t\t// toast container never silently swallows the failure.\n\t\tfunction blastRestoreRequest(ids, commit, onSuccess) {\n\t\t\tif (!ids.length) return;\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tfetch(blastRestoreBasePath() + '/api/v1/reports/blast-radius/restore', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': blastRestoreCSRF() },\n\t\t\t\tbody: JSON.stringify({ change_ids: ids, commit: commit })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (resp.status === 409) {\n\t\t\t\t\tshowToast(i18n.restoreConflict || 'Another restore is already running.');\n\t\t\t\t\treturn null;\n\t\t\t\t}\n\t\t\t\treturn resp.json().then(function(data) { return { status: resp.status, body: data }; });\n\t\t\t}).then(function(result) {\n\t\t\t\tif (!result) return;\n\t\t\t\tif (result.status < 200 || result.status >= 300) {\n\t\t\t\t\tconsole.error('blast-radius restore failed', result.status, result.body);\n\t\t\t\t\tshowToast((i18n.restoreFailed || 'Restore request failed (HTTP {status})').replace('{status}', result.status));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tonSuccess(result.body);\n\t\t\t}).catch(function(err) {\n\t\t\t\tconsole.error('blast-radius restore network error', err);\n\t\t\t\tshowToast(i18n.networkError || 'Network error while restoring');\n\t\t\t});\n\t\t}\n\n\t\t// blastRestorePlanSummary turns a plan response into a human-readable\n\t\t// confirmation line, naming refusals explicitly rather than only the\n\t\t// eligible count -- a partial plan must not read as a clean one.\n\t\tfunction blastRestorePlanSummary(plan) {\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tvar msg = (i18n.planSummary || '{eligible} of {requested} selected change(s) can be restored.')\n\t\t\t\t.replace('{eligible}', plan.eligible).replace('{requested}', plan.requested);\n\t\t\tif (plan.refused > 0) {\n\t\t\t\tmsg += ' ' + (i18n.planRefused || '{refused} cannot be restored.').replace('{refused}', plan.refused);\n\t\t\t}\n\t\t\treturn msg;\n\t\t}\n\n\t\t// blastRestoreRow previews a single row, then commits on confirmation.\n\t\tfunction blastRestoreRow(id) {\n\t\t\tvar i18n = blastRestoreI18n();\n\t\t\tblastRestoreRequest([id], false, function(plan) {\n\t\t\t\tif (plan.eligible === 0) {\n\t\t\t\t\tshowToast(blastRestorePlanSummary(plan));\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\twindow.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {\n\t\t\t\t\tblastRestoreRequest([id], true, function(result) {\n\t\t\t\t\t\tshowSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));\n\t\t\t\t\t\tvar row = document.getElementById('blast-row-' + id);\n\t\t\t\t\t\tif (row) row.remove();\n\t\t\t\t\t});\n\t\t\t\t}, { title: i18n.confirmTitle || 'Restore value?', acceptText: i18n.confirmAccept || 'Restore' });\n\t\t\t});\n\t\t}\n\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2659,12 +2524,12 @@ func repComplianceScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var158 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var158 == nil {
-			templ_7745c5c3_Var158 = templ.NopComponent
+		templ_7745c5c3_Var147 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var147 == nil {
+			templ_7745c5c3_Var147 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 192, "<script>\n\t\t// Tab switching: toggle aria-selected + hidden on the tab panels.\n\t\tfunction swRepTabSwitch(name) {\n\t\t\tdocument.getElementById('sw-rep-tabbar').querySelectorAll('[role=\"tab\"]').forEach(function(btn) {\n\t\t\t\tbtn.setAttribute('aria-selected', btn.id === 'sw-rep-tab-btn-' + name ? 'true' : 'false');\n\t\t\t\tbtn.classList.toggle('is-active', btn.id === 'sw-rep-tab-btn-' + name);\n\t\t\t});\n\t\t\t// Move the one #compliance-results shell into the active tab so a single\n\t\t\t// #compliance-tbl / #select-all ever exists (#2079). The shell is the HTMX\n\t\t\t// swap target, so outerHTML refreshes replace it in place wherever it\n\t\t\t// currently lives -- keeping both tabs in sync with no duplicate render.\n\t\t\tvar results = document.getElementById('compliance-results');\n\t\t\tif (results) {\n\t\t\t\tvar target = name === 'matrix'\n\t\t\t\t\t? document.getElementById('sw-rep-matrix-mount')\n\t\t\t\t\t: document.getElementById('sw-rep-tab-results');\n\t\t\t\tif (target && results.parentElement !== target) {\n\t\t\t\t\ttarget.appendChild(results);\n\t\t\t\t}\n\t\t\t}\n\t\t\t['results', 'matrix'].forEach(function(tab) {\n\t\t\t\tvar panel = document.getElementById('sw-rep-tab-' + tab);\n\t\t\t\tif (panel) panel.classList.toggle('hidden', tab !== name);\n\t\t\t});\n\t\t}\n\n\t\t// Column sort: swap sort/order hidden inputs and re-issue the compliance\n\t\t// search request. The search input carries the request contract\n\t\t// (hx-get/target/swap/include), so we fire its dedicated \"sortchanged\"\n\t\t// trigger rather than a synthetic \"keyup\" -- keyup is gated by the\n\t\t// input's \"changed\" modifier, which suppresses the request when the\n\t\t// search term itself has not changed (the reason header sorting never\n\t\t// actually fired). \"sortchanged\" has no such guard, so every header\n\t\t// click re-sorts (#2304).\n\t\tfunction sortBy(col) {\n\t\t\tvar sortInput = document.getElementById('compliance-sort');\n\t\t\tvar orderInput = document.getElementById('compliance-order');\n\t\t\tif (!sortInput || !orderInput) return;\n\t\t\tvar curSort = sortInput.value;\n\t\t\tvar curOrder = orderInput.value;\n\t\t\t// Cycle the clicked column: asc -> desc -> off. \"off\" clears the sort\n\t\t\t// param so the server falls back to the default ordering (name asc).\n\t\t\tif (curSort === col && curOrder === 'asc') {\n\t\t\t\torderInput.value = 'desc';\n\t\t\t} else if (curSort === col && curOrder === 'desc') {\n\t\t\t\tsortInput.value = '';\n\t\t\t\torderInput.value = 'asc';\n\t\t\t} else {\n\t\t\t\tsortInput.value = col;\n\t\t\t\torderInput.value = 'asc';\n\t\t\t}\n\t\t\tvar searchInput = document.querySelector('[name=\"search\"]');\n\t\t\tif (searchInput) htmx.trigger(searchInput, 'sortchanged');\n\t\t}\n\n\t\t// Bulk selection helpers.\n\t\tfunction toggleSelectAll(checkbox) {\n\t\t\tdocument.querySelectorAll('.bulk-select').forEach(function(cb) { cb.checked = checkbox.checked; });\n\t\t\tupdateBulkBar();\n\t\t}\n\n\t\tfunction updateBulkBar() {\n\t\t\tvar selected = document.querySelectorAll('.bulk-select:checked');\n\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\tvar count = document.getElementById('bulk-count');\n\t\t\tif (!bar) return;\n\t\t\tif (selected.length > 0) {\n\t\t\t\tbar.classList.remove('hidden');\n\t\t\t\tif (count) {\n\t\t\t\t\tcount.textContent = selected.length === 1\n\t\t\t\t\t\t? (count.dataset.oneText || '1 selected')\n\t\t\t\t\t\t: (count.dataset.manyTemplate || '{count} selected').replace('{count}', String(selected.length));\n\t\t\t\t}\n\t\t\t} else {\n\t\t\t\tbar.classList.add('hidden');\n\t\t\t\tif (count) count.textContent = count.dataset.zeroText || '';\n\t\t\t}\n\t\t}\n\n\t\tfunction clearBulkSelection() {\n\t\t\tdocument.querySelectorAll('.bulk-select').forEach(function(cb) { cb.checked = false; });\n\t\t\tvar sa = document.getElementById('select-all');\n\t\t\tif (sa) sa.checked = false;\n\t\t\tupdateBulkBar();\n\t\t}\n\n\t\tfunction bulkAction(action) {\n\t\t\tvar ids = [];\n\t\t\tdocument.querySelectorAll('.bulk-select:checked').forEach(function(cb) { ids.push(cb.value); });\n\t\t\tif (!ids.length) return;\n\t\t\tvar bp = (function() { var el = document.querySelector('meta[name=\"htmx-base-path\"]'); return el ? el.content : ''; })();\n\t\t\tvar csrf = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1');\n\t\t\tfetch(bp + '/api/v1/bulk/' + action, {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },\n\t\t\t\tbody: JSON.stringify({ mode: 'prompt_no_match', artist_ids: ids })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (resp.ok) clearBulkSelection();\n\t\t\t}).catch(function() {});\n\t\t}\n\n\t\t// Re-sync bulk bar after HTMX swaps reload the table rows.\n\t\tdocument.body.addEventListener('htmx:afterSettle', function() { updateBulkBar(); });\n\n\t\t// Filter flyout applies filters: dispatch sw:filter-applied on #compliance-results.\n\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\tif (!evt.target || evt.target.id !== 'compliance-results') return;\n\t\t\thtmx.ajax('GET', '/reports/compliance' + window.location.search, { target: '#compliance-results', swap: 'outerHTML' });\n\t\t});\n\n\t\t// Hydrate filter flyout from URL on first paint.\n\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\tif (window.swFilterFlyout) swFilterFlyout.initFromURL('compliance-filter-flyout');\n\t\t});\n\n\t\t// rewriteComplianceExport copies the current search params onto the\n\t\t// export link so the CSV download reflects the active filters.\n\t\tfunction rewriteComplianceExport(link) {\n\t\t\tvar base = link.dataset.exportBase || link.href;\n\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t// Keep only canonical compliance filter params.\n\t\t\tvar keep = ['search', 'status', 'filter', 'library_id', 'sort', 'order', 'health_min', 'health_max'];\n\t\t\tvar out = new URLSearchParams();\n\t\t\tkeep.forEach(function(k) {\n\t\t\t\tvar field = document.querySelector('[name=\"' + k + '\"]');\n\t\t\t\tvar value = field ? field.value : params.get(k);\n\t\t\t\tif (value !== null && value !== '') out.set(k, value);\n\t\t\t});\n\t\t\tvar qs = out.toString();\n\t\t\tlink.href = qs ? base + '?' + qs : base;\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "<script>\n\t\t// Tab switching: toggle aria-selected + hidden on the tab panels.\n\t\tfunction swRepTabSwitch(name) {\n\t\t\tdocument.getElementById('sw-rep-tabbar').querySelectorAll('[role=\"tab\"]').forEach(function(btn) {\n\t\t\t\tbtn.setAttribute('aria-selected', btn.id === 'sw-rep-tab-btn-' + name ? 'true' : 'false');\n\t\t\t\tbtn.classList.toggle('is-active', btn.id === 'sw-rep-tab-btn-' + name);\n\t\t\t});\n\t\t\t// Move the one #compliance-results shell into the active tab so a single\n\t\t\t// #compliance-tbl / #select-all ever exists (#2079). The shell is the HTMX\n\t\t\t// swap target, so outerHTML refreshes replace it in place wherever it\n\t\t\t// currently lives -- keeping both tabs in sync with no duplicate render.\n\t\t\tvar results = document.getElementById('compliance-results');\n\t\t\tif (results) {\n\t\t\t\tvar target = name === 'matrix'\n\t\t\t\t\t? document.getElementById('sw-rep-matrix-mount')\n\t\t\t\t\t: document.getElementById('sw-rep-tab-results');\n\t\t\t\tif (target && results.parentElement !== target) {\n\t\t\t\t\ttarget.appendChild(results);\n\t\t\t\t}\n\t\t\t}\n\t\t\t['results', 'matrix'].forEach(function(tab) {\n\t\t\t\tvar panel = document.getElementById('sw-rep-tab-' + tab);\n\t\t\t\tif (panel) panel.classList.toggle('hidden', tab !== name);\n\t\t\t});\n\t\t}\n\n\t\t// Column sort: swap sort/order hidden inputs and re-issue the compliance\n\t\t// search request. The search input carries the request contract\n\t\t// (hx-get/target/swap/include), so we fire its dedicated \"sortchanged\"\n\t\t// trigger rather than a synthetic \"keyup\" -- keyup is gated by the\n\t\t// input's \"changed\" modifier, which suppresses the request when the\n\t\t// search term itself has not changed (the reason header sorting never\n\t\t// actually fired). \"sortchanged\" has no such guard, so every header\n\t\t// click re-sorts (#2304).\n\t\tfunction sortBy(col) {\n\t\t\tvar sortInput = document.getElementById('compliance-sort');\n\t\t\tvar orderInput = document.getElementById('compliance-order');\n\t\t\tif (!sortInput || !orderInput) return;\n\t\t\tvar curSort = sortInput.value;\n\t\t\tvar curOrder = orderInput.value;\n\t\t\t// Cycle the clicked column: asc -> desc -> off. \"off\" clears the sort\n\t\t\t// param so the server falls back to the default ordering (name asc).\n\t\t\tif (curSort === col && curOrder === 'asc') {\n\t\t\t\torderInput.value = 'desc';\n\t\t\t} else if (curSort === col && curOrder === 'desc') {\n\t\t\t\tsortInput.value = '';\n\t\t\t\torderInput.value = 'asc';\n\t\t\t} else {\n\t\t\t\tsortInput.value = col;\n\t\t\t\torderInput.value = 'asc';\n\t\t\t}\n\t\t\tvar searchInput = document.querySelector('[name=\"search\"]');\n\t\t\tif (searchInput) htmx.trigger(searchInput, 'sortchanged');\n\t\t}\n\n\t\t// Bulk selection helpers.\n\t\tfunction toggleSelectAll(checkbox) {\n\t\t\tdocument.querySelectorAll('.bulk-select').forEach(function(cb) { cb.checked = checkbox.checked; });\n\t\t\tupdateBulkBar();\n\t\t}\n\n\t\tfunction updateBulkBar() {\n\t\t\tvar selected = document.querySelectorAll('.bulk-select:checked');\n\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\tvar count = document.getElementById('bulk-count');\n\t\t\tif (!bar) return;\n\t\t\tif (selected.length > 0) {\n\t\t\t\tbar.classList.remove('hidden');\n\t\t\t\tif (count) {\n\t\t\t\t\tcount.textContent = selected.length === 1\n\t\t\t\t\t\t? (count.dataset.oneText || '1 selected')\n\t\t\t\t\t\t: (count.dataset.manyTemplate || '{count} selected').replace('{count}', String(selected.length));\n\t\t\t\t}\n\t\t\t} else {\n\t\t\t\tbar.classList.add('hidden');\n\t\t\t\tif (count) count.textContent = count.dataset.zeroText || '';\n\t\t\t}\n\t\t}\n\n\t\tfunction clearBulkSelection() {\n\t\t\tdocument.querySelectorAll('.bulk-select').forEach(function(cb) { cb.checked = false; });\n\t\t\tvar sa = document.getElementById('select-all');\n\t\t\tif (sa) sa.checked = false;\n\t\t\tupdateBulkBar();\n\t\t}\n\n\t\tfunction bulkAction(action) {\n\t\t\tvar ids = [];\n\t\t\tdocument.querySelectorAll('.bulk-select:checked').forEach(function(cb) { ids.push(cb.value); });\n\t\t\tif (!ids.length) return;\n\t\t\tvar bp = (function() { var el = document.querySelector('meta[name=\"htmx-base-path\"]'); return el ? el.content : ''; })();\n\t\t\tvar csrf = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1');\n\t\t\tfetch(bp + '/api/v1/bulk/' + action, {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },\n\t\t\t\tbody: JSON.stringify({ mode: 'prompt_no_match', artist_ids: ids })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (resp.ok) clearBulkSelection();\n\t\t\t}).catch(function() {});\n\t\t}\n\n\t\t// Re-sync bulk bar after HTMX swaps reload the table rows.\n\t\tdocument.body.addEventListener('htmx:afterSettle', function() { updateBulkBar(); });\n\n\t\t// Filter flyout applies filters: dispatch sw:filter-applied on #compliance-results.\n\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\tif (!evt.target || evt.target.id !== 'compliance-results') return;\n\t\t\thtmx.ajax('GET', '/reports/compliance' + window.location.search, { target: '#compliance-results', swap: 'outerHTML' });\n\t\t});\n\n\t\t// Hydrate filter flyout from URL on first paint.\n\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\tif (window.swFilterFlyout) swFilterFlyout.initFromURL('compliance-filter-flyout');\n\t\t});\n\n\t\t// rewriteComplianceExport copies the current search params onto the\n\t\t// export link so the CSV download reflects the active filters.\n\t\tfunction rewriteComplianceExport(link) {\n\t\t\tvar base = link.dataset.exportBase || link.href;\n\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t// Keep only canonical compliance filter params.\n\t\t\tvar keep = ['search', 'status', 'filter', 'library_id', 'sort', 'order', 'health_min', 'health_max'];\n\t\t\tvar out = new URLSearchParams();\n\t\t\tkeep.forEach(function(k) {\n\t\t\t\tvar field = document.querySelector('[name=\"' + k + '\"]');\n\t\t\t\tvar value = field ? field.value : params.get(k);\n\t\t\t\tif (value !== null && value !== '') out.set(k, value);\n\t\t\t});\n\t\t\tvar qs = out.toString();\n\t\t\tlink.href = qs ? base + '?' + qs : base;\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2690,12 +2555,12 @@ func repRailFilterScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var159 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var159 == nil {
-			templ_7745c5c3_Var159 = templ.NopComponent
+		templ_7745c5c3_Var148 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var148 == nil {
+			templ_7745c5c3_Var148 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 193, "<script>\n\t\tfunction swRepRailFilter(query) {\n\t\t\tvar q = query.toLowerCase();\n\t\t\tdocument.querySelectorAll('#sw-rep-list .sw-rep-list-item').forEach(function(li) {\n\t\t\t\tvar label = (li.dataset.repLabel || '').toLowerCase();\n\t\t\t\tli.hidden = q.length > 0 && !label.includes(q);\n\t\t\t});\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "<script>\n\t\tfunction swRepRailFilter(query) {\n\t\t\tvar q = query.toLowerCase();\n\t\t\tdocument.querySelectorAll('#sw-rep-list .sw-rep-list-item').forEach(function(li) {\n\t\t\t\tvar label = (li.dataset.repLabel || '').toLowerCase();\n\t\t\t\tli.hidden = q.length > 0 && !label.includes(q);\n\t\t\t});\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2727,12 +2592,12 @@ func repRailDrawerScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var160 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var160 == nil {
-			templ_7745c5c3_Var160 = templ.NopComponent
+		templ_7745c5c3_Var149 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var149 == nil {
+			templ_7745c5c3_Var149 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 194, "<script>\n\t\twindow.swReportsRailDrawer = (function() {\n\t\t\tvar RAIL_ID = 'sw-rep-rail';\n\t\t\tvar SCRIM_ID = 'sw-rep-rail-scrim';\n\t\t\t// Focusable selector for the focus-trap (mirrors prefs-drawer.js).\n\t\t\tvar FOCUSABLE = [\n\t\t\t\t'a[href]',\n\t\t\t\t'button:not([disabled])',\n\t\t\t\t'input:not([disabled])',\n\t\t\t\t'select:not([disabled])',\n\t\t\t\t'textarea:not([disabled])',\n\t\t\t\t'[tabindex]:not([tabindex=\"-1\"])'\n\t\t\t].join(',');\n\t\t\tvar _opener = null;\n\n\t\t\tfunction rail()  { return document.getElementById(RAIL_ID); }\n\t\t\tfunction scrim() { return document.getElementById(SCRIM_ID); }\n\t\t\tfunction isOpen() {\n\t\t\t\tvar r = rail();\n\t\t\t\treturn r ? r.classList.contains('sw-rep-rail--open') : false;\n\t\t\t}\n\t\t\tfunction triggers() {\n\t\t\t\treturn Array.prototype.slice.call(document.querySelectorAll('.sw-rep-rail-toggle'));\n\t\t\t}\n\n\t\t\tfunction open() {\n\t\t\t\tvar r = rail();\n\t\t\t\tif (!r || isOpen()) return;\n\t\t\t\t_opener = document.activeElement;\n\t\t\t\tr.classList.add('sw-rep-rail--open');\n\t\t\t\tvar s = scrim();\n\t\t\t\tif (s) s.classList.add('sw-rep-rail-scrim--visible');\n\t\t\t\ttriggers().forEach(function(t) { t.setAttribute('aria-expanded', 'true'); });\n\t\t\t\t// Move focus into the drawer (the rail search input is the first\n\t\t\t\t// focusable child) so the trap has a real anchor.\n\t\t\t\tvar focusable = r.querySelectorAll(FOCUSABLE);\n\t\t\t\tif (focusable.length) focusable[0].focus();\n\t\t\t\t// Scope the trap to the drawer element (prefs-drawer.js pattern): it\n\t\t\t\t// only fires while focus is inside, and is removed symmetrically on\n\t\t\t\t// close so it never persists while the drawer is shut.\n\t\t\t\tr.addEventListener('keydown', onKeydown);\n\t\t\t}\n\n\t\t\tfunction close() {\n\t\t\t\tvar r = rail();\n\t\t\t\tif (!r || !isOpen()) return;\n\t\t\t\tr.classList.remove('sw-rep-rail--open');\n\t\t\t\tvar s = scrim();\n\t\t\t\tif (s) s.classList.remove('sw-rep-rail-scrim--visible');\n\t\t\t\ttriggers().forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });\n\t\t\t\tr.removeEventListener('keydown', onKeydown);\n\t\t\t\tif (_opener && typeof _opener.focus === 'function') { _opener.focus(); }\n\t\t\t\t_opener = null;\n\t\t\t}\n\n\t\t\tfunction toggle() { if (isOpen()) { close(); } else { open(); } }\n\n\t\t\t// Esc closes; Tab / Shift+Tab wrap focus within the open drawer so it\n\t\t\t// cannot walk out into the pane controls obscured behind the scrim.\n\t\t\tfunction onKeydown(ev) {\n\t\t\t\tif (ev.key === 'Escape') { ev.preventDefault(); close(); return; }\n\t\t\t\tif (ev.key !== 'Tab') return;\n\t\t\t\tvar r = rail();\n\t\t\t\tif (!r) return;\n\t\t\t\tvar focusable = Array.prototype.slice.call(r.querySelectorAll(FOCUSABLE));\n\t\t\t\tif (!focusable.length) { ev.preventDefault(); return; }\n\t\t\t\tvar first = focusable[0];\n\t\t\t\tvar last = focusable[focusable.length - 1];\n\t\t\t\tif (ev.shiftKey) {\n\t\t\t\t\tif (document.activeElement === first || !r.contains(document.activeElement)) {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tlast.focus();\n\t\t\t\t\t}\n\t\t\t\t} else {\n\t\t\t\t\tif (document.activeElement === last || !r.contains(document.activeElement)) {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tfirst.focus();\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\n\t\t\treturn { open: open, close: close, toggle: toggle };\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "<script>\n\t\twindow.swReportsRailDrawer = (function() {\n\t\t\tvar RAIL_ID = 'sw-rep-rail';\n\t\t\tvar SCRIM_ID = 'sw-rep-rail-scrim';\n\t\t\t// Focusable selector for the focus-trap (mirrors prefs-drawer.js).\n\t\t\tvar FOCUSABLE = [\n\t\t\t\t'a[href]',\n\t\t\t\t'button:not([disabled])',\n\t\t\t\t'input:not([disabled])',\n\t\t\t\t'select:not([disabled])',\n\t\t\t\t'textarea:not([disabled])',\n\t\t\t\t'[tabindex]:not([tabindex=\"-1\"])'\n\t\t\t].join(',');\n\t\t\tvar _opener = null;\n\n\t\t\tfunction rail()  { return document.getElementById(RAIL_ID); }\n\t\t\tfunction scrim() { return document.getElementById(SCRIM_ID); }\n\t\t\tfunction isOpen() {\n\t\t\t\tvar r = rail();\n\t\t\t\treturn r ? r.classList.contains('sw-rep-rail--open') : false;\n\t\t\t}\n\t\t\tfunction triggers() {\n\t\t\t\treturn Array.prototype.slice.call(document.querySelectorAll('.sw-rep-rail-toggle'));\n\t\t\t}\n\n\t\t\tfunction open() {\n\t\t\t\tvar r = rail();\n\t\t\t\tif (!r || isOpen()) return;\n\t\t\t\t_opener = document.activeElement;\n\t\t\t\tr.classList.add('sw-rep-rail--open');\n\t\t\t\tvar s = scrim();\n\t\t\t\tif (s) s.classList.add('sw-rep-rail-scrim--visible');\n\t\t\t\ttriggers().forEach(function(t) { t.setAttribute('aria-expanded', 'true'); });\n\t\t\t\t// Move focus into the drawer (the rail search input is the first\n\t\t\t\t// focusable child) so the trap has a real anchor.\n\t\t\t\tvar focusable = r.querySelectorAll(FOCUSABLE);\n\t\t\t\tif (focusable.length) focusable[0].focus();\n\t\t\t\t// Scope the trap to the drawer element (prefs-drawer.js pattern): it\n\t\t\t\t// only fires while focus is inside, and is removed symmetrically on\n\t\t\t\t// close so it never persists while the drawer is shut.\n\t\t\t\tr.addEventListener('keydown', onKeydown);\n\t\t\t}\n\n\t\t\tfunction close() {\n\t\t\t\tvar r = rail();\n\t\t\t\tif (!r || !isOpen()) return;\n\t\t\t\tr.classList.remove('sw-rep-rail--open');\n\t\t\t\tvar s = scrim();\n\t\t\t\tif (s) s.classList.remove('sw-rep-rail-scrim--visible');\n\t\t\t\ttriggers().forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });\n\t\t\t\tr.removeEventListener('keydown', onKeydown);\n\t\t\t\tif (_opener && typeof _opener.focus === 'function') { _opener.focus(); }\n\t\t\t\t_opener = null;\n\t\t\t}\n\n\t\t\tfunction toggle() { if (isOpen()) { close(); } else { open(); } }\n\n\t\t\t// Esc closes; Tab / Shift+Tab wrap focus within the open drawer so it\n\t\t\t// cannot walk out into the pane controls obscured behind the scrim.\n\t\t\tfunction onKeydown(ev) {\n\t\t\t\tif (ev.key === 'Escape') { ev.preventDefault(); close(); return; }\n\t\t\t\tif (ev.key !== 'Tab') return;\n\t\t\t\tvar r = rail();\n\t\t\t\tif (!r) return;\n\t\t\t\tvar focusable = Array.prototype.slice.call(r.querySelectorAll(FOCUSABLE));\n\t\t\t\tif (!focusable.length) { ev.preventDefault(); return; }\n\t\t\t\tvar first = focusable[0];\n\t\t\t\tvar last = focusable[focusable.length - 1];\n\t\t\t\tif (ev.shiftKey) {\n\t\t\t\t\tif (document.activeElement === first || !r.contains(document.activeElement)) {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tlast.focus();\n\t\t\t\t\t}\n\t\t\t\t} else {\n\t\t\t\t\tif (document.activeElement === last || !r.contains(document.activeElement)) {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tfirst.focus();\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\n\t\t\treturn { open: open, close: close, toggle: toggle };\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2762,12 +2627,12 @@ func repRunRulesScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var161 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var161 == nil {
-			templ_7745c5c3_Var161 = templ.NopComponent
+		templ_7745c5c3_Var150 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var150 == nil {
+			templ_7745c5c3_Var150 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 195, "<script>\n\t\t// confirmAndRunRules fetches the artist count, then shows a confirmation\n\t\t// modal with the estimated duration before starting rule evaluation.\n\t\t// scope is \"incremental\" (default Run Rules, #698) or \"all\"\n\t\t// (Re-evaluate All admin escape hatch).\n\t\tfunction confirmAndRunRules(scope) {\n\t\t\tscope = (scope === 'all') ? 'all' : 'incremental';\n\t\t\tvar bp = (function() {\n\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\treturn el ? el.content : '';\n\t\t\t})();\n\n\t\t\t// Fetch artist count from the health endpoint to build the estimate.\n\t\t\tfetch(bp + '/api/v1/reports/health')\n\t\t\t\t.then(function(res) {\n\t\t\t\t\tif (!res.ok) {\n\t\t\t\t\t\t// If we cannot determine the count, proceed without estimate.\n\t\t\t\t\t\tshowRunRulesConfirm(bp, 0, scope);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\treturn res.json();\n\t\t\t\t})\n\t\t\t\t.then(function(data) {\n\t\t\t\t\tif (!data) return;\n\t\t\t\t\tvar count = (data && data.total_artists) ? data.total_artists : 0;\n\t\t\t\t\tshowRunRulesConfirm(bp, count, scope);\n\t\t\t\t})\n\t\t\t\t.catch(function() {\n\t\t\t\t\t// Preserve the requested scope on estimate failure; a\n\t\t\t\t\t// dropped scope would silently downgrade Re-evaluate\n\t\t\t\t\t// All to incremental on any transient /reports/health\n\t\t\t\t\t// hiccup.\n\t\t\t\t\tshowRunRulesConfirm(bp, 0, scope);\n\t\t\t\t});\n\t\t}\n\n\t\tfunction showRunRulesConfirm(bp, artistCount, scope) {\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tvar ds = btn ? btn.dataset : {};\n\t\t\tvar isAll = scope === 'all';\n\t\t\t// scope=all uses the stronger warning copy pulled from the\n\t\t\t// confirm-all-* data attributes. scope=incremental keeps the\n\t\t\t// familiar Run Rules copy.\n\t\t\tvar bodyTemplate = isAll\n\t\t\t\t? (ds.confirmAllBody || 'Force a full re-evaluation of every eligible artist.')\n\t\t\t\t: (ds.confirmBody || 'This will evaluate rules for all artists.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.');\n\t\t\tvar estimateTemplate = isAll\n\t\t\t\t? (ds.confirmAllBodyEstimate || bodyTemplate)\n\t\t\t\t: (ds.confirmBodyEstimate || 'This will evaluate rules for <strong>{artists}</strong> artists and may take approximately <strong>{duration}</strong>.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.');\n\t\t\tvar message;\n\t\t\tif (artistCount > 0) {\n\t\t\t\tvar minutes = Math.ceil(artistCount * 0.05 / 60);\n\t\t\t\tif (minutes < 1) minutes = 1;\n\t\t\t\tvar minuteLabel = (minutes === 1)\n\t\t\t\t\t? (ds.confirmMinuteOne || '{count} minute').replace('{count}', minutes)\n\t\t\t\t\t: (ds.confirmMinuteOther || '{count} minutes').replace('{count}', minutes);\n\t\t\t\tmessage = estimateTemplate\n\t\t\t\t\t.replace('{artists}', artistCount)\n\t\t\t\t\t.replace('{duration}', minuteLabel);\n\t\t\t} else {\n\t\t\t\tmessage = bodyTemplate;\n\t\t\t}\n\n\t\t\t// Pass customizations via opts so the modal resets them in hideModal.\n\t\t\t// No pre-mutation of the shared modal DOM is needed.\n\t\t\twindow.showConfirmDialog(message, 'run_rules', function() {\n\t\t\t\tstartRuleRun(bp, scope);\n\t\t\t}, {\n\t\t\t\thtml: true,\n\t\t\t\ttitle: isAll ? (ds.confirmAllTitle || 'Re-evaluate all artists?') : (ds.confirmTitle || 'Run Rules'),\n\t\t\t\tacceptText: isAll ? (ds.confirmAllAccept || 'Re-evaluate All') : (ds.confirmAccept || 'Start'),\n\t\t\t\t// The modal's default accept is the danger-red treatment; Run\n\t\t\t\t// Rules is non-destructive, so restyle the accept with the\n\t\t\t\t// pane's accent-emphasis motif classes (no solid-blue fill --\n\t\t\t\t// #1757 PR-4 sweep). The focus ring matches the canonical\n\t\t\t\t// artist-detail buttons.\n\t\t\t\tacceptClass: 'sw-rep-run-btn sw-rep-run-btn--primary focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'\n\t\t\t});\n\t\t}\n\n\t\t// lastRunStickyToast holds the sticky summary toast from the most\n\t\t// recent Run Rules completion (#698). We dismiss it at the start\n\t\t// of the next run so two summaries never sit in the toast stack at\n\t\t// the same time.\n\t\tvar lastRunStickyToast = null;\n\n\t\tfunction startRuleRun(bp, scope) {\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tvar allBtn = document.getElementById('run-rules-all-btn');\n\t\t\tvar spinner = document.getElementById('run-rules-spinner');\n\t\t\tvar label = document.getElementById('run-rules-label');\n\n\t\t\tif (btn) btn.disabled = true;\n\t\t\tif (allBtn) allBtn.disabled = true;\n\t\t\tif (spinner) spinner.classList.remove('hidden');\n\t\t\tif (label) label.textContent = (btn && btn.dataset.labelRunning) || 'Running...';\n\t\t\t// Dismiss any prior sticky summary so the next run owns the\n\t\t\t// toast stack; it will be replaced on completion. Guard the\n\t\t\t// dismiss call because a throwing showStickyToast on the\n\t\t\t// previous run may have left lastRunStickyToast unassigned\n\t\t\t// or without a dismiss handle.\n\t\t\tif (lastRunStickyToast && typeof lastRunStickyToast.dismiss === 'function') {\n\t\t\t\ttry { lastRunStickyToast.dismiss(); } catch (e) { /* ignore */ }\n\t\t\t}\n\t\t\tlastRunStickyToast = null;\n\n\t\t\tvar csrfVal = (function() {\n\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\treturn m ? m[1] : '';\n\t\t\t})();\n\n\t\t\tvar url = bp + '/api/v1/rules/run-all' + (scope === 'all' ? '?scope=all' : '');\n\t\t\tfetch(url, {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfVal\n\t\t\t\t}\n\t\t\t}).then(function(r) {\n\t\t\t\tif (r.status === 202) {\n\t\t\t\t\tshowSuccessToast((btn && btn.dataset.toastStarted) || 'Rule evaluation started...');\n\t\t\t\t\tpollRuleStatus(bp);\n\t\t\t\t} else if (r.status === 409) {\n\t\t\t\t\tshowToast((btn && btn.dataset.toastAlreadyRunning) || 'Rules already running');\n\t\t\t\t\tpollRuleStatus(bp);\n\t\t\t\t} else {\n\t\t\t\t\treturn r.json().then(function(data) {\n\t\t\t\t\t\tshowToast(data.error || (btn && btn.dataset.toastFailedStart) || 'Failed to start rules');\n\t\t\t\t\t\tresetRuleButton();\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t}).catch(function() {\n\t\t\t\tshowToast((btn && btn.dataset.toastFailedStartEvaluation) || 'Failed to start rule evaluation');\n\t\t\t\tresetRuleButton();\n\t\t\t});\n\t\t}\n\n\t\tfunction pollRuleStatus(bp) {\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tpollAsyncStatus(bp + '/api/v1/rules/run-all/status', {\n\t\t\t\tonData: function(data) {\n\t\t\t\t\tif (data.status === 'completed') {\n\t\t\t\t\t\t// Combine the incremental summary (#698) with the\n\t\t\t\t\t\t// violation outcome into a single persistent toast\n\t\t\t\t\t\t// so the user has one dismissable record of the run,\n\t\t\t\t\t\t// not a transient toast plus a caption card.\n\t\t\t\t\t\tvar summary = buildRunSummary(data);\n\t\t\t\t\t\tvar outcome;\n\t\t\t\t\t\tif (data.violations_found === 0) {\n\t\t\t\t\t\t\toutcome = (btn && btn.dataset.msgNoViolations) || 'No violations found';\n\t\t\t\t\t\t} else if (data.violations_remaining === 0 && data.violations_auto_fixed > 0) {\n\t\t\t\t\t\t\toutcome = ((btn && btn.dataset.msgAllAutoFixed) || 'Found {found} violations, all auto-fixed').replace('{found}', data.violations_found);\n\t\t\t\t\t\t} else if (data.violations_auto_fixed > 0) {\n\t\t\t\t\t\t\toutcome = ((btn && btn.dataset.msgViolationsFoundAutoFixed) || 'Found {found} violations ({autoFixed} auto-fixed, {remaining} remaining)')\n\t\t\t\t\t\t\t\t.replace('{found}', data.violations_found).replace('{autoFixed}', data.violations_auto_fixed).replace('{remaining}', data.violations_remaining);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\toutcome = ((btn && btn.dataset.msgViolationsFound) || 'Found {found} violations ({remaining} remaining)')\n\t\t\t\t\t\t\t\t.replace('{found}', data.violations_found).replace('{remaining}', data.violations_remaining);\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar fullMsg = summary ? (summary + ' ' + outcome) : outcome;\n\t\t\t\t\t\t// Prefer the sticky toast so the summary persists\n\t\t\t\t\t\t// until the user dismisses it, but fall back to\n\t\t\t\t\t\t// the transient success toast if the sticky\n\t\t\t\t\t\t// helper is unavailable or throws (e.g. the\n\t\t\t\t\t\t// toast container is missing from the DOM).\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tif (typeof window.showStickyToast === 'function') {\n\t\t\t\t\t\t\t\tlastRunStickyToast = window.showStickyToast(fullMsg);\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tshowSuccessToast(fullMsg);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\tlastRunStickyToast = null;\n\t\t\t\t\t\t\tshowSuccessToast(fullMsg);\n\t\t\t\t\t\t}\n\t\t\t\t\t\tresetRuleButton();\n\t\t\t\t\t\t// Refresh health summary and compliance table if present.\n\t\t\t\t\t\tif (document.getElementById('health-summary')) {\n\t\t\t\t\t\t\thtmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (document.getElementById('compliance-summary')) {\n\t\t\t\t\t\t\thtmx.ajax('GET', '/api/v1/reports/health/by-library', {target: '#compliance-summary', swap: 'innerHTML'});\n\t\t\t\t\t\t}\n\t\t\t\t\t\thtmx.ajax('GET', '/api/v1/notifications/badge', {target: '#sidebar-notif-badge', swap: 'innerHTML'});\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\tif (data.status === 'failed') {\n\t\t\t\t\t\tshowToast(((btn && btn.dataset.toastEvaluationFailed) || 'Rule evaluation failed') + ': ' + (data.error || 'unknown error'));\n\t\t\t\t\t\tresetRuleButton();\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\tif (data.status === 'idle') {\n\t\t\t\t\t\tshowToast((btn && btn.dataset.toastIdle) || 'Rule run state was lost');\n\t\t\t\t\t\tresetRuleButton();\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\treturn false;\n\t\t\t\t},\n\t\t\t\tonHTTPError: function(status) {\n\t\t\t\t\tshowToast(((btn && btn.dataset.toastStatusHttpError) || 'Status check failed (HTTP {status})').replace('{status}', status));\n\t\t\t\t\tresetRuleButton();\n\t\t\t\t},\n\t\t\t\tonNetworkError: function() {\n\t\t\t\t\tshowToast((btn && btn.dataset.toastStatusNetworkError) || 'Network error while checking rule status');\n\t\t\t\t\tresetRuleButton();\n\t\t\t\t}\n\t\t\t}, {maxAttempts: 0});\n\t\t}\n\n\t\tfunction resetRuleButton() {\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tvar allBtn = document.getElementById('run-rules-all-btn');\n\t\t\tvar spinner = document.getElementById('run-rules-spinner');\n\t\t\tvar label = document.getElementById('run-rules-label');\n\t\t\tif (btn) btn.disabled = false;\n\t\t\tif (allBtn) allBtn.disabled = false;\n\t\t\tif (spinner) spinner.classList.add('hidden');\n\t\t\tif (label) label.textContent = (btn && btn.dataset.labelRun) || 'Run Rules';\n\t\t}\n\n\t\t// buildRunSummary returns the incremental-benefit sentence for\n\t\t// the dirty tracker (#698): \"Evaluated {processed} of {total}\n\t\t// artists ({skipped} unchanged).\" for scope=incremental, or\n\t\t// \"Evaluated all {total} artists.\" for scope=all. Returns an\n\t\t// empty string when totals are missing so the caller can render\n\t\t// the outcome alone.\n\t\tfunction buildRunSummary(data) {\n\t\t\tvar total = data.artists_total || 0;\n\t\t\tif (total <= 0) return '';\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tvar ds = btn ? btn.dataset : {};\n\t\t\tif (data.scope === 'all') {\n\t\t\t\treturn (ds.msgEvaluatedSummaryAll || 'Evaluated all {total} artists.')\n\t\t\t\t\t.replace('{total}', total);\n\t\t\t}\n\t\t\tvar processed = data.artists_processed || 0;\n\t\t\tvar skipped = data.artists_skipped || 0;\n\t\t\treturn (ds.msgEvaluatedSummary || 'Evaluated {processed} of {total} artists ({skipped} unchanged).')\n\t\t\t\t.replace('{processed}', processed)\n\t\t\t\t.replace('{total}', total)\n\t\t\t\t.replace('{skipped}', skipped);\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 184, "<script>\n\t\t// confirmAndRunRules fetches the artist count, then shows a confirmation\n\t\t// modal with the estimated duration before starting rule evaluation.\n\t\t// scope is \"incremental\" (default Run Rules, #698) or \"all\"\n\t\t// (Re-evaluate All admin escape hatch).\n\t\tfunction confirmAndRunRules(scope) {\n\t\t\tscope = (scope === 'all') ? 'all' : 'incremental';\n\t\t\tvar bp = (function() {\n\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\treturn el ? el.content : '';\n\t\t\t})();\n\n\t\t\t// Fetch artist count from the health endpoint to build the estimate.\n\t\t\tfetch(bp + '/api/v1/reports/health')\n\t\t\t\t.then(function(res) {\n\t\t\t\t\tif (!res.ok) {\n\t\t\t\t\t\t// If we cannot determine the count, proceed without estimate.\n\t\t\t\t\t\tshowRunRulesConfirm(bp, 0, scope);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\treturn res.json();\n\t\t\t\t})\n\t\t\t\t.then(function(data) {\n\t\t\t\t\tif (!data) return;\n\t\t\t\t\tvar count = (data && data.total_artists) ? data.total_artists : 0;\n\t\t\t\t\tshowRunRulesConfirm(bp, count, scope);\n\t\t\t\t})\n\t\t\t\t.catch(function() {\n\t\t\t\t\t// Preserve the requested scope on estimate failure; a\n\t\t\t\t\t// dropped scope would silently downgrade Re-evaluate\n\t\t\t\t\t// All to incremental on any transient /reports/health\n\t\t\t\t\t// hiccup.\n\t\t\t\t\tshowRunRulesConfirm(bp, 0, scope);\n\t\t\t\t});\n\t\t}\n\n\t\tfunction showRunRulesConfirm(bp, artistCount, scope) {\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tvar ds = btn ? btn.dataset : {};\n\t\t\tvar isAll = scope === 'all';\n\t\t\t// scope=all uses the stronger warning copy pulled from the\n\t\t\t// confirm-all-* data attributes. scope=incremental keeps the\n\t\t\t// familiar Run Rules copy.\n\t\t\tvar bodyTemplate = isAll\n\t\t\t\t? (ds.confirmAllBody || 'Force a full re-evaluation of every eligible artist.')\n\t\t\t\t: (ds.confirmBody || 'This will evaluate rules for all artists.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.');\n\t\t\tvar estimateTemplate = isAll\n\t\t\t\t? (ds.confirmAllBodyEstimate || bodyTemplate)\n\t\t\t\t: (ds.confirmBodyEstimate || 'This will evaluate rules for <strong>{artists}</strong> artists and may take approximately <strong>{duration}</strong>.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.');\n\t\t\tvar message;\n\t\t\tif (artistCount > 0) {\n\t\t\t\tvar minutes = Math.ceil(artistCount * 0.05 / 60);\n\t\t\t\tif (minutes < 1) minutes = 1;\n\t\t\t\tvar minuteLabel = (minutes === 1)\n\t\t\t\t\t? (ds.confirmMinuteOne || '{count} minute').replace('{count}', minutes)\n\t\t\t\t\t: (ds.confirmMinuteOther || '{count} minutes').replace('{count}', minutes);\n\t\t\t\tmessage = estimateTemplate\n\t\t\t\t\t.replace('{artists}', artistCount)\n\t\t\t\t\t.replace('{duration}', minuteLabel);\n\t\t\t} else {\n\t\t\t\tmessage = bodyTemplate;\n\t\t\t}\n\n\t\t\t// Pass customizations via opts so the modal resets them in hideModal.\n\t\t\t// No pre-mutation of the shared modal DOM is needed.\n\t\t\twindow.showConfirmDialog(message, 'run_rules', function() {\n\t\t\t\tstartRuleRun(bp, scope);\n\t\t\t}, {\n\t\t\t\thtml: true,\n\t\t\t\ttitle: isAll ? (ds.confirmAllTitle || 'Re-evaluate all artists?') : (ds.confirmTitle || 'Run Rules'),\n\t\t\t\tacceptText: isAll ? (ds.confirmAllAccept || 'Re-evaluate All') : (ds.confirmAccept || 'Start'),\n\t\t\t\t// The modal's default accept is the danger-red treatment; Run\n\t\t\t\t// Rules is non-destructive, so restyle the accept with the\n\t\t\t\t// pane's accent-emphasis motif classes (no solid-blue fill --\n\t\t\t\t// #1757 PR-4 sweep). The focus ring matches the canonical\n\t\t\t\t// artist-detail buttons.\n\t\t\t\tacceptClass: 'sw-rep-run-btn sw-rep-run-btn--primary focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'\n\t\t\t});\n\t\t}\n\n\t\t// lastRunStickyToast holds the sticky summary toast from the most\n\t\t// recent Run Rules completion (#698). We dismiss it at the start\n\t\t// of the next run so two summaries never sit in the toast stack at\n\t\t// the same time.\n\t\tvar lastRunStickyToast = null;\n\n\t\tfunction startRuleRun(bp, scope) {\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tvar allBtn = document.getElementById('run-rules-all-btn');\n\t\t\tvar spinner = document.getElementById('run-rules-spinner');\n\t\t\tvar label = document.getElementById('run-rules-label');\n\n\t\t\tif (btn) btn.disabled = true;\n\t\t\tif (allBtn) allBtn.disabled = true;\n\t\t\tif (spinner) spinner.classList.remove('hidden');\n\t\t\tif (label) label.textContent = (btn && btn.dataset.labelRunning) || 'Running...';\n\t\t\t// Dismiss any prior sticky summary so the next run owns the\n\t\t\t// toast stack; it will be replaced on completion. Guard the\n\t\t\t// dismiss call because a throwing showStickyToast on the\n\t\t\t// previous run may have left lastRunStickyToast unassigned\n\t\t\t// or without a dismiss handle.\n\t\t\tif (lastRunStickyToast && typeof lastRunStickyToast.dismiss === 'function') {\n\t\t\t\ttry { lastRunStickyToast.dismiss(); } catch (e) { /* ignore */ }\n\t\t\t}\n\t\t\tlastRunStickyToast = null;\n\n\t\t\tvar csrfVal = (function() {\n\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\treturn m ? m[1] : '';\n\t\t\t})();\n\n\t\t\tvar url = bp + '/api/v1/rules/run-all' + (scope === 'all' ? '?scope=all' : '');\n\t\t\tfetch(url, {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfVal\n\t\t\t\t}\n\t\t\t}).then(function(r) {\n\t\t\t\tif (r.status === 202) {\n\t\t\t\t\tshowSuccessToast((btn && btn.dataset.toastStarted) || 'Rule evaluation started...');\n\t\t\t\t\tpollRuleStatus(bp);\n\t\t\t\t} else if (r.status === 409) {\n\t\t\t\t\tshowToast((btn && btn.dataset.toastAlreadyRunning) || 'Rules already running');\n\t\t\t\t\tpollRuleStatus(bp);\n\t\t\t\t} else {\n\t\t\t\t\treturn r.json().then(function(data) {\n\t\t\t\t\t\tshowToast(data.error || (btn && btn.dataset.toastFailedStart) || 'Failed to start rules');\n\t\t\t\t\t\tresetRuleButton();\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t}).catch(function() {\n\t\t\t\tshowToast((btn && btn.dataset.toastFailedStartEvaluation) || 'Failed to start rule evaluation');\n\t\t\t\tresetRuleButton();\n\t\t\t});\n\t\t}\n\n\t\tfunction pollRuleStatus(bp) {\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tpollAsyncStatus(bp + '/api/v1/rules/run-all/status', {\n\t\t\t\tonData: function(data) {\n\t\t\t\t\tif (data.status === 'completed') {\n\t\t\t\t\t\t// Combine the incremental summary (#698) with the\n\t\t\t\t\t\t// violation outcome into a single persistent toast\n\t\t\t\t\t\t// so the user has one dismissable record of the run,\n\t\t\t\t\t\t// not a transient toast plus a caption card.\n\t\t\t\t\t\tvar summary = buildRunSummary(data);\n\t\t\t\t\t\tvar outcome;\n\t\t\t\t\t\tif (data.violations_found === 0) {\n\t\t\t\t\t\t\toutcome = (btn && btn.dataset.msgNoViolations) || 'No violations found';\n\t\t\t\t\t\t} else if (data.violations_remaining === 0 && data.violations_auto_fixed > 0) {\n\t\t\t\t\t\t\toutcome = ((btn && btn.dataset.msgAllAutoFixed) || 'Found {found} violations, all auto-fixed').replace('{found}', data.violations_found);\n\t\t\t\t\t\t} else if (data.violations_auto_fixed > 0) {\n\t\t\t\t\t\t\toutcome = ((btn && btn.dataset.msgViolationsFoundAutoFixed) || 'Found {found} violations ({autoFixed} auto-fixed, {remaining} remaining)')\n\t\t\t\t\t\t\t\t.replace('{found}', data.violations_found).replace('{autoFixed}', data.violations_auto_fixed).replace('{remaining}', data.violations_remaining);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\toutcome = ((btn && btn.dataset.msgViolationsFound) || 'Found {found} violations ({remaining} remaining)')\n\t\t\t\t\t\t\t\t.replace('{found}', data.violations_found).replace('{remaining}', data.violations_remaining);\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar fullMsg = summary ? (summary + ' ' + outcome) : outcome;\n\t\t\t\t\t\t// Prefer the sticky toast so the summary persists\n\t\t\t\t\t\t// until the user dismisses it, but fall back to\n\t\t\t\t\t\t// the transient success toast if the sticky\n\t\t\t\t\t\t// helper is unavailable or throws (e.g. the\n\t\t\t\t\t\t// toast container is missing from the DOM).\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tif (typeof window.showStickyToast === 'function') {\n\t\t\t\t\t\t\t\tlastRunStickyToast = window.showStickyToast(fullMsg);\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tshowSuccessToast(fullMsg);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\tlastRunStickyToast = null;\n\t\t\t\t\t\t\tshowSuccessToast(fullMsg);\n\t\t\t\t\t\t}\n\t\t\t\t\t\tresetRuleButton();\n\t\t\t\t\t\t// Refresh health summary and compliance table if present.\n\t\t\t\t\t\tif (document.getElementById('health-summary')) {\n\t\t\t\t\t\t\thtmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (document.getElementById('compliance-summary')) {\n\t\t\t\t\t\t\thtmx.ajax('GET', '/api/v1/reports/health/by-library', {target: '#compliance-summary', swap: 'innerHTML'});\n\t\t\t\t\t\t}\n\t\t\t\t\t\thtmx.ajax('GET', '/api/v1/notifications/badge', {target: '#sidebar-notif-badge', swap: 'innerHTML'});\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\tif (data.status === 'failed') {\n\t\t\t\t\t\tshowToast(((btn && btn.dataset.toastEvaluationFailed) || 'Rule evaluation failed') + ': ' + (data.error || 'unknown error'));\n\t\t\t\t\t\tresetRuleButton();\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\tif (data.status === 'idle') {\n\t\t\t\t\t\tshowToast((btn && btn.dataset.toastIdle) || 'Rule run state was lost');\n\t\t\t\t\t\tresetRuleButton();\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\treturn false;\n\t\t\t\t},\n\t\t\t\tonHTTPError: function(status) {\n\t\t\t\t\tshowToast(((btn && btn.dataset.toastStatusHttpError) || 'Status check failed (HTTP {status})').replace('{status}', status));\n\t\t\t\t\tresetRuleButton();\n\t\t\t\t},\n\t\t\t\tonNetworkError: function() {\n\t\t\t\t\tshowToast((btn && btn.dataset.toastStatusNetworkError) || 'Network error while checking rule status');\n\t\t\t\t\tresetRuleButton();\n\t\t\t\t}\n\t\t\t}, {maxAttempts: 0});\n\t\t}\n\n\t\tfunction resetRuleButton() {\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tvar allBtn = document.getElementById('run-rules-all-btn');\n\t\t\tvar spinner = document.getElementById('run-rules-spinner');\n\t\t\tvar label = document.getElementById('run-rules-label');\n\t\t\tif (btn) btn.disabled = false;\n\t\t\tif (allBtn) allBtn.disabled = false;\n\t\t\tif (spinner) spinner.classList.add('hidden');\n\t\t\tif (label) label.textContent = (btn && btn.dataset.labelRun) || 'Run Rules';\n\t\t}\n\n\t\t// buildRunSummary returns the incremental-benefit sentence for\n\t\t// the dirty tracker (#698): \"Evaluated {processed} of {total}\n\t\t// artists ({skipped} unchanged).\" for scope=incremental, or\n\t\t// \"Evaluated all {total} artists.\" for scope=all. Returns an\n\t\t// empty string when totals are missing so the caller can render\n\t\t// the outcome alone.\n\t\tfunction buildRunSummary(data) {\n\t\t\tvar total = data.artists_total || 0;\n\t\t\tif (total <= 0) return '';\n\t\t\tvar btn = document.getElementById('run-rules-btn');\n\t\t\tvar ds = btn ? btn.dataset : {};\n\t\t\tif (data.scope === 'all') {\n\t\t\t\treturn (ds.msgEvaluatedSummaryAll || 'Evaluated all {total} artists.')\n\t\t\t\t\t.replace('{total}', total);\n\t\t\t}\n\t\t\tvar processed = data.artists_processed || 0;\n\t\t\tvar skipped = data.artists_skipped || 0;\n\t\t\treturn (ds.msgEvaluatedSummary || 'Evaluated {processed} of {total} artists ({skipped} unchanged).')\n\t\t\t\t.replace('{processed}', processed)\n\t\t\t\t.replace('{total}', total)\n\t\t\t\t.replace('{skipped}', skipped);\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

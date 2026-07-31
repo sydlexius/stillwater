@@ -1762,7 +1762,6 @@
   "reports.blast_radius.js.restored_count": "{count} value(s) restored.",
   "reports.blast_radius.label": "Blast radius",
   "reports.blast_radius.page_of": "Page %d of %d",
-  "reports.blast_radius.preview_selected": "Preview Restore",
   "reports.blast_radius.restore": "Restore",
   "reports.blast_radius.restore_row_title": "Preview restoring this value",
   "reports.blast_radius.retention_note": "Change history is kept until an artist is deleted or merged into another. Restoring a value does not republish it or re-trigger the writer that changed it, but the artist is marked dirty, so the next rule pass re-evaluates it.",
