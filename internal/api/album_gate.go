@@ -231,9 +231,6 @@ const tier3RivalCatalogueBudget = 2
 func (r *Router) tier3RivalClearsOverlapFloor(ctx context.Context, local artist.AlbumSet, results []provider.ArtistSearchResult, best *provider.ArtistSearchResult, cache *releaseGroupCache) bool {
 	fetched := 0
 	for i := range results {
-		if fetched >= tier3RivalCatalogueBudget {
-			return false
-		}
 		res := &results[i]
 
 		// EqualFold, not ==: IsValidMBID accepts either case, so the very same
@@ -264,11 +261,25 @@ func (r *Router) tier3RivalClearsOverlapFloor(ctx context.Context, local artist.
 		// regardless, and it is what keeps the budget honest if Tier 2 ever does
 		// fall through warm -- but it is defensive here, not load-bearing.
 		//
+		// The budget gates the FETCH, not the iteration. It is checked after
+		// cachedAlready is known and only when the lookup would cost a call,
+		// because a cached rival is free to evaluate and evaluating it can only
+		// make the gate STRICTER. Returning at the top of the loop instead --
+		// as this did before -- meant uncached rivals could exhaust the budget
+		// and a later CACHED rival whose catalogue clears the overlap floor was
+		// never consulted, so a contested identity read as uncontested and the
+		// gate permitted an unattended write. That is the dangerous direction,
+		// and it is the same shape as the charge-on-cache-hit bug this function
+		// was already being fixed for: budget accounting that skips rivals.
+		//
 		// holds MUST be asked BEFORE titles: titles writes c.entries on BOTH its
 		// success and failure paths, so asking after would make holds always true,
 		// never increment, and silently render the budget inert.
 		// TestTier3RivalBudgetStopsAtTheBudget pins that bound.
 		cachedAlready := cache.holds(res.MusicBrainzID)
+		if !cachedAlready && fetched >= tier3RivalCatalogueBudget {
+			return false
+		}
 		remote, known := cache.titles(ctx, res.MusicBrainzID)
 		if !cachedAlready {
 			fetched++

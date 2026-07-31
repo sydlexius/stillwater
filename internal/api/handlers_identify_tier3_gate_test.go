@@ -554,12 +554,19 @@ const (
 // TestTier3RivalBudgetIsNotSpentOnCacheHits pins #2864.
 //
 // tier3RivalCatalogueBudget rations PROVIDER CALLS, not loop iterations. Two
-// rivals whose catalogues are already cached -- the ordinary case, since Tier 2
-// populates the same cache on its fall-through path -- cost nothing to consult.
-// Charging them exhausted the budget after ZERO provider round-trips, so the
-// third rival, the only genuinely unmeasured one, was never looked at and could
-// never contest. That silently narrows contest detection, which is the thing
-// the rival measurement exists to provide.
+// rivals whose catalogues are already cached cost nothing to consult. Charging
+// them exhausted the budget after ZERO provider round-trips, so the third
+// rival, the only genuinely unmeasured one, was never looked at and could never
+// contest. That silently narrows contest detection, which is the thing the
+// rival measurement exists to provide.
+//
+// The cache state here is set up EXPLICITLY, not produced by running Tier 2.
+// Tier 2 does populate this cache via enrichAndScoreTier2, but that call sits
+// inside the one branch of identifyArtist that returns unconditionally, so no
+// path which actually falls through to Tier 3 leaves Tier 2 work behind. What
+// this test controls for is the cache STATE the accounting must handle, whatever
+// produced it -- today a repeated MBID within one result list, and any future
+// caller that arrives warm.
 //
 // The fixture is built so the THIRD rival is the only one that contests: the
 // two cached rivals carry unrelated catalogues, so reaching them and finding
@@ -587,8 +594,8 @@ func TestTier3RivalBudgetIsNotSpentOnCacheHits(t *testing.T) {
 		t.Fatal("precondition: a nil cache measures no rival at all, so the budget would never be reached")
 	}
 
-	// PRE-WARM the first two rivals, standing in for the Tier 2 fall-through
-	// that already looked at them. These cost no further provider call.
+	// PRE-WARM the first two rivals: explicit cache-hit setup, so consulting
+	// them costs no further provider call.
 	for _, mbid := range []string{mbidGateRival, mbidGateRival2} {
 		if _, known := cache.titles(ctx, mbid); !known {
 			t.Fatalf("precondition failed: pre-warming %s did not produce a known entry", mbid)
@@ -714,6 +721,97 @@ func TestTier3RivalBudgetStopsAtTheBudget(t *testing.T) {
 		t.Errorf("rival provider calls = %d %v, want exactly %d: the budget bounds how many rival catalogues are fetched, "+
 			"and a list longer than the budget must not be walked past it",
 			len(rivalFetches), rivalFetches, tier3RivalCatalogueBudget)
+	}
+}
+
+// TestTier3CachedRivalIsConsultedAfterTheBudgetIsSpent pins the DANGEROUS half
+// of the budget's behavior, and it is the case the first two budget tests miss.
+//
+// The budget gates the FETCH, not the iteration. Checking it at the top of the
+// loop -- before knowing whether this rival would cost a provider call -- means
+// budget-sized uncached rivals exhaust it and the loop returns before ever
+// looking at a later CACHED rival. That rival is free to evaluate, and if its
+// catalogue clears the overlap floor it CONTESTS: the identity is ambiguous and
+// the gate must not auto-link.
+//
+// Skipping it inverts the answer. tier3RivalClearsOverlapFloor returns false
+// ("nothing contests"), tier3AlbumGateDeclines sets UncontestedBest = true, and
+// with the best candidate's own overlap above the auto-link floor
+// EvaluateAlbumGate returns permit -- an unattended MusicBrainz ID write on an
+// artist a rival genuinely contests.
+//
+// This is the same shape as the charge-on-cache-hit bug the rest of this branch
+// fixes: budget accounting that silently skips rivals. Consulting a cached rival
+// can only make the gate STRICTER, so there is never a reason to ration it.
+func TestTier3CachedRivalIsConsultedAfterTheBudgetIsSpent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	localTitles := []string{"First Record", "Second Record"}
+	var fetches []string
+	r, _ := newIdentifyTestServer(t, nil,
+		func(_ context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
+			fetches = append(fetches, mbid)
+			if mbid == mbidGateRival4 {
+				// The contesting catalogue: it matches the local albums, so it
+				// clears artist.AlbumOverlapAutoLinkFloor.
+				return []provider.ReleaseGroupInfo{{Title: "First Record"}, {Title: "Second Record"}}, nil
+			}
+			return []provider.ReleaseGroupInfo{{Title: "Unrelated Record"}}, nil
+		},
+	)
+
+	cache := r.newReleaseGroupCache()
+	if cache == nil {
+		t.Fatal("precondition: a nil cache measures no rival at all, so no rival is consulted either way")
+	}
+
+	// Warm ONLY the contesting rival, so consulting it costs no provider call.
+	if _, known := cache.titles(ctx, mbidGateRival4); !known {
+		t.Fatalf("precondition failed: pre-warming %s did not produce a known entry", mbidGateRival4)
+	}
+	warmFetches := len(fetches)
+
+	// The uncached rivals come FIRST and are exactly budget-sized, so they spend
+	// the whole budget before the cached contester is reached.
+	uncached := []string{mbidGateRival, mbidGateRival2}
+	if len(uncached) != tier3RivalCatalogueBudget {
+		t.Fatalf("precondition failed: %d uncached rivals do not exactly spend a budget of %d", len(uncached), tier3RivalCatalogueBudget)
+	}
+	// PRECONDITION: they really are uncached (they must COST the budget), and the
+	// contester really is cached (it must be free). If either flipped, the loop
+	// would reach the contester for the wrong reason and the test would pass
+	// vacuously against the very bug it exists to catch.
+	for _, mbid := range uncached {
+		if cache.holds(mbid) {
+			t.Fatalf("precondition failed: %s is cached, so it does not spend budget and the contester is reached trivially", mbid)
+		}
+	}
+	if !cache.holds(mbidGateRival4) {
+		t.Fatal("precondition failed: the contesting rival is not cached, so this test does not exercise a free post-budget lookup")
+	}
+
+	local := artist.AlbumSet{Titles: localTitles, Evidence: artist.EvidenceFound, Origin: "test"}
+	best := &provider.ArtistSearchResult{Name: "Gate Cached", MusicBrainzID: mbidGateRealArtist, Score: 100, Source: string(provider.NameMusicBrainz)}
+	results := []provider.ArtistSearchResult{
+		*best,
+		{Name: "Gate Cached", MusicBrainzID: uncached[0], Score: 90, Source: string(provider.NameMusicBrainz)},
+		{Name: "Gate Cached", MusicBrainzID: uncached[1], Score: 85, Source: string(provider.NameMusicBrainz)},
+		// Cached, contesting, and positioned AFTER the budget is spent.
+		{Name: "Gate Cached", MusicBrainzID: mbidGateRival4, Score: 80, Source: string(provider.NameMusicBrainz)},
+	}
+
+	if !r.tier3RivalClearsOverlapFloor(ctx, local, results, best, cache) {
+		t.Errorf("tier3RivalClearsOverlapFloor = false, want true: the cached rival %s clears the overlap floor and costs no "+
+			"provider call, so a budget that rations CALLS must not skip it -- reporting it uncontested permits an "+
+			"unattended write on a contested identity", mbidGateRival4)
+	}
+	// The measurement, not just the verdict: the cached rival must be consulted
+	// WITHOUT a new provider call. A fix that simply raised the budget would
+	// reach the same verdict by spending a call, which is not the fix.
+	if newFetches := fetches[warmFetches:]; len(newFetches) != tier3RivalCatalogueBudget {
+		t.Errorf("new provider fetches = %v (%d), want exactly %d: the two uncached rivals spend the budget and the cached "+
+			"contester must be evaluated for free", newFetches, len(newFetches), tier3RivalCatalogueBudget)
 	}
 }
 
