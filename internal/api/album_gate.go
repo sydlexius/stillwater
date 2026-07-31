@@ -250,13 +250,24 @@ func (r *Router) tier3RivalClearsOverlapFloor(ctx context.Context, local artist.
 		}
 
 		// The budget rations PROVIDER CALLS, so only a lookup that actually
-		// makes one is charged for. A candidate Tier 2 already looked at on the
-		// fall-through path is served from the cache at no cost, and charging
-		// for it would let two free hits exhaust the budget before a single
-		// genuinely unmeasured rival had been consulted -- the same argument
-		// the malformed-ID skip above already makes.
+		// makes one is charged for -- the same argument the malformed-ID skip
+		// above already makes.
 		//
-		// holds must be asked BEFORE titles, which populates the entry.
+		// Which hits are reachable, stated precisely because the obvious answer
+		// is wrong: a candidate Tier 2 already fetched is NOT one of them.
+		// enrichAndScoreTier2 populates this cache, but it sits on the one Tier 2
+		// branch that returns unconditionally (handlers_identify.go), so every
+		// path that actually falls through to Tier 3 leaves the cache empty of
+		// Tier 2 work. What reaches here warm is `best` (skipped by the EqualFold
+		// guard above before this line) and a repeated MBID inside a single
+		// result list. The charge-only-on-fetch rule is the correct semantics
+		// regardless, and it is what keeps the budget honest if Tier 2 ever does
+		// fall through warm -- but it is defensive here, not load-bearing.
+		//
+		// holds MUST be asked BEFORE titles: titles writes c.entries on BOTH its
+		// success and failure paths, so asking after would make holds always true,
+		// never increment, and silently render the budget inert.
+		// TestTier3RivalBudgetStopsAtTheBudget pins that bound.
 		cachedAlready := cache.holds(res.MusicBrainzID)
 		remote, known := cache.titles(ctx, res.MusicBrainzID)
 		if !cachedAlready {

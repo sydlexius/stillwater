@@ -548,6 +548,7 @@ func TestReleaseGroupCacheLogsFetchFailure(t *testing.T) {
 const (
 	mbidGateRival2 = "2c3d4e5f-6071-4b8c-9dae-1f2a3b4c5d6f"
 	mbidGateRival3 = "3d4e5f60-7182-4c9d-8ebf-2a3b4c5d6e70"
+	mbidGateRival4 = "4e5f6071-8293-4dae-9fc0-3b4c5d6e7f81"
 )
 
 // TestTier3RivalBudgetIsNotSpentOnCacheHits pins #2864.
@@ -630,6 +631,89 @@ func TestTier3RivalBudgetIsNotSpentOnCacheHits(t *testing.T) {
 	newFetches := fetches[warmFetches:]
 	if len(newFetches) != 1 || newFetches[0] != mbidGateRival3 {
 		t.Errorf("new provider fetches = %v, want exactly [%s]", newFetches, mbidGateRival3)
+	}
+}
+
+// TestTier3RivalBudgetStopsAtTheBudget pins the OTHER half of the budget's
+// contract, and it is the half nothing else covers.
+//
+// TestTier3RivalBudgetIsNotSpentOnCacheHits proves a free lookup is not charged.
+// That alone is satisfied by an implementation that charges NOTHING -- one where
+// the budget never stops anything at all. This asserts the bound itself: given
+// more uncached rivals than the budget allows, exactly tier3RivalCatalogueBudget
+// provider calls are made and no more.
+//
+// Two real mutants survive the rest of the suite and die here:
+//
+//   - swapping the holds/titles call order. titles writes c.entries on BOTH its
+//     success and failure paths, so asking holds afterwards makes it always true,
+//     fetched never increments, and the budget becomes inert. Measured on a
+//     40-rival list: 2 provider calls as shipped, 40 with the order reversed.
+//   - relaxing `fetched >= budget` to `fetched > budget`, which consults one
+//     rival more than the documented bound.
+//
+// Both are the wasteful direction rather than the dangerous one -- more rivals
+// consulted means more contests, which is more conservative. But the bound is a
+// promise about a rate-limited public API made on the one code path whose defining
+// trait is a long list of same-named entities, so an unbounded call count is a
+// real defect even though it cannot produce a wrong write.
+func TestTier3RivalBudgetStopsAtTheBudget(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var fetches []string
+	r, _ := newIdentifyTestServer(t, nil,
+		func(_ context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
+			fetches = append(fetches, mbid)
+			// Every rival's catalogue is unrelated, so none contests and the loop
+			// runs until the budget stops it rather than returning early.
+			return []provider.ReleaseGroupInfo{{Title: "Unrelated Record"}}, nil
+		},
+	)
+
+	cache := r.newReleaseGroupCache()
+	if cache == nil {
+		t.Fatal("precondition: a nil cache measures no rival at all, so no budget is exercised")
+	}
+
+	local := artist.AlbumSet{Titles: []string{"First Record", "Second Record"}, Evidence: artist.EvidenceFound, Origin: "test"}
+	best := &provider.ArtistSearchResult{Name: "Gate Bound", MusicBrainzID: mbidGateRealArtist, Score: 100, Source: string(provider.NameMusicBrainz)}
+	rivalMBIDs := []string{mbidGateRival, mbidGateRival2, mbidGateRival3, mbidGateRival4}
+	results := []provider.ArtistSearchResult{*best}
+	for i, mbid := range rivalMBIDs {
+		results = append(results, provider.ArtistSearchResult{
+			Name: "Gate Bound", MusicBrainzID: mbid, Score: 90 - i, Source: string(provider.NameMusicBrainz),
+		})
+	}
+
+	// PRECONDITION 1: strictly MORE uncached rivals than the budget allows. With
+	// fewer, the list would run out before the budget bound was ever tested and
+	// this test would pass against an implementation that never stops.
+	if len(rivalMBIDs) <= tier3RivalCatalogueBudget {
+		t.Fatalf("precondition failed: %d rivals cannot exercise a bound of %d", len(rivalMBIDs), tier3RivalCatalogueBudget)
+	}
+	// PRECONDITION 2: none of them is cached, so every consultation costs a real
+	// provider call and the budget is measuring what it claims to measure.
+	for _, mbid := range rivalMBIDs {
+		if cache.holds(mbid) {
+			t.Fatalf("precondition failed: %s is already cached, so consulting it is free and does not spend budget", mbid)
+		}
+	}
+
+	// The best candidate's own fetch is charged to a different budget line, so
+	// measure only what the rival loop spends.
+	r.tier3RivalClearsOverlapFloor(ctx, local, results, best, cache)
+
+	rivalFetches := make([]string, 0, len(fetches))
+	for _, mbid := range fetches {
+		if mbid != mbidGateRealArtist {
+			rivalFetches = append(rivalFetches, mbid)
+		}
+	}
+	if len(rivalFetches) != tier3RivalCatalogueBudget {
+		t.Errorf("rival provider calls = %d %v, want exactly %d: the budget bounds how many rival catalogues are fetched, "+
+			"and a list longer than the budget must not be walked past it",
+			len(rivalFetches), rivalFetches, tier3RivalCatalogueBudget)
 	}
 }
 
