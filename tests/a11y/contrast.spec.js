@@ -16,9 +16,9 @@
 // a11y rules: wcag2a + wcag2aa + color-contrast are ALL enabled here (real CSS).
 
 import { test, expect } from 'playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 
 import { disableTransitions } from './helpers/settle.js';
+import { buildAxeBuilder, formatViolations, applyTheme } from './helpers/axe.js';
 import { assertOnlyKnownViolations } from './helpers/known-violations.js';
 
 // Auth: a single login happens once in global-setup.js; the session is loaded
@@ -47,14 +47,6 @@ test.beforeEach(async ({ page }) => {
 //     case fixtures load without the full layout; the browser tier is about
 //     contrast, not structural completeness.
 // ---------------------------------------------------------------------------
-function buildAxeBuilder(page) {
-  return new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'best-practice'])
-    .disableRules([
-      // Not a concern for the rendered smoke set (Playwright provides lang).
-      'html-has-lang',
-    ]);
-}
 
 // ---------------------------------------------------------------------------
 // 1. Dashboard (/next/) - stat cards
@@ -226,7 +218,7 @@ test('/next/settings passes a11y scan in dark mode', async ({ page }) => {
   await page.goto('/next/settings');
   await page.waitForSelector('.sw-next-settings-pane', { timeout: 10_000 });
 
-  await applyTheme(page, 'dark');
+  await applyTheme(expect, page, 'dark');
 
   const results = await buildAxeBuilder(page).analyze();
   expect(
@@ -314,52 +306,7 @@ test('/next/settings passes a11y scan in light mode', async ({ page }) => {
   ).toHaveLength(0);
 });
 
-// ---------------------------------------------------------------------------
-// Helper: switch theme through the app's own preference path (#2872).
-//
-// Never sets the .dark class directly. The rendered theme depends on BOTH the
-// class AND an inline --sw-glass-bg that preferences.js writes on :root, and
-// that inline value's colour is chosen from the class at write time. Setting
-// the class without re-running the preference apply leaves the two disagreeing
-// and the page half-themed -- see the comment on the dark-mode test above.
-//
-// applySingle applies to the DOM without persisting, so this does not mutate
-// the server's stored preference for later tests.
-//
-// It throws rather than falling back to a class toggle if the API is missing.
-// A fallback would silently reintroduce the exact half-themed state this
-// helper exists to prevent, and the resulting failure would look like a real
-// contrast defect rather than a broken helper.
-// ---------------------------------------------------------------------------
-async function applyTheme(page, theme) {
-  const applied = await page.evaluate((t) => {
-    const api = window.swPreferences;
-    if (!api || typeof api.applySingle !== 'function') return false;
-    api.applySingle('theme', t);
-    return true;
-  }, theme);
-
-  expect(
-    applied,
-    'window.swPreferences.applySingle is unavailable, so the theme could not be '
-    + 'applied through the app\'s own path. Setting the .dark class directly is NOT '
-    + 'an acceptable fallback here (#2872): it leaves the inline --sw-glass-bg at the '
-    + 'other theme\'s colour and produces false contrast violations.',
-  ).toBe(true);
-
-  // Confirm the class actually landed, so a silently-ignored key cannot let the
-  // scan run against the wrong theme and report a green that means nothing.
-  const isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
-  expect(isDark, `theme "${theme}" did not take effect on <html>`).toBe(theme === 'dark');
-}
 
 // ---------------------------------------------------------------------------
 // Helper: format violations for assertion messages.
 // ---------------------------------------------------------------------------
-function formatViolations(violations) {
-  if (!violations.length) return '(none)';
-  return violations.map(v =>
-    `  [${v.impact}] ${v.id}: ${v.description}\n` +
-    v.nodes.slice(0, 2).map(n => `    target: ${JSON.stringify(n.target)}`).join('\n'),
-  ).join('\n');
-}

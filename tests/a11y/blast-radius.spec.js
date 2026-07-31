@@ -32,9 +32,9 @@
 // the UAT database.
 
 import { test, expect } from 'playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 
 import { disableTransitions } from './helpers/settle.js';
+import { buildAxeBuilder, formatViolations, applyTheme } from './helpers/axe.js';
 
 // The pane route. The paged variant asks for the SMALLEST page the server will
 // honor, so the pager renders on the smallest possible database.
@@ -60,33 +60,6 @@ test.beforeEach(async ({ page }) => {
   await disableTransitions(page);
 });
 
-// ---------------------------------------------------------------------------
-// Shared axe configuration -- same rule set and same exemption as
-// contrast.spec.js / cheat-sheet.spec.js so this pane is held to the tier's
-// existing bar, not a softer one.
-// ---------------------------------------------------------------------------
-function buildAxeBuilder(page) {
-  return new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'best-practice'])
-    .disableRules([
-      // Structural check; Playwright supplies lang via the context.
-      'html-has-lang',
-    ]);
-}
-
-// formatViolations renders rule id, impact, description AND the node targets so
-// a CI failure is actionable on its own. A bare count tells the next reader
-// nothing about what broke.
-function formatViolations(violations) {
-  if (!violations.length) return '(none)';
-  return violations.map(v =>
-    `  [${v.impact}] ${v.id}: ${v.description}\n` +
-    `    help: ${v.helpUrl}\n` +
-    v.nodes.map(n => `    target: ${JSON.stringify(n.target)}\n` +
-      `      ${String(n.failureSummary || '').replace(/\n/g, '\n      ')}`).join('\n'),
-  ).join('\n');
-}
-
 // gotoPane navigates and waits for the pane's own markup. 'networkidle' is
 // never used: the SSE event stream keeps the connection open forever, so it
 // would always time out.
@@ -103,33 +76,6 @@ async function gotoPane(page, url = PANE_URL) {
   await page.waitForSelector('#blast-radius-tbl', { timeout: 10_000 });
 }
 
-// applyDarkTheme drives the app's own theme path instead of setting the .dark
-// class directly. See the dark-theme test for why that distinction matters
-// (#2872): the rendered theme depends on both the class AND an inline
-// --sw-glass-bg whose colour preferences.js picks from the class at write
-// time, so setting one without the other leaves the page half-themed.
-//
-// Throws rather than falling back to a class toggle: a fallback would
-// reintroduce exactly the state this exists to prevent, and the resulting
-// failure would read as a real contrast defect rather than a broken helper.
-async function applyDarkTheme(page) {
-  const applied = await page.evaluate(() => {
-    const api = window.swPreferences;
-    if (!api || typeof api.applySingle !== 'function') return false;
-    api.applySingle('theme', 'dark');
-    return true;
-  });
-  expect(
-    applied,
-    'window.swPreferences.applySingle is unavailable, so the dark theme could not '
-    + 'be applied through the app\'s own path. Forcing the .dark class is NOT an '
-    + 'acceptable fallback (#2872).',
-  ).toBe(true);
-  expect(
-    await page.evaluate(() => document.documentElement.classList.contains('dark')),
-    'dark theme did not take effect on <html>',
-  ).toBe(true);
-}
 
 // ---------------------------------------------------------------------------
 // 1. axe-core, full page, both themes.
@@ -155,7 +101,7 @@ test('blast-radius pane passes full-page a11y scan (dark theme)', async ({ page 
   // from the same false failure.
   await page.emulateMedia({ colorScheme: 'dark' });
   await gotoPane(page);
-  await applyDarkTheme(page);
+  await applyTheme(expect, page, 'dark');
 
   const results = await buildAxeBuilder(page).analyze();
   expect(
@@ -507,30 +453,55 @@ test('pager is Tab-reachable with a visible focus ring', async ({ page }) => {
     document.body.focus();
   });
 
-  const found = {};      // label -> computed style while focused
-  const MAX_TABS = 250;  // generous: the full page chrome sits ahead of the pane
+  // Collect focus hits with a SINGLE in-page listener rather than one
+  // page.evaluate per Tab press. The earlier form paid a round-trip for every
+  // press, so a missing control -- the failure case that matters -- cost 250
+  // presses AND 250 round trips before reporting. The listener records every
+  // focus change as it happens; the walk then only presses Tab and asks for the
+  // results once.
+  //
+  // MAX_TABS stays generous because the page chrome (sidebar, header, rail)
+  // sits ahead of the pane and its depth varies with the data rendered. It is a
+  // termination bound, not a measurement: the assertion below reports which
+  // targets were never reached, so an under-tight bound would read as a
+  // keyboard defect rather than as a truncated walk.
+  const MAX_TABS = 250;
 
-  for (let i = 0; i < MAX_TABS; i++) {
-    await page.keyboard.press('Tab');
-    const hit = await page.evaluate(([targets, props]) => {
+  await page.evaluate(([targets, props]) => {
+    window.__swFocusHits = {};
+    window.__swFocusListener = () => {
       const a = document.activeElement;
-      if (!a || a === document.body) return null;
+      if (!a || a === document.body) return;
       for (const [label, sel] of Object.entries(targets)) {
-        if (a.matches(sel)) {
+        if (a.matches(sel) && !window.__swFocusHits[label]) {
           const cs = getComputedStyle(a);
-          return {
+          window.__swFocusHits[label] = {
             label,
             focusVisible: a.matches(':focus-visible'),
             ...Object.fromEntries(props.map(p => [p, cs[p]])),
           };
         }
       }
-      return null;
-    }, [REACHABLE_TARGETS, FOCUS_PROPS]);
+    };
+    document.addEventListener('focusin', window.__swFocusListener, true);
+  }, [REACHABLE_TARGETS, FOCUS_PROPS]);
 
-    if (hit && !found[hit.label]) found[hit.label] = hit;
-    if (Object.keys(found).length === Object.keys(REACHABLE_TARGETS).length) break;
+  const targetCount = Object.keys(REACHABLE_TARGETS).length;
+  for (let i = 0; i < MAX_TABS; i++) {
+    await page.keyboard.press('Tab');
+    // Poll for completion occasionally rather than every press: this is the
+    // only remaining round trip in the loop, and the walk terminates as soon as
+    // every target has been seen.
+    if (i % 10 === 9) {
+      const n = await page.evaluate(() => Object.keys(window.__swFocusHits).length);
+      if (n === targetCount) break;
+    }
   }
+
+  const found = await page.evaluate(() => {
+    document.removeEventListener('focusin', window.__swFocusListener, true);
+    return window.__swFocusHits;
+  });
 
   // Reachability. Asserted separately from visibility: "cannot get there" and
   // "cannot tell you are there" are different defects with different fixes.

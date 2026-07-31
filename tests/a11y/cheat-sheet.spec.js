@@ -14,9 +14,9 @@
 // Auth: reuses the same setupAndLogin pattern as contrast.spec.js.
 
 import { test, expect } from 'playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 
 import { disableTransitions } from './helpers/settle.js';
+import { buildAxeBuilder, formatViolations } from './helpers/axe.js';
 import { assertOnlyKnownViolations } from './helpers/known-violations.js';
 
 // Auth: a single login happens once in global-setup.js; the session is loaded
@@ -33,19 +33,6 @@ test.use({ colorScheme: 'dark' });
 test.beforeEach(async ({ page }) => {
   await disableTransitions(page);
 });
-
-// ---------------------------------------------------------------------------
-// Helper: same axe rule set as contrast.spec.js.
-// ---------------------------------------------------------------------------
-function buildAxeBuilder(page) {
-  return new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'best-practice'])
-    .disableRules([
-      // Same exemption as contrast.spec.js: structural check, not a concern
-      // for rendered smoke (Playwright provides lang via context).
-      'html-has-lang',
-    ]);
-}
 
 // ---------------------------------------------------------------------------
 // Cheat-sheet modal: open via '?' then full-page scan.
@@ -78,13 +65,3 @@ test('cheat-sheet modal passes full-page a11y scan (dark mode)', async ({ page }
   assertOnlyKnownViolations(expect, results.violations, 'Cheat-sheet modal', formatViolations);
 });
 
-// ---------------------------------------------------------------------------
-// Helper: format violations for assertion messages (matches contrast.spec.js).
-// ---------------------------------------------------------------------------
-function formatViolations(violations) {
-  if (!violations.length) return '(none)';
-  return violations.map(v =>
-    `  [${v.impact}] ${v.id}: ${v.description}\n` +
-    v.nodes.slice(0, 2).map(n => `    target: ${JSON.stringify(n.target)}`).join('\n'),
-  ).join('\n');
-}
