@@ -286,7 +286,11 @@ func (r *Router) tier3RivalClearsOverlapFloor(ctx context.Context, local artist.
 			fetched++
 		}
 		if !known {
-			r.logger.Info("identify: Tier 3 rival catalogue could not be retrieved, treating the best candidate as contested",
+			// "not available", not "could not be retrieved": with no MusicBrainz
+			// provider registered the cache is nil and reports not-known without
+			// making a call, so no retrieval was attempted. Same correction as the
+			// gate's own reason string in internal/artist/albumgate.go.
+			r.logger.Info("identify: Tier 3 rival catalogue is not available, treating the best candidate as contested",
 				"rival_mbid", res.MusicBrainzID)
 			return true
 		}

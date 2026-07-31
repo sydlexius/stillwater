@@ -193,7 +193,7 @@ type AlbumGateInput struct {
 //	Evidence  | Candidate catalogue | Overlap | Decision
 //	----------+---------------------+---------+---------
 //	Unknown   | n/a                 | n/a     | DECLINE
-//	Found     | not retrieved       | n/a     | DECLINE
+//	Found     | not available       | n/a     | DECLINE
 //	Found     | 0 release groups    | n/a     | DECLINE
 //	Found     | >= 1                | >= 70   | permit (if uncontested, no red flag)
 //	Found     | >= 1                | >= 30   | review
@@ -236,7 +236,15 @@ func EvaluateAlbumGate(in AlbumGateInput) (AlbumGateDecision, string) {
 	}
 
 	if !in.CandidateReleasesKnown {
-		return AlbumGateDecline, "the candidate's release groups could not be retrieved, so the catalogues were never compared"
+		// "not available" rather than "could not be retrieved", for the reason
+		// spelled out at reasonNoCandidateAlbumSource in internal/api/
+		// album_evidence.go: this branch is reached BOTH when a fetch was made and
+		// failed AND when no fetcher existed to make one (an install with no
+		// MusicBrainz provider leaves the release-group cache nil, which reports
+		// not-known without any call). Saying a retrieval failed asserts an event
+		// that in the second case never happened. The decision is identical either
+		// way; only the wording was overclaiming.
+		return AlbumGateDecline, "the candidate's release groups are not available, so the catalogues were never compared"
 	}
 
 	if in.CandidateReleaseCount == 0 {
