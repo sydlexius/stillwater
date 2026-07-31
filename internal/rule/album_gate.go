@@ -100,6 +100,17 @@ func (g ruleAlbumGate) log() *slog.Logger {
 // candidate's catalogue successfully, and found that the two CONTRADICT. Any
 // step that could not produce an answer falls through to allow with the
 // behavior the caller had before this gate existed.
+//
+// The bool is deliberately COARSER than artist.AlbumGateDecision: both
+// AlbumGateReview and AlbumGateDecline collapse to false, i.e. "do not
+// auto-write". That is correct on this path specifically because neither caller
+// has a review queue to route a candidate INTO -- unlike internal/api, where
+// REVIEW means "show the candidate to an operator". Here the rule violation
+// simply stays open, which is already the operator-visible surface: the artist
+// keeps showing as missing an MBID and can still be linked by hand. Preserving
+// the two states separately would therefore buy the caller nothing it could
+// act on, so the distinction stays in the log line (which records the decision
+// verbatim) rather than in the return type.
 func (g ruleAlbumGate) permits(ctx context.Context, ruleID string, a *artist.Artist, best *provider.ArtistSearchResult) (bool, string) {
 	if !g.wired() || a == nil || best == nil {
 		return true, ""
@@ -135,8 +146,9 @@ func (g ruleAlbumGate) permits(ctx context.Context, ruleID string, a *artist.Art
 
 	titles, ok := g.candidateTitles(ctx, ruleID, a, best.MusicBrainzID)
 	if !ok {
-		// The fetch was attempted and did not produce a determination. An
-		// unretrievable catalogue cannot contradict anything.
+		// No determination was produced: either there was no MBID to look up, or
+		// the fetch failed. A catalogue nobody could read cannot contradict
+		// anything.
 		return true, ""
 	}
 

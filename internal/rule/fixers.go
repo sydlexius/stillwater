@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/text/unicode/norm"
@@ -246,7 +247,15 @@ type MetadataFixer struct {
 	// elsewhere in the wiring. The zero value is a supported inert state: an
 	// unwired gate permits every candidate, so every existing construction site
 	// behaves exactly as before.
-	albumGate ruleAlbumGate
+	//
+	// albumGateMu guards it for the same reason Pipeline.writeGateMu guards
+	// writeGate (fixer.go): the setter runs after construction during startup
+	// wiring while fixMBID reads the field on the auto-fix path, which runs
+	// concurrently across artist workers. Kept symmetric with
+	// BulkExecutor.albumGateMu so both #2858 write paths synchronize the same
+	// way rather than one relying on a happens-before nobody wrote down.
+	albumGateMu sync.RWMutex
+	albumGate   ruleAlbumGate
 }
 
 // SetAlbumGate late-wires the #2858 album-evidence gate for the nfo_has_mbid
@@ -254,7 +263,19 @@ type MetadataFixer struct {
 // gate inert (every candidate permitted), which is the fail-open behavior an
 // install with no MusicBrainz provider must keep.
 func (f *MetadataFixer) SetAlbumGate(albums artist.AlbumSource, fetcher ReleaseGroupFetcher) {
+	f.albumGateMu.Lock()
 	f.albumGate = ruleAlbumGate{albums: albums, fetcher: fetcher, logger: f.logger}
+	f.albumGateMu.Unlock()
+}
+
+// getAlbumGate returns the currently installed album gate under the read lock
+// so fixMBID can read it safely without racing a concurrent SetAlbumGate. The
+// returned value is a copy of the small struct, so no lock is held while the
+// gate performs its provider I/O.
+func (f *MetadataFixer) getAlbumGate() ruleAlbumGate {
+	f.albumGateMu.RLock()
+	defer f.albumGateMu.RUnlock()
+	return f.albumGate
 }
 
 // NewMetadataFixer creates a MetadataFixer. NFO write-back and platform push
@@ -355,7 +376,7 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 	// whenever it cannot look (no gate wired, no MusicBrainz provider, unreadable
 	// album directory, failed release-group fetch), so it can only ever refuse a
 	// candidate the artist's own albums CONTRADICT. See album_gate.go.
-	if ok, reason := f.albumGate.permits(ctx, RuleNFOHasMBID, a, best); !ok {
+	if ok, reason := f.getAlbumGate().permits(ctx, RuleNFOHasMBID, a, best); !ok {
 		return &FixResult{
 			RuleID:  RuleNFOHasMBID,
 			Fixed:   false,

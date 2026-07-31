@@ -53,7 +53,16 @@ type BulkExecutor struct {
 	// releaseGroupFetcherFor accessor does not reach it and the fetcher must be
 	// injected here directly. The zero value is a supported inert state (every
 	// candidate permitted), so an executor built without it behaves as before.
-	albumGate ruleAlbumGate
+	//
+	// albumGateMu guards it for exactly the reason historyServiceMu guards
+	// historyService below: SetAlbumGate is called after construction during
+	// startup wiring (main.go), while the read happens on the bulk fetch-images
+	// hot path (selfHealMBID) which can run concurrently with that setter. A
+	// dedicated RWMutex rather than a reuse of historyServiceMu keeps the
+	// one-lock-per-late-wired-field shape this package already uses
+	// (historyServiceMu here, writeGateMu/eventBusMu/orchestratorMu in fixer.go).
+	albumGateMu sync.RWMutex
+	albumGate   ruleAlbumGate
 
 	// historyServiceMu guards historyService for the same reason
 	// Pipeline.historyServiceMu does (see fixer.go): SetHistoryService can be
@@ -88,7 +97,19 @@ func (e *BulkExecutor) SetCollisionGuard(notifier backdropCollisionNotifier, ind
 // SetCollisionGuard/SetHistoryService and keeps the already-nine-parameter
 // constructor signature stable for existing call sites.
 func (e *BulkExecutor) SetAlbumGate(albums artist.AlbumSource, fetcher ReleaseGroupFetcher) {
+	e.albumGateMu.Lock()
 	e.albumGate = ruleAlbumGate{albums: albums, fetcher: fetcher, logger: e.logger}
+	e.albumGateMu.Unlock()
+}
+
+// getAlbumGate returns the currently installed album gate under the read lock
+// so selfHealMBID can read it safely without racing a concurrent SetAlbumGate.
+// The returned value is a copy of the (small, immutable-after-set) struct, so
+// the caller holds no lock while the gate does its provider I/O.
+func (e *BulkExecutor) getAlbumGate() ruleAlbumGate {
+	e.albumGateMu.RLock()
+	defer e.albumGateMu.RUnlock()
+	return e.albumGate
 }
 
 // SetHistoryService installs (or replaces) the artist history service the
@@ -480,7 +501,7 @@ func (e *BulkExecutor) selfHealMBID(ctx context.Context, a *artist.Artist, mode 
 	// MusicBrainz provider, unreadable album directory, failed release-group
 	// fetch) -- so it can only refuse a candidate the artist's own albums
 	// CONTRADICT. See album_gate.go.
-	if ok, reason := e.albumGate.permits(ctx, "bulk_fetch_images_mbid", a, best); !ok {
+	if ok, reason := e.getAlbumGate().permits(ctx, "bulk_fetch_images_mbid", a, best); !ok {
 		return BulkItemSkipped, fmt.Sprintf("no MBID: declined to adopt one from search: %s", reason)
 	}
 

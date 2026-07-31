@@ -542,6 +542,40 @@ func TestFetchImages_AlbumGate_AllowsWhenReleaseGroupFetchFails(t *testing.T) {
 	}
 }
 
+// TestFetchImages_AlbumGate_AllowsWhenArtistHasNoLocalAlbums is the bulk twin of
+// TestFixMBID_AlbumGate_AllowsWhenArtistHasNoLocalAlbums, covering EvidenceNone:
+// a real determination that the artist has no albums at all, as opposed to
+// EvidenceUnknown where nobody could look. Under the fail-open policy both
+// allow, and both paths must agree on that.
+//
+// It exists because the fixMBID-side test was the ONLY thing killing a mutation
+// of the evidence check (`local.Evidence != EvidenceFound` weakened to
+// `local.Evidence == EvidenceUnknown`, which lets EvidenceNone fall through into
+// the decision table and decline on a zero-title local set). The bulk path was
+// unpinned on that axis; this closes it.
+func TestFetchImages_AlbumGate_AllowsWhenArtistHasNoLocalAlbums(t *testing.T) {
+	results := gateSearchResults()
+	assertNameGatesPass(t, results)
+
+	// A rich candidate catalogue against an EMPTY local set. If the evidence
+	// check stopped short-circuiting here, the overlap would be 0% and the gate
+	// would decline -- which is exactly what this test forbids.
+	fetcher := &stubReleaseGroupFetcher{groups: gateReleaseGroups(10)}
+	e, svc, a := bulkGateArtist(t, []string{}, fetcher, results)
+
+	// An EXISTING but EMPTY directory is EvidenceNone, not EvidenceUnknown. The
+	// two are the pair this subsystem exists to keep apart, so the distinction is
+	// asserted rather than assumed.
+	assertLocalEvidence(t, a.Path, artist.EvidenceNone, 0)
+
+	status, msg := e.selfHealMBID(context.Background(), a, BulkModeYOLO)
+
+	if status != "" {
+		t.Fatalf("expected the self-heal to be ALLOWED for an artist with no local albums, got status %q (message: %q)", status, msg)
+	}
+	assertBulkAdopted(t, svc, a, status, msg)
+}
+
 // TestFetchImages_AlbumGate_AllowsOnHighOverlap is the bulk corroborated happy
 // path.
 func TestFetchImages_AlbumGate_AllowsOnHighOverlap(t *testing.T) {
