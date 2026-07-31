@@ -318,6 +318,69 @@ func TestLoadReportsBlastRadiusData_ClampsPagePastTheEnd(t *testing.T) {
 	if len(got.Rows) == 0 {
 		t.Errorf("clamped page returned 0 rows; the caption would claim a page that shows nothing")
 	}
+
+	// The rows must be the LAST page's rows, not merely some rows. Asserting only
+	// "CurrentPage == TotalPages and non-empty" is satisfied by an implementation
+	// that clamps the caption and re-fetches at offset 0 -- which renders "Page 3
+	// of 3" above page ONE's rows. That is the same correct-caption-over-the-wrong-
+	// table failure the clamp exists to prevent, so the offset arithmetic is the
+	// substance here and needs pinning by identity.
+	explicit := loadBlastPane(t, r, "?page_size=10&page=3")
+	if len(explicit.Rows) != len(got.Rows) {
+		t.Fatalf("clamped page has %d rows, explicit last page has %d; they must be the same page", len(got.Rows), len(explicit.Rows))
+	}
+	for i := range explicit.Rows {
+		if got.Rows[i].ID != explicit.Rows[i].ID {
+			t.Errorf("clamped page row %d is change %q, want %q: the clamp landed on a different page than the caption claims",
+				i, got.Rows[i].ID, explicit.Rows[i].ID)
+		}
+	}
+}
+
+// TestLoadReportsBlastRadiusData_ClampedRefetchKeepsTheFilter pins that the
+// clamp's SECOND query narrows exactly like the first.
+//
+// The re-fetch rebuilds the filter from the request and overrides only the
+// offset. Building it from a bare filter instead would widen the clamped page to
+// the whole report while the caption still described the narrowed one -- rows the
+// operator did not ask for, presented as though they matched. Nothing else in the
+// suite covers the re-fetch's filter fidelity, so a mutation dropping it passes
+// silently.
+func TestLoadReportsBlastRadiusData_ClampedRefetchKeepsTheFilter(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	// A MIX of damage classes: seedAPIBlastRows writes only blanked rows, and a
+	// filter every row satisfies cannot tell a narrowed re-fetch from a widened
+	// one. 25 blanked, then 15 replaced (a non-empty new value).
+	seedAPIBlastRows(t, r, 25)
+	for i := 0; i < 15; i++ {
+		seedAPIBlastChange(t, r,
+			fmt.Sprintf("rep-%03d", i),
+			fmt.Sprintf("rep-art-%03d", i),
+			fmt.Sprintf("Replaced Artist %03d", i),
+			"biography", "a real bio", "an automated rewrite", "scan",
+			apiBlastBase.Add(time.Duration(100+i)*time.Minute))
+	}
+
+	// Precondition: the filter must genuinely narrow, or a widened re-fetch would
+	// return the same rows and the test could not tell the two apart.
+	all := loadBlastPane(t, r, "?page_size=10")
+	filtered := loadBlastPane(t, r, "?page_size=10&class=replaced")
+	if filtered.Counts.Total == 0 || filtered.Counts.Total >= all.Counts.Total {
+		t.Fatalf("precondition: class=replaced matches %d of %d rows; it must match some but not all",
+			filtered.Counts.Total, all.Counts.Total)
+	}
+
+	got := loadBlastPane(t, r, "?page_size=10&class=replaced&page=99")
+	if len(got.Rows) == 0 {
+		t.Fatal("clamped filtered page returned no rows")
+	}
+	for i, row := range got.Rows {
+		if row.Class != "replaced" {
+			t.Errorf("clamped re-fetch row %d has class %q, want \"replaced\": the re-fetch dropped the filter and widened the page",
+				i, row.Class)
+		}
+	}
 }
 
 // TestHandleReportPage_BlastRadiusEmptyStateIsHonest asserts the rendered copy
@@ -342,9 +405,60 @@ func TestHandleReportPage_BlastRadiusEmptyStateIsHonest(t *testing.T) {
 	if body := renderBlastPane(t, r, "?page_size=10&page=99"); strings.Contains(body, allClear) {
 		t.Errorf("out-of-range page rendered the library-wide all-clear %q while the report has damage to show", allClear)
 	}
-	// The same sentence is CORRECT when the filtered set is genuinely empty.
-	if body := renderBlastPane(t, r, "?field=no_such_field_xyz"); !strings.Contains(body, allClear) {
-		t.Errorf("genuinely empty result set did not render %q; the empty state must still work", allClear)
+
+	// A FILTER matching nothing must NOT render the library-wide sentence. This
+	// arm previously asserted the opposite -- that the all-clear was correct here
+	// -- which made the test a guard on the defect: the pane told an operator
+	// filtering to an undamaged field that NO tracked field had been overwritten,
+	// over a library holding 25 destroyed values. Same false reassurance the
+	// out-of-range case above produces, reached through a different door.
+	// Each narrowing must match NOTHING against this fixture, or the table is not
+	// empty and neither empty-state message is reached -- the test would pass
+	// without exercising the branch at all. seedAPIBlastRows writes 25 blanked,
+	// scan-sourced (therefore automated-attributed) rows, so ?attribution=automated
+	// deliberately does NOT appear here: it matches all 25.
+	for _, narrowing := range []string{
+		"?field=no_such_field_xyz",
+		"?class=replaced",
+		"?artist_id=no-such-artist",
+		"?attribution=unknown",
+	} {
+		body := renderBlastPane(t, r, narrowing)
+		if rows := loadBlastPane(t, r, narrowing); len(rows.Rows) != 0 {
+			t.Fatalf("precondition: narrowing %q matched %d rows; it must match none to reach the empty state",
+				narrowing, len(rows.Rows))
+		}
+		if strings.Contains(body, allClear) {
+			t.Errorf("narrowing %q rendered the library-wide all-clear %q over a library with %d recorded changes",
+				narrowing, allClear, 25)
+		}
+		// Not merely absent -- the operator must be told the filter is why the
+		// table is empty, and that the report still holds rows behind it.
+		if !strings.Contains(body, "No rows match the current filter") {
+			t.Errorf("narrowing %q rendered neither the all-clear nor a filtered-empty explanation; "+
+				"an unexplained empty table reads as an all-clear too", narrowing)
+		}
+	}
+}
+
+// TestHandleReportPage_BlastRadiusAllClearOnGenuinelyCleanLibrary is the POSITIVE
+// arm, kept separate because it needs a different fixture.
+//
+// Without it, the assertions above are satisfied by deleting the all-clear
+// string entirely -- a pane that can never say "nothing was overwritten" passes
+// every negative check and is useless. This pins that the sentence still renders
+// where it is TRUE: no damage recorded, no filter narrowing the view.
+func TestHandleReportPage_BlastRadiusAllClearOnGenuinelyCleanLibrary(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+
+	// Precondition: nothing seeded, so the library-wide claim is TRUE here.
+	if base := loadBlastPane(t, r, ""); base.Counts.Total != 0 {
+		t.Fatalf("precondition: fixture reports %d changes, so the all-clear would be false and this test proves nothing", base.Counts.Total)
+	}
+
+	if body := renderBlastPane(t, r, ""); !strings.Contains(body, "Nothing recorded") {
+		t.Error("an undamaged library with no filter did not render the all-clear; the empty state must still work")
 	}
 }
 

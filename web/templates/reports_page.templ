@@ -3,6 +3,8 @@ package templates
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -537,6 +539,30 @@ type BlastRadiusData struct {
 	BasePath    string
 }
 
+// blastRadiusNarrowed reports whether any filter is restricting the pane's view.
+//
+// It exists so the empty state can tell "this library has no damage" apart from
+// "no damage matches what you asked for". Those are opposite answers on a
+// recovery surface and only one of them can be true at a time: an operator who
+// reads a library-wide all-clear stops looking, so rendering it under an active
+// filter would hide exactly the destroyed values the report is for.
+//
+// Every narrowing axis the loader carries is checked. Adding a filter without
+// adding it here would silently reintroduce the false all-clear for that axis,
+// which is why this reads the same four fields the loader populates rather than
+// re-deriving them from the request.
+//
+// Class and Attribution default to the literal "all" rather than empty (their
+// scope values are all/blanked/replaced and all/automated/unknown), so an
+// emptiness check alone reports EVERY request as narrowed and the library-wide
+// sentence could never render. Field and ArtistID are genuinely empty when
+// unset. Both shapes are checked here rather than normalized at the loader,
+// because "all" is the value the query layer wants.
+func blastRadiusNarrowed(data BlastRadiusData) bool {
+	narrowed := func(v string) bool { return v != "" && v != artist.BlastScopeAll }
+	return narrowed(data.Class) || narrowed(data.Attribution) || data.Field != "" || data.ArtistID != ""
+}
+
 // blastRadiusRowClassLabel and blastRadiusRowAttributionLabel key i18n
 // lookups for the row-level class/attribution badges.
 func blastRadiusRowClassLabel(ctx context.Context, class string) string {
@@ -617,7 +643,21 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 				if len(data.Rows) == 0 {
 					<tr>
 						<td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-							{ t(ctx, "reports.blast_radius.empty") }
+							// Two DIFFERENT statements, because only one of them is ever
+							// true. "Nothing recorded" is a claim about the whole library
+							// and is false the moment a filter is narrowing the view: an
+							// operator who filters to a field with no damage would
+							// otherwise read an all-clear over a library that still holds
+							// destroyed values, which is the exact failure this pane exists
+							// to prevent. blastRadiusNarrowed reports whether any narrowing
+							// is active; the counts come from CountBlastRadius, which
+							// deliberately ignores the attribution filter so the total
+							// quoted here is the honest library-wide one.
+							if blastRadiusNarrowed(data) {
+								{ tf(ctx, "reports.blast_radius.empty_filtered", data.Counts.Total) }
+							} else {
+								{ t(ctx, "reports.blast_radius.empty") }
+							}
 						</td>
 					</tr>
 				}
@@ -627,7 +667,7 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 			</tbody>
 		</table>
 	</div>
-	@blastRadiusPagination(data.Pagination)
+	@blastRadiusPagination(data)
 	<!-- i18n strings for blastRadiusScript. JS has no access to the request
 	     translator, so every user-facing string the script renders (toasts,
 	     confirm-dialog copy, plan summaries) is passed through this hidden
@@ -705,28 +745,66 @@ templ blastRadiusRow(row artist.BlastRadiusRow) {
 	</tr>
 }
 
+// blastRadiusPageURL builds a pager link that carries the ENTIRE view forward:
+// the base path, every active filter, and the page size.
+//
+// Dropping any of them is a data-honesty bug on this surface, not a cosmetic
+// one. A link of bare ?page=N re-resolves page size from the stored preference,
+// so paging from a 10-row page 1 to a 50-row page 2 skips rows 11-50 outright --
+// the operator pages forward, sees no gap, and never learns those destroyed
+// values exist. Dropping the filters is the mirror failure: page 2 silently
+// widens to the unfiltered report while the caption still describes the narrowed
+// one.
+//
+// BasePath is required because the pane is reachable under SW_BASE_PATH; an
+// absolute /reports/... link 404s behind a reverse proxy, leaving the operator
+// no way forward except editing the URL by hand.
+//
+// url.Values is used rather than string concatenation so a field name or artist
+// id containing & or = cannot break out of its parameter.
+func blastRadiusPageURL(data BlastRadiusData, page int) string {
+	q := url.Values{}
+	if data.Class != "" {
+		q.Set("class", data.Class)
+	}
+	if data.Attribution != "" {
+		q.Set("attribution", data.Attribution)
+	}
+	if data.Field != "" {
+		q.Set("field", data.Field)
+	}
+	if data.ArtistID != "" {
+		q.Set("artist_id", data.ArtistID)
+	}
+	// Always explicit: an omitted page_size falls back to the stored preference,
+	// which is exactly how rows go missing between pages of different sizes.
+	q.Set("page_size", strconv.Itoa(data.Pagination.PageSize))
+	q.Set("page", strconv.Itoa(page))
+	return data.BasePath + "/reports/blast-radius?" + q.Encode()
+}
+
 // blastRadiusPagination renders a plain (non-HTMX) prev/next pager for the
 // blast-radius pane. components.Pagination is not reused here: its links
 // carry hx-get/hx-target against a fragment endpoint, and /reports/blast-radius
 // has no such fragment handler (unlike /reports/compliance) -- reusing it
 // would target a swap that never responds. A full-page navigation link is
 // correct for this pane's current scope.
-templ blastRadiusPagination(p components.PaginationData) {
-	if p.TotalPages > 1 {
-		<nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3" aria-label={ t(ctx, "reports.page_title") }>
+templ blastRadiusPagination(data BlastRadiusData) {
+	if data.Pagination.TotalPages > 1 {
+		<nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3" aria-label={ t(ctx, "reports.blast_radius.pager_label") }>
 			<p class="text-sm text-gray-700 dark:text-gray-300">
-				{ tf(ctx, "reports.blast_radius.page_of", p.CurrentPage, p.TotalPages) }
+				{ tf(ctx, "reports.blast_radius.page_of", data.Pagination.CurrentPage, data.Pagination.TotalPages) }
 			</p>
 			<div class="flex gap-2">
-				if p.CurrentPage > 1 {
+				if data.Pagination.CurrentPage > 1 {
 					<a
-						href={ templ.SafeURL(fmt.Sprintf("/reports/blast-radius?page=%d", p.CurrentPage-1)) }
+						href={ templ.SafeURL(blastRadiusPageURL(data, data.Pagination.CurrentPage-1)) }
 						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
 					>{ t(ctx, "common.previous") }</a>
 				}
-				if p.CurrentPage < p.TotalPages {
+				if data.Pagination.CurrentPage < data.Pagination.TotalPages {
 					<a
-						href={ templ.SafeURL(fmt.Sprintf("/reports/blast-radius?page=%d", p.CurrentPage+1)) }
+						href={ templ.SafeURL(blastRadiusPageURL(data, data.Pagination.CurrentPage+1)) }
 						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
 					>{ t(ctx, "common.next") }</a>
 				}

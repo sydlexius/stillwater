@@ -1275,6 +1275,7 @@ func (r *Router) loadReportsBlastRadiusData(w http.ResponseWriter, req *http.Req
 	// (Unclamped, the pager also read "Page 99 of 2" with Previous walking to 98,
 	// so there was no way back to a real page except editing the URL.)
 	if totalPages > 0 && view.Page > totalPages {
+		requestedPage := view.Page
 		view.Page = totalPages
 		clamped := r.blastRadiusPagedFilterFromRequest(req)
 		clamped.Offset = (totalPages - 1) * view.PageSize
@@ -1286,6 +1287,27 @@ func (r *Router) loadReportsBlastRadiusData(w http.ResponseWriter, req *http.Req
 			return templates.BlastRadiusData{}, false
 		}
 		view.Rows = rows
+
+		// The count and this re-fetch are separate queries with no transaction
+		// between them, so the row set can shrink in the gap -- a concurrent
+		// restore, or the same operator with the pane open twice. When it does,
+		// the clamped offset points past the NEW end and the re-fetch returns
+		// nothing, which would render the library-wide all-clear underneath a
+		// caveat band still quoting the pre-delete total. That is the precise
+		// failure this clamp was written to eliminate, arriving through a
+		// narrower door.
+		//
+		// Refusing is the honest answer. We know the count is stale (it promised
+		// rows this page does not have) but not what replaced it, and a recovery
+		// surface must never resolve "I cannot tell" into "nothing to see". A
+		// second clamp against a fresh count would be racing the same window
+		// again; a reload reads a consistent snapshot.
+		if len(view.Rows) == 0 && view.Counts.Total > 0 {
+			r.logger.Warn("blast-radius report changed while loading; refusing to render a stale empty page",
+				"requested_page", requestedPage, "clamped_page", totalPages, "counted_total", view.Counts.Total)
+			http.Error(w, "the report changed while loading; reload to see the current state", http.StatusConflict)
+			return templates.BlastRadiusData{}, false
+		}
 	}
 
 	return templates.BlastRadiusData{
