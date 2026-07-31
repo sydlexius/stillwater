@@ -855,26 +855,65 @@ a11y_changed() {
 # expanding an EMPTY array as "${arr[*]}" aborts with "unbound variable". The
 # all-engines-present path produces exactly that empty case, so the array form
 # would crash the gate on the HAPPY path (verified against bash 3.2.57).
+# That constraint is why the whitespace handling below is done with IFS and the
+# positional parameters rather than with an array, which would be the obvious fix.
 a11y_missing_engines() {
   command -v npx >/dev/null 2>&1 || { echo "npx"; return; }
 
+  # Roots accumulate NEWLINE-delimited, not space-delimited, and the loop below
+  # reads them with IFS set to a newline. PLAYWRIGHT_BROWSERS_PATH is
+  # operator-set and may contain spaces; a space-delimited accumulator read by
+  # an unquoted `for root in $roots` word-splits such a path into fragments,
+  # none of which is a directory, so every engine reads as MISSING even though
+  # it is installed. That is the dangerous shape of wrong: a plausible-looking
+  # "not installed" answer rather than an error.
+  #
+  # A newline delimiter is safe because a newline cannot appear in a path
+  # component here without the directory test failing anyway, whereas a space
+  # very much can. Arrays would be the obvious fix and are ruled out by the
+  # bash 3.2 constraint above.
   roots=""
   for root in "${PLAYWRIGHT_BROWSERS_PATH:-}" "$HOME/.cache/ms-playwright" \
     "$HOME/Library/Caches/ms-playwright" "${LOCALAPPDATA:-}/ms-playwright"; do
     if [ -n "$root" ] && [ -d "$root" ]; then
-      roots="$roots $root"
+      roots="$roots$root
+"
     fi
   done
   if [ -z "$roots" ]; then
-    echo "chromium firefox"
+    # No browsers directory anywhere: every declared engine is missing. Kept in
+    # step with the engine list below -- both must grow together when the
+    # firefox-a11y project lands, or this branch would under-report.
+    echo "chromium"
     return
   fi
 
-  # Keep this list in step with the projects in playwright.config.js.
+  # Engines this branch's playwright.config.js actually declares a project for.
+  # It declares chromium-a11y only; the firefox-a11y project ships with the
+  # blast-radius a11y spec. ADD firefox HERE IN THAT SAME CHANGE -- the CI
+  # workflow already installs both, so the binary will be present, but until a
+  # project uses it this probe must not gate on it. Gating early would skip the
+  # whole a11y run on a machine that can serve every configured project.
+  # Split the accumulator ONCE into the positional parameters, with IFS set to
+  # a newline and globbing disabled, then restore both immediately. After this
+  # "$@" holds one root per entry and every later use is quoted, so no path is
+  # ever re-split. `set --` is safe here: this function takes no arguments.
+  a11y_oldifs=$IFS
+  set -f
+  IFS='
+'
+  # shellcheck disable=SC2086 # deliberate split on the newline delimiter above
+  set -- $roots
+  IFS=$a11y_oldifs
+  set +f
+
   missing=""
-  for engine in chromium firefox; do
+  # shellcheck disable=SC2043 # single-element today by design; the firefox-a11y
+  # project adds "firefox" to this list, and keeping the loop makes that a
+  # one-word change rather than a restructure.
+  for engine in chromium; do
     found=0
-    for root in $roots; do
+    for root in "$@"; do
       # A matching <engine>-<rev> directory means that engine is installed.
       for candidate in "$root/$engine"-*; do
         [ -d "$candidate" ] && { found=1; break; }
