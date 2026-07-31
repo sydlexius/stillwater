@@ -19,6 +19,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 import { setupAndLogin } from './helpers/bootstrap.js';
+import { seedBlastRadius } from './helpers/seed-blast-radius.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,6 +39,25 @@ export default async function globalSetup() {
     // storageState() then serializes those cookies (session + csrf) for reuse.
     await setupAndLogin(ctx);
     await ctx.storageState({ path: STORAGE_STATE });
+
+    // Seed the blast-radius fixture. The a11y target runs against a fresh
+    // empty database every time, so without this the pane renders its empty
+    // state and blast-radius.spec.js cannot reach the restore dialog or the
+    // pager -- it throws rather than passing vacuously, which is correct
+    // behaviour and exactly why the data has to exist.
+    //
+    // Seeded here rather than in a beforeAll so it happens ONCE for the whole
+    // run: the fixture is shared, idempotent-per-run state, and re-seeding per
+    // spec file would multiply both the rows and the wall-clock cost.
+    //
+    // A failure here is fatal on purpose. A half-seeded fixture would surface
+    // as unrelated a11y failures ("pager absent", "no rows") that read as
+    // defects in the pane rather than as a broken fixture.
+    const seeded = await seedBlastRadius(ctx);
+    console.log(
+      `[a11y] blast-radius fixture: ${seeded.rows} rows `
+      + `(${seeded.automated} automated, ${seeded.unknown} unknown)`,
+    );
   } finally {
     await ctx.dispose();
   }
