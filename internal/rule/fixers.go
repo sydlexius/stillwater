@@ -238,6 +238,23 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 type MetadataFixer struct {
 	orchestrator metadataOrchestrator
 	logger       *slog.Logger
+
+	// albumGate is the #2858 album-evidence gate on fixMBID's write. Late-wired
+	// via SetAlbumGate (mirroring ImageFixer.SetCollisionGuard) rather than added
+	// to the constructor, because the collaborators it needs -- an album source
+	// and the registry-resolved MusicBrainz release-group fetcher -- are resolved
+	// elsewhere in the wiring. The zero value is a supported inert state: an
+	// unwired gate permits every candidate, so every existing construction site
+	// behaves exactly as before.
+	albumGate ruleAlbumGate
+}
+
+// SetAlbumGate late-wires the #2858 album-evidence gate for the nfo_has_mbid
+// fixer's MusicBrainz-ID write. Passing a nil source or a nil fetcher leaves the
+// gate inert (every candidate permitted), which is the fail-open behavior an
+// install with no MusicBrainz provider must keep.
+func (f *MetadataFixer) SetAlbumGate(albums artist.AlbumSource, fetcher ReleaseGroupFetcher) {
+	f.albumGate = ruleAlbumGate{albums: albums, fetcher: fetcher, logger: f.logger}
 }
 
 // NewMetadataFixer creates a MetadataFixer. NFO write-back and platform push
@@ -329,6 +346,20 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 			RuleID:  RuleNFOHasMBID,
 			Fixed:   false,
 			Message: fmt.Sprintf("declined to set MusicBrainz ID for %s: %s", a.Name, rej.Reason),
+		}, nil
+	}
+
+	// #2858: the name gates above read only the SEARCH RESULT. Ask the catalogue
+	// question too -- do the candidate's release groups look like this artist's
+	// albums? -- before an unattended write. The gate FAILS OPEN: it permits
+	// whenever it cannot look (no gate wired, no MusicBrainz provider, unreadable
+	// album directory, failed release-group fetch), so it can only ever refuse a
+	// candidate the artist's own albums CONTRADICT. See album_gate.go.
+	if ok, reason := f.albumGate.permits(ctx, RuleNFOHasMBID, a, best); !ok {
+		return &FixResult{
+			RuleID:  RuleNFOHasMBID,
+			Fixed:   false,
+			Message: fmt.Sprintf("declined to set MusicBrainz ID for %s: %s", a.Name, reason),
 		}, nil
 	}
 

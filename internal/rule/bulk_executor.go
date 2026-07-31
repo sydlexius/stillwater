@@ -47,6 +47,14 @@ type BulkExecutor struct {
 	// to the already-nine-parameter constructor. Nil is a supported no-op state.
 	collision *collisionGuard
 
+	// albumGate is the #2858 album-evidence gate on fetchImages' MBID self-heal.
+	// Late-wired via SetAlbumGate, mirroring SetCollisionGuard: this type holds a
+	// *provider.Orchestrator and has NO capability path at all, so the Engine's
+	// releaseGroupFetcherFor accessor does not reach it and the fetcher must be
+	// injected here directly. The zero value is a supported inert state (every
+	// candidate permitted), so an executor built without it behaves as before.
+	albumGate ruleAlbumGate
+
 	// historyServiceMu guards historyService for the same reason
 	// Pipeline.historyServiceMu does (see fixer.go): SetHistoryService can be
 	// called after construction, and the read happens on the bulk fetch-images
@@ -69,6 +77,18 @@ func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 // for the bulk auto-fix path. Passing a nil notifier or indexer disables it.
 func (e *BulkExecutor) SetCollisionGuard(notifier backdropCollisionNotifier, indexer fanartIdentityIndexer) {
 	e.collision = newCollisionGuard(notifier, indexer, e.logger)
+}
+
+// SetAlbumGate late-wires the #2858 album-evidence gate for the bulk
+// fetch-images job's MusicBrainz-ID self-heal. Passing a nil source or a nil
+// fetcher leaves the gate inert (every candidate permitted), which is the
+// fail-open behavior an install with no MusicBrainz provider must keep.
+//
+// Setter form (rather than a NewBulkExecutor parameter) mirrors
+// SetCollisionGuard/SetHistoryService and keeps the already-nine-parameter
+// constructor signature stable for existing call sites.
+func (e *BulkExecutor) SetAlbumGate(albums artist.AlbumSource, fetcher ReleaseGroupFetcher) {
+	e.albumGate = ruleAlbumGate{albums: albums, fetcher: fetcher, logger: e.logger}
 }
 
 // SetHistoryService installs (or replaces) the artist history service the
@@ -356,53 +376,9 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 
 func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode string, identityIdx *fanartIndex) (string, string) {
 	if a.MusicBrainzID == "" {
-		if mode == BulkModeManual || mode == BulkModeDisambiguate {
-			return BulkItemSkipped, "no MBID"
+		if status, message := e.selfHealMBID(ctx, a, mode); status != "" {
+			return status, message
 		}
-		results, err := e.orchestrator.Search(ctx, a.Name)
-		if err != nil || len(results) == 0 {
-			return BulkItemSkipped, "no MBID and provider search found nothing"
-		}
-		// #2825: an operator asking for IMAGES never asked for an identity
-		// decision, so this self-heal may adopt an MBID ONLY when it clears the
-		// same confidence gate the nfo_has_mbid rule fixer applies (fixers.go) --
-		// reused via artist.EvaluateMBIDCandidate, not re-implemented here. A
-		// "first result that happens to carry an MBID" pick (the prior behavior)
-		// read no score at all and was weaker than that fixer's own floor.
-		best, runnerUp := artist.BestMBIDCandidates(results)
-		if rej := artist.EvaluateMBIDCandidate(a.Name, best, runnerUp); rej != nil {
-			e.logger.Info("declined to self-heal MusicBrainz ID for image fetch",
-				slog.String("artist", a.Name),
-				slog.String("reason", rej.Reason))
-			return BulkItemSkipped, fmt.Sprintf("no MBID: declined to adopt one from search: %s", rej.Reason)
-		}
-
-		// The in-memory artist is mutated before the write, so a failed write
-		// would otherwise leave `a` claiming an MBID the database never got.
-		// The caller keeps using this same pointer after fetchImages returns
-		// (bulkFixOne at :312 hands it straight on), so the divergence would be
-		// read as a real adoption. Capture enough to undo it, including whether
-		// the provenance key was ABSENT rather than merely different: restoring
-		// an empty string would leave a bogus key behind.
-		prevMBID := a.MusicBrainzID
-		prevSource, hadSource := a.MetadataSources[artist.SourceKeyMusicBrainzID]
-
-		mbid := strings.ToLower(strings.TrimSpace(best.MusicBrainzID))
-		a.MusicBrainzID = mbid
-		if a.MetadataSources == nil {
-			a.MetadataSources = make(map[string]string)
-		}
-		a.MetadataSources[artist.SourceKeyMusicBrainzID] = artist.SourceMachinePicked
-		if err := e.artistService.Update(ctx, a); err != nil {
-			a.MusicBrainzID = prevMBID
-			if hadSource {
-				a.MetadataSources[artist.SourceKeyMusicBrainzID] = prevSource
-			} else {
-				delete(a.MetadataSources, artist.SourceKeyMusicBrainzID)
-			}
-			return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
-		}
-		e.recordBulkMBIDHistory(ctx, a.ID, mbid)
 	}
 
 	needed := make(map[string]bool)
@@ -459,6 +435,85 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 	}
 
 	return BulkItemFixed, fmt.Sprintf("saved %d image(s)", fixed)
+}
+
+// selfHealMBID adopts a MusicBrainz ID for an artist that has none, so the bulk
+// image fetch has something to query providers with.
+//
+// It returns a NON-EMPTY status only when fetchImages must stop -- the artist
+// was skipped or the write failed. An empty status means the caller may
+// continue: either an ID was adopted and persisted, or (unreachable today) there
+// was nothing to do.
+//
+// Extracted from fetchImages rather than left inline because the identity
+// decision now has three refusal gates in sequence (mode, artist.
+// EvaluateMBIDCandidate, and the #2858 album-evidence gate) plus the
+// rollback-on-failed-write dance, and folding all of that into the image loop
+// pushed the combined function past the cognitive-complexity ceiling. The split
+// is along the seam the code already had: decide an identity, then fetch images
+// for it.
+func (e *BulkExecutor) selfHealMBID(ctx context.Context, a *artist.Artist, mode string) (string, string) {
+	if mode == BulkModeManual || mode == BulkModeDisambiguate {
+		return BulkItemSkipped, "no MBID"
+	}
+	results, err := e.orchestrator.Search(ctx, a.Name)
+	if err != nil || len(results) == 0 {
+		return BulkItemSkipped, "no MBID and provider search found nothing"
+	}
+	// #2825: an operator asking for IMAGES never asked for an identity
+	// decision, so this self-heal may adopt an MBID ONLY when it clears the
+	// same confidence gate the nfo_has_mbid rule fixer applies (fixers.go) --
+	// reused via artist.EvaluateMBIDCandidate, not re-implemented here. A
+	// "first result that happens to carry an MBID" pick (the prior behavior)
+	// read no score at all and was weaker than that fixer's own floor.
+	best, runnerUp := artist.BestMBIDCandidates(results)
+	if rej := artist.EvaluateMBIDCandidate(a.Name, best, runnerUp); rej != nil {
+		e.logger.Info("declined to self-heal MusicBrainz ID for image fetch",
+			slog.String("artist", a.Name),
+			slog.String("reason", rej.Reason))
+		return BulkItemSkipped, fmt.Sprintf("no MBID: declined to adopt one from search: %s", rej.Reason)
+	}
+
+	// #2858: EvaluateMBIDCandidate reads only the SEARCH RESULT, so ask the
+	// catalogue question too before this unattended, library-wide write. The
+	// gate FAILS OPEN -- it permits whenever it cannot look (no gate wired, no
+	// MusicBrainz provider, unreadable album directory, failed release-group
+	// fetch) -- so it can only refuse a candidate the artist's own albums
+	// CONTRADICT. See album_gate.go.
+	if ok, reason := e.albumGate.permits(ctx, "bulk_fetch_images_mbid", a, best); !ok {
+		return BulkItemSkipped, fmt.Sprintf("no MBID: declined to adopt one from search: %s", reason)
+	}
+
+	// The in-memory artist is mutated before the write, so a failed write
+	// would otherwise leave `a` claiming an MBID the database never got.
+	// The caller keeps using this same pointer after fetchImages returns
+	// (bulkFixOne at :312 hands it straight on), so the divergence would be
+	// read as a real adoption. Capture enough to undo it, including whether
+	// the provenance key was ABSENT rather than merely different: restoring
+	// an empty string would leave a bogus key behind.
+	prevMBID := a.MusicBrainzID
+	prevSource, hadSource := a.MetadataSources[artist.SourceKeyMusicBrainzID]
+
+	mbid := strings.ToLower(strings.TrimSpace(best.MusicBrainzID))
+	a.MusicBrainzID = mbid
+	if a.MetadataSources == nil {
+		a.MetadataSources = make(map[string]string)
+	}
+	a.MetadataSources[artist.SourceKeyMusicBrainzID] = artist.SourceMachinePicked
+	if err := e.artistService.Update(ctx, a); err != nil {
+		a.MusicBrainzID = prevMBID
+		if hadSource {
+			a.MetadataSources[artist.SourceKeyMusicBrainzID] = prevSource
+		} else {
+			delete(a.MetadataSources, artist.SourceKeyMusicBrainzID)
+		}
+		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
+	}
+	e.recordBulkMBIDHistory(ctx, a.ID, mbid)
+
+	// Empty status: an identity was adopted and persisted, so the caller may go
+	// on and fetch images for it.
+	return "", ""
 }
 
 // saveBestImage saves the best candidate image for the given type. Returns the

@@ -938,9 +938,18 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	// impossible. Same shape as collisionFixer.SetRemediator below.
 	imageFixer := rule.NewImageFixer(a.orchestrator, a.platformService, a.fsCheck, logger)
 
+	// #2858: gate the nfo_has_mbid fixer's MusicBrainz-ID write on album
+	// evidence. Both collaborators may be nil (no MusicBrainz provider
+	// registered), which leaves the gate inert -- fail-open is the decided
+	// policy, since a MusicBrainz provider is not a precondition for running the
+	// rule engine and a gate that disabled the rule it guards would be a
+	// regression. See internal/rule/album_gate.go.
+	metadataFixer := rule.NewMetadataFixer(a.orchestrator, logger)
+	metadataFixer.SetAlbumGate(artist.NewFilesystemAlbumSource(), releaseGroupFetcher)
+
 	fixers := []rule.Fixer{
 		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites, a.publisher, a.platformService),
-		rule.NewMetadataFixer(a.orchestrator, logger),
+		metadataFixer,
 		rule.NewNameLanguageFixer(a.orchestrator, logger),
 		imageFixer,
 		rule.NewExtraneousImagesFixer(a.platformService, a.fsCheck, logger),
@@ -1006,6 +1015,11 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	// job self-heals a missing MusicBrainz ID, mirroring the pipeline's own
 	// SetHistoryService wiring above.
 	a.bulkExecutor.SetHistoryService(a.historyService)
+	// #2858: the bulk fetch-images job's MBID self-heal is the other internal/rule
+	// automated write path, and it holds a bare *provider.Orchestrator with no
+	// capability path, so the release-group fetcher is injected directly here.
+	// Same fail-open contract as the metadata fixer's gate above.
+	a.bulkExecutor.SetAlbumGate(artist.NewFilesystemAlbumSource(), releaseGroupFetcher)
 
 	// Overlay UI-persisted operational settings (#1746, #1753) now that the
 	// scanner and rule pipeline are wired. Env-wins; see applyPersistedOpsSettings.
