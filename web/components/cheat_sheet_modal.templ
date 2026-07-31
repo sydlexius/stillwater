@@ -52,7 +52,23 @@ templ CheatSheetModal() {
 						</svg>
 					</button>
 				</div>
-				<div id="cheat-sheet-content" class="px-6 py-4 max-h-[70vh] overflow-y-auto space-y-4"></div>
+				<!-- tabindex="0" so the scrollable body is keyboard-reachable (#2873):
+				     max-h + overflow-y-auto makes this a scroll container, and without a
+				     focus stop a keyboard-only user cannot scroll it, so shortcuts past
+				     the fold are unreachable. axe flags this as
+				     scrollable-region-focusable.
+
+				     Deliberately NO role="region" here. The enclosing dialog is already
+				     named "Keyboard Shortcuts" by cheat-sheet-title, and promoting this
+				     body to a named landmark is exactly what produced the duplicate-
+				     landmark defect on the settings pane (#2874). aria-labelledby gives
+				     the focus stop an accessible name without adding a landmark. -->
+				<div
+					id="cheat-sheet-content"
+					tabindex="0"
+					aria-labelledby="cheat-sheet-title"
+					class="px-6 py-4 max-h-[70vh] overflow-y-auto space-y-4"
+				></div>
 			</div>
 		</div>
 		<script>
