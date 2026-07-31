@@ -660,3 +660,41 @@ func TestFetchImages_AlbumGate_BlockedCandidateWritesNoHistory(t *testing.T) {
 		}
 	}
 }
+
+// TestFetchImages_AlbumGate_ReachableThroughFetchImages closes the seam the
+// selfHealMBID extraction opened.
+//
+// Every other bulk case above calls selfHealMBID DIRECTLY, which proves the gate
+// decides correctly but NOT that fetchImages still routes through it. Severing
+// the delegation in fetchImages leaves all of those passing -- the extraction
+// would have silently disabled the gate on the real entry point and no
+// album-gate test would have noticed. (The eight pre-existing
+// TestFetchImages_MBIDGate_* cases do catch that severance, but they exercise
+// artist.EvaluateMBIDCandidate, not this gate, so they would not catch the gate
+// specifically being bypassed.)
+//
+// This one drives the PUBLIC path end to end with a candidate only the ALBUM
+// gate can refuse, so it fails if fetchImages ever stops consulting it.
+func TestFetchImages_AlbumGate_ReachableThroughFetchImages(t *testing.T) {
+	results := gateSearchResults()
+	assertNameGatesPass(t, results)
+
+	// 10% overlap: clears every name gate, refused only by the album gate.
+	fetcher := &stubReleaseGroupFetcher{groups: gateReleaseGroups(1)}
+	e, svc, a := bulkGateArtist(t, gateAlbums, fetcher, results)
+	assertLocalEvidence(t, a.Path, artist.EvidenceFound, len(gateAlbums))
+
+	// PRECONDITION: the artist must genuinely still need images, or fetchImages
+	// could short-circuit on "all images present" and never reach the self-heal.
+	if a.ThumbExists || a.FanartExists || a.LogoExists {
+		t.Fatalf("fixture precondition: artist must need images, got thumb=%v fanart=%v logo=%v",
+			a.ThumbExists, a.FanartExists, a.LogoExists)
+	}
+
+	status, msg := e.fetchImages(context.Background(), a, BulkModeYOLO, nil)
+
+	assertBulkNotAdopted(t, svc, a, status, msg)
+	if !strings.Contains(msg, "overlap") {
+		t.Errorf("message %q does not name the catalogue-overlap reason, so fetchImages may not be consulting the album gate", msg)
+	}
+}
