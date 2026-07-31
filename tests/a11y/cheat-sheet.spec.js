@@ -14,9 +14,10 @@
 // Auth: reuses the same setupAndLogin pattern as contrast.spec.js.
 
 import { test, expect } from 'playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 
 import { disableTransitions } from './helpers/settle.js';
+import { buildAxeBuilder, formatViolations } from './helpers/axe.js';
+import { assertOnlyKnownViolations } from './helpers/known-violations.js';
 
 // Auth: a single login happens once in global-setup.js; the session is loaded
 // into every test context via `use.storageState` (playwright.config.js).
@@ -32,19 +33,6 @@ test.use({ colorScheme: 'dark' });
 test.beforeEach(async ({ page }) => {
   await disableTransitions(page);
 });
-
-// ---------------------------------------------------------------------------
-// Helper: same axe rule set as contrast.spec.js.
-// ---------------------------------------------------------------------------
-function buildAxeBuilder(page) {
-  return new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'best-practice'])
-    .disableRules([
-      // Same exemption as contrast.spec.js: structural check, not a concern
-      // for rendered smoke (Playwright provides lang via context).
-      'html-has-lang',
-    ]);
-}
 
 // ---------------------------------------------------------------------------
 // Cheat-sheet modal: open via '?' then full-page scan.
@@ -70,19 +58,10 @@ test('cheat-sheet modal passes full-page a11y scan (dark mode)', async ({ page }
   // A scoped scan hides violations in the surrounding chrome (contrast.spec.js
   // comment; hostile-review spec requirement for this surface).
   const results = await buildAxeBuilder(page).analyze();
-  expect(
-    results.violations,
-    `Cheat-sheet modal a11y violations:\n${formatViolations(results.violations)}`,
-  ).toHaveLength(0);
+  // This is a FULL-PAGE scan (deliberately -- see above), so it also sees the
+  // dashboard behind the modal, including the activity timestamps tracked as
+  // #2875. Allows only that; any other violation, here or in the modal, still
+  // fails. See helpers/known-violations.js for why this is not an axe exclude.
+  assertOnlyKnownViolations(expect, results.violations, 'Cheat-sheet modal', formatViolations);
 });
 
-// ---------------------------------------------------------------------------
-// Helper: format violations for assertion messages (matches contrast.spec.js).
-// ---------------------------------------------------------------------------
-function formatViolations(violations) {
-  if (!violations.length) return '(none)';
-  return violations.map(v =>
-    `  [${v.impact}] ${v.id}: ${v.description}\n` +
-    v.nodes.slice(0, 2).map(n => `    target: ${JSON.stringify(n.target)}`).join('\n'),
-  ).join('\n');
-}

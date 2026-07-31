@@ -16,9 +16,10 @@
 // a11y rules: wcag2a + wcag2aa + color-contrast are ALL enabled here (real CSS).
 
 import { test, expect } from 'playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 
 import { disableTransitions } from './helpers/settle.js';
+import { buildAxeBuilder, formatViolations, applyTheme, restorePersistedTheme } from './helpers/axe.js';
+import { assertOnlyKnownViolations } from './helpers/known-violations.js';
 
 // Auth: a single login happens once in global-setup.js; the session is loaded
 // into every test context via `use.storageState` (playwright.config.js), so no
@@ -34,6 +35,14 @@ test.beforeEach(async ({ page }) => {
   await disableTransitions(page);
 });
 
+// Restore the SERVER-SIDE theme after every test in this file. Tests that
+// exercise the real toggle path persist their change, and spec files run in
+// alphabetical order, so an unrestored light theme becomes the starting state
+// for every later file and breaks scans that never touched the theme.
+test.afterEach(async ({ page }) => {
+  await restorePersistedTheme(page);
+});
+
 // ---------------------------------------------------------------------------
 // Helper: build an AxeBuilder scan scoped to the target rules.
 //
@@ -46,14 +55,6 @@ test.beforeEach(async ({ page }) => {
 //     case fixtures load without the full layout; the browser tier is about
 //     contrast, not structural completeness.
 // ---------------------------------------------------------------------------
-function buildAxeBuilder(page) {
-  return new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'best-practice'])
-    .disableRules([
-      // Not a concern for the rendered smoke set (Playwright provides lang).
-      'html-has-lang',
-    ]);
-}
 
 // ---------------------------------------------------------------------------
 // 1. Dashboard (/next/) - stat cards
@@ -65,10 +66,10 @@ test('dashboard stat cards pass a11y scan', async ({ page }) => {
   await page.waitForSelector('.sw-next-header-strip', { timeout: 10_000 });
 
   const results = await buildAxeBuilder(page).analyze();
-  expect(
-    results.violations,
-    `Dashboard a11y violations:\n${formatViolations(results.violations)}`,
-  ).toHaveLength(0);
+  // Allows ONLY the tracked #2875 timestamp contrast defect; anything else
+  // still fails, and the allowance itself fails once #2875 is fixed. See
+  // helpers/known-violations.js for why this is not an axe exclude.
+  assertOnlyKnownViolations(expect, results.violations, 'Dashboard', formatViolations);
 });
 
 // ---------------------------------------------------------------------------
@@ -191,11 +192,31 @@ test('prefs drawer passes a11y scan', async ({ page }) => {
 // regressions are caught by static-analysis snapshots; dark is where the
 // reused stable bodies carry inverted-muted and blue-ink debt fixed in #1339.
 //
-// Dark mode is activated via:
-//   (a) page.emulateMedia({ colorScheme: 'dark' }) -- satisfies the 'system'
-//       theme preference branch in preferences.js (matchMedia check).
-//   (b) page.evaluate classList.add('dark') -- satisfies the hardcoded 'dark'
-//       preference branch and any race where JS runs after emulateMedia fires.
+// Dark mode is activated by driving the app's OWN theme path
+// (window.swPreferences.applySingle), never by adding the .dark class directly.
+//
+// WHY THAT MATTERS -- this test reported a false contrast failure for exactly
+// that reason (#2872). preferences.js keeps an inline --sw-glass-bg on :root
+// whose COLOUR is theme-dependent: the bg_opacity branch reads
+// classList.contains('dark') at the moment it runs and writes rgba(30,41,59,a)
+// or rgba(255,255,255,a) to match. An inline style on :root outranks both
+// theme scopes.
+//
+// The old form here added the class with a raw classList.add, which fires no
+// preference change, so nothing re-ran that branch. The page ended up
+// half-themed: .dark applied, but the LIGHT glass value still pinned inline.
+// axe then correctly reported dark-theme text (#f3f4f6, #9ca3af, ...) against
+// a light surface (#dbdcdf) at ratios as bad as 1.07:1 -- a real violation of
+// a state no user can reach, on a page that is fine in both actual themes.
+//
+// Measured at the moment of the scan: running animations 0, readyState
+// complete, opacity 1 -- so this was never a fade/settling race, which is what
+// the retry-flakiness made it look like.
+//
+// applySingle is the documented apply-without-persist entry point, and it
+// re-applies bg_opacity after toggling the class, so the class and the inline
+// token stay consistent. emulateMedia stays because the 'system' branch
+// resolves through matchMedia.
 // ---------------------------------------------------------------------------
 
 test('/next/settings passes a11y scan in dark mode', async ({ page }) => {
@@ -205,8 +226,7 @@ test('/next/settings passes a11y scan in dark mode', async ({ page }) => {
   await page.goto('/next/settings');
   await page.waitForSelector('.sw-next-settings-pane', { timeout: 10_000 });
 
-  // Ensure the .dark class is present regardless of stored preference state.
-  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await applyTheme(expect, page, 'dark');
 
   const results = await buildAxeBuilder(page).analyze();
   expect(
@@ -294,13 +314,7 @@ test('/next/settings passes a11y scan in light mode', async ({ page }) => {
   ).toHaveLength(0);
 });
 
+
 // ---------------------------------------------------------------------------
 // Helper: format violations for assertion messages.
 // ---------------------------------------------------------------------------
-function formatViolations(violations) {
-  if (!violations.length) return '(none)';
-  return violations.map(v =>
-    `  [${v.impact}] ${v.id}: ${v.description}\n` +
-    v.nodes.slice(0, 2).map(n => `    target: ${JSON.stringify(n.target)}`).join('\n'),
-  ).join('\n');
-}
