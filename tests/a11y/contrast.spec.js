@@ -18,7 +18,7 @@
 import { test, expect } from 'playwright/test';
 
 import { disableTransitions } from './helpers/settle.js';
-import { buildAxeBuilder, formatViolations, applyTheme } from './helpers/axe.js';
+import { buildAxeBuilder, formatViolations, applyTheme, restorePersistedTheme } from './helpers/axe.js';
 import { assertOnlyKnownViolations } from './helpers/known-violations.js';
 
 // Auth: a single login happens once in global-setup.js; the session is loaded
@@ -33,6 +33,14 @@ import { assertOnlyKnownViolations } from './helpers/known-violations.js';
 // production theme switching is unchanged.
 test.beforeEach(async ({ page }) => {
   await disableTransitions(page);
+});
+
+// Restore the SERVER-SIDE theme after every test in this file. Tests that
+// exercise the real toggle path persist their change, and spec files run in
+// alphabetical order, so an unrestored light theme becomes the starting state
+// for every later file and breaks scans that never touched the theme.
+test.afterEach(async ({ page }) => {
+  await restorePersistedTheme(page);
 });
 
 // ---------------------------------------------------------------------------

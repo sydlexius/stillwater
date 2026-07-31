@@ -71,6 +71,8 @@ test-js:
 test-a11y: build
 	@set -euo pipefail; \
 	SW_DB="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.db"; \
+	SW_EMPTY_LIB="$${TMPDIR:-/tmp}/stillwater-a11y-emptylib-$$$$"; \
+	mkdir -p "$$SW_EMPTY_LIB"; \
 	PID_FILE="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.pid"; \
 	LOG_FILE="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.log"; \
 	\
@@ -78,6 +80,7 @@ test-a11y: build
 	  if [ -f "$$PID_FILE" ]; then \
 	    kill "$$(cat $$PID_FILE)" 2>/dev/null || true; \
 	    rm -f "$$PID_FILE" "$$SW_DB" "$$SW_DB-wal" "$$SW_DB-shm" "$$LOG_FILE"; \
+	    rmdir "$$SW_EMPTY_LIB" 2>/dev/null || true; \
 	  fi; \
 	}; \
 	trap cleanup EXIT INT TERM; \
@@ -88,7 +91,7 @@ test-a11y: build
 	\
 	echo "[test-a11y] starting server on port $$SW_PORT (db=$$SW_DB)"; \
 	SW_DB_PATH="$$SW_DB" SW_PORT="$$SW_PORT" SW_LOG_FORMAT=text SW_LOG_LEVEL=warn \
-	  SW_BACKUP_ENABLED=false SW_UX=next \
+	  SW_BACKUP_ENABLED=false SW_UX=next SW_MUSIC_PATH="$$SW_EMPTY_LIB" \
 	  ./$(BINARY) > "$$LOG_FILE" 2>&1 & \
 	echo $$! > "$$PID_FILE"; \
 	\

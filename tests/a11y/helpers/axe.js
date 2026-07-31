@@ -47,6 +47,38 @@ export function formatViolations(violations) {
   ).join('\n');
 }
 
+// restorePersistedTheme puts the SERVER-SIDE theme preference back to the
+// app default after a test that legitimately persisted a change.
+//
+// Some tests must exercise the real toggle (swSidebar.cycleTheme, which calls
+// swPreferences.set) because the thing under test IS that path. `set` writes to
+// the server, and Playwright orders spec files alphabetically, so a persisted
+// light theme in an early file silently becomes the starting state for every
+// later file. That is how a dashboard scan in a "dark mode" spec ended up
+// measuring a light-mode amber badge at 4.01:1 -- a real violation, reported
+// against a page the test never meant to be looking at.
+//
+// Called from an afterEach rather than at the end of each toggling test: a
+// per-test cleanup is one forgotten call away from silently reintroducing the
+// leak, and the failure lands in a DIFFERENT file, where nobody looks for it.
+//
+// Best-effort by design. If the page is already closed (a timed-out or retried
+// test), there is nothing to restore and the next test's own navigation
+// re-establishes state; swallowing that is correct, not a silent failure. A
+// genuine inability to reach the API still surfaces, as the next spec's theme
+// assertion.
+export async function restorePersistedTheme(page, theme = 'dark') {
+  try {
+    if (page.isClosed()) return;
+    await page.evaluate((t) => {
+      const api = window.swPreferences;
+      if (api && typeof api.set === 'function') api.set('theme', t);
+    }, theme);
+  } catch {
+    // Page closed or navigated mid-teardown -- see above.
+  }
+}
+
 // applyTheme switches theme through the app's OWN preference path, never by
 // setting the .dark class directly.
 //
