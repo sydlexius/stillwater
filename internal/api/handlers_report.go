@@ -1255,6 +1255,39 @@ func (r *Router) loadReportsBlastRadiusData(w http.ResponseWriter, req *http.Req
 		totalPages++
 	}
 
+	// Clamp the requested page to the range that exists, and re-fetch the rows
+	// at the clamped offset.
+	//
+	// Reached by the ordinary recovery flow, not just a hand-typed URL: restoring
+	// a value removes its row from the DOM (blastRadiusScript), so an operator
+	// who restores everything on the last page shrinks the result set below the
+	// page they are standing on. Refreshing then asked for a page past the end,
+	// which returned zero rows -- and the template's len(Rows)==0 branch prints
+	// the LIBRARY-WIDE "Nothing recorded. No tracked field has been blanked or
+	// overwritten by an automated writer." directly beneath a caveat band still
+	// reporting real damage. The page contradicted itself and the reassuring
+	// sentence was the one in the table, produced by doing exactly what the
+	// feature is for.
+	//
+	// The rows are re-fetched rather than left empty because clamping the CAPTION
+	// alone would render "Page 2 of 2" above an empty table -- a different false
+	// statement, not a fix. After the re-fetch the caption and the rows agree.
+	// (Unclamped, the pager also read "Page 99 of 2" with Previous walking to 98,
+	// so there was no way back to a real page except editing the URL.)
+	if totalPages > 0 && view.Page > totalPages {
+		view.Page = totalPages
+		clamped := r.blastRadiusPagedFilterFromRequest(req)
+		clamped.Offset = (totalPages - 1) * view.PageSize
+		clamped.Validate()
+		rows, listErr := r.historyService.ListBlastRadius(req.Context(), clamped)
+		if listErr != nil {
+			r.logger.Error("re-listing blast-radius rows at clamped page", "error", listErr)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return templates.BlastRadiusData{}, false
+		}
+		view.Rows = rows
+	}
+
 	return templates.BlastRadiusData{
 		Rows:   view.Rows,
 		Counts: view.Counts,
