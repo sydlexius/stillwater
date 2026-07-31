@@ -829,18 +829,101 @@ a11y_changed() {
   git diff --name-only "$BASE" HEAD 2>/dev/null \
     | grep -qE '^(web/templates/|web/static/css/|web/static/js/|tests/a11y/|playwright\.config\.js|package(-lock)?\.json)|\.templ$'
 }
-# a11y_toolchain_ready: are the Playwright browser binaries available? make
-# test-a11y runs `npm ci` itself (so node deps are not the gating concern) but
-# never `npx playwright install`, so the BROWSER cache is the real dependency.
-# Its location is platform-specific -- ~/.cache (Linux/CI), ~/Library/Caches
-# (macOS), %LOCALAPPDATA% (Windows) -- and PLAYWRIGHT_BROWSERS_PATH overrides it,
-# so probe all of them rather than a single Linux path.
-a11y_toolchain_ready() {
-  command -v npx >/dev/null 2>&1 || return 1
-  for d in "${PLAYWRIGHT_BROWSERS_PATH:-}" "$HOME/.cache/ms-playwright" "$HOME/Library/Caches/ms-playwright" "${LOCALAPPDATA:-}/ms-playwright"; do
-    [ -n "$d" ] && [ -d "$d" ] && return 0
+# a11y_missing_engines: which of the engines playwright.config.js declares are
+# NOT installed? Echoes a space-separated list ("firefox", "chromium firefox"),
+# or nothing when all are present. Echoes "npx" if npx itself is unavailable.
+#
+# make test-a11y runs `npm ci` itself (so node deps are not the gating concern)
+# but never `npx playwright install`, so the BROWSER binaries are the real
+# dependency. Their location is platform-specific -- ~/.cache (Linux/CI),
+# ~/Library/Caches (macOS), %LOCALAPPDATA% (Windows) -- and
+# PLAYWRIGHT_BROWSERS_PATH overrides it, so probe all of them.
+#
+# This checks PER ENGINE rather than just "does the browsers directory exist".
+# The directory-only form predates the tier running on more than one engine: on
+# a machine with chromium but no firefox it reported ready, and the run then
+# hard-failed at launch ("Executable doesn't exist"). That is a loud failure
+# rather than a silent pass, so it was never a correctness hole -- but the skip
+# message it produced named neither the missing engine nor a command that would
+# actually fix it. Naming the engine is the whole point of this probe.
+#
+# Playwright lays the binaries out as <engine>-<revision> directories, so a
+# glob for the engine prefix is the check.
+#
+# Accumulates into plain STRINGS rather than arrays on purpose: this script runs
+# under `set -u`, and in bash 3.2 -- which is what /bin/bash still is on macOS --
+# expanding an EMPTY array as "${arr[*]}" aborts with "unbound variable". The
+# all-engines-present path produces exactly that empty case, so the array form
+# would crash the gate on the HAPPY path (verified against bash 3.2.57).
+# That constraint is why the whitespace handling below is done with IFS and the
+# positional parameters rather than with an array, which would be the obvious fix.
+a11y_missing_engines() {
+  command -v npx >/dev/null 2>&1 || { echo "npx"; return; }
+
+  # Roots accumulate NEWLINE-delimited, not space-delimited, and the loop below
+  # reads them with IFS set to a newline. PLAYWRIGHT_BROWSERS_PATH is
+  # operator-set and may contain spaces; a space-delimited accumulator read by
+  # an unquoted `for root in $roots` word-splits such a path into fragments,
+  # none of which is a directory, so every engine reads as MISSING even though
+  # it is installed. That is the dangerous shape of wrong: a plausible-looking
+  # "not installed" answer rather than an error.
+  #
+  # A newline delimiter is safe because a newline cannot appear in a path
+  # component here without the directory test failing anyway, whereas a space
+  # very much can. Arrays would be the obvious fix and are ruled out by the
+  # bash 3.2 constraint above.
+  roots=""
+  for root in "${PLAYWRIGHT_BROWSERS_PATH:-}" "$HOME/.cache/ms-playwright" \
+    "$HOME/Library/Caches/ms-playwright" "${LOCALAPPDATA:-}/ms-playwright"; do
+    if [ -n "$root" ] && [ -d "$root" ]; then
+      roots="$roots$root
+"
+    fi
   done
-  return 1
+  if [ -z "$roots" ]; then
+    # No browsers directory anywhere: every declared engine is missing. Kept in
+    # step with the engine list below -- both must grow together when the
+    # firefox-a11y project lands, or this branch would under-report.
+    echo "chromium"
+    return
+  fi
+
+  # Engines this branch's playwright.config.js actually declares a project for.
+  # It declares chromium-a11y only; the firefox-a11y project ships with the
+  # blast-radius a11y spec. ADD firefox HERE IN THAT SAME CHANGE -- the CI
+  # workflow already installs both, so the binary will be present, but until a
+  # project uses it this probe must not gate on it. Gating early would skip the
+  # whole a11y run on a machine that can serve every configured project.
+  # Split the accumulator ONCE into the positional parameters, with IFS set to
+  # a newline and globbing disabled, then restore both immediately. After this
+  # "$@" holds one root per entry and every later use is quoted, so no path is
+  # ever re-split. `set --` is safe here: this function takes no arguments.
+  a11y_oldifs=$IFS
+  set -f
+  IFS='
+'
+  # shellcheck disable=SC2086 # deliberate split on the newline delimiter above
+  set -- $roots
+  IFS=$a11y_oldifs
+  set +f
+
+  missing=""
+  # shellcheck disable=SC2043 # single-element today by design; the firefox-a11y
+  # project adds "firefox" to this list, and keeping the loop makes that a
+  # one-word change rather than a restructure.
+  for engine in chromium; do
+    found=0
+    for root in "$@"; do
+      # A matching <engine>-<rev> directory means that engine is installed.
+      for candidate in "$root/$engine"-*; do
+        [ -d "$candidate" ] && { found=1; break; }
+      done
+      [ "$found" -eq 1 ] && break
+    done
+    [ "$found" -eq 0 ] && missing="$missing $engine"
+  done
+  # Trim the leading space; empty stays empty.
+  echo "${missing# }"
 }
 
 run_a11y=0
@@ -856,10 +939,20 @@ case "$a11y_flag" in
   *)
     if ! a11y_changed; then
       echo "a11y: skipped (no a11y-relevant changes since BASE; set RUN_A11Y=1 to force)"
-    elif ! a11y_toolchain_ready; then
-      echo "a11y: skipped (Playwright browsers not installed -- run 'npx playwright install chromium' to enable locally; CI still gates a11y)"
     else
-      run_a11y=1
+      a11y_missing=$(a11y_missing_engines)
+      if [ "$a11y_missing" = "npx" ]; then
+        echo "a11y: skipped (npx not found; CI still gates a11y)"
+      elif [ -n "$a11y_missing" ]; then
+        # Name the missing engine AND the command that installs exactly it.
+        # A generic "browsers not installed" hint sent people to
+        # 'install chromium', which leaves the target engine missing and the
+        # run failing at launch.
+        echo "a11y: skipped (Playwright engine(s) not installed: ${a11y_missing} --" \
+          "run 'npx playwright install ${a11y_missing}' to enable locally; CI still gates a11y)"
+      else
+        run_a11y=1
+      fi
     fi
     ;;
 esac
