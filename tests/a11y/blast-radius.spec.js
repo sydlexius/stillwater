@@ -103,6 +103,34 @@ async function gotoPane(page, url = PANE_URL) {
   await page.waitForSelector('#blast-radius-tbl', { timeout: 10_000 });
 }
 
+// applyDarkTheme drives the app's own theme path instead of setting the .dark
+// class directly. See the dark-theme test for why that distinction matters
+// (#2872): the rendered theme depends on both the class AND an inline
+// --sw-glass-bg whose colour preferences.js picks from the class at write
+// time, so setting one without the other leaves the page half-themed.
+//
+// Throws rather than falling back to a class toggle: a fallback would
+// reintroduce exactly the state this exists to prevent, and the resulting
+// failure would read as a real contrast defect rather than a broken helper.
+async function applyDarkTheme(page) {
+  const applied = await page.evaluate(() => {
+    const api = window.swPreferences;
+    if (!api || typeof api.applySingle !== 'function') return false;
+    api.applySingle('theme', 'dark');
+    return true;
+  });
+  expect(
+    applied,
+    'window.swPreferences.applySingle is unavailable, so the dark theme could not '
+    + 'be applied through the app\'s own path. Forcing the .dark class is NOT an '
+    + 'acceptable fallback (#2872).',
+  ).toBe(true);
+  expect(
+    await page.evaluate(() => document.documentElement.classList.contains('dark')),
+    'dark theme did not take effect on <html>',
+  ).toBe(true);
+}
+
 // ---------------------------------------------------------------------------
 // 1. axe-core, full page, both themes.
 //
@@ -113,11 +141,21 @@ async function gotoPane(page, url = PANE_URL) {
 
 test('blast-radius pane passes full-page a11y scan (dark theme)', async ({ page }) => {
   // Dark is the app default. emulateMedia satisfies the 'system' preference
-  // branch in preferences.js; the classList add covers the case where JS
-  // resolved the theme before the media emulation landed.
+  // branch in preferences.js.
+  //
+  // The theme is then applied through the app's OWN path rather than by adding
+  // the .dark class, for the reason the light-theme test below already
+  // documents: forcing the class skips the --sw-glass-bg recompute and can
+  // scan a half-applied theme. That is not hypothetical -- the identical
+  // pattern in contrast.spec.js produced false contrast violations at ratios
+  // as bad as 1.07:1 against a surface no user ever sees (#2872).
+  //
+  // This test passed with the forcing form only because dark is the default,
+  // so the token already held the dark value. It was one default-flip away
+  // from the same false failure.
   await page.emulateMedia({ colorScheme: 'dark' });
   await gotoPane(page);
-  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await applyDarkTheme(page);
 
   const results = await buildAxeBuilder(page).analyze();
   expect(

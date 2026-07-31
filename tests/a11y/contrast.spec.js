@@ -191,11 +191,31 @@ test('prefs drawer passes a11y scan', async ({ page }) => {
 // regressions are caught by static-analysis snapshots; dark is where the
 // reused stable bodies carry inverted-muted and blue-ink debt fixed in #1339.
 //
-// Dark mode is activated via:
-//   (a) page.emulateMedia({ colorScheme: 'dark' }) -- satisfies the 'system'
-//       theme preference branch in preferences.js (matchMedia check).
-//   (b) page.evaluate classList.add('dark') -- satisfies the hardcoded 'dark'
-//       preference branch and any race where JS runs after emulateMedia fires.
+// Dark mode is activated by driving the app's OWN theme path
+// (window.swPreferences.applySingle), never by adding the .dark class directly.
+//
+// WHY THAT MATTERS -- this test reported a false contrast failure for exactly
+// that reason (#2872). preferences.js keeps an inline --sw-glass-bg on :root
+// whose COLOUR is theme-dependent: the bg_opacity branch reads
+// classList.contains('dark') at the moment it runs and writes rgba(30,41,59,a)
+// or rgba(255,255,255,a) to match. An inline style on :root outranks both
+// theme scopes.
+//
+// The old form here added the class with a raw classList.add, which fires no
+// preference change, so nothing re-ran that branch. The page ended up
+// half-themed: .dark applied, but the LIGHT glass value still pinned inline.
+// axe then correctly reported dark-theme text (#f3f4f6, #9ca3af, ...) against
+// a light surface (#dbdcdf) at ratios as bad as 1.07:1 -- a real violation of
+// a state no user can reach, on a page that is fine in both actual themes.
+//
+// Measured at the moment of the scan: running animations 0, readyState
+// complete, opacity 1 -- so this was never a fade/settling race, which is what
+// the retry-flakiness made it look like.
+//
+// applySingle is the documented apply-without-persist entry point, and it
+// re-applies bg_opacity after toggling the class, so the class and the inline
+// token stay consistent. emulateMedia stays because the 'system' branch
+// resolves through matchMedia.
 // ---------------------------------------------------------------------------
 
 test('/next/settings passes a11y scan in dark mode', async ({ page }) => {
@@ -205,8 +225,7 @@ test('/next/settings passes a11y scan in dark mode', async ({ page }) => {
   await page.goto('/next/settings');
   await page.waitForSelector('.sw-next-settings-pane', { timeout: 10_000 });
 
-  // Ensure the .dark class is present regardless of stored preference state.
-  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await applyTheme(page, 'dark');
 
   const results = await buildAxeBuilder(page).analyze();
   expect(
@@ -293,6 +312,45 @@ test('/next/settings passes a11y scan in light mode', async ({ page }) => {
     `/next/settings light-mode a11y violations:\n${formatViolations(results.violations)}`,
   ).toHaveLength(0);
 });
+
+// ---------------------------------------------------------------------------
+// Helper: switch theme through the app's own preference path (#2872).
+//
+// Never sets the .dark class directly. The rendered theme depends on BOTH the
+// class AND an inline --sw-glass-bg that preferences.js writes on :root, and
+// that inline value's colour is chosen from the class at write time. Setting
+// the class without re-running the preference apply leaves the two disagreeing
+// and the page half-themed -- see the comment on the dark-mode test above.
+//
+// applySingle applies to the DOM without persisting, so this does not mutate
+// the server's stored preference for later tests.
+//
+// It throws rather than falling back to a class toggle if the API is missing.
+// A fallback would silently reintroduce the exact half-themed state this
+// helper exists to prevent, and the resulting failure would look like a real
+// contrast defect rather than a broken helper.
+// ---------------------------------------------------------------------------
+async function applyTheme(page, theme) {
+  const applied = await page.evaluate((t) => {
+    const api = window.swPreferences;
+    if (!api || typeof api.applySingle !== 'function') return false;
+    api.applySingle('theme', t);
+    return true;
+  }, theme);
+
+  expect(
+    applied,
+    'window.swPreferences.applySingle is unavailable, so the theme could not be '
+    + 'applied through the app\'s own path. Setting the .dark class directly is NOT '
+    + 'an acceptable fallback here (#2872): it leaves the inline --sw-glass-bg at the '
+    + 'other theme\'s colour and produces false contrast violations.',
+  ).toBe(true);
+
+  // Confirm the class actually landed, so a silently-ignored key cannot let the
+  // scan run against the wrong theme and report a green that means nothing.
+  const isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+  expect(isDark, `theme "${theme}" did not take effect on <html>`).toBe(theme === 'dark');
+}
 
 // ---------------------------------------------------------------------------
 // Helper: format violations for assertion messages.
