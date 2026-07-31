@@ -99,6 +99,13 @@ export async function restorePersistedTheme(page, theme = 'dark') {
 // resulting failure would read as a real contrast defect rather than a broken
 // helper.
 export async function applyTheme(expect, page, theme) {
+  // Reject an unsupported value BEFORE touching the page. preferences.js
+  // silently ignores a key it does not recognise, so a typo ('Dark', 'lite')
+  // would no-op and then fail on the class assertion below with "theme did not
+  // take effect on <html>" -- a message that accuses the APP of a defect when
+  // the caller passed a bad argument. Failing here names the real cause.
+  expect(['dark', 'light'], `unsupported theme "${theme}"`).toContain(theme);
+
   const applied = await page.evaluate((t) => {
     const api = window.swPreferences;
     if (!api || typeof api.applySingle !== 'function') return false;
