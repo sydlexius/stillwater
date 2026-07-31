@@ -187,10 +187,21 @@ test('blast-radius pane passes full-page a11y scan (light theme)', async ({ page
   // short quiet period outlasts the late hydration without depending on a fixed
   // sleep. The assertions after the scan are the backstop if it still loses.
   // Re-apply light until it holds, rather than asserting once.
+  // applySingle, NOT set: `set` PERSISTS the preference to the server, which
+  // leaks light mode into every test that runs after this file. Playwright
+  // orders spec files alphabetically, so blast-radius runs FIRST and the leak
+  // reached cheat-sheet.spec.js and contrast.spec.js -- both of which scan in
+  // dark mode and started failing on light-mode contrast (an amber "warning"
+  // badge at 4.01:1). That reproduced only in CI, where the database contains
+  // nothing but this fixture; a developer machine with a real library renders
+  // different dashboard content and hides it.
+  //
+  // applySingle applies to the DOM without writing to the server, so the theme
+  // change dies with this page.
   const holdLight = (message) => expect.poll(
     async () => page.evaluate(() => {
       if (document.documentElement.classList.contains('dark')) {
-        window.swPreferences.set('theme', 'light');
+        window.swPreferences.applySingle('theme', 'light');
         return false;
       }
       return true;

@@ -229,7 +229,18 @@ async function setField(request, artistId, field, value) {
  * needs.
  */
 export async function seedBlastRadius(request) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-a11y-fixture-'));
+  // DETERMINISTIC path, not mkdtempSync. The library row is keyed by a UNIQUE
+  // name, so a re-run against a server that already carries the fixture has to
+  // reuse that row -- and reuse is only safe if the path still matches. A
+  // random temp dir per invocation guarantees it never does, which made the
+  // 409-reuse branch below unreachable and left it throwing instead. Caught in
+  // review; the idempotency it was added for did not actually work.
+  //
+  // Scoped to the port so two servers on one machine cannot share a fixture
+  // directory and scan each other's artists.
+  const port = process.env.SW_PORT || new URL(BASE_URL).port || 'default';
+  const dir = path.join(os.tmpdir(), `sw-a11y-fixture-${port}`);
+  fs.mkdirSync(dir, { recursive: true });
 
   // --- the scanned artist needs its directory + NFO before the first scan.
   const scannedDir = path.join(dir, SCANNED_ARTIST);

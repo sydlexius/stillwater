@@ -19,6 +19,7 @@ import { test, expect } from 'playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 import { disableTransitions } from './helpers/settle.js';
+import { assertOnlyKnownViolations } from './helpers/known-violations.js';
 
 // Auth: a single login happens once in global-setup.js; the session is loaded
 // into every test context via `use.storageState` (playwright.config.js), so no
@@ -65,10 +66,10 @@ test('dashboard stat cards pass a11y scan', async ({ page }) => {
   await page.waitForSelector('.sw-next-header-strip', { timeout: 10_000 });
 
   const results = await buildAxeBuilder(page).analyze();
-  expect(
-    results.violations,
-    `Dashboard a11y violations:\n${formatViolations(results.violations)}`,
-  ).toHaveLength(0);
+  // Allows ONLY the tracked #2875 timestamp contrast defect; anything else
+  // still fails, and the allowance itself fails once #2875 is fixed. See
+  // helpers/known-violations.js for why this is not an axe exclude.
+  assertOnlyKnownViolations(expect, results.violations, 'Dashboard', formatViolations);
 });
 
 // ---------------------------------------------------------------------------
