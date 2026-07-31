@@ -136,14 +136,42 @@ function waitPastSecondBoundary() {
  * into the fixture, and every write below targets fixture artists by name
  * so that real data is never touched.
  */
+// The library name is UNIQUE in the schema, so re-seeding a server that
+// already carries the fixture gets a 409. That happens whenever the suite is
+// re-run against a persistent server (the normal `make test-a11y` path builds
+// a fresh database each time, but a developer pointing SW_TEST_URL at a live
+// instance would otherwise hit it on the second run).
+const FIXTURE_LIBRARY_NAME = 'a11y blast-radius fixture';
+
 async function ensureLibrary(request, dir) {
   const resp = await apiFetch(request, 'POST', '/api/v1/libraries', {
-    name: 'a11y blast-radius fixture', path: dir, type: 'regular',
+    name: FIXTURE_LIBRARY_NAME, path: dir, type: 'regular',
   });
-  if (!resp.ok()) {
-    throw new Error(`seed: creating fixture library failed: ${resp.status()} ${await resp.text()}`);
+  if (resp.ok()) return (await resp.json()).id;
+
+  // 409 means a previous run already created it. Reuse that row rather than
+  // failing: the seeder must be safe to re-run. Any OTHER status is a real
+  // failure and still throws -- a silent fallback here would let a broken
+  // library configuration seed an empty fixture.
+  if (resp.status() === 409) {
+    const list = await request.fetch(`${BASE_URL}/api/v1/libraries`);
+    if (list.ok()) {
+      const body = await list.json();
+      const libs = Array.isArray(body) ? body : (body.libraries || []);
+      const existing = libs.find(l => l.name === FIXTURE_LIBRARY_NAME);
+      // Only reuse it if it points where this run expects. A stale row aimed at
+      // a deleted temp dir would scan nothing and seed an empty fixture, which
+      // is the failure this whole helper exists to prevent.
+      if (existing && existing.path === dir) return existing.id;
+      if (existing) {
+        throw new Error(
+          `seed: fixture library exists but points at ${existing.path}, not ${dir}. `
+          + 'Delete it (or use a fresh database) before re-seeding.',
+        );
+      }
+    }
   }
-  return (await resp.json()).id;
+  throw new Error(`seed: creating fixture library failed: ${resp.status()} ${await resp.text()}`);
 }
 
 /** runScan triggers a scan and waits for it to finish. */
