@@ -541,3 +541,133 @@ func TestReleaseGroupCacheLogsFetchFailure(t *testing.T) {
 		}
 	}
 }
+
+// Two more real UUIDs so the rival list can be longer than the budget. The
+// budget test below needs THREE distinct rivals, and IsValidMBID is a strict
+// shape check, so a readable placeholder would be skipped for the wrong reason.
+const (
+	mbidGateRival2 = "2c3d4e5f-6071-4b8c-9dae-1f2a3b4c5d6f"
+	mbidGateRival3 = "3d4e5f60-7182-4c9d-8ebf-2a3b4c5d6e70"
+)
+
+// TestTier3RivalBudgetIsNotSpentOnCacheHits pins #2864.
+//
+// tier3RivalCatalogueBudget rations PROVIDER CALLS, not loop iterations. Two
+// rivals whose catalogues are already cached -- the ordinary case, since Tier 2
+// populates the same cache on its fall-through path -- cost nothing to consult.
+// Charging them exhausted the budget after ZERO provider round-trips, so the
+// third rival, the only genuinely unmeasured one, was never looked at and could
+// never contest. That silently narrows contest detection, which is the thing
+// the rival measurement exists to provide.
+//
+// The fixture is built so the THIRD rival is the only one that contests: the
+// two cached rivals carry unrelated catalogues, so reaching them and finding
+// nothing is not what the assertion turns on.
+func TestTier3RivalBudgetIsNotSpentOnCacheHits(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	localTitles := []string{"First Record", "Second Record"}
+	var fetches []string
+	r, _ := newIdentifyTestServer(t, nil,
+		func(_ context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
+			fetches = append(fetches, mbid)
+			if mbid == mbidGateRival3 {
+				// The contesting catalogue: it matches the local albums, so it
+				// clears artist.AlbumOverlapAutoLinkFloor.
+				return []provider.ReleaseGroupInfo{{Title: "First Record"}, {Title: "Second Record"}}, nil
+			}
+			return []provider.ReleaseGroupInfo{{Title: "Unrelated Record"}}, nil
+		},
+	)
+
+	cache := r.newReleaseGroupCache()
+	if cache == nil {
+		t.Fatal("precondition: a nil cache measures no rival at all, so the budget would never be reached")
+	}
+
+	// PRE-WARM the first two rivals, standing in for the Tier 2 fall-through
+	// that already looked at them. These cost no further provider call.
+	for _, mbid := range []string{mbidGateRival, mbidGateRival2} {
+		if _, known := cache.titles(ctx, mbid); !known {
+			t.Fatalf("precondition failed: pre-warming %s did not produce a known entry", mbid)
+		}
+	}
+	// PRECONDITION 1: the two rivals really are cached, so consulting them is
+	// free. Without this the test could pass on a fixture that never warmed.
+	for _, mbid := range []string{mbidGateRival, mbidGateRival2} {
+		if !cache.holds(mbid) {
+			t.Fatalf("precondition failed: %s is not in the cache, so this test does not exercise a cache hit", mbid)
+		}
+	}
+	// PRECONDITION 2: the contesting rival is NOT cached and sits beyond the
+	// naive (iteration-counting) budget. If it were cached, or if there were
+	// fewer preceding rivals than the budget, the buggy code would reach it too
+	// and the test would pass vacuously.
+	if cache.holds(mbidGateRival3) {
+		t.Fatal("precondition failed: the contesting rival is already cached, so no provider call is at stake")
+	}
+	if precedingRivals := 2; precedingRivals < tier3RivalCatalogueBudget {
+		t.Fatalf("precondition failed: %d cached rivals cannot exhaust a budget of %d", precedingRivals, tier3RivalCatalogueBudget)
+	}
+	warmFetches := len(fetches)
+
+	local := artist.AlbumSet{Titles: localTitles, Evidence: artist.EvidenceFound, Origin: "test"}
+	best := &provider.ArtistSearchResult{Name: "Gate Budget", MusicBrainzID: mbidGateRealArtist, Score: 100, Source: string(provider.NameMusicBrainz)}
+	results := []provider.ArtistSearchResult{
+		*best,
+		{Name: "Gate Budget", MusicBrainzID: mbidGateRival, Score: 90, Source: string(provider.NameMusicBrainz)},
+		{Name: "Gate Budget", MusicBrainzID: mbidGateRival2, Score: 85, Source: string(provider.NameMusicBrainz)},
+		{Name: "Gate Budget", MusicBrainzID: mbidGateRival3, Score: 80, Source: string(provider.NameMusicBrainz)},
+	}
+
+	if !r.tier3RivalClearsOverlapFloor(ctx, local, results, best, cache) {
+		t.Errorf("tier3RivalClearsOverlapFloor = false, want true: two cached rivals consumed a budget that rations provider calls, "+
+			"so the only unmeasured rival (%s) was never consulted", mbidGateRival3)
+	}
+	// The measurement, not just the verdict: exactly one NEW provider call was
+	// made, and it was for the third rival.
+	newFetches := fetches[warmFetches:]
+	if len(newFetches) != 1 || newFetches[0] != mbidGateRival3 {
+		t.Errorf("new provider fetches = %v, want exactly [%s]", newFetches, mbidGateRival3)
+	}
+}
+
+// TestReleaseGroupCacheHoldsIsNilSafe pins the reason holds exists as a METHOD
+// rather than a raw cache.entries read at the call site.
+//
+// newReleaseGroupCache returns nil on three paths -- no provider registry, no
+// registered MusicBrainz provider, and a provider not implementing
+// ReleaseGroupFetcher -- and tier3AlbumGateDeclines is nil-safe today only
+// because titles guards its own receiver. A map read from outside would panic
+// the identify run for every operator who has not configured MusicBrainz: a
+// crash introduced by a fix for a non-crashing efficiency bug.
+func TestReleaseGroupCacheHoldsIsNilSafe(t *testing.T) {
+	t.Parallel()
+
+	var nilCache *releaseGroupCache
+	if nilCache.holds(mbidGateRealArtist) {
+		t.Error("nil cache holds() = true, want false")
+	}
+
+	// The other half: on a live cache holds must actually DISCRIMINATE, or the
+	// nil case above would be satisfied by a method that always returns false
+	// and the budget fix would be silently inert.
+	r, _ := testRouter(t)
+	installAudioDBOrchestrator(t, r, nil, func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+		return []provider.ReleaseGroupInfo{{Title: "First Record"}}, nil
+	})
+	cache := r.newReleaseGroupCache()
+	if cache == nil {
+		t.Fatal("precondition: a nil cache here would make the discrimination check vacuous")
+	}
+	if cache.holds(mbidGateRealArtist) {
+		t.Error("holds() = true before any lookup, want false")
+	}
+	if _, known := cache.titles(context.Background(), mbidGateRealArtist); !known {
+		t.Fatal("precondition failed: the seeding lookup was not a determination")
+	}
+	if !cache.holds(mbidGateRealArtist) {
+		t.Error("holds() = false after a successful lookup, want true")
+	}
+}

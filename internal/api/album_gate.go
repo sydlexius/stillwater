@@ -69,6 +69,23 @@ func (r *Router) newReleaseGroupCache() *releaseGroupCache {
 	return &releaseGroupCache{fetcher: fetcher, logger: r.logger, entries: make(map[string]releaseGroupEntry)}
 }
 
+// holds reports whether this MBID has already been looked up, so a caller
+// rationing PROVIDER CALLS can tell a free cache hit from one that costs a
+// round-trip.
+//
+// It is a method rather than a raw c.entries read at the call site precisely
+// because the receiver can be nil: newReleaseGroupCache returns nil on an
+// install with no MusicBrainz provider, and every other access to the map is
+// already behind a nil guard. Reading the map from outside would turn a
+// no-MusicBrainz install's identify run into a panic.
+func (c *releaseGroupCache) holds(mbid string) bool {
+	if c == nil {
+		return false
+	}
+	_, ok := c.entries[mbid]
+	return ok
+}
+
 // titles returns the candidate's release-group titles and whether the lookup
 // was a determination at all. A nil receiver, an empty MBID, or a fetch error
 // all report known=false.
@@ -232,10 +249,19 @@ func (r *Router) tier3RivalClearsOverlapFloor(ctx context.Context, local artist.
 			continue
 		}
 
-		// The cache dedupes, so a candidate Tier 2 already looked at on the
-		// fall-through path is free and does not consume the budget twice.
+		// The budget rations PROVIDER CALLS, so only a lookup that actually
+		// makes one is charged for. A candidate Tier 2 already looked at on the
+		// fall-through path is served from the cache at no cost, and charging
+		// for it would let two free hits exhaust the budget before a single
+		// genuinely unmeasured rival had been consulted -- the same argument
+		// the malformed-ID skip above already makes.
+		//
+		// holds must be asked BEFORE titles, which populates the entry.
+		cachedAlready := cache.holds(res.MusicBrainzID)
 		remote, known := cache.titles(ctx, res.MusicBrainzID)
-		fetched++
+		if !cachedAlready {
+			fetched++
+		}
 		if !known {
 			r.logger.Info("identify: Tier 3 rival catalogue could not be retrieved, treating the best candidate as contested",
 				"rival_mbid", res.MusicBrainzID)
