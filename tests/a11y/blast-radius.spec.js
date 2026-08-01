@@ -14,12 +14,21 @@
 //      the highest-risk keyboard surface on this pane.
 //   3. Keyboard reachability + VISIBLE focus indicator for the pager.
 //
-// SCOPED TO WHAT THIS INCREMENT SHIPS. The pane's filter controls and its
-// ContextHelp "?" affordance arrive with the filters/copy increment, so their
-// coverage -- reachability across all three control groups, and a test that
-// ContextHelp genuinely TOGGLES rather than merely rendering -- lives on that
-// side. Nothing here is a trimmed-down placeholder: each test below covers a
-// surface this branch actually renders.
+// SCOPED TO WHAT THIS INCREMENT SHIPS. The pane's filter controls arrive with
+// the filters increment, so their coverage lives on that side. Nothing here is
+// a trimmed-down placeholder: each test below covers a surface this branch
+// actually renders.
+//
+// The ContextHelp "?" affordance on the pane title IS rendered on this branch
+// (added after the maintainer's UAT flagged that a destructive-recovery pane
+// had no in-app route to its documentation). The full-page axe scans below
+// therefore cover it, since they are not scoped to a subtree. Its structural
+// contract -- present, accessible name, real <button>, handlers defined on the
+// page, correct docs anchor -- is asserted server-side by
+// TestBlastRadiusPane_CarriesContextHelpToTheDocs in internal/api. What is
+// NOT yet covered anywhere is a browser test that the popover genuinely
+// TOGGLES on click and dismisses on Escape; that belongs here and is
+// outstanding.
 //
 // Auth: the single login from global-setup.js, loaded into every context via
 // `use.storageState` in playwright.config.js. No credential ever appears in

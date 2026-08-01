@@ -1753,6 +1753,7 @@
   "reports.blast_radius.desc": "Values an automated writer blanked or overwrote, with per-row restore",
   "reports.blast_radius.empty": "Nothing recorded. No tracked field has been blanked or overwritten by an automated writer.",
   "reports.blast_radius.empty_filtered": "No rows match the current filter. The report still records %d change(s) overall -- clear the filter to see them.",
+  "reports.blast_radius.help": "Restoring a value is always two steps, and a preview is not a promise: Stillwater re-reads each value before writing it and refuses any row that changed in between. Refused rows stay in the table.",
   "reports.blast_radius.js.confirm_accept": "Restore",
   "reports.blast_radius.js.confirm_title": "Restore this value?",
   "reports.blast_radius.js.confirm_title_bulk": "Restore selected values?",

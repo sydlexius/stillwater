@@ -637,10 +637,29 @@ func blastRadiusRowAttributionLabel(ctx context.Context, attribution string) str
 templ repPaneBlastRadius(data BlastRadiusData) {
 	<div class="sw-rep-pane-header">
 		<div class="sw-rep-pane-title-block">
-			<p class="sw-rep-pane-title">{ t(ctx, "reports.blast_radius.label") }</p>
+			<!-- Context help sits on the TITLE of this pane specifically because
+			     this is a destructive-recovery surface. The rules an operator
+			     needs at the moment a restore is refused (that a preview is
+			     not a promise, why a row can be refused, that refused rows stay
+			     in the table) live in the docs, and an operator staring at a
+			     refusal should not have to go search a docs site for them. The
+			     anchor is validated by TestContextHelpAnchors against
+			     web/components/_doc-anchors.txt, so a docs heading rename
+			     fails CI rather than shipping a 404 "Read more".
+			     Scope: blast radius only (#2750 UAT). The other report panes
+			     deliberately do not carry one yet. -->
+			<p class="sw-rep-pane-title">
+				{ t(ctx, "reports.blast_radius.label") }
+				@components.ContextHelp("help-blast-radius", t(ctx, "reports.blast_radius.label"), t(ctx, "reports.blast_radius.help"), "how-to/view-reports#blast-radius")
+			</p>
 			<p class="sw-rep-pane-desc">{ t(ctx, "reports.blast_radius.desc") }</p>
 		</div>
 	</div>
+	<!-- Mounts swContextHelpToggle/swContextHelpClose for the "?" icon above.
+	     Layout does not mount them globally, and this pane is the only reports
+	     pane that renders a ContextHelp, so the script belongs here rather
+	     than on ReportsPage. The component self-guards re-injection. -->
+	@components.ContextHelpScript()
 	<!-- Attribution + coverage caveat band. Both counts are always shown side
 	     by side (never just the automated headline), and the field lists are
 	     rendered from data.CoveredFields/UncoveredFields, which the loader
