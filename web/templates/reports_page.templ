@@ -605,16 +605,28 @@ func blastRadiusRowAttributionLabel(ctx context.Context, attribution string) str
 // (issue #2750): which fields an automated writer blanked or overwrote, and
 // per-row restore. Modeled on repPaneCompliance.
 //
-// Deliberately NO bulk selection. An earlier cut emitted .bulk-select
-// checkboxes, a select-all and a #bulk-action-bar whose handlers
-// (toggleSelectAll/updateBulkBar/clearBulkSelection) are defined only inside
-// repComplianceScript. The pane dispatch is an else-if chain, so on this pane
-// that script never renders and every one of those handlers was an undefined
-// function: ticking a box threw ReferenceError, the bar never unhid, and the
-// "Preview Restore" it contained was unreachable. Shipping an affordance that
-// silently does nothing is worse than not shipping it, so it is gone until the
-// shared script that makes it work lands with it. Per-row Restore is the
-// pane's recovery mechanism and works today.
+// Bulk selection is OWNED BY THIS PANE, not shared with compliance. An earlier
+// cut emitted .bulk-select checkboxes, a select-all and a #bulk-action-bar whose
+// handlers (toggleSelectAll/updateBulkBar/clearBulkSelection) are defined only
+// inside repComplianceScript. The pane dispatch is an else-if chain, so on this
+// pane that script never renders and every one of those handlers was an
+// undefined function: ticking a box threw ReferenceError and the bar never
+// unhid. The markup was removed rather than ship an inert control.
+//
+// The fix is NOT to hoist those three functions into a shared partial. Hoisting
+// would give the selection logic TWO render surfaces to keep correct, and its
+// selectors (.bulk-select, #select-all, #bulk-action-bar) are document-wide, so
+// the two panes would cross-select the moment anything rendered both. Instead
+// this pane carries its own blast-prefixed handlers in blastRadiusScript --
+// the SAME partial that already ships blastRestoreRow, and which
+// repPaneBlastRadius already renders unconditionally. Every handler referenced
+// by this pane's markup is defined in a script this pane emits; the
+// wiring test in internal/api asserts exactly that, so the ReferenceError
+// defect cannot come back unnoticed.
+//
+// Selection markup uses .blast-select / #blast-select-all / #blast-bulk-bar --
+// names disjoint from the compliance ones, so neither pane can reach the
+// other's controls even if both were ever rendered together.
 //
 // The unknown-attribution count is always rendered next to the automated
 // count (never hidden by a filter -- BlastRadiusCounts is computed without
@@ -625,10 +637,29 @@ func blastRadiusRowAttributionLabel(ctx context.Context, attribution string) str
 templ repPaneBlastRadius(data BlastRadiusData) {
 	<div class="sw-rep-pane-header">
 		<div class="sw-rep-pane-title-block">
-			<p class="sw-rep-pane-title">{ t(ctx, "reports.blast_radius.label") }</p>
+			<!-- Context help sits on the TITLE of this pane specifically because
+			     this is a destructive-recovery surface. The rules an operator
+			     needs at the moment a restore is refused (that a preview is
+			     not a promise, why a row can be refused, that refused rows stay
+			     in the table) live in the docs, and an operator staring at a
+			     refusal should not have to go search a docs site for them. The
+			     anchor is validated by TestContextHelpAnchors against
+			     web/components/_doc-anchors.txt, so a docs heading rename
+			     fails CI rather than shipping a 404 "Read more".
+			     Scope: blast radius only (#2750 UAT). The other report panes
+			     deliberately do not carry one yet. -->
+			<p class="sw-rep-pane-title">
+				{ t(ctx, "reports.blast_radius.label") }
+				@components.ContextHelp("help-blast-radius", t(ctx, "reports.blast_radius.label"), t(ctx, "reports.blast_radius.help"), "how-to/view-reports#putting-a-value-back")
+			</p>
 			<p class="sw-rep-pane-desc">{ t(ctx, "reports.blast_radius.desc") }</p>
 		</div>
 	</div>
+	<!-- Mounts swContextHelpToggle/swContextHelpClose for the "?" icon above.
+	     Layout does not mount them globally, and this pane is the only reports
+	     pane that renders a ContextHelp, so the script belongs here rather
+	     than on ReportsPage. The component self-guards re-injection. -->
+	@components.ContextHelpScript()
 	<!-- Attribution + coverage caveat band. Both counts are always shown side
 	     by side (never just the automated headline), and the field lists are
 	     rendered from data.CoveredFields/UncoveredFields, which the loader
@@ -652,6 +683,22 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		<table id="blast-radius-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 			<thead class="bg-gray-50 dark:bg-gray-800">
 				<tr>
+					<th scope="col" class="px-4 py-3 text-center w-10">
+						<!-- Select-all covers ONLY the rows currently rendered. The pane
+						     is server-paged, so there is no honest way to select rows this
+						     page never fetched, and a control implying otherwise would
+						     misreport the size of a destructive operation. The accessible
+						     name sits on the input; the visible column header is the
+						     sr-only span beside it. -->
+						<input
+							type="checkbox"
+							id="blast-select-all"
+							onchange="blastToggleSelectAll(this)"
+							class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+							aria-label={ t(ctx, "reports.blast_radius.select_all_rows") }
+						/>
+						<span class="sr-only">{ t(ctx, "reports.blast_radius.select_column") }</span>
+					</th>
 					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.column_artist") }</th>
 					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_field") }</th>
 					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_change") }</th>
@@ -664,7 +711,7 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 			<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
 				if len(data.Rows) == 0 {
 					<tr>
-						<td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+						<td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 							// Two DIFFERENT statements, because only one of them is ever
 							// true. "Nothing recorded" is a claim about the whole library
 							// and is false the moment a filter is narrowing the view: an
@@ -690,6 +737,55 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		</table>
 	</div>
 	@blastRadiusPagination(data)
+	<!-- Bulk action bar. Rendered hidden and revealed by blastUpdateBulkBar
+	     once at least one row is selected.
+
+	     The live region is #blast-bulk-count ALONE, not this wrapper.
+	     role="status" implies aria-atomic="true", so putting it on the bar
+	     re-announced the bar's ENTIRE subtree on every selection change:
+	     "3 rows selectedRestore Selected Cancel". Ticking 20 rows meant 20
+	     announcements each ending in the button labels. Scoped to the count,
+	     the reveal still ANNOUNCES itself (a keyboard or screen-reader user
+	     who ticks a checkbox otherwise gets no signal that a new destructive
+	     control appeared below the table) and each change announces only the
+	     number that changed. The script sets the count only AFTER unhiding,
+	     because a live region mutated while display:none announces nothing.
+
+	     The bar is in normal document order after the table, so it is
+	     reachable by Tab and escapable by Tab (not a focus trap), and
+	     deliberately does not move focus on reveal, which would yank a user
+	     out of the row list mid-selection. It DOES move focus out on hide;
+	     see blastUpdateBulkBar. -->
+	<div
+		id="blast-bulk-bar"
+		class="hidden fixed bottom-0 left-0 right-0 z-30 bg-gray-900 dark:bg-gray-800 border-t border-gray-700 px-6 py-3"
+	>
+		<div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
+			<span
+				id="blast-bulk-count"
+				role="status"
+				aria-live="polite"
+				class="text-sm text-white"
+				data-one-text={ t(ctx, "reports.blast_radius.one_selected") }
+				data-many-template={ t(ctx, "reports.blast_radius.n_selected") }
+			></span>
+			<div class="flex items-center gap-3">
+				<!-- Preview, never commit. This button issues the commit:false dry
+				     run; the confirm dialog it opens is the second affirmative
+				     action that commits. Same two-step blastRestoreRow uses. -->
+				<button
+					type="button"
+					onclick="blastRestoreSelected()"
+					class="inline-flex items-center gap-1.5 rounded-md border border-white/25 px-3 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors"
+				>{ t(ctx, "reports.blast_radius.restore_selected") }</button>
+				<button
+					type="button"
+					onclick="blastClearSelection()"
+					class="inline-flex items-center rounded-md bg-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-600"
+				>{ t(ctx, "common.cancel") }</button>
+			</div>
+		</div>
+	</div>
 	<!-- i18n strings for blastRadiusScript. JS has no access to the request
 	     translator, so every user-facing string the script renders (toasts,
 	     confirm-dialog copy, plan summaries) is passed through this hidden
@@ -703,8 +799,13 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		data-plan-summary={ t(ctx, "reports.blast_radius.js.plan_summary") }
 		data-plan-refused={ t(ctx, "reports.blast_radius.js.plan_refused") }
 		data-restored-count={ t(ctx, "reports.blast_radius.js.restored_count") }
+		data-restore-partial={ t(ctx, "reports.blast_radius.js.restore_partial") }
+		data-restore-none={ t(ctx, "reports.blast_radius.js.restore_none") }
+		data-restore-nothing={ t(ctx, "reports.blast_radius.js.restore_nothing") }
+		data-restore-unchanged={ t(ctx, "reports.blast_radius.js.restore_unchanged") }
 		data-confirm-title={ t(ctx, "reports.blast_radius.js.confirm_title") }
 		data-confirm-accept={ t(ctx, "reports.blast_radius.js.confirm_accept") }
+		data-confirm-title-bulk={ t(ctx, "reports.blast_radius.js.confirm_title_bulk") }
 	></div>
 	@blastRadiusScript()
 }
@@ -715,6 +816,19 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 // per-row restore action.
 templ blastRadiusRow(row artist.BlastRadiusRow) {
 	<tr id={ "blast-row-" + row.ID } class="hover:bg-gray-50 dark:hover:bg-gray-800">
+		<td class="px-4 py-3 text-center">
+			<!-- value is the metadata_changes id, which is exactly what the
+			     restore endpoint takes as change_ids. The per-row name repeats
+			     the artist and field so a screen-reader user hears WHICH value
+			     they are selecting rather than "checkbox" seven times. -->
+			<input
+				type="checkbox"
+				class="blast-select rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+				value={ row.ID }
+				onchange="blastUpdateBulkBar()"
+				aria-label={ tf(ctx, "reports.blast_radius.select_row", row.ArtistName, historyFieldLabel(ctx, row.Field)) }
+			/>
+		</td>
 		<td class="px-4 py-3 text-sm">{ row.ArtistName }</td>
 		<td class="px-4 py-3 text-sm">{ historyFieldLabel(ctx, row.Field) }</td>
 		<td class="px-4 py-3 text-sm">
@@ -935,6 +1049,50 @@ templ blastRadiusScript() {
 			return msg;
 		}
 
+		// blastRestoreOutcomeToast reports a COMMITTED restore truthfully.
+		//
+		// commitBlastRestore re-reads the live value immediately before each
+		// write, so the server can refuse at commit time an item the plan
+		// listed as eligible (a scan, rule pass, or operator edit can land
+		// between preview and commit). {restored:0, refused:N} is therefore a
+		// designed-for response, not a hypothetical -- and reporting it with
+		// the success toast put a GREEN banner reading "0 value(s) restored."
+		// in front of an operator whose data was NOT recovered. On a recovery
+		// surface that is the worst possible misreport.
+		//
+		// So the toast VARIANT is chosen from the counts, not assumed:
+		//   restored === 0            -> error toast (nothing was recovered)
+		//   restored > 0 && refused>0 -> warning toast naming BOTH numbers
+		//   otherwise                 -> the success toast
+		function blastRestoreOutcomeToast(result) {
+			var i18n = blastRestoreI18n();
+			var restored = result.restored || 0;
+			var refused = result.refused || 0;
+			var unchanged = result.unchanged || 0;
+			if (restored === 0) {
+				// Nothing landed. Say WHY where the server told us: refusals
+				// first (the actionable case -- the rows are still damaged),
+				// then the benign "already held that value" case.
+				if (refused > 0) {
+					showToast((i18n.restoreNone || 'Nothing was restored. {refused} value(s) were refused.').replace('{refused}', refused));
+				} else if (unchanged > 0) {
+					showToast((i18n.restoreUnchanged || 'Nothing was restored. {unchanged} value(s) already held the value being put back.').replace('{unchanged}', unchanged));
+				} else {
+					showToast(i18n.restoreNothing || 'Nothing was restored.');
+				}
+				return;
+			}
+			if (refused > 0) {
+				// Partial success. Both numbers, in a warning variant: an
+				// operator who reads only the color must not read this as a
+				// clean recovery.
+				showWarningToast((i18n.restorePartial || '{count} value(s) restored, {refused} refused.')
+					.replace('{count}', restored).replace('{refused}', refused));
+				return;
+			}
+			showSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', restored));
+		}
+
 		// blastRestoreRow previews a single row, then commits on confirmation.
 		function blastRestoreRow(id) {
 			var i18n = blastRestoreI18n();
@@ -945,14 +1103,173 @@ templ blastRadiusScript() {
 				}
 				window.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {
 					blastRestoreRequest([id], true, function(result) {
-						showSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));
-						var row = document.getElementById('blast-row-' + id);
-						if (row) row.remove();
+						blastRestoreOutcomeToast(result);
+						// Drop the row ONLY when the server says this item was
+						// actually restored. Removing it unconditionally hid a
+						// REFUSED restore: the row is still damaged and still
+						// needs the operator, but it vanished from the table
+						// until reload. Same guard the bulk path uses.
+						// Match on change_id rather than position. items[0]
+						// assumed the server returns exactly one item, in
+						// request order, for a single-id request; keying on the
+						// id makes no such assumption and reads identically to
+						// the bulk path below.
+						(result.items || []).forEach(function(item) {
+							if (item.change_id !== id || item.restore_status !== 'restored') return;
+							var row = document.getElementById('blast-row-' + id);
+							if (row) row.remove();
+						});
+						// The removed row may have been ticked, so the bar's count is now
+						// stale. Re-derive it from the DOM rather than leave a number that
+						// overstates what a bulk restore would touch.
+						blastUpdateBulkBar();
 					});
 				}, { title: i18n.confirmTitle || 'Restore value?', acceptText: i18n.confirmAccept || 'Restore' });
 			});
 		}
 
+		// ---- Bulk selection -------------------------------------------------
+		//
+		// These handlers are PANE-LOCAL on purpose. The compliance pane has its
+		// own toggleSelectAll/updateBulkBar/clearBulkSelection in
+		// repComplianceScript, and the pane dispatch is an else-if chain, so at
+		// most one of the two scripts is ever on the page. Sharing one
+		// implementation would mean a second render surface to keep correct and
+		// two panes contending for the same document-wide selectors. The names
+		// here (.blast-select, #blast-select-all, #blast-bulk-bar) are disjoint
+		// from the compliance ones so neither pane can reach the other's rows.
+
+		// blastSelectedIDs returns the change ids of the ticked rows in DOM
+		// order, so a preview lists them the way the table does.
+		function blastSelectedIDs() {
+			var ids = [];
+			document.querySelectorAll('.blast-select:checked').forEach(function(cb) { ids.push(cb.value); });
+			return ids;
+		}
+
+		// blastToggleSelectAll ticks/unticks every row CURRENTLY RENDERED. The
+		// pane is server-paged, so this deliberately cannot reach rows on other
+		// pages; see the header comment on the control.
+		function blastToggleSelectAll(master) {
+			document.querySelectorAll('.blast-select').forEach(function(cb) { cb.checked = master.checked; });
+			blastUpdateBulkBar();
+		}
+
+		// blastUpdateBulkBar reveals the bar once at least one row is selected
+		// and reports HOW MANY, so the operator sees the size of the write they
+		// are about to preview.
+		//
+		// Ordering matters in BOTH directions.
+		//
+		// On REVEAL: #blast-bulk-count is an aria-live region, and a mutation
+		// made while it is display:none is not announced. The bar is unhidden
+		// BEFORE the count text is written, so the reveal produces an
+		// announcement rather than a silent appearance.
+		//
+		// On HIDE: focus is moved out of the bar BEFORE it is hidden. Hiding
+		// the element that currently holds focus resets focus to <body>, which
+		// strands a keyboard user at the top of the document right after a
+		// destructive operation. See the n === 0 branch.
+		function blastUpdateBulkBar() {
+			var bar = document.getElementById('blast-bulk-bar');
+			var count = document.getElementById('blast-bulk-count');
+			if (!bar) {
+				// Loud, not silent: a missing bar means the affordance is inert,
+				// which is the exact defect that got the earlier cut removed.
+				console.error('blast-radius: #blast-bulk-bar is missing, bulk selection cannot be shown');
+				return;
+			}
+			var boxes = document.querySelectorAll('.blast-select');
+			var n = document.querySelectorAll('.blast-select:checked').length;
+			var master = document.getElementById('blast-select-all');
+			if (master) {
+				master.checked = boxes.length > 0 && n === boxes.length;
+				// A partial selection is neither checked nor unchecked, and
+				// saying so is what stops "select all" reading as already done.
+				master.indeterminate = n > 0 && n < boxes.length;
+			}
+			if (n === 0) {
+				// Move focus OUT before hiding. .hidden is display:none, and a
+				// browser blurs a focused element that becomes display:none --
+				// focus resets to <body>. Both paths that reach here on a
+				// keyboard (Cancel, and blastClearSelection after a commit)
+				// have focus INSIDE this bar at that moment: the shared modal's
+				// hideModal restores focus to the opener, which is the "Restore
+				// Selected" button in this bar, and only then does the callback
+				// hide it. Without this, a keyboard user who just committed a
+				// destructive operation is dumped at the top of the document.
+				// #blast-select-all is the nearest stable control that owns the
+				// selection this bar was reporting on.
+				if (bar.contains(document.activeElement)) {
+					var refocus = document.getElementById('blast-select-all');
+					if (refocus) {
+						refocus.focus();
+					} else {
+						// Loud, not silent: with no select-all to catch it,
+						// focus is about to fall to <body> and we cannot stop
+						// it. Say so rather than leave a silent a11y defect.
+						console.error('blast-radius: #blast-select-all is missing, focus will be lost when the bulk bar hides');
+					}
+				}
+				bar.classList.add('hidden');
+				if (count) count.textContent = '';
+				return;
+			}
+			bar.classList.remove('hidden');
+			if (count) {
+				count.textContent = n === 1
+					? (count.dataset.oneText || '1 selected')
+					: (count.dataset.manyTemplate || '{count} selected').replace('{count}', String(n));
+			}
+		}
+
+		// blastClearSelection unticks everything and hides the bar. Used by the
+		// bar's own Cancel and after a committed restore.
+		function blastClearSelection() {
+			document.querySelectorAll('.blast-select').forEach(function(cb) { cb.checked = false; });
+			var master = document.getElementById('blast-select-all');
+			if (master) {
+				master.checked = false;
+				master.indeterminate = false;
+			}
+			blastUpdateBulkBar();
+		}
+
+		// blastRestoreSelected is the bulk mirror of blastRestoreRow: DRY RUN
+		// first (commit:false writes nothing), show the plan, and commit only on
+		// an explicit second affirmative action in the confirm dialog. The first
+		// click can never write.
+		function blastRestoreSelected() {
+			var ids = blastSelectedIDs();
+			if (!ids.length) return;
+			var i18n = blastRestoreI18n();
+			blastRestoreRequest(ids, false, function(plan) {
+				// A plan with nothing eligible is reported and stops here rather
+				// than opening a dialog whose only honest action is Cancel.
+				if (plan.eligible === 0) {
+					showToast(blastRestorePlanSummary(plan));
+					return;
+				}
+				window.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {
+					blastRestoreRequest(ids, true, function(result) {
+						blastRestoreOutcomeToast(result);
+						// Drop ONLY the rows the server reports as actually
+						// restored. Removing every requested row would hide the
+						// refusals -- rows still damaged and still needing the
+						// operator's attention.
+						(result.items || []).forEach(function(item) {
+							if (item.restore_status !== 'restored') return;
+							var row = document.getElementById('blast-row-' + item.change_id);
+							if (row) row.remove();
+						});
+						blastClearSelection();
+					});
+				}, {
+					title: i18n.confirmTitleBulk || 'Restore selected values?',
+					acceptText: i18n.confirmAccept || 'Restore'
+				});
+			});
+		}
 	</script>
 }
 
