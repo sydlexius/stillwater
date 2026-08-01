@@ -541,3 +541,131 @@ test('pager is Tab-reachable with a visible focus ring', async ({ page }) => {
     description: JSON.stringify({ baseline, focused: found, verdict: indicators }, null, 2),
   });
 });
+
+// ---------------------------------------------------------------------------
+// 4. Focus survives the bulk bar being hidden.
+//
+// The bulk action bar is hidden with the .hidden utility, which is
+// display:none. A browser blurs a focused element that becomes display:none,
+// and focus falls all the way back to <body> -- a keyboard user is silently
+// dumped at the top of the document.
+//
+// Two paths hide the bar with focus inside it: the bar's own Cancel button
+// (exercised here) and blastClearSelection() after a committed restore. The
+// commit path is NOT exercised, because this spec never confirms a restore
+// (see the destructive-flow policy at the top of this file); it runs the same
+// blastUpdateBulkBar n === 0 branch, so the guard under test is identical.
+//
+// THIS TEST CANNOT BE WRITTEN AT ANY LOWER TIER. Measured during the review
+// that found the defect:
+//   - jsdom reported focus STAYING on the hidden button. jsdom does not blur
+//     on hide, so the defect is invisible there and a green jsdom test would
+//     be an active lie.
+//   - A real browser WITHOUT the built stylesheet also reported the wrong
+//     answer, because .hidden carries no display rule until styles.css loads,
+//     so the element never actually became display:none.
+// Only a real engine plus the real served stylesheet reproduces it, which is
+// exactly what this tier provides. The precondition below asserts the
+// stylesheet is genuinely in force rather than assuming it.
+// ---------------------------------------------------------------------------
+
+test('hiding the bulk action bar does not drop focus to the document body', async ({ page }) => {
+  await gotoPane(page);
+
+  const checkboxes = page.locator('.blast-select');
+  const n = await checkboxes.count();
+  if (n === 0) {
+    // A DATA condition, not a pass. Same reasoning as the dialog test above.
+    throw new Error(
+      'no blast-radius rows on this server, so the bulk selection bar could not be revealed. '
+      + 'This surface is UNVERIFIED -- seed at least one tracked automated field change before trusting a green run.',
+    );
+  }
+
+  const bar = page.locator('#blast-bulk-bar');
+  await expect(bar).toHaveCount(1);
+
+  // PRECONDITION 1: the real stylesheet is in force, i.e. .hidden actually
+  // computes to display:none. Without this the whole test is vacuous -- the
+  // element would stay visible and focusable, and the guard would never be
+  // needed. This is the exact check that a stylesheet-less browser run failed.
+  const hiddenIsDisplayNone = await page.evaluate(() => {
+    const el = document.getElementById('blast-bulk-bar');
+    return el ? getComputedStyle(el).display : null;
+  });
+  expect(
+    hiddenIsDisplayNone,
+    'the bulk bar starts hidden but .hidden does not compute to display:none, so the built stylesheet is not in force '
+    + 'and this test would pass vacuously (a browser run without styles.css gives exactly this wrong answer)',
+  ).toBe('none');
+
+  // Select a row via the KEYBOARD so the whole flow is the one a keyboard user
+  // takes. Reveal the bar.
+  const firstBox = checkboxes.first();
+  await firstBox.focus();
+  await page.keyboard.press('Space');
+  await page.waitForSelector('#blast-bulk-bar:not(.hidden)', { timeout: 10_000 });
+
+  // PRECONDITION 2: the bar is genuinely visible now, so hiding it is a real
+  // state change.
+  await expect(bar).toBeVisible();
+
+  // Move focus INTO the bar, onto the Cancel button, and confirm it is there.
+  // This reproduces the state the shared modal's hideModal leaves behind on the
+  // commit path, where focus is restored to the opener -- also inside the bar.
+  // Located by its HANDLER, not its label: the label is translated, so a
+  // text match would make this a11y test fail under a non-English locale for
+  // a reason that has nothing to do with focus.
+  const cancelBtn = bar.locator('button[onclick="blastClearSelection()"]');
+  await expect(cancelBtn).toHaveCount(1);
+  await cancelBtn.focus();
+  await expect(cancelBtn).toBeFocused();
+
+  // PRECONDITION 3: focus really is inside the bar, which is what makes the
+  // hide destructive to focus. Asserting it rules out a green result produced
+  // by focus having been somewhere harmless all along.
+  const focusWasInBar = await page.evaluate(() => {
+    const el = document.getElementById('blast-bulk-bar');
+    return !!(el && el.contains(document.activeElement));
+  });
+  expect(focusWasInBar, 'focus was not inside the bulk bar before hiding it, so this test would not exercise the defect').toBe(true);
+
+  // The action under test: Cancel clears the selection, which hides the bar.
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#blast-bulk-bar.hidden', { timeout: 10_000 });
+
+  const after = await page.evaluate(() => {
+    const el = document.getElementById('blast-bulk-bar');
+    return {
+      activeTag: document.activeElement ? document.activeElement.tagName : null,
+      activeId: document.activeElement ? document.activeElement.id : null,
+      activeIsBody: document.activeElement === document.body,
+      barDisplay: el ? getComputedStyle(el).display : null,
+    };
+  });
+
+  // The bar really did hide. If it did not, the focus reading below says
+  // nothing about the defect.
+  expect(after.barDisplay, 'the bulk bar did not become display:none, so focus was never at risk in this run').toBe('none');
+
+  // THE ASSERTION. Before the fix this measured
+  // {activeIsBody: true, activeTag: "BODY"}.
+  expect(
+    after.activeIsBody,
+    `focus fell to <body> when the bulk action bar was hidden (measured: ${JSON.stringify(after)}). `
+    + 'A keyboard user is stranded at the top of the document immediately after a destructive operation. '
+    + 'blastUpdateBulkBar must move focus out of the bar BEFORE adding .hidden.',
+  ).toBe(false);
+
+  // And it landed somewhere USEFUL, not merely somewhere. #blast-select-all is
+  // the control that owns the selection the bar was reporting on.
+  expect(
+    after.activeId,
+    `focus survived the hide but did not land on the select-all control (measured: ${JSON.stringify(after)})`,
+  ).toBe('blast-select-all');
+
+  test.info().annotations.push({
+    type: 'focus-after-bulk-bar-hide',
+    description: JSON.stringify(after, null, 2),
+  });
+});

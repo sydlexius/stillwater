@@ -719,26 +719,33 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 	</div>
 	@blastRadiusPagination(data)
 	<!-- Bulk action bar. Rendered hidden and revealed by blastUpdateBulkBar
-	     once at least one row is selected. It is a role="status"
-	     aria-live="polite" region so the reveal ANNOUNCES itself: a keyboard
-	     or screen-reader user who ticks a checkbox otherwise gets no signal
-	     that a new destructive control just appeared below the table. The
-	     script sets the count only AFTER unhiding, because a live region
-	     mutated while display:none announces nothing.
+	     once at least one row is selected.
+
+	     The live region is #blast-bulk-count ALONE, not this wrapper.
+	     role="status" implies aria-atomic="true", so putting it on the bar
+	     re-announced the bar's ENTIRE subtree on every selection change:
+	     "3 rows selectedRestore Selected Cancel". Ticking 20 rows meant 20
+	     announcements each ending in the button labels. Scoped to the count,
+	     the reveal still ANNOUNCES itself (a keyboard or screen-reader user
+	     who ticks a checkbox otherwise gets no signal that a new destructive
+	     control appeared below the table) and each change announces only the
+	     number that changed. The script sets the count only AFTER unhiding,
+	     because a live region mutated while display:none announces nothing.
 
 	     The bar is in normal document order after the table, so it is
 	     reachable by Tab and escapable by Tab (not a focus trap), and
 	     deliberately does not move focus on reveal, which would yank a user
-	     out of the row list mid-selection. -->
+	     out of the row list mid-selection. It DOES move focus out on hide;
+	     see blastUpdateBulkBar. -->
 	<div
 		id="blast-bulk-bar"
-		role="status"
-		aria-live="polite"
 		class="hidden fixed bottom-0 left-0 right-0 z-30 bg-gray-900 dark:bg-gray-800 border-t border-gray-700 px-6 py-3"
 	>
 		<div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
 			<span
 				id="blast-bulk-count"
+				role="status"
+				aria-live="polite"
 				class="text-sm text-white"
 				data-one-text={ t(ctx, "reports.blast_radius.one_selected") }
 				data-many-template={ t(ctx, "reports.blast_radius.n_selected") }
@@ -773,6 +780,10 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		data-plan-summary={ t(ctx, "reports.blast_radius.js.plan_summary") }
 		data-plan-refused={ t(ctx, "reports.blast_radius.js.plan_refused") }
 		data-restored-count={ t(ctx, "reports.blast_radius.js.restored_count") }
+		data-restore-partial={ t(ctx, "reports.blast_radius.js.restore_partial") }
+		data-restore-none={ t(ctx, "reports.blast_radius.js.restore_none") }
+		data-restore-nothing={ t(ctx, "reports.blast_radius.js.restore_nothing") }
+		data-restore-unchanged={ t(ctx, "reports.blast_radius.js.restore_unchanged") }
 		data-confirm-title={ t(ctx, "reports.blast_radius.js.confirm_title") }
 		data-confirm-accept={ t(ctx, "reports.blast_radius.js.confirm_accept") }
 		data-confirm-title-bulk={ t(ctx, "reports.blast_radius.js.confirm_title_bulk") }
@@ -1019,6 +1030,50 @@ templ blastRadiusScript() {
 			return msg;
 		}
 
+		// blastRestoreOutcomeToast reports a COMMITTED restore truthfully.
+		//
+		// commitBlastRestore re-reads the live value immediately before each
+		// write, so the server can refuse at commit time an item the plan
+		// listed as eligible (a scan, rule pass, or operator edit can land
+		// between preview and commit). {restored:0, refused:N} is therefore a
+		// designed-for response, not a hypothetical -- and reporting it with
+		// the success toast put a GREEN banner reading "0 value(s) restored."
+		// in front of an operator whose data was NOT recovered. On a recovery
+		// surface that is the worst possible misreport.
+		//
+		// So the toast VARIANT is chosen from the counts, not assumed:
+		//   restored === 0            -> error toast (nothing was recovered)
+		//   restored > 0 && refused>0 -> warning toast naming BOTH numbers
+		//   otherwise                 -> the success toast
+		function blastRestoreOutcomeToast(result) {
+			var i18n = blastRestoreI18n();
+			var restored = result.restored || 0;
+			var refused = result.refused || 0;
+			var unchanged = result.unchanged || 0;
+			if (restored === 0) {
+				// Nothing landed. Say WHY where the server told us: refusals
+				// first (the actionable case -- the rows are still damaged),
+				// then the benign "already held that value" case.
+				if (refused > 0) {
+					showToast((i18n.restoreNone || 'Nothing was restored. {refused} value(s) were refused.').replace('{refused}', refused));
+				} else if (unchanged > 0) {
+					showToast((i18n.restoreUnchanged || 'Nothing was restored. {unchanged} value(s) already held the value being put back.').replace('{unchanged}', unchanged));
+				} else {
+					showToast(i18n.restoreNothing || 'Nothing was restored.');
+				}
+				return;
+			}
+			if (refused > 0) {
+				// Partial success. Both numbers, in a warning variant: an
+				// operator who reads only the color must not read this as a
+				// clean recovery.
+				showWarningToast((i18n.restorePartial || '{count} value(s) restored, {refused} refused.')
+					.replace('{count}', restored).replace('{refused}', refused));
+				return;
+			}
+			showSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', restored));
+		}
+
 		// blastRestoreRow previews a single row, then commits on confirmation.
 		function blastRestoreRow(id) {
 			var i18n = blastRestoreI18n();
@@ -1029,9 +1084,17 @@ templ blastRadiusScript() {
 				}
 				window.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {
 					blastRestoreRequest([id], true, function(result) {
-						showSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));
-						var row = document.getElementById('blast-row-' + id);
-						if (row) row.remove();
+						blastRestoreOutcomeToast(result);
+						// Drop the row ONLY when the server says this item was
+						// actually restored. Removing it unconditionally hid a
+						// REFUSED restore: the row is still damaged and still
+						// needs the operator, but it vanished from the table
+						// until reload. Same guard the bulk path uses.
+						var items = result.items || [];
+						if (items.length > 0 && items[0].restore_status === 'restored') {
+							var row = document.getElementById('blast-row-' + id);
+							if (row) row.remove();
+						}
 						// The removed row may have been ticked, so the bar's count is now
 						// stale. Re-derive it from the DOM rather than leave a number that
 						// overstates what a bulk restore would touch.
@@ -1072,10 +1135,17 @@ templ blastRadiusScript() {
 		// and reports HOW MANY, so the operator sees the size of the write they
 		// are about to preview.
 		//
-		// Ordering matters: the bar is an aria-live region, and a mutation made
-		// while it is display:none is not announced. It is unhidden BEFORE the
-		// count text is written, so the reveal produces an announcement rather
-		// than a silent appearance.
+		// Ordering matters in BOTH directions.
+		//
+		// On REVEAL: #blast-bulk-count is an aria-live region, and a mutation
+		// made while it is display:none is not announced. The bar is unhidden
+		// BEFORE the count text is written, so the reveal produces an
+		// announcement rather than a silent appearance.
+		//
+		// On HIDE: focus is moved out of the bar BEFORE it is hidden. Hiding
+		// the element that currently holds focus resets focus to <body>, which
+		// strands a keyboard user at the top of the document right after a
+		// destructive operation. See the n === 0 branch.
 		function blastUpdateBulkBar() {
 			var bar = document.getElementById('blast-bulk-bar');
 			var count = document.getElementById('blast-bulk-count');
@@ -1095,6 +1165,28 @@ templ blastRadiusScript() {
 				master.indeterminate = n > 0 && n < boxes.length;
 			}
 			if (n === 0) {
+				// Move focus OUT before hiding. .hidden is display:none, and a
+				// browser blurs a focused element that becomes display:none --
+				// focus resets to <body>. Both paths that reach here on a
+				// keyboard (Cancel, and blastClearSelection after a commit)
+				// have focus INSIDE this bar at that moment: the shared modal's
+				// hideModal restores focus to the opener, which is the "Restore
+				// Selected" button in this bar, and only then does the callback
+				// hide it. Without this, a keyboard user who just committed a
+				// destructive operation is dumped at the top of the document.
+				// #blast-select-all is the nearest stable control that owns the
+				// selection this bar was reporting on.
+				if (bar.contains(document.activeElement)) {
+					var refocus = document.getElementById('blast-select-all');
+					if (refocus) {
+						refocus.focus();
+					} else {
+						// Loud, not silent: with no select-all to catch it,
+						// focus is about to fall to <body> and we cannot stop
+						// it. Say so rather than leave a silent a11y defect.
+						console.error('blast-radius: #blast-select-all is missing, focus will be lost when the bulk bar hides');
+					}
+				}
 				bar.classList.add('hidden');
 				if (count) count.textContent = '';
 				return;
@@ -1136,7 +1228,7 @@ templ blastRadiusScript() {
 				}
 				window.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {
 					blastRestoreRequest(ids, true, function(result) {
-						showSuccessToast((i18n.restoredCount || '{count} value(s) restored.').replace('{count}', result.restored));
+						blastRestoreOutcomeToast(result);
 						// Drop ONLY the rows the server reports as actually
 						// restored. Removing every requested row would hide the
 						// refusals -- rows still damaged and still needing the

@@ -60,6 +60,27 @@ You can narrow the report by damage kind, by attribution, by field, or to a sing
 
 When a filter matches nothing, the pane says so and tells you how many changes the report still holds behind that filter. It does not report an all-clear, because a filter matching nothing says nothing about the rest of your library.
 
+### Putting a value back
+
+Every row in the workspace pane has a **Restore** button that writes your old value back over what the automated change left. You can also tick the checkbox on several rows and use **Restore Selected** to put them all back in one go. The checkbox in the header ticks every row on the page you are looking at; because the report is paged, it cannot reach rows on other pages.
+
+Restore is always two steps, and the first one never writes:
+
+1. **Preview.** Stillwater checks each selected row against the current state of your library and reports how many of them can be put back, and how many cannot. Nothing has been written at this point.
+2. **Confirm.** Only then does the write happen, and only for the rows the preview listed as restorable.
+
+**A preview is not a promise.** Stillwater re-reads each value immediately before writing it, because a scan, a rule pass, or an edit you made in another tab can land in the gap between the preview and your confirmation. If the value changed in that gap, the restore is refused rather than overwriting the newer value with an older one. A row is also refused when the change record is gone, when the field keeps no change history, or when the row is itself an earlier restore, which would only chain undo onto undo.
+
+That means a confirmed restore can come back reporting fewer values put back than the preview offered, including none at all. Stillwater tells you which happened:
+
+- All rows restored - a success message with the count.
+- Some restored, some refused - a warning naming both numbers. The restore is incomplete.
+- Nothing restored - an error message with the refusal count.
+
+Refused rows stay in the table so you can see they still need attention; only rows that were genuinely put back disappear from it. A refused restore is safe to retry: reload the report so it reflects the current state, then try again.
+
+Restoring a value does not republish it or re-run the writer that changed it. It does mark the artist for re-evaluation, so the next rule pass looks at it again. Only one restore can run at a time across the whole application; if another is already in progress, Stillwater says so instead of queuing yours.
+
 ### What the report can prove about who made a change
 
 Every row is labeled one of two ways:

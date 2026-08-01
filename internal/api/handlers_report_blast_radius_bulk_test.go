@@ -199,11 +199,263 @@ func TestBlastRadiusPane_BulkSelectionMarkupAndA11y(t *testing.T) {
 	}
 	// Live region. The bar is revealed by script, and a control that appears
 	// with no announcement is invisible to a screen-reader user who just ticked
-	// a box. role=status + aria-live=polite is what announces it.
-	if !strings.Contains(barTag, `role="status"`) || !strings.Contains(barTag, `aria-live="polite"`) {
-		t.Errorf("bulk action bar is not an announced live region (want role=status aria-live=polite); tag: %s", barTag)
+	// a box. role=status + aria-live=polite is what announces it -- but it must
+	// be scoped to the COUNT, not the whole bar; see the dedicated test below.
+	countTag := blastBulkCountTag(t, body)
+	if !strings.Contains(countTag, `role="status"`) || !strings.Contains(countTag, `aria-live="polite"`) {
+		t.Errorf("bulk selection count is not an announced live region (want role=status aria-live=polite); tag: %s", countTag)
 	}
 
+}
+
+// blastBulkCountTag returns the opening tag of #blast-bulk-count.
+func blastBulkCountTag(t *testing.T, body string) string {
+	t.Helper()
+	idx := strings.Index(body, `id="blast-bulk-count"`)
+	if idx < 0 {
+		t.Fatalf("#blast-bulk-count absent; the bulk bar has no count element at all")
+	}
+	end := strings.Index(body[idx:], ">")
+	if end < 0 {
+		t.Fatalf("malformed #blast-bulk-count tag")
+	}
+	return body[idx : idx+end]
+}
+
+// TestBlastRadiusPane_LiveRegionIsScopedToTheCount pins FIX 3.
+//
+// role="status" implies aria-atomic="true": a change anywhere inside the live
+// region re-announces the region's ENTIRE text. With the role on
+// #blast-bulk-bar, every checkbox tick re-announced the bar's whole subtree --
+// the count PLUS both button labels ("3 rows selectedRestore Selected Cancel").
+// Ticking twenty rows produced twenty announcements each ending in the button
+// names, which buries the only part that actually changed.
+//
+// Scoped to #blast-bulk-count, the reveal still announces (the count is written
+// after unhiding) and each subsequent change announces only the number.
+//
+// The mutation that gives it teeth: moving role="status" aria-live="polite"
+// back onto the #blast-bulk-bar tag fails both halves of this.
+func TestBlastRadiusPane_LiveRegionIsScopedToTheCount(t *testing.T) {
+	t.Parallel()
+	body := renderBlastRadiusPane(t)
+
+	// Precondition: the bar and its buttons rendered. Without the buttons
+	// inside the bar there is nothing for an over-broad live region to
+	// over-announce, and this test would pass vacuously.
+	barIdx := strings.Index(body, `id="blast-bulk-bar"`)
+	if barIdx < 0 {
+		t.Fatalf("#blast-bulk-bar absent")
+	}
+	barEnd := strings.Index(body[barIdx:], ">")
+	if barEnd < 0 {
+		t.Fatalf("malformed #blast-bulk-bar tag")
+	}
+	barTag := body[barIdx : barIdx+barEnd]
+	// The buttons must actually live inside the bar for the over-announcement
+	// to be possible; assert on the region between the bar tag and the i18n
+	// element that follows it.
+	after := body[barIdx:]
+	if i18nIdx := strings.Index(after, `id="blast-radius-i18n"`); i18nIdx > 0 {
+		after = after[:i18nIdx]
+	}
+	if !strings.Contains(after, "blastRestoreSelected()") || !strings.Contains(after, "blastClearSelection()") {
+		t.Fatalf("the bulk bar's action buttons are not inside it; an over-broad live region could not over-announce, so this test would be vacuous")
+	}
+
+	// The assertion: the bar itself must NOT be the live region.
+	if strings.Contains(barTag, `role="status"`) || strings.Contains(barTag, `aria-live=`) {
+		t.Errorf("#blast-bulk-bar is itself a live region, so role=status's implicit aria-atomic re-announces the buttons "+
+			"on every selection change; move role=status/aria-live onto #blast-bulk-count. tag: %s", barTag)
+	}
+
+	// And the count must be, or the reveal announces nothing at all.
+	countTag := blastBulkCountTag(t, body)
+	if !strings.Contains(countTag, `role="status"`) || !strings.Contains(countTag, `aria-live="polite"`) {
+		t.Errorf("#blast-bulk-count is not a live region (want role=status aria-live=polite), so ticking a checkbox announces nothing; tag: %s", countTag)
+	}
+}
+
+// blastScriptFunc returns the body of a top-level function in the rendered
+// blast-radius script, bounded at the next top-level function or the script
+// close so assertions cannot leak into a neighboring function.
+func blastScriptFunc(t *testing.T, body, name string) string {
+	t.Helper()
+	start := strings.Index(body, "function "+name+"(")
+	if start < 0 {
+		t.Fatalf("%s is not defined in the rendered page", name)
+	}
+	fn := body[start:]
+	if end := strings.Index(fn[1:], "\n\t\tfunction "); end >= 0 {
+		fn = fn[:end]
+	} else if end := strings.Index(fn, "</script>"); end >= 0 {
+		fn = fn[:end]
+	}
+	return fn
+}
+
+// TestBlastRadiusPane_CommitOutcomeBranchesOnTheCounts pins FIX 1.
+//
+// commitBlastRestore re-reads the live value immediately before each write, so
+// the server can refuse at commit time an item the dry-run plan listed as
+// eligible. {restored:0, refused:3} is a designed-for response.
+//
+// Both commit callbacks used to call showSuccessToast unconditionally, so an
+// operator who selected three rows, previewed "3 of 3 selected change(s) can be
+// restored." and confirmed got a GREEN success banner reading "0 value(s)
+// restored." on a recovery surface where nothing had been recovered.
+//
+// The mutation that gives it teeth: replacing either callback's
+// blastRestoreOutcomeToast(result) with a bare showSuccessToast(...) fails the
+// per-callback assertions; deleting any one of the three branches inside
+// blastRestoreOutcomeToast fails the branch assertions.
+func TestBlastRadiusPane_CommitOutcomeBranchesOnTheCounts(t *testing.T) {
+	t.Parallel()
+	body := renderBlastRadiusPane(t)
+
+	outcome := blastScriptFunc(t, body, "blastRestoreOutcomeToast")
+
+	// Precondition: the helper reads the counts at all. A helper that ignores
+	// refused could not branch on it, and every assertion below would be
+	// asserting on dead text.
+	for _, field := range []string{"result.restored", "result.refused"} {
+		if !strings.Contains(outcome, field) {
+			t.Fatalf("blastRestoreOutcomeToast never reads %s, so it cannot branch on the outcome:\n%s", field, outcome)
+		}
+	}
+
+	// All three variants must be reachable from this one helper. The variant
+	// is the only signal an operator gets at a glance, so a missing branch is
+	// a misreport, not a cosmetic gap.
+	if !strings.Contains(outcome, "showToast(") {
+		t.Errorf("a commit that restored NOTHING does not raise the error toast; a zero would be reported in a success color:\n%s", outcome)
+	}
+	if !strings.Contains(outcome, "showWarningToast(") {
+		t.Errorf("a partial restore (some restored, some refused) does not raise the warning toast; an incomplete recovery would read as clean:\n%s", outcome)
+	}
+	if !strings.Contains(outcome, "showSuccessToast(") {
+		t.Errorf("a fully successful restore never raises the success toast:\n%s", outcome)
+	}
+
+	// The zero-restored branch must come FIRST. If the success branch could be
+	// reached with restored === 0, the fix is defeated regardless of which
+	// toasts the function can raise.
+	zeroGuard := strings.Index(outcome, "restored === 0")
+	success := strings.Index(outcome, "showSuccessToast(")
+	if zeroGuard < 0 {
+		t.Fatalf("blastRestoreOutcomeToast has no restored === 0 guard, so a zero-restore reaches a non-error toast:\n%s", outcome)
+	}
+	if zeroGuard > success {
+		t.Errorf("the restored === 0 guard (offset %d) comes AFTER the success toast (offset %d); a zero-restore can still report success",
+			zeroGuard, success)
+	}
+
+	// Both commit callbacks must route through the helper, and neither may
+	// call the success toast directly -- that is the exact defect.
+	for _, name := range []string{"blastRestoreRow", "blastRestoreSelected"} {
+		fn := blastScriptFunc(t, body, name)
+		if !strings.Contains(fn, "blastRestoreOutcomeToast(result)") {
+			t.Errorf("%s does not report its commit outcome through blastRestoreOutcomeToast, so it cannot distinguish a refused restore from a successful one:\n%s", name, fn)
+		}
+		if strings.Contains(fn, "showSuccessToast(") {
+			t.Errorf("%s calls showSuccessToast directly; a commit that restored nothing would be reported in green:\n%s", name, fn)
+		}
+	}
+}
+
+// TestBlastRadiusPane_PerRowRemovalIsGatedOnRestoreStatus pins FIX 1b.
+//
+// The per-row path removed the row unconditionally after a commit. A REFUSED
+// restore therefore both reported success AND made the still-damaged row vanish
+// from the table until reload -- the operator loses the only on-screen evidence
+// that the value still needs recovering. The bulk path already guarded this.
+//
+// The mutation that gives it teeth: dropping the restore_status check around
+// row.remove() in blastRestoreRow.
+func TestBlastRadiusPane_PerRowRemovalIsGatedOnRestoreStatus(t *testing.T) {
+	t.Parallel()
+	body := renderBlastRadiusPane(t)
+
+	fn := blastScriptFunc(t, body, "blastRestoreRow")
+
+	// Precondition: the function does remove a row. If it stopped removing
+	// rows entirely, the gate assertion would be vacuously satisfied.
+	remove := strings.Index(fn, "row.remove()")
+	if remove < 0 {
+		t.Fatalf("blastRestoreRow no longer removes the restored row, so the removal gate is not under test:\n%s", fn)
+	}
+
+	// The gate must be READ (the item's status) and must sit BEFORE the
+	// removal. A status check after the fact does not stop the row vanishing.
+	gate := strings.Index(fn, "restore_status")
+	if gate < 0 {
+		t.Fatalf("blastRestoreRow removes the row without consulting restore_status; a REFUSED restore hides a still-damaged row:\n%s", fn)
+	}
+	if gate > remove {
+		t.Errorf("blastRestoreRow's restore_status check (offset %d) comes AFTER row.remove() (offset %d); the row is already gone",
+			gate, remove)
+	}
+	// It must compare against the server's own "restored" token, not merely
+	// mention the field.
+	if !strings.Contains(fn, `'restored'`) {
+		t.Errorf("blastRestoreRow does not compare restore_status against 'restored', the token commitBlastRestore writes for a landed write:\n%s", fn)
+	}
+}
+
+// TestBlastRadiusPane_BulkBarMovesFocusOutBeforeHiding pins FIX 2 at the
+// source level.
+//
+// .hidden is display:none, and hiding the element that currently holds focus
+// makes the browser reset focus to <body>. Both paths that hide this bar --
+// the bar's own Cancel, and blastClearSelection after a commit -- have focus
+// INSIDE the bar at that moment, because the shared modal's hideModal restores
+// focus to its opener (the "Restore Selected" button, in the bar) and only then
+// does the callback hide it. A keyboard user who just committed a destructive
+// operation was dumped at the top of the document.
+//
+// This is a SOURCE-ORDER assertion, not a behavioral one. It cannot observe
+// focus: jsdom does not blur on hide (it reported focus STAYING on the hidden
+// button), and a browser test without the real built stylesheet gets the wrong
+// answer too, because .hidden is inert without it. Only Chromium plus the real
+// styles.css reproduces the defect, which needs a served page. This test pins
+// that the guard exists and runs BEFORE the hide; see the report for what a
+// browser-level regression test would need.
+func TestBlastRadiusPane_BulkBarMovesFocusOutBeforeHiding(t *testing.T) {
+	t.Parallel()
+	body := renderBlastRadiusPane(t)
+
+	fn := blastScriptFunc(t, body, "blastUpdateBulkBar")
+
+	// Precondition: the function does hide the bar by adding .hidden. That is
+	// the action that drops focus; without it there is nothing to guard.
+	hide := strings.Index(fn, `classList.add('hidden')`)
+	if hide < 0 {
+		t.Fatalf("blastUpdateBulkBar no longer hides the bar via the hidden class, so the focus guard is not under test:\n%s", fn)
+	}
+
+	// The guard: it must test whether focus is inside the bar, and move it to
+	// the select-all, BEFORE the hide.
+	contains := strings.Index(fn, "bar.contains(document.activeElement)")
+	if contains < 0 {
+		t.Fatalf("blastUpdateBulkBar hides the bar without checking whether it holds focus; focus falls to <body>:\n%s", fn)
+	}
+	if contains > hide {
+		t.Errorf("the focus check (offset %d) runs AFTER the bar is hidden (offset %d); by then the browser has already reset focus to <body>",
+			contains, hide)
+	}
+	refocus := strings.Index(fn, `getElementById('blast-select-all')`)
+	if refocus < 0 || !strings.Contains(fn, ".focus()") {
+		t.Fatalf("blastUpdateBulkBar does not move focus to #blast-select-all before hiding:\n%s", fn)
+	}
+	if refocus > hide {
+		t.Errorf("focus is moved to #blast-select-all (offset %d) only AFTER the hide (offset %d), which is too late", refocus, hide)
+	}
+
+	// The refocus target must actually exist on the page, or the guard is a
+	// no-op that reports a console error and still drops focus.
+	if !strings.Contains(body, `id="blast-select-all"`) {
+		t.Errorf("the focus guard targets #blast-select-all, which this page does not render")
+	}
 }
 
 // TestCompliancePane_SelectionHandlersStillResolve is the other half of the
