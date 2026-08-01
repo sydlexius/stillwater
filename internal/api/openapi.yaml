@@ -669,6 +669,44 @@ components:
         status:
           type: string
           description: Current status text.
+    ConnectionUpdateRequest:
+      type: object
+      description: >-
+        Partial update of a connection. Every property is optional and an
+        omitted property leaves the stored value unchanged, which is what lets
+        the settings edit form -- which renders only name, url and api_key --
+        submit without clearing the toggles it does not display.
+      properties:
+        name:
+          type: string
+          description: User-assigned display name for this connection.
+        type:
+          # Deliberately NOT an enum, unlike ConnectionResponse. The previous
+          # inline request schema declared a bare string, so constraining it
+          # here would narrow what the endpoint accepts -- a breaking change
+          # for any client sending a value outside the list. Extracting this
+          # schema must preserve the request contract exactly; the handler
+          # validates the type itself.
+          type: string
+          description: Platform type. Changing it clears the platform-specific sub-config.
+        url:
+          type: string
+          description: Base URL of the platform server.
+        api_key:
+          type: string
+          description: API key for the platform. An empty value leaves the stored key unchanged.
+        enabled:
+          type: boolean
+          description: Whether the connection is active and will be used for operations.
+        feature_image_write:
+          type: boolean
+          description: Whether Stillwater writes image files for artists in this server's libraries.
+        feature_metadata_push:
+          type: boolean
+          description: Whether Stillwater pushes metadata to this server.
+        feature_trigger_refresh:
+          type: boolean
+          description: Whether Stillwater asks this server to refresh after a write.
     ConnectionResponse:
       type: object
       properties:
@@ -6248,21 +6286,16 @@ paths:
             type: string
       requestBody:
         required: true
+        # The settings-page edit form submits urlencoded, the API submits JSON;
+        # the handler branches on Content-Type and accepts both (#2886). An
+        # omitted property means "leave unchanged" on either encoding.
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                type:
-                  type: string
-                url:
-                  type: string
-                api_key:
-                  type: string
-                enabled:
-                  type: boolean
+              $ref: "#/components/schemas/ConnectionUpdateRequest"
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/ConnectionUpdateRequest"
       responses:
         "200":
           description: Connection updated
