@@ -1197,6 +1197,8 @@
   "image.album_match_count": "%d/%d albums",
   "image.album_match_unavailable": "Albums not checked",
   "image.album_match_unavailable_help": "This artist's album folder could not be read, so the album match could not be calculated. A missing match here is not evidence that this candidate is wrong.",
+  "image.album_match_not_scored": "Albums not compared",
+  "image.album_match_not_scored_help": "Stillwater did not compare this candidate's albums against your library, so there is no match to show. That usually means it ranked below the handful of candidates that get compared (each comparison is a rate-limited lookup, so only the strongest are checked), or it has no MusicBrainz ID to look up, or the lookup failed. Either way this is missing information, not evidence that the candidate is wrong.",
   "image.alt_artist_type": "%s %s",
   "image.artist_name_placeholder": "Artist name",
   "image.assign": "Assign",

@@ -436,7 +436,7 @@ func TestEnrichWithAlbumComparisonFlagsUnavailable(t *testing.T) {
 			t.Fatal("GetReleaseGroups must not run for an Unknown album set")
 			return nil, nil
 		})
-		got := r.enrichWithAlbumComparison(context.Background(), results, unknownAlbums())
+		got := r.enrichWithAlbumComparison(context.Background(), "A", results, unknownAlbums())
 		if len(got) != 1 {
 			t.Fatalf("len = %d, want 1", len(got))
 		}
@@ -452,7 +452,7 @@ func TestEnrichWithAlbumComparisonFlagsUnavailable(t *testing.T) {
 		t.Parallel()
 		r, _ := testRouter(t)
 		installAudioDBOrchestrator(t, r, nil, nil)
-		got := r.enrichWithAlbumComparison(context.Background(), results, foundNoAlbums())
+		got := r.enrichWithAlbumComparison(context.Background(), "A", results, foundNoAlbums())
 		if got[0].AlbumsUnavailable {
 			t.Error("AlbumsUnavailable = true for a genuinely empty artist; that is the false claim in the other direction")
 		}
@@ -464,7 +464,7 @@ func TestEnrichWithAlbumComparisonFlagsUnavailable(t *testing.T) {
 		installAudioDBOrchestrator(t, r, nil, func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
 			return []provider.ReleaseGroupInfo{{Title: "Album One"}}, nil
 		})
-		got := r.enrichWithAlbumComparison(context.Background(), results, foundAlbums("Album One"))
+		got := r.enrichWithAlbumComparison(context.Background(), "A", results, foundAlbums("Album One"))
 		if got[0].AlbumsUnavailable {
 			t.Error("AlbumsUnavailable = true despite a successful album read")
 		}
