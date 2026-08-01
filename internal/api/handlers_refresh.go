@@ -870,8 +870,8 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, query string, re
 // providers returned them in, rather than shuffling between identical requests.
 func sortCandidatesByRank(query string, candidates []templates.DisambiguationCandidate) {
 	slices.SortStableFunc(candidates, func(a, b templates.DisambiguationCandidate) int {
-		aScored := a.AlbumComparison != nil && a.AlbumComparison.LocalCount > 0
-		bScored := b.AlbumComparison != nil && b.AlbumComparison.LocalCount > 0
+		aScored := a.HasMeasuredOverlap()
+		bScored := b.HasMeasuredOverlap()
 		if aScored != bScored {
 			if aScored {
 				return -1

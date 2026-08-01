@@ -40,6 +40,17 @@ type DisambiguationCandidate struct {
 	AlbumsNotScored bool
 }
 
+// HasMeasuredOverlap reports whether this candidate carries a real album
+// comparison: one was computed AND there were local albums to compare against.
+//
+// It is the single definition of that rule. The handler's ranking sort, the
+// badge branch below, and the tests all ask this question, and a rule written
+// out three times is one a future change updates in two places -- with the
+// ranking and the badge then disagreeing about whether a row was measured.
+func (c DisambiguationCandidate) HasMeasuredOverlap() bool {
+	return c.AlbumComparison != nil && c.AlbumComparison.LocalCount > 0
+}
+
 // RefreshOOBData holds data for OOB-swapped sections after a metadata refresh.
 type RefreshOOBData struct {
 	Artist         artist.Artist
@@ -188,7 +199,7 @@ templ DisambiguationResults(data DisambiguationResultsData) {
 							if c.Result.MusicBrainzID != "" {
 								<div class="text-[10px] text-gray-400 font-mono mt-0.5 truncate">{ c.Result.MusicBrainzID }</div>
 							}
-							if c.AlbumComparison != nil && c.AlbumComparison.LocalCount > 0 {
+							if c.HasMeasuredOverlap() {
 								<div class="mt-1.5 flex items-center gap-2">
 									<span class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", albumMatchClasses(c.AlbumComparison.MatchPercent) }>
 										{ tf(ctx, "image.album_match_count", c.AlbumComparison.MatchCount, c.AlbumComparison.LocalCount) }

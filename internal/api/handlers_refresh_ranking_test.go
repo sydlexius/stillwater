@@ -294,8 +294,7 @@ func TestEnrichWithAlbumComparison_EvidenceOverridesNameRanking(t *testing.T) {
 // not-scored. Anything else renders NOTHING, which an operator reads as a
 // measured zero rather than as an absent measurement.
 func rendersAlbumState(c templates.DisambiguationCandidate) bool {
-	return (c.AlbumComparison != nil && c.AlbumComparison.LocalCount > 0) ||
-		c.AlbumsUnavailable || c.AlbumsNotScored
+	return c.HasMeasuredOverlap() || c.AlbumsUnavailable || c.AlbumsNotScored
 }
 
 // TestEnrichWithAlbumComparison_EveryCandidateExplainsItself is the invariant
