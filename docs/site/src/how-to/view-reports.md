@@ -45,9 +45,7 @@ Lists every configured rule with its pass count, evaluation count, and pass perc
 
 ## Blast radius
 
-The blast-radius report answers "which values that I set did an automated change replace or blank". It is available in the Reports workspace pane, through the API, and as a CSV download.
-
-Request it at `/api/v1/reports/blast-radius`, or download `/api/v1/reports/blast-radius/export` for a spreadsheet.
+The blast-radius report answers "which values that I set did an automated change replace or blank". Click **Blast radius** in the reports rail to open it. The same rows are also available as a CSV spreadsheet, though only through the API for now - see [Downloading the CSV](#downloading-the-csv) below.
 
 For each artist and field, the report shows the most recent change, and keeps it only when that change replaced or blanked a value that had been set. Two kinds of damage are reported, because both destroy what you set:
 
@@ -56,7 +54,7 @@ For each artist and field, the report shows the most recent change, and keeps it
 
 A field whose value has since been put back drops out of the report automatically.
 
-You can narrow the report by damage kind, by attribution, by field, or to a single artist. Both damage kinds are shown by default. In the API and the CSV export, pass these as query parameters. The workspace pane reads the same parameters from its URL and honors them, including when you page through results, but does not yet offer on-screen filter controls.
+You can narrow the report by damage kind, by attribution, by field, or to a single artist. Both damage kinds are shown by default. The pane does not yet offer on-screen filter controls, so for now you set a filter by adding it to the page address; the pane reads the filters from the URL and keeps them as you page through results. The CSV download accepts the same filters. The [API reference](../api/index.md) lists the exact filter names and values.
 
 When a filter matches nothing, the pane says so and tells you how many changes the report still holds behind that filter. It does not report an all-clear, because a filter matching nothing says nothing about the rest of your library.
 
@@ -106,11 +104,11 @@ It is not unlimited, though: change history is kept until an artist is deleted o
 
 The CSV carries the same rows plus the source label on each one. Note rows at the end restate the source limit, both field lists, and the retention boundary, so a spreadsheet you open weeks later still says what it does not cover. The export is capped at 10,000 rows and tells you when it was truncated.
 
+There is no download button on the pane yet, so this export is reachable only through the API. The [API reference](../api/index.md) has the endpoint and its parameters.
+
 ## Rule-Written MusicBrainz IDs (API and CSV)
 
-This report answers "which artists did the automatic NFO rule fix pick a MusicBrainz ID for". It exists so you can find artists that fix may have misidentified. It is available through the API and as a CSV download only; there is no pane for it in the Reports workspace.
-
-Request it at `/api/v1/reports/nfo-has-mbid`, or download `/api/v1/reports/nfo-has-mbid/export` for a spreadsheet.
+This report answers "which artists did the automatic NFO rule fix pick a MusicBrainz ID for". It exists so you can find artists that fix may have misidentified. There is no pane for it in the Reports workspace and nothing to click: you read it through the API, or pull it as a CSV spreadsheet the same way. Both are listed in the [API reference](../api/index.md).
 
 Each row is one ID assignment: the artist, the note the fix recorded at the time, when it happened, and the MusicBrainz ID the artist carries now. If the fix wrote an ID for the same artist twice, you get two rows, because each one was a separate guess worth seeing. You can narrow the report to a single artist and sort by date or artist name.
 
@@ -217,14 +215,14 @@ Because the signal is a visual match, it is inherently ambiguous: two artists ca
 
 Remediation quarantines each flagged backdrop, removes it from the artist locally, and deletes the mirrored copy from your connected platforms. It is admin-only.
 
-Send a `POST` to `/api/v1/reports/phash-mismatch/remediate` with a JSON body:
+This report has no screen of its own: unlike the two duplicate reports above, there is no page to open and no button to click. You run the back-out through the API, which is where the [API reference](../api/index.md) documents the request in full. What it asks of you is worth knowing before you run it:
 
-| Field | Meaning |
+| Option | Meaning |
 |---|---|
-| `artist_id` | Scope the back-out to a single artist. |
-| `all_artists` | Set this to run library-wide. You must supply either `artist_id` or `all_artists` - a request with neither is rejected, so a forgotten scope can never become a library-wide delete. |
-| `dry_run` | Preview the outcome without changing anything. |
-| `tolerance` | Optionally override the similarity cutoff. A supplied value must be a number in the range `(0, 1]`; anything else is rejected rather than quietly falling back to the default. |
+| Artist | Scope the back-out to a single artist. |
+| All artists | Run library-wide. You must choose one scope or the other - a request with neither is rejected, so a forgotten scope can never become a library-wide delete. |
+| Dry run | Preview the outcome without changing anything. |
+| Tolerance | Optionally override the similarity cutoff, as a number above 0 and no greater than 1. Anything else is rejected rather than quietly falling back to the default. |
 
 Remediation is designed to be safe on an ambiguous signal:
 
@@ -233,13 +231,13 @@ Remediation is designed to be safe on an ambiguous signal:
 - It copies the picture into a durable quarantine **before** removing the original, so a removed backdrop is always recoverable.
 - The platform-side delete happens only after the local removal has committed; the fuzzy platform match never authorizes a deletion on its own.
 
-The response summarizes how many artists were processed, how many slots were removed, quarantined, or skipped, and any failures, with a per-slot breakdown. On a dry run, slots are reported as "would-remove" and nothing is touched. Each run is tagged with an operation id (`op_id`) - keep it if you may want to restore the run later.
+The response summarizes how many artists were processed, how many slots were removed, quarantined, or skipped, and any failures, with a per-slot breakdown. On a dry run, slots are reported as "would-remove" and nothing is touched. Each run is tagged with an operation id - keep it if you may want to restore the run later.
 
 ### Restore a back-out
 
 If a back-out removed a backdrop that was not actually pollution, the restore puts that operation's quarantined backdrops back - both locally and on the platforms they were deleted from. It is admin-only.
 
-Send a `POST` to `/api/v1/reports/phash-mismatch/restore` with both `artist_id` and `op_id` (the id from the remediation run); a request missing either field is rejected.
+The restore runs through the API too, and needs two things: the artist, and the operation id from the back-out run you want undone. A request missing either one is rejected, so a restore can never guess which run you meant. The [API reference](../api/index.md) has the request itself.
 
 Restore is content-addressed: it appends a recovered backdrop at the next free slot rather than trying to put it back at its old position, because removal renumbers the survivors and the old position no longer exists. Appending can never overwrite another backdrop. Each quarantined picture lands in one of three states, reported separately so a restore that needs your attention is never mistaken for a clean one:
 
