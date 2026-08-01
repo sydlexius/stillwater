@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -179,7 +180,7 @@ func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 			"artist_id", artistID, "reason", err)
 	}
 
-	candidates := r.enrichWithAlbumComparison(req.Context(), results, localAlbums)
+	candidates := r.enrichWithAlbumComparison(req.Context(), query, results, localAlbums)
 	failedProviders := collectFailedProviderDisplayNames(statuses)
 
 	if isHTMXRequest(req) {
@@ -683,14 +684,72 @@ func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// enrichWithAlbumComparison wraps search results in DisambiguationCandidate,
-// enriching the top 3 MusicBrainz results with album comparison data when the
-// local album set is a determination that found albums.
+// albumEvidenceBudget caps how many candidates receive an album-overlap
+// comparison in one disambiguation request.
 //
-// Only EvidenceFound proceeds. An Unknown set would compare against no titles
-// and stamp every candidate with a 0% match badge -- the exact false claim this
-// migration removes.
-func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provider.ArtistSearchResult, local artist.AlbumSet) []templates.DisambiguationCandidate {
+// The cap is a LATENCY budget, not a correctness knob. Each comparison is a
+// live GetReleaseGroups call: MusicBrainz is limited to one request per second
+// through a shared limiter, and the fetch paginates sequentially in pages of
+// 100 up to 500 release groups. So every additional candidate costs at least a
+// second of wall-clock, and a prolific artist costs a second per page, all
+// inside a synchronous HTTP request. Scoring a typical ~20-candidate result
+// set would run 20-60s and invite the severed-idle-connection failure that
+// renders the panel as an indistinguishable "no matches" (#2818).
+//
+// Nothing coalesces these fetches on this path. The release-group coalescer in
+// internal/rule is keyed to the rule engine's per-artist EvaluationContext and
+// is not reachable from here, so the budget is the only thing bounding them.
+const albumEvidenceBudget = 8
+
+// rankScore is the network-free ranking signal for a disambiguation candidate:
+// how well its name matches what the operator searched for, blended with the
+// provider's own confidence.
+//
+// Name similarity dominates (weighted 2:1) because it answers the operator's
+// actual question -- is this the artist I typed? -- while the provider score
+// reflects that provider's internal ranking and is not comparable across
+// providers. Both inputs are already on ArtistSearchResult and cost nothing to
+// compute, which is what lets every candidate be ranked before any of them
+// spends the album-evidence budget.
+//
+// SortName is scored alongside Name and the better of the two wins, so an
+// artist listed as "Beatles, The" is not penalized against a query of "The
+// Beatles". Aliases would need a separate fetch and are out of scope here.
+func rankScore(query string, res provider.ArtistSearchResult) int {
+	name := provider.NameSimilarity(query, res.Name)
+	if res.SortName != "" {
+		if s := provider.NameSimilarity(query, res.SortName); s > name {
+			name = s
+		}
+	}
+	return name*2 + res.Score
+}
+
+// enrichWithAlbumComparison wraps search results in DisambiguationCandidate,
+// ranks them, and spends the album-evidence budget on the strongest.
+//
+// Ordering matters and is the fix for #2885. Previously the first three
+// candidates in provider order were enriched, which meant the three that got
+// the strongest available evidence were chosen arbitrarily -- results are
+// appended per provider with no global sort (#2819), so a correct match could
+// sit outside the window and render with no album evidence at all while worse
+// candidates carried badges. The pass now:
+//
+//  1. ranks every candidate by the free signals (name similarity + provider
+//     score), so position reflects match quality rather than provider order;
+//  2. spends the album-evidence budget on the top albumEvidenceBudget rows;
+//  3. re-sorts so a measured album overlap outranks the name-only estimate,
+//     since overlap compares what the operator actually has on disk and is the
+//     strongest signal available;
+//  4. marks every candidate that ends without a comparison, for ANY reason --
+//     ranked below the budget, no MusicBrainz ID to look up (all Discogs
+//     results), a failed fetch, or an early return before any fetch runs --
+//     so such a row reads as "not compared" rather than as a candidate that
+//     was measured and scored zero.
+//
+// Only EvidenceFound proceeds to step 2. An Unknown set would compare against
+// no titles and stamp every candidate with a 0% match badge -- a false claim.
+func (r *Router) enrichWithAlbumComparison(ctx context.Context, query string, results []provider.ArtistSearchResult, local artist.AlbumSet) []templates.DisambiguationCandidate {
 	candidates := make([]templates.DisambiguationCandidate, len(results))
 	for i := range results {
 		candidates[i].Result = results[i]
@@ -698,6 +757,32 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 		// say so rather than silently omitting the badge, which is what a
 		// genuinely empty artist also does.
 		candidates[i].AlbumsUnavailable = local.Evidence == artist.EvidenceUnknown
+	}
+
+	// Rank before anything else. Even when album evidence is unavailable this
+	// leaves the operator with candidates ordered by match quality instead of
+	// grouped by provider, which is a strict improvement on its own (#2819).
+	sortCandidatesByRank(query, candidates)
+
+	// Mark every candidate as not-compared UP FRONT, then clear the flag as
+	// each one is actually compared. The inverse -- marking on the way out --
+	// has to be repeated at every early return below, and missing one leaves
+	// a row rendering no badge at all, which an operator reads as a measured
+	// 0%. Defaulting to "not compared" makes the safe state the one you get
+	// by doing nothing, so a future early return cannot reintroduce the bug.
+	//
+	// AlbumsUnavailable stays separate and wins in the template: it says the
+	// local folder could not be read, which is a fault worth surfacing, while
+	// this flag only says no comparison was made.
+	// Skip a candidate already flagged AlbumsUnavailable: that says the local
+	// folder could not be read, which is the more specific and more actionable
+	// statement, and the template checks it first. Setting both would leave
+	// two contradictory-looking flags on the same row for any API client or
+	// future UI reading the struct rather than the rendered badge.
+	for i := range candidates {
+		if !candidates[i].AlbumsUnavailable {
+			candidates[i].AlbumsNotScored = true
+		}
 	}
 
 	if local.Evidence != artist.EvidenceFound || r.providerRegistry == nil {
@@ -714,15 +799,24 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 		return candidates
 	}
 
-	// Enrich top 3 MB results that have an MBID. Track attempts (not just
-	// successes) to cap the total number of API calls made during search.
+	// Spend the budget on the highest-ranked candidates. Attempts are counted
+	// rather than successes so a provider erroring on every call cannot walk
+	// the whole candidate list one failed request at a time.
 	attempted := 0
 	for i := range candidates {
-		if attempted >= 3 {
-			break
-		}
 		res := candidates[i].Result
+		// Each candidate below is already flagged not-compared by default, so
+		// every `continue` here simply leaves that flag in place. Only a
+		// successful comparison clears it.
 		if res.MusicBrainzID == "" {
+			// No MBID, so there is nothing to look up. The check stays AHEAD of
+			// the budget so an unscoreable candidate never consumes it. Discogs
+			// results never carry an MBID, and Discogs is one of the two
+			// providers this screen searches, so this is the largest population
+			// of not-compared rows.
+			continue
+		}
+		if attempted >= albumEvidenceBudget {
 			continue
 		}
 
@@ -730,6 +824,8 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 
 		groups, err := fetcher.GetReleaseGroups(ctx, res.MusicBrainzID)
 		if err != nil {
+			// The budget was consumed and no comparison was produced, so the
+			// candidate keeps its not-compared flag.
 			r.logger.Warn("fetching release groups for disambiguation",
 				slog.String("mbid", res.MusicBrainzID),
 				slog.String("error", err.Error()),
@@ -748,9 +844,47 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 		ev := artist.CompareAlbumSet(local, remoteTitles)
 		comp := ev.AlbumComparison
 		candidates[i].AlbumComparison = &comp
+		// Compared: clear the default flag so the row shows its match badge.
+		candidates[i].AlbumsNotScored = false
 	}
 
+	// Re-sort now that measured evidence exists: a candidate with real album
+	// overlap outranks one carrying only a name-similarity estimate.
+	sortCandidatesByRank(query, candidates)
+
 	return candidates
+}
+
+// sortCandidatesByRank orders candidates best-first, preferring measured album
+// overlap over the network-free estimate.
+//
+// A candidate whose album overlap was actually computed sorts above one that
+// was not, because the overlap is evidence about the operator's own library
+// rather than a guess about a name. Among scored candidates the higher match
+// percentage wins; among unscored ones the rank estimate breaks the tie. A
+// candidate scored at 0% overlap deliberately still outranks an unscored one:
+// it was measured against the library and found not to match, which is a
+// finding, whereas the unscored candidate is simply unknown.
+//
+// The sort is stable so candidates that tie on every signal keep the order the
+// providers returned them in, rather than shuffling between identical requests.
+func sortCandidatesByRank(query string, candidates []templates.DisambiguationCandidate) {
+	slices.SortStableFunc(candidates, func(a, b templates.DisambiguationCandidate) int {
+		aScored := a.HasMeasuredOverlap()
+		bScored := b.HasMeasuredOverlap()
+		if aScored != bScored {
+			if aScored {
+				return -1
+			}
+			return 1
+		}
+		if aScored {
+			if c := cmp.Compare(b.AlbumComparison.MatchPercent, a.AlbumComparison.MatchPercent); c != 0 {
+				return c
+			}
+		}
+		return cmp.Compare(rankScore(query, b.Result), rankScore(query, a.Result))
+	})
 }
 
 // applyProviderName updates the artist's Name and SortName from provider

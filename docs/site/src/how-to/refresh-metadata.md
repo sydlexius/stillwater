@@ -30,13 +30,21 @@ If the artist has no MusicBrainz ID yet, Stillwater needs to pick the right one 
 
 This only happens once per artist -- after the link, future refreshes go straight through.
 
-### When Local Albums Can't Be Checked
+### How Candidates Are Ordered
 
-Each candidate in the search results normally shows how well its known albums line up with what's on disk, so you can confirm a match by discography rather than by name alone.
+Candidates are ranked with the best match first, so the entry you want is usually at the top of the list. The ordering uses the album comparison where one was made -- a candidate whose releases line up with what's on disk outranks one that merely has a similar name -- and falls back to how closely the name matches your query, taking the artist's sort name into account as well as its display name. Providers are mixed together in one ranked list rather than grouped, so a Discogs result can appear above a MusicBrainz one when it is the better match.
 
-Sometimes Stillwater can't perform that comparison at all -- the artist has no folder path recorded yet, or the folder couldn't be read (a missing mount, a permissions problem, or a file where a directory was expected). When that happens, the candidate list carries a notice that local albums are unavailable, and the album-comparison column is left blank rather than showing a match count. If you're integrating against the API directly, this is the `local_albums_unavailable` field on the search response -- search for that name if you're looking for it in the wire format.
+### When Albums Weren't Compared
 
-A blank or missing album comparison in this state means "Stillwater could not look," not "this candidate has no matching albums." Don't read it as a strike against the candidate -- fall back to the artist name, MusicBrainz ID, and any other identifying details you have, and fix the underlying problem (add the artist's folder path, check the mount, check permissions) if you want album comparison back for future searches.
+Each candidate in the search results can show how well its known albums line up with what's on disk, so you can confirm a match by discography rather than by name alone. Not every candidate carries that comparison, and the list tells you which case you are looking at rather than leaving you to guess.
+
+Comparing albums means asking MusicBrainz for that candidate's releases, which is a rate-limited request. A broad search can return dozens of candidates, and comparing every one would leave you waiting on the search far longer than it is worth. So Stillwater compares the strongest candidates and marks the rest **Albums not compared**. Because ranking happens before the comparison, the candidates most likely to be right are the ones that get checked.
+
+A candidate marked that way was not measured and found wanting -- it simply wasn't measured. Read it as "no information", never as a strike against the candidate. The same marker appears on a candidate with no MusicBrainz ID to look up (Discogs results have none) and on one whose lookup failed. If the entry you want is marked this way, refine the search so it ranks higher: adding a country, a year, or the artist's full sort name usually brings the right candidate into the compared group.
+
+Sometimes Stillwater can't perform that comparison at all -- the artist has no folder path recorded yet, or the folder couldn't be read (a missing mount, a permissions problem, or a file where a directory was expected). That is a different situation from the one above: there, the candidate wasn't checked; here, nothing could be checked against. Every candidate is marked **Albums not checked**, and the album-comparison column shows no match count. If you're integrating against the API directly, this is the `local_albums_unavailable` field on the search response -- search for that name if you're looking for it in the wire format.
+
+A missing album comparison in this state means "Stillwater could not look," not "this candidate has no matching albums." Don't read it as a strike against the candidate -- fall back to the artist name, MusicBrainz ID, and any other identifying details you have, and fix the underlying problem (add the artist's folder path, check the mount, check permissions) if you want album comparison back for future searches.
 
 This is different from a candidate that genuinely has zero comparable albums, which Stillwater reports separately as "no local albums to compare" -- that case means the lookup succeeded and simply found nothing on disk, which is still useful signal.
 

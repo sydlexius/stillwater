@@ -436,6 +436,7 @@ how-to/quick-actions#quick-actions
 how-to/quick-actions#see-also
 how-to/quick-actions#sidebar-state
 how-to/quick-actions#the-three-actions
+how-to/refresh-metadata#how-candidates-are-ordered
 how-to/refresh-metadata#re-identifying-an-artist-that-is-already-linked
 how-to/refresh-metadata#refresh-many-artists
 how-to/refresh-metadata#refresh-metadata
@@ -443,7 +444,7 @@ how-to/refresh-metadata#refresh-one-artist
 how-to/refresh-metadata#refresh-scan-together
 how-to/refresh-metadata#what-a-refresh-does
 how-to/refresh-metadata#what-a-refresh-doesnt-do
-how-to/refresh-metadata#when-local-albums-cant-be-checked
+how-to/refresh-metadata#when-albums-werent-compared
 how-to/refresh-metadata#when-you-get-the-disambiguation-prompt
 how-to/refresh-metadata#why-a-field-didnt-update
 how-to/repair-image-registry#confirming-the-result
