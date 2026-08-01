@@ -632,7 +632,12 @@ test('hiding the bulk action bar does not drop focus to the document body', asyn
 
   // The action under test: Cancel clears the selection, which hides the bar.
   await page.keyboard.press('Enter');
-  await page.waitForSelector('#blast-bulk-bar.hidden', { timeout: 10_000 });
+  // state: 'hidden', not the default 'visible'. waitForSelector waits for the
+  // element to be VISIBLE unless told otherwise, so '#blast-bulk-bar.hidden'
+  // under the default state waits for an element to be simultaneously hidden
+  // and visible -- it can only ever time out, even when the bar hides exactly
+  // as intended.
+  await page.waitForSelector('#blast-bulk-bar.hidden', { state: 'hidden', timeout: 10_000 });
 
   const after = await page.evaluate(() => {
     const el = document.getElementById('blast-bulk-bar');
