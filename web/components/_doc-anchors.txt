@@ -523,6 +523,7 @@ how-to/view-reports#one-repair-at-a-time
 how-to/view-reports#open-the-reports-workspace
 how-to/view-reports#platform-backdrop-duplicates
 how-to/view-reports#prune-platform-duplicates
+how-to/view-reports#putting-a-value-back
 how-to/view-reports#reading-the-recorded-note
 how-to/view-reports#restore-a-back-out
 how-to/view-reports#rule-pass-rates
