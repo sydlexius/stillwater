@@ -18,9 +18,26 @@ import (
 //   - internal/api Tier 3 (name-only search) -- GATED. This was the hole.
 //   - internal/api Tier 1 (connection-library fill) -- NOT GATED. See the
 //     WHY-NOT note below; this is a deliberate scope decision, not an omission.
-//   - internal/rule fixMBID and internal/rule bulk_executor fetchImages -- NOT
-//     GATED. Both call EvaluateMBIDCandidate with no catalogue leg. That is a
-//     genuine remaining gap, tracked separately rather than fixed here.
+//   - internal/rule fixMBID (nfo_has_mbid) and internal/rule bulk_executor
+//     fetchImages (the bulk image job's MBID self-heal) -- GATED as of #2858,
+//     but on FAIL-OPEN terms rather than the identify tiers' terms. Both reach
+//     this function through internal/rule/album_gate.go, which allows the write
+//     whenever no album evidence is available at all -- no album source or
+//     release-group fetcher wired, an unreadable album directory
+//     (EvidenceUnknown), an artist with genuinely no local albums
+//     (EvidenceNone), or a failed release-group fetch -- and consults the
+//     decision table below only when both catalogues were actually read. So a
+//     rule write is refused only by CONTRADICTION, never by absence.
+//
+// WHY THE RULE PATHS FAIL OPEN WHERE THE IDENTIFY TIERS DECLINE. The identify
+// tiers are an operator asking "who is this artist?", so refusing to answer is
+// a legitimate answer. The rule engine is a background health pass that must
+// work on an install with no MusicBrainz provider configured at all, and 43% of
+// a production library sits in EvidenceUnknown. Declining those here would not
+// harden nfo_has_mbid, it would stop the rule doing anything -- a regression
+// wearing a gate's clothing. The measured 18/18 failure was an empty stub
+// contradicted by a full local album directory, and that case is still refused:
+// it reaches EvidenceFound with a zero-release-group candidate.
 //
 // WHY TIER 1 IS NOT GATED. The gate's two admitting states are the problem: it
 // declines EvidenceUnknown and EvidenceNone outright, and it needs a
@@ -176,7 +193,7 @@ type AlbumGateInput struct {
 //	Evidence  | Candidate catalogue | Overlap | Decision
 //	----------+---------------------+---------+---------
 //	Unknown   | n/a                 | n/a     | DECLINE
-//	Found     | not retrieved       | n/a     | DECLINE
+//	Found     | not available       | n/a     | DECLINE
 //	Found     | 0 release groups    | n/a     | DECLINE
 //	Found     | >= 1                | >= 70   | permit (if uncontested, no red flag)
 //	Found     | >= 1                | >= 30   | review
@@ -219,7 +236,15 @@ func EvaluateAlbumGate(in AlbumGateInput) (AlbumGateDecision, string) {
 	}
 
 	if !in.CandidateReleasesKnown {
-		return AlbumGateDecline, "the candidate's release groups could not be retrieved, so the catalogues were never compared"
+		// "not available" rather than "could not be retrieved", for the reason
+		// spelled out at reasonNoCandidateAlbumSource in internal/api/
+		// album_evidence.go: this branch is reached BOTH when a fetch was made and
+		// failed AND when no fetcher existed to make one (an install with no
+		// MusicBrainz provider leaves the release-group cache nil, which reports
+		// not-known without any call). Saying a retrieval failed asserts an event
+		// that in the second case never happened. The decision is identical either
+		// way; only the wording was overclaiming.
+		return AlbumGateDecline, "the candidate's release groups are not available, so the catalogues were never compared"
 	}
 
 	if in.CandidateReleaseCount == 0 {

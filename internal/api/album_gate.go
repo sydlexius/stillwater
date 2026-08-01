@@ -138,9 +138,10 @@ func (c *releaseGroupCache) titles(ctx context.Context, mbid string) ([]string, 
 // all, and 43% of a production library takes that route by default.
 //
 // SCOPE, so this is not read as more coverage than it is: this closes the hole
-// on the two SEARCH-DERIVED tiers. Tier 1 (connection-library fill) and the
-// internal/rule write paths remain ungated -- see the WHICH WRITE PATHS APPLY
-// IT block at the top of internal/artist/albumgate.go for which, and why.
+// on the two SEARCH-DERIVED tiers. Tier 1 (connection-library fill) remains
+// ungated, and the internal/rule write paths are gated on FAIL-OPEN terms
+// rather than these -- see the WHICH WRITE PATHS APPLY IT block at the top of
+// internal/artist/albumgate.go for which, and why.
 //
 // Returning true only STOPS THE UNATTENDED WRITE. The caller falls through to
 // the review queue, so the operator still sees the candidate and can link it
@@ -285,7 +286,11 @@ func (r *Router) tier3RivalClearsOverlapFloor(ctx context.Context, local artist.
 			fetched++
 		}
 		if !known {
-			r.logger.Info("identify: Tier 3 rival catalogue could not be retrieved, treating the best candidate as contested",
+			// "not available", not "could not be retrieved": with no MusicBrainz
+			// provider registered the cache is nil and reports not-known without
+			// making a call, so no retrieval was attempted. Same correction as the
+			// gate's own reason string in internal/artist/albumgate.go.
+			r.logger.Info("identify: Tier 3 rival catalogue is not available, treating the best candidate as contested",
 				"rival_mbid", res.MusicBrainzID)
 			return true
 		}
