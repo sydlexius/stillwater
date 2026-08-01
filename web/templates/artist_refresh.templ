@@ -24,6 +24,17 @@ type DisambiguationCandidate struct {
 	// candidate look name-scored on purpose, so the operator has no way to know
 	// the album evidence is missing rather than negative.
 	AlbumsUnavailable bool
+
+	// AlbumsNotScored reports that this candidate ranked below the album
+	// evidence budget, so no comparison was attempted for it (#2885).
+	//
+	// Distinct from AlbumsUnavailable, which means the local album folder
+	// could not be read at all. Both leave the match badge off, but only
+	// AlbumsUnavailable is a fault the operator might act on; this one is a
+	// deliberate cost decision, since each comparison is a rate-limited
+	// provider call. It exists so a skipped candidate does not render
+	// identically to one that was measured and found not to match.
+	AlbumsNotScored bool
 }
 
 // RefreshOOBData holds data for OOB-swapped sections after a metadata refresh.
@@ -187,6 +198,12 @@ templ DisambiguationResults(data DisambiguationResultsData) {
 								<div class="mt-1.5 flex items-center gap-2">
 									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" title={ t(ctx, "image.album_match_unavailable_help") }>
 										{ t(ctx, "image.album_match_unavailable") }
+									</span>
+								</div>
+							} else if c.AlbumsNotScored {
+								<div class="mt-1.5 flex items-center gap-2">
+									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300" title={ t(ctx, "image.album_match_not_scored_help") }>
+										{ t(ctx, "image.album_match_not_scored") }
 									</span>
 								</div>
 							}

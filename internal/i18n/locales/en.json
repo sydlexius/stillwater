@@ -1197,6 +1197,8 @@
   "image.album_match_count": "%d/%d albums",
   "image.album_match_unavailable": "Albums not checked",
   "image.album_match_unavailable_help": "This artist's album folder could not be read, so the album match could not be calculated. A missing match here is not evidence that this candidate is wrong.",
+  "image.album_match_not_scored": "Albums not compared",
+  "image.album_match_not_scored_help": "Album comparison is limited to the strongest candidates because each one is a rate-limited lookup. This candidate ranked below that limit, so its albums were not compared. That is not evidence it is wrong.",
   "image.alt_artist_type": "%s %s",
   "image.artist_name_placeholder": "Artist name",
   "image.assign": "Assign",
