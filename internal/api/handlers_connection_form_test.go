@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -314,6 +315,91 @@ func TestHandleUpdateConnection_ContentTypeBranching(t *testing.T) {
 				t.Errorf("Name = %q, want %q", got.Name, tc.wantName)
 			}
 		})
+	}
+}
+
+// TestHandleUpdateConnection_MultipartIsNotSilentlyDiscarded pins that a
+// multipart body cannot become a silent no-op.
+//
+// req.ParseForm does NOT parse multipart/form-data -- only ParseMultipartForm
+// does -- so routing multipart into the form branch would leave PostForm
+// empty, skip every field, and answer 200 OK having written nothing. The
+// endpoint accepts only JSON and urlencoded, so multipart must fail loudly.
+func TestHandleUpdateConnection_MultipartIsNotSilentlyDiscarded(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+
+	c := &connection.Connection{
+		Name: "Before", Type: connection.TypeEmby,
+		URL: "http://emby.local:8096", APIKey: "k", Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if err := mw.WriteField("name", "ViaMultipart"); err != nil {
+		t.Fatalf("writing multipart field: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.SetPathValue("id", c.ID)
+
+	w := httptest.NewRecorder()
+	r.handleUpdateConnection(w, req)
+
+	// The specific status matters less than the rule: an unsupported encoding
+	// must NOT report success. A 200 here means the write was discarded while
+	// the client was told it worked.
+	if w.Code == http.StatusOK {
+		t.Errorf("status = 200 for a multipart body: an unparsed body must never report success")
+	}
+
+	got, err := r.connectionService.GetByID(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Name != "Before" {
+		t.Errorf("Name = %q, want %q (a rejected body must not mutate)", got.Name, "Before")
+	}
+}
+
+// TestHandleUpdateConnection_OversizedFormBodyIsRejected pins the size cap on
+// the form path. ParseForm reads the whole body into memory, so without a
+// bound this path is an exhaustion vector the JSON path already closes with
+// DecodeJSON's MaxBytesReader.
+func TestHandleUpdateConnection_OversizedFormBodyIsRejected(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+
+	c := &connection.Connection{
+		Name: "Before", Type: connection.TypeEmby,
+		URL: "http://emby.local:8096", APIKey: "k", Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+
+	form := url.Values{}
+	form.Set("name", strings.Repeat("A", maxJSONBodyBytes+1))
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", c.ID)
+
+	w := httptest.NewRecorder()
+	r.handleUpdateConnection(w, req)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413 for an oversized form body", w.Code)
+	}
+
+	got, err := r.connectionService.GetByID(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Name != "Before" {
+		t.Errorf("Name = %q, want unchanged", got.Name)
 	}
 }
 

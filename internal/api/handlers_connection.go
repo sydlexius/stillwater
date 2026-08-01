@@ -382,9 +382,26 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	// mime.ParseMediaType rather than a raw prefix match so a charset, odd
 	// casing, or stray whitespace cannot flip the branch -- the same reason
 	// handleWizardDecision parses it that way.
+	// multipart/form-data is deliberately NOT in this allowlist. req.ParseForm
+	// does not parse a multipart body -- only ParseMultipartForm does -- so
+	// admitting it here would leave PostForm empty, skip every field, and
+	// answer 200 OK having written nothing: the same silent no-op this branch
+	// ordering exists to prevent. Nothing sends multipart to this endpoint and
+	// the spec documents only JSON and urlencoded, so it falls through to the
+	// JSON decoder and fails loudly instead.
 	mediaType, _, _ := mime.ParseMediaType(req.Header.Get("Content-Type"))
-	if mediaType == "application/x-www-form-urlencoded" || mediaType == "multipart/form-data" {
+	if mediaType == "application/x-www-form-urlencoded" {
+		// Bound the body before parsing it, matching DecodeJSON's
+		// MaxBytesReader on the JSON path: ParseForm reads the whole body into
+		// memory, so an unbounded form body is the same exhaustion risk the
+		// JSON path already caps.
+		req.Body = http.MaxBytesReader(w, req.Body, maxJSONBodyBytes)
 		if err := req.ParseForm(); err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				writeFormError(w, req, http.StatusRequestEntityTooLarge, "request body too large")
+				return
+			}
 			writeFormError(w, req, http.StatusBadRequest, "invalid request body")
 			return
 		}
