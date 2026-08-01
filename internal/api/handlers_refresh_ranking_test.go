@@ -176,65 +176,64 @@ func TestEnrichWithAlbumComparison_MeasuredZeroOutranksUnscored(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	// The candidates that WILL be scored are named so they rank WORST, and the
-	// tail that will be skipped is named to match the query exactly. So the
-	// rank estimate actively fights the album-evidence tier here.
+	// The uncompared candidate is uncompared for a reason INDEPENDENT of its
+	// rank: it carries no MusicBrainz ID, so there is nothing to look up no
+	// matter how highly it ranks. That independence is what makes the tier
+	// observable at all.
 	//
-	// That opposition is the whole point. An earlier version gave every
-	// candidate the same name and score, which made the rank estimate tie on
-	// all of them -- so the scored rows led purely because a stable sort kept
-	// them in input order, and the test passed with the album-evidence tier
-	// deleted. It measured sort stability while claiming to measure the tier.
-	// With the estimate pulling the other way, only the tier can produce the
-	// expected order.
-	results := make([]provider.ArtistSearchResult, albumEvidenceBudget+3)
-	for i := range results {
-		name := "Zzz Unrelated Filler"
-		if i >= albumEvidenceBudget {
-			name = "Same Name"
-		}
-		results[i] = provider.ArtistSearchResult{
-			Name:          name,
-			MusicBrainzID: fmt.Sprintf("mbid-%02d", i),
-			Score:         50,
-		}
-	}
-	// Precondition: the skipped tail must genuinely out-rank the scored head on
-	// the network-free estimate, or the assertion below passes vacuously.
-	if rankScore("Same Name", results[len(results)-1]) <= rankScore("Same Name", results[0]) {
-		t.Fatalf("fixture defect: the unscored tail does not out-rank the scored head on rankScore, so the album-evidence tier is not the deciding signal")
+	// Two earlier fixtures failed to test this and passed anyway. The first
+	// gave every candidate the same name and score, so the estimate tied and
+	// a stable sort alone produced the expected order. The second ranked the
+	// intended tail HIGHER, but the budget always attempts the top-K of the
+	// pre-fetch order, so those high-ranking candidates were exactly the ones
+	// that got compared and the "unscored tail" never existed. Both passed
+	// with the tier deleted.
+	//
+	// Here the MBID-less candidate is named to match the query EXACTLY, so it
+	// wins the rank estimate outright, while the compared candidate has a
+	// weaker name and measures 0% overlap. Only the scored-above-unscored
+	// tier can put the 0% candidate first.
+	results := []provider.ArtistSearchResult{
+		{Name: "Same Name", Score: 100}, // no MBID: never comparable
+		{Name: "Same Name Extended Edition", MusicBrainzID: "mbid-scored", Score: 100},
 	}
 
-	// Every fetched candidate measures as 0% overlap: nothing it returns is in
-	// the local set. So the scored rows are known-bad and the rest are unknown.
-	installAudioDBOrchestrator(t, r, nil, func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+	// Precondition: the uncomparable candidate must genuinely out-rank the
+	// comparable one on the network-free estimate, or this passes vacuously.
+	if rankScore("Same Name", results[0]) <= rankScore("Same Name", results[1]) {
+		t.Fatalf("fixture defect: the uncomparable candidate (%d) does not out-rank the comparable one (%d), so the album-evidence tier is not the deciding signal",
+			rankScore("Same Name", results[0]), rankScore("Same Name", results[1]))
+	}
+
+	// The compared candidate shares nothing with the library, so it measures
+	// 0%: known-bad, versus the other candidate's unknown.
+	installAudioDBOrchestrator(t, r, nil, func(_ context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
+		if mbid != "mbid-scored" {
+			t.Errorf("unexpected fetch for %q", mbid)
+		}
 		return []provider.ReleaseGroupInfo{{Title: "Nothing In Common"}}, nil
 	})
 
 	got := r.enrichWithAlbumComparison(context.Background(), "Same Name", results, foundAlbums("Local Album"))
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
 
-	// The measured-at-0% candidates must occupy the front of the list, ahead
-	// of every candidate that was never looked at.
-	for i, c := range got {
-		scored := c.AlbumComparison != nil
-		if i < albumEvidenceBudget {
-			if !scored {
-				t.Errorf("index %d: unscored candidate ranked inside the measured block", i)
-			}
-			if c.AlbumComparison.MatchPercent != 0 {
-				t.Errorf("index %d: MatchPercent = %d, want 0", i, c.AlbumComparison.MatchPercent)
-			}
-			if c.AlbumsNotScored {
-				t.Errorf("index %d: a measured candidate must not be marked not-scored", i)
-			}
-			continue
-		}
-		if scored {
-			t.Errorf("index %d: scored candidate ranked below an unscored one", i)
-		}
-		if !c.AlbumsNotScored {
-			t.Errorf("index %d: skipped candidate is not marked not-scored", i)
-		}
+	if got[0].Result.MusicBrainzID != "mbid-scored" {
+		t.Errorf("top candidate = %q, want mbid-scored: a candidate measured at 0%% is a FINDING and must outrank one that was never compared, even though the latter has the better name",
+			got[0].Result.Name)
+	}
+	if got[0].AlbumComparison == nil || got[0].AlbumComparison.MatchPercent != 0 {
+		t.Errorf("top candidate comparison = %+v, want a measured 0%%", got[0].AlbumComparison)
+	}
+	if got[0].AlbumsNotScored {
+		t.Error("a measured candidate must not be marked not-compared")
+	}
+	if !got[1].AlbumsNotScored {
+		t.Error("the uncomparable candidate must be marked not-compared")
+	}
+	if got[1].AlbumComparison != nil {
+		t.Errorf("candidate without an MBID has a comparison: %+v", got[1].AlbumComparison)
 	}
 }
 
@@ -349,6 +348,46 @@ func TestEnrichWithAlbumComparison_EveryCandidateExplainsItself(t *testing.T) {
 			if !rendersAlbumState(c) {
 				t.Errorf("candidate %q (mbid %q) renders no album state at all: an operator cannot tell it apart from a measured 0%% match",
 					c.Result.Name, c.Result.MusicBrainzID)
+			}
+		}
+	})
+
+	// The early returns are the ones a marking-on-the-way-out implementation
+	// misses: they leave the function before the budget loop runs at all.
+	// EvidenceNone is the sharpest -- the folder WAS read and genuinely held
+	// nothing, so AlbumsUnavailable is correctly false and every row would
+	// render bare.
+	t.Run("local albums genuinely empty", func(t *testing.T) {
+		t.Parallel()
+		r, _ := testRouter(t)
+		results := []provider.ArtistSearchResult{
+			{Name: "A", MusicBrainzID: "mbid-a"},
+			{Name: "B"},
+		}
+		installAudioDBOrchestrator(t, r, nil, func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+			t.Error("no fetch may run when the artist has no local albums")
+			return nil, nil
+		})
+		got := r.enrichWithAlbumComparison(context.Background(), "A", results, foundNoAlbums())
+		for _, c := range got {
+			if !rendersAlbumState(c) {
+				t.Errorf("candidate %q renders no album state on the EvidenceNone early return", c.Result.Name)
+			}
+			if c.AlbumsUnavailable {
+				t.Errorf("candidate %q flagged unavailable, but the folder was read successfully and was empty", c.Result.Name)
+			}
+		}
+	})
+
+	t.Run("no provider registry", func(t *testing.T) {
+		t.Parallel()
+		r, _ := testRouter(t)
+		r.providerRegistry = nil
+		results := []provider.ArtistSearchResult{{Name: "A", MusicBrainzID: "mbid-a"}}
+		got := r.enrichWithAlbumComparison(context.Background(), "A", results, foundAlbums("Local Album"))
+		for _, c := range got {
+			if !rendersAlbumState(c) {
+				t.Errorf("candidate %q renders no album state when no provider registry is configured", c.Result.Name)
 			}
 		}
 	})

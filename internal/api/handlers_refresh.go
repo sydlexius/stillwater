@@ -741,8 +741,11 @@ func rankScore(query string, res provider.ArtistSearchResult) int {
 //  3. re-sorts so a measured album overlap outranks the name-only estimate,
 //     since overlap compares what the operator actually has on disk and is the
 //     strongest signal available;
-//  4. marks the candidates it deliberately skipped, so an unscored row reads
-//     as "not checked" rather than as a candidate that scored zero.
+//  4. marks every candidate that ends without a comparison, for ANY reason --
+//     ranked below the budget, no MusicBrainz ID to look up (all Discogs
+//     results), a failed fetch, or an early return before any fetch runs --
+//     so such a row reads as "not compared" rather than as a candidate that
+//     was measured and scored zero.
 //
 // Only EvidenceFound proceeds to step 2. An Unknown set would compare against
 // no titles and stamp every candidate with a 0% match badge -- a false claim.
@@ -760,6 +763,27 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, query string, re
 	// leaves the operator with candidates ordered by match quality instead of
 	// grouped by provider, which is a strict improvement on its own (#2819).
 	sortCandidatesByRank(query, candidates)
+
+	// Mark every candidate as not-compared UP FRONT, then clear the flag as
+	// each one is actually compared. The inverse -- marking on the way out --
+	// has to be repeated at every early return below, and missing one leaves
+	// a row rendering no badge at all, which an operator reads as a measured
+	// 0%. Defaulting to "not compared" makes the safe state the one you get
+	// by doing nothing, so a future early return cannot reintroduce the bug.
+	//
+	// AlbumsUnavailable stays separate and wins in the template: it says the
+	// local folder could not be read, which is a fault worth surfacing, while
+	// this flag only says no comparison was made.
+	// Skip a candidate already flagged AlbumsUnavailable: that says the local
+	// folder could not be read, which is the more specific and more actionable
+	// statement, and the template checks it first. Setting both would leave
+	// two contradictory-looking flags on the same row for any API client or
+	// future UI reading the struct rather than the rendered badge.
+	for i := range candidates {
+		if !candidates[i].AlbumsUnavailable {
+			candidates[i].AlbumsNotScored = true
+		}
+	}
 
 	if local.Evidence != artist.EvidenceFound || r.providerRegistry == nil {
 		return candidates
@@ -781,24 +805,18 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, query string, re
 	attempted := 0
 	for i := range candidates {
 		res := candidates[i].Result
-		// Every candidate that ends this loop without a comparison is marked,
-		// whatever the reason. An unmarked one renders no badge at all, which
-		// an operator reads as a measured 0% -- the precise confusion this
-		// flag exists to remove.
+		// Each candidate below is already flagged not-compared by default, so
+		// every `continue` here simply leaves that flag in place. Only a
+		// successful comparison clears it.
 		if res.MusicBrainzID == "" {
 			// No MBID, so there is nothing to look up. The check stays AHEAD of
-			// the budget so an unscoreable candidate never consumes it, but the
-			// candidate is still marked. Discogs results never carry an MBID,
-			// and Discogs is one of the two providers this screen searches, so
-			// this is the largest population of otherwise-blank rows.
-			candidates[i].AlbumsNotScored = true
+			// the budget so an unscoreable candidate never consumes it. Discogs
+			// results never carry an MBID, and Discogs is one of the two
+			// providers this screen searches, so this is the largest population
+			// of not-compared rows.
 			continue
 		}
 		if attempted >= albumEvidenceBudget {
-			// Distinguish "ranked below the budget" from "the local album
-			// folder could not be read": both leave the badge off, but only
-			// the latter is a fault, and neither should read as a 0% match.
-			candidates[i].AlbumsNotScored = true
 			continue
 		}
 
@@ -806,10 +824,8 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, query string, re
 
 		groups, err := fetcher.GetReleaseGroups(ctx, res.MusicBrainzID)
 		if err != nil {
-			// A failed fetch consumed the budget and produced no comparison, so
-			// mark it too. Without this a provider having a bad minute yields
-			// up to albumEvidenceBudget unexplained blank rows.
-			candidates[i].AlbumsNotScored = true
+			// The budget was consumed and no comparison was produced, so the
+			// candidate keeps its not-compared flag.
 			r.logger.Warn("fetching release groups for disambiguation",
 				slog.String("mbid", res.MusicBrainzID),
 				slog.String("error", err.Error()),
@@ -828,6 +844,8 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, query string, re
 		ev := artist.CompareAlbumSet(local, remoteTitles)
 		comp := ev.AlbumComparison
 		candidates[i].AlbumComparison = &comp
+		// Compared: clear the default flag so the row shows its match badge.
+		candidates[i].AlbumsNotScored = false
 	}
 
 	// Re-sort now that measured evidence exists: a candidate with real album
