@@ -478,6 +478,20 @@ func (e *BulkExecutor) selfHealMBID(ctx context.Context, a *artist.Artist, mode 
 		return BulkItemSkipped, "no MBID"
 	}
 	results, err := e.orchestrator.Search(ctx, a.Name)
+	if err != nil {
+		// Diagnostic ONLY -- the status and message below are deliberately
+		// unchanged, because a broken provider and a genuinely unknown artist
+		// lead to the same operator-visible outcome (this artist is skipped).
+		// What they must NOT share is the trace: without this line a provider
+		// outage is indistinguishable from "nothing found" across an entire
+		// library sweep. Warn, matching the release-group fetch failure in
+		// album_gate.go: an upstream call that failed is a fault, unlike the
+		// Info-level "declined to self-heal" decision below, which is a
+		// deliberate refusal.
+		e.logger.Warn("bulk image fetch: provider search for a missing MusicBrainz ID failed",
+			slog.String("artist", a.Name),
+			slog.String("error", err.Error()))
+	}
 	if err != nil || len(results) == 0 {
 		return BulkItemSkipped, "no MBID and provider search found nothing"
 	}

@@ -223,13 +223,12 @@ func (g ruleAlbumGate) candidateTitles(ctx context.Context, ruleID string, a *ar
 		return nil, false
 	}
 
-	// Cap the round-trip for the same reason countMBReleaseGroups does: a slow
-	// MusicBrainz response must not stall a library-wide fix pass. A timeout
-	// degrades to "not a determination", which allows.
-	fetchCtx, cancel := context.WithTimeout(ctx, discographyFetchTimeout)
-	defer cancel()
-
-	groups, err := g.fetchGroups(fetchCtx, mbid)
+	// The round-trip is capped at discographyFetchTimeout for the same reason
+	// countMBReleaseGroups does: a slow MusicBrainz response must not stall a
+	// library-wide fix pass. A timeout degrades to "not a determination", which
+	// allows. The cap is applied inside fetchGroups rather than here because the
+	// two paths need it derived from DIFFERENT parents -- see fetchGroups.
+	groups, err := g.fetchGroups(ctx, mbid)
 	if err != nil {
 		g.log().Warn("album-evidence gate: fetching the candidate's release groups failed, so its catalogue cannot contradict anything",
 			slog.String("rule_id", ruleID),
@@ -253,11 +252,39 @@ func (g ruleAlbumGate) candidateTitles(ctx context.Context, ruleID string, a *ar
 // with the discography checker's fetch for the same artist into one upstream
 // call; off it (single-violation fixes, the bulk executor) it falls back to the
 // bare fetcher, which is the pre-existing behavior.
+//
+// WHO OWNS THE DEADLINE is the whole reason the timeout lives here rather than
+// in candidateTitles, and the two branches answer it differently:
+//
+//   - COALESCED branch: the upstream fetch is SHARED. Whoever loses the
+//     singleflight race waits on the winner's result, so a deadline (or a
+//     cancellation) belonging to ONE caller must never reach that fetch -- it
+//     would cancel work other callers are waiting on, and the canceled error
+//     would then be CACHED in the coalescer and served to them as though their
+//     own fetch had failed. context.WithoutCancel severs the caller's
+//     cancellation while KEEPING the context values (the EvaluationContext and
+//     any PassContext ride along), and the timeout is then re-applied on top so
+//     the shared fetch is still bounded -- by a cap the coalescer owns rather
+//     than by whichever caller happened to arrive first.
+//
+//   - DIRECT branch: the fetch is caller-scoped by construction (no coalescer,
+//     so nobody else can be waiting on it), and canceling it when the caller
+//     goes away is correct. It keeps the caller's context and the caller's
+//     15s cap, exactly as before.
+//
+// Both branches remain bounded by discographyFetchTimeout, so a slow
+// MusicBrainz still cannot stall a library-wide pass, and a timeout on either
+// still surfaces as an error -> known=false -> ALLOW (see candidateTitles).
 func (g ruleAlbumGate) fetchGroups(ctx context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
 	if ec := EvaluationContextFromContext(ctx); ec != nil {
 		return ec.GetReleaseGroups(ctx, mbid, func(fetchCtx context.Context) ([]provider.ReleaseGroupInfo, error) {
-			return g.fetcher.GetReleaseGroups(fetchCtx, mbid)
+			sharedCtx, cancel := context.WithTimeout(context.WithoutCancel(fetchCtx), discographyFetchTimeout)
+			defer cancel()
+			return g.fetcher.GetReleaseGroups(sharedCtx, mbid)
 		})
 	}
-	return g.fetcher.GetReleaseGroups(ctx, mbid)
+
+	fetchCtx, cancel := context.WithTimeout(ctx, discographyFetchTimeout)
+	defer cancel()
+	return g.fetcher.GetReleaseGroups(fetchCtx, mbid)
 }
