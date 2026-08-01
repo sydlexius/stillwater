@@ -69,8 +69,14 @@ func TestBlastRadiusPane_CarriesContextHelpToTheDocs(t *testing.T) {
 
 	// The deep link, and where it points. contextHelpDocURL turns the
 	// path-and-fragment anchor into the published docs URL.
-	if !strings.Contains(body, "how-to/view-reports#blast-radius") {
-		t.Errorf("context-help popover does not link to the blast-radius docs section; body has a Read more link: %v",
+	//
+	// It targets the RESTORE subsection, not the top of the blast-radius
+	// section. The operator most likely to reach for this help is one whose
+	// restore was just refused, and the explanation they need -- that a
+	// preview is not a promise -- lives in that subsection. Landing them at
+	// the top of the section makes them scroll for it.
+	if !strings.Contains(body, "how-to/view-reports#putting-a-value-back") {
+		t.Errorf("context-help popover does not deep-link to the restore subsection; body has a Read more link: %v",
 			strings.Contains(body, "sw-context-help-link"))
 	}
 

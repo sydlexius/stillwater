@@ -286,8 +286,12 @@ func blastScriptFunc(t *testing.T, body, name string) string {
 		t.Fatalf("%s is not defined in the rendered page", name)
 	}
 	fn := body[start:]
+	// end indexes into fn[1:], so it is one byte behind the same position in
+	// fn. Slicing fn[:end] would drop the final character of the body -- a
+	// substring assertion still passes, but one anchored on the closing brace
+	// would fail for a reason that has nothing to do with the code under test.
 	if end := strings.Index(fn[1:], "\n\t\tfunction "); end >= 0 {
-		fn = fn[:end]
+		fn = fn[:end+1]
 	} else if end := strings.Index(fn, "</script>"); end >= 0 {
 		fn = fn[:end]
 	}
@@ -571,18 +575,7 @@ func TestBlastRadiusPane_BulkRestorePreviewsBeforeCommitting(t *testing.T) {
 	t.Parallel()
 	body := renderBlastRadiusPane(t)
 
-	start := strings.Index(body, "function blastRestoreSelected(")
-	if start < 0 {
-		t.Fatalf("blastRestoreSelected is not defined in the rendered page")
-	}
-	// Bound the slice at the next top-level function or the script close, so
-	// this reads blastRestoreSelected's body and not the rest of the file.
-	fn := body[start:]
-	if end := strings.Index(fn[1:], "\n\t\tfunction "); end >= 0 {
-		fn = fn[:end]
-	} else if end := strings.Index(fn, "</script>"); end >= 0 {
-		fn = fn[:end]
-	}
+	fn := blastScriptFunc(t, body, "blastRestoreSelected")
 
 	preview := strings.Index(fn, "blastRestoreRequest(ids, false")
 	confirm := strings.Index(fn, "showConfirmDialog(")

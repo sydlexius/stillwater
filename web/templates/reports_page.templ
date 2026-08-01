@@ -650,7 +650,7 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 			     deliberately do not carry one yet. -->
 			<p class="sw-rep-pane-title">
 				{ t(ctx, "reports.blast_radius.label") }
-				@components.ContextHelp("help-blast-radius", t(ctx, "reports.blast_radius.label"), t(ctx, "reports.blast_radius.help"), "how-to/view-reports#blast-radius")
+				@components.ContextHelp("help-blast-radius", t(ctx, "reports.blast_radius.label"), t(ctx, "reports.blast_radius.help"), "how-to/view-reports#putting-a-value-back")
 			</p>
 			<p class="sw-rep-pane-desc">{ t(ctx, "reports.blast_radius.desc") }</p>
 		</div>
@@ -1109,11 +1109,16 @@ templ blastRadiusScript() {
 						// REFUSED restore: the row is still damaged and still
 						// needs the operator, but it vanished from the table
 						// until reload. Same guard the bulk path uses.
-						var items = result.items || [];
-						if (items.length > 0 && items[0].restore_status === 'restored') {
+						// Match on change_id rather than position. items[0]
+						// assumed the server returns exactly one item, in
+						// request order, for a single-id request; keying on the
+						// id makes no such assumption and reads identically to
+						// the bulk path below.
+						(result.items || []).forEach(function(item) {
+							if (item.change_id !== id || item.restore_status !== 'restored') return;
 							var row = document.getElementById('blast-row-' + id);
 							if (row) row.remove();
-						}
+						});
 						// The removed row may have been ticked, so the bar's count is now
 						// stale. Re-derive it from the DOM rather than leave a number that
 						// overstates what a bulk restore would touch.
