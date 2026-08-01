@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 // RequirePathParam extracts a named path parameter from the request.
@@ -16,6 +18,47 @@ func RequirePathParam(w http.ResponseWriter, req *http.Request, name string) (st
 		return "", false
 	}
 	return val, true
+}
+
+// formBoolPtr reads a form field as an optional boolean, mirroring the
+// pointer-as-tristate semantics the JSON request bodies use: a key the form
+// did not carry at all yields nil, meaning "leave the stored value unchanged"
+// rather than "set false". This matters because HTML forms render only the
+// fields they display -- collapsing an unrendered checkbox into false would
+// clear settings the operator never touched.
+//
+// req.PostForm is read directly rather than via req.FormValue because
+// FormValue returns "" for both an absent key and a present-but-empty one,
+// which cannot express the tristate.
+//
+// "on" is accepted alongside the strconv.ParseBool set because a checked
+// checkbox with no value attribute posts the literal string "on".
+//
+// The second return value reports whether the field was WELL-FORMED, which is
+// not the same question as whether it was present: a field the form omitted
+// entirely is (nil, true), while a field carrying a value that is not a
+// boolean is (nil, false). Both leave the stored value unchanged -- the safe
+// direction, since a garbled value must never disable a connection -- but the
+// false distinguishes a client bug from a deliberate omission so the caller
+// can log it rather than let it vanish.
+func formBoolPtr(req *http.Request, key string) (*bool, bool) {
+	if err := req.ParseForm(); err != nil {
+		return nil, false
+	}
+	vs, ok := req.PostForm[key]
+	if !ok || len(vs) == 0 {
+		return nil, true
+	}
+	raw := strings.ToLower(strings.TrimSpace(vs[0]))
+	if raw == "on" {
+		v := true
+		return &v, true
+	}
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		return nil, false
+	}
+	return &parsed, true
 }
 
 // maxJSONBodyBytes caps the size of a JSON request body read by DecodeJSON.

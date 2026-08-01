@@ -236,7 +236,6 @@ templ serverConnectionRowNext(c connection.Connection) {
 			<form
 				class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-3 space-y-2"
 				hx-put={ "/api/v1/connections/" + c.ID }
-				hx-ext="json-enc"
 				hx-target={ "#edit-result-" + c.ID }
 				hx-swap="innerHTML"
 			>
