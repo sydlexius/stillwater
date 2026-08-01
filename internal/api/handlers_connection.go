@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 	"sync"
@@ -363,7 +364,69 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 		FeatureMetadataPush   *bool  `json:"feature_metadata_push"`
 		FeatureTriggerRefresh *bool  `json:"feature_trigger_refresh"`
 	}
-	if !DecodeJSON(w, req, &body) {
+	// The settings-page edit form submits urlencoded while the API submits
+	// JSON, so branch on Content-Type. Decoding JSON unconditionally rejected
+	// every form submission with 400 "invalid request body", which made the
+	// connection edit panel completely non-functional (#2886).
+	//
+	// The FORM branch is an explicit allowlist and JSON is the fallback, not
+	// the other way round, because the two failure modes are not symmetric.
+	// Form-parsing a JSON body SUCCEEDS -- the whole document becomes one
+	// key with an empty value -- so every field below reads "", every guard
+	// skips it, and the handler would answer 200 OK having written nothing.
+	// A JSON decode of a form body fails loudly with a 400 instead. So an
+	// unrecognized or absent Content-Type must fall to JSON: a client that
+	// sends a body we cannot classify gets a clear error rather than a
+	// silently discarded write.
+	//
+	// mime.ParseMediaType rather than a raw prefix match so a charset, odd
+	// casing, or stray whitespace cannot flip the branch -- the same reason
+	// handleWizardDecision parses it that way.
+	mediaType, _, _ := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if mediaType == "application/x-www-form-urlencoded" || mediaType == "multipart/form-data" {
+		if err := req.ParseForm(); err != nil {
+			writeFormError(w, req, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		// PostForm, not FormValue: FormValue merges the URL query into the
+		// body, which would let a query string rewrite a connection's URL or
+		// API key on a request whose body never mentioned them. The body is
+		// the only sanctioned source for an update, and formBoolPtr reads
+		// PostForm for exactly the same reason.
+		body.Name = req.PostForm.Get("name")
+		body.Type = req.PostForm.Get("type")
+		body.URL = req.PostForm.Get("url")
+		body.APIKey = req.PostForm.Get("api_key")
+		// The optional flags are *bool so an ABSENT field means "leave
+		// unchanged" rather than "set false" -- the edit form renders none of
+		// these four inputs, so collapsing an unrendered field to false would
+		// silently disable the connection and clear its write features on
+		// every name or URL edit. formBoolPtr preserves that distinction by
+		// returning nil for a field the form did not submit at all.
+		//
+		// A field that IS present but is not a boolean also leaves the value
+		// unchanged (a garbled value must never disable a connection), but it
+		// is a client bug rather than an omission, so it is logged instead of
+		// swallowed.
+		for _, f := range []struct {
+			key string
+			dst **bool
+		}{
+			{"enabled", &body.Enabled},
+			{"feature_image_write", &body.FeatureImageWrite},
+			{"feature_metadata_push", &body.FeatureMetadataPush},
+			{"feature_trigger_refresh", &body.FeatureTriggerRefresh},
+		} {
+			v, wellFormed := formBoolPtr(req, f.key)
+			if !wellFormed {
+				r.logger.Warn("ignoring malformed boolean in connection update form",
+					slog.String("field", f.key),
+					slog.String("connection_id", id),
+				)
+			}
+			*f.dst = v
+		}
+	} else if !DecodeJSON(w, req, &body) {
 		return
 	}
 
