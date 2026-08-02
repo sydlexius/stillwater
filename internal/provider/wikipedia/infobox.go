@@ -307,8 +307,9 @@ func parseListField(value string) []string {
 		}
 	}
 
-	// Check for <br /> separated values.
-	if strings.Contains(strings.ToLower(value), "<br") {
+	// Check for <br /> separated values. Uses the same delimiter-aware scanner
+	// as the guard above, so a br-prefixed tag is never a separator.
+	if hasLineBreak(value) {
 		parts := splitOnBR(value)
 		for _, part := range parts {
 			item := cleanMarkup(part)
@@ -660,30 +661,43 @@ func stripRefs(s string) string {
 	return s
 }
 
-// hasLineBreak reports whether s contains a <br> tag in any of its spellings
-// (<br>, <br/>, <br />, <BR clear="all" />).
+// indexLineBreak returns the byte offset of the next <br> tag at or after from,
+// or -1 when there is none. lower must already be lowercased.
 //
-// The tag name must be followed by a delimiter. A bare strings.Contains(s,
-// "<br") also matches <bracket> and <brand>, which would make callers split at
-// a tag that is not a line break at all.
-func hasLineBreak(s string) bool {
-	lower := strings.ToLower(s)
-	for i := 0; ; {
+// The tag name has to be followed by a delimiter. A bare
+// strings.Index(s, "<br") also matches <bracket> and <brand>, so a caller
+// splitting on it separates at a tag that is not a line break at all.
+//
+// This is the single definition of "where is the next line break", shared by
+// hasLineBreak, splitOnBR and parseListField. They previously carried two
+// different answers: hasLineBreak was delimiter-aware while splitOnBR was not,
+// so a value holding BOTH a real <br /> and a br-prefixed tag passed the guard
+// and was then split at the wrong tag anyway -- producing a spurious extra item
+// and a stray ", ". A guard and the scanner it guards must agree.
+func indexLineBreak(lower string, from int) int {
+	for i := from; ; {
 		idx := strings.Index(lower[i:], "<br")
 		if idx < 0 {
-			return false
+			return -1
 		}
-		i += idx + 3
+		pos := i + idx
+		i = pos + 3
 		if i >= len(lower) {
 			// Trailing "<br" with nothing after it: treat as a line break so a
 			// truncated value still separates rather than concatenates.
-			return true
+			return pos
 		}
-		switch c := lower[i]; c {
+		switch lower[i] {
 		case '>', '/', ' ', '\t', '\n', '\r':
-			return true
+			return pos
 		}
 	}
+}
+
+// hasLineBreak reports whether s contains a <br> tag in any of its spellings
+// (<br>, <br/>, <br />, <BR clear="all" />).
+func hasLineBreak(s string) bool {
+	return indexLineBreak(strings.ToLower(s), 0) >= 0
 }
 
 // joinLineBreaks replaces <br /> separators with ", ".
@@ -717,17 +731,19 @@ func joinLineBreaks(s string) string {
 }
 
 // splitOnBR splits a string on <br>, <br/>, <br />, and variants.
+//
+// Tag detection goes through indexLineBreak, so a br-prefixed tag such as
+// <brand> is not a separator here -- matching hasLineBreak exactly.
 func splitOnBR(s string) []string {
 	var parts []string
 	lower := strings.ToLower(s)
 	start := 0
 	for {
-		idx := strings.Index(lower[start:], "<br")
-		if idx < 0 {
+		pos := indexLineBreak(lower, start)
+		if pos < 0 {
 			parts = append(parts, s[start:])
 			break
 		}
-		pos := start + idx
 		parts = append(parts, s[start:pos])
 
 		// Skip past the <br ... > or <br ... />.

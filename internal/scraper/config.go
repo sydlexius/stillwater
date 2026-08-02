@@ -133,6 +133,12 @@ type ScraperConfig struct {
 	// Empty on a config written before this existed; backfillMissingFields
 	// seeds it from the current Fields in that case, so a pre-existing install
 	// does not have its current selection treated as unseen.
+	//
+	// That seeding carries one unavoidable boundary case: a field deleted
+	// BEFORE the roster existed left no record anywhere, so on the seeding boot
+	// it cannot be told apart from a field introduced later and is re-added
+	// once. Deletions are durable only from that boot onward. Deleting it again
+	// sticks.
 	KnownFields []FieldName `json:"known_fields,omitempty"`
 }
 
@@ -283,9 +289,14 @@ func ProviderCapabilities() []ProviderCapability {
 			Provider:     provider.NameWikipedia,
 			DisplayName:  provider.NameWikipedia.DisplayName(),
 			RequiresAuth: false,
+			// FieldFormed and FieldDisbanded are deliberately absent: GetArtist
+			// never assigns ArtistMetadata.Formed or .Disbanded, so advertising
+			// them would offer Wikipedia for fields it cannot answer -- a dead
+			// slot in the priority chain that still spends a request. Add them
+			// back only alongside the extraction. (#2897 tracks the same class
+			// across the other providers.)
 			MetadataFields: []FieldName{
-				FieldBiography, FieldYearsActive, FieldOrigin, FieldBorn, FieldFormed,
-				FieldDied, FieldDisbanded,
+				FieldBiography, FieldYearsActive, FieldOrigin, FieldBorn, FieldDied,
 			},
 		},
 		{

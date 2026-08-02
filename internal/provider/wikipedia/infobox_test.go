@@ -304,6 +304,8 @@ func TestCleanScalarField(t *testing.T) {
 		// Contains(s, "<br") guard would split here and inject a stray comma.
 		{"br-prefixed tag is not a line break", "[[A]] <bracket> [[B]]", "A B"},
 		{"brand tag is not a line break", "[[A]]<brand>[[B]]", "AB"},
+		// Both shapes together: the real <br /> separates, the <brand> does not.
+		{"br-prefixed tag alongside a real br", "[[A]]<brand>x</brand><br />[[B]]", "Ax, B"},
 	}
 
 	for _, tt := range tests {
@@ -761,6 +763,17 @@ func TestParseListField_BRAcrossEveryBranch(t *testing.T) {
 			name:  "precondition: comma list without br",
 			input: "[[Rock]], [[Pop]]",
 			want:  []string{"Rock", "Pop"},
+		},
+		// A REAL <br /> alongside a br-prefixed tag. This is the case a guard
+		// alone cannot catch: hasLineBreak correctly returns true (there IS a
+		// line break), and a splitter using a bare "<br" prefix check then
+		// separates at <brand> as well -- yielding a spurious third item. It
+		// only fails when both tag shapes appear together, which is why the
+		// guard and the splitter have to share one scanner.
+		{
+			name:  "br-prefixed tag alongside a real br",
+			input: "[[A]]<brand>x</brand><br />[[B]]",
+			want:  []string{"Ax", "B"},
 		},
 	}
 

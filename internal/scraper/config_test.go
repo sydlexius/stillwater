@@ -132,6 +132,7 @@ func TestAllFieldNames(t *testing.T) {
 	// while dropping one of the required field names.
 	required := map[FieldName]bool{
 		FieldYearsActive: false,
+		FieldOrigin:      false,
 		FieldType:        false,
 		FieldGender:      false,
 	}
