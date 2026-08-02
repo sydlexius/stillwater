@@ -719,15 +719,25 @@ func TestIdentifyArtist(t *testing.T) {
 	})
 }
 
-// TestRunBulkIdentify_PanicRecovered exercises the deferred recover() added
-// for C11. We inject a panic by providing an orchestrator whose registered
-// MusicBrainz stub panics inside SearchArtist. Because identifyArtist calls
-// SearchForLinking when the artist has no album subdir, the panic surfaces
-// inside the goroutine. The recover must:
+// TestRunBulkIdentify_PanicRecovered exercises panic containment for a bulk
+// run. We inject a panic by providing an orchestrator whose registered
+// MusicBrainz stub panics inside SearchArtist, which identifyArtist reaches
+// via SearchForLinking when the artist has no album subdir.
 //
-//   - prevent the test process from crashing,
-//   - transition progress.Status to "failed",
-//   - emit a structured log entry tagged "bulk-identify panic recovered".
+// Recovery moved DOWN a layer for #2818: SearchForLinking now runs each
+// provider in its own goroutine, so a panic is recovered at the orchestrator
+// boundary and reported as an errored provider status rather than unwinding
+// into runBulkIdentify's own recover(). Containing it there is what stops one
+// bad adapter killing unrelated in-flight requests, but it also means the
+// job-level outcome can no longer be signaled by a propagating panic.
+//
+// The guarantees the operator actually depends on are unchanged, and are what
+// this test still asserts:
+//
+//   - the process does not crash,
+//   - progress.Status ends "failed", NOT "completed" -- a run whose every
+//     artist failed must never report success,
+//   - the panic is logged with its value, so the cause is diagnosable.
 func TestRunBulkIdentify_PanicRecovered(t *testing.T) {
 	t.Parallel()
 
@@ -795,8 +805,10 @@ func TestRunBulkIdentify_PanicRecovered(t *testing.T) {
 	bufMu.Lock()
 	logged := logBuf.String()
 	bufMu.Unlock()
-	if !strings.Contains(logged, "bulk-identify panic recovered") {
-		t.Errorf("log output missing recovery marker; got:\n%s", logged)
+	// Logged by the orchestrator's per-provider recover rather than by
+	// runBulkIdentify, since the panic no longer reaches the job goroutine.
+	if !strings.Contains(logged, "provider search panicked") {
+		t.Errorf("log output missing the provider-panic recovery marker; got:\n%s", logged)
 	}
 	if !strings.Contains(logged, "induced panic for recovery test") {
 		t.Errorf("log output missing panic value; got:\n%s", logged)
