@@ -225,7 +225,7 @@ func isBulletList(value string) bool {
 // Handles: {{flatlist|...}}, {{hlist|...}}, {{plainlist|...}}, bullet lists,
 // <br /> separators, and comma-separated values.
 //
-//nolint:gocognit // Wikitext list parser: each separator format ({{flatlist}}, bullets, <br />, commas) has its own probing branch, and the cleanup pass (link unwrap, ref strip, html-entity decode, whitespace normalization) applies after detection; the format-detection ladder is the function's purpose.
+//nolint:gocognit // Wikitext list parser: <br /> is handled up front (it separates items in every format), then each remaining separator format ({{flatlist}}, bullets, pipes, commas) has its own probing branch, with the cleanup pass (link unwrap, ref strip, html-entity decode, whitespace normalization) applying after detection; the format-detection ladder is the function's purpose.
 func parseListField(value string) []string {
 	// Strip ref tags and their content first.
 	value = stripRefs(value)
@@ -236,13 +236,15 @@ func parseListField(value string) []string {
 	var items []string
 
 	// A <br /> always separates ITEMS in a list field, in every format below,
-	// so handle it once here instead of as one more rung of the ladder.
+	// so it is handled ONCE here rather than as one more rung of the ladder --
+	// and this is the ONLY <br /> handling in the function. Everything past
+	// this block runs on a value with no line break in it.
 	//
-	// The ladder is ordered (pipes, then bullets, then <br />, then commas), so
-	// a <br /> nested inside a pipe- or bullet-delimited value was reached only
-	// by cleanMarkup, which strips it -- butting two items together into one
-	// ("[[Pop]]<br />[[Folk]]" inside an hlist became the single tag "PopFolk",
-	// #2895). Recursing per segment covers every branch.
+	// It used to be the third rung, after pipes and bullets, so a <br /> nested
+	// inside a pipe- or bullet-delimited value never reached it: those branches
+	// called cleanMarkup, which strips the tag, butting two items together into
+	// one ("[[Pop]]<br />[[Folk]]" inside an hlist became the single tag
+	// "PopFolk", #2895). Recursing per segment covers every branch.
 	//
 	// Bullets are split FIRST, because a bullet list is line-oriented while
 	// <br /> is not: splitting "* [[A]]<br />[[B]]\n* [[C]]" on the <br /> hands
@@ -300,21 +302,6 @@ func parseListField(value string) []string {
 				if item != "" {
 					items = append(items, item)
 				}
-			}
-		}
-		if len(items) > 0 {
-			return items
-		}
-	}
-
-	// Check for <br /> separated values. Uses the same delimiter-aware scanner
-	// as the guard above, so a br-prefixed tag is never a separator.
-	if hasLineBreak(value) {
-		parts := splitOnBR(value)
-		for _, part := range parts {
-			item := cleanMarkup(part)
-			if item != "" {
-				items = append(items, item)
 			}
 		}
 		if len(items) > 0 {
