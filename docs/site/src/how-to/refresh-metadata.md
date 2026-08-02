@@ -58,6 +58,14 @@ Picking a match discards the MusicBrainz ID Stillwater currently holds -- you ha
 
 All of that happens at the moment you pick a match, not before. Until then the artist keeps every ID it had, so you can search, change the query, find nothing usable, or close the page entirely and the artist is left exactly as it was. There is no intermediate state where the artist has no identity at all.
 
+**Re-identify also refreshes the metadata.** Picking a match runs a full refresh against the newly linked identity. The fields listed under [which values a refresh replaces](#which-values-a-refresh-replaces) are rewritten from the new entry, and unlike an ordinary refresh the Name and Sort name are updated too.
+
+That is the point. If the artist was matched to the wrong entry, its origin, biography, and dates all came from the wrong artist and should not survive the correction.
+
+The same lock rules apply, which is worth thinking about before relinking. A lock you set to protect a handwritten biography also keeps that biography after you have declared the artist to be someone else.
+
+An artist-level lock skips the metadata refresh entirely. The identity is still relinked, so the artist ends up correctly identified with its old metadata intact.
+
 ## Refresh many artists
 
 To run refreshes across a saved view or a whole library:
@@ -68,12 +76,48 @@ To run refreshes across a saved view or a whole library:
 
 The bulk path runs one artist at a time per provider (so a slow provider doesn't fan out to its rate limit). Progress shows in the event banner; you can keep using Stillwater while it runs.
 
+### Repairing values that were stored badly
+
+Refreshing is also how you correct a field that was stored in a bad shape. Text fields such as **Origin** and **Years active** are replaced whenever a provider returns a value for them. Re-running a refresh on one artist, in bulk, or as part of re-identifying therefore overwrites the stored text rather than leaving it in place.
+
+Two things bound this:
+
+- **Locked fields are still skipped.** If you already corrected a field by hand and pinned it, the refresh leaves your version alone. That is usually what you want, but it also means a field you locked keeps its old value -- unlock it first if you want the provider's.
+- **The provider has to return something.** For Origin and Years active, a field no enabled provider supplies stays as it is. Other fields clear differently -- see [which values a refresh replaces](#which-values-a-refresh-replaces).
+
+When repairing in bulk, filter the artist list down to the affected artists first rather than refreshing the whole library, so you can check the result on a scope small enough to read.
+
+## Which values a refresh replaces
+
+A refresh is not additive. For most fields, a provider that returns a value **replaces** what is stored, including a value you typed yourself. Locks are what stop that, so it is worth knowing which fields behave which way before you run one across a library.
+
+**Replaced whenever a provider returns something:** Origin, Years active, Type, Gender, Disambiguation. If any enabled provider has a value, it wins over the stored one. A provider returning nothing leaves the stored value alone.
+
+**Replaced only when the provider was asked and answered:** Biography, Genres, Styles, Moods, Born, Formed, Died, Disbanded. These can also be *cleared* when a provider is asked for the field and authoritatively returns nothing, so they follow the provider more closely than the group above.
+
+**Genres, Styles, and Moods are replaced, not accumulated.** Worth stating plainly because it is easy to assume otherwise: the resolved provider tag list replaces whatever the artist had. Tags you added by hand are not kept alongside it. If you have curated a tag list, lock the field.
+
+**Filled only when empty:** the provider IDs (MusicBrainz, Discogs, Deezer, and so on). Once an ID is set, a refresh will not swap it. Changing one is what re-identify is for.
+
+**Never touched by a refresh:** Name and Sort name. Re-identify updates these deliberately, because saying "this is a different artist" is a statement about identity; an ordinary refresh does not.
+
+## Keeping a value you curated
+
+If you have corrected a field by hand and want it to survive, **lock it**. Locks are the only thing that stops an automated write:
+
+- **Field lock** -- pins one field. Everything else on the artist still refreshes normally. This is the right tool when you have fixed one wrong origin or written your own biography.
+- **Artist lock** -- skips the artist entirely. A refresh will not run on it at all.
+
+Both are described in [field locks](../core-concepts/field-locks.md), and the [edit-artist how-to](edit-artist.md) shows where the padlocks live in the UI.
+
+The corollary matters just as much: a locked field keeps its stored value even when that value is the one you wanted to be fixed. If you locked an origin and later want the provider's version, unlock it first, then refresh.
+
 ## What a refresh does
 
 For each artist:
 
 1. Stillwater walks your **per-field provider priority list** (Settings > Providers > Priorities).
-2. For each field that needs a value, it asks providers in order. First match wins for text fields; aggregated fields (genres, styles, moods, images) collect from every provider in the list.
+2. For each field that needs a value, it asks providers in order. First match wins: the first provider that returns a value for the field supplies it, including the tag fields (genres, styles, moods). Images are the exception -- they collect from every provider in the list.
 3. **Locked fields are skipped** entirely. If you've pinned the biography, no provider can overwrite it on a refresh.
 4. As IDs are discovered (a Discogs URL in MusicBrainz's response, for example), Stillwater learns them and feeds them to subsequent providers in the same refresh.
 5. The artist record is updated. Source attributions appear in the "Sources" panel so you can see which provider supplied which field.

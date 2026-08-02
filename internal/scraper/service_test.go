@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"log/slog"
 	"os"
+	"slices"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/provider"
 	_ "modernc.org/sqlite"
 )
 
@@ -215,5 +217,286 @@ func TestMergeConfigs(t *testing.T) {
 	// Scope should be from connection
 	if merged.Scope != "conn-1" {
 		t.Errorf("merged Scope = %q, want %q", merged.Scope, "conn-1")
+	}
+}
+
+// TestSeedDefaults_BackfillsFieldAddedAfterInstall covers the upgrade half of
+// #2895. The scraper config is a JSON blob written once at install time, so a
+// field added to DefaultConfig in a later release reaches new installs only --
+// an existing install keeps the field list it was created with and never
+// fetches the new field. Origin hit exactly that, which is why an upgraded
+// instance would still not repair a bad origin even with the applier in place.
+//
+// The fixture writes a config with origin REMOVED, mimicking a row written by
+// a pre-fix build, then asserts the startup path restores it.
+func TestSeedDefaults_BackfillsFieldAddedAfterInstall(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Strip origin and persist, simulating a config written before the field
+	// existed. Save through the service so the row is written the same way a
+	// real older build would have written it.
+	pruned := make([]FieldConfig, 0, len(stored.Fields))
+	for _, f := range stored.Fields {
+		if f.Field != FieldOrigin {
+			pruned = append(pruned, f)
+		}
+	}
+	if len(pruned) == len(stored.Fields) {
+		t.Fatalf("precondition failed: seeded config had no %q field to remove", FieldOrigin)
+	}
+	stored.Fields = pruned
+	if err := svc.SaveConfig(ctx, ScopeGlobal, stored, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// SeedDefaults is the startup path an upgraded install runs through.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got *FieldConfig
+	for i := range reloaded.Fields {
+		if reloaded.Fields[i].Field == FieldOrigin {
+			got = &reloaded.Fields[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("%q missing after reload: an upgraded install will never fetch it", FieldOrigin)
+	}
+	if !got.Enabled {
+		t.Errorf("backfilled %q Enabled = false, want true", FieldOrigin)
+	}
+	if got.Category != CategoryMetadata {
+		t.Errorf("backfilled %q Category = %q, want %q", FieldOrigin, got.Category, CategoryMetadata)
+	}
+}
+
+// TestSeedDefaults_BackfillPreservesOperatorChoices is the counterweight: the
+// backfill must only ADD. An operator who disabled a field or repointed it at
+// a different provider must keep that setting across the upgrade, otherwise
+// the self-heal silently reverts their configuration on every read.
+func TestSeedDefaults_BackfillPreservesOperatorChoices(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range stored.Fields {
+		if stored.Fields[i].Field == FieldOrigin {
+			stored.Fields[i].Enabled = false
+			stored.Fields[i].Primary = provider.NameAudioDB
+		}
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, stored, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count := 0
+	for _, f := range reloaded.Fields {
+		if f.Field != FieldOrigin {
+			continue
+		}
+		count++
+		if f.Enabled {
+			t.Error("operator disabled origin but backfill re-enabled it")
+		}
+		if f.Primary != provider.NameAudioDB {
+			t.Errorf("operator set primary %q but backfill reverted it to %q", provider.NameAudioDB, f.Primary)
+		}
+	}
+	if count != 1 {
+		t.Errorf("origin appears %d times after reload, want exactly 1: the backfill duplicated an existing field", count)
+	}
+}
+
+// TestSeedDefaults_BackfillDoesNotResurrectDeletedFields covers the hostile-review
+// finding on the #2895 backfill.
+//
+// PUT /api/v1/scraper/config accepts an arbitrary Fields array and does not
+// require completeness, so "disable this field" and "remove this field" are
+// both reachable through the same API. Judging the backfill on the Fields list
+// alone makes those indistinguishable from a field introduced by a later
+// release, and every boot silently restores the removed entries -- re-enabled,
+// because DefaultConfig has Enabled: true.
+func TestSeedDefaults_BackfillDoesNotResurrectDeletedFields(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// A first boot on an existing install seeds the known-field roster.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The operator removes every image field rather than disabling them.
+	kept := make([]FieldConfig, 0, len(stored.Fields))
+	removed := 0
+	for _, f := range stored.Fields {
+		if CategoryFor(f.Field) == CategoryImages {
+			removed++
+			continue
+		}
+		kept = append(kept, f)
+	}
+	if removed == 0 {
+		t.Fatal("precondition failed: seeded config had no image fields to remove")
+	}
+	stored.Fields = kept
+	if err := svc.SaveConfig(ctx, ScopeGlobal, stored, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Restart.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range reloaded.Fields {
+		if CategoryFor(f.Field) == CategoryImages {
+			t.Errorf("field %q was deleted by the operator but came back after restart (enabled=%v)",
+				f.Field, f.Enabled)
+		}
+	}
+
+	// Precondition: the backfill still works for a genuinely new field. Drop
+	// origin from BOTH the field list and the known roster, which is what a
+	// config written before the field existed looks like.
+	reloaded.Fields = slices.DeleteFunc(reloaded.Fields, func(f FieldConfig) bool {
+		return f.Field == FieldOrigin
+	})
+	reloaded.KnownFields = slices.DeleteFunc(reloaded.KnownFields, func(f FieldName) bool {
+		return f == FieldOrigin
+	})
+	if err := svc.SaveConfig(ctx, ScopeGlobal, reloaded, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	after, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(after.Fields, func(f FieldConfig) bool { return f.Field == FieldOrigin }) {
+		t.Error("a field absent from both Fields and KnownFields must still be added; the deletion guard has disabled the backfill entirely")
+	}
+}
+
+// TestSeedDefaults_PreRosterDeletionIsRestoredOnceThenDurable pins the one
+// boundary case in the KnownFields deletion guard, which CodeRabbit asked for
+// on #2898.
+//
+// A config written before the roster existed carries no record of what the
+// operator removed, so a deletion made BEFORE the upgrade is indistinguishable
+// from a field introduced after it. On the seeding boot that field comes back,
+// enabled. There is no way to recover the pre-upgrade intent -- the point of
+// this test is that the behavior is DELIBERATE and BOUNDED: it happens exactly
+// once, and a deletion made from that boot onward is durable.
+//
+// Asserting only the durability half would leave the one-time restore
+// undocumented in the suite; asserting only the restore would read as if the
+// guard did not work at all.
+func TestSeedDefaults_PreRosterDeletionIsRestoredOnceThenDurable(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a config that looks like a pre-KnownFields row: origin removed AND
+	// no roster, which is exactly what an operator deletion before the upgrade
+	// left behind.
+	stored, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.Fields = slices.DeleteFunc(stored.Fields, func(f FieldConfig) bool {
+		return f.Field == FieldOrigin
+	})
+	stored.KnownFields = nil
+	if err := svc.SaveConfig(ctx, ScopeGlobal, stored, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// First boot after the upgrade: the field is restored, because nothing
+	// distinguishes it from one this release introduced.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	afterFirst, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(afterFirst.Fields, func(f FieldConfig) bool { return f.Field == FieldOrigin }) {
+		t.Fatalf("%q was not restored on the seeding boot; the boundary case documented on KnownFields does not match the code", FieldOrigin)
+	}
+	if len(afterFirst.KnownFields) == 0 {
+		t.Fatal("the roster was not persisted on the seeding boot, so no deletion can ever become durable")
+	}
+
+	// The operator deletes it again, now that a roster exists to record it.
+	afterFirst.Fields = slices.DeleteFunc(afterFirst.Fields, func(f FieldConfig) bool {
+		return f.Field == FieldOrigin
+	})
+	if err := svc.SaveConfig(ctx, ScopeGlobal, afterFirst, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two more boots: the deletion has to hold on both. One would not
+	// distinguish "durable" from "restored on an even-numbered boot".
+	for i := 1; i <= 2; i++ {
+		if err := svc.SeedDefaults(ctx); err != nil {
+			t.Fatal(err)
+		}
+		reloaded, err := svc.GetConfig(ctx, ScopeGlobal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.ContainsFunc(reloaded.Fields, func(f FieldConfig) bool { return f.Field == FieldOrigin }) {
+			t.Fatalf("boot %d: %q came back after a post-roster deletion; deletions must be durable once the roster exists", i, FieldOrigin)
+		}
 	}
 }

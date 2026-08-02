@@ -114,8 +114,8 @@ func TestProviderCapabilities(t *testing.T) {
 
 func TestAllFieldNames(t *testing.T) {
 	names := AllFieldNames()
-	if len(names) != 16 {
-		t.Errorf("AllFieldNames count = %d, want 16", len(names))
+	if len(names) != 17 {
+		t.Errorf("AllFieldNames count = %d, want 17", len(names))
 	}
 
 	// Check uniqueness
@@ -132,6 +132,7 @@ func TestAllFieldNames(t *testing.T) {
 	// while dropping one of the required field names.
 	required := map[FieldName]bool{
 		FieldYearsActive: false,
+		FieldOrigin:      false,
 		FieldType:        false,
 		FieldGender:      false,
 	}

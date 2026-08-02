@@ -22,6 +22,7 @@ const (
 	FieldDied        FieldName = "died"
 	FieldDisbanded   FieldName = "disbanded"
 	FieldYearsActive FieldName = "years_active"
+	FieldOrigin      FieldName = "origin"
 	FieldType        FieldName = "type"
 	FieldGender      FieldName = "gender"
 	FieldThumb       FieldName = "thumb"
@@ -35,7 +36,7 @@ func AllFieldNames() []FieldName {
 	return []FieldName{
 		FieldBiography, FieldGenres, FieldStyles, FieldMoods,
 		FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
-		FieldYearsActive, FieldType, FieldGender,
+		FieldYearsActive, FieldOrigin, FieldType, FieldGender,
 		FieldThumb, FieldFanart, FieldLogo, FieldBanner,
 	}
 }
@@ -121,6 +122,24 @@ type ScraperConfig struct {
 	FallbackChains []FallbackChain `json:"fallback_chains"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
+
+	// KnownFields records every field this install has been offered, which is
+	// not the same as the fields it currently uses. The startup backfill adds a
+	// field only when it is absent from BOTH Fields and KnownFields, so a field
+	// the operator deliberately removed stays removed while a field introduced
+	// by a later release is still added once. Without it, "deleted" and "never
+	// existed" are indistinguishable and every boot resurrects the deletion.
+	//
+	// Empty on a config written before this existed; backfillMissingFields
+	// seeds it from the current Fields in that case, so a pre-existing install
+	// does not have its current selection treated as unseen.
+	//
+	// That seeding carries one unavoidable boundary case: a field deleted
+	// BEFORE the roster existed left no record anywhere, so on the seeding boot
+	// it cannot be told apart from a field introduced later and is re-added
+	// once. Deletions are durable only from that boot onward. Deleting it again
+	// sticks.
+	KnownFields []FieldName `json:"known_fields,omitempty"`
 }
 
 // Overrides tracks which fields and fallback chains have been explicitly
@@ -178,6 +197,7 @@ func DefaultConfig() *ScraperConfig {
 			{Field: FieldDied, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldDisbanded, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldYearsActive, Primary: provider.NameWikipedia, Enabled: true, Category: CategoryMetadata},
+			{Field: FieldOrigin, Primary: provider.NameWikipedia, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldType, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldGender, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldThumb, Primary: provider.NameFanartTV, Enabled: true, Category: CategoryImages},
@@ -219,7 +239,7 @@ func ProviderCapabilities() []ProviderCapability {
 			MetadataFields: []FieldName{
 				FieldGenres, FieldStyles, FieldMembers,
 				FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
-				FieldType, FieldGender,
+				FieldOrigin, FieldType, FieldGender,
 			},
 		},
 		{
@@ -234,6 +254,7 @@ func ProviderCapabilities() []ProviderCapability {
 			RequiresAuth: true,
 			MetadataFields: []FieldName{
 				FieldBiography, FieldGenres, FieldStyles, FieldMoods, FieldFormed, FieldYearsActive,
+				FieldOrigin,
 			},
 			ImageFields: []FieldName{FieldThumb, FieldFanart, FieldLogo, FieldBanner},
 		},
@@ -261,15 +282,21 @@ func ProviderCapabilities() []ProviderCapability {
 			RequiresAuth: false,
 			MetadataFields: []FieldName{
 				FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
-				FieldType, FieldGender,
+				FieldOrigin, FieldType, FieldGender,
 			},
 		},
 		{
 			Provider:     provider.NameWikipedia,
 			DisplayName:  provider.NameWikipedia.DisplayName(),
 			RequiresAuth: false,
+			// FieldFormed and FieldDisbanded are deliberately absent: GetArtist
+			// never assigns ArtistMetadata.Formed or .Disbanded, so advertising
+			// them would offer Wikipedia for fields it cannot answer -- a dead
+			// slot in the priority chain that still spends a request. Add them
+			// back only alongside the extraction. (#2897 tracks the same class
+			// across the other providers.)
 			MetadataFields: []FieldName{
-				FieldBiography, FieldYearsActive, FieldBorn, FieldFormed, FieldDied, FieldDisbanded,
+				FieldBiography, FieldYearsActive, FieldOrigin, FieldBorn, FieldDied,
 			},
 		},
 		{

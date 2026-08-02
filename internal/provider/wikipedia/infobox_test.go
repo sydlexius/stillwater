@@ -160,6 +160,60 @@ func TestParseInfobox_BRMembers(t *testing.T) {
 	}
 }
 
+// TestParseInfobox_BROrigin covers the whole-field path for #2895: an origin
+// whose components are stacked with <br /> must be joined with ", ", and the
+// list fields in the same infobox -- which have always split on <br /> and are
+// reached by a different branch of parseListField -- must be unchanged by that.
+func TestParseInfobox_BROrigin(t *testing.T) {
+	wikitext := `{{Infobox musical artist
+| name         = Test Artist
+| origin       = [[New York City]]<br />[[United States]]
+| genre        = [[Rock]]<br />[[Folk]]
+| years_active = 1985-present
+}}`
+
+	data := parseInfobox(wikitext)
+	if data == nil {
+		t.Fatal("expected non-nil infoboxData")
+	}
+
+	const wantOrigin = "New York City, United States"
+	if data.Origin != wantOrigin {
+		t.Errorf("Origin = %q, want %q", data.Origin, wantOrigin)
+	}
+
+	wantGenres := []string{"Rock", "Folk"}
+	if len(data.Genres) != len(wantGenres) {
+		t.Fatalf("Genres = %v, want %v", data.Genres, wantGenres)
+	}
+	for i, g := range data.Genres {
+		if g != wantGenres[i] {
+			t.Errorf("Genres[%d] = %q, want %q", i, g, wantGenres[i])
+		}
+	}
+}
+
+// TestParseInfobox_OriginWithoutBR is the precondition guard for the test
+// above: an origin that already carries its own separators must survive the
+// <br /> handling untouched, so a passing TestParseInfobox_BROrigin cannot be
+// explained by the joiner rewriting every origin.
+func TestParseInfobox_OriginWithoutBR(t *testing.T) {
+	wikitext := `{{Infobox musical artist
+| name   = Test Artist
+| origin = [[Abingdon, Oxfordshire|Abingdon]], [[Oxfordshire]], England
+}}`
+
+	data := parseInfobox(wikitext)
+	if data == nil {
+		t.Fatal("expected non-nil infoboxData")
+	}
+
+	const wantOrigin = "Abingdon, Oxfordshire, England"
+	if data.Origin != wantOrigin {
+		t.Errorf("Origin = %q, want %q", data.Origin, wantOrigin)
+	}
+}
+
 func TestParseInfobox_NoInfobox(t *testing.T) {
 	wikitext := "This article has no infobox template at all. Just plain text about music."
 	data := parseInfobox(wikitext)
@@ -219,6 +273,46 @@ func TestCleanMarkup(t *testing.T) {
 			got := cleanMarkup(tt.input)
 			if got != tt.want {
 				t.Errorf("cleanMarkup(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCleanScalarField covers the SCALAR entry point, where a <br /> stacks the
+// components of ONE value and must become ", " rather than vanishing (#2895).
+// The list entry point means the opposite by a <br />; see TestParseListField.
+func TestCleanScalarField(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"br between wikilinks", "[[New York City]]<br />[[United States]]", "New York City, United States"},
+		{"br unspaced variant", "[[Paris]]<br>[[France]]", "Paris, France"},
+		{"br self-closing no space", "[[Tokyo]]<br/>[[Japan]]", "Tokyo, Japan"},
+		{"br uppercase", "[[Berlin]]<BR />[[Germany]]", "Berlin, Germany"},
+		{"br with attributes", "[[Oslo]]<br clear=\"all\" />[[Norway]]", "Oslo, Norway"},
+		{"br three components", "[[Austin]]<br />[[Texas]]<br />[[United States]]", "Austin, Texas, United States"},
+		{"trailing comma not doubled", "New York City,<br />United States", "New York City, United States"},
+		{"leading comma not doubled", "New York City<br />, United States", "New York City, United States"},
+		{"br with surrounding whitespace", "[[Seattle]] <br /> [[Washington]]", "Seattle, Washington"},
+		{"trailing br dropped", "[[Dublin]]<br />", "Dublin"},
+		{"leading br dropped", "<br />[[Cork]]", "Cork"},
+		{"consecutive brs collapse", "[[Lisbon]]<br /><br />[[Portugal]]", "Lisbon, Portugal"},
+		{"no br unchanged", "Abingdon, Oxfordshire, England", "Abingdon, Oxfordshire, England"},
+		// A tag whose name merely STARTS with "br" is not a line break. A bare
+		// Contains(s, "<br") guard would split here and inject a stray comma.
+		{"br-prefixed tag is not a line break", "[[A]] <bracket> [[B]]", "A B"},
+		{"brand tag is not a line break", "[[A]]<brand>[[B]]", "AB"},
+		// Both shapes together: the real <br /> separates, the <brand> does not.
+		{"br-prefixed tag alongside a real br", "[[A]]<brand>x</brand><br />[[B]]", "Ax, B"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cleanScalarField(tt.input)
+			if got != tt.want {
+				t.Errorf("cleanScalarField(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -430,6 +524,11 @@ func TestCleanYearsActive(t *testing.T) {
 		{"amp entity", "rock &amp; roll", "rock & roll"},
 		{"realistic wikipedia value", "{{start date|1987}}&ndash;present<ref>source</ref>", "1987-present"},
 		{"multiple ranges with entities", "1972&#8211;1982, 2018&#8211;2022", "1972-1982, 2018-2022"},
+		// Discontinuous runs stacked with <br /> hit the same missing-separator
+		// hazard as origin (#2895); they must read as a comma list.
+		{"br separated ranges", "1985-1990<br />1995-present", "1985-1990, 1995-present"},
+		{"br separated with en-dash", "1972–1982<br />2018–2022", "1972-1982, 2018-2022"},
+		{"no br unchanged", "1985-present", "1985-present"},
 	}
 
 	for _, tt := range tests {
@@ -598,6 +697,96 @@ func TestExtractYear(t *testing.T) {
 			got := extractYear(tc.input)
 			if got != tc.want {
 				t.Errorf("%s: extractYear(%q) = %q, want %q", tc.comment, tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestParseListField_BRAcrossEveryBranch is the regression guard for the
+// hostile-review blocker on #2895.
+//
+// parseListField detects its format with an ordered ladder (pipes, bullets,
+// <br />, commas). The <br /> rung is third, so a <br /> nested inside a pipe-
+// or bullet-delimited value never reached it -- those branches called
+// cleanMarkup on each part, which strips the tag and butts two items together
+// into one ("[[Pop]]<br />[[Folk]]" inside an hlist became the single genre
+// "PopFolk"). A genre or member list is written to the artist and pushed to
+// Emby/Jellyfin, so a fused item is operator-visible bad data.
+//
+// Each case here carries a <br /> in a DIFFERENT branch of the ladder, which is
+// the point: a single-shape test would pass with the ladder still broken for
+// the other shapes.
+func TestParseListField_BRAcrossEveryBranch(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "br inside an hlist pipe segment",
+			input: "{{hlist|class=nowrap|[[A]]<br/>[[B]]|[[C]]}}",
+			want:  []string{"A", "B", "C"},
+		},
+		{
+			name:  "br inside a bullet item",
+			input: "* [[A]]<br />[[B]]\n* [[C]]",
+			want:  []string{"A", "B", "C"},
+		},
+		{
+			name:  "br inside a top-level pipe list",
+			input: "[[A]]|[[B]]<br />[[C]]",
+			want:  []string{"A", "B", "C"},
+		},
+		{
+			name:  "br as the sole separator still works",
+			input: "[[Rock]]<br />[[Pop]]",
+			want:  []string{"Rock", "Pop"},
+		},
+		{
+			name:  "br inside a comma list",
+			input: "[[A]], [[B]]<br />[[C]]",
+			want:  []string{"A", "B", "C"},
+		},
+		// Preconditions: the shapes WITHOUT a <br /> must be unchanged, so a
+		// passing suite cannot be explained by the split rewriting every list.
+		{
+			name:  "precondition: bullets without br",
+			input: "* [[A]]\n* [[B]]",
+			want:  []string{"A", "B"},
+		},
+		{
+			name:  "precondition: hlist without br",
+			input: "{{hlist|[[A]]|[[B]]}}",
+			want:  []string{"A", "B"},
+		},
+		{
+			name:  "precondition: comma list without br",
+			input: "[[Rock]], [[Pop]]",
+			want:  []string{"Rock", "Pop"},
+		},
+		// A REAL <br /> alongside a br-prefixed tag. This is the case a guard
+		// alone cannot catch: hasLineBreak correctly returns true (there IS a
+		// line break), and a splitter using a bare "<br" prefix check then
+		// separates at <brand> as well -- yielding a spurious third item. It
+		// only fails when both tag shapes appear together, which is why the
+		// guard and the splitter have to share one scanner.
+		{
+			name:  "br-prefixed tag alongside a real br",
+			input: "[[A]]<brand>x</brand><br />[[B]]",
+			want:  []string{"Ax", "B"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseListField(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("parseListField(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("parseListField(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+				}
 			}
 		})
 	}

@@ -1109,6 +1109,13 @@ func TestApplyFieldValue_PerFieldTable(t *testing.T) {
 			readBack: func(m *provider.ArtistMetadata) bool { return m.YearsActive == "1995-2005" },
 		},
 		{
+			field:    FieldOrigin,
+			populate: func(m *provider.ArtistMetadata) { m.Origin = "New York City, United States" },
+			readBack: func(m *provider.ArtistMetadata) bool {
+				return m.Origin == "New York City, United States"
+			},
+		},
+		{
 			field:    FieldType,
 			populate: func(m *provider.ArtistMetadata) { m.Type = "Group" },
 			readBack: func(m *provider.ArtistMetadata) bool { return m.Type == "Group" },
@@ -1845,5 +1852,91 @@ func TestExecutorAIMD_CompositeRateLimitWinsOverSuccess(t *testing.T) {
 	if got := float64(gotLimit); got != 0.5 {
 		t.Errorf("expected exact limit 0.5 (rate-limit wins over success); primed=%.3f got=%.3f",
 			float64(primedLimit), got)
+	}
+}
+
+// TestEveryMetadataFieldIsFetchable is the class-level guard for #2895.
+//
+// Origin was a first-class artist column, had a rule that fixed it, sat in the
+// merge table, and was listed in the provider priority settings -- and was
+// still never fetched by a refresh, because the production scrape path had no
+// FieldOrigin at all. Every individual layer looked correct; the field simply
+// did not exist in the one table that decides what gets queried.
+//
+// A per-field test cannot catch that: a field nobody declared has no test case
+// to fail. This asserts the JOIN instead -- every metadata field the config
+// layer knows about must have an applier, and every applier must be a field the
+// config layer knows about. Adding a field to one side without the other now
+// fails here rather than silently never fetching.
+func TestEveryMetadataFieldIsFetchable(t *testing.T) {
+	t.Parallel()
+
+	for _, f := range AllFieldNames() {
+		if CategoryFor(f) == CategoryImages {
+			// Image fields read from pr.images and are applied by the
+			// CategoryImages branch of applyFieldValue, not fieldAppliers.
+			continue
+		}
+		if _, ok := fieldAppliers[f]; !ok {
+			t.Errorf("metadata field %q has no entry in fieldAppliers: it can be configured and displayed but a refresh will never populate it", f)
+		}
+	}
+
+	for f := range fieldAppliers {
+		if !IsValidFieldName(f) {
+			t.Errorf("fieldAppliers has entry %q which is not in AllFieldNames(): it can never be selected", f)
+		}
+	}
+}
+
+// TestDefaultConfigCoversEveryField pins the other half of the same join: a
+// field can be known and have an applier yet still never fetched if no default
+// FieldConfig assigns it a primary provider.
+func TestDefaultConfigCoversEveryField(t *testing.T) {
+	t.Parallel()
+
+	configured := make(map[FieldName]bool)
+	for _, fc := range DefaultConfig().Fields {
+		configured[fc.Field] = true
+	}
+
+	for _, f := range AllFieldNames() {
+		if !configured[f] {
+			t.Errorf("field %q is in AllFieldNames() but has no DefaultConfig entry: a fresh install will never fetch it", f)
+		}
+	}
+}
+
+// TestProviderCapabilitiesCoverOrigin asserts the providers that actually
+// return an origin advertise it, so the settings UI offers them for the field.
+// The four named here are exactly the adapters that assign ArtistMetadata.Origin.
+func TestProviderCapabilitiesCoverOrigin(t *testing.T) {
+	t.Parallel()
+
+	want := map[provider.ProviderName]bool{
+		provider.NameWikipedia:   true,
+		provider.NameAudioDB:     true,
+		provider.NameWikidata:    true,
+		provider.NameMusicBrainz: true,
+	}
+
+	got := make(map[provider.ProviderName]bool)
+	for _, cap := range ProviderCapabilities() {
+		for _, f := range cap.MetadataFields {
+			if f == FieldOrigin {
+				got[cap.Provider] = true
+			}
+		}
+	}
+
+	for p := range want {
+		if !got[p] {
+			t.Errorf("provider %q supplies Origin but does not advertise FieldOrigin: the settings UI will not offer it", p)
+		}
+	}
+	for p := range got {
+		if !want[p] {
+			t.Errorf("provider %q advertises FieldOrigin but does not set ArtistMetadata.Origin", p)
+		}
 	}
 }

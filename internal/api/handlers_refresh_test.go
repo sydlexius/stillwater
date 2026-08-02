@@ -1279,3 +1279,125 @@ func TestHandleRefreshLink_LockedArtistSkipsRefresh(t *testing.T) {
 		t.Errorf("biography = %q, want empty; the refresh that follows the link must be skipped", saved.Biography)
 	}
 }
+
+// TestRefreshArtistForBulk_RepairsMalformedOrigin covers the MERGE half of the
+// #2895 repair: given a FetchResult that carries an origin, the bulk refresh
+// entry point must overwrite a non-empty stored value rather than skip it.
+// Origin sits in modeNonEmpty for OverwriteAttempted (internal/artist/merge.go),
+// which is what makes the repair possible at all.
+//
+// SCOPE WARNING, because this test looks stronger than it is: the orchestrator
+// is stubbed, so the FetchResult arrives with Origin already populated. That
+// bypasses internal/scraper, which is the layer that actually decides whether
+// a field is ever fetched -- and which had NO origin field at all, the real
+// reason a refresh never repaired one. This test passes with that defect fully
+// present. The guard that catches it is
+// TestEveryMetadataFieldIsFetchable in internal/scraper; do not treat this one
+// as end-to-end coverage of the repair.
+func TestRefreshArtistForBulk_RepairsMalformedOrigin(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	ctx := context.Background()
+
+	const (
+		malformedOrigin = "New York CityUnited States"
+		repairedOrigin  = "New York City, United States"
+	)
+
+	a := &artist.Artist{
+		Name:          "Bulk Origin Repair",
+		SortName:      "Bulk Origin Repair",
+		Type:          "person",
+		Path:          "/music/Bulk Origin Repair",
+		MusicBrainzID: "00000000-0000-0000-0000-0000000002895",
+		Origin:        malformedOrigin,
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Precondition: the malformed value really is persisted. Without this the
+	// post-assertion could pass against an artist that never held it.
+	seeded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading seeded artist: %v", err)
+	}
+	if seeded.Origin != malformedOrigin {
+		t.Fatalf("seeded origin = %q, want %q", seeded.Origin, malformedOrigin)
+	}
+
+	stub := &stubScraperExecutor{
+		result: &provider.FetchResult{
+			Metadata:        &provider.ArtistMetadata{Origin: repairedOrigin},
+			AttemptedFields: []string{"origin"},
+			PopulatedFields: []string{"origin"},
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := provider.NewOrchestrator(nil, nil, logger, nil)
+	orch.SetExecutor(stub)
+	r.orchestrator = orch
+
+	if got := r.refreshArtistForBulk(ctx, a); got != bulkOutcomeSucceeded {
+		t.Fatalf("refreshArtistForBulk outcome = %v, want bulkOutcomeSucceeded", got)
+	}
+
+	saved, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist after bulk refresh: %v", err)
+	}
+	if saved.Origin != repairedOrigin {
+		t.Errorf("origin after bulk refresh = %q, want %q; a stored malformed origin must be overwritten, not preserved as fill-empty",
+			saved.Origin, repairedOrigin)
+	}
+}
+
+// TestRefreshArtistForBulk_HonoursOriginLock is the counterweight to the test
+// above. Bulk repair must not become a license to overwrite a field the
+// operator deliberately corrected by hand and locked -- which is the exact
+// hand-correction that surfaced this defect in the first place.
+func TestRefreshArtistForBulk_HonoursOriginLock(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	ctx := context.Background()
+
+	const handCorrected = "New York City, United States"
+
+	a := &artist.Artist{
+		Name:          "Bulk Origin Lock",
+		SortName:      "Bulk Origin Lock",
+		Type:          "person",
+		Path:          "/music/Bulk Origin Lock",
+		MusicBrainzID: "00000000-0000-0000-0000-0000000002896",
+		Origin:        handCorrected,
+		LockedFields:  []string{"origin"},
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	stub := &stubScraperExecutor{
+		result: &provider.FetchResult{
+			Metadata:        &provider.ArtistMetadata{Origin: "Somewhere Else"},
+			AttemptedFields: []string{"origin"},
+			PopulatedFields: []string{"origin"},
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := provider.NewOrchestrator(nil, nil, logger, nil)
+	orch.SetExecutor(stub)
+	r.orchestrator = orch
+
+	if got := r.refreshArtistForBulk(ctx, a); got != bulkOutcomeSucceeded {
+		t.Fatalf("refreshArtistForBulk outcome = %v, want bulkOutcomeSucceeded", got)
+	}
+
+	saved, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist after bulk refresh: %v", err)
+	}
+	if saved.Origin != handCorrected {
+		t.Errorf("origin after bulk refresh = %q, want %q; a locked origin must survive bulk repair",
+			saved.Origin, handCorrected)
+	}
+}
