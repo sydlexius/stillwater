@@ -1,22 +1,30 @@
 # Release configuration for /push-release skill
 
-[versioning]
-# Dev fallback version file -- bumped to match the tag so `go run` shows the
-# correct version even without ldflags.
-file = "internal/version/version.go"
-pattern = 'Version = "{version}"'
-post_bump = []
+# No [versioning] section: the release version comes solely from the git tag
+# (#2254). internal/version/version.go holds a "dev" sentinel that `make build`,
+# CI and goreleaser all override via ldflags, so there is nothing to bump. The
+# section that used to live here anchored on `Version = "{version}"`, a line the
+# file no longer contains -- a stale pattern that matches nothing is worse than
+# no pattern, because it fails at tag time rather than at edit time.
 
 [build]
 working_dir = "."
 pre_checks = [
-    # Wait for ALL workflow runs on the current main tip to pass before tagging.
-    # Uses --commit <SHA> so every parallel workflow (CI, Security, etc.) is
-    # checked, not just whichever run happens to be most recent on the branch.
-    # Captures run IDs first and fails explicitly if the list is empty (xargs -r
-    # would silently succeed with no input, producing a false green).
-    # --limit 100 prevents the default cap of 20 from truncating the list.
-    "sha=$(gh api repos/sydlexius/stillwater/git/ref/heads/main --jq .object.sha) || { echo \"Failed to fetch main HEAD SHA\"; exit 1; }; echo \"Checking all CI runs for main (${sha:0:7})...\"; run_ids=$(gh run list --commit \"$sha\" --limit 100 --json databaseId --jq '.[].databaseId'); if [ -z \"$run_ids\" ]; then echo \"No workflow runs found for $sha\" && exit 1; fi; echo \"$run_ids\" | xargs -I{} gh run watch {} --exit-status && echo \"All runs passed\"",
+    # Wait for ALL workflow runs on the current main tip to finish, then fail
+    # only on a genuinely bad conclusion. Uses --commit <SHA> so every parallel
+    # workflow (CI, Security, etc.) is checked, not just whichever run happens
+    # to be most recent on the branch. --limit 100 prevents the default cap of
+    # 20 from truncating the list, and an empty list is an explicit failure
+    # rather than a silent pass.
+    #
+    # Deliberately NOT `gh run watch --exit-status`: that flag treats any
+    # conclusion other than "success" as failure, including "skipped". Several
+    # workflows here (Claude Code, Merge approved Dependabot PRs) skip on every
+    # commit, so the old form exited non-zero on a perfectly green tip and the
+    # check could never pass. Status ("is anything still running?") and
+    # conclusion ("did anything fail?") are separate questions; conflating them
+    # is what broke it.
+    "set -euo pipefail; sha=$(gh api repos/sydlexius/stillwater/git/ref/heads/main --jq .object.sha) || { echo \"Failed to fetch main HEAD SHA\"; exit 1; }; echo \"Checking all CI runs for main (${sha:0:7})...\"; for _ in $(seq 1 60); do json=$(gh run list --commit \"$sha\" --limit 100 --json name,status,conclusion); if [ \"$(jq 'length' <<<\"$json\")\" -eq 0 ]; then echo \"No workflow runs found for $sha\"; exit 1; fi; bad=$(jq -r '[.[] | select(.conclusion as $c | [\"failure\",\"cancelled\",\"timed_out\",\"startup_failure\"] | index($c))] | .[] | \"  \\(.name): \\(.conclusion)\"' <<<\"$json\"); if [ -n \"$bad\" ]; then echo \"FAILED runs:\"; echo \"$bad\"; exit 1; fi; pending=$(jq '[.[] | select(.status != \"completed\")] | length' <<<\"$json\"); if [ \"$pending\" -eq 0 ]; then jq -r 'length as $t | ([.[] | select(.conclusion == \"success\")] | length) as $s | \"All \\($t) runs finished: \\($s) success, \\($t - $s) skipped/neutral\"' <<<\"$json\"; exit 0; fi; echo \"  $pending run(s) still in progress...\"; sleep 20; done; echo \"Timed out waiting for CI\"; exit 1",
     # Run local deterministic checks
     "bash scripts/pre-push-gate.sh",
 ]
