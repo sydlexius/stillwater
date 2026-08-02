@@ -131,7 +131,7 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		// "Barlow Girl" against BarlowGirl, "Beatles, The" against The
 		// Beatles, or a Latin-script alias for an artist whose primary name is
 		// in another script (the #2285 case).
-		names := make([]string, 0, len(a.Aliases)+2)
+		names := make([]string, 0, len(a.Aliases)*2+2)
 		names = append(names, a.Name, a.SortName)
 		for j := range a.Aliases {
 			names = append(names, a.Aliases[j].Name, a.Aliases[j].SortName)

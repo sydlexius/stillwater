@@ -86,7 +86,7 @@ func TestBestNameSimilarity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := BestNameSimilarity(tc.query, tc.candidates...); got != tc.want {
-				t.Errorf("BestNameSimilarity(%q, %q) = %d, want %d", tc.query, tc.candidates, got, tc.want)
+				t.Errorf("BestNameSimilarity(%q, %v) = %d, want %d", tc.query, tc.candidates, got, tc.want)
 			}
 		})
 	}
