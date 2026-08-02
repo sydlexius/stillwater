@@ -442,6 +442,7 @@ how-to/refresh-metadata#refresh-many-artists
 how-to/refresh-metadata#refresh-metadata
 how-to/refresh-metadata#refresh-one-artist
 how-to/refresh-metadata#refresh-scan-together
+how-to/refresh-metadata#repairing-values-that-were-stored-badly
 how-to/refresh-metadata#what-a-refresh-does
 how-to/refresh-metadata#what-a-refresh-doesnt-do
 how-to/refresh-metadata#when-albums-werent-compared

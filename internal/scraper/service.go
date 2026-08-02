@@ -37,7 +37,9 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 		return fmt.Errorf("checking for existing global config: %w", err)
 	}
 	if count > 0 {
-		return nil
+		// An install that already has a config still needs fields added by
+		// later releases; see backfillMissingFields.
+		return s.backfillGlobalFields(ctx)
 	}
 
 	cfg := DefaultConfig()
@@ -45,15 +47,51 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 	return s.saveConfigRow(ctx, cfg, nil)
 }
 
+// backfillGlobalFields adds any field present in DefaultConfig but absent from
+// the stored global config, then persists the result.
+//
+// The scraper config is a JSON blob written once at install time, so a field
+// added to DefaultConfig in a later release reaches NEW installs only: an
+// existing install keeps the field list it was created with and the new field
+// is simply never fetched. That is how "origin" ended up unreachable on the
+// production scrape path despite being a first-class artist column, having its
+// own rule, and appearing in the provider priority settings (#2895).
+//
+// This runs at startup rather than on every config read. Reading is the wrong
+// place: a caller that deliberately supplies a narrow config would have fields
+// silently added underneath it, and the rewrite would be invisible. Doing it
+// once at seed time makes the upgrade explicit and leaves read paths honest.
+//
+// It only ADDS. A field the operator disabled or repointed at another provider
+// keeps their setting, because an entry that already exists is never touched.
+func (s *Service) backfillGlobalFields(ctx context.Context) error {
+	cfg, err := s.loadGlobalConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("loading global config for backfill: %w", err)
+	}
+
+	added := backfillMissingFields(cfg)
+	if added == 0 {
+		return nil
+	}
+
+	if err := s.saveConfigRow(ctx, cfg, nil); err != nil {
+		return fmt.Errorf("saving backfilled global config: %w", err)
+	}
+	s.logger.Info("added scraper fields introduced since this install was created",
+		"count", added, "scope", ScopeGlobal)
+	return nil
+}
+
 // GetConfig returns the effective scraper configuration for a scope.
 // For the global scope, returns the global config directly.
 // For a connection scope, returns the global config with connection overrides merged in.
 func (s *Service) GetConfig(ctx context.Context, scope string) (*ScraperConfig, error) {
 	if scope == ScopeGlobal {
-		return s.loadConfig(ctx, ScopeGlobal)
+		return s.loadGlobalConfig(ctx)
 	}
 
-	global, err := s.loadConfig(ctx, ScopeGlobal)
+	global, err := s.loadGlobalConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading global config: %w", err)
 	}
@@ -76,7 +114,7 @@ func (s *Service) GetConfig(ctx context.Context, scope string) (*ScraperConfig, 
 // For the global scope, overrides will be nil.
 func (s *Service) GetRawConfig(ctx context.Context, scope string) (*ScraperConfig, *Overrides, error) {
 	if scope == ScopeGlobal {
-		cfg, err := s.loadConfig(ctx, ScopeGlobal)
+		cfg, err := s.loadGlobalConfig(ctx)
 		return cfg, nil, err
 	}
 	cfg, overrides, err := s.loadConfigWithOverrides(ctx, scope)
@@ -122,8 +160,11 @@ func (s *Service) ResetConfig(ctx context.Context, scope string) error {
 	return nil
 }
 
-// loadConfig reads a single scraper config row by scope.
-func (s *Service) loadConfig(ctx context.Context, scope string) (*ScraperConfig, error) {
+// loadGlobalConfig reads the global scraper config row. Scoped rows carry
+// overrides and are read by loadConfigWithOverrides instead.
+func (s *Service) loadGlobalConfig(ctx context.Context) (*ScraperConfig, error) {
+	const scope = ScopeGlobal
+
 	var id, configJSON, createdAt, updatedAt string
 	err := s.db.QueryRowContext(ctx,
 		"SELECT id, config_json, created_at, updated_at FROM scraper_config WHERE scope = ?",
@@ -142,6 +183,38 @@ func (s *Service) loadConfig(ctx context.Context, scope string) (*ScraperConfig,
 	cfg.CreatedAt = dbutil.ParseTime(createdAt)
 	cfg.UpdatedAt = dbutil.ParseTime(updatedAt)
 	return cfg, nil
+}
+
+// backfillMissingFields adds any field present in DefaultConfig but absent from
+// a stored config, using the default's primary provider and enabled state.
+//
+// The config is persisted as a JSON blob written once at install time, so a
+// field added to DefaultConfig later reaches new installs only -- an existing
+// install keeps the field list it was created with and the new field is simply
+// never fetched. That is how "origin" was unreachable on the production scrape
+// path despite being a first-class artist column (#2895).
+//
+// It only ADDS, and reports how many entries it appended. A field the operator
+// disabled or repointed keeps their setting, because the merge is keyed on the
+// field name and an existing entry is left untouched. Callers persist the
+// result; see backfillGlobalFields for why that happens at startup rather than
+// on every read.
+func backfillMissingFields(cfg *ScraperConfig) int {
+	if cfg == nil {
+		return 0
+	}
+	present := make(map[FieldName]bool, len(cfg.Fields))
+	for _, f := range cfg.Fields {
+		present[f.Field] = true
+	}
+	added := 0
+	for _, def := range DefaultConfig().Fields {
+		if !present[def.Field] {
+			cfg.Fields = append(cfg.Fields, def)
+			added++
+		}
+	}
+	return added
 }
 
 // loadConfigWithOverrides reads a config row along with its overrides.

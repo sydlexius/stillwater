@@ -70,14 +70,14 @@ The bulk path runs one artist at a time per provider (so a slow provider doesn't
 
 ### Repairing values that were stored badly
 
-A bulk refresh is also how you correct fields that a past refresh stored in a bad shape. Text fields such as **Origin** and **Years active** are overwritten whenever a provider returns a value for them, so re-running the refresh replaces the stored text rather than leaving it in place.
+Refreshing is also how you correct a field that was stored in a bad shape. Text fields such as **Origin** and **Years active** are replaced whenever a provider returns a value for them, so re-running a refresh -- on one artist, in bulk, or as part of re-identifying -- overwrites the stored text rather than leaving it in place.
 
 Two things bound this:
 
-- **Locked fields are still skipped.** If you already corrected a field by hand and pinned it, the bulk refresh leaves your version alone. That is usually what you want, but it also means a field you locked will keep its old value -- unlock it first if you want the provider's.
+- **Locked fields are still skipped.** If you already corrected a field by hand and pinned it, the refresh leaves your version alone. That is usually what you want, but it also means a field you locked keeps its old value -- unlock it first if you want the provider's.
 - **The provider has to return something.** A field no enabled provider supplies stays as it is; an empty response never clears a stored value.
 
-Filter the artist list down to the affected artists before running this, rather than refreshing the whole library, so you can see the result on a scope small enough to check.
+When repairing in bulk, filter the artist list down to the affected artists first rather than refreshing the whole library, so you can check the result on a scope small enough to read.
 
 ## What a refresh does
 

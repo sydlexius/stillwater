@@ -1280,20 +1280,20 @@ func TestHandleRefreshLink_LockedArtistSkipsRefresh(t *testing.T) {
 	}
 }
 
-// TestRefreshArtistForBulk_RepairsMalformedOrigin is the repair half of #2895.
-//
-// The parser fix stops NEW malformed origins from being written, but every
-// value already stored is still wrong. The chosen repair path is bulk refresh:
-// no migration, no rescan -- an operator selects the affected artists and runs
-// the action they already have. That only works if bulk refresh actually
-// OVERWRITES a non-empty stored origin, which is the behavior this test pins.
-//
+// TestRefreshArtistForBulk_RepairsMalformedOrigin covers the MERGE half of the
+// #2895 repair: given a FetchResult that carries an origin, the bulk refresh
+// entry point must overwrite a non-empty stored value rather than skip it.
 // Origin sits in modeNonEmpty for OverwriteAttempted (internal/artist/merge.go),
-// so a provider returning a non-empty origin replaces the stored one rather
-// than being skipped as fill-empty would. Wiring the whole bulk entry point
-// rather than calling ApplyMetadata directly is deliberate: the defect in
-// #2894 was precisely a handler that never reached the merge, and a merge-level
-// test cannot see that.
+// which is what makes the repair possible at all.
+//
+// SCOPE WARNING, because this test looks stronger than it is: the orchestrator
+// is stubbed, so the FetchResult arrives with Origin already populated. That
+// bypasses internal/scraper, which is the layer that actually decides whether
+// a field is ever fetched -- and which had NO origin field at all, the real
+// reason a refresh never repaired one. This test passes with that defect fully
+// present. The guard that catches it is
+// TestEveryMetadataFieldIsFetchable in internal/scraper; do not treat this one
+// as end-to-end coverage of the repair.
 func TestRefreshArtistForBulk_RepairsMalformedOrigin(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)

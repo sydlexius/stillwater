@@ -509,6 +509,13 @@ var fieldAppliers = map[FieldName]fieldApplier{
 		r.Metadata.YearsActive = m.YearsActive
 		return true
 	},
+	FieldOrigin: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if m.Origin == "" {
+			return false
+		}
+		r.Metadata.Origin = m.Origin
+		return true
+	},
 	FieldType: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
 		if m.Type == "" {
 			return false

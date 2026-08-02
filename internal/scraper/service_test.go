@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/provider"
 	_ "modernc.org/sqlite"
 )
 
@@ -215,5 +216,125 @@ func TestMergeConfigs(t *testing.T) {
 	// Scope should be from connection
 	if merged.Scope != "conn-1" {
 		t.Errorf("merged Scope = %q, want %q", merged.Scope, "conn-1")
+	}
+}
+
+// TestSeedDefaults_BackfillsFieldAddedAfterInstall covers the upgrade half of
+// #2895. The scraper config is a JSON blob written once at install time, so a
+// field added to DefaultConfig in a later release reaches new installs only --
+// an existing install keeps the field list it was created with and never
+// fetches the new field. Origin hit exactly that, which is why an upgraded
+// instance would still not repair a bad origin even with the applier in place.
+//
+// The fixture writes a config with origin REMOVED, mimicking a row written by
+// a pre-fix build, then asserts the startup path restores it.
+func TestSeedDefaults_BackfillsFieldAddedAfterInstall(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Strip origin and persist, simulating a config written before the field
+	// existed. Save through the service so the row is written the same way a
+	// real older build would have written it.
+	pruned := make([]FieldConfig, 0, len(stored.Fields))
+	for _, f := range stored.Fields {
+		if f.Field != FieldOrigin {
+			pruned = append(pruned, f)
+		}
+	}
+	if len(pruned) == len(stored.Fields) {
+		t.Fatalf("precondition failed: seeded config had no %q field to remove", FieldOrigin)
+	}
+	stored.Fields = pruned
+	if err := svc.SaveConfig(ctx, ScopeGlobal, stored, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// SeedDefaults is the startup path an upgraded install runs through.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got *FieldConfig
+	for i := range reloaded.Fields {
+		if reloaded.Fields[i].Field == FieldOrigin {
+			got = &reloaded.Fields[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("%q missing after reload: an upgraded install will never fetch it", FieldOrigin)
+	}
+	if !got.Enabled {
+		t.Errorf("backfilled %q Enabled = false, want true", FieldOrigin)
+	}
+	if got.Category != CategoryMetadata {
+		t.Errorf("backfilled %q Category = %q, want %q", FieldOrigin, got.Category, CategoryMetadata)
+	}
+}
+
+// TestSeedDefaults_BackfillPreservesOperatorChoices is the counterweight: the
+// backfill must only ADD. An operator who disabled a field or repointed it at
+// a different provider must keep that setting across the upgrade, otherwise
+// the self-heal silently reverts their configuration on every read.
+func TestSeedDefaults_BackfillPreservesOperatorChoices(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range stored.Fields {
+		if stored.Fields[i].Field == FieldOrigin {
+			stored.Fields[i].Enabled = false
+			stored.Fields[i].Primary = provider.NameAudioDB
+		}
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, stored, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count := 0
+	for _, f := range reloaded.Fields {
+		if f.Field != FieldOrigin {
+			continue
+		}
+		count++
+		if f.Enabled {
+			t.Error("operator disabled origin but backfill re-enabled it")
+		}
+		if f.Primary != provider.NameAudioDB {
+			t.Errorf("operator set primary %q but backfill reverted it to %q", provider.NameAudioDB, f.Primary)
+		}
+	}
+	if count != 1 {
+		t.Errorf("origin appears %d times after reload, want exactly 1: the backfill duplicated an existing field", count)
 	}
 }

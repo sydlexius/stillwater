@@ -22,6 +22,7 @@ const (
 	FieldDied        FieldName = "died"
 	FieldDisbanded   FieldName = "disbanded"
 	FieldYearsActive FieldName = "years_active"
+	FieldOrigin      FieldName = "origin"
 	FieldType        FieldName = "type"
 	FieldGender      FieldName = "gender"
 	FieldThumb       FieldName = "thumb"
@@ -35,7 +36,7 @@ func AllFieldNames() []FieldName {
 	return []FieldName{
 		FieldBiography, FieldGenres, FieldStyles, FieldMoods,
 		FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
-		FieldYearsActive, FieldType, FieldGender,
+		FieldYearsActive, FieldOrigin, FieldType, FieldGender,
 		FieldThumb, FieldFanart, FieldLogo, FieldBanner,
 	}
 }
@@ -178,6 +179,7 @@ func DefaultConfig() *ScraperConfig {
 			{Field: FieldDied, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldDisbanded, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldYearsActive, Primary: provider.NameWikipedia, Enabled: true, Category: CategoryMetadata},
+			{Field: FieldOrigin, Primary: provider.NameWikipedia, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldType, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldGender, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldThumb, Primary: provider.NameFanartTV, Enabled: true, Category: CategoryImages},
@@ -219,7 +221,7 @@ func ProviderCapabilities() []ProviderCapability {
 			MetadataFields: []FieldName{
 				FieldGenres, FieldStyles, FieldMembers,
 				FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
-				FieldType, FieldGender,
+				FieldOrigin, FieldType, FieldGender,
 			},
 		},
 		{
@@ -234,6 +236,7 @@ func ProviderCapabilities() []ProviderCapability {
 			RequiresAuth: true,
 			MetadataFields: []FieldName{
 				FieldBiography, FieldGenres, FieldStyles, FieldMoods, FieldFormed, FieldYearsActive,
+				FieldOrigin,
 			},
 			ImageFields: []FieldName{FieldThumb, FieldFanart, FieldLogo, FieldBanner},
 		},
@@ -261,7 +264,7 @@ func ProviderCapabilities() []ProviderCapability {
 			RequiresAuth: false,
 			MetadataFields: []FieldName{
 				FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
-				FieldType, FieldGender,
+				FieldOrigin, FieldType, FieldGender,
 			},
 		},
 		{
@@ -269,7 +272,8 @@ func ProviderCapabilities() []ProviderCapability {
 			DisplayName:  provider.NameWikipedia.DisplayName(),
 			RequiresAuth: false,
 			MetadataFields: []FieldName{
-				FieldBiography, FieldYearsActive, FieldBorn, FieldFormed, FieldDied, FieldDisbanded,
+				FieldBiography, FieldYearsActive, FieldOrigin, FieldBorn, FieldFormed,
+				FieldDied, FieldDisbanded,
 			},
 		},
 		{
