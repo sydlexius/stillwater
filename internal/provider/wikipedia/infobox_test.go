@@ -160,6 +160,60 @@ func TestParseInfobox_BRMembers(t *testing.T) {
 	}
 }
 
+// TestParseInfobox_BROrigin covers the whole-field path for #2895: an origin
+// whose components are stacked with <br /> must be joined with ", ", and the
+// list fields in the same infobox -- which have always split on <br /> and are
+// reached by a different branch of parseListField -- must be unchanged by that.
+func TestParseInfobox_BROrigin(t *testing.T) {
+	wikitext := `{{Infobox musical artist
+| name         = Test Artist
+| origin       = [[New York City]]<br />[[United States]]
+| genre        = [[Rock]]<br />[[Folk]]
+| years_active = 1985-present
+}}`
+
+	data := parseInfobox(wikitext)
+	if data == nil {
+		t.Fatal("expected non-nil infoboxData")
+	}
+
+	const wantOrigin = "New York City, United States"
+	if data.Origin != wantOrigin {
+		t.Errorf("Origin = %q, want %q", data.Origin, wantOrigin)
+	}
+
+	wantGenres := []string{"Rock", "Folk"}
+	if len(data.Genres) != len(wantGenres) {
+		t.Fatalf("Genres = %v, want %v", data.Genres, wantGenres)
+	}
+	for i, g := range data.Genres {
+		if g != wantGenres[i] {
+			t.Errorf("Genres[%d] = %q, want %q", i, g, wantGenres[i])
+		}
+	}
+}
+
+// TestParseInfobox_OriginWithoutBR is the precondition guard for the test
+// above: an origin that already carries its own separators must survive the
+// <br /> handling untouched, so a passing TestParseInfobox_BROrigin cannot be
+// explained by the joiner rewriting every origin.
+func TestParseInfobox_OriginWithoutBR(t *testing.T) {
+	wikitext := `{{Infobox musical artist
+| name   = Test Artist
+| origin = [[Abingdon, Oxfordshire|Abingdon]], [[Oxfordshire]], England
+}}`
+
+	data := parseInfobox(wikitext)
+	if data == nil {
+		t.Fatal("expected non-nil infoboxData")
+	}
+
+	const wantOrigin = "Abingdon, Oxfordshire, England"
+	if data.Origin != wantOrigin {
+		t.Errorf("Origin = %q, want %q", data.Origin, wantOrigin)
+	}
+}
+
 func TestParseInfobox_NoInfobox(t *testing.T) {
 	wikitext := "This article has no infobox template at all. Just plain text about music."
 	data := parseInfobox(wikitext)
@@ -212,6 +266,21 @@ func TestCleanMarkup(t *testing.T) {
 		{"named entity lt literal", "1 &lt; 2", "1 < 2"},
 		{"named entity gt literal", "x &gt; y", "x > y"},
 		{"lt then text", "born 1 &lt; 2 years ago", "born 1 < 2 years ago"},
+		// <br /> separates the components of a stacked scalar field. Stripping
+		// it as a plain HTML tag would butt the components together
+		// ("New York CityUnited States"); it must become ", " instead.
+		{"br between wikilinks", "[[New York City]]<br />[[United States]]", "New York City, United States"},
+		{"br unspaced variant", "[[Paris]]<br>[[France]]", "Paris, France"},
+		{"br self-closing no space", "[[Tokyo]]<br/>[[Japan]]", "Tokyo, Japan"},
+		{"br uppercase", "[[Berlin]]<BR />[[Germany]]", "Berlin, Germany"},
+		{"br with attributes", "[[Oslo]]<br clear=\"all\" />[[Norway]]", "Oslo, Norway"},
+		{"br three components", "[[Austin]]<br />[[Texas]]<br />[[United States]]", "Austin, Texas, United States"},
+		{"br with existing comma not doubled", "New York City,<br />United States", "New York City, United States"},
+		{"br with surrounding whitespace", "[[Seattle]] <br /> [[Washington]]", "Seattle, Washington"},
+		{"trailing br dropped", "[[Dublin]]<br />", "Dublin"},
+		{"leading br dropped", "<br />[[Cork]]", "Cork"},
+		{"consecutive brs collapse", "[[Lisbon]]<br /><br />[[Portugal]]", "Lisbon, Portugal"},
+		{"no br unchanged", "Abingdon, Oxfordshire, England", "Abingdon, Oxfordshire, England"},
 	}
 
 	for _, tt := range tests {
@@ -430,6 +499,11 @@ func TestCleanYearsActive(t *testing.T) {
 		{"amp entity", "rock &amp; roll", "rock & roll"},
 		{"realistic wikipedia value", "{{start date|1987}}&ndash;present<ref>source</ref>", "1987-present"},
 		{"multiple ranges with entities", "1972&#8211;1982, 2018&#8211;2022", "1972-1982, 2018-2022"},
+		// Discontinuous runs stacked with <br /> hit the same missing-separator
+		// hazard as origin (#2895); they must read as a comma list.
+		{"br separated ranges", "1985-1990<br />1995-present", "1985-1990, 1995-present"},
+		{"br separated with en-dash", "1972–1982<br />2018–2022", "1972-1982, 2018-2022"},
+		{"no br unchanged", "1985-present", "1985-present"},
 	}
 
 	for _, tt := range tests {

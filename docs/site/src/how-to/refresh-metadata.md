@@ -68,6 +68,17 @@ To run refreshes across a saved view or a whole library:
 
 The bulk path runs one artist at a time per provider (so a slow provider doesn't fan out to its rate limit). Progress shows in the event banner; you can keep using Stillwater while it runs.
 
+### Repairing values that were stored badly
+
+A bulk refresh is also how you correct fields that a past refresh stored in a bad shape. Text fields such as **Origin** and **Years active** are overwritten whenever a provider returns a value for them, so re-running the refresh replaces the stored text rather than leaving it in place.
+
+Two things bound this:
+
+- **Locked fields are still skipped.** If you already corrected a field by hand and pinned it, the bulk refresh leaves your version alone. That is usually what you want, but it also means a field you locked will keep its old value -- unlock it first if you want the provider's.
+- **The provider has to return something.** A field no enabled provider supplies stays as it is; an empty response never clears a stored value.
+
+Filter the artist list down to the affected artists before running this, rather than refreshing the whole library, so you can see the result on a scope small enough to check.
+
 ## What a refresh does
 
 For each artist:

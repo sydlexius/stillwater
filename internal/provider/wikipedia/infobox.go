@@ -361,10 +361,12 @@ func unwrapListTemplates(s string) string {
 
 // cleanMarkup removes wikitext markup from a string, producing plain text.
 // Handles: [[Link|Display]] -> Display, [[Link]] -> Link,
-// {{nowrap|text}} -> text, {{small|text}} -> text, HTML tags, ref tags.
+// {{nowrap|text}} -> text, {{small|text}} -> text, HTML tags, ref tags,
+// and <br /> component separators.
 func cleanMarkup(s string) string {
 	s = html.UnescapeString(s)
 	s = stripRefs(s)
+	s = joinLineBreaks(s)
 	s = stripHTMLTags(s)
 	s = resolveWikilinks(s)
 	s = stripSimpleTemplates(s)
@@ -607,6 +609,35 @@ func stripRefs(s string) string {
 	return s
 }
 
+// joinLineBreaks replaces <br /> separators with ", ".
+//
+// Wikipedia infoboxes use <br /> to stack the components of a scalar field --
+// "origin = [[New York City]]<br />[[United States]]" is a single origin split
+// across two rendered lines, not two origins. stripHTMLTags removes <br /> the
+// same way it removes <i>, which would butt the components together with no
+// separator at all ("New York CityUnited States"). Substituting the separator
+// before the tag stripper runs preserves the "City, Country" form used
+// everywhere else.
+//
+// Values with no <br /> are returned unchanged, so this is a no-op for the
+// list fields that already split on <br /> themselves (see parseListField).
+func joinLineBreaks(s string) string {
+	if !strings.Contains(strings.ToLower(s), "<br") {
+		return s
+	}
+	parts := splitOnBR(s)
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		// Right-trim separator punctuation so a value that already ends its
+		// component with a comma ("New York City,<br />United States") does not
+		// end up with a doubled ", ,".
+		if trimmed := strings.TrimRight(strings.TrimSpace(part), " ,;"); trimmed != "" {
+			kept = append(kept, trimmed)
+		}
+	}
+	return strings.Join(kept, ", ")
+}
+
 // splitOnBR splits a string on <br>, <br/>, <br />, and variants.
 func splitOnBR(s string) []string {
 	var parts []string
@@ -678,6 +709,10 @@ func cleanYearsActive(s string) string {
 	s = html.UnescapeString(s)
 
 	s = stripRefs(s)
+	// Same <br /> hazard as cleanMarkup: a discontinuous run
+	// ("1985-1990<br />1995-present") would otherwise collapse into
+	// "1985-19901995-present".
+	s = joinLineBreaks(s)
 	s = stripHTMLTags(s)
 
 	// Handle {{start date|YYYY}} template.
