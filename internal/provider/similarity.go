@@ -41,6 +41,44 @@ func NameSimilarity(a, b string) int {
 	return 100 - (dist*100)/maxLen
 }
 
+// BestNameSimilarity returns the highest NameSimilarity score between query
+// and any of the candidate names, ignoring empty ones.
+//
+// It exists because an artist has more than one true name. MusicBrainz carries
+// a primary name, a sort-name, and any number of aliases, and the operator's
+// folder may be named after any of them: "Barlow Girl" for BarlowGirl,
+// "Beatles, The" for The Beatles, or a Latin-script alias for an artist whose
+// primary name is in another script. Scoring only the primary name reports
+// those as unrelated, which on the disambiguation screen means the right
+// candidate ranks below wrong ones.
+//
+// Taking the MAXIMUM rather than an average is deliberate: matching any one of
+// an artist's names is positive evidence, and an artist with forty aliases
+// must not be penalized for the thirty-nine that do not match the query.
+//
+// Empty candidates are SKIPPED rather than scored, which is the one place this
+// diverges from NameSimilarity: that function returns 100 for ("", "") because
+// empty equals empty, but an empty candidate here means "this artist has no
+// sort-name" or "this alias carries no name", and treating missing data as a
+// perfect match would rank an incomplete candidate above a genuinely matching
+// one. So this is not a drop-in replacement for every NameSimilarity call --
+// only for those comparing a query against real names.
+func BestNameSimilarity(query string, candidates ...string) int {
+	best := 0
+	for _, c := range candidates {
+		if c == "" {
+			continue
+		}
+		if s := NameSimilarity(query, c); s > best {
+			best = s
+			if best == 100 {
+				return best // cannot be beaten; skip the rest
+			}
+		}
+	}
+	return best
+}
+
 // NormalizeName lowercases, strips "the " prefix, and removes punctuation and
 // symbols (keeping letters, digits, and spaces) for comparison purposes.
 func NormalizeName(s string) string {
