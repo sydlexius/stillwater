@@ -834,7 +834,15 @@ components:
         status:
           type: string
           enum: [idle, running, completed, canceled, failed]
-          description: Current state of the identification process. "failed" surfaces when the bulk-identify pipeline recovers from a panic; the slot is released and a subsequent POST starts a fresh job.
+          description: >-
+            Current state of the identification process. "failed" surfaces when
+            every processed artist failed, which is what a provider outage looks
+            like from here, or when the bulk-identify pipeline recovers from a
+            panic in its own goroutine. A panic inside a provider adapter is
+            contained by the orchestrator and reported as a failed provider
+            instead, so it reaches this field through the all-failed condition
+            rather than through panic recovery. Either way the slot is released
+            and a subsequent POST starts a fresh job.
         total:
           type: integer
           description: Total number of unidentified artists to process.

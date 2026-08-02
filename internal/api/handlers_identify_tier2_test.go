@@ -719,15 +719,25 @@ func TestIdentifyArtist(t *testing.T) {
 	})
 }
 
-// TestRunBulkIdentify_PanicRecovered exercises the deferred recover() added
-// for C11. We inject a panic by providing an orchestrator whose registered
-// MusicBrainz stub panics inside SearchArtist. Because identifyArtist calls
-// SearchForLinking when the artist has no album subdir, the panic surfaces
-// inside the goroutine. The recover must:
+// TestRunBulkIdentify_PanicRecovered exercises panic containment for a bulk
+// run. We inject a panic by providing an orchestrator whose registered
+// MusicBrainz stub panics inside SearchArtist, which identifyArtist reaches
+// via SearchForLinking when the artist has no album subdir.
 //
-//   - prevent the test process from crashing,
-//   - transition progress.Status to "failed",
-//   - emit a structured log entry tagged "bulk-identify panic recovered".
+// Recovery moved DOWN a layer for #2818: SearchForLinking now runs each
+// provider in its own goroutine, so a panic is recovered at the orchestrator
+// boundary and reported as an errored provider status rather than unwinding
+// into runBulkIdentify's own recover(). Containing it there is what stops one
+// bad adapter killing unrelated in-flight requests, but it also means the
+// job-level outcome can no longer be signaled by a propagating panic.
+//
+// The guarantees the operator actually depends on are unchanged, and are what
+// this test still asserts:
+//
+//   - the process does not crash,
+//   - progress.Status ends "failed", NOT "completed" -- a run whose every
+//     artist failed must never report success,
+//   - the panic is logged with its value, so the cause is diagnosable.
 func TestRunBulkIdentify_PanicRecovered(t *testing.T) {
 	t.Parallel()
 
@@ -742,8 +752,12 @@ func TestRunBulkIdentify_PanicRecovered(t *testing.T) {
 	r, _, artistSvc := testRouterWithLibrary(t)
 	r.logger = logger
 
-	// Stub that panics on SearchArtist. The panic propagates up through
-	// SearchForLinking -> identifyArtist -> the runBulkIdentify goroutine.
+	// Stub that panics on SearchArtist. The panic is recovered inside
+	// SearchForLinking's per-provider goroutine and reported as an errored
+	// provider status, which identifyArtist turns into outcomeFailed; the
+	// runBulkIdentify aggregation then sets Status from the failure count.
+	// It does NOT propagate up the call stack -- containing it there is what
+	// stops one bad adapter killing unrelated in-flight requests.
 	panicProv := &identifyStubProvider{
 		name: provider.NameMusicBrainz,
 		searchFn: func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
@@ -774,8 +788,10 @@ func TestRunBulkIdentify_PanicRecovered(t *testing.T) {
 
 	r.runBulkIdentify(ctx, []artist.Artist{*a}, progress)
 
-	// Wait up to 5s for the goroutine to settle. On panic-recovery the
-	// deferred handler flips Status to "failed".
+	// Wait up to 5s for the goroutine to settle. The panic is recovered at the
+	// orchestrator boundary and reported as an errored provider, which the tier
+	// handler turns into outcomeFailed; the final aggregation then sets Status
+	// to "failed" because every processed artist failed.
 	deadline := time.Now().Add(5 * time.Second)
 	var finalStatus string
 	for time.Now().Before(deadline) {
@@ -795,8 +811,10 @@ func TestRunBulkIdentify_PanicRecovered(t *testing.T) {
 	bufMu.Lock()
 	logged := logBuf.String()
 	bufMu.Unlock()
-	if !strings.Contains(logged, "bulk-identify panic recovered") {
-		t.Errorf("log output missing recovery marker; got:\n%s", logged)
+	// Logged by the orchestrator's per-provider recover rather than by
+	// runBulkIdentify, since the panic no longer reaches the job goroutine.
+	if !strings.Contains(logged, "provider search panicked") {
+		t.Errorf("log output missing the provider-panic recovery marker; got:\n%s", logged)
 	}
 	if !strings.Contains(logged, "induced panic for recovery test") {
 		t.Errorf("log output missing panic value; got:\n%s", logged)
@@ -834,10 +852,12 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 		t.Fatalf("first POST status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
 	}
 
-	// Wait for terminal state. A nil progress slot is also terminal: the
-	// panic-recovery deferred handler may have cleared it outright instead
-	// of leaving a "failed" sentinel behind, and either outcome is a
-	// "no in-flight job" signal that lets the second POST proceed.
+	// Wait for terminal state. A nil progress slot is also terminal: the job's
+	// deferred handler may have cleared it outright instead of leaving a
+	// terminal sentinel behind, and either outcome is a "no in-flight job"
+	// signal that lets the second POST proceed. (Provider panics no longer
+	// reach that handler -- they are contained at the orchestrator boundary --
+	// but the slot-clearing path this test guards is unchanged.)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		r.identifyMu.RLock()
