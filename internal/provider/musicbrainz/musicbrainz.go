@@ -121,8 +121,23 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		// score. The API score reflects relevance factors beyond name matching
 		// (popularity, tag matches), while name similarity catches cases where
 		// the API underscores an exact or near-exact name match.
+		//
+		// Similarity is measured against every name the artist is known by,
+		// not just the primary one (#2820). The search response already
+		// carries aliases and the sort-name, so this costs no extra request:
+		// MusicBrainz returns them inline on /artist?query=, and MBArtist has
+		// always parsed them. Scoring only the primary name left a candidate
+		// looking unrelated whenever the operator's folder used an alias --
+		// "Barlow Girl" against BarlowGirl, "Beatles, The" against The
+		// Beatles, or a Latin-script alias for an artist whose primary name is
+		// in another script (the #2285 case).
+		names := make([]string, 0, len(a.Aliases)+2)
+		names = append(names, a.Name, a.SortName)
+		for j := range a.Aliases {
+			names = append(names, a.Aliases[j].Name, a.Aliases[j].SortName)
+		}
 		score := a.Score
-		if ns := provider.NameSimilarity(name, a.Name); ns > score {
+		if ns := provider.BestNameSimilarity(name, names...); ns > score {
 			score = ns
 		}
 		origin := a.Area.Name
