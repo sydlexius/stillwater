@@ -267,12 +267,9 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	// signal.
 	reidentify := body.ClearIDs == "true" && (body.MBID != "" || body.DiscogsID != "")
 
-	// The discard is PER-PROVIDER, keyed to what the replacement actually
-	// supplies. Re-identify means "this artist is someone else", so the
-	// repudiated MusicBrainz identity always goes -- but a wrong MBID does not
-	// make a correct AudioDB, Wikidata, Deezer or Spotify ID wrong, so those
-	// are left alone. Wiping every ID as a unit destroys correct data to fix
-	// one incorrect field.
+	// The discard is keyed to what the replacement actually supplies: an ID
+	// carried by THIS request is kept, every ID belonging to the repudiated
+	// entity goes.
 	//
 	// A MusicBrainz pick supplies its own replacement MBID, which the
 	// overwrite below applies. A Discogs pick supplies none, so the repudiated
@@ -303,6 +300,68 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	}
 	if body.DiscogsID != "" {
 		a.DiscogsID = body.DiscogsID
+	}
+
+	// Discard every provider ID the repudiated entity supplied (#2894).
+	//
+	// This NARROWS the per-provider rule #2714/#2725 established, and the
+	// narrowing is deliberate. Those issues reasoned about repairing a bad
+	// MusicBrainz ID on an artist that was otherwise correctly identified, and
+	// there "a wrong MBID does not make a correct Discogs ID wrong" is true.
+	// A re-identify is a different claim: the operator is declaring the whole
+	// ENTITY wrong. The secondary IDs were harvested from that entity's own
+	// provider responses in the first place (EnrichProviderIDs), so they are
+	// not independent facts about a correct artist -- they are more of the same
+	// wrong answer. Every non-re-identify path keeps the old behavior, gated by
+	// the same positive allow-list above.
+	//
+	// The harm from keeping them is not that they sit there unused: they STEER
+	// the follow-up refresh. FetchProviderResult prefers a provider-specific ID
+	// over the MBID, so a surviving stale ID makes the refresh re-fetch the
+	// repudiated artist. AudioDB is the #2 origin provider and Discogs supplies
+	// biography, both ahead of MusicBrainz in the first-match-wins priority
+	// order, so the wrong values win before the corrected identity is ever
+	// consulted. That is #2894: identity corrected, refresh succeeds, wrong
+	// metadata survives, nothing on screen says so.
+	//
+	// Recovery is NOT symmetric, and the difference matters to anyone reading
+	// this later:
+	//
+	//   - Discogs, Deezer, Wikidata, AllMusic and Spotify are re-derived from
+	//     URLs in the corrected MusicBrainz response by EnrichProviderIDs, so
+	//     for those this is a round trip.
+	//   - AudioDB is NOT. EnrichProviderIDs has no AudioDB branch. It returns
+	//     only opportunistically, when a refresh queries AudioDB for a field it
+	//     does not populate and applyField falls through to the ID merge. Until
+	//     then the ID stays cleared and AudioDB is resolved by MBID instead.
+	//
+	// That asymmetry is accepted rather than worked around: a wrong AudioDB ID
+	// is precisely what poisons origin, so clearing it is the point, and when
+	// it does come back it comes back resolved from the CORRECTED identity. An
+	// ID the operator can re-link is a better outcome than metadata that is
+	// silently wrong.
+	//
+	// Per-field locks are untouched by any of this. This is provider-ID
+	// plumbing, not a field merge; ApplyMetadata still reads a.LockedFields off
+	// the artist on every call, and a locked ARTIST never reaches the refresh
+	// at all (the gate below).
+	if reidentify {
+		// Logged before the clear, and audiodb specifically because it is the
+		// one that does not reliably come back.
+		r.logger.Info("re-identify: discarding the repudiated entity's provider IDs",
+			slog.String("artist_id", a.ID),
+			slog.String("previous_audiodb_id", a.AudioDBID),
+			slog.String("previous_deezer_id", a.DeezerID),
+		)
+		a.AudioDBID = ""
+		a.WikidataID = ""
+		a.DeezerID = ""
+		a.SpotifyID = ""
+		// Only when this request did not supply a replacement: a Discogs pick
+		// sets a.DiscogsID just above and that value must survive.
+		if body.DiscogsID == "" {
+			a.DiscogsID = ""
+		}
 	}
 
 	if err := r.artistService.Update(req.Context(), a); err != nil {

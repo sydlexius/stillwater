@@ -7747,10 +7747,22 @@ paths:
             Wizard advanced. The response body is one of two shapes:
             {status: advanced, index: <next>} when there is another
             step, or {status: done, session_id: <sid>} when the
-            advance landed on the final step.
+            advance landed on the final step. Either may also carry
+            refresh_skipped_locked; see that property.
           content:
             application/json:
               schema:
+                type: object
+                properties:
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the decision just recorded linked a
+                      new identity but the artist-level lock suppressed the
+                      metadata refresh that normally follows, so the artist's
+                      metadata still reflects its PREVIOUS match. Only accept
+                      can report true; skip and decline write nothing to
+                      refresh. Omitted otherwise.
                 oneOf:
                   - type: object
                     required: [status, index]
@@ -7787,10 +7799,22 @@ paths:
             Wizard advanced. The response body is one of two shapes:
             {status: advanced, index: <next>} when there is another
             step, or {status: done, session_id: <sid>} when the
-            advance landed on the final step.
+            advance landed on the final step. Either may also carry
+            refresh_skipped_locked; see that property.
           content:
             application/json:
               schema:
+                type: object
+                properties:
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the decision just recorded linked a
+                      new identity but the artist-level lock suppressed the
+                      metadata refresh that normally follows, so the artist's
+                      metadata still reflects its PREVIOUS match. Only accept
+                      can report true; skip and decline write nothing to
+                      refresh. Omitted otherwise.
                 oneOf:
                   - type: object
                     required: [status, index]
@@ -7826,10 +7850,22 @@ paths:
             Wizard advanced. The response body is one of two shapes:
             {status: advanced, index: <next>} when there is another
             step, or {status: done, session_id: <sid>} when the
-            advance landed on the final step.
+            advance landed on the final step. Either may also carry
+            refresh_skipped_locked; see that property.
           content:
             application/json:
               schema:
+                type: object
+                properties:
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the decision just recorded linked a
+                      new identity but the artist-level lock suppressed the
+                      metadata refresh that normally follows, so the artist's
+                      metadata still reflects its PREVIOUS match. Only accept
+                      can report true; skip and decline write nothing to
+                      refresh. Omitted otherwise.
                 oneOf:
                   - type: object
                     required: [status, index]

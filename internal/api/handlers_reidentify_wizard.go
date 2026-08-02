@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -92,6 +93,17 @@ type reIdentifyWizardSession struct {
 	// artists and gets a wizard with 47 steps can see which 3 dropped and
 	// why, instead of silently losing them.
 	SkippedAtStart []SkippedWizardArtist
+	// LockedNoRefresh names artists that were accepted while the artist-level
+	// lock was on. Their new identity was persisted, but the metadata refresh
+	// that normally follows was suppressed by the lock, so their metadata still
+	// reflects the PREVIOUS match (#2894).
+	//
+	// The wizard has no equivalent of the single-artist screen's
+	// RefreshSkippedLocked fragment, so without this the operator accepts a
+	// candidate, sees the wizard advance, and is never told that half the
+	// operation did not happen. Names rather than IDs: this is read by a person
+	// deciding which artists to go back and unlock.
+	LockedNoRefresh []string
 }
 
 // SkippedWizardArtist names one artist the wizard start endpoint had to
@@ -492,19 +504,25 @@ func (r *Router) handleReIdentifyWizardAccept(w http.ResponseWriter, req *http.R
 	if body.DiscogsID != "" {
 		a.DiscogsID = body.DiscogsID
 	}
-	// The wizard advances to the next step either way; the skip flag is
-	// reported by the link endpoints that answer with their own JSON, not by
-	// this navigation response.
-	if _, err := r.autoLinkAndRefresh(req.Context(), a); err != nil {
+	// The wizard advances either way, but refreshSkipped must NOT be discarded
+	// (#2894). A locked artist gets its new identity persisted and its metadata
+	// refresh suppressed, which leaves the previous match's metadata in place --
+	// the exact "looks repaired and is not" state this issue is about. Dropping
+	// the flag here is what made that invisible in the wizard.
+	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a)
+	if err != nil {
 		r.logger.Error("reidentify wizard: accept failed", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to link artist")
 		return
 	}
 	sess.mu.Lock()
 	applyDecision(sess, step, wizardDecisionAccepted)
+	if refreshSkipped && !slices.Contains(sess.LockedNoRefresh, a.Name) {
+		sess.LockedNoRefresh = append(sess.LockedNoRefresh, a.Name)
+	}
 	sess.touch()
 	sess.mu.Unlock()
-	r.advanceWizard(w, req, sess, idx)
+	r.advanceWizard(w, req, sess, idx, refreshSkipped)
 }
 
 // handleReIdentifyWizardSkip leaves the artist unchanged and advances.
@@ -518,7 +536,7 @@ func (r *Router) handleReIdentifyWizardSkip(w http.ResponseWriter, req *http.Req
 	applyDecision(sess, step, wizardDecisionSkipped)
 	sess.touch()
 	sess.mu.Unlock()
-	r.advanceWizard(w, req, sess, idx)
+	r.advanceWizard(w, req, sess, idx, false)
 }
 
 // handleReIdentifyWizardRetry re-issues the provider lookup for a step the
@@ -561,7 +579,7 @@ func (r *Router) handleReIdentifyWizardDecline(w http.ResponseWriter, req *http.
 	applyDecision(sess, step, wizardDecisionDeclined)
 	sess.touch()
 	sess.mu.Unlock()
-	r.advanceWizard(w, req, sess, idx)
+	r.advanceWizard(w, req, sess, idx, false)
 }
 
 // applyDecision makes wizard decisions idempotent across Back/retry. The
@@ -698,7 +716,13 @@ func (r *Router) wizardStepFromRequest(w http.ResponseWriter, req *http.Request)
 // advanceWizard renders the next step (or the completion summary if the
 // current step was the last one). HTMX callers get a fragment; non-HTMX
 // callers get a JSON pointer they can follow.
-func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *reIdentifyWizardSession, idx int) {
+//
+// refreshSkipped reports that the decision just recorded linked a new identity
+// but could NOT refresh the artist's metadata, because the artist-level lock
+// suppressed it (#2894). Only the accept path can produce it; skip and decline
+// pass false because they write nothing to refresh. It is carried here rather
+// than answered separately so the accept response keeps one shape.
+func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *reIdentifyWizardSession, idx int, refreshSkipped bool) {
 	next := idx + 1
 	sess.mu.Lock()
 	total := len(sess.Steps)
@@ -708,7 +732,11 @@ func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *r
 			r.renderWizardDone(w, req, sess)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "done", "session_id": sess.ID})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":                 "done",
+			"session_id":             sess.ID,
+			"refresh_skipped_locked": refreshSkipped,
+		})
 		return
 	}
 	if isHTMXRequest(req) {
@@ -718,11 +746,19 @@ func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *r
 		sess.mu.Lock()
 		step := sess.Steps[next]
 		data := buildWizardStepData(req.Context(), sess, step, next, total)
+		// Carried on the NEXT step's data because that is the fragment the
+		// operator is about to look at. The artist it names is the one they
+		// just accepted, not the one now on screen.
+		data.LockedNoRefresh = append([]string(nil), sess.LockedNoRefresh...)
 		sess.mu.Unlock()
 		renderTempl(w, req, templates.ReIdentifyWizardStep(data))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "advanced", "index": next})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":                 "advanced",
+		"index":                  next,
+		"refresh_skipped_locked": refreshSkipped,
+	})
 }
 
 // renderWizardDone renders the completion summary and tears down the session.
@@ -734,6 +770,11 @@ func (r *Router) renderWizardDone(w http.ResponseWriter, req *http.Request, sess
 		Accepted:  sess.Accepted,
 		Skipped:   sess.Skipped,
 		Declined:  sess.Declined,
+		// The session is deleted immediately below, so this summary is the
+		// LAST chance to tell the operator which artists still need a refresh
+		// (#2894). Copied rather than aliased because the session it points
+		// into is about to go away.
+		LockedNoRefresh: append([]string(nil), sess.LockedNoRefresh...),
 	}
 	sess.mu.Unlock()
 	r.reIdentifyWizardStore.delete(sess.ID)

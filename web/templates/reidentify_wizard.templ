@@ -42,6 +42,10 @@ type ReIdentifyWizardStepData struct {
 	// no matches" from "Discogs errored, results incomplete". A full
 	// lookup failure routes through Errored instead. Issue #1663.
 	FailedProviders []string
+	// LockedNoRefresh names artists accepted earlier in this session whose
+	// metadata refresh the artist-level lock suppressed. Their identity was
+	// updated; their metadata still reflects the previous match (#2894).
+	LockedNoRefresh []string
 }
 
 // SkippedArtistView is the flat view of a dropped artist exposed to the
@@ -60,6 +64,10 @@ type ReIdentifyWizardDoneData struct {
 	Accepted  int
 	Skipped   int
 	Declined  int
+	// LockedNoRefresh names accepted artists whose metadata refresh the
+	// artist-level lock suppressed, so the operator leaves the wizard knowing
+	// which ones still hold the previous match's metadata (#2894).
+	LockedNoRefresh []string
 }
 
 // ReIdentifyWizardPage is the full-page wrapper used when the wizard is
@@ -121,6 +129,33 @@ templ ReIdentifyWizardPageDone(assets AssetPaths, data ReIdentifyWizardDoneData)
 	}
 }
 
+// reIdentifyWizardLockedNoRefreshNotice tells the operator that an accepted
+// artist kept its previous match's metadata.
+//
+// The wizard links a locked artist's new identity but the lock suppresses the
+// metadata refresh that normally follows, so the artist is left half-corrected
+// with nothing on screen saying so (#2894). The single-artist screen has
+// RefreshSkippedLocked for exactly this; the wizard had no equivalent.
+//
+// Styled with the same --swd-warn token pair RefreshSkippedLocked uses, because
+// this is the lock contract working rather than a failure -- not a new colour.
+// role="status" rather than "alert": it is important but not an error, and it
+// appears as part of a swap the operator initiated.
+templ reIdentifyWizardLockedNoRefreshNotice(names []string) {
+	<div
+		class="rounded-md px-4 py-3 text-sm"
+		style="border:1px solid var(--swd-warn);background:var(--swd-warn-soft);color:var(--swd-warn)"
+		role="status"
+	>
+		<div class="font-medium">{ t(ctx, "artists.bulk.reidentify.wizard.refresh_skipped_locked") }</div>
+		<ul class="mt-2 list-disc list-inside space-y-0.5">
+			for _, n := range names {
+				<li>{ n }</li>
+			}
+		</ul>
+	</div>
+}
+
 // ReIdentifyWizardStep renders one artist + candidate list. Action buttons
 // HTMX-POST to the per-step endpoints and swap the response into
 // #wizard-body, so the stepper advances without a full navigation.
@@ -141,6 +176,9 @@ templ ReIdentifyWizardStep(data ReIdentifyWizardStepData) {
 			<progress class="w-32" value={ strconv.Itoa(data.Index + 1) } max={ strconv.Itoa(data.Total) }></progress>
 		</header>
 		<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+			if len(data.LockedNoRefresh) > 0 {
+				@reIdentifyWizardLockedNoRefreshNotice(data.LockedNoRefresh)
+			}
 			if len(data.FailedProviders) > 0 {
 				@disambiguationProviderErrorBanner(data.FailedProviders)
 			}
@@ -329,6 +367,9 @@ templ ReIdentifyWizardDone(data ReIdentifyWizardDoneData) {
 		<p class="text-sm text-gray-600 dark:text-gray-400">
 			{ tf(ctx, "artists.bulk.reidentify.wizard.done.summary", data.Accepted, data.Skipped, data.Declined, data.Total) }
 		</p>
+		if len(data.LockedNoRefresh) > 0 {
+			@reIdentifyWizardLockedNoRefreshNotice(data.LockedNoRefresh)
+		}
 		<div>
 			<a
 				href={ templ.SafeURL(basePath() + "/artists") }

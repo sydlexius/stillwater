@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1214,4 +1215,243 @@ func TestHandleReIdentifyWizardStep_UnauthRendersLoginPage(t *testing.T) {
 	if !strings.Contains(body, `type="password"`) {
 		t.Error("login page must include a password input field (type=password)")
 	}
+}
+
+// TestHandleReIdentifyWizardAccept_LockedArtistInformsOperator is the wizard
+// half of #2894.
+//
+// The wizard links a locked artist's new identity and the artist-level lock
+// suppresses the metadata refresh that normally follows. That part is correct
+// and deliberate. What was wrong is that the wizard DISCARDED the
+// refreshSkipped flag autoLinkAndRefresh returns, so the operator saw the step
+// advance exactly as it does on a full success and was never told that half the
+// operation did not happen -- the artist keeps the previous match's metadata
+// with nothing on screen saying so.
+//
+// attachSentinelOrchestrator wires a real orchestrator returning a sentinel
+// biography. Without it r.orchestrator is nil, the refresh branch is
+// unreachable, and "the metadata did not change" would pass vacuously against
+// an implementation that refreshed locked artists unconditionally.
+func TestHandleReIdentifyWizardAccept_LockedArtistInformsOperator(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	attachSentinelOrchestrator(t, r)
+	ctx := context.Background()
+
+	const priorBio = "biography from the previous, wrong match"
+	// LockedAt is required by a schema CHECK constraint: locked = 0 OR
+	// (locked = 1 AND locked_at IS NOT NULL). A locked artist with no timestamp
+	// cannot be persisted at all.
+	lockedAt := time.Date(2024, time.January, 2, 3, 4, 5, 0, time.UTC)
+	a := &artist.Artist{
+		ID:        "wizLocked1",
+		Name:      "Locked Wizard Artist",
+		Biography: priorBio,
+		Locked:    true,
+		LockedAt:  &lockedAt,
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+
+	// Preconditions. Both matter: an artist that is not actually locked would
+	// take the refresh path and prove nothing, and an empty biography would
+	// make the "unchanged" assertion below vacuous.
+	seeded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading seeded artist: %v", err)
+	}
+	if !seeded.Locked {
+		t.Fatalf("precondition: artist is not locked, so the refresh would run and this test proves nothing")
+	}
+	if seeded.Biography != priorBio {
+		t.Fatalf("precondition: biography = %q, want %q seeded before the accept", seeded.Biography, priorBio)
+	}
+
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
+		{ArtistID: a.ID}, {ArtistID: "other"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/any", strings.NewReader(`{"mbid":"mbid-corrected"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("sid", sess.ID)
+	req.SetPathValue("idx", "0")
+	w := httptest.NewRecorder()
+	r.handleReIdentifyWizardAccept(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	// The identity DID change -- the lock permits a manual edit.
+	reloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if reloaded.MusicBrainzID != "mbid-corrected" {
+		t.Errorf("MusicBrainzID = %q, want %q; the accept did not persist the new identity", reloaded.MusicBrainzID, "mbid-corrected")
+	}
+	// The metadata did NOT -- the refresh really was skipped, rather than
+	// having run and merely gone unreported.
+	if reloaded.Biography != priorBio {
+		t.Errorf("biography = %q, want %q unchanged; the lock did not suppress the refresh", reloaded.Biography, priorBio)
+	}
+
+	// The operator must be told. This is the whole point: without it the artist
+	// looks repaired and is not.
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if skipped, ok := resp["refresh_skipped_locked"].(bool); !ok || !skipped {
+		t.Errorf("refresh_skipped_locked = %v, want true; the wizard linked a new identity, silently skipped the refresh, and told the caller nothing (#2894)", resp["refresh_skipped_locked"])
+	}
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	if !slices.Contains(sess.LockedNoRefresh, a.Name) {
+		t.Errorf("session LockedNoRefresh = %v, want it to name %q; the completion summary is the operator's last chance to learn which artists still need a refresh", sess.LockedNoRefresh, a.Name)
+	}
+}
+
+// TestHandleReIdentifyWizardAccept_UnlockedArtistRefreshesAndReportsIt is the
+// positive control for the test above. Without it, an implementation that
+// reported refresh_skipped_locked=true unconditionally would look correct.
+func TestHandleReIdentifyWizardAccept_UnlockedArtistRefreshesAndReportsIt(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	attachSentinelOrchestrator(t, r)
+	ctx := context.Background()
+
+	a := &artist.Artist{ID: "wizUnlocked1", Name: "Unlocked Wizard Artist", Biography: "stale"}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+	seeded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading seeded artist: %v", err)
+	}
+	if seeded.Locked {
+		t.Fatalf("precondition: artist is locked, so the refresh would be skipped and this control proves nothing")
+	}
+
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
+		{ArtistID: a.ID}, {ArtistID: "other"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/any", strings.NewReader(`{"mbid":"mbid-corrected"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("sid", sess.ID)
+	req.SetPathValue("idx", "0")
+	w := httptest.NewRecorder()
+	r.handleReIdentifyWizardAccept(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	// The refresh really ran: the sentinel biography is proof of invocation.
+	reloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if reloaded.Biography != lockedRefreshSentinel {
+		t.Errorf("biography = %q, want the sentinel %q; the refresh did not run on an unlocked artist", reloaded.Biography, lockedRefreshSentinel)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if skipped, ok := resp["refresh_skipped_locked"].(bool); !ok || skipped {
+		t.Errorf("refresh_skipped_locked = %v, want false; the refresh ran, so reporting it as skipped would send the operator chasing work that is already done", resp["refresh_skipped_locked"])
+	}
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	if len(sess.LockedNoRefresh) != 0 {
+		t.Errorf("session LockedNoRefresh = %v, want empty; a refreshed artist must not appear in the outstanding-work list", sess.LockedNoRefresh)
+	}
+}
+
+// TestWizardLockedNoRefreshNoticeRenders covers the user-visible half of
+// #2894's wizard fix.
+//
+// The handler tests above assert the flag reaches the session and the JSON
+// response. Neither proves the operator ever SEES anything, which is the entire
+// point of E -- a flag threaded correctly into a fragment that renders nothing
+// is the same silent half-completion the issue reports. Both surfaces are
+// asserted because they are reached by different paths: the step fragment shows
+// the running list mid-run, and the completion summary is the last chance to
+// see it before the session is deleted.
+//
+// Asserted on role="status" and the localized copy rather than the Tailwind
+// classes, so a restyle does not break the test, matching
+// TestWizardErroredStepRendersBanner's contract.
+func TestWizardLockedNoRefreshNoticeRenders(t *testing.T) {
+	t.Parallel()
+	const lockedName = "Locked Wizard Artist"
+
+	// Precondition: the notice must be ABSENT when nothing was skipped, or the
+	// presence assertions below would pass against a fragment that renders the
+	// banner unconditionally and cries wolf on every clean run.
+	var clean bytes.Buffer
+	cleanData := templates.ReIdentifyWizardStepData{
+		SessionID: "sid-clean", Index: 0, Total: 1, ArtistID: "a1", ArtistName: "Clean",
+	}
+	if err := templates.ReIdentifyWizardStep(cleanData).Render(testI18nCtx(t, context.Background()), &clean); err != nil {
+		t.Fatalf("render clean step: %v", err)
+	}
+	if strings.Contains(clean.String(), "still reflects the previous match") {
+		t.Fatalf("precondition: the locked-no-refresh notice rendered with an EMPTY list; it would fire on every clean run")
+	}
+
+	t.Run("step fragment", func(t *testing.T) {
+		t.Parallel()
+		data := templates.ReIdentifyWizardStepData{
+			SessionID:       "sid-test",
+			Index:           1,
+			Total:           2,
+			ArtistID:        "a2",
+			ArtistName:      "Next Artist",
+			LockedNoRefresh: []string{lockedName},
+		}
+		var buf bytes.Buffer
+		if err := templates.ReIdentifyWizardStep(data).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, `role="status"`) {
+			t.Errorf("rendered step missing role=status notice; got:\n%s", out)
+		}
+		if !strings.Contains(out, "still reflects the previous match") {
+			t.Errorf("rendered step missing the localized locked-no-refresh copy; the operator is not told the metadata was not refreshed (#2894); got:\n%s", out)
+		}
+		// The artist must be NAMED: a notice that does not say which artist
+		// leaves the operator no way to act on it.
+		if !strings.Contains(out, lockedName) {
+			t.Errorf("rendered step does not name the affected artist %q; got:\n%s", lockedName, out)
+		}
+	})
+
+	t.Run("completion summary", func(t *testing.T) {
+		t.Parallel()
+		data := templates.ReIdentifyWizardDoneData{
+			SessionID:       "sid-test",
+			Total:           2,
+			Accepted:        1,
+			LockedNoRefresh: []string{lockedName},
+		}
+		var buf bytes.Buffer
+		if err := templates.ReIdentifyWizardDone(data).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "still reflects the previous match") {
+			t.Errorf("completion summary missing the locked-no-refresh copy; the session is deleted right after this renders, so the operator never learns which artists still need a refresh; got:\n%s", out)
+		}
+		if !strings.Contains(out, lockedName) {
+			t.Errorf("completion summary does not name the affected artist %q; got:\n%s", lockedName, out)
+		}
+	})
 }
