@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -143,6 +144,11 @@ type Orchestrator struct {
 	executor ScraperExecutor
 	aimd     *AIMDController
 	logger   *slog.Logger
+
+	// searchTimeout overrides perProviderSearchTimeout when non-zero. It exists
+	// so tests can exercise the deadline without waiting the production ceiling;
+	// nothing in production sets it, so the constant is what ships.
+	searchTimeout time.Duration
 }
 
 // NewOrchestrator creates a new Orchestrator. aimd may be nil; when nil, the
@@ -1256,6 +1262,31 @@ type ProviderSearchStatus struct {
 	ScrubbedMessage string
 }
 
+// perProviderTimeout returns the deadline applied to each provider search:
+// the package constant, unless a test has overridden it.
+func (o *Orchestrator) perProviderTimeout() time.Duration {
+	if o.searchTimeout > 0 {
+		return o.searchTimeout
+	}
+	return perProviderSearchTimeout
+}
+
+// perProviderSearchTimeout bounds a single provider's disambiguation search.
+//
+// The ceiling exists because DoWithRetry will sit through a rate-limited
+// provider's backoff for far longer than a person will wait: a sustained 429
+// from one provider could consume roughly a minute while a healthy provider's
+// answer was already in hand. Sequentially, that latency was additive and the
+// whole response blocked behind the slowest provider; if the browser or a
+// reverse proxy severed the idle connection first, the panel rendered as an
+// indistinguishable "no matches" (#2818).
+//
+// 12s is chosen to sit well under the server's 60s IdleTimeout (see
+// internal/server/listeners.go) with room for the response itself, while still
+// leaving a slow-but-working provider time to answer. Because providers now run
+// concurrently, this is the bound on the WHOLE search, not per provider summed.
+const perProviderSearchTimeout = 12 * time.Second
+
 // SearchForLinking queries only the specified providers for disambiguation.
 // Unlike Search (which queries all providers), this targets only providers
 // whose IDs need to be linked (e.g., MusicBrainz for MBID, Discogs for DiscogsID).
@@ -1275,38 +1306,115 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 		return nil, nil, errors.New("provider registry not configured")
 	}
 
-	var allResults []ArtistSearchResult
-	statuses := make([]ProviderSearchStatus, 0, len(providers))
-
+	// Resolve providers first, keeping each one's position in the input slice.
+	// Unregistered names are dropped here exactly as before, so they still emit
+	// no status; everything downstream indexes into these compacted slices.
+	queried := make([]Provider, 0, len(providers))
+	names := make([]ProviderName, 0, len(providers))
 	for _, provName := range providers {
-		p := o.registry.Get(provName)
-		if p == nil {
-			continue
+		if p := o.registry.Get(provName); p != nil {
+			queried = append(queried, p)
+			names = append(names, provName)
 		}
-		results, err := p.SearchArtist(ctx, name)
-		if err != nil {
-			scrubbed := ScrubError(err)
-			o.logger.Warn("provider search failed",
-				slog.String("provider", string(provName)),
-				slog.String("error", scrubbed),
-				retryAfterAttr(err))
-			statuses = append(statuses, ProviderSearchStatus{
-				Provider:        provName,
-				Errored:         true,
-				ScrubbedMessage: scrubbed,
-			})
-			// Only signal AIMD on rate-limit / provider-unavailable errors.
-			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
-			if o.aimd != nil && IsRateLimitError(err) {
-				o.aimd.RecordFailure(provName, RetryAfterDuration(err))
+	}
+
+	// One slot per queried provider, written only by that provider's goroutine.
+	// Pre-sizing rather than appending under a mutex keeps the fan-out race-free
+	// AND preserves input order, which the UI relies on to line a failed-provider
+	// banner up with the provider the operator configured.
+	perResults := make([][]ArtistSearchResult, len(queried))
+	perStatus := make([]ProviderSearchStatus, len(queried))
+
+	var wg sync.WaitGroup
+	for i := range queried {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// A provider adapter panicking must not take the process down with
+			// it: this runs on the request path, and one malformed upstream
+			// response would otherwise kill every in-flight request. The
+			// recovered provider is reported as ERRORED under its own name
+			// (see the slot fill below), so the failed-provider banner can
+			// name it rather than showing an unnamed provider that quietly
+			// matched nothing.
+			defer func() {
+				if v := recover(); v != nil {
+					o.logger.Error("provider search panicked",
+						slog.String("provider", string(names[i])),
+						slog.Any("panic", v),
+						slog.String("stack", string(debug.Stack())))
+					// Fill the slot: a zero-valued status carries an EMPTY
+					// provider name, so the row would render as an unnamed
+					// provider that quietly matched nothing. Report it as
+					// errored under its own name instead, which is both true
+					// and what the failed-provider banner needs to name it.
+					perStatus[i] = ProviderSearchStatus{
+						Provider:        names[i],
+						Errored:         true,
+						ScrubbedMessage: "provider search failed unexpectedly",
+					}
+					perResults[i] = nil
+				}
+			}()
+
+			// Each provider gets its own deadline derived from the request
+			// context, so a struggling provider bounds only itself. Derived
+			// from ctx rather than detached because this is foreground request
+			// work: if the operator navigates away, the searches should stop.
+			provCtx, cancel := context.WithTimeout(ctx, o.perProviderTimeout())
+			defer cancel()
+
+			results, err := queried[i].SearchArtist(provCtx, name)
+			if err != nil {
+				scrubbed := ScrubError(err)
+				o.logger.Warn("provider search failed",
+					slog.String("provider", string(names[i])),
+					slog.String("error", scrubbed),
+					retryAfterAttr(err))
+				perStatus[i] = ProviderSearchStatus{
+					Provider:        names[i],
+					Errored:         true,
+					ScrubbedMessage: scrubbed,
+				}
+				// Only signal AIMD on rate-limit / provider-unavailable errors.
+				// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
+				//
+				// Our OWN deadline is excluded too. A timeout that fires during
+				// DoWithRetry's backoff sleep surfaces wrapped as
+				// ErrProviderUnavailable, which IsRateLimitError accepts -- so
+				// without this check the orchestrator would read its own
+				// impatience as evidence the provider is rate-limiting us and
+				// throttle a healthy provider on the next search.
+				// Test DeadlineExceeded specifically, not "is provCtx done".
+				// The latter is also true once the deferred cancel runs and
+				// once the caller cancels, so it would suppress AIMD for a
+				// genuine 429 that happened to arrive around cancellation.
+				// A caller-canceled request is excluded too (ctx.Err() != nil):
+				// the operator navigating away is not evidence about the
+				// provider's health either.
+				ourDeadline := errors.Is(provCtx.Err(), context.DeadlineExceeded)
+				callerGone := ctx.Err() != nil
+				if o.aimd != nil && IsRateLimitError(err) && !ourDeadline && !callerGone {
+					o.aimd.RecordFailure(names[i], RetryAfterDuration(err))
+				}
+				return
 			}
-			continue
-		}
-		statuses = append(statuses, ProviderSearchStatus{Provider: provName})
-		allResults = append(allResults, results...)
-		if o.aimd != nil {
-			o.aimd.RecordSuccess(provName)
-		}
+			perStatus[i] = ProviderSearchStatus{Provider: names[i]}
+			perResults[i] = results
+			if o.aimd != nil {
+				o.aimd.RecordSuccess(names[i])
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Flatten in input order. Every queried provider has a filled slot by now:
+	// success, error, or the recovery path above.
+	var allResults []ArtistSearchResult
+	statuses := make([]ProviderSearchStatus, 0, len(queried))
+	for i := range queried {
+		statuses = append(statuses, perStatus[i])
+		allResults = append(allResults, perResults[i]...)
 	}
 
 	return allResults, statuses, nil

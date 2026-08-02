@@ -19,8 +19,11 @@ import (
 
 // IdentifyProgress tracks the state of a bulk-identify operation.
 type IdentifyProgress struct {
-	mu          sync.RWMutex
-	Status      string              `json:"status"` // "running", "completed", "canceled"
+	mu sync.RWMutex
+	// Status is one of "running", "completed", "failed", or "canceled".
+	// "failed" covers a run in which every processed artist failed, which is
+	// what a provider outage or a panicking adapter looks like from here.
+	Status      string              `json:"status"`
 	Total       int                 `json:"total"`
 	Processed   int                 `json:"processed"`
 	AutoLinked  int                 `json:"auto_linked"`
@@ -453,7 +456,27 @@ func (r *Router) runBulkIdentify(ctx context.Context, artists []artist.Artist, p
 		}
 
 		progress.mu.Lock()
-		progress.Status = "completed"
+		// A run in which EVERY artist failed did not complete in any sense the
+		// operator would recognize: the usual cause is the provider being down
+		// or panicking, so reporting "completed" over a total washout tells
+		// them the job succeeded and there is simply nothing to review.
+		//
+		// This is deliberately "all failed", not "any failed". A handful of
+		// individual failures within a large run is ordinary and already
+		// visible in the Failed counter; only a wholesale failure is a job
+		// outcome rather than a per-artist one.
+		//
+		// It also replaces what a propagating panic used to signal. Provider
+		// panics are now contained at the orchestrator boundary (so one bad
+		// adapter cannot kill unrelated in-flight requests) and surface as an
+		// errored provider status, which the tier handlers already translate
+		// into outcomeFailed -- so the signal arrives here as a count rather
+		// than as a stack unwind.
+		if progress.Processed > 0 && progress.Failed == progress.Processed {
+			progress.Status = "failed"
+		} else {
+			progress.Status = "completed"
+		}
 		progress.CurrentName = ""
 		progress.mu.Unlock()
 	}()
