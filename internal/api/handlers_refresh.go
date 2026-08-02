@@ -716,12 +716,14 @@ const albumEvidenceBudget = 8
 // artist listed as "Beatles, The" is not penalized against a query of "The
 // Beatles". Aliases would need a separate fetch and are out of scope here.
 func rankScore(query string, res provider.ArtistSearchResult) int {
-	name := provider.NameSimilarity(query, res.Name)
-	if res.SortName != "" {
-		if s := provider.NameSimilarity(query, res.SortName); s > name {
-			name = s
-		}
-	}
+	// Name and sort-name are the two the view model carries, so they are the
+	// two this can measure directly. Aliases are NOT missing by oversight:
+	// ArtistSearchResult has no alias field, and the alias signal reaches this
+	// function through res.Score instead -- the MusicBrainz adapter scores the
+	// query against every alias and sort-name at search time and keeps the
+	// best (#2820). So an alias-only match arrives here as a raised provider
+	// score rather than as a raised name similarity.
+	name := provider.BestNameSimilarity(query, res.Name, res.SortName)
 	return name*2 + res.Score
 }
 
