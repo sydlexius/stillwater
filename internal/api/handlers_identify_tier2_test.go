@@ -784,8 +784,10 @@ func TestRunBulkIdentify_PanicRecovered(t *testing.T) {
 
 	r.runBulkIdentify(ctx, []artist.Artist{*a}, progress)
 
-	// Wait up to 5s for the goroutine to settle. On panic-recovery the
-	// deferred handler flips Status to "failed".
+	// Wait up to 5s for the goroutine to settle. The panic is recovered at the
+	// orchestrator boundary and reported as an errored provider, which the tier
+	// handler turns into outcomeFailed; the final aggregation then sets Status
+	// to "failed" because every processed artist failed.
 	deadline := time.Now().Add(5 * time.Second)
 	var finalStatus string
 	for time.Now().Before(deadline) {
@@ -846,10 +848,12 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 		t.Fatalf("first POST status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
 	}
 
-	// Wait for terminal state. A nil progress slot is also terminal: the
-	// panic-recovery deferred handler may have cleared it outright instead
-	// of leaving a "failed" sentinel behind, and either outcome is a
-	// "no in-flight job" signal that lets the second POST proceed.
+	// Wait for terminal state. A nil progress slot is also terminal: the job's
+	// deferred handler may have cleared it outright instead of leaving a
+	// terminal sentinel behind, and either outcome is a "no in-flight job"
+	// signal that lets the second POST proceed. (Provider panics no longer
+	// reach that handler -- they are contained at the orchestrator boundary --
+	// but the slot-clearing path this test guards is unchanged.)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		r.identifyMu.RLock()

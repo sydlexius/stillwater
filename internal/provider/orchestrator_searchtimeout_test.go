@@ -3,9 +3,8 @@ package provider
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
-	"os"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,7 +20,7 @@ func newTimeoutTestOrchestrator(t *testing.T, aimd *AIMDController, provs ...Pro
 	for _, p := range provs {
 		registry.Register(p)
 	}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	return NewOrchestrator(registry, nil, logger, aimd)
 }
 
@@ -253,10 +252,15 @@ func TestSearchForLinking_TimeoutDoesNotSignalAIMD(t *testing.T) {
 			},
 		}
 		o := newTimeoutTestOrchestrator(t, aimd, hung)
+		// The caller context must have NO deadline, so the ONLY thing that can
+		// end the provider call is the orchestrator's own ceiling. An earlier
+		// version passed a 100ms caller deadline, which made ctx.Err() non-nil
+		// and let the callerGone clause carry the assertion -- so deleting the
+		// ourDeadline check entirely still passed. Verified: with a caller
+		// deadline the mutation is NOT caught; with this shape it is.
+		o.searchTimeout = 150 * time.Millisecond
 
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer cancel()
-		_, statuses, err := o.SearchForLinking(ctx, "x", []ProviderName{prov})
+		_, statuses, err := o.SearchForLinking(context.Background(), "x", []ProviderName{prov})
 		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
@@ -334,6 +338,19 @@ func TestSearchForLinking_PanicIsContained(t *testing.T) {
 	if statuses[0].Provider != NameMusicBrainz || statuses[1].Provider != NameDiscogs {
 		t.Errorf("status order = %v, %v; want MusicBrainz, Discogs", statuses[0].Provider, statuses[1].Provider)
 	}
+	// The panicking provider must report as ERRORED under its own name. A
+	// regression leaving the slot zero-valued still satisfies the count and
+	// order checks above, but renders an unnamed provider that quietly matched
+	// nothing -- which is exactly what the failed-provider banner cannot show.
+	if statuses[0].Errored {
+		t.Errorf("healthy provider reported errored: %+v", statuses[0])
+	}
+	if !statuses[1].Errored {
+		t.Error("the panicking provider must report as errored, not as an empty success")
+	}
+	if statuses[1].ScrubbedMessage == "" {
+		t.Error("the panicking provider's status carries no message for the banner to show")
+	}
 }
 
 // TestSearchForLinking_ConcurrentWritesAreRaceFree exercises the fan-out with
@@ -346,8 +363,6 @@ func TestSearchForLinking_ConcurrentWritesAreRaceFree(t *testing.T) {
 	names := []ProviderName{NameMusicBrainz, NameDiscogs, NameAudioDB, NameDeezer}
 	provs := make([]Provider, 0, len(names))
 	var calls atomic.Int32
-	var mu sync.Mutex
-	seen := map[ProviderName]bool{}
 
 	for _, n := range names {
 		n := n
@@ -355,9 +370,6 @@ func TestSearchForLinking_ConcurrentWritesAreRaceFree(t *testing.T) {
 			name: n,
 			searchFn: func(_ context.Context, _ string) ([]ArtistSearchResult, error) {
 				calls.Add(1)
-				mu.Lock()
-				seen[n] = true
-				mu.Unlock()
 				return []ArtistSearchResult{{Name: string(n)}}, nil
 			},
 		})

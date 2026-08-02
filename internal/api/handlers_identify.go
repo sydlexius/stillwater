@@ -19,8 +19,11 @@ import (
 
 // IdentifyProgress tracks the state of a bulk-identify operation.
 type IdentifyProgress struct {
-	mu          sync.RWMutex
-	Status      string              `json:"status"` // "running", "completed", "canceled"
+	mu sync.RWMutex
+	// Status is one of "running", "completed", "failed", or "canceled".
+	// "failed" covers a run in which every processed artist failed, which is
+	// what a provider outage or a panicking adapter looks like from here.
+	Status      string              `json:"status"`
 	Total       int                 `json:"total"`
 	Processed   int                 `json:"processed"`
 	AutoLinked  int                 `json:"auto_linked"`

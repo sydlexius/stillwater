@@ -1332,9 +1332,11 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 			defer wg.Done()
 			// A provider adapter panicking must not take the process down with
 			// it: this runs on the request path, and one malformed upstream
-			// response would otherwise kill every in-flight request. The slot
-			// is left as a non-errored empty result, which reads as "this
-			// provider returned nothing".
+			// response would otherwise kill every in-flight request. The
+			// recovered provider is reported as ERRORED under its own name
+			// (see the slot fill below), so the failed-provider banner can
+			// name it rather than showing an unnamed provider that quietly
+			// matched nothing.
 			defer func() {
 				if v := recover(); v != nil {
 					o.logger.Error("provider search panicked",
