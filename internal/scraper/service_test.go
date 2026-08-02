@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log/slog"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -336,5 +337,89 @@ func TestSeedDefaults_BackfillPreservesOperatorChoices(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("origin appears %d times after reload, want exactly 1: the backfill duplicated an existing field", count)
+	}
+}
+
+// TestSeedDefaults_BackfillDoesNotResurrectDeletedFields covers the hostile-review
+// finding on the #2895 backfill.
+//
+// PUT /api/v1/scraper/config accepts an arbitrary Fields array and does not
+// require completeness, so "disable this field" and "remove this field" are
+// both reachable through the same API. Judging the backfill on the Fields list
+// alone makes those indistinguishable from a field introduced by a later
+// release, and every boot silently restores the removed entries -- re-enabled,
+// because DefaultConfig has Enabled: true.
+func TestSeedDefaults_BackfillDoesNotResurrectDeletedFields(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// A first boot on an existing install seeds the known-field roster.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The operator removes every image field rather than disabling them.
+	kept := make([]FieldConfig, 0, len(stored.Fields))
+	removed := 0
+	for _, f := range stored.Fields {
+		if CategoryFor(f.Field) == CategoryImages {
+			removed++
+			continue
+		}
+		kept = append(kept, f)
+	}
+	if removed == 0 {
+		t.Fatal("precondition failed: seeded config had no image fields to remove")
+	}
+	stored.Fields = kept
+	if err := svc.SaveConfig(ctx, ScopeGlobal, stored, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Restart.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range reloaded.Fields {
+		if CategoryFor(f.Field) == CategoryImages {
+			t.Errorf("field %q was deleted by the operator but came back after restart (enabled=%v)",
+				f.Field, f.Enabled)
+		}
+	}
+
+	// Precondition: the backfill still works for a genuinely new field. Drop
+	// origin from BOTH the field list and the known roster, which is what a
+	// config written before the field existed looks like.
+	reloaded.Fields = slices.DeleteFunc(reloaded.Fields, func(f FieldConfig) bool {
+		return f.Field == FieldOrigin
+	})
+	reloaded.KnownFields = slices.DeleteFunc(reloaded.KnownFields, func(f FieldName) bool {
+		return f == FieldOrigin
+	})
+	if err := svc.SaveConfig(ctx, ScopeGlobal, reloaded, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	after, err := svc.GetConfig(ctx, ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(after.Fields, func(f FieldConfig) bool { return f.Field == FieldOrigin }) {
+		t.Error("a field absent from both Fields and KnownFields must still be added; the deletion guard has disabled the backfill entirely")
 	}
 }

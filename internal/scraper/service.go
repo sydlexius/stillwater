@@ -70,16 +70,22 @@ func (s *Service) backfillGlobalFields(ctx context.Context) error {
 		return fmt.Errorf("loading global config for backfill: %w", err)
 	}
 
+	// Compare the field roster before and after. A boot that adds nothing but
+	// seeds KnownFields for the first time still has to persist, or the roster
+	// is recomputed from scratch every startup and a deletion is never durable.
+	rosterBefore := len(cfg.KnownFields)
 	added := backfillMissingFields(cfg)
-	if added == 0 {
+	if added == 0 && len(cfg.KnownFields) == rosterBefore {
 		return nil
 	}
 
 	if err := s.saveConfigRow(ctx, cfg, nil); err != nil {
 		return fmt.Errorf("saving backfilled global config: %w", err)
 	}
-	s.logger.Info("added scraper fields introduced since this install was created",
-		"count", added, "scope", ScopeGlobal)
+	if added > 0 {
+		s.logger.Info("added scraper fields introduced since this install was created",
+			"count", added, "scope", ScopeGlobal)
+	}
 	return nil
 }
 
@@ -195,23 +201,53 @@ func (s *Service) loadGlobalConfig(ctx context.Context) (*ScraperConfig, error) 
 // path despite being a first-class artist column (#2895).
 //
 // It only ADDS, and reports how many entries it appended. A field the operator
-// disabled or repointed keeps their setting, because the merge is keyed on the
-// field name and an existing entry is left untouched. Callers persist the
-// result; see backfillGlobalFields for why that happens at startup rather than
-// on every read.
+// disabled or repointed keeps their setting, because an entry that already
+// exists is never touched. A field the operator DELETED also stays deleted:
+// the decision is made against cfg.KnownFields, which records every field this
+// install has been offered, so "removed on purpose" is distinguishable from
+// "introduced after this install was created". Judging on the Fields list alone
+// would resurrect a deletion on every boot.
+//
+// Callers persist the result; see backfillGlobalFields for why that happens at
+// startup rather than on every read.
 func backfillMissingFields(cfg *ScraperConfig) int {
 	if cfg == nil {
 		return 0
 	}
+
+	known := make(map[FieldName]bool, len(cfg.KnownFields)+len(cfg.Fields))
+	for _, f := range cfg.KnownFields {
+		known[f] = true
+	}
+	// A config written before KnownFields existed has none. Seed it from the
+	// fields the install currently carries so its present selection counts as
+	// already-seen; anything genuinely newer is still absent and gets added.
+	if len(cfg.KnownFields) == 0 {
+		for _, f := range cfg.Fields {
+			known[f.Field] = true
+		}
+	}
+
 	present := make(map[FieldName]bool, len(cfg.Fields))
 	for _, f := range cfg.Fields {
 		present[f.Field] = true
 	}
+
 	added := 0
 	for _, def := range DefaultConfig().Fields {
-		if !present[def.Field] {
+		if !present[def.Field] && !known[def.Field] {
 			cfg.Fields = append(cfg.Fields, def)
 			added++
+		}
+		known[def.Field] = true
+	}
+
+	// Rewrite the roster from the union so it covers both the fields in use and
+	// the ones deliberately dropped.
+	cfg.KnownFields = cfg.KnownFields[:0]
+	for _, def := range AllFieldNames() {
+		if known[def] {
+			cfg.KnownFields = append(cfg.KnownFields, def)
 		}
 	}
 	return added

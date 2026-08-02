@@ -39,7 +39,7 @@ func parseInfobox(wikitext string) *infoboxData {
 
 	// Origin / birth_place
 	if v := fieldValue(fields, "origin", "birth_place"); v != "" {
-		data.Origin = cleanMarkup(v)
+		data.Origin = cleanScalarField(v)
 	}
 
 	// Years active
@@ -216,6 +216,11 @@ func fieldValue(fields map[string]string, aliases ...string) string {
 	return ""
 }
 
+// isBulletList reports whether a field value uses wikitext bullet markers.
+func isBulletList(value string) bool {
+	return strings.Contains(value, "\n*") || strings.HasPrefix(strings.TrimSpace(value), "*")
+}
+
 // parseListField extracts a list of items from a wikitext field value.
 // Handles: {{flatlist|...}}, {{hlist|...}}, {{plainlist|...}}, bullet lists,
 // <br /> separators, and comma-separated values.
@@ -229,6 +234,37 @@ func parseListField(value string) []string {
 	value = unwrapListTemplates(value)
 
 	var items []string
+
+	// A <br /> always separates ITEMS in a list field, in every format below,
+	// so handle it once here instead of as one more rung of the ladder.
+	//
+	// The ladder is ordered (pipes, then bullets, then <br />, then commas), so
+	// a <br /> nested inside a pipe- or bullet-delimited value was reached only
+	// by cleanMarkup, which strips it -- butting two items together into one
+	// ("[[Pop]]<br />[[Folk]]" inside an hlist became the single tag "PopFolk",
+	// #2895). Recursing per segment covers every branch.
+	//
+	// Bullets are split FIRST, because a bullet list is line-oriented while
+	// <br /> is not: splitting "* [[A]]<br />[[B]]\n* [[C]]" on the <br /> hands
+	// the bullet branch a segment whose first item has lost its "*" marker, and
+	// that branch keeps only lines that still carry one -- silently dropping B.
+	// Splitting on bullets first leaves each <br /> wholly inside one item.
+	if hasLineBreak(value) {
+		if isBulletList(value) {
+			for _, line := range strings.Split(value, "\n") {
+				line = strings.TrimSpace(line)
+				if !strings.HasPrefix(line, "*") {
+					continue
+				}
+				items = append(items, parseListField(strings.TrimLeft(line, "* "))...)
+			}
+			return items
+		}
+		for _, seg := range splitOnBR(value) {
+			items = append(items, parseListField(seg)...)
+		}
+		return items
+	}
 
 	// After hlist unwrapping, items are pipe-separated (e.g. "[[Rock]]|[[Pop]]").
 	// Split on pipes that are outside wikilinks and templates.
@@ -254,7 +290,7 @@ func parseListField(value string) []string {
 	}
 
 	// Check for bullet-list items.
-	if strings.Contains(value, "\n*") || strings.HasPrefix(strings.TrimSpace(value), "*") {
+	if isBulletList(value) {
 		lines := strings.Split(value, "\n")
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
@@ -359,14 +395,29 @@ func unwrapListTemplates(s string) string {
 	return s
 }
 
+// cleanScalarField cleans a SCALAR field value, where a <br /> separates the
+// stacked components of one value ("New York City<br />United States") rather
+// than delimiting separate items. The components are joined with ", ".
+//
+// List fields must NOT use this: there a <br /> separates items, and
+// parseListField splits on it instead. Keeping the two entry points distinct
+// is deliberate -- folding the join into cleanMarkup, which parseListField
+// calls per item, silently merged genuinely separate list items into one
+// comma-joined string (#2895).
+func cleanScalarField(s string) string {
+	return cleanMarkup(joinLineBreaks(s))
+}
+
 // cleanMarkup removes wikitext markup from a string, producing plain text.
 // Handles: [[Link|Display]] -> Display, [[Link]] -> Link,
-// {{nowrap|text}} -> text, {{small|text}} -> text, HTML tags, ref tags,
-// and <br /> component separators.
+// {{nowrap|text}} -> text, {{small|text}} -> text, HTML tags, ref tags.
+//
+// It does NOT give <br /> any meaning: the tag stripper removes it like any
+// other tag. Callers decide what a <br /> means for their field --
+// cleanScalarField joins across it, parseListField splits on it.
 func cleanMarkup(s string) string {
 	s = html.UnescapeString(s)
 	s = stripRefs(s)
-	s = joinLineBreaks(s)
 	s = stripHTMLTags(s)
 	s = resolveWikilinks(s)
 	s = stripSimpleTemplates(s)
@@ -609,9 +660,35 @@ func stripRefs(s string) string {
 	return s
 }
 
+// hasLineBreak reports whether s contains a <br> tag in any of its spellings
+// (<br>, <br/>, <br />, <BR clear="all" />).
+//
+// The tag name must be followed by a delimiter. A bare strings.Contains(s,
+// "<br") also matches <bracket> and <brand>, which would make callers split at
+// a tag that is not a line break at all.
+func hasLineBreak(s string) bool {
+	lower := strings.ToLower(s)
+	for i := 0; ; {
+		idx := strings.Index(lower[i:], "<br")
+		if idx < 0 {
+			return false
+		}
+		i += idx + 3
+		if i >= len(lower) {
+			// Trailing "<br" with nothing after it: treat as a line break so a
+			// truncated value still separates rather than concatenates.
+			return true
+		}
+		switch c := lower[i]; c {
+		case '>', '/', ' ', '\t', '\n', '\r':
+			return true
+		}
+	}
+}
+
 // joinLineBreaks replaces <br /> separators with ", ".
 //
-// Wikipedia infoboxes use <br /> to stack the components of a scalar field --
+// Wikipedia infoboxes use <br /> to stack the components of a SCALAR field --
 // "origin = [[New York City]]<br />[[United States]]" is a single origin split
 // across two rendered lines, not two origins. stripHTMLTags removes <br /> the
 // same way it removes <i>, which would butt the components together with no
@@ -619,19 +696,20 @@ func stripRefs(s string) string {
 // before the tag stripper runs preserves the "City, Country" form used
 // everywhere else.
 //
-// Values with no <br /> are returned unchanged, so this is a no-op for the
-// list fields that already split on <br /> themselves (see parseListField).
+// Only cleanScalarField and cleanYearsActive call this. List fields mean the
+// opposite by a <br /> and split on it in parseListField.
 func joinLineBreaks(s string) string {
-	if !strings.Contains(strings.ToLower(s), "<br") {
+	if !hasLineBreak(s) {
 		return s
 	}
 	parts := splitOnBR(s)
 	kept := make([]string, 0, len(parts))
 	for _, part := range parts {
-		// Right-trim separator punctuation so a value that already ends its
-		// component with a comma ("New York City,<br />United States") does not
-		// end up with a doubled ", ,".
-		if trimmed := strings.TrimRight(strings.TrimSpace(part), " ,;"); trimmed != "" {
+		// Trim separator punctuation from BOTH ends so a value that already
+		// carries its own comma -- on either side of the tag, as in
+		// "New York City,<br />United States" or "New York City<br />, United
+		// States" -- does not end up with a doubled ", ,".
+		if trimmed := strings.Trim(strings.TrimSpace(part), " ,;"); trimmed != "" {
 			kept = append(kept, trimmed)
 		}
 	}

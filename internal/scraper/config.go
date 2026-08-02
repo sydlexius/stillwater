@@ -122,6 +122,18 @@ type ScraperConfig struct {
 	FallbackChains []FallbackChain `json:"fallback_chains"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
+
+	// KnownFields records every field this install has been offered, which is
+	// not the same as the fields it currently uses. The startup backfill adds a
+	// field only when it is absent from BOTH Fields and KnownFields, so a field
+	// the operator deliberately removed stays removed while a field introduced
+	// by a later release is still added once. Without it, "deleted" and "never
+	// existed" are indistinguishable and every boot resurrects the deletion.
+	//
+	// Empty on a config written before this existed; backfillMissingFields
+	// seeds it from the current Fields in that case, so a pre-existing install
+	// does not have its current selection treated as unseen.
+	KnownFields []FieldName `json:"known_fields,omitempty"`
 }
 
 // Overrides tracks which fields and fallback chains have been explicitly

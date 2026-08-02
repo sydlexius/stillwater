@@ -32,6 +32,10 @@ Sometimes you want most of an artist's metadata to refresh from providers, but t
 
 You pin a field (biography, sort name, born year, ...) and Stillwater's refresh, fill-empty, and NFO-import paths all skip that field. Pinned date fields also survive the post-merge "this date doesn't apply to this artist type" cleanup -- if you've pinned a born year on a band, it stays.
 
+This is the mechanism to reach for whenever you have corrected a value by hand. A refresh replaces most fields with whatever the providers return, and re-identifying an artist runs a refresh against the new identity. An unlocked correction therefore lasts only until the next one of either.
+
+The [refresh how-to](../how-to/refresh-metadata.md#which-values-a-refresh-replaces) lists which fields are replaced outright, which can be cleared, and which a refresh never touches.
+
 Field locks coexist with the artist-level lock. Unlocking the artist doesn't clear field locks; they're independent layers.
 
 **Where to find the lock controls:** open an artist from the **Artists** sidebar item; lock icons sit next to the Biography heading, each tag-group label (Genres / Styles / Moods), and every field in the Details panel.
