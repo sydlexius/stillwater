@@ -752,8 +752,12 @@ func TestRunBulkIdentify_PanicRecovered(t *testing.T) {
 	r, _, artistSvc := testRouterWithLibrary(t)
 	r.logger = logger
 
-	// Stub that panics on SearchArtist. The panic propagates up through
-	// SearchForLinking -> identifyArtist -> the runBulkIdentify goroutine.
+	// Stub that panics on SearchArtist. The panic is recovered inside
+	// SearchForLinking's per-provider goroutine and reported as an errored
+	// provider status, which identifyArtist turns into outcomeFailed; the
+	// runBulkIdentify aggregation then sets Status from the failure count.
+	// It does NOT propagate up the call stack -- containing it there is what
+	// stops one bad adapter killing unrelated in-flight requests.
 	panicProv := &identifyStubProvider{
 		name: provider.NameMusicBrainz,
 		searchFn: func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
