@@ -871,8 +871,14 @@ func TestHandleAudioDBLink_UnlockedArtistStillRefreshes(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if _, present := resp["refresh_skipped_locked"]; present {
-		t.Errorf("refresh_skipped_locked present on an unlocked artist; body=%v", resp)
+	// The field is ALWAYS present now, so the assertion is on its VALUE. Testing
+	// for absence would pass against a handler that stopped emitting it at all,
+	// which is the ambiguity the always-present convention removes.
+	skipped, present := resp["refresh_skipped_locked"]
+	if !present {
+		t.Errorf("refresh_skipped_locked missing; it is always emitted so a client can key on the value, not the key; body=%v", resp)
+	} else if skipped != false {
+		t.Errorf("refresh_skipped_locked = %v, want false on an unlocked artist; body=%v", skipped, resp)
 	}
 	assertSentinelBiographyPresent(t, artistSvc, a.ID)
 }

@@ -155,7 +155,7 @@ templ reIdentifyWizardLockedNoRefreshNotice(artists []LockedNoRefreshArtist) {
 		style="border:1px solid var(--swd-warn);background:var(--swd-warn-soft);color:var(--swd-warn)"
 		role="status"
 	>
-		<div class="font-medium">{ t(ctx, "artists.bulk.reidentify.wizard.refresh_skipped_locked") }</div>
+		<div class="font-medium">{ tn(ctx, "artists.bulk.reidentify.wizard.refresh_skipped_locked", len(artists)) }</div>
 		<ul class="mt-2 list-disc list-inside space-y-0.5">
 			for _, a := range artists {
 				<li>{ a.Name }</li>

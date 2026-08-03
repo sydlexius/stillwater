@@ -7620,9 +7620,11 @@ paths:
                   refresh_skipped_locked:
                     type: boolean
                     description: >
-                      Present and true when the provider ID was persisted but
-                      the follow-up metadata refresh was suppressed because the
-                      artist is locked. Omitted otherwise.
+                      Always present. True when the provider ID was persisted
+                      but the follow-up metadata refresh was suppressed because
+                      the artist is locked; false otherwise. The field is never
+                      omitted, so a client may key on its VALUE and does not
+                      have to test for the key's presence.
         "400":
           description: Invalid request body or missing required fields
           content:
@@ -13983,7 +13985,12 @@ paths:
                     wrong, and those IDs were derived from that entity's own
                     provider responses, so keeping them would steer the
                     follow-up refresh straight back to it. Ignored when neither
-                    ID is supplied.
+                    ID is supplied. The secondary-ID discard takes effect only
+                    when the follow-up refresh actually runs and succeeds: a
+                    locked artist keeps every provider ID and returns
+                    status "skipped_locked", and a failed refresh persists
+                    nothing, so the artist retains every ID it started with and
+                    the response is a 500.
           application/x-www-form-urlencoded:
             schema:
               type: object
@@ -14011,7 +14018,12 @@ paths:
                     wrong, and those IDs were derived from that entity's own
                     provider responses, so keeping them would steer the
                     follow-up refresh straight back to it. Ignored when neither
-                    ID is supplied.
+                    ID is supplied. The secondary-ID discard takes effect only
+                    when the follow-up refresh actually runs and succeeds: a
+                    locked artist keeps every provider ID and returns
+                    status "skipped_locked", and a failed refresh persists
+                    nothing, so the artist retains every ID it started with and
+                    the response is a 500.
       responses:
         "200":
           description: >
@@ -14253,9 +14265,11 @@ paths:
                   refresh_skipped_locked:
                     type: boolean
                     description: >
-                      Present and true when the provider ID was persisted but
-                      the follow-up metadata refresh was suppressed because the
-                      artist is locked. Omitted otherwise.
+                      Always present. True when the provider ID was persisted
+                      but the follow-up metadata refresh was suppressed because
+                      the artist is locked; false otherwise. The field is never
+                      omitted, so a client may key on its VALUE and does not
+                      have to test for the key's presence.
             text/html:
               schema:
                 type: string
@@ -14474,9 +14488,11 @@ paths:
                   refresh_skipped_locked:
                     type: boolean
                     description: >
-                      Present and true when the provider ID was persisted but
-                      the follow-up metadata refresh was suppressed because the
-                      artist is locked. Omitted otherwise.
+                      Always present. True when the provider ID was persisted
+                      but the follow-up metadata refresh was suppressed because
+                      the artist is locked; false otherwise. The field is never
+                      omitted, so a client may key on its VALUE and does not
+                      have to test for the key's presence.
             text/html:
               schema:
                 type: string
@@ -14704,9 +14720,11 @@ paths:
                   refresh_skipped_locked:
                     type: boolean
                     description: >
-                      Present and true when the provider ID was persisted but
-                      the follow-up metadata refresh was suppressed because the
-                      artist is locked. Omitted otherwise.
+                      Always present. True when the provider ID was persisted
+                      but the follow-up metadata refresh was suppressed because
+                      the artist is locked; false otherwise. The field is never
+                      omitted, so a client may key on its VALUE and does not
+                      have to test for the key's presence.
             text/html:
               schema:
                 type: string

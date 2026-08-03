@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -497,7 +498,14 @@ func TestHandleReidentify_RendersClearIDsIntoTheForm(t *testing.T) {
 // asserts "the stale rows are gone" passes against a fix that clears IDs
 // without changing what the refresh actually fetches; this one fails unless the
 // corrected identity is what reaches the provider layer.
+// The mutex matches recordingScraperExecutor in handlers_reidentify_discard_test.go
+// deliberately. Today every refresh here runs inline on the handler goroutine, so
+// there is no race to detect; the synchronization is for the change that has not
+// happened yet. Two recorders in one package with opposite contracts is a trap --
+// adding t.Parallel() to a test here, or moving the refresh onto a goroutine, would
+// turn this into a silent data race surfacing as an unrelated -race failure.
 type steeringRecorder struct {
+	mu          sync.Mutex
 	calls       int
 	gotMBID     string
 	gotProvider map[provider.ProviderName]string
@@ -508,6 +516,8 @@ type steeringRecorder struct {
 }
 
 func (s *steeringRecorder) ScrapeAll(_ context.Context, mbid, _, _ string, ids map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.calls++
 	s.gotMBID = mbid
 	s.gotProvider = map[provider.ProviderName]string{}
@@ -526,6 +536,33 @@ func (s *steeringRecorder) ScrapeAll(_ context.Context, mbid, _, _ string, ids m
 		AttemptedFields: []string{"origin", "years_active"},
 		PopulatedFields: []string{"origin", "years_active"},
 	}, nil
+}
+
+// callCount, steeringMBID and steeringIDs read the recorded state under the same
+// lock ScrapeAll writes it with. Locking only the writer leaves the read side
+// unsynchronized, which is the same race with an extra step.
+func (s *steeringRecorder) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
+func (s *steeringRecorder) steeringMBID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.gotMBID
+}
+
+// steeringIDs returns a copy, so an assertion cannot observe the map mutating
+// under it if a later change starts issuing concurrent fetches.
+func (s *steeringRecorder) steeringIDs() map[provider.ProviderName]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[provider.ProviderName]string, len(s.gotProvider))
+	for k, v := range s.gotProvider {
+		out[k] = v
+	}
+	return out
 }
 
 // steeringRouter wires a steeringRecorder in place of the scraper executor.
@@ -580,16 +617,17 @@ func TestHandleRefreshLink_ReidentifyRefreshResolvesFromCorrectedIdentity(t *tes
 
 	// Precondition: the refresh actually ran. A refresh that never happened
 	// must not read as a pass -- "origin unchanged" would be trivially true.
-	if rec.calls != 1 {
-		t.Fatalf("precondition: orchestrator called %d times, want exactly 1; the follow-up refresh did not run, so every assertion below is vacuous", rec.calls)
+	if got := rec.callCount(); got != 1 {
+		t.Fatalf("precondition: orchestrator called %d times, want exactly 1; the follow-up refresh did not run, so every assertion below is vacuous", got)
 	}
 
 	// The provider layer must have been steered by the CORRECTED identity.
-	if rec.gotMBID != replacementMBID {
-		t.Errorf("refresh was steered by mbid %q, want %q", rec.gotMBID, replacementMBID)
+	if got := rec.steeringMBID(); got != replacementMBID {
+		t.Errorf("refresh was steered by mbid %q, want %q", got, replacementMBID)
 	}
+	steered := rec.steeringIDs()
 	for _, prov := range []provider.ProviderName{provider.NameAudioDB, provider.NameDeezer, provider.NameSpotify} {
-		if got := rec.gotProvider[prov]; got != "" {
+		if got := steered[prov]; got != "" {
 			t.Errorf("refresh was handed stale %s id %q; FetchProviderResult prefers a provider-specific ID over the MBID, so this re-fetches the artist the operator just repudiated (#2894)", prov, got)
 		}
 	}
@@ -656,8 +694,8 @@ func TestHandleRefreshLink_ReidentifyHonorsFieldLocks(t *testing.T) {
 	if resp.Code != 200 {
 		t.Fatalf("handleRefreshLink status = %d, want 200; body: %s", resp.Code, resp.Body.String())
 	}
-	if rec.calls != 1 {
-		t.Fatalf("precondition: orchestrator called %d times, want exactly 1", rec.calls)
+	if got := rec.callCount(); got != 1 {
+		t.Fatalf("precondition: orchestrator called %d times, want exactly 1", got)
 	}
 
 	reloaded, err := svc.GetByID(ctx, a.ID)

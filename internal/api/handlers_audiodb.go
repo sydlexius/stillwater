@@ -213,16 +213,16 @@ func (r *Router) handleAudioDBLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Always present, never omitted when false. A client that keys on the
+	// FIELD rather than its value would otherwise read the link endpoints and
+	// the re-identify wizard (which always emits it) differently. When true,
+	// the ID was persisted -- a manual edit the lock allows -- but the provider
+	// refresh that normally follows was suppressed by the artist-level lock.
 	resp := map[string]any{
-		"status":     "linked",
-		"artist_id":  a.ID,
-		"audiodb_id": a.AudioDBID,
-	}
-	if refreshSkipped {
-		// The TheAudioDB ID was persisted (a manual edit the lock allows) but
-		// the provider refresh that normally follows was suppressed by the
-		// artist-level lock.
-		resp["refresh_skipped_locked"] = true
+		"status":                 "linked",
+		"artist_id":              a.ID,
+		"audiodb_id":             a.AudioDBID,
+		"refresh_skipped_locked": refreshSkipped,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
