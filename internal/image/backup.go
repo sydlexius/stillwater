@@ -152,7 +152,19 @@ func BackupSingleSlot(ctx context.Context, dir, imageType string, naming []strin
 		return pruneBackupFiles(dir, imageType, "")
 	}
 
-	data, err := os.ReadFile(existing) //nolint:gosec // existing built from trusted naming patterns
+	// Bounded, ctx-aware read (#2934). The strict probe above is ctx-bound but
+	// this read was not, so a mount that stopped answering wedged the backup
+	// itself -- and BackupSingleSlot runs immediately BEFORE a destructive
+	// write, inside a handler whose singleton is released by a deferred unlock.
+	// A read that never returns pins that slot for the life of the process.
+	//
+	// A cancellation surfaces here as an ordinary read error, and that is the
+	// CORRECT handling for this function: every error but ErrNotExist aborts,
+	// which is exactly what a caller that has already given up should do. The
+	// ErrNotExist case still returns nil (the file vanished between the probe
+	// and the read; there is nothing to protect), and ctx.Err() is never
+	// ErrNotExist, so a cancellation cannot take that branch.
+	data, err := readFileBounded(ctx, existing)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -301,7 +313,18 @@ func BackupSlot(ctx context.Context, dir, imageType, fileName string) error {
 		return pruneSlotBackups(dir, imageType, fileName, "")
 	}
 
-	data, err := os.ReadFile(existing) //nolint:gosec // existing built from trusted naming patterns
+	// Bounded, ctx-aware read (#2934), same reasoning as BackupSingleSlot: the
+	// probe above is ctx-bound and this read was not, and this runs immediately
+	// before a destructive per-slot write.
+	//
+	// ErrImageTooLarge now aborts rather than backing the file up. That is the
+	// safe direction and is deliberate: refusing leaves the original on disk
+	// untouched (the caller aborts its destructive save), whereas proceeding
+	// without a backup would let the overwrite destroy an original with no
+	// revert path. The bound is the same MaxDecodeBytes every other read of
+	// these files already enforces, so a file this rejects is one no other
+	// image path in the process would read either.
+	data, err := readFileBounded(ctx, existing)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil

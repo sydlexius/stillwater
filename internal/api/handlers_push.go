@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -182,7 +181,13 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 				continue
 			}
 			for i, fp := range fanartPaths {
-				data, readErr := os.ReadFile(fp) //nolint:gosec // path from trusted fanart discovery
+				// Bounded, ctx-aware read (#2934): DiscoverFanart above already
+				// honors the request context, so a bare os.ReadFile here left
+				// the actual byte read as the one step a dead mount could wedge
+				// forever -- with the request's own cancellation unable to
+				// reach it. The bound also caps the allocation for an
+				// arbitrarily large operator file.
+				data, readErr := img.ReadImageFileBounded(req.Context(), fp)
 				if readErr != nil {
 					r.logger.Error("reading fanart for push",
 						slog.String("path", fp),
@@ -215,7 +220,9 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
-		data, readErr := os.ReadFile(filePath) //nolint:gosec // path from trusted naming patterns
+		// Bounded, ctx-aware read (#2934), same reasoning as the fanart branch:
+		// FindExistingImage above is ctx-bound and this read was not.
+		data, readErr := img.ReadImageFileBounded(req.Context(), filePath)
 		if readErr != nil {
 			r.logger.Error("reading image for push",
 				slog.String("path", filePath),

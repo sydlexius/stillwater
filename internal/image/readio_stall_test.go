@@ -41,19 +41,29 @@ func mkfifo(t *testing.T) string {
 	return path
 }
 
-// returnsWithin fails unless fn returns before limit. It runs fn on its own
-// goroutine precisely because a REGRESSION here means fn never returns: a
+// stallBound is how long a call under a sub-second deadline is given before
+// the test declares it wedged. It is a shared constant rather than a per-call
+// argument because every caller wants the same thing: an interval long enough
+// that CI scheduling noise cannot produce a false failure, yet far shorter than
+// the go test timeout, so a genuine regression is reported as THIS test failing
+// rather than as an unrelated binary-wide panic. The individual tests still
+// assert PROMPTNESS separately against their own much tighter bound; this
+// constant only bounds the hang.
+const stallBound = 5 * time.Second
+
+// returnsWithin fails unless fn returns within stallBound. It runs fn on its
+// own goroutine precisely because a REGRESSION here means fn never returns: a
 // plain call would hang the test binary until the go test timeout and report
 // as an unrelated panic rather than as this test failing.
-func returnsWithin(t *testing.T, limit time.Duration, fn func() error) error {
+func returnsWithin(t *testing.T, fn func() error) error {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() { done <- fn() }()
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(limit):
-		t.Fatalf("call did not return within %v; the read is still wedging its caller", limit)
+	case <-time.After(stallBound):
+		t.Fatalf("call did not return within %v; the read is still wedging its caller", stallBound)
 		return nil
 	}
 }
@@ -67,7 +77,7 @@ func TestHashFile_StalledRead_ReturnsOnDeadline(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	err := returnsWithin(t, 5*time.Second, func() error {
+	err := returnsWithin(t, func() error {
 		_, err := HashFile(ctx, path, true)
 		return err
 	})
@@ -177,7 +187,7 @@ func TestStalledReadCap_RefusesRatherThanAccumulating(t *testing.T) {
 	var lastErr error
 	for i := 0; i < maxStalledReads+1; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-		lastErr = returnsWithin(t, 5*time.Second, func() error {
+		lastErr = returnsWithin(t, func() error {
 			_, err := HashFile(ctx, path, false)
 			return err
 		})

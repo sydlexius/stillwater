@@ -789,10 +789,20 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		return warnings
 	}
 
-	data, readErr := os.ReadFile(filePath) //nolint:gosec // path from trusted naming patterns
+	// Read the bytes under ctx (#2934). FindExistingImage above is already
+	// ctx-bound, so leaving the byte read on a bare os.ReadFile put the only
+	// unbounded step of this function AFTER the bounded one: a mount that stops
+	// answering between the probe and the read wedges the sync indefinitely and
+	// nothing above can abort it. Bounded is also the size guard -- an operator
+	// artwork file of arbitrary size used to be read whole into memory here.
+	data, readErr := img.ReadImageFileBounded(ctx, filePath)
 	if readErr != nil {
 		p.logger.Error("reading image for platform sync", "artist", a.Name, "type", imageType, "path", filePath, "error", readErr)
-		warnings = append(warnings, "platform sync skipped: failed to read image for upload")
+		if errors.Is(readErr, img.ErrImageTooLarge) {
+			warnings = append(warnings, "platform sync skipped: image exceeds the size limit for upload")
+		} else {
+			warnings = append(warnings, "platform sync skipped: failed to read image for upload")
+		}
 		return warnings
 	}
 	snapMod := fileModTime(filePath)

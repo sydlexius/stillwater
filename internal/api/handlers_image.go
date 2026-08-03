@@ -2326,47 +2326,53 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	f, err := os.Open(filePath) //nolint:gosec // path built from trusted naming patterns
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read logo"})
-		return
-	}
-	// Bound the read (#2620, same defect class as #2618). The PATH is trusted
-	// -- it comes from FindExistingImage over naming patterns -- but the
-	// file's CONTENTS are not sized by us: this is an operator-supplied
-	// library directory, and an arbitrarily large file sitting in one used to
-	// be read whole into memory right here, on a REQUEST-reachable path. Go
-	// has no allocation-failure path, so an over-budget allocation is a fatal
-	// runtime error rather than an error value: under a container memory
-	// limit that is a SIGKILL and a restart loop, not something this handler
-	// could recover from.
+	// Read the logo under the REQUEST context, bounded at MaxDecodeBytes
+	// (#2934; the bound itself is #2620, same defect class as #2618).
 	//
-	// io.LimitReader, not os.Stat: a Stat-then-read has a TOCTOU window in
-	// which the file can grow between the size check and the read, so it
-	// bounds a MEASUREMENT while the read stays unbounded. LimitReader bounds
-	// the allocation itself. Reading one byte PAST the bound is what
-	// distinguishes "exactly at the bound" from "over it" -- without the +1
-	// an oversized file reads exactly MaxDecodeBytes, LimitReader returns a
-	// clean EOF, and a truncated prefix gets trimmed and SAVED OVER the
-	// original as though it were the whole logo. That silent-corruption
-	// failure mode is worse than the unbounded read this guard replaces.
-	data, readErr := io.ReadAll(io.LimitReader(f, img.MaxDecodeBytes+1))
-	_ = f.Close()
+	// Two properties, both load-bearing, and this one helper is where they are
+	// jointly guaranteed:
+	//
+	// CANCELLATION. FindExistingImage above already honors req.Context(), so
+	// the inline os.Open + io.ReadAll this replaces was the one step of the
+	// handler a dead mount could wedge FOREVER -- with the request's own
+	// cancellation unable to reach it, because Go cannot interrupt an in-flight
+	// read(2) on a regular file. See readio.go for the goroutine-race mechanism
+	// that returns control to the caller anyway.
+	//
+	// SIZE. The PATH is trusted -- it comes from FindExistingImage over naming
+	// patterns -- but the file's CONTENTS are not sized by us: this is an
+	// operator-supplied library directory, and an arbitrarily large file
+	// sitting in one used to be read whole into memory right here, on a
+	// REQUEST-reachable path. Go has no allocation-failure path, so an
+	// over-budget allocation is a fatal runtime error rather than an error
+	// value: under a container memory limit that is a SIGKILL and a restart
+	// loop, not something this handler could recover from.
+	//
+	// The over-size boundary now lives in exactly one place. readFileBounded
+	// reads ONE BYTE PAST MaxDecodeBytes and reports ErrImageTooLarge itself,
+	// so the "exactly at the limit is fine, one byte over is not" comparison is
+	// no longer restated here where it could drift. Getting that +1 wrong is
+	// not a rounding error: without it an oversized file reads exactly
+	// MaxDecodeBytes, the reader returns a clean EOF, and a TRUNCATED PREFIX
+	// gets trimmed and SAVED OVER the original as though it were the whole
+	// logo. The 413-vs-500 split below is preserved because ErrImageTooLarge is
+	// a sentinel the caller can still distinguish from a genuine I/O fault.
+	data, readErr := img.ReadImageFileBounded(req.Context(), filePath)
 	if readErr != nil {
+		if errors.Is(readErr, img.ErrImageTooLarge) {
+			r.logger.Error("logo exceeds the decode bound; trim aborted before any read of the full file",
+				slog.String("artist_id", artistID),
+				slog.String("path", filePath),
+				slog.Int64("max_bytes", img.MaxDecodeBytes),
+				slog.String("error", readErr.Error()))
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "logo exceeds 25MB limit; not trimmed"})
+			return
+		}
 		r.logger.Error("reading logo for trim",
 			slog.String("artist_id", artistID),
 			slog.String("path", filePath),
 			slog.String("error", readErr.Error()))
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read logo"})
-		return
-	}
-	if int64(len(data)) > img.MaxDecodeBytes {
-		r.logger.Error("logo exceeds the decode bound; trim aborted before any read of the full file",
-			slog.String("artist_id", artistID),
-			slog.String("path", filePath),
-			slog.Int64("max_bytes", img.MaxDecodeBytes),
-			slog.String("error", img.ErrImageTooLarge.Error()))
-		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "logo exceeds 25MB limit; not trimmed"})
 		return
 	}
 
