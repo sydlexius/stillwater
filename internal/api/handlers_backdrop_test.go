@@ -410,7 +410,14 @@ func TestHandleFanartSlotDelete_OnlySlot(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	remaining, _ := img.DiscoverFanart(context.Background(), artistDir, primary)
+	// Fail on the discovery error rather than discarding it: DiscoverFanart
+	// returns (nil, err) on a read failure, and a discarded error turns that
+	// nil into len(remaining) == 0 -- which is exactly the assertion below.
+	// The test would then PASS without the deletion having happened at all.
+	remaining, discoverErr := img.DiscoverFanart(context.Background(), artistDir, primary)
+	if discoverErr != nil {
+		t.Fatalf("discovering remaining fanart: %v", discoverErr)
+	}
 	if len(remaining) != 0 {
 		t.Fatalf("got %d remaining fanart, want 0", len(remaining))
 	}
