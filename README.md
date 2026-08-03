@@ -60,12 +60,15 @@ services:
       - PUID=99
       - PGID=100
       - GOMAXPROCS=2  # keep equal to `cpus` below
+      - GOMEMLIMIT=2400MiB  # keep at ~80% of `mem_limit` below
     volumes:
       - stillwater-data:/config
       - /path/to/your/music:/music:rw
     restart: unless-stopped
     cpus: "2.0"
     pids_limit: 512
+    mem_limit: 3g
+    mem_reservation: 512m
     ulimits:
       nofile:
         soft: 8192
