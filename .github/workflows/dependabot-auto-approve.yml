@@ -2,6 +2,25 @@
 # Major version bumps are left for manual review. A separate workflow
 # (dependabot-merge.yml) handles merging after all checks pass.
 #
+# WHY THE MAJOR-BUMP SKIP ANNOUNCES ITSELF
+#
+# Not approving a major bump is deliberate policy, and it stays that way. The
+# problem was that the skip was SILENT: the step's `if:` simply evaluated false
+# and the workflow finished green having done nothing. On the PR that is
+# indistinguishable from a workflow that never fired, an expired token, or a
+# `fetch-metadata` failure -- all of which also leave no approval and no trace.
+#
+# That ambiguity has already misled a reader once. A jsdom 29->30 major bump
+# carried an APPROVED state contributed incidentally by CodeRabbit, which reads
+# as the pipeline having approved it under policy when in fact policy had
+# declined and something else happened to approve. The merge workflow's
+# is_approved() check does not distinguish approvers, so an incidental approval
+# is functionally a policy approval.
+#
+# So the skip now posts a comment saying it skipped and why. It is written once
+# per PR (guarded by a marker string) so a push to the branch does not repeat
+# it, and it changes no approval behaviour whatsoever.
+#
 # Prerequisites:
 #   - Branch protection rules requiring status checks on main
 #   - "Allow GitHub Actions to create and approve pull requests" enabled
@@ -38,3 +57,62 @@ jobs:
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The counterpart to the step above: whenever policy DECLINES to approve,
+      # say so on the PR. Silence here is what made a declined major bump look
+      # like a workflow that never ran (see the note at the top of this file).
+      - name: Announce that a major bump was not auto-approved
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          DEPENDENCY: ${{ steps.metadata.outputs.dependency-names }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Marker for the write-once guard. Must not change without accepting
+          # that every open major-bump PR gets a second copy of the comment.
+          MARKER="<!-- dependabot-auto-approve: major-skip -->"
+
+          # `pull_request` fires again on every push to the branch, so without
+          # this guard the comment would accumulate one copy per push.
+          #
+          # The listing is captured in its own statement rather than piped
+          # straight into the `if`. Inside an `if` condition a failing pipeline
+          # is simply "false", so a transient API error would read as "no marker
+          # present" and post a duplicate. Failing here instead lets `set -e`
+          # stop the step, and the next push retries cleanly.
+          EXISTING=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+                       --paginate --jq '.[].body')
+          if printf '%s' "$EXISTING" | grep -qF "$MARKER"; then
+            echo "Skip notice already present on PR #$PR_NUMBER; not repeating it."
+            exit 0
+          fi
+
+          # printf with %s arguments, not a heredoc: $DEPENDENCY is metadata
+          # from the PR and must never be evaluated as shell. An unquoted
+          # heredoc would expand a backtick or $(...) inside it; a quoted one
+          # would not interpolate the value at all. %s does exactly the one
+          # thing wanted -- substitute, never evaluate.
+          #
+          # The blank line after the marker is load-bearing: without it Markdown
+          # folds the HTML comment and the heading that follows into a single
+          # raw-HTML block and the heading never renders.
+          BODY=$(printf '%s\n\n%s\n\n%s\n%s\n%s\n\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n' \
+            "$MARKER" \
+            "**Not auto-approved: this is a major version bump.**" \
+            "The auto-approve workflow approves \`patch\` and \`minor\` Dependabot" \
+            "updates only. \`$DEPENDENCY\` is a \`major\` update, so it is declined" \
+            "by policy and needs a human review." \
+            "This is the workflow working as intended, not a failure. Nothing else" \
+            "will approve it on your behalf, and the merge workflow will keep" \
+            "skipping this PR until a reviewer approves it." \
+            "Note that any approval recorded on this PR -- including one from a" \
+            "review bot -- satisfies the merge workflow's approval check, which" \
+            "does not distinguish approvers. If you did not intend to approve a" \
+            "major bump, do not leave one.")
+
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$BODY" >/dev/null
+
+          echo "Posted the major-bump skip notice on PR #$PR_NUMBER."
