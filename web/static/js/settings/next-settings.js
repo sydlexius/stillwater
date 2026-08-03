@@ -12,7 +12,9 @@
 //      index; a non-label match shows an inline "↳ <matched-keyword>" line. The
 //      filter NARROWS THE RAIL (its jump targets): non-matching items hide, empty
 //      groups collapse, a no-match state offers Clear. The pane stays fully
-//      scrollable. Persists to localStorage('sw-settings-filter').
+//      scrollable. Transient view state only -- never persisted (#2429); a
+//      deprecated 'sw-settings-filter' localStorage key is proactively removed
+//      on load so a stale value from the old persisted behavior does not linger.
 //   4. Keyboard -- '/' focus filter, Esc clear, ↑/↓ move the rail selection AND
 //      jump to that section, Enter jump to the selected item, ⌘S/Ctrl+S blur-to-
 //      save the focused control.
@@ -38,7 +40,10 @@
 
   if (window.swNextSettings) return;
 
-  var FILTER_STORAGE_KEY = 'sw-settings-filter';
+  // Deprecated: the filter used to persist here (#2429). Kept only so the
+  // one-time cleanup removal below has a name; nothing writes or reads this
+  // key anymore.
+  var DEPRECATED_FILTER_STORAGE_KEY = 'sw-settings-filter';
 
   function list(root, sel) {
     return Array.prototype.slice.call((root || document).querySelectorAll(sel));
@@ -315,15 +320,12 @@
 
     function clearFilter() {
       if (input) input.value = '';
-      try { window.localStorage.removeItem(FILTER_STORAGE_KEY); } catch (err) { /* private mode */ }
       applyFilter('');
     }
 
     if (input) {
       input.addEventListener('input', function (e) {
-        var v = e.target.value;
-        try { window.localStorage.setItem(FILTER_STORAGE_KEY, v); } catch (err) { /* private mode */ }
-        applyFilter(v);
+        applyFilter(e.target.value);
       });
       input.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') { e.preventDefault(); clearFilter(); return; }
@@ -337,12 +339,16 @@
         }
       });
 
-      // Restore the persisted query (the search you left, FF-style).
-      var saved = '';
-      try { saved = window.localStorage.getItem(FILTER_STORAGE_KEY) || ''; } catch (err) { saved = ''; }
-      if (saved) input.value = saved;
       applyFilter(input.value);
     }
+
+    // The filter is transient view state (#2429): the input always starts
+    // empty on a fresh page load, nothing is restored from storage. A value
+    // left over from the old persisted behavior is proactively cleaned up
+    // (guarded try/catch: private mode / restrictive CSP may throw). This
+    // runs unconditionally -- even on a surface with no filter input -- so
+    // the deprecated key can't survive indefinitely on such a surface.
+    try { window.localStorage.removeItem(DEPRECATED_FILTER_STORAGE_KEY); } catch (err) { /* private mode */ }
 
     if (emptyEl) {
       var clearBtn = emptyEl.querySelector('[data-rail-clear]');
