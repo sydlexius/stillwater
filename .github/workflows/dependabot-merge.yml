@@ -254,9 +254,15 @@ jobs:
         if: steps.candidates.outputs.numbers != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # The branch-update push MUST NOT be made with GITHUB_TOKEN: a push
-          # made with it starts no workflow runs, so the required checks never
-          # re-run on the new head and the PR is wedged permanently (see the
+          # The branch-update push MUST NOT be made with GITHUB_TOKEN. The
+          # event sequence matters, because "no checks appear" has two very
+          # different causes and only one of them is this: the push itself
+          # starts no `push`-triggered workflow runs, but updating the pull
+          # request DOES emit a `pull_request` `synchronize` event, and the
+          # runs it creates are held in `action_required` awaiting manual
+          # approval because the head is now authored by github-actions[bot].
+          # So the runs exist and never execute. The required checks never
+          # report on the new head and the PR is wedged permanently (see the
           # CONFIRMED AND FIXED note at the top of this file).
           #
           # SETUP -- this is a repository ACTIONS secret, not a Dependabot
