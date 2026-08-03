@@ -73,6 +73,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -256,12 +257,13 @@ func (r *Router) handleRegistryRepairRemediate(w http.ResponseWriter, req *http.
 	// singleton would stay claimed for the life of the process and every later
 	// repair would 409. Reproduced against a real TCP client during review.
 	//
-	// The context does NOT provide that bound either: RepairImageRegistry checks
-	// ctx.Err() per artist (internal/maintenance/image_registry_repair.go), but
-	// RestoreExistsFlags' preview scan does NOT check it at all -- its only
-	// cancellation check sits in the commit-only UPDATE loop, which a preview
-	// never reaches. So for `{"commit":false}` the deadline below is the only
-	// thing that can end a wedged request.
+	// The write deadline remains the ONLY bound on the final response write --
+	// that is its job, and #2689 does not change it. What #2689 DID change is
+	// the other half: the work itself is now bounded too (see the
+	// context.WithTimeout below), and RestoreExistsFlags' preview scan now
+	// honors cancellation on every on-disk probe rather than only in the
+	// commit-only UPDATE loop a preview never reaches. So a `{"commit":false}`
+	// request no longer depends on this deadline alone to end a wedged run.
 	//
 	// The value is sized to be generous against a much larger library than the
 	// one measured while still guaranteeing the slot is eventually released.
@@ -277,7 +279,25 @@ func (r *Router) handleRegistryRepairRemediate(w http.ResponseWriter, req *http.
 			slog.Any("error", err))
 	}
 
-	ctx := req.Context()
+	// BOUND THE WORK, not just the response write (#2689). The deadline above
+	// is on the CONNECTION: it ends a write that cannot land, and it does
+	// nothing at all for a pass wedged inside a filesystem read, because no
+	// write has been attempted yet when the hang begins. Now that the image
+	// I/O honors a context, a real work deadline finally has teeth -- and it
+	// is what guarantees `defer release()` runs, which is what keeps this
+	// endpoint from 409ing for the life of the process.
+	//
+	// Derived from req.Context() rather than context.Background() so a client
+	// disconnect still cancels the run; the timeout only adds an upper bound
+	// the request context does not supply.
+	//
+	// Sharing registryRepairWriteTimeout with the write deadline is
+	// deliberate: both answer the same question ("how long may the slowest
+	// legitimate library-wide run take"), and two independently-tuned
+	// constants would drift into a state where the response deadline fires
+	// first and the work keeps running unobserved.
+	ctx, cancel := context.WithTimeout(req.Context(), registryRepairWriteTimeout)
+	defer cancel()
 
 	// Pass 1: REBUILD. Insert rows for files on disk that the registry has
 	// forgotten. Runs first for the reasons in the package comment; the two

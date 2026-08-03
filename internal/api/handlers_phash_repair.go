@@ -38,9 +38,23 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/rule"
 )
+
+// phashRepairWorkTimeout bounds the WORK of a phash back-out or restore
+// (#2689), so the shared destructive-fanart singleton is always released.
+//
+// Matched to the sibling remediation bounds (registryRepairWriteTimeout,
+// backdropRemediateWriteTimeout) rather than tuned independently: all three
+// answer the same question -- how long may the slowest legitimate
+// library-wide pass over an operator's artist directories take -- and three
+// separately-chosen constants would drift apart for no reason anyone could
+// later reconstruct. Generous against a library far larger than any measured
+// here, while still finite, which is the whole point: a finite bound is what
+// makes the deferred slot release reachable.
+const phashRepairWorkTimeout = 30 * time.Minute
 
 // pHashRemediator is the pipeline capability these handlers need: the
 // destructive back-out and its restore.
@@ -189,7 +203,20 @@ func (r *Router) handlePHashMismatchRemediate(w http.ResponseWriter, req *http.R
 	}
 	defer release()
 
-	result, err := remediator.RemediatePHashMismatches(req.Context(), scope, rule.PHashRemediateOpts{
+	// BOUND THE WORK (#2689). This handler claims the SHARED
+	// destructive-fanart slot, so a pass wedged inside an image read does not
+	// merely hang this endpoint -- it 409s the fanart-duplicate remediation,
+	// the quarantine restore, and every bulk action for the life of the
+	// process, because all four gate on the same flag released by the deferred
+	// release() above. Now that the image I/O honors a context, this deadline
+	// is what guarantees that release actually runs.
+	//
+	// Derived from req.Context() so a client disconnect still cancels; the
+	// timeout adds only the upper bound the request context does not supply.
+	ctx, cancel := context.WithTimeout(req.Context(), phashRepairWorkTimeout)
+	defer cancel()
+
+	result, err := remediator.RemediatePHashMismatches(ctx, scope, rule.PHashRemediateOpts{
 		AllArtists: body.AllArtists,
 		DryRun:     body.DryRun,
 	})
@@ -233,7 +260,20 @@ func (r *Router) handlePHashMismatchRestore(w http.ResponseWriter, req *http.Req
 	}
 	defer release()
 
-	result, err := remediator.RestorePHashQuarantine(req.Context(), body.ArtistID, body.OpID)
+	// BOUND THE WORK (#2689). This handler claims the SHARED
+	// destructive-fanart slot, so a pass wedged inside an image read does not
+	// merely hang this endpoint -- it 409s the fanart-duplicate remediation,
+	// the quarantine restore, and every bulk action for the life of the
+	// process, because all four gate on the same flag released by the deferred
+	// release() above. Now that the image I/O honors a context, this deadline
+	// is what guarantees that release actually runs.
+	//
+	// Derived from req.Context() so a client disconnect still cancels; the
+	// timeout adds only the upper bound the request context does not supply.
+	ctx, cancel := context.WithTimeout(req.Context(), phashRepairWorkTimeout)
+	defer cancel()
+
+	result, err := remediator.RestorePHashQuarantine(ctx, body.ArtistID, body.OpID)
 	if err != nil {
 		r.logger.Error("restoring phash quarantine", slog.String("error", err.Error()))
 		http.Error(w, "restore failed", http.StatusInternalServerError)

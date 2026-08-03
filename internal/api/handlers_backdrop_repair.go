@@ -36,10 +36,13 @@ type fanartDuplicateRepairer interface {
 // {basePath}/reports/backdrop-duplicates.
 //
 // #2684: this handler used to call ScanFanartDuplicates -- a full-library,
-// from-disk fanart rehash -- synchronously on every render. That scan is not
-// context-aware at the point it actually blocks (image.HashFile does a bare
-// os.Open/io.ReadAll with no ctx param), so a bounded context around the call
-// cannot save it from a stalled network-mounted read, and it contends for the
+// from-disk fanart rehash -- synchronously on every render. At the time that
+// scan was not context-aware at the point it actually blocks (image.HashFile
+// did a bare os.Open/io.ReadAll with no ctx param), so a bounded context
+// around the call could not save it from a stalled network-mounted read.
+// #2689 has since made that read cancellable, but it does not restore the
+// scan to the request path: the cost argument below is independent of
+// cancellability, and it contends for the
 // single SQLite connection with any other write-heavy background job
 // (library populate/re-sync, a bulk action, ...) regardless of which specific
 // subsystem happens to be running one. Measured at 257.79s / 0 bytes against
@@ -145,7 +148,25 @@ func (r *Router) handleBackdropDuplicatesRemediate(w http.ResponseWriter, req *h
 			slog.Any("error", err))
 	}
 
-	result, err := repairer.RemediateFanartDuplicates(req.Context())
+	// BOUND THE WORK, not just the response write (#2689). The deadline above
+	// is on the CONNECTION and cannot end a pass wedged inside a filesystem
+	// read -- the hang starts before any write is attempted, which is exactly
+	// why a write deadline was never the fix for this. Now that the image I/O
+	// honors a context, this bound has teeth, and it is what guarantees the
+	// deferred release above runs rather than leaving the shared
+	// destructive-fanart slot claimed for the life of the process (and with it
+	// the phash back-out, the restore, and bulk actions, all of which gate on
+	// the same flag).
+	//
+	// Derived from req.Context() so a client disconnect still cancels; the
+	// timeout only adds the upper bound the request context does not supply.
+	// The rescan below shares this context for the same reason -- it is the
+	// same operator wait, and a rescan is not licensed to run past the bound
+	// the remediation itself was held to.
+	ctx, cancel := context.WithTimeout(req.Context(), backdropRemediateWriteTimeout)
+	defer cancel()
+
+	result, err := repairer.RemediateFanartDuplicates(ctx)
 	if err != nil {
 		r.logger.Error("remediating fanart duplicates", slog.String("error", err.Error()))
 		http.Error(w, "remediation failed", http.StatusInternalServerError)
@@ -179,7 +200,7 @@ func (r *Router) handleBackdropDuplicatesRemediate(w http.ResponseWriter, req *h
 	// showing pre-remediation counts until the next refresh. Surfaced at Warn
 	// rather than papered over, because "your remediation worked but the page
 	// has not caught up yet" is exactly what an operator needs told.
-	if rerr := r.dupImageCache().Refresh(req.Context()); rerr != nil {
+	if rerr := r.dupImageCache().Refresh(ctx); rerr != nil {
 		if errors.Is(rerr, dupimages.ErrRefreshInFlight) {
 			r.logger.Warn("post-remediation rescan dropped: a duplicate-image refresh was already running; " +
 				"the report page may show pre-remediation counts until the next refresh")
