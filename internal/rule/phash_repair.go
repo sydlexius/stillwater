@@ -534,8 +534,10 @@ func (p *Pipeline) remediateArtistPHash(
 		p.logger.Warn("resolving fanart naming convention after phash back-out; artist fields left as-is",
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("error", namesErr.Error()))
-	} else {
-		resyncFanartFields(ctx, a, names)
+	} else if resyncErr := resyncFanartFields(ctx, a, names); resyncErr != nil {
+		p.logger.Warn("resyncing fanart fields after phash back-out; artist fields left as-is",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("error", resyncErr.Error()))
 	}
 	if err := p.artistService.Update(ctx, a); err != nil {
 		// The destructive on-disk work is already committed and IRREVERSIBLE
@@ -870,8 +872,10 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 		p.logger.Warn("resolving fanart naming convention after phash restore; artist fields left as-is",
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("error", namesErr.Error()))
-	} else {
-		resyncFanartFields(ctx, a, names)
+	} else if resyncErr := resyncFanartFields(ctx, a, names); resyncErr != nil {
+		p.logger.Warn("resyncing fanart fields after phash restore; artist fields left as-is",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("error", resyncErr.Error()))
 	}
 	if err := p.artistService.Update(ctx, a); err != nil {
 		// The bytes are already back on disk at this point -- the restore

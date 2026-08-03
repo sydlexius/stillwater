@@ -1319,14 +1319,27 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 				Message: "skipped: cannot determine safe deletion set for shared-filesystem library without platform service",
 			}, nil
 		}
-		expected = expectedImageFilesAllProfiles(ctx, f.platformService, f.logger, a.Path)
+		var expErr error
+		expected, expErr = expectedImageFilesAllProfiles(ctx, f.platformService, f.logger, a.Path)
+		if expErr != nil {
+			return nil, fmt.Errorf("building expected-image set: %w", expErr)
+		}
 	}
 	if expected == nil {
 		var profile *platform.Profile
 		if f.platformService != nil {
 			profile, _ = f.platformService.GetActive(ctx)
 		}
-		expected = expectedImageFiles(ctx, profile, a.Path)
+		var expErr error
+		expected, expErr = expectedImageFiles(ctx, profile, a.Path)
+		if expErr != nil {
+			// HARD STOP before the deletion loop. The expected set is the
+			// whitelist that loop deletes AGAINST: every image file not on it
+			// is unlinked. A cancellation truncates the set, so continuing
+			// here would delete artwork that was simply never discovered.
+			// Nothing below this point may run on a partial set.
+			return nil, fmt.Errorf("building expected-image set: %w", expErr)
+		}
 	}
 
 	entries, readErr := os.ReadDir(a.Path)
@@ -1991,6 +2004,13 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 	for _, primaryName := range fanartNames {
 		discovered, err := img.DiscoverFanart(ctx, a.Path, primaryName)
 		if err != nil {
+			// A cancellation abandons the fix. Skipping this primary name and
+			// renumbering under the NEXT one would rename files against a
+			// convention chosen from a truncated scan. Interrogate the context
+			// object, not the error text.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, fmt.Errorf("discovering fanart for sequencing fix on %s: %w", a.Name, ctxErr)
+			}
 			f.logger.Warn("discovering fanart for sequencing fix",
 				"artist", a.Name, "primary", primaryName, "error", err)
 			continue
@@ -2038,8 +2058,9 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		if names, namesErr := resolveFanartNames(ctx, f.platformService); namesErr != nil {
 			f.logger.Warn("resolving fanart naming convention after renumber; artist fields left as-is",
 				slog.String("artist_id", a.ID), slog.String("error", namesErr.Error()))
-		} else {
-			resyncFanartFields(ctx, a, names)
+		} else if resyncErr := resyncFanartFields(ctx, a, names); resyncErr != nil {
+			f.logger.Warn("resyncing fanart fields after renumber; artist fields left as-is",
+				slog.String("artist_id", a.ID), slog.String("error", resyncErr.Error()))
 		}
 
 		return &FixResult{
@@ -2246,8 +2267,9 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	if names, namesErr := resolveFanartNames(ctx, f.platformService); namesErr != nil {
 		f.logger.Warn("resolving fanart naming convention after duplicate fix; artist fields left as-is",
 			slog.String("artist_id", a.ID), slog.String("error", namesErr.Error()))
-	} else {
-		resyncFanartFields(ctx, a, names)
+	} else if resyncErr := resyncFanartFields(ctx, a, names); resyncErr != nil {
+		f.logger.Warn("resyncing fanart fields after duplicate fix; artist fields left as-is",
+			slog.String("artist_id", a.ID), slog.String("error", resyncErr.Error()))
 	}
 
 	return &FixResult{
@@ -2421,10 +2443,24 @@ func wrapWithRollbackErrs(rollbackErrs []string, err error) error {
 // backdrop sequencing, duplicate collapse, and pHash pollution back-out --
 // reach it through this shared function, and they run in AUTO mode across the
 // whole library with nobody watching.
-func resyncFanartFields(ctx context.Context, a *artist.Artist, names []string) {
+// It returns an error rather than swallowing one so a CANCELED scan can never
+// be mistaken for a completed one. The fields written here are DERIVED from an
+// enumeration of the directory: FanartExists is `count > 0`, so a scan that was
+// abandoned before it enumerated anything would record "this artist has no
+// fanart" for an artist that may have plenty -- and these paths run in AUTO
+// mode across the whole library with nobody watching. The context object is
+// interrogated directly, never the error text.
+//
+// A non-nil return means the artist's fanart fields were left UNTOUCHED; the
+// caller should warn and persist the artist without them rather than treat the
+// unwritten fields as measured.
+func resyncFanartFields(ctx context.Context, a *artist.Artist, names []string) error {
 	_, existing, err := img.ResolveFanart(ctx, a.Path, names)
 	if err != nil {
-		return
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("resolving fanart for resync: %w", ctxErr)
+		}
+		return fmt.Errorf("resolving fanart for resync: %w", err)
 	}
 	count := len(existing)
 	a.FanartExists = count > 0
@@ -2436,11 +2472,16 @@ func resyncFanartFields(ctx context.Context, a *artist.Artist, names []string) {
 	// this function could not establish the geometry itself.
 	a.FanartWidth, a.FanartHeight = 0, 0
 	if count == 0 {
-		return
+		return nil
 	}
+	// From here the COUNT is already established from a complete enumeration,
+	// so FanartExists/FanartCount are correct regardless of what follows. Only
+	// the geometry is at stake, and its zero value already means "unknown, go
+	// measure the file" -- so a failed read (cancellation included) leaves an
+	// honest answer rather than a wrong one, and needs no error.
 	data, readErr := img.ReadImageFileBounded(ctx, existing[0])
 	if readErr != nil {
-		return
+		return nil //nolint:nilerr // deliberate: geometry is optional, see comment above
 	}
 	w, h, dimErr := img.GetDimensions(bytes.NewReader(data))
 	if dimErr == nil {
@@ -2452,6 +2493,7 @@ func resyncFanartFields(ctx context.Context, a *artist.Artist, names []string) {
 		// slot 0.
 		a.FanartWidth, a.FanartHeight = w, h
 	}
+	return nil
 }
 
 // activeUseSymlinks returns the UseSymlinks flag from the active platform profile.

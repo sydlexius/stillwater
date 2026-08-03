@@ -559,7 +559,10 @@ func TestCheckExtraneousImages_CrossProfileCanonical_NotFlagged(t *testing.T) {
 		},
 	}
 
-	expected := expectedImageFiles(context.Background(), embyLikeProfile, dir)
+	expected, expErr := expectedImageFiles(context.Background(), embyLikeProfile, dir)
+	if expErr != nil {
+		t.Fatalf("expectedImageFiles: %v", expErr)
+	}
 	if !expected["fanart.jpg"] {
 		t.Error("fanart.jpg must be in expected set under any profile (cross-profile canonical filename); regression of #1225 fix")
 	}
@@ -958,7 +961,10 @@ func TestCheckBackdropSequencing_SingleFile(t *testing.T) {
 func TestCountBackdrops_Empty(t *testing.T) {
 	dir := t.TempDir()
 	e := &Engine{platformService: nil}
-	count := e.countBackdrops(context.Background(), dir)
+	count, countErr := e.countBackdrops(context.Background(), dir)
+	if countErr != nil {
+		t.Fatalf("countBackdrops: %v", countErr)
+	}
 	if count != 0 {
 		t.Errorf("countBackdrops empty dir = %d, want 0", count)
 	}
@@ -969,7 +975,10 @@ func TestCountBackdrops_SingleFanart(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
 
 	e := &Engine{platformService: nil}
-	count := e.countBackdrops(context.Background(), dir)
+	count, countErr := e.countBackdrops(context.Background(), dir)
+	if countErr != nil {
+		t.Fatalf("countBackdrops: %v", countErr)
+	}
 	if count != 1 {
 		t.Errorf("countBackdrops single = %d, want 1", count)
 	}
@@ -982,7 +991,10 @@ func TestCountBackdrops_MultipleFanart(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
 
 	e := &Engine{platformService: nil}
-	count := e.countBackdrops(context.Background(), dir)
+	count, countErr := e.countBackdrops(context.Background(), dir)
+	if countErr != nil {
+		t.Fatalf("countBackdrops: %v", countErr)
+	}
 	if count < 3 {
 		t.Errorf("countBackdrops multiple = %d, want >= 3", count)
 	}
@@ -995,7 +1007,10 @@ func TestCountBackdrops_IgnoresNonFanart(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "logo.png"), 400, 200)
 
 	e := &Engine{platformService: nil}
-	count := e.countBackdrops(context.Background(), dir)
+	count, countErr := e.countBackdrops(context.Background(), dir)
+	if countErr != nil {
+		t.Fatalf("countBackdrops: %v", countErr)
+	}
 	if count != 1 {
 		t.Errorf("countBackdrops with non-fanart = %d, want 1", count)
 	}

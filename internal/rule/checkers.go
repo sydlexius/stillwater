@@ -679,7 +679,19 @@ var imageExtensions = map[string]bool{
 // truth shared between the registry and disk; declaring it extraneous because
 // it does not match the active profile's PRIMARY name is a profile-vs-disk
 // drift, not a Stillwater hygiene problem.
-func expectedImageFiles(ctx context.Context, profile *platform.Profile, artistPath string) map[string]bool {
+//
+// It returns an error ONLY when the set could not be built COMPLETELY because
+// the context was canceled or timed out. That distinction is load-bearing: the
+// returned set is a whitelist, and ExtraneousImagesFixer DELETES every image
+// file that is not on it. An ordinary per-directory I/O error still yields a
+// best-effort set (the historical behavior, and the reason the discovery error
+// below is only warned about) because it affects one candidate name; a
+// cancellation means the enumeration was ABANDONED partway, so the set is short
+// through no fault of the files on disk. Handing a short set to the deletion
+// loop would destroy operator artwork that simply had not been discovered yet.
+// Callers must treat a non-nil error as "no safe answer", never as "nothing was
+// expected".
+func expectedImageFiles(ctx context.Context, profile *platform.Profile, artistPath string) (map[string]bool, error) {
 	expected := make(map[string]bool)
 	expected["artist.nfo"] = true
 
@@ -726,6 +738,15 @@ func expectedImageFiles(ctx context.Context, profile *platform.Profile, artistPa
 		for _, fanartName := range fanartNames {
 			discovered, discoverErr := image.DiscoverFanart(ctx, artistPath, fanartName)
 			if discoverErr != nil {
+				// Interrogate the CONTEXT, not the error text. An I/O error
+				// whose message happens to mention a deadline must not be
+				// mistaken for a real cancellation, and a real cancellation
+				// must not be missed because the wrapped error reads like an
+				// ordinary read failure. Matches the propagation branch in
+				// phash_repair.go.
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return nil, fmt.Errorf("building expected-image set for %s: %w", artistPath, ctxErr)
+				}
 				slog.Warn("discovering fanart for expected-files whitelist",
 					slog.String("dir", artistPath),
 					slog.String("primary", fanartName),
@@ -746,7 +767,7 @@ func expectedImageFiles(ctx context.Context, profile *platform.Profile, artistPa
 		}
 	}
 
-	return expected
+	return expected, nil
 }
 
 // makeExtraneousImagesChecker returns a Checker closure that detects non-canonical
@@ -772,7 +793,14 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 		// When shared filesystem is detected, union expected files from all
 		// profiles to avoid flagging platform-written images.
 		if e.IsSharedFilesystem(ctx, a) && e.platformService != nil {
-			expected := expectedImageFilesAllProfiles(ctx, e.platformService, e.logger, a.Path)
+			expected, expErr := expectedImageFilesAllProfiles(ctx, e.platformService, e.logger, a.Path)
+			if expErr != nil {
+				// The expected set is incomplete because the scan was
+				// abandoned. Reporting extraneous files against a short
+				// whitelist would flag valid artwork as extraneous and offer
+				// the operator a one-click delete for it.
+				return nil
+			}
 			return e.checkExtraneousAgainst(a, expected, cfg)
 		}
 
@@ -780,7 +808,10 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 		if e.platformService != nil {
 			profile, _ = e.platformService.GetActive(ctx)
 		}
-		expected := expectedImageFiles(ctx, profile, a.Path)
+		expected, expErr := expectedImageFiles(ctx, profile, a.Path)
+		if expErr != nil {
+			return nil
+		}
 
 		entries, readErr := e.readDirCached(a.Path)
 		if readErr != nil {
@@ -947,9 +978,15 @@ func (e *Engine) checkExtraneousImagesFromDB(ctx context.Context, a *artist.Arti
 // status is detected so that files written by any connected platform are not flagged
 // as extraneous. This is a package-level function so both the checker and the
 // fixer can share the same logic without duplicating it.
-func expectedImageFilesAllProfiles(ctx context.Context, svc *platform.Service, logger *slog.Logger, artistPath string) map[string]bool {
+//
+// It propagates a cancellation for the same reason expectedImageFiles does: an
+// incomplete union is a short deletion whitelist.
+func expectedImageFilesAllProfiles(ctx context.Context, svc *platform.Service, logger *slog.Logger, artistPath string) (map[string]bool, error) {
 	profiles, err := svc.List(ctx)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("listing profiles for expected-image set: %w", ctxErr)
+		}
 		logger.Warn("listing profiles for shared-filesystem expected files",
 			slog.String("error", err.Error()))
 		// Fall back to active profile only.
@@ -959,19 +996,27 @@ func expectedImageFilesAllProfiles(ctx context.Context, svc *platform.Service, l
 
 	merged := make(map[string]bool)
 	for i := range profiles {
-		for k, v := range expectedImageFiles(ctx, &profiles[i], artistPath) {
+		set, setErr := expectedImageFiles(ctx, &profiles[i], artistPath)
+		if setErr != nil {
+			return nil, setErr
+		}
+		for k, v := range set {
 			if v {
 				merged[k] = true
 			}
 		}
 	}
 	// Always include the default set too (no profile).
-	for k, v := range expectedImageFiles(ctx, nil, artistPath) {
+	defaults, defErr := expectedImageFiles(ctx, nil, artistPath)
+	if defErr != nil {
+		return nil, defErr
+	}
+	for k, v := range defaults {
 		if v {
 			merged[k] = true
 		}
 	}
-	return merged
+	return merged, nil
 }
 
 // canonicalDirName is a thin alias around artist.CanonicalDirName so the
@@ -1213,6 +1258,12 @@ func (e *Engine) makeBackdropSequencingChecker() Checker {
 		for _, primaryName := range fanartNames {
 			discovered, err := image.DiscoverFanart(ctx, a.Path, primaryName)
 			if err != nil {
+				// A cancellation abandons the whole check: the remaining
+				// names cannot be trusted either, and reporting "contiguous"
+				// from a truncated scan is a false clean bill of health.
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return nil
+				}
 				e.logger.Debug("discovering fanart for sequencing check",
 					"dir", a.Path,
 					"primary", primaryName,
@@ -1223,31 +1274,42 @@ func (e *Engine) makeBackdropSequencingChecker() Checker {
 				continue
 			}
 
-			// Check whether files occupy contiguous indices.
-			for i, path := range discovered {
-				expected := image.FanartFilename(primaryName, i, kodiNumbering)
-				actual := filepath.Base(path)
-				// Compare base names ignoring extension (jpg vs png is fine).
-				expectedBase := strings.TrimSuffix(expected, filepath.Ext(expected))
-				actualBase := strings.TrimSuffix(actual, filepath.Ext(actual))
-				if !strings.EqualFold(expectedBase, actualBase) {
-					var fileList []string
-					for _, p := range discovered {
-						fileList = append(fileList, filepath.Base(p))
-					}
-					return &Violation{
-						RuleID:   RuleBackdropSequencing,
-						RuleName: "Backdrop/fanart sequencing",
-						Category: "image",
-						Severity: effectiveSeverity(cfg),
-						Message:  fmt.Sprintf("artist %s has non-sequential %s files: %s", a.Name, strings.TrimSuffix(primaryName, filepath.Ext(primaryName)), strings.Join(fileList, ", ")),
-						Fixable:  true,
-					}
-				}
+			if v := nonSequentialFanartViolation(a, cfg, primaryName, discovered, kodiNumbering); v != nil {
+				return v
 			}
 		}
 		return nil
 	}
+}
+
+// nonSequentialFanartViolation reports a backdrop_sequencing violation when the
+// discovered files do not occupy contiguous indices under primaryName, or nil
+// when they do. Extracted from makeBackdropSequencingChecker so the checker
+// stays under the cognitive-complexity limit.
+func nonSequentialFanartViolation(a *artist.Artist, cfg RuleConfig, primaryName string, discovered []string, kodiNumbering bool) *Violation {
+	for i, path := range discovered {
+		expected := image.FanartFilename(primaryName, i, kodiNumbering)
+		actual := filepath.Base(path)
+		// Compare base names ignoring extension (jpg vs png is fine).
+		expectedBase := strings.TrimSuffix(expected, filepath.Ext(expected))
+		actualBase := strings.TrimSuffix(actual, filepath.Ext(actual))
+		if strings.EqualFold(expectedBase, actualBase) {
+			continue
+		}
+		fileList := make([]string, 0, len(discovered))
+		for _, p := range discovered {
+			fileList = append(fileList, filepath.Base(p))
+		}
+		return &Violation{
+			RuleID:   RuleBackdropSequencing,
+			RuleName: "Backdrop/fanart sequencing",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %s has non-sequential %s files: %s", a.Name, strings.TrimSuffix(primaryName, filepath.Ext(primaryName)), strings.Join(fileList, ", ")),
+			Fixable:  true,
+		}
+	}
+	return nil
 }
 
 // checkBackdropSequencingFromDB is the API-artist equivalent of the filesystem
@@ -1319,7 +1381,11 @@ func (e *Engine) checkBackdropSequencingFromDB(ctx context.Context, a *artist.Ar
 // the active platform profile (falling back to defaults) and sums the discovered
 // files for each pattern. Duplicate files across patterns are not double-counted
 // A `seen` map deduplicates files that appear under multiple naming patterns.
-func (e *Engine) countBackdrops(ctx context.Context, dir string) int {
+//
+// A cancellation is reported rather than folded into the count: an abandoned
+// scan yields an UNDERCOUNT, which reads as "this artist is missing backdrops"
+// for an artist that may have plenty.
+func (e *Engine) countBackdrops(ctx context.Context, dir string) (int, error) {
 	var profile *platform.Profile
 	if e.platformService != nil {
 		profile, _ = e.platformService.GetActive(ctx)
@@ -1340,6 +1406,9 @@ func (e *Engine) countBackdrops(ctx context.Context, dir string) int {
 	for _, primaryName := range fanartNames {
 		discovered, err := image.DiscoverFanart(ctx, dir, primaryName)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return 0, fmt.Errorf("counting backdrops in %s: %w", dir, ctxErr)
+			}
 			continue
 		}
 		for _, path := range discovered {
@@ -1349,7 +1418,7 @@ func (e *Engine) countBackdrops(ctx context.Context, dir string) int {
 			}
 		}
 	}
-	return count
+	return count, nil
 }
 
 // countBackdropsFromDB counts the number of fanart image slots recorded in the
@@ -1384,7 +1453,13 @@ func (e *Engine) makeBackdropMinCountChecker() Checker {
 
 		var count int
 		if a.Path != "" {
-			count = e.countBackdrops(ctx, a.Path)
+			var countErr error
+			count, countErr = e.countBackdrops(ctx, a.Path)
+			if countErr != nil {
+				// Undercount from an abandoned scan; do not raise a
+				// "missing backdrops" violation the operator would act on.
+				return nil
+			}
 		} else {
 			count = e.countBackdropsFromDB(ctx, a.ID)
 		}
