@@ -82,8 +82,13 @@ const maxStalledReads = 16
 var stalledReads atomic.Int64
 
 // StalledReadCount reports how many abandoned filesystem reads are currently
-// in flight. Exported for the operator-facing diagnostics and for tests; it is
-// a live gauge, not a cumulative total.
+// in flight. It is a live gauge, not a cumulative total.
+//
+// Exported for tests. No operator-facing surface consumes this today -- it is
+// currently internal-only, despite the value it reports being exactly what an
+// operator debugging a wedged mount would want to see. Wiring it to a real
+// diagnostics surface (a metrics endpoint, an admin page) is future work, not
+// something this function claims to already provide.
 func StalledReadCount() int64 { return stalledReads.Load() }
 
 // ErrTooManyStalledReads reports that too many previously-abandoned reads are
@@ -94,6 +99,20 @@ func StalledReadCount() int64 { return stalledReads.Load() }
 //
 // The message names the mount because that is what an operator seeing this
 // has to go fix; the condition is never caused by the library's contents.
+//
+// THE CAP IS PROCESS-GLOBAL, NOT PER-MOUNT. Once 16 abandoned reads are
+// outstanding against ONE wedged mount, this error is returned for every
+// read anywhere in the process, including a perfectly healthy file on a
+// different filesystem. That is a deliberate, safe direction to fail in: no
+// caller in this codebase treats this error as a positive claim that a file
+// is absent (the non-strict discovery paths degrade to "could not look, skip
+// and report" rather than "not found", and the one caller that could
+// otherwise overwrite -- BackupSingleSlot -- aborts on the same gauge rather
+// than proceeding past it). A destructive path never mistakes a refused read
+// for a genuine absence. Narrowing the cap to be per-mount would need a way
+// to key an abandoned read by its filesystem, which the read itself has no
+// way to determine once the kernel has swallowed it; global-and-safe is the
+// tradeoff made here rather than precise-and-unbuildable.
 var ErrTooManyStalledReads = errStalledReads{}
 
 type errStalledReads struct{}
@@ -115,6 +134,16 @@ func runCancellable[T any](ctx context.Context, fn func() (T, error)) (T, error)
 	if err := ctx.Err(); err != nil {
 		return zero, err
 	}
+	// APPROXIMATE, not atomic: this Load and the Add(1) below (on the
+	// ctx.Done() path) are two separate operations, so several callers can
+	// each observe a count under the cap and all proceed, briefly pushing the
+	// true in-flight count above maxStalledReads. That is DELIBERATE and
+	// safe in the only direction that matters: the race can only let MORE
+	// reads through than the nominal cap, never fewer, and this cap exists to
+	// bound unbounded growth against a wedged mount, not to enforce an exact
+	// ceiling. Making it exact would need a lock on every call on the hot
+	// path for a race whose worst case is "the cap is soft by a handful of
+	// reads for one instant." Not worth it.
 	if stalledReads.Load() >= maxStalledReads {
 		return zero, ErrTooManyStalledReads
 	}
