@@ -25,15 +25,121 @@
 #      merge into main re-sweeps the remaining open Dependabot PRs, updates the
 #      stale ones, and re-arms. A batch therefore drains one at a time.
 #
-# KNOWN RISK, verify on the next batch: pushes made with GITHUB_TOKEN do not
-# start new workflow runs. The branch update below is such a push, so the
-# required checks may not re-run on the updated head, leaving the PR waiting on
-# checks that never arrive. The `push: main` sweep is what makes this
-# self-correcting rather than terminal -- it re-evaluates every open PR on each
-# merge. If the checks do turn out not to re-run, the fix is to replace the
-# update-branch call with an `@dependabot rebase` comment posted with a PAT
-# stored as a Dependabot secret; a bot-authored rebase comment is reportedly
-# ignored, which is why it is not the default here.
+# CONFIRMED AND FIXED (2026-08-03). The risk recorded here on 2026-07-27 came
+# true. The EXACT MECHANISM is not what that note guessed, and the difference
+# matters to anyone debugging this later -- so read this rather than grepping
+# for the old wording.
+#
+# WHAT THE OLD NOTE SAID: pushes made with GITHUB_TOKEN start no workflow runs,
+# so the checks never run.
+#
+# WHAT ACTUALLY HAPPENS: the runs ARE created. They are HELD, in
+# `status=completed, conclusion=action_required`, waiting for a human to press
+# "Approve and run" in the Actions UI. Nobody approves them, so they never
+# execute, so the head accumulates zero check runs. Same observable end state,
+# different cause. Measured on the wedged batch: EIGHT held runs per affected PR
+# (CI, Bruno API Tests, Security, CodeQL, Signed Commits, Pre-Push Gate,
+# Auto-approve Dependabot PRs, Re-request Copilot review) across six PRs -- ~48
+# runs queued for manual approval.
+#
+# THE DISCRIMINATOR IS THE HEAD COMMIT'S AUTHOR, established by a same-branch,
+# same-workflow comparison (so branch, workflow and content are all controlled
+# for) -- runs of THIS repo's auto-approve workflow on the SAME Dependabot
+# branch:
+#
+#   head SHA authored by            run actor / triggering_actor   conclusion
+#   dependabot[bot]                 dependabot[bot]                success
+#   github-actions[bot] (our push)  github-actions[bot]            action_required
+#   github-actions[bot] (our push)  sydlexius (manual approval)    success
+#
+# When update-branch below runs with GITHUB_TOKEN it re-authors the head as
+# `github-actions[bot]`, every workflow on that head is attributed to that bot,
+# and bot-attributed runs are gated behind manual approval. The third row is the
+# maintainer clearing them by hand, which is the workaround this change exists
+# to eliminate.
+#
+# THE LOOP IS SELF-PERPETUATING, which is the part that makes it more than an
+# annoyance. Approving the runs by hand does NOT settle the batch. Timeline,
+# measured: PR #2915 (the only one still carrying a Dependabot-authored head,
+# hence the only one with real checks) merged at 19:09:22Z. That merge fired the
+# `push: main` sweep, which found the remaining six BEHIND and re-ran
+# update-branch on all of them -- new head SHAs at 19:21:58Z through 19:22:24Z,
+# each freshly bot-authored, each with a new batch of held runs. So every merge
+# re-wedges every survivor, and hand-approving is work that the next merge
+# throws away. A batch cannot drain itself.
+#
+# NOT FIXABLE BY A REPOSITORY SETTING -- see the note below on
+# fork-pr-contributor-approval before reaching for one.
+#
+# THE FIX: the update-branch call is made with a PAT (DEPENDABOT_UPDATE_TOKEN)
+# rather than GITHUB_TOKEN. The head is then authored by a real repository
+# contributor rather than by `github-actions[bot]`, so the runs on it are
+# attributed to that user and start immediately instead of being held -- exactly
+# the third row of the table above, minus the human. When the secret is absent
+# the workflow DECLINES to update and fails the job loudly; see the asymmetry
+# argument at the step below for why declining beats falling back.
+#
+# WHY NOT JUST CHANGE A REPOSITORY SETTING. The obvious suspect is
+# `actions/permissions/fork-pr-contributor-approval`, which is set to
+# `first_time_contributors_new_to_github`. Two reasons that is not the lever:
+#
+#   1. It is ALREADY at its loosest value. The enum is
+#      first_time_contributors_new_to_github / first_time_contributors /
+#      all_external_contributors -- three thresholds, each stricter than the
+#      last, and NO value meaning "never require approval". There is nothing to
+#      loosen; the only available moves make the gating stricter.
+#   2. It is a FORK-PR policy, and these are in-repo branches, not forks. The
+#      held runs are real and measured, but attributing them to this setting is
+#      pattern-matching on its name. The gating that is actually documented for
+#      this case is on bot-authored pull requests / bot-attributed runs.
+#
+# So no settings change fixes this, and in particular DO NOT relax
+# fork-pr-contributor-approval hoping to clear it -- that would weaken a
+# security control, in the wrong direction, for no effect on this bug.
+#
+# OPTIONS CONSIDERED AND REJECTED
+#
+#   (a) Post `@dependabot rebase` with GITHUB_TOKEN. Rejected on two independent
+#       grounds. First, Dependabot refuses comment commands from a GitHub App
+#       identity even when that app has write access -- it replies "Sorry, only
+#       users with push access can use that command"
+#       (dependabot/dependabot-core#9147), and `github-actions[bot]` is exactly
+#       such an identity. The earlier note above said a bot-authored rebase
+#       comment is "reportedly ignored"; the real behaviour is a refusal, which
+#       is at least loud, but it is still a refusal. Second, even with a token
+#       Dependabot accepts, the rebase command has a long tail of reports where
+#       the job runs green and pushes nothing (dependabot-core #6886, #7018,
+#       #10118, #10310, #11803). It adds a dependency on a flaky remote command
+#       surface to solve a problem a token swap solves outright.
+#   (b) `workflow_dispatch` / `repository_dispatch` to re-run the checks. The
+#       required set is 17 contexts spread over ci.yml, gate.yml, codeql.yml,
+#       security.yml and bruno-ci.yml, and most of those jobs read
+#       `github.event.pull_request`, which does not exist on a dispatch event.
+#       Making them dispatch-capable means rewriting five workflows to carry a
+#       second event shape, and every future required check inherits that
+#       obligation or silently re-wedges the pipeline. Enormous blast radius,
+#       and it treats the symptom (no checks) rather than the cause (a
+#       bot-authored head).
+#   (c) Close and reopen the PR. Drops the auto-merge arming and any review
+#       state, Dependabot may read the close as "do not recreate this update",
+#       and it leaves the head bot-authored -- so any runs it did start would be
+#       held for approval exactly as before. Crude and does not address the
+#       cause.
+#   (d) Re-run the existing CI run via the API. Re-running reports its results
+#       against the run's ORIGINAL head SHA, which is not the SHA the branch
+#       protection is evaluating. It produces green checks on a commit nobody is
+#       waiting on.
+#   (e) Approve the held runs by hand, or automate approving them. This is what
+#       was happening before, and it does not converge: as the timeline above
+#       shows, the next merge to main re-runs update-branch on every survivor
+#       and produces a fresh bot-authored head with a fresh batch of held runs.
+#       Automating the approval would also mean auto-approving bot-attributed
+#       workflow runs as a policy, which is the control that exists to stop
+#       generated code from running against repository secrets. Wrong trade.
+#
+# A PAT-authored update-branch (the chosen fix) is the smallest change that
+# actually restores the invariant: it keeps the proven mechanism and swaps only
+# the identity that performs the push.
 
 name: Merge approved Dependabot PRs
 
@@ -148,6 +254,37 @@ jobs:
         if: steps.candidates.outputs.numbers != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The branch-update push MUST NOT be made with GITHUB_TOKEN. The
+          # event sequence matters, because "no checks appear" has two very
+          # different causes and only one of them is this: the push itself
+          # starts no `push`-triggered workflow runs, but updating the pull
+          # request DOES emit a `pull_request` `synchronize` event, and the
+          # runs it creates are held in `action_required` awaiting manual
+          # approval because the head is now authored by github-actions[bot].
+          # So the runs exist and never execute. The required checks never
+          # report on the new head and the PR is wedged permanently (see the
+          # CONFIRMED AND FIXED note at the top of this file).
+          #
+          # SETUP -- this is a repository ACTIONS secret, not a Dependabot
+          # secret. This workflow is triggered by `workflow_run` and `push`, so
+          # it runs in the base repository's context and reads the ordinary
+          # Actions secret store; the Dependabot store is only consulted for
+          # workflows triggered by a Dependabot-authored `pull_request`.
+          #
+          #   1. Create a fine-grained PAT scoped to THIS REPOSITORY ONLY, with
+          #      exactly two repository permissions:
+          #        - Contents: Read and write   (to push the merge commit)
+          #        - Pull requests: Read and write (update-branch is a PR API)
+          #      Nothing else. Do not use a classic `repo` token: its scope is
+          #      every repository the owner can reach.
+          #   2. gh secret set DEPENDABOT_UPDATE_TOKEN --repo <owner>/<repo>
+          #   3. Set a calendar reminder for its expiry. When it lapses the
+          #      fallback below fires and the job fails loudly, which is the
+          #      intended behaviour, not a regression.
+          #
+          # An empty value here is the unconfigured state and is handled
+          # explicitly below.
+          UPDATE_TOKEN: ${{ secrets.DEPENDABOT_UPDATE_TOKEN }}
           REPO: ${{ github.repository }}
           EVENT: ${{ github.event_name }}
           NUMBERS: ${{ steps.candidates.outputs.numbers }}
@@ -239,10 +376,41 @@ jobs:
             if [ "$STATE" = "BEHIND" ]; then
               # The strict status-check policy blocks a stale branch and
               # auto-merge will not refresh one, so merge main in explicitly.
-              if gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/update-branch" >/dev/null; then
-                echo "Requested branch update for PR #$PR_NUMBER."
+              #
+              # WHICH TOKEN MAKES THIS CALL IS THE ENTIRE FIX. The token decides
+              # who AUTHORS the resulting merge commit, and that authorship
+              # decides whether the workflow runs on the new head start or are
+              # held for manual approval. Same API call, opposite outcome.
+              if [ -n "${UPDATE_TOKEN:-}" ]; then
+                if GH_TOKEN="$UPDATE_TOKEN" \
+                     gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/update-branch" >/dev/null; then
+                  echo "Requested branch update for PR #$PR_NUMBER (PAT-authored head; runs start without manual approval)."
+                else
+                  echo "::warning::Could not update the branch for PR #$PR_NUMBER; a later sweep will retry."
+                fi
               else
-                echo "::warning::Could not update the branch for PR #$PR_NUMBER; a later sweep will retry."
+                # UNCONFIGURED PATH -- DO NOT UPDATE. Falling back to
+                # GITHUB_TOKEN here looks like the helpful choice and is the
+                # worse one, because the two outcomes are not symmetric:
+                #
+                #   not updating  -> the PR stays BEHIND and untouched. Nothing
+                #                    is lost, no runs are queued for anyone to
+                #                    approve, and the moment the secret is
+                #                    configured the next sweep updates it
+                #                    correctly. Fully recoverable.
+                #   updating with -> a fresh bot-authored head, whose ~8
+                #   GITHUB_TOKEN     workflow runs are all held for manual
+                #                    approval. The maintainer must either clear
+                #                    them by hand or leave the PR stuck, and the
+                #                    next merge to main repeats the whole thing.
+                #                    This is what produced ~48 held runs across
+                #                    six PRs on 2026-08-03.
+                #
+                # So the update is gated on a POSITIVE check for the token, and
+                # the unconfigured case declines and fails the job loudly rather
+                # than generating work for a human.
+                echo "::error::DEPENDABOT_UPDATE_TOKEN is not configured, so PR #$PR_NUMBER was NOT updated and stays BEHIND. Updating it with GITHUB_TOKEN would re-author its head as github-actions[bot], which holds every workflow run on that head for manual approval -- so this workflow declines to. Configure the secret (see the step's env comment); the next sweep will then update and merge it normally."
+                FAILED=1
               fi
             fi
 
