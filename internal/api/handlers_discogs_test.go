@@ -821,8 +821,12 @@ func TestHandleDiscogsLink_UnlockedArtistStillRefreshes(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if _, present := resp["refresh_skipped_locked"]; present {
-		t.Errorf("refresh_skipped_locked present on an unlocked artist; body=%v", resp)
+	// See handlers_audiodb_test.go: always-present field, assert the VALUE.
+	skipped, present := resp["refresh_skipped_locked"]
+	if !present {
+		t.Errorf("refresh_skipped_locked missing; it is always emitted so a client can key on the value, not the key; body=%v", resp)
+	} else if skipped != false {
+		t.Errorf("refresh_skipped_locked = %v, want false on an unlocked artist; body=%v", skipped, resp)
 	}
 	assertSentinelBiographyPresent(t, artistSvc, a.ID)
 }

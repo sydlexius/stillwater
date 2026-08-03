@@ -148,7 +148,7 @@ func (r *Router) handleDeezerLink(w http.ResponseWriter, req *http.Request) {
 
 	a.DeezerID = deezerID
 
-	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a)
+	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a, false, "")
 	if err != nil {
 		r.logger.Error("deezer link: updating artist", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to link Deezer ID")
@@ -187,16 +187,15 @@ func (r *Router) handleDeezerLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Always present, never omitted when false -- see handlers_audiodb.go for
+	// why key presence must not be the signal. When true, the Deezer ID was
+	// persisted (a manual edit the lock allows) but the provider refresh that
+	// normally follows was suppressed by the artist-level lock.
 	resp := map[string]any{
-		"status":    "linked",
-		"artist_id": a.ID,
-		"deezer_id": a.DeezerID,
-	}
-	if refreshSkipped {
-		// The Deezer ID was persisted (a manual edit the lock allows) but the
-		// provider refresh that normally follows was suppressed by the
-		// artist-level lock.
-		resp["refresh_skipped_locked"] = true
+		"status":                 "linked",
+		"artist_id":              a.ID,
+		"deezer_id":              a.DeezerID,
+		"refresh_skipped_locked": refreshSkipped,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

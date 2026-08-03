@@ -318,6 +318,8 @@
   "artists.bulk.reidentify.wizard.done.title": "Review complete",
   "artists.bulk.reidentify.wizard.loading": "Searching providers for candidates...",
   "artists.bulk.reidentify.wizard.no_candidates": "No candidates found for this artist.",
+  "artists.bulk.reidentify.wizard.refresh_skipped_locked.one": "Identity updated. Metadata was not refreshed for this artist because it is locked, so it still reflects the previous match.",
+  "artists.bulk.reidentify.wizard.refresh_skipped_locked.other": "Identity updated. Metadata was not refreshed for these {count} artists because they are locked, so it still reflects the previous match.",
   "artists.bulk.reidentify.wizard.save_exit": "Save and exit",
   "artists.bulk.reidentify.wizard.skip": "Skip",
   "artists.bulk.reidentify.wizard.step_of": "Step %d of %d",

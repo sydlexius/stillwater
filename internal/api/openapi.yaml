@@ -7620,9 +7620,11 @@ paths:
                   refresh_skipped_locked:
                     type: boolean
                     description: >
-                      Present and true when the provider ID was persisted but
-                      the follow-up metadata refresh was suppressed because the
-                      artist is locked. Omitted otherwise.
+                      Always present. True when the provider ID was persisted
+                      but the follow-up metadata refresh was suppressed because
+                      the artist is locked; false otherwise. The field is never
+                      omitted, so a client may key on its VALUE and does not
+                      have to test for the key's presence.
         "400":
           description: Invalid request body or missing required fields
           content:
@@ -7747,10 +7749,22 @@ paths:
             Wizard advanced. The response body is one of two shapes:
             {status: advanced, index: <next>} when there is another
             step, or {status: done, session_id: <sid>} when the
-            advance landed on the final step.
+            advance landed on the final step. Either may also carry
+            refresh_skipped_locked; see that property.
           content:
             application/json:
               schema:
+                type: object
+                properties:
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the decision just recorded linked a
+                      new identity but the artist-level lock suppressed the
+                      metadata refresh that normally follows, so the artist's
+                      metadata still reflects its PREVIOUS match. Only accept
+                      can report true; skip and decline write nothing to
+                      refresh. false otherwise.
                 oneOf:
                   - type: object
                     required: [status, index]
@@ -7787,10 +7801,22 @@ paths:
             Wizard advanced. The response body is one of two shapes:
             {status: advanced, index: <next>} when there is another
             step, or {status: done, session_id: <sid>} when the
-            advance landed on the final step.
+            advance landed on the final step. Either may also carry
+            refresh_skipped_locked; see that property.
           content:
             application/json:
               schema:
+                type: object
+                properties:
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the decision just recorded linked a
+                      new identity but the artist-level lock suppressed the
+                      metadata refresh that normally follows, so the artist's
+                      metadata still reflects its PREVIOUS match. Only accept
+                      can report true; skip and decline write nothing to
+                      refresh. false otherwise.
                 oneOf:
                   - type: object
                     required: [status, index]
@@ -7826,10 +7852,22 @@ paths:
             Wizard advanced. The response body is one of two shapes:
             {status: advanced, index: <next>} when there is another
             step, or {status: done, session_id: <sid>} when the
-            advance landed on the final step.
+            advance landed on the final step. Either may also carry
+            refresh_skipped_locked; see that property.
           content:
             application/json:
               schema:
+                type: object
+                properties:
+                  refresh_skipped_locked:
+                    type: boolean
+                    description: >
+                      Present and true when the decision just recorded linked a
+                      new identity but the artist-level lock suppressed the
+                      metadata refresh that normally follows, so the artist's
+                      metadata still reflects its PREVIOUS match. Only accept
+                      can report true; skip and decline write nothing to
+                      refresh. false otherwise.
                 oneOf:
                   - type: object
                     required: [status, index]
@@ -13940,13 +13978,19 @@ paths:
                     discarded in the same write that stores the chosen
                     replacement: an mbid overwrites it, a discogs_id-only pick
                     clears it, because re-identify repudiates the previous
-                    MusicBrainz identity either way. The discard is scoped to
-                    MusicBrainz -- audiodb, wikidata, deezer and spotify IDs
-                    are kept, as is the artist's discogs_id, which is
-                    overwritten only when a discogs_id is itself supplied as
-                    the replacement, since a wrong MusicBrainz ID does not
-                    make any of them wrong. Ignored when neither ID is
-                    supplied.
+                    MusicBrainz identity either way. The audiodb, wikidata,
+                    deezer and spotify IDs are ALSO discarded, as is the
+                    artist's discogs_id unless a discogs_id is itself supplied
+                    as the replacement: a re-identify declares the whole entity
+                    wrong, and those IDs were derived from that entity's own
+                    provider responses, so keeping them would steer the
+                    follow-up refresh straight back to it. Ignored when neither
+                    ID is supplied. The secondary-ID discard takes effect only
+                    when the follow-up refresh actually runs and succeeds: a
+                    locked artist keeps every provider ID and returns
+                    status "skipped_locked", and a failed refresh persists
+                    nothing, so the artist retains every ID it started with and
+                    the response is a 500.
           application/x-www-form-urlencoded:
             schema:
               type: object
@@ -13967,13 +14011,19 @@ paths:
                     discarded in the same write that stores the chosen
                     replacement: an mbid overwrites it, a discogs_id-only pick
                     clears it, because re-identify repudiates the previous
-                    MusicBrainz identity either way. The discard is scoped to
-                    MusicBrainz -- audiodb, wikidata, deezer and spotify IDs
-                    are kept, as is the artist's discogs_id, which is
-                    overwritten only when a discogs_id is itself supplied as
-                    the replacement, since a wrong MusicBrainz ID does not
-                    make any of them wrong. Ignored when neither ID is
-                    supplied.
+                    MusicBrainz identity either way. The audiodb, wikidata,
+                    deezer and spotify IDs are ALSO discarded, as is the
+                    artist's discogs_id unless a discogs_id is itself supplied
+                    as the replacement: a re-identify declares the whole entity
+                    wrong, and those IDs were derived from that entity's own
+                    provider responses, so keeping them would steer the
+                    follow-up refresh straight back to it. Ignored when neither
+                    ID is supplied. The secondary-ID discard takes effect only
+                    when the follow-up refresh actually runs and succeeds: a
+                    locked artist keeps every provider ID and returns
+                    status "skipped_locked", and a failed refresh persists
+                    nothing, so the artist retains every ID it started with and
+                    the response is a 500.
       responses:
         "200":
           description: >
@@ -14215,9 +14265,11 @@ paths:
                   refresh_skipped_locked:
                     type: boolean
                     description: >
-                      Present and true when the provider ID was persisted but
-                      the follow-up metadata refresh was suppressed because the
-                      artist is locked. Omitted otherwise.
+                      Always present. True when the provider ID was persisted
+                      but the follow-up metadata refresh was suppressed because
+                      the artist is locked; false otherwise. The field is never
+                      omitted, so a client may key on its VALUE and does not
+                      have to test for the key's presence.
             text/html:
               schema:
                 type: string
@@ -14436,9 +14488,11 @@ paths:
                   refresh_skipped_locked:
                     type: boolean
                     description: >
-                      Present and true when the provider ID was persisted but
-                      the follow-up metadata refresh was suppressed because the
-                      artist is locked. Omitted otherwise.
+                      Always present. True when the provider ID was persisted
+                      but the follow-up metadata refresh was suppressed because
+                      the artist is locked; false otherwise. The field is never
+                      omitted, so a client may key on its VALUE and does not
+                      have to test for the key's presence.
             text/html:
               schema:
                 type: string
@@ -14666,9 +14720,11 @@ paths:
                   refresh_skipped_locked:
                     type: boolean
                     description: >
-                      Present and true when the provider ID was persisted but
-                      the follow-up metadata refresh was suppressed because the
-                      artist is locked. Omitted otherwise.
+                      Always present. True when the provider ID was persisted
+                      but the follow-up metadata refresh was suppressed because
+                      the artist is locked; false otherwise. The field is never
+                      omitted, so a client may key on its VALUE and does not
+                      have to test for the key's presence.
             text/html:
               schema:
                 type: string

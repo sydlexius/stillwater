@@ -166,7 +166,7 @@ func (r *Router) handleDiscogsLink(w http.ResponseWriter, req *http.Request) {
 
 	a.DiscogsID = discogsID
 
-	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a)
+	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a, false, "")
 	if err != nil {
 		r.logger.Error("discogs link: updating artist", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to link Discogs ID")
@@ -207,16 +207,15 @@ func (r *Router) handleDiscogsLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Always present, never omitted when false -- see handlers_audiodb.go for
+	// why key presence must not be the signal. When true, the Discogs ID was
+	// persisted (a manual edit the lock allows) but the provider refresh that
+	// normally follows was suppressed by the artist-level lock.
 	resp := map[string]any{
-		"status":     "linked",
-		"artist_id":  a.ID,
-		"discogs_id": a.DiscogsID,
-	}
-	if refreshSkipped {
-		// The Discogs ID was persisted (a manual edit the lock allows) but the
-		// provider refresh that normally follows was suppressed by the
-		// artist-level lock.
-		resp["refresh_skipped_locked"] = true
+		"status":                 "linked",
+		"artist_id":              a.ID,
+		"discogs_id":             a.DiscogsID,
+		"refresh_skipped_locked": refreshSkipped,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

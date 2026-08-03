@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -92,6 +93,43 @@ type reIdentifyWizardSession struct {
 	// artists and gets a wizard with 47 steps can see which 3 dropped and
 	// why, instead of silently losing them.
 	SkippedAtStart []SkippedWizardArtist
+	// LockedNoRefresh names artists that were accepted while the artist-level
+	// lock was on. Their new identity was persisted, but the metadata refresh
+	// that normally follows was suppressed by the lock, so their metadata still
+	// reflects the PREVIOUS match (#2894).
+	//
+	// The wizard has no equivalent of the single-artist screen's
+	// RefreshSkippedLocked fragment, so without this the operator accepts a
+	// candidate, sees the wizard advance, and is never told that half the
+	// operation did not happen. Names rather than IDs: this is read by a person
+	// deciding which artists to go back and unlock.
+	//
+	// Keyed by artist ID, not by NAME. Two distinct locked artists can share a
+	// display name -- the exact ambiguity this wizard exists to resolve -- and
+	// deduping on name would collapse them into one entry, telling the operator
+	// to unlock one artist when two need it.
+	LockedNoRefresh []LockedNoRefreshArtist
+}
+
+// LockedNoRefreshArtist names one artist whose metadata refresh the
+// artist-level lock suppressed during a wizard run. ID is what makes entries
+// unique; Name is what the operator reads.
+type LockedNoRefreshArtist struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// projectLockedNoRefresh converts the session's locked-no-refresh entries into
+// the template view type. Caller must hold sess.mu.
+func projectLockedNoRefresh(entries []LockedNoRefreshArtist) []templates.LockedNoRefreshArtist {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]templates.LockedNoRefreshArtist, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, templates.LockedNoRefreshArtist{ID: e.ID, Name: e.Name})
+	}
+	return out
 }
 
 // SkippedWizardArtist names one artist the wizard start endpoint had to
@@ -390,6 +428,11 @@ func (r *Router) handleReIdentifyWizardStep(w http.ResponseWriter, req *http.Req
 	if !isHTMXRequest(req) && idx == 0 {
 		data.SkippedAtStart = projectSkippedAtStart(sess.SkippedAtStart)
 	}
+	// Carried here as well as in advanceWizard: this handler serves Back and
+	// reload, and without it the outstanding-refresh notice vanishes the moment
+	// the operator navigates -- silently dropping the only mid-run record of
+	// artists that still hold the previous match's metadata (#2894).
+	data.LockedNoRefresh = projectLockedNoRefresh(sess.LockedNoRefresh)
 	sess.mu.Unlock()
 	if isHTMXRequest(req) {
 		renderTempl(w, req, templates.ReIdentifyWizardStep(data))
@@ -492,19 +535,36 @@ func (r *Router) handleReIdentifyWizardAccept(w http.ResponseWriter, req *http.R
 	if body.DiscogsID != "" {
 		a.DiscogsID = body.DiscogsID
 	}
-	// The wizard advances to the next step either way; the skip flag is
-	// reported by the link endpoints that answer with their own JSON, not by
-	// this navigation response.
-	if _, err := r.autoLinkAndRefresh(req.Context(), a); err != nil {
+	// reidentify=true is what makes the WIZARD a real re-identify path rather
+	// than a plain provider link (#2894). The first cut of this fix lived only
+	// in handleRefreshLink, scoping it by HANDLER when the correct scope is
+	// INTENT -- so the bulk wizard, which is the common path, kept every stale
+	// secondary ID and reproduced the reported defect in full. The discard
+	// itself runs inside autoLinkAndRefresh, after its lock gate and
+	// immediately before the fetch, so a locked artist never loses IDs it
+	// cannot re-derive and a failed refresh strands nothing.
+	//
+	// refreshSkipped must also NOT be discarded. A locked artist gets its new
+	// identity persisted and its metadata refresh suppressed, which leaves the
+	// previous match's metadata in place -- the exact "looks repaired and is
+	// not" state this issue is about. Dropping the flag is what made that
+	// invisible in the wizard.
+	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a, true, body.DiscogsID)
+	if err != nil {
 		r.logger.Error("reidentify wizard: accept failed", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to link artist")
 		return
 	}
 	sess.mu.Lock()
 	applyDecision(sess, step, wizardDecisionAccepted)
+	if refreshSkipped && !slices.ContainsFunc(sess.LockedNoRefresh,
+		func(e LockedNoRefreshArtist) bool { return e.ID == a.ID }) {
+		sess.LockedNoRefresh = append(sess.LockedNoRefresh,
+			LockedNoRefreshArtist{ID: a.ID, Name: a.Name})
+	}
 	sess.touch()
 	sess.mu.Unlock()
-	r.advanceWizard(w, req, sess, idx)
+	r.advanceWizard(w, req, sess, idx, refreshSkipped)
 }
 
 // handleReIdentifyWizardSkip leaves the artist unchanged and advances.
@@ -518,7 +578,7 @@ func (r *Router) handleReIdentifyWizardSkip(w http.ResponseWriter, req *http.Req
 	applyDecision(sess, step, wizardDecisionSkipped)
 	sess.touch()
 	sess.mu.Unlock()
-	r.advanceWizard(w, req, sess, idx)
+	r.advanceWizard(w, req, sess, idx, false)
 }
 
 // handleReIdentifyWizardRetry re-issues the provider lookup for a step the
@@ -561,7 +621,7 @@ func (r *Router) handleReIdentifyWizardDecline(w http.ResponseWriter, req *http.
 	applyDecision(sess, step, wizardDecisionDeclined)
 	sess.touch()
 	sess.mu.Unlock()
-	r.advanceWizard(w, req, sess, idx)
+	r.advanceWizard(w, req, sess, idx, false)
 }
 
 // applyDecision makes wizard decisions idempotent across Back/retry. The
@@ -698,7 +758,13 @@ func (r *Router) wizardStepFromRequest(w http.ResponseWriter, req *http.Request)
 // advanceWizard renders the next step (or the completion summary if the
 // current step was the last one). HTMX callers get a fragment; non-HTMX
 // callers get a JSON pointer they can follow.
-func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *reIdentifyWizardSession, idx int) {
+//
+// refreshSkipped reports that the decision just recorded linked a new identity
+// but could NOT refresh the artist's metadata, because the artist-level lock
+// suppressed it (#2894). Only the accept path can produce it; skip and decline
+// pass false because they write nothing to refresh. It is carried here rather
+// than answered separately so the accept response keeps one shape.
+func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *reIdentifyWizardSession, idx int, refreshSkipped bool) {
 	next := idx + 1
 	sess.mu.Lock()
 	total := len(sess.Steps)
@@ -708,7 +774,11 @@ func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *r
 			r.renderWizardDone(w, req, sess)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "done", "session_id": sess.ID})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":                 "done",
+			"session_id":             sess.ID,
+			"refresh_skipped_locked": refreshSkipped,
+		})
 		return
 	}
 	if isHTMXRequest(req) {
@@ -718,11 +788,19 @@ func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *r
 		sess.mu.Lock()
 		step := sess.Steps[next]
 		data := buildWizardStepData(req.Context(), sess, step, next, total)
+		// Carried on the NEXT step's data because that is the fragment the
+		// operator is about to look at. The artist it names is the one they
+		// just accepted, not the one now on screen.
+		data.LockedNoRefresh = projectLockedNoRefresh(sess.LockedNoRefresh)
 		sess.mu.Unlock()
 		renderTempl(w, req, templates.ReIdentifyWizardStep(data))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "advanced", "index": next})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":                 "advanced",
+		"index":                  next,
+		"refresh_skipped_locked": refreshSkipped,
+	})
 }
 
 // renderWizardDone renders the completion summary and tears down the session.
@@ -734,6 +812,11 @@ func (r *Router) renderWizardDone(w http.ResponseWriter, req *http.Request, sess
 		Accepted:  sess.Accepted,
 		Skipped:   sess.Skipped,
 		Declined:  sess.Declined,
+		// The session is deleted immediately below, so this summary is the
+		// LAST chance to tell the operator which artists still need a refresh
+		// (#2894). Copied rather than aliased because the session it points
+		// into is about to go away.
+		LockedNoRefresh: projectLockedNoRefresh(sess.LockedNoRefresh),
 	}
 	sess.mu.Unlock()
 	r.reIdentifyWizardStore.delete(sess.ID)
