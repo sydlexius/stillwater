@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -528,4 +529,78 @@ func TestAutoLinkAndRefresh_ReidentifyKeepsThisRequestsDiscogsPick(t *testing.T)
 		t.Errorf("DiscogsID = %q, want %q; the operator's pick did not survive its own re-identify", reloaded.DiscogsID, pickedDiscogsID)
 	}
 	assertSecondaryIDsDiscarded(t, r.db, a.ID, "a re-identify carrying a Discogs pick")
+}
+
+// TestReIdentifyWizard_LockedNoRefreshNoticeSurvivesTheJourney closes the gap
+// between "the flag reaches the session" and "the operator sees it".
+//
+// Three tests already touch this notice and none of them proves it: the accept
+// tests assert the session field and the JSON flag, and
+// TestWizardLockedNoRefreshNoticeRenders calls the templ component with
+// hand-built data. Nothing connects them. A flag threaded correctly into a
+// fragment that the handler never populates renders nothing, and every one of
+// those tests stays green -- which is the same silent half-completion #2894 is
+// about, one layer up.
+//
+// So this drives the REAL handlers end to end and reads the rendered HTML: lock
+// an artist, accept it in the wizard, then fetch the next step the way the
+// operator's browser does. The step fetch is the part that matters -- it is
+// Back and reload, a path that reaches the notice through
+// handleReIdentifyWizardStep rather than through the accept's own response, and
+// losing it there drops the only mid-run record of artists still holding the
+// previous match's metadata.
+func TestReIdentifyWizard_LockedNoRefreshNoticeSurvivesTheJourney(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	rec := attachRecordingOrchestrator(t, r, reidentifyFetchResult(), nil)
+	ctx := context.Background()
+
+	const lockedName = "Locked Journey Artist"
+	a := &artist.Artist{ID: "wizJourney1", Name: lockedName, AudioDBID: "adb-journey"}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+	lockArtist(t, artistSvc, a.ID)
+
+	sess := startWizardOn(t, r, a.ID)
+	if w := postWizardAccept(t, r, sess, `{"mbid":"mbid-journey"}`); w.Code != http.StatusOK {
+		t.Fatalf("accept status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	// Precondition: the lock really suppressed the refresh, so the notice is
+	// warranted rather than being rendered on every run.
+	if n := rec.callCount(); n != 0 {
+		t.Fatalf("provider fetch ran %d times, want 0; the lock did not suppress the refresh, so the notice would be a lie", n)
+	}
+
+	// Now the browser fetches step 1 -- Back, or a reload. HX-Request so
+	// renderTempl emits the fragment rather than the full page wrapper.
+	// testI18nCtx is required, not decoration: this rig wires no i18n bundle, so
+	// without it every t() call renders its KEY and the copy assertion below
+	// fails against a notice that is in fact present.
+	req := httptest.NewRequestWithContext(
+		testI18nCtx(t, middleware.WithTestUserID(ctx, "test-user")),
+		http.MethodGet, "/artists/re-identify/wizard/"+sess.ID+"/step/1", nil)
+	req.SetPathValue("sid", sess.ID)
+	req.SetPathValue("idx", "1")
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("Accept-Language", "en")
+	w := httptest.NewRecorder()
+	r.handleReIdentifyWizardStep(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("step status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+	// Asserted on the localized copy and role="status", not on Tailwind
+	// classes, matching TestWizardLockedNoRefreshNoticeRenders's contract so a
+	// restyle does not break this.
+	if !strings.Contains(body, "still reflects the previous match") {
+		t.Errorf("the locked-no-refresh notice is absent from the step fragment; the operator navigated and lost the only record that %q still holds the previous match's metadata (#2894)", lockedName)
+	}
+	if !strings.Contains(body, `role="status"`) {
+		t.Errorf("the notice rendered without role=\"status\"; a screen-reader user is told nothing")
+	}
+	if !strings.Contains(body, lockedName) {
+		t.Errorf("the notice does not name %q; an operator cannot act on a count", lockedName)
+	}
 }
