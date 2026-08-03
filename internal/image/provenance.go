@@ -1,6 +1,7 @@
 package image
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"os"
@@ -25,9 +26,30 @@ type ProvenanceData struct {
 	Source        string
 	FileFormat    string
 	LastWrittenAt string
+
+	// Width and Height are the decoded pixel dimensions of the file as
+	// written. They live here, rather than being collected separately by
+	// each caller, because artist_images.width/height are slot-keyed columns
+	// that only the scanner ever refreshed: every save path wrote the file
+	// and recorded provenance while leaving geometry describing the PREVIOUS
+	// image, and the rules read those columns in preference to the file
+	// (#2713). Carrying them alongside the hashes makes it impossible to
+	// record evidence of a write without also recording what was written.
+	//
+	// Zero means the dimensions could not be decoded. Callers must treat
+	// that as "unknown" and leave the stored values alone rather than
+	// writing a zero over a good number -- see UpdateProvenance.
+	Width  int
+	Height int
 }
 
 // IsEmpty returns true when no provenance data was collected.
+//
+// Dimensions are deliberately NOT part of this test. A file whose bytes
+// decoded far enough to measure but that yielded no EXIF provenance, no
+// content hash and no recognized extension is still "no provenance
+// collected"; treating a stray width as data would make callers record an
+// otherwise-blank row.
 func (p ProvenanceData) IsEmpty() bool {
 	return p.PHash == "" && p.ContentHash == "" && p.Source == "" &&
 		p.FileFormat == "" && p.LastWrittenAt == ""
@@ -64,6 +86,24 @@ func CollectProvenance(filePath string, logger *slog.Logger) ProvenanceData {
 	}
 	if len(data) > 0 {
 		d.ContentHash = ContentHash(data)
+
+		// Measure from the bytes already in hand rather than re-opening the
+		// file: the read above is the one that matters, so the geometry
+		// recorded here describes exactly the bytes the content hash covers.
+		// Re-reading would open a window for the two to disagree.
+		//
+		// A decode failure is logged and left as zero. It must not abort
+		// provenance collection -- the hashes and source are still worth
+		// recording for a file whose dimensions cannot be read.
+		w, h, dimErr := GetDimensions(bytes.NewReader(data))
+		if dimErr != nil {
+			logger.Warn("reading image dimensions for provenance",
+				slog.String("path", filePath),
+				slog.String("error", dimErr.Error()))
+		} else {
+			d.Width = w
+			d.Height = h
+		}
 	}
 
 	// Determine file format from extension.

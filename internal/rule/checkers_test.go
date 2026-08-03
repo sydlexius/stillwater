@@ -2259,3 +2259,55 @@ func TestBackdropSequencingChecker_DispatchesToDB(t *testing.T) {
 		t.Error("DB-based sequencing violations should not be fixable")
 	}
 }
+
+// TestGetImageDimensionsResolved_ZeroedRowFallsBackToFS is the guard for
+// migration 027, which resets stale geometry to zero library-wide.
+//
+// It is deliberately NOT the same case as
+// TestGetImageDimensionsResolved_FallbackToFS above. That one covers "no row
+// at all". This one covers the state the migration actually produces: a row
+// that EXISTS, is joined and scanned successfully, and carries zero. Those
+// take different paths through getImageDimensionsFromDB -- one returns
+// sql.ErrNoRows, the other returns (0, 0, nil) -- so a resolver that handled
+// the missing row but treated a present zero as an authoritative answer would
+// pass that test and fail this one. The migration's entire safety argument
+// rests on this branch, so it gets its own assertion rather than being
+// assumed to follow from the neighboring case.
+//
+// The file is 1200x900: non-square and unequal on both axes, so a resolver
+// returning the row's zeros, or transposing the pair, cannot coincide with
+// the expected answer.
+func TestGetImageDimensionsResolved_ZeroedRowFallsBackToFS(t *testing.T) {
+	db := setupTestDB(t)
+	e := &Engine{db: db, logger: slog.Default()}
+
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1200, 900)
+
+	// Exactly what migration 027 leaves behind: the row is present, with
+	// exists_flag set, holding zeroed geometry.
+	seedImageDimensions(t, db, "artist-zeroed", "fanart", 0, 0)
+
+	// Precondition: the row really is there. Without this the test would
+	// silently degrade into the no-row case it exists to be distinct from,
+	// and would pass while proving nothing.
+	var count int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM artist_images WHERE artist_id = ? AND image_type = ?`,
+		"artist-zeroed", "fanart",
+	).Scan(&count); err != nil {
+		t.Fatalf("precondition query: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("precondition: expected exactly 1 seeded row, got %d -- "+
+			"this test must exercise the present-but-zero path, not the absent-row path", count)
+	}
+
+	w, h, err := e.getImageDimensionsResolved(context.Background(), "artist-zeroed", dir, "fanart", fanartPatterns)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w != 1200 || h != 900 {
+		t.Errorf("a zeroed row must route the reader to the file: got (%d,%d), want (1200,900)", w, h)
+	}
+}

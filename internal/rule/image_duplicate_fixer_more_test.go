@@ -200,3 +200,65 @@ func TestResyncFanartFields_CountsAndReadsSlot0(t *testing.T) {
 		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
 	}
 }
+
+// TestResyncFanartFields_RecordsGeometryOfTheNewSlotZero closes the rule-engine
+// half of the two-store defect adversarial review found on the API handlers
+// (#2713).
+//
+// All three rule paths that renumber fanart -- backdrop sequencing, duplicate
+// collapse, and pHash pollution back-out -- reach the artist struct through
+// this one function, then persist it. RenumberFanart zeroes the stored row
+// through the invalidator, but ReconcileImages and persistNormalized both
+// rebuild that row from this struct, and a surviving non-zero value wins the
+// upsert. So leaving geometry here did not merely go stale, it UNDID the
+// invalidation on the very next write.
+//
+// The function was already measuring the dimensions to derive low_res and
+// discarding them -- the identical discard that produced the original bug in
+// setArtistImageFlag. It now keeps them.
+//
+// The seeded geometry differs from the fixture's real size on BOTH axes, so a
+// no-op cannot pass.
+func TestResyncFanartFields_RecordsGeometryOfTheNewSlotZero(t *testing.T) {
+	dir := t.TempDir()
+	// A real decodable image, deliberately not square.
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1280, 720)
+
+	a := &artist.Artist{
+		ID:   "resync-geom",
+		Path: dir,
+		// What the struct carried before the renumber: a different file.
+		FanartWidth:  3840,
+		FanartHeight: 2160,
+	}
+
+	resyncFanartFields(a, []string{"fanart.jpg"})
+
+	if a.FanartWidth != 1280 || a.FanartHeight != 720 {
+		t.Errorf("resync left geometry at %dx%d; it must describe the file now in slot 0 (1280x720), "+
+			"otherwise the caller's next persist writes the old file's size back over the invalidated row",
+			a.FanartWidth, a.FanartHeight)
+	}
+}
+
+// TestResyncFanartFields_ZeroesWhenItCannotMeasure pins the other half: when
+// this function cannot establish the geometry (no fanart left after a collapse
+// that removed everything), it must leave "unknown" rather than the previous
+// file's size. Zero routes readers to the filesystem; a stale number does not.
+func TestResyncFanartFields_ZeroesWhenItCannotMeasure(t *testing.T) {
+	dir := t.TempDir() // deliberately empty: every fanart file was removed
+
+	a := &artist.Artist{
+		ID:           "resync-empty",
+		Path:         dir,
+		FanartWidth:  3840,
+		FanartHeight: 2160,
+	}
+
+	resyncFanartFields(a, []string{"fanart.jpg"})
+
+	if a.FanartWidth != 0 || a.FanartHeight != 0 {
+		t.Errorf("with no fanart on disk the geometry must read unknown (0x0), got %dx%d",
+			a.FanartWidth, a.FanartHeight)
+	}
+}

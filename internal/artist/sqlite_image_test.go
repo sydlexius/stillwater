@@ -95,7 +95,7 @@ func TestUpdateProvenance(t *testing.T) {
 
 	// Now update provenance fields via the targeted update.
 	err = svc.UpdateImageProvenance(ctx, a.ID, "thumb", 0,
-		"ff00ff00ff00ff00", "sha-thumb", "musicbrainz", "jpeg", "2026-03-21T15:30:00Z")
+		"ff00ff00ff00ff00", "sha-thumb", "musicbrainz", "jpeg", "2026-03-21T15:30:00Z", 0, 0)
 	if err != nil {
 		t.Fatalf("UpdateImageProvenance: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestUpdateProvenance_NoRow(t *testing.T) {
 	// UpdateProvenance on a non-existent row should return an error indicating
 	// no matching row was found.
 	err := svc.UpdateImageProvenance(ctx, a.ID, "thumb", 0,
-		"deadbeef", "sha-missing", "user", "png", "2026-03-21T10:00:00Z")
+		"deadbeef", "sha-missing", "user", "png", "2026-03-21T10:00:00Z", 0, 0)
 	if err == nil {
 		t.Fatal("UpdateImageProvenance on missing row should return an error")
 	}
@@ -213,23 +213,23 @@ func TestNewestWriteTimesByArtist(t *testing.T) {
 
 	// Set provenance with different timestamps for each artist.
 	if err := repo.UpdateProvenance(ctx, artistA.ID, "thumb", 0,
-		"aaa", "sha-a", "musicbrainz", "jpeg", "2026-03-20T10:00:00Z"); err != nil {
+		"aaa", "sha-a", "musicbrainz", "jpeg", "2026-03-20T10:00:00Z", 0, 0); err != nil {
 		t.Fatalf("UpdateProvenance A: %v", err)
 	}
 
 	// Artist B has two images with different timestamps -- the MAX should be returned.
 	if err := repo.UpdateProvenance(ctx, artistB.ID, "thumb", 0,
-		"bbb", "sha-b-thumb", "fanarttv", "jpeg", "2026-03-21T08:00:00Z"); err != nil {
+		"bbb", "sha-b-thumb", "fanarttv", "jpeg", "2026-03-21T08:00:00Z", 0, 0); err != nil {
 		t.Fatalf("UpdateProvenance B thumb: %v", err)
 	}
 	if err := repo.UpdateProvenance(ctx, artistB.ID, "fanart", 0,
-		"ccc", "sha-b-fanart", "fanarttv", "jpeg", "2026-03-21T15:30:00Z"); err != nil {
+		"ccc", "sha-b-fanart", "fanarttv", "jpeg", "2026-03-21T15:30:00Z", 0, 0); err != nil {
 		t.Fatalf("UpdateProvenance B fanart: %v", err)
 	}
 
 	// Artist C is in a different library -- set provenance to verify filtering.
 	if err := repo.UpdateProvenance(ctx, artistC.ID, "thumb", 0,
-		"ddd", "sha-c", "user", "png", "2026-03-22T00:00:00Z"); err != nil {
+		"ddd", "sha-c", "user", "png", "2026-03-22T00:00:00Z", 0, 0); err != nil {
 		t.Fatalf("UpdateProvenance C: %v", err)
 	}
 
@@ -338,7 +338,7 @@ func TestMergeAll_PreservesProvenance(t *testing.T) {
 
 	// Step 2: Set provenance via UpdateProvenance (the normal flow after image save).
 	if err := repo.UpdateProvenance(ctx, a.ID, "fanart", 0,
-		"1234567890abcdef", "sha-fanart", "fanarttv", "jpeg", "2026-01-15T08:00:00Z"); err != nil {
+		"1234567890abcdef", "sha-fanart", "fanarttv", "jpeg", "2026-01-15T08:00:00Z", 0, 0); err != nil {
 		t.Fatalf("UpdateProvenance: %v", err)
 	}
 
@@ -467,23 +467,18 @@ func TestUpsert_PreservesLock(t *testing.T) {
 			got[0].Width, got[0].Height)
 	}
 
-	// PINS A KNOWN DEFECT, not desired behavior. The conflict path sets
-	// id = excluded.id, and Upsert fills an empty ID with a fresh UUID, so the
-	// refresh above rotated this row's primary key out from under any caller
-	// holding the pre-refresh ID -- including SetLock, which matches on id
-	// alone. Asserting the rotation keeps the defect visible: a change to
-	// id = excluded.id in either direction trips this test instead of passing
-	// silently. When the rotation is fixed (tracked separately), invert this to
-	// require got[0].ID == imageID and drop this comment.
-	if got[0].ID == imageID {
-		t.Errorf("image ID did not rotate across the refresh (still %s); "+
-			"if the id = excluded.id rotation was fixed, invert this assertion",
-			imageID)
+	// Inverted per this assertion's own instruction once the rotation was
+	// fixed (#2643). The conflict path no longer sets id = excluded.id, so a
+	// refresh updates the row in place and every ID a caller holds stays
+	// valid. See TestUpsert_DoesNotRotateThePrimaryKey for the operator-facing
+	// consequence this protects: SetLock matches on id alone, so a rotated key
+	// meant a silently unapplied lock.
+	if got[0].ID != imageID {
+		t.Errorf("refresh rotated the image ID (%s -> %s); an Upsert must not "+
+			"redefine the identity of an existing row", imageID, got[0].ID)
 	}
 
-	// The deliberate unlock path must still clear the lock. Note this uses the
-	// post-refresh ID; the pre-refresh imageID would fail with ErrNotFound for
-	// the reason pinned above.
+	// The deliberate unlock path must still clear the lock.
 	t.Run("ExplicitUnlock", func(t *testing.T) {
 		if err := repo.SetLock(ctx, got[0].ID, false); err != nil {
 			t.Fatalf("SetLock(false): %v", err)

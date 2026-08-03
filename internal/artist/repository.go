@@ -250,7 +250,13 @@ type ImageRepository interface {
 	// caller verified by looking.
 	ReconcileAll(ctx context.Context, artistID string, images []ArtistImage, enumerated []ImageEnumeration) error
 
-	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error
+	// UpdateProvenance records the evidence of a single slot's write: the
+	// hashes, source, format and timestamp, plus the geometry of the file
+	// that was written. Geometry rides along rather than being a separate
+	// call because the two are the same fact -- see the implementation for
+	// why splitting them produced #2713. A zero width or height means
+	// "could not decode" and leaves the stored value alone.
+	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string, width, height int) error
 
 	// UpdateHashes writes only phash and content_hash, leaving the other
 	// provenance columns intact. Used by the lazy hash backfill, which hashes
@@ -266,6 +272,12 @@ type ImageRepository interface {
 	// keyed by slot and such an operation silently changes which file a slot
 	// holds.
 	ClearHashesForType(ctx context.Context, artistID, imageType string) error
+
+	// ClearGeometryForType zeroes width and height for every slot of one
+	// image type. It pairs with ClearHashesForType: both are per-slot facts
+	// that a renumber, reorder or slot-delete invalidates by moving a
+	// different file into a slot without touching its row (#2713).
+	ClearGeometryForType(ctx context.Context, artistID, imageType string) error
 
 	// ClearExistsFlag sets exists_flag=0 for the given artist/image_type/slot.
 	// Used to mark stale image entries when the file is confirmed missing on disk.

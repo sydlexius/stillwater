@@ -164,6 +164,12 @@ func queryImageDupRows(ctx context.Context, db *sql.DB, a *artist.Artist, logger
 type imageHashRecorder interface {
 	UpdateImageHashes(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash string) error
 	InvalidateImageHashes(ctx context.Context, artistID, imageType string) error
+
+	// InvalidateImageGeometry is here so this interface satisfies
+	// image.HashInvalidator, which RenumberFanart requires. Geometry is
+	// invalidated on the same terms as the hashes and for the same reason:
+	// both are per-slot facts that a renumber makes wrong (#2713).
+	InvalidateImageGeometry(ctx context.Context, artistID, imageType string) error
 }
 
 // hashImageFile is the seam through which duplicate detection reads and hashes

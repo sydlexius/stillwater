@@ -959,12 +959,18 @@ func (s *Service) persistNormalized(ctx context.Context, a *Artist) error {
 }
 
 // UpdateImageProvenance updates the provenance-related fields (phash,
-// content_hash, source, file_format, last_written_at) on an existing image row
-// without touching display fields like exists_flag, low_res, or placeholder.
-// This is called after an image save to record evidence of what was written and
-// when.
-func (s *Service) UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error {
-	return s.images.UpdateProvenance(ctx, artistID, imageType, slotIndex, phash, contentHash, source, fileFormat, lastWrittenAt)
+// content_hash, source, file_format, last_written_at) and the geometry (width,
+// height) on an existing image row, without touching the other display fields
+// (exists_flag, low_res, placeholder). This is called after an image save to
+// record evidence of what was written and when.
+//
+// Geometry is part of that evidence. It used to be omitted, which left the
+// stored dimensions describing whichever file the last scan saw while the
+// hashes described the file just written -- a row that contradicted itself,
+// and the source of the stale verdicts in #2713. A zero width or height is
+// treated as "could not decode" and preserves the stored value.
+func (s *Service) UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string, width, height int) error {
+	return s.images.UpdateProvenance(ctx, artistID, imageType, slotIndex, phash, contentHash, source, fileFormat, lastWrittenAt, width, height)
 }
 
 // UpdateImageHashes writes only the perceptual and content hashes for an image
@@ -990,6 +996,95 @@ func (s *Service) UpdateImageHashes(ctx context.Context, artistID, imageType str
 // this call impossible to omit.
 func (s *Service) InvalidateImageHashes(ctx context.Context, artistID, imageType string) error {
 	return s.images.ClearHashesForType(ctx, artistID, imageType)
+}
+
+// InvalidateImageGeometry zeroes the stored width/height for one image type,
+// so the next reader measures the files on disk instead of trusting a row.
+//
+// Call it after any operation that changes WHICH FILE occupies a slot --
+// renumbering, reordering, deleting a slot. Geometry is keyed by slot, and
+// those operations move a different file into a slot without touching its
+// row, which leaves the slot describing a picture it no longer holds. The
+// image rules read these columns in preference to the file (they measure the
+// file only when the stored values are zero), so a stale number makes a rule
+// judge artwork that is not there -- reporting a square backdrop as the wrong
+// shape, or a full-resolution one as too small (#2713).
+//
+// It satisfies image.HashInvalidator alongside InvalidateImageHashes, which is
+// how image.RenumberFanart makes this call impossible to omit.
+//
+// ZEROING THE ROW IS NOT SUFFICIENT ON ITS OWN, and callers must not assume it
+// is. Geometry lives in two places: the artist_images row and the in-memory
+// Artist struct the caller is holding. Every rename path invalidates and then
+// persists that same struct, and persistNormalized -> extractImageMetadata
+// rebuilds the row from the struct's still-stale FanartWidth/FanartHeight.
+// writeAll's upsert keeps a non-zero incoming value
+// (width = CASE WHEN excluded.width > 0 ...), so the stale number wins and the
+// invalidation is silently undone. Found by adversarial review before this
+// shipped; reproduced at the service layer and on the slot-delete and
+// batch-delete handlers.
+//
+// InvalidateImageGeometryOn below is the safe form: it zeroes both. Prefer it
+// wherever a live *Artist is in hand. This method remains for callers that
+// hold only an ID (the image.HashInvalidator contract), and those callers must
+// re-read the artist before persisting it.
+func (s *Service) InvalidateImageGeometry(ctx context.Context, artistID, imageType string) error {
+	return s.images.ClearGeometryForType(ctx, artistID, imageType)
+}
+
+// InvalidateImageGeometryOn zeroes the stored geometry for one image type AND
+// clears the matching fields on the caller's in-memory artist, so a subsequent
+// Update cannot resurrect the value that was just invalidated.
+//
+// It exists because the two-store split above makes the DB-only form a trap:
+// it looks correct at the call site and is undone a few lines later by a write
+// the caller does not associate with geometry at all.
+func (s *Service) InvalidateImageGeometryOn(ctx context.Context, a *Artist, imageType string) error {
+	if a == nil {
+		return fmt.Errorf("invalidating image geometry: nil artist")
+	}
+	if err := s.images.ClearGeometryForType(ctx, a.ID, imageType); err != nil {
+		return err
+	}
+	clearArtistGeometry(a, imageType)
+	return nil
+}
+
+// ClearGeometryFields zeroes the in-memory geometry for one image type on the
+// caller's own artist.
+//
+// It is the exported companion for callers that reach the DB invalidation
+// INDIRECTLY: image.RenumberFanart takes the HashInvalidator interface, which
+// carries only an artist ID, so it cannot touch the *Artist the caller is
+// still holding -- and that struct is what the caller's next Update writes
+// back over the freshly zeroed row. Call this on that artist immediately after
+// a renumber, before any Update.
+//
+// Only the per-type fields exist on the struct (there is one FanartWidth, for
+// slot 0), which is the same asymmetry that made the bug possible: the DB is
+// per-slot and the struct is per-type, so the struct can only ever describe
+// the primary. Zeroing it is still correct -- after a renumber the primary is
+// exactly the slot most likely to hold a different file than before.
+func ClearGeometryFields(a *Artist, imageType string) {
+	if a == nil {
+		return
+	}
+	clearArtistGeometry(a, imageType)
+}
+
+// clearArtistGeometry is the unexported worker behind ClearGeometryFields and
+// InvalidateImageGeometryOn.
+func clearArtistGeometry(a *Artist, imageType string) {
+	switch imageType {
+	case "thumb":
+		a.ThumbWidth, a.ThumbHeight = 0, 0
+	case "fanart":
+		a.FanartWidth, a.FanartHeight = 0, 0
+	case "logo":
+		a.LogoWidth, a.LogoHeight = 0, 0
+	case "banner":
+		a.BannerWidth, a.BannerHeight = 0, 0
+	}
 }
 
 // ClearImageFlag sets the exists flag to false for a single image slot.

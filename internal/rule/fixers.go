@@ -531,12 +531,16 @@ func firstNonEmptyFieldValue(results []provider.FieldProviderResult) (value, sou
 }
 
 // provenanceRecorder records image provenance data (phash, content hash,
-// source, file format, write timestamp) in the artist_images table after an
-// image is saved to disk. Used by the fix pipeline and bulk executor after
-// persisting the artist so that the artist_images row exists before
+// source, file format, write timestamp, geometry) in the artist_images table
+// after an image is saved to disk. Used by the fix pipeline and bulk executor
+// after persisting the artist so that the artist_images row exists before
 // UpdateImageProvenance is called.
+//
+// Geometry is part of the same record: a fixer that replaces artwork changes
+// the file's dimensions, and leaving them to the next scan is what let the
+// image rules keep judging the replaced picture (#2713).
 type provenanceRecorder interface {
-	UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error
+	UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string, width, height int) error
 }
 
 // ImageFixer resolves image-related rule violations by fetching images from
@@ -1028,7 +1032,7 @@ func recordSavedImageProvenanceSlot0(ctx context.Context, pr provenanceRecorder,
 		log.Warn("no provenance data collected from saved image, skipping update")
 		return
 	}
-	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, primarySlotIndex, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
+	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, primarySlotIndex, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt, d.Width, d.Height); err != nil {
 		log.Warn("recording image provenance after save",
 			slog.String("error", err.Error()))
 	}
@@ -2019,6 +2023,25 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 			"primary", primaryName,
 			"count", len(discovered))
 
+		// Re-read the artist's fanart fields from disk before returning.
+		// RenumberFanart zeroed the STORED geometry through the invalidator,
+		// but Pipeline.FixViolation persists THIS struct afterwards, and both
+		// persistNormalized and ReconcileImages rebuild the row from it -- so
+		// a surviving non-zero value wins the upsert and the invalidation is
+		// undone (#2713). The renumber just moved a different file into slot
+		// 0, which is exactly when its dimensions are wrong.
+		//
+		// Mirrors ImageDuplicateFixer.Fix, the sibling renumbering fixer, down
+		// to the resolver-error handling: on a resolver failure, warn and leave
+		// the fields as-is rather than substitute a guessed count against the
+		// wrong naming convention (#2635).
+		if names, namesErr := resolveFanartNames(ctx, f.platformService); namesErr != nil {
+			f.logger.Warn("resolving fanart naming convention after renumber; artist fields left as-is",
+				slog.String("artist_id", a.ID), slog.String("error", namesErr.Error()))
+		} else {
+			resyncFanartFields(a, names)
+		}
+
 		return &FixResult{
 			RuleID:  RuleBackdropSequencing,
 			Fixed:   true,
@@ -2380,8 +2403,24 @@ func wrapWithRollbackErrs(rollbackErrs []string, err error) error {
 // updates the artist's fanart fields in place, mirroring
 // Router.updateArtistFanartCount. Fixers have no Router reference, so this
 // is a self-contained copy limited to the fields extractImageMetadata reads
-// for fanart (Exists, Count, LowRes); Width/Height are left untouched since
-// slot 0 is never deleted and its dimensions do not change.
+// for fanart (Exists, Count, LowRes, and geometry).
+//
+// It ZEROES the geometry rather than leaving it, and the comment that used to
+// sit here -- "Width/Height are left untouched since slot 0 is never deleted
+// and its dimensions do not change" -- was wrong on both clauses (#2713).
+// Every caller of this function has just renumbered or collapsed fanart slots,
+// which is precisely the operation that moves a DIFFERENT file into slot 0.
+//
+// Leaving them was not merely stale, it actively UNDID the invalidation:
+// RenumberFanart zeroes the stored row through the invalidator, but the
+// caller then persists this artist, and both persistNormalized and
+// ReconcileImages rebuild that row from this struct. A surviving non-zero
+// value wins the upsert (width = CASE WHEN excluded.width > 0 ...), so the
+// zero never survived the very next write. That is the same two-store trap
+// adversarial review found on the API handlers; these three rule paths --
+// backdrop sequencing, duplicate collapse, and pHash pollution back-out --
+// reach it through this shared function, and they run in AUTO mode across the
+// whole library with nobody watching.
 func resyncFanartFields(a *artist.Artist, names []string) {
 	_, existing, err := img.ResolveFanart(a.Path, names)
 	if err != nil {
@@ -2391,6 +2430,11 @@ func resyncFanartFields(a *artist.Artist, names []string) {
 	a.FanartExists = count > 0
 	a.FanartCount = count
 	a.FanartLowRes = false
+	// Zero first, so every early return below leaves "unknown" rather than a
+	// number describing the file that used to occupy this slot. A reader
+	// treats zero as "measure the file", which is the honest answer whenever
+	// this function could not establish the geometry itself.
+	a.FanartWidth, a.FanartHeight = 0, 0
 	if count == 0 {
 		return
 	}
@@ -2402,6 +2446,12 @@ func resyncFanartFields(a *artist.Artist, names []string) {
 	w, h, dimErr := img.GetDimensions(f)
 	if dimErr == nil {
 		a.FanartLowRes = img.IsLowResolution(w, h, "fanart")
+		// The dimensions were already being measured here and then thrown
+		// away, with only the derived low_res flag kept -- the same discard
+		// that produced #2713 in setArtistImageFlag. Keep them: this is the
+		// post-renumber re-read, so they describe the file that now occupies
+		// slot 0.
+		a.FanartWidth, a.FanartHeight = w, h
 	}
 }
 

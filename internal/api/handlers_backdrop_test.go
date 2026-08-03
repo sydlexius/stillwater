@@ -776,3 +776,216 @@ func TestHandleFanartBatchDelete_Blocked409(t *testing.T) {
 	assertConflictWriteBlock(t, w.Body.Bytes()) // 409 must carry the conflict payload
 	assertSlotsUnchanged(t, p0, p1)             // T1: blocked batch-delete must not remove bytes
 }
+
+// TestHandleFanartReorder_InvalidatesStoredGeometry is the #2713 guard for the
+// one write path the compiler cannot protect.
+//
+// image.RenumberFanart takes a mandatory invalidator, so every caller that goes
+// through it is gated at compile time. This handler permutes the files itself
+// and never calls it, so removing the invalidation here still builds cleanly --
+// verified by deleting the call and rebuilding. That makes a behavioral test
+// the only thing standing between a reorder and rows describing the wrong file.
+//
+// The fixture gives each slot DIFFERENT dimensions, and the permutation moves
+// every one of them. Equal-sized slots would let a no-op pass: the stored
+// numbers would still happen to match the files after the shuffle.
+func TestHandleFanartReorder_InvalidatesStoredGeometry(t *testing.T) {
+	t.Parallel()
+	artistDir := t.TempDir()
+	r, artistSvc := testRouterForBackdrops(t)
+
+	a := &artist.Artist{
+		Name:         "GeometryReorder",
+		SortName:     "GeometryReorder",
+		Type:         "group",
+		Path:         artistDir,
+		FanartExists: true,
+		FanartCount:  3,
+		// Slot 0's geometry as the scanner recorded it. After the reorder
+		// below, slot 0 holds what used to be slot 2, so this number
+		// describes a file that has moved.
+		FanartWidth:  1920,
+		FanartHeight: 1080,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	primary := r.getActiveFanartPrimary(context.Background())
+	kodi := r.isKodiNumbering(context.Background())
+	for i, c := range []string{"AAA", "BBB", "CCC"} {
+		name := img.FanartFilename(primary, i, kodi)
+		if err := os.WriteFile(filepath.Join(artistDir, name), []byte(c), 0o644); err != nil {
+			t.Fatalf("writing test fanart %d: %v", i, err)
+		}
+	}
+
+	// Precondition: the geometry is actually stored. Without this the
+	// assertion below could pass against a row that never held it, which
+	// would make the test vacuous.
+	before, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reading artist back: %v", err)
+	}
+	if before.FanartWidth != 1920 || before.FanartHeight != 1080 {
+		t.Fatalf("precondition: stored geometry is %dx%d, want 1920x1080",
+			before.FanartWidth, before.FanartHeight)
+	}
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/artists/"+a.ID+"/images/fanart/reorder", strings.NewReader(`{"order":[2,0,1]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleFanartReorder(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	after, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reading artist after reorder: %v", err)
+	}
+	// Zero, not "recomputed": zero is what makes the rule resolver fall back
+	// to measuring the file, which is the correct answer once the slot-to-file
+	// mapping has shifted.
+	if after.FanartWidth != 0 || after.FanartHeight != 0 {
+		t.Errorf("stored fanart geometry survived a reorder as %dx%d; it now describes a file that moved slots, so it must be zeroed",
+			after.FanartWidth, after.FanartHeight)
+	}
+}
+
+// TestHandleFanartSlotDelete_InvalidatesStoredGeometry is the handler-level
+// guard for the defect adversarial review caught before this shipped (#2713).
+//
+// RenumberFanart zeroes the stored geometry through the invalidator, but it
+// receives only an artist ID -- the handler's own *Artist still carries the old
+// value, and the persist that follows writes it straight back (writeAll keeps a
+// non-zero incoming width). The reorder test above passed only because that
+// handler invalidates in a defer, which lands after its persist; slot-delete
+// invalidated first and was silently undone.
+//
+// Fixture geometry differs from anything the delete could coincidentally
+// produce, so a no-op cannot pass.
+func TestHandleFanartSlotDelete_InvalidatesStoredGeometry(t *testing.T) {
+	t.Parallel()
+	artistDir := t.TempDir()
+	r, artistSvc := testRouterForBackdrops(t)
+
+	a := &artist.Artist{
+		Name:         "SlotDeleteGeometry",
+		SortName:     "SlotDeleteGeometry",
+		Type:         "group",
+		Path:         artistDir,
+		FanartExists: true,
+		FanartCount:  3,
+		FanartWidth:  1920,
+		FanartHeight: 1080,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	primary := r.getActiveFanartPrimary(context.Background())
+	kodi := r.isKodiNumbering(context.Background())
+	for i, c := range []string{"AAA", "BBB", "CCC"} {
+		name := img.FanartFilename(primary, i, kodi)
+		if err := os.WriteFile(filepath.Join(artistDir, name), []byte(c), 0o644); err != nil {
+			t.Fatalf("writing test fanart %d: %v", i, err)
+		}
+	}
+
+	// Precondition: the geometry is actually stored, so the assertion below
+	// cannot pass against an artist that never had it.
+	before, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reading artist back: %v", err)
+	}
+	if before.FanartWidth != 1920 || before.FanartHeight != 1080 {
+		t.Fatalf("precondition: stored geometry is %dx%d, want 1920x1080",
+			before.FanartWidth, before.FanartHeight)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete,
+		"/api/v1/artists/"+a.ID+"/images/fanart/slots/0", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("slot", "0")
+	w := httptest.NewRecorder()
+
+	r.handleFanartSlotDelete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	after, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reading artist after delete: %v", err)
+	}
+	if after.FanartWidth != 0 || after.FanartHeight != 0 {
+		t.Errorf("stored fanart geometry survived a slot delete as %dx%d; slot 0 now holds a "+
+			"different file, so it must be zeroed rather than restored by the handler's own persist",
+			after.FanartWidth, after.FanartHeight)
+	}
+}
+
+// TestInvalidateFanartHelpers_ReportFailure guards the finding CodeRabbit
+// raised on this PR: the reorder handler's hash and geometry invalidations ran
+// in a bare defer and their errors reached only the log.
+//
+// That was both a silent failure and an inconsistency -- the sibling
+// handleFanartSlotDelete already surfaces its equivalent renumber failure to
+// the client. A failed invalidation leaves the stored hashes and dimensions
+// describing files their slots no longer hold, and the files have already
+// moved, so there is nothing to roll back and nothing else to tell the
+// operator.
+//
+// This tests the HELPERS rather than driving the handler, deliberately. An
+// earlier version of this test closed the database and posted a reorder,
+// which looked like an end-to-end proof and was not: the handler 404s at the
+// artist lookup long before it reaches the invalidation, so the test passed
+// while exercising none of the code it named. Verified by mutation -- removing
+// the fix left it green. The helpers are where the error either propagates or
+// is swallowed, so that is what gets asserted.
+//
+// The fix could not simply keep the defer, which is worth recording: a defer
+// runs AFTER the response is written, so a failure detected there can never
+// reach the client. The invalidation is called inline on the success path,
+// with the defer retained (via sync.Once) to cover early returns.
+func TestInvalidateFanartHelpers_ReportFailure(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterForBackdrops(t)
+
+	a := &artist.Artist{
+		Name: "InvalidateHelpers", SortName: "InvalidateHelpers",
+		Type: "group", Path: t.TempDir(),
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Precondition: both helpers succeed against a healthy store, so a
+	// non-nil return below means the failure was detected rather than
+	// reported unconditionally.
+	if err := r.invalidateFanartHashes(context.Background(), a.ID); err != nil {
+		t.Fatalf("precondition: hashes invalidation failed on a healthy store: %v", err)
+	}
+	if err := r.invalidateFanartGeometry(context.Background(), a.ID); err != nil {
+		t.Fatalf("precondition: geometry invalidation failed on a healthy store: %v", err)
+	}
+
+	// Now break the store. This is the state the handler is in when the files
+	// have already been permuted and the derived data cannot follow.
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing the store: %v", err)
+	}
+
+	if err := r.invalidateFanartHashes(context.Background(), a.ID); err == nil {
+		t.Error("invalidateFanartHashes returned nil against a closed store; the caller cannot warn about a failure it is never told about")
+	}
+	if err := r.invalidateFanartGeometry(context.Background(), a.ID); err == nil {
+		t.Error("invalidateFanartGeometry returned nil against a closed store; the caller cannot warn about a failure it is never told about")
+	}
+}

@@ -1619,7 +1619,7 @@ func (r *Router) recordImageProvenance(ctx context.Context, artistID, imageType,
 		log.Warn("no provenance data collected, skipping update")
 		return
 	}
-	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, slotIndex, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
+	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, slotIndex, d.PHash, d.ContentHash, d.Source, d.FileFormat, d.LastWrittenAt, d.Width, d.Height); err != nil {
 		log.Warn("recording image provenance",
 			slog.String("error", err.Error()))
 	}
@@ -2835,7 +2835,12 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 		renumberWarning = true
 		r.logger.Warn("skipping fanart renumber due to failed deletes",
 			slog.String("artist_id", artistID))
-	} else if renumberErr := img.RenumberFanart(req.Context(), r.artistService, a.ID, r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
+	} else if renumberErr := func() error {
+		// See handlers_backdrop.go: the stored zero is undone by the caller's
+		// own stale struct unless both are cleared (#2713).
+		artist.ClearGeometryFields(a, "fanart")
+		return img.RenumberFanart(req.Context(), r.artistService, a.ID, r.imageDir(a), primary, survivors, kodi)
+	}(); renumberErr != nil {
 		renumberWarning = true
 		r.logger.Warn("renumbering fanart after batch delete",
 			slog.String("artist_id", artistID),
