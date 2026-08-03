@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -586,13 +587,81 @@ const (
 	// a copy, so the read limit and the decode limit cannot drift apart.
 	MaxDecodeBytes  int64 = 25 << 20    // 25 MB (matches upload limit)
 	maxDecodePixels int64 = 100_000_000 // 100 megapixels
+
+	// maxDecodedBytes bounds the DECODED footprint, which is the quantity that
+	// actually allocates (#2929). The two constants above are proxies for
+	// memory, not memory itself: MaxDecodeBytes bounds the COMPRESSED bytes
+	// and the compression ratio is attacker-controllable, while
+	// maxDecodePixels bounds the pixel COUNT and says nothing about the bytes
+	// each pixel costs. image.Decode returns whatever concrete type the
+	// decoder chooses, and a 16-bit-per-channel PNG decodes to
+	// *image.NRGBA64/RGBA64 at 8 B/px rather than the 4 B/px an 8-bit image
+	// uses -- so a measured 808 KB, 10000x10000 16-bit PNG passed BOTH guards
+	// and allocated 763 MB.
+	//
+	// 400 MB is maxDecodePixels * 4, i.e. the 8-bit worst case operators
+	// already run today. Choosing the current implicit worst case instead
+	// (100 MP * 8 B/px = 800 MB) would change nothing and leave the 763 MB
+	// case passing. At 400 MB, every 8-bit image that decodes today still
+	// decodes -- the 4 B/px ceiling is exactly where the pixel cap already put
+	// it -- and the only inputs newly rejected are >4 B/px ones above about
+	// 50 megapixels (16-bit RGBA), which no legitimate artist artwork
+	// approaches. This makes the worst-case decoded footprint independent of
+	// bit depth, which is what lets docker-compose.yml size the container on
+	// one number.
+	maxDecodedBytes int64 = maxDecodePixels * 4 // ~400 MB
 )
 
+// bytesPerPixel maps the color model image.DecodeConfig reports to a
+// conservative UPPER BOUND on the bytes the decoded image will occupy per
+// pixel.
+//
+// Every entry is an over-estimate or exact, never an under-estimate, and an
+// unrecognized or nil model falls through to the maximum. That direction is
+// deliberate and load-bearing: a wrong-LOW estimate is the entire bug this
+// guard exists to fix, so an unknown decoder (a future stdlib type, a new
+// third-party format registered via image.RegisterFormat) must be treated as
+// expensive rather than cheap. The cost of guessing high is rejecting an
+// image that would have fit; the cost of guessing low is the 763 MB
+// allocation.
+func bytesPerPixel(m color.Model) int64 {
+	switch m {
+	case color.RGBA64Model, color.NRGBA64Model:
+		return 8 // image.RGBA64 / image.NRGBA64: 4 channels x 16 bits.
+	case color.RGBAModel, color.NRGBAModel:
+		return 4 // image.RGBA / image.NRGBA: 4 channels x 8 bits.
+	case color.CMYKModel:
+		return 4 // image.CMYK: 4 channels x 8 bits.
+	case color.YCbCrModel, color.NYCbCrAModel:
+		// image.YCbCr is 1-3 B/px depending on chroma subsampling and
+		// image.NYCbCrA adds one alpha byte, so 4 is an over-estimate that
+		// covers 4:4:4 plus alpha, the densest of the family.
+		return 4
+	case color.Gray16Model:
+		return 2 // image.Gray16: 1 channel x 16 bits.
+	case color.GrayModel:
+		return 1 // image.Gray: 1 channel x 8 bits.
+	case color.Alpha16Model:
+		return 2 // image.Alpha16.
+	case color.AlphaModel:
+		return 1 // image.Alpha.
+	default:
+		// Paletted images report a color.Palette (not one of the singleton
+		// models above) and decode to image.Paletted at 1 B/px, so they land
+		// here and are over-estimated rather than under-estimated -- correct
+		// per the fail-large rule, and harmless because 8 B/px only rejects a
+		// paletted image above 50 MP.
+		return 8
+	}
+}
+
 // decodeWithLimit reads up to MaxDecodeBytes from r, checks the declared
-// pixel dimensions via image.DecodeConfig (before any pixel buffer is
-// allocated), and only then fully decodes the image. This rejects
-// decompression-bomb style inputs (a small file declaring huge dimensions)
-// before the expensive allocation happens.
+// pixel dimensions and the projected DECODED footprint via image.DecodeConfig
+// (before any pixel buffer is allocated), acquires a process-wide decode slot,
+// and only then fully decodes the image. This rejects decompression-bomb style
+// inputs (a small file declaring huge dimensions, or declaring a bit depth
+// whose decoded cost dwarfs its compressed size) before the expensive
+// allocation happens, and bounds how many such allocations can be live at once.
 func decodeWithLimit(r io.Reader) (image.Image, error) {
 	data, err := io.ReadAll(io.LimitReader(r, MaxDecodeBytes+1))
 	if err != nil {
@@ -614,6 +683,23 @@ func decodeWithLimit(r io.Reader) (image.Image, error) {
 	if h > maxDecodePixels || w > maxDecodePixels/h {
 		return nil, fmt.Errorf("image too many pixels (%dx%d, max %d)", cfg.Width, cfg.Height, maxDecodePixels)
 	}
+
+	// Staged division rather than w*h*bpp, so the comparison itself cannot
+	// overflow int64 on a hostile header (same shape as the pixel check above).
+	bpp := bytesPerPixel(cfg.ColorModel)
+	if bpp > 0 && h > maxDecodedBytes/bpp/w {
+		return nil, fmt.Errorf("image too large decoded (%dx%d at %d bytes/pixel = %d bytes, max %d)",
+			cfg.Width, cfg.Height, bpp, w*h*bpp, maxDecodedBytes)
+	}
+
+	// Bound how many of these allocations are live at once (#2928). Acquired
+	// only around the full decode, never around the cheap header probe above,
+	// so a rejected input never consumes a slot.
+	release, err := acquireDecodeSlot()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
