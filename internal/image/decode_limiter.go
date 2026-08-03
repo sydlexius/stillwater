@@ -1,13 +1,10 @@
 package image
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
-
-	"golang.org/x/sync/semaphore"
 )
 
 // Process-wide bound on CONCURRENT full-pixel decodes (#2928).
@@ -38,22 +35,28 @@ const (
 	// must move with it.
 	DefaultDecodeConcurrency = 2
 
-	// decodeAcquireTimeout bounds how long a caller waits for a decode slot.
+	// defaultDecodeAcquireTimeout bounds how long a caller waits for a slot.
 	//
-	// A plain blocking acquire (semaphore.Acquire with context.Background()) is
-	// deliberately NOT used: decodeWithLimit has no context to carry a caller's
-	// cancellation, so an unbounded block re-creates exactly the wedge that
-	// #2689 spent three review rounds eliminating -- a saturated queue would
-	// pin an HTTP handler goroutine indefinitely with no way for the client's
-	// disconnect to release it. A bounded wait keeps ordinary contention
-	// invisible (a queued decode simply waits its turn) while turning
-	// sustained saturation into load shedding with a clear error instead of an
-	// unbounded backlog.
+	// An UNBOUNDED wait is deliberately not used. decodeWithLimit takes no
+	// context (none of the eleven exported entry points thread one, and adding
+	// them would be a signature-breaking change across four packages), so a
+	// caller blocked here would have no cancellation path at all: a saturated
+	// queue would pin an HTTP handler goroutine indefinitely with no way for
+	// the client's disconnect to release it. That is precisely the wedge #2689
+	// spent three review rounds eliminating, and re-creating it here would
+	// trade an unbounded memory peak for an unbounded goroutine backlog.
+	//
+	// A bounded wait gets both halves: ordinary contention stays invisible (a
+	// queued decode simply waits its turn, and a decode is fast relative to
+	// 30 s), while sustained saturation sheds load with a clear error instead
+	// of accumulating a queue. 30 s sits above any plausible single decode and
+	// below any sane HTTP client timeout, so the caller sees the error rather
+	// than a dead connection.
 	defaultDecodeAcquireTimeout = 30 * time.Second
 )
 
-// decodeAcquireTimeout is a var, not a const, solely so tests can shorten it;
-// nothing in production ever writes it.
+// decodeAcquireTimeout is a var, not a const, solely so tests can shorten it.
+// Nothing in production ever writes it.
 var decodeAcquireTimeout = defaultDecodeAcquireTimeout
 
 // ErrDecodeBusy is returned when no decode slot became available within
@@ -62,13 +65,21 @@ var decodeAcquireTimeout = defaultDecodeAcquireTimeout
 var ErrDecodeBusy = errors.New("image decode capacity exhausted")
 
 var (
-	// decodeSem holds the live semaphore. It is swapped atomically so
-	// SetMaxConcurrentDecodes can re-size the bound at boot (and would support
-	// a live reload) without locking every decode; in-flight decodes drain
-	// against the semaphore they acquired, new ones use the new bound.
-	decodeSem atomic.Pointer[semaphore.Weighted]
+	// decodeSem is a counting semaphore: capacity is the concurrency bound, a
+	// send takes a slot and a receive returns it. A buffered channel is used
+	// rather than golang.org/x/sync/semaphore because the channel form
+	// expresses a bounded wait through a plain select, with no
+	// context.Context anywhere -- and fabricating a context here purely to
+	// carry a timeout is exactly the "ignores its caller's context" shape the
+	// contextcheck linter flags, on a call chain where several callers really
+	// do hold a context they cannot pass down.
+	//
+	// The pointer is swapped atomically so SetMaxConcurrentDecodes can re-size
+	// the bound without locking every decode; in-flight decodes release into
+	// the channel they acquired from, new ones use the new channel.
+	decodeSem atomic.Pointer[chan struct{}]
 
-	// decodeLimit mirrors the weight currently installed in decodeSem so
+	// decodeLimit mirrors the capacity currently installed in decodeSem so
 	// MaxConcurrentDecodes can report the bound in force.
 	decodeLimit atomic.Int64
 )
@@ -84,7 +95,8 @@ func SetMaxConcurrentDecodes(n int) {
 	if n <= 0 {
 		n = DefaultDecodeConcurrency
 	}
-	decodeSem.Store(semaphore.NewWeighted(int64(n)))
+	sem := make(chan struct{}, n)
+	decodeSem.Store(&sem)
 	decodeLimit.Store(int64(n))
 }
 
@@ -93,25 +105,34 @@ func MaxConcurrentDecodes() int {
 	return int(decodeLimit.Load())
 }
 
-// acquireDecodeSlot blocks until a decode slot is free or decodeAcquireTimeout
-// elapses. The returned release function is always non-nil on success and must
-// be called on the SAME semaphore that granted the slot -- hence the closure,
-// which captures the pointer rather than re-loading it (a concurrent
-// SetMaxConcurrentDecodes between acquire and release would otherwise release
-// a permit into a semaphore that never issued it).
+// acquireDecodeSlot waits for a decode slot, up to decodeAcquireTimeout, and
+// returns the function that releases it. The release closure captures the
+// channel that granted the slot rather than re-reading decodeSem, so a
+// concurrent SetMaxConcurrentDecodes between acquire and release cannot return
+// a permit to a semaphore that never issued one.
 func acquireDecodeSlot() (release func(), err error) {
-	sem := decodeSem.Load()
-	if sem == nil {
-		// Unreachable in practice (init installs one), but a nil dereference
-		// here would be a far worse failure than an unbounded decode.
+	semPtr := decodeSem.Load()
+	if semPtr == nil {
+		// Unreachable in practice (init installs one). Failing open is
+		// deliberate: one unbounded decode is a far smaller problem than a nil
+		// dereference on every image request.
 		return func() {}, nil
 	}
+	sem := *semPtr
 
-	ctx, cancel := context.WithTimeout(context.Background(), decodeAcquireTimeout)
-	defer cancel()
+	// Fast path: a slot is free, so no timer is allocated.
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
+	default:
+	}
 
-	if err := sem.Acquire(ctx, 1); err != nil {
+	timer := time.NewTimer(decodeAcquireTimeout)
+	defer timer.Stop()
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
+	case <-timer.C:
 		return nil, fmt.Errorf("%w (limit %d, waited %s)", ErrDecodeBusy, MaxConcurrentDecodes(), decodeAcquireTimeout)
 	}
-	return func() { sem.Release(1) }, nil
 }
