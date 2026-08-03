@@ -47,6 +47,8 @@ services:
       - SW_LOG_FORMAT=json
       # Keep this equal to the `cpus` value below.
       - GOMAXPROCS=2
+      # Keep this at about 80% of `mem_limit` below.
+      - GOMEMLIMIT=2400MiB
       # SW_ENCRYPTION_KEY is auto-generated on first run if not set.
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy.
     volumes:
@@ -55,6 +57,8 @@ services:
     restart: unless-stopped
     cpus: "2.0"
     pids_limit: 512
+    mem_limit: 3g
+    mem_reservation: 512m
     ulimits:
       nofile:
         soft: 8192
@@ -90,21 +94,31 @@ Other knobs you may not need to touch:
 
 ## Resource Limits
 
-The compose file bounds what the container can consume. All three keys are plain Compose Spec service keys, so `docker compose up` applies them; the `deploy.resources` form you may have seen elsewhere only takes effect under Swarm.
+The compose file bounds what the container can consume. This file uses the service-level Compose Spec keys so `docker compose up` applies them. Modern Docker Compose also supports `deploy.resources` outside Swarm, but if both service-level keys and `deploy.resources` are declared, they must be consistent with each other.
 
 | Key | Value | What it bounds |
 |---|---|---|
 | `cpus` + `GOMAXPROCS` | `2.0` / `2` | CPU time |
 | `pids_limit` | `512` | Processes and OS threads |
 | `ulimits.nofile` | `8192` | Open file descriptors |
+| `mem_limit` + `GOMEMLIMIT` | `3g` / `2400MiB` | Memory |
+| `mem_reservation` | `512m` | Memory, soft limit under host contention |
 
-- **CPU.** Two cores matches `SW_RULE_ENGINE_ARTIST_WORKERS`, which defaults to 2 and is the widest deliberate concurrency in Stillwater. Reaching the limit throttles rather than fails: a rules pass or a scan takes longer, and nothing errors. Set `GOMAXPROCS` to the same number, because `cpus` on its own constrains the container through the kernel scheduler without informing the Go runtime, which then runs more work in parallel than the quota can absorb. If sweeps feel slow on a machine with cores to spare, raise both together (`4.0` and `4`).
+- **CPU.** Two cores matches `SW_RULE_ENGINE_ARTIST_WORKERS`, which defaults to 2 and is the widest deliberate concurrency in Stillwater. Reaching the limit throttles rather than fails: a rules pass or a scan takes longer, and nothing errors. Set `GOMAXPROCS` to the same number, because `cpus` on its own constrains the container through the kernel scheduler without informing the Go runtime, which then runs more work in parallel than the quota can absorb. If sweeps feel slow on a machine with cores to spare, you can raise `cpus`/`GOMAXPROCS` together (`4.0` and `4`) -- but raising `SW_RULE_ENGINE_ARTIST_WORKERS` also raises the memory peak documented under **Memory** below proportionally, so `mem_limit` and `GOMEMLIMIT` need to move with it too, not just the CPU pair.
 
-- **Processes.** `512` is a backstop against a runaway, not a working ceiling. Stillwater's steady-state thread count is far below it, so you should never approach this number in normal operation. Leave it high: unlike the other two limits, exhausting the process limit is fatal to the container rather than degrading.
+- **Processes.** `512` is a backstop against a runaway, not a working ceiling. Stillwater's steady-state thread count is far below it, so you should never approach this number in normal operation. Leave it high: like the memory limit, and unlike the CPU and file-descriptor limits, exhausting the process limit is fatal to the container rather than degrading.
 
 - **File descriptors.** `8192` sits well above any healthy peak. It is set generously on purpose, because a meaningful share of Stillwater's descriptors are sockets to Emby, Jellyfin, and Lidarr, and how many of those are open at once depends partly on how those services behave rather than only on what Stillwater is doing. Running out degrades: file opens are logged and skipped, outbound connections surface as a request error, and the filesystem watcher falls back to polling. If you tune it, do not go below `2048`.
 
-There is deliberately no memory limit. A container memory cap is enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. Combined with `restart: unless-stopped`, anything that reliably exceeds the cap would restart into the same condition and loop. If you need to bound memory on a shared box, prefer giving Stillwater its own host or a generous cap you do not expect to reach. If you do add one, set `GOMEMLIMIT` to about 80% of the intended `mem_limit` first, so the Go garbage collector gets a chance to reclaim before the kernel intervenes, and only then set `mem_limit` itself.
+- **Memory.** Two settings that work as a pair, and the order matters. `GOMEMLIMIT` is a soft ceiling the Go garbage collector honors: as the heap approaches it the collector works harder, so memory pressure shows up as slower passes -- for ordinary garbage. `mem_limit` is the hard ceiling, enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. `GOMEMLIMIT` is set to roughly 80% of `mem_limit` (2400/3072 = 78%) so the soft control has room to act before the hard one fires; the remaining margin covers the parts of the process the Go heap does not account for. If you change one, change both. For the image-decode workload described next, treat the two as a genuine pair rather than a soft-then-hard sequence: the bytes involved are live objects Stillwater is actively holding, not reclaimable garbage, so `GOMEMLIMIT` pressure cannot make them go away faster.
+
+    `3g` is derived from the corrected worst case Stillwater can actually reach, not picked as a round number. Every path that reads an image file caps the read at 25 MB, but the buffer briefly holds about twice that while it grows, so budget 50-60 MB per read -- a small term next to decode. Decoding is the larger cost, and larger than a simple pixel-count times 4 bytes suggests: the 100-megapixel cap bounds pixel count, but the Go image decoder picks the concrete type, and a 16-bit-per-channel source decodes to 8 bytes per pixel rather than 4, so the worst case is about 800 MB, not 400 MB, and that is a separate allocation from the bytes it was decoded from. The logo-trim path compounds this: it allocates a second full-size buffer for the cropped result (about 400 MB at 4 bytes per pixel) that is live at the same time as the ~800 MB decoded source, so one trim peaks around 1.2 GB. `SW_RULE_ENGINE_ARTIST_WORKERS` (default 2) bounds concurrency on the rules-pass path, so two trims can run at once: about 2.3 GiB, which is close to a measured peak of 2293 MiB for that exact scenario. Against the 3g ceiling that leaves roughly 779 MiB for SQLite, HTTP, the update stream, the library scanner, and goroutine stacks -- real headroom, but closer to 1.3x the peak than 3x. `ArtistWorkers` only bounds the rules-pass path: the logo-trim API endpoint, the image upload path, and placeholder generation reached from the scanner all decode on their own request goroutine with no separate concurrency limit, so a burst of concurrent requests is not capped by this setting. A dedicated limit for that path is tracked separately; `mem_limit` is the backstop for it today.
+
+    These are fixed per-image bounds, so the number does not grow with your library. A larger library makes a sweep take longer, not consume more memory. Raise `mem_limit` (and `GOMEMLIMIT` with it) only if you raise `SW_RULE_ENGINE_ARTIST_WORKERS`, since that is what widens the concurrent-decode term on the rules-pass path.
+
+    If the hard limit is ever reached, files already on disk are safe: Stillwater stages every NFO and image write in a temporary file and installs it with a single rename, so no file is left half-written. What is lost is the work in flight, meaning a rules pass in progress has to be re-run. Because `restart: unless-stopped` would restart into the same condition, the limit is set far enough above the real peak that reaching it indicates a genuine leak rather than ordinary work.
+
+- **Memory reservation.** `mem_reservation` is a soft memory limit enforced by the kernel under host memory contention. It does not reserve capacity or make placement decisions in plain Compose. When memory is plentiful the container may exceed it, up to `mem_limit`; when the host is under memory pressure, the kernel tries to push the container toward this figure. `512m` is a conservative chosen value below the transient peak above, not a measured steady-state figure.
 
 ## Bring it up
 
