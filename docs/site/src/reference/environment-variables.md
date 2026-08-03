@@ -89,6 +89,10 @@ The same configuration in YAML (still supported for existing deployments) uses k
 
 ## Behavior notes
 
+### `GOMAXPROCS` and `GOMEMLIMIT` are not Stillwater settings
+
+Both are standard Go runtime variables rather than `SW_*` configuration fields, so they do not appear in the table above and Stillwater neither reads nor validates them. They are set in the shipped container configuration because each is paired with a container resource limit: `GOMAXPROCS` with the CPU quota, `GOMEMLIMIT` with the memory limit. Change either one only together with its paired limit -- the [install with Docker Compose](../getting-started/install-docker-compose.md) page explains the pairing and the values.
+
 ### Base path normalization
 
 `/`, `/stillwater/`, and `/stillwater` all normalize at startup. Either no prefix or `/stillwater` -- not both. The "managed by environment" UI marker keeps the value source visible.
