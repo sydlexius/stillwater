@@ -382,8 +382,29 @@ func TestBackdropDuplicatesRemediate_NonAdminForbidden(t *testing.T) {
 // TestBackdropDuplicatesRemediate_Success asserts the happy path: an admin
 // POST against a pipeline that implements fanartDuplicateRepairer reaches
 // RemediateFanartDuplicates and the JSON body reports its result.
+//
+// NOT t.Parallel() (#2908): the remediate handler's post-remediation rescan
+// (handlers_backdrop_repair.go, handleBackdropDuplicatesRemediate) reaches
+// dupimages.Shared() -- the SAME process-wide singleton
+// TestBackdropDuplicatesPage_ColdCacheTriggersBackgroundScanAndShowsPendingNotice
+// above documents itself against. Unlike that test, this one does not call
+// Reset(); it depends on the shared cache's installed sources still pointing
+// at THIS test's router (r.libraryDupCount/r.platformDupCounts) at the moment
+// Refresh runs. dupImageCache's sync.Once only installs a router's sources
+// ONCE, at construction, and installing them again is a process-wide
+// replacement (dupimages.Cache.SetSources), not a per-router claim -- so any
+// OTHER parallel test that constructs a router (every dupImageCache()/
+// NewRouter() call does, router.go:480) re-points the singleton at ITS OWN
+// sources and races this one's rescan. A prior version of this test ran
+// t.Parallel() and, when a fanart-reorder test built such a router mid-scan,
+// this test's rescan read the WRONG router's (non-fanart-capable) sources,
+// which failed to establish a value at all -- so the post-remediation write
+// never landed and the assertion below observed the stale pre-remediation
+// count. Go's test runner fully drains every non-parallel top-level test
+// before resuming any parallel one, so declaring this test serial is a
+// deterministic fix, not a reordering of the same race: no other test's
+// router construction can execute concurrently with this one's Refresh call.
 func TestBackdropDuplicatesRemediate_Success(t *testing.T) {
-	t.Parallel()
 	pipeline := &fanartCapablePipeline{
 		stubPipeline: &stubPipeline{},
 		remediateFn: func(_ context.Context) (rule.FanartRepairResult, error) {
