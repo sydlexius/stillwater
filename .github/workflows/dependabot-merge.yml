@@ -25,15 +25,76 @@
 #      merge into main re-sweeps the remaining open Dependabot PRs, updates the
 #      stale ones, and re-arms. A batch therefore drains one at a time.
 #
-# KNOWN RISK, verify on the next batch: pushes made with GITHUB_TOKEN do not
-# start new workflow runs. The branch update below is such a push, so the
-# required checks may not re-run on the updated head, leaving the PR waiting on
-# checks that never arrive. The `push: main` sweep is what makes this
-# self-correcting rather than terminal -- it re-evaluates every open PR on each
-# merge. If the checks do turn out not to re-run, the fix is to replace the
-# update-branch call with an `@dependabot rebase` comment posted with a PAT
-# stored as a Dependabot secret; a bot-authored rebase comment is reportedly
-# ignored, which is why it is not the default here.
+# CONFIRMED AND FIXED (2026-08-03). The risk recorded here on 2026-07-27 --
+# "pushes made with GITHUB_TOKEN do not start new workflow runs, so the required
+# checks may not re-run on the updated head" -- came true, and it is TERMINAL,
+# not self-correcting. Measured across the seven open Dependabot PRs:
+#
+#   PR     head       check-runs  head commit author
+#   #2913  e4f4ff56   0           github-actions[bot]
+#   #2912  c382c8aa   0           github-actions[bot]
+#   #2911  384b5361   0           github-actions[bot]
+#   #2910  15b875fb   0           github-actions[bot]
+#   #2914  f0dfcad8   0           github-actions[bot]
+#   #2919  6a883ad9   0           github-actions[bot]
+#   #2915  aae4a882   49          dependabot[bot]   <-- never updated, so never broken
+#
+# The head commit's AUTHOR is the whole discriminator. Every PR whose head was
+# rewritten by the update-branch call below has ZERO check runs; the one PR that
+# still carries its original Dependabot-authored head has the full 49. With no
+# checks, the strict status-check policy can never be satisfied, mergeStateStatus
+# stays BLOCKED forever, and the PR is unmergeable by any amount of sweeping.
+#
+# The `push: main` sweep does NOT rescue this. The sweep re-evaluates the PR and
+# finds it no longer BEHIND (the update already landed), so it never touches the
+# head again -- and a head nobody touches is a head nothing re-checks. The sweep
+# only ever helped for staleness, never for missing checks.
+#
+# THE FIX: the update-branch call is made with a PAT (DEPENDABOT_UPDATE_TOKEN)
+# rather than GITHUB_TOKEN. Recursion prevention keys on the TOKEN that made the
+# push, not on the API endpoint, so the identical update-branch call authored by
+# a real user's token DOES start the required workflow runs. When the secret is
+# absent the step still updates the branch with GITHUB_TOKEN -- refusing would
+# leave the PR stale as well as uncheckable -- but it fails the job loudly, and
+# only in the case that actually bites (a PR was refreshed by the fallback path).
+# Setup steps are in the step's own comment below.
+#
+# OPTIONS CONSIDERED AND REJECTED
+#
+#   (a) Post `@dependabot rebase` with GITHUB_TOKEN. Rejected on two independent
+#       grounds. First, Dependabot refuses comment commands from a GitHub App
+#       identity even when that app has write access -- it replies "Sorry, only
+#       users with push access can use that command"
+#       (dependabot/dependabot-core#9147), and `github-actions[bot]` is exactly
+#       such an identity. The earlier note above said a bot-authored rebase
+#       comment is "reportedly ignored"; the real behaviour is a refusal, which
+#       is at least loud, but it is still a refusal. Second, even with a token
+#       Dependabot accepts, the rebase command has a long tail of reports where
+#       the job runs green and pushes nothing (dependabot-core #6886, #7018,
+#       #10118, #10310, #11803). It adds a dependency on a flaky remote command
+#       surface to solve a problem a token swap solves outright.
+#   (b) `workflow_dispatch` / `repository_dispatch` to re-run the checks. These
+#       are the two events genuinely exempt from recursion prevention, so the
+#       mechanism would work -- but the required set is 17 contexts spread over
+#       ci.yml, gate.yml, codeql.yml, security.yml and bruno-ci.yml, and most of
+#       those jobs read `github.event.pull_request`, which does not exist on a
+#       dispatch event. Making them dispatch-capable means rewriting five
+#       workflows to carry a second event shape, and every future required check
+#       inherits that obligation or silently re-wedges the pipeline. Enormous
+#       blast radius for a worse result.
+#   (c) Close and reopen the PR. Does not work: issue/PR events caused by
+#       GITHUB_TOKEN are suppressed by the same recursion prevention, so the
+#       reopen starts no runs either. It also drops the auto-merge arming and
+#       any review state, and Dependabot may treat the close as "don't reopen
+#       this update". Crude and ineffective.
+#   (d) Re-run the existing CI run via the API. Re-running reports its results
+#       against the run's ORIGINAL head SHA, which is not the SHA the branch
+#       protection is evaluating. It produces green checks on a commit nobody is
+#       waiting on.
+#
+# A PAT-authored update-branch (the chosen fix) is the smallest change that
+# actually restores the invariant: it keeps the proven mechanism and swaps only
+# the identity that performs the push.
 
 name: Merge approved Dependabot PRs
 
