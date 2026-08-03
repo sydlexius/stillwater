@@ -47,6 +47,8 @@ services:
       - SW_LOG_FORMAT=json
       # Keep this equal to the `cpus` value below.
       - GOMAXPROCS=2
+      # Keep this at about 80% of `mem_limit` below.
+      - GOMEMLIMIT=2400MiB
       # SW_ENCRYPTION_KEY is auto-generated on first run if not set.
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy.
     volumes:
@@ -55,6 +57,8 @@ services:
     restart: unless-stopped
     cpus: "2.0"
     pids_limit: 512
+    mem_limit: 3g
+    mem_reservation: 512m
     ulimits:
       nofile:
         soft: 8192
@@ -90,21 +94,31 @@ Other knobs you may not need to touch:
 
 ## Resource Limits
 
-The compose file bounds what the container can consume. All three keys are plain Compose Spec service keys, so `docker compose up` applies them; the `deploy.resources` form you may have seen elsewhere only takes effect under Swarm.
+The compose file bounds what the container can consume. These are all plain Compose Spec service keys, so `docker compose up` applies them; the `deploy.resources` form you may have seen elsewhere only takes effect under Swarm, where a limit that is silently ignored looks exactly like one that works.
 
 | Key | Value | What it bounds |
 |---|---|---|
 | `cpus` + `GOMAXPROCS` | `2.0` / `2` | CPU time |
 | `pids_limit` | `512` | Processes and OS threads |
 | `ulimits.nofile` | `8192` | Open file descriptors |
+| `mem_limit` + `GOMEMLIMIT` | `3g` / `2400MiB` | Memory |
+| `mem_reservation` | `512m` | Memory, for scheduling only |
 
 - **CPU.** Two cores matches `SW_RULE_ENGINE_ARTIST_WORKERS`, which defaults to 2 and is the widest deliberate concurrency in Stillwater. Reaching the limit throttles rather than fails: a rules pass or a scan takes longer, and nothing errors. Set `GOMAXPROCS` to the same number, because `cpus` on its own constrains the container through the kernel scheduler without informing the Go runtime, which then runs more work in parallel than the quota can absorb. If sweeps feel slow on a machine with cores to spare, raise both together (`4.0` and `4`).
 
-- **Processes.** `512` is a backstop against a runaway, not a working ceiling. Stillwater's steady-state thread count is far below it, so you should never approach this number in normal operation. Leave it high: unlike the other two limits, exhausting the process limit is fatal to the container rather than degrading.
+- **Processes.** `512` is a backstop against a runaway, not a working ceiling. Stillwater's steady-state thread count is far below it, so you should never approach this number in normal operation. Leave it high: like the memory limit, and unlike the CPU and file-descriptor limits, exhausting the process limit is fatal to the container rather than degrading.
 
 - **File descriptors.** `8192` sits well above any healthy peak. It is set generously on purpose, because a meaningful share of Stillwater's descriptors are sockets to Emby, Jellyfin, and Lidarr, and how many of those are open at once depends partly on how those services behave rather than only on what Stillwater is doing. Running out degrades: file opens are logged and skipped, outbound connections surface as a request error, and the filesystem watcher falls back to polling. If you tune it, do not go below `2048`.
 
-There is deliberately no memory limit. A container memory cap is enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. Combined with `restart: unless-stopped`, anything that reliably exceeds the cap would restart into the same condition and loop. If you need to bound memory on a shared box, prefer giving Stillwater its own host or a generous cap you do not expect to reach. If you do add one, set `GOMEMLIMIT` to about 80% of the intended `mem_limit` first, so the Go garbage collector gets a chance to reclaim before the kernel intervenes, and only then set `mem_limit` itself.
+- **Memory.** Two settings that work as a pair, and the order matters. `GOMEMLIMIT` is a soft ceiling the Go garbage collector honors: as the heap approaches it the collector works harder, so memory pressure shows up as slower passes. `mem_limit` is the hard ceiling, enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. `GOMEMLIMIT` is set to about 80% of `mem_limit` so the soft control has room to act before the hard one fires; the remaining 20% covers the parts of the process the Go heap does not account for. If you change one, change both.
+
+    `3g` is roughly three times the worst case Stillwater can actually reach, and the figure is derived rather than picked. Every path that reads an image file caps the read at 25 MB, but the buffer briefly holds about twice that while it grows, so budget 50-60 MB per read. Decoding is the larger cost: a decoded image is capped at 100 megapixels, which is about 400 MB in the worst case, and that is a separate allocation from the bytes it was decoded from. Both are limited by `SW_RULE_ENGINE_ARTIST_WORKERS`, which defaults to 2, so the transient peak stays under about 1 GB.
+
+    These are fixed per-image bounds, so the number does not grow with your library. A larger library makes a sweep take longer, not consume more memory. Raise `mem_limit` (and `GOMEMLIMIT` with it) only if you raise `SW_RULE_ENGINE_ARTIST_WORKERS`, since that is what widens the concurrent-decode term.
+
+    If the hard limit is ever reached, files already on disk are safe: Stillwater stages every NFO and image write in a temporary file and installs it with a single rename, so no file is left half-written. What is lost is the work in flight, meaning a rules pass in progress has to be re-run. Because `restart: unless-stopped` would restart into the same condition, the limit is set far enough above the real peak that reaching it indicates a genuine leak rather than ordinary work.
+
+- **Memory reservation.** `mem_reservation` reserves nothing and kills nothing. It is a soft floor a host uses when deciding how to pack containers, so a busy server does not treat Stillwater as free. `512m` reflects the steady-state working set rather than the transient peak above.
 
 ## Bring it up
 

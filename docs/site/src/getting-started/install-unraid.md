@@ -41,25 +41,36 @@ Optional knobs:
 
 ## Resource Limits
 
-The Community Applications template does not set resource limits. If Stillwater shares your server with other containers, you can bound what it consumes by switching the template to **Advanced View** and adding the following to **Extra Parameters**:
+The Community Applications template is maintained outside the Stillwater source tree and does not set resource limits, so the values shipped in the Docker Compose file do **not** reach an Unraid install. You have to enter them yourself; nothing applies them on your behalf.
+
+If Stillwater shares your server with other containers, switch the template to **Advanced View** and add the following to **Extra Parameters**:
 
 ```text
---cpus=2.0 --pids-limit=512 --ulimit nofile=8192:8192
+--cpus=2.0 --pids-limit=512 --ulimit nofile=8192:8192 --memory=3g --memory-reservation=512m
 ```
 
-Then add one variable alongside your other environment variables:
+Then add two variables alongside your other environment variables:
 
 - **`GOMAXPROCS`** = `2`
+- **`GOMEMLIMIT`** = `2400MiB`
+
+Unraid's template also exposes a **Memory Limit** field. If you prefer to use it, set it to `3g` and drop `--memory=3g` from Extra Parameters rather than setting both.
 
 Why these numbers:
 
 - **CPU (`--cpus=2.0` plus `GOMAXPROCS=2`).** Two cores matches `SW_RULE_ENGINE_ARTIST_WORKERS`, which defaults to 2 and is the widest deliberate concurrency in Stillwater. Reaching the limit throttles rather than fails: rules passes and scans take longer, nothing errors. `GOMAXPROCS` must match, because the CPU limit constrains the container through the kernel scheduler without informing the Go runtime, which would otherwise run more work in parallel than the quota can absorb. Raise both together if sweeps feel slow.
 
-- **Processes (`--pids-limit=512`).** A backstop against a runaway, not a working ceiling. Stillwater's normal thread count is far below this, and unlike the other two limits, exhausting it is fatal to the container rather than degrading, so leave it high.
+- **Processes (`--pids-limit=512`).** A backstop against a runaway, not a working ceiling. Stillwater's normal thread count is far below this, and like the memory limit, but unlike the CPU and file-descriptor limits, exhausting it is fatal to the container rather than degrading, so leave it high.
 
 - **File descriptors (`--ulimit nofile=8192:8192`).** Set well above any healthy peak on purpose. A meaningful share of Stillwater's descriptors are sockets to Emby, Jellyfin, and Lidarr, and how many are open at once depends partly on how those services behave rather than only on what Stillwater is doing. Exhaustion degrades: file opens are logged and skipped, outbound connections surface as a request error, and the filesystem watcher falls back to polling. Do not go below `2048`.
 
-Deliberately absent: a memory limit. Unraid exposes one, but a container memory cap is enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. With Unraid restarting the container afterwards, anything that reliably exceeds the cap restarts into the same condition and loops. On a memory-constrained server, prefer a cap you do not expect to reach over a snug one. If you set the field anyway, add a `GOMEMLIMIT` variable at about 80% of that figure first, so the Go garbage collector gets a chance to reclaim before the kernel intervenes, and only then fill in the memory limit itself.
+- **Memory (`--memory=3g` plus `GOMEMLIMIT=2400MiB`).** A pair, and both halves matter. `GOMEMLIMIT` is a soft ceiling the Go garbage collector honors, so approaching it shows up as slower passes. `--memory` is the hard ceiling, enforced by the kernel's OOM killer, which terminates the process outright with no chance to flush state or shut down cleanly. Setting `GOMEMLIMIT` at about 80% of the hard limit gives the soft control room to act first; the remaining 20% covers what the Go heap does not account for. Change one and you must change the other.
+
+    `3g` is about three times the worst case Stillwater reaches. Image reads are capped at 25 MB but transiently hold roughly twice that while the buffer grows, and a decoded image is capped at 100 megapixels (about 400 MB worst case) as a separate allocation. Both are bounded by `SW_RULE_ENGINE_ARTIST_WORKERS`, which defaults to 2, keeping the transient peak under about 1 GB. These are per-image bounds, so the figure does not grow with the size of your library -- only raising `SW_RULE_ENGINE_ARTIST_WORKERS` warrants raising it.
+
+    If the hard limit is reached, files already on disk are safe: every NFO and image write is staged in a temporary file and installed with a single rename, so nothing is left half-written. Work in flight is lost, so a rules pass in progress has to be re-run. Because Unraid restarts the container afterwards, the limit is set well above the real peak so that reaching it signals a genuine leak rather than ordinary work.
+
+- **Memory reservation (`--memory-reservation=512m`).** A soft floor used only when the host decides how to pack containers. It reserves nothing and kills nothing, and reflects the steady-state working set rather than the transient peak.
 
 ## Apply and first run
 
