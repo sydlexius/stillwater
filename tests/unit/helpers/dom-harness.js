@@ -21,6 +21,7 @@ export const MODULE_PATHS = {
   notifBadges:  join(REPO_ROOT, 'web/static/js/settings/notif-badges.js'),
   sectionRefresh: join(REPO_ROOT, 'web/static/js/settings/section-refresh.js'),
   heroPathSync: join(REPO_ROOT, 'web/static/js/artist-detail/hero-path-sync.js'),
+  nextSettings: join(REPO_ROOT, 'web/static/js/settings/next-settings.js'),
 };
 
 /**
