@@ -212,7 +212,7 @@ type ImageConfig struct {
 	// image.DefaultDecodeConcurrency so internal/config does not pull in the
 	// image-decoding package; TestDecodeConcurrencyDefaultMatchesImagePackage
 	// fails if the two ever drift.
-	DecodeConcurrency int `yaml:"decode_concurrency" toml:"decode_concurrency" env:"SW_IMAGE_DECODE_CONCURRENCY" default:"2" desc:"Number of image decodes Stillwater performs concurrently across the whole process. Default 2. Each concurrent decode can hold up to 400 MB, so raising this raises the container memory peak proportionally and any mem_limit / GOMEMLIMIT must be raised with it. Requests arriving while every slot is busy wait up to 30 seconds and are then rejected rather than queueing without bound. Must be a positive integer; non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting."`
+	DecodeConcurrency int `yaml:"decode_concurrency" toml:"decode_concurrency" env:"SW_IMAGE_DECODE_CONCURRENCY" default:"2" desc:"Number of image decodes Stillwater performs concurrently across the whole process. Default 2. Each concurrent decode can hold up to 400 MB, so raising this raises the container memory peak proportionally and any mem_limit / GOMEMLIMIT must be raised with it. Requests arriving while every slot is busy wait up to 30 seconds and are then rejected rather than queuing without bound. Must be a positive integer; non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting."`
 }
 
 // Default returns a Config with sensible defaults.
