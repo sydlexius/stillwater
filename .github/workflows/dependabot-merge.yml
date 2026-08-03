@@ -54,10 +54,10 @@
 # rather than GITHUB_TOKEN. Recursion prevention keys on the TOKEN that made the
 # push, not on the API endpoint, so the identical update-branch call authored by
 # a real user's token DOES start the required workflow runs. When the secret is
-# absent the step still updates the branch with GITHUB_TOKEN -- refusing would
-# leave the PR stale as well as uncheckable -- but it fails the job loudly, and
-# only in the case that actually bites (a PR was refreshed by the fallback path).
-# Setup steps are in the step's own comment below.
+# absent the workflow DECLINES to update at all and fails the job loudly -- an
+# un-updated PR stays BEHIND and heals on a later sweep, whereas a
+# GITHUB_TOKEN-updated one is wedged beyond recovery. Setup steps and the full
+# asymmetry argument are in the step's own comments below.
 #
 # OPTIONS CONSIDERED AND REJECTED
 #
@@ -209,6 +209,31 @@ jobs:
         if: steps.candidates.outputs.numbers != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The branch-update push MUST NOT be made with GITHUB_TOKEN: a push
+          # made with it starts no workflow runs, so the required checks never
+          # re-run on the new head and the PR is wedged permanently (see the
+          # CONFIRMED AND FIXED note at the top of this file).
+          #
+          # SETUP -- this is a repository ACTIONS secret, not a Dependabot
+          # secret. This workflow is triggered by `workflow_run` and `push`, so
+          # it runs in the base repository's context and reads the ordinary
+          # Actions secret store; the Dependabot store is only consulted for
+          # workflows triggered by a Dependabot-authored `pull_request`.
+          #
+          #   1. Create a fine-grained PAT scoped to THIS REPOSITORY ONLY, with
+          #      exactly two repository permissions:
+          #        - Contents: Read and write   (to push the merge commit)
+          #        - Pull requests: Read and write (update-branch is a PR API)
+          #      Nothing else. Do not use a classic `repo` token: its scope is
+          #      every repository the owner can reach.
+          #   2. gh secret set DEPENDABOT_UPDATE_TOKEN --repo <owner>/<repo>
+          #   3. Set a calendar reminder for its expiry. When it lapses the
+          #      fallback below fires and the job fails loudly, which is the
+          #      intended behaviour, not a regression.
+          #
+          # An empty value here is the unconfigured state and is handled
+          # explicitly below.
+          UPDATE_TOKEN: ${{ secrets.DEPENDABOT_UPDATE_TOKEN }}
           REPO: ${{ github.repository }}
           EVENT: ${{ github.event_name }}
           NUMBERS: ${{ steps.candidates.outputs.numbers }}
@@ -300,10 +325,37 @@ jobs:
             if [ "$STATE" = "BEHIND" ]; then
               # The strict status-check policy blocks a stale branch and
               # auto-merge will not refresh one, so merge main in explicitly.
-              if gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/update-branch" >/dev/null; then
-                echo "Requested branch update for PR #$PR_NUMBER."
+              #
+              # WHICH TOKEN MAKES THIS CALL IS THE ENTIRE FIX. Recursion
+              # prevention keys on the token that authored the push, so the
+              # same API call is either harmless or terminal depending on it.
+              if [ -n "${UPDATE_TOKEN:-}" ]; then
+                if GH_TOKEN="$UPDATE_TOKEN" \
+                     gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/update-branch" >/dev/null; then
+                  echo "Requested branch update for PR #$PR_NUMBER (PAT-authored; checks will re-run)."
+                else
+                  echo "::warning::Could not update the branch for PR #$PR_NUMBER; a later sweep will retry."
+                fi
               else
-                echo "::warning::Could not update the branch for PR #$PR_NUMBER; a later sweep will retry."
+                # UNCONFIGURED PATH -- DO NOT UPDATE. Falling back to
+                # GITHUB_TOKEN here looks like the helpful choice and is the
+                # worse one, because the two outcomes are not symmetric:
+                #
+                #   not updating  -> the PR stays BEHIND. Nothing is lost. Every
+                #                    later sweep retries it, so the moment the
+                #                    secret is configured it heals by itself.
+                #   updating with -> the PR is no longer BEHIND, so no sweep
+                #   GITHUB_TOKEN     ever touches it again -- and its new head
+                #                    has no checks and never will. Permanently
+                #                    wedged, and configuring the secret later
+                #                    does NOT recover it. This is exactly what
+                #                    happened to six PRs on 2026-08-03.
+                #
+                # So the update is gated on a positive check for the token, and
+                # the unconfigured case declines and fails the job loudly rather
+                # than doing the irreversible thing.
+                echo "::error::DEPENDABOT_UPDATE_TOKEN is not configured, so PR #$PR_NUMBER was NOT updated and stays BEHIND. Updating it with GITHUB_TOKEN would wedge it permanently (its required checks would never re-run), so this workflow declines to. Configure the secret (see the step's env comment); the next sweep will then update and merge it normally."
+                FAILED=1
               fi
             fi
 
