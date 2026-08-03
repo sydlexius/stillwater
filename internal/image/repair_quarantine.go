@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -282,7 +283,7 @@ func validateRepairEntry(entry RepairEntry) error {
 // serialization is load-bearing, not defensive -- see repairOpMu for what an
 // unguarded read-modify-write on the shared manifest destroys. Different
 // operations, and different artists, proceed in parallel.
-func QuarantineImage(dir, opID, srcPath string, entry RepairEntry) error {
+func QuarantineImage(ctx context.Context, dir, opID, srcPath string, entry RepairEntry) error {
 	opDir, err := repairOpDir(dir, opID)
 	if err != nil {
 		return err
@@ -310,7 +311,7 @@ func QuarantineImage(dir, opID, srcPath string, entry RepairEntry) error {
 	// that ever passes an untrusted path would read whatever it names, so a
 	// future exported entry point taking a user-supplied source must validate
 	// before calling here rather than inherit this assumption.
-	data, err := os.ReadFile(srcPath) //nolint:gosec // G304: caller-trusted path; see the trust-assumption comment above
+	data, err := readFileBounded(ctx, srcPath)
 	if err != nil {
 		return fmt.Errorf("reading %s for quarantine: %w", filepath.Base(srcPath), err)
 	}
@@ -515,7 +516,7 @@ func ListRepairOps(dir string) ([]string, error) {
 }
 
 // RepairEntryBytes returns the quarantined bytes for one manifest entry.
-func RepairEntryBytes(dir, opID string, entry RepairEntry) ([]byte, error) {
+func RepairEntryBytes(ctx context.Context, dir, opID string, entry RepairEntry) ([]byte, error) {
 	opDir, err := repairOpDir(dir, opID)
 	if err != nil {
 		return nil, err
@@ -524,7 +525,7 @@ func RepairEntryBytes(dir, opID string, entry RepairEntry) ([]byte, error) {
 	// The stored name is derived here or read from a manifest this package
 	// wrote; reduce it to a basename anyway so a hand-edited manifest cannot
 	// steer the read out of the op dir.
-	data, err := os.ReadFile(filepath.Join(opDir, filepath.Base(stored))) //nolint:gosec // opID validated, name reduced to basename
+	data, err := readFileBounded(ctx, filepath.Join(opDir, filepath.Base(stored)))
 	if err != nil {
 		return nil, fmt.Errorf("reading quarantined bytes for %s: %w", entry.FileName, err)
 	}

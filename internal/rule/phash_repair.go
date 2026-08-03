@@ -424,7 +424,7 @@ func (p *Pipeline) remediateArtistPHash(
 		// hash that no longer describes it. Re-hashing from the file is
 		// the only check that binds the decision to what is actually
 		// about to be deleted.
-		ok, reason := p.reverifySlotPHash(path, s.PHash)
+		ok, reason := p.reverifySlotPHash(ctx, path, s.PHash)
 		if !ok {
 			outcome.Action, outcome.Reason = "skipped", reason
 			p.logger.Warn("phash back-out skipping slot that failed re-verification",
@@ -476,7 +476,7 @@ func (p *Pipeline) remediateArtistPHash(
 			MatchedArtistName: s.MatchedArtistName,
 			Similarity:        s.Similarity,
 		}
-		if err := img.QuarantineImage(a.Path, opID, path, entry); err != nil {
+		if err := img.QuarantineImage(ctx, a.Path, opID, path, entry); err != nil {
 			return fmt.Errorf("quarantining slot %d for %s: %w", s.SlotIndex, a.Name, err)
 		}
 		result.Quarantined++
@@ -608,17 +608,16 @@ func (p *Pipeline) deleteRemovedSlotsOnPlatforms(ctx context.Context, a *artist.
 // other unknown, so admitting it here would let "we do not know what this is"
 // match "we do not know what that is" and manufacture a confident deletion out
 // of two absences. Unknown never matches unknown.
-func (p *Pipeline) reverifySlotPHash(path, flagged string) (bool, string) {
+func (p *Pipeline) reverifySlotPHash(ctx context.Context, path, flagged string) (bool, string) {
 	if flagged == "" {
 		return false, "flagged slot carries no stored phash; refusing to remove on an unknown hash"
 	}
-	f, err := os.Open(path) //nolint:gosec // path is a DiscoverFanart result under the artist dir
+	data, err := img.ReadImageFileBounded(ctx, path)
 	if err != nil {
 		return false, fmt.Sprintf("re-reading slot: %v", err)
 	}
-	defer f.Close() //nolint:errcheck // best-effort close after read
 
-	h, err := img.PerceptualHash(f)
+	h, err := img.PerceptualHash(bytes.NewReader(data))
 	if err != nil {
 		return false, fmt.Sprintf("re-hashing slot: %v", err)
 	}
@@ -668,13 +667,12 @@ func (p *Pipeline) reverifyMatchedCounterpart(ctx context.Context, primaryName, 
 	if matchedSlotIndex < 0 || matchedSlotIndex >= len(paths) {
 		return false, "matched counterpart slot no longer exists on disk; the collision cannot be re-confirmed"
 	}
-	f, err := os.Open(paths[matchedSlotIndex])
+	data, err := img.ReadImageFileBounded(ctx, paths[matchedSlotIndex])
 	if err != nil {
 		return false, fmt.Sprintf("re-reading matched counterpart: %v", err)
 	}
-	defer f.Close() //nolint:errcheck // best-effort close after read
 
-	got, err := img.PerceptualHash(f)
+	got, err := img.PerceptualHash(bytes.NewReader(data))
 	if err != nil {
 		return false, fmt.Sprintf("re-hashing matched counterpart: %v", err)
 	}
@@ -905,7 +903,7 @@ func (p *Pipeline) restoreOneQuarantined(
 	opID, primaryName string,
 	kodiNumbering bool,
 ) (restoreOutcome, error) {
-	data, err := img.RepairEntryBytes(a.Path, opID, *entry)
+	data, err := img.RepairEntryBytes(ctx, a.Path, opID, *entry)
 	if err != nil {
 		return restoreOutcomeUnset, err
 	}

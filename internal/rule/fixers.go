@@ -2438,12 +2438,11 @@ func resyncFanartFields(ctx context.Context, a *artist.Artist, names []string) {
 	if count == 0 {
 		return
 	}
-	f, openErr := os.Open(existing[0])
-	if openErr != nil {
+	data, readErr := img.ReadImageFileBounded(ctx, existing[0])
+	if readErr != nil {
 		return
 	}
-	defer f.Close() //nolint:errcheck // best-effort close after read
-	w, h, dimErr := img.GetDimensions(f)
+	w, h, dimErr := img.GetDimensions(bytes.NewReader(data))
 	if dimErr == nil {
 		a.FanartLowRes = img.IsLowResolution(w, h, "fanart")
 		// The dimensions were already being measured here and then thrown

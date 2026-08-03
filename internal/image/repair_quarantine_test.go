@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -36,7 +37,7 @@ func TestQuarantineImage_CopiesBytesLeavingSourceInPlace(t *testing.T) {
 		SlotIndex: 1, FileName: "fanart2.jpg", PHash: "abc123",
 		MatchedArtistID: "art-2", MatchedArtistName: "Artist Two", Similarity: 0.97,
 	}
-	if err := QuarantineImage(dir, "op-one", src, entry); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-one", src, entry); err != nil {
 		t.Fatalf("QuarantineImage: %v", err)
 	}
 
@@ -63,7 +64,7 @@ func TestQuarantineImage_CopiesBytesLeavingSourceInPlace(t *testing.T) {
 		t.Error("manifest entry must carry a quarantine timestamp")
 	}
 
-	data, err := RepairEntryBytes(dir, "op-one", got)
+	data, err := RepairEntryBytes(context.Background(), dir, "op-one", got)
 	if err != nil {
 		t.Fatalf("RepairEntryBytes: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestQuarantineImage_RejectsTraversingOpID(t *testing.T) {
 		strings.Repeat("a", maxRepairOpIDLen+1),
 	} {
 		t.Run(opID, func(t *testing.T) {
-			err := QuarantineImage(dir, opID, src, RepairEntry{FileName: "fanart.jpg"})
+			err := QuarantineImage(context.Background(), dir, opID, src, RepairEntry{FileName: "fanart.jpg"})
 			if err == nil {
 				t.Fatalf("op id %q must be rejected, got nil error", opID)
 			}
@@ -171,7 +172,7 @@ func TestQuarantineImage_RejectsAnEntryThatCannotDescribeARecoverableImage(t *te
 
 			before := treeSnapshot(t, root)
 
-			err := QuarantineImage(dir, "op-invalid", src, tc.entry)
+			err := QuarantineImage(context.Background(), dir, "op-invalid", src, tc.entry)
 			if err == nil {
 				t.Fatalf("entry %+v must be rejected, got nil error -- the caller would now delete its original", tc.entry)
 			}
@@ -240,10 +241,10 @@ func TestQuarantineImage_SameBasenameAcrossSlotsDoesNotClobber(t *testing.T) {
 	srcA := quarantineFixture(t, dir, "a.jpg", "slot-one-bytes")
 	srcB := quarantineFixture(t, dir, "b.jpg", "slot-two-bytes")
 
-	if err := QuarantineImage(dir, "op-two", srcA, RepairEntry{SlotIndex: 1, FileName: "fanart.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-two", srcA, RepairEntry{SlotIndex: 1, FileName: "fanart.jpg"}); err != nil {
 		t.Fatalf("quarantining slot 1: %v", err)
 	}
-	if err := QuarantineImage(dir, "op-two", srcB, RepairEntry{SlotIndex: 2, FileName: "fanart.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-two", srcB, RepairEntry{SlotIndex: 2, FileName: "fanart.jpg"}); err != nil {
 		t.Fatalf("quarantining slot 2: %v", err)
 	}
 
@@ -258,11 +259,11 @@ func TestQuarantineImage_SameBasenameAcrossSlotsDoesNotClobber(t *testing.T) {
 		t.Fatalf("entries sharing a basename must get distinct stored names, both = %q", m.Entries[0].StoredName)
 	}
 
-	first, err := RepairEntryBytes(dir, "op-two", m.Entries[0])
+	first, err := RepairEntryBytes(context.Background(), dir, "op-two", m.Entries[0])
 	if err != nil {
 		t.Fatalf("reading entry 0: %v", err)
 	}
-	second, err := RepairEntryBytes(dir, "op-two", m.Entries[1])
+	second, err := RepairEntryBytes(context.Background(), dir, "op-two", m.Entries[1])
 	if err != nil {
 		t.Fatalf("reading entry 1: %v", err)
 	}
@@ -278,10 +279,10 @@ func TestConsumeRepairEntry_DropsEntryAndCleansUpWhenEmptied(t *testing.T) {
 	dir := t.TempDir()
 	srcA := quarantineFixture(t, dir, "a.jpg", "aaa")
 	srcB := quarantineFixture(t, dir, "b.jpg", "bbb")
-	if err := QuarantineImage(dir, "op-three", srcA, RepairEntry{SlotIndex: 1, FileName: "a.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-three", srcA, RepairEntry{SlotIndex: 1, FileName: "a.jpg"}); err != nil {
 		t.Fatalf("quarantining a: %v", err)
 	}
-	if err := QuarantineImage(dir, "op-three", srcB, RepairEntry{SlotIndex: 2, FileName: "b.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-three", srcB, RepairEntry{SlotIndex: 2, FileName: "b.jpg"}); err != nil {
 		t.Fatalf("quarantining b: %v", err)
 	}
 
@@ -302,10 +303,10 @@ func TestConsumeRepairEntry_DropsEntryAndCleansUpWhenEmptied(t *testing.T) {
 		t.Fatalf("expected only the second entry to remain, got %+v", m.Entries)
 	}
 	// The consumed entry's bytes are gone; the survivor's are not.
-	if _, err := RepairEntryBytes(dir, "op-three", first); err == nil {
+	if _, err := RepairEntryBytes(context.Background(), dir, "op-three", first); err == nil {
 		t.Error("consumed entry's bytes must be removed")
 	}
-	if _, err := RepairEntryBytes(dir, "op-three", second); err != nil {
+	if _, err := RepairEntryBytes(context.Background(), dir, "op-three", second); err != nil {
 		t.Errorf("surviving entry's bytes must remain: %v", err)
 	}
 
@@ -338,11 +339,11 @@ func TestConsumeRepairEntry_DropsEntryAndCleansUpWhenEmptied(t *testing.T) {
 func TestQuarantineImage_VanishedSourceErrorsWithoutRecordingAnEntry(t *testing.T) {
 	dir := t.TempDir()
 	src := quarantineFixture(t, dir, "present.jpg", "bytes")
-	if err := QuarantineImage(dir, "op-four", src, RepairEntry{SlotIndex: 0, FileName: "present.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-four", src, RepairEntry{SlotIndex: 0, FileName: "present.jpg"}); err != nil {
 		t.Fatalf("seeding a real entry: %v", err)
 	}
 
-	err := QuarantineImage(dir, "op-four", filepath.Join(dir, "gone.jpg"), RepairEntry{SlotIndex: 1, FileName: "gone.jpg"})
+	err := QuarantineImage(context.Background(), dir, "op-four", filepath.Join(dir, "gone.jpg"), RepairEntry{SlotIndex: 1, FileName: "gone.jpg"})
 	if err == nil {
 		t.Fatal("quarantining a vanished source must error")
 	}
@@ -366,10 +367,10 @@ func TestConsumeRepairEntry_KeepsRepairRootWhileAnotherOpHoldsEntries(t *testing
 	dir := t.TempDir()
 	srcA := quarantineFixture(t, dir, "a.jpg", "aaa")
 	srcB := quarantineFixture(t, dir, "b.jpg", "bbb")
-	if err := QuarantineImage(dir, "op-alpha", srcA, RepairEntry{SlotIndex: 0, FileName: "a.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-alpha", srcA, RepairEntry{SlotIndex: 0, FileName: "a.jpg"}); err != nil {
 		t.Fatalf("quarantining into op-alpha: %v", err)
 	}
-	if err := QuarantineImage(dir, "op-beta", srcB, RepairEntry{SlotIndex: 0, FileName: "b.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-beta", srcB, RepairEntry{SlotIndex: 0, FileName: "b.jpg"}); err != nil {
 		t.Fatalf("quarantining into op-beta: %v", err)
 	}
 
@@ -392,7 +393,7 @@ func TestConsumeRepairEntry_KeepsRepairRootWhileAnotherOpHoldsEntries(t *testing
 	if err != nil || beta == nil || len(beta.Entries) != 1 {
 		t.Fatalf("op-beta must be intact, got %+v (err %v)", beta, err)
 	}
-	data, err := RepairEntryBytes(dir, "op-beta", beta.Entries[0])
+	data, err := RepairEntryBytes(context.Background(), dir, "op-beta", beta.Entries[0])
 	if err != nil || string(data) != "bbb" {
 		t.Errorf("op-beta's bytes must survive, got %q (err %v)", data, err)
 	}
@@ -441,7 +442,7 @@ func TestReadRepairManifest_MissingOpIsNotAnError(t *testing.T) {
 func TestListRepairOps_SkipsIdsThisPackageCouldNotHaveWritten(t *testing.T) {
 	dir := t.TempDir()
 	src := quarantineFixture(t, dir, "fanart.jpg", "bytes")
-	if err := QuarantineImage(dir, "op-legit", src, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-legit", src, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}); err != nil {
 		t.Fatalf("QuarantineImage: %v", err)
 	}
 	// A directory nothing in this package could have created.
@@ -468,7 +469,7 @@ func TestSetRepairEntryPlatformTargets_RecordsOntoTheMatchingEntry(t *testing.T)
 	dir := t.TempDir()
 	src := quarantineFixture(t, dir, "fanart2.jpg", "polluted-bytes")
 	entry := RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg", PHash: "abc123"}
-	if err := QuarantineImage(dir, "op-one", src, entry); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-one", src, entry); err != nil {
 		t.Fatalf("QuarantineImage: %v", err)
 	}
 
@@ -506,7 +507,7 @@ func TestSetRepairEntryPlatformTargets_EmptyTargetsIsANoOp(t *testing.T) {
 	dir := t.TempDir()
 	src := quarantineFixture(t, dir, "fanart.jpg", "bytes")
 	entry := RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}
-	if err := QuarantineImage(dir, "op-one", src, entry); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-one", src, entry); err != nil {
 		t.Fatalf("QuarantineImage: %v", err)
 	}
 	if err := SetRepairEntryPlatformTargets(dir, "op-one", entry, nil); err != nil {
@@ -525,7 +526,7 @@ func TestSetRepairEntryPlatformTargets_EmptyTargetsIsANoOp(t *testing.T) {
 func TestSetRepairEntryPlatformTargets_NoMatchingEntryIsNotAnError(t *testing.T) {
 	dir := t.TempDir()
 	src := quarantineFixture(t, dir, "fanart.jpg", "bytes")
-	if err := QuarantineImage(dir, "op-one", src, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-one", src, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}); err != nil {
 		t.Fatalf("QuarantineImage: %v", err)
 	}
 	// A slot the manifest does not carry.

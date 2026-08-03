@@ -240,7 +240,7 @@ func TestRemediatePHashMismatches_QuarantinesThenRemovesAndRenumbers(t *testing.
 	if m.Entries[0].MatchedArtistID != "art-b" {
 		t.Errorf("manifest must attribute the collision to art-b, got %q", m.Entries[0].MatchedArtistID)
 	}
-	data, err := image.RepairEntryBytes(dirA, res.OpID, m.Entries[0])
+	data, err := image.RepairEntryBytes(context.Background(), dirA, res.OpID, m.Entries[0])
 	if err != nil {
 		t.Fatalf("RepairEntryBytes: %v", err)
 	}
@@ -620,7 +620,7 @@ func TestRestorePHashQuarantine_AlreadyPresentIsAnIdempotentNoOp(t *testing.T) {
 	// Re-quarantine the same picture WITHOUT removing it, to reconstruct the
 	// interrupted state: bytes on disk AND an unconsumed manifest entry.
 	h1 := image.HashHex(pollutionHash(t, 1))
-	if err := image.QuarantineImage(dirA, res.OpID, filepath.Join(dirA, "fanart3.jpg"), image.RepairEntry{
+	if err := image.QuarantineImage(context.Background(), dirA, res.OpID, filepath.Join(dirA, "fanart3.jpg"), image.RepairEntry{
 		ArtistID: "art-a", ArtistName: "Artist A", ImageType: "fanart",
 		SlotIndex: 1, FileName: "fanart2.jpg", PHash: h1,
 	}); err != nil {
@@ -765,7 +765,7 @@ func TestRestorePHashQuarantine_AReEncodedCopyIsRetainedForReviewNotConsumed(t *
 		t.Fatalf("a perceptual-only match must RETAIN the entry -- the quarantine holds "+
 			"the only copy of the original bytes. manifest = %+v", m)
 	}
-	data, err := image.RepairEntryBytes(dirA, res.OpID, m.Entries[0])
+	data, err := image.RepairEntryBytes(context.Background(), dirA, res.OpID, m.Entries[0])
 	if err != nil {
 		t.Fatalf("the quarantined bytes must still be readable: %v", err)
 	}
@@ -787,7 +787,7 @@ func TestReverifySlotPHash_RefusesAnEmptyFlaggedHash(t *testing.T) {
 	p, db := newPHashRepairPipeline(t)
 	dirA := seedPollutedLibrary(t, db)
 
-	ok, reason := p.reverifySlotPHash(filepath.Join(dirA, "fanart.jpg"), "")
+	ok, reason := p.reverifySlotPHash(context.Background(), filepath.Join(dirA, "fanart.jpg"), "")
 	if ok {
 		t.Fatal("an empty flagged hash must never authorize a removal")
 	}
@@ -1644,7 +1644,7 @@ func TestRestorePHashQuarantine_APerceptualNearMissMustNotDestroyTheQuarantinedB
 		t.Fatalf("a resemblance must NOT consume the entry -- the removed artwork's only "+
 			"copy is the quarantine, and the original is already deleted. manifest = %+v", m)
 	}
-	data, err := image.RepairEntryBytes(dirA, res.OpID, m.Entries[0])
+	data, err := image.RepairEntryBytes(context.Background(), dirA, res.OpID, m.Entries[0])
 	if err != nil {
 		t.Fatalf("the quarantined bytes must still be readable: %v", err)
 	}
@@ -1872,7 +1872,7 @@ func TestRemediateAndRestore_ConcurrentSameArtistIsRaceFree(t *testing.T) {
 	}
 	if m != nil {
 		for _, e := range m.Entries {
-			if _, err := image.RepairEntryBytes(dirA, res.OpID, e); err != nil {
+			if _, err := image.RepairEntryBytes(context.Background(), dirA, res.OpID, e); err != nil {
 				t.Errorf("manifest references bytes that are gone: %v", err)
 			}
 		}
@@ -1990,7 +1990,7 @@ func TestRestorePHashQuarantine_WiresPlatformRestore(t *testing.T) {
 		ArtistID: "art-a", ArtistName: "Artist A", ImageType: "fanart",
 		SlotIndex: 0, FileName: "fanart.jpg", PHash: h,
 	}
-	if err := image.QuarantineImage(dirA, "op-restore", filepath.Join(dirA, "fanart.jpg"), entry); err != nil {
+	if err := image.QuarantineImage(context.Background(), dirA, "op-restore", filepath.Join(dirA, "fanart.jpg"), entry); err != nil {
 		t.Fatalf("QuarantineImage: %v", err)
 	}
 	if err := image.SetRepairEntryPlatformTargets(dirA, "op-restore",

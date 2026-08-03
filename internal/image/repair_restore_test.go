@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -232,7 +233,7 @@ func TestReadRepairManifest_NeverReportsAnExistingOpAsAbsent(t *testing.T) {
 	// Seed one entry, so from here on the op provably EXISTS for the whole
 	// run and every (nil, nil) the reader sees is a false absence.
 	seed := quarantineFixture(t, dir, "seed.jpg", "seed-bytes")
-	if err := QuarantineImage(dir, opID, seed, RepairEntry{SlotIndex: 0, FileName: "seed.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, opID, seed, RepairEntry{SlotIndex: 0, FileName: "seed.jpg"}); err != nil {
 		t.Fatalf("seeding the op: %v", err)
 	}
 
@@ -264,7 +265,7 @@ func TestReadRepairManifest_NeverReportsAnExistingOpAsAbsent(t *testing.T) {
 	// Mutator: append slots to the same op, rewriting the manifest each time.
 	for i := 1; i <= appends; i++ {
 		src := quarantineFixture(t, dir, fmt.Sprintf("fanart%d.jpg", i), fmt.Sprintf("bytes-%d", i))
-		if err := QuarantineImage(dir, opID, src, RepairEntry{SlotIndex: i, FileName: fmt.Sprintf("fanart%d.jpg", i)}); err != nil {
+		if err := QuarantineImage(context.Background(), dir, opID, src, RepairEntry{SlotIndex: i, FileName: fmt.Sprintf("fanart%d.jpg", i)}); err != nil {
 			close(done)
 			wg.Wait()
 			t.Fatalf("appending slot %d: %v", i, err)
@@ -311,7 +312,7 @@ func TestQuarantineImage_FailsWhenTheQuarantineDirCannotBeCreated(t *testing.T) 
 		t.Fatalf("seeding blocker: %v", err)
 	}
 
-	err := QuarantineImage(dir, "op-blocked", src, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"})
+	err := QuarantineImage(context.Background(), dir, "op-blocked", src, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"})
 	if err == nil {
 		t.Fatal("quarantine must fail when its directory cannot be created")
 	}
@@ -348,7 +349,7 @@ func TestQuarantineImage_ReportsAByteWriteItCannotPerform(t *testing.T) {
 	unwritableName := strings.Repeat("a", 300) + ".jpg"
 	src := quarantineFixture(t, dir, "short.jpg", "artwork-bytes")
 
-	err := QuarantineImage(dir, "op-long", src, RepairEntry{SlotIndex: 1, FileName: unwritableName})
+	err := QuarantineImage(context.Background(), dir, "op-long", src, RepairEntry{SlotIndex: 1, FileName: unwritableName})
 	if err == nil {
 		t.Fatal("quarantine must fail when the stored bytes cannot be written")
 	}
@@ -403,7 +404,7 @@ func TestQuarantineImage_ConcurrentSlotsOfOneOpAllSurvive(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start // maximize overlap on the manifest read-modify-write
-			errs[i] = QuarantineImage(dir, "op-concurrent", srcs[i], RepairEntry{
+			errs[i] = QuarantineImage(context.Background(), dir, "op-concurrent", srcs[i], RepairEntry{
 				SlotIndex: i, FileName: fmt.Sprintf("fanart%d.jpg", i),
 			})
 		}(i)
@@ -436,7 +437,7 @@ func TestQuarantineImage_ConcurrentSlotsOfOneOpAllSurvive(t *testing.T) {
 	// And every entry actually resolves to its own bytes.
 	seen := make(map[string]bool, slots)
 	for i := range m.Entries {
-		data, err := RepairEntryBytes(dir, "op-concurrent", m.Entries[i])
+		data, err := RepairEntryBytes(context.Background(), dir, "op-concurrent", m.Entries[i])
 		if err != nil {
 			t.Errorf("entry %+v: RepairEntryBytes: %v", m.Entries[i], err)
 			continue
@@ -461,7 +462,7 @@ func TestConsumeRepairEntry_ConcurrentWithQuarantineDoesNotDropTheAppend(t *test
 	keeper := quarantineFixture(t, dir, "fanart2.jpg", "keeper-bytes")
 
 	// Seed the entry that will be consumed.
-	if err := QuarantineImage(dir, "op-race", victim, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}); err != nil {
+	if err := QuarantineImage(context.Background(), dir, "op-race", victim, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"}); err != nil {
 		t.Fatalf("seeding: %v", err)
 	}
 
@@ -477,7 +478,7 @@ func TestConsumeRepairEntry_ConcurrentWithQuarantineDoesNotDropTheAppend(t *test
 	go func() {
 		defer wg.Done()
 		<-start
-		quarantineErr = QuarantineImage(dir, "op-race", keeper, RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"})
+		quarantineErr = QuarantineImage(context.Background(), dir, "op-race", keeper, RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"})
 	}()
 	close(start)
 	wg.Wait()
@@ -498,7 +499,7 @@ func TestConsumeRepairEntry_ConcurrentWithQuarantineDoesNotDropTheAppend(t *test
 	if m == nil || len(m.Entries) != 1 {
 		t.Fatalf("expected exactly the keeper's entry to remain, got %+v", m)
 	}
-	data, err := RepairEntryBytes(dir, "op-race", m.Entries[0])
+	data, err := RepairEntryBytes(context.Background(), dir, "op-race", m.Entries[0])
 	if err != nil {
 		t.Fatalf("RepairEntryBytes: %v", err)
 	}
@@ -533,7 +534,7 @@ func TestQuarantineImage_RefusesWhenTheExistingManifestIsUnreadable(t *testing.T
 		t.Fatalf("writing corrupt manifest: %v", err)
 	}
 
-	err := QuarantineImage(dir, "op-corrupt", src, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"})
+	err := QuarantineImage(context.Background(), dir, "op-corrupt", src, RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"})
 	if err == nil {
 		t.Fatal("quarantine must refuse to append to an unreadable manifest")
 	}
@@ -557,7 +558,7 @@ func TestRepairReadPaths_RejectAnInvalidOpID(t *testing.T) {
 	if _, err := ReadRepairManifest(dir, "../escape"); err == nil {
 		t.Error("ReadRepairManifest must reject a traversing op id")
 	}
-	if _, err := RepairEntryBytes(dir, "../escape", entry); err == nil {
+	if _, err := RepairEntryBytes(context.Background(), dir, "../escape", entry); err == nil {
 		t.Error("RepairEntryBytes must reject a traversing op id")
 	}
 	if err := ConsumeRepairEntry(dir, "../escape", entry); err == nil {
@@ -707,7 +708,7 @@ func TestRepairEntryBytes_DerivesTheStoredNameWhenAbsent(t *testing.T) {
 	dir := t.TempDir()
 	seedBareManifestOp(t, dir, "op-read", 1, "fanart2.jpg", "artwork-bytes")
 
-	data, err := RepairEntryBytes(dir, "op-read", RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"})
+	data, err := RepairEntryBytes(context.Background(), dir, "op-read", RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"})
 	if err != nil {
 		t.Fatalf("RepairEntryBytes must derive the stored name: %v", err)
 	}
