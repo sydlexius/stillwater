@@ -339,13 +339,16 @@
         }
       });
 
-      // The filter is transient view state (#2429): the input always starts
-      // empty on a fresh page load, nothing is restored from storage. A value
-      // left over from the old persisted behavior is proactively cleaned up
-      // (guarded try/catch: private mode / restrictive CSP may throw).
-      try { window.localStorage.removeItem(DEPRECATED_FILTER_STORAGE_KEY); } catch (err) { /* private mode */ }
       applyFilter(input.value);
     }
+
+    // The filter is transient view state (#2429): the input always starts
+    // empty on a fresh page load, nothing is restored from storage. A value
+    // left over from the old persisted behavior is proactively cleaned up
+    // (guarded try/catch: private mode / restrictive CSP may throw). This
+    // runs unconditionally -- even on a surface with no filter input -- so
+    // the deprecated key can't survive indefinitely on such a surface.
+    try { window.localStorage.removeItem(DEPRECATED_FILTER_STORAGE_KEY); } catch (err) { /* private mode */ }
 
     if (emptyEl) {
       var clearBtn = emptyEl.querySelector('[data-rail-clear]');

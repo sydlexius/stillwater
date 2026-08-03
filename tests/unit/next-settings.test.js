@@ -46,12 +46,68 @@ describe('next-settings filter: transient view state only (#2429)', () => {
     await flush(); // let the deferred DOMContentLoaded-driven init run
     const input = window.document.getElementById('settings-search-input');
 
-    input.value = 'theme';
-    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    // Spy on setItem before typing: asserting only the final key value is
+    // weaker than it looks (an implementation that writes then removes the
+    // query would still pass). Assert the call count directly. jsdom's
+    // Storage getters/setters are proxy-backed, so the spy must patch the
+    // shared prototype method, not the instance property (an instance
+    // override is bypassed by the internal storage proxy).
+    const storageProto = Object.getPrototypeOf(window.localStorage);
+    const originalSetItem = storageProto.setItem;
+    let setItemCalls = 0;
+    storageProto.setItem = function (...args) {
+      setItemCalls += 1;
+      return originalSetItem.apply(this, args);
+    };
 
+    try {
+      input.value = 'theme';
+      input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    } finally {
+      storageProto.setItem = originalSetItem;
+    }
+
+    assert.equal(
+      setItemCalls, 0,
+      'typing into the filter must never call localStorage.setItem',
+    );
     assert.equal(
       window.localStorage.getItem('sw-settings-filter'), null,
       'typing into the filter must never persist the query',
+    );
+  });
+
+  it('removes a pre-seeded deprecated key on init even when there is no filter input', async () => {
+    // Fixture deliberately omits #settings-search-input to cover the F1 gap:
+    // init must remove the deprecated key unconditionally, not only when the
+    // filter input exists on the page.
+    const HTML_NO_INPUT = `<!doctype html><html><body>
+<div id="sw-next-settings-pane">
+  <section data-rail-section id="section-general"></section>
+</div>
+<div class="sw-next-settings-rail">
+  <div class="sw-next-rail-group" data-rail-group>
+    <a class="sw-next-rail-item" data-rail-link="general" data-label="General" data-keywords="theme|appearance" href="#section-general">
+      General
+      <span data-rail-hit hidden></span>
+    </a>
+  </div>
+</div>
+<div data-rail-empty data-empty-template='No settings match "{query}".' hidden>
+  <span data-rail-empty-text></span>
+  <button data-rail-clear>Clear</button>
+</div>
+</body></html>`;
+
+    const { window } = createDom({ html: HTML_NO_INPUT });
+    window.localStorage.setItem('sw-settings-filter', 'stale-query');
+
+    window.eval(readFileSync(NEXT_SETTINGS_PATH, 'utf-8'));
+    await flush(); // let the deferred DOMContentLoaded-driven init run
+
+    assert.equal(
+      window.localStorage.getItem('sw-settings-filter'), null,
+      'the deprecated stored key must be removed on init even without a filter input on the page',
     );
   });
 
