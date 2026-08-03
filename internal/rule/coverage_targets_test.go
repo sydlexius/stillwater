@@ -728,3 +728,52 @@ func TestIsSharedFilesystem_DBErrorFailsClosed(t *testing.T) {
 		t.Error("second call (cached fail-closed) did not return true")
 	}
 }
+
+// TestBackdropSequencingFixer_Fix_ResyncsGeometry is the guard for the finding
+// CodeRabbit caught on this PR (#2713).
+//
+// The fixer renumbers, which moves a DIFFERENT file into slot 0 and zeroes the
+// stored geometry through the invalidator -- and then returned without
+// re-reading the artist. Pipeline.FixViolation persists this struct
+// afterwards, and both persistNormalized and ReconcileImages rebuild the row
+// from it, so a surviving non-zero value wins the upsert and the invalidation
+// is silently undone.
+//
+// Its two sibling renumbering fixers (ImageDuplicateFixer and the pHash
+// back-out) both resync; this one was the odd one out. An audit of all six
+// RenumberFanart call sites confirmed it was the only remaining gap.
+//
+// The fixture makes slot 0 and the file promoted into it DIFFERENT sizes, so a
+// fixer that skipped the resync cannot coincidentally land on the right
+// numbers.
+func TestBackdropSequencingFixer_Fix_ResyncsGeometry(t *testing.T) {
+	dir := t.TempDir()
+	// A gap at index 1, so fanart3.jpg is renumbered into fanart2.jpg. The
+	// PRIMARY keeps its own size, which is what slot 0's geometry must read.
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1600, 900)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 640, 480)
+
+	f := NewBackdropSequencingFixer(nil, nonSharedFSCheck(), &fakeHashRecorder{}, testLogger())
+	a := &artist.Artist{
+		Name: "Resync Geometry", Path: dir, LibraryID: "lib-test",
+		// What the struct carried before the renumber: a different file.
+		FanartWidth:  3840,
+		FanartHeight: 2160,
+	}
+
+	res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleBackdropSequencing})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	// Precondition: the renumber must actually have happened, or the geometry
+	// assertion below is testing nothing.
+	if !res.Fixed {
+		t.Fatalf("precondition: Fixed = false, so no renumber occurred. Message: %s", res.Message)
+	}
+
+	if a.FanartWidth != 1600 || a.FanartHeight != 900 {
+		t.Errorf("after a renumber the artist carries %dx%d; it must describe the file now in slot 0 "+
+			"(1600x900), otherwise Pipeline.FixViolation persists the old size over the invalidated row",
+			a.FanartWidth, a.FanartHeight)
+	}
+}

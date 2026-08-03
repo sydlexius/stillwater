@@ -2023,6 +2023,25 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 			"primary", primaryName,
 			"count", len(discovered))
 
+		// Re-read the artist's fanart fields from disk before returning.
+		// RenumberFanart zeroed the STORED geometry through the invalidator,
+		// but Pipeline.FixViolation persists THIS struct afterwards, and both
+		// persistNormalized and ReconcileImages rebuild the row from it -- so
+		// a surviving non-zero value wins the upsert and the invalidation is
+		// undone (#2713). The renumber just moved a different file into slot
+		// 0, which is exactly when its dimensions are wrong.
+		//
+		// Mirrors ImageDuplicateFixer.Fix, the sibling renumbering fixer, down
+		// to the resolver-error handling: on a resolver failure, warn and leave
+		// the fields as-is rather than substitute a guessed count against the
+		// wrong naming convention (#2635).
+		if names, namesErr := resolveFanartNames(ctx, f.platformService); namesErr != nil {
+			f.logger.Warn("resolving fanart naming convention after renumber; artist fields left as-is",
+				slog.String("artist_id", a.ID), slog.String("error", namesErr.Error()))
+		} else {
+			resyncFanartFields(a, names)
+		}
+
 		return &FixResult{
 			RuleID:  RuleBackdropSequencing,
 			Fixed:   true,

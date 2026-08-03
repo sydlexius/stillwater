@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -597,8 +598,36 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 	// The defers cover the rollback paths too: those are best-effort, so a
 	// failed reorder cannot promise the original slot-to-file mapping was
 	// restored.
-	defer r.invalidateFanartHashes(req.Context(), a.ID)
-	defer r.invalidateFanartGeometry(req.Context(), a.ID)
+	// Invalidation must happen on EVERY exit, including the rollback paths --
+	// those are best-effort, so a failed reorder cannot promise the original
+	// slot-to-file mapping was restored, and the stored per-slot facts are
+	// suspect either way.
+	//
+	// It cannot be a bare defer, though. A defer runs after the response has
+	// been written, so a failure detected there can only reach the log and
+	// never the operator, and handleFanartSlotDelete already surfaces its
+	// equivalent renumber failure as a warning. So: one idempotent closure,
+	// called INLINE on the success path (where its result can still be put in
+	// the response) and by the defer on every early return (where the log is
+	// genuinely all that is left). The sync.Once keeps a double call harmless.
+	var (
+		invalidateOnce    sync.Once
+		invalidateWarning string
+	)
+	invalidateSlotFacts := func() {
+		invalidateOnce.Do(func() {
+			if hashErr := r.invalidateFanartHashes(req.Context(), a.ID); hashErr != nil {
+				invalidateWarning = "stored image fingerprints could not be refreshed; duplicate detection may be inaccurate until the next scan"
+			}
+			if geomErr := r.invalidateFanartGeometry(req.Context(), a.ID); geomErr != nil {
+				if invalidateWarning != "" {
+					invalidateWarning += "; "
+				}
+				invalidateWarning += "stored image dimensions could not be refreshed; image rules may judge the previous ordering until the next scan"
+			}
+		})
+	}
+	defer invalidateSlotFacts()
 
 	// Phase 1: stage all files to temporary names to avoid collisions.
 	type stagedFile struct {
@@ -711,6 +740,14 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 	defer cancel()
 	syncWarnings := r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
 
+	// Run it here rather than leaving it to the defer, so a failure is still
+	// reportable. The files have already moved; this is the last point at
+	// which the operator can be told the derived data did not keep up.
+	invalidateSlotFacts()
+	if invalidateWarning != "" {
+		syncWarnings = append(syncWarnings, invalidateWarning)
+	}
+
 	r.logger.Info("reordered fanart",
 		slog.String("artist_id", artistID),
 		slog.Int("count", len(paths)))
@@ -736,12 +773,14 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 // has already committed, and failing the request would not undo it. It is logged
 // at Error, not Debug, because a stale hash is what lets the exact-duplicate
 // fixer delete a distinct image -- if this is failing, that is worth seeing.
-func (r *Router) invalidateFanartHashes(ctx context.Context, artistID string) {
+func (r *Router) invalidateFanartHashes(ctx context.Context, artistID string) error {
 	if err := r.artistService.InvalidateImageHashes(ctx, artistID, "fanart"); err != nil {
 		r.logger.Error("invalidating fanart hashes after reordering files",
 			slog.String("artist_id", artistID),
 			slog.String("error", err.Error()))
+		return err
 	}
+	return nil
 }
 
 // invalidateFanartGeometry zeroes the artist's stored fanart dimensions, so the
@@ -753,12 +792,14 @@ func (r *Router) invalidateFanartHashes(ctx context.Context, artistID string) {
 // the renames have already committed and failing the request would not undo
 // them. Error level, not Debug, because a stale dimension is what makes the
 // image rules flag artwork that is fine (#2713).
-func (r *Router) invalidateFanartGeometry(ctx context.Context, artistID string) {
+func (r *Router) invalidateFanartGeometry(ctx context.Context, artistID string) error {
 	if err := r.artistService.InvalidateImageGeometry(ctx, artistID, "fanart"); err != nil {
 		r.logger.Error("invalidating fanart geometry after reordering files",
 			slog.String("artist_id", artistID),
 			slog.String("error", err.Error()))
+		return err
 	}
+	return nil
 }
 
 // isValidPermutation checks that order is a valid permutation of [0, len(order)).
