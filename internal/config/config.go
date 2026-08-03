@@ -31,6 +31,7 @@ type Config struct {
 	Logging    LoggingConfig    `yaml:"logging" toml:"logging"`
 	ACME       ACMEConfig       `yaml:"acme" toml:"acme"`
 	RuleEngine RuleEngineConfig `yaml:"rule_engine" toml:"rule_engine"`
+	Image      ImageConfig      `yaml:"image" toml:"image"`
 
 	// DeprecatedYAMLFormat is set to true when Load parsed the config file as
 	// YAML. YAML config is deprecated in favor of TOML (issue #1274); the
@@ -193,6 +194,27 @@ type RuleEngineConfig struct {
 	ArtistWorkers int `yaml:"artist_workers" toml:"artist_workers" env:"SW_RULE_ENGINE_ARTIST_WORKERS" default:"2" desc:"Number of artists the rule engine processes concurrently during a Run Rules pass. Default 2. Set to 1 for the original strictly-sequential walk; higher values overlap more per-artist provider fetches. The shared per-provider rate limiter still caps total request throughput. Must be a positive integer; non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting, so the Settings control is shown read-only."`
 }
 
+// ImageConfig holds image-processing execution settings.
+type ImageConfig struct {
+	// DecodeConcurrency bounds how many full-pixel image decodes may run
+	// concurrently across the WHOLE process (#2928). Process memory peak is
+	// per-decode cost times concurrency; internal/image bounds the first
+	// factor at a 400 MB decoded footprint, and this bounds the second.
+	// Before it, the request-reachable decode paths (logo trim, image
+	// upload/save, placeholder generation) had no bound at all, so the peak
+	// tracked inbound request volume. SW_RULE_ENGINE_ARTIST_WORKERS bounds
+	// only the rules-pass path and is not a substitute.
+	//
+	// The default of 2 matches ArtistWorkers above, so the rules pass is not
+	// throttled below its own fan-out by this bound. Raising it raises the
+	// memory peak proportionally -- mem_limit and GOMEMLIMIT must move with
+	// it. Kept as a literal rather than referencing
+	// image.DefaultDecodeConcurrency so internal/config does not pull in the
+	// image-decoding package; TestDecodeConcurrencyDefaultMatchesImagePackage
+	// fails if the two ever drift.
+	DecodeConcurrency int `yaml:"decode_concurrency" toml:"decode_concurrency" env:"SW_IMAGE_DECODE_CONCURRENCY" default:"2" desc:"Number of image decodes Stillwater performs concurrently across the whole process. Default 2. Each concurrent decode can hold up to 400 MB, so raising this raises the container memory peak proportionally and any mem_limit / GOMEMLIMIT must be raised with it. Requests arriving while every slot is busy wait up to 30 seconds and are then rejected rather than queueing without bound. Must be a positive integer; non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting."`
+}
+
 // Default returns a Config with sensible defaults.
 func Default() *Config {
 	return &Config{
@@ -233,6 +255,9 @@ func Default() *Config {
 		},
 		RuleEngine: RuleEngineConfig{
 			ArtistWorkers: 2,
+		},
+		Image: ImageConfig{
+			DecodeConcurrency: 2,
 		},
 	}
 }
@@ -580,6 +605,8 @@ func (c *Config) loadFromEnv() error {
 		// Rule engine (lenient int; non-positive values are silently ignored,
 		// matching the backup retention/interval knobs).
 		{Key: "SW_RULE_ENGINE_ARTIST_WORKERS", Apply: setIntPositive(&c.RuleEngine.ArtistWorkers)},
+		// Image processing (same lenient-int convention).
+		{Key: "SW_IMAGE_DECODE_CONCURRENCY", Apply: setIntPositive(&c.Image.DecodeConcurrency)},
 		// TLS -- SW_TLS_CERT_FILE/KEY_FILE/PORT have behavior today; the
 		// remaining entries keep the env-var surface stable so future
 		// milestones only add behavior, not new env knobs.
@@ -842,6 +869,15 @@ func (c *Config) validate() error {
 	// config sources honoring the same "non-positive is ignored" contract.
 	if c.RuleEngine.ArtistWorkers <= 0 {
 		c.RuleEngine.ArtistWorkers = Default().RuleEngine.ArtistWorkers
+	}
+
+	// Same normalization for the decode-concurrency bound, and for the same
+	// reason: a file-backed 0 would otherwise reach SetMaxConcurrentDecodes.
+	// (It normalizes non-positive values itself, but relying on that would
+	// leave cfg.Image.DecodeConcurrency reporting a value the process is not
+	// actually running with.)
+	if c.Image.DecodeConcurrency <= 0 {
+		c.Image.DecodeConcurrency = Default().Image.DecodeConcurrency
 	}
 
 	// Normalize and validate the UI channel flag. An empty value (file-backed
