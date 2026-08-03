@@ -31,10 +31,13 @@ services:
       # Soft heap ceiling for the Go garbage collector, deliberately set BELOW
       # the mem_limit further down. mem_limit alone gives the runtime no signal:
       # the process allocates happily until the cgroup SIGKILLs it. GOMEMLIMIT
-      # makes the collector work harder as the heap approaches this number, so
-      # memory pressure surfaces as slower passes instead of a sudden kill. Keep
-      # it at roughly 80% of mem_limit; the remaining headroom covers the parts
-      # of the process the Go heap does not account for. Move both together.
+      # makes the collector work harder as the heap approaches this number, but
+      # for the decode/trim path below that buys less than it sounds: the
+      # bytes involved are live objects the fixer is actively holding, not
+      # reclaimable garbage, so GC pressure cannot make them go away faster.
+      # Keep it at roughly 80% of mem_limit (2400/3072 = 78%); the remaining
+      # headroom covers the parts of the process the Go heap does not account
+      # for. Move both together.
       - GOMEMLIMIT=2400MiB
       # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
@@ -58,7 +61,10 @@ services:
     # deliberate fan-out in the application, so the quota sits at what Stillwater
     # actually asks for rather than at an arbitrary round number. Hitting it
     # throttles: a rules pass takes longer and nothing errors. Raise it (and
-    # GOMAXPROCS above, together) if sweeps feel slow on a larger box.
+    # GOMAXPROCS above, together) if sweeps feel slow on a larger box -- but
+    # raising ArtistWorkers also raises the memory peak documented at mem_limit
+    # below proportionally, so mem_limit and GOMEMLIMIT must move with it, not
+    # just GOMAXPROCS.
     cpus: "2.0"
 
     # Runaway-thread backstop, not a working ceiling. Goroutines are multiplexed
@@ -83,32 +89,56 @@ services:
         soft: 8192
         hard: 8192
 
-    # Hard memory ceiling. Unlike the three limits above this one does NOT
-    # degrade: it is enforced by the cgroup OOM killer, which SIGKILLs the
-    # process with no deferred cleanup and no flush. It is set here only
-    # because GOMEMLIMIT above gives the garbage collector a chance to react
-    # first, so the hard ceiling is a backstop rather than the primary control.
+    # Hard memory ceiling. Of the four limits in this block, only cpus and
+    # nofile degrade when reached (a slower pass, a logged-and-skipped file
+    # open). mem_limit and pids_limit do NOT degrade: mem_limit is enforced by
+    # the cgroup OOM killer, which SIGKILLs the process with no deferred
+    # cleanup and no flush, and pids_limit's own comment above notes the same
+    # for `fatal error: newosproc`. GOMEMLIMIT does not rescue this workload
+    # either: the bytes counted below are objects the fixer is actively
+    # holding (a decoded source image and, on the trim path, a second
+    # full-size destination buffer), not garbage the collector can reclaim by
+    # working harder. So GOMEMLIMIT and mem_limit are both live risks here,
+    # not a soft-then-hard pair where the soft one absorbs the pressure.
     #
-    # 3 GB is roughly three times the worst-case transient this application can
-    # reach, derived rather than rounded to a familiar number:
+    # 3 GB is derived from the corrected worst-case transient below, not
+    # rounded to a familiar number:
     #
     #   * Every path that reads an image file into memory is bounded at
     #     MaxDecodeBytes (25 MB). io.ReadAll grows its buffer by repeated
     #     append, and append keeps the old backing array alive while copying
     #     into the new one, so the realized peak per read is about twice the
-    #     bound -- roughly 50-60 MB, not 25 MB.
-    #   * A decoded image is a separate and much larger allocation than the
-    #     bytes it came from. Decoding is capped at 100 megapixels, which at
-    #     4 bytes per pixel is about 400 MB for a maximally compressed
-    #     worst-case file. This, not the read bound, is the dominant term.
-    #   * Both are bounded by SW_RULE_ENGINE_ARTIST_WORKERS (default 2), so at
-    #     most two of those run at once: under about 1 GB of transient peak.
+    #     bound -- roughly 50-60 MB, not 25 MB. This term is small next to
+    #     decode and is not the dominant cost.
+    #   * Decoding is capped at 100 megapixels, but the decoder chooses the
+    #     concrete image type, and a 16-bit-per-channel source decodes to
+    #     *image.NRGBA64/RGBA64 at 8 bytes per pixel, not the 4 B/px an
+    #     8-bit image would use. Worst case is therefore ~800 MB, not 400 MB.
+    #   * TrimWithMargin and TrimAlpha take the non-SubImage branch on most
+    #     real crops and allocate a SECOND full-size buffer (image.NewRGBA +
+    #     draw.Copy) at 4 B/px, ~400 MB. That buffer is live at the same time
+    #     as the ~800 MB decoded source, so a single trim is ~1.2 GB, not a
+    #     sequence of smaller allocations.
+    #   * SW_RULE_ENGINE_ARTIST_WORKERS (default 2) bounds concurrency on the
+    #     rules-pass / fixer path only: two workers at ~1.2 GB each puts the
+    #     rules-pass peak at ~2.3 GiB, matching a measured 2293 MiB HeapAlloc
+    #     for two concurrent trims. Against the 3 GiB ceiling that leaves
+    #     ~779 MiB for SQLite, HTTP, the SSE hub, the scanner, and goroutine
+    #     stacks -- real margin, but closer to 1.3x than 3x.
+    #   * ArtistWorkers does NOT bound every decoder in the process. The
+    #     request-reachable paths -- POST .../images/logo/trim, the image
+    #     upload/save path, and GeneratePlaceholder (reached from the scanner
+    #     and image-registry repair) -- decode on their own goroutine with no
+    #     listener limit or semaphore; N concurrent requests is N concurrent
+    #     decodes. A real bound on those is tracked as a separate issue and is
+    #     out of scope here (this PR is config + docs, not runtime behavior).
+    #     mem_limit is the only backstop against that path today.
     #
     # These are fixed per-image bounds, so the figure does NOT scale with how
     # many artists are in the library -- a larger library makes a sweep longer,
     # not more memory-hungry. Raise mem_limit (and GOMEMLIMIT with it) only if
-    # SW_RULE_ENGINE_ARTIST_WORKERS is raised, which is what widens the
-    # concurrent-decode term.
+    # SW_RULE_ENGINE_ARTIST_WORKERS is raised (see the cpus comment above),
+    # which is what widens the concurrent-decode term on the bounded path.
     #
     # Reaching this limit is a hard kill, so consider what survives one:
     # WriteFileAtomic stages every NFO and image write in a temp file and
@@ -122,8 +152,9 @@ services:
 
     # Soft floor advertised to the scheduler for placement decisions. It
     # reserves nothing and kills nothing; it exists so a host packing several
-    # containers does not treat Stillwater as free. Set at the steady-state
-    # working set rather than the peak, because the peak above is transient.
+    # containers does not treat Stillwater as free. 512m is not a measured
+    # steady-state figure -- it is a conservative scheduler placement hint,
+    # chosen well below the transient peak above, not a derived floor.
     mem_reservation: 512m
 
 volumes:
