@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -1145,7 +1146,7 @@ func (r *Router) applyIdentity(ctx context.Context, a *artist.Artist, w identity
 		a.DiscogsID = w.DiscogsID
 	}
 
-	refreshSkipped, err = r.autoLinkAndRefresh(ctx, a)
+	refreshSkipped, err = r.autoLinkAndRefresh(ctx, a, false, "")
 	if err != nil {
 		return refreshSkipped, err
 	}
@@ -1195,7 +1196,20 @@ func (r *Router) recordIdentityHistory(ctx context.Context, a *artist.Artist, ol
 // still persisted, but the automated fetch/merge that normally follows is the
 // exact "automated change" the artist lock promises to skip (see
 // applyBulkAction and Pipeline.runForArtistFiltered for the same rule).
-func (r *Router) autoLinkAndRefresh(ctx context.Context, a *artist.Artist) (refreshSkipped bool, err error) {
+//
+// reidentify tells this function the caller is performing a RE-IDENTIFY -- the
+// operator declaring the artist to be a different entity -- rather than
+// linking one provider ID onto an artist whose identity is not in question.
+// Only then are the repudiated entity's secondary provider IDs discarded
+// (#2894). It is a parameter rather than something inferred here because the
+// Deezer / Discogs / TheAudioDB link handlers share this primitive and must
+// keep preserving those IDs; the distinction is the CALLER's intent and only
+// the caller knows it.
+// keepDiscogsID is the Discogs ID the current request supplied, if any. It is
+// preserved through the discard because it is the operator's own choice for the
+// NEW identity, not a leftover from the repudiated one. Ignored unless
+// reidentify is true.
+func (r *Router) autoLinkAndRefresh(ctx context.Context, a *artist.Artist, reidentify bool, keepDiscogsID string) (refreshSkipped bool, err error) {
 	if err := r.artistService.Update(ctx, a); err != nil {
 		r.logger.Warn("bulk-identify: update failed", "artist", a.Name, "error", err)
 		return false, err
@@ -1203,9 +1217,29 @@ func (r *Router) autoLinkAndRefresh(ctx context.Context, a *artist.Artist) (refr
 	if a.Locked {
 		// Info, not Warn: the lock contract working, not a fault. The provider
 		// ID above genuinely changed, so the event below still publishes.
+		//
+		// The secondary-ID discard is deliberately NOT reached on this branch:
+		// the refresh that would re-derive those IDs never runs for a locked
+		// artist, so clearing them here would destroy them permanently (AudioDB
+		// especially -- see discardRepudiatedProviderIDs on why it does not
+		// reliably come back).
 		r.logger.Info("link: refresh skipped, artist is locked", "artist_id", a.ID)
 		refreshSkipped = true
 	} else if r.orchestrator != nil {
+		// Discard immediately before the fetch, never as part of the Update
+		// above. The clear lives only in memory until executeRefreshCtx's own
+		// successful write persists it, so a failed refresh below leaves the
+		// artist with every ID it started with rather than stranding it with
+		// fewer IDs and the same wrong metadata.
+		if reidentify {
+			previousAudioDBID := a.AudioDBID
+			if discardRepudiatedProviderIDs(a, keepDiscogsID) {
+				r.logger.Info("re-identify: discarding the repudiated entity's provider IDs",
+					slog.String("artist_id", a.ID),
+					slog.String("previous_audiodb_id", previousAudioDBID),
+				)
+			}
+		}
 		if _, err := r.executeRefreshCtx(ctx, a); err != nil {
 			r.logger.Warn("bulk-identify: refresh failed after linking",
 				"artist", a.Name, "error", err)

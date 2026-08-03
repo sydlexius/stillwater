@@ -1309,8 +1309,11 @@ func TestHandleReIdentifyWizardAccept_LockedArtistInformsOperator(t *testing.T) 
 	}
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	if !slices.Contains(sess.LockedNoRefresh, a.Name) {
-		t.Errorf("session LockedNoRefresh = %v, want it to name %q; the completion summary is the operator's last chance to learn which artists still need a refresh", sess.LockedNoRefresh, a.Name)
+	// Matched on ID, not name: entries are keyed by artist ID so two locked
+	// artists sharing a display name stay distinct (#2894).
+	if !slices.ContainsFunc(sess.LockedNoRefresh,
+		func(e LockedNoRefreshArtist) bool { return e.ID == a.ID && e.Name == a.Name }) {
+		t.Errorf("session LockedNoRefresh = %v, want it to name %q (id %s); the completion summary is the operator's last chance to learn which artists still need a refresh", sess.LockedNoRefresh, a.Name, a.ID)
 	}
 }
 
@@ -1414,7 +1417,7 @@ func TestWizardLockedNoRefreshNoticeRenders(t *testing.T) {
 			Total:           2,
 			ArtistID:        "a2",
 			ArtistName:      "Next Artist",
-			LockedNoRefresh: []string{lockedName},
+			LockedNoRefresh: []templates.LockedNoRefreshArtist{{ID: "locked-1", Name: lockedName}},
 		}
 		var buf bytes.Buffer
 		if err := templates.ReIdentifyWizardStep(data).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
@@ -1440,7 +1443,7 @@ func TestWizardLockedNoRefreshNoticeRenders(t *testing.T) {
 			SessionID:       "sid-test",
 			Total:           2,
 			Accepted:        1,
-			LockedNoRefresh: []string{lockedName},
+			LockedNoRefresh: []templates.LockedNoRefreshArtist{{ID: "locked-1", Name: lockedName}},
 		}
 		var buf bytes.Buffer
 		if err := templates.ReIdentifyWizardDone(data).Render(testI18nCtx(t, context.Background()), &buf); err != nil {

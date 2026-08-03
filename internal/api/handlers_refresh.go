@@ -214,6 +214,78 @@ func collectFailedProviderDisplayNames(statuses []provider.ProviderSearchStatus)
 	return failed
 }
 
+// discardRepudiatedProviderIDs clears the provider IDs that belonged to the
+// entity a re-identify just repudiated, keeping any the current request
+// supplied. It reports whether anything actually changed.
+//
+// WHY THIS EXISTS (#2894). A surviving stale secondary ID does not sit there
+// inert: it STEERS the follow-up refresh. FetchProviderResult prefers a
+// provider-specific ID over the MBID, so the refresh re-fetches the artist the
+// operator just declared wrong. AudioDB is the #2 origin provider and Discogs
+// outranks MusicBrainz for biography, and MusicBrainz is LAST in the priority
+// order for origin, biography and years_active alike -- so the repudiated
+// entity's values win before the corrected identity is ever consulted. The
+// result is #2894 exactly: identity corrected, refresh visibly succeeds, wrong
+// metadata survives, nothing on screen says so.
+//
+// WHY THIS NARROWS #2714/#2725, deliberately. Those issues reasoned about
+// repairing a bad MusicBrainz ID on an artist that was otherwise correctly
+// identified, and there "a wrong MBID does not make a correct Discogs ID
+// wrong" holds. A re-identify is a different claim: the operator is declaring
+// the whole ENTITY wrong, and these IDs were harvested from that entity's own
+// provider responses in the first place (EnrichProviderIDs). They are not
+// independent facts about a correct artist; they are more of the same wrong
+// answer. Every NON-re-identify path keeps the old preserve-everything
+// behavior -- callers gate on their own re-identify intent before calling.
+//
+// WHY IT IS A FUNCTION rather than inline in the handler. There are two
+// re-identify entry points -- the single-artist disambiguation
+// (handleRefreshLink) and the bulk wizard (handleReIdentifyWizardAccept) --
+// and the first cut of this fix lived inside handleRefreshLink, which scoped
+// it by HANDLER when the correct scope is INTENT. The wizard therefore kept
+// every stale ID and reproduced #2894 in full on the common bulk path. One
+// implementation, both callers.
+//
+// CALL IT ONLY IMMEDIATELY BEFORE A REFRESH THAT WILL RUN. The clear is only
+// safe when the refresh that re-derives the IDs actually follows it. Callers
+// must have already passed their artist-level lock gate, because a locked
+// artist skips the refresh entirely and would keep the clear permanently. See
+// the recovery asymmetry below for why that is not survivable.
+//
+// RECOVERY IS NOT SYMMETRIC, and this is the part a future reader must not
+// re-derive from scratch:
+//
+//   - Discogs, Deezer, Wikidata, AllMusic and Spotify are re-derived from URLs
+//     in the corrected MusicBrainz response by EnrichProviderIDs, so for those
+//     this is a round trip.
+//   - AudioDB is NOT. EnrichProviderIDs has no AudioDB branch. It comes back
+//     only opportunistically -- when a refresh queries AudioDB for a field it
+//     does not populate, applyField falls through to the ID merge and
+//     modeFillEmpty accepts it. Until that happens the ID stays cleared and
+//     AudioDB is resolved by MBID instead.
+//
+// That asymmetry is accepted rather than worked around: a wrong AudioDB ID is
+// precisely what poisons origin, so clearing it is the point, and when it does
+// return it returns resolved from the CORRECTED identity. An ID the operator
+// can re-link beats metadata that is silently wrong.
+//
+// Per-field locks are untouched: this is provider-ID plumbing, not a field
+// merge, and ApplyMetadata still reads a.LockedFields on every call.
+func discardRepudiatedProviderIDs(a *artist.Artist, keepDiscogsID string) bool {
+	changed := a.AudioDBID != "" || a.WikidataID != "" || a.DeezerID != "" || a.SpotifyID != ""
+	a.AudioDBID = ""
+	a.WikidataID = ""
+	a.DeezerID = ""
+	a.SpotifyID = ""
+	// Only when this request did not supply a replacement: a Discogs pick is
+	// the operator's own choice for THIS identity and must survive.
+	if keepDiscogsID == "" {
+		changed = changed || a.DiscogsID != ""
+		a.DiscogsID = ""
+	}
+	return changed
+}
+
 // handleRefreshLink stores the selected provider ID from disambiguation,
 // then continues with the full metadata refresh.
 // POST /api/v1/artists/{id}/refresh/link
@@ -254,12 +326,20 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	//  2. a replacement identity is actually present in THIS request -- either
 	//     a MusicBrainz ID or a Discogs ID.
 	//
-	// Condition 2 is what makes the artist un-strandable. The old code cleared
+	// Condition 2 is what stops the MBID being stranded. The old code cleared
 	// in handleReidentify, before any candidate existed, so an abandoned flow
-	// left nothing behind. Here the discard and the replacement are applied to
-	// the same in-memory artist and committed by the single Update below, so
+	// left nothing behind. Here the MBID discard and its replacement are applied
+	// to the same in-memory artist and committed by the single Update below, so
 	// the row never observes an identity-less state -- and if the operator
 	// walks away, no write happened at all.
+	//
+	// SCOPE: this argument covers the MusicBrainz IDENTITY only. It does NOT
+	// extend to the secondary provider IDs, which a re-identify also discards
+	// (#2894) but which are deliberately NOT touched in this write. They are
+	// cleared further down, after the lock gate and immediately before the
+	// refresh, precisely because this reasoning does not protect them: an
+	// artist can survive with the right MBID and still lose an AudioDB ID that
+	// nothing re-derives. See discardRepudiatedProviderIDs and its call site.
 	//
 	// Anything unrecognized (a missing field, "1", "TRUE", an empty body, a
 	// body with neither ID) falls through to the non-destructive path and
@@ -300,68 +380,6 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	}
 	if body.DiscogsID != "" {
 		a.DiscogsID = body.DiscogsID
-	}
-
-	// Discard every provider ID the repudiated entity supplied (#2894).
-	//
-	// This NARROWS the per-provider rule #2714/#2725 established, and the
-	// narrowing is deliberate. Those issues reasoned about repairing a bad
-	// MusicBrainz ID on an artist that was otherwise correctly identified, and
-	// there "a wrong MBID does not make a correct Discogs ID wrong" is true.
-	// A re-identify is a different claim: the operator is declaring the whole
-	// ENTITY wrong. The secondary IDs were harvested from that entity's own
-	// provider responses in the first place (EnrichProviderIDs), so they are
-	// not independent facts about a correct artist -- they are more of the same
-	// wrong answer. Every non-re-identify path keeps the old behavior, gated by
-	// the same positive allow-list above.
-	//
-	// The harm from keeping them is not that they sit there unused: they STEER
-	// the follow-up refresh. FetchProviderResult prefers a provider-specific ID
-	// over the MBID, so a surviving stale ID makes the refresh re-fetch the
-	// repudiated artist. AudioDB is the #2 origin provider and Discogs supplies
-	// biography, both ahead of MusicBrainz in the first-match-wins priority
-	// order, so the wrong values win before the corrected identity is ever
-	// consulted. That is #2894: identity corrected, refresh succeeds, wrong
-	// metadata survives, nothing on screen says so.
-	//
-	// Recovery is NOT symmetric, and the difference matters to anyone reading
-	// this later:
-	//
-	//   - Discogs, Deezer, Wikidata, AllMusic and Spotify are re-derived from
-	//     URLs in the corrected MusicBrainz response by EnrichProviderIDs, so
-	//     for those this is a round trip.
-	//   - AudioDB is NOT. EnrichProviderIDs has no AudioDB branch. It returns
-	//     only opportunistically, when a refresh queries AudioDB for a field it
-	//     does not populate and applyField falls through to the ID merge. Until
-	//     then the ID stays cleared and AudioDB is resolved by MBID instead.
-	//
-	// That asymmetry is accepted rather than worked around: a wrong AudioDB ID
-	// is precisely what poisons origin, so clearing it is the point, and when
-	// it does come back it comes back resolved from the CORRECTED identity. An
-	// ID the operator can re-link is a better outcome than metadata that is
-	// silently wrong.
-	//
-	// Per-field locks are untouched by any of this. This is provider-ID
-	// plumbing, not a field merge; ApplyMetadata still reads a.LockedFields off
-	// the artist on every call, and a locked ARTIST never reaches the refresh
-	// at all (the gate below).
-	if reidentify {
-		// Logged before the clear, and audiodb specifically because it is the
-		// one that does not reliably come back.
-		r.logger.Info("re-identify: discarding the repudiated entity's provider IDs",
-			slog.String("artist_id", a.ID),
-			slog.String("previous_audiodb_id", a.AudioDBID),
-			slog.String("previous_deezer_id", a.DeezerID),
-		)
-		a.AudioDBID = ""
-		a.WikidataID = ""
-		a.DeezerID = ""
-		a.SpotifyID = ""
-		// Only when this request did not supply a replacement: a Discogs pick
-		// sets a.DiscogsID just above and that value must survive.
-		if body.DiscogsID == "" {
-			a.DiscogsID = ""
-		}
 	}
 
 	if err := r.artistService.Update(req.Context(), a); err != nil {
@@ -414,6 +432,38 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		r.InvalidateHealthCache()
 		r.respondRefreshSkippedLocked(w, req, a)
 		return
+	}
+
+	// Discard the repudiated entity's provider IDs, then refresh (#2894).
+	//
+	// ORDER IS THE WHOLE SAFETY ARGUMENT, so do not move this above the Update
+	// or the lock gate. An earlier cut cleared the IDs in the SAME write that
+	// stored the new identity, which committed the clear before either the lock
+	// gate or the refresh had run, and produced two ways to destroy operator
+	// data with no undo:
+	//
+	//   - a LOCKED artist returned at the gate above, so the refresh that
+	//     re-derives the IDs never ran and the clear was permanent; and
+	//   - a FAILED refresh (provider outage, rate limit, network) returned 500
+	//     with the clear already committed, leaving the operator FEWER provider
+	//     IDs and the SAME wrong metadata -- strictly worse than the bug.
+	//
+	// Clearing here makes both impossible by construction rather than by
+	// remembering to unwind: the lock gate has already returned, and the clear
+	// is only ever persisted by executeRefresh's own successful write. If the
+	// refresh fails below, nothing was saved and the artist keeps every ID it
+	// had. That is why the in-memory mutation and the fetch are adjacent, and
+	// why there is no separate Update call between them.
+	previousAudioDBID, previousDeezerID := a.AudioDBID, a.DeezerID
+	if reidentify && discardRepudiatedProviderIDs(a, body.DiscogsID) {
+		// Read from the snapshot above: by this point the fields are empty, so
+		// logging them directly would record nothing. AudioDB is named first
+		// because it is the one that does not reliably come back.
+		r.logger.Info("re-identify: discarding the repudiated entity's provider IDs",
+			slog.String("artist_id", a.ID),
+			slog.String("previous_audiodb_id", previousAudioDBID),
+			slog.String("previous_deezer_id", previousDeezerID),
+		)
 	}
 
 	// Now run the full refresh with the linked MBID

@@ -172,7 +172,7 @@ func (r *Router) handleAudioDBLink(w http.ResponseWriter, req *http.Request) {
 
 	a.AudioDBID = audiodbID
 
-	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a)
+	refreshSkipped, err := r.autoLinkAndRefresh(req.Context(), a, false, "")
 	if err != nil {
 		r.logger.Error("audiodb link: updating artist", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to link TheAudioDB ID")
