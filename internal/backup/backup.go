@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 // backupPattern matches backup filenames: stillwater-YYYYMMDD-HHMMSS.db, plus
@@ -48,6 +50,13 @@ var osMkdirTemp = os.MkdirTemp
 // tests to simulate a failure. The staging file lives inside backupDir, so the
 // link is always same-filesystem.
 var osLink = os.Link
+
+// syncBackupDir fsyncs the backup directory after the snapshot is linked into
+// it, so the new directory entry survives a crash (issue #2673). It delegates
+// to filesystem.SyncDir, which owns the platform handling (no-op on Windows,
+// benign on filesystems that do not implement directory fsync). Overridable in
+// tests to simulate a sync failure, following the osLink/osChmod pattern above.
+var syncBackupDir = filesystem.SyncDir
 
 // BackupInfo describes a backup file.
 type BackupInfo struct {
@@ -148,6 +157,23 @@ func (s *Service) Backup(ctx context.Context) (*BackupInfo, error) {
 
 	if err := osChmod(dest, 0o600); err != nil {
 		return nil, fmt.Errorf("restricting backup permissions: %w", err)
+	}
+
+	// Make the new directory entry durable (issue #2673). SQLite's VACUUM INTO
+	// syncs the snapshot's DATA, and os.Link created a name for it -- but the
+	// directory holding that name is not itself on stable storage until it is
+	// fsynced. A crash in that window loses the entry, and the failure mode is
+	// the worst in the set: Backup already reported success, so the operator
+	// only discovers the missing file at restore time, when they need it.
+	//
+	// A sync failure does NOT fail the backup. The snapshot is complete and
+	// present; the shortfall is crash-durability of its directory entry, and
+	// returning an error here would discard a good backup over it.
+	if err := syncBackupDir(s.backupDir); err != nil {
+		s.logger.Warn("backup directory sync failed; backup is in place but its directory entry is not yet durable",
+			slog.String("filename", filename),
+			slog.String("dir", s.backupDir),
+			slog.String("error", err.Error()))
 	}
 
 	info, err := os.Stat(dest)
