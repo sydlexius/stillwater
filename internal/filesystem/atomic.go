@@ -92,8 +92,16 @@ func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 	TraceFSWrite("WriteFileAtomic", target, 0)
 	log := fsLog().With(slog.String("op", "WriteFileAtomic"), slog.String("path", target))
 
-	// Ensure parent directory exists
+	// Ensure parent directory exists.
+	//
+	// Record the deepest ancestor of dir that ALREADY exists before the
+	// MkdirAll. Every level below it is about to be created by us, and each
+	// newly-created directory is itself an entry in its own parent that a crash
+	// can lose (issue #2673). Syncing only dir would make the file's entry
+	// durable inside a directory whose own entry is not, so the crash still
+	// loses the file. The post-rename sync below walks this chain.
 	dir := filepath.Dir(target)
+	syncFloor := deepestExistingDir(dir)
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301: 0755 is appropriate for application data directories
 		log.Error("atomic write failed creating parent directory; target untouched",
 			slog.String("step", "mkdir_parent"),
@@ -168,9 +176,10 @@ func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 	}
 
 	// The rename is done and the target now names the new inode. Make that
-	// directory entry durable (issue #2673). A failure is recorded, not
-	// returned: see syncTargetDir.
-	syncTargetDir("WriteFileAtomic", dir, target)
+	// directory entry durable (issue #2673), along with the entry of every
+	// directory MkdirAll had to create to get here -- child first, then upward.
+	// A failure is recorded, not returned: see syncTargetDir.
+	syncCreatedChain("WriteFileAtomic", dir, syncFloor, target)
 
 	log.Debug("atomic write promoted temp onto target",
 		slog.String("step", "rename_promote"),

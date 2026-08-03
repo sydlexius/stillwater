@@ -116,48 +116,142 @@ func TestWriteFileAtomic_TempStagingFailureRecordsUntouchedTarget(t *testing.T) 
 
 // TestWriteFileAtomic_SyncsParentDirectoryAfterRename pins #2673. It wires the
 // real machinery -- the directory-handle sync hook the production path calls --
-// and asserts both THAT it fired and WHICH directory it was given, because a
-// dir-fsync of the wrong directory is exactly as useless as none at all.
+// and asserts both THAT it fired and WHICH directories it was given, IN WHAT
+// ORDER, because a dir-fsync of the wrong directory is exactly as useless as
+// none at all, and a parent synced before its child is very nearly as useless:
+// the child's contents may still be in the page cache when the parent's entry
+// lands, so the crash still loses the file.
+//
+// The table covers the three shapes that differ in how much MkdirAll created,
+// which is exactly what determines how far up the chain must be synced.
 //
 // The precondition assertion (no sync observed before the write) is what stops
 // this passing vacuously against a stale observation from an earlier call.
 func TestWriteFileAtomic_SyncsParentDirectoryAfterRename(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "nested", "banner.jpg")
-	wantDir := filepath.Dir(target)
+	for _, tc := range []struct {
+		name string
+		// rel is the target path relative to the fresh temp root.
+		rel string
+		// wantRel is the expected sequence of synced directories, relative to
+		// the temp root; "." is the root itself.
+		wantRel []string
+	}{
+		{
+			// Nothing created: the plain-rename shape. One fsync, of the
+			// directory that already existed and holds the new entry.
+			name:    "existing directory syncs only itself",
+			rel:     "banner.jpg",
+			wantRel: []string{"."},
+		},
+		{
+			// MkdirAll created one level. The file's entry lives in "nested",
+			// and "nested"'s own entry lives in the root -- both are new-ish and
+			// both must land, child first.
+			name:    "one created level syncs child then its parent",
+			rel:     "nested/banner.jpg",
+			wantRel: []string{"nested", "."},
+		},
+		{
+			// MkdirAll created three levels. Syncing only one level up would
+			// leave "a"'s entry in the root non-durable, and a crash losing "a"
+			// loses everything beneath it -- the whole file included.
+			name:    "several created levels sync the whole created chain",
+			rel:     "a/b/c/banner.jpg",
+			wantRel: []string{"a/b/c", "a/b", "a", "."},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			target := filepath.Join(root, filepath.FromSlash(tc.rel))
+
+			want := make([]string, len(tc.wantRel))
+			for i, r := range tc.wantRel {
+				want[i] = filepath.Join(root, filepath.FromSlash(r))
+			}
+
+			var syncedPaths []string
+			origOpen := openDir
+			origSync := syncDirHandle
+			t.Cleanup(func() { openDir = origOpen; syncDirHandle = origSync })
+			openDir = func(name string) (*os.File, error) {
+				syncedPaths = append(syncedPaths, name)
+				return origOpen(name)
+			}
+
+			if len(syncedPaths) != 0 {
+				t.Fatalf("precondition: expected no directory opens before the write, got %v", syncedPaths)
+			}
+
+			if err := WriteFileAtomic(target, []byte("payload"), 0o644); err != nil {
+				t.Fatalf("WriteFileAtomic: %v", err)
+			}
+
+			if len(syncedPaths) != len(want) {
+				t.Fatalf("directory syncs = %v, want exactly %v", syncedPaths, want)
+			}
+			for i := range want {
+				if syncedPaths[i] != want[i] {
+					t.Errorf("synced directory[%d] = %q, want %q (full sequence %v, want %v; child must precede parent)",
+						i, syncedPaths[i], want[i], syncedPaths, want)
+				}
+			}
+
+			// The write itself must still have landed. A durability step that ate
+			// the write would satisfy the assertions above.
+			got, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatalf("reading target: %v", err)
+			}
+			if !bytes.Equal(got, []byte("payload")) {
+				t.Errorf("target content = %q, want %q", got, "payload")
+			}
+		})
+	}
+}
+
+// TestWriteFileAtomic_DoesNotSyncAboveTheDirectoriesItCreated is the bound on
+// the chain walk. Without it, "sync the parents too" could be satisfied by a
+// version that climbs all the way to the filesystem root fsyncing directories
+// this write never touched -- correct-looking, and a per-write cost that grows
+// with how deep the library happens to be mounted.
+//
+// The floor is the deepest directory that already existed. Its own entry in ITS
+// parent was made durable by whoever created it; this write did not create it
+// and does not owe it an fsync.
+func TestWriteFileAtomic_DoesNotSyncAboveTheDirectoriesItCreated(t *testing.T) {
+	root := t.TempDir()
+	// Pre-create the floor so MkdirAll only has to make "new" beneath it.
+	floor := filepath.Join(root, "existing")
+	if err := os.MkdirAll(floor, 0o755); err != nil {
+		t.Fatalf("seeding floor directory: %v", err)
+	}
+	target := filepath.Join(floor, "new", "banner.jpg")
 
 	var syncedPaths []string
 	origOpen := openDir
-	origSync := syncDirHandle
-	t.Cleanup(func() { openDir = origOpen; syncDirHandle = origSync })
+	t.Cleanup(func() { openDir = origOpen })
 	openDir = func(name string) (*os.File, error) {
 		syncedPaths = append(syncedPaths, name)
 		return origOpen(name)
-	}
-
-	if len(syncedPaths) != 0 {
-		t.Fatalf("precondition: expected no directory opens before the write, got %v", syncedPaths)
 	}
 
 	if err := WriteFileAtomic(target, []byte("payload"), 0o644); err != nil {
 		t.Fatalf("WriteFileAtomic: %v", err)
 	}
 
-	if len(syncedPaths) != 1 {
-		t.Fatalf("directory syncs = %v, want exactly one (for %s)", syncedPaths, wantDir)
+	want := []string{filepath.Join(floor, "new"), floor}
+	if len(syncedPaths) != len(want) {
+		t.Fatalf("directory syncs = %v, want exactly %v (the walk must stop at the deepest pre-existing directory)", syncedPaths, want)
 	}
-	if syncedPaths[0] != wantDir {
-		t.Errorf("synced directory = %q, want %q", syncedPaths[0], wantDir)
+	for i := range want {
+		if syncedPaths[i] != want[i] {
+			t.Errorf("synced directory[%d] = %q, want %q (full sequence %v)", i, syncedPaths[i], want[i], syncedPaths)
+		}
 	}
-
-	// The write itself must still have landed. A durability step that ate the
-	// write would satisfy the assertions above.
-	got, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatalf("reading target: %v", err)
-	}
-	if !bytes.Equal(got, []byte("payload")) {
-		t.Errorf("target content = %q, want %q", got, "payload")
+	for _, p := range syncedPaths {
+		if p == root {
+			t.Errorf("synced %q, which already existed and was not created by this write; the walk climbed too far (full sequence %v)", root, syncedPaths)
+		}
 	}
 }
 
@@ -370,6 +464,185 @@ func TestRenameFileAtomic_CrossDeviceCopySucceedsAndRecords(t *testing.T) {
 	}
 	if entries[0].attrs["rename_error"] == "" {
 		t.Error("rename_error is empty; the record must say why the atomic rename was not used")
+	}
+}
+
+// TestRenameFileAtomic_PlainRenameSyncsDestinationDirectory is the mirror of
+// TestWriteFileAtomic_SyncsParentDirectoryAfterRename for the OTHER promoting
+// rename in this package. Every other RenameFileAtomic test forces EXDEV, so
+// renameFunc never succeeds and the sync on the plain-rename path was never
+// executed by any test: an edit deleting that call passed the whole suite.
+func TestRenameFileAtomic_PlainRenameSyncsDestinationDirectory(t *testing.T) {
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "src")
+	dstDir := filepath.Join(root, "dst")
+	for _, d := range []string{srcDir, dstDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("seeding %s: %v", d, err)
+		}
+	}
+	src := filepath.Join(srcDir, "cover.jpg")
+	dst := filepath.Join(dstDir, "cover.jpg")
+	content := []byte("renamed bytes")
+	if err := os.WriteFile(src, content, 0o644); err != nil {
+		t.Fatalf("seeding src: %v", err)
+	}
+
+	var syncedPaths []string
+	origOpen := openDir
+	t.Cleanup(func() { openDir = origOpen })
+	openDir = func(name string) (*os.File, error) {
+		syncedPaths = append(syncedPaths, name)
+		return origOpen(name)
+	}
+
+	if len(syncedPaths) != 0 {
+		t.Fatalf("precondition: expected no directory opens before the rename, got %v", syncedPaths)
+	}
+
+	// renameFunc is deliberately NOT overridden here: the point of this test is
+	// the path where the real os.Rename succeeds.
+	if err := RenameFileAtomic(src, dst); err != nil {
+		t.Fatalf("RenameFileAtomic: %v", err)
+	}
+
+	// Precondition on the shape: the rename really did take the plain path, not
+	// the copy fallback (which would also leave dst readable).
+	if _, statErr := os.Stat(src); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("precondition: src should be gone after a plain rename, stat err = %v", statErr)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("reading dst: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("dst content = %q, want %q", got, content)
+	}
+
+	if len(syncedPaths) != 1 {
+		t.Fatalf("directory syncs = %v, want exactly one (for %s)", syncedPaths, dstDir)
+	}
+	if syncedPaths[0] != dstDir {
+		t.Errorf("synced directory = %q, want %q (the DESTINATION's directory holds the new entry)", syncedPaths[0], dstDir)
+	}
+}
+
+// TestRenameFileAtomic_CrossDeviceSyncsDestinationBeforeRemovingSource pins the
+// ordering that makes the EXDEV fallback survivable. copyFile fsyncs the
+// destination's DATA; nothing fsynced the directory ENTRY naming it. A crash
+// between the copy and the source unlink therefore had a window in which the
+// bytes existed and no name reached them -- the destination entry never landed
+// and the source entry was already gone.
+//
+// The assertion is on ORDER, not on a count: a sync of the right directory
+// AFTER the unlink closes nothing.
+func TestRenameFileAtomic_CrossDeviceSyncsDestinationBeforeRemovingSource(t *testing.T) {
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "src")
+	dstDir := filepath.Join(root, "dst")
+	for _, d := range []string{srcDir, dstDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("seeding %s: %v", d, err)
+		}
+	}
+	src := filepath.Join(srcDir, "cover.jpg")
+	dst := filepath.Join(dstDir, "cover.jpg")
+	if err := os.WriteFile(src, []byte("moved bytes"), 0o644); err != nil {
+		t.Fatalf("seeding src: %v", err)
+	}
+
+	origRename := renameFunc
+	t.Cleanup(func() { renameFunc = origRename })
+	renameFunc = func(oldPath, newPath string) error {
+		return &os.LinkError{Op: "rename", Old: oldPath, New: newPath, Err: syscall.EXDEV}
+	}
+
+	// Ordering is established from INSIDE the sync hook: it records whether the
+	// source still exists at the instant the sync fires. Asserting only that the
+	// destination directory was synced at some point would pass against a sync
+	// placed after the unlink, which closes nothing.
+	var syncedPaths []string
+	srcStillPresentAtSync := make(map[string]bool)
+	origOpen := openDir
+	t.Cleanup(func() { openDir = origOpen })
+	openDir = func(name string) (*os.File, error) {
+		syncedPaths = append(syncedPaths, name)
+		_, statErr := os.Lstat(src)
+		srcStillPresentAtSync[name] = statErr == nil
+		return origOpen(name)
+	}
+
+	if err := RenameFileAtomic(src, dst); err != nil {
+		t.Fatalf("RenameFileAtomic: %v", err)
+	}
+
+	// Outcome preconditions: the move really completed via the fallback.
+	if _, statErr := os.Stat(src); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("precondition: src should be gone after a successful cross-device move, stat err = %v", statErr)
+	}
+	if _, statErr := os.Stat(dst); statErr != nil {
+		t.Fatalf("precondition: dst should exist after a successful cross-device move, stat err = %v", statErr)
+	}
+
+	if len(syncedPaths) != 1 || syncedPaths[0] != dstDir {
+		t.Fatalf("directory syncs = %v, want exactly [%s]", syncedPaths, dstDir)
+	}
+	if !srcStillPresentAtSync[dstDir] {
+		t.Errorf("the destination directory was synced AFTER the source was unlinked; the crash window this closes is between the copy and the unlink, so the sync must come first")
+	}
+}
+
+// TestRenameDirAtomic_PlainRenameSyncsDestinationDirectory is the directory
+// sibling of the file case above. RenameDirAtomic's successful rename installed
+// a whole tree under a new name and left that entry non-durable, while
+// RenameFileAtomic right beside it did not -- an inconsistency, and on this path
+// the thing at risk is an entire artist directory rather than one file.
+func TestRenameDirAtomic_PlainRenameSyncsDestinationDirectory(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "library")
+	src := filepath.Join(parent, "old-name")
+	dst := filepath.Join(parent, "new-name")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatalf("seeding src tree: %v", err)
+	}
+	content := []byte("artwork bytes")
+	if err := os.WriteFile(filepath.Join(src, "folder.jpg"), content, 0o644); err != nil {
+		t.Fatalf("seeding src file: %v", err)
+	}
+
+	var syncedPaths []string
+	origOpen := openDir
+	t.Cleanup(func() { openDir = origOpen })
+	openDir = func(name string) (*os.File, error) {
+		syncedPaths = append(syncedPaths, name)
+		return origOpen(name)
+	}
+
+	if len(syncedPaths) != 0 {
+		t.Fatalf("precondition: expected no directory opens before the rename, got %v", syncedPaths)
+	}
+
+	if err := RenameDirAtomic(src, dst); err != nil {
+		t.Fatalf("RenameDirAtomic: %v", err)
+	}
+
+	// Precondition: the plain rename path, not the copy-and-delete fallback.
+	if _, statErr := os.Stat(src); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("precondition: src should be gone after a plain rename, stat err = %v", statErr)
+	}
+	got, err := os.ReadFile(filepath.Join(dst, "folder.jpg"))
+	if err != nil {
+		t.Fatalf("reading moved file: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("moved content = %q, want %q", got, content)
+	}
+
+	if len(syncedPaths) != 1 {
+		t.Fatalf("directory syncs = %v, want exactly one (for %s)", syncedPaths, parent)
+	}
+	if syncedPaths[0] != parent {
+		t.Errorf("synced directory = %q, want %q (the directory HOLDING the renamed tree, not the tree itself)", syncedPaths[0], parent)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 	"syscall"
 )
@@ -94,5 +95,62 @@ func syncTargetDir(op, dir, target string) {
 			slog.String("path", target),
 			slog.String("dir", dir),
 			slog.String("error", err.Error()))
+	}
+}
+
+// deepestExistingDir returns the deepest ancestor of dir (dir itself included)
+// that currently exists on disk. Callers use it as a "floor" recorded BEFORE an
+// os.MkdirAll: every path component between the floor and dir is one the
+// MkdirAll is about to create.
+//
+// A stat error other than "does not exist" (a permission problem, say) is
+// treated as "exists": the MkdirAll is then almost certainly going to fail
+// anyway, and the conservative answer keeps the sync chain SHORT rather than
+// having it climb to the filesystem root fsyncing directories we never touched.
+//
+// The walk terminates at the volume root because filepath.Dir is idempotent
+// there ("/" -> "/", "C:\" -> "C:\"), which is the loop's stop condition.
+func deepestExistingDir(dir string) string {
+	for {
+		if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return dir
+		}
+		dir = parent
+	}
+}
+
+// syncCreatedChain fsyncs dir and then each ancestor up to and including floor,
+// which is the value deepestExistingDir returned before the os.MkdirAll that
+// created them (issue #2673).
+//
+// ORDER IS LOAD-BEARING and the direction is child-first. Making a parent
+// durable before its child buys nothing: the child's own contents may still be
+// in the page cache when the parent's entry lands, so a crash can leave a
+// directory that exists but whose contents (including the file just renamed in)
+// do not. Going upward means that at every step, everything below the level
+// being synced is already on stable storage.
+//
+// When nothing was created, floor == dir and this is exactly one fsync of dir,
+// which is the plain-rename case. floor itself IS synced -- it is the directory
+// holding the first entry we created -- but its own entry in ITS parent is not,
+// because floor already existed and whoever created it owned that durability.
+func syncCreatedChain(op, dir, floor, target string) {
+	for {
+		syncTargetDir(op, dir, target)
+		if dir == floor {
+			return
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached the volume root without meeting floor. Only reachable if
+			// floor was not an ancestor of dir, which the callers guarantee;
+			// stop rather than spin.
+			return
+		}
+		dir = parent
 	}
 }

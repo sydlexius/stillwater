@@ -25,6 +25,14 @@ var renameFunc = os.Rename
 func RenameDirAtomic(src, dst string) error {
 	renameErr := renameFunc(src, dst)
 	if renameErr == nil {
+		if dir := filepath.Dir(dst); dir != "" {
+			// Same durability step RenameFileAtomic and WriteFileAtomic take: the
+			// rename created a directory entry (here, for a whole tree) that is
+			// not yet on stable storage (issue #2673). A crash before the parent's
+			// metadata lands loses the name the tree was just moved to, while the
+			// source name is already gone.
+			syncTargetDir("RenameDirAtomic", dir, dst)
+		}
 		return nil
 	}
 
@@ -110,6 +118,17 @@ func RenameFileAtomic(src, dst string) error {
 			slog.Bool("partial_dst_cleaned", cleaned),
 			slog.String("error", err.Error()))
 		return fmt.Errorf("copy fallback failed: %w", err)
+	}
+
+	// The copy is complete and copyFile fsynced the destination's DATA, but the
+	// directory ENTRY naming that data is still only in the page cache. The very
+	// next statement unlinks the source. A crash in between is the one window on
+	// this path where the bytes exist and no name reaches them: the source entry
+	// is gone from disk and the destination entry never landed. Sync the
+	// destination's directory first so the name is durable before the only other
+	// copy of it is destroyed (issue #2673).
+	if dir := filepath.Dir(dst); dir != "" {
+		syncTargetDir("RenameFileAtomic", dir, dst)
 	}
 
 	if err := os.Remove(src); err != nil {
