@@ -99,19 +99,20 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 	// needs to guard provenance or dimensions here, mirror their approach: exclude the
 	// column outright, or gate it with a CASE WHEN that keeps the stored value.
 	//
-	// id = excluded.id below is NOT part of that design and is a known defect:
-	// because an empty img.ID is filled with a fresh UUID above, a
-	// refresh-shaped Upsert rotates an existing row's primary key. Any ID a
-	// caller still holds then goes stale, including the one SetLock matches on,
-	// so a lock toggle issued against the pre-refresh ID fails with ErrNotFound.
-	// Tracked as its own issue; left in place here to keep this change scoped to
-	// the locked column.
+	// id is deliberately ABSENT from the DO UPDATE list (#2643). An empty
+	// img.ID is filled with a fresh UUID above, so including it made a
+	// refresh-shaped Upsert rotate an existing row's primary key: the row
+	// survived intact in every other respect, but every ID a caller still held
+	// went stale. SetLock matches on id alone, and since #2639 it is the only
+	// path that can set or clear a lock -- so an operator whose page was open
+	// across a background refresh got a silent 404 on the lock toggle and no
+	// lock. The identity of an existing row is not something a refresh
+	// redefines.
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
 			width, height, phash, content_hash, file_format, source, last_written_at, locked)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(artist_id, image_type, slot_index) DO UPDATE SET
-			id = excluded.id,
 			exists_flag = excluded.exists_flag,
 			low_res = excluded.low_res,
 			placeholder = excluded.placeholder,
@@ -505,17 +506,37 @@ func (r *sqliteImageRepo) writeAll(ctx context.Context, artistID string, images 
 	return nil
 }
 
-// UpdateProvenance updates only the provenance-related fields (phash,
-// content_hash, source, file_format, last_written_at) on an existing
-// artist_images row, identified by artist_id + image_type + slot_index. This is
-// a targeted update that does not touch display fields (exists_flag, low_res,
-// placeholder, dimensions). Returns an error if no matching row exists.
-func (r *sqliteImageRepo) UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string) error {
+// UpdateProvenance updates the provenance-related fields (phash, content_hash,
+// source, file_format, last_written_at) AND the geometry (width, height) on an
+// existing artist_images row, identified by artist_id + image_type +
+// slot_index. It does not touch the remaining display fields (exists_flag,
+// low_res, placeholder). Returns an error if no matching row exists.
+//
+// Geometry is written here, rather than left to the scanner, because it is the
+// evidence of the same write the rest of these columns document. Before #2713
+// the scanner was the only producer of fresh width/height on an existing row,
+// so a manual save recorded new hashes against dimensions that still described
+// the PREVIOUS image. The rules read those columns in preference to the file
+// (rule.Engine.getImageDimensionsResolved falls back to the filesystem only
+// when they are zero), so thumb_square and thumb_min_res judged an image the
+// operator had already replaced -- measured in production as a 1000x1000
+// square stored as 450x600 and flagged both non-square and low-resolution.
+//
+// A zero width or height means "could not decode" and leaves the stored value
+// alone. Writing the zero through would be worse than the staleness it
+// replaces: the resolver treats zero as "ask the filesystem", which is correct
+// for a slot whose file was renamed out from under it (see
+// InvalidateImageGeometry) but wrong here, where the file is present and
+// merely unreadable at this instant. The two cases must stay distinguishable.
+func (r *sqliteImageRepo) UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, contentHash, source, fileFormat, lastWrittenAt string, width, height int) error {
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE artist_images
-		SET phash = ?, content_hash = ?, source = ?, file_format = ?, last_written_at = ?
+		SET phash = ?, content_hash = ?, source = ?, file_format = ?, last_written_at = ?,
+			width  = CASE WHEN ? > 0 THEN ? ELSE width  END,
+			height = CASE WHEN ? > 0 THEN ? ELSE height END
 		WHERE artist_id = ? AND image_type = ? AND slot_index = ?`,
 		phash, contentHash, source, fileFormat, lastWrittenAt,
+		width, width, height, height,
 		artistID, imageType, slotIndex,
 	)
 	if err != nil {
@@ -582,6 +603,31 @@ func (r *sqliteImageRepo) ClearHashesForType(ctx context.Context, artistID, imag
 	)
 	if err != nil {
 		return fmt.Errorf("clearing image hashes for %s/%s: %w", artistID, imageType, err)
+	}
+	return nil
+}
+
+// ClearGeometryForType zeroes width and height for every slot of one image
+// type, so the next reader measures the files rather than trusting the rows.
+//
+// It exists for the renumber/reorder/slot-delete family, which moves a
+// DIFFERENT file into a slot without touching that slot's row. Geometry is
+// keyed per slot, so those rows are left describing pictures they no longer
+// hold (#2713).
+//
+// Zero is the honest value here, not a placeholder: rule.getImageDimensionsResolved
+// treats zero as "unknown" and falls back to measuring the file, which is
+// exactly the behavior wanted after the mapping has shifted. Recomputing
+// instead would mean re-deriving the slot-to-file mapping at the one moment it
+// is in flux -- the same mistake that produced the staleness.
+func (r *sqliteImageRepo) ClearGeometryForType(ctx context.Context, artistID, imageType string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE artist_images SET width = 0, height = 0
+		WHERE artist_id = ? AND image_type = ?`,
+		artistID, imageType,
+	)
+	if err != nil {
+		return fmt.Errorf("clearing image geometry for %s/%s: %w", artistID, imageType, err)
 	}
 	return nil
 }

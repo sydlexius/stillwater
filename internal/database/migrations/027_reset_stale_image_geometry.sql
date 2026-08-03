@@ -1,0 +1,130 @@
+-- +goose Up
+-- Issue #2713: clear the stored image geometry once, so the rows that already
+-- describe a REPLACED image stop being read as truth.
+--
+-- artist_images.width/height were refreshed by exactly one producer, the
+-- scanner. Every save path wrote the file and recorded provenance while
+-- leaving geometry alone, so from the moment an operator replaced an image
+-- until the next scan re-walked that artist, the row described the previous
+-- picture. The rules read those columns in preference to the file, so
+-- thumb_square and thumb_min_res judged artwork that had already been fixed
+-- and kept re-firing. Measured in production: a slot storing 450x600 whose
+-- file on disk was a 1000x1000 square, flagged both non-square and
+-- low-resolution while being neither.
+--
+-- The code fix stops new drift. It cannot repair rows that drifted before it
+-- shipped: those hold a plausible, non-zero, wrong number that nothing
+-- distinguishes from a correct one. Left alone, an artist nobody touches
+-- again keeps a wrong verdict indefinitely.
+--
+-- ZERO IS NOT A NULL-OUT, IT IS THE ESTABLISHED "UNKNOWN" VALUE on this
+-- column, and that is the whole reason this migration is one statement rather
+-- than a repair job. rule.Engine.getImageDimensionsResolved
+-- (internal/rule/fscache.go:415) returns the stored values only when BOTH are
+-- greater than zero, and otherwise measures the file on disk. So zeroing does
+-- not blank the data; it routes every reader to the authority. Verified on a
+-- live instance rather than argued: with geometry zeroed, thumb_min_res
+-- reported the file's true 300x300.
+--
+-- Why not recompute here instead. A migration cannot read the filesystem, has
+-- no artist path resolution, and no naming-convention profile -- the three
+-- things needed to find the file a row refers to. Even if it could, it would
+-- be re-deriving the slot-to-file mapping outside the code that owns it.
+-- Zeroing hands that job to the one component that already does it correctly.
+--
+-- THE SECOND STATEMENT IS NOT OPTIONAL, and the reason is measured rather
+-- than assumed. Zeroing alone does NOT repopulate on the next scan for the
+-- directories that matter most.
+--
+-- The scanner's mtime fast path (scanner.detectFilesWithFastPath) exists to
+-- carry STORED dimensions forward when a directory's mtime has not moved.
+-- Zeroing a row happens in the DATABASE and never touches the directory, so
+-- the fast path faithfully carries the zero forward on every later scan, and
+-- a settled library never recovers its geometry at all. Measured on a real
+-- library: a full scan left 35 of 45 zeroed rows untouched.
+--
+-- Clearing last_scanned_at is the fix, and it reuses a condition the scanner
+-- already defines rather than inventing one: a NULL last_scanned_at is the
+-- documented "no prior scan" state that sends an artist down the full probe
+-- path (scanner.go:1177). So the next scan measures every file exactly once,
+-- repopulates the geometry, and re-stamps last_scanned_at -- after which the
+-- fast path resumes untouched.
+--
+-- Doing it here rather than in scanner code is deliberate. The alternative
+-- considered was to make the fast path re-probe whenever a slot claims a file
+-- but carries no geometry. That was implemented, tested against a real
+-- library, and REVERTED: an undecodable image (a truncated download, a file
+-- that is not really a JPEG) legitimately probes as 0x0 every time, so the
+-- condition would re-fire forever and permanently disable the fast path for
+-- that artist. TestScan_FastPath_SkipsExpensiveProbe catches exactly this and
+-- was right to. A one-time flag in a one-time migration cannot loop.
+--
+-- The rows also repopulate on any save, immediately, through
+-- UpdateProvenance -- that path does not depend on the scanner at all.
+--
+-- Three honest costs, plus one pre-existing limit worth naming.
+--
+-- 1. The next scan after upgrading is a FULL scan: one image decode per slot,
+--    library-wide, instead of the usual cheap existence check. That is a real
+--    one-time expense on a large or network-mounted library. It is the same
+--    work a first-ever scan does, and it happens once.
+--
+-- 2. Until that scan or a save lands, geometry-reading rules measure the file
+--    per evaluation, and the artist page shows no size for a slot -- not a
+--    broken "0 x 0", because all seven geometry render sites across the
+--    templates guard on a non-zero dimension (artist_images_tab.templ:49 is
+--    the representative one), and img.IsLowResolution returns false on a zero
+--    so no spurious "Low resolution" badge appears either. It is an absence
+--    the operator may notice, not a wrong value.
+--
+--    The artist detail page also stops showing its "last scan" date until the
+--    next scan re-stamps it, because that line is hidden when the timestamp is
+--    NULL (artist_detail.templ:256). Same shape: an honest blank, not a lie.
+--
+-- 3. A PATHLESS artist -- platform-only, no directory on disk -- has no file
+--    to measure, so nothing here can recover its geometry. The resolver
+--    returns an error for that case and every geometry rule responds by
+--    SKIPPING the artist (internal/rule/checkers.go:91 and its five siblings
+--    return nil on a resolver error), so the outcome is a rule that declines
+--    to judge rather than one that judges wrongly. That is the right
+--    direction to fail, but it does mean those artists lose dimension checks
+--    until a save gives them geometry again. Measured on a real library: 9 of
+--    45 thumb rows, all pathless.
+--
+-- Not a cost of this migration, but visible alongside it: NON-PRIMARY fanart
+-- slots (backdrop2.jpg and beyond) have never carried geometry at all. The
+-- Artist struct the scanner writes through holds one FanartWidth/FanartHeight
+-- pair, for slot 0, so slots 1+ were always zero. Verified on an untouched
+-- database: fanart slot 0 held geometry for 22 of 30 rows, slot 1 for 0 of 4.
+-- Those rows read as zero before this migration and after it, and the
+-- filesystem fall-through has always been what serves them.
+--
+-- All four are strictly better than the alternative, which is a wrong number
+-- presented with confidence.
+
+-- +goose StatementBegin
+UPDATE artist_images SET width = 0, height = 0 WHERE width > 0 OR height > 0;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+UPDATE artists SET last_scanned_at = NULL WHERE last_scanned_at IS NOT NULL;
+-- +goose StatementEnd
+
+-- +goose Down
+-- Deliberately a no-op, not a restore.
+--
+-- The previous values are gone and CANNOT be reconstructed -- that is the
+-- point of the Up, not an oversight. They were, by definition, the numbers
+-- this issue found to be untrustworthy. Writing anything back here would
+-- invent data; leaving the column zero is correct in both directions, because
+-- zero already means "measure the file" to every reader.
+--
+-- A migration whose Down silently restores garbage is worse than one that
+-- states it will not.
+--
+-- last_scanned_at is likewise not restored. Clearing it costs one full scan
+-- and nothing else; inventing a timestamp would suppress the very scan the
+-- Up depends on.
+-- +goose StatementBegin
+SELECT 1;
+-- +goose StatementEnd

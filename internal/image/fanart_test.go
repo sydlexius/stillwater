@@ -619,13 +619,20 @@ func TestRenumberFanart_ContentPreservation(t *testing.T) {
 
 // fakeHashInvalidator records the InvalidateImageHashes calls made against it.
 type fakeHashInvalidator struct {
-	calls []string // "artistID/imageType" per call
-	err   error
+	calls    []string // "artistID/imageType" per InvalidateImageHashes call
+	geomCall []string // "artistID/imageType" per InvalidateImageGeometry call
+	err      error
+	geomErr  error
 }
 
 func (f *fakeHashInvalidator) InvalidateImageHashes(_ context.Context, artistID, imageType string) error {
 	f.calls = append(f.calls, artistID+"/"+imageType)
 	return f.err
+}
+
+func (f *fakeHashInvalidator) InvalidateImageGeometry(_ context.Context, artistID, imageType string) error {
+	f.geomCall = append(f.geomCall, artistID+"/"+imageType)
+	return f.geomErr
 }
 
 // TestRenumberFanart_InvalidatesHashes proves the invalidation is not optional.
@@ -743,5 +750,95 @@ func TestRenumberFanart_InvalidationFailureSurfaces(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(dir, "backdrop.jpg")); !os.IsNotExist(statErr) {
 		t.Errorf("renumber proceeded despite the invalidation failure (backdrop.jpg exists)")
+	}
+}
+
+// TestRenumberFanart_InvalidatesGeometry is the #2713 counterpart to
+// TestRenumberFanart_InvalidatesHashes, and exists for the same reason.
+//
+// artist_images.width/height are keyed per SLOT, and a renumber moves a
+// different FILE into a slot without touching that slot's row. The image rules
+// read those columns in preference to the file -- rule.getImageDimensionsResolved
+// measures the file only when the stored values are zero -- so a slot left
+// holding its neighbor's dimensions makes a rule judge a picture that is no
+// longer there. Zeroing is what restores the fall-through to the filesystem.
+//
+// The assertion is on the observable call, not on a nil return, so a
+// reordering of the invalidation that skipped it would still be caught.
+func TestRenumberFanart_InvalidatesGeometry(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"backdrop.jpg", "backdrop3.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	survivors := []string{
+		filepath.Join(dir, "backdrop.jpg"),
+		filepath.Join(dir, "backdrop3.jpg"),
+	}
+
+	inv := &fakeHashInvalidator{}
+	if err := RenumberFanart(context.Background(), inv, "artist-1", dir, "backdrop.jpg", survivors, false); err != nil {
+		t.Fatalf("RenumberFanart() error: %v", err)
+	}
+
+	if want := "artist-1/fanart"; len(inv.geomCall) != 1 || inv.geomCall[0] != want {
+		t.Errorf("geometry invalidator calls = %v, want exactly [%s]", inv.geomCall, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "backdrop2.jpg")); err != nil {
+		t.Errorf("survivor was not renumbered into slot 1: %v", err)
+	}
+}
+
+// TestRenumberFanart_EmptySurvivorsStillInvalidatesGeometry mirrors the
+// empty-survivors hash case. Deleting the last fanart file for an artist means
+// every stored dimension for that type now describes nothing, so there is MORE
+// to invalidate, not less. A short-circuit that returned before the geometry
+// call would leave the deleted slot's size ready to be read as truth.
+func TestRenumberFanart_EmptySurvivorsStillInvalidatesGeometry(t *testing.T) {
+	dir := t.TempDir()
+	inv := &fakeHashInvalidator{}
+
+	if err := RenumberFanart(context.Background(), inv, "artist-1", dir, "backdrop.jpg", nil, false); err != nil {
+		t.Fatalf("RenumberFanart(empty survivors) error: %v", err)
+	}
+
+	if want := "artist-1/fanart"; len(inv.geomCall) != 1 || inv.geomCall[0] != want {
+		t.Errorf("geometry invalidator calls = %v, want exactly [%s]", inv.geomCall, want)
+	}
+}
+
+// TestRenumberFanart_GeometryInvalidationFailureStopsBeforeRenaming pins the
+// ordering argument the function's own comment makes for hashes: invalidation
+// runs BEFORE the destructive rename so an invalidation-only failure (a
+// transient DB error, nothing to do with the filesystem) returns with nothing
+// moved, leaving the caller's rollback safe.
+//
+// Without this, a geometry failure after the rename would be indistinguishable
+// to the caller from a failed rename, and its rollback could restore tombed
+// files onto paths the renumbered survivors now occupy.
+func TestRenumberFanart_GeometryInvalidationFailureStopsBeforeRenaming(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"backdrop.jpg", "backdrop3.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	survivors := []string{
+		filepath.Join(dir, "backdrop.jpg"),
+		filepath.Join(dir, "backdrop3.jpg"),
+	}
+
+	inv := &fakeHashInvalidator{geomErr: errors.New("db busy")}
+	if err := RenumberFanart(context.Background(), inv, "artist-1", dir, "backdrop.jpg", survivors, false); err == nil {
+		t.Fatal("RenumberFanart must fail when geometry invalidation fails")
+	}
+
+	// Nothing moved: the original numbering is intact and no new slot exists.
+	if _, err := os.Stat(filepath.Join(dir, "backdrop3.jpg")); err != nil {
+		t.Errorf("original file was renamed despite the invalidation failure: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "backdrop2.jpg")); err == nil {
+		t.Error("a rename happened despite the invalidation failure")
 	}
 }

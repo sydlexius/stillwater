@@ -903,14 +903,19 @@ func discoverForTest(t *testing.T, dir string) []string {
 // #2564 AC: the provenance recorder itself
 // --------------------------------------------------------------------------
 
-// captureProvenanceRecorder records the slot index it was asked to write.
+// captureProvenanceRecorder records the slot index and geometry it was asked
+// to write.
 type captureProvenanceRecorder struct {
-	calls []int // slotIndex per call
-	err   error
+	calls   []int // slotIndex per call
+	widths  []int // width per call, parallel to calls
+	heights []int // height per call, parallel to calls
+	err     error
 }
 
-func (c *captureProvenanceRecorder) UpdateImageProvenance(_ context.Context, _, _ string, slotIndex int, _, _, _, _, _ string) error {
+func (c *captureProvenanceRecorder) UpdateImageProvenance(_ context.Context, _, _ string, slotIndex int, _, _, _, _, _ string, width, height int) error {
 	c.calls = append(c.calls, slotIndex)
+	c.widths = append(c.widths, width)
+	c.heights = append(c.heights, height)
 	return c.err
 }
 
@@ -946,6 +951,16 @@ func TestRecordSavedImageProvenance_WritesThePrimarySlot(t *testing.T) {
 	}
 	if rec.calls[0] != 0 {
 		t.Errorf("the rule engine's post-save provenance write must land on slot 0, got %d", rec.calls[0])
+	}
+
+	// The same write must carry the geometry of the file it just saved
+	// (#2713). A fixer that replaces artwork changes its dimensions, and
+	// leaving them to the next scan is what let the image rules keep judging
+	// the replaced picture. The fixture is 640x360, so a width/height mixup
+	// or a zero cannot pass here.
+	if rec.widths[0] != 640 || rec.heights[0] != 360 {
+		t.Errorf("post-save provenance must record the saved file's geometry: got %dx%d, want 640x360",
+			rec.widths[0], rec.heights[0])
 	}
 }
 

@@ -3834,3 +3834,69 @@ func TestHandleImageCrop_NoSlot_BackwardCompatible(t *testing.T) {
 		t.Errorf("saved = %v, want [%q] (recrop-of-primary, no slot supplied)", saved, names[0])
 	}
 }
+
+// TestHandleFanartBatchDelete_InvalidatesStoredGeometry is the batch-delete
+// counterpart to the slot-delete guard in handlers_backdrop_test.go (#2713).
+//
+// Both handlers renumber the surviving fanart, which moves a DIFFERENT file
+// into slot 0, and both then persist an *Artist that still carries the old
+// geometry -- which the upsert prefers over the zero the invalidator just
+// wrote. Adversarial review found the defect on slot-delete; this path shares
+// the mechanism and so needs its own assertion rather than inheriting
+// confidence from its sibling.
+//
+// The seeded geometry differs from anything the delete could coincidentally
+// produce, so a no-op cannot pass.
+func TestHandleFanartBatchDelete_InvalidatesStoredGeometry(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+
+	a := &artist.Artist{
+		Name: "Batch Delete Geometry", SortName: "Batch Delete Geometry", Path: dir,
+		FanartExists: true, FanartCount: 3,
+		FanartWidth: 2560, FanartHeight: 1440,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	for _, name := range []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("img-"+name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Precondition: the geometry is actually stored, so the assertion below
+	// cannot pass against an artist that never carried it.
+	before, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reading artist back: %v", err)
+	}
+	if before.FanartWidth != 2560 || before.FanartHeight != 1440 {
+		t.Fatalf("precondition: stored geometry is %dx%d, want 2560x1440",
+			before.FanartWidth, before.FanartHeight)
+	}
+
+	// Delete slot 0, so a different file is renumbered into it.
+	req := httptest.NewRequest(http.MethodDelete,
+		"/api/v1/artists/"+a.ID+"/images/fanart/batch", strings.NewReader(`{"indices": [0]}`))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleFanartBatchDelete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	after, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reading artist after batch delete: %v", err)
+	}
+	if after.FanartWidth != 0 || after.FanartHeight != 0 {
+		t.Errorf("stored fanart geometry survived a batch delete as %dx%d; slot 0 now holds a "+
+			"different file, so it must be zeroed rather than restored by the handler's own persist",
+			after.FanartWidth, after.FanartHeight)
+	}
+}

@@ -285,14 +285,32 @@ func NextFanartIndex(maxSuffix int, kodi bool) int {
 	return maxSuffix
 }
 
-// HashInvalidator drops the stored perceptual and content hashes for an
-// artist's images of a given type, so that the next duplicate evaluation
-// re-derives them from the files actually on disk.
+// HashInvalidator drops the stored per-slot facts for an artist's images of a
+// given type -- the perceptual and content hashes, and the geometry -- so that
+// the next reader re-derives them from the files actually on disk.
 //
 // It is an interface here, rather than a concrete store, so that this package
 // keeps depending on nothing but the filesystem.
+//
+// Geometry joined the hashes here (#2713) because it fails the same way for
+// the same reason: artist_images.width/height are keyed per SLOT, and a
+// renumber moves a different FILE into a slot without touching its row. The
+// image rules read those columns in preference to the file, so a slot left
+// holding a neighbor's dimensions makes the rules judge a picture that is no
+// longer there -- a square backdrop reported as the wrong shape, or a
+// full-resolution one reported as too small.
 type HashInvalidator interface {
 	InvalidateImageHashes(ctx context.Context, artistID, imageType string) error
+
+	// InvalidateImageGeometry zeroes the stored width/height for the type.
+	//
+	// Zeroing rather than recomputing is deliberate, and is the same
+	// argument RenumberFanart makes for the hashes below: zero has exactly
+	// one meaning ("unknown"), and the rule resolver already handles it by
+	// falling back to measuring the file. Recomputing would mean re-deriving
+	// the slot-to-file mapping at the one moment that mapping is in flux,
+	// which is precisely how the staleness arose.
+	InvalidateImageGeometry(ctx context.Context, artistID, imageType string) error
 }
 
 // RenumberFanart renames the given survivor paths so they occupy contiguous
@@ -364,6 +382,15 @@ func RenumberFanart(ctx context.Context, inv HashInvalidator, artistID, dir, pri
 	// never a wrong-hash-based delete.
 	if invErr := inv.InvalidateImageHashes(ctx, artistID, "fanart"); invErr != nil {
 		return fmt.Errorf("invalidating fanart hashes for artist %s before renumber: %w", artistID, invErr)
+	}
+
+	// Geometry is invalidated on the same terms and for the same reason
+	// (#2713): it is a per-slot column about to describe a file that is no
+	// longer in that slot. It runs BEFORE the rename for the identical
+	// failure-isolation argument made above -- a DB-busy error here returns
+	// with nothing on disk changed, so the caller's rollback stays safe.
+	if invErr := inv.InvalidateImageGeometry(ctx, artistID, "fanart"); invErr != nil {
+		return fmt.Errorf("invalidating fanart geometry for artist %s before renumber: %w", artistID, invErr)
 	}
 
 	if len(survivors) == 0 {

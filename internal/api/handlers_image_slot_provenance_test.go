@@ -125,7 +125,7 @@ func seedPrimaryFanart(t *testing.T, svc *artist.Service, name string) (*artist.
 		t.Fatalf("updating artist to materialize slot 0 row: %v", err)
 	}
 	if err := svc.UpdateImageProvenance(ctx, a.ID, "fanart", 0,
-		prim.PHash, prim.ContentHash, prim.Source, prim.FileFormat, prim.LastWrittenAt); err != nil {
+		prim.PHash, prim.ContentHash, prim.Source, prim.FileFormat, prim.LastWrittenAt, prim.Width, prim.Height); err != nil {
 		t.Fatalf("seeding slot 0 provenance: %v", err)
 	}
 

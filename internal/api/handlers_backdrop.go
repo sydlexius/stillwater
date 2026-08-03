@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
@@ -478,6 +479,12 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	// RenumberFanart zeroes the STORED geometry through the invalidator, but it
+	// only sees an artist ID -- the *Artist below still carries the old value,
+	// and the Update a few lines down would write it straight back over the
+	// zero (writeAll keeps a non-zero incoming width). Clear both (#2713).
+	artist.ClearGeometryFields(a, "fanart")
+
 	var renumberWarning string
 	if renumberErr := img.RenumberFanart(req.Context(), r.artistService, a.ID, r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
 		r.logger.Warn("renumbering fanart after slot delete",
@@ -577,18 +584,21 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 
 	dir := r.imageDir(a)
 
-	// Every rename below moves a different FILE into a slot, and the stored
-	// image hashes are keyed by slot -- so from this point on they describe
-	// files their slots no longer hold. Left stale, the exact-duplicate fixer
-	// reads two slots as byte-identical and deletes artwork that is not a copy
-	// of anything.
+	// Every rename below moves a different FILE into a slot, and both the
+	// stored image hashes and the stored geometry are keyed by slot -- so from
+	// this point on they describe files their slots no longer hold. Left stale,
+	// the exact-duplicate fixer reads two slots as byte-identical and deletes
+	// artwork that is not a copy of anything, and the image rules measure a
+	// picture that has moved elsewhere (#2713).
 	//
 	// This handler permutes the files itself rather than calling
 	// image.RenumberFanart, so it does not inherit that function's compile-time
-	// invalidation gate and has to do the same job by hand. The defer covers the
-	// rollback paths too: those are best-effort, so a failed reorder cannot
-	// promise the original slot-to-file mapping was restored.
+	// invalidation gate and has to do the same job by hand -- for BOTH facts.
+	// The defers cover the rollback paths too: those are best-effort, so a
+	// failed reorder cannot promise the original slot-to-file mapping was
+	// restored.
 	defer r.invalidateFanartHashes(req.Context(), a.ID)
+	defer r.invalidateFanartGeometry(req.Context(), a.ID)
 
 	// Phase 1: stage all files to temporary names to avoid collisions.
 	type stagedFile struct {
@@ -729,6 +739,23 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 func (r *Router) invalidateFanartHashes(ctx context.Context, artistID string) {
 	if err := r.artistService.InvalidateImageHashes(ctx, artistID, "fanart"); err != nil {
 		r.logger.Error("invalidating fanart hashes after reordering files",
+			slog.String("artist_id", artistID),
+			slog.String("error", err.Error()))
+	}
+}
+
+// invalidateFanartGeometry zeroes the artist's stored fanart dimensions, so the
+// next reader measures the files actually on disk.
+//
+// It is the geometry half of invalidateFanartHashes and exists for the same
+// reason: width/height are per-slot columns that a reorder makes describe the
+// wrong file. A failure is logged rather than surfaced, on the same grounds --
+// the renames have already committed and failing the request would not undo
+// them. Error level, not Debug, because a stale dimension is what makes the
+// image rules flag artwork that is fine (#2713).
+func (r *Router) invalidateFanartGeometry(ctx context.Context, artistID string) {
+	if err := r.artistService.InvalidateImageGeometry(ctx, artistID, "fanart"); err != nil {
+		r.logger.Error("invalidating fanart geometry after reordering files",
 			slog.String("artist_id", artistID),
 			slog.String("error", err.Error()))
 	}
