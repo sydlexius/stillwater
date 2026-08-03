@@ -1320,13 +1320,27 @@ func TestHandleReIdentifyWizardAccept_LockedArtistInformsOperator(t *testing.T) 
 // TestHandleReIdentifyWizardAccept_UnlockedArtistRefreshesAndReportsIt is the
 // positive control for the test above. Without it, an implementation that
 // reported refresh_skipped_locked=true unconditionally would look correct.
+//
+// It also carries a stale AudioDB ID, and that half is a correction rather than
+// extra coverage. This test exercises the exact unlocked-wizard path #2894's
+// bulk-wizard defect lived on, and it stayed GREEN throughout that defect
+// because it asserted only the biography sentinel and the notice flag -- it
+// never looked at a secondary provider ID. A positive control for the notice
+// feature that READS like coverage of the ID discard is worse than no coverage,
+// so the ID is asserted here as well. The mechanism-level proof (what the fetch
+// was steered by, and the corrected origin) lives in
+// TestHandleReIdentifyWizardAccept_DiscardsRepudiatedIDsAndCorrectsOrigin.
 func TestHandleReIdentifyWizardAccept_UnlockedArtistRefreshesAndReportsIt(t *testing.T) {
 	t.Parallel()
 	r, _, artistSvc := testRouterWithIdentify(t)
 	attachSentinelOrchestrator(t, r)
 	ctx := context.Background()
 
-	a := &artist.Artist{ID: "wizUnlocked1", Name: "Unlocked Wizard Artist", Biography: "stale"}
+	const staleAudioDBID = "adb-repudiated"
+	a := &artist.Artist{
+		ID: "wizUnlocked1", Name: "Unlocked Wizard Artist", Biography: "stale",
+		AudioDBID: staleAudioDBID,
+	}
 	if err := artistSvc.Create(ctx, a); err != nil {
 		t.Fatalf("seed artist: %v", err)
 	}
@@ -1336,6 +1350,9 @@ func TestHandleReIdentifyWizardAccept_UnlockedArtistRefreshesAndReportsIt(t *tes
 	}
 	if seeded.Locked {
 		t.Fatalf("precondition: artist is locked, so the refresh would be skipped and this control proves nothing")
+	}
+	if seeded.AudioDBID != staleAudioDBID {
+		t.Fatalf("precondition: AudioDBID = %q, want %q seeded; the discard assertion below would pass vacuously", seeded.AudioDBID, staleAudioDBID)
 	}
 
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
@@ -1361,6 +1378,13 @@ func TestHandleReIdentifyWizardAccept_UnlockedArtistRefreshesAndReportsIt(t *tes
 	}
 	if reloaded.Biography != lockedRefreshSentinel {
 		t.Errorf("biography = %q, want the sentinel %q; the refresh did not run on an unlocked artist", reloaded.Biography, lockedRefreshSentinel)
+	}
+	// The repudiated entity's AudioDB ID must be gone. A surviving one steers
+	// the NEXT refresh back to the artist the operator just repudiated, because
+	// FetchProviderResult prefers a provider-specific ID over the MBID and
+	// AudioDB sits ahead of MusicBrainz for origin (#2894).
+	if reloaded.AudioDBID != "" {
+		t.Errorf("AudioDBID = %q, want empty; the bulk wizard kept the repudiated entity's secondary provider ID, so the corrected identity's metadata will lose to it on the next refresh (#2894)", reloaded.AudioDBID)
 	}
 
 	var resp map[string]any
