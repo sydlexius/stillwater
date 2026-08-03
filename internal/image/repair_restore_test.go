@@ -251,7 +251,7 @@ func TestReadRepairManifest_NeverReportsAnExistingOpAsAbsent(t *testing.T) {
 				return
 			default:
 			}
-			m, err := ReadRepairManifest(dir, opID)
+			m, err := ReadRepairManifest(context.Background(), dir, opID)
 			if err != nil {
 				atomic.AddInt64(&readErrs, 1)
 				continue
@@ -284,7 +284,7 @@ func TestReadRepairManifest_NeverReportsAnExistingOpAsAbsent(t *testing.T) {
 
 	// The op must also be intact and complete: a reader-side lock that somehow
 	// cost an append would be a worse bug than the one this test pins.
-	m, err := ReadRepairManifest(dir, opID)
+	m, err := ReadRepairManifest(context.Background(), dir, opID)
 	if err != nil {
 		t.Fatalf("final read: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestQuarantineImage_ReportsAByteWriteItCannotPerform(t *testing.T) {
 
 	// Nothing may be advertised in the manifest for bytes that were never
 	// stored: a later restore would fail on an entry nobody can serve.
-	m, mErr := ReadRepairManifest(dir, "op-long")
+	m, mErr := ReadRepairManifest(context.Background(), dir, "op-long")
 	if mErr != nil {
 		t.Fatalf("ReadRepairManifest: %v", mErr)
 	}
@@ -420,7 +420,7 @@ func TestQuarantineImage_ConcurrentSlotsOfOneOpAllSurvive(t *testing.T) {
 
 	// EVERY entry survived. Each call returned nil, so the caller is entitled
 	// to delete all eight originals; the manifest must account for all eight.
-	m, err := ReadRepairManifest(dir, "op-concurrent")
+	m, err := ReadRepairManifest(context.Background(), dir, "op-concurrent")
 	if err != nil {
 		t.Fatalf("ReadRepairManifest: %v", err)
 	}
@@ -473,7 +473,7 @@ func TestConsumeRepairEntry_ConcurrentWithQuarantineDoesNotDropTheAppend(t *test
 	go func() {
 		defer wg.Done()
 		<-start
-		consumeErr = ConsumeRepairEntry(dir, "op-race", RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"})
+		consumeErr = ConsumeRepairEntry(context.Background(), dir, "op-race", RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"})
 	}()
 	go func() {
 		defer wg.Done()
@@ -492,7 +492,7 @@ func TestConsumeRepairEntry_ConcurrentWithQuarantineDoesNotDropTheAppend(t *test
 
 	// Whichever order they landed in, the keeper's entry must exist: its
 	// QuarantineImage returned nil, so its original is gone.
-	m, err := ReadRepairManifest(dir, "op-race")
+	m, err := ReadRepairManifest(context.Background(), dir, "op-race")
 	if err != nil {
 		t.Fatalf("ReadRepairManifest: %v", err)
 	}
@@ -555,13 +555,13 @@ func TestRepairReadPaths_RejectAnInvalidOpID(t *testing.T) {
 	dir := t.TempDir()
 	entry := RepairEntry{SlotIndex: 0, FileName: "fanart.jpg", StoredName: "000-fanart.jpg"}
 
-	if _, err := ReadRepairManifest(dir, "../escape"); err == nil {
+	if _, err := ReadRepairManifest(context.Background(), dir, "../escape"); err == nil {
 		t.Error("ReadRepairManifest must reject a traversing op id")
 	}
 	if _, err := RepairEntryBytes(context.Background(), dir, "../escape", entry); err == nil {
 		t.Error("RepairEntryBytes must reject a traversing op id")
 	}
-	if err := ConsumeRepairEntry(dir, "../escape", entry); err == nil {
+	if err := ConsumeRepairEntry(context.Background(), dir, "../escape", entry); err == nil {
 		t.Error("ConsumeRepairEntry must reject a traversing op id")
 	}
 }
@@ -579,7 +579,7 @@ func TestReadRepairManifest_ErrorsWhenTheManifestCannotBeRead(t *testing.T) {
 		t.Fatalf("creating dir-as-manifest: %v", err)
 	}
 
-	m, err := ReadRepairManifest(dir, "op-dir")
+	m, err := ReadRepairManifest(context.Background(), dir, "op-dir")
 	if err == nil {
 		t.Fatalf("an unreadable manifest must error, got manifest %+v", m)
 	}
@@ -653,7 +653,7 @@ func seedBareManifestOp(t *testing.T, dir, opID string, slot int, fileName, cont
 
 	// Precondition: the stored side really is empty. If a future change makes
 	// the decoder populate it, this test silently stops covering the bug.
-	m, err := ReadRepairManifest(dir, opID)
+	m, err := ReadRepairManifest(context.Background(), dir, opID)
 	if err != nil || m == nil || len(m.Entries) != 1 {
 		t.Fatalf("seeding: expected 1 entry, got %+v (err %v)", m, err)
 	}
@@ -682,12 +682,12 @@ func TestConsumeRepairEntry_RemovesAnEntryWhoseStoredManifestNameIsEmpty(t *test
 	seedBareManifestOp(t, dir, "op-bare", 1, "fanart2.jpg", "artwork-bytes")
 
 	bare := RepairEntry{SlotIndex: 1, FileName: "fanart2.jpg"}
-	if err := ConsumeRepairEntry(dir, "op-bare", bare); err != nil {
+	if err := ConsumeRepairEntry(context.Background(), dir, "op-bare", bare); err != nil {
 		t.Fatalf("ConsumeRepairEntry: %v", err)
 	}
 
 	// The entry is really gone -- not "returned nil while doing nothing".
-	m, err := ReadRepairManifest(dir, "op-bare")
+	m, err := ReadRepairManifest(context.Background(), dir, "op-bare")
 	if err != nil {
 		t.Fatalf("ReadRepairManifest: %v", err)
 	}
@@ -731,7 +731,7 @@ func TestConsumeRepairEntry_PropagatesAnUnreadableManifest(t *testing.T) {
 		t.Fatalf("writing corrupt manifest: %v", err)
 	}
 
-	err := ConsumeRepairEntry(dir, "op-broken", RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"})
+	err := ConsumeRepairEntry(context.Background(), dir, "op-broken", RepairEntry{SlotIndex: 0, FileName: "fanart.jpg"})
 	if err == nil {
 		t.Fatal("consuming against an unreadable manifest must error")
 	}

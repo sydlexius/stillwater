@@ -587,7 +587,7 @@ func (p *Pipeline) deleteRemovedSlotsOnPlatforms(ctx context.Context, a *artist.
 				slog.String("connection_id", f.ConnectionID), slog.String("error", f.Err))
 		}
 		if len(delRes.Targets) > 0 {
-			if err := img.SetRepairEntryPlatformTargets(a.Path, opID, *e, delRes.Targets); err != nil {
+			if err := img.SetRepairEntryPlatformTargets(ctx, a.Path, opID, *e, delRes.Targets); err != nil {
 				// The picture is already off the platform, but we could not
 				// record where from. A restore will still put the bytes back on
 				// disk; it just will not re-upload to the platform. Non-fatal,
@@ -823,7 +823,7 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 	mu.Lock()
 	defer mu.Unlock()
 
-	m, err := img.ReadRepairManifest(a.Path, opID)
+	m, err := img.ReadRepairManifest(ctx, a.Path, opID)
 	if err != nil {
 		return PHashRestoreResult{}, err
 	}
@@ -927,7 +927,7 @@ func (p *Pipeline) restoreOneQuarantined(
 		// the local disk still has it. Content-addressed and idempotent -- a
 		// copy already present on the platform is a no-op.
 		p.restorePHashToPlatforms(ctx, a, entry, data, opID)
-		return restoreAlreadyPresent, img.ConsumeRepairEntry(a.Path, opID, *entry)
+		return restoreAlreadyPresent, img.ConsumeRepairEntry(ctx, a.Path, opID, *entry)
 
 	case similar:
 		// A surviving slot RESEMBLES this picture but is not it. Do
@@ -994,7 +994,7 @@ func (p *Pipeline) restoreOneQuarantined(
 	// remediation. Runs after the on-disk restore so the local recovery -- the
 	// thing that must not be lost -- is committed first.
 	p.restorePHashToPlatforms(ctx, a, entry, data, opID)
-	return restoreWrote, img.ConsumeRepairEntry(a.Path, opID, *entry)
+	return restoreWrote, img.ConsumeRepairEntry(ctx, a.Path, opID, *entry)
 }
 
 // restorePHashToPlatforms re-uploads a restored backdrop's bytes to each
@@ -1086,8 +1086,27 @@ func (p *Pipeline) quarantinedImagePresence(ctx context.Context, dir, primaryNam
 
 	want, wantErr := img.PerceptualHash(bytes.NewReader(data))
 	for _, path := range paths {
-		onDisk, readErr := os.ReadFile(path) //nolint:gosec // path is a DiscoverFanart result under the artist dir
+		onDisk, readErr := img.ReadImageFileBounded(ctx, path)
 		if readErr != nil {
+			// A canceled/timed-out ctx must PROPAGATE, not be swallowed as
+			// "this path did not match". The other read failures below (a
+			// vanished file, an over-size file, a permissions error) are
+			// legitimately "skip this one candidate and keep looking" --
+			// nothing else in the artist directory is affected. A ctx
+			// deadline is different: it means NO further candidate in this
+			// loop can be trusted either (the same stalled mount would wedge
+			// the next read too), and this result feeds a RESTORE decision
+			// (quarantinedImagePresence's exact/similar answer decides
+			// whether restoreOneQuarantined treats the quarantined bytes as
+			// already present). Continuing past a deadline here would let a
+			// stalled read on ONE candidate silently report "no duplicate
+			// found" for the whole directory, which is the wrong answer to
+			// feed a destructive-adjacent decision. Propagate instead of
+			// continuing so the caller sees the failure rather than a false
+			// negative.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return false, false, fmt.Errorf("checking %s for quarantine presence: %w", filepath.Base(path), ctxErr)
+			}
 			continue
 		}
 		if bytes.Equal(onDisk, data) {

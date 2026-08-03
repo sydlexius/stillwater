@@ -274,3 +274,108 @@ func TestPHashRemediate_WedgedReverifyRead_ReleasesSharedSingleton(t *testing.T)
 			img.HashHex(h0), img.HashHex(h1), img.HashHex(h2))
 	}
 }
+
+// TestPHashRestore_WedgedManifestRead_ReleasesSharedSingleton is the SECOND
+// F1 survivor: a lead re-review found that internal/image/repair_quarantine.go's
+// readRepairManifestLocked -- reached from RestorePHashQuarantine via
+// ReadRepairManifest -- performed its own bare os.ReadFile of the op's
+// manifest.json, independent of (and missed by) the fix to the per-entry
+// image reads. The restore handler claims the SAME backdropRepairRunning
+// singleton as the remediate handler above, so a stalled mount wedging THIS
+// read is an equally complete instance of #2689.
+//
+// This test quarantines a real entry (via img.QuarantineImage, exercising
+// the production write path), then REPLACES the op's manifest.json with a
+// FIFO before calling the restore handler, so the very first read
+// RestorePHashQuarantine performs -- reading back the manifest it is about
+// to act on -- blocks in the kernel.
+func TestPHashRestore_WedgedManifestRead_ReleasesSharedSingleton(t *testing.T) {
+	// Deliberately NOT t.Parallel(): withRemediationWorkTimeout writes a
+	// package-level var.
+
+	r, db := newWedgePipeline(t)
+	dirA := t.TempDir()
+	seedWedgeArtist(t, db, "wedge-restore-a", "Wedge Restore Artist A", dirA)
+
+	v0 := wedgeJPEG(t, 0)
+	srcPath := filepath.Join(dirA, "fanart.jpg")
+	if err := os.WriteFile(srcPath, v0, 0o644); err != nil {
+		t.Fatalf("writing fanart.jpg: %v", err)
+	}
+	h0, err := img.PerceptualHash(bytes.NewReader(v0))
+	if err != nil {
+		t.Fatalf("hashing v0: %v", err)
+	}
+
+	const opID = "op-wedge-restore"
+	entry := img.RepairEntry{
+		ArtistID: "wedge-restore-a", ArtistName: "Wedge Restore Artist A",
+		ImageType: "fanart", SlotIndex: 0, FileName: "fanart.jpg",
+		PHash: img.HashHex(h0),
+	}
+	if err := img.QuarantineImage(context.Background(), dirA, opID, srcPath, entry); err != nil {
+		t.Fatalf("QuarantineImage (seeding the op to restore): %v", err)
+	}
+
+	// The quarantine write above created dirA/.sw-repair/op-wedge-restore/
+	// manifest.json (a real, valid file at this point -- QuarantineImage's
+	// own write succeeded normally). Replace it with a FIFO so the FIRST
+	// read RestorePHashQuarantine performs -- reading the manifest back --
+	// is what blocks, not any per-entry image read.
+	manifestPath := filepath.Join(dirA, img.RepairDirName, opID, "manifest.json")
+	if err := os.Remove(manifestPath); err != nil {
+		t.Fatalf("removing the real manifest to replace it with a FIFO: %v", err)
+	}
+	wedgeFifo(t, manifestPath)
+
+	withRemediationWorkTimeout(t, 300*time.Millisecond)
+
+	body, err := json.Marshal(map[string]any{"artist_id": "wedge-restore-a", "op_id": opID})
+	if err != nil {
+		t.Fatalf("marshaling body: %v", err)
+	}
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
+		"/api/v1/reports/phash-mismatch/restore", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		r.handlePHashMismatchRestore(w, req)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the phash restore handler never returned once its work deadline elapsed; " +
+			"readRepairManifestLocked's read of manifest.json is wedged on the FIFO with no " +
+			"ctx bound, the SHARED backdropRepairRunning singleton is pinned, and every later " +
+			"remediate/restore/bulk action will 409 forever -- this is the second F1 survivor " +
+			"the first fix round missed")
+	}
+
+	r.bulkActionMu.Lock()
+	running := r.backdropRepairRunning
+	r.bulkActionMu.Unlock()
+	if running {
+		t.Fatal("backdropRepairRunning is still claimed after a wedged manifest read; " +
+			"the shared destructive-fanart slot is now permanently unavailable")
+	}
+
+	// The operator-visible property: the slot is re-claimable. A second POST
+	// against a clean (nonexistent) restore target must not 409 -- it should
+	// fail for its own reasons (bad artist/op), but never with a 409 that
+	// says a repair is already running.
+	second := httptest.NewRecorder()
+	secondBody, err := json.Marshal(map[string]any{"artist_id": "wedge-restore-a", "op_id": "op-does-not-exist"})
+	if err != nil {
+		t.Fatalf("marshaling second body: %v", err)
+	}
+	secondReq := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
+		"/api/v1/reports/phash-mismatch/restore", bytes.NewReader(secondBody))
+	r.handlePHashMismatchRestore(second, secondReq)
+
+	if second.Code == http.StatusConflict {
+		t.Fatal("a later restore POST returned 409 after the wedged run ended; " +
+			"this is the permanent-409 #2689 reports")
+	}
+}
