@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/jpeg"
 	"os"
@@ -84,7 +85,7 @@ func TestResolveFanartFiles(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := resolveTestDir(t, tc.files...)
-			got, err := ResolveFanartFiles(dir, superset)
+			got, err := ResolveFanartFiles(context.Background(), dir, superset)
 			if err != nil {
 				t.Fatalf("ResolveFanartFiles: %v", err)
 			}
@@ -114,7 +115,7 @@ func TestResolveFanartFilesUnreadableDirErrors(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 
-	got, err := ResolveFanartFiles(dir, DefaultFileNames["fanart"])
+	got, err := ResolveFanartFiles(context.Background(), dir, DefaultFileNames["fanart"])
 	if err == nil {
 		t.Fatalf("unreadable directory returned no error (got %v); 'cannot tell' must not read as 'no files'", got)
 	}

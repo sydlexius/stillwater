@@ -379,7 +379,7 @@ func (p *Pipeline) remediateArtistPHash(
 	opts PHashRemediateOpts,
 	result *PHashRemediateResult,
 ) error {
-	paths, err := img.DiscoverFanart(a.Path, primaryName)
+	paths, err := img.DiscoverFanart(ctx, a.Path, primaryName)
 	if err != nil {
 		return fmt.Errorf("discovering fanart for %s: %w", a.Name, err)
 	}
@@ -424,7 +424,7 @@ func (p *Pipeline) remediateArtistPHash(
 		// hash that no longer describes it. Re-hashing from the file is
 		// the only check that binds the decision to what is actually
 		// about to be deleted.
-		ok, reason := p.reverifySlotPHash(path, s.PHash)
+		ok, reason := p.reverifySlotPHash(ctx, path, s.PHash)
 		if !ok {
 			outcome.Action, outcome.Reason = "skipped", reason
 			p.logger.Warn("phash back-out skipping slot that failed re-verification",
@@ -476,7 +476,7 @@ func (p *Pipeline) remediateArtistPHash(
 			MatchedArtistName: s.MatchedArtistName,
 			Similarity:        s.Similarity,
 		}
-		if err := img.QuarantineImage(a.Path, opID, path, entry); err != nil {
+		if err := img.QuarantineImage(ctx, a.Path, opID, path, entry); err != nil {
 			return fmt.Errorf("quarantining slot %d for %s: %w", s.SlotIndex, a.Name, err)
 		}
 		result.Quarantined++
@@ -534,8 +534,10 @@ func (p *Pipeline) remediateArtistPHash(
 		p.logger.Warn("resolving fanart naming convention after phash back-out; artist fields left as-is",
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("error", namesErr.Error()))
-	} else {
-		resyncFanartFields(a, names)
+	} else if resyncErr := resyncFanartFields(ctx, a, names); resyncErr != nil {
+		p.logger.Warn("resyncing fanart fields after phash back-out; artist fields left as-is",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("error", resyncErr.Error()))
 	}
 	if err := p.artistService.Update(ctx, a); err != nil {
 		// The destructive on-disk work is already committed and IRREVERSIBLE
@@ -587,7 +589,7 @@ func (p *Pipeline) deleteRemovedSlotsOnPlatforms(ctx context.Context, a *artist.
 				slog.String("connection_id", f.ConnectionID), slog.String("error", f.Err))
 		}
 		if len(delRes.Targets) > 0 {
-			if err := img.SetRepairEntryPlatformTargets(a.Path, opID, *e, delRes.Targets); err != nil {
+			if err := img.SetRepairEntryPlatformTargets(ctx, a.Path, opID, *e, delRes.Targets); err != nil {
 				// The picture is already off the platform, but we could not
 				// record where from. A restore will still put the bytes back on
 				// disk; it just will not re-upload to the platform. Non-fatal,
@@ -608,17 +610,16 @@ func (p *Pipeline) deleteRemovedSlotsOnPlatforms(ctx context.Context, a *artist.
 // other unknown, so admitting it here would let "we do not know what this is"
 // match "we do not know what that is" and manufacture a confident deletion out
 // of two absences. Unknown never matches unknown.
-func (p *Pipeline) reverifySlotPHash(path, flagged string) (bool, string) {
+func (p *Pipeline) reverifySlotPHash(ctx context.Context, path, flagged string) (bool, string) {
 	if flagged == "" {
 		return false, "flagged slot carries no stored phash; refusing to remove on an unknown hash"
 	}
-	f, err := os.Open(path) //nolint:gosec // path is a DiscoverFanart result under the artist dir
+	data, err := img.ReadImageFileBounded(ctx, path)
 	if err != nil {
 		return false, fmt.Sprintf("re-reading slot: %v", err)
 	}
-	defer f.Close() //nolint:errcheck // best-effort close after read
 
-	h, err := img.PerceptualHash(f)
+	h, err := img.PerceptualHash(bytes.NewReader(data))
 	if err != nil {
 		return false, fmt.Sprintf("re-hashing slot: %v", err)
 	}
@@ -661,20 +662,19 @@ func (p *Pipeline) reverifyMatchedCounterpart(ctx context.Context, primaryName, 
 	if ma.Path == "" {
 		return false, "matched artist has no path; cannot re-verify the counterpart on disk"
 	}
-	paths, err := img.DiscoverFanart(ma.Path, primaryName)
+	paths, err := img.DiscoverFanart(ctx, ma.Path, primaryName)
 	if err != nil {
 		return false, fmt.Sprintf("discovering matched artist fanart: %v", err)
 	}
 	if matchedSlotIndex < 0 || matchedSlotIndex >= len(paths) {
 		return false, "matched counterpart slot no longer exists on disk; the collision cannot be re-confirmed"
 	}
-	f, err := os.Open(paths[matchedSlotIndex])
+	data, err := img.ReadImageFileBounded(ctx, paths[matchedSlotIndex])
 	if err != nil {
 		return false, fmt.Sprintf("re-reading matched counterpart: %v", err)
 	}
-	defer f.Close() //nolint:errcheck // best-effort close after read
 
-	got, err := img.PerceptualHash(f)
+	got, err := img.PerceptualHash(bytes.NewReader(data))
 	if err != nil {
 		return false, fmt.Sprintf("re-hashing matched counterpart: %v", err)
 	}
@@ -825,7 +825,7 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 	mu.Lock()
 	defer mu.Unlock()
 
-	m, err := img.ReadRepairManifest(a.Path, opID)
+	m, err := img.ReadRepairManifest(ctx, a.Path, opID)
 	if err != nil {
 		return PHashRestoreResult{}, err
 	}
@@ -872,8 +872,10 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 		p.logger.Warn("resolving fanart naming convention after phash restore; artist fields left as-is",
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("error", namesErr.Error()))
-	} else {
-		resyncFanartFields(a, names)
+	} else if resyncErr := resyncFanartFields(ctx, a, names); resyncErr != nil {
+		p.logger.Warn("resyncing fanart fields after phash restore; artist fields left as-is",
+			slog.String("op_id", opID), slog.String("artist_id", a.ID),
+			slog.String("error", resyncErr.Error()))
 	}
 	if err := p.artistService.Update(ctx, a); err != nil {
 		// The bytes are already back on disk at this point -- the restore
@@ -905,12 +907,12 @@ func (p *Pipeline) restoreOneQuarantined(
 	opID, primaryName string,
 	kodiNumbering bool,
 ) (restoreOutcome, error) {
-	data, err := img.RepairEntryBytes(a.Path, opID, *entry)
+	data, err := img.RepairEntryBytes(ctx, a.Path, opID, *entry)
 	if err != nil {
 		return restoreOutcomeUnset, err
 	}
 
-	exact, similar, err := p.quarantinedImagePresence(a.Path, primaryName, data)
+	exact, similar, err := p.quarantinedImagePresence(ctx, a.Path, primaryName, data)
 	if err != nil {
 		return restoreOutcomeUnset, err
 	}
@@ -929,7 +931,7 @@ func (p *Pipeline) restoreOneQuarantined(
 		// the local disk still has it. Content-addressed and idempotent -- a
 		// copy already present on the platform is a no-op.
 		p.restorePHashToPlatforms(ctx, a, entry, data, opID)
-		return restoreAlreadyPresent, img.ConsumeRepairEntry(a.Path, opID, *entry)
+		return restoreAlreadyPresent, img.ConsumeRepairEntry(ctx, a.Path, opID, *entry)
 
 	case similar:
 		// A surviving slot RESEMBLES this picture but is not it. Do
@@ -955,7 +957,7 @@ func (p *Pipeline) restoreOneQuarantined(
 	// counted once outside the loop: each restore adds a slot, so a cached
 	// length would aim the second entry at the ordinal the first just took
 	// and clobber it.
-	paths, err := img.DiscoverFanart(a.Path, primaryName)
+	paths, err := img.DiscoverFanart(ctx, a.Path, primaryName)
 	if err != nil {
 		return restoreOutcomeUnset, fmt.Errorf("discovering fanart: %w", err)
 	}
@@ -996,7 +998,7 @@ func (p *Pipeline) restoreOneQuarantined(
 	// remediation. Runs after the on-disk restore so the local recovery -- the
 	// thing that must not be lost -- is committed first.
 	p.restorePHashToPlatforms(ctx, a, entry, data, opID)
-	return restoreWrote, img.ConsumeRepairEntry(a.Path, opID, *entry)
+	return restoreWrote, img.ConsumeRepairEntry(ctx, a.Path, opID, *entry)
 }
 
 // restorePHashToPlatforms re-uploads a restored backdrop's bytes to each
@@ -1077,8 +1079,8 @@ func (p *Pipeline) restorePHashToPlatforms(ctx context.Context, a *artist.Artist
 // near-duplicate and keeps the quarantined bytes, rather than authorizing
 // anything destructive. It must not be reconnected to a delete without also
 // plumbing the operator's real tolerance through the manifest.
-func (p *Pipeline) quarantinedImagePresence(dir, primaryName string, data []byte) (exact, similar bool, err error) {
-	paths, err := img.DiscoverFanart(dir, primaryName)
+func (p *Pipeline) quarantinedImagePresence(ctx context.Context, dir, primaryName string, data []byte) (exact, similar bool, err error) {
+	paths, err := img.DiscoverFanart(ctx, dir, primaryName)
 	if err != nil {
 		return false, false, fmt.Errorf("discovering fanart: %w", err)
 	}
@@ -1088,8 +1090,27 @@ func (p *Pipeline) quarantinedImagePresence(dir, primaryName string, data []byte
 
 	want, wantErr := img.PerceptualHash(bytes.NewReader(data))
 	for _, path := range paths {
-		onDisk, readErr := os.ReadFile(path) //nolint:gosec // path is a DiscoverFanart result under the artist dir
+		onDisk, readErr := img.ReadImageFileBounded(ctx, path)
 		if readErr != nil {
+			// A canceled/timed-out ctx must PROPAGATE, not be swallowed as
+			// "this path did not match". The other read failures below (a
+			// vanished file, an over-size file, a permissions error) are
+			// legitimately "skip this one candidate and keep looking" --
+			// nothing else in the artist directory is affected. A ctx
+			// deadline is different: it means NO further candidate in this
+			// loop can be trusted either (the same stalled mount would wedge
+			// the next read too), and this result feeds a RESTORE decision
+			// (quarantinedImagePresence's exact/similar answer decides
+			// whether restoreOneQuarantined treats the quarantined bytes as
+			// already present). Continuing past a deadline here would let a
+			// stalled read on ONE candidate silently report "no duplicate
+			// found" for the whole directory, which is the wrong answer to
+			// feed a destructive-adjacent decision. Propagate instead of
+			// continuing so the caller sees the failure rather than a false
+			// negative.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return false, false, fmt.Errorf("checking %s for quarantine presence: %w", filepath.Base(path), ctxErr)
+			}
 			continue
 		}
 		if bytes.Equal(onDisk, data) {

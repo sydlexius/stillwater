@@ -2745,17 +2745,17 @@ func TestDiscoverFanartFiles_MatchesDiscoverFanart(t *testing.T) {
 				}
 				if primaryPresent {
 					var err error
-					if want, err = swimage.DiscoverFanart(dir, p); err != nil {
-						t.Fatalf("DiscoverFanart(%s): %v", p, err)
+					if want, err = swimage.DiscoverFanart(context.Background(), dir, p); err != nil {
+						t.Fatalf("DiscoverFanart(context.Background(), %s): %v", p, err)
 					}
 					break
 				}
 			}
 			if len(want) == 0 {
 				for _, p := range fanartPatterns {
-					paths, err := swimage.DiscoverFanart(dir, p)
+					paths, err := swimage.DiscoverFanart(context.Background(), dir, p)
 					if err != nil {
-						t.Fatalf("DiscoverFanart(%s): %v", p, err)
+						t.Fatalf("DiscoverFanart(context.Background(), %s): %v", p, err)
 					}
 					if len(paths) > 0 {
 						want = paths

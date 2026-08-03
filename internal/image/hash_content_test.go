@@ -5,6 +5,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	stdimage "image"
 	"image/color"
 	"image/jpeg"
@@ -58,9 +59,9 @@ func TestHashFile_DecodesOnlyWhenAsked(t *testing.T) {
 	raw := writeTestJPEG(t, path, 1, 90)
 
 	// Without the perceptual hash: content hash present, perceptual zero.
-	cheap, err := HashFile(path, false)
+	cheap, err := HashFile(context.Background(), path, false)
 	if err != nil {
-		t.Fatalf("HashFile(needPerceptual=false): %v", err)
+		t.Fatalf("HashFile(context.Background(), needPerceptual=false): %v", err)
 	}
 	if cheap.Content != ContentHash(raw) {
 		t.Error("content hash does not match a hash of the file's bytes")
@@ -70,9 +71,9 @@ func TestHashFile_DecodesOnlyWhenAsked(t *testing.T) {
 	}
 
 	// With it: both present.
-	full, err := HashFile(path, true)
+	full, err := HashFile(context.Background(), path, true)
 	if err != nil {
-		t.Fatalf("HashFile(needPerceptual=true): %v", err)
+		t.Fatalf("HashFile(context.Background(), needPerceptual=true): %v", err)
 	}
 	if full.Content != cheap.Content {
 		t.Error("content hash differs between the decoding and non-decoding paths")
@@ -93,11 +94,11 @@ func TestHashFile_ByteIdenticalCopiesHashAlike(t *testing.T) {
 		t.Fatalf("copying file: %v", err)
 	}
 
-	a, err := HashFile(original, false)
+	a, err := HashFile(context.Background(), original, false)
 	if err != nil {
 		t.Fatalf("HashFile: %v", err)
 	}
-	b, err := HashFile(copied, false)
+	b, err := HashFile(context.Background(), copied, false)
 	if err != nil {
 		t.Fatalf("HashFile: %v", err)
 	}
@@ -116,11 +117,11 @@ func TestHashFile_ReencodedCopyDiffersByBytesButNotByEye(t *testing.T) {
 	writeTestJPEG(t, high, 3, 95)
 	writeTestJPEG(t, low, 3, 55)
 
-	a, err := HashFile(high, true)
+	a, err := HashFile(context.Background(), high, true)
 	if err != nil {
 		t.Fatalf("HashFile: %v", err)
 	}
-	b, err := HashFile(low, true)
+	b, err := HashFile(context.Background(), low, true)
 	if err != nil {
 		t.Fatalf("HashFile: %v", err)
 	}
@@ -136,7 +137,7 @@ func TestHashFile_ReencodedCopyDiffersByBytesButNotByEye(t *testing.T) {
 }
 
 func TestHashFile_MissingFileErrors(t *testing.T) {
-	if _, err := HashFile(filepath.Join(t.TempDir(), "nope.jpg"), true); err == nil {
+	if _, err := HashFile(context.Background(), filepath.Join(t.TempDir(), "nope.jpg"), true); err == nil {
 		t.Error("HashFile on a missing file returned nil error")
 	}
 }
@@ -152,7 +153,7 @@ func TestHashFile_UndecodableFileStillYieldsContentHash(t *testing.T) {
 		t.Fatalf("writing junk file: %v", err)
 	}
 
-	h, err := HashFile(path, true)
+	h, err := HashFile(context.Background(), path, true)
 	if err == nil {
 		t.Error("expected a decode error for an undecodable file")
 	}

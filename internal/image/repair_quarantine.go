@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -282,7 +283,7 @@ func validateRepairEntry(entry RepairEntry) error {
 // serialization is load-bearing, not defensive -- see repairOpMu for what an
 // unguarded read-modify-write on the shared manifest destroys. Different
 // operations, and different artists, proceed in parallel.
-func QuarantineImage(dir, opID, srcPath string, entry RepairEntry) error {
+func QuarantineImage(ctx context.Context, dir, opID, srcPath string, entry RepairEntry) error {
 	opDir, err := repairOpDir(dir, opID)
 	if err != nil {
 		return err
@@ -310,7 +311,7 @@ func QuarantineImage(dir, opID, srcPath string, entry RepairEntry) error {
 	// that ever passes an untrusted path would read whatever it names, so a
 	// future exported entry point taking a user-supplied source must validate
 	// before calling here rather than inherit this assumption.
-	data, err := os.ReadFile(srcPath) //nolint:gosec // G304: caller-trusted path; see the trust-assumption comment above
+	data, err := readFileBounded(ctx, srcPath)
 	if err != nil {
 		return fmt.Errorf("reading %s for quarantine: %w", filepath.Base(srcPath), err)
 	}
@@ -326,7 +327,7 @@ func QuarantineImage(dir, opID, srcPath string, entry RepairEntry) error {
 
 	// Locked helper: this goroutine already holds the mutex and it is not
 	// reentrant. See readRepairManifestLocked.
-	m, err := readRepairManifestLocked(dir, opID)
+	m, err := readRepairManifestLocked(ctx, dir, opID)
 	if err != nil {
 		return err
 	}
@@ -366,7 +367,7 @@ func QuarantineImage(dir, opID, srcPath string, entry RepairEntry) error {
 // matches gets nil, not an error -- the same idempotent posture as
 // ConsumeRepairEntry, since a retried delete may legitimately find the entry
 // already consumed.
-func SetRepairEntryPlatformTargets(dir, opID string, entry RepairEntry, targets []RepairPlatformTarget) error {
+func SetRepairEntryPlatformTargets(ctx context.Context, dir, opID string, entry RepairEntry, targets []RepairPlatformTarget) error {
 	if _, err := repairOpDir(dir, opID); err != nil {
 		return err
 	}
@@ -380,7 +381,7 @@ func SetRepairEntryPlatformTargets(dir, opID string, entry RepairEntry, targets 
 
 	// Locked helper: this goroutine already holds the mutex and it is not
 	// reentrant. See readRepairManifestLocked.
-	m, err := readRepairManifestLocked(dir, opID)
+	m, err := readRepairManifestLocked(ctx, dir, opID)
 	if err != nil || m == nil {
 		return err
 	}
@@ -448,7 +449,7 @@ func writeRepairManifest(dir, opID string, m *RepairManifest) error {
 // readRepairManifestLocked instead. A mutator switched to this exported function
 // would self-deadlock for the process lifetime -- see backup.go's
 // slotMutexForBase for the same trap.
-func ReadRepairManifest(dir, opID string) (*RepairManifest, error) {
+func ReadRepairManifest(ctx context.Context, dir, opID string) (*RepairManifest, error) {
 	// Validate before taking a lock, so an invalid op id cannot mint a mutex
 	// in repairOpMu -- which is never evicted.
 	if _, err := repairOpDir(dir, opID); err != nil {
@@ -457,7 +458,7 @@ func ReadRepairManifest(dir, opID string) (*RepairManifest, error) {
 	mu := repairOpMutex(dir, opID)
 	mu.Lock()
 	defer mu.Unlock()
-	return readRepairManifestLocked(dir, opID)
+	return readRepairManifestLocked(ctx, dir, opID)
 }
 
 // readRepairManifestLocked is ReadRepairManifest's body without the lock.
@@ -465,12 +466,12 @@ func ReadRepairManifest(dir, opID string) (*RepairManifest, error) {
 // CALLERS MUST ALREADY HOLD repairOpMutex(dir, opID). It exists so the mutators,
 // which read the manifest inside their own critical section, do not relock a
 // non-reentrant mutex. Everything else must use the exported ReadRepairManifest.
-func readRepairManifestLocked(dir, opID string) (*RepairManifest, error) {
+func readRepairManifestLocked(ctx context.Context, dir, opID string) (*RepairManifest, error) {
 	opDir, err := repairOpDir(dir, opID)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(opDir, repairManifestName)) //nolint:gosec // opID validated by repairOpDir
+	data, err := readFileBounded(ctx, filepath.Join(opDir, repairManifestName))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -515,7 +516,7 @@ func ListRepairOps(dir string) ([]string, error) {
 }
 
 // RepairEntryBytes returns the quarantined bytes for one manifest entry.
-func RepairEntryBytes(dir, opID string, entry RepairEntry) ([]byte, error) {
+func RepairEntryBytes(ctx context.Context, dir, opID string, entry RepairEntry) ([]byte, error) {
 	opDir, err := repairOpDir(dir, opID)
 	if err != nil {
 		return nil, err
@@ -524,7 +525,7 @@ func RepairEntryBytes(dir, opID string, entry RepairEntry) ([]byte, error) {
 	// The stored name is derived here or read from a manifest this package
 	// wrote; reduce it to a basename anyway so a hand-edited manifest cannot
 	// steer the read out of the op dir.
-	data, err := os.ReadFile(filepath.Join(opDir, filepath.Base(stored))) //nolint:gosec // opID validated, name reduced to basename
+	data, err := readFileBounded(ctx, filepath.Join(opDir, filepath.Base(stored)))
 	if err != nil {
 		return nil, fmt.Errorf("reading quarantined bytes for %s: %w", entry.FileName, err)
 	}
@@ -545,7 +546,7 @@ func RepairEntryBytes(dir, opID string, entry RepairEntry) ([]byte, error) {
 // takes. This is a read-modify-write on the same shared manifest and races it
 // identically -- an unguarded consume running against a concurrent quarantine
 // drops the entry that quarantine just appended, orphaning its bytes.
-func ConsumeRepairEntry(dir, opID string, entry RepairEntry) error {
+func ConsumeRepairEntry(ctx context.Context, dir, opID string, entry RepairEntry) error {
 	opDir, err := repairOpDir(dir, opID)
 	if err != nil {
 		return err
@@ -557,7 +558,7 @@ func ConsumeRepairEntry(dir, opID string, entry RepairEntry) error {
 
 	// Locked helper: this goroutine already holds the mutex and it is not
 	// reentrant. See readRepairManifestLocked.
-	m, err := readRepairManifestLocked(dir, opID)
+	m, err := readRepairManifestLocked(ctx, dir, opID)
 	if err != nil || m == nil {
 		return err
 	}

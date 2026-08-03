@@ -13,6 +13,7 @@ package rule
 // consequence -- the other artists' slots still get hashed and persisted.
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -47,7 +48,7 @@ func writeOversizedSparse(t *testing.T, path string) {
 func TestOversizedBoundMatchesHashFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "probe.jpg")
 	writeOversizedSparse(t, path)
-	if _, err := image.HashFile(path, true); !errors.Is(err, image.ErrImageTooLarge) {
+	if _, err := image.HashFile(context.Background(), path, true); !errors.Is(err, image.ErrImageTooLarge) {
 		t.Fatalf("oversized fixture no longer exceeds image.HashFile's bound "+
 			"(got %v) -- update writeOversizedSparse to match image.MaxDecodeBytes", err)
 	}

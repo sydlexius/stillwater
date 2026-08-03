@@ -49,9 +49,9 @@ func TestDiscoverFanart(t *testing.T) {
 		}
 	}
 
-	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(context.Background(), dir, "backdrop.jpg")
 	if err != nil {
-		t.Fatalf("DiscoverFanart() error: %v", err)
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
 	}
 	if len(paths) != 3 {
 		t.Fatalf("expected 3 fanart files, got %d: %v", len(paths), paths)
@@ -75,9 +75,9 @@ func TestDiscoverFanart_KodiNaming(t *testing.T) {
 		}
 	}
 
-	paths, err := DiscoverFanart(dir, "fanart.jpg")
+	paths, err := DiscoverFanart(context.Background(), dir, "fanart.jpg")
 	if err != nil {
-		t.Fatalf("DiscoverFanart() error: %v", err)
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
 	}
 	if len(paths) != 3 {
 		t.Fatalf("expected 3 fanart files, got %d: %v", len(paths), paths)
@@ -94,7 +94,7 @@ func TestDiscoverFanart_KodiNaming(t *testing.T) {
 
 func TestDiscoverFanart_NonexistentDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "no-such-subdir")
-	_, err := DiscoverFanart(dir, "backdrop.jpg")
+	_, err := DiscoverFanart(context.Background(), dir, "backdrop.jpg")
 	if err == nil {
 		t.Fatal("expected error for nonexistent directory, got nil")
 	}
@@ -105,9 +105,9 @@ func TestDiscoverFanart_NonexistentDir(t *testing.T) {
 
 func TestDiscoverFanart_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(context.Background(), dir, "backdrop.jpg")
 	if err != nil {
-		t.Fatalf("DiscoverFanart() error: %v", err)
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
 	}
 	if len(paths) != 0 {
 		t.Errorf("expected 0 fanart files, got %d", len(paths))
@@ -123,9 +123,9 @@ func TestDiscoverFanart_MixedCase(t *testing.T) {
 		}
 	}
 
-	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(context.Background(), dir, "backdrop.jpg")
 	if err != nil {
-		t.Fatalf("DiscoverFanart() error: %v", err)
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
 	}
 	if len(paths) != 3 {
 		t.Fatalf("expected 3 fanart files (mixed case), got %d: %v", len(paths), paths)
@@ -155,26 +155,26 @@ func TestMaxFanartIndex(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			got, err := MaxFanartIndex(dir, tt.primary)
+			got, err := MaxFanartIndex(context.Background(), dir, tt.primary)
 			if err != nil {
-				t.Fatalf("MaxFanartIndex() error: %v", err)
+				t.Fatalf("MaxFanartIndex(context.Background(), ) error: %v", err)
 			}
 			if got != tt.want {
-				t.Errorf("MaxFanartIndex() = %d, want %d", got, tt.want)
+				t.Errorf("MaxFanartIndex(context.Background(), ) = %d, want %d", got, tt.want)
 			}
 		})
 	}
 }
 
 func TestMaxFanartIndex_ReadDirError(t *testing.T) {
-	_, err := MaxFanartIndex("/nonexistent/path/abc123", "backdrop.jpg")
+	_, err := MaxFanartIndex(context.Background(), "/nonexistent/path/abc123", "backdrop.jpg")
 	if err == nil {
 		t.Error("expected error for nonexistent directory")
 	}
 }
 
 func TestMaxFanartIndex_EmptyPrimary(t *testing.T) {
-	got, err := MaxFanartIndex(t.TempDir(), "")
+	got, err := MaxFanartIndex(context.Background(), t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestNextFanartIndex_EmbySequence(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	maxSuffix, err := MaxFanartIndex(dir, "backdrop.jpg")
+	maxSuffix, err := MaxFanartIndex(context.Background(), dir, "backdrop.jpg")
 	if err != nil {
 		t.Fatalf("MaxFanartIndex error: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestNextFanartIndex_KodiSequence(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	maxSuffix, err := MaxFanartIndex(dir, "fanart.jpg")
+	maxSuffix, err := MaxFanartIndex(context.Background(), dir, "fanart.jpg")
 	if err != nil {
 		t.Fatalf("MaxFanartIndex error: %v", err)
 	}
@@ -269,9 +269,9 @@ func TestDiscoverFanart_DuplicateExtension(t *testing.T) {
 		}
 	}
 
-	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(context.Background(), dir, "backdrop.jpg")
 	if err != nil {
-		t.Fatalf("DiscoverFanart() error: %v", err)
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
 	}
 	if len(paths) != 1 {
 		t.Fatalf("expected 1 fanart file (dedup), got %d: %v", len(paths), paths)
@@ -291,9 +291,9 @@ func TestDiscoverFanart_DuplicateNumbered(t *testing.T) {
 		}
 	}
 
-	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(context.Background(), dir, "backdrop.jpg")
 	if err != nil {
-		t.Fatalf("DiscoverFanart() error: %v", err)
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
 	}
 	if len(paths) != 2 {
 		t.Fatalf("expected 2 fanart files (primary + one numbered), got %d: %v", len(paths), paths)
@@ -311,9 +311,9 @@ func TestDiscoverFanart_AlternateExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(context.Background(), dir, "backdrop.jpg")
 	if err != nil {
-		t.Fatalf("DiscoverFanart() error: %v", err)
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
 	}
 	if len(paths) != 1 {
 		t.Fatalf("expected 1 fanart file (alternate ext), got %d: %v", len(paths), paths)

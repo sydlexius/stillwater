@@ -345,7 +345,7 @@ func TestHandleFanartSlotAssign_NotifiesCrossArtistCollision(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (notify-only must never fail the write); body: %s", w.Code, w.Body.String())
 	}
 	primary := r.getActiveFanartPrimary(context.Background())
-	paths, _ := img.DiscoverFanart(artistDir, primary)
+	paths, _ := img.DiscoverFanart(context.Background(), artistDir, primary)
 	if len(paths) != 1 {
 		t.Fatalf("got %d fanart files, want 1: the assignment itself must still happen", len(paths))
 	}

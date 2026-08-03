@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,7 +65,7 @@ func TestResolveFanartFiles_MatchesScanner(t *testing.T) {
 				}
 			}
 
-			got, err := swimage.ResolveFanartFiles(dir, fanartPatterns)
+			got, err := swimage.ResolveFanartFiles(context.Background(), dir, fanartPatterns)
 			if err != nil {
 				t.Fatalf("ResolveFanartFiles: %v", err)
 			}

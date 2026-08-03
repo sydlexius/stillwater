@@ -21,12 +21,12 @@
 package maintenance
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -324,7 +324,7 @@ func (s *Service) existingSlots(ctx context.Context, artistID string) (map[slotK
 // pass). Files present but failing verification are counted in res.FilesSkipped
 // and omitted.
 func (s *Service) discover(ctx context.Context, log *slog.Logger, artistID, dir string, res *ImageRepairResult) ([]candidate, error) {
-	fanart, err := img.ResolveFanartFiles(dir, img.DefaultFileNames["fanart"])
+	fanart, err := img.ResolveFanartFiles(ctx, dir, img.DefaultFileNames["fanart"])
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +345,7 @@ func (s *Service) discover(ctx context.Context, log *slog.Logger, artistID, dir 
 		// Strict: a stat error means "cannot tell" and must not read as
 		// "absent" (issue #1161). Absent is a no-op here anyway; the point is
 		// that a flaky mount cannot produce a silently clean report.
-		path, ok, statErr := img.FindExistingImageStrict(dir, img.FileNamesForType(img.DefaultFileNames, t))
+		path, ok, statErr := img.FindExistingImageStrict(ctx, dir, img.FileNamesForType(img.DefaultFileNames, t))
 		if statErr != nil {
 			log.Warn("image repair: stat error probing image type, skipping type",
 				slog.String("image_type", t), slog.Any("error", statErr))
@@ -402,7 +402,7 @@ func appendVerified(ctx context.Context, log *slog.Logger, out []candidate, arti
 func verifyImageFile(ctx context.Context, key slotKey, path string, withMetadata bool) (candidate, error) {
 	c := candidate{key: key, fileName: filepath.Base(path)}
 
-	// Cancellation check before the os.Open + full pixel decode: a canceled or
+	// Cancellation check before the read + full pixel decode: a canceled or
 	// timed-out pass must not keep decoding the current artist's remaining
 	// files. Returning the context error propagates the cancellation up through
 	// appendVerified and discover.
@@ -410,23 +410,31 @@ func verifyImageFile(ctx context.Context, key slotKey, path string, withMetadata
 		return c, err
 	}
 
-	f, err := os.Open(path) //nolint:gosec // path comes from a listing of the artist's own image dir
+	// Read the bytes under context control FIRST, then decode them from
+	// memory (#2689). This used to be a bare os.Open handed straight to the
+	// decoders, so a stalled network mount wedged the read inside
+	// GeneratePlaceholder with nothing able to abort it -- and this function
+	// runs inside the registry-repair handler, whose singleton is released by
+	// a deferred unlock that a never-returning handler never reaches.
+	//
+	// The split is what makes the bound real: only the read can hang on the
+	// mount, and the decode that follows is bounded CPU work over bytes
+	// already in hand. It also removes the Seek: two decoders now read two
+	// independent bytes.Readers over the same buffer rather than rewinding one
+	// file handle.
+	data, err := img.ReadImageFileBounded(ctx, path)
 	if err != nil {
 		return c, fmt.Errorf("opening %s: %w", path, err)
 	}
-	defer f.Close() //nolint:errcheck // read-only handle
 
-	placeholder, err := img.GeneratePlaceholder(f, key.imageType)
+	placeholder, err := img.GeneratePlaceholder(bytes.NewReader(data), key.imageType)
 	if err != nil {
 		return c, fmt.Errorf("decoding %s: %w", path, err)
 	}
 	if !withMetadata {
 		return c, nil
 	}
-	if _, err := f.Seek(0, 0); err != nil {
-		return c, fmt.Errorf("rewinding %s: %w", path, err)
-	}
-	w, h, err := img.GetDimensions(f)
+	w, h, err := img.GetDimensions(bytes.NewReader(data))
 	if err != nil {
 		return c, fmt.Errorf("reading dimensions of %s: %w", path, err)
 	}

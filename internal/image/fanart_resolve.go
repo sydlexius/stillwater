@@ -1,8 +1,8 @@
 package image
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -30,8 +30,12 @@ import (
 // (nil, nil) for an unreadable directory -- "cannot tell" and "no fanart
 // here" are different facts, and collapsing them is what destroyed the
 // registry rows this function exists to help rebuild.
-func ResolveFanartFiles(dir string, candidates []string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
+//
+// ctx bounds every directory read this performs (#2689). It sits directly on
+// the registry-repair rebuild path, inside a handler whose singleton a wedged
+// request never releases.
+func ResolveFanartFiles(ctx context.Context, dir string, candidates []string) ([]string, error) {
+	entries, err := readDirCtx(ctx, dir)
 	if err != nil {
 		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
@@ -59,14 +63,14 @@ func ResolveFanartFiles(dir string, candidates []string) ([]string, error) {
 	// Pass 1: a primary file on disk decides which naming convention applies.
 	for _, candidate := range candidates {
 		if present[strings.ToLower(candidate)] {
-			return DiscoverFanart(dir, candidate)
+			return DiscoverFanart(ctx, dir, candidate)
 		}
 	}
 
 	// Pass 2: no primary anywhere, so numbered variants may still be present.
 	// Strictly additive -- it cannot change any artist pass 1 resolved.
 	for _, candidate := range candidates {
-		paths, err := DiscoverFanart(dir, candidate)
+		paths, err := DiscoverFanart(ctx, dir, candidate)
 		if err != nil {
 			return nil, err
 		}

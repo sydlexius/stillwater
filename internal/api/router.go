@@ -222,6 +222,14 @@ type Router struct {
 	// platforms, it does not touch the local library's fanart rows the way
 	// the local remediation and bulk actions do, so there is no shared
 	// TOCTOU surface requiring cross-singleton exclusion.
+	//
+	// NOT on the #2689 stalled-read path, audited rather than assumed: the
+	// prune reads no local image bytes at all. Its work is a DB artist listing
+	// plus platform HTTP calls, and every platform client is constructed with
+	// a finite http.Client Timeout (internal/connection/{emby,jellyfin}/
+	// client.go), so each call returns and the deferred release is always
+	// reached. That is why this handler carries no work deadline while the
+	// four remediation handlers that DO read local images now do.
 	platformPruneMu      sync.Mutex
 	platformPruneRunning bool
 	// registryRepairRunning guards the singleton image-registry repair run
@@ -245,6 +253,11 @@ type Router struct {
 	// separate: a restore writes artist metadata columns and history rows, and
 	// touches no image bytes on disk, so it shares no TOCTOU surface with the
 	// destructive-fanart singletons.
+	//
+	// That same property keeps it off the #2689 stalled-read path: "touches no
+	// image bytes on disk" is exactly the reason a wedged mount cannot pin
+	// this handler, so it needs no work deadline. Verified, not inferred --
+	// handlers_blast_radius_restore.go performs no filesystem I/O at all.
 	blastRestoreMu      sync.Mutex
 	blastRestoreRunning bool
 	// discographyFetchInFlight holds the artist IDs that currently have a

@@ -230,8 +230,18 @@ func (s *Service) ScanExistsFlags(ctx context.Context) error {
 			skipped++
 			continue
 		}
-		_, found, statErr := img.FindExistingImageStrictVerifyDir(dir, patterns)
+		_, found, statErr := img.FindExistingImageStrictVerifyDir(ctx, dir, patterns)
 		if statErr != nil {
+			// Cancellation ends the pass rather than being absorbed as one
+			// more unverifiable artist (#2689). Skipping is SAFE here -- a
+			// skipped row is never cleared -- but continuing would walk every
+			// remaining row against a context that is already done, doing no
+			// filesystem work at all, and then log a completed scan whose
+			// "skipped" count is really "we stopped looking". Ending the pass
+			// reports the truth and lets the next tick redo it.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return fmt.Errorf("exists_flag scan canceled after %d rows checked: %w", checked, ctxErr)
+			}
 			s.logger.Warn("exists_flag scan: stat error probing artist dir, skipping",
 				slog.String("artist_id", artistID),
 				slog.String("dir", dir),
@@ -342,14 +352,14 @@ func (s *Service) StartExistsFlagScanner(ctx context.Context, interval, startupD
 // path, whatever numbering convention the library uses. Single-slot types
 // (thumb, logo, banner) occupy slot 0 only; a row claiming slot_index > 0 for
 // such a type has no on-disk naming and is reported absent, never restored.
-func confirmSlotOnDisk(dir, imageType string, slotIndex int) (bool, error) {
+func confirmSlotOnDisk(ctx context.Context, dir, imageType string, slotIndex int) (bool, error) {
 	if imageType == "fanart" {
 		names, err := img.ResolveFanartNames(nil)
 		if err != nil {
 			// No fanart naming patterns at all: cannot verify, so do not restore.
 			return false, err
 		}
-		_, paths, err := img.ResolveFanart(dir, names)
+		_, paths, err := img.ResolveFanart(ctx, dir, names)
 		if err != nil {
 			// Directory unreadable/absent -- unverifiable, skip.
 			return false, err
@@ -375,7 +385,7 @@ func confirmSlotOnDisk(dir, imageType string, slotIndex int) (bool, error) {
 	// "file present" (nor collapsed into "definitively absent" the way
 	// plain FindExistingImageStrict would on a vanished directory -- see
 	// #2686). Restore only on a confirmed hit.
-	_, found, err := img.FindExistingImageStrictVerifyDir(dir, patterns)
+	_, found, err := img.FindExistingImageStrictVerifyDir(ctx, dir, patterns)
 	return found, err
 }
 
@@ -506,8 +516,25 @@ func (s *Service) RestoreExistsFlags(ctx context.Context, opts ExistsFlagRestore
 			continue
 		}
 
-		found, confErr := confirmSlotOnDisk(dir, imageType, slotIndex)
+		found, confErr := confirmSlotOnDisk(ctx, dir, imageType, slotIndex)
 		if confErr != nil {
+			// A cancellation is not an unverifiable slot -- it is an aborted
+			// pass, and it must END the scan rather than be absorbed into the
+			// skip branch below (#2689). This distinction is load-bearing now
+			// that the on-disk probes honor the context: without it a
+			// timed-out preview would walk every remaining row, count each as
+			// Skipped, and return a 200 whose counters describe a scan that
+			// never actually looked at anything -- "cannot tell" reported as a
+			// completed pass, which is the exact category error this whole
+			// feature exists to prevent.
+			//
+			// It is checked here rather than at the top of the loop because
+			// the probe is where the cancellation is OBSERVED; a row whose
+			// probe answered before the deadline is a legitimate result and
+			// stays counted.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, fmt.Errorf("exists_flag restore canceled after %d rows checked: %w", res.Checked, ctxErr)
+			}
 			// Unverifiable (permission denied, I/O error, unreadable dir). Skip:
 			// a flag is restored only on positive confirmation, never on a guess.
 			s.logger.Warn("exists_flag restore: cannot verify slot on disk, skipping",
@@ -738,7 +765,7 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 		}
 		paths, ok := discovered[st.artistID]
 		if !ok {
-			p, discErr := img.DiscoverFanart(dir, primary)
+			p, discErr := img.DiscoverFanart(ctx, dir, primary)
 			if discErr != nil {
 				s.logger.Warn("fanart hash backfill: discovering fanart, skipping artist",
 					slog.String("artist_id", st.artistID),
@@ -764,7 +791,7 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 		}
 		path := paths[st.slotIndex]
 
-		fh, hashErr := img.HashFile(path, true)
+		fh, hashErr := img.HashFile(ctx, path, true)
 		if hashErr != nil || fh.Perceptual == 0 && fh.Content == "" {
 			s.logger.Warn("fanart hash backfill: hashing file, skipping",
 				slog.String("artist_id", st.artistID),

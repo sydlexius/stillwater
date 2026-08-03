@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -36,7 +37,7 @@ func TestBackupSingleSlot_BackupDirIsFile(t *testing.T) {
 		t.Fatalf("seeding .sw-backup as file: %v", err)
 	}
 
-	err := BackupSingleSlot(dir, "thumb", errPathThumbNaming)
+	err := BackupSingleSlot(context.Background(), dir, "thumb", errPathThumbNaming)
 	if err == nil {
 		t.Fatal("BackupSingleSlot must error when .sw-backup is a regular file")
 	}
@@ -76,7 +77,7 @@ func TestBackupSingleSlot_FailedWritePreservesPriorBackup(t *testing.T) {
 	// Restore perms so t.TempDir's RemoveAll can clean up.
 	t.Cleanup(func() { _ = os.Chmod(typeDir, 0o750) })
 
-	err := BackupSingleSlot(dir, "thumb", errPathThumbNaming)
+	err := BackupSingleSlot(context.Background(), dir, "thumb", errPathThumbNaming)
 	if err == nil {
 		t.Fatal("BackupSingleSlot must error when the fresh backup write fails")
 	}
@@ -181,7 +182,7 @@ func TestRemoveBackupFiles_SkipsSubdirectories(t *testing.T) {
 	}
 
 	// BackupSingleSlot writes a fresh backup, then runs pruneBackupFiles (one-deep).
-	if err := BackupSingleSlot(dir, "thumb", errPathThumbNaming); err != nil {
+	if err := BackupSingleSlot(context.Background(), dir, "thumb", errPathThumbNaming); err != nil {
 		t.Fatalf("BackupSingleSlot: %v", err)
 	}
 

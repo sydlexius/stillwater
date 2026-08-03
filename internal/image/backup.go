@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -128,11 +129,17 @@ func pruneBackupFiles(dir, imageType, keep string) error {
 // naming is the configured filename list for imageType (the type's canonical
 // names); the PRIMARY existing original is located by probing those names plus
 // alternate extensions, matching FindExistingImageStrict semantics.
-func BackupSingleSlot(dir, imageType string, naming []string) error {
+func BackupSingleSlot(ctx context.Context, dir, imageType string, naming []string) error {
 	// Strict probe: a transient stat error must not be mistaken for "absent",
 	// which would silently skip the backup and let the destructive caller
 	// overwrite a still-present original (#1161).
-	existing, found, statErr := FindExistingImageStrict(dir, naming)
+	//
+	// ctx bounds those probes (#2689). A backup runs immediately BEFORE a
+	// destructive write, so a caller that has already given up must not still
+	// be probing a mount that stopped answering: the cancellation surfaces as
+	// a probe error, which this function already treats as "abort rather than
+	// destroy an original I could not protect".
+	existing, found, statErr := FindExistingImageStrict(ctx, dir, naming)
 	if statErr != nil {
 		return fmt.Errorf("probing original for backup: %w", statErr)
 	}
@@ -283,8 +290,8 @@ func pruneSlotBackups(dir, imageType, fileName, keep string) error {
 // When no original exists, any STALE backup for this slot is pruned. Without that, a
 // backup left behind by an earlier overwrite could be restored over a slot the user
 // has since DELETED -- resurrecting artwork they threw away.
-func BackupSlot(dir, imageType, fileName string) error {
-	existing, found, statErr := FindExistingImageStrict(dir, []string{fileName})
+func BackupSlot(ctx context.Context, dir, imageType, fileName string) error {
+	existing, found, statErr := FindExistingImageStrict(ctx, dir, []string{fileName})
 	if statErr != nil {
 		return fmt.Errorf("probing slot original for backup: %w", statErr)
 	}
@@ -567,7 +574,7 @@ func lockSlots(dir, imageType string, names []string) func() {
 // cross-package entry point (internal/rule and others call it without
 // necessarily holding a logger) and a nil logger must never panic on the
 // failed-rollback path.
-func SaveSlotProtected(dir, imageType string, naming []string, data []byte, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) ([]string, error) {
+func SaveSlotProtected(ctx context.Context, dir, imageType string, naming []string, data []byte, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) ([]string, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -606,7 +613,7 @@ func SaveSlotProtected(dir, imageType string, naming []string, data []byte, useS
 	defer unlock()
 
 	for _, name := range protected {
-		if bErr := BackupSlot(dir, imageType, name); bErr != nil {
+		if bErr := BackupSlot(ctx, dir, imageType, name); bErr != nil {
 			// Name the SPECIFIC slot file, not just the type: a multi-name save backs up
 			// several files and "the fanart slot failed" does not tell an operator which.
 			return nil, fmt.Errorf("backing up %s (the %s slot) before overwrite (aborting destructive save): %w", name, imageType, bErr)

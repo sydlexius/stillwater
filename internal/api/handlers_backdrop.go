@@ -140,7 +140,7 @@ func (r *Router) handlePlatformBackdrops(w http.ResponseWriter, req *http.Reques
 	if isHTMXRequest(req) {
 		// Compute next available fanart slot for the assign button.
 		primary := r.getActiveFanartPrimary(req.Context())
-		discovered, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+		discovered, discoverErr := img.DiscoverFanart(req.Context(), r.imageDir(a), primary)
 		if discoverErr != nil && !errors.Is(discoverErr, os.ErrNotExist) {
 			r.logger.Error("discovering fanart for backdrop listing",
 				slog.String("artist_id", a.ID),
@@ -289,7 +289,7 @@ func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request
 	// Validate slot density: reject gaps (slot must be <= current count).
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodi := r.isKodiNumbering(req.Context())
-	existing, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	existing, discoverErr := img.DiscoverFanart(req.Context(), r.imageDir(a), primary)
 	if discoverErr != nil && !errors.Is(discoverErr, os.ErrNotExist) {
 		r.logger.Error("discovering fanart for slot assign",
 			slog.String("artist_id", artistID),
@@ -440,7 +440,7 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodi := r.isKodiNumbering(req.Context())
-	paths, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	paths, discoverErr := img.DiscoverFanart(req.Context(), r.imageDir(a), primary)
 	if discoverErr != nil {
 		r.logger.Error("discovering fanart for slot delete",
 			slog.String("artist_id", artistID),
@@ -561,7 +561,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodi := r.isKodiNumbering(req.Context())
-	paths, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	paths, discoverErr := img.DiscoverFanart(req.Context(), r.imageDir(a), primary)
 	if discoverErr != nil {
 		r.logger.Error("discovering fanart for reorder",
 			slog.String("artist_id", artistID),

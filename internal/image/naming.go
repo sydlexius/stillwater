@@ -1,10 +1,10 @@
 package image
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -150,8 +150,13 @@ var AllSlots = []string{"thumb", "fanart", "logo", "banner"}
 // flags, deleting rows, overwriting NFOs) MUST call FindExistingImageStrict
 // instead so transient stat errors (EACCES, EIO, ESTALE, ELOOP) are not
 // silently treated as "file absent". See issue #1161.
-func FindExistingImage(dir string, patterns []string) (string, bool) {
-	path, found, _ := FindExistingImageStrict(dir, patterns)
+//
+// ctx is threaded through to the stats below (#2689) on the same terms as
+// FindExistingImageStrict: this wrapper discards the ERROR, never the
+// cancellation, and a caller that has given up should not keep probing a
+// mount that has stopped answering.
+func FindExistingImage(ctx context.Context, dir string, patterns []string) (string, bool) {
+	path, found, _ := FindExistingImageStrict(ctx, dir, patterns)
 	return path, found
 }
 
@@ -164,10 +169,23 @@ func FindExistingImage(dir string, patterns []string) (string, bool) {
 // On a clean miss (every probe returned fs.ErrNotExist), the result is
 // ("", false, nil). On a hit, the result is (path, true, nil). On the first
 // non-ENOENT error, the result is ("", false, err) and probing stops.
-func FindExistingImageStrict(dir string, patterns []string) (string, bool, error) {
+//
+// ctx bounds every stat (#2689). A stat is one metadata round trip rather than
+// a byte stream, so it is the least likely of these probes to stall for long
+// -- but on a hard-mounted export that has stopped answering it hangs exactly
+// as completely as a read, and this function runs a LOOP of them: one per
+// pattern plus one per alternate extension, so a single wedged directory
+// multiplies. It is on both registry-repair passes, inside a handler whose
+// singleton a request that never returns never releases.
+//
+// A canceled probe returns the context error, which lands in the same
+// "cannot tell -- skip and report" branch every non-ENOENT stat error already
+// takes. That is the correct reading and requires no caller change: a
+// canceled probe genuinely did not establish absence.
+func FindExistingImageStrict(ctx context.Context, dir string, patterns []string) (string, bool, error) {
 	for _, pattern := range patterns {
 		p := filepath.Join(dir, pattern)
-		if _, err := os.Stat(p); err == nil {
+		if _, err := statCtx(ctx, p); err == nil {
 			return p, true, nil
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return "", false, err
@@ -179,7 +197,7 @@ func FindExistingImageStrict(dir string, patterns []string) (string, bool, error
 				continue
 			}
 			alt := filepath.Join(dir, base+ext)
-			if _, err := os.Stat(alt); err == nil {
+			if _, err := statCtx(ctx, alt); err == nil {
 				return alt, true, nil
 			} else if !errors.Is(err, fs.ErrNotExist) {
 				return "", false, err
@@ -214,9 +232,12 @@ func FindExistingImageStrict(dir string, patterns []string) (string, bool, error
 // a shared cache or library volume must degrade to "skip and retry next
 // cycle", never to "the artwork is gone, clear the flag" or "the artwork is
 // gone, delete the row". See issue #2686.
-func FindExistingImageStrictVerifyDir(dir string, patterns []string) (string, bool, error) {
-	if _, err := os.Stat(dir); err != nil {
+//
+// ctx bounds the directory stat and every probe below it (#2689), on the same
+// terms as FindExistingImageStrict.
+func FindExistingImageStrictVerifyDir(ctx context.Context, dir string, patterns []string) (string, bool, error) {
+	if _, err := statCtx(ctx, dir); err != nil {
 		return "", false, fmt.Errorf("stat image dir %s: %w", dir, err)
 	}
-	return FindExistingImageStrict(dir, patterns)
+	return FindExistingImageStrict(ctx, dir, patterns)
 }

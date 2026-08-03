@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -78,13 +79,13 @@ func TestSaveSlotProtected_ConcurrentSameSlot_RollbackCannotEatAGoodWrite(t *tes
 		go func() {
 			defer wg.Done()
 			<-start
-			_, winnerErr = SaveSlotProtected(dir, "fanart", []string{"fanart.jpg"}, winnerImage, false, nil, discardLogger())
+			_, winnerErr = SaveSlotProtected(context.Background(), dir, "fanart", []string{"fanart.jpg"}, winnerImage, false, nil, discardLogger())
 		}()
 		go func() {
 			defer wg.Done()
 			<-start
 			// Same slot ("fanart"), and its second name is unwritable, so it rolls back.
-			_, loserErr = SaveSlotProtected(dir, "fanart",
+			_, loserErr = SaveSlotProtected(context.Background(), dir, "fanart",
 				[]string{"fanart.jpg", unwritableName}, makeJPEG(t, 60, 40), false, nil, discardLogger())
 		}()
 		close(start)
@@ -164,14 +165,14 @@ func TestSaveSlotProtected_ConcurrentSameSlot_CrossFormat(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, winnerErr = SaveSlotProtected(dir, "fanart", []string{"fanart.png"}, winnerImage, false, nil, discardLogger())
+			_, winnerErr = SaveSlotProtected(context.Background(), dir, "fanart", []string{"fanart.png"}, winnerImage, false, nil, discardLogger())
 		}()
 		go func() {
 			defer wg.Done()
 			<-start
 			// The SAME slot, spelled with the other extension, and an unwritable second name
 			// so it fails AFTER its write lands and therefore really does roll back.
-			_, loserErr = SaveSlotProtected(dir, "fanart",
+			_, loserErr = SaveSlotProtected(context.Background(), dir, "fanart",
 				[]string{"fanart.jpg", unwritableName}, makeJPEG(t, 60, 40), false, nil, discardLogger())
 		}()
 		close(start)
@@ -236,7 +237,7 @@ func TestSaveSlotProtected_ConcurrentSameSlot_LastWriteIsIntact(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, errs[i] = SaveSlotProtected(dir, "fanart", []string{"fanart.jpg"}, payloads[i], false, nil, discardLogger())
+			_, errs[i] = SaveSlotProtected(context.Background(), dir, "fanart", []string{"fanart.jpg"}, payloads[i], false, nil, discardLogger())
 		}()
 	}
 	close(start)
