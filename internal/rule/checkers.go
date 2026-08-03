@@ -679,7 +679,7 @@ var imageExtensions = map[string]bool{
 // truth shared between the registry and disk; declaring it extraneous because
 // it does not match the active profile's PRIMARY name is a profile-vs-disk
 // drift, not a Stillwater hygiene problem.
-func expectedImageFiles(profile *platform.Profile, artistPath string) map[string]bool {
+func expectedImageFiles(ctx context.Context, profile *platform.Profile, artistPath string) map[string]bool {
 	expected := make(map[string]bool)
 	expected["artist.nfo"] = true
 
@@ -724,7 +724,7 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 		}
 		kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
 		for _, fanartName := range fanartNames {
-			discovered, discoverErr := image.DiscoverFanart(artistPath, fanartName)
+			discovered, discoverErr := image.DiscoverFanart(ctx, artistPath, fanartName)
 			if discoverErr != nil {
 				slog.Warn("discovering fanart for expected-files whitelist",
 					slog.String("dir", artistPath),
@@ -780,7 +780,7 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 		if e.platformService != nil {
 			profile, _ = e.platformService.GetActive(ctx)
 		}
-		expected := expectedImageFiles(profile, a.Path)
+		expected := expectedImageFiles(ctx, profile, a.Path)
 
 		entries, readErr := e.readDirCached(a.Path)
 		if readErr != nil {
@@ -954,19 +954,19 @@ func expectedImageFilesAllProfiles(ctx context.Context, svc *platform.Service, l
 			slog.String("error", err.Error()))
 		// Fall back to active profile only.
 		active, _ := svc.GetActive(ctx)
-		return expectedImageFiles(active, artistPath)
+		return expectedImageFiles(ctx, active, artistPath)
 	}
 
 	merged := make(map[string]bool)
 	for i := range profiles {
-		for k, v := range expectedImageFiles(&profiles[i], artistPath) {
+		for k, v := range expectedImageFiles(ctx, &profiles[i], artistPath) {
 			if v {
 				merged[k] = true
 			}
 		}
 	}
 	// Always include the default set too (no profile).
-	for k, v := range expectedImageFiles(nil, artistPath) {
+	for k, v := range expectedImageFiles(ctx, nil, artistPath) {
 		if v {
 			merged[k] = true
 		}
@@ -1211,7 +1211,7 @@ func (e *Engine) makeBackdropSequencingChecker() Checker {
 		kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
 
 		for _, primaryName := range fanartNames {
-			discovered, err := image.DiscoverFanart(a.Path, primaryName)
+			discovered, err := image.DiscoverFanart(ctx, a.Path, primaryName)
 			if err != nil {
 				e.logger.Debug("discovering fanart for sequencing check",
 					"dir", a.Path,
@@ -1338,7 +1338,7 @@ func (e *Engine) countBackdrops(ctx context.Context, dir string) int {
 	seen := make(map[string]bool)
 	count := 0
 	for _, primaryName := range fanartNames {
-		discovered, err := image.DiscoverFanart(dir, primaryName)
+		discovered, err := image.DiscoverFanart(ctx, dir, primaryName)
 		if err != nil {
 			continue
 		}

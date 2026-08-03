@@ -293,7 +293,7 @@ func TestHandleFanartSlotAssign(t *testing.T) {
 
 	// Verify the file was saved -- default primary is "fanart.jpg".
 	primary := r.getActiveFanartPrimary(context.Background())
-	paths, _ := img.DiscoverFanart(artistDir, primary)
+	paths, _ := img.DiscoverFanart(context.Background(), artistDir, primary)
 	if len(paths) != 1 {
 		t.Fatalf("got %d fanart files, want 1", len(paths))
 	}
@@ -372,7 +372,7 @@ func TestHandleFanartSlotDelete(t *testing.T) {
 	}
 
 	// Should have 2 remaining files, renumbered.
-	remaining, _ := img.DiscoverFanart(artistDir, primary)
+	remaining, _ := img.DiscoverFanart(context.Background(), artistDir, primary)
 	if len(remaining) != 2 {
 		t.Fatalf("got %d remaining fanart, want 2", len(remaining))
 	}
@@ -410,7 +410,7 @@ func TestHandleFanartSlotDelete_OnlySlot(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	remaining, _ := img.DiscoverFanart(artistDir, primary)
+	remaining, _ := img.DiscoverFanart(context.Background(), artistDir, primary)
 	if len(remaining) != 0 {
 		t.Fatalf("got %d remaining fanart, want 0", len(remaining))
 	}
@@ -465,7 +465,7 @@ func TestHandleFanartReorder(t *testing.T) {
 	}
 
 	// Verify content moved correctly.
-	paths, _ := img.DiscoverFanart(artistDir, primary)
+	paths, _ := img.DiscoverFanart(context.Background(), artistDir, primary)
 	if len(paths) != 3 {
 		t.Fatalf("got %d fanart files, want 3", len(paths))
 	}

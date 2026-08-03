@@ -47,13 +47,13 @@ func installHashCounter(t *testing.T) *hashCallLog {
 	t.Helper()
 	log := &hashCallLog{}
 	original := hashImageFile
-	hashImageFile = func(path string, needPerceptual bool) (image.FileHashes, error) {
+	hashImageFile = func(ctx context.Context, path string, needPerceptual bool) (image.FileHashes, error) {
 		log.reads++
 		if needPerceptual {
 			log.decodes++
 		}
 		log.paths = append(log.paths, path)
-		return original(path, needPerceptual)
+		return original(ctx, path, needPerceptual)
 	}
 	t.Cleanup(func() { hashImageFile = original })
 	return log
@@ -860,7 +860,7 @@ func TestImageDuplicateExactFixer_SecondCycleKeepsDistinctArtwork(t *testing.T) 
 	// THE ASSERTION. Both files must be on disk, and slot 1 must still hold the
 	// distinct image. If the stale hash won, fanart2.jpg is gone and only
 	// fanart.jpg remains.
-	survivors, err := image.DiscoverFanart(dir, "fanart.jpg")
+	survivors, err := image.DiscoverFanart(context.Background(), dir, "fanart.jpg")
 	if err != nil {
 		t.Fatalf("DiscoverFanart: %v", err)
 	}
@@ -922,7 +922,7 @@ func TestImageDuplicateExactFixer_RenumberInvalidatesStoredHashes(t *testing.T) 
 	).Scan(&stored); err != nil {
 		t.Fatalf("reading slot 1 content_hash: %v", err)
 	}
-	onDisk, err := image.HashFile(filepath.Join(dir, "fanart2.jpg"), false)
+	onDisk, err := image.HashFile(context.Background(), filepath.Join(dir, "fanart2.jpg"), false)
 	if err != nil {
 		t.Fatalf("hashing the file now in slot 1: %v", err)
 	}
@@ -959,7 +959,7 @@ func TestImageDuplicateExactFixer_RefusesToDeleteOnAnUnverifiedHash(t *testing.T
 	insertTestImage(t, db, "art-oob", "fanart", 0)
 	insertTestImage(t, db, "art-oob", "fanart", 1)
 
-	slot0, err := image.HashFile(filepath.Join(dir, "fanart.jpg"), true)
+	slot0, err := image.HashFile(context.Background(), filepath.Join(dir, "fanart.jpg"), true)
 	if err != nil {
 		t.Fatalf("hashing slot 0: %v", err)
 	}
@@ -1189,7 +1189,7 @@ func TestImageDuplicateExactChecker_EmptySurvivorsInvalidationPreventsStaleMatch
 
 	// Slot 0 holds the artist's only fanart image, hashed and persisted.
 	insertTestImage(t, db, "art-f2", "fanart", 0)
-	oh, err := image.HashFile(originalPath, true)
+	oh, err := image.HashFile(context.Background(), originalPath, true)
 	if err != nil {
 		t.Fatalf("hashing original: %v", err)
 	}

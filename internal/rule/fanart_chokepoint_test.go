@@ -214,7 +214,7 @@ func TestSaveImageToDisk_NonFanartTypesAreStillUnprotected(t *testing.T) {
 		t.Fatalf("seeding the thumb: %v", err)
 	}
 
-	if _, err := saveImageToDisk(dir, "thumb", makeTestJPEG(t, 500, 500),
+	if _, err := saveImageToDisk(context.Background(), dir, "thumb", makeTestJPEG(t, 500, 500),
 		[]string{"folder.jpg"}, false, nil, testLogger()); err != nil {
 		t.Fatalf("saveImageToDisk: %v", err)
 	}

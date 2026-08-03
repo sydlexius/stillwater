@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -96,7 +97,7 @@ func TestSaveSlotProtected_RollsBackAFailedWrite(t *testing.T) {
 	t.Parallel()
 	dir, original, naming := seedOriginalWithAFailingSecondName(t)
 
-	_, err := SaveSlotProtected(dir, "fanart", naming, makeJPEG(t, 120, 90), false, nil, discardLogger())
+	_, err := SaveSlotProtected(context.Background(), dir, "fanart", naming, makeJPEG(t, 120, 90), false, nil, discardLogger())
 	if err == nil {
 		t.Fatal("expected the unwritable second filename to fail the save")
 	}
@@ -193,7 +194,7 @@ func TestSaveSlotProtected_ABackupItCannotTakeAbortsTheSave(t *testing.T) {
 
 			imageType := tc.breakBackup(t, dir)
 
-			_, err := SaveSlotProtected(dir, imageType, []string{"fanart.jpg"},
+			_, err := SaveSlotProtected(context.Background(), dir, imageType, []string{"fanart.jpg"},
 				makeJPEG(t, 120, 90), false, nil, discardLogger())
 			if err == nil {
 				t.Fatal("the save PROCEEDED despite an unusable backup; it must abort instead")
@@ -239,7 +240,7 @@ func TestSaveSlotProtected_ReportsAFailedRollbackAsFailed(t *testing.T) {
 		t.Fatalf("seeding a corrupt original: %v", err)
 	}
 
-	_, err := SaveSlotProtected(dir, "fanart", []string{"fanart.jpg", unwritableName},
+	_, err := SaveSlotProtected(context.Background(), dir, "fanart", []string{"fanart.jpg", unwritableName},
 		makeJPEG(t, 120, 90), false, nil, discardLogger())
 	if err == nil {
 		t.Fatal("expected the unwritable second filename to fail the save")
@@ -265,7 +266,7 @@ func TestSaveSlotProtected_NilLoggerDoesNotPanic(t *testing.T) {
 	t.Run("success path", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		if _, err := SaveSlotProtected(dir, "fanart", []string{"fanart.jpg"}, makeJPEG(t, 40, 30), false, nil, nil); err != nil {
+		if _, err := SaveSlotProtected(context.Background(), dir, "fanart", []string{"fanart.jpg"}, makeJPEG(t, 40, 30), false, nil, nil); err != nil {
 			t.Fatalf("unexpected error with a nil logger: %v", err)
 		}
 	})
@@ -283,7 +284,7 @@ func TestSaveSlotProtected_NilLoggerDoesNotPanic(t *testing.T) {
 			t.Fatalf("seeding a corrupt original: %v", err)
 		}
 
-		_, err := SaveSlotProtected(dir, "fanart", []string{"fanart.jpg", unwritableName},
+		_, err := SaveSlotProtected(context.Background(), dir, "fanart", []string{"fanart.jpg", unwritableName},
 			makeJPEG(t, 120, 90), false, nil, nil)
 		if err == nil {
 			t.Fatal("expected the unwritable second filename to fail the save")
@@ -299,7 +300,7 @@ func TestSaveSlotProtected_NilLoggerDoesNotPanic(t *testing.T) {
 func TestSaveSlotProtected_NoConfiguredNames(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	_, err := SaveSlotProtected(dir, "fanart", nil, makeJPEG(t, 10, 10), false, nil, discardLogger())
+	_, err := SaveSlotProtected(context.Background(), dir, "fanart", nil, makeJPEG(t, 10, 10), false, nil, discardLogger())
 	if err == nil {
 		t.Fatal("expected an empty naming list to fail")
 	}
@@ -327,7 +328,7 @@ func TestSaveSlotProtected_FirstEverWriteIsNotAFailedRollback(t *testing.T) {
 	dir := t.TempDir()
 	naming := []string{"fanart.jpg", unwritableName}
 
-	_, err := SaveSlotProtected(dir, "fanart", naming, makeJPEG(t, 120, 90), false, nil, discardLogger())
+	_, err := SaveSlotProtected(context.Background(), dir, "fanart", naming, makeJPEG(t, 120, 90), false, nil, discardLogger())
 	if err == nil {
 		t.Fatal("expected the unwritable second filename to fail the save")
 	}

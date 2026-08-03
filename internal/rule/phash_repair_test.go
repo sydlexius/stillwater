@@ -864,7 +864,7 @@ func TestExistingImageFileNames_NeverResolvesANonPrimaryFanartSlot(t *testing.T)
 	// And the names it did return all sort to ordinal 0 under DiscoverFanart,
 	// which is the other half of the argument.
 	for _, name := range names {
-		paths, err := image.DiscoverFanart(dir, name)
+		paths, err := image.DiscoverFanart(context.Background(), dir, name)
 		if err != nil {
 			t.Fatalf("discovering with primary %q: %v", name, err)
 		}
@@ -892,7 +892,7 @@ func reEncodeJPEG(t *testing.T, data []byte, quality int) []byte {
 // discoverForTest returns the artist's fanart paths under the default naming.
 func discoverForTest(t *testing.T, dir string) []string {
 	t.Helper()
-	paths, err := image.DiscoverFanart(dir, "fanart.jpg")
+	paths, err := image.DiscoverFanart(context.Background(), dir, "fanart.jpg")
 	if err != nil {
 		t.Fatalf("discovering fanart: %v", err)
 	}
@@ -1854,7 +1854,7 @@ func TestRemediateAndRestore_ConcurrentSameArtistIsRaceFree(t *testing.T) {
 	}
 
 	// Every discovered fanart file must be readable (no half-written slot).
-	paths, err := image.DiscoverFanart(dirA, "fanart")
+	paths, err := image.DiscoverFanart(context.Background(), dirA, "fanart")
 	if err != nil {
 		t.Fatalf("DiscoverFanart: %v", err)
 	}

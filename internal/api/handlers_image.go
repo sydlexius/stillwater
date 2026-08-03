@@ -426,7 +426,7 @@ func (e *fanartSlotError) Error() string { return e.msg }
 // Shared by handleImageCrop and handleImageFetch's slot branches.
 func (r *Router) validateFanartSlot(ctx context.Context, dir string, slot int) *fanartSlotError {
 	primary := r.getActiveFanartPrimary(ctx)
-	existing, discoverErr := img.DiscoverFanart(dir, primary)
+	existing, discoverErr := img.DiscoverFanart(ctx, dir, primary)
 	if discoverErr != nil && !errors.Is(discoverErr, os.ErrNotExist) {
 		r.logger.Error("discovering fanart for slot validation", slog.String("dir", dir), slog.String("error", discoverErr.Error()))
 		return &fanartSlotError{status: http.StatusInternalServerError, msg: "failed to read fanart directory"}
@@ -452,7 +452,7 @@ func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Requ
 	kodiNumbering := r.isKodiNumbering(req.Context())
 	targetName := img.FanartFilename(primary, slot, kodiNumbering)
 	slotMeta := &img.ExifMeta{Source: artist.ImageSourceUser}
-	if existingPath, found := img.FindExistingImage(dir, []string{targetName}); found {
+	if existingPath, found := img.FindExistingImage(req.Context(), dir, []string{targetName}); found {
 		if existingMeta, readErr := img.ReadProvenance(existingPath); readErr == nil && existingMeta != nil {
 			slotMeta = existingMeta
 		}
@@ -1064,7 +1064,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	// Skipped for the append branch above, which never uses cropMeta.
 	var cropMeta *img.ExifMeta
 	patterns := r.getActiveNamingConfig(req.Context(), body.Type)
-	if filePath, found := img.FindExistingImage(r.imageDir(a), patterns); found {
+	if filePath, found := img.FindExistingImage(req.Context(), r.imageDir(a), patterns); found {
 		if existing, readErr := img.ReadProvenance(filePath); readErr == nil && existing != nil {
 			cropMeta = existing
 		} else if readErr != nil {
@@ -1156,7 +1156,7 @@ func (r *Router) saveFanartSlotProtected(ctx context.Context, dir string, naming
 		defer r.expectedWrites.RemoveAll(expectedPaths)
 	}
 	_, useSymlinks := r.getActiveNamingAndSymlinks(ctx, "fanart")
-	return img.SaveSlotProtected(dir, "fanart", naming, data, useSymlinks, meta, r.logger)
+	return img.SaveSlotProtected(ctx, dir, "fanart", naming, data, useSymlinks, meta, r.logger)
 }
 
 // processAndSaveImage processes image data (convert format, optimize) and saves it.
@@ -1224,7 +1224,7 @@ func (r *Router) processAndSaveImage(ctx context.Context, scope *imageWriteScope
 		return saved, nil
 	}
 
-	if bErr := img.BackupSingleSlot(dir, imageType, naming); bErr != nil {
+	if bErr := img.BackupSingleSlot(ctx, dir, imageType, naming); bErr != nil {
 		return nil, fmt.Errorf("backing up original before overwrite (aborting destructive save): %w", bErr)
 	}
 
@@ -1463,7 +1463,7 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 	var resolvedPath string // path to the image file on disk, used for provenance readback
 	if exists {
 		patterns := r.getActiveNamingConfig(ctx, imageType)
-		if filePath, found := img.FindExistingImage(r.imageDir(a), patterns); found {
+		if filePath, found := img.FindExistingImage(ctx, r.imageDir(a), patterns); found {
 			if f, openErr := os.Open(filePath); openErr == nil { //nolint:gosec // path from trusted naming patterns
 				resolvedPath = filePath
 				defer f.Close() //nolint:errcheck // Close error not actionable on cleanup
@@ -1660,7 +1660,7 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 	// clear a flag for artwork this request never actually got to look at
 	// -- this is the destructive path measured in #2686. See also #1161 for
 	// the original non-ENOENT stat-error guard this extends.
-	filePath, found, statErr := img.FindExistingImageStrictVerifyDir(dir, patterns)
+	filePath, found, statErr := img.FindExistingImageStrictVerifyDir(req.Context(), dir, patterns)
 	if statErr != nil {
 		r.logger.Warn("serve image: stat error probing artist dir; preserving exists_flag",
 			slog.String("artist_id", a.ID),
@@ -1849,7 +1849,7 @@ func (r *Router) corroborateImageAbsence(ctx context.Context, artistID, imageTyp
 	case <-time.After(staleFlagCorroborationDelay):
 	}
 
-	_, found, statErr := img.FindExistingImageStrictVerifyDir(dir, patterns)
+	_, found, statErr := img.FindExistingImageStrictVerifyDir(ctx, dir, patterns)
 	if statErr != nil {
 		log.Warn("not clearing image flag: stat error on the corroborating probe",
 			slog.String("error", statErr.Error()))
@@ -1892,7 +1892,7 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	filePath, found := img.FindExistingImage(dir, patterns)
+	filePath, found := img.FindExistingImage(req.Context(), dir, patterns)
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "image not found"})
 		return
@@ -1975,7 +1975,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	// For fanart, delete ALL numbered variants as well.
 	if imageType == "fanart" {
 		primary := r.getActiveFanartPrimary(req.Context())
-		fanartPaths, fanartErr := img.DiscoverFanart(r.imageDir(a), primary)
+		fanartPaths, fanartErr := img.DiscoverFanart(req.Context(), r.imageDir(a), primary)
 		if fanartErr != nil {
 			r.logger.Error("discovering fanart for delete",
 				slog.String("artist_id", artistID),
@@ -2042,7 +2042,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	// having vanished between the delete attempt above and this check
 	// (e.g. the library share unmounted mid-request), means we cannot
 	// confirm absence and must leave the flag alone. See #1161 and #2686.
-	if _, found, statErr := img.FindExistingImageStrictVerifyDir(r.imageDir(a), patterns); statErr != nil {
+	if _, found, statErr := img.FindExistingImageStrictVerifyDir(req.Context(), r.imageDir(a), patterns); statErr != nil {
 		r.logger.Warn("delete image: post-delete stat error; preserving exists_flag",
 			slog.String("artist_id", a.ID),
 			slog.String("image_type", imageType),
@@ -2320,7 +2320,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), "logo")
-	filePath, found := img.FindExistingImage(r.imageDir(a), patterns)
+	filePath, found := img.FindExistingImage(req.Context(), r.imageDir(a), patterns)
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "logo not found"})
 		return
@@ -2407,7 +2407,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	// failure (transient stat error or write error) ABORT the trim with 500 and
 	// do NOT call Save, so the original logo is never destroyed without a
 	// recoverable backup.
-	if bErr := img.BackupSingleSlot(r.imageDir(a), "logo", patterns); bErr != nil {
+	if bErr := img.BackupSingleSlot(req.Context(), r.imageDir(a), "logo", patterns); bErr != nil {
 		r.logger.Error("backing up logo before trim; aborting",
 			slog.String("artist_id", artistID), slog.String("error", bErr.Error()))
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to preserve pre-trim original; trim aborted"})
@@ -2497,7 +2497,7 @@ func (r *Router) handleImageRevert(w http.ResponseWriter, req *http.Request) {
 		// Multi-slot: revert == drop the newest derived slot (highest index),
 		// leaving the original slot 0 intact. 404 when only the original exists.
 		primary := r.getActiveFanartPrimary(req.Context())
-		paths, discErr := img.DiscoverFanart(dir, primary)
+		paths, discErr := img.DiscoverFanart(req.Context(), dir, primary)
 		if discErr != nil {
 			r.logger.Error("discovering fanart for revert", slog.String("artist_id", artistID), slog.String("error", discErr.Error()))
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read fanart directory"})
@@ -2663,7 +2663,7 @@ func (r *Router) processAndAppendFanart(ctx context.Context, scope *imageWriteSc
 
 	primary := r.getActiveFanartPrimary(ctx)
 	kodi := r.isKodiNumbering(ctx)
-	maxIdx, err := img.MaxFanartIndex(dir, primary)
+	maxIdx, err := img.MaxFanartIndex(ctx, dir, primary)
 	if err != nil {
 		return nil, fmt.Errorf("scanning fanart: %w", err)
 	}
@@ -2708,7 +2708,7 @@ func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) 
 			slog.String("error", namesErr.Error()))
 		return
 	}
-	_, existing, discoverErr := img.ResolveFanart(r.imageDir(a), names)
+	_, existing, discoverErr := img.ResolveFanart(ctx, r.imageDir(a), names)
 	if discoverErr != nil {
 		r.logger.Warn("discovering fanart for count update; skipping DB update",
 			slog.String("artist_id", a.ID),
@@ -2772,7 +2772,7 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 	}
 
 	primary := r.getActiveFanartPrimary(req.Context())
-	paths, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	paths, discoverErr := img.DiscoverFanart(req.Context(), r.imageDir(a), primary)
 	if discoverErr != nil {
 		r.logger.Error("discovering fanart for gallery",
 			slog.String("artist_id", artistID),
@@ -2846,7 +2846,7 @@ func (r *Router) handleServeFanartByIndex(w http.ResponseWriter, req *http.Reque
 	}
 
 	primary := r.getActiveFanartPrimary(req.Context())
-	paths, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	paths, discoverErr := img.DiscoverFanart(req.Context(), r.imageDir(a), primary)
 	if discoverErr != nil {
 		r.logger.Error("discovering fanart for serve",
 			slog.String("artist_id", artistID),
@@ -2906,7 +2906,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodi := r.isKodiNumbering(req.Context())
-	paths, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	paths, discoverErr := img.DiscoverFanart(req.Context(), r.imageDir(a), primary)
 	if discoverErr != nil {
 		r.logger.Error("discovering fanart for batch delete",
 			slog.String("artist_id", artistID),
@@ -3194,7 +3194,7 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 		// an unmounted library share mid-rotation), must skip this artist
 		// without touching the flag -- see #1161 for the stat-error guard
 		// and #2686 for the missing-directory extension.
-		filePath, found, statErr := img.FindExistingImageStrictVerifyDir(dir, patterns)
+		filePath, found, statErr := img.FindExistingImageStrictVerifyDir(req.Context(), dir, patterns)
 		if statErr != nil {
 			r.logger.Warn("random backdrop: stat error probing artist dir; preserving exists_flag",
 				slog.String("artist_id", a.ID),

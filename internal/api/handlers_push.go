@@ -173,7 +173,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		// Fanart: upload all discovered fanart files at their respective indices.
 		if imgType == "fanart" {
 			primary := r.getActiveFanartPrimary(req.Context())
-			fanartPaths, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+			fanartPaths, discoverErr := img.DiscoverFanart(req.Context(), r.imageDir(a), primary)
 			if discoverErr != nil {
 				r.logger.Error("discovering fanart for push",
 					slog.String("artist_id", a.ID),
@@ -210,7 +210,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		}
 
 		patterns := r.getActiveNamingConfig(req.Context(), imgType)
-		filePath, found := img.FindExistingImage(r.imageDir(a), patterns)
+		filePath, found := img.FindExistingImage(req.Context(), r.imageDir(a), patterns)
 		if !found {
 			continue
 		}

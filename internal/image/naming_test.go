@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -154,7 +155,7 @@ func TestFindExistingImageStrict_FilePresent(t *testing.T) {
 	if err := os.WriteFile(target, []byte("img"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	got, found, err := FindExistingImageStrict(dir, []string{"folder.jpg"})
+	got, found, err := FindExistingImageStrict(context.Background(), dir, []string{"folder.jpg"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -171,7 +172,7 @@ func TestFindExistingImageStrict_FilePresent(t *testing.T) {
 // callers should trust for destructive actions.
 func TestFindExistingImageStrict_FileAbsent(t *testing.T) {
 	dir := t.TempDir()
-	got, found, err := FindExistingImageStrict(dir, []string{"folder.jpg"})
+	got, found, err := FindExistingImageStrict(context.Background(), dir, []string{"folder.jpg"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestFindExistingImageStrict_FileAbsent(t *testing.T) {
 // directory surfaces as ENOENT (clean miss, no error).
 func TestFindExistingImageStrict_DirAbsent(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "does-not-exist")
-	_, found, err := FindExistingImageStrict(dir, []string{"folder.jpg"})
+	_, found, err := FindExistingImageStrict(context.Background(), dir, []string{"folder.jpg"})
 	if err != nil {
 		t.Fatalf("ENOENT must surface as nil error, got %v", err)
 	}
@@ -201,7 +202,7 @@ func TestFindExistingImageStrict_AlternateExtension(t *testing.T) {
 	if err := os.WriteFile(target, []byte("img"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	got, found, err := FindExistingImageStrict(dir, []string{"folder.jpg"})
+	got, found, err := FindExistingImageStrict(context.Background(), dir, []string{"folder.jpg"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -234,7 +235,7 @@ func TestFindExistingImageStrict_PermissionDenied(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
 
-	_, found, err := FindExistingImageStrict(child, []string{"folder.jpg"})
+	_, found, err := FindExistingImageStrict(context.Background(), child, []string{"folder.jpg"})
 	if err == nil {
 		t.Fatal("expected non-nil error from permission-denied stat")
 	}
@@ -255,13 +256,13 @@ func TestFindExistingImage_LooseWrapper(t *testing.T) {
 	if err := os.WriteFile(target, []byte("img"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	got, found := FindExistingImage(dir, []string{"folder.jpg"})
+	got, found := FindExistingImage(context.Background(), dir, []string{"folder.jpg"})
 	if !found || got != target {
-		t.Errorf("FindExistingImage(present)=(%q,%v), want (%q,true)", got, found, target)
+		t.Errorf("FindExistingImage(context.Background(), present)=(%q,%v), want (%q,true)", got, found, target)
 	}
-	got, found = FindExistingImage(filepath.Join(t.TempDir(), "missing"), []string{"folder.jpg"})
+	got, found = FindExistingImage(context.Background(), filepath.Join(t.TempDir(), "missing"), []string{"folder.jpg"})
 	if found || got != "" {
-		t.Errorf("FindExistingImage(absent)=(%q,%v), want (\"\",false)", got, found)
+		t.Errorf("FindExistingImage(context.Background(), absent)=(%q,%v), want (\"\",false)", got, found)
 	}
 }
 
@@ -287,7 +288,7 @@ func TestFindExistingImage_LooseWrapper_StatErrorReturnsNotFound(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
 
-	got, found := FindExistingImage(child, []string{"folder.jpg"})
+	got, found := FindExistingImage(context.Background(), child, []string{"folder.jpg"})
 	if found {
 		t.Error("expected found=false on permission-denied stat")
 	}
@@ -368,7 +369,7 @@ func TestFindExistingImageStrict_PermissionDeniedAltExt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(hidden, 0o755) })
 
-	_, found, err := FindExistingImageStrict(probeDir, []string{"folder.jpg"})
+	_, found, err := FindExistingImageStrict(context.Background(), probeDir, []string{"folder.jpg"})
 	if err == nil {
 		t.Fatal("expected non-nil error from alt-extension EACCES probe")
 	}

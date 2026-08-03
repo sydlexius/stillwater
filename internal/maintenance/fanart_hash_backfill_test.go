@@ -124,7 +124,7 @@ func TestBackfillFanartHashes_FillsStarvedSlots(t *testing.T) {
 	seen := map[string]int{}
 	for slot := range 3 {
 		wantPath := filepath.Join(dir, img.FanartFilename(testPrimary, slot, false))
-		fh, err := img.HashFile(wantPath, true)
+		fh, err := img.HashFile(context.Background(), wantPath, true)
 		if err != nil {
 			t.Fatalf("hashing expected file for slot %d: %v", slot, err)
 		}

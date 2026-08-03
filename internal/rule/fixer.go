@@ -2134,7 +2134,7 @@ func (p *Pipeline) reconcileAfterFix(ctx context.Context, a *artist.Artist, remo
 		return
 	}
 
-	paths, walkErr := img.DiscoverFanart(a.Path, primaryName)
+	paths, walkErr := img.DiscoverFanart(ctx, a.Path, primaryName)
 	if walkErr != nil {
 		p.logger.Warn("walking artist directory to reconcile after fix; skipping reconcile",
 			"artist", a.Name, "artist_id", a.ID, "error", walkErr)

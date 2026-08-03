@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -11,8 +12,6 @@ import (
 	_ "image/png"
 	"io"
 	"math/bits"
-	"os"
-	"path/filepath"
 	"strconv"
 
 	"golang.org/x/image/draw"
@@ -144,25 +143,26 @@ type FileHashes struct {
 // high-water mark is roughly 2x the bound -- about 50-60 MB for today's
 // 25 MB limit. Size any container memory budget off that peak, not the
 // nominal limit.
-func HashFile(path string, needPerceptual bool) (FileHashes, error) {
-	f, err := os.Open(filepath.Clean(path))
+//
+// CONTEXT (#2689). ctx bounds the READ, which is the only step that can block
+// indefinitely: a network-mounted library that stops responding leaves a
+// regular-file read wedged in the kernel with no timeout, and this function
+// used to take no context at all, so nothing above it could abort. That wedged
+// several remediation handlers permanently -- each holds a singleton released
+// by a deferred unlock, so a handler that never returns 409s its endpoint for
+// the life of the process.
+//
+// The hashing itself is deliberately NOT interruptible and does not need to
+// be: both tiers run over bytes already in memory, so they are bounded CPU
+// work that cannot hang on the mount. Splitting the read from the hash is what
+// makes the bound meaningful rather than decorative.
+func HashFile(ctx context.Context, path string, needPerceptual bool) (FileHashes, error) {
+	data, err := readFileBounded(ctx, path, MaxDecodeBytes)
 	if err != nil {
+		if errors.Is(err, ErrImageTooLarge) {
+			return FileHashes{}, fmt.Errorf("hashing %s: %w (max %d bytes)", path, ErrImageTooLarge, MaxDecodeBytes)
+		}
 		return FileHashes{}, fmt.Errorf("reading image for hashing: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	// io.LimitReader, not os.Stat: a Stat-then-read has a TOCTOU window in
-	// which the file can grow between the size check and the read, so the
-	// check bounds a number while the read stays unbounded. The LimitReader
-	// bounds the ALLOCATION itself, which is the thing that has to be
-	// bounded. Reading one byte past the limit is what distinguishes
-	// "exactly at the limit" from "over it".
-	data, err := io.ReadAll(io.LimitReader(f, MaxDecodeBytes+1))
-	if err != nil {
-		return FileHashes{}, fmt.Errorf("reading image for hashing: %w", err)
-	}
-	if int64(len(data)) > MaxDecodeBytes {
-		return FileHashes{}, fmt.Errorf("hashing %s: %w (max %d bytes)", path, ErrImageTooLarge, MaxDecodeBytes)
 	}
 
 	h := FileHashes{Content: ContentHash(data)}

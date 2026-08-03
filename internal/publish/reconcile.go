@@ -112,7 +112,7 @@ func (p *Publisher) accumulateNeeds(
 ) {
 	if !needs.fanart {
 		primary := p.getActiveFanartPrimary(ctx)
-		fanartPaths, discoverErr := img.DiscoverFanart(dir, primary)
+		fanartPaths, discoverErr := img.DiscoverFanart(ctx, dir, primary)
 		if discoverErr != nil {
 			p.logger.Warn("artwork reconciler: discovering fanart",
 				slog.String("artist_id", artistID),
@@ -127,7 +127,7 @@ func (p *Publisher) accumulateNeeds(
 			continue
 		}
 		patterns := p.getActiveNamingConfig(ctx, imageType)
-		if _, found := img.FindExistingImage(dir, patterns); !found {
+		if _, found := img.FindExistingImage(ctx, dir, patterns); !found {
 			continue
 		}
 		switch imageType {

@@ -259,7 +259,7 @@ func resolveImageDupHashes(
 		}
 	}
 
-	fh, err := hashImageFile(path, !havePerceptual)
+	fh, err := hashImageFile(ctx, path, !havePerceptual)
 	if err != nil {
 		// A decode failure still leaves a valid content hash (an
 		// undecodable file can be byte-compared), so fall through with
@@ -498,7 +498,7 @@ func findImageDuplicatesImpl(
 		return out, err
 	}
 
-	fanartPaths := discoverFanartForDup(a, raw, fanartPrimaryName, fresh, logger)
+	fanartPaths := discoverFanartForDup(ctx, a, raw, fanartPrimaryName, fresh, logger)
 
 	var hashes []uint64
 	for _, r := range raw {
@@ -526,7 +526,7 @@ func findImageDuplicatesImpl(
 // stored). An artist whose hashes are all persisted causes no directory scan
 // at all, which is the steady state after the first evaluation.
 // A fresh pass always needs the paths: it re-reads every file by definition.
-func discoverFanartForDup(a *artist.Artist, raw []imageDupRawRow, fanartPrimaryName string, fresh bool, logger *slog.Logger) []string {
+func discoverFanartForDup(ctx context.Context, a *artist.Artist, raw []imageDupRawRow, fanartPrimaryName string, fresh bool, logger *slog.Logger) []string {
 	// No local directory: nothing to discover. The caller then runs entirely off
 	// the hashes already stored in artist_images, which is the whole point of
 	// letting a path-less artist reach detection at all.
@@ -551,7 +551,7 @@ func discoverFanartForDup(a *artist.Artist, raw []imageDupRawRow, fanartPrimaryN
 		return nil
 	}
 
-	discovered, discErr := image.DiscoverFanart(a.Path, fanartPrimaryName)
+	discovered, discErr := image.DiscoverFanart(ctx, a.Path, fanartPrimaryName)
 	if discErr != nil {
 		logger.Debug("discovering fanart for duplicate detection", "artist", a.Name, "error", discErr)
 		return nil

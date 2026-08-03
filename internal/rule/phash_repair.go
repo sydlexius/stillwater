@@ -379,7 +379,7 @@ func (p *Pipeline) remediateArtistPHash(
 	opts PHashRemediateOpts,
 	result *PHashRemediateResult,
 ) error {
-	paths, err := img.DiscoverFanart(a.Path, primaryName)
+	paths, err := img.DiscoverFanart(ctx, a.Path, primaryName)
 	if err != nil {
 		return fmt.Errorf("discovering fanart for %s: %w", a.Name, err)
 	}
@@ -535,7 +535,7 @@ func (p *Pipeline) remediateArtistPHash(
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("error", namesErr.Error()))
 	} else {
-		resyncFanartFields(a, names)
+		resyncFanartFields(ctx, a, names)
 	}
 	if err := p.artistService.Update(ctx, a); err != nil {
 		// The destructive on-disk work is already committed and IRREVERSIBLE
@@ -661,7 +661,7 @@ func (p *Pipeline) reverifyMatchedCounterpart(ctx context.Context, primaryName, 
 	if ma.Path == "" {
 		return false, "matched artist has no path; cannot re-verify the counterpart on disk"
 	}
-	paths, err := img.DiscoverFanart(ma.Path, primaryName)
+	paths, err := img.DiscoverFanart(ctx, ma.Path, primaryName)
 	if err != nil {
 		return false, fmt.Sprintf("discovering matched artist fanart: %v", err)
 	}
@@ -873,7 +873,7 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("error", namesErr.Error()))
 	} else {
-		resyncFanartFields(a, names)
+		resyncFanartFields(ctx, a, names)
 	}
 	if err := p.artistService.Update(ctx, a); err != nil {
 		// The bytes are already back on disk at this point -- the restore
@@ -910,7 +910,7 @@ func (p *Pipeline) restoreOneQuarantined(
 		return restoreOutcomeUnset, err
 	}
 
-	exact, similar, err := p.quarantinedImagePresence(a.Path, primaryName, data)
+	exact, similar, err := p.quarantinedImagePresence(ctx, a.Path, primaryName, data)
 	if err != nil {
 		return restoreOutcomeUnset, err
 	}
@@ -955,7 +955,7 @@ func (p *Pipeline) restoreOneQuarantined(
 	// counted once outside the loop: each restore adds a slot, so a cached
 	// length would aim the second entry at the ordinal the first just took
 	// and clobber it.
-	paths, err := img.DiscoverFanart(a.Path, primaryName)
+	paths, err := img.DiscoverFanart(ctx, a.Path, primaryName)
 	if err != nil {
 		return restoreOutcomeUnset, fmt.Errorf("discovering fanart: %w", err)
 	}
@@ -1077,8 +1077,8 @@ func (p *Pipeline) restorePHashToPlatforms(ctx context.Context, a *artist.Artist
 // near-duplicate and keeps the quarantined bytes, rather than authorizing
 // anything destructive. It must not be reconnected to a delete without also
 // plumbing the operator's real tolerance through the manifest.
-func (p *Pipeline) quarantinedImagePresence(dir, primaryName string, data []byte) (exact, similar bool, err error) {
-	paths, err := img.DiscoverFanart(dir, primaryName)
+func (p *Pipeline) quarantinedImagePresence(ctx context.Context, dir, primaryName string, data []byte) (exact, similar bool, err error) {
+	paths, err := img.DiscoverFanart(ctx, dir, primaryName)
 	if err != nil {
 		return false, false, fmt.Errorf("discovering fanart: %w", err)
 	}

@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,7 +83,7 @@ func TestSaveSlotProtected_RollsBackEveryConfiguredName(t *testing.T) {
 	t.Parallel()
 	dir, fanartOrig, backdropOrig, naming := seedTwoNamedOriginals(t)
 
-	_, err := SaveSlotProtected(dir, "fanart", naming, makeJPEG(t, 120, 90), false, nil, discardLogger())
+	_, err := SaveSlotProtected(context.Background(), dir, "fanart", naming, makeJPEG(t, 120, 90), false, nil, discardLogger())
 	if err == nil {
 		t.Fatal("expected the unwritable third filename to fail the save")
 	}
@@ -137,7 +138,7 @@ func TestSaveSlotProtected_BacksUpEveryConfiguredName(t *testing.T) {
 	}
 
 	naming := []string{"fanart.jpg", "backdrop.jpg"}
-	saved, err := SaveSlotProtected(dir, "fanart", naming, makeJPEG(t, 200, 120), false, nil, discardLogger())
+	saved, err := SaveSlotProtected(context.Background(), dir, "fanart", naming, makeJPEG(t, 200, 120), false, nil, discardLogger())
 	if err != nil {
 		t.Fatalf("SaveSlotProtected: %v", err)
 	}
@@ -182,7 +183,7 @@ func TestSaveSlotProtected_PrunesOnlyItsOwnSlot(t *testing.T) {
 		t.Fatalf("seeding the numbered slot: %v", err)
 	}
 	// Give the numbered slot a backup by overwriting it through the chokepoint.
-	if _, err := SaveSlotProtected(dir, "fanart", []string{"fanart1.jpg"}, makeJPEG(t, 71, 46), false, nil, discardLogger()); err != nil {
+	if _, err := SaveSlotProtected(context.Background(), dir, "fanart", []string{"fanart1.jpg"}, makeJPEG(t, 71, 46), false, nil, discardLogger()); err != nil {
 		t.Fatalf("seeding the numbered slot's backup: %v", err)
 	}
 
@@ -195,7 +196,7 @@ func TestSaveSlotProtected_PrunesOnlyItsOwnSlot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "backdrop.jpg"), backdropOrig, 0o644); err != nil {
 		t.Fatalf("seeding backdrop.jpg: %v", err)
 	}
-	if _, err := SaveSlotProtected(dir, "fanart", []string{"fanart.jpg", "backdrop.jpg"},
+	if _, err := SaveSlotProtected(context.Background(), dir, "fanart", []string{"fanart.jpg", "backdrop.jpg"},
 		makeJPEG(t, 200, 120), false, nil, discardLogger()); err != nil {
 		t.Fatalf("SaveSlotProtected: %v", err)
 	}
@@ -239,7 +240,7 @@ func TestSaveSlotProtected_ThreadsUseSymlinksIntoTheSave(t *testing.T) {
 	dir := t.TempDir()
 
 	naming := []string{"folder.jpg", "artist.jpg"}
-	if _, err := SaveSlotProtected(dir, "thumb", naming, makeJPEG(t, 120, 120), true, nil, discardLogger()); err != nil {
+	if _, err := SaveSlotProtected(context.Background(), dir, "thumb", naming, makeJPEG(t, 120, 120), true, nil, discardLogger()); err != nil {
 		t.Fatalf("SaveSlotProtected: %v", err)
 	}
 
@@ -255,7 +256,7 @@ func TestSaveSlotProtected_ThreadsUseSymlinksIntoTheSave(t *testing.T) {
 	// The control: the same call with useSymlinks=false must write a real file. Without
 	// this, the assertion above would also pass on code that hardcoded symlinks ON.
 	plain := t.TempDir()
-	if _, err := SaveSlotProtected(plain, "thumb", naming, makeJPEG(t, 120, 120), false, nil, discardLogger()); err != nil {
+	if _, err := SaveSlotProtected(context.Background(), plain, "thumb", naming, makeJPEG(t, 120, 120), false, nil, discardLogger()); err != nil {
 		t.Fatalf("SaveSlotProtected: %v", err)
 	}
 	plainInfo, err := os.Lstat(filepath.Join(plain, "artist.jpg"))
@@ -286,7 +287,7 @@ func TestSaveSlotProtected_UnprotectableNameIsRefusedNotSilentlySkipped(t *testi
 		t.Fatalf("seeding: %v", err)
 	}
 
-	_, err := SaveSlotProtected(dir, "fanart", []string{"sub/fanart.jpg"}, makeJPEG(t, 120, 90), false, nil, discardLogger())
+	_, err := SaveSlotProtected(context.Background(), dir, "fanart", []string{"sub/fanart.jpg"}, makeJPEG(t, 120, 90), false, nil, discardLogger())
 	if err == nil {
 		t.Fatal("a save with no backup-protectable name PROCEEDED; it must abort instead")
 	}
@@ -342,7 +343,7 @@ func TestSaveSlotProtected_UnprotectableNameRefusesTheWHOLESave(t *testing.T) {
 	}
 
 	naming := []string{"fanart.jpg", "sub/fanart.jpg"}
-	saved, err := SaveSlotProtected(dir, "fanart", naming, makeJPEG(t, 200, 120), false, nil, discardLogger())
+	saved, err := SaveSlotProtected(context.Background(), dir, "fanart", naming, makeJPEG(t, 200, 120), false, nil, discardLogger())
 	if err == nil {
 		t.Fatal("a save carrying a name it cannot back up PROCEEDED; it must refuse outright")
 	}

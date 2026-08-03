@@ -1262,7 +1262,7 @@ func TestConfirmSlotOnDisk(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			found, err := confirmSlotOnDisk(tc.dir, tc.imageType, tc.slot)
+			found, err := confirmSlotOnDisk(context.Background(), tc.dir, tc.imageType, tc.slot)
 			if found != tc.wantFound {
 				t.Errorf("found = %v, want %v", found, tc.wantFound)
 			}

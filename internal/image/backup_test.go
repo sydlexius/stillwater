@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -43,7 +44,7 @@ func TestBackupSingleSlot_CreatesPeerInertCopy(t *testing.T) {
 		t.Fatalf("seeding canonical: %v", err)
 	}
 
-	if err := BackupSingleSlot(dir, "thumb", []string{"folder.jpg", "folder.png"}); err != nil {
+	if err := BackupSingleSlot(context.Background(), dir, "thumb", []string{"folder.jpg", "folder.png"}); err != nil {
 		t.Fatalf("BackupSingleSlot: %v", err)
 	}
 
@@ -69,14 +70,14 @@ func TestBackupSingleSlot_OneDeepOverwrite(t *testing.T) {
 	if err := os.WriteFile(canonical, []byte("v1"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := BackupSingleSlot(dir, "logo", []string{"logo.png", "logo-white.png"}); err != nil {
+	if err := BackupSingleSlot(context.Background(), dir, "logo", []string{"logo.png", "logo-white.png"}); err != nil {
 		t.Fatalf("backup v1: %v", err)
 	}
 	// Second edit overwrites the canonical, then re-backs-up.
 	if err := os.WriteFile(canonical, []byte("v2"), 0o644); err != nil {
 		t.Fatalf("write v2: %v", err)
 	}
-	if err := BackupSingleSlot(dir, "logo", []string{"logo.png", "logo-white.png"}); err != nil {
+	if err := BackupSingleSlot(context.Background(), dir, "logo", []string{"logo.png", "logo-white.png"}); err != nil {
 		t.Fatalf("backup v2: %v", err)
 	}
 	// Exactly one backup file should remain (one-deep) and it should hold v2.
@@ -105,7 +106,7 @@ func TestRestoreSingleSlot_RoundTrips(t *testing.T) {
 	if err := os.WriteFile(canonical, orig, 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := BackupSingleSlot(dir, "thumb", naming); err != nil {
+	if err := BackupSingleSlot(context.Background(), dir, "thumb", naming); err != nil {
 		t.Fatalf("backup: %v", err)
 	}
 	// Simulate a destructive edit.
@@ -141,7 +142,7 @@ func TestRestoreSingleSlot_FormatChangeRevertible(t *testing.T) {
 		t.Fatalf("seed png: %v", err)
 	}
 	// Back up the png original.
-	if err := BackupSingleSlot(dir, "thumb", naming); err != nil {
+	if err := BackupSingleSlot(context.Background(), dir, "thumb", naming); err != nil {
 		t.Fatalf("backup: %v", err)
 	}
 	// Simulate the crop: Save jpg data, which deletes folder.png and writes folder.jpg.
@@ -185,7 +186,7 @@ func TestHasBackup(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "banner.jpg"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := BackupSingleSlot(dir, "banner", []string{"banner.jpg", "banner.png"}); err != nil {
+	if err := BackupSingleSlot(context.Background(), dir, "banner", []string{"banner.jpg", "banner.png"}); err != nil {
 		t.Fatalf("backup: %v", err)
 	}
 	if !HasBackup(dir, "banner") {
@@ -197,7 +198,7 @@ func TestHasBackup(t *testing.T) {
 // leaves no backup.
 func TestBackupSingleSlot_NoOriginalNoOp(t *testing.T) {
 	dir := t.TempDir()
-	if err := BackupSingleSlot(dir, "thumb", []string{"folder.jpg", "folder.png"}); err != nil {
+	if err := BackupSingleSlot(context.Background(), dir, "thumb", []string{"folder.jpg", "folder.png"}); err != nil {
 		t.Fatalf("BackupSingleSlot no-original: %v", err)
 	}
 	if HasBackup(dir, "thumb") {

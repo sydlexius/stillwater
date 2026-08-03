@@ -43,12 +43,17 @@ type indexedFile struct {
 // The primary name comes from the active platform profile (e.g., "backdrop.jpg"
 // for Emby, "fanart.jpg" for Kodi). Files are returned in index order: primary
 // first, then numbered variants sorted ascending.
-func DiscoverFanart(dir string, primaryName string) ([]string, error) {
+// ctx bounds the directory read (#2689): a listing on an unresponsive network
+// mount hangs exactly as completely as a file read, and this helper sits under
+// the remediation handlers whose singleton a wedged request never releases.
+// Only the ReadDir is I/O; fanartMatches below is pure matching over the
+// already-read entries and needs no context.
+func DiscoverFanart(ctx context.Context, dir string, primaryName string) ([]string, error) {
 	if primaryName == "" {
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(dir)
+	entries, err := readDirCtx(ctx, dir)
 	if err != nil {
 		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
@@ -174,8 +179,12 @@ func fanartPaths(files []indexedFile) []string {
 // result, because the two outcomes license OPPOSITE actions: an empty result
 // says "looked, nothing is there" and invites deleting stale rows, while an
 // error says "could not look" and must leave everything untouched.
-func ResolveFanart(dir string, names []string) (string, []string, error) {
-	entries, err := os.ReadDir(dir)
+//
+// ctx bounds the single directory read (#2689). One ReadDir serves every
+// convention -- that is already why fanartMatches takes pre-read entries --
+// so there is exactly one blocking call here to bound.
+func ResolveFanart(ctx context.Context, dir string, names []string) (string, []string, error) {
+	entries, err := readDirCtx(ctx, dir)
 	if err != nil {
 		return "", nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
@@ -212,7 +221,9 @@ func ResolveFanart(dir string, names []string) (string, []string, error) {
 // fanart files exist. The primary file (exact base match) counts as index 0.
 // This avoids overwriting existing files when gaps exist in the numbering
 // sequence (e.g., fanart1.jpg deleted but fanart2.jpg still present).
-func MaxFanartIndex(dir string, primaryName string) (int, error) {
+//
+// ctx bounds the directory read (#2689), on the same terms as DiscoverFanart.
+func MaxFanartIndex(ctx context.Context, dir string, primaryName string) (int, error) {
 	if primaryName == "" {
 		return -1, nil
 	}
@@ -220,7 +231,7 @@ func MaxFanartIndex(dir string, primaryName string) (int, error) {
 	base := strings.TrimSuffix(primaryName, filepath.Ext(primaryName))
 	baseLower := strings.ToLower(base)
 
-	entries, err := os.ReadDir(dir)
+	entries, err := readDirCtx(ctx, dir)
 	if err != nil {
 		return -1, fmt.Errorf("reading directory %s: %w", dir, err)
 	}

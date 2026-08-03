@@ -170,7 +170,7 @@ func TestResyncFanartFields_NoFanart(t *testing.T) {
 		Name: "Empty Fanart Artist", Path: t.TempDir(),
 		FanartExists: true, FanartCount: 5, FanartLowRes: true,
 	}
-	resyncFanartFields(a, []string{"fanart.jpg"})
+	resyncFanartFields(context.Background(), a, []string{"fanart.jpg"})
 	if a.FanartExists {
 		t.Error("FanartExists = true; want false when no fanart files exist")
 	}
@@ -192,7 +192,7 @@ func TestResyncFanartFields_CountsAndReadsSlot0(t *testing.T) {
 	createGradientJPEG(t, filepath.Join(dir, "fanart2.jpg"), 3)
 
 	a := &artist.Artist{Name: "Fanart Artist", Path: dir}
-	resyncFanartFields(a, []string{"fanart.jpg"})
+	resyncFanartFields(context.Background(), a, []string{"fanart.jpg"})
 	if !a.FanartExists {
 		t.Error("FanartExists = false; want true when fanart files exist")
 	}
@@ -232,7 +232,7 @@ func TestResyncFanartFields_RecordsGeometryOfTheNewSlotZero(t *testing.T) {
 		FanartHeight: 2160,
 	}
 
-	resyncFanartFields(a, []string{"fanart.jpg"})
+	resyncFanartFields(context.Background(), a, []string{"fanart.jpg"})
 
 	if a.FanartWidth != 1280 || a.FanartHeight != 720 {
 		t.Errorf("resync left geometry at %dx%d; it must describe the file now in slot 0 (1280x720), "+
@@ -255,7 +255,7 @@ func TestResyncFanartFields_ZeroesWhenItCannotMeasure(t *testing.T) {
 		FanartHeight: 2160,
 	}
 
-	resyncFanartFields(a, []string{"fanart.jpg"})
+	resyncFanartFields(context.Background(), a, []string{"fanart.jpg"})
 
 	if a.FanartWidth != 0 || a.FanartHeight != 0 {
 		t.Errorf("with no fanart on disk the geometry must read unknown (0x0), got %dx%d",

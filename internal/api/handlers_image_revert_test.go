@@ -30,7 +30,7 @@ func TestHandleImageRevert_SingleSlotRestoresBackup(t *testing.T) {
 	canonical := filepath.Join(dir, "folder.jpg")
 	writeJPEG(t, canonical, 64, 64)
 	orig, _ := os.ReadFile(canonical)
-	if err := img.BackupSingleSlot(dir, "thumb", thumbNaming); err != nil {
+	if err := img.BackupSingleSlot(context.Background(), dir, "thumb", thumbNaming); err != nil {
 		t.Fatalf("seed backup: %v", err)
 	}
 	// Simulate a destructive edit (different image content).
@@ -192,7 +192,7 @@ func TestHandleImageRevert_Blocked409(t *testing.T) {
 	canonical := filepath.Join(dir, "folder.jpg")
 	writeJPEG(t, canonical, 64, 64)
 	canonicalBefore, _ := os.ReadFile(canonical)
-	if err := img.BackupSingleSlot(dir, "thumb", thumbNaming); err != nil {
+	if err := img.BackupSingleSlot(context.Background(), dir, "thumb", thumbNaming); err != nil {
 		t.Fatalf("seed backup: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/thumb/revert", nil)
@@ -254,7 +254,7 @@ func TestHandleImageInfo_ReportsBackupExists(t *testing.T) {
 	}
 
 	// After a backup exists -> backup_exists true.
-	if err := img.BackupSingleSlot(dir, "thumb", thumbNaming); err != nil {
+	if err := img.BackupSingleSlot(context.Background(), dir, "thumb", thumbNaming); err != nil {
 		t.Fatalf("seed backup: %v", err)
 	}
 	if !infoBackupExists("thumb") {

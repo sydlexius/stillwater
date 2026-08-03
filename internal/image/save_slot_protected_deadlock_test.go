@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,7 +66,7 @@ func TestSaveSlotProtected_DottedNamesDoNotDeadlock(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		saved, err := SaveSlotProtected(dir, "fanart", naming, makeJPEG(t, 120, 90), false, nil, discardLogger())
+		saved, err := SaveSlotProtected(context.Background(), dir, "fanart", naming, makeJPEG(t, 120, 90), false, nil, discardLogger())
 		done <- result{saved, err}
 	}()
 
@@ -117,7 +118,7 @@ func TestSaveSlotProtected_DottedNamesLockDistinctSlots(t *testing.T) {
 	}
 
 	naming := []string{"backdrop.wide.jpg", "backdrop.tall.jpg"}
-	if _, err := SaveSlotProtected(dir, "fanart", naming, makeJPEG(t, 200, 120), false, nil, discardLogger()); err != nil {
+	if _, err := SaveSlotProtected(context.Background(), dir, "fanart", naming, makeJPEG(t, 200, 120), false, nil, discardLogger()); err != nil {
 		t.Fatalf("SaveSlotProtected: %v", err)
 	}
 

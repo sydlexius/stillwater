@@ -559,7 +559,7 @@ func TestCheckExtraneousImages_CrossProfileCanonical_NotFlagged(t *testing.T) {
 		},
 	}
 
-	expected := expectedImageFiles(embyLikeProfile, dir)
+	expected := expectedImageFiles(context.Background(), embyLikeProfile, dir)
 	if !expected["fanart.jpg"] {
 		t.Error("fanart.jpg must be in expected set under any profile (cross-profile canonical filename); regression of #1225 fix")
 	}

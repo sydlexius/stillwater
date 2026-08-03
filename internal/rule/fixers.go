@@ -1121,7 +1121,7 @@ func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, 
 		naming = existingImageFileNames(ctx, a.Path, imageType, platformService)
 	}
 
-	saved, err := saveImageToDisk(a.Path, imageType, converted, naming, useSymlinks, meta, logger)
+	saved, err := saveImageToDisk(ctx, a.Path, imageType, converted, naming, useSymlinks, meta, logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving image: %w", err)
 	}
@@ -1151,9 +1151,9 @@ func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, 
 // directory would corrupt the Router's revert feature. Closing it means lifting the
 // Router's single-slot backup+rollback policy into internal/image as a second shared
 // chokepoint, which is its own change.
-func saveImageToDisk(dir, imageType string, data []byte, naming []string, useSymlinks bool, meta *img.ExifMeta, logger *slog.Logger) ([]string, error) {
+func saveImageToDisk(ctx context.Context, dir, imageType string, data []byte, naming []string, useSymlinks bool, meta *img.ExifMeta, logger *slog.Logger) ([]string, error) {
 	if imageType == "fanart" {
-		return img.SaveSlotProtected(dir, imageType, naming, data, useSymlinks, meta, logger)
+		return img.SaveSlotProtected(ctx, dir, imageType, naming, data, useSymlinks, meta, logger)
 	}
 	return img.Save(dir, imageType, data, naming, useSymlinks, meta, logger)
 }
@@ -1326,7 +1326,7 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 		if f.platformService != nil {
 			profile, _ = f.platformService.GetActive(ctx)
 		}
-		expected = expectedImageFiles(profile, a.Path)
+		expected = expectedImageFiles(ctx, profile, a.Path)
 	}
 
 	entries, readErr := os.ReadDir(a.Path)
@@ -1513,7 +1513,7 @@ func (f *LogoPaddingFixer) fixViaDisk(ctx context.Context, a *artist.Artist, v *
 	// place in this package that reaches the image-write primitives. A logo is
 	// single-slot, so this still lands on a bare Save today (see saveImageToDisk); the
 	// point is that a fanart write can never be added here without the guard seeing it.
-	savedNames, err := saveImageToDisk(a.Path, "logo", trimmed, naming, useSymlinks, padMeta, f.logger)
+	savedNames, err := saveImageToDisk(ctx, a.Path, "logo", trimmed, naming, useSymlinks, padMeta, f.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving trimmed logo: %w", err)
 	}
@@ -1989,7 +1989,7 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 	kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
 
 	for _, primaryName := range fanartNames {
-		discovered, err := img.DiscoverFanart(a.Path, primaryName)
+		discovered, err := img.DiscoverFanart(ctx, a.Path, primaryName)
 		if err != nil {
 			f.logger.Warn("discovering fanart for sequencing fix",
 				"artist", a.Name, "primary", primaryName, "error", err)
@@ -2039,7 +2039,7 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 			f.logger.Warn("resolving fanart naming convention after renumber; artist fields left as-is",
 				slog.String("artist_id", a.ID), slog.String("error", namesErr.Error()))
 		} else {
-			resyncFanartFields(a, names)
+			resyncFanartFields(ctx, a, names)
 		}
 
 		return &FixResult{
@@ -2247,7 +2247,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 		f.logger.Warn("resolving fanart naming convention after duplicate fix; artist fields left as-is",
 			slog.String("artist_id", a.ID), slog.String("error", namesErr.Error()))
 	} else {
-		resyncFanartFields(a, names)
+		resyncFanartFields(ctx, a, names)
 	}
 
 	return &FixResult{
@@ -2299,7 +2299,7 @@ func (f *ImageDuplicateFixer) protectedFanartSlots(ctx context.Context, artistID
 // post-commit tomb-unlink failure is logged, not rolled back -- the survivors
 // are already renumbered, and a leftover tomb is ignored by discovery.
 func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Context, a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
-	paths, discErr := img.DiscoverFanart(a.Path, primaryName)
+	paths, discErr := img.DiscoverFanart(ctx, a.Path, primaryName)
 	if discErr != nil {
 		return nil, fmt.Errorf("discovering fanart for %s: %w", a.Name, discErr)
 	}
@@ -2421,8 +2421,8 @@ func wrapWithRollbackErrs(rollbackErrs []string, err error) error {
 // backdrop sequencing, duplicate collapse, and pHash pollution back-out --
 // reach it through this shared function, and they run in AUTO mode across the
 // whole library with nobody watching.
-func resyncFanartFields(a *artist.Artist, names []string) {
-	_, existing, err := img.ResolveFanart(a.Path, names)
+func resyncFanartFields(ctx context.Context, a *artist.Artist, names []string) {
+	_, existing, err := img.ResolveFanart(ctx, a.Path, names)
 	if err != nil {
 		return
 	}

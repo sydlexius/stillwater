@@ -1891,9 +1891,9 @@ func TestNewBackdropDedup_SeedsFromDisk(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	d := newBackdropDedup(dir, "fanart.jpg", logger)
+	d := newBackdropDedup(context.Background(), dir, "fanart.jpg", logger)
 
-	h, err := img.HashFile(existing, true)
+	h, err := img.HashFile(context.Background(), existing, true)
 	if err != nil {
 		t.Fatalf("hashing existing file: %v", err)
 	}
@@ -1912,7 +1912,7 @@ func TestNewBackdropDedup_SeedsFromDisk(t *testing.T) {
 func TestNewBackdropDedup_EmptyDir(t *testing.T) {
 	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	d := newBackdropDedup(t.TempDir(), "fanart.jpg", logger)
+	d := newBackdropDedup(context.Background(), t.TempDir(), "fanart.jpg", logger)
 	if d.isDuplicate("anything", 12345) {
 		t.Error("empty-dir dedup should hold nothing")
 	}
@@ -1925,7 +1925,7 @@ func TestNewBackdropDedup_DiscoverError(t *testing.T) {
 	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
-	d := newBackdropDedup(missing, "fanart.jpg", logger)
+	d := newBackdropDedup(context.Background(), missing, "fanart.jpg", logger)
 	if d.isDuplicate("anything", 12345) {
 		t.Error("dedup seeded from an unreadable dir should hold nothing")
 	}
@@ -1949,9 +1949,9 @@ func TestNewBackdropDedup_UnhashableFileSkipped(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	d := newBackdropDedup(dir, "fanart.jpg", logger)
+	d := newBackdropDedup(context.Background(), dir, "fanart.jpg", logger)
 
-	h, err := img.HashFile(filepath.Join(dir, "fanart1.jpg"), true)
+	h, err := img.HashFile(context.Background(), filepath.Join(dir, "fanart1.jpg"), true)
 	if err != nil {
 		t.Fatalf("hashing valid fanart: %v", err)
 	}

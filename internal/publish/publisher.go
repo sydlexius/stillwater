@@ -783,7 +783,7 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		return warnings
 	}
 	patterns := p.getActiveNamingConfig(ctx, imageType)
-	filePath, found := img.FindExistingImage(dir, patterns)
+	filePath, found := img.FindExistingImage(ctx, dir, patterns)
 	if !found {
 		warnings = append(warnings, "platform sync skipped: no local image found to upload")
 		return warnings
@@ -1076,7 +1076,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	}
 
 	primary := p.getActiveFanartPrimary(ctx)
-	fanartPaths, discoverErr := img.DiscoverFanart(dir, primary)
+	fanartPaths, discoverErr := img.DiscoverFanart(ctx, dir, primary)
 	if discoverErr != nil {
 		p.logger.Error("discovering fanart for platform sync",
 			slog.String("artist_id", a.ID),

@@ -1092,7 +1092,7 @@ func (p *platformImagePipeline) downloadNamedImage(ctx context.Context, stillwat
 	r, a := p.r, p.artist
 
 	patterns := r.getActiveNamingConfig(ctx, stillwaterType)
-	if _, found := img.FindExistingImage(p.dir, patterns); found {
+	if _, found := img.FindExistingImage(ctx, p.dir, patterns); found {
 		r.logger.Debug("skipping existing image", "artist", a.Name, "type", stillwaterType)
 		return
 	}
@@ -1157,16 +1157,16 @@ type backdropDedup struct {
 // a duplicate of an already-present image is skipped. A discovery or hashing
 // error degrades to in-run dedup only (still prevents spraying within this
 // populate) rather than failing the download.
-func newBackdropDedup(dir, primary string, log *slog.Logger) *backdropDedup {
+func newBackdropDedup(ctx context.Context, dir, primary string, log *slog.Logger) *backdropDedup {
 	d := &backdropDedup{content: map[string]struct{}{}}
-	paths, err := img.DiscoverFanart(dir, primary)
+	paths, err := img.DiscoverFanart(ctx, dir, primary)
 	if err != nil {
 		log.Warn("discovering existing fanart for dedup; proceeding with in-run dedup only",
 			slog.String("dir", dir), slog.String("error", err.Error()))
 		return d
 	}
 	for _, p := range paths {
-		h, herr := img.HashFile(p, true)
+		h, herr := img.HashFile(ctx, p, true)
 		if herr != nil {
 			// A file we cannot hash cannot be deduped against; log and skip it
 			// rather than fail the whole populate. Worst case a duplicate slips
@@ -1220,7 +1220,7 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 	r, a := p.r, p.artist
 	primary := r.getActiveFanartPrimary(ctx)
 	kodi := r.isKodiNumbering(ctx)
-	dedup := newBackdropDedup(p.dir, primary, r.logger)
+	dedup := newBackdropDedup(ctx, p.dir, primary, r.logger)
 
 	// #2540 NOTIFY-ONLY cross-artist collision registry. Built ONCE per artist's
 	// backdrop import (it is a whole-library scan) and reused for every slot --
@@ -1433,7 +1433,7 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 // but numbered files exist. This closes gaps so the primary filename always
 // corresponds to the first available fanart.
 func (r *Router) compactFanartIfNeeded(ctx context.Context, artistID, dir, primary string, kodi bool) {
-	paths, discoverErr := img.DiscoverFanart(dir, primary)
+	paths, discoverErr := img.DiscoverFanart(ctx, dir, primary)
 	if discoverErr != nil {
 		r.logger.Warn("discovering fanart for compact",
 			slog.String("dir", dir),

@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,7 +19,7 @@ func TestResolveFanart(t *testing.T) {
 
 	t.Run("pass 1 primary decides the convention", func(t *testing.T) {
 		dir := resolveTestDir(t, "backdrop.jpg", "backdrop2.jpg")
-		name, paths, err := ResolveFanart(dir, names)
+		name, paths, err := ResolveFanart(context.Background(), dir, names)
 		if err != nil {
 			t.Fatalf("ResolveFanart: %v", err)
 		}
@@ -35,7 +36,7 @@ func TestResolveFanart(t *testing.T) {
 		// numbered variant with no primary. A pass-1-only resolver would call
 		// this "no fanart" and strand it.
 		dir := resolveTestDir(t, "backdrop2.jpg")
-		name, paths, err := ResolveFanart(dir, names)
+		name, paths, err := ResolveFanart(context.Background(), dir, names)
 		if err != nil {
 			t.Fatalf("ResolveFanart: %v", err)
 		}
@@ -52,7 +53,7 @@ func TestResolveFanart(t *testing.T) {
 		// nil): "successfully looked, found none". The preferred name is the
 		// first non-empty candidate, ready for a fresh write.
 		dir := resolveTestDir(t, "folder.jpg", "logo.png")
-		name, paths, err := ResolveFanart(dir, names)
+		name, paths, err := ResolveFanart(context.Background(), dir, names)
 		if err != nil {
 			t.Fatalf("ResolveFanart: %v", err)
 		}
@@ -79,7 +80,7 @@ func TestResolveFanartUnreadableDirErrors(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 
-	name, paths, err := ResolveFanart(dir, []string{"fanart.jpg"})
+	name, paths, err := ResolveFanart(context.Background(), dir, []string{"fanart.jpg"})
 	if err == nil {
 		t.Fatalf("unreadable directory returned no error (name %q, paths %v); "+
 			"'cannot tell' must not read as 'no files'", name, filepath.Base(name))

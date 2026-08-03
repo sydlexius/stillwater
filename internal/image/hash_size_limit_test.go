@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	gimage "image"
 	"image/color"
@@ -37,7 +38,7 @@ func TestHashFile_OverLimit_ReturnsSentinel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "oversized.jpg")
 	writeSparseFile(t, path, MaxDecodeBytes+1)
 
-	got, err := HashFile(path, true)
+	got, err := HashFile(context.Background(), path, true)
 	if err == nil {
 		t.Fatal("HashFile on an oversized file: got nil error, want ErrImageTooLarge")
 	}
@@ -59,7 +60,7 @@ func TestHashFile_AtLimit_NotRejectedForSize(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "atlimit.jpg")
 	writeSparseFile(t, path, MaxDecodeBytes)
 
-	got, err := HashFile(path, false)
+	got, err := HashFile(context.Background(), path, false)
 	if err != nil {
 		t.Fatalf("HashFile at exactly the limit: unexpected error %v", err)
 	}
@@ -84,7 +85,7 @@ func TestHashFile_UnderLimit_HashesUnchanged(t *testing.T) {
 		t.Fatalf("writing fixture: %v", err)
 	}
 
-	got, err := HashFile(path, true)
+	got, err := HashFile(context.Background(), path, true)
 	if err != nil {
 		t.Fatalf("HashFile on a small valid image: %v", err)
 	}
@@ -126,7 +127,7 @@ func makeDescendingGradientPNG(t *testing.T, w, h int) []byte {
 // earns its keep if callers can trust it to mean "oversized" specifically;
 // collapsing every failure into it would make it useless for triage.
 func TestHashFile_Missing_IsNotTooLarge(t *testing.T) {
-	_, err := HashFile(filepath.Join(t.TempDir(), "absent.jpg"), false)
+	_, err := HashFile(context.Background(), filepath.Join(t.TempDir(), "absent.jpg"), false)
 	if err == nil {
 		t.Fatal("HashFile on a missing file: got nil error")
 	}
