@@ -28,6 +28,14 @@ services:
       # schedules more parallel goroutines and GC workers than the quota can run,
       # adding latency on top of the throttling. Bump both together or neither.
       - GOMAXPROCS=2
+      # Soft heap ceiling for the Go garbage collector, deliberately set BELOW
+      # the mem_limit further down. mem_limit alone gives the runtime no signal:
+      # the process allocates happily until the cgroup SIGKILLs it. GOMEMLIMIT
+      # makes the collector work harder as the heap approaches this number, so
+      # memory pressure surfaces as slower passes instead of a sudden kill. Keep
+      # it at roughly 80% of mem_limit; the remaining headroom covers the parts
+      # of the process the Go heap does not account for. Move both together.
+      - GOMEMLIMIT=2400MiB
       # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
       # Direct TLS (see docs/how-to/direct-tls-setup):
@@ -75,16 +83,48 @@ services:
         soft: 8192
         hard: 8192
 
-    # No `mem_limit` here, and that omission is deliberate. `mem_limit` is
-    # enforced by the cgroup OOM killer, which SIGKILLs the process: no deferred
-    # cleanup, no flush, no graceful shutdown. Paired with `restart:
-    # unless-stopped`, a request that reliably blows the cap turns a single kill
-    # into a crash loop, which is worse than the unbounded growth the cap was
-    # meant to contain. A memory limit stays deferred until the unbounded read
-    # tracked in issue #2620 is fixed. When adding one, set GOMEMLIMIT to about
-    # 80% of the intended mem_limit first, so the Go garbage collector gets a
-    # chance to reclaim before the kernel intervenes, and only then set
-    # mem_limit itself.
+    # Hard memory ceiling. Unlike the three limits above this one does NOT
+    # degrade: it is enforced by the cgroup OOM killer, which SIGKILLs the
+    # process with no deferred cleanup and no flush. It is set here only
+    # because GOMEMLIMIT above gives the garbage collector a chance to react
+    # first, so the hard ceiling is a backstop rather than the primary control.
+    #
+    # 3 GB is roughly three times the worst-case transient this application can
+    # reach, derived rather than rounded to a familiar number:
+    #
+    #   * Every path that reads an image file into memory is bounded at
+    #     MaxDecodeBytes (25 MB). io.ReadAll grows its buffer by repeated
+    #     append, and append keeps the old backing array alive while copying
+    #     into the new one, so the realized peak per read is about twice the
+    #     bound -- roughly 50-60 MB, not 25 MB.
+    #   * A decoded image is a separate and much larger allocation than the
+    #     bytes it came from. Decoding is capped at 100 megapixels, which at
+    #     4 bytes per pixel is about 400 MB for a maximally compressed
+    #     worst-case file. This, not the read bound, is the dominant term.
+    #   * Both are bounded by SW_RULE_ENGINE_ARTIST_WORKERS (default 2), so at
+    #     most two of those run at once: under about 1 GB of transient peak.
+    #
+    # These are fixed per-image bounds, so the figure does NOT scale with how
+    # many artists are in the library -- a larger library makes a sweep longer,
+    # not more memory-hungry. Raise mem_limit (and GOMEMLIMIT with it) only if
+    # SW_RULE_ENGINE_ARTIST_WORKERS is raised, which is what widens the
+    # concurrent-decode term.
+    #
+    # Reaching this limit is a hard kill, so consider what survives one:
+    # WriteFileAtomic stages every NFO and image write in a temp file and
+    # installs it with a single rename, so a file on disk is never left
+    # half-written. An in-flight rules pass and any open SQLite write
+    # transaction are lost and the pass has to be re-run. Combined with
+    # `restart: unless-stopped` a reproducible overrun would restart into the
+    # same condition, which is why the limit is set far enough above the real
+    # peak that reaching it means a genuine leak rather than ordinary work.
+    mem_limit: 3g
+
+    # Soft floor advertised to the scheduler for placement decisions. It
+    # reserves nothing and kills nothing; it exists so a host packing several
+    # containers does not treat Stillwater as free. Set at the steady-state
+    # working set rather than the peak, because the peak above is transient.
+    mem_reservation: 512m
 
 volumes:
   stillwater-data:
