@@ -70,7 +70,7 @@ Why these numbers:
 
     If the hard limit is reached, files already on disk are safe: every NFO and image write is staged in a temporary file and installed with a single rename, so nothing is left half-written. Work in flight is lost, so a rules pass in progress has to be re-run. Because Unraid restarts the container afterwards, the limit is set well above the real peak so that reaching it signals a genuine leak rather than ordinary work.
 
-- **Memory reservation (`--memory-reservation=512m`).** A soft floor used only when the host decides how to pack containers. It reserves nothing and kills nothing. `512m` is a conservative placement value chosen below the transient peak above, not a measured steady-state figure.
+- **Memory reservation (`--memory-reservation=512m`).** A soft memory limit enforced by the kernel under host memory contention. It does not reserve capacity or make placement decisions. When memory is plentiful the container may exceed it, up to `--memory`; when the host is under memory pressure, the kernel tries to push the container toward this figure. `512m` is a conservative chosen value below the transient peak above, not a measured steady-state figure.
 
 ## Apply and first run
 

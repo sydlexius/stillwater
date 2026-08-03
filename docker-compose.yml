@@ -150,11 +150,12 @@ services:
     # peak that reaching it means a genuine leak rather than ordinary work.
     mem_limit: 3g
 
-    # Soft floor advertised to the scheduler for placement decisions. It
-    # reserves nothing and kills nothing; it exists so a host packing several
-    # containers does not treat Stillwater as free. 512m is not a measured
-    # steady-state figure -- it is a conservative scheduler placement hint,
-    # chosen well below the transient peak above, not a derived floor.
+    # Soft memory limit enforced by the kernel under host memory contention.
+    # Does not reserve capacity or make placement decisions in plain Compose.
+    # When memory is plentiful the container may exceed it, up to mem_limit.
+    # When the host is under memory pressure, the kernel tries to push the
+    # container toward this figure. 512m is a conservative chosen value, not
+    # a measured steady-state figure.
     mem_reservation: 512m
 
 volumes:

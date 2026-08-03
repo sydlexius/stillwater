@@ -94,7 +94,7 @@ Other knobs you may not need to touch:
 
 ## Resource Limits
 
-The compose file bounds what the container can consume. These are all plain Compose Spec service keys, so `docker compose up` applies them; the `deploy.resources` form you may have seen elsewhere only takes effect under Swarm, where a limit that is silently ignored looks exactly like one that works.
+The compose file bounds what the container can consume. This file uses the service-level Compose Spec keys so `docker compose up` applies them. Modern Docker Compose also supports `deploy.resources` outside Swarm, but if both service-level keys and `deploy.resources` are declared, they must be consistent with each other.
 
 | Key | Value | What it bounds |
 |---|---|---|
@@ -102,7 +102,7 @@ The compose file bounds what the container can consume. These are all plain Comp
 | `pids_limit` | `512` | Processes and OS threads |
 | `ulimits.nofile` | `8192` | Open file descriptors |
 | `mem_limit` + `GOMEMLIMIT` | `3g` / `2400MiB` | Memory |
-| `mem_reservation` | `512m` | Memory, for scheduling only |
+| `mem_reservation` | `512m` | Memory, soft limit under host contention |
 
 - **CPU.** Two cores matches `SW_RULE_ENGINE_ARTIST_WORKERS`, which defaults to 2 and is the widest deliberate concurrency in Stillwater. Reaching the limit throttles rather than fails: a rules pass or a scan takes longer, and nothing errors. Set `GOMAXPROCS` to the same number, because `cpus` on its own constrains the container through the kernel scheduler without informing the Go runtime, which then runs more work in parallel than the quota can absorb. If sweeps feel slow on a machine with cores to spare, you can raise `cpus`/`GOMAXPROCS` together (`4.0` and `4`) -- but raising `SW_RULE_ENGINE_ARTIST_WORKERS` also raises the memory peak documented under **Memory** below proportionally, so `mem_limit` and `GOMEMLIMIT` need to move with it too, not just the CPU pair.
 
@@ -118,7 +118,7 @@ The compose file bounds what the container can consume. These are all plain Comp
 
     If the hard limit is ever reached, files already on disk are safe: Stillwater stages every NFO and image write in a temporary file and installs it with a single rename, so no file is left half-written. What is lost is the work in flight, meaning a rules pass in progress has to be re-run. Because `restart: unless-stopped` would restart into the same condition, the limit is set far enough above the real peak that reaching it indicates a genuine leak rather than ordinary work.
 
-- **Memory reservation.** `mem_reservation` reserves nothing and kills nothing. It is a soft floor a host uses when deciding how to pack containers, so a busy server does not treat Stillwater as free. `512m` is a conservative scheduler hint chosen below the transient peak above, not a measured steady-state figure.
+- **Memory reservation.** `mem_reservation` is a soft memory limit enforced by the kernel under host memory contention. It does not reserve capacity or make placement decisions in plain Compose. When memory is plentiful the container may exceed it, up to `mem_limit`; when the host is under memory pressure, the kernel tries to push the container toward this figure. `512m` is a conservative chosen value below the transient peak above, not a measured steady-state figure.
 
 ## Bring it up
 
