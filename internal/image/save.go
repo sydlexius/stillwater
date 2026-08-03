@@ -94,6 +94,23 @@ func Save(dir string, imageType string, data []byte, fileNames []string, useSyml
 		if i == 0 || !symlinkEligible {
 			// First file (or symlinks disabled): write as real file
 			if err := filesystem.WriteFileAtomic(targetPath, data, 0o644); err != nil {
+				// Save logged only its successes. A failed write left no record
+				// of any wording anywhere in the production log, so an operator
+				// whose artwork did not appear had the "saved image" line for
+				// every file that worked and silence for the one that did not
+				// (issue #2636). The error does propagate to the caller, but
+				// every caller wraps it into its own vocabulary, so the log has
+				// no single greppable term for "this save failed".
+				//
+				// Error, not Warn: unlike the EXIF-injection and
+				// conflicting-format warnings above, nothing was written and
+				// the caller's image does not exist on disk.
+				logger.Error("failed to save image",
+					slog.String("path", targetPath),
+					slog.String("type", imageType),
+					slog.String("format", format),
+					slog.Int("saved_before_failure", len(saved)),
+					slog.String("error", err.Error()))
 				return saved, fmt.Errorf("writing %s: %w", targetPath, err)
 			}
 			if i == 0 {
@@ -116,6 +133,16 @@ func Save(dir string, imageType string, data []byte, fileNames []string, useSyml
 					slog.String("target", targetPath),
 					slog.String("error", err.Error()))
 				if err := filesystem.WriteFileAtomic(targetPath, data, 0o644); err != nil {
+					// Same record as the primary-write branch: the symlink
+					// fallback failing is still a save that produced no file,
+					// and it must not be the one failure shape that stays
+					// silent (issue #2636).
+					logger.Error("failed to save image",
+						slog.String("path", targetPath),
+						slog.String("type", imageType),
+						slog.String("format", format),
+						slog.Int("saved_before_failure", len(saved)),
+						slog.String("error", err.Error()))
 					return saved, fmt.Errorf("writing %s: %w", targetPath, err)
 				}
 			}

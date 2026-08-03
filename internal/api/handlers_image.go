@@ -1678,7 +1678,12 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 			// IDs, logging context) while detaching cancellation so the
 			// goroutine survives after the response is written. Matches the
 			// pattern in handlers_conflict / handlers_fix / handlers_refresh.
-			go r.clearImageFlagAsync(context.WithoutCancel(req.Context()), a.ID, imageType)
+			//
+			// dir and patterns are handed on so the goroutine can CORROBORATE
+			// this probe before destroying anything (#2634). The probe above is
+			// a single instant, and a file that has not landed YET is
+			// indistinguishable at that instant from one that was deleted.
+			go r.clearImageFlagAsync(context.WithoutCancel(req.Context()), a.ID, imageType, dir, patterns)
 		}
 		http.NotFound(w, req)
 		return
@@ -1709,6 +1714,21 @@ func imageExistsFlag(a *artist.Artist, imageType string) bool {
 	}
 }
 
+// staleFlagCorroborationDelay is how long clearImageFlagAsync waits before
+// re-probing the artist directory (#2634).
+//
+// It is a var so a test can shrink it; production keeps the real delay because
+// the whole point is to outlast a write that is landing right now.
+//
+// The value is chosen against what it has to cover, not as a round number: the
+// racing write is a local rename(2) that has already returned to its caller by
+// the time the serve request runs, so the residual window is metadata
+// visibility, measured in milliseconds even on a network mount. 750ms is a
+// large multiple of that. The cost of waiting is nil -- this goroutine already
+// outlives the response and nothing blocks on it -- while the cost of waiting
+// too briefly is the bug: a flag cleared under artwork that exists.
+var staleFlagCorroborationDelay = 750 * time.Millisecond
+
 // clearImageFlagAsync clears the exists_flag for a stale image entry in a
 // background goroutine that outlives the HTTP request. The caller is
 // expected to pass context.WithoutCancel(req.Context()) so request-scoped
@@ -1719,7 +1739,40 @@ func imageExistsFlag(a *artist.Artist, imageType string) bool {
 // the cleanup. The recovered panic value is included as a string attribute
 // so operators can correlate the log with later artist-state confusion
 // (e.g. a UI still showing a broken-image tile).
-func (r *Router) clearImageFlagAsync(ctx context.Context, artistID, imageType string) {
+//
+// CORROBORATION (#2634). The serve handler's probe is a single instant, and at
+// that instant a file that has not landed YET looks exactly like a file that was
+// deleted. The handler treated the ambiguous case as proof of deletion, so the
+// GET the UI fires immediately after a successful fetch would clear the flag for
+// the artwork that fetch had just written: the image vanished from the UI, the
+// rules read the slot as empty, and a second fetch was needed to make it stick.
+//
+// The existing guard did not cover this and could not. It refuses to clear on a
+// non-ENOENT stat error or a missing directory -- a probe FAILURE. This is a
+// probe that succeeded and returned a truthful "not there" about a moment that
+// had already passed.
+//
+// So this path now waits and probes AGAIN, in the goroutine, off the request. If
+// the second probe finds the file, the first was early rather than authoritative
+// and nothing is cleared. Two independent observations separated in time are the
+// cheapest evidence that distinguishes "gone" from "not yet", and the read path
+// pays nothing for it: the caller already spawned this goroutine and does not
+// wait on it.
+//
+// The clear is also suppressed while the path is in the expected-writes set,
+// which is the direct, non-timing-based answer whenever the racing writer is
+// Stillwater itself: that writer registers every path it is about to touch, so
+// an intersection is positive proof a write is in flight against this very slot.
+// It is deliberately NOT the only guard -- an external writer registers nothing,
+// and a write that has finished registering but not yet become visible needs the
+// re-probe -- but where it applies it is exact rather than probabilistic.
+//
+// dir and patterns are the same values the serve handler probed with, passed
+// through rather than re-derived, so the second probe asks the identical
+// question of the identical location. Re-deriving them here would let a naming
+// config change between the two probes turn a corroboration into a comparison of
+// two different questions.
+func (r *Router) clearImageFlagAsync(ctx context.Context, artistID, imageType, dir string, patterns []string) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			r.logger.Error("panic in clearImageFlagAsync",
@@ -1728,6 +1781,10 @@ func (r *Router) clearImageFlagAsync(ctx context.Context, artistID, imageType st
 				slog.Any("panic", rec))
 		}
 	}()
+
+	if !r.corroborateImageAbsence(ctx, artistID, imageType, dir, patterns) {
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -1741,6 +1798,71 @@ func (r *Router) clearImageFlagAsync(ctx context.Context, artistID, imageType st
 	r.logger.Info("cleared stale image flag",
 		slog.String("artist_id", artistID),
 		slog.String("image_type", imageType))
+}
+
+// corroborateImageAbsence reports whether the serve handler's "file not found"
+// verdict still holds after a delay, and is therefore safe to act on (#2634).
+// It returns false -- meaning DO NOT clear -- for every outcome that is not a
+// positive, corroborated absence.
+//
+// The default direction here is deliberate and is the whole safety property.
+// This gates a DESTRUCTIVE action, so it is a positive allow-list: the flag is
+// cleared only when this function has affirmative evidence the file is gone.
+// Every other answer (a write in flight, a stat error, a file that showed up on
+// the second look, a canceled context) declines. Inverting that -- clearing
+// unless something proves the file is present -- would restore exactly the bug
+// this fixes, because "no proof of presence" is the state a not-yet-visible
+// write is in.
+func (r *Router) corroborateImageAbsence(ctx context.Context, artistID, imageType, dir string, patterns []string) bool {
+	log := r.logger.With(
+		slog.String("artist_id", artistID),
+		slog.String("image_type", imageType))
+
+	// Exact answer first, where one is available: if Stillwater's own writer has
+	// registered any of this slot's candidate paths, a write is in flight
+	// against it right now and the absence is provably premature.
+	if r.expectedWrites != nil && dir != "" && len(patterns) > 0 {
+		for _, p := range img.ExpectedPaths(dir, patterns) {
+			if r.expectedWrites.IsExpected(p) {
+				log.Info("not clearing image flag: a write to this slot is in flight",
+					slog.String("path", p))
+				return false
+			}
+		}
+	}
+
+	// Without the probe inputs there is nothing to corroborate against, and an
+	// uncorroborated clear is the bug. Decline rather than fall back to the old
+	// single-probe behavior.
+	if dir == "" || len(patterns) == 0 {
+		log.Warn("not clearing image flag: no directory or naming patterns to re-probe with")
+		return false
+	}
+
+	select {
+	case <-ctx.Done():
+		// The caller passes context.WithoutCancel, so reaching here means a
+		// genuine shutdown. Declining is correct: an un-cleared flag is
+		// self-correcting on the next serve, a wrongly-cleared one is not.
+		log.Info("not clearing image flag: context ended before the absence could be corroborated")
+		return false
+	case <-time.After(staleFlagCorroborationDelay):
+	}
+
+	_, found, statErr := img.FindExistingImageStrictVerifyDir(dir, patterns)
+	if statErr != nil {
+		log.Warn("not clearing image flag: stat error on the corroborating probe",
+			slog.String("error", statErr.Error()))
+		return false
+	}
+	if found {
+		// This is the #2634 case caught in the act. It is recorded at Info
+		// rather than Debug because it is the evidence that the guard is doing
+		// work, and an operator diagnosing "my image flickers" needs to see it.
+		log.Info("not clearing image flag: the file was present on the corroborating probe (the first look was early)")
+		return false
+	}
+	return true
 }
 
 // handleImageInfo returns metadata about a local artist image (dimensions, file size).

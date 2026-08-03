@@ -4465,3 +4465,103 @@ func TestHandleLibraryOpStatus_UnknownLibraryReturnsIdle(t *testing.T) {
 		t.Errorf("status field = %q, want \"idle\"; body: %s", body["status"], w.Body.String())
 	}
 }
+
+// TestBackfillPlatformIDToManualLibs_ContestedIDRecordNamesBothRows pins the
+// enriched skip record from issue #2636. The old record named neither the
+// conflicting platform ID nor the row that already held it, so a contested
+// platform identity could not be traced to the rows involved: the reader
+// learned that some mapping was skipped for some artist and had no way to
+// reach the other side of the conflict.
+//
+// The conflict is arranged for real -- a different artist row genuinely holds
+// the (connection_id, platform_artist_id) pair, so the UNIQUE index rejects the
+// backfill and the production code takes its ErrPlatformIDClaimedByAnotherArtist
+// branch. Nothing is stubbed.
+func TestBackfillPlatformIDToManualLibs_ContestedIDRecordNamesBothRows(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	musicDir := t.TempDir()
+	manualLib := &library.Library{
+		Name:   "Filesystem",
+		Path:   musicDir,
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := router.libraryService.Create(ctx, manualLib); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+
+	// The filesystem row the backfill will target.
+	fsArtist := &artist.Artist{
+		Name:      "Portishead",
+		SortName:  "Portishead",
+		LibraryID: manualLib.ID,
+		Path:      filepath.Join(musicDir, "Portishead"),
+	}
+	if err := router.artistService.Create(ctx, fsArtist); err != nil {
+		t.Fatalf("creating filesystem artist: %v", err)
+	}
+
+	// The connection-library row that already claimed the platform mapping.
+	claimant := &artist.Artist{
+		Name:     "Portishead (Emby)",
+		SortName: "Portishead (Emby)",
+		Path:     filepath.Join(t.TempDir(), "Portishead"),
+	}
+	if err := router.artistService.Create(ctx, claimant); err != nil {
+		t.Fatalf("creating claimant artist: %v", err)
+	}
+	const platformID = "emby-portishead-001"
+	if err := router.artistService.SetPlatformID(ctx, claimant.ID, "conn-emby-1", platformID); err != nil {
+		t.Fatalf("seeding the claim: %v", err)
+	}
+	// Precondition: the claim really is held by the other row. Without it the
+	// backfill below would SUCCEED and this test would assert against a record
+	// the code never emits.
+	held, err := router.artistService.GetPlatformID(ctx, claimant.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("reading back the claim: %v", err)
+	}
+	if held != platformID {
+		t.Fatalf("precondition: claimant holds %q, want %q", held, platformID)
+	}
+
+	var logBuf safeBuffer
+	router.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	router.backfillPlatformIDToManualLibs(ctx,
+		"", "Portishead",
+		"conn-emby-1", platformID, claimant.ID,
+		[]library.Library{*manualLib})
+
+	got := logBuf.String()
+	if !strings.Contains(got, "already held by another artist row") {
+		t.Fatalf("want the contested-identity skip record; got %q", got)
+	}
+	// The two identifiers the old record omitted, which are the whole point.
+	if !strings.Contains(got, "platform_artist_id="+platformID) {
+		t.Errorf("record must name the contested platform ID; got %q", got)
+	}
+	if !strings.Contains(got, "conn_artist_id="+claimant.ID) {
+		t.Errorf("record must name the artist row holding the claim; got %q", got)
+	}
+	// And the row that lost, so both sides are reachable from one line.
+	if !strings.Contains(got, "fs_artist_id="+fsArtist.ID) {
+		t.Errorf("record must name the filesystem artist row; got %q", got)
+	}
+
+	// The skip must also be a genuine no-op: the filesystem row acquired
+	// nothing. A record describing a skip that did not happen is worse than no
+	// record at all.
+	fsPID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID for the filesystem artist: %v", err)
+	}
+	if fsPID != "" {
+		t.Errorf("filesystem artist platform ID = %q, want empty (the backfill must have skipped)", fsPID)
+	}
+}

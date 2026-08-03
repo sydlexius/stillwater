@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -469,5 +470,63 @@ func TestExpectedPaths(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSave_FailedWriteEmitsAFailureRecord pins the failure record added for
+// issue #2636. Save logged "saved image" for every file that worked and nothing
+// at all for the one that did not, so an operator whose artwork never appeared
+// had no greppable term for the failure anywhere in the production log. The
+// error does reach the caller, but each caller wraps it into its own wording.
+//
+// The failure is provoked through the real writer: the target's parent is a
+// FILE, so WriteFileAtomic's MkdirAll cannot create the directory and the write
+// genuinely fails. Nothing about the record is stubbed.
+func TestSave_FailedWriteEmitsAFailureRecord(t *testing.T) {
+	root := t.TempDir()
+	// A regular file where Save expects a directory. MkdirAll on a path whose
+	// parent is a file returns ENOTDIR.
+	blocker := filepath.Join(root, "blocked")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("seeding blocker file: %v", err)
+	}
+	dir := filepath.Join(blocker, "artist")
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	saved, err := Save(dir, "thumb", makeJPEG(t, 100, 100), []string{"folder.jpg"}, false, nil, logger)
+	if err == nil {
+		t.Fatal("Save: want an error when the underlying write fails, got nil")
+	}
+	// Precondition on the failure shape: nothing was written, so there is no
+	// partial success that could account for a missing record.
+	if len(saved) != 0 {
+		t.Fatalf("saved = %v, want empty on a failed first write", saved)
+	}
+	// The stat itself fails with ENOTDIR here (the parent is a file), which is
+	// still proof no file exists at the target: what must not happen is a
+	// successful stat.
+	if _, statErr := os.Stat(filepath.Join(dir, "folder.jpg")); statErr == nil {
+		t.Fatal("no file should exist at the target, but stat succeeded")
+	}
+
+	got := logBuf.String()
+	if !strings.Contains(got, "failed to save image") {
+		t.Errorf("want a failure record in the log; got %q", got)
+	}
+	if !strings.Contains(got, "level=ERROR") {
+		t.Errorf("want the failure recorded at ERROR (a Warn or Info record is silenced by a routine level bump); got %q", got)
+	}
+	if !strings.Contains(got, "type=thumb") {
+		t.Errorf("want the image type in the record; got %q", got)
+	}
+	if !strings.Contains(got, "folder.jpg") {
+		t.Errorf("want the target path in the record; got %q", got)
+	}
+	// And the success record must NOT be there. Without this assertion the test
+	// would pass against a Save that logged both.
+	if strings.Contains(got, "saved image") {
+		t.Errorf("a failed save must not also emit the success record; got %q", got)
 	}
 }

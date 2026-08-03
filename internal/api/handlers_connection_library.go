@@ -1495,8 +1495,23 @@ func (r *Router) backfillPlatformIDToManualLibs(
 		// than erroneous. Skip silently with a debug log instead of
 		// warning.
 		if errors.Is(setErr, artist.ErrPlatformIDClaimedByAnotherArtist) {
+			// The record now names the CONTESTED IDENTITY and BOTH rows in the
+			// contest (issue #2636). It previously named neither the platform
+			// ID nor the artist row that already held it, which made a
+			// contested platform identity untraceable to the rows involved:
+			// the reader learned that some mapping was skipped for some artist,
+			// with no way to reach the other side of the conflict.
+			//
+			// platform_artist_id is the join key the UNIQUE index is on, so it
+			// is what an operator greps to find the winner; conn_artist_id is
+			// the connection-library row that claimed it first. With those two,
+			// the conflict is a two-row lookup instead of an investigation.
 			r.logger.Debug("backfill: platform id already held by another artist row, skipping",
-				"fs_artist_id", fsArtist.ID, "connection_id", connectionID)
+				"fs_artist_id", fsArtist.ID,
+				"fs_artist_name", fsArtist.Name,
+				"conn_artist_id", connArtistID,
+				"platform_artist_id", platformArtistID,
+				"connection_id", connectionID)
 			return
 		}
 		r.logger.Warn("backfill: storing platform id on filesystem artist", "name", fsArtist.Name, "error", setErr)
