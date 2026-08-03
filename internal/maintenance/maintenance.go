@@ -763,20 +763,13 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 			skipped++
 			continue
 		}
-		paths, ok := discovered[st.artistID]
-		if !ok {
-			p, discErr := img.DiscoverFanart(ctx, dir, primary)
-			if discErr != nil {
-				s.logger.Warn("fanart hash backfill: discovering fanart, skipping artist",
-					slog.String("artist_id", st.artistID),
-					slog.String("dir", dir),
-					slog.Any("error", discErr))
-				discovered[st.artistID] = nil
-				skipped++
-				continue
-			}
-			discovered[st.artistID] = p
-			paths = p
+		paths, discOK, discErr := s.backfillFanartPaths(ctx, discovered, st.artistID, dir, primary)
+		if discErr != nil {
+			return fmt.Errorf("fanart hash backfill canceled after %d rows filled: %w", filled, discErr)
+		}
+		if !discOK {
+			skipped++
+			continue
 		}
 		// slot_index is the DiscoverFanart ORDINAL, so it indexes the slice
 		// directly -- the same mapping imageDupRowPath uses. Matching it exactly
@@ -793,6 +786,16 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 
 		fh, hashErr := img.HashFile(ctx, path, true)
 		if hashErr != nil || fh.Perceptual == 0 && fh.Content == "" {
+			// Same distinction one layer in. HashFile reads the file bytes
+			// under ctx, so a canceled pass surfaces here as an ordinary
+			// hashing failure and would otherwise be counted as an undecodable
+			// file -- the one category BackfillFanartHashes' own doc comment
+			// calls a permanent, re-selected residue. Attributing a
+			// cancellation to the file makes a healthy library look like it has
+			// corrupt artwork. A genuine decode failure still skips.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return fmt.Errorf("fanart hash backfill canceled after %d rows filled: %w", filled, ctxErr)
+			}
 			s.logger.Warn("fanart hash backfill: hashing file, skipping",
 				slog.String("artist_id", st.artistID),
 				slog.Int("slot_index", st.slotIndex),
@@ -831,6 +834,54 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 		slog.Int("failed", failed),
 		slog.Bool("truncated", truncated))
 	return nil
+}
+
+// backfillFanartPaths resolves one artist's fanart paths for the backfill,
+// memoised in cache so a directory is read once per artist even though the rows
+// arrive one slot at a time.
+//
+// Three-valued, because the caller has three genuinely different things to do:
+//
+//	(paths, true,  nil)  discovery succeeded (an empty slice is a valid answer)
+//	(nil,    false, nil) this ARTIST could not be read -- skip it, keep going
+//	(nil,    false, err) the CONTEXT is done -- the pass must abort
+//
+// That last distinction is the whole point (#2934). DiscoverFanart became
+// cancellable, so a canceled pass now fails here with an error shaped exactly
+// like an unreadable directory. Interrogate the CONTEXT rather than the error's
+// contents: an I/O error whose message mentions a deadline is not a
+// cancellation, and a cancellation wrapped in an ordinary-looking read failure
+// still is one.
+//
+// Absorbing a cancellation as a skip would be wrong in a way that LOOKS RIGHT.
+// Every remaining row would walk the same already-done context, do no
+// filesystem work at all, and land here too -- so the pass logs "complete" with
+// a skipped count that reads as "this many artists have unreadable directories"
+// when it actually means "we stopped looking".
+//
+// A failed artist is cached as nil so its remaining rows do not each re-probe a
+// directory already known to be unreadable; the caller's slot-bounds check then
+// skips them.
+func (s *Service) backfillFanartPaths(
+	ctx context.Context, cache map[string][]string, artistID, dir, primary string,
+) ([]string, bool, error) {
+	if paths, ok := cache[artistID]; ok {
+		return paths, true, nil
+	}
+	paths, err := img.DiscoverFanart(ctx, dir, primary)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, false, ctxErr
+		}
+		s.logger.Warn("fanart hash backfill: discovering fanart, skipping artist",
+			slog.String("artist_id", artistID),
+			slog.String("dir", dir),
+			slog.Any("error", err))
+		cache[artistID] = nil
+		return nil, false, nil
+	}
+	cache[artistID] = paths
+	return paths, true, nil
 }
 
 // StartFanartHashBackfill runs BackfillFanartHashes after startupDelay and then

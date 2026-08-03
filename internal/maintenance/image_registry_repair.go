@@ -347,6 +347,27 @@ func (s *Service) discover(ctx context.Context, log *slog.Logger, artistID, dir 
 		// that a flaky mount cannot produce a silently clean report.
 		path, ok, statErr := img.FindExistingImageStrict(ctx, dir, img.FileNamesForType(img.DefaultFileNames, t))
 		if statErr != nil {
+			// A cancellation is not a flaky mount: propagate it rather than
+			// recording this type as one more unverifiable slot (#2934).
+			//
+			// Interrogate the CONTEXT, not the error's contents. An I/O error
+			// whose message happens to mention a deadline must not be mistaken
+			// for a real cancellation, and a real cancellation must not be
+			// missed because the wrapped error reads like an ordinary stat
+			// failure. Matches appendVerified's branch below.
+			//
+			// The distinction is what the operator READS. Recording a skip
+			// leaves FilesSkipped and an Outcomes row describing a file that was
+			// never actually probed, and the pass then reports as COMPLETE with
+			// some unreadable files -- a plausible-looking report of a library
+			// problem that does not exist. Once the context is done every
+			// remaining type would probe against an already-canceled context,
+			// doing no filesystem work at all, so the whole tail of the type
+			// list would be counted as skipped for the same non-reason. An
+			// ordinary stat error still skips: it genuinely affects one type.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			log.Warn("image repair: stat error probing image type, skipping type",
 				slog.String("image_type", t), slog.Any("error", statErr))
 			res.FilesSkipped++
