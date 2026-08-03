@@ -49,8 +49,12 @@ const (
 	// invisible (a queued decode simply waits its turn) while turning
 	// sustained saturation into load shedding with a clear error instead of an
 	// unbounded backlog.
-	decodeAcquireTimeout = 30 * time.Second
+	defaultDecodeAcquireTimeout = 30 * time.Second
 )
+
+// decodeAcquireTimeout is a var, not a const, solely so tests can shorten it;
+// nothing in production ever writes it.
+var decodeAcquireTimeout = defaultDecodeAcquireTimeout
 
 // ErrDecodeBusy is returned when no decode slot became available within
 // decodeAcquireTimeout. It is a load-shedding signal, not a corrupt-input

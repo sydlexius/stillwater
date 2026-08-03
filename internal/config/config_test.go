@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	img "github.com/sydlexius/stillwater/internal/image"
 )
 
 func TestDefault(t *testing.T) {
@@ -400,6 +402,58 @@ rule_engine:
 				t.Errorf("RuleEngine.ArtistWorkers = %d, want %d", cfg.RuleEngine.ArtistWorkers, tc.want)
 			}
 		})
+	}
+}
+
+// TestValidate_DecodeConcurrencyNonPositive is the ImageConfig sibling of the
+// artist_workers normalization above: a file-backed 0 must not reach
+// image.SetMaxConcurrentDecodes, and cfg must report the value the process
+// actually runs with.
+func TestValidate_DecodeConcurrencyNonPositive(t *testing.T) {
+	wantDefault := Default().Image.DecodeConcurrency
+	cases := []struct {
+		name    string
+		decodes int
+		want    int
+	}{
+		{"zero normalizes to default", 0, wantDefault},
+		{"negative normalizes to default", -3, wantDefault},
+		{"positive passes through", 6, 6},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			clearSWEnv(t)
+			dir := t.TempDir()
+			yamlPath := filepath.Join(dir, "config.yaml")
+			body := fmt.Sprintf(`
+server:
+  port: 1973
+database:
+  path: /tmp/test.db
+image:
+  decode_concurrency: %d
+`, tc.decodes)
+			if err := os.WriteFile(yamlPath, []byte(body), 0o644); err != nil {
+				t.Fatalf("writing config file: %v", err)
+			}
+			cfg, err := Load(yamlPath)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Image.DecodeConcurrency != tc.want {
+				t.Errorf("Image.DecodeConcurrency = %d, want %d", cfg.Image.DecodeConcurrency, tc.want)
+			}
+		})
+	}
+}
+
+// TestDecodeConcurrencyDefaultMatchesImagePackage guards the one duplication
+// this change deliberately accepts. config.go keeps the default as a literal
+// so internal/config does not import the image-decoding package; this test is
+// what makes that safe, by failing loudly if the two ever diverge.
+func TestDecodeConcurrencyDefaultMatchesImagePackage(t *testing.T) {
+	if got, want := Default().Image.DecodeConcurrency, img.DefaultDecodeConcurrency; got != want {
+		t.Errorf("config default DecodeConcurrency = %d but image.DefaultDecodeConcurrency = %d; keep the literal in config.go equal to the image package constant (or the `default:` struct tag and the env-var reference will document a value the process does not use)", got, want)
 	}
 }
 
