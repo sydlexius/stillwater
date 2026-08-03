@@ -2,10 +2,14 @@ package image
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -13,6 +17,85 @@ import (
 
 func bytesReader(data []byte) io.Reader {
 	return bytes.NewReader(data)
+}
+
+// --- structured record capture (issue #2636) ---------------------------------
+//
+// Save's failure records are asserted on their ATTRIBUTES, not on the rendered
+// text. A substring check against a TextHandler buffer cannot tell a `path`
+// attribute from the same string appearing inside the wrapped error message, so
+// `strings.Contains(got, "folder.jpg")` passed even with the attribute missing.
+// These helpers read the record's attrs directly.
+
+type saveLogEntry struct {
+	level slog.Level
+	msg   string
+	attrs map[string]string
+}
+
+type saveLogHandler struct {
+	entries *[]saveLogEntry
+	attrs   []slog.Attr
+}
+
+// Enabled returns true for every level on purpose: the handler must SEE the
+// Debug "saved image" record, or a negative assertion about it is vacuous.
+func (h *saveLogHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+
+func (h *saveLogHandler) Handle(_ context.Context, r slog.Record) error {
+	e := saveLogEntry{level: r.Level, msg: r.Message, attrs: map[string]string{}}
+	for _, a := range h.attrs {
+		e.attrs[a.Key] = a.Value.String()
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		e.attrs[a.Key] = a.Value.String()
+		return true
+	})
+	*h.entries = append(*h.entries, e)
+	return nil
+}
+
+func (h *saveLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	merged := make([]slog.Attr, 0, len(h.attrs)+len(attrs))
+	merged = append(merged, h.attrs...)
+	merged = append(merged, attrs...)
+	return &saveLogHandler{entries: h.entries, attrs: merged}
+}
+
+func (h *saveLogHandler) WithGroup(_ string) slog.Handler { return h }
+
+// captureSaveLogs returns a logger that records every level and the slice its
+// records land in.
+func captureSaveLogs() (*slog.Logger, *[]saveLogEntry) {
+	entries := &[]saveLogEntry{}
+	return slog.New(&saveLogHandler{entries: entries}), entries
+}
+
+// requireOneSaveRecord asserts exactly one captured record has the given
+// message, and returns it.
+func requireOneSaveRecord(t *testing.T, entries *[]saveLogEntry, msg string) saveLogEntry {
+	t.Helper()
+	var got []saveLogEntry
+	for _, e := range *entries {
+		if e.msg == msg {
+			got = append(got, e)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("want exactly 1 %q record, got %d; all captured records: %+v", msg, len(got), *entries)
+	}
+	return got[0]
+}
+
+// countSaveRecords reports how many captured records carry the given message.
+func countSaveRecords(entries *[]saveLogEntry, msg string) int {
+	n := 0
+	for _, e := range *entries {
+		if e.msg == msg {
+			n++
+		}
+	}
+	return n
 }
 
 func TestSave_SingleFile(t *testing.T) {
@@ -469,5 +552,155 @@ func TestExpectedPaths(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSave_FailedWriteEmitsAFailureRecord pins the failure record added for
+// issue #2636. Save logged "saved image" for every file that worked and nothing
+// at all for the one that did not, so an operator whose artwork never appeared
+// had no greppable term for the failure anywhere in the production log. The
+// error does reach the caller, but each caller wraps it into its own wording.
+//
+// The failure is provoked through the real writer: the target's parent is a
+// FILE, so WriteFileAtomic's MkdirAll cannot create the directory and the write
+// genuinely fails. Nothing about the record is stubbed.
+func TestSave_FailedWriteEmitsAFailureRecord(t *testing.T) {
+	root := t.TempDir()
+	// A regular file where Save expects a directory. MkdirAll on a path whose
+	// parent is a file returns ENOTDIR.
+	blocker := filepath.Join(root, "blocked")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("seeding blocker file: %v", err)
+	}
+	dir := filepath.Join(blocker, "artist")
+
+	// The handler must be level-permissive. "saved image" is emitted at Debug,
+	// so a handler configured at Info filtered it out before the negative
+	// assertion below ever saw it -- that assertion could not have detected a
+	// Save that emitted BOTH records, which is exactly the regression it exists
+	// to catch. captureSaveLogs is Enabled for every level.
+	logger, entries := captureSaveLogs()
+	targetPath := filepath.Join(dir, "folder.jpg")
+
+	saved, err := Save(dir, "thumb", makeJPEG(t, 100, 100), []string{"folder.jpg"}, false, nil, logger)
+	if err == nil {
+		t.Fatal("Save: want an error when the underlying write fails, got nil")
+	}
+	// Precondition on the failure shape: nothing was written, so there is no
+	// partial success that could account for a missing record.
+	if len(saved) != 0 {
+		t.Fatalf("saved = %v, want empty on a failed first write", saved)
+	}
+	// Precondition on the FIXTURE: the intended failure is ENOTDIR, because the
+	// target's parent is a regular file. A bare `statErr == nil` check would
+	// accept any unrelated setup error (a permissions problem, a path typo) and
+	// so would not prove the fixture this test describes actually ran.
+	if _, statErr := os.Stat(targetPath); !errors.Is(statErr, syscall.ENOTDIR) {
+		t.Fatalf("precondition: stat of %s should fail with ENOTDIR (its parent is a regular file), got %v", targetPath, statErr)
+	}
+
+	e := requireOneSaveRecord(t, entries, "failed to save image")
+	if e.level != slog.LevelError {
+		t.Errorf("level = %v, want %v (a Warn or Info record is silenced by a routine level bump)", e.level, slog.LevelError)
+	}
+	if e.attrs["type"] != "thumb" {
+		t.Errorf("type = %q, want %q", e.attrs["type"], "thumb")
+	}
+	// Asserted as a structured ATTRIBUTE, not as a substring of the rendered
+	// line: the wrapped error text also contains "folder.jpg", so a substring
+	// check passed even when the path attribute was absent.
+	if e.attrs["path"] != targetPath {
+		t.Errorf("path = %q, want %q (the operator greps this attribute to find the file that never appeared)", e.attrs["path"], targetPath)
+	}
+	if e.attrs["error"] == "" {
+		t.Error("error attribute is empty; the record must name the failure")
+	}
+	// And the success record must NOT be there. This is only meaningful because
+	// the handler above is Enabled at Debug: at Info it was filtered out and the
+	// assertion could never fail.
+	if n := countSaveRecords(entries, "saved image"); n != 0 {
+		t.Errorf("a failed save must not also emit the success record; got %d; all records: %+v", n, *entries)
+	}
+}
+
+// TestSave_SymlinkFallbackWriteFailureEmitsAFailureRecord covers the OTHER
+// branch that returns a failed save: the symlink for a secondary filename
+// cannot be created, and the WriteFileAtomic fallback then fails too. It is a
+// distinct code path from the primary write, and before #2636 it was equally
+// silent -- an operator would see the primary file appear and the alias simply
+// not exist, with nothing in the log naming it.
+//
+// Both failures are provoked structurally rather than stubbed: the secondary
+// target path is an existing non-empty DIRECTORY, so CreateRelativeSymlink
+// fails (the directory cannot be unlinked to make room) and WriteFileAtomic's
+// promoting rename onto that same directory fails too.
+func TestSave_SymlinkFallbackWriteFailureEmitsAFailureRecord(t *testing.T) {
+	dir := t.TempDir()
+	// The alias name Save will try to create as a symlink, pre-occupied by a
+	// non-empty directory so neither the symlink nor the fallback write can
+	// take the name.
+	blocked := filepath.Join(dir, "artist.jpg")
+	if err := os.MkdirAll(filepath.Join(blocked, "occupied"), 0o755); err != nil {
+		t.Fatalf("seeding blocking directory: %v", err)
+	}
+
+	logger, entries := captureSaveLogs()
+
+	saved, err := Save(dir, "thumb", makeJPEG(t, 100, 100), []string{"folder.jpg", "artist.jpg"}, true, nil, logger)
+	if err == nil {
+		t.Fatal("Save: want an error when both the symlink and its write fallback fail, got nil")
+	}
+
+	// Precondition on the failure SHAPE: the primary write succeeded, so this
+	// really is the symlink-fallback branch and not the primary-write branch
+	// wearing the same record.
+	if len(saved) != 1 || saved[0] != "folder.jpg" {
+		t.Fatalf("saved = %v, want [folder.jpg] (the primary must have been written before the alias failed)", saved)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "folder.jpg")); statErr != nil {
+		t.Fatalf("precondition: the primary file should exist, stat err = %v", statErr)
+	}
+	// Precondition that the symlink leg was actually attempted and failed:
+	// the blocker is still a directory, so nothing replaced it.
+	info, statErr := os.Lstat(blocked)
+	if statErr != nil {
+		t.Fatalf("precondition: stat of the blocking path: %v", statErr)
+	}
+	if !info.IsDir() {
+		t.Fatalf("precondition: %s should still be the blocking directory, got mode %v", blocked, info.Mode())
+	}
+
+	// The Warn that announces the fallback was taken.
+	w := requireOneSaveRecord(t, entries, "symlink creation failed, falling back to copy")
+	if w.level != slog.LevelWarn {
+		t.Errorf("fallback-notice level = %v, want %v", w.level, slog.LevelWarn)
+	}
+	if w.attrs["target"] != blocked {
+		t.Errorf("fallback-notice target = %q, want %q", w.attrs["target"], blocked)
+	}
+
+	// And the Error that says the save produced no file.
+	e := requireOneSaveRecord(t, entries, "failed to save image")
+	if e.level != slog.LevelError {
+		t.Errorf("level = %v, want %v (a Warn or Info record is silenced by a routine level bump)", e.level, slog.LevelError)
+	}
+	if e.attrs["path"] != blocked {
+		t.Errorf("path = %q, want %q", e.attrs["path"], blocked)
+	}
+	if e.attrs["type"] != "thumb" {
+		t.Errorf("type = %q, want %q", e.attrs["type"], "thumb")
+	}
+	// saved_before_failure is what tells the operator how far the save got.
+	if e.attrs["saved_before_failure"] != "1" {
+		t.Errorf("saved_before_failure = %q, want %q", e.attrs["saved_before_failure"], "1")
+	}
+	if e.attrs["error"] == "" {
+		t.Error("error attribute is empty; the record must name the failure")
+	}
+
+	// The returned error must name the path too, so a caller wrapping it keeps
+	// the file identifiable.
+	if !strings.Contains(err.Error(), blocked) {
+		t.Errorf("returned error = %v, want it to name %s", err, blocked)
 	}
 }

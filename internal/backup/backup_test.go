@@ -588,3 +588,97 @@ func TestIsValidBackupFilename(t *testing.T) {
 		})
 	}
 }
+
+// TestBackup_SyncsBackupDirectoryAfterLink pins #2673 for the backup path.
+// VACUUM INTO syncs the snapshot's data and os.Link gives it a name, but the
+// directory holding that name is not durable until it is fsynced. The failure
+// mode this guards is the worst in the set: Backup reports success, a crash
+// loses the entry, and the operator finds out at restore time.
+//
+// The hook is wired for real (it is the same var the production path calls) and
+// the assertion is on WHICH directory was synced, because syncing the wrong one
+// is exactly as useless as syncing none. The precondition assertion rules out a
+// vacuous pass against a call that never happened.
+func TestBackup_SyncsBackupDirectoryAfterLink(t *testing.T) {
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := NewService(db, backupDir, 7, logger)
+	svc.clock = newTestClock()
+
+	var synced []string
+	orig := syncBackupDir
+	t.Cleanup(func() { syncBackupDir = orig })
+	syncBackupDir = func(dir string) error {
+		synced = append(synced, dir)
+		return orig(dir)
+	}
+
+	if len(synced) != 0 {
+		t.Fatalf("precondition: expected no directory syncs before the backup, got %v", synced)
+	}
+
+	info, err := svc.Backup(context.Background())
+	if err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+
+	if len(synced) != 1 {
+		t.Fatalf("directory syncs = %v, want exactly one (for %s)", synced, backupDir)
+	}
+	if synced[0] != backupDir {
+		t.Errorf("synced directory = %q, want %q", synced[0], backupDir)
+	}
+
+	// The backup itself must still be on disk and non-empty; a durability step
+	// that ate the snapshot would satisfy the assertions above.
+	dest := filepath.Join(backupDir, info.Filename)
+	st, statErr := os.Stat(dest)
+	if statErr != nil {
+		t.Fatalf("stat backup file: %v", statErr)
+	}
+	if st.Size() == 0 {
+		t.Error("backup file is empty")
+	}
+}
+
+// TestBackup_DirSyncFailureDoesNotFailTheBackup pins the deliberate choice that
+// a failed directory fsync is recorded, not returned. The snapshot is complete
+// and linked into place; discarding a good backup over a missed durability step
+// would be a strictly worse outcome than keeping it.
+func TestBackup_DirSyncFailureDoesNotFailTheBackup(t *testing.T) {
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	svc := NewService(db, backupDir, 7, logger)
+	svc.clock = newTestClock()
+
+	orig := syncBackupDir
+	t.Cleanup(func() { syncBackupDir = orig })
+	syncBackupDir = func(_ string) error { return errors.New("simulated EIO") }
+
+	info, err := svc.Backup(context.Background())
+	if err != nil {
+		t.Fatalf("Backup: a directory-sync failure must not fail the backup, got %v", err)
+	}
+
+	// The snapshot is on disk with real content.
+	dest := filepath.Join(backupDir, info.Filename)
+	st, statErr := os.Stat(dest)
+	if statErr != nil {
+		t.Fatalf("stat backup file: %v", statErr)
+	}
+	if st.Size() == 0 {
+		t.Fatal("backup file is empty")
+	}
+
+	// And the shortfall is recorded rather than swallowed.
+	got := logBuf.String()
+	if !strings.Contains(got, "backup directory sync failed") {
+		t.Errorf("want a warning about the failed directory sync, log was: %s", got)
+	}
+	if !strings.Contains(got, "simulated EIO") {
+		t.Errorf("want the underlying error in the record, log was: %s", got)
+	}
+}

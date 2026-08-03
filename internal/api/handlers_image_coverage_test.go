@@ -1217,7 +1217,7 @@ func TestClearImageFlagAsync_RecoversFromPanic(t *testing.T) {
 	// Run synchronously by calling the helper directly (the production call
 	// site spawns a goroutine; calling directly lets us deterministically
 	// observe the recovery without test-side timing flakes).
-	r.clearImageFlagAsync(context.Background(), a.ID, "thumb")
+	r.clearImageFlagAsync(context.Background(), a.ID, "thumb", a.Path, []string{"thumb.jpg"})
 
 	got := logBuf.String()
 	if !strings.Contains(got, "panic in clearImageFlagAsync") {
@@ -1254,7 +1254,7 @@ func TestClearImageFlagAsync_LogsWarnOnError(t *testing.T) {
 		t.Fatalf("closing db: %v", err)
 	}
 
-	r.clearImageFlagAsync(context.Background(), a.ID, "thumb")
+	r.clearImageFlagAsync(context.Background(), a.ID, "thumb", a.Path, []string{"thumb.jpg"})
 
 	got := logBuf.String()
 	if !strings.Contains(got, "failed to clear stale image flag") {
@@ -1280,7 +1280,7 @@ func TestClearImageFlagAsync_HappyPath(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	r.clearImageFlagAsync(context.Background(), a.ID, "thumb")
+	r.clearImageFlagAsync(context.Background(), a.ID, "thumb", a.Path, []string{"thumb.jpg"})
 
 	got := logBuf.String()
 	if !strings.Contains(got, "cleared stale image flag") {
