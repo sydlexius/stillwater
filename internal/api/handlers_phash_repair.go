@@ -43,18 +43,24 @@ import (
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
-// phashRepairWorkTimeout bounds the WORK of a phash back-out or restore
-// (#2689), so the shared destructive-fanart singleton is always released.
+// remediationWorkTimeout bounds the WORK of every singleton-holding
+// remediation pass (#2689), so the slot's deferred release is always reached
+// and the endpoint never 409s for the life of the process.
 //
-// Matched to the sibling remediation bounds (registryRepairWriteTimeout,
-// backdropRemediateWriteTimeout) rather than tuned independently: all three
-// answer the same question -- how long may the slowest legitimate
-// library-wide pass over an operator's artist directories take -- and three
-// separately-chosen constants would drift apart for no reason anyone could
-// later reconstruct. Generous against a library far larger than any measured
-// here, while still finite, which is the whole point: a finite bound is what
-// makes the deferred slot release reachable.
-const phashRepairWorkTimeout = 30 * time.Minute
+// ONE value shared by all of them rather than a constant per handler. They all
+// answer the same question -- how long may the slowest legitimate library-wide
+// pass over an operator's artist directories take -- and separately-tuned
+// numbers would drift apart for no reason a later reader could reconstruct.
+// Generous against a library far larger than any measured here (the worst
+// measured pass was 5m23s over 1226 artists), while still FINITE, which is the
+// entire point: an infinite bound is indistinguishable from the bug.
+//
+// A var, not a const, solely so tests can shorten it. Without that seam a test
+// of "the handler's own deadline releases the slot" has to cancel the REQUEST
+// context to finish in reasonable time -- which tests the request context and
+// passes just as happily with this bound deleted. Production never reassigns
+// it; withRemediationWorkTimeout (test-only) is the sole writer.
+var remediationWorkTimeout = 30 * time.Minute
 
 // pHashRemediator is the pipeline capability these handlers need: the
 // destructive back-out and its restore.
@@ -213,7 +219,7 @@ func (r *Router) handlePHashMismatchRemediate(w http.ResponseWriter, req *http.R
 	//
 	// Derived from req.Context() so a client disconnect still cancels; the
 	// timeout adds only the upper bound the request context does not supply.
-	ctx, cancel := context.WithTimeout(req.Context(), phashRepairWorkTimeout)
+	ctx, cancel := context.WithTimeout(req.Context(), remediationWorkTimeout)
 	defer cancel()
 
 	result, err := remediator.RemediatePHashMismatches(ctx, scope, rule.PHashRemediateOpts{
@@ -270,7 +276,7 @@ func (r *Router) handlePHashMismatchRestore(w http.ResponseWriter, req *http.Req
 	//
 	// Derived from req.Context() so a client disconnect still cancels; the
 	// timeout adds only the upper bound the request context does not supply.
-	ctx, cancel := context.WithTimeout(req.Context(), phashRepairWorkTimeout)
+	ctx, cancel := context.WithTimeout(req.Context(), remediationWorkTimeout)
 	defer cancel()
 
 	result, err := remediator.RestorePHashQuarantine(ctx, body.ArtistID, body.OpID)

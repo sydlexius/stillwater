@@ -163,7 +163,7 @@ func (r *Router) handleBackdropDuplicatesRemediate(w http.ResponseWriter, req *h
 	// The rescan below shares this context for the same reason -- it is the
 	// same operator wait, and a rescan is not licensed to run past the bound
 	// the remediation itself was held to.
-	ctx, cancel := context.WithTimeout(req.Context(), backdropRemediateWriteTimeout)
+	ctx, cancel := context.WithTimeout(req.Context(), remediationWorkTimeout)
 	defer cancel()
 
 	result, err := repairer.RemediateFanartDuplicates(ctx)

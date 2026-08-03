@@ -168,15 +168,18 @@ func runCancellable[T any](ctx context.Context, fn func() (T, error)) (T, error)
 	}
 }
 
-// readFileBounded reads path under context control and returns its bytes.
+// readFileBounded reads path under context control and returns its bytes,
+// bounded at MaxDecodeBytes.
 //
-// maxBytes is the largest ACCEPTABLE size, not the number of bytes to read.
-// The helper reads one byte past it and returns ErrImageTooLarge when the file
+// The bound is MaxDecodeBytes rather than a caller-supplied limit ON PURPOSE.
+// The helper reads ONE BYTE PAST it and returns ErrImageTooLarge when the file
 // is larger, so the "exactly at the limit is fine, one byte over is not"
-// boundary lives in exactly one place. That off-by-one is the whole point of
-// the bound and has been reasoned about in-place at every call site it used to
-// be duplicated in (see HashFile); a helper taking a raw read length would
-// silently move the boundary the first time a caller forgot the +1.
+// boundary lives in exactly one place and cannot be restated wrongly. A
+// parameterised limit would invite a caller to pass the read length directly
+// and silently move that boundary by a byte the first time someone forgot the
+// +1 -- and nothing else in the suite would notice. Reusing the same constant
+// decodeWithLimit enforces also keeps the read bound and the decode bound from
+// drifting apart.
 //
 // io.LimitReader, not os.Stat: a Stat-then-read has a TOCTOU window in which
 // the file can grow between the size check and the read, so the check bounds a
@@ -190,19 +193,19 @@ func runCancellable[T any](ctx context.Context, fn func() (T, error)) (T, error)
 // was for the os.Open this replaces: callers construct paths from trusted
 // sources (database rows, filesystem discovery, fixed naming patterns), never
 // from request input.
-func readFileBounded(ctx context.Context, path string, maxBytes int64) ([]byte, error) {
+func readFileBounded(ctx context.Context, path string) ([]byte, error) {
 	data, err := runCancellable(ctx, func() ([]byte, error) {
 		f, openErr := os.Open(filepath.Clean(path))
 		if openErr != nil {
 			return nil, openErr
 		}
 		defer func() { _ = f.Close() }()
-		return io.ReadAll(io.LimitReader(f, maxBytes+1))
+		return io.ReadAll(io.LimitReader(f, MaxDecodeBytes+1))
 	})
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > maxBytes {
+	if int64(len(data)) > MaxDecodeBytes {
 		return nil, ErrImageTooLarge
 	}
 	return data, nil
@@ -222,7 +225,7 @@ func readFileBounded(ctx context.Context, path string, maxBytes int64) ([]byte, 
 // Over-size files return ErrImageTooLarge, matching HashFile so the read bound
 // and the decode bound cannot drift apart.
 func ReadImageFileBounded(ctx context.Context, path string) ([]byte, error) {
-	return readFileBounded(ctx, path, MaxDecodeBytes)
+	return readFileBounded(ctx, path)
 }
 
 // readDirCtx lists dir under context control.

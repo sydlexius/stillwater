@@ -157,7 +157,7 @@ type FileHashes struct {
 // work that cannot hang on the mount. Splitting the read from the hash is what
 // makes the bound meaningful rather than decorative.
 func HashFile(ctx context.Context, path string, needPerceptual bool) (FileHashes, error) {
-	data, err := readFileBounded(ctx, path, MaxDecodeBytes)
+	data, err := readFileBounded(ctx, path)
 	if err != nil {
 		if errors.Is(err, ErrImageTooLarge) {
 			return FileHashes{}, fmt.Errorf("hashing %s: %w (max %d bytes)", path, ErrImageTooLarge, MaxDecodeBytes)

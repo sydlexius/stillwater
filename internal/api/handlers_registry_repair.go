@@ -291,12 +291,13 @@ func (r *Router) handleRegistryRepairRemediate(w http.ResponseWriter, req *http.
 	// disconnect still cancels the run; the timeout only adds an upper bound
 	// the request context does not supply.
 	//
-	// Sharing registryRepairWriteTimeout with the write deadline is
-	// deliberate: both answer the same question ("how long may the slowest
-	// legitimate library-wide run take"), and two independently-tuned
-	// constants would drift into a state where the response deadline fires
-	// first and the work keeps running unobserved.
-	ctx, cancel := context.WithTimeout(req.Context(), registryRepairWriteTimeout)
+	// remediationWorkTimeout is shared with the other singleton-holding
+	// remediation handlers and matches this route's write deadline, because
+	// all of them answer the same question ("how long may the slowest
+	// legitimate library-wide run take"). Independently-tuned numbers would
+	// drift into a state where the response deadline fires first and the work
+	// keeps running unobserved.
+	ctx, cancel := context.WithTimeout(req.Context(), remediationWorkTimeout)
 	defer cancel()
 
 	// Pass 1: REBUILD. Insert rows for files on disk that the registry has
