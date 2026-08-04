@@ -23,10 +23,11 @@ import (
 // bit is set. This produces a hash that is robust against scaling, minor
 // color adjustments, and JPEG compression artifacts.
 func PerceptualHash(r io.Reader) (uint64, error) {
-	src, err := decodeWithLimit(r)
+	src, release, err := decodeWithLimit(r)
 	if err != nil {
 		return 0, fmt.Errorf("decoding image for hash: %w", err)
 	}
+	defer release()
 
 	return PerceptualHashFromImage(src), nil
 }

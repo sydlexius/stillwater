@@ -110,35 +110,48 @@ services:
     #     into the new one, so the realized peak per read is about twice the
     #     bound -- roughly 50-60 MB, not 25 MB. This term is small next to
     #     decode and is not the dominant cost.
-    #   * Decoding is capped at 100 megapixels, but the decoder chooses the
-    #     concrete image type, and a 16-bit-per-channel source decodes to
-    #     *image.NRGBA64/RGBA64 at 8 bytes per pixel, not the 4 B/px an
-    #     8-bit image would use. Worst case is therefore ~800 MB, not 400 MB.
+    #   * Decoding is capped at a 400 MB DECODED FOOTPRINT (#2929). The
+    #     100-megapixel cap alone was not a memory bound: the decoder chooses
+    #     the concrete image type, and a 16-bit-per-channel source decodes to
+    #     *image.NRGBA64/RGBA64 at 8 bytes per pixel, so 100 MP could cost
+    #     ~800 MB. The guard now estimates bytes-per-pixel from the image
+    #     header and rejects anything projecting past 400 MB, which is the
+    #     8-bit worst case operators already ran. The figure is therefore
+    #     independent of bit depth.
     #   * TrimWithMargin and TrimAlpha take the non-SubImage branch on most
     #     real crops and allocate a SECOND full-size buffer (image.NewRGBA +
     #     draw.Copy) at 4 B/px, ~400 MB. That buffer is live at the same time
-    #     as the ~800 MB decoded source, so a single trim is ~1.2 GB, not a
+    #     as the ~400 MB decoded source, so a single trim is ~800 MB, not a
     #     sequence of smaller allocations.
+    #   * SW_IMAGE_DECODE_CONCURRENCY (default 2) bounds how many DECODED
+    #     IMAGES are live at once ACROSS THE WHOLE PROCESS (#2928) -- the slot
+    #     is held for the buffer's lifetime, not just for the decode, because
+    #     the buffer is what occupies the memory. That is what makes the
+    #     figure above multiply by a configured number instead of by inbound
+    #     request volume. Two concurrent decodes at 400 MB, each possibly
+    #     paired with the trim path's second full-size buffer, puts the peak
+    #     at ~1.6 GB. Against the 3 GiB ceiling that leaves real margin for
+    #     SQLite, HTTP, the SSE hub, the scanner, and goroutine stacks.
+    #     Requests arriving with every slot busy wait up to 30 seconds and are
+    #     then rejected, so a burst sheds load rather than queueing without
+    #     bound. RAISING THIS RAISES THE PEAK PROPORTIONALLY -- mem_limit and
+    #     GOMEMLIMIT must move with it, exactly as for ArtistWorkers.
     #   * SW_RULE_ENGINE_ARTIST_WORKERS (default 2) bounds concurrency on the
-    #     rules-pass / fixer path only: two workers at ~1.2 GB each puts the
-    #     rules-pass peak at ~2.3 GiB, matching a measured 2293 MiB HeapAlloc
-    #     for two concurrent trims. Against the 3 GiB ceiling that leaves
-    #     ~779 MiB for SQLite, HTTP, the SSE hub, the scanner, and goroutine
-    #     stacks -- real margin, but closer to 1.3x than 3x.
-    #   * ArtistWorkers does NOT bound every decoder in the process. The
-    #     request-reachable paths -- POST .../images/logo/trim, the image
-    #     upload/save path, and GeneratePlaceholder (reached from the scanner
-    #     and image-registry repair) -- decode on their own goroutine with no
-    #     listener limit or semaphore; N concurrent requests is N concurrent
-    #     decodes. A real bound on those is tracked as a separate issue and is
-    #     out of scope here (this PR is config + docs, not runtime behavior).
-    #     mem_limit is the only backstop against that path today.
+    #     rules-pass / fixer path only, and is deliberately equal to the decode
+    #     bound so it is not throttled below its own fan-out. It is NOT a
+    #     process bound: the request-reachable paths -- POST
+    #     .../images/logo/trim, the image upload/save path, and
+    #     GeneratePlaceholder (reached from the scanner and image-registry
+    #     repair) -- decode on their own goroutine outside its worker pool.
+    #     Those are bounded by SW_IMAGE_DECODE_CONCURRENCY above; mem_limit is
+    #     a backstop, no longer the only one.
     #
     # These are fixed per-image bounds, so the figure does NOT scale with how
     # many artists are in the library -- a larger library makes a sweep longer,
     # not more memory-hungry. Raise mem_limit (and GOMEMLIMIT with it) only if
-    # SW_RULE_ENGINE_ARTIST_WORKERS is raised (see the cpus comment above),
-    # which is what widens the concurrent-decode term on the bounded path.
+    # SW_IMAGE_DECODE_CONCURRENCY or SW_RULE_ENGINE_ARTIST_WORKERS is raised
+    # (see the cpus comment above), which is what widens the concurrent-decode
+    # term.
     #
     # Reaching this limit is a hard kill, so consider what survives one:
     # WriteFileAtomic stages every NFO and image write in a temp file and
