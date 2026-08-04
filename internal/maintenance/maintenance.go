@@ -909,12 +909,31 @@ func (s *Service) backfillRowPath(
 // when it actually means "we stopped looking".
 //
 // A failed artist is cached as nil so its remaining rows do not each re-probe a
-// directory already known to be unreadable; the caller's slot-bounds check then
-// skips them.
+// directory already known to be unreadable. nil is reserved for exactly that:
+// a SUCCESSFUL discovery that found nothing is normalized to an empty non-nil
+// slice before caching, so a cache hit can tell the two apart and a failed
+// artist keeps reporting as a failure for every row it owns.
 func (s *Service) backfillFanartPaths(
 	ctx context.Context, cache map[string][]string, artistID, dir, primary string,
 ) ([]string, bool, error) {
 	if paths, ok := cache[artistID]; ok {
+		// nil is the FAILURE sentinel on a cache hit, which is why the success
+		// path below never stores one. Returning discOK=true here regardless
+		// would hand a previously-FAILED artist back as "discovery succeeded"
+		// for every one of its remaining rows, silently discarding the
+		// three-valued distinction this helper exists to express.
+		//
+		// It changes no count today: such a row currently falls through to the
+		// caller's slot-bounds check (0 >= 0 for a nil slice) and is skipped
+		// there instead, the same counter and the same continue. That is
+		// precisely why it is worth fixing now rather than when it bites --
+		// the moment anything downstream tells "discovery failed" apart from
+		// "discovery found nothing" (a separate counter, a retry decision, a
+		// report field), it inherits the wrong answer, and the bug reads as
+		// having been introduced by whoever added the distinction.
+		if paths == nil {
+			return nil, false, nil
+		}
 		return paths, true, nil
 	}
 	paths, err := img.DiscoverFanart(ctx, dir, primary)
@@ -928,6 +947,13 @@ func (s *Service) backfillFanartPaths(
 			slog.Any("error", err))
 		cache[artistID] = nil
 		return nil, false, nil
+	}
+	if paths == nil {
+		// DiscoverFanart returns (nil, nil) for a directory that simply holds
+		// no fanart -- a legitimate SUCCESS whose value happens to collide with
+		// the failure sentinel above. Normalize it so nil in the cache means
+		// exactly one thing.
+		paths = []string{}
 	}
 	cache[artistID] = paths
 	return paths, true, nil

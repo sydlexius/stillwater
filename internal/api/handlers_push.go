@@ -88,6 +88,42 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "pushed"})
 }
 
+// writeCanceledPush ends a push whose request was canceled or timed out.
+//
+// It answers 499 rather than 200-with-errors (#2934). The old shape recorded
+// the cancellation as one more per-slot read failure and carried on, so the
+// client received a SUCCESS carrying "fanart[2]: read failed" -- a response
+// that names the operator's artwork for a fault that was never in the file,
+// while the slots before it really were pushed to the peer. Neither half is
+// something a client can act on.
+//
+// 499 (nginx's "Client Closed Request") is the honest code: no standard status
+// describes "the caller went away", and every 2xx here would be a claim about
+// work that did not finish. It is also unambiguous in a log, which matters
+// because the alternative failure mode of this handler is a 200 that hides the
+// abort entirely.
+//
+// The slots ALREADY uploaded are reported rather than dropped. They genuinely
+// reached the peer, and a client that reconciles state needs to know which --
+// omitting them would make a partial push look like no push at all, which is
+// the same class of lie in the opposite direction.
+func writeCanceledPush(w http.ResponseWriter, log *slog.Logger, artistName string, uploaded []string, cause error) {
+	log.Warn("image push canceled by the client; stopping before any further upload",
+		slog.String("artist", artistName),
+		slog.Int("uploaded_before_cancel", len(uploaded)),
+		slog.Any("error", cause))
+	writeJSON(w, StatusClientClosedRequest, map[string]any{
+		"error":    "push canceled: the request ended before all images could be read",
+		"uploaded": uploaded,
+	})
+}
+
+// StatusClientClosedRequest is nginx's non-standard 499. net/http has no
+// constant for it because it is not in the RFC, and inventing a 4xx of our own
+// would be worse: 499 is the code operators already recognize in a proxy log
+// for exactly this condition.
+const StatusClientClosedRequest = 499
+
 // handlePushImages uploads artist images to an Emby/Jellyfin connection.
 // POST /api/v1/artists/{id}/push/images
 //
@@ -189,6 +225,20 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 				// arbitrarily large operator file.
 				data, readErr := img.ReadImageFileBounded(req.Context(), fp)
 				if readErr != nil {
+					// A CANCELED REQUEST IS NOT A BAD FILE (#2934). Bounding
+					// this read stopped the handler wedging on a dead mount; it
+					// did not stop a canceled request answering 200 with an
+					// errors list. ReadImageFileBounded returns the context
+					// error in the same shape an unreadable file produces, so
+					// classifying it per-slot let the loop carry on PUSHING the
+					// remaining slots to the peer for a request the operator had
+					// already abandoned. Interrogate the context, not the
+					// error's contents; an ordinary read failure still reports
+					// its own slot and continues.
+					if ctxErr := req.Context().Err(); ctxErr != nil {
+						writeCanceledPush(w, r.logger, a.Name, uploaded, ctxErr)
+						return
+					}
 					r.logger.Error("reading fanart for push",
 						slog.String("path", fp),
 						slog.String("artist", a.Name),
@@ -224,6 +274,12 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		// FindExistingImage above is ctx-bound and this read was not.
 		data, readErr := img.ReadImageFileBounded(req.Context(), filePath)
 		if readErr != nil {
+			// Same distinction as the fanart branch above, and it is a separate
+			// read reached through a different path, so it needs its own guard.
+			if ctxErr := req.Context().Err(); ctxErr != nil {
+				writeCanceledPush(w, r.logger, a.Name, uploaded, ctxErr)
+				return
+			}
 			r.logger.Error("reading image for push",
 				slog.String("path", filePath),
 				slog.String("artist", a.Name),

@@ -599,3 +599,96 @@ func TestRepairImageRegistry_CancellationIsNeverACompletedRepair(t *testing.T) {
 			"nothing about a cancellation arriving there")
 	}
 }
+
+// TestBackfillFanartPaths_CacheKeepsFailureDistinctFromEmpty proves the
+// three-valued contract survives the per-artist cache.
+//
+// THE AMBIGUITY. nil was stored for two different meanings: explicitly on a
+// discovery FAILURE, and implicitly as a legitimate SUCCESS, because
+// DiscoverFanart returns (nil, nil) for a directory holding no fanart. A cache
+// hit returned discOK=true unconditionally, so a previously-FAILED artist came
+// back as "discovery succeeded" for every one of its remaining rows.
+//
+// WHY IT IS TESTED ON discOK RATHER THAN A COUNTER. It changes no count today:
+// a failed artist's later rows fell through to the caller's slot-bounds check
+// (0 >= 0 for a nil slice) and were skipped there instead -- same counter, same
+// continue. A counter-only assertion would therefore pass against both the
+// buggy and the fixed code and prove nothing. What is actually wrong is the
+// ANSWER the helper gives, so that is what this asserts.
+//
+// MORE THAN ONE ROW is essential: the first row populates the cache and the
+// second is the one that reads it back. A single-row fixture never exercises
+// the hit at all.
+func TestBackfillFanartPaths_CacheKeepsFailureDistinctFromEmpty(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	ctx := context.Background()
+	cache := map[string][]string{}
+
+	// A directory that is not on disk: discovery fails, and it is NOT a
+	// cancellation, so the helper must absorb it as a per-artist failure.
+	gone := filepath.Join(t.TempDir(), "unmounted")
+	if _, ok, err := svc.backfillFanartPaths(ctx, cache, "artist-fail", gone, testPrimary); err != nil {
+		t.Fatalf("first probe: err = %v, want nil (an unreadable directory is not a cancellation)", err)
+	} else if ok {
+		t.Fatal("first probe: discOK = true for a directory that does not exist")
+	}
+	if _, cached := cache["artist-fail"]; !cached {
+		t.Fatal("the failed artist was not cached; its remaining rows would each re-probe the same " +
+			"unreadable directory, and this test would not be exercising the cache hit at all")
+	}
+
+	// THE CACHE HIT. This is the second row of the same artist.
+	paths, ok, err := svc.backfillFanartPaths(ctx, cache, "artist-fail", gone, testPrimary)
+	if err != nil {
+		t.Fatalf("cached probe: err = %v, want nil", err)
+	}
+	if ok {
+		t.Errorf("cached probe: discOK = true (paths %v) for an artist whose discovery FAILED -- the "+
+			"cache is reporting a failure as a successful discovery that found nothing, so anything "+
+			"downstream that tells those apart inherits the wrong answer", paths)
+	}
+}
+
+// TestBackfillFanartPaths_CacheKeepsEmptySuccessSuccessful is the REQUIRED
+// over-correction guard for the fix above.
+//
+// A directory that is perfectly readable and simply holds no fanart is a
+// SUCCESS whose result is empty. It must stay discOK=true across the cache. A
+// fix that treated every nil as the failure sentinel -- rather than normalizing
+// the success to an empty non-nil slice before caching -- would satisfy the
+// test above and silently reclassify every fanart-less artist in the library as
+// a failed probe.
+func TestBackfillFanartPaths_CacheKeepsEmptySuccessSuccessful(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	ctx := context.Background()
+	cache := map[string][]string{}
+
+	// Readable, and holds nothing discovery will match.
+	empty := t.TempDir()
+
+	paths, ok, err := svc.backfillFanartPaths(ctx, cache, "artist-empty", empty, testPrimary)
+	if err != nil {
+		t.Fatalf("first probe: err = %v, want nil", err)
+	}
+	if !ok {
+		t.Fatal("first probe: discOK = false for a readable directory that simply has no fanart")
+	}
+	if len(paths) != 0 {
+		t.Fatalf("first probe: paths = %v, want empty; the fixture is not the empty-success case", paths)
+	}
+
+	// THE CACHE HIT must still say success.
+	paths, ok, err = svc.backfillFanartPaths(ctx, cache, "artist-empty", empty, testPrimary)
+	if err != nil {
+		t.Fatalf("cached probe: err = %v, want nil", err)
+	}
+	if !ok {
+		t.Error("cached probe: discOK = false for an artist whose discovery SUCCEEDED with zero " +
+			"matches -- every fanart-less artist in the library is now being reported as a failed probe")
+	}
+	if len(paths) != 0 {
+		t.Errorf("cached probe: paths = %v, want empty", paths)
+	}
+}

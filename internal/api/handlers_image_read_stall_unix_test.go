@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -45,13 +46,20 @@ func readStallFifo(t *testing.T, path string) {
 	})
 }
 
+// servedWithinLimit bounds how long a handler under test may take to return.
+// Generous on purpose: these tests distinguish "returns" from "never returns",
+// so the margin only has to beat a hang, and a tight bound would make them
+// flaky on a loaded machine without catching anything a loose one misses.
+const servedWithinLimit = 5 * time.Second
+
 // servedWithin runs the handler on its own goroutine and fails unless it
-// returns before limit. The goroutine is not ceremony: a REGRESSION here means
-// the handler never returns, and a direct call would hang the test binary until
-// the go test timeout and report as an unrelated panic rather than as this
-// test failing.
-func servedWithin(t *testing.T, limit time.Duration, fn func()) time.Duration {
+// returns within servedWithinLimit. The goroutine is not ceremony: a REGRESSION
+// here means the handler never returns, and a direct call would hang the test
+// binary until the go test timeout and report as an unrelated panic rather than
+// as this test failing.
+func servedWithin(t *testing.T, fn func()) time.Duration {
 	t.Helper()
+	const limit = servedWithinLimit
 	done := make(chan time.Duration, 1)
 	go func() {
 		start := time.Now()
@@ -101,11 +109,19 @@ func pushImages(t *testing.T, r *Router, a *artist.Artist, ctx context.Context, 
 	var resp struct {
 		Uploaded []string `json:"uploaded"`
 		Errors   []string `json:"errors"`
+		Error    string   `json:"error"`
 	}
-	if w.Code == http.StatusOK {
+	// 499 carries a body too (an `error` string and whatever DID upload before
+	// the abort), and the cancellation tests below assert on both. Decoding
+	// only 200 would have hidden the uploaded list on exactly the responses
+	// where it matters most.
+	if w.Code == http.StatusOK || w.Code == StatusClientClosedRequest {
 		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 			t.Fatalf("decoding response: %v", err)
 		}
+	}
+	if resp.Error != "" {
+		resp.Errors = append(resp.Errors, resp.Error)
 	}
 	return w.Code, resp.Uploaded, resp.Errors
 }
@@ -125,9 +141,10 @@ func TestHandlePushImages_StalledFanartRead_ReturnsOnDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
+	var code int
 	var uploaded, errs []string
-	elapsed := servedWithin(t, 5*time.Second, func() {
-		_, uploaded, errs = pushImages(t, r, a, ctx, "fanart")
+	elapsed := servedWithin(t, func() {
+		code, uploaded, errs = pushImages(t, r, a, ctx, "fanart")
 	})
 
 	if elapsed > 2*time.Second {
@@ -138,6 +155,11 @@ func TestHandlePushImages_StalledFanartRead_ReturnsOnDeadline(t *testing.T) {
 	}
 	if len(errs) == 0 {
 		t.Error("no errors reported for a fanart slot that could not be read; the client is told the push was clean")
+	}
+	if code != StatusClientClosedRequest {
+		t.Errorf("status = %d, want %d: a canceled request must not answer with a success carrying a "+
+			"per-slot read error -- that names the operator's artwork for a fault that was never in "+
+			"the file", code, StatusClientClosedRequest)
 	}
 }
 
@@ -152,9 +174,10 @@ func TestHandlePushImages_StalledSingleSlotRead_ReturnsOnDeadline(t *testing.T) 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
+	var code int
 	var uploaded, errs []string
-	elapsed := servedWithin(t, 5*time.Second, func() {
-		_, uploaded, errs = pushImages(t, r, a, ctx, "thumb")
+	elapsed := servedWithin(t, func() {
+		code, uploaded, errs = pushImages(t, r, a, ctx, "thumb")
 	})
 
 	if elapsed > 2*time.Second {
@@ -165,6 +188,9 @@ func TestHandlePushImages_StalledSingleSlotRead_ReturnsOnDeadline(t *testing.T) 
 	}
 	if len(errs) == 0 {
 		t.Error("no errors reported for a thumb that could not be read; the client is told the push was clean")
+	}
+	if code != StatusClientClosedRequest {
+		t.Errorf("status = %d, want %d: same distinction as the fanart branch", code, StatusClientClosedRequest)
 	}
 }
 
@@ -247,7 +273,7 @@ func TestHandleLogoTrim_StalledRead_ReturnsOnDeadline(t *testing.T) {
 	defer cancel()
 
 	w := httptest.NewRecorder()
-	elapsed := servedWithin(t, 5*time.Second, func() {
+	elapsed := servedWithin(t, func() {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/logo/trim", nil)
 		req.SetPathValue("id", a.ID)
 		r.handleLogoTrim(w, req.WithContext(ctx))
@@ -265,5 +291,102 @@ func TestHandleLogoTrim_StalledRead_ReturnsOnDeadline(t *testing.T) {
 	// And the original is untouched -- the FIFO is still the only thing there.
 	if _, err := os.Lstat(filepath.Join(dir, "logo.png")); err != nil {
 		t.Errorf("the original logo path was disturbed by a trim that never read it: %v", err)
+	}
+}
+
+// TestHandlePushImages_CancellationStopsFurtherUploads is the load-bearing
+// handler guard, and it is multi-file for the same reason its publish sibling
+// is: a single-slot cancellation cannot distinguish "the handler stopped" from
+// "the handler warned and had nothing left to push".
+//
+// SLOT ORDER MATTERS, for a reason specific to this handler. It reads and
+// uploads ONE SLOT AT A TIME rather than snapshotting first, so the healthy
+// file must come FIRST: slot 0 is read and pushed, then slot 1 consumes the
+// deadline.
+//
+//	defect:  slot 1's cancellation is recorded as "fanart[1]: read failed", the
+//	         loop continues to the end, and the client gets HTTP 200 whose
+//	         `uploaded` list names a file that really was handed to the peer for
+//	         a request it had already abandoned.
+//	fixed:   the handler stops at the cancellation and says so.
+//
+// Stalling slot 0 instead would make the peer count zero under BOTH behaviors
+// -- every later read short-circuits on the dead context -- and the assertion
+// could never fail.
+//
+// WHAT EACH ASSERTION HERE ACTUALLY PROVES, stated plainly because the two are
+// not equally strong:
+//
+//   - THE STATUS is what carries this test. 200-with-errors versus 499 is the
+//     difference between a client being told its abandoned push succeeded and
+//     being told it was abandoned, and it flips under the mutation.
+//   - THE PEER COUNT is a VACUITY GUARD, not the proof. Once the context is
+//     dead every remaining read short-circuits inside ReadImageFileBounded, so
+//     even the unfixed handler uploads nothing further -- the count cannot
+//     reach 2 no matter how many healthy slots follow, and asserting "<= 1"
+//     would be asserting nothing. What it does prove is that a healthy slot
+//     DID upload before the cancellation, which is what makes this the
+//     partial-success shape rather than a request that failed before doing
+//     anything.
+//
+// The publish-side sibling (TestSyncAllFanartToPlatforms_CancellationStopsTheSet)
+// is where the stop is proven at the peer, because that path snapshots the
+// whole set before uploading any of it, so the bytes captured before the abort
+// are still in hand and the defect genuinely pushes them.
+func TestHandlePushImages_CancellationStopsFurtherUploads(t *testing.T) {
+	var uploads atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		uploads.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), []byte("healthy"), 0o644); err != nil {
+		t.Fatalf("seeding the healthy first slot: %v", err)
+	}
+	readStallFifo(t, filepath.Join(dir, "fanart1.jpg"))
+
+	r, artistSvc := testRouter(t)
+	r.platformService = platform.NewService(r.db)
+	a := &artist.Artist{Name: "Canceled Mid-Push", SortName: "Canceled Mid-Push", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-stall-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	var code int
+	var uploaded []string
+	servedWithin(t, func() {
+		code, uploaded, _ = pushImages(t, r, a, ctx, "fanart")
+	})
+
+	// Vacuity guard, per the note above: exactly one upload means slot 0 really
+	// was pushed while the context was live, so this IS the partial-success
+	// shape. Zero would mean the deadline beat the first read and the status
+	// assertion below would be about a request that never did anything.
+	if n := uploads.Load(); n != 1 {
+		t.Errorf("the peer received %d upload(s), want exactly 1 (slot 0, pushed before the abort); "+
+			"0 means the healthy slot never uploaded, so this test is not exercising a push that was "+
+			"canceled PART WAY THROUGH", n)
+	}
+	// The slot that really did reach the peer is still reported. Dropping it
+	// would make a partial push look like no push at all -- the same class of
+	// lie in the opposite direction.
+	if len(uploaded) != 1 {
+		t.Errorf("uploaded = %v, want the one slot that genuinely reached the peer before the abort", uploaded)
+	}
+	if code == http.StatusOK {
+		t.Error("status = 200 for a canceled request: the client is told the push succeeded, with the " +
+			"abort reported as an error against a file that was never at fault")
+	}
+	if code != StatusClientClosedRequest {
+		t.Errorf("status = %d, want %d", code, StatusClientClosedRequest)
 	}
 }

@@ -389,3 +389,83 @@ func TestSyncAllFanart_UnreadableSlot_KeepsIndices(t *testing.T) {
 		t.Errorf("slot 1 was uploaded at platform index %d; compaction shifted the gallery", uploadedIndices[0])
 	}
 }
+
+// cancelingClobberUploader destroys the victim file and then CANCELS the
+// caller's context, reproducing the exact ordering that makes the deferred
+// repair load-bearing: the peer has already eaten the operator's file by the
+// time the request goes away.
+type cancelingClobberUploader struct {
+	victim string
+	cancel context.CancelFunc
+	calls  int
+}
+
+func (c *cancelingClobberUploader) UploadImageAtIndex(_ context.Context, _, _ string, _ int, _ []byte, _ string) error {
+	c.calls++
+	_ = os.Remove(c.victim)
+	c.cancel()
+	return nil
+}
+
+// TestSyncAllFanart_CanceledAfterPeerDestroyedFile_StillRestored is the
+// INTERACTION guard for the #2934 cancellation stop.
+//
+// Stopping the snapshot/upload path on cancellation must NOT cost the deferred
+// re-assertion, and losing that repair would be strictly worse than the defect
+// the stop fixes: a cancellation is precisely WHEN a peer is most likely to have
+// destroyed a file and nothing else will put it back. The repair deliberately
+// runs on a detached context (context.WithoutCancel plus its own deadline) for
+// that reason, and this test is what proves the new early return did not put
+// itself in front of it.
+//
+// ORDERING IS THE FIXTURE. The peer deletes the operator's backdrop and THEN
+// cancels the request, so the cancellation lands after a peer was genuinely
+// reached -- the case the early return must not intercept. The new stop sits in
+// the SNAPSHOT, which has already completed by this point, and the repair is
+// registered before the upload loop and gated on uploadedTo, which is non-empty
+// here. The assertion is the bytes on disk, not a counter.
+func TestSyncAllFanart_CanceledAfterPeerDestroyedFile_StillRestored(t *testing.T) {
+	dir := t.TempDir()
+	want := []byte("OPERATOR-BACKDROP-BYTES")
+	victim := filepath.Join(dir, "fanart.jpg")
+	writeFile(t, victim, want)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	up := &cancelingClobberUploader{victim: victim, cancel: cancel}
+	origIndexed := newIndexedImageUploader
+	newIndexedImageUploader = func(_ *connection.Connection, _ *slog.Logger) connection.IndexedImageUploader {
+		return up
+	}
+	t.Cleanup(func() { newIndexedImageUploader = origIndexed })
+
+	conn := &connection.Connection{
+		ID: "c1", Name: "Peer", Type: connection.TypeEmby, Enabled: true, Status: "ok",
+		URL: "http://peer.invalid",
+	}
+	conn.FeatureManageServerFiles = true
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: conn.ID, PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{conn.ID: conn}},
+		Logger:            silentLogger(),
+	})
+
+	p.SyncAllFanartToPlatforms(ctx, &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir})
+
+	if up.calls == 0 {
+		t.Fatal("precondition failed: the uploader never ran, so no peer was reached and the repair " +
+			"was never owed -- this test would prove nothing about the interaction")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("precondition failed: the context was not canceled during the push")
+	}
+	got := mustRead(t, victim)
+	if string(got) != string(want) {
+		t.Errorf("restored bytes = %q, want the operator's original %q; the cancellation stop is "+
+			"preventing the deferred repair from running, which loses operator data for exactly the "+
+			"case the repair exists to cover", got, want)
+	}
+}

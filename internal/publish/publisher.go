@@ -805,6 +805,18 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	// artwork file of arbitrary size used to be read whole into memory here.
 	data, readErr := img.ReadImageFileBounded(ctx, filePath)
 	if readErr != nil {
+		// A cancellation gets its OWN outcome (#2934). This path already
+		// returns on any read failure, so the defect here is not partial work
+		// but a MISREPORT: "failed to read image for upload" tells the operator
+		// their artwork is unreadable and sends them to check the file, when
+		// what actually happened is that they navigated away or the request
+		// timed out. Same context-not-contents rule as everywhere else here.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			p.logger.Warn("platform image sync canceled before upload",
+				"artist", a.Name, "type", imageType, "path", filePath, "error", ctxErr)
+			warnings = append(warnings, "platform sync canceled: the request ended before the image could be read")
+			return warnings
+		}
 		p.logger.Error("reading image for platform sync", "artist", a.Name, "type", imageType, "path", filePath, "error", readErr)
 		if errors.Is(readErr, img.ErrImageTooLarge) {
 			warnings = append(warnings, "platform sync skipped: image exceeds the size limit for upload")
@@ -937,18 +949,47 @@ type fanartSnapshot struct {
 // The bound is also the allocation guard -- a set of arbitrarily large operator
 // files was previously read whole into memory, all of it resident at once.
 //
-// An ordinary per-file failure still SKIPS that file and keeps going; only the
-// caller's own deadline stops the loop, and it does so by making every
-// remaining read fail immediately rather than by an early return. That is the
-// deliberate shape: this function's contract is "one warning per file that
-// could not be read", and the caller's hasReadableFanart check then declines
-// the push because nothing was captured.
-func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([]fanartSnapshot, []string) {
+// An ordinary per-file failure still SKIPS that file and keeps going, keeping a
+// nil-data entry so the slots AFTER it retain their TRUE index. That is the
+// deliberate shape: for a vanished file, a permissions error or an over-size
+// file, this function's contract is "one warning per file that could not be
+// read", and the caller's hasReadableFanart check then declines the push
+// because nothing was captured.
+//
+// A CANCELLATION IS NOT ONE OF THOSE, and it is returned rather than warned
+// about (#2934). Bounding the read stopped this loop hanging on a dead mount;
+// it did NOT stop a canceled request becoming a partial success, because
+// ReadImageFileBounded returns the context error in exactly the shape an
+// ordinary read failure has. Classified as per-file, the loop kept going, the
+// earlier snapshots were retained, and the caller walked on into its upload
+// loop -- so a request the operator abandoned still pushed files to peers, and
+// the push handler answered 200 with an errors list. Bounding the read and
+// propagating the cancellation are two separate requirements and this branch
+// owes both.
+//
+// Interrogate the CONTEXT rather than the error's contents, as everywhere else
+// here: an I/O error whose text mentions a deadline is not a cancellation, and
+// a cancellation wrapped in an ordinary-looking read failure still is one.
+//
+// The snapshot captured so far is returned ALONGSIDE the error rather than
+// discarded. The bytes already in hand are exactly what the deferred
+// re-assertion would need if any peer had been reached, so throwing them away
+// would trade this defect for a worse one. It is the caller's job to stop
+// before the upload loop.
+func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([]fanartSnapshot, []string, error) {
 	snapshot := make([]fanartSnapshot, 0, len(fanartPaths))
 	var warnings []string
 	for i, fp := range fanartPaths {
 		data, readErr := img.ReadImageFileBounded(ctx, fp)
 		if readErr != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				p.logger.Warn("fanart snapshot canceled; no further fanart will be read",
+					slog.String("path", fp),
+					slog.Int("index", i),
+					slog.Int("captured", len(snapshot)),
+					slog.Any("error", ctxErr))
+				return snapshot, warnings, ctxErr
+			}
 			p.logger.Error("reading fanart for platform sync",
 				slog.String("path", fp),
 				slog.String("error", readErr.Error()))
@@ -964,7 +1005,7 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 		}
 		snapshot = append(snapshot, fanartSnapshot{path: fp, index: i, data: data, mod: fileModTime(fp)})
 	}
-	return snapshot, warnings
+	return snapshot, warnings, nil
 }
 
 // hasReadableFanart reports whether any snapshot entry actually captured bytes.
@@ -1152,8 +1193,28 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	fanartIdentityIdx := p.fanartIdentityIndex(ctx, a)
 	collisionNotified := make(map[string]bool)
 
-	snapshot, snapWarnings := p.snapshotFanart(ctx, fanartPaths)
+	snapshot, snapWarnings, snapCancelErr := p.snapshotFanart(ctx, fanartPaths)
 	warnings = append(warnings, snapWarnings...)
+	if snapCancelErr != nil {
+		// STOP BEFORE THE UPLOAD LOOP. Continuing here is what turned an
+		// abandoned request into a partial push: the files read before the
+		// cancellation would still have been handed to every peer.
+		//
+		// Returning here does NOT cost the deferred re-assertion anything, and
+		// that is worth stating because losing it would be a data-loss bug
+		// strictly worse than this one. The repair is registered BELOW this
+		// point and is gated on uploadedTo being non-empty -- with the upload
+		// loop never entered, no peer was reached, nothing external touched
+		// these files, and the only thing a repair could do is revert a
+		// concurrent operator write. That is the same guard the primary path
+		// applies. The detached-context repair still runs, exactly as intended,
+		// for a cancellation that lands AFTER a peer has been handed a file.
+		p.logger.Warn("platform fanart sync canceled before upload",
+			slog.String("artist_id", a.ID),
+			slog.Any("error", snapCancelErr))
+		warnings = append(warnings, "platform sync canceled: the request ended before all fanart could be read")
+		return warnings
+	}
 	if !hasReadableFanart(snapshot) {
 		return warnings
 	}

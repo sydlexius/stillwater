@@ -106,8 +106,20 @@ func TestSyncImageToPlatforms_StalledRead_ReturnsOnDeadline(t *testing.T) {
 		t.Fatal("a sync whose image could not be read returned NO warnings; the caller surfaces these " +
 			"to the operator, so silence reads as a successful push")
 	}
-	if !strings.Contains(strings.Join(got.warnings, "|"), "failed to read image") {
-		t.Errorf("warnings do not report the read failure: %v", got.warnings)
+	// THE OUTCOME MUST NAME THE CANCELLATION, not the file (#2934). Bounding
+	// the read stopped the hang; it left the deadline being REPORTED as an
+	// unreadable image, which sends the operator to inspect artwork that is
+	// perfectly fine when what actually happened is that the request ended.
+	// Asserting both halves is what makes the two arms genuinely distinct --
+	// an implementation that emitted both strings would satisfy a
+	// contains-check on either one alone while telling the operator nothing.
+	joined := strings.Join(got.warnings, "|")
+	if !strings.Contains(joined, "platform sync canceled") {
+		t.Errorf("warnings = %v, want the cancellation reported as a cancellation", got.warnings)
+	}
+	if strings.Contains(joined, "failed to read image") {
+		t.Errorf("warnings = %v carry the ordinary read-failure wording; a canceled request is being "+
+			"attributed to the operator's file", got.warnings)
 	}
 }
 
@@ -267,8 +279,14 @@ func TestSyncAllFanartToPlatforms_StalledRead_ReturnsOnDeadline(t *testing.T) {
 		t.Fatal("a fanart sync whose only file could not be read returned NO warnings; " +
 			"silence reads to the operator as a successful push")
 	}
-	if !strings.Contains(strings.Join(got.warnings, "|"), "failed to read fanart") {
-		t.Errorf("warnings do not report the read failure: %v", got.warnings)
+	// Same distinction as the single-image case above.
+	joined := strings.Join(got.warnings, "|")
+	if !strings.Contains(joined, "platform sync canceled") {
+		t.Errorf("warnings = %v, want the cancellation reported as a cancellation", got.warnings)
+	}
+	if strings.Contains(joined, "failed to read fanart") {
+		t.Errorf("warnings = %v carry the ordinary read-failure wording; a canceled request is being "+
+			"attributed to the operator's artwork", got.warnings)
 	}
 }
 
@@ -425,5 +443,80 @@ func TestSyncAllFanartToPlatforms_OversizeFile_WarnsDistinctly(t *testing.T) {
 	if strings.Contains(joined, "failed to read fanart") {
 		t.Errorf("warnings = %v, want ONLY the over-size wording; the generic "+
 			"read-failure string means the two arms are no longer distinct", warnings)
+	}
+}
+
+// TestSyncAllFanartToPlatforms_CancellationStopsTheSet is the LOAD-BEARING
+// guard for #2934 on the fanart sync path, and the reason it is multi-file is
+// the whole point.
+//
+// A SINGLE-FILE cancellation case cannot tell "stopped" from "warned and had
+// nothing left to do" -- both produce one warning and zero uploads, so it
+// passes against the defect.
+//
+// SLOT ORDER IS THE WHOLE FIXTURE, and getting it backwards makes the test
+// vacuous. The healthy file must come FIRST, before the one that stalls:
+//
+//	healthy-first (this fixture): slot 0 is read and CAPTURED WITH BYTES, then
+//	  slot 1 consumes the deadline. Under the defect that cancellation is
+//	  warned about per-file, the loop continues, hasReadableFanart sees slot
+//	  0's real bytes and returns TRUE, and the upload loop pushes the
+//	  operator's artwork to the peer for a request they had already abandoned.
+//	  That is the partial success, and it is visible at the uploader.
+//	stall-first (the trap): the FIFO consumes the deadline before anything is
+//	  captured, so every LATER read short-circuits on the dead context and the
+//	  snapshot holds nothing but nil entries. hasReadableFanart returns false
+//	  and the defect returns early on its own -- zero uploads either way, and
+//	  an uploader assertion that can never fail.
+//
+// So the assertion is on the UPLOADER, not the warnings: what makes this a
+// partial-success bug is work that reached the peer, and only the uploader can
+// see that.
+func TestSyncAllFanartToPlatforms_CancellationStopsTheSet(t *testing.T) {
+	dir := t.TempDir()
+	// Slot 0 healthy and read BEFORE the cancellation; slot 1 stalls until the
+	// deadline. See the slot-order note above.
+	seedJPG(t, dir, fanartPrimaryFixtureName)
+	syncFifo(t, filepath.Join(dir, "fanart1.jpg"))
+	assertOnFanartReadPath(t, dir, fanartPrimaryFixtureName)
+	// PRECONDITION: the stalling file really is on the read path too. If
+	// discovery returned only slot 0 the pass would complete normally and this
+	// would assert nothing about a cancellation.
+	assertOnFanartReadPath(t, dir, "fanart1.jpg")
+
+	up := &recordingIndexedUploader{}
+	orig := newIndexedImageUploader
+	newIndexedImageUploader = func(_ *connection.Connection, _ *slog.Logger) connection.IndexedImageUploader {
+		return up
+	}
+	t.Cleanup(func() { newIndexedImageUploader = orig })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	type result struct{ warnings []string }
+	done := make(chan result, 1)
+	p := syncTestPublisher()
+	go func() {
+		done <- result{warnings: p.SyncAllFanartToPlatforms(ctx,
+			&artist.Artist{ID: "a1", Name: "Canceled Mid-Set", Path: dir})}
+	}()
+
+	var got result
+	select {
+	case got = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SyncAllFanartToPlatforms did not return within 5s of a 100ms deadline")
+	}
+
+	if idx := up.got(); len(idx) != 0 {
+		t.Errorf("uploaded slots %v after the request was canceled, want none; the cancellation is "+
+			"being absorbed as a per-file read failure and the set continues, so the bytes captured "+
+			"before the abort are still pushed to the peer for a request the operator abandoned", idx)
+	}
+	joined := strings.Join(got.warnings, "|")
+	if !strings.Contains(joined, "platform sync canceled") {
+		t.Errorf("warnings = %v, want the cancellation named; stopping silently tells the caller "+
+			"nothing about why the push is incomplete", got.warnings)
 	}
 }
