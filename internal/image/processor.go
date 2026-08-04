@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"golang.org/x/image/draw"
@@ -170,10 +171,11 @@ func Resize(src io.Reader, maxWidth, maxHeight int) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	img, err := decodeWithLimit(replay)
+	img, release, err := decodeWithLimit(replay)
 	if err != nil {
 		return nil, "", err
 	}
+	defer release()
 
 	bounds := img.Bounds()
 	origW := bounds.Dx()
@@ -220,10 +222,11 @@ func ConvertFormat(src io.Reader) ([]byte, string, error) {
 	}
 
 	// WebP: decode and re-encode as PNG.
-	decoded, err := decodeWithLimit(replay)
+	decoded, release, err := decodeWithLimit(replay)
 	if err != nil {
 		return nil, "", err
 	}
+	defer release()
 	data, err := encode(decoded, FormatPNG, 85)
 	if err != nil {
 		return nil, "", err
@@ -234,10 +237,11 @@ func ConvertFormat(src io.Reader) ([]byte, string, error) {
 // Optimize re-encodes the image at the given quality setting.
 // For JPEG, quality controls compression (1-100). For PNG, quality is ignored.
 func Optimize(src io.Reader, format string, quality int) ([]byte, error) {
-	img, err := decodeWithLimit(src)
+	img, release, err := decodeWithLimit(src)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	return encode(img, format, quality)
 }
@@ -249,10 +253,11 @@ func ConvertToFormat(src io.Reader, targetFormat string) ([]byte, error) {
 		return nil, fmt.Errorf("unsupported target format: %s", targetFormat)
 	}
 
-	img, err := decodeWithLimit(src)
+	img, release, err := decodeWithLimit(src)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	return encode(img, targetFormat, 85)
 }
@@ -286,10 +291,11 @@ func TrimAlphaBounds(src io.Reader, threshold uint8) (content, original image.Re
 		return bounds, bounds, nil
 	}
 
-	decoded, decodeErr := decodeWithLimit(replay)
+	decoded, release, decodeErr := decodeWithLimit(replay)
 	if decodeErr != nil {
 		return image.Rectangle{}, image.Rectangle{}, decodeErr
 	}
+	defer release()
 
 	bounds := decoded.Bounds()
 
@@ -382,10 +388,11 @@ func ContentBounds(src io.Reader) (content, original image.Rectangle, err error)
 		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("detecting format: %w", detectErr)
 	}
 
-	decoded, decodeErr := decodeWithLimit(replay)
+	decoded, release, decodeErr := decodeWithLimit(replay)
 	if decodeErr != nil {
 		return image.Rectangle{}, image.Rectangle{}, decodeErr
 	}
+	defer release()
 
 	bounds := decoded.Bounds()
 	content = contentBoundsFromImage(decoded, format == FormatPNG)
@@ -405,10 +412,11 @@ func TrimWithMargin(src io.Reader, margin int) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	decoded, err := decodeWithLimit(replay)
+	decoded, release, err := decodeWithLimit(replay)
 	if err != nil {
 		return nil, "", err
 	}
+	defer release()
 
 	bounds := decoded.Bounds()
 	content := contentBoundsFromImage(decoded, format == FormatPNG)
@@ -473,10 +481,11 @@ func TrimAlpha(src io.Reader, threshold uint8) ([]byte, string, error) {
 		return data, format, readErr
 	}
 
-	decoded, err := decodeWithLimit(replay)
+	decoded, release, err := decodeWithLimit(replay)
 	if err != nil {
 		return nil, "", err
 	}
+	defer release()
 
 	bounds := decoded.Bounds()
 
@@ -537,10 +546,11 @@ func Crop(src io.Reader, x, y, w, h int) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	img, err := decodeWithLimit(replay)
+	img, release, err := decodeWithLimit(replay)
 	if err != nil {
 		return nil, "", err
 	}
+	defer release()
 
 	rect := image.Rect(x, y, x+w, y+h)
 	bounds := img.Bounds()
@@ -616,14 +626,36 @@ const (
 // conservative UPPER BOUND on the bytes the decoded image will occupy per
 // pixel.
 //
-// Every entry is an over-estimate or exact, never an under-estimate, and an
-// unrecognized or nil model falls through to the maximum. That direction is
-// deliberate and load-bearing: a wrong-LOW estimate is the entire bug this
-// guard exists to fix, so an unknown decoder (a future stdlib type, a new
+// THE GUARANTEE: for every model listed explicitly below, the estimate is an
+// over-estimate or exact for EVERY concrete type any registered decoder can
+// produce from a header reporting that model. Everything else -- including
+// models whose header report does not determine the decoded type -- falls
+// through to the maximum. A wrong-LOW estimate is the entire bug this guard
+// exists to fix, so an unknown decoder (a future stdlib type, a new
 // third-party format registered via image.RegisterFormat) must be treated as
 // expensive rather than cheap. The cost of guessing high is rejecting an
 // image that would have fit; the cost of guessing low is the 763 MB
 // allocation.
+//
+// THE GREYSCALE AND ALPHA MODELS ARE DELIBERATELY ABSENT. They look like the
+// cheapest rows in the table (1-2 B/px) and were the most dangerous, because
+// image.DecodeConfig cannot see what image.Decode will allocate for them.
+// image/png derives the reported ColorModel from the IHDR header ALONE, but
+// the decoder ALSO consults the tRNS (transparency) chunk, which DecodeConfig
+// never reaches: with tRNS present, cbG16 allocates *image.NRGBA64 (8 B/px)
+// instead of *image.Gray16 (2 B/px), and cbG8 allocates *image.NRGBA
+// (4 B/px) instead of *image.Gray (1 B/px). See
+// $(go env GOROOT)/src/image/png/reader.go -- the model table maps IHDR to
+// Gray16Model/GrayModel, while the allocation switch branches on
+// d.useTransparent, which only a tRNS chunk sets.
+//
+// That made a 124 KB greyscale-plus-tRNS PNG project 2 B/px, pass the guard,
+// and allocate at 8 B/px -- a deterministic 4x under-estimate reproducing the
+// exact #2929 failure the guard was written to stop. There is no cheap
+// header-only fix (detecting it would require a format-specific chunk scan
+// per decoder), so these models take the fail-large default instead. The cost
+// is rejecting greyscale images above ~50 MP, which the rationale above
+// already accepts.
 func bytesPerPixel(m color.Model) int64 {
 	switch m {
 	case color.RGBA64Model, color.NRGBA64Model:
@@ -637,23 +669,26 @@ func bytesPerPixel(m color.Model) int64 {
 		// image.NYCbCrA adds one alpha byte, so 4 is an over-estimate that
 		// covers 4:4:4 plus alpha, the densest of the family.
 		return 4
-	case color.Gray16Model:
-		return 2 // image.Gray16: 1 channel x 16 bits.
-	case color.GrayModel:
-		return 1 // image.Gray: 1 channel x 8 bits.
-	case color.Alpha16Model:
-		return 2 // image.Alpha16.
-	case color.AlphaModel:
-		return 1 // image.Alpha.
 	default:
-		// Paletted images report a color.Palette (not one of the singleton
-		// models above) and decode to image.Paletted at 1 B/px, so they land
-		// here and are over-estimated rather than under-estimated -- correct
-		// per the fail-large rule, and harmless because 8 B/px only rejects a
-		// paletted image above 50 MP.
+		// Everything else fails large. Two populations land here:
+		//
+		//   * Greyscale and alpha-only models (Gray16, Gray, Alpha16, Alpha),
+		//     excluded on purpose -- see the tRNS mechanism in the doc above.
+		//   * Paletted images, which report a color.Palette (not one of the
+		//     singleton models) and decode to image.Paletted at 1 B/px.
+		//
+		// Both are over-estimated rather than under-estimated, which is the
+		// correct direction, and 8 B/px only rejects them above 50 MP.
 		return 8
 	}
 }
+
+// noopRelease is the release closure handed back on every decodeWithLimit
+// error path. Returning a callable no-op rather than nil means a caller can
+// write the `img, release, err := ...; if err != nil { return }; defer
+// release()` shape without a nil check, and a caller that defers before
+// checking the error still cannot panic.
+func noopRelease() {}
 
 // decodeWithLimit reads up to MaxDecodeBytes from r, checks the declared
 // pixel dimensions and the projected DECODED footprint via image.DecodeConfig
@@ -662,50 +697,87 @@ func bytesPerPixel(m color.Model) int64 {
 // inputs (a small file declaring huge dimensions, or declaring a bit depth
 // whose decoded cost dwarfs its compressed size) before the expensive
 // allocation happens, and bounds how many such allocations can be live at once.
-func decodeWithLimit(r io.Reader) (image.Image, error) {
+//
+// THE CALLER OWNS THE SLOT AND MUST `defer release()`. The slot is NOT freed
+// when this function returns, because what consumes memory is not the act of
+// decoding -- it is the decoded buffer, which outlives the decode and stays
+// live for the whole of the caller's work (the trim paths then allocate a
+// SECOND full-size buffer on top of it). Releasing on return bounded
+// concurrent DECODES while leaving concurrent decoded IMAGES unbounded, which
+// is a bound on the wrong quantity: at limit 1, sixteen decoded images were
+// measured live simultaneously. Holding the slot for the buffer's lifetime is
+// what makes the documented `per-decode cost x concurrency` peak true.
+//
+// This is only expressible because the decoded buffer never escapes this
+// package: no exported function in internal/image returns an image.Image, so
+// every one of the eleven call sites can scope the release to its own frame.
+//
+// release is never nil and is safe to call more than once.
+func decodeWithLimit(r io.Reader) (image.Image, func(), error) {
 	data, err := io.ReadAll(io.LimitReader(r, MaxDecodeBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("reading image data: %w", err)
+		return nil, noopRelease, fmt.Errorf("reading image data: %w", err)
 	}
 	if int64(len(data)) > MaxDecodeBytes {
-		return nil, fmt.Errorf("image too large (%d bytes, max %d)", len(data), MaxDecodeBytes)
+		return nil, noopRelease, fmt.Errorf("image too large (%d bytes, max %d)", len(data), MaxDecodeBytes)
 	}
 
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("decoding image config: %w", err)
+		return nil, noopRelease, fmt.Errorf("decoding image config: %w", err)
 	}
 	w := int64(cfg.Width)
 	h := int64(cfg.Height)
 	if w <= 0 || h <= 0 {
-		return nil, fmt.Errorf("invalid image dimensions (%dx%d)", cfg.Width, cfg.Height)
+		return nil, noopRelease, fmt.Errorf("invalid image dimensions (%dx%d)", cfg.Width, cfg.Height)
 	}
 	if h > maxDecodePixels || w > maxDecodePixels/h {
-		return nil, fmt.Errorf("image too many pixels (%dx%d, max %d)", cfg.Width, cfg.Height, maxDecodePixels)
+		return nil, noopRelease, fmt.Errorf("image too many pixels (%dx%d, max %d)", cfg.Width, cfg.Height, maxDecodePixels)
 	}
 
 	// Staged division rather than w*h*bpp, so the comparison itself cannot
 	// overflow int64 on a hostile header (same shape as the pixel check above).
 	bpp := bytesPerPixel(cfg.ColorModel)
 	if bpp > 0 && h > maxDecodedBytes/bpp/w {
-		return nil, fmt.Errorf("image too large decoded (%dx%d at %d bytes/pixel = %d bytes, max %d)",
+		return nil, noopRelease, fmt.Errorf("image too large decoded (%dx%d at %d bytes/pixel = %d bytes, max %d)",
 			cfg.Width, cfg.Height, bpp, w*h*bpp, maxDecodedBytes)
 	}
 
-	// Bound how many of these allocations are live at once (#2928). Acquired
-	// only around the full decode, never around the cheap header probe above,
-	// so a rejected input never consumes a slot.
-	release, err := acquireDecodeSlot()
+	// Bound how many decoded buffers are live at once (#2928). Acquired only
+	// after the cheap header probe above, so a rejected input never consumes a
+	// slot.
+	rawRelease, err := acquireDecodeSlot()
 	if err != nil {
-		return nil, err
+		return nil, noopRelease, err
 	}
-	defer release()
+
+	// sync.Once rather than an audit of every caller's control flow. The
+	// contract handed out here ("release is safe to call more than once")
+	// makes a double release harmless at ELEVEN call sites plus every future
+	// one, where a bare closure would make correctness depend on each of them
+	// getting its branches right forever.
+	//
+	// Both failure modes are fatal, in different ways. A MISSED release leaks
+	// a permit permanently, shrinking the effective bound until the process
+	// wedges. A DOUBLE release is worse and less obvious: the raw release is
+	// a receive on a buffered channel, so the second one finds the channel
+	// empty and BLOCKS THE CALLING GOROUTINE FOREVER -- a request handler
+	// hung with no error, no timeout and no log line. (Verified by mutation:
+	// dropping this Once makes TestDecodeWithLimit_ReleaseIsIdempotent hang
+	// until the test binary's own timeout kills it.) Once() removes that
+	// mode outright and leaves the first to be enforced by the single
+	// `defer release()` line each caller writes.
+	var once sync.Once
+	release := func() { once.Do(rawRelease) }
 
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("decoding image: %w", err)
+		// The caller gets an error and will not defer release, so this frame
+		// owns the slot and must free it here.
+		release()
+		return nil, noopRelease, fmt.Errorf("decoding image: %w", err)
 	}
-	return img, nil
+	return img, release, nil
 }
 
 // GeneratePlaceholder creates a tiny 16x16 base64-encoded data URI from the
@@ -718,10 +790,11 @@ func GeneratePlaceholder(src io.Reader, imageType string) (string, error) {
 		return "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	decoded, err := decodeWithLimit(replay)
+	decoded, release, err := decodeWithLimit(replay)
 	if err != nil {
 		return "", err
 	}
+	defer release()
 
 	dst := image.NewRGBA(image.Rect(0, 0, 16, 16))
 	draw.CatmullRom.Scale(dst, dst.Bounds(), decoded, decoded.Bounds(), draw.Over, nil)

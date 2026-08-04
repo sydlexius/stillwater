@@ -7,10 +7,28 @@ import (
 	"time"
 )
 
-// Process-wide bound on CONCURRENT full-pixel decodes (#2928).
+// Process-wide bound on CONCURRENT LIVE DECODED IMAGES (#2928).
 //
-// Process memory peak is `per-decode cost x concurrency`. maxDecodedBytes
-// (#2929) bounds the first factor; this bounds the second. Before this, the
+// Process memory peak is `per-image cost x concurrency`. maxDecodedBytes
+// (#2929) bounds the first factor; this bounds the second.
+//
+// THE SECOND FACTOR IS LIVE IMAGES, NOT RUNNING DECODES, and the distinction
+// is the whole bound. What occupies memory is the decoded buffer, which
+// outlives the decode that produced it: a caller holds it for the rest of its
+// work, and the trim paths allocate a second full-size buffer alongside it.
+// An earlier revision released the slot when the decode call returned, which
+// bounded the running decodes while leaving the live buffers unbounded --
+// measured at limit 1, sixteen decoded images were live at once and the heap
+// grew 256 MB. decodeWithLimit therefore hands its release closure to the
+// caller, who defers it, so the slot covers the buffer's whole lifetime.
+//
+// What this does NOT bound is inbound request volume. Nothing in
+// internal/server or internal/api caps in-flight requests, so callers can
+// still queue up arbitrarily; they simply wait for a slot (up to
+// decodeAcquireTimeout) rather than each holding a decoded image. Bounding
+// concurrent requests is a separate, and separately-tracked, concern.
+//
+// Before this, the
 // request-reachable decoders -- POST .../images/logo/trim, the image
 // upload/save path, and GeneratePlaceholder (reached from the scanner and from
 // image-registry repair) -- decoded on their own goroutine with no listener
@@ -21,7 +39,11 @@ import (
 //
 // The bound is applied inside decodeWithLimit because that is the single funnel
 // every decode in the package already passes through, which is what lets one
-// change cover all eleven exported entry points without touching a signature.
+// change cover all eleven exported entry points without changing any exported
+// signature. Scoping the slot to the buffer's lifetime is only expressible
+// because that buffer never escapes the package: no exported function in
+// internal/image returns an image.Image, so each entry point can defer its own
+// release.
 const (
 	// DefaultDecodeConcurrency is the default number of concurrent decodes.
 	//
