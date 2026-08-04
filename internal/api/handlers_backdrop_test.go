@@ -1029,106 +1029,162 @@ func (s stubFanartInvalidator) InvalidateImageGeometry(_ context.Context, _, _ s
 // it never drives the handler or reads a response.
 //
 // This test drives a REAL reorder (files actually move on disk), injects a
-// fanartInvalidator that fails both invalidation calls, and asserts the
-// resulting warning text is present in the JSON body's sync_warnings array --
-// the exact surface the operator reads. It does not assert anything about
-// which internal function got called.
+// fanartInvalidator that fails one or both invalidation calls per subtest,
+// and asserts the resulting warning text is present (and, critically, that
+// the OTHER warning is absent) in the JSON body's sync_warnings array -- the
+// exact surface the operator reads. It does not assert anything about which
+// internal function got called.
+//
+// Three subtests cover the #2908 acceptance criteria: hash-only failure,
+// geometry-only failure, and the combined case where both fail and the two
+// messages are joined. The combined case alone cannot tell "emits the right
+// warning" apart from "emits every warning regardless of which invalidation
+// actually failed" -- that is what the absence assertions in the hash-only
+// and geometry-only subtests are for. Each subtest gets its own router, DB,
+// temp dir, and artist so one subtest's renames cannot affect another's.
+//
+// Not parallel: it drives the fanart reorder handler through the same
+// package's shared fixtures as the dupimages.Shared()-touching tests
+// elsewhere in this file, and this file's tests were deliberately made
+// non-parallel to avoid racing that process-wide singleton (#2908). No new
+// t.Parallel() calls -- outer or subtest -- are added here.
 func TestHandleFanartReorder_SurfacesInvalidationWarningToOperator(t *testing.T) {
 	t.Parallel()
-	artistDir := t.TempDir()
-	r, artistSvc := testRouterForBackdrops(t)
-	r.fanartInvalidator = stubFanartInvalidator{failHashes: true, failGeometry: true}
-
-	a := &artist.Artist{
-		Name:     "InvalidationWarningSurface",
-		SortName: "InvalidationWarningSurface",
-		Type:     "group",
-		Path:     artistDir,
-	}
-	if err := artistSvc.Create(context.Background(), a); err != nil {
-		t.Fatalf("creating artist: %v", err)
-	}
-
-	primary := r.getActiveFanartPrimary(context.Background())
-	kodi := r.isKodiNumbering(context.Background())
-	contents := []string{"AAA", "BBB", "CCC"}
-	for i, c := range contents {
-		name := img.FanartFilename(primary, i, kodi)
-		if err := os.WriteFile(filepath.Join(artistDir, name), []byte(c), 0o644); err != nil {
-			t.Fatalf("writing test fanart %d: %v", i, err)
-		}
-	}
-
-	req := httptest.NewRequest(http.MethodPost,
-		"/api/v1/artists/"+a.ID+"/images/fanart/reorder", strings.NewReader(`{"order":[2,0,1]}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
-
-	r.handleFanartReorder(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	// Precondition 1: the reorder actually happened. Without this, a handler
-	// that bailed out before ever reaching the invalidation call (e.g. on a
-	// validation error) could still produce a response the assertion below
-	// would misread as "warning present", when in fact nothing ran.
-	paths, err := img.DiscoverFanart(context.Background(), artistDir, primary)
-	if err != nil {
-		t.Fatalf("discovering fanart after reorder: %v", err)
-	}
-	if len(paths) != 3 {
-		t.Fatalf("precondition: got %d fanart files after reorder, want 3", len(paths))
-	}
-	expected := []string{"CCC", "AAA", "BBB"}
-	for i, p := range paths {
-		data, readErr := os.ReadFile(p)
-		if readErr != nil {
-			t.Fatalf("reading fanart %d: %v", i, readErr)
-		}
-		if string(data) != expected[i] {
-			t.Fatalf("precondition: fanart[%d] content = %q, want %q -- reorder did not actually happen",
-				i, string(data), expected[i])
-		}
-	}
-
-	// Precondition 2: the invalidating condition (a failing invalidator) was
-	// actually present for this request -- checked by construction above via
-	// r.fanartInvalidator, and re-asserted here structurally so a future
-	// refactor that stops threading the seam through the handler (e.g. by
-	// reverting to r.artistService directly) fails this test rather than
-	// silently no-op-ing the stub.
-	if _, ok := r.fanartInvalidator.(stubFanartInvalidator); !ok {
-		t.Fatalf("precondition: router's fanartInvalidator is %T, want stubFanartInvalidator -- the handler is not wired through the injectable seam",
-			r.fanartInvalidator)
-	}
-
-	var resp struct {
-		Status       string   `json:"status"`
-		SyncWarnings []string `json:"sync_warnings"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response body: %v", err)
-	}
 
 	const hashWarning = "stored image fingerprints could not be refreshed; duplicate detection may be inaccurate until the next scan"
 	const geomWarning = "stored image dimensions could not be refreshed; image rules may judge the previous ordering until the next scan"
 
-	foundHash, foundGeom := false, false
-	for _, w := range resp.SyncWarnings {
-		if strings.Contains(w, hashWarning) {
-			foundHash = true
+	// driveReorder sets up an isolated router + artist + on-disk fanart
+	// files, injects stub as the fanartInvalidator, performs a real reorder
+	// through the handler, and returns the decoded sync_warnings after
+	// checking the shared reorder preconditions: the artist resolved, the
+	// renames actually happened, and the response is 200. These exist so a
+	// subtest cannot pass vacuously (e.g. by asserting against a response
+	// from a handler that bailed out before reaching the invalidation call).
+	driveReorder := func(t *testing.T, stub stubFanartInvalidator) []string {
+		t.Helper()
+
+		artistDir := t.TempDir()
+		r, artistSvc := testRouterForBackdrops(t)
+		r.fanartInvalidator = stub
+
+		a := &artist.Artist{
+			Name:     "InvalidationWarningSurface",
+			SortName: "InvalidationWarningSurface",
+			Type:     "group",
+			Path:     artistDir,
 		}
-		if strings.Contains(w, geomWarning) {
-			foundGeom = true
+		if err := artistSvc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist: %v", err)
 		}
+
+		primary := r.getActiveFanartPrimary(context.Background())
+		kodi := r.isKodiNumbering(context.Background())
+		contents := []string{"AAA", "BBB", "CCC"}
+		for i, c := range contents {
+			name := img.FanartFilename(primary, i, kodi)
+			if err := os.WriteFile(filepath.Join(artistDir, name), []byte(c), 0o644); err != nil {
+				t.Fatalf("writing test fanart %d: %v", i, err)
+			}
+		}
+
+		req := httptest.NewRequest(http.MethodPost,
+			"/api/v1/artists/"+a.ID+"/images/fanart/reorder", strings.NewReader(`{"order":[2,0,1]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("id", a.ID)
+		w := httptest.NewRecorder()
+
+		r.handleFanartReorder(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		// Precondition 1: the reorder actually happened. Without this, a
+		// handler that bailed out before ever reaching the invalidation call
+		// (e.g. on a validation error) could still produce a response the
+		// assertion below would misread as "warning present", when in fact
+		// nothing ran.
+		paths, err := img.DiscoverFanart(context.Background(), artistDir, primary)
+		if err != nil {
+			t.Fatalf("discovering fanart after reorder: %v", err)
+		}
+		if len(paths) != 3 {
+			t.Fatalf("precondition: got %d fanart files after reorder, want 3", len(paths))
+		}
+		expected := []string{"CCC", "AAA", "BBB"}
+		for i, p := range paths {
+			data, readErr := os.ReadFile(p)
+			if readErr != nil {
+				t.Fatalf("reading fanart %d: %v", i, readErr)
+			}
+			if string(data) != expected[i] {
+				t.Fatalf("precondition: fanart[%d] content = %q, want %q -- reorder did not actually happen",
+					i, string(data), expected[i])
+			}
+		}
+
+		// Precondition 2: the invalidating condition (the injected
+		// invalidator) was actually present for this request -- checked by
+		// construction above via r.fanartInvalidator, and re-asserted here
+		// structurally so a future refactor that stops threading the seam
+		// through the handler (e.g. by reverting to r.artistService
+		// directly) fails this test rather than silently no-op-ing the
+		// stub.
+		if _, ok := r.fanartInvalidator.(stubFanartInvalidator); !ok {
+			t.Fatalf("precondition: router's fanartInvalidator is %T, want stubFanartInvalidator -- the handler is not wired through the injectable seam",
+				r.fanartInvalidator)
+		}
+
+		var resp struct {
+			Status       string   `json:"status"`
+			SyncWarnings []string `json:"sync_warnings"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decoding response body: %v", err)
+		}
+		return resp.SyncWarnings
 	}
-	if !foundHash {
-		t.Errorf("sync_warnings %v does not contain the hash-invalidation warning the operator needs to see", resp.SyncWarnings)
+
+	containsWarning := func(warnings []string, text string) bool {
+		for _, w := range warnings {
+			if strings.Contains(w, text) {
+				return true
+			}
+		}
+		return false
 	}
-	if !foundGeom {
-		t.Errorf("sync_warnings %v does not contain the geometry-invalidation warning the operator needs to see", resp.SyncWarnings)
-	}
+
+	t.Run("hash-only", func(t *testing.T) {
+		warnings := driveReorder(t, stubFanartInvalidator{failHashes: true, failGeometry: false})
+
+		if !containsWarning(warnings, hashWarning) {
+			t.Errorf("sync_warnings %v does not contain the hash-invalidation warning the operator needs to see", warnings)
+		}
+		if containsWarning(warnings, geomWarning) {
+			t.Errorf("sync_warnings %v contains the geometry-invalidation warning, but geometry invalidation did not fail", warnings)
+		}
+	})
+
+	t.Run("geometry-only", func(t *testing.T) {
+		warnings := driveReorder(t, stubFanartInvalidator{failHashes: false, failGeometry: true})
+
+		if !containsWarning(warnings, geomWarning) {
+			t.Errorf("sync_warnings %v does not contain the geometry-invalidation warning the operator needs to see", warnings)
+		}
+		if containsWarning(warnings, hashWarning) {
+			t.Errorf("sync_warnings %v contains the hash-invalidation warning, but hash invalidation did not fail", warnings)
+		}
+	})
+
+	t.Run("combined", func(t *testing.T) {
+		warnings := driveReorder(t, stubFanartInvalidator{failHashes: true, failGeometry: true})
+
+		if !containsWarning(warnings, hashWarning) {
+			t.Errorf("sync_warnings %v does not contain the hash-invalidation warning the operator needs to see", warnings)
+		}
+		if !containsWarning(warnings, geomWarning) {
+			t.Errorf("sync_warnings %v does not contain the geometry-invalidation warning the operator needs to see", warnings)
+		}
+	})
 }
