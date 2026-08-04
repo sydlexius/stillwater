@@ -458,8 +458,26 @@ func TestBackdropDuplicatesRemediate_Success(t *testing.T) {
 // out or corrupt the last known-good cached report, and the remediation
 // response itself must still report success (the collapse itself succeeded;
 // only the opportunistic refresh afterward failed).
+//
+// NOT t.Parallel() (#2908): this handler's rescan reaches dupimages.Shared()
+// through r.dupImageCache().Refresh(ctx) -- the SAME process-wide singleton
+// TestBackdropDuplicatesRemediate_Success's file comment (above) documents
+// itself against. Every NewRouter() call (testRouterWithFanartPipeline ->
+// NewRouter, router.go:493) eagerly re-points that singleton's installed
+// scan sources at ITS OWN router via dupimages.Cache.SetSources -- a
+// process-wide replacement, not a per-router claim. A parallel sibling test
+// that constructs a router (e.g. TestBackdropDuplicatesPage_
+// WarmCacheRendersWithoutScanning, whose scanFn calls t.Fatal if ever
+// invoked) can therefore re-point the shared sources mid-Refresh here and
+// this test's rescan ends up invoking the WRONG router's scan function --
+// measured by a hostile reviewer as a first-run race+shuffle panic
+// (WarmCache's t.Fatal firing inside this test's Refresh call). Declaring
+// this test serial, exactly like Success above it, is what makes that
+// impossible rather than merely unlikely: Go's test runner fully drains
+// every non-parallel top-level test before resuming any parallel one, so no
+// other test's router construction can execute concurrently with this
+// test's Refresh call.
 func TestBackdropDuplicatesRemediate_RescanFailureLeavesPriorCache(t *testing.T) {
-	t.Parallel()
 	pipeline := &fanartCapablePipeline{
 		stubPipeline: &stubPipeline{},
 		remediateFn: func(_ context.Context) (rule.FanartRepairResult, error) {

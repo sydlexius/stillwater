@@ -1075,7 +1075,7 @@ func TestHandleFanartReorder_SurfacesInvalidationWarningToOperator(t *testing.T)
 	// that bailed out before ever reaching the invalidation call (e.g. on a
 	// validation error) could still produce a response the assertion below
 	// would misread as "warning present", when in fact nothing ran.
-	paths, err := img.DiscoverFanart(artistDir, primary)
+	paths, err := img.DiscoverFanart(context.Background(), artistDir, primary)
 	if err != nil {
 		t.Fatalf("discovering fanart after reorder: %v", err)
 	}
