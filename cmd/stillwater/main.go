@@ -1004,6 +1004,12 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	// walk. The shared per-provider rate limiter bounds total throughput
 	// regardless of this value.
 	a.pipeline.SetArtistWorkers(cfg.RuleEngine.ArtistWorkers)
+	// Issue #2928: bound concurrent image decodes process-wide. This is a
+	// package-level bound in internal/image rather than a per-service one
+	// because the decoders that had NO bound before are request-reachable
+	// (logo trim, image upload/save, placeholder generation) and do not run
+	// under the pipeline's worker pool at all.
+	img.SetMaxConcurrentDecodes(cfg.Image.DecodeConcurrency)
 
 	a.bulkService = rule.NewBulkService(db)
 	a.bulkExecutor = rule.NewBulkExecutor(a.bulkService, a.artistService, a.orchestrator, a.pipeline, a.nfoSnapshotService, a.platformService, a.expectedWrites, a.publisher, logger)
@@ -1437,6 +1443,24 @@ func applyPersistedOpsSettings(ctx context.Context, a *Application, logger *slog
 				}
 				a.pipeline.SetArtistWorkers(n)
 				logger.Info("applied persisted rule_engine.artist_workers override", "workers", n)
+			})
+	}
+
+	// image.decode_concurrency -- same presence-gated, warn-on-corrupt shape as
+	// the worker count above. The upper bound is 64 for the same reason: past
+	// that the memory peak (400 MB per concurrent decode) dwarfs any plausible
+	// container limit, so a larger stored value is far likelier to be a typo
+	// than an intent.
+	if !envSet("SW_IMAGE_DECODE_CONCURRENCY") {
+		applyPersistedPositiveInt(ctx, db, logger, "image.decode_concurrency",
+			func(n int) {
+				if n > 64 {
+					logger.Warn("ignoring persisted image.decode_concurrency: value out of range (max 64)",
+						"stored_value", n)
+					return
+				}
+				img.SetMaxConcurrentDecodes(n)
+				logger.Info("applied persisted image.decode_concurrency override", "decodes", n)
 			})
 	}
 

@@ -111,9 +111,28 @@ func TestQuarantinedImagePresence_HealthyDirectoryStillWorks(t *testing.T) {
 	p, _ := newPHashRepairPipeline(t)
 	dir := t.TempDir()
 
+	// The FIRST candidate is unreadable for a NON-ctx reason (mode 0, so the
+	// read fails with a permissions error). That is what wires the misbehavior
+	// this test claims to guard: the loop must SKIP it and keep looking. A
+	// fixture holding only readable files would leave the skip-vs-propagate
+	// distinction unexercised, so a fix that wrongly propagated every read
+	// error would still pass -- the guard would be advertised but not wired.
+	unreadable := filepath.Join(dir, "fanart.jpg")
+	if err := os.WriteFile(unreadable, pollutionJPEG(t, 1), 0o644); err != nil {
+		t.Fatalf("writing the unreadable candidate: %v", err)
+	}
+	if err := os.Chmod(unreadable, 0o000); err != nil {
+		t.Fatalf("chmod 0 on the unreadable candidate: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o644) })
+	if _, err := os.ReadFile(unreadable); err == nil {
+		t.Skip("running as a user that ignores mode 0 (root?); cannot wire a non-ctx read failure")
+	}
+
+	// The MATCH sits in a later slot, so it is only found if the loop skipped.
 	data := pollutionJPEG(t, 0)
-	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), data, 0o644); err != nil {
-		t.Fatalf("writing fanart.jpg: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, "fanart1.jpg"), data, 0o644); err != nil {
+		t.Fatalf("writing fanart1.jpg: %v", err)
 	}
 
 	exact, similar, err := p.quarantinedImagePresence(context.Background(), dir, "fanart.jpg", data)

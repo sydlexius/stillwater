@@ -154,16 +154,22 @@ type Router struct {
 	logger             *slog.Logger
 	// dupImageOnce installs this router's scan sources on the shared
 	// duplicate-image count cache exactly once. See dupImageCache().
-	dupImageOnce       sync.Once
-	basePath           string
-	basePathFromEnv    bool
-	ux                 string
-	tlsStatus          templates.TLSStatusData
-	http3Port          int
-	imageCacheDir      string
-	staticAssets       *StaticAssets
-	db                 *sql.DB
-	fileRemover        FileRemover
+	dupImageOnce    sync.Once
+	basePath        string
+	basePathFromEnv bool
+	ux              string
+	tlsStatus       templates.TLSStatusData
+	http3Port       int
+	imageCacheDir   string
+	staticAssets    *StaticAssets
+	db              *sql.DB
+	fileRemover     FileRemover
+	// fanartInvalidator is the seam invalidateFanartHashes/invalidateFanartGeometry
+	// call through, mirroring the fileRemover/osRemover pattern (defaults to
+	// artistService, which already satisfies img.HashInvalidator). Tests inject a
+	// stub to prove the reorder handler's response surfaces an invalidation
+	// failure to the operator (#2908).
+	fanartInvalidator  img.HashInvalidator
 	ssrfClient         *http.Client
 	libraryOps         map[string]*LibraryOpResult
 	libraryOpsMu       sync.Mutex
@@ -413,6 +419,7 @@ func NewRouter(deps RouterDeps) *Router {
 		staticAssets:             NewStaticAssets(deps.StaticFS, deps.Logger),
 		ssrfClient:               httpsafe.SafeClient(fetchTimeout),
 		fileRemover:              osRemover{},
+		fanartInvalidator:        deps.ArtistService,
 		libraryOps:               make(map[string]*LibraryOpResult),
 		discographyFetchInFlight: make(map[string]bool),
 		undoStore:                rule.NewUndoStore(),

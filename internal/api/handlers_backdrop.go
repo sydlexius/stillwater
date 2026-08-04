@@ -774,7 +774,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 // at Error, not Debug, because a stale hash is what lets the exact-duplicate
 // fixer delete a distinct image -- if this is failing, that is worth seeing.
 func (r *Router) invalidateFanartHashes(ctx context.Context, artistID string) error {
-	if err := r.artistService.InvalidateImageHashes(ctx, artistID, "fanart"); err != nil {
+	if err := r.fanartInvalidator.InvalidateImageHashes(ctx, artistID, "fanart"); err != nil {
 		r.logger.Error("invalidating fanart hashes after reordering files",
 			slog.String("artist_id", artistID),
 			slog.String("error", err.Error()))
@@ -793,7 +793,7 @@ func (r *Router) invalidateFanartHashes(ctx context.Context, artistID string) er
 // them. Error level, not Debug, because a stale dimension is what makes the
 // image rules flag artwork that is fine (#2713).
 func (r *Router) invalidateFanartGeometry(ctx context.Context, artistID string) error {
-	if err := r.artistService.InvalidateImageGeometry(ctx, artistID, "fanart"); err != nil {
+	if err := r.fanartInvalidator.InvalidateImageGeometry(ctx, artistID, "fanart"); err != nil {
 		r.logger.Error("invalidating fanart geometry after reordering files",
 			slog.String("artist_id", artistID),
 			slog.String("error", err.Error()))
