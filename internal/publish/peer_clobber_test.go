@@ -324,7 +324,7 @@ func TestReassertLocalImage_UnreadableFile_LeftAlone(t *testing.T) {
 	p := New(Deps{Logger: silentLogger()})
 	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
 
-	p.reassertLocalImage(a, "banner", victim, []byte("REPLACEMENT"), time.Now().Add(-time.Hour), []string{"Peer"})
+	p.reassertLocalImage(context.Background(), a, "banner", victim, []byte("REPLACEMENT"), time.Now().Add(-time.Hour), []string{"Peer"})
 
 	if err := os.Chmod(victim, 0o600); err != nil {
 		t.Fatalf("restoring read permission: %v", err)

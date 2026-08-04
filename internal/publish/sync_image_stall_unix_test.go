@@ -4,15 +4,18 @@ package publish
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	img "github.com/sydlexius/stillwater/internal/image"
 )
 
 // syncImageToPlatforms locates the image under ctx (FindExistingImage) and then
@@ -176,5 +179,231 @@ func TestSyncImageToPlatforms_HealthyImageStillUploads(t *testing.T) {
 	// regression that dropped the payload would still register as an upload.
 	if got := hits.lastBodySize(); got == 0 {
 		t.Error("the upload body was empty; the image bytes never reached the peer")
+	}
+}
+
+// --- fanart path (#2934 round 2) ---
+//
+// syncAllFanartToPlatforms is a SECOND, equally request-reachable entry point in
+// this file, and the first round fixed only the single-image one. Its shape was
+// the same defect and strictly worse: DiscoverFanart is ctx-bound, snapshotFanart
+// then read every discovered file with a bare os.ReadFile, and it reads the WHOLE
+// set -- so a mount that stops answering wedges on file 1 of 42 while seven
+// handler call sites sit on a 30s deadline that cannot reach it.
+
+// fanartPrimaryFixtureName is the filename the fanart sync ACTUALLY reads under
+// this package's test wiring, and planting the wedge anywhere else is how this
+// bug stayed hidden: a fixture named backdrop.jpg returns instantly, because
+// getActiveFanartPrimary resolves to fanart.jpg and DiscoverFanart matches on
+// that base only -- backdrop.jpg is a FALLBACK in DefaultFileNames, never the
+// primary. assertOnFanartReadPath below pins that rather than trusting it.
+const fanartPrimaryFixtureName = "fanart.jpg"
+
+// assertOnFanartReadPath fails unless discovery actually returns the named file.
+// A stall test whose fixture is off the read path returns fast and passes for
+// the wrong reason -- vacuously green, and worse than no test at all, since it
+// reads as coverage of a path it never touches.
+func assertOnFanartReadPath(t *testing.T, dir, name string) {
+	t.Helper()
+	p := syncTestPublisher()
+	primary := p.getActiveFanartPrimary(context.Background())
+	if primary != fanartPrimaryFixtureName {
+		t.Fatalf("precondition: fanart primary resolved to %q, but the fixture is named %q; "+
+			"the wedge would be planted off the read path", primary, fanartPrimaryFixtureName)
+	}
+	// Discovery must be given a deadline of its own: on a REGRESSION the fixture
+	// is a FIFO, and while os.ReadDir does not open it, proving the precondition
+	// must not itself be able to hang.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	paths, err := img.DiscoverFanart(ctx, dir, primary)
+	if err != nil {
+		t.Fatalf("precondition: discovering fanart in the fixture dir: %v", err)
+	}
+	want := filepath.Join(dir, name)
+	for _, got := range paths {
+		if got == want {
+			return
+		}
+	}
+	t.Fatalf("precondition: %s is NOT on the fanart read path (discovered %v); "+
+		"this test would pass without ever exercising the read", want, paths)
+}
+
+// TestSyncAllFanartToPlatforms_StalledRead_ReturnsOnDeadline is the Family B
+// property for the fanart path, mirroring the single-image test above.
+func TestSyncAllFanartToPlatforms_StalledRead_ReturnsOnDeadline(t *testing.T) {
+	dir := t.TempDir()
+	syncFifo(t, filepath.Join(dir, fanartPrimaryFixtureName))
+	assertOnFanartReadPath(t, dir, fanartPrimaryFixtureName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	type result struct {
+		warnings []string
+		elapsed  time.Duration
+	}
+	done := make(chan result, 1)
+	p := syncTestPublisher()
+	go func() {
+		start := time.Now()
+		w := p.SyncAllFanartToPlatforms(ctx, &artist.Artist{ID: "a1", Name: "Stalled", Path: dir})
+		done <- result{warnings: w, elapsed: time.Since(start)}
+	}()
+
+	var got result
+	select {
+	case got = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SyncAllFanartToPlatforms did not return within 5s of a 100ms deadline; " +
+			"the fanart byte read is still wedging its caller")
+	}
+	if got.elapsed > 2*time.Second {
+		t.Fatalf("SyncAllFanartToPlatforms took %v to honor a 100ms deadline; the bound is not engaging", got.elapsed)
+	}
+	if len(got.warnings) == 0 {
+		t.Fatal("a fanart sync whose only file could not be read returned NO warnings; " +
+			"silence reads to the operator as a successful push")
+	}
+	if !strings.Contains(strings.Join(got.warnings, "|"), "failed to read fanart") {
+		t.Errorf("warnings do not report the read failure: %v", got.warnings)
+	}
+}
+
+// recordingIndexedUploader accepts every fanart upload and records the slot
+// index it was sent to. The green sibling below needs the INDEX, not just a
+// count: the whole point of keeping a nil-data entry for a failed read is that
+// the files after it keep their true slot numbers.
+type recordingIndexedUploader struct {
+	mu      sync.Mutex
+	indices []int
+}
+
+func (r *recordingIndexedUploader) UploadImageAtIndex(_ context.Context, _, _ string, idx int, _ []byte, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.indices = append(r.indices, idx)
+	return nil
+}
+
+func (r *recordingIndexedUploader) got() []int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]int(nil), r.indices...)
+}
+
+// TestSyncAllFanartToPlatforms_UnreadableFileSkipsAndContinues is the REQUIRED
+// green sibling, guarding the OPPOSITE failure: over-propagation.
+//
+// An ordinary per-file read error is not a cancellation and must NOT abort the
+// set. The unreadable file is skipped with a warning, the readable ones still
+// upload, and -- the part that actually has teeth -- the survivor keeps its TRUE
+// slot index. A fix that bailed out of the loop, or that compacted the snapshot,
+// would satisfy every cancellation assertion above and silently renumber the
+// operator's whole gallery.
+func TestSyncAllFanartToPlatforms_UnreadableFileSkipsAndContinues(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not make a file unreadable")
+	}
+	dir := t.TempDir()
+	// Slot 0 unreadable, slot 1 healthy. A REAL file with its permissions
+	// removed, not a directory: fanartMatches skips directory entries outright,
+	// so a directory fixture never reaches the read and proves nothing.
+	bad := filepath.Join(dir, fanartPrimaryFixtureName)
+	writeFile(t, bad, []byte{0xff, 0xd8, 0xff, 0xd9})
+	if err := os.Chmod(bad, 0o000); err != nil {
+		t.Fatalf("removing read permission: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(bad, 0o600) })
+	seedJPG(t, dir, "fanart1.jpg")
+	assertOnFanartReadPath(t, dir, fanartPrimaryFixtureName)
+
+	up := &recordingIndexedUploader{}
+	orig := newIndexedImageUploader
+	newIndexedImageUploader = func(_ *connection.Connection, _ *slog.Logger) connection.IndexedImageUploader {
+		return up
+	}
+	t.Cleanup(func() { newIndexedImageUploader = orig })
+
+	p := syncTestPublisher()
+	warnings := p.SyncAllFanartToPlatforms(context.Background(),
+		&artist.Artist{ID: "a1", Name: "Partly Unreadable", Path: dir})
+
+	joined := strings.Join(warnings, "|")
+	if !strings.Contains(joined, "failed to read fanart 0") {
+		t.Errorf("warnings = %v, want the unreadable slot 0 reported", warnings)
+	}
+	got := up.got()
+	if len(got) != 1 {
+		t.Fatalf("uploads = %v, want exactly one (slot 0 unreadable, slot 1 healthy); "+
+			"a read error must skip its own file, never abort the set", got)
+	}
+	if got[0] != 1 {
+		t.Errorf("the surviving file uploaded at index %d, want its TRUE index 1; "+
+			"the failed slot's index must still be spent or the gallery renumbers", got[0])
+	}
+}
+
+// writeOversizeFile plants a sparse file one byte past MaxDecodeBytes. Sparse
+// because the bound is 25MB and the test must not actually write 25MB.
+func writeOversizeFile(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("creating oversize fixture: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := f.Truncate(img.MaxDecodeBytes + 1); err != nil {
+		t.Fatalf("truncating oversize fixture: %v", err)
+	}
+}
+
+// TestSyncImageToPlatforms_OversizeImage_WarnsDistinctly covers the
+// ErrImageTooLarge arm, which had ZERO hits.
+//
+// It is NOT equivalent to the ordinary read-failure arm it sits beside: same
+// control flow, different string. The failure a test catches here is a
+// copy-paste leaving the SAME wording in both arms, which makes the split dead
+// while every other assertion in this file still passes -- the operator is told
+// to check the file for I/O errors when the real answer is "it is over 25MB".
+func TestSyncImageToPlatforms_OversizeImage_WarnsDistinctly(t *testing.T) {
+	dir := t.TempDir()
+	writeOversizeFile(t, filepath.Join(dir, "folder.jpg"))
+
+	p := syncTestPublisher()
+	warnings := p.SyncImageToPlatforms(context.Background(),
+		&artist.Artist{ID: "a1", Name: "Oversize", Path: dir}, "thumb")
+
+	joined := strings.Join(warnings, "|")
+	if !strings.Contains(joined, "exceeds the size limit") {
+		t.Fatalf("warnings = %v, want the distinct over-size wording", warnings)
+	}
+	// And it must NOT also carry the generic wording: an arm that emitted both
+	// would pass the assertion above while telling the operator nothing.
+	if strings.Contains(joined, "failed to read image") {
+		t.Errorf("warnings = %v, want ONLY the over-size wording; the generic "+
+			"read-failure string means the two arms are no longer distinct", warnings)
+	}
+}
+
+// TestSyncAllFanartToPlatforms_OversizeFile_WarnsDistinctly is the same guard
+// for the over-size arm added to snapshotFanart, for the same reason.
+func TestSyncAllFanartToPlatforms_OversizeFile_WarnsDistinctly(t *testing.T) {
+	dir := t.TempDir()
+	writeOversizeFile(t, filepath.Join(dir, fanartPrimaryFixtureName))
+	assertOnFanartReadPath(t, dir, fanartPrimaryFixtureName)
+
+	p := syncTestPublisher()
+	warnings := p.SyncAllFanartToPlatforms(context.Background(),
+		&artist.Artist{ID: "a1", Name: "Oversize Fanart", Path: dir})
+
+	joined := strings.Join(warnings, "|")
+	if !strings.Contains(joined, "exceeds the size limit") {
+		t.Fatalf("warnings = %v, want the distinct over-size wording", warnings)
+	}
+	if strings.Contains(joined, "failed to read fanart") {
+		t.Errorf("warnings = %v, want ONLY the over-size wording; the generic "+
+			"read-failure string means the two arms are no longer distinct", warnings)
 	}
 }

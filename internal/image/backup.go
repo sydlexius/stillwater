@@ -169,7 +169,12 @@ func BackupSingleSlot(ctx context.Context, dir, imageType string, naming []strin
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("reading original for backup: %w", err)
+		// Name the PATH and the BOUND. This error reaches the operator as a 500
+		// body, and the one case they can act on is an existing library image
+		// over MaxDecodeBytes: the backup refuses it, so every save of that slot
+		// aborts until the file is replaced by hand. A bare "image file too
+		// large" tells them neither which file nor what the limit is.
+		return fmt.Errorf("reading original for backup (%s, max %d bytes): %w", existing, MaxDecodeBytes, err)
 	}
 
 	typeDir, err := backupTypeDir(dir, imageType)
@@ -329,7 +334,11 @@ func BackupSlot(ctx context.Context, dir, imageType, fileName string) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("reading slot original for backup: %w", err)
+		// Path and bound named for the same reason as BackupSingleSlot: an
+		// operator whose existing slot image is over MaxDecodeBytes cannot
+		// overwrite it until they replace the file, and the 500 body is the only
+		// place they learn which file and which limit.
+		return fmt.Errorf("reading slot original for backup (%s, max %d bytes): %w", existing, MaxDecodeBytes, err)
 	}
 
 	typeDir, err := backupTypeDir(dir, imageType)

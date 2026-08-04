@@ -49,6 +49,14 @@ const (
 	pushTimeout = 30 * time.Second
 	// maxWarningRunes caps warning strings to prevent oversized JSON responses.
 	maxWarningRunes = 200
+	// reassertVerifyTimeout bounds the post-upload verify read in
+	// reassertLocalImage. That read is deliberately DETACHED from the caller's
+	// context -- see the function's doc comment -- so this is the only thing
+	// standing between a dead mount and a goroutine pinned for the life of the
+	// process. Short, because the file was read successfully moments earlier:
+	// anything slower than this is a mount that has stopped answering, not a
+	// slow disk.
+	reassertVerifyTimeout = 10 * time.Second
 )
 
 // Deps holds all dependencies for a Publisher.
@@ -878,7 +886,7 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	// delete (the original #2533 concern), and an existence check would call that
 	// clean.
 	if len(uploadedTo) > 0 {
-		p.reassertLocalImage(a, imageType, filePath, data, snapMod, uploadedTo)
+		p.reassertLocalImage(ctx, a, imageType, filePath, data, snapMod, uploadedTo)
 	}
 	return warnings
 }
@@ -921,16 +929,34 @@ type fanartSnapshot struct {
 // holds 42 backdrops). That is the price of being able to restore a file that is
 // already deleted -- a hash-only snapshot could DETECT the loss but never repair
 // it.
-func (p *Publisher) snapshotFanart(fanartPaths []string) ([]fanartSnapshot, []string) {
+//
+// The reads are ctx-bound and size-bounded (#2934). DiscoverFanart above is
+// already cancellable, so a bare os.ReadFile here left the same defect the
+// primary path had, only worse: this loop reads the WHOLE set, so a mount that
+// stops answering wedges on file 1 of 42 and no caller deadline can reach it.
+// The bound is also the allocation guard -- a set of arbitrarily large operator
+// files was previously read whole into memory, all of it resident at once.
+//
+// An ordinary per-file failure still SKIPS that file and keeps going; only the
+// caller's own deadline stops the loop, and it does so by making every
+// remaining read fail immediately rather than by an early return. That is the
+// deliberate shape: this function's contract is "one warning per file that
+// could not be read", and the caller's hasReadableFanart check then declines
+// the push because nothing was captured.
+func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([]fanartSnapshot, []string) {
 	snapshot := make([]fanartSnapshot, 0, len(fanartPaths))
 	var warnings []string
 	for i, fp := range fanartPaths {
-		data, readErr := os.ReadFile(fp) //nolint:gosec // path from trusted fanart discovery
+		data, readErr := img.ReadImageFileBounded(ctx, fp)
 		if readErr != nil {
 			p.logger.Error("reading fanart for platform sync",
 				slog.String("path", fp),
 				slog.String("error", readErr.Error()))
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("failed to read fanart %d", i)))
+			if errors.Is(readErr, img.ErrImageTooLarge) {
+				warnings = append(warnings, truncateWarning(fmt.Sprintf("fanart %d exceeds the size limit for upload", i)))
+			} else {
+				warnings = append(warnings, truncateWarning(fmt.Sprintf("failed to read fanart %d", i)))
+			}
 			// Kept with nil data so the slots AFTER this one keep their real
 			// index; the upload loop skips nil entries.
 			snapshot = append(snapshot, fanartSnapshot{path: fp, index: i})
@@ -1009,8 +1035,31 @@ func hasReadableFanart(snapshot []fanartSnapshot) bool {
 //
 // snapMod is the file's mtime when its bytes were captured. Retained for the
 // restore log so an operator can see how stale the restored copy was.
-func (p *Publisher) reassertLocalImage(a *artist.Artist, imageType, filePath string, data []byte, snapMod time.Time, uploadedTo []string) {
-	current, readErr := os.ReadFile(filePath) //nolint:gosec // filePath came from FindExistingImage over trusted naming patterns
+//
+// THE VERIFY READ IS DETACHED FROM ctx AND GIVEN ITS OWN DEADLINE (#2934), and
+// that combination is load-bearing in BOTH directions.
+//
+// Detached, because this repair exists precisely FOR the canceled push. The
+// fanart caller registers it in a defer specifically so it still runs when the
+// push timed out -- that is when a peer is most likely to have destroyed a file
+// with nothing else coming to put it back. Handing it the caller's ctx would
+// make the read fail with context.Canceled, which is not os.ErrNotExist, so it
+// would take the "cannot verify, leave it alone" branch and silently abandon
+// the artwork. Over-propagating a cancellation here loses operator data, which
+// is worse than the hang.
+//
+// But bounded anyway, because "not cancellable" must not mean "unbounded": a
+// bare os.ReadFile on a dead mount pins this goroutine forever, and it runs in
+// a defer inside a request handler. Its own short deadline is what makes the
+// repair give up on its own terms rather than never.
+func (p *Publisher) reassertLocalImage(ctx context.Context, a *artist.Artist, imageType, filePath string, data []byte, snapMod time.Time, uploadedTo []string) {
+	verifyCtx, cancelVerify := context.WithTimeout(context.WithoutCancel(ctx), reassertVerifyTimeout)
+	defer cancelVerify()
+
+	// readFileBounded returns the open error UNWRAPPED, so the os.ErrNotExist
+	// branch below still matches a genuinely missing file -- which is the case
+	// that triggers the restore.
+	current, readErr := img.ReadImageFileBounded(verifyCtx, filePath)
 	switch {
 	case readErr == nil && bytes.Equal(current, data):
 		return // untouched: the common and correct case
@@ -1103,7 +1152,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	fanartIdentityIdx := p.fanartIdentityIndex(ctx, a)
 	collisionNotified := make(map[string]bool)
 
-	snapshot, snapWarnings := p.snapshotFanart(fanartPaths)
+	snapshot, snapWarnings := p.snapshotFanart(ctx, fanartPaths)
 	warnings = append(warnings, snapWarnings...)
 	if !hasReadableFanart(snapshot) {
 		return warnings
@@ -1119,10 +1168,13 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	// Gated on uploadedTo: with no peer reached, nothing external touched these
 	// files and the only thing a repair could do is revert a concurrent operator
 	// write. The primary path applies the same guard.
-	// No context is consulted: the repair reads the local filesystem and the
-	// pre-push artist snapshot only, so it still runs correctly when the push
+	// The caller's context is passed but deliberately NOT honored as a
+	// cancellation: reassertLocalImage detaches it (context.WithoutCancel) and
+	// substitutes its own short deadline, so the repair still runs when the push
 	// itself was canceled or timed out -- precisely when a peer may have destroyed
-	// a file and nothing else will put it back.
+	// a file and nothing else will put it back -- while a dead mount can no longer
+	// pin this deferred read forever. ctx is still threaded through for its
+	// VALUES; see reassertLocalImage for the full reasoning.
 	defer func() {
 		if len(uploadedTo) == 0 {
 			return
@@ -1131,7 +1183,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			if sf.data == nil {
 				continue // never captured; there is nothing to put back
 			}
-			p.reassertLocalImage(a, "fanart", sf.path, sf.data, sf.mod, uploadedTo)
+			p.reassertLocalImage(ctx, a, "fanart", sf.path, sf.data, sf.mod, uploadedTo)
 		}
 	}()
 
