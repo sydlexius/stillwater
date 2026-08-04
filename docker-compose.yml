@@ -121,10 +121,12 @@ services:
     #   * TrimWithMargin and TrimAlpha take the non-SubImage branch on most
     #     real crops and allocate a SECOND full-size buffer (image.NewRGBA +
     #     draw.Copy) at 4 B/px, ~400 MB. That buffer is live at the same time
-    #     as the ~800 MB decoded source, so a single trim is ~1.2 GB, not a
+    #     as the ~400 MB decoded source, so a single trim is ~800 MB, not a
     #     sequence of smaller allocations.
-    #   * SW_IMAGE_DECODE_CONCURRENCY (default 2) bounds how many decodes run
-    #     at once ACROSS THE WHOLE PROCESS (#2928), which is what makes the
+    #   * SW_IMAGE_DECODE_CONCURRENCY (default 2) bounds how many DECODED
+    #     IMAGES are live at once ACROSS THE WHOLE PROCESS (#2928) -- the slot
+    #     is held for the buffer's lifetime, not just for the decode, because
+    #     the buffer is what occupies the memory. That is what makes the
     #     figure above multiply by a configured number instead of by inbound
     #     request volume. Two concurrent decodes at 400 MB, each possibly
     #     paired with the trim path's second full-size buffer, puts the peak
