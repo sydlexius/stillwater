@@ -4,6 +4,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -303,19 +304,38 @@ func (r *recordingIndexedUploader) got() []int {
 // would satisfy every cancellation assertion above and silently renumber the
 // operator's whole gallery.
 func TestSyncAllFanartToPlatforms_UnreadableFileSkipsAndContinues(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("running as root: permission bits do not make a file unreadable")
-	}
 	dir := t.TempDir()
-	// Slot 0 unreadable, slot 1 healthy. A REAL file with its permissions
-	// removed, not a directory: fanartMatches skips directory entries outright,
-	// so a directory fixture never reaches the read and proves nothing.
+	// Slot 0 unreadable, slot 1 healthy.
+	//
+	// A DANGLING SYMLINK, not permission bits. Chmod 0o000 does not make a file
+	// unreadable for uid 0, so the permission fixture had to SKIP the whole test
+	// under root -- and this is the green sibling guarding the
+	// no-over-propagation direction, so skipping it silently removes the only
+	// thing stopping a fix that aborts the set on the first read error. A
+	// symlink pointing at a path that does not exist fails the open with ENOENT
+	// for every effective user, root included.
+	//
+	// IT REACHES THE READ, which is the property that makes it a valid
+	// substitute rather than just a different fixture. Discovery lists the
+	// directory with os.ReadDir, whose entries carry the LINK's own type and are
+	// never resolved, so fanartMatches' IsDir check does not filter a symlink
+	// and its .jpg extension matches like any other file. Nothing between
+	// discovery and snapshotFanart stats the path, so the first thing to touch
+	// the target is the open inside the bounded read -- exactly where the
+	// permission fixture failed. assertOnFanartReadPath below pins the first
+	// half of that (discovery really returns it) and the warning assertion pins
+	// the second (the read really failed).
 	bad := filepath.Join(dir, fanartPrimaryFixtureName)
-	writeFile(t, bad, []byte{0xff, 0xd8, 0xff, 0xd9})
-	if err := os.Chmod(bad, 0o000); err != nil {
-		t.Fatalf("removing read permission: %v", err)
+	if err := os.Symlink(filepath.Join(dir, "does-not-exist.jpg"), bad); err != nil {
+		t.Fatalf("planting the dangling symlink fixture: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(bad, 0o600) })
+	// PRECONDITION: the link really is dangling. A fixture that resolved (a
+	// stray file at the target, a platform that refuses to create the link)
+	// would make the whole test a healthy-path assertion.
+	if _, err := os.Open(bad); err == nil || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("precondition: opening the dangling symlink gave %v, want a not-exist error; "+
+			"the fixture would not produce a read failure", err)
+	}
 	seedJPG(t, dir, "fanart1.jpg")
 	assertOnFanartReadPath(t, dir, fanartPrimaryFixtureName)
 

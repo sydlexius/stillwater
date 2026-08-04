@@ -160,6 +160,29 @@ func (s *Service) RepairImageRegistry(ctx context.Context, opts ImageRepairOpts)
 		}
 	}
 
+	// THE LAST-ARTIST RESIDUE. The check at the TOP of the loop catches a
+	// cancellation for every artist except the final one, and repairOneArtist
+	// deliberately absorbs several late failures rather than aborting: a failed
+	// per-row INSERT is logged so confirm() can report the divergence, a failed
+	// COMMIT likewise, and a failed post-write re-read reports "unconfirmed".
+	// Every one of those absorbs a CANCELLATION in the same shape -- the write
+	// fails because the context is done, not because the database refused -- and
+	// on the final artist there is no next iteration left to notice. The pass
+	// then returns a result with err == nil, which the handler reports as a
+	// completed repair whose rows merely "diverged".
+	//
+	// One check here closes all of them at once, which is why it lives here
+	// rather than being restated in each absorbing branch: those branches are
+	// right to absorb an ordinary write failure, and the only thing they get
+	// wrong is that a canceled pass must not be REPORTED as a finished one.
+	//
+	// Before the mount-down guard, deliberately: an abandoned pass has not
+	// established anything about the mount, so it must not be allowed to claim
+	// the library is unreachable.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+
 	// Mount-down guard. On a library-wide pass, if not one artist directory
 	// was readable yet at least one reported absent, the library itself is not
 	// visible (a missing mount makes every directory ENOENT). Refuse to call

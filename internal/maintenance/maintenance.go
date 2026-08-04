@@ -631,6 +631,15 @@ func (s *Service) RestoreExistsFlags(ctx context.Context, opts ExistsFlagRestore
 // no work -- a silent no-op in the exact place a silent no-op is most expensive.
 type FanartPrimaryFn func(ctx context.Context) string
 
+// starvedFanartRow is one artist_images row selected by the backfill: a fanart
+// slot whose phash is empty, paired with its artist's library path so the file
+// can be located without a second query.
+type starvedFanartRow struct {
+	artistID   string
+	slotIndex  int
+	artistPath string
+}
+
 // BackfillFanartHashes computes and stores the perceptual and content hashes of
 // fanart slots whose phash column is empty.
 //
@@ -695,18 +704,13 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 	}
 	defer rows.Close() //nolint:errcheck // read-only cursor, no actionable close error
 
-	type starved struct {
-		artistID   string
-		slotIndex  int
-		artistPath string
-	}
 	// Drain the cursor before issuing any write. modernc.org/sqlite uses a
 	// single-writer pool, so holding this SELECT open across writes on the same
 	// *sql.DB serializes badly or deadlocks. Two-phase is a correctness
 	// requirement under the pure-Go driver, not an optimization.
-	var pending []starved
+	var pending []starvedFanartRow
 	for rows.Next() {
-		var st starved
+		var st starvedFanartRow
 		if err := rows.Scan(&st.artistID, &st.slotIndex, &st.artistPath); err != nil {
 			return fmt.Errorf("scanning starved fanart row: %w", err)
 		}
@@ -756,33 +760,14 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 	filled, failed := 0, 0
 
 	for _, st := range pending {
-		dir := s.artistImageDir(st.artistPath, st.artistID)
-		if dir == "" {
-			s.logger.Warn("fanart hash backfill: unresolvable image dir, skipping",
-				slog.String("artist_id", st.artistID))
+		path, resolveErr := s.backfillRowPath(ctx, discovered, st, primary)
+		if resolveErr != nil {
+			return fmt.Errorf("fanart hash backfill canceled after %d rows filled: %w", filled, resolveErr)
+		}
+		if path == "" {
 			skipped++
 			continue
 		}
-		paths, discOK, discErr := s.backfillFanartPaths(ctx, discovered, st.artistID, dir, primary)
-		if discErr != nil {
-			return fmt.Errorf("fanart hash backfill canceled after %d rows filled: %w", filled, discErr)
-		}
-		if !discOK {
-			skipped++
-			continue
-		}
-		// slot_index is the DiscoverFanart ORDINAL, so it indexes the slice
-		// directly -- the same mapping imageDupRowPath uses. Matching it exactly
-		// matters: reading the numeric filename suffix instead would drift the
-		// moment a renumber closes a gap.
-		if st.slotIndex < 0 || st.slotIndex >= len(paths) {
-			// The row outlived its file, or a concurrent scan renumbered the
-			// slots between the SELECT and here. Detection is unaffected; the
-			// next pass re-derives.
-			skipped++
-			continue
-		}
-		path := paths[st.slotIndex]
 
 		fh, hashErr := img.HashFile(ctx, path, true)
 		if hashErr != nil || fh.Perceptual == 0 && fh.Content == "" {
@@ -814,8 +799,30 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 			WHERE artist_id = ? AND image_type = 'fanart' AND slot_index = ? AND phash = ''`,
 			img.HashHex(fh.Perceptual), fh.Content, st.artistID, st.slotIndex)
 		if err != nil {
-			// Filling these is the entire point of the task; a failed UPDATE
-			// leaves a slot starved, which is the defect this exists to end.
+			// The SAME distinction one branch lower, and the window this
+			// branch owns is the one the hashing guard above CANNOT see. That
+			// guard runs before the read; a cancellation that arrives after
+			// HashFile has already returned its bytes leaves the guard looking
+			// at a live context, so the pass reaches here with a healthy hash
+			// in hand and a context that is done. ExecContext then fails with
+			// the cancellation, and counting it as `failed` lets the loop fall
+			// out of its LAST iteration and return nil -- a canceled partial
+			// pass reported as a completed one, which is exactly the defect
+			// this function's other branches were changed to end (#2934).
+			//
+			// Interrogate the CONTEXT for the same reason as everywhere else
+			// here: a DB error whose text mentions a deadline is not a
+			// cancellation, and a cancellation wrapped in an ordinary-looking
+			// write failure still is one. The wording matches the hashing
+			// branch verbatim so both report identically -- an operator must
+			// not be able to tell which side of the read the abort landed on,
+			// because the consequence is the same either way.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return fmt.Errorf("fanart hash backfill canceled after %d rows filled: %w", filled, ctxErr)
+			}
+			// A genuine write failure is a per-row fact and still skips:
+			// filling these is the entire point of the task, so a failed
+			// UPDATE leaves one slot starved, which the next pass re-selects.
 			s.logger.Error("fanart hash backfill: UPDATE failed, slot remains starved",
 				slog.String("artist_id", st.artistID),
 				slog.Int("slot_index", st.slotIndex),
@@ -834,6 +841,48 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 		slog.Int("failed", failed),
 		slog.Bool("truncated", truncated))
 	return nil
+}
+
+// backfillRowPath resolves ONE starved row to the file on disk that its
+// slot_index names, or reports that the row must be skipped.
+//
+// Three-valued in the same shape backfillFanartPaths uses one layer down, and
+// for the same reason -- the caller has three genuinely different things to do:
+//
+//	(path, nil)  resolved: hash this file
+//	("",   nil)  this ROW cannot be resolved -- skip it, keep going
+//	("",   err)  the CONTEXT is done -- the pass must abort
+//
+// It is a separate function purely so the pass loop reads as the three steps it
+// actually performs (resolve, hash, store) rather than as a wall of skip
+// branches. It makes no decision the loop did not already make.
+func (s *Service) backfillRowPath(
+	ctx context.Context, discovered map[string][]string, st starvedFanartRow, primary string,
+) (string, error) {
+	dir := s.artistImageDir(st.artistPath, st.artistID)
+	if dir == "" {
+		s.logger.Warn("fanart hash backfill: unresolvable image dir, skipping",
+			slog.String("artist_id", st.artistID))
+		return "", nil
+	}
+	paths, discOK, discErr := s.backfillFanartPaths(ctx, discovered, st.artistID, dir, primary)
+	if discErr != nil {
+		return "", discErr
+	}
+	if !discOK {
+		return "", nil
+	}
+	// slot_index is the DiscoverFanart ORDINAL, so it indexes the slice
+	// directly -- the same mapping imageDupRowPath uses. Matching it exactly
+	// matters: reading the numeric filename suffix instead would drift the
+	// moment a renumber closes a gap.
+	if st.slotIndex < 0 || st.slotIndex >= len(paths) {
+		// The row outlived its file, or a concurrent scan renumbered the slots
+		// between the SELECT and here. Detection is unaffected; the next pass
+		// re-derives.
+		return "", nil
+	}
+	return paths[st.slotIndex], nil
 }
 
 // backfillFanartPaths resolves one artist's fanart paths for the backfill,
