@@ -614,6 +614,15 @@ func (p *Pipeline) reverifySlotPHash(ctx context.Context, path, flagged string) 
 	if flagged == "" {
 		return false, "flagged slot carries no stored phash; refusing to remove on an unknown hash"
 	}
+	// Every read failure -- ordinary I/O, over-size, or a canceled ctx --
+	// refuses the removal, so this site needs no ctx.Err() interrogation of the
+	// kind quarantinedImagePresence performs above. The difference is what the
+	// error decides. There, a per-file failure meant "keep looking" and only a
+	// cancellation had to abort the loop, so the two had to be told apart.
+	// Here the answer feeds a single DELETE authorization and false is the
+	// refusing direction, so collapsing them is already the safe outcome:
+	// nothing is removed on a hash this function could not re-read for any
+	// reason. Adding a ctx check would change no behavior.
 	data, err := img.ReadImageFileBounded(ctx, path)
 	if err != nil {
 		return false, fmt.Sprintf("re-reading slot: %v", err)

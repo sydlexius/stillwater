@@ -160,6 +160,29 @@ func (s *Service) RepairImageRegistry(ctx context.Context, opts ImageRepairOpts)
 		}
 	}
 
+	// THE LAST-ARTIST RESIDUE. The check at the TOP of the loop catches a
+	// cancellation for every artist except the final one, and repairOneArtist
+	// deliberately absorbs several late failures rather than aborting: a failed
+	// per-row INSERT is logged so confirm() can report the divergence, a failed
+	// COMMIT likewise, and a failed post-write re-read reports "unconfirmed".
+	// Every one of those absorbs a CANCELLATION in the same shape -- the write
+	// fails because the context is done, not because the database refused -- and
+	// on the final artist there is no next iteration left to notice. The pass
+	// then returns a result with err == nil, which the handler reports as a
+	// completed repair whose rows merely "diverged".
+	//
+	// One check here closes all of them at once, which is why it lives here
+	// rather than being restated in each absorbing branch: those branches are
+	// right to absorb an ordinary write failure, and the only thing they get
+	// wrong is that a canceled pass must not be REPORTED as a finished one.
+	//
+	// Before the mount-down guard, deliberately: an abandoned pass has not
+	// established anything about the mount, so it must not be allowed to claim
+	// the library is unreachable.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+
 	// Mount-down guard. On a library-wide pass, if not one artist directory
 	// was readable yet at least one reported absent, the library itself is not
 	// visible (a missing mount makes every directory ENOENT). Refuse to call
@@ -347,6 +370,27 @@ func (s *Service) discover(ctx context.Context, log *slog.Logger, artistID, dir 
 		// that a flaky mount cannot produce a silently clean report.
 		path, ok, statErr := img.FindExistingImageStrict(ctx, dir, img.FileNamesForType(img.DefaultFileNames, t))
 		if statErr != nil {
+			// A cancellation is not a flaky mount: propagate it rather than
+			// recording this type as one more unverifiable slot (#2934).
+			//
+			// Interrogate the CONTEXT, not the error's contents. An I/O error
+			// whose message happens to mention a deadline must not be mistaken
+			// for a real cancellation, and a real cancellation must not be
+			// missed because the wrapped error reads like an ordinary stat
+			// failure. Matches appendVerified's branch below.
+			//
+			// The distinction is what the operator READS. Recording a skip
+			// leaves FilesSkipped and an Outcomes row describing a file that was
+			// never actually probed, and the pass then reports as COMPLETE with
+			// some unreadable files -- a plausible-looking report of a library
+			// problem that does not exist. Once the context is done every
+			// remaining type would probe against an already-canceled context,
+			// doing no filesystem work at all, so the whole tail of the type
+			// list would be counted as skipped for the same non-reason. An
+			// ordinary stat error still skips: it genuinely affects one type.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			log.Warn("image repair: stat error probing image type, skipping type",
 				slog.String("image_type", t), slog.Any("error", statErr))
 			res.FilesSkipped++

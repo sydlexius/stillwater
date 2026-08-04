@@ -15971,6 +15971,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "499":
+          description: >-
+            The client closed the request before all images could be read.
+            Non-standard (nginx's "Client Closed Request"), used because no
+            standard status describes a caller that went away, and any 2xx
+            would claim work that did not finish. Uploads already delivered
+            to the platform are listed so a client can reconcile: the push
+            is stopped, not undone.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  uploaded:
+                    type: array
+                    items:
+                      type: string
+                    description: >-
+                      Images that genuinely reached the platform before the
+                      request was abandoned.
 
   /artists/{id}/push/images/{type}:
     delete:
