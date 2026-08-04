@@ -447,6 +447,76 @@ image:
 	}
 }
 
+// TestValidate_DecodeConcurrencyClampedAtCeiling covers the OTHER direction of
+// the same contract. The non-positive case above was already handled; the top
+// end was not, on either config source, while cmd/stillwater refused a stored
+// value over 64. An env or file value of 100000 therefore built a 100000-slot
+// semaphore -- which removes the bound the container is sized against rather
+// than raising it.
+//
+// Both sources are exercised, because they take different code paths into the
+// field (setIntPositive for env, direct unmarshal for file) and the defect was
+// that only one of the three ways in had a ceiling.
+func TestValidate_DecodeConcurrencyClampedAtCeiling(t *testing.T) {
+	const ceiling = maxDecodeConcurrency
+
+	t.Run("from file", func(t *testing.T) {
+		cases := []struct {
+			name    string
+			decodes int
+			want    int
+		}{
+			{"far over the ceiling is clamped", 100000, ceiling},
+			{"just over the ceiling is clamped", ceiling + 1, ceiling},
+			{"exactly at the ceiling passes through", ceiling, ceiling},
+			{"just under the ceiling passes through", ceiling - 1, ceiling - 1},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				clearSWEnv(t)
+				dir := t.TempDir()
+				yamlPath := filepath.Join(dir, "config.yaml")
+				body := fmt.Sprintf(`
+server:
+  port: 1973
+database:
+  path: /tmp/test.db
+image:
+  decode_concurrency: %d
+`, tc.decodes)
+				if err := os.WriteFile(yamlPath, []byte(body), 0o644); err != nil {
+					t.Fatalf("writing config file: %v", err)
+				}
+				cfg, err := Load(yamlPath)
+				if err != nil {
+					t.Fatalf("Load: %v", err)
+				}
+				if cfg.Image.DecodeConcurrency != tc.want {
+					t.Errorf("Image.DecodeConcurrency = %d, want %d", cfg.Image.DecodeConcurrency, tc.want)
+				}
+			})
+		}
+	})
+
+	t.Run("from env", func(t *testing.T) {
+		clearSWEnv(t)
+		dir := t.TempDir()
+		yamlPath := filepath.Join(dir, "config.yaml")
+		if err := os.WriteFile(yamlPath, []byte("server:\n  port: 1973\ndatabase:\n  path: /tmp/test.db\n"), 0o644); err != nil {
+			t.Fatalf("writing config file: %v", err)
+		}
+		t.Setenv("SW_IMAGE_DECODE_CONCURRENCY", "100000")
+
+		cfg, err := Load(yamlPath)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Image.DecodeConcurrency != ceiling {
+			t.Errorf("SW_IMAGE_DECODE_CONCURRENCY=100000 produced DecodeConcurrency = %d, want it clamped to %d; an unclamped env value builds a 100000-slot semaphore and removes the bound entirely", cfg.Image.DecodeConcurrency, ceiling)
+		}
+	})
+}
+
 // TestDecodeConcurrencyDefaultMatchesImagePackage guards the one duplication
 // this change deliberately accepts. config.go keeps the default as a literal
 // so internal/config does not import the image-decoding package; this test is

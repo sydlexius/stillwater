@@ -194,12 +194,24 @@ type RuleEngineConfig struct {
 	ArtistWorkers int `yaml:"artist_workers" toml:"artist_workers" env:"SW_RULE_ENGINE_ARTIST_WORKERS" default:"2" desc:"Number of artists the rule engine processes concurrently during a Run Rules pass. Default 2. Set to 1 for the original strictly-sequential walk; higher values overlap more per-artist provider fetches. The shared per-provider rate limiter still caps total request throughput. Must be a positive integer; non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting, so the Settings control is shown read-only."`
 }
 
+// maxDecodeConcurrency is the accepted ceiling for DecodeConcurrency. It
+// mirrors the >64 refusal cmd/stillwater applies to the DB-backed setting, so
+// the env/file path and the persisted path cannot disagree about what is a
+// legal bound. Past 64 the memory peak (400 MB per live decoded image) dwarfs
+// any plausible container limit, making a larger value far likelier to be a
+// typo than an intent.
+const maxDecodeConcurrency = 64
+
 // ImageConfig holds image-processing execution settings.
 type ImageConfig struct {
-	// DecodeConcurrency bounds how many full-pixel image decodes may run
-	// concurrently across the WHOLE process (#2928). Process memory peak is
-	// per-decode cost times concurrency; internal/image bounds the first
-	// factor at a 400 MB decoded footprint, and this bounds the second.
+	// DecodeConcurrency bounds how many DECODED IMAGES may be live at once
+	// across the WHOLE process (#2928). Process memory peak is per-image cost
+	// times concurrency; internal/image bounds the first factor at a 400 MB
+	// decoded footprint, and this bounds the second. The slot is held for the
+	// decoded buffer's lifetime rather than for the duration of the decode,
+	// because the buffer is what occupies the memory and it outlives the
+	// decode that produced it.
+	//
 	// Before it, the request-reachable decode paths (logo trim, image
 	// upload/save, placeholder generation) had no bound at all, so the peak
 	// tracked inbound request volume. SW_RULE_ENGINE_ARTIST_WORKERS bounds
@@ -212,7 +224,7 @@ type ImageConfig struct {
 	// image.DefaultDecodeConcurrency so internal/config does not pull in the
 	// image-decoding package; TestDecodeConcurrencyDefaultMatchesImagePackage
 	// fails if the two ever drift.
-	DecodeConcurrency int `yaml:"decode_concurrency" toml:"decode_concurrency" env:"SW_IMAGE_DECODE_CONCURRENCY" default:"2" desc:"Number of image decodes Stillwater performs concurrently across the whole process. Default 2. Each concurrent decode can hold up to 400 MB, so raising this raises the container memory peak proportionally and any mem_limit / GOMEMLIMIT must be raised with it. Requests arriving while every slot is busy wait up to 30 seconds and are then rejected rather than queuing without bound. Must be a positive integer; non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting."`
+	DecodeConcurrency int `yaml:"decode_concurrency" toml:"decode_concurrency" env:"SW_IMAGE_DECODE_CONCURRENCY" default:"2" desc:"Number of decoded images Stillwater keeps in memory at once across the whole process. Default 2. A slot is held for as long as the decoded image is in use, not merely while it is being decoded, and each one can hold up to 400 MB, so raising this raises the container memory peak proportionally and any mem_limit / GOMEMLIMIT must be raised with it. Requests arriving while every slot is busy wait up to 30 seconds and are then rejected rather than queuing without bound. Must be a positive integer no greater than 64; non-positive or non-numeric values are silently ignored, and a larger value is clamped to 64. When set from the environment, this value takes precedence over the saved setting."`
 }
 
 // Default returns a Config with sensible defaults.
@@ -878,6 +890,19 @@ func (c *Config) validate() error {
 	// actually running with.)
 	if c.Image.DecodeConcurrency <= 0 {
 		c.Image.DecodeConcurrency = Default().Image.DecodeConcurrency
+	}
+
+	// Clamp the top end too, matching the >64 refusal the DB-backed path
+	// applies in cmd/stillwater. Without this the env path had no ceiling at
+	// all: SW_IMAGE_DECODE_CONCURRENCY=100000 built a 100000-slot semaphore,
+	// which is not a bound in any useful sense -- it removes the one the
+	// container is sized against. Past 64 the memory peak (400 MB per live
+	// decoded image) dwarfs any plausible container limit, so a larger value
+	// is far likelier to be a typo than an intent. Normalizing rather than
+	// erroring keeps this the same shape as the non-positive case above, so
+	// both directions and both config sources honor one contract.
+	if c.Image.DecodeConcurrency > maxDecodeConcurrency {
+		c.Image.DecodeConcurrency = maxDecodeConcurrency
 	}
 
 	// Normalize and validate the UI channel flag. An empty value (file-backed
