@@ -162,6 +162,23 @@ Default when no hint: Sonnet + Plan Mode + medium effort for features; Sonnet + 
 - **Tests:** Integration tests use real SQLite. Run `go test -race ./...` for concurrent code (goroutines, shared state, background workers). Native on macOS.
 - **Security:** API keys encrypted at rest (AES-256-GCM). Scrub sensitive values from logs. CSRF on state-changing requests. Validate at API boundary.
 
+## Filing Issues
+
+**Every issue gets a MILESTONE and LABELS at creation time. Both, always, no exceptions.** An
+unmilestoned issue does not appear in any release view, so it is invisible to planning and silently
+never gets scheduled. This is not a nicety to add later -- "later" does not happen.
+
+- `gh issue create --title ... --body-file ... --milestone '<exact title>' --label <l> --label <l>`
+- Pick the milestone from `gh api repos/sydlexius/stillwater/milestones` (match on title, not
+  number). A defect found while working milestone M belongs in M unless it is clearly out of scope
+  for that release -- do not default to leaving it blank.
+- Labels: a type (`bug` / `enhancement` / `chore` / `technical-debt`), a `scope: small|medium|large`,
+  and the affected area (`images`, `rules`, `ui`, `providers`, `database`, ...).
+- Add the agent hints the repo uses (`[mode:]`, `[model:]`, `[effort:]`) in the body when the issue
+  is meant to be picked up by an agent.
+- Same rule applies to a follow-up issue spun out of a review finding: it inherits the milestone of
+  the work that surfaced it unless there is a stated reason otherwise.
+
 ## PR Workflow
 
 Repo-specific delta on top of the global PR workflow (`/prep-pr` to open, `/handle-review`, `/merge-pr`): the pre-push git hook runs `scripts/pre-push-gate.sh` automatically on every push, so do **not** invoke it manually as a standalone pre-push step -- the manual call duplicates the hook's work without adding signal. Manual `bash scripts/pre-push-gate.sh` invocations are appropriate only inside `/handle-review` and `/merge-pr` (verifying fixes before commit, gating a merge).
