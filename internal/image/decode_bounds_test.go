@@ -277,6 +277,21 @@ func pngChunk(t *testing.T, chunkType string, payload []byte) []byte {
 // bug: the header-reported model and the allocated type DISAGREE for greyscale
 // PNG files carrying tRNS, and no assertion phrased in terms of models can
 // observe a disagreement between a model and a type.
+//
+// THE DURABLE LESSON, for whoever touches bytesPerPixel next: a
+// bytes-per-pixel estimate must be validated against a REAL DECODE, never
+// against a table of color.Model constants. A table-driven test over model
+// values can only ever confirm the map matches itself. Add cases HERE, with a
+// real encoded fixture, rather than to any list of models.
+//
+// One known case is NOT covered here: a lossy WebP carrying an alpha chunk.
+// golang.org/x/image/webp has the same divergence -- decode.go's fccVP8 branch
+// reports color.YCbCrModel when configOnly is set, but allocates
+// *image.NYCbCrA when an alpha chunk is present. It is not a live
+// under-estimate (both YCbCrModel and NYCbCrAModel estimate 4, and NYCbCrA at
+// 4:4:4 is exactly 3 + 1 = 4), and x/image ships no WebP ENCODER, so no
+// fixture can be built here without either a checked-in binary blob or a
+// hand-rolled encoder. Tracked as #2935.
 func TestBytesPerPixel_NeverUnderestimatesRealDecodes(t *testing.T) {
 	// 64x64 is deliberate. The model/type mismatch is a property of the
 	// FORMAT, not of the size, so it reproduces identically at 64x64 and at
@@ -324,6 +339,17 @@ func TestBytesPerPixel_NeverUnderestimatesRealDecodes(t *testing.T) {
 		t.Fatalf("encoding JPEG fixture: %v", err)
 	}
 
+	// A SINGLE-COMPONENT greyscale JPEG. image/jpeg's DecodeConfig switches on
+	// component count and returns color.GrayModel for nComp == 1
+	// ($(go env GOROOT)/src/image/jpeg/reader.go), NOT YCbCrModel -- so this
+	// lands squarely on a row the fix drops, and it is the case that pins what
+	// the greyscale trade-off actually costs. image/jpeg encodes an
+	// *image.Gray as one component, so the fixture needs no special handling.
+	var grayJPEGBuf bytes.Buffer
+	if err := jpeg.Encode(&grayJPEGBuf, gray8, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatalf("encoding greyscale JPEG fixture: %v", err)
+	}
+
 	cases := []struct {
 		name string
 		data []byte
@@ -341,7 +367,17 @@ func TestBytesPerPixel_NeverUnderestimatesRealDecodes(t *testing.T) {
 		{"PNG 16-bit RGBA", encodePNGFixture(t, opaque16)},
 		{"PNG 8-bit NRGBA (alpha channel)", encodePNGFixture(t, translucent8)},
 		{"PNG paletted", encodePNGFixture(t, paletted)},
-		{"JPEG (decodes to YCbCr)", jpegBuf.Bytes()},
+		{"JPEG 3-component (decodes to YCbCr)", jpegBuf.Bytes()},
+
+		// Greyscale JPEG. NOTE, so nobody credits this case with more than it
+		// does: it decodes to *image.Gray at exactly 1 B/px, so it can never
+		// be an UNDER-estimate and it passes here trivially -- verified by
+		// mutation (restoring the GrayModel row leaves this case green while
+		// the PNG tRNS case goes red). It is carried because greyscale is not
+		// PNG-only and this is the second format landing on a dropped row.
+		// The assertion with teeth for it lives in
+		// TestGreyscaleJPEG_ReportsGrayModel below.
+		{"JPEG 1-component greyscale (header says Gray)", grayJPEGBuf.Bytes()},
 	}
 
 	for _, tc := range cases {
@@ -797,4 +833,54 @@ func TestDecodeWithLimit_FailedDecodeReleasesItsSlot(t *testing.T) {
 		t.Fatalf("could not acquire after a FAILED decode (%v) -- the failure path leaked its slot", err)
 	}
 	release()
+}
+
+// TestGreyscaleJPEG_ReportsGrayModel pins the fact that makes the greyscale
+// trade-off documented on bytesPerPixel accurate, rather than leaving it as an
+// unverified premise.
+//
+// bytesPerPixel's doc comment tells operators that greyscale artwork in EITHER
+// PNG or JPEG is now estimated at 8 B/px and rejected above ~50 MP. The JPEG
+// half of that claim rests entirely on image/jpeg's DecodeConfig switching on
+// COMPONENT COUNT and returning color.GrayModel for a single-component file
+// ($(go env GOROOT)/src/image/jpeg/reader.go). If it reported YCbCrModel
+// instead -- a natural assumption, and one this round initially made -- then
+// greyscale JPEG would never have touched a dropped row and the documented
+// cost would overstate the regression.
+//
+// Both halves are asserted because both are load-bearing: GrayModel from the
+// header is what routes it to the fail-large default, and *image.Gray from the
+// decoder is what proves the estimate is an OVER-estimate here rather than an
+// under-estimate (which is also why that fixture cannot fail in the guard test
+// above, and why this test exists separately).
+func TestGreyscaleJPEG_ReportsGrayModel(t *testing.T) {
+	src := image.NewGray(image.Rect(0, 0, 64, 64))
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			src.SetGray(x, y, color.Gray{Y: uint8(x + y)})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, src, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatalf("encoding greyscale JPEG: %v", err)
+	}
+
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("fixture header does not parse: %v", err)
+	}
+	if format != "jpeg" {
+		t.Fatalf("fixture decoded as %q, want jpeg", format)
+	}
+	if cfg.ColorModel != color.GrayModel {
+		t.Errorf("DecodeConfig reports %v for a single-component JPEG, want color.GrayModel; bytesPerPixel's documented greyscale trade-off names JPEG on the strength of this mapping, so if it changed the doc comment overstates the cost and must be corrected", cfg.ColorModel)
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("fixture does not decode: %v", err)
+	}
+	if _, ok := img.(*image.Gray); !ok {
+		t.Errorf("greyscale JPEG decoded to %T, want *image.Gray; if the decoder now allocates something wider this stops being a safe over-estimate and becomes the tRNS defect in a second format", img)
+	}
 }

@@ -653,9 +653,17 @@ const (
 // and allocate at 8 B/px -- a deterministic 4x under-estimate reproducing the
 // exact #2929 failure the guard was written to stop. There is no cheap
 // header-only fix (detecting it would require a format-specific chunk scan
-// per decoder), so these models take the fail-large default instead. The cost
-// is rejecting greyscale images above ~50 MP, which the rationale above
-// already accepts.
+// per decoder), so these models take the fail-large default instead.
+//
+// THIS DOES REGRESS ONE REAL CASE, stated plainly rather than waved past.
+// Greyscale is not PNG-only: image/jpeg's DecodeConfig switches on component
+// count and reports GrayModel for a single-component JPEG, so greyscale
+// artwork in EITHER format is now estimated at 8 B/px and rejected between
+// ~50 MP and the 100 MP pixel cap -- roughly above 7000x7000. For scale, a 4K
+// backdrop is 8.3 MP and this package's own low-resolution floors are
+// 960x540 (fanart), 758x140 (banner) and 400x155 (logo), three orders of
+// magnitude below the new threshold. Nothing this application handles sits in
+// that band, and the alternative is the 800 MB allocation above.
 func bytesPerPixel(m color.Model) int64 {
 	switch m {
 	case color.RGBA64Model, color.NRGBA64Model:
