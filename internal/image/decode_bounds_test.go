@@ -567,9 +567,9 @@ func TestDecodeSlot_PeakConcurrencyRespectsLimit(t *testing.T) {
 // ErrDecodeBusy rather than proceeding to allocate.
 func TestDecodeWithLimit_AcquiresASlot(t *testing.T) {
 	withDecodeLimit(t, 1)
-	prevTimeout := decodeAcquireTimeout
-	decodeAcquireTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { decodeAcquireTimeout = prevTimeout })
+	prevTimeout := decodeAcquireTimeout.Load()
+	decodeAcquireTimeout.Store(int64(50 * time.Millisecond))
+	t.Cleanup(func() { decodeAcquireTimeout.Store(prevTimeout) })
 
 	data := encodeImage(t, solidImage(32, 32, color.RGBA{R: 10, G: 20, B: 30, A: 255}))
 
@@ -605,9 +605,9 @@ func TestDecodeWithLimit_AcquiresASlot(t *testing.T) {
 // attacker could saturate the bound with 50-byte files.
 func TestDecodeWithLimit_RejectedInputConsumesNoSlot(t *testing.T) {
 	withDecodeLimit(t, 1)
-	prevTimeout := decodeAcquireTimeout
-	decodeAcquireTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { decodeAcquireTimeout = prevTimeout })
+	prevTimeout := decodeAcquireTimeout.Load()
+	decodeAcquireTimeout.Store(int64(50 * time.Millisecond))
+	t.Cleanup(func() { decodeAcquireTimeout.Store(prevTimeout) })
 
 	release, err := acquireDecodeSlot()
 	if err != nil {
@@ -782,9 +782,9 @@ func TestDecodeWithLimit_LiveDecodedImagesRespectLimit(t *testing.T) {
 // raised the effective bound.
 func TestDecodeWithLimit_ReleaseIsIdempotent(t *testing.T) {
 	withDecodeLimit(t, 1)
-	prevTimeout := decodeAcquireTimeout
-	decodeAcquireTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { decodeAcquireTimeout = prevTimeout })
+	prevTimeout := decodeAcquireTimeout.Load()
+	decodeAcquireTimeout.Store(int64(50 * time.Millisecond))
+	t.Cleanup(func() { decodeAcquireTimeout.Store(prevTimeout) })
 
 	data := encodeImage(t, solidImage(32, 32, color.RGBA{R: 1, G: 2, B: 3, A: 255}))
 
@@ -816,9 +816,9 @@ func TestDecodeWithLimit_ReleaseIsIdempotent(t *testing.T) {
 // process, so it is asserted directly rather than inferred.
 func TestDecodeWithLimit_FailedDecodeReleasesItsSlot(t *testing.T) {
 	withDecodeLimit(t, 1)
-	prevTimeout := decodeAcquireTimeout
-	decodeAcquireTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { decodeAcquireTimeout = prevTimeout })
+	prevTimeout := decodeAcquireTimeout.Load()
+	decodeAcquireTimeout.Store(int64(50 * time.Millisecond))
+	t.Cleanup(func() { decodeAcquireTimeout.Store(prevTimeout) })
 
 	// A header-only PNG: it passes every pre-decode guard (so a slot IS
 	// acquired) and then fails inside image.Decode on the missing pixel data.
@@ -882,5 +882,53 @@ func TestGreyscaleJPEG_ReportsGrayModel(t *testing.T) {
 	}
 	if _, ok := img.(*image.Gray); !ok {
 		t.Errorf("greyscale JPEG decoded to %T, want *image.Gray; if the decoder now allocates something wider this stops being a safe over-estimate and becomes the tRNS defect in a second format", img)
+	}
+}
+
+// TestDecodeWithLimit_RejectsZeroDimensions covers the `w <= 0 || h <= 0`
+// guard in decodeWithLimit (processor.go), which every other pre-decode
+// guard in this file already has a targeted fixture for. It is load-bearing:
+// the decoded-footprint check a few lines below it divides by w, so a
+// zero-width header that reached that far would panic on an integer divide
+// by zero on the request goroutine instead of returning a rejection.
+//
+// NOTE: for a PNG fixture, image/png's own DecodeConfig rejects a
+// non-positive dimension ("png: invalid format: non-positive dimension")
+// before decodeWithLimit's own guard is ever reached -- confirmed by probing
+// image.DecodeConfig directly against these fixtures. That makes this test
+// pin the observable behavior (zero dimensions are rejected before any
+// buffer is allocated), not the specific guard at processor.go:739-741. The
+// `w <= 0 || h <= 0` guard is still real defense in depth: this package also
+// registers JPEG and WebP decoders (see the blank imports elsewhere in this
+// package), and nothing here guarantees every registered decoder's own
+// DecodeConfig rejects a zero dimension the way image/png's does. Removing
+// the guard would not fail this PNG-fixture test, but it would remove the
+// only line standing between a permissive decoder and the divide-by-zero
+// below it.
+func TestDecodeWithLimit_RejectsZeroDimensions(t *testing.T) {
+	cases := []struct {
+		name string
+		w, h uint32
+	}{
+		{"zero width", 0, 100},
+		{"zero height", 100, 0},
+		{"both zero", 0, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := pngHeaderWithDepth(t, tc.w, tc.h, 8)
+
+			_, release, err := decodeWithLimit(bytes.NewReader(data))
+			defer release()
+			if err == nil {
+				t.Fatalf("expected rejection of a %dx%d image, got nil", tc.w, tc.h)
+			}
+			// image/png's DecodeConfig rejects a non-positive dimension itself,
+			// ahead of decodeWithLimit's own `w <= 0 || h <= 0` guard -- see the
+			// doc comment above. Assert on the layer that actually fires.
+			if !strings.Contains(err.Error(), "decoding image config") {
+				t.Errorf("error = %q, want it to mention %q (i.e. rejected while parsing the header, before any pixel buffer is allocated)", err.Error(), "decoding image config")
+			}
+		})
 	}
 }

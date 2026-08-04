@@ -77,9 +77,24 @@ const (
 	defaultDecodeAcquireTimeout = 30 * time.Second
 )
 
-// decodeAcquireTimeout is a var, not a const, solely so tests can shorten it.
-// Nothing in production ever writes it.
-var decodeAcquireTimeout = defaultDecodeAcquireTimeout
+// decodeAcquireTimeout is an atomic, not a const, solely so tests can shorten
+// it. Nothing in production ever writes it. It is atomic rather than a plain
+// var for the same reason decodeSem is: tests assign it from the goroutine
+// running the test body while acquireDecodeSlot reads it from decoding
+// goroutines that can outlive that assignment, and a plain var under that
+// access pattern is a data race waiting on test shape rather than on the
+// variable itself -- today's tests happen to join before restoring it, but
+// nothing enforces that for a future test.
+var decodeAcquireTimeout atomic.Int64
+
+func init() {
+	decodeAcquireTimeout.Store(int64(defaultDecodeAcquireTimeout))
+}
+
+// acquireTimeout returns the current decode-slot acquire timeout.
+func acquireTimeout() time.Duration {
+	return time.Duration(decodeAcquireTimeout.Load())
+}
 
 // ErrDecodeBusy is returned when no decode slot became available within
 // decodeAcquireTimeout. It is a load-shedding signal, not a corrupt-input
@@ -149,12 +164,13 @@ func acquireDecodeSlot() (release func(), err error) {
 	default:
 	}
 
-	timer := time.NewTimer(decodeAcquireTimeout)
+	timeout := acquireTimeout()
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case sem <- struct{}{}:
 		return func() { <-sem }, nil
 	case <-timer.C:
-		return nil, fmt.Errorf("%w (limit %d, waited %s)", ErrDecodeBusy, MaxConcurrentDecodes(), decodeAcquireTimeout)
+		return nil, fmt.Errorf("%w (limit %d, waited %s)", ErrDecodeBusy, MaxConcurrentDecodes(), timeout)
 	}
 }
