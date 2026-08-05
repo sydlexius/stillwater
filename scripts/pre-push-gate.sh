@@ -379,6 +379,47 @@ if ! command -v golangci-lint >/dev/null 2>&1; then
   echo "FAIL: golangci-lint not in PATH (install: brew install golangci-lint)" >&2
   exit 1
 fi
+
+# A REMOVED WORKTREE POISONS THE SHARED LINT CACHE. golangci-lint's cache is
+# USER-GLOBAL (~/Library/Caches/golangci-lint on macOS), not per-worktree and not
+# per-repo, so deleting one worktree leaves entries keyed to paths that no longer
+# exist. The next gate in a SIBLING worktree then reports findings against files
+# it cannot open.
+#
+# The cost is misdirection, not just time: the findings are not real, but they
+# fail the gate, and the natural response is to hunt a bug in code that is fine.
+# Measured in the sibling canticle repo on 2026-08-05: three blocked gate runs in
+# one session -- one of them a release tag push -- with 107 findings on the worst
+# occurrence, every one naming a path inside a removed directory and zero in the
+# working tree. Ported from sydlexius/canticle#738.
+#
+# Detected HERE rather than at the removal site on purpose: worktrees are removed
+# by tooling maintained outside this repo, so no local target or wrapper can hook
+# it reliably. The roster lives under the COMMON git dir, shared by every worktree
+# of this clone, so a removal recorded by one gate run is visible to the next run
+# in any sibling.
+#
+# Cleans only on a DISAPPEARANCE. Adding a worktree is harmless, and cleaning
+# unconditionally would discard a warm cache on every run -- lint is one of the
+# slowest steps in this gate, so that trade is deliberate.
+WT_ROSTER="$(git rev-parse --git-common-dir)/golangci-worktree-roster"
+# STRIP THE PREFIX, do not field-split. `awk '{print $2}'` truncates a path at the
+# first space, and a truncated path never matches the live list -- so it reads as
+# "removed" on EVERY run and would clean the cache every time, silently
+# destroying the warm-cache trade above. LC_ALL=C throughout because comm requires
+# both inputs in the SAME collation and the roster outlives the run that wrote it.
+WT_NOW="$(git worktree list --porcelain | sed -n 's/^worktree //p' | LC_ALL=C sort)"
+if [ -f "$WT_ROSTER" ]; then
+  # comm -23 prints lines unique to the first (recorded) side: paths that were
+  # present at the last gate run and are gone now.
+  if WT_GONE="$(LC_ALL=C comm -23 "$WT_ROSTER" <(printf '%s\n' "$WT_NOW"))" && [ -n "$WT_GONE" ]; then
+    echo "==> worktree removed since the last gate run; cleaning the shared lint cache:"
+    printf '%s\n' "$WT_GONE" | sed 's/^/      - /'
+    golangci-lint cache clean || echo "    WARNING: cache clean failed; phantom findings may follow" >&2
+  fi
+fi
+printf '%s\n' "$WT_NOW" > "$WT_ROSTER"
+
 golangci-lint run --new-from-rev="$BASE" ./...
 
 # Second pass: re-lint the touched Go files with measurement linters that
