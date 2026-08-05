@@ -418,7 +418,29 @@ if [ -f "$WT_ROSTER" ]; then
     golangci-lint cache clean || echo "    WARNING: cache clean failed; phantom findings may follow" >&2
   fi
 fi
-printf '%s\n' "$WT_NOW" > "$WT_ROSTER"
+# WRITE THE ROSTER ATOMICALLY AND BEST-EFFORT. Two distinct failures, both fatal
+# in the obvious `printf ... > "$WT_ROSTER"` form:
+#   - `set -e` is on, so an unwritable roster (read-only home, full disk) aborts
+#     the WHOLE gate before lint even runs. Roster bookkeeping is an optimization
+#     for the NEXT run; it must never block this push. Warn and continue, exactly
+#     as the `cache clean` failure above does.
+#   - `>` truncates in place, so a gate running concurrently in a sibling worktree
+#     can read an empty or partial roster and see every live worktree as removed,
+#     wiping the warm cache the block above exists to protect. rename(2) within one
+#     directory is atomic, so a concurrent reader gets either the old roster or the
+#     new one, never a half-written one. The temp file is created in the same
+#     directory for that reason -- a cross-filesystem mv would copy, not rename.
+# The chain sits in an `if` CONDITION because commands there are exempt from
+# errexit; as bare statements each failure would abort the gate again.
+WT_ROSTER_TMP="$(mktemp "${WT_ROSTER}.XXXXXX" 2>/dev/null || true)"
+if [ -n "$WT_ROSTER_TMP" ] &&
+  printf '%s\n' "$WT_NOW" >"$WT_ROSTER_TMP" &&
+  mv -f "$WT_ROSTER_TMP" "$WT_ROSTER"; then
+  :
+else
+  [ -n "$WT_ROSTER_TMP" ] && rm -f "$WT_ROSTER_TMP"
+  echo "    WARNING: could not update the worktree roster ($WT_ROSTER); a worktree removed before the next gate run may go undetected" >&2
+fi
 
 golangci-lint run --new-from-rev="$BASE" ./...
 
