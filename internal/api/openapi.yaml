@@ -7394,7 +7394,7 @@ paths:
       operationId: getBulkActionStatus
       responses:
         "200":
-          description: Returns live progress while a bulk action is running, or the most recent terminal snapshot (completed, failed, or canceled) once it has finished. Returns status=idle only when no snapshot exists yet (process has never run a bulk action since startup).
+          description: Returns live progress while a bulk action is running, or the most recent terminal snapshot (completed, failed, canceled, or timed_out) once it has finished. Returns status=idle only when no snapshot exists yet (process has never run a bulk action since startup).
           content:
             application/json:
               schema:
@@ -7402,7 +7402,14 @@ paths:
                 properties:
                   status:
                     type: string
-                    enum: [idle, running, completed, failed, canceled]
+                    enum: [idle, running, completed, failed, canceled, timed_out]
+                    description: >
+                      timed_out means the run hit the server's bulk-action work
+                      deadline with artists still outstanding and was ended so
+                      the singleton slot is released. It is distinct from
+                      canceled (an operator stopped it) and from completed: the
+                      processed count is below total and the remaining artists
+                      were not attempted.
                   action:
                     type: string
                     enum: [run_rules, re_identify_auto, scan, fetch_images, refresh_metadata, lock, unlock]

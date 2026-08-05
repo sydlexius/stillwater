@@ -205,10 +205,45 @@ func TestPublishOpProgress_ProcessedClampedToTotal(t *testing.T) {
 	}
 }
 
+// TestPublishOpProgress_TimedOutIsEmittedNotDropped guards #2931's UI half.
+// The bulk-action deadline records status "timed_out", and this validator is
+// the only thing between that value and the pill. When "timed_out" was missing
+// from the allow-list the event was dropped with nothing but a log warning, so
+// a run that timed out left the pill spinning forever -- the exact
+// "silently went quiet" outcome the distinct terminal state exists to prevent.
+//
+// Asserts the emitted payload, not merely that an event arrived: a status that
+// survived the guard but reached the client under a different value would fail
+// the pill's status branch just as completely.
+func TestPublishOpProgress_TimedOutIsEmittedNotDropped(t *testing.T) {
+	t.Parallel()
+	r, snap, stop := newRecorderRouter(t)
+	defer stop()
+	// A timed-out run stopped short, so processed < total here, matching
+	// what runBulkAction publishes on the deadline path.
+	r.publishOpProgress("bulk_action", "run_rules", 10, 4, "timed_out", "/api/v1/artists/bulk-actions/cancel")
+	got := waitForEventCount(t, snap, 1, time.Second)
+	if len(got) != 1 {
+		t.Fatalf("events = %d, want 1 (timed_out must not be dropped)", len(got))
+	}
+	if got[0].Data["status"] != "timed_out" {
+		t.Errorf("status = %v, want timed_out", got[0].Data["status"])
+	}
+	if got[0].Data["processed"] != 4 {
+		t.Errorf("processed = %v, want 4 (a timed-out run must not claim full progress)", got[0].Data["processed"])
+	}
+	// timed_out is terminal: a Cancel button on a run that already ended
+	// would POST to the cancel endpoint and get a 409.
+	if v, present := got[0].Data["cancel_url"]; present {
+		t.Errorf("cancel_url present on terminal timed_out event: %v", v)
+	}
+}
+
 // TestPublishOpProgress_InvalidStatusDropped: an unknown status string
 // would render a pill stuck in an unknown state because the JS only
-// branches on the canonical four (running, completed, failed, canceled).
-// The guard drops the event entirely rather than emit a malformed one.
+// branches on the canonical set (running, completed, failed, canceled,
+// timed_out). The guard drops the event entirely rather than emit a
+// malformed one.
 func TestPublishOpProgress_InvalidStatusDropped(t *testing.T) {
 	t.Parallel()
 	r, snap, stop := newRecorderRouter(t)

@@ -351,7 +351,14 @@
           status: "running",
           cancel_url: base + "/api/v1/artists/bulk-actions/cancel"
         });
-      } else if (status === "completed" || status === "failed" || status === "canceled") {
+      } else if (status === "completed" || status === "failed" ||
+        status === "canceled" || status === "timed_out") {
+        // timed_out belongs here for the reason this rehydrate exists at
+        // all: a run that ends while nobody is looking must still be
+        // visible on the next page load. Omitting it would drop the pill
+        // on exactly the case an operator most needs to see -- they
+        // stepped away, the pass ran out of time, and the reload would
+        // show nothing at all.
         window.swProgressPill.push({
           op_id: "bulk_action",
           label: snap.action || "",
