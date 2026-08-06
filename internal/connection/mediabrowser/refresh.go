@@ -78,6 +78,50 @@ func postNoBody(ctx context.Context, t Transport, path string) error {
 	return nil
 }
 
+// ErrItemNotFound marks a fetch that reached the peer, got a well-formed
+// answer, and that answer was "no such item". It is the ONLY not-found signal
+// callers may act on, and it exists so a caller can tell "the item is gone"
+// apart from "the request failed" WITHOUT matching on error text.
+//
+// WHY A SENTINEL AND NOT A STRING: a caller deciding whether to DESTROY state
+// (drop a stored platform link, #2426) has to distinguish absence from
+// failure. Before this, both arrived as untyped fmt.Errorf values, so the only
+// available discriminator was a substring match on an error message -- a
+// predicate that silently becomes wrong the day a message is reworded, while
+// still compiling and still passing its tests. The failure mode is deleting a
+// good link because a peer returned 500. Match with errors.Is, never on text.
+//
+// WHAT THIS DELIBERATELY EXCLUDES is as important as what it covers:
+//
+//   - Any non-2xx status. A 500/502/401 says nothing about whether the item
+//     exists; it says the question was not answered.
+//   - A null Items[0] payload. See ErrItemAmbiguousPayload -- the peer returns
+//     that shape for BOTH a tombstoned record and an access-denied one, and
+//     those warrant opposite conclusions.
+//   - A transport or decode failure, for the same reason as the first case.
+//
+// So this is a positive allow-list of ONE proven state: the peer answered 200,
+// the response decoded, and the Items array was empty. Everything else stays a
+// plain error, which a fail-closed caller treats as "keep what you have".
+var ErrItemNotFound = errors.New("mediabrowser: item not found")
+
+// ErrItemAmbiguousPayload marks the peer returning a null Items[0]: a
+// well-formed 200 whose single element is JSON null.
+//
+// This is SEPARATE from ErrItemNotFound on purpose, and collapsing the two
+// would be a latent data-loss bug rather than a tidy-up. The peer produces
+// this shape for a tombstoned record AND for one the caller may not see, and
+// those demand opposite responses: the first means the link is dead, the
+// second means the API key lost permission and the link is fine. Nothing in
+// the response distinguishes them, so neither conclusion is available and the
+// only correct answer is "I do not know".
+//
+// It is exported anyway rather than left an anonymous error, so a caller can
+// recognize and report the ambiguity precisely ("the peer will not say")
+// instead of lumping it in with transport noise. A caller must NEVER treat it
+// as evidence of absence.
+var ErrItemAmbiguousPayload = errors.New("mediabrowser: item returned a null payload (tombstoned or access-denied; indistinguishable)")
+
 // FetchItemRaw retrieves a single item by ID as a generic map, via
 // GET /Items?Ids={id}&Fields={fields}. This is Jellyfin's private fetchItem
 // promoted to a shared free function and migrated onto Transport.Do (it
@@ -118,13 +162,18 @@ func FetchItemRaw(ctx context.Context, t Transport, itemID, fields string, class
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if len(result.Items) == 0 {
-		return nil, fmt.Errorf("item %s not found", itemID)
+		// The one state that IS proof of absence: the peer answered, the body
+		// decoded, and it holds no item. Wrapped so callers match with errors.Is
+		// while the message keeps the id for logs.
+		return nil, fmt.Errorf("item %s: %w", itemID, ErrItemNotFound)
 	}
 	// The peer can legitimately return a null Items[0] for a tombstoned or
-	// access-denied record. Treat it as "not found" rather than returning a
-	// nil map that would panic on the caller's first write.
+	// access-denied record. These warrant OPPOSITE conclusions and the response
+	// cannot tell them apart, so this is explicitly NOT ErrItemNotFound: a
+	// caller that would destroy state on absence must treat it as unknown and
+	// keep what it has. See ErrItemAmbiguousPayload.
 	if result.Items[0] == nil {
-		return nil, fmt.Errorf("item %s returned null payload", itemID)
+		return nil, fmt.Errorf("item %s: %w", itemID, ErrItemAmbiguousPayload)
 	}
 	return result.Items[0], nil
 }
