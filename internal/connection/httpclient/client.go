@@ -52,6 +52,13 @@ func (e *StatusError) IsAuth() bool {
 	return e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden
 }
 
+// IsNotFound reports whether the status code is 404 or 410, i.e. the peer
+// gave a definitive "this resource does not exist" answer rather than an
+// indeterminate failure.
+func (e *StatusError) IsNotFound() bool {
+	return e.StatusCode == http.StatusNotFound || e.StatusCode == http.StatusGone
+}
+
 // readErrorBody reads up to 1 KB of body for use in error messages, then
 // drains any remaining bytes so the HTTP transport can reuse the connection.
 func readErrorBody(r io.Reader) string {
