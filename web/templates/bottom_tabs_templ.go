@@ -8,6 +8,12 @@ package templates
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
+import (
+	"context"
+
+	"github.com/sydlexius/stillwater/web/components"
+)
+
 // isTabActive returns true when the current path matches the tab's route.
 // currentPath should have the base path already stripped.
 func isTabActive(currentPath, tabPath string) bool {
@@ -27,7 +33,8 @@ func isTabActive(currentPath, tabPath string) bool {
 // BottomTabs renders a fixed bottom navigation bar for mobile viewports.
 // bp is the server base path (e.g. "/stillwater"), empty at root.
 // currentPath is the request path with the base path stripped.
-// isAdmin controls visibility of the Settings tab.
+// isAdmin controls visibility of the Settings tab and the admin-only entries
+// in the More sheet (#2382).
 func BottomTabs(bp string, currentPath string, isAdmin bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -56,7 +63,7 @@ func BottomTabs(bp string, currentPath string, isAdmin bool) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.mobile_navigation"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 25, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 32, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
@@ -84,12 +91,137 @@ func BottomTabs(bp string, currentPath string, isAdmin bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
+		templ_7745c5c3_Err = moreTab().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</nav>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.BottomSheet("more-nav", t(ctx, "nav.more_menu"), moreTabItems(ctx, bp, isAdmin)).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		return nil
 	})
+}
+
+// moreTab renders the 5th "More" bottom tab, which opens the overflow sheet
+// listing every sidebar destination not covered by the four primary tabs
+// (#2382). It is a button, not a link: the sidebar itself is display:none at
+// mobile widths, so the sheet is the only affordance for the low-frequency
+// destinations, the theme toggle, help, and Log Out.
+func moreTab() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var3 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var3 == nil {
+			templ_7745c5c3_Var3 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, components.OpenBottomSheet("more-nav"))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<button type=\"button\" class=\"sw-bottom-tab\" aria-haspopup=\"true\" aria-expanded=\"false\" aria-controls=\"bs-more-nav\" onclick=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var4 templ.ComponentScript = components.OpenBottomSheet("more-nav")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4.Call)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = moreIcon().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<span class=\"sw-bottom-tab-label\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "nav.more"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 61, Col: 56}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</span></button>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// moreTabItems builds the More sheet's item list: every sidebar destination
+// that is not one of the four primary bottom tabs (Dashboard, Artists,
+// Compliance, Settings). Mirrors sidebar.templ's admin gating -- the
+// admin-only items here are the same set the sidebar hides from non-admins
+// (Duplicates, the whole Images section, Logs), plus the sidebar's
+// bottom-bar actions (Preferences, theme, help, Log Out) which are
+// universal. The Images-section entries are pinned here as static links
+// (unlike the sidebar's HTMX-hydrated, count-gated placeholders) because the
+// sheet has no polling budget of its own; each destination is reachable
+// regardless of whether it currently has violations. Per-platform Duplicates
+// rows in the sidebar (one per offending connection type) all resolve to the
+// same /reports/platform-backdrop-duplicates page (see
+// duplicate_images_nav.templ), so one static link here covers every platform.
+func moreTabItems(ctx context.Context, bp string, isAdmin bool) []components.BottomSheetItemData {
+	items := []components.BottomSheetItemData{
+		{Label: t(ctx, "reports.page_title"), Icon: components.IconChartBar("h-5 w-5"), Href: bp + "/reports"},
+	}
+	if isAdmin {
+		items = append(items,
+			components.BottomSheetItemData{Label: t(ctx, "nav.reports.duplicates"), Icon: components.IconPhotoStack("h-5 w-5"), Href: bp + "/reports/duplicates"},
+			components.BottomSheetItemData{Label: t(ctx, "nav.images.unmatched"), Icon: components.IconPhoto("h-5 w-5"), Href: bp + "/reports/foreign-files"},
+			components.BottomSheetItemData{Label: t(ctx, "nav.images.library_duplicates"), Icon: components.IconPhotoStack("h-5 w-5"), Href: bp + "/reports/backdrop-duplicates"},
+			components.BottomSheetItemData{Label: t(ctx, "nav.reports.platform_backdrop_duplicates"), Icon: components.IconPhotoStack("h-5 w-5"), Href: bp + "/reports/platform-backdrop-duplicates"},
+		)
+	}
+	items = append(items, components.BottomSheetItemData{Label: t(ctx, "nav.activity"), Icon: components.IconActivity("h-5 w-5"), Href: bp + "/activity"})
+	if isAdmin {
+		items = append(items, components.BottomSheetItemData{Label: t(ctx, "nav.logs"), Icon: components.IconDocumentText("h-5 w-5"), Href: bp + "/logs"})
+	}
+	items = append(items,
+		components.BottomSheetItemData{Label: t(ctx, "nav.preferences"), Icon: components.IconAdjustmentsHorizontal("h-5 w-5"), OnClick: openPreferencesFromSheet()},
+		components.BottomSheetItemData{Label: t(ctx, "nav.cycle_theme"), Icon: components.IconSun("h-5 w-5"), OnClick: cycleThemeFromSheet()},
+		components.BottomSheetItemData{Label: t(ctx, "nav.help_shortcuts"), Icon: components.IconQuestionMarkCircle("h-5 w-5"), OnClick: openHelpFromSheet()},
+		components.BottomSheetItemData{
+			Label:       t(ctx, "nav.logout"),
+			Icon:        components.IconArrowRightOnRectangle("h-5 w-5"),
+			Destructive: true,
+			HXPost:      "/api/v1/auth/logout",
+			HXRedirect:  bp + "/",
+			// Mirrors the sidebar's logout (sidebar.templ): clear the cached
+			// preferences BEFORE the request so the next user on a shared
+			// device does not see the previous user's appearance settings.
+			// At mobile widths this is the only Log Out there is.
+			HXOnBeforeRequest: "if(window.swPreferences)swPreferences.clearCache()",
+		},
+	)
+	return items
 }
 
 // bottomTab renders a single tab link in the bottom navigation bar.
@@ -112,53 +244,53 @@ func bottomTab(bp string, href string, matchPath string, currentPath string, lab
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var3 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var3 == nil {
-			templ_7745c5c3_Var3 = templ.NopComponent
+		templ_7745c5c3_Var6 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var6 == nil {
+			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var4 = []any{"sw-bottom-tab", templ.KV("sw-bottom-tab-active", isTabActive(currentPath, matchPath))}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var4...)
+		var templ_7745c5c3_Var7 = []any{"sw-bottom-tab", templ.KV("sw-bottom-tab-active", isTabActive(currentPath, matchPath))}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var7...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var5 templ.SafeURL
-		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + href))
+		var templ_7745c5c3_Var8 templ.SafeURL
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + href))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 43, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 120, Col: 33}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var4).String())
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var9 string
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var7).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if isTabActive(currentPath, matchPath) {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, " aria-current=\"page\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " aria-current=\"page\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, ">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -166,20 +298,20 @@ func bottomTab(bp string, href string, matchPath string, currentPath string, lab
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<span class=\"sw-bottom-tab-label\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<span class=\"sw-bottom-tab-label\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var7 string
-		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		var templ_7745c5c3_Var10 string
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 50, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 127, Col: 43}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</span></a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</span></a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -204,12 +336,12 @@ func dashboardIcon() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var8 == nil {
-			templ_7745c5c3_Var8 = templ.NopComponent
+		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var11 == nil {
+			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<svg class=\"sw-bottom-tab-icon\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z\"></path></svg>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<svg class=\"sw-bottom-tab-icon\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z\"></path></svg>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -233,12 +365,12 @@ func artistsIcon() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var9 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var9 == nil {
-			templ_7745c5c3_Var9 = templ.NopComponent
+		templ_7745c5c3_Var12 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var12 == nil {
+			templ_7745c5c3_Var12 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<svg class=\"sw-bottom-tab-icon\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5l-10.5 3v6.553m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 13.553z\"></path></svg>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<svg class=\"sw-bottom-tab-icon\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5l-10.5 3v6.553m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 13.553z\"></path></svg>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -262,12 +394,12 @@ func reportsIcon() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var10 == nil {
-			templ_7745c5c3_Var10 = templ.NopComponent
+		templ_7745c5c3_Var13 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var13 == nil {
+			templ_7745c5c3_Var13 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<svg class=\"sw-bottom-tab-icon\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z\"></path></svg>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<svg class=\"sw-bottom-tab-icon\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z\"></path></svg>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -291,17 +423,145 @@ func settingsIcon() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var11 == nil {
-			templ_7745c5c3_Var11 = templ.NopComponent
+		templ_7745c5c3_Var14 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var14 == nil {
+			templ_7745c5c3_Var14 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<svg class=\"sw-bottom-tab-icon\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z\"></path> <path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15 12a3 3 0 11-6 0 3 3 0 016 0z\"></path></svg>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<svg class=\"sw-bottom-tab-icon\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z\"></path> <path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15 12a3 3 0 11-6 0 3 3 0 016 0z\"></path></svg>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		return nil
 	})
+}
+
+// moreIcon renders the Heroicons "ellipsis-horizontal-circle" outline icon
+// (24x24) for the More tab -- distinct from the four solid destination icons
+// so the overflow affordance reads visually as "more", not a fifth page.
+func moreIcon() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var15 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var15 == nil {
+			templ_7745c5c3_Var15 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<svg class=\"sw-bottom-tab-icon\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M8.25 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM17.25 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z\"></path> <path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 21a9 9 0 100-18 9 9 0 000 18Z\"></path></svg>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// openPreferencesFromSheet closes the More sheet and opens the preferences
+// drawer. window.swPrefsDrawer is wired unconditionally by prefs-drawer.js
+// (see wireTriggers() there); its absence would mean the script failed to
+// load, which is a real defect worth surfacing rather than swallowing.
+func openPreferencesFromSheet() templ.ComponentScript {
+	return templ.ComponentScript{
+		Name: `__templ_openPreferencesFromSheet_d49f`,
+		Function: `function __templ_openPreferencesFromSheet_d49f(){// Close the sheet INLINE. A templ ` + "`" + `script` + "`" + ` block compiles to a
+	// hash-suffixed global (__templ_<name>_<hash>), so calling a sibling
+	// script by its source name throws ReferenceError -- and a block that is
+	// never used as an OnClick is never emitted into the page at all, so the
+	// function does not exist under any name. Both of those were true of the
+	// former closeMoreSheet helper, which made this handler throw on its first
+	// line and never reach the code below (#2382 review).
+	var sheet = document.getElementById('bs-more-nav');
+	if (sheet) {
+		var trigger = sheet._trigger;
+		sheet.classList.remove('ctx-sheet-open');
+		sheet.setAttribute('aria-hidden', 'true');
+		sheet.setAttribute('inert', '');
+		document.body.classList.remove('ctx-sheet-body-lock');
+		if (trigger && typeof trigger.setAttribute === 'function') {
+			trigger.setAttribute('aria-expanded', 'false');
+		}
+		// Park focus on the trigger BEFORE opening the drawer. prefs-drawer.js
+		// open() snapshots document.activeElement into _lastFocusedBefore and
+		// restores it on close; closing the sheet above just made the focused
+		// sheet item inert, so without this the drawer memorizes an inert
+		// element and close() has nowhere to send focus back to (#2382 review).
+		if (trigger && typeof trigger.focus === 'function') {
+			trigger.focus();
+		}
+	}
+	if (window.swPrefsDrawer && typeof window.swPrefsDrawer.open === 'function') {
+		window.swPrefsDrawer.open();
+	} else {
+		console.error('More sheet: window.swPrefsDrawer.open unavailable; cannot open preferences');
+	}
+}`,
+		Call:       templ.SafeScript(`__templ_openPreferencesFromSheet_d49f`),
+		CallInline: templ.SafeScriptInline(`__templ_openPreferencesFromSheet_d49f`),
+	}
+}
+
+// cycleThemeFromSheet cycles the color theme via the same handler the
+// sidebar's desktop theme button uses (window.swSidebar.cycleTheme), so
+// mobile and desktop stay on one code path. Leaves the sheet open: the
+// visible feedback is the theme itself changing, and closing would hide that.
+func cycleThemeFromSheet() templ.ComponentScript {
+	return templ.ComponentScript{
+		Name: `__templ_cycleThemeFromSheet_0b23`,
+		Function: `function __templ_cycleThemeFromSheet_0b23(){if (window.swSidebar && typeof window.swSidebar.cycleTheme === 'function') {
+		window.swSidebar.cycleTheme();
+	} else {
+		console.error('More sheet: window.swSidebar.cycleTheme unavailable; cannot cycle theme');
+	}
+}`,
+		Call:       templ.SafeScript(`__templ_cycleThemeFromSheet_0b23`),
+		CallInline: templ.SafeScriptInline(`__templ_cycleThemeFromSheet_0b23`),
+	}
+}
+
+// openHelpFromSheet closes the More sheet and opens the keyboard-shortcuts
+// help overlay via the same global the desktop sidebar's help button uses.
+func openHelpFromSheet() templ.ComponentScript {
+	return templ.ComponentScript{
+		Name: `__templ_openHelpFromSheet_82c8`,
+		Function: `function __templ_openHelpFromSheet_82c8(){// Close the sheet INLINE. A templ ` + "`" + `script` + "`" + ` block compiles to a
+	// hash-suffixed global (__templ_<name>_<hash>), so calling a sibling
+	// script by its source name throws ReferenceError -- and a block that is
+	// never used as an OnClick is never emitted into the page at all, so the
+	// function does not exist under any name. Both of those were true of the
+	// former closeMoreSheet helper, which made this handler throw on its first
+	// line and never reach the code below (#2382 review).
+	var sheet = document.getElementById('bs-more-nav');
+	if (sheet) {
+		var trigger = sheet._trigger;
+		sheet.classList.remove('ctx-sheet-open');
+		sheet.setAttribute('aria-hidden', 'true');
+		sheet.setAttribute('inert', '');
+		document.body.classList.remove('ctx-sheet-body-lock');
+		if (trigger && typeof trigger.setAttribute === 'function') {
+			trigger.setAttribute('aria-expanded', 'false');
+		}
+	}
+	if (typeof window.toggleHelpOverlay === 'function') {
+		window.toggleHelpOverlay();
+	} else {
+		console.error('More sheet: window.toggleHelpOverlay unavailable; cannot open help');
+	}
+}`,
+		Call:       templ.SafeScript(`__templ_openHelpFromSheet_82c8`),
+		CallInline: templ.SafeScriptInline(`__templ_openHelpFromSheet_82c8`),
+	}
 }
 
 var _ = templruntime.GeneratedTemplate

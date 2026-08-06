@@ -198,7 +198,15 @@ script ToggleContextMenu(id string) {
 	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
 	if (!panel) return;
 
-	var isMobile = window.innerWidth < 768;
+	// <= 768, matching the CSS boundary exactly. Every layout rule in this app
+	// treats 768 as mobile (.sw-bottom-tabs and the sidebar both switch at
+	// `max-width: 768px`), and .ctx-desktop-panel / .ctx-bottom-sheet now do
+	// too. A `< 768` here would take the DESKTOP branch at exactly 768 and
+	// un-hide a panel that CSS hides at that width, leaving neither surface
+	// visible -- the same dead-affordance shape as #2382's More tab, on every
+	// other context menu. This is the fifth number in that lockstep; changing
+	// any one of them without this one reopens the gap.
+	var isMobile = window.innerWidth <= 768;
 	var isOpen = isMobile
 		? (sheet ? sheet.classList.contains('ctx-sheet-open') : false)
 		: !panel.classList.contains('hidden');
@@ -209,7 +217,6 @@ script ToggleContextMenu(id string) {
 			p.classList.remove('ctx-sheet-open');
 			p.setAttribute('aria-hidden', 'true');
 			p.setAttribute('inert', '');
-			document.body.classList.remove('ctx-sheet-body-lock');
 		} else {
 			p.classList.add('hidden');
 		}
@@ -219,7 +226,20 @@ script ToggleContextMenu(id string) {
 			var btn = parent.querySelector(':scope > button[aria-expanded]');
 			if (btn) btn.setAttribute('aria-expanded', 'false');
 		}
+		// A STANDALONE BottomSheet's trigger is not a DOM sibling (the mobile
+		// nav's More tab lives in the tab bar), so the sibling lookup above
+		// finds nothing and its aria-expanded would stay stuck at "true" after
+		// this loop closed the sheet. Clear it via the stored reference, the
+		// same way closeAllContextMenus already does (#2382 review).
+		if (p._trigger && typeof p._trigger.setAttribute === 'function') {
+			p._trigger.setAttribute('aria-expanded', 'false');
+		}
 	});
+	// Body lock re-derived from what is still open rather than removed
+	// per-sheet inside the loop, matching closeAllContextMenus.
+	if (!document.querySelector('.ctx-bottom-sheet.ctx-sheet-open')) {
+		document.body.classList.remove('ctx-sheet-body-lock');
+	}
 
 	if (!isOpen) {
 		if (isMobile && sheet) {
@@ -276,29 +296,68 @@ script CloseContextMenu(id string) {
 templ ContextMenuGlobalJS() {
 	<script>
 		(function() {
-			function closeAllContextMenus() {
+			// exceptId, when given, is the id of ONE sheet to leave alone. It
+			// exists so the click that opens a standalone sheet can still close
+			// every OTHER open menu: skipping the close entirely (the first
+			// shape of this fix) let a context-menu sheet and the nav sheet be
+			// open simultaneously, two aria-modal dialogs with neither inert.
+			function closeAllContextMenus(exceptId) {
 				document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden), .ctx-bottom-sheet.ctx-sheet-open').forEach(function(p) {
+					if (exceptId && p.id === exceptId) return;
 					if (p.classList.contains('ctx-bottom-sheet')) {
 						p.classList.remove('ctx-sheet-open');
 						p.setAttribute('aria-hidden', 'true');
 						p.setAttribute('inert', '');
-						document.body.classList.remove('ctx-sheet-body-lock');
 					} else {
 						p.classList.add('hidden');
 					}
-					// Walk up to find the trigger button sibling.
+					// Walk up to find the trigger button sibling (ContextMenu).
 					var parent = p.parentElement;
 					if (parent) {
 						var btn = parent.querySelector(':scope > button[aria-expanded]');
 						if (btn) btn.setAttribute('aria-expanded', 'false');
 					}
+					// A standalone BottomSheet's trigger is not a DOM sibling;
+					// clear it via the stored reference instead.
+					if (p._trigger && typeof p._trigger.setAttribute === 'function') {
+						p._trigger.setAttribute('aria-expanded', 'false');
+					}
 				});
+				// Re-derive the body lock from what is STILL open rather than
+				// clearing it per-sheet inside the loop. With exceptId in play a
+				// sheet can survive this call, and an unconditional remove let
+				// the page scroll behind a live modal.
+				if (!document.querySelector('.ctx-bottom-sheet.ctx-sheet-open')) {
+					document.body.classList.remove('ctx-sheet-body-lock');
+				}
 			}
 
 			document.addEventListener('click', function(e) {
 				if (!(e.target instanceof Element)) return;
 				var menu = e.target.closest('[data-context-menu]');
 				var bottomSheet = e.target.closest('.ctx-bottom-sheet');
+				// A STANDALONE BottomSheet's trigger (components.BottomSheet,
+				// e.g. the mobile nav's More tab) lives nowhere near its sheet:
+				// not inside [data-context-menu], not inside .ctx-bottom-sheet.
+				// Without this third case the very click that runs the trigger's
+				// onclick and opens the sheet ALSO bubbles here, reads as an
+				// outside click, and closes it again in the same gesture -- the
+				// sheet visibly never opens (#2382). A ContextMenu trigger never
+				// hit this because it sits inside [data-context-menu].
+				//
+				// Keyed on aria-controls pointing at a bs-* sheet rather than a
+				// new marker attribute, because that association already has to
+				// be correct for accessibility, so it cannot silently drift out
+				// of sync the way a duplicate marker could.
+				var sheetTrigger = e.target.closest('[aria-controls^="bs-"]');
+				var opening = sheetTrigger && sheetTrigger.getAttribute('aria-controls');
+				if (opening && document.getElementById(opening)) {
+					// Close everything EXCEPT the sheet this trigger opens. An
+					// unconditional `return` here would leave an already-open
+					// menu or sheet up alongside the new one.
+					closeAllContextMenus(opening);
+					return;
+				}
 				if (!menu && !bottomSheet) {
 					closeAllContextMenus();
 				}
@@ -313,10 +372,17 @@ templ ContextMenuGlobalJS() {
 						sheet.setAttribute('aria-hidden', 'true');
 						sheet.setAttribute('inert', '');
 						document.body.classList.remove('ctx-sheet-body-lock');
+						// Sibling-lookup covers ContextMenu triggers (button is a
+						// DOM sibling of the sheet); a standalone BottomSheet's
+						// trigger lives elsewhere in the tree, so also clear
+						// aria-expanded directly on the stored trigger reference.
 						var parent = sheet.parentElement;
 						if (parent) {
 							var btn = parent.querySelector(':scope > button[aria-expanded]');
 							if (btn) btn.setAttribute('aria-expanded', 'false');
+						}
+						if (t && typeof t.setAttribute === 'function') {
+							t.setAttribute('aria-expanded', 'false');
 						}
 						if (t) t.focus();
 					});
@@ -326,9 +392,30 @@ templ ContextMenuGlobalJS() {
 				// Focus trap for open bottom sheets: Tab and Shift+Tab cycle inside.
 				var openSheet = document.querySelector('.ctx-bottom-sheet.ctx-sheet-open');
 				if (openSheet && e.key === 'Tab') {
+					// a[href] MUST be included. A sheet's navigation rows are
+					// anchors, so omitting them made `first` resolve to the
+					// first BUTTON further down the list; Shift+Tab from any
+					// anchor then never matched `activeElement === first` and
+					// focus walked straight out of the sheet into the page
+					// behind it. The trap held going forward and leaked going
+					// backward, which reads as "trapped" in any test that only
+					// presses Tab (#2382 review).
+					// The disabled filter is NOT redundant with the selector.
+					// `a[href]` matches a disabled ANCHOR regardless of its
+					// tabindex="-1" -- an anchor has no `disabled` attribute, so
+					// BottomSheetItemData.Disabled marks it with aria-disabled +
+					// tabindex="-1" instead. Without this, a disabled link joins
+					// the cycle and Tab lands on something that does nothing.
 					var focusable = Array.prototype.slice.call(
-						openSheet.querySelectorAll('button:not([disabled]), [tabindex="0"]')
-					).filter(function(el) { return el.offsetParent !== null; });
+						openSheet.querySelectorAll(
+							'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+						)
+					).filter(function(el) {
+						if (el.offsetParent === null) return false;
+						if (el.getAttribute('aria-disabled') === 'true') return false;
+						if (el.getAttribute('tabindex') === '-1') return false;
+						return true;
+					});
 					if (focusable.length === 0) return;
 					var first = focusable[0];
 					var last = focusable[focusable.length - 1];
