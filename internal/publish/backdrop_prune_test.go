@@ -2,14 +2,18 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 )
 
 // TestNewBackdropPruneClient_SupportedTypes is primarily a compile-time proof
@@ -627,6 +631,123 @@ func (errDetailBackdropClient) DeleteImageAtIndex(_ context.Context, _ string, _
 	return fmt.Errorf("must not be called")
 }
 
+// statusDetailBackdropClient is a backdropPruneClient whose GetArtistDetail
+// always fails with a *httpclient.StatusError carrying the given status
+// code, so tests can exercise the 404/410-vs-everything-else classification
+// boundary in backdropRedundantIndices without a real HTTP round trip.
+type statusDetailBackdropClient struct{ status int }
+
+func (c statusDetailBackdropClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	return nil, &httpclient.StatusError{StatusCode: c.status, Body: "boom"}
+}
+
+func (statusDetailBackdropClient) GetArtistBackdrop(_ context.Context, _ string, _ int) ([]byte, string, error) {
+	return nil, "", fmt.Errorf("must not be called")
+}
+
+func (statusDetailBackdropClient) DeleteImageAtIndex(_ context.Context, _ string, _ string, _ int) error {
+	return fmt.Errorf("must not be called")
+}
+
+// perImageStatusBackdropClient's artist detail succeeds with backdropCount
+// backdrops, but GetArtistBackdrop returns a *httpclient.StatusError with the
+// given status at failIndex. Used to prove a per-image (as opposed to
+// artist-detail) 404 is NOT reclassified as absent -- only the artist-detail
+// lookup gets that treatment.
+type perImageStatusBackdropClient struct {
+	backdropCount int
+	failIndex     int
+	failStatus    int
+}
+
+func (c perImageStatusBackdropClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	return &connection.ArtistPlatformState{BackdropCount: c.backdropCount}, nil
+}
+
+func (c perImageStatusBackdropClient) GetArtistBackdrop(_ context.Context, _ string, i int) ([]byte, string, error) {
+	if i == c.failIndex {
+		return nil, "", &httpclient.StatusError{StatusCode: c.failStatus, Body: "boom"}
+	}
+	return []byte("AAA"), "image/jpeg", nil
+}
+
+func (perImageStatusBackdropClient) DeleteImageAtIndex(_ context.Context, _ string, _ string, _ int) error {
+	return fmt.Errorf("must not be called")
+}
+
+// TestBackdropRedundantIndices_NotFoundYieldsAbsentSentinel proves the
+// positive-only classification boundary: a 404 or 410 on the artist-detail
+// lookup must yield errArtistAbsentOnPlatform (zero count, no redundant
+// indices), never the generic "fetching artist detail" wrap.
+func TestBackdropRedundantIndices_NotFoundYieldsAbsentSentinel(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusGone} {
+		t.Run(fmt.Sprintf("status_%d", status), func(t *testing.T) {
+			fake := statusDetailBackdropClient{status: status}
+			redundant, total, err := backdropRedundantIndices(context.Background(), fake, "p1")
+			if !errors.Is(err, errArtistAbsentOnPlatform) {
+				t.Fatalf("err = %v, want errArtistAbsentOnPlatform", err)
+			}
+			if total != 0 || len(redundant) != 0 {
+				t.Fatalf("total=%d redundant=%v, want 0/none", total, redundant)
+			}
+		})
+	}
+}
+
+// TestBackdropRedundantIndices_AbsentErrorPreservesDiagnostics is the F1
+// hostile-review fix: the absent-sentinel error must satisfy errors.Is
+// against errArtistAbsentOnPlatform (so detectArtistPlatformDups's skip
+// branch still fires) AND its message must still carry the original status
+// error text (status code + body), so pruneOneArtist's Failures -- which log
+// detErr.Error() verbatim with no errors.Is branch of its own -- stay
+// diagnosable instead of collapsing to a bare "artist not present on
+// platform" that hides the status code, endpoint, and body an operator
+// needs to debug a stale platform ID mapping.
+func TestBackdropRedundantIndices_AbsentErrorPreservesDiagnostics(t *testing.T) {
+	fake := statusDetailBackdropClient{status: http.StatusNotFound}
+	_, _, err := backdropRedundantIndices(context.Background(), fake, "p1")
+	if !errors.Is(err, errArtistAbsentOnPlatform) {
+		t.Fatalf("err = %v, want errors.Is match against errArtistAbsentOnPlatform", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "unexpected status 404") {
+		t.Fatalf("err = %v, want message to still contain the original status error text (\"unexpected status 404\")", err)
+	}
+}
+
+// TestBackdropRedundantIndices_NonNotFoundStatusStaysGenericError is the
+// other half of the boundary: every non-404/410 status (timeout-shaped,
+// 401, 500) must NOT match errArtistAbsentOnPlatform and must still wrap as
+// the generic "fetching artist detail" failure -- proving the check is a
+// positive test for 404/410, not a negated list of "known bad" statuses
+// that would treat an unrecognized status as absent.
+func TestBackdropRedundantIndices_NonNotFoundStatusStaysGenericError(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		t.Run(fmt.Sprintf("status_%d", status), func(t *testing.T) {
+			fake := statusDetailBackdropClient{status: status}
+			_, _, err := backdropRedundantIndices(context.Background(), fake, "p1")
+			if errors.Is(err, errArtistAbsentOnPlatform) {
+				t.Fatalf("err = %v, must NOT match errArtistAbsentOnPlatform for status %d", err, status)
+			}
+			if err == nil || !strings.Contains(err.Error(), "fetching artist detail") {
+				t.Fatalf("err = %v, want wrapped generic failure", err)
+			}
+		})
+	}
+}
+
+// TestBackdropRedundantIndices_NonStatusErrorStaysGenericError proves a
+// non-network-shaped, non-*httpclient.StatusError failure (a plain error,
+// e.g. context cancellation or a decode failure) is never treated as
+// absent -- errors.As on the wrong type must fall through to the generic
+// path rather than defaulting to "absent" on an unrecognized error shape.
+func TestBackdropRedundantIndices_NonStatusErrorStaysGenericError(t *testing.T) {
+	fake := &errDetailBackdropClient{}
+	_, _, err := backdropRedundantIndices(context.Background(), fake, "p1")
+	if errors.Is(err, errArtistAbsentOnPlatform) {
+		t.Fatalf("err = %v, must NOT match errArtistAbsentOnPlatform for a non-StatusError failure", err)
+	}
+}
+
 // TestDetectArtistPlatformDups_GetPlatformIDsError guards the platform-IDs
 // lookup failure path: it must report one scan error and no dups rather than
 // propagating the error to the caller (a scan tolerates per-artist failures).
@@ -637,7 +758,7 @@ func TestDetectArtistPlatformDups_GetPlatformIDsError(t *testing.T) {
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
 		Logger:            silentLogger(),
 	})
-	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1")
+	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1", nil)
 	if scanErrs != 1 {
 		t.Fatalf("scanErrs = %d, want 1", scanErrs)
 	}
@@ -659,7 +780,7 @@ func TestDetectArtistPlatformDups_ConnectionLoadFailed(t *testing.T) {
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
 		Logger:            silentLogger(),
 	})
-	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1")
+	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1", nil)
 	if scanErrs != 1 {
 		t.Fatalf("scanErrs = %d, want 1", scanErrs)
 	}
@@ -687,7 +808,7 @@ func TestDetectArtistPlatformDups_DisabledOrUnhealthySkipped(t *testing.T) {
 				ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{"c1": conn}},
 				Logger:            silentLogger(),
 			})
-			dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1")
+			dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1", nil)
 			if scanErrs != 0 || len(dups) != 0 {
 				t.Fatalf("scanErrs=%d dups=%+v, want 0/none", scanErrs, dups)
 			}
@@ -711,9 +832,67 @@ func TestDetectArtistPlatformDups_NilClientSkipped(t *testing.T) {
 		}},
 		Logger: silentLogger(),
 	})
-	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1")
+	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1", nil)
 	if scanErrs != 0 || len(dups) != 0 {
 		t.Fatalf("scanErrs=%d dups=%+v, want 0/none", scanErrs, dups)
+	}
+}
+
+// TestDetectArtistPlatformDups_NotFoundNotCountedAsScanError is the
+// direct fix under test (#2692): an artist-detail 404 must be skipped
+// without incrementing scanErrs, since it is a definitive "artist not on
+// this platform" answer, not an indeterminate read failure.
+func TestDetectArtistPlatformDups_NotFoundNotCountedAsScanError(t *testing.T) {
+	fake := statusDetailBackdropClient{status: http.StatusNotFound}
+	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+
+	dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1", nil)
+	if scanErrs != 0 {
+		t.Fatalf("scanErrs = %d, want 0 (a 404 is a definitive absent answer, not a scan error)", scanErrs)
+	}
+	if len(dups) != 0 {
+		t.Fatalf("dups = %+v, want none", dups)
+	}
+}
+
+// TestDetectArtistPlatformDups_NonNotFoundStillCountsAsScanError is the
+// other half of the #2692 boundary check at the detectArtistPlatformDups
+// level: a non-404 artist-detail failure (timeout-shaped and 500 here) must
+// still increment scanErrs and still fail closed, proving the fix does not
+// convert a broken platform into a silent "no duplicates".
+func TestDetectArtistPlatformDups_NonNotFoundStillCountsAsScanError(t *testing.T) {
+	for name, fake := range map[string]backdropPruneClient{
+		"timeout": statusDetailBackdropClient{status: http.StatusRequestTimeout},
+		"500":     statusDetailBackdropClient{status: http.StatusInternalServerError},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+			dups, scanErrs := p.detectArtistPlatformDups(context.Background(), "a1", nil)
+			if scanErrs != 1 {
+				t.Fatalf("scanErrs = %d, want 1 (a non-404 failure must still fail closed)", scanErrs)
+			}
+			if len(dups) != 0 {
+				t.Fatalf("dups = %+v, want none", dups)
+			}
+		})
+	}
+}
+
+// TestBackdropRedundantIndices_PerImageNotFoundNotReclassified proves the
+// scope ceiling: a 404 mid-scan on a per-image GetArtistBackdrop call
+// (after the artist-detail lookup already succeeded) is NOT reclassified as
+// absent -- that is a different, inconsistent state (the platform promised
+// N images but one is gone mid-scan) and must still fail closed as a
+// genuine scan error, matching the issue's explicit scope: only the
+// artist-detail 404 means "artist absent".
+func TestBackdropRedundantIndices_PerImageNotFoundNotReclassified(t *testing.T) {
+	fake := perImageStatusBackdropClient{backdropCount: 3, failIndex: 1, failStatus: http.StatusNotFound}
+	_, _, err := backdropRedundantIndices(context.Background(), fake, "p1")
+	if errors.Is(err, errArtistAbsentOnPlatform) {
+		t.Fatalf("err = %v, must NOT match errArtistAbsentOnPlatform for a per-image 404", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "fetching backdrop 1") {
+		t.Fatalf("err = %v, want wrapped per-image failure", err)
 	}
 }
 
@@ -847,4 +1026,120 @@ func TestPrunePlatformBackdropDuplicates_DeleteFailureStopsConnection(t *testing
 	if len(res.Failures) != 1 {
 		t.Fatalf("Failures = %d, want 1", len(res.Failures))
 	}
+}
+
+// newTestPublisherWithNArtistsOnePlatform builds a sweep fixture: N artists,
+// all mapped to ONE connection. The systemic-absence bound only exists across
+// a whole sweep, so a single-artist fixture cannot express it -- with one
+// artist, "every mapped artist is absent" and "one artist is absent" are the
+// same state, and a test built on it would pass without distinguishing them.
+func newTestPublisherWithNArtistsOnePlatform(t *testing.T, n int, fake backdropPruneClient) *Publisher {
+	t.Helper()
+
+	prevFactory := backdropPruneClientFactory
+	backdropPruneClientFactory = func(_ *connection.Connection, _ *slog.Logger) backdropPruneClient {
+		return fake
+	}
+	t.Cleanup(func() { backdropPruneClientFactory = prevFactory })
+
+	lister := &fakePlatformLister{}
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("a%d", i+1)
+		lister.ids = append(lister.ids, artist.PlatformID{
+			ArtistID: id, ConnectionID: "c-emby", PlatformArtistID: fmt.Sprintf("p%d", i+1),
+		})
+		lister.artists = append(lister.artists, artist.Artist{ID: id, Name: "Artist " + id})
+	}
+	conns := &fakeConnectionGetter{conns: map[string]*connection.Connection{
+		"c-emby": {
+			ID: "c-emby", Name: "emby", Type: connection.TypeEmby,
+			Enabled: true, Status: "ok",
+			Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true},
+		},
+	}}
+	return New(Deps{
+		ArtistService: lister, ArtistLister: lister,
+		ConnectionService: conns, Logger: silentLogger(),
+	})
+}
+
+// TestScanPlatformBackdropDuplicates_SystemicAbsenceFailsClosed is #2692's F2.
+//
+// F1 established that an artist absent on a platform is NOT a scan error, which
+// is right for one artist and opens a hole in aggregate: when EVERY mapped
+// artist 404s -- the shape a stale PlatformUserID produces -- the sweep reports
+// ScanErrors 0, the dupimages cache gate treats that as authoritative, and it
+// caches zero duplicate counts. A library full of duplicates then renders as
+// verified clean. Connection.Status cannot catch it: it is stored at
+// connection-test time from /System/Info, which never exercises the user ID.
+//
+// This does NOT claim to detect a misconfiguration. "Every artist genuinely
+// absent" and "connection misconfigured" emit an identical stream of 404s and
+// are indistinguishable from inside one scan. The bound treats that ambiguity
+// the way the existing partial-scan guard treats "unreachable": fail closed.
+func TestScanPlatformBackdropDuplicates_SystemicAbsenceFailsClosed(t *testing.T) {
+	// Every artist-detail lookup 404s -> every mapped artist reads as absent.
+	fake := statusDetailBackdropClient{status: http.StatusNotFound}
+	p := newTestPublisherWithNArtistsOnePlatform(t, 3, fake)
+
+	report, err := p.ScanPlatformBackdropDuplicates(context.Background())
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	// Precondition: the sweep really walked all three artists. Without this the
+	// assertion below could pass on a scan that never ran.
+	if len(report.PerArtist) != 0 || report.RedundantBackdrops != 0 {
+		t.Fatalf("precondition: expected no duplicates found, got %+v", report)
+	}
+
+	// THE BOUND. One scan error for the connection, not one per artist: the
+	// signal is a property of the connection, and per-artist counting would
+	// make the number scale with library size for no added meaning.
+	if report.ScanErrors != 1 {
+		t.Fatalf("ScanErrors = %d, want 1; a connection whose every mapped artist is "+
+			"absent must fail closed, or a stale PlatformUserID caches as a clean library",
+			report.ScanErrors)
+	}
+}
+
+// TestScanPlatformBackdropDuplicates_PartialAbsenceDoesNotFailClosed is the
+// other side of the bound, and the reason it is `absent == mapped` rather than
+// `absent > 0`. One artist legitimately missing from a platform is ordinary --
+// exactly what F1 stopped treating as an error. If this test fails, the fix has
+// re-broken F1 and made every ordinary sweep report a partial scan, which would
+// freeze the cache permanently instead of protecting it.
+func TestScanPlatformBackdropDuplicates_PartialAbsenceDoesNotFailClosed(t *testing.T) {
+	// Artist 1 is absent; artists 2 and 3 resolve normally with no duplicates.
+	fake := &absentForArtistBackdropClient{absentPlatformIDs: map[string]bool{"p1": true}}
+	p := newTestPublisherWithNArtistsOnePlatform(t, 3, fake)
+
+	report, err := p.ScanPlatformBackdropDuplicates(context.Background())
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if report.ScanErrors != 0 {
+		t.Fatalf("ScanErrors = %d, want 0; one absent artist among several is ordinary "+
+			"and must not mark the whole sweep partial", report.ScanErrors)
+	}
+}
+
+// absentForArtistBackdropClient 404s the artist-detail lookup for the listed
+// platform IDs and returns a clean, duplicate-free response for every other,
+// so a test can build a sweep with a MIX of absent and present artists.
+type absentForArtistBackdropClient struct{ absentPlatformIDs map[string]bool }
+
+func (c *absentForArtistBackdropClient) GetArtistDetail(_ context.Context, platformID string) (*connection.ArtistPlatformState, error) {
+	if c.absentPlatformIDs[platformID] {
+		return nil, &httpclient.StatusError{StatusCode: http.StatusNotFound, Body: "not found"}
+	}
+	return &connection.ArtistPlatformState{BackdropCount: 0}, nil
+}
+
+func (c *absentForArtistBackdropClient) GetArtistBackdrop(_ context.Context, _ string, _ int) ([]byte, string, error) {
+	return nil, "", fmt.Errorf("must not be called: no backdrops to read")
+}
+
+func (c *absentForArtistBackdropClient) DeleteImageAtIndex(_ context.Context, _ string, _ string, _ int) error {
+	return fmt.Errorf("must not be called: scan is read-only")
 }

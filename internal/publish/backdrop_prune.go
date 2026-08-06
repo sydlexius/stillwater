@@ -9,6 +9,7 @@ package publish
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -16,8 +17,16 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
+	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 )
+
+// errArtistAbsentOnPlatform signals that the platform gave a definitive
+// "this artist does not exist" answer (a 404/410 on the artist-detail
+// lookup) rather than an indeterminate read failure. Distinct from every
+// other backdropRedundantIndices error, which still means "could not
+// determine whether the artist has duplicates" and must fail closed.
+var errArtistAbsentOnPlatform = errors.New("artist not present on platform")
 
 // backdropPruneClient is what the engine needs from a platform: read backdrops
 // and delete one at an index.
@@ -134,13 +143,22 @@ type platformBackdropDup struct {
 
 // backdropRedundantIndices reads every backdrop for the artist on the given
 // connection, hashes it, and returns the redundant (deletable, descending by
-// index) entries along with the total backdrop count. A read error for ANY
-// index aborts the whole connection (returns an error) rather than risking a
-// partial/blind result -- the caller counts this as a skipped scan, never a
-// partial one.
+// index) entries along with the total backdrop count. A non-404/410 read
+// error for ANY index aborts the whole connection (returns an error) rather
+// than risking a partial/blind result -- the caller counts this as a skipped
+// scan, never a partial one. A 404/410 on the artist-detail lookup
+// specifically is a third outcome: it returns an error that wraps
+// errArtistAbsentOnPlatform (checkable via errors.Is) alongside the original
+// status error, so callers can distinguish "artist definitively absent" from
+// "could not determine" while the message still carries the original status
+// text for diagnosability.
 func backdropRedundantIndices(ctx context.Context, client backdropPruneClient, platformArtistID string) (redundant []redundantBackdrop, total int, err error) {
 	detail, err := client.GetArtistDetail(ctx, platformArtistID)
 	if err != nil {
+		var statusErr *httpclient.StatusError
+		if errors.As(err, &statusErr) && statusErr.IsNotFound() {
+			return nil, 0, fmt.Errorf("fetching artist detail: %w: %w", errArtistAbsentOnPlatform, err)
+		}
 		return nil, 0, fmt.Errorf("fetching artist detail: %w", err)
 	}
 	count := detail.BackdropCount
@@ -158,11 +176,42 @@ func backdropRedundantIndices(ctx context.Context, client backdropPruneClient, p
 	return dedupBackdropIndices(hashes), count, nil
 }
 
+// connAbsenceTally accumulates, per connection, how many artists carried a
+// mapped platform ID and how many of those turned out to be absent on the
+// platform. It exists because the systemic case can only be recognized ACROSS
+// a whole sweep: detectArtistPlatformDups sees one artist at a time, and a
+// single 404 is ordinary (#2692's F1 established that an absent artist is not
+// a scan error).
+//
+// What it bounds is the hole F1 opened. When EVERY artist on a connection is
+// absent, the scan reports ScanErrors 0, the cache gate treats the result as
+// authoritative, and it caches zero duplicate counts -- so a stale
+// PlatformUserID renders as a verified-clean library. Connection.Status cannot
+// catch that: it is stored at connection-test time from /System/Info, which
+// never exercises the user ID.
+//
+// IMPORTANT, and worth stating plainly in review: this does NOT detect a
+// misconfiguration. "Every artist is genuinely absent" and "the connection is
+// misconfigured" emit an identical stream of per-artist 404s, and nothing
+// inside a single scan can separate them. So this treats the AMBIGUITY the way
+// the existing partial-scan guard already treats "unreachable" -- it fails
+// closed, preferring a stale-but-true cached count over a confident zero.
+type connAbsenceTally struct {
+	mapped int
+	absent int
+}
+
 // detectArtistPlatformDups reads every backdrop for the artist on each of its
 // enabled, healthy connections and returns the redundant (deletable) indices
 // per connection. A read error for any backdrop skips that whole connection
 // (counted via scanErrs) rather than risking a partial delete.
-func (p *Publisher) detectArtistPlatformDups(ctx context.Context, artistID string) (dups []platformBackdropDup, scanErrs int) {
+//
+// tally, when non-nil, accumulates the per-connection mapped/absent counts the
+// caller needs for the systemic-absence bound above. It is an optional
+// out-parameter rather than a third return value so the six existing direct
+// call sites -- which test this function in isolation and have no sweep to
+// accumulate across -- keep compiling unchanged.
+func (p *Publisher) detectArtistPlatformDups(ctx context.Context, artistID string, tally map[string]*connAbsenceTally) (dups []platformBackdropDup, scanErrs int) {
 	platformIDs, err := p.artistService.GetPlatformIDs(ctx, artistID)
 	if err != nil {
 		p.logger.Warn("platform backdrop scan: platform IDs unavailable",
@@ -184,8 +233,28 @@ func (p *Publisher) detectArtistPlatformDups(ctx context.Context, artistID strin
 		if client == nil {
 			continue
 		}
+		// Counted here, AFTER the connection is known usable, so a disabled or
+		// unhealthy connection never contributes to the ratio. Counting earlier
+		// would let a connection that was skipped entirely read as "mapped but
+		// never resolved" and fire the systemic bound on a healthy sweep.
+		if tally != nil {
+			t := tally[pid.ConnectionID]
+			if t == nil {
+				t = &connAbsenceTally{}
+				tally[pid.ConnectionID] = t
+			}
+			t.mapped++
+		}
 		redundant, count, detErr := backdropRedundantIndices(ctx, client, pid.PlatformArtistID)
 		if detErr != nil {
+			if errors.Is(detErr, errArtistAbsentOnPlatform) {
+				p.logger.Warn("platform backdrop scan: artist not present on platform; skipping",
+					slog.String("artist_id", artistID), slog.String("connection", conn.Name))
+				if tally != nil {
+					tally[pid.ConnectionID].absent++
+				}
+				continue
+			}
 			p.logger.Warn("platform backdrop scan: backdrop read failed; skipping connection",
 				slog.String("artist_id", artistID), slog.String("connection", conn.Name), slog.String("error", detErr.Error()))
 			scanErrs++
@@ -208,6 +277,9 @@ func (p *Publisher) ScanPlatformBackdropDuplicates(ctx context.Context) (Platfor
 
 	var report PlatformBackdropDupReport
 	conns := make(map[string]bool)
+	// Accumulated across the WHOLE sweep, not per page and not per artist: the
+	// systemic-absence signal only exists in aggregate. See connAbsenceTally.
+	absence := make(map[string]*connAbsenceTally)
 	page := 1
 	for {
 		artists, _, err := p.artistLister.List(ctx, artist.ListParams{Page: page, PageSize: scanBackdropPageSize})
@@ -219,7 +291,7 @@ func (p *Publisher) ScanPlatformBackdropDuplicates(ctx context.Context) (Platfor
 		}
 		for i := range artists {
 			a := &artists[i]
-			dups, scanErrs := p.detectArtistPlatformDups(ctx, a.ID)
+			dups, scanErrs := p.detectArtistPlatformDups(ctx, a.ID, absence)
 			report.ScanErrors += scanErrs
 			for _, d := range dups {
 				report.ArtistsAffected++ // per artist/connection pair with dups
@@ -235,6 +307,31 @@ func (p *Publisher) ScanPlatformBackdropDuplicates(ctx context.Context) (Platfor
 			break
 		}
 		page++
+	}
+	// Systemic absence: a connection where every mapped artist resolved to
+	// "not present" saw no transport error, so without this the sweep reports
+	// ScanErrors 0, the cache gate accepts it as authoritative, and a stale
+	// PlatformUserID caches as a verified-clean library (#2692).
+	//
+	// The condition is deliberately narrow. It fires ONLY on the pure-absent
+	// case: a connection carrying a mix of absent artists and genuine read
+	// errors already fails closed through the existing scanErrs path, so
+	// widening this to `absent > 0` would double-count that population and
+	// would also fire on the ordinary case of one artist legitimately missing.
+	//
+	// No `mapped > 0` guard, deliberately: an entry is created only on the line
+	// immediately before its first mapped++, so a zero-mapped entry cannot
+	// exist and such a guard would be unreachable code dressed as a safety
+	// check. If that construction ever moves, restore the guard -- `absent ==
+	// mapped` would otherwise be trivially true (0 == 0) for a phantom entry
+	// and would report a scan error for a connection nobody mapped.
+	for connID, t := range absence {
+		if t.absent == t.mapped {
+			report.ScanErrors++
+			p.logger.Warn("platform backdrop scan: every mapped artist absent on this connection; "+
+				"treating the sweep as partial so cached counts are not cleared",
+				slog.String("connection_id", connID), slog.Int("mapped", t.mapped))
+		}
 	}
 	report.ConnectionsAffected = len(conns)
 	return report, nil

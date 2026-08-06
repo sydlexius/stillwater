@@ -410,3 +410,30 @@ func TestStatusError_ErrorAndIsAuth(t *testing.T) {
 		})
 	}
 }
+
+// TestStatusError_IsNotFound pins the 404/410-vs-everything-else classification
+// IsNotFound provides: only a definitive "resource absent" response counts,
+// never an indeterminate failure (401/403 auth, 5xx, 2xx, or a zero-value
+// network-style error).
+func TestStatusError_IsNotFound(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        *StatusError
+		isNotFound bool
+	}{
+		{"404", &StatusError{StatusCode: 404, Body: "missing"}, true},
+		{"410", &StatusError{StatusCode: 410, Body: "gone"}, true},
+		{"200", &StatusError{StatusCode: 200, Body: ""}, false},
+		{"401", &StatusError{StatusCode: 401, Body: "denied"}, false},
+		{"403", &StatusError{StatusCode: 403, Body: "forbidden"}, false},
+		{"500", &StatusError{StatusCode: 500, Body: "boom"}, false},
+		{"zero-value", &StatusError{}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.err.IsNotFound(); got != tc.isNotFound {
+				t.Errorf("IsNotFound() = %v, want %v", got, tc.isNotFound)
+			}
+		})
+	}
+}
