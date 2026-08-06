@@ -1441,8 +1441,17 @@
   transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
   /* Safe area inset for notched devices */
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  max-height: 85vh;
-  overflow-y: auto;
+  /* dvh, not vh: vh resolves against the LARGEST viewport, so a visible mobile
+   * URL bar pushes the bottom of the panel off screen. dvh tracks the chrome. */
+  max-height: min(85vh, 100dvh);
+  /* The PANEL no longer scrolls -- .ctx-sheet-items does (below). Shrinking
+   * this cap was measured and cannot help: on a 375x568 phone the admin sheet's
+   * content is 586px against a 483px panel, so a smaller panel only hides more.
+   * The fix is keeping the footer OUT of the scroll region so Cancel and the
+   * destructive Log Out are reachable at any height. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 
@@ -1479,6 +1488,18 @@
 }
 
 /* Item list inside the sheet: taller rows for touch targets */
+/* The scroll region. Keeping the overflow HERE rather than on the panel is what
+ * keeps .ctx-sheet-footer (Cancel, and the destructive Log Out above it) on
+ * screen on a short phone instead of below the fold (#2382 review). min-height:0
+ * is required: a flex child's default min-height:auto refuses to shrink below
+ * its content, which would push the footer off exactly as before. */
+.ctx-sheet-items {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .ctx-sheet-items {
   padding: 4px 0;
 }

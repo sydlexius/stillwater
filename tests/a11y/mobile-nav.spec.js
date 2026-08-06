@@ -148,3 +148,39 @@ test('More sheet actions actually run (no ReferenceError)', async ({ page }) => 
     );
   }
 });
+
+// A short phone must still reach the sheet's destructive action. At 375x568
+// (iPhone SE / 8) the admin sheet's content is taller than the panel, and the
+// panel used to be the scroll container -- so Cancel and Log Out rendered below
+// the fold with nothing indicating the list scrolled.
+//
+// The fix is structural, not a smaller max-height: shrinking the cap was
+// measured and makes it WORSE, because the content (586px) exceeds the panel
+// (483px) either way. The footer now sits outside the scroll region.
+test('the sheet footer stays on screen on a short phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 568 });
+  await page.goto('/');
+  await page.locator(TRIGGER).first().click();
+
+  const sheet = page.locator(SHEET);
+  await expect(sheet).toHaveClass(/ctx-sheet-open/);
+
+  // Precondition: this viewport really does overflow. If the sheet ever gets
+  // short enough to fit, this test is no longer exercising the case it names
+  // and should be re-pointed rather than left passing for the wrong reason.
+  const overflows = await sheet.locator('.ctx-sheet-items')
+    .evaluate((el) => el.scrollHeight > el.clientHeight);
+  expect(overflows, 'the item list no longer overflows at 375x568; re-point this test').toBe(true);
+
+  // Cancel must be IN the viewport, not merely in the DOM.
+  const cancel = sheet.locator('.ctx-sheet-cancel');
+  const box = await cancel.boundingBox();
+  expect(box.y + box.height,
+    `Cancel bottom is ${box.y + box.height}px in a 568px viewport -- it is below the fold`)
+    .toBeLessThanOrEqual(568);
+
+  // And Log Out must be reachable by scrolling the list.
+  const logout = sheet.getByText('Log Out', { exact: false }).first();
+  await logout.scrollIntoViewIfNeeded();
+  await expect(logout).toBeInViewport();
+});
