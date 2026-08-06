@@ -5064,6 +5064,23 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   box-shadow:
     var(--sw-halo);
 }
+/* #2729: the popover's counterpart to .sw-next-finding-unfixable. It fills the
+ * Fix button's slot when no fixer exists, so a lone Dismiss reads as by-design.
+ * Deliberately NOT .sw-ff-pop-btn: it is a non-interactive span, so it takes
+ * the buttons' padding and radius for alignment within the flex row but none of
+ * their border, cursor, or hover affordance -- nothing here should look
+ * clickable. Tone matches the :disabled state above, which says the same thing. */
+.sw-next-artist-detail .sw-ff-pop-unfixable {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: var(--swd-r-2, 10px);
+  font-size: 0.8571rem; /* matches .sw-ff-pop-btn; scales with font-size pref */
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--swd-ink-3);
+  white-space: nowrap;
+}
 .sw-next-artist-detail .sw-ff-pop-dismiss {
   color: var(--swd-ink-2);
   background: transparent;
@@ -5661,6 +5678,16 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 .sw-next-artist-detail .sw-next-finding-dismiss:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+/* #2729: a muted, non-interactive label filling the Fix button's slot when a
+ * finding has no working fixer, so "only Dismiss" reads as by-design rather
+ * than broken. Same tone (--swd-ink-3) and weight as the disabled fix/dismiss
+ * state above, since it communicates the same "not actionable" state. */
+.sw-next-artist-detail .sw-next-finding-unfixable {
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
+  font-weight: 500;
+  color: var(--swd-ink-3);
+  white-space: nowrap;
 }
 
 /* M55 #1773: .sw-next-foreign-files surface backgrounds.
