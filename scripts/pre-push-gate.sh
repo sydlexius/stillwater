@@ -499,6 +499,16 @@ echo "=== CSS comments ==="
 bash "$SCRIPT_DIR/check-css-comments.sh"
 
 echo ""
+echo "=== Worktree settings link (#2879) ==="
+# Hermetic, no network, sub-second: runs unconditionally rather than diff-scoped.
+# What it guards is invisible at runtime -- a worktree whose Claude Code grants
+# silently fall back to the user-global set produces a permission PROMPT, and a
+# backgrounded agent cannot answer one, so it stalls with no error anywhere. A
+# regression here would be noticed as "the agent hung", days later, by someone
+# not looking at this script.
+bash "$SCRIPT_DIR/test-link-worktree-settings.sh"
+
+echo ""
 echo "=== zizmor suppression scope ==="
 # A `# zizmor: ignore[dangerous-triggers]` suppresses the audit for the WHOLE
 # `on:` mapping, not the one trigger it was written for. So a dangerous trigger
