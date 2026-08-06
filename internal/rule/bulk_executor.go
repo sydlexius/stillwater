@@ -82,6 +82,23 @@ func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 	e.eventBus = bus
 }
 
+// itemFailure is the sanitization boundary for a per-item bulk failure
+// (issue #2881). Every fetchMetadata/fetchImages failure site that used to
+// interpolate a raw driver or provider error directly into the operator-
+// facing message now goes through here instead: the full error, plus enough
+// context to diagnose it, goes to the server log; only the caller-supplied
+// sanitized message reaches BulkJobItem.Message, which bulk_service.go
+// persists verbatim to bulk_job_items and internal/api/handlers_rule.go
+// marshals with no redaction. message must never itself be built from err.
+func (e *BulkExecutor) itemFailure(a *artist.Artist, operation, message string, err error) (string, string) {
+	e.logger.Warn("bulk item failed",
+		slog.String("artist_id", a.ID),
+		slog.String("artist", a.Name),
+		slog.String("operation", operation),
+		slog.String("error", err.Error()))
+	return BulkItemFailed, message
+}
+
 // SetCollisionGuard late-wires the #2540 cross-artist backdrop-collision seam
 // for the bulk auto-fix path. Passing a nil notifier or indexer disables it.
 func (e *BulkExecutor) SetCollisionGuard(notifier backdropCollisionNotifier, indexer fanartIdentityIndexer) {
@@ -242,12 +259,16 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 
 		for {
 			if err := ctx.Err(); err != nil {
-				e.finishJob(ctx, job, BulkStatusCanceled, fmt.Sprintf("bulk job canceled: %v", err))
+				e.logger.Info("bulk job canceled while listing artists",
+					slog.String("job_id", job.ID), slog.String("operation", job.Type), slog.String("error", err.Error()))
+				e.finishJob(ctx, job, BulkStatusCanceled, "bulk job canceled")
 				return
 			}
 			page, _, err := e.artistService.List(ctx, params)
 			if err != nil {
-				e.finishJob(ctx, job, BulkStatusFailed, fmt.Sprintf("listing artists: %v", err))
+				e.logger.Error("listing artists for bulk job",
+					slog.String("job_id", job.ID), slog.String("operation", job.Type), slog.String("error", err.Error()))
+				e.finishJob(ctx, job, BulkStatusFailed, "failed to list artists for the bulk job")
 				return
 			}
 			if len(page) == 0 {
@@ -363,7 +384,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 
 	result, err := e.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
-		return BulkItemFailed, fmt.Sprintf("fetch failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchMetadata, "metadata fetch from providers failed; retry later", err)
 	}
 
 	u := artist.FetchResultToUpdate(result)
@@ -385,7 +406,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 	}
 
 	if err := e.artistService.Update(ctx, a); err != nil {
-		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchMetadata, "saving fetched metadata failed; retry later", err)
 	}
 
 	UpdateProviderFetchTimestamps(ctx, e.artistService, a.ID, result.AttemptedProviders, e.logger)
@@ -419,7 +440,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 
 	imgResult, err := e.orchestrator.FetchImages(ctx, a.MusicBrainzID, a.ProviderIDMap())
 	if err != nil {
-		return BulkItemFailed, fmt.Sprintf("image fetch failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchImages, "image fetch from providers failed; retry later", err)
 	}
 
 	// Track saved file paths so provenance can be recorded after Update()
@@ -443,7 +464,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 	}
 
 	if err := e.artistService.Update(ctx, a); err != nil {
-		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchImages, "saving fetched images failed; retry later", err)
 	}
 
 	// Record provenance after Update() so the artist_images rows exist,
@@ -542,7 +563,7 @@ func (e *BulkExecutor) selfHealMBID(ctx context.Context, a *artist.Artist, mode 
 		} else {
 			delete(a.MetadataSources, artist.SourceKeyMusicBrainzID)
 		}
-		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchImages, "saving MusicBrainz ID failed; retry later", err)
 	}
 	e.recordBulkMBIDHistory(ctx, a.ID, mbid)
 
