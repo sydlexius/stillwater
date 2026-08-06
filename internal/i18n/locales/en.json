@@ -633,6 +633,8 @@
   "common.export_csv": "Export CSV",
   "common.fetch": "Fetch",
   "common.field": "Field",
+  "common.fix_unavailable": "Fix unavailable",
+  "common.fix_unavailable_tooltip": "No automatic fix is available for this finding.",
   "common.filter_not_prefix": "Not %s",
   "common.filters": "Filters",
   "common.full": "Full",

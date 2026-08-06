@@ -968,8 +968,10 @@ func (e *Engine) checkExtraneousImagesFromDB(ctx context.Context, a *artist.Arti
 		RuleName: "Extraneous image files",
 		Category: "image",
 		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %s has %d extraneous image record(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
-		Fixable:  false, // no filesystem to clean up for API-imported artists
+		Message: fmt.Sprintf(
+			"artist %s has %d extraneous image record(s): %s (no automatic fix: this artist has no local directory, so there are no files to clean up)",
+			a.Name, len(extraneous), strings.Join(extraneous, ", ")),
+		Fixable: false, // no filesystem to clean up for API-imported artists
 	}
 }
 

@@ -111,3 +111,62 @@ func TestDashboardActionCard_ChannelAwareArtistLink(t *testing.T) {
 		t.Errorf("next card leaked a bare href=\"/artists/a-42\"; got:\n%s", nb)
 	}
 }
+
+// TestDashboardActionCard_UnfixableShowsExplicitChip pins #2729: a non-fixable
+// violation (e.g. extraneous_images for a platform-only artist) must not
+// render a bare Dismiss-only card. It must show the "Fix unavailable" chip so
+// the operator can tell "correct by design" from "broken affordance". The
+// nfo_has_mbid special case (re-identify link) must NOT show the chip -- it
+// has its own working affordance in place of Fix.
+func TestDashboardActionCard_UnfixableShowsExplicitChip(t *testing.T) {
+	v := rule.RuleViolation{
+		ID:         "v-2729",
+		RuleID:     rule.RuleExtraneousImages,
+		ArtistID:   "a-99",
+		ArtistName: "Platform Only Artist",
+		Severity:   "warning",
+		Message:    "extraneous images, no automatic fix: no local directory",
+		Fixable:    false,
+		Status:     rule.ViolationStatusOpen,
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	var buf bytes.Buffer
+	if err := DashboardActionCard(v, "").Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+
+	if !strings.Contains(body, "Fix unavailable") {
+		t.Errorf("non-fixable card missing the explicit \"Fix unavailable\" chip; got:\n%s", body)
+	}
+	if strings.Contains(body, `hx-post="/api/v1/notifications/v-2729/fix"`) {
+		t.Errorf("non-fixable card must not render a working Fix button; got:\n%s", body)
+	}
+
+	// The nfo_has_mbid special case keeps its own re-identify affordance and
+	// must NOT also show the generic "Fix unavailable" chip -- it already
+	// tells the operator what to do instead of Fix.
+	mbid := rule.RuleViolation{
+		ID:         "v-mbid",
+		RuleID:     "nfo_has_mbid",
+		ArtistID:   "a-100",
+		ArtistName: "No MBID Artist",
+		Severity:   "warning",
+		Message:    "no musicbrainz id",
+		Fixable:    false,
+		Status:     rule.ViolationStatusOpen,
+		CreatedAt:  time.Now().UTC(),
+	}
+	var mbidBuf bytes.Buffer
+	if err := DashboardActionCard(mbid, "").Render(testCtx(t), &mbidBuf); err != nil {
+		t.Fatalf("render mbid: %v", err)
+	}
+	mbidBody := mbidBuf.String()
+	if strings.Contains(mbidBody, "Fix unavailable") {
+		t.Errorf("nfo_has_mbid card should keep its own re-identify link, not the generic chip; got:\n%s", mbidBody)
+	}
+	if !strings.Contains(mbidBody, "Re-identify") {
+		t.Errorf("nfo_has_mbid card missing its re-identify link; got:\n%s", mbidBody)
+	}
+}

@@ -116,6 +116,56 @@ func TestArtistFindingsList_RendersList(t *testing.T) {
 	}
 }
 
+// TestArtistFindingsList_UnfixableShowsExplicitChip pins #2729: an open,
+// non-fixable finding (e.g. extraneous_images for a platform-only artist)
+// must render the explicit "Fix unavailable" chip in place of the Fix
+// button, not a bare row with only Dismiss. A dismissed/resolved non-fixable
+// violation must NOT show the chip -- it is no longer an open action item.
+func TestArtistFindingsList_UnfixableShowsExplicitChip(t *testing.T) {
+	data := ArtistViolationsTabData{
+		ArtistID: "a-2729",
+		Violations: []rule.RuleViolation{
+			{
+				ID:        "v-2729-open",
+				RuleID:    rule.RuleExtraneousImages,
+				ArtistID:  "a-2729",
+				Severity:  "warning",
+				Message:   "extraneous images, no automatic fix: no local directory",
+				Fixable:   false,
+				Status:    rule.ViolationStatusOpen,
+				CreatedAt: time.Now().UTC(),
+			},
+			{
+				ID:        "v-2729-dismissed",
+				RuleID:    rule.RuleExtraneousImages,
+				ArtistID:  "a-2729",
+				Severity:  "warning",
+				Message:   "extraneous images, no automatic fix: no local directory",
+				Fixable:   false,
+				Status:    rule.ViolationStatusDismissed,
+				CreatedAt: time.Now().UTC(),
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := ArtistFindingsList(data).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+
+	if !strings.Contains(body, `class="sw-next-finding-unfixable"`) {
+		t.Errorf("open non-fixable finding missing the \"Fix unavailable\" chip; got:\n%s", body)
+	}
+	if strings.Contains(body, `class="sw-next-finding-fix"`) {
+		t.Errorf("non-fixable finding must not render a working Fix button; got:\n%s", body)
+	}
+
+	// Only one row is open; the dismissed row must not add a second chip.
+	if n := strings.Count(body, `class="sw-next-finding-unfixable"`); n != 1 {
+		t.Errorf("expected exactly 1 unfixable chip (dismissed row must not show it), got %d; body:\n%s", n, body)
+	}
+}
+
 // TestArtistFindingsList_Empty renders the empty state without a list/table.
 func TestArtistFindingsList_Empty(t *testing.T) {
 	var buf bytes.Buffer

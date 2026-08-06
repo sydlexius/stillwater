@@ -75,6 +75,13 @@ templ artistFindingListItem(v rule.RuleViolation, artistID string) {
 				>
 					{ fixButtonLabel(ctx, v.RuleID) }
 				</button>
+			} else if v.Status == rule.ViolationStatusOpen {
+				<span
+					class="sw-next-finding-unfixable"
+					title={ t(ctx, "common.fix_unavailable_tooltip") }
+				>
+					{ t(ctx, "common.fix_unavailable") }
+				</span>
 			}
 			<button
 				type="button"
