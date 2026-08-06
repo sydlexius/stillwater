@@ -9,9 +9,9 @@ import (
 // publishOpProgress emits an event.OperationProgress event carrying the
 // shape consumed by the global ProgressPill JS. Callers should emit one
 // event when an operation starts, throttled events while it runs, and a
-// final event with a terminal status (completed / failed / canceled) so
-// the pill auto-dismisses (success) or stays sticky until dismissed
-// (failure).
+// final event with a terminal status (completed / failed / canceled /
+// timed_out) so the pill auto-dismisses (success) or stays sticky until
+// dismissed (failure, timeout).
 //
 // Fields on the event Data map:
 //
@@ -21,7 +21,7 @@ import (
 //	           verbatim today, will be localized client-side in PR7
 //	processed  done count
 //	total      total work units (0 means indeterminate)
-//	status     "running" | "completed" | "failed" | "canceled"
+//	status     "running" | "completed" | "failed" | "canceled" | "timed_out"
 //	cancel_url optional API path that cancels the underlying op; the
 //	           pill renders a Cancel button only when this is non-empty
 //
@@ -61,15 +61,17 @@ func (r *Router) publishOpProgress(opID, label string, total, processed int, sta
 			slog.Int("total", total))
 		processed = total
 	}
-	// Reject unknown status strings. The canonical enum mirrors the
-	// terminal-state precedence in handlers_sse.go (running, completed,
-	// failed, canceled); a typo would render a pill stuck in an unknown
-	// state because the JS only branches on these four.
+	// Reject unknown status strings. The canonical enum mirrors the states
+	// the ProgressPill JS branches on (running, completed, failed, canceled,
+	// timed_out); a typo would render a pill stuck in an unknown state.
+	// timed_out is terminal and renders with the failed treatment so the
+	// operator sees a sticky, clearly-unsuccessful pill (#2931).
 	validStatus := map[string]bool{
 		"running":   true,
 		"completed": true,
 		"failed":    true,
 		"canceled":  true,
+		"timed_out": true,
 	}
 	if !validStatus[status] {
 		if r.logger != nil {

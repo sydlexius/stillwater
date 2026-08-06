@@ -687,6 +687,8 @@ templ BulkProgressPill() {
 		data-i18n-single={ t(ctx, "artists.bulk.progress.single") }
 		data-i18n-summary={ t(ctx, "artists.bulk.summary") }
 		data-i18n-reidentify-summary={ t(ctx, "artists.bulk.reidentify.summary") }
+		data-i18n-timed-out-summary-one={ t(ctx, "artists.bulk.timed_out.summary.one") }
+		data-i18n-timed-out-summary-other={ t(ctx, "artists.bulk.timed_out.summary.other") }
 		data-i18n-confirm-small={ t(ctx, "artists.bulk.confirm.small") }
 		data-i18n-confirm-large={ t(ctx, "artists.bulk.confirm.large") }
 	></div>
@@ -1474,7 +1476,12 @@ templ ArtistsPageScripts() {
 					// The global ProgressPill renders its own Cancel button
 					// when the operation.progress event carries cancel_url;
 					// the local controller no longer needs to toggle one.
-					if (data.status === 'completed' || data.status === 'failed' || data.status === 'canceled') {
+					// timed_out is terminal exactly like the other three: the
+					// server ended the run at its work deadline and released
+					// the singleton slot, so polling on would only re-read the
+					// same snapshot forever while Apply stayed disabled.
+					if (data.status === 'completed' || data.status === 'failed' ||
+						data.status === 'canceled' || data.status === 'timed_out') {
 						// Push the matching terminal state to the layout pill
 						// directly: the local /status poll observes terminal
 						// status before the next throttled SSE tick lands, and
@@ -1520,7 +1527,32 @@ templ ArtistsPageScripts() {
 								.replace('{failed}', String(data.failed || 0))
 								.replace('{skipped}', String(data.skipped || 0));
 						}
-						if (typeof window.showSuccessToast === 'function' && (data.failed || 0) === 0) {
+						// A timed-out run stopped with artists still
+						// unprocessed. Say so ahead of the counters: the
+						// counters alone read as a normal summary, which is
+						// exactly the "looks like it completed" confusion the
+						// distinct terminal state exists to prevent.
+						if (data.status === 'timed_out') {
+							// Singular/plural picked the same way the selection
+							// counter above does. A single-artist bulk action
+							// uses this exact handler, so a plural-only string
+							// renders "1 of 1 artists"; the fallbacks carry the
+							// same split so a missing attribute cannot
+							// reintroduce it.
+							var tTotal = data.total || 0;
+							var ttpl = tTotal === 1
+								? ((pill && pill.getAttribute('data-i18n-timed-out-summary-one')) ||
+									'Bulk action timed out after {processed} of 1 artist.')
+								: ((pill && pill.getAttribute('data-i18n-timed-out-summary-other')) ||
+									'Bulk action timed out after {processed} of {total} artists.');
+							msg = ttpl
+								.replace('{processed}', String(data.processed || 0))
+								.replace('{total}', String(tTotal)) + ' ' + msg;
+						}
+						if (data.status === 'timed_out' && typeof window.showWarningToast === 'function') {
+							window.showWarningToast(msg);
+						} else if (typeof window.showSuccessToast === 'function' &&
+							data.status !== 'timed_out' && (data.failed || 0) === 0) {
 							window.showSuccessToast(msg);
 						} else if (typeof window.showToast === 'function') {
 							window.showToast(msg);

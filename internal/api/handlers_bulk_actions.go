@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -54,10 +55,45 @@ const (
 // the character class conservative so arbitrary input cannot leak through.
 var idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
+// bulkActionWorkDeadline bounds the WORK of a bulk-action pass so the detached
+// goroutine always returns, always clears the running status, and therefore
+// always frees the singleton slot that bulkActionMu / backdropRepairRunning
+// gate (#2931). Without it a wedged pass pins the progress record in the
+// running state for the life of the process, and four endpoints -- bulk
+// actions plus the three remediation handlers sharing the same singleton --
+// answer 409 forever with no timer that ever ends it.
+//
+// Sized above the remediation handlers' shared remediationWorkTimeout (30m)
+// rather than equal to it: those passes walk one artist's directories, while a
+// bulk pass walks up to MaxBulkActionIDs artists and can do per-artist provider
+// work (re-identify, refresh metadata) against rate-limited external APIs. The
+// number is deliberately generous -- it is a safety bound, not a scheduling
+// target -- but FINITE, which is the entire point. An operator who wants to
+// stop a pass sooner has the cancel endpoint.
+//
+// Mutable, not a const, solely so tests can shorten it. That seam is what lets
+// a test exercise THIS deadline: the obvious alternative, canceling the loop
+// through the cancel handler, passes just as happily with this bound deleted
+// because it measures the cancel path instead. remediationWorkTimeout carries
+// the same rationale. Production never writes it; withBulkActionWorkDeadline
+// (test-only) is the sole writer.
+//
+// Atomic rather than a plain var. The tests that write it are deliberately
+// sequential, and Go pauses top-level t.Parallel() tests until every
+// sequential test has finished, so a plain var does not actually race today.
+// That is a guarantee about testing-package scheduling, though, not about this
+// code -- it would be silently lost the moment someone adds t.Parallel() to a
+// deadline test. An atomic costs one uncontended load on a path that then does
+// per-artist network I/O, and makes the safety a property of the variable
+// instead of a fact a future reader has to rediscover.
+var bulkActionWorkDeadline atomic.Int64 // time.Duration nanoseconds
+
+func init() { bulkActionWorkDeadline.Store(int64(60 * time.Minute)) }
+
 // bulkActionStatus enumerates the terminal and in-flight lifecycle states a
 // BulkActionProgress can occupy. The underlying string type preserves the
-// existing JSON wire format ("running", "completed", "failed", "canceled")
-// while preventing typo-driven drift at call sites.
+// existing JSON wire format ("running", "completed", "failed", "canceled",
+// "timed_out") while preventing typo-driven drift at call sites.
 type bulkActionStatus string
 
 const (
@@ -65,7 +101,64 @@ const (
 	bulkActionCompleted bulkActionStatus = "completed"
 	bulkActionFailed    bulkActionStatus = "failed"
 	bulkActionCanceled  bulkActionStatus = "canceled"
+	// bulkActionTimedOut is the terminal state for a pass that hit
+	// bulkActionWorkDeadline with work still outstanding. It is deliberately
+	// distinct from bulkActionCanceled and from bulkActionCompleted: an
+	// operator returning to a bulk action that stopped needs to know it ran
+	// out of time rather than that someone canceled it or that it finished.
+	bulkActionTimedOut bulkActionStatus = "timed_out"
 )
+
+// finalBulkStatus decides the terminal status a bulk pass finishes in.
+//
+// runErr is the run context's error: nil on a clean walk, context.Canceled
+// when the operator hit the cancel endpoint, context.DeadlineExceeded when
+// bulkActionWorkDeadline elapsed.
+//
+// interrupted says whether the context actually cut work short -- either the
+// loop broke before an artist it had not started, or an artist's work was
+// still in flight when the context ended. It exists because a non-nil runErr
+// alone does not mean anything was lost: a cancel POST (or the deadline) can
+// land in the window after the last artist finished and before this epilogue
+// runs, and reporting "canceled" for that would lie to /status and to the
+// completion event.
+//
+// A remaining-work COUNT cannot stand in for the flag. When the context ends
+// while the final artist is being processed, that artist is still counted --
+// as a failure -- so processed reaches total even though the run was cut off.
+// Deciding on counts would report such a run as completed, which for a
+// single-ID bulk action means every timeout reads as a normal finish.
+func finalBulkStatus(runErr error, interrupted bool) bulkActionStatus {
+	if runErr == nil || !interrupted {
+		return bulkActionCompleted
+	}
+	if errors.Is(runErr, context.DeadlineExceeded) {
+		return bulkActionTimedOut
+	}
+	return bulkActionCanceled
+}
+
+// bulkPillStatus maps a terminal bulkActionStatus plus the failure count onto
+// the status string the ProgressPill renders. A run that timed out reports
+// timed_out even when some artists also failed: the timeout is the reason the
+// run stopped, and it is the more actionable fact for the operator.
+func bulkPillStatus(final bulkActionStatus, failed int) string {
+	switch final {
+	case bulkActionTimedOut:
+		return string(bulkActionTimedOut)
+	case bulkActionCanceled:
+		return string(bulkActionCanceled)
+	case bulkActionRunning, bulkActionCompleted, bulkActionFailed:
+		if failed > 0 {
+			return string(bulkActionFailed)
+		}
+		return string(bulkActionCompleted)
+	}
+	if failed > 0 {
+		return string(bulkActionFailed)
+	}
+	return string(bulkActionCompleted)
+}
 
 // BulkActionProgress tracks the state of an in-flight bulk action. It is
 // mutex-protected and shared between the request handler and the background
@@ -377,9 +470,20 @@ func (r *Router) handleBulkActionCancel(w http.ResponseWriter, _ *http.Request) 
 //nolint:gocognit // Action-dispatch worker: per-action branches (lock/unlock/delete/refresh) each have distinct prerequisites and outcome accounting, all wrapped in the same cancel-aware loop with mutex-protected progress; the dispatch must stay in one function for the cancel observer to see consistent state transitions.
 func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []string, progress *BulkActionProgress) {
 	// Detach from the request lifecycle but keep request-scoped values
-	// (user, logger, etc.). fix-all uses the same pattern. Wrap with a
-	// cancel so the cancel handler can stop the loop mid-run.
-	ctx, cancel := context.WithCancel(context.WithoutCancel(reqCtx))
+	// (user, logger, etc.). fix-all uses the same pattern.
+	//
+	// context.WithTimeout returns a context that is BOTH cancellable and
+	// deadline-bounded, so the single cancel func stored on the progress
+	// still stops the loop on an operator cancel while the deadline
+	// independently guarantees the goroutine returns (#2931). Both reach the
+	// same ctx that per-item calls receive, so either one unwedges work that
+	// is blocked inside a context-aware read.
+	// Read the deadline ONCE, synchronously, and pass the value down. The
+	// goroutine outlives the handler call, so reading the package var from
+	// inside it would observe a later test-only write rather than the value
+	// this run started with.
+	deadline := time.Duration(bulkActionWorkDeadline.Load())
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(reqCtx), deadline)
 	progress.mu.Lock()
 	progress.cancelFn = cancel
 	progress.mu.Unlock()
@@ -419,12 +523,19 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 			artistsByID = map[string]*artist.Artist{}
 		}
 
+		// interrupted records that the context ended with work genuinely cut
+		// short, which is what separates a canceled or timed-out run from one
+		// whose context happened to end just after the last artist finished.
+		// Only the goroutine writes it, and only before the epilogue reads it.
+		interrupted := false
+
 		for _, id := range ids {
 			// Cancellation check. Break out of the loop and flag the
 			// progress as canceled so the completion path surfaces a
 			// distinct status rather than a successful completion on a
 			// short-circuited run.
 			if ctx.Err() != nil {
+				interrupted = true
 				break
 			}
 			a, ok := artistsByID[id]
@@ -490,6 +601,16 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 				case outcomeFailed:
 					progress.Failed++
 				}
+				// A failure recorded while the context is already done is
+				// work the context aborted, not work that was attempted and
+				// lost on its merits. That is the in-flight case the loop's
+				// top-of-iteration check cannot see: it fires only before an
+				// artist is started, so without this the LAST artist's
+				// interrupted work would leave processed == total and the run
+				// would report a clean completion.
+				if res.Outcome == outcomeFailed && ctx.Err() != nil {
+					interrupted = true
+				}
 				processed := progress.Processed
 				total := progress.Total
 				progress.mu.Unlock()
@@ -520,6 +641,13 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 			total := progress.Total
 			progress.mu.Unlock()
 
+			// Same in-flight-abort accounting as the re-identify branch
+			// above; see the comment there for why the loop's top-of-
+			// iteration check is not sufficient on its own.
+			if outcome != bulkOutcomeSucceeded && outcome != bulkOutcomeSkipped && ctx.Err() != nil {
+				interrupted = true
+			}
+
 			// Throttle ProgressPill updates: one event per artist is fine
 			// at 10ms cadence (100/s) for small runs, but big batches
 			// would flood the SSE hub. Emit every event for the first
@@ -538,14 +666,10 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 		}
 
 		progress.mu.Lock()
-		// A cancel POST can land after the last artist has already been
-		// processed but before this epilogue runs. In that race ctx.Err()
-		// is non-nil yet every item is complete; reporting "canceled" here
-		// lies to /status and the completion event. Gate on remaining work.
-		finalStatus := bulkActionCompleted
-		if ctx.Err() != nil && progress.Processed < progress.Total {
-			finalStatus = bulkActionCanceled
-		}
+		// finalBulkStatus separates a deadline from an operator cancel and
+		// handles the "context ended after the last item" race; see its doc
+		// comment for the reasoning.
+		finalStatus := finalBulkStatus(ctx.Err(), interrupted)
 		progress.Status = finalStatus
 		progress.CurrentName = ""
 		progress.CompletedAt = time.Now().UTC()
@@ -553,18 +677,34 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 		succeeded := progress.Succeeded
 		failed := progress.Failed
 		total := progress.Total
+		processed := progress.Processed
 		progress.mu.Unlock()
 
+		// A pass that ran out of time is an operator-visible anomaly, not
+		// routine completion: log it once with the counts so the server log
+		// says why the run stopped short.
+		if finalStatus == bulkActionTimedOut {
+			r.logger.Warn("bulk action: work deadline exceeded; ending the pass and releasing the slot",
+				"action", action, "deadline", deadline,
+				"processed", processed, "total", total)
+		}
+
 		// Surface the completion via the event bus so the SSE hub can
-		// broadcast a toast to connected clients. Canceled runs emit the
-		// same event type with status="canceled" so the client can show a
-		// distinct toast.
+		// broadcast a toast to connected clients. Canceled and timed-out runs
+		// emit the same event type with their own status so the client can
+		// show a distinct toast.
+		//
+		// status is down-cast to a plain string because the SSE hub's message
+		// builder reads it with a `v.(string)` type assertion, which a named
+		// string type fails -- leaving the toast to fall back to its generic
+		// "Bulk operation completed" title. For a timed-out run that fallback
+		// would state the opposite of what happened.
 		if r.eventBus != nil {
 			r.eventBus.Publish(event.Event{
 				Type: event.BulkCompleted,
 				Data: map[string]any{
 					"type":      action,
-					"status":    finalStatus,
+					"status":    string(finalStatus),
 					"total":     total,
 					"succeeded": succeeded,
 					"failed":    failed,
@@ -572,16 +712,13 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 			})
 		}
 		// Terminal ProgressPill event. ProgressPill JS auto-dismisses
-		// completed pills and keeps failed pills sticky until dismissed,
-		// so we just relay the final status string.
-		pillStatus := "completed"
-		if failed > 0 {
-			pillStatus = "failed"
-		}
-		if finalStatus == bulkActionCanceled {
-			pillStatus = "canceled"
-		}
-		r.publishOpProgress(opID, action, total, total, pillStatus, "")
+		// completed pills, keeps failed and timed-out pills sticky until
+		// dismissed, and removes canceled ones, so we just relay the final
+		// status string. processed (not total) is reported because a run that
+		// broke out of the loop early never reached total and claiming
+		// "N of N" would overstate what it did; the two are equal on a
+		// completed run, and also on a timeout that struck the last artist.
+		r.publishOpProgress(opID, action, total, processed, bulkPillStatus(finalStatus, failed), "")
 
 		// Bulk actions change artist state, which invalidates health and
 		// badge caches for the dashboard.
