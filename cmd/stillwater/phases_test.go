@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/database"
@@ -1216,3 +1218,86 @@ func TestMigrateSchema_RejectsInMemory(t *testing.T) {
 		t.Fatal("migrateSchema(\":memory:\") = nil, want an in-memory rejection error")
 	}
 }
+
+// TestResolveRelinkReconcileInterval pins the three-way contract of
+// relink_reconcile.interval_minutes (#2426 review).
+//
+// The load-bearing case is minutes == 0 -> DISABLED. The version this replaces
+// used `<= 0 -> default`, which silently re-enabled a reconciler the operator
+// had deliberately switched off, leaving no way to stop an unattended job that
+// rewrites platform links. Reverting to that clamp makes the "explicit zero
+// disables" case fail.
+//
+// The negative case asserts the OTHER half of the split: a nonsense value must
+// still fall back to the default rather than being treated as a disable, so an
+// operator who fat-fingers a minus sign gets a working reconciler and not a
+// silently dead one.
+func TestResolveRelinkReconcileInterval(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		minutes     int
+		wantDur     time.Duration
+		wantEnabled bool
+	}{
+		{"positive runs at that cadence", 30, 30 * time.Minute, true},
+		{"one minute is honored", 1, time.Minute, true},
+		{"explicit zero disables", 0, 0, false},
+		{"negative falls back to the default", -5, defaultRelinkReconcileMinutes * time.Minute, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotDur, gotEnabled := resolveRelinkReconcileInterval(tc.minutes)
+			if gotEnabled != tc.wantEnabled {
+				t.Errorf("resolveRelinkReconcileInterval(%d) enabled = %v, want %v",
+					tc.minutes, gotEnabled, tc.wantEnabled)
+			}
+			if gotEnabled && gotDur != tc.wantDur {
+				t.Errorf("resolveRelinkReconcileInterval(%d) = %v, want %v",
+					tc.minutes, gotDur, tc.wantDur)
+			}
+		})
+	}
+}
+
+// TestResolveRelinkReconcileInterval_NeverReturnsNonPositiveWhenEnabled is the
+// safety invariant behind the split: time.NewTicker PANICS on a non-positive
+// duration, so "enabled" must imply "> 0".
+//
+// AN EARLIER VERSION OF THIS TEST CLAIMED TO COVER "every possible input" WHILE
+// SWEEPING ONLY -100..100, and the claim is what made it useless: the ONLY
+// inputs that could break the invariant are enormous ones, where
+// `time.Duration(minutes) * time.Minute` overflows int64 nanoseconds and wraps
+// negative. The confident comment made the narrow range look deliberate, so the
+// gap read as covered ground. Review caught the overflow; this test had said
+// nothing about it. The boundary values below are the ones that actually
+// exercise the property.
+func TestResolveRelinkReconcileInterval_NeverReturnsNonPositiveWhenEnabled(t *testing.T) {
+	inputs := make([]int, 0, 210)
+	for m := -100; m <= 100; m++ {
+		inputs = append(inputs, m)
+	}
+	// The overflow region and its edges. math.MaxInt64 nanoseconds is about
+	// 1.5e11 minutes, so everything past that wraps; these straddle it and the
+	// int extremes on both signs.
+	inputs = append(inputs,
+		maxRelinkReconcileMinutesForTest,
+		maxRelinkReconcileMinutesForTest+1,
+		1<<40, 1<<50, 1<<62,
+		math.MaxInt32, math.MaxInt64, math.MinInt64,
+	)
+
+	for _, m := range inputs {
+		d, enabled := resolveRelinkReconcileInterval(m)
+		if enabled && d <= 0 {
+			t.Fatalf("resolveRelinkReconcileInterval(%d) = (%v, enabled) -- a non-positive "+
+				"interval would panic time.NewTicker", m, d)
+		}
+	}
+}
+
+// maxRelinkReconcileMinutesForTest mirrors the cap inside
+// resolveRelinkReconcileInterval, which is deliberately a function-local
+// constant (it has no other caller and does not belong in the package
+// namespace). Duplicated here rather than exported: the test needs to probe
+// the boundary, and widening a production symbol purely for a test is the
+// worse trade.
+const maxRelinkReconcileMinutesForTest = 60 * 24 * 365
