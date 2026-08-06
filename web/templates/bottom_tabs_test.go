@@ -117,11 +117,17 @@ func TestBottomTabs_MoreSheet_NonAdminOmitsAdminOnly(t *testing.T) {
 // rather than drifting onto an unstyled element.
 func TestBottomTabs_MoreTab_TouchTarget44px(t *testing.T) {
 	html := renderBottomTabs(t, true)
-	if !strings.Contains(html, `class="sw-bottom-tab"`) {
-		t.Fatal("More tab missing the shared sw-bottom-tab class (44px touch target rule)")
+	// Scoped to the ONE element that controls the sheet. A bare search for the
+	// class passes on the four primary tabs alone, so it would stay green even
+	// if the More trigger drifted onto an unstyled element -- which is the exact
+	// drift this test claims to guard (#2382 review).
+	moreTab := regexp.MustCompile(`<button[^>]*aria-controls="bs-more-nav"[^>]*>`).FindString(html)
+	if moreTab == "" {
+		t.Fatal("no <button> carries aria-controls=\"bs-more-nav\"; the More trigger is absent")
 	}
-	if !strings.Contains(html, `aria-controls="bs-more-nav"`) {
-		t.Error("More tab missing aria-controls pointing at the sheet")
+	if !strings.Contains(moreTab, `class="sw-bottom-tab"`) {
+		t.Errorf("the More trigger does not carry the shared sw-bottom-tab class "+
+			"(44px touch target rule); got: %s", moreTab)
 	}
 	if !strings.Contains(html, `id="bs-more-nav"`) {
 		t.Error("More sheet missing its id (bs-more-nav)")
@@ -176,7 +182,11 @@ func sidebarDestinations(t *testing.T) []string {
 // basePathHref matches the sidebar's `templ.SafeURL(data.BasePath + "/path")`
 // link form. Pinned as a package-level var so the vacuity check above has a
 // single thing to guard.
-var basePathHref = regexp.MustCompile(`BasePath \+ "([^"]*)"`)
+// Anchored to href={ templ.SafeURL(...) } specifically. A bare `BasePath + "..."`
+// also matches hx-redirect and any other attribute built from the base path,
+// which would let a non-navigable value be treated as a mobile destination --
+// it avoided a false match today only because that value happens to be "/".
+var basePathHref = regexp.MustCompile(`href=\{ templ\.SafeURL\(data\.BasePath \+ "([^"]*)"\)`)
 
 // TestBottomTabs_MoreSheet_NoSidebarDestinationIsUnreachable is the real 1:1
 // coverage assertion: EVERY destination the sidebar offers must be reachable

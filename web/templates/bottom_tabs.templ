@@ -40,7 +40,7 @@ templ BottomTabs(bp string, currentPath string, isAdmin bool) {
 		}
 		@moreTab()
 	</nav>
-	@components.BottomSheet("more-nav", moreTabItems(ctx, bp, isAdmin))
+	@components.BottomSheet("more-nav", t(ctx, "nav.more_menu"), moreTabItems(ctx, bp, isAdmin))
 }
 
 // moreTab renders the 5th "More" bottom tab, which opens the overflow sheet

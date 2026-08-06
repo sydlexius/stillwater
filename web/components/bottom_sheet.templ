@@ -56,14 +56,18 @@ type BottomSheetItemData struct {
 //
 // Usage:
 //
-//	@components.BottomSheet("artist-sheet", items)
-templ BottomSheet(id string, items []BottomSheetItemData) {
+//	@components.BottomSheet("artist-sheet", "Artist actions", items)
+//
+// label is the sheet's accessible name. Pass a LOCALIZED string: it is the
+// only name a screen reader announces for the dialog, and a hardcoded English
+// one is invisible to the i18n drift check.
+templ BottomSheet(id, label string, items []BottomSheetItemData) {
 	<div
 		id={ "bs-" + id }
 		class="ctx-bottom-sheet"
 		role="menu"
 		aria-modal="true"
-		aria-label="Actions"
+		aria-label={ label }
 		aria-hidden="true"
 		inert
 	>
