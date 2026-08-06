@@ -194,6 +194,18 @@ func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 	return mediabrowser.TriggerLibraryScanRaw(ctx, c, wrapAuthIfStatusAuth)
 }
 
+// LibraryScanIdle reports whether Jellyfin currently has no library scan
+// running. The companion to TriggerLibraryScan, which is fire-and-forget and
+// so cannot tell a caller when its scan finished.
+//
+// Fail-closed: any error means "not proven idle" and the bool is false. See
+// mediabrowser.LibraryScanIdleRaw for the full contract, including why a
+// single Idle reading does not prove a previously-triggered scan has
+// completed.
+func (c *Client) LibraryScanIdle(ctx context.Context) (bool, error) {
+	return mediabrowser.LibraryScanIdleRaw(ctx, c, wrapAuthIfStatusAuth)
+}
+
 // rescanQuery drives a non-destructive item refresh: Recursive=true so a
 // folder item (an artist) picks up newly-appeared child folders (albums
 // absorbed by a merge), while MetadataRefreshMode=Default and

@@ -103,6 +103,12 @@ func assignInto(result any, v any) error {
 			return errors.New("assignInto: type mismatch for testItemsResponse")
 		}
 		*dst = src
+	case *[]scheduledTask:
+		src, ok := v.([]scheduledTask)
+		if !ok {
+			return errors.New("assignInto: type mismatch for []scheduledTask")
+		}
+		*dst = src
 	default:
 		return errors.New("assignInto: unsupported result type")
 	}
@@ -377,5 +383,166 @@ func TestListLibraryArtistsRaw_PageCap(t *testing.T) {
 	}
 	if calls != listArtistsPageCap {
 		t.Errorf("expected exactly %d calls (page cap), got %d", listArtistsPageCap, calls)
+	}
+}
+
+// --- #2426 evidence primitives: listing completeness ---
+
+// TestListLibraryArtistsComplete_ShortPageIsComplete pins the normal case: the
+// peer signals end-of-data with a short page, so the enumeration saw
+// everything and absences from it are meaningful.
+func TestListLibraryArtistsComplete_ShortPageIsComplete(t *testing.T) {
+	fetch := func(_ context.Context, _ string, startIndex, limit int) ([]connection.PeerArtist, int, error) {
+		if startIndex > 0 {
+			return nil, 0, nil
+		}
+		// Fewer than limit: the peer's own "that is all I have".
+		return make([]connection.PeerArtist, 3), 3, nil
+	}
+
+	items, complete, err := ListLibraryArtistsComplete(context.Background(), []string{"lib1"}, fetch)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !complete {
+		t.Error("complete = false after the peer returned a short page")
+	}
+	if len(items) != 3 {
+		t.Errorf("got %d items, want 3", len(items))
+	}
+}
+
+// TestListLibraryArtistsComplete_PageCapIsTruncated is the guard the brief
+// asked for explicitly. A peer that keeps returning full pages until the cap
+// yields a listing that LOOKS finished, and a caller reasoning from absence
+// would silently conclude that everything past the cap does not exist.
+//
+// Latent today (it needs a 100k-artist library), which is exactly why it is
+// pinned now rather than left for that library to discover: the bug is
+// invisible at the call site and only reachable at a scale nobody tests at.
+func TestListLibraryArtistsComplete_PageCapIsTruncated(t *testing.T) {
+	calls := 0
+	fetch := func(_ context.Context, _ string, _, limit int) ([]connection.PeerArtist, int, error) {
+		calls++
+		// Always a full page: the peer never signals the end.
+		return make([]connection.PeerArtist, limit), limit, nil
+	}
+
+	items, complete, err := ListLibraryArtistsComplete(context.Background(), []string{"lib1"}, fetch)
+	// The sentinel must be OBSERVABLE, not merely declared: a caller that
+	// checks only err would otherwise treat a truncated listing as complete.
+	if !errors.Is(err, ErrListingTruncated) {
+		t.Fatalf("err = %v, want ErrListingTruncated", err)
+	}
+	if complete {
+		t.Error("complete = true after stopping at the page cap; absences in a truncated " +
+			"listing are not meaningful and a destructive caller would act on them")
+	}
+	if calls != listArtistsPageCap {
+		t.Errorf("made %d fetch calls, want exactly the cap (%d)", calls, listArtistsPageCap)
+	}
+	// The items ARE valid; only the absences are unreliable. A caller
+	// enumerating what exists must still get them.
+	if len(items) != listArtistsPageCap*listArtistsPageLimit {
+		t.Errorf("got %d items, want %d: truncation must not discard what was read",
+			len(items), listArtistsPageCap*listArtistsPageLimit)
+	}
+}
+
+// TestListLibraryArtistsComplete_OneTruncatedLibraryTaintsTheWholeResult is the
+// multi-library case. Completeness is an ALL, not an ANY: a caller asking "is
+// this artist absent?" is asking about the whole enumeration, so one truncated
+// library makes the entire answer unreliable even if every other library
+// finished cleanly.
+//
+// The fixture puts the clean library FIRST so a per-library flag that is
+// overwritten rather than accumulated would pass. Ordering matters here.
+func TestListLibraryArtistsComplete_OneTruncatedLibraryTaintsTheWholeResult(t *testing.T) {
+	fetch := func(_ context.Context, libID string, startIndex, limit int) ([]connection.PeerArtist, int, error) {
+		if libID == "clean" {
+			if startIndex > 0 {
+				return nil, 0, nil
+			}
+			return make([]connection.PeerArtist, 2), 2, nil
+		}
+		// "endless" never returns a short page.
+		return make([]connection.PeerArtist, limit), limit, nil
+	}
+
+	_, complete, err := ListLibraryArtistsComplete(context.Background(),
+		[]string{"clean", "endless"}, fetch)
+	if !errors.Is(err, ErrListingTruncated) {
+		t.Fatalf("err = %v, want ErrListingTruncated", err)
+	}
+	if complete {
+		t.Error("complete = true when one of two libraries truncated; completeness is an ALL")
+	}
+}
+
+// TestListLibraryArtistsComplete_ErrorIsNeverComplete: a failed enumeration
+// saw nothing conclusive, so it must not report completeness. The bool is
+// checked independently of the error because a caller that reads it without
+// checking err first must still get the safe answer.
+func TestListLibraryArtistsComplete_ErrorIsNeverComplete(t *testing.T) {
+	fetch := func(_ context.Context, _ string, _, _ int) ([]connection.PeerArtist, int, error) {
+		return nil, 0, errors.New("peer exploded")
+	}
+
+	items, complete, err := ListLibraryArtistsComplete(context.Background(), []string{"lib1"}, fetch)
+	if err == nil {
+		t.Fatal("expected the fetch error to propagate")
+	}
+	if complete {
+		t.Error("complete = true on a failed enumeration")
+	}
+	if items != nil {
+		t.Errorf("items = %v on error, want nil: a partial read must not look like a result", items)
+	}
+}
+
+// TestListLibraryArtistsComplete_NoLibrariesIsVacuouslyComplete documents a
+// deliberate edge: zero libraries means nothing was left unread, so the
+// enumeration is complete and empty.
+//
+// This is safe in the drop context and worth stating: a caller must still
+// treat "the artist is absent from an empty listing" as absence only if it
+// independently expected the artist's library to be in the list at all. That
+// judgment belongs to the caller; this function reports only what it saw.
+func TestListLibraryArtistsComplete_NoLibrariesIsVacuouslyComplete(t *testing.T) {
+	fetch := func(_ context.Context, _ string, _, _ int) ([]connection.PeerArtist, int, error) {
+		t.Fatal("fetch must not be called when there are no libraries")
+		return nil, 0, nil
+	}
+
+	items, complete, err := ListLibraryArtistsComplete(context.Background(), nil, fetch)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !complete {
+		t.Error("complete = false for an empty library list; nothing went unread")
+	}
+	if len(items) != 0 {
+		t.Errorf("got %d items from no libraries", len(items))
+	}
+}
+
+// TestListLibraryArtistsRaw_StillDelegatesAndDropsTheFlag proves the old
+// signature keeps working for its existing callers (emby/jellyfin
+// ListLibraryArtists), so this PR adds a capability without changing any
+// current behavior.
+func TestListLibraryArtistsRaw_StillDelegatesAndDropsTheFlag(t *testing.T) {
+	fetch := func(_ context.Context, _ string, startIndex, _ int) ([]connection.PeerArtist, int, error) {
+		if startIndex > 0 {
+			return nil, 0, nil
+		}
+		return make([]connection.PeerArtist, 2), 2, nil
+	}
+
+	items, err := ListLibraryArtistsRaw(context.Background(), []string{"lib1"}, fetch)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 2 {
+		t.Errorf("got %d items, want 2", len(items))
 	}
 }

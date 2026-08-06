@@ -7,6 +7,7 @@ package mediabrowser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -345,21 +346,92 @@ type ArtistItemFetcher func(ctx context.Context, libraryID string, startIndex, l
 // loop/paging logic on both platforms. Empty library IDs are skipped,
 // matching the prior per-package behavior.
 func ListLibraryArtistsRaw(ctx context.Context, libraryIDs []string, fetchPage ArtistItemFetcher) ([]connection.PeerArtist, error) {
+	items, _, err := ListLibraryArtistsComplete(ctx, libraryIDs, fetchPage)
+	// Suppress ONLY the truncation sentinel. Existing callers predate this
+	// signal and already treat a page-capped listing as success; surfacing it
+	// here would change their behavior, which this PR deliberately does not do.
+	// Every other error still propagates.
+	if errors.Is(err, ErrListingTruncated) {
+		return items, nil
+	}
+	return items, err
+}
+
+// ErrListingTruncated marks an enumeration that stopped at listArtistsPageCap
+// with the peer still reporting full pages. The items returned alongside it are
+// VALID but INCOMPLETE.
+//
+// It exists because the dangerous shape of a truncated listing is that it looks
+// exactly like a finished one: a caller that asked "is X in the library?" and
+// got back a list without X cannot tell "X is absent" from "I stopped reading
+// before X". Absence-from-a-listing is only meaningful if the listing was
+// complete, so completeness has to be part of the return value rather than an
+// assumption.
+//
+// Deliberately a WARNING rather than a hard error, and the reason is the same
+// asymmetry: truncation does not make the items wrong, only the ABSENCES
+// unreliable. A caller enumerating what exists (an import, a presence check)
+// is fine; a caller reasoning from what is missing is not. So the items and the
+// flag are returned together and the caller decides. Mirrors ErrPartialScan
+// (internal/dupimages/cache.go), whose contract is the same one: only a scan
+// that saw everything may be used to clear state.
+var ErrListingTruncated = errors.New("mediabrowser: artist listing truncated at the page cap; absences are not meaningful")
+
+// ListLibraryArtistsComplete is ListLibraryArtistsRaw plus the answer to "did I
+// see the whole library?".
+//
+// Returns (items, complete, err). complete is true only when every library was
+// walked to a short page -- the peer's own signal that it had nothing more to
+// give. It is false when any library hit listArtistsPageCap while still
+// returning full pages, and false on error.
+//
+// A caller that will DESTROY state on absence (drop a stored platform link,
+// #2426) must refuse to act unless complete is true. A caller merely
+// enumerating what is present can ignore it.
+//
+// Today the cap is 200 pages of 500, so truncation needs a 100,000-artist
+// library and is not a live condition on any real deployment. It is
+// nonetheless reported rather than assumed away: "cannot happen yet" is a
+// property of current constants, not of the contract, and the whole point of
+// this signal is that its absence is invisible at the call site. A caller that
+// checks it is correct at any cap; one that assumes completeness silently
+// becomes wrong if the cap or the limit ever moves.
+func ListLibraryArtistsComplete(
+	ctx context.Context, libraryIDs []string, fetchPage ArtistItemFetcher,
+) (items []connection.PeerArtist, complete bool, err error) {
 	var out []connection.PeerArtist
+	sawEverything := true
 	for _, libID := range libraryIDs {
 		if libID == "" {
 			continue
 		}
+		// reachedShortPage records the peer's own end-of-data signal. Starting
+		// it false and setting it only on the short-page break is what makes
+		// exhausting the cap detectable: the loop finishing by exhaustion and
+		// the loop finishing by a short page are otherwise the same exit.
+		reachedShortPage := false
 		for page := 0; page < listArtistsPageCap; page++ {
-			items, n, err := fetchPage(ctx, libID, page*listArtistsPageLimit, listArtistsPageLimit)
-			if err != nil {
-				return nil, fmt.Errorf("listing artists in library %s: %w", libID, err)
+			pageItems, n, fetchErr := fetchPage(ctx, libID, page*listArtistsPageLimit, listArtistsPageLimit)
+			if fetchErr != nil {
+				return nil, false, fmt.Errorf("listing artists in library %s: %w", libID, fetchErr)
 			}
-			out = append(out, items...)
+			out = append(out, pageItems...)
 			if n < listArtistsPageLimit {
+				reachedShortPage = true
 				break
 			}
 		}
+		if !reachedShortPage {
+			sawEverything = false
+		}
 	}
-	return out, nil
+	if !sawEverything {
+		// Return the sentinel, do not just flag it. A caller that only checks
+		// err would otherwise treat a truncated enumeration as authoritative,
+		// and the docstring promised an observable signal the code never
+		// emitted (#2426 review). Items come back alongside it: truncation
+		// makes ABSENCES unreliable, not the items that were found.
+		return out, false, ErrListingTruncated
+	}
+	return out, true, nil
 }

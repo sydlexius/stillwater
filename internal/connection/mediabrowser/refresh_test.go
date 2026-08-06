@@ -160,19 +160,60 @@ func TestFetchItemRaw_EmptyItemID(t *testing.T) {
 	}
 }
 
-func TestFetchItemRaw_NotFound(t *testing.T) {
-	tr := &rawTransport{doBody: `{"Items":[]}`}
-	_, err := FetchItemRaw(context.Background(), tr, "missing", "Overview", noopClassifier)
-	if err == nil {
-		t.Fatal("expected not-found error for empty Items")
+// TestFetchItemRaw_PayloadClassification pins WHICH sentinel each response
+// shape yields, not merely that an error came back.
+//
+// The distinction is the entire product of this file: ErrItemNotFound is the
+// only value that licenses a caller to delete a stored platform link, so a
+// test asserting `err != nil` would pass just as happily if a malformed
+// response were classified as proof of absence -- the exact defect this table
+// exists to prevent (#2426 review).
+//
+// The nil-vs-empty rows matter because encoding/json decodes `{}`,
+// `{"Items":null}` and `{"Items":[]}` into the SAME nil slice. Only the third
+// is the peer answering "no such item"; the first two are it not answering.
+func TestFetchItemRaw_PayloadClassification(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{"present but empty array is absence", `{"Items":[]}`, ErrItemNotFound},
+		{"missing Items field is malformed", `{}`, ErrItemMalformedPayload},
+		{"null Items field is malformed", `{"Items":null}`, ErrItemMalformedPayload},
+		{"null first item is ambiguous", `{"Items":[null]}`, ErrItemAmbiguousPayload},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := &rawTransport{doBody: tc.body}
+			_, err := FetchItemRaw(context.Background(), tr, "probe", "Overview", noopClassifier)
+			if err == nil {
+				t.Fatalf("body %s: expected an error, got nil", tc.body)
+			}
+			if !errors.Is(err, tc.want) {
+				t.Errorf("body %s classified as %v, want %v", tc.body, err, tc.want)
+			}
+			// Cross-check: a shape must not ALSO satisfy a sibling sentinel.
+			// Without this, a change that wrapped both would satisfy the
+			// assertion above while destroying the distinction.
+			for _, other := range []error{ErrItemNotFound, ErrItemMalformedPayload, ErrItemAmbiguousPayload} {
+				if !errors.Is(other, tc.want) && errors.Is(err, other) {
+					t.Errorf("body %s also matches %v; the sentinels are no longer exclusive", tc.body, other)
+				}
+			}
+		})
 	}
 }
 
-func TestFetchItemRaw_NullFirstItem(t *testing.T) {
-	tr := &rawTransport{doBody: `{"Items":[null]}`}
-	_, err := FetchItemRaw(context.Background(), tr, "tombstoned", "Overview", noopClassifier)
-	if err == nil {
-		t.Fatal("expected error for a null first item")
+// TestFetchItemRaw_SuccessStillReturnsTheItem guards the inverse: the
+// pointer-decode change must not turn a GOOD response into an error.
+func TestFetchItemRaw_SuccessStillReturnsTheItem(t *testing.T) {
+	tr := &rawTransport{doBody: `{"Items":[{"Id":"abc","Name":"Real Artist"}]}`}
+	item, err := FetchItemRaw(context.Background(), tr, "abc", "Overview", noopClassifier)
+	if err != nil {
+		t.Fatalf("a well-formed item response errored: %v", err)
+	}
+	if item["Id"] != "abc" {
+		t.Errorf("item = %+v, want Id=abc", item)
 	}
 }
 
@@ -275,4 +316,122 @@ func TestPostFullItemRaw_DoErrorPropagates(t *testing.T) {
 var jellyfinReadOnlyFieldsForTest = []string{
 	"ServerId", "ImageBlurHashes", "ImageTags", "BackdropImageTags",
 	"LocationType", "MediaType", "ChannelId",
+}
+
+// --- #2426 evidence primitives: not-found vs. everything else ---
+
+// TestFetchItemRaw_EmptyItemsIsErrItemNotFound pins the ONE state that counts
+// as proof of absence: the peer answered 200, the body decoded, and the Items
+// array is empty.
+//
+// Asserted via errors.Is, never a substring match on the message -- the whole
+// point of the sentinel is that a caller deciding whether to DESTROY state
+// (drop a platform link, #2426) must not depend on error wording that a
+// reword would silently break while still compiling.
+func TestFetchItemRaw_EmptyItemsIsErrItemNotFound(t *testing.T) {
+	tr := &rawTransport{doBody: `{"Items":[]}`}
+
+	_, err := FetchItemRaw(context.Background(), tr, "jf-gone", "Overview", noopClassifier)
+	if err == nil {
+		t.Fatal("expected an error for an empty Items array")
+	}
+	if !errors.Is(err, ErrItemNotFound) {
+		t.Errorf("error %v is not ErrItemNotFound; a caller cannot recognize a genuine absence", err)
+	}
+	if !strings.Contains(err.Error(), "jf-gone") {
+		t.Errorf("error %q drops the item id, making the log unactionable", err.Error())
+	}
+}
+
+// TestFetchItemRaw_NullPayloadIsNotNotFound is the most important test in this
+// file. The peer returns a null Items[0] for a TOMBSTONED record AND for an
+// ACCESS-DENIED one; those demand opposite responses (the link is dead vs. the
+// API key lost permission and the link is fine), and the response cannot tell
+// them apart.
+//
+// So this asserts the ambiguity is preserved rather than resolved: it must NOT
+// satisfy errors.Is(ErrItemNotFound). Folding these together would look like a
+// tidy-up and would license deleting a good link the first time a permission
+// changed.
+func TestFetchItemRaw_NullPayloadIsNotNotFound(t *testing.T) {
+	tr := &rawTransport{doBody: `{"Items":[null]}`}
+
+	_, err := FetchItemRaw(context.Background(), tr, "jf-ambiguous", "Overview", noopClassifier)
+	if err == nil {
+		t.Fatal("expected an error for a null Items[0]")
+	}
+	if errors.Is(err, ErrItemNotFound) {
+		t.Error("a null payload reported as ErrItemNotFound: tombstoned and access-denied " +
+			"are indistinguishable here, so neither conclusion is available")
+	}
+	if !errors.Is(err, ErrItemAmbiguousPayload) {
+		t.Errorf("error %v is not ErrItemAmbiguousPayload; the caller cannot report the "+
+			"ambiguity precisely and will lump it in with transport noise", err)
+	}
+}
+
+// TestFetchItemRaw_ServerErrorIsNotNotFound covers the failure that would be
+// most catastrophic to misread. A 500 says the question was not answered; it
+// says nothing about whether the item exists. If this ever satisfied
+// ErrItemNotFound, every artist's link would be a candidate for deletion the
+// next time a peer had a bad minute.
+func TestFetchItemRaw_ServerErrorIsNotNotFound(t *testing.T) {
+	for _, status := range []int{http.StatusInternalServerError, http.StatusBadGateway,
+		http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			tr := &rawTransport{doStatus: status, doBody: `{"error":"nope"}`}
+
+			_, err := FetchItemRaw(context.Background(), tr, "jf-a1", "Overview", noopClassifier)
+			if err == nil {
+				t.Fatalf("expected an error for status %d", status)
+			}
+			if errors.Is(err, ErrItemNotFound) {
+				t.Errorf("status %d reported as ErrItemNotFound; a failed request is not "+
+					"evidence the item is gone", status)
+			}
+		})
+	}
+}
+
+// TestFetchItemRaw_TransportErrorIsNotNotFound is the unreachable-peer case:
+// same rule, different layer.
+func TestFetchItemRaw_TransportErrorIsNotNotFound(t *testing.T) {
+	tr := &rawTransport{doErr: errors.New("dial tcp: connection refused")}
+
+	_, err := FetchItemRaw(context.Background(), tr, "jf-a1", "Overview", noopClassifier)
+	if err == nil {
+		t.Fatal("expected an error from an unreachable peer")
+	}
+	if errors.Is(err, ErrItemNotFound) {
+		t.Error("an unreachable peer reported as ErrItemNotFound")
+	}
+}
+
+// TestFetchItemRaw_MalformedBodyIsNotNotFound: a body that does not decode is
+// an unanswered question too. Notably a 200 with garbage must not fall through
+// to the empty-Items branch.
+func TestFetchItemRaw_MalformedBodyIsNotNotFound(t *testing.T) {
+	tr := &rawTransport{doBody: `{"Items": not json`}
+
+	_, err := FetchItemRaw(context.Background(), tr, "jf-a1", "Overview", noopClassifier)
+	if err == nil {
+		t.Fatal("expected a decode error")
+	}
+	if errors.Is(err, ErrItemNotFound) {
+		t.Error("a malformed body reported as ErrItemNotFound")
+	}
+}
+
+// TestFetchItemRaw_BlankItemIDIsNotNotFound: the caller's own bad input is a
+// programming error, not a statement about the peer's contents.
+func TestFetchItemRaw_BlankItemIDIsNotNotFound(t *testing.T) {
+	tr := &rawTransport{}
+
+	_, err := FetchItemRaw(context.Background(), tr, "  ", "Overview", noopClassifier)
+	if err == nil {
+		t.Fatal("expected an error for a blank item id")
+	}
+	if errors.Is(err, ErrItemNotFound) {
+		t.Error("a blank item id reported as ErrItemNotFound")
+	}
 }
