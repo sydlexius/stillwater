@@ -300,6 +300,13 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 					>
 						{ t(ctx, "dashboard.re_identify") }
 					</a>
+				} else {
+					<span
+						class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+						title={ t(ctx, "common.fix_unavailable_tooltip") }
+					>
+						{ t(ctx, "common.fix_unavailable") }
+					</span>
 				}
 				<button
 					type="button"

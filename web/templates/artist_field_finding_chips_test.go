@@ -170,3 +170,82 @@ func TestFieldFindingChip_PopoverHeader(t *testing.T) {
 		t.Errorf("popover header missing the generic Finding fallback:\n%s", unnamed)
 	}
 }
+
+// TestFieldFindingChipPopover_UnfixableShowsExplicitChip pins #2729 on the
+// THIRD render surface. The artist-detail inline field-finding popover had
+// `if f.Fixable { Fix }` with no else and an always-rendered Dismiss, so a
+// finding with no fixer showed a lone Dismiss -- the exact defect #2729 fixes,
+// left live here while the violations tab and dashboard were patched.
+//
+// Reachable in practice: name_language_pref sets Fixable:false whenever no
+// localized alias exists, and any Fields-bearing rule persists Fixable:false in
+// manual mode with no wired fixer.
+//
+// The assertions check WHERE the chip lands, not just that it exists. A pass
+// over the two patched surfaces mutated the chip into the wrong container and
+// both of their tests still passed: they asserted presence only. Substring
+// presence is not placement, and a chip rendered outside the actions row is a
+// visual defect that reads as green.
+func TestFieldFindingChipPopover_UnfixableShowsExplicitChip(t *testing.T) {
+	ctx := WithFieldFindings(testCtx(t), map[string][]FieldFinding{
+		"origin": {{
+			ID: "v-2729", ArtistID: "ar-2729", RuleID: "name_language_pref",
+			Severity: "info", Message: "no localized alias exists", Fixable: false,
+		}},
+	})
+	a := &artist.Artist{ID: "ar-2729", Name: "Unfixable Artist", Type: "person", Origin: "Berlin"}
+	got := renderField(t, ctx, a, "origin", false)
+
+	// Precondition: the popover really rendered. Without this every assertion
+	// below passes vacuously on an empty string.
+	if !strings.Contains(got, "sw-ff-pop-actions") {
+		t.Fatalf("popover actions container absent; the test asserts nothing:\n%s", got)
+	}
+	if !strings.Contains(got, "sw-ff-pop-unfixable") {
+		t.Errorf("non-fixable finding is missing the \"Fix unavailable\" chip:\n%s", got)
+	}
+	if strings.Contains(got, "sw-ff-pop-fix") {
+		t.Errorf("non-fixable finding must not render a working Fix button:\n%s", got)
+	}
+	// The Dismiss action still stands: the chip replaces Fix, it does not
+	// remove the one action that IS available.
+	if !strings.Contains(got, "sw-ff-pop-dismiss") {
+		t.Errorf("Dismiss must still render alongside the unfixable chip:\n%s", got)
+	}
+
+	// PLACEMENT. The chip must sit inside the actions row, filling the slot the
+	// Fix button would occupy -- it is an in-row substitute, not a loose label.
+	// Ordering positions prove containment without an HTML parser: the chip has
+	// to fall between the container's opening tag and the Dismiss button that
+	// closes out the same row.
+	openIdx := strings.Index(got, "sw-ff-pop-actions")
+	chipIdx := strings.Index(got, "sw-ff-pop-unfixable")
+	dismissIdx := strings.Index(got, "sw-ff-pop-dismiss")
+	if openIdx >= chipIdx || chipIdx >= dismissIdx {
+		t.Errorf("chip is outside the actions row: actions@%d, chip@%d, dismiss@%d; "+
+			"it must render inside sw-ff-pop-actions, before Dismiss:\n%s",
+			openIdx, chipIdx, dismissIdx, got)
+	}
+
+	// The visible label, not just the class. A class-only assertion passes on a
+	// chip rendered with an empty or untranslated body.
+	if !strings.Contains(got, "Fix unavailable") {
+		t.Errorf("chip is missing its visible label text:\n%s", got)
+	}
+
+	// A FIXABLE finding on the same surface must still get the real button and
+	// no chip -- otherwise this fix would suppress every Fix action.
+	fixableCtx := WithFieldFindings(testCtx(t), map[string][]FieldFinding{
+		"origin": {{
+			ID: "v-2729-fix", ArtistID: "ar-2729", RuleID: "origin_missing",
+			Severity: "warning", Message: "origin missing", Fixable: true,
+		}},
+	})
+	fixable := renderField(t, fixableCtx, a, "origin", false)
+	if !strings.Contains(fixable, "sw-ff-pop-fix") {
+		t.Errorf("fixable finding lost its Fix button:\n%s", fixable)
+	}
+	if strings.Contains(fixable, "sw-ff-pop-unfixable") {
+		t.Errorf("fixable finding must not render the unfixable chip:\n%s", fixable)
+	}
+}

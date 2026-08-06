@@ -2008,6 +2008,14 @@ func TestCheckExtraneousImagesFromDB_UnknownImageType(t *testing.T) {
 	if !strings.Contains(v.Message, "poster/0") {
 		t.Errorf("expected message to mention 'poster/0', got: %s", v.Message)
 	}
+	// #2729: a non-fixable violation must say WHY, not just what -- an operator
+	// staring at "only Dismiss" with no explanation cannot tell "correct by
+	// design" from "broken affordance". Assert the actual explanatory content,
+	// not merely that Message is non-empty (which would pass vacuously even if
+	// the explanation clause were deleted).
+	if !strings.Contains(v.Message, "no local directory") {
+		t.Errorf("expected message to explain the fix is unavailable because the artist has no local directory, got: %s", v.Message)
+	}
 }
 
 func TestCheckExtraneousImagesFromDB_InvalidSlotIndex(t *testing.T) {
