@@ -2,12 +2,16 @@ package image
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
 )
@@ -411,6 +415,204 @@ func RenumberFanart(ctx context.Context, inv HashInvalidator, artistID, dir, pri
 	return renumberFanartFiles(dir, primaryName, survivors, kodi)
 }
 
+// quarantineMarker is the infix stamped into a quarantined file's name. An
+// INFIX rather than a trailing suffix, deliberately: see quarantineStrandedTemp.
+const quarantineMarker = ".orphan-"
+
+// quarantineNow is time.Now in production and a pinned clock in tests. It
+// exists so the collision path in quarantineStrandedTemp can be reached at
+// all: with a real clock, two quarantines get distinct names from the stamp
+// and the refuse-to-clobber guard is never executed, so a test claiming to
+// cover it would pass with the guard deleted.
+var quarantineNow = time.Now
+
+// quarantineRaceHook, when non-nil, runs after the staging path has been
+// stat'd and before it is linked. Test-only: it is the only way to simulate a
+// concurrent run clearing the source in that window, since a source that is
+// absent up front never reaches the link at all. nil in production.
+var quarantineRaceHook func(path string)
+
+// quarantinePostLinkHook, when non-nil, runs after the quarantine link is
+// committed and before the source is unlinked. Test-only, and it exists for a
+// structural reason rather than convenience: the removal-failure branch needs a
+// read-only parent directory, while the link that precedes it needs that same
+// directory writable, so no single filesystem state reaches the branch. nil in
+// production.
+var quarantinePostLinkHook func(path string)
+
+// quarantineStrandedTemp moves whatever sits at path aside instead of deleting
+// it, and is a no-op when nothing is there (#2460).
+//
+// WHY NOT os.Remove, WHICH IS WHAT THIS REPLACED. A survivor's staging path
+// holds one of two things, and nothing in the filename distinguishes them:
+//
+//  1. Inert junk left by a previously FAILED renumber. Deleting it is correct
+//     and deleting it is what the old code did.
+//  2. REAL, ONLY-COPY artwork stranded by a HARD crash -- power loss, SIGKILL,
+//     OOM -- landing between the two rename phases below. The file has been
+//     moved off its final name but not yet onto its new one, so this staging
+//     path is the only place it exists on disk.
+//
+// The old sweep assumed (1) unconditionally, so every crash of shape (2) had
+// its artwork silently unlinked by the next ordinary renumber, with no error
+// and nothing in any log. Quarantining costs one rename in case (1) and saves
+// the only copy in case (2).
+//
+// This is the CRASH-path twin of #2459, which fixed the ERROR path by hoisting
+// this sweep ahead of any staging. That hoist made a transient I/O failure
+// harmless; it could not help here, because a hard crash leaves no error to
+// handle -- the process is simply gone.
+//
+// THE NAME KEEPS THE ORIGINAL EXTENSION TERMINAL, and that is load-bearing
+// rather than cosmetic. The obvious shape, appending a suffix
+// (fanart_renumber_0.jpg.orphan-<ts>), makes filepath.Ext return
+// ".orphan-<ts>" -- so every consumer that classifies by extension stops
+// recognizing the file as an image. internal/foreign's isForeignCandidate is
+// exactly such a consumer: it looks the extension up in its imageExtensions map
+// and returns false before it ever reaches its prefix matching. Since surfacing
+// these orphans to an operator is the deferred follow-up to this fix (#2954),
+// a name
+// that cannot be classified would quietly foreclose it.
+//
+// A crash can recur, and a second quarantine that overwrote the first would
+// destroy the earlier only-copy -- reintroducing this very bug one level up.
+// UNIQUENESS COMES FROM THE COLLISION LOOP BELOW, not from the timestamp: the
+// stamp's format carries nanosecond digits but the clock does not fill them
+// (darwin is ~microsecond-granular, so consecutive calls repeat a stamp
+// readily). Treating the stamp as the guarantee would be a comment that is
+// format-true and behavior-false.
+func quarantineStrandedTemp(path, ext string) error {
+	info, statErr := os.Lstat(path)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return nil // The ordinary case: nothing stranded, nothing to do.
+		}
+		return statErr
+	}
+
+	// ONLY A REGULAR FILE IS QUARANTINED. Anything else at a staging path --
+	// a directory, a symlink, a socket -- is not crash-stranded artwork, so
+	// preserving it serves no one, and MOVING it would be strictly worse than
+	// the os.Remove this replaced: rename succeeds on a directory where remove
+	// fails, so the sweep would quietly proceed into a two-phase rename over a
+	// path something else is occupying.
+	//
+	// That is not hypothetical. #2459's error-path guard is built on this step
+	// being FALLIBLE: internal/rule's stale-tmp-sweep tests squat the staging
+	// path with a non-empty directory precisely so the sweep fails and the
+	// whole operation aborts before any survivor is staged. A quarantine that
+	// renamed the squatter away would have silently retired that guard --
+	// making the crash path safe while making the error path unsafe. Failing
+	// here keeps both.
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s exists and is not a regular file (mode %s); refusing to touch it",
+			filepath.Base(path), info.Mode().Type())
+	}
+
+	base := strings.TrimSuffix(filepath.Base(path), ".tmp")
+	base = strings.TrimSuffix(base, ext)
+	dir := filepath.Dir(path)
+	// quarantineNow is a seam, not indirection for its own sake: with a real
+	// clock the collision branch below is unreachable from a test, because two
+	// quarantines land in different microseconds and get distinct names from
+	// the STAMP rather than from the guard. Pinning the clock is what makes the
+	// guard the only thing standing between two files and one.
+	stamp := quarantineNow().UTC().Format("20060102T150405.000000000Z")
+
+	// quarantineRaceHook is nil in production. It exists because the ENOENT
+	// branch on the link below is otherwise UNREACHABLE from a test: a file
+	// that is absent up front returns at the Lstat above, so the only way to
+	// reach the link with a missing source is for it to vanish BETWEEN the two
+	// -- which is exactly the concurrent-clear the branch handles. Without this
+	// seam a test aimed at that branch passes via the Lstat early return
+	// instead, proving nothing (measured: the mutation survived).
+	if quarantineRaceHook != nil {
+		quarantineRaceHook(path)
+	}
+
+	// os.Link + os.Remove, NOT os.Rename.
+	//
+	// An earlier version used Lstat-then-Rename and justified it with "a plain
+	// rename is atomic within a directory". That premise is TRUE and the
+	// conclusion did not follow: rename's atomicity means the SOURCE is never
+	// nameless, and says nothing about the DESTINATION being unoccupied --
+	// which is the only property this guard needs. os.Rename SILENTLY
+	// OVERWRITES an existing regular file (verified), so the Lstat was a
+	// check-then-act with a window between them: two quarantines computing the
+	// same dest could both pass the Lstat, and the second would destroy the
+	// first's only copy. Renumbering takes no lock (see backup.go's
+	// "unlocked renumbering renames") and five call sites can reach it
+	// concurrently, so that window is reachable rather than theoretical.
+	//
+	// os.Link fails with EEXIST when dest exists, making the refusal ATOMIC --
+	// the kernel does the checking, so there is no window to lose. The cost is
+	// a moment where the file exists under BOTH names, which is strictly safer
+	// than a moment where the destination is silently overwritten.
+	for attempt := range 100 {
+		name := fmt.Sprintf("%s%s%s%s", base, quarantineMarker, stamp, ext)
+		if attempt > 0 {
+			name = fmt.Sprintf("%s%s%s-%d%s", base, quarantineMarker, stamp, attempt, ext)
+		}
+		dest := filepath.Join(dir, name)
+		filesystem.TraceFSWrite("Link(quarantine)", dest, 0)
+		if err := os.Link(path, dest); err != nil {
+			// EEXIST: something already holds this name. Try the next counter
+			// rather than clobbering it -- it may be somebody's only copy.
+			if errors.Is(err, fs.ErrExist) {
+				continue
+			}
+			// ENOENT: the SOURCE is gone. Renumbering takes no lock, so a
+			// concurrent run can clear the staging path between the Lstat above
+			// and this link. That is not a failure -- this function's entire
+			// purpose is "nothing stranded at this path", and nothing is. Note
+			// the fail-safe direction is OPPOSITE to the EEXIST case one branch
+			// up: a destination that already exists must never read as success
+			// (it may be an earlier only-copy), while a source that is already
+			// gone genuinely is success. Aborting here would fail a renumber
+			// for having gotten what it wanted.
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		// Test-only seam, nil in production. The removal-failure branch below is
+		// otherwise unreachable: making the unlink fail needs a read-only
+		// parent directory, but the link above needs that same directory
+		// WRITABLE, so no single directory mode reaches it. The failure has to
+		// be introduced BETWEEN the two operations, which is what this hook is.
+		if quarantinePostLinkHook != nil {
+			quarantinePostLinkHook(path)
+		}
+
+		// The link is committed, so the bytes are now safe under dest no matter
+		// what happens next. Unlinking the source can fail (a read-only
+		// directory, say) without risking the artwork; report it rather than
+		// leaving the caller believing the staging path is clear, since the
+		// two-phase rename below is about to want it.
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			// ENOENT is tolerated for the same reason as on the link above: a
+			// concurrent run may have cleared the source, and the staging path
+			// being clear is precisely the outcome wanted. Any OTHER failure
+			// (a read-only directory, say) is reported -- the bytes are already
+			// safe under dest, but the caller's two-phase rename is about to
+			// want this path and must not be told it is free when it is not.
+			return fmt.Errorf("quarantined %s to %s but could not clear the original: %w",
+				filepath.Base(path), filepath.Base(dest), err)
+		}
+		// WARN, not Info. This is rare, it means an earlier operation died
+		// mid-flight, and the file it names may be the only copy of that
+		// artwork -- an operator who never sees this line has no way to learn
+		// the file exists or where it went. Persistent operator-visible
+		// surfacing is the deferred follow-up (#2954); this is the immediate signal.
+		slog.Warn("quarantined a stranded temp file instead of deleting it; it may be the only copy of this artwork",
+			slog.String("component", "fanart-renumber"),
+			slog.String("original", path),
+			slog.String("quarantined_to", dest))
+		return nil
+	}
+	return fmt.Errorf("quarantining %s: exhausted name attempts", filepath.Base(path))
+}
+
 // renumberFanartFiles performs the on-disk half of RenumberFanart. It is
 // separate only so the two-phase rename can be tested without a hash store;
 // production code must go through RenumberFanart, which cannot skip the
@@ -450,8 +652,8 @@ func renumberFanartFiles(dir, primaryName string, survivors []string, kodi bool)
 		ext := filepath.Ext(oldPath)
 		tmpName := fmt.Sprintf("fanart_renumber_%d%s.tmp", i, ext)
 		tmpPath := filepath.Join(dir, tmpName)
-		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			return fmt.Errorf("clearing stale temp file %s: %w", tmpName, removeErr)
+		if quarantineErr := quarantineStrandedTemp(tmpPath, ext); quarantineErr != nil {
+			return fmt.Errorf("clearing stale temp file %s: %w", tmpName, quarantineErr)
 		}
 		stagedFiles[i] = staged{tmpPath: tmpPath, ext: ext}
 	}
