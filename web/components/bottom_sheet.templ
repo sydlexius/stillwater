@@ -3,8 +3,9 @@ package components
 // BottomSheetItemData describes a single action item in a standalone BottomSheet.
 // For context menu bottom sheets the items come from the ContextMenu children slot.
 //
-// For items that need a custom JS onclick handler, use the slot-based
-// ContextMenu component or write button elements directly inside the sheet.
+// An item renders as an <a> when Href is set, otherwise as a <button>. At most
+// one of Href, HXPost, or OnClick should be set; Href takes precedence over
+// HXPost, and HXPost takes precedence over OnClick.
 type BottomSheetItemData struct {
 	// Label is the visible text for the item.
 	Label string
@@ -14,12 +15,29 @@ type BottomSheetItemData struct {
 	Destructive bool
 	// Disabled prevents interaction and greys out the item.
 	Disabled bool
+	// Href renders the item as a plain navigation link instead of a button.
+	Href string
+	// Current marks a Href item as the active destination (aria-current="page").
+	Current bool
+	// OnClick is a JS action to run on click (e.g. a templ script function
+	// call). Ignored when Href or HXPost is set.
+	OnClick templ.ComponentScript
 	// HXPost is an hx-post URL for HTMX-driven items.
 	HXPost string
 	// HXTarget is an optional hx-target selector for HTMX items.
 	HXTarget string
 	// HXConfirm is an optional confirmation message for HTMX items.
 	HXConfirm string
+	// HXRedirect is an optional hx-redirect URL for HTMX items (e.g. logout).
+	HXRedirect string
+	// HXOnBeforeRequest is an optional hx-on::before-request handler for HTMX
+	// items. Exists so a sheet item can carry the same pre-flight side effect
+	// its desktop counterpart does -- specifically Log Out, which must clear
+	// the cached preferences before the request so the next user on a shared
+	// device does not briefly see the previous user's appearance settings.
+	// Without it the mobile Log Out (the ONLY Log Out at mobile widths) left
+	// that cache behind.
+	HXOnBeforeRequest string
 }
 
 // BottomSheet renders a standalone mobile-first action sheet that slides up from
@@ -91,6 +109,16 @@ templ BottomSheet(id string, items []BottomSheetItemData) {
 	</div>
 }
 
+// bsBeforeRequestAttr renders hx-on::before-request as a PLAIN attribute.
+//
+// It cannot be written literally in the markup: templ classifies any attribute
+// matching on* / hx-on* as a script attribute and requires a
+// templ.ComponentScript, so `hx-on::before-request={ someString }` fails to
+// compile. templ.Attributes emits it verbatim, which is what HTMX reads.
+func bsBeforeRequestAttr(handler string) templ.Attributes {
+	return templ.Attributes{"hx-on::before-request": handler}
+}
+
 // bsFirstDestructiveIndex returns the index of the first destructive item or -1.
 func bsFirstDestructiveIndex(items []BottomSheetItemData) int {
 	for i, item := range items {
@@ -102,35 +130,74 @@ func bsFirstDestructiveIndex(items []BottomSheetItemData) int {
 }
 
 // bottomSheetItem renders a single item row inside a standalone BottomSheet.
+// Renders as an <a> when Href is set, otherwise as a <button>.
+//
+// The HXPost and OnClick attribute branches are two separate guarded `if`s
+// rather than an if/else-if. templ does not support `else if` inside an
+// attribute block: it parses but emits the literal text " else" as an
+// attribute on EVERY rendered button, and the branches are not actually
+// exclusive. The explicit `item.HXPost == ""` guard on the second one is what
+// makes the exclusivity real. (A `//` comment cannot live inside the attribute
+// block either -- templ fails to parse it -- which is why this note is here.)
 templ bottomSheetItem(item BottomSheetItemData) {
-	<button
-		type="button"
-		role="menuitem"
-		class={
-			"context-menu-item",
-			templ.KV("context-menu-item-danger", item.Destructive),
-			templ.KV("context-menu-item-disabled", item.Disabled),
-		}
-		if item.Disabled {
-			disabled
-		}
-		if item.HXPost != "" {
-			hx-post={ item.HXPost }
-			if item.HXTarget != "" {
-				hx-target={ item.HXTarget }
+	if item.Href != "" {
+		<a
+			href={ templ.SafeURL(item.Href) }
+			role="menuitem"
+			class={
+				"context-menu-item",
+				templ.KV("context-menu-item-danger", item.Destructive),
 			}
-			if item.HXConfirm != "" {
-				hx-confirm={ item.HXConfirm }
+			if item.Current {
+				aria-current="page"
 			}
-		}
-	>
-		if item.Icon != nil {
-			<span class="context-menu-item-icon" aria-hidden="true">
-				@item.Icon
-			</span>
-		}
-		{ item.Label }
-	</button>
+		>
+			if item.Icon != nil {
+				<span class="context-menu-item-icon" aria-hidden="true">
+					@item.Icon
+				</span>
+			}
+			{ item.Label }
+		</a>
+	} else {
+		<button
+			type="button"
+			role="menuitem"
+			class={
+				"context-menu-item",
+				templ.KV("context-menu-item-danger", item.Destructive),
+				templ.KV("context-menu-item-disabled", item.Disabled),
+			}
+			if item.Disabled {
+				disabled
+			}
+			if item.HXPost != "" {
+				hx-post={ item.HXPost }
+				if item.HXTarget != "" {
+					hx-target={ item.HXTarget }
+				}
+				if item.HXConfirm != "" {
+					hx-confirm={ item.HXConfirm }
+				}
+				if item.HXRedirect != "" {
+					hx-redirect={ item.HXRedirect }
+				}
+				if item.HXOnBeforeRequest != "" {
+					{ bsBeforeRequestAttr(item.HXOnBeforeRequest)... }
+				}
+			}
+			if item.HXPost == "" && item.OnClick.Name != "" {
+				onclick={ item.OnClick }
+			}
+		>
+			if item.Icon != nil {
+				<span class="context-menu-item-icon" aria-hidden="true">
+					@item.Icon
+				</span>
+			}
+			{ item.Label }
+		</button>
+	}
 }
 
 // OpenBottomSheet returns a JS expression that opens the standalone BottomSheet
@@ -140,6 +207,9 @@ script OpenBottomSheet(id string) {
 	var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
 	sheet._trigger = document.activeElement;
+	if (sheet._trigger && typeof sheet._trigger.setAttribute === 'function') {
+		sheet._trigger.setAttribute('aria-expanded', 'true');
+	}
 	sheet.classList.add('ctx-sheet-open');
 	sheet.setAttribute('aria-hidden', 'false');
 	sheet.removeAttribute('inert');
@@ -168,5 +238,8 @@ script CloseBottomSheet(id string) {
 	sheet.setAttribute('aria-hidden', 'true');
 	sheet.setAttribute('inert', '');
 	document.body.classList.remove('ctx-sheet-body-lock');
+	if (trigger && typeof trigger.setAttribute === 'function') {
+		trigger.setAttribute('aria-expanded', 'false');
+	}
 	if (trigger && typeof trigger.focus === 'function') trigger.focus();
 }

@@ -11,8 +11,9 @@ import templruntime "github.com/a-h/templ/runtime"
 // BottomSheetItemData describes a single action item in a standalone BottomSheet.
 // For context menu bottom sheets the items come from the ContextMenu children slot.
 //
-// For items that need a custom JS onclick handler, use the slot-based
-// ContextMenu component or write button elements directly inside the sheet.
+// An item renders as an <a> when Href is set, otherwise as a <button>. At most
+// one of Href, HXPost, or OnClick should be set; Href takes precedence over
+// HXPost, and HXPost takes precedence over OnClick.
 type BottomSheetItemData struct {
 	// Label is the visible text for the item.
 	Label string
@@ -22,12 +23,29 @@ type BottomSheetItemData struct {
 	Destructive bool
 	// Disabled prevents interaction and greys out the item.
 	Disabled bool
+	// Href renders the item as a plain navigation link instead of a button.
+	Href string
+	// Current marks a Href item as the active destination (aria-current="page").
+	Current bool
+	// OnClick is a JS action to run on click (e.g. a templ script function
+	// call). Ignored when Href or HXPost is set.
+	OnClick templ.ComponentScript
 	// HXPost is an hx-post URL for HTMX-driven items.
 	HXPost string
 	// HXTarget is an optional hx-target selector for HTMX items.
 	HXTarget string
 	// HXConfirm is an optional confirmation message for HTMX items.
 	HXConfirm string
+	// HXRedirect is an optional hx-redirect URL for HTMX items (e.g. logout).
+	HXRedirect string
+	// HXOnBeforeRequest is an optional hx-on::before-request handler for HTMX
+	// items. Exists so a sheet item can carry the same pre-flight side effect
+	// its desktop counterpart does -- specifically Log Out, which must clear
+	// the cached preferences before the request so the next user on a shared
+	// device does not briefly see the previous user's appearance settings.
+	// Without it the mobile Log Out (the ONLY Log Out at mobile widths) left
+	// that cache behind.
+	HXOnBeforeRequest string
 }
 
 // BottomSheet renders a standalone mobile-first action sheet that slides up from
@@ -75,7 +93,7 @@ func BottomSheet(id string, items []BottomSheetItemData) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue("bs-" + id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 44, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 62, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
@@ -153,6 +171,16 @@ func BottomSheet(id string, items []BottomSheetItemData) templ.Component {
 	})
 }
 
+// bsBeforeRequestAttr renders hx-on::before-request as a PLAIN attribute.
+//
+// It cannot be written literally in the markup: templ classifies any attribute
+// matching on* / hx-on* as a script attribute and requires a
+// templ.ComponentScript, so `hx-on::before-request={ someString }` fails to
+// compile. templ.Attributes emits it verbatim, which is what HTMX reads.
+func bsBeforeRequestAttr(handler string) templ.Attributes {
+	return templ.Attributes{"hx-on::before-request": handler}
+}
+
 // bsFirstDestructiveIndex returns the index of the first destructive item or -1.
 func bsFirstDestructiveIndex(items []BottomSheetItemData) int {
 	for i, item := range items {
@@ -164,6 +192,15 @@ func bsFirstDestructiveIndex(items []BottomSheetItemData) int {
 }
 
 // bottomSheetItem renders a single item row inside a standalone BottomSheet.
+// Renders as an <a> when Href is set, otherwise as a <button>.
+//
+// The HXPost and OnClick attribute branches are two separate guarded `if`s
+// rather than an if/else-if. templ does not support `else if` inside an
+// attribute block: it parses but emits the literal text " else" as an
+// attribute on EVERY rendered button, and the branches are not actually
+// exclusive. The explicit `item.HXPost == ""` guard on the second one is what
+// makes the exclusivity real. (A `//` comment cannot live inside the attribute
+// block either -- templ fails to parse it -- which is why this note is here.)
 func bottomSheetItem(item BottomSheetItemData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -185,124 +222,245 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var6 = []any{"context-menu-item",
-			templ.KV("context-menu-item-danger", item.Destructive),
-			templ.KV("context-menu-item-disabled", item.Disabled),
-		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var6...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<button type=\"button\" role=\"menuitem\" class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var7 string
-		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var6).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if item.Disabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, " disabled")
+		if item.Href != "" {
+			var templ_7745c5c3_Var6 = []any{"context-menu-item",
+				templ.KV("context-menu-item-danger", item.Destructive),
+			}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var6...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		}
-		if item.HXPost != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " hx-post=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<a href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var7 templ.SafeURL
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.Href))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 145, Col: 34}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" role=\"menuitem\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
-			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXPost)
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var6).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 118, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if item.HXTarget != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, " hx-target=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var9 string
-				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXTarget)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 120, Col: 29}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\"")
+			if item.Current {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " aria-current=\"page\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			if item.HXConfirm != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " hx-confirm=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var10 string
-				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXConfirm)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 123, Col: 31}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, ">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if item.Icon != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<span class=\"context-menu-item-icon\" aria-hidden=\"true\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = item.Icon.Render(ctx, templ_7745c5c3_Buffer)
+			if item.Icon != nil {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<span class=\"context-menu-item-icon\" aria-hidden=\"true\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = item.Icon.Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</span> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 160, Col: 15}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</a>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		}
-		var templ_7745c5c3_Var11 string
-		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 132, Col: 14}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</button>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
+		} else {
+			var templ_7745c5c3_Var10 = []any{"context-menu-item",
+				templ.KV("context-menu-item-danger", item.Destructive),
+				templ.KV("context-menu-item-disabled", item.Disabled),
+			}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var10...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, item.OnClick)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<button type=\"button\" role=\"menuitem\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var11 string
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var10).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if item.Disabled {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " disabled")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if item.HXPost != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, " hx-post=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var12 string
+				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXPost)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 175, Col: 25}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if item.HXTarget != "" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, " hx-target=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var13 string
+					templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXTarget)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 177, Col: 30}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				if item.HXConfirm != "" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, " hx-confirm=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var14 string
+					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXConfirm)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 180, Col: 32}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				if item.HXRedirect != "" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, " hx-redirect=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var15 string
+					templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXRedirect)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 183, Col: 34}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				if item.HXOnBeforeRequest != "" {
+					templ_7745c5c3_Err = templ.RenderAttributes(ctx, templ_7745c5c3_Buffer, bsBeforeRequestAttr(item.HXOnBeforeRequest))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+			}
+			if item.HXPost == "" && item.OnClick.Name != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, " onclick=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var16 templ.ComponentScript = item.OnClick
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16.Call)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, ">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if item.Icon != nil {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<span class=\"context-menu-item-icon\" aria-hidden=\"true\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = item.Icon.Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</span> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			var templ_7745c5c3_Var17 string
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 198, Col: 15}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</button>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
 		return nil
 	})
@@ -312,10 +470,13 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 // with the given id and stores the trigger element for focus restoration.
 func OpenBottomSheet(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_OpenBottomSheet_d0eb`,
-		Function: `function __templ_OpenBottomSheet_d0eb(id){var sheet = document.getElementById('bs-' + id);
+		Name: `__templ_OpenBottomSheet_6489`,
+		Function: `function __templ_OpenBottomSheet_6489(id){var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
 	sheet._trigger = document.activeElement;
+	if (sheet._trigger && typeof sheet._trigger.setAttribute === 'function') {
+		sheet._trigger.setAttribute('aria-expanded', 'true');
+	}
 	sheet.classList.add('ctx-sheet-open');
 	sheet.setAttribute('aria-hidden', 'false');
 	sheet.removeAttribute('inert');
@@ -332,8 +493,8 @@ func OpenBottomSheet(id string) templ.ComponentScript {
 		}
 	}, 300);
 }`,
-		Call:       templ.SafeScript(`__templ_OpenBottomSheet_d0eb`, id),
-		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_d0eb`, id),
+		Call:       templ.SafeScript(`__templ_OpenBottomSheet_6489`, id),
+		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_6489`, id),
 	}
 }
 
@@ -341,18 +502,21 @@ func OpenBottomSheet(id string) templ.ComponentScript {
 // with the given id and restores focus to the trigger element.
 func CloseBottomSheet(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_CloseBottomSheet_3bb2`,
-		Function: `function __templ_CloseBottomSheet_3bb2(id){var sheet = document.getElementById('bs-' + id);
+		Name: `__templ_CloseBottomSheet_7c43`,
+		Function: `function __templ_CloseBottomSheet_7c43(id){var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
 	var trigger = sheet._trigger;
 	sheet.classList.remove('ctx-sheet-open');
 	sheet.setAttribute('aria-hidden', 'true');
 	sheet.setAttribute('inert', '');
 	document.body.classList.remove('ctx-sheet-body-lock');
+	if (trigger && typeof trigger.setAttribute === 'function') {
+		trigger.setAttribute('aria-expanded', 'false');
+	}
 	if (trigger && typeof trigger.focus === 'function') trigger.focus();
 }`,
-		Call:       templ.SafeScript(`__templ_CloseBottomSheet_3bb2`, id),
-		CallInline: templ.SafeScriptInline(`__templ_CloseBottomSheet_3bb2`, id),
+		Call:       templ.SafeScript(`__templ_CloseBottomSheet_7c43`, id),
+		CallInline: templ.SafeScriptInline(`__templ_CloseBottomSheet_7c43`, id),
 	}
 }
 

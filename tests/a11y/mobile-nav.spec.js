@@ -1,0 +1,136 @@
+// mobile-nav.spec.js -- the mobile navigation contract (#2382).
+//
+// At mobile widths the desktop sidebar is display:none. The bottom tab bar's
+// 5th "More" tab plus its BottomSheet is the ONLY route to Activity, Logs,
+// Preferences, the admin report items, the theme toggle and Log Out. Both
+// defects these tests pin were invisible to the Go templ tests, which assert
+// rendered MARKUP: the sheet was present and correct in the DOM in both cases
+// and still could not be opened by a user.
+//
+//   1. A document-level outside-click listener closed the sheet on the SAME
+//      click that opened it (a standalone BottomSheet trigger sits outside
+//      both [data-context-menu] and .ctx-bottom-sheet).
+//   2. The bottom tabs showed at `max-width: 768px` while .ctx-bottom-sheet
+//      was suppressed at `min-width: 768px`, so at EXACTLY 768px the More tab
+//      was visible but its sheet could never paint.
+//
+// Both are behavioural/cascade failures, so they need a real browser.
+
+import { test, expect } from 'playwright/test';
+
+import { disableTransitions } from './helpers/settle.js';
+
+const TRIGGER = 'button[aria-controls="bs-more-nav"]';
+const SHEET = '#bs-more-nav';
+
+test.beforeEach(async ({ page }) => {
+  await disableTransitions(page);
+});
+
+// The widths that matter: a phone, and both sides of the 768 boundary the
+// bottom tabs and the sheet used to disagree about.
+for (const width of [390, 767, 768]) {
+  test(`More sheet opens and is usable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/');
+
+    // Precondition: this really is the mobile layout. Without it the test
+    // would pass vacuously on a desktop render where no tab bar exists.
+    await expect(page.locator('.sw-bottom-tabs')).toBeVisible();
+    const trigger = page.locator(TRIGGER).first();
+    await expect(trigger).toBeVisible();
+
+    // UX0: 44px minimum tap target.
+    const box = await trigger.boundingBox();
+    expect(box.height, `More tab is ${box.height}px tall; the 44px rule is a floor`).toBeGreaterThanOrEqual(44);
+
+    await trigger.click();
+
+    // The regression: the sheet must still be open after the click settles.
+    // Asserting computed display AND the open attributes, because the two
+    // bugs failed differently -- one reverted the attributes, the other left
+    // them correct while CSS kept display:none.
+    const sheet = page.locator(SHEET);
+    await expect(sheet).toHaveClass(/ctx-sheet-open/);
+    await expect(sheet).toHaveAttribute('aria-hidden', 'false');
+    const display = await sheet.evaluate((el) => getComputedStyle(el).display);
+    expect(display, `sheet is display:${display} at ${width}px; the More tab is a dead button`).not.toBe('none');
+    await expect(sheet.locator('a,button').first()).toBeVisible();
+
+    // Log Out is the item the issue names as having no other mobile route.
+    await expect(sheet.getByText('Log Out')).toBeVisible();
+
+    // Focus moves into the sheet, and Escape closes it and gives focus back.
+    await expect.poll(async () =>
+      sheet.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(sheet).not.toHaveClass(/ctx-sheet-open/);
+    await expect.poll(async () =>
+      trigger.evaluate((el) => el === document.activeElement)).toBe(true);
+  });
+}
+
+// Every width must offer SOME navigation. 769px is the first desktop width:
+// the tabs go away, so the sidebar has to come back.
+test('769px hands off to the sidebar rather than leaving no nav', async ({ page }) => {
+  await page.setViewportSize({ width: 769, height: 844 });
+  await page.goto('/');
+  await expect(page.locator('.sw-bottom-tabs')).toBeHidden();
+  await expect(page.locator('#sw-sidebar')).toBeVisible();
+});
+
+// The sheet's non-link actions. These are the ones a markup test cannot reach
+// and the ones the first version of this spec missed entirely: it clicked the
+// trigger and nothing else, so it passed green while Preferences and Help both
+// threw ReferenceError on their first line and did nothing at all.
+//
+// Root cause worth remembering: a templ `script` block compiles to a
+// hash-suffixed global, and a block never used as an OnClick is never emitted
+// into the page, so calling one script from another by its SOURCE name throws.
+test('More sheet actions actually run (no ReferenceError)', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e.message)));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const sheet = page.locator(SHEET);
+
+  // Preferences: closes the sheet and opens the drawer.
+  await page.locator(TRIGGER).first().click();
+  await expect(sheet).toHaveClass(/ctx-sheet-open/);
+  await sheet.getByText('Preferences', { exact: false }).first().click();
+  await expect(sheet).not.toHaveClass(/ctx-sheet-open/);
+  await expect(page.locator('#sw-prefs-drawer')).toHaveAttribute('aria-hidden', 'false');
+  expect(errors, `page errors after Preferences: ${errors.join('; ')}`).toEqual([]);
+
+  // Help: same shape, different global.
+  await page.reload();
+  errors.length = 0;
+  await page.locator(TRIGGER).first().click();
+  await expect(sheet).toHaveClass(/ctx-sheet-open/);
+  await sheet.getByText('Help shortcuts', { exact: false }).first().click();
+  await expect(sheet).not.toHaveClass(/ctx-sheet-open/);
+  expect(errors, `page errors after Help: ${errors.join('; ')}`).toEqual([]);
+
+  // Theme cycle: deliberately leaves the sheet OPEN (the theme change is the
+  // feedback), so this also pins that documented difference.
+  //
+  // Asserts the STORED PREFERENCE advanced, not the html class. The cycle is
+  // dark -> light -> system, and "system" resolves back to whatever the OS
+  // says -- which in a dark-defaulted context re-applies the same class the
+  // run started with. Comparing class strings made this test flaky (it failed
+  // once and passed on retry); the preference is the thing the click actually
+  // changes.
+  await page.reload();
+  errors.length = 0;
+  await page.locator(TRIGGER).first().click();
+  const before = await page.evaluate(() =>
+    localStorage.getItem('sw-theme') || document.documentElement.getAttribute('data-theme'));
+  await sheet.getByText('Cycle theme', { exact: false }).first().click();
+  await expect.poll(async () => page.evaluate(() =>
+    localStorage.getItem('sw-theme') || document.documentElement.getAttribute('data-theme')),
+    { message: 'theme preference did not advance' }).not.toBe(before);
+  // The sheet stays open on purpose here -- that is the documented behaviour.
+  await expect(sheet).toHaveClass(/ctx-sheet-open/);
+  expect(errors, `page errors after theme cycle: ${errors.join('; ')}`).toEqual([]);
+});

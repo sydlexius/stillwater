@@ -173,9 +173,16 @@
   gap: 2px;
   flex: 1;
   height: 100%;
+  min-width: 44px;
   text-decoration: none;
   color: var(--sw-sidebar-text);
   transition: color 0.15s ease;
+  /* The More tab is a <button> (it opens a sheet, not a page); these resets
+     make it match the <a> tabs' appearance -- no default button chrome. */
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
 
 .sw-bottom-tab:hover {
@@ -1354,15 +1361,25 @@
 }
 
 /* On mobile the desktop dropdown panel is suppressed; the bottom sheet
-   rendered inside the same ContextMenu component takes over instead. */
-@media (max-width: 767px) {
+   rendered inside the same ContextMenu component takes over instead.
+
+   The mobile/desktop boundary is 768px INCLUSIVE, matching .sw-bottom-tabs
+   and the sidebar (both `max-width: 768px`). These two rules previously split
+   at 767/768 while everything else split at 768, so at EXACTLY 768px the
+   bottom tab bar was visible -- sidebar hidden, More tab rendered and
+   clickable -- while every .ctx-bottom-sheet was `display: none`. The sheet
+   opened in the DOM and could never paint, making the More tab a dead button
+   at iPad-portrait width (#2382). Keep these four numbers in lockstep: a
+   width that shows the bottom tabs must be a width where the sheet can
+   render, or the primary mobile nav has no target. */
+@media (max-width: 768px) {
   .ctx-desktop-panel {
     display: none !important;
   }
 }
 
 /* On desktop the bottom sheet panels are suppressed. */
-@media (min-width: 768px) {
+@media (min-width: 769px) {
   .ctx-bottom-sheet {
     display: none !important;
   }
