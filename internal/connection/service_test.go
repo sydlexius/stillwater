@@ -689,6 +689,65 @@ func TestSetManageServerFiles_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestUpdate_DoesNotClobberPreStillwaterSnapshot is the regression guard for
+// issue #2440: a generic connection PUT (GetByID -> mutate -> Update, as
+// handleUpdateConnection does with no lock) must never overwrite the
+// pre_stillwater_config_json snapshot. That column is toggle-lifecycle state
+// owned exclusively by SetPreStillwaterConfig; it is the ONLY copy of the
+// user's original peer config, so a generic edit racing the managed toggle
+// must not be able to destroy it.
+func TestUpdate_DoesNotClobberPreStillwaterSnapshot(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	conn := &Connection{Name: "race", Type: TypeEmby, URL: "http://localhost:8096", APIKey: "k"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Simulate the managed-toggle path persisting the snapshot first.
+	const snapshot = `{"v":1,"savers":"on"}`
+	if err := svc.SetPreStillwaterConfig(ctx, conn.ID, snapshot); err != nil {
+		t.Fatalf("set snapshot: %v", err)
+	}
+
+	// Precondition: the snapshot is actually stored before the race.
+	before, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload before race: %v", err)
+	}
+	if before.PreStillwaterConfigJSON != snapshot {
+		t.Fatalf("precondition failed: snapshot not persisted, got %q", before.PreStillwaterConfigJSON)
+	}
+
+	// Simulate the racing generic PUT: it read the row BEFORE the snapshot
+	// was persisted (in-memory struct has an empty PreStillwaterConfigJSON),
+	// then calls Update after the toggle path already wrote the snapshot.
+	racer := &Connection{
+		ID:      conn.ID,
+		Name:    "race-renamed",
+		Type:    TypeEmby,
+		URL:     "http://localhost:8096",
+		APIKey:  "k",
+		Enabled: before.Enabled,
+		// PreStillwaterConfigJSON intentionally left empty, mirroring a
+		// struct built from a pre-toggle read.
+	}
+	if err := svc.Update(ctx, racer); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Assert the STORED COLUMN VALUE, not a returned struct or status.
+	after, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after race: %v", err)
+	}
+	if after.PreStillwaterConfigJSON != snapshot {
+		t.Errorf("snapshot destroyed by racing Update: got %q, want %q", after.PreStillwaterConfigJSON, snapshot)
+	}
+}
+
 func TestSetManageServerFiles_ErrorOnUnknownID(t *testing.T) {
 	t.Parallel()
 	svc := setupTestService(t)
