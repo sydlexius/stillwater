@@ -687,7 +687,8 @@ templ BulkProgressPill() {
 		data-i18n-single={ t(ctx, "artists.bulk.progress.single") }
 		data-i18n-summary={ t(ctx, "artists.bulk.summary") }
 		data-i18n-reidentify-summary={ t(ctx, "artists.bulk.reidentify.summary") }
-		data-i18n-timed-out-summary={ t(ctx, "artists.bulk.timed_out.summary") }
+		data-i18n-timed-out-summary-one={ t(ctx, "artists.bulk.timed_out.summary.one") }
+		data-i18n-timed-out-summary-other={ t(ctx, "artists.bulk.timed_out.summary.other") }
 		data-i18n-confirm-small={ t(ctx, "artists.bulk.confirm.small") }
 		data-i18n-confirm-large={ t(ctx, "artists.bulk.confirm.large") }
 	></div>
@@ -1532,11 +1533,21 @@ templ ArtistsPageScripts() {
 						// exactly the "looks like it completed" confusion the
 						// distinct terminal state exists to prevent.
 						if (data.status === 'timed_out') {
-							var ttpl = (pill && pill.getAttribute('data-i18n-timed-out-summary')) ||
-								'Bulk action timed out after {processed} of {total} artists.';
+							// Singular/plural picked the same way the selection
+							// counter above does. A single-artist bulk action
+							// uses this exact handler, so a plural-only string
+							// renders "1 of 1 artists"; the fallbacks carry the
+							// same split so a missing attribute cannot
+							// reintroduce it.
+							var tTotal = data.total || 0;
+							var ttpl = tTotal === 1
+								? ((pill && pill.getAttribute('data-i18n-timed-out-summary-one')) ||
+									'Bulk action timed out after {processed} of 1 artist.')
+								: ((pill && pill.getAttribute('data-i18n-timed-out-summary-other')) ||
+									'Bulk action timed out after {processed} of {total} artists.');
 							msg = ttpl
 								.replace('{processed}', String(data.processed || 0))
-								.replace('{total}', String(data.total || 0)) + ' ' + msg;
+								.replace('{total}', String(tTotal)) + ' ' + msg;
 						}
 						if (data.status === 'timed_out' && typeof window.showWarningToast === 'function') {
 							window.showWarningToast(msg);
