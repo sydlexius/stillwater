@@ -502,8 +502,8 @@ func contextMenuItem(item ContextMenuItemData) templ.Component {
 // On mobile (< 768px) the bottom sheet is shown instead of the dropdown.
 func ToggleContextMenu(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_ToggleContextMenu_aa49`,
-		Function: `function __templ_ToggleContextMenu_aa49(id){var panel = document.getElementById('ctx-panel-' + id);
+		Name: `__templ_ToggleContextMenu_0ea5`,
+		Function: `function __templ_ToggleContextMenu_0ea5(id){var panel = document.getElementById('ctx-panel-' + id);
 	var sheet = document.getElementById('ctx-sheet-' + id);
 	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
 	if (!panel) return;
@@ -527,7 +527,6 @@ func ToggleContextMenu(id string) templ.ComponentScript {
 			p.classList.remove('ctx-sheet-open');
 			p.setAttribute('aria-hidden', 'true');
 			p.setAttribute('inert', '');
-			document.body.classList.remove('ctx-sheet-body-lock');
 		} else {
 			p.classList.add('hidden');
 		}
@@ -537,7 +536,20 @@ func ToggleContextMenu(id string) templ.ComponentScript {
 			var btn = parent.querySelector(':scope > button[aria-expanded]');
 			if (btn) btn.setAttribute('aria-expanded', 'false');
 		}
+		// A STANDALONE BottomSheet's trigger is not a DOM sibling (the mobile
+		// nav's More tab lives in the tab bar), so the sibling lookup above
+		// finds nothing and its aria-expanded would stay stuck at "true" after
+		// this loop closed the sheet. Clear it via the stored reference, the
+		// same way closeAllContextMenus already does (#2382 review).
+		if (p._trigger && typeof p._trigger.setAttribute === 'function') {
+			p._trigger.setAttribute('aria-expanded', 'false');
+		}
 	});
+	// Body lock re-derived from what is still open rather than removed
+	// per-sheet inside the loop, matching closeAllContextMenus.
+	if (!document.querySelector('.ctx-bottom-sheet.ctx-sheet-open')) {
+		document.body.classList.remove('ctx-sheet-body-lock');
+	}
 
 	if (!isOpen) {
 		if (isMobile && sheet) {
@@ -569,8 +581,8 @@ func ToggleContextMenu(id string) templ.ComponentScript {
 		}
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_ToggleContextMenu_aa49`, id),
-		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_aa49`, id),
+		Call:       templ.SafeScript(`__templ_ToggleContextMenu_0ea5`, id),
+		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_0ea5`, id),
 	}
 }
 

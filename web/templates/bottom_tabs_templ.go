@@ -474,8 +474,8 @@ func moreIcon() templ.Component {
 // load, which is a real defect worth surfacing rather than swallowing.
 func openPreferencesFromSheet() templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_openPreferencesFromSheet_a85e`,
-		Function: `function __templ_openPreferencesFromSheet_a85e(){// Close the sheet INLINE. A templ ` + "`" + `script` + "`" + ` block compiles to a
+		Name: `__templ_openPreferencesFromSheet_d49f`,
+		Function: `function __templ_openPreferencesFromSheet_d49f(){// Close the sheet INLINE. A templ ` + "`" + `script` + "`" + ` block compiles to a
 	// hash-suffixed global (__templ_<name>_<hash>), so calling a sibling
 	// script by its source name throws ReferenceError -- and a block that is
 	// never used as an OnClick is never emitted into the page at all, so the
@@ -492,6 +492,14 @@ func openPreferencesFromSheet() templ.ComponentScript {
 		if (trigger && typeof trigger.setAttribute === 'function') {
 			trigger.setAttribute('aria-expanded', 'false');
 		}
+		// Park focus on the trigger BEFORE opening the drawer. prefs-drawer.js
+		// open() snapshots document.activeElement into _lastFocusedBefore and
+		// restores it on close; closing the sheet above just made the focused
+		// sheet item inert, so without this the drawer memorizes an inert
+		// element and close() has nowhere to send focus back to (#2382 review).
+		if (trigger && typeof trigger.focus === 'function') {
+			trigger.focus();
+		}
 	}
 	if (window.swPrefsDrawer && typeof window.swPrefsDrawer.open === 'function') {
 		window.swPrefsDrawer.open();
@@ -499,8 +507,8 @@ func openPreferencesFromSheet() templ.ComponentScript {
 		console.error('More sheet: window.swPrefsDrawer.open unavailable; cannot open preferences');
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_openPreferencesFromSheet_a85e`),
-		CallInline: templ.SafeScriptInline(`__templ_openPreferencesFromSheet_a85e`),
+		Call:       templ.SafeScript(`__templ_openPreferencesFromSheet_d49f`),
+		CallInline: templ.SafeScriptInline(`__templ_openPreferencesFromSheet_d49f`),
 	}
 }
 

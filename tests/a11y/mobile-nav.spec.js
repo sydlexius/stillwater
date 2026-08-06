@@ -133,4 +133,18 @@ test('More sheet actions actually run (no ReferenceError)', async ({ page }) => 
   // The sheet stays open on purpose here -- that is the documented behaviour.
   await expect(sheet).toHaveClass(/ctx-sheet-open/);
   expect(errors, `page errors after theme cycle: ${errors.join('; ')}`).toEqual([]);
+
+  // RESTORE the theme. The click runs the production action, which persists
+  // through swPreferences to the SHARED test server -- this tier runs one
+  // ephemeral server for every spec file, so leaving the theme advanced makes
+  // a later a11y scan run under a theme it did not choose and report contrast
+  // violations that are artefacts of this test. Restoring is the fix rather
+  // than avoiding the write, because the persisted write is the behaviour
+  // under test.
+  if (before) {
+    await page.evaluate(
+      (theme) => window.swPreferences && window.swPreferences.set('theme', theme),
+      before,
+    );
+  }
 });

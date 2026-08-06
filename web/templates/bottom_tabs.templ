@@ -187,6 +187,14 @@ script openPreferencesFromSheet() {
 		if (trigger && typeof trigger.setAttribute === 'function') {
 			trigger.setAttribute('aria-expanded', 'false');
 		}
+		// Park focus on the trigger BEFORE opening the drawer. prefs-drawer.js
+		// open() snapshots document.activeElement into _lastFocusedBefore and
+		// restores it on close; closing the sheet above just made the focused
+		// sheet item inert, so without this the drawer memorizes an inert
+		// element and close() has nowhere to send focus back to (#2382 review).
+		if (trigger && typeof trigger.focus === 'function') {
+			trigger.focus();
+		}
 	}
 	if (window.swPrefsDrawer && typeof window.swPrefsDrawer.open === 'function') {
 		window.swPrefsDrawer.open();

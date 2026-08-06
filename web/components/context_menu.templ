@@ -217,7 +217,6 @@ script ToggleContextMenu(id string) {
 			p.classList.remove('ctx-sheet-open');
 			p.setAttribute('aria-hidden', 'true');
 			p.setAttribute('inert', '');
-			document.body.classList.remove('ctx-sheet-body-lock');
 		} else {
 			p.classList.add('hidden');
 		}
@@ -227,7 +226,20 @@ script ToggleContextMenu(id string) {
 			var btn = parent.querySelector(':scope > button[aria-expanded]');
 			if (btn) btn.setAttribute('aria-expanded', 'false');
 		}
+		// A STANDALONE BottomSheet's trigger is not a DOM sibling (the mobile
+		// nav's More tab lives in the tab bar), so the sibling lookup above
+		// finds nothing and its aria-expanded would stay stuck at "true" after
+		// this loop closed the sheet. Clear it via the stored reference, the
+		// same way closeAllContextMenus already does (#2382 review).
+		if (p._trigger && typeof p._trigger.setAttribute === 'function') {
+			p._trigger.setAttribute('aria-expanded', 'false');
+		}
 	});
+	// Body lock re-derived from what is still open rather than removed
+	// per-sheet inside the loop, matching closeAllContextMenus.
+	if (!document.querySelector('.ctx-bottom-sheet.ctx-sheet-open')) {
+		document.body.classList.remove('ctx-sheet-body-lock');
+	}
 
 	if (!isOpen) {
 		if (isMobile && sheet) {

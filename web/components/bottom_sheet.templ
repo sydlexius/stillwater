@@ -147,9 +147,14 @@ templ bottomSheetItem(item BottomSheetItemData) {
 			class={
 				"context-menu-item",
 				templ.KV("context-menu-item-danger", item.Destructive),
+				templ.KV("context-menu-item-disabled", item.Disabled),
 			}
 			if item.Current {
 				aria-current="page"
+			}
+			if item.Disabled {
+				aria-disabled="true"
+				tabindex="-1"
 			}
 		>
 			if item.Icon != nil {
@@ -206,7 +211,17 @@ templ bottomSheetItem(item BottomSheetItemData) {
 script OpenBottomSheet(id string) {
 	var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
-	sheet._trigger = document.activeElement;
+	// Safari/WebKit does NOT focus a <button> on click, so document.activeElement
+	// is <body> there -- which used to be recorded as the trigger, leaving
+	// aria-expanded stuck on the real button and dumping focus on <body> when the
+	// sheet closed. Resolve the trigger by the association it already declares
+	// (aria-controls), and only fall back to activeElement when that finds
+	// nothing. Verified on desktop WebKit; the a11y tier runs Firefox+Chromium so
+	// it could not see this (#2382 review).
+	var byControls = document.querySelector('[aria-controls="bs-' + id + '"]');
+	var active = document.activeElement;
+	sheet._trigger = byControls
+		|| (active && active !== document.body ? active : null);
 	if (sheet._trigger && typeof sheet._trigger.setAttribute === 'function') {
 		sheet._trigger.setAttribute('aria-expanded', 'true');
 	}
