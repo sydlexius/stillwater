@@ -429,8 +429,10 @@ func TestListLibraryArtistsComplete_PageCapIsTruncated(t *testing.T) {
 	}
 
 	items, complete, err := ListLibraryArtistsComplete(context.Background(), []string{"lib1"}, fetch)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// The sentinel must be OBSERVABLE, not merely declared: a caller that
+	// checks only err would otherwise treat a truncated listing as complete.
+	if !errors.Is(err, ErrListingTruncated) {
+		t.Fatalf("err = %v, want ErrListingTruncated", err)
 	}
 	if complete {
 		t.Error("complete = true after stopping at the page cap; absences in a truncated " +
@@ -469,8 +471,8 @@ func TestListLibraryArtistsComplete_OneTruncatedLibraryTaintsTheWholeResult(t *t
 
 	_, complete, err := ListLibraryArtistsComplete(context.Background(),
 		[]string{"clean", "endless"}, fetch)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, ErrListingTruncated) {
+		t.Fatalf("err = %v, want ErrListingTruncated", err)
 	}
 	if complete {
 		t.Error("complete = true when one of two libraries truncated; completeness is an ALL")

@@ -347,6 +347,13 @@ type ArtistItemFetcher func(ctx context.Context, libraryID string, startIndex, l
 // matching the prior per-package behavior.
 func ListLibraryArtistsRaw(ctx context.Context, libraryIDs []string, fetchPage ArtistItemFetcher) ([]connection.PeerArtist, error) {
 	items, _, err := ListLibraryArtistsComplete(ctx, libraryIDs, fetchPage)
+	// Suppress ONLY the truncation sentinel. Existing callers predate this
+	// signal and already treat a page-capped listing as success; surfacing it
+	// here would change their behavior, which this PR deliberately does not do.
+	// Every other error still propagates.
+	if errors.Is(err, ErrListingTruncated) {
+		return items, nil
+	}
 	return items, err
 }
 
@@ -418,5 +425,13 @@ func ListLibraryArtistsComplete(
 			sawEverything = false
 		}
 	}
-	return out, sawEverything, nil
+	if !sawEverything {
+		// Return the sentinel, do not just flag it. A caller that only checks
+		// err would otherwise treat a truncated enumeration as authoritative,
+		// and the docstring promised an observable signal the code never
+		// emitted (#2426 review). Items come back alongside it: truncation
+		// makes ABSENCES unreliable, not the items that were found.
+		return out, false, ErrListingTruncated
+	}
+	return out, true, nil
 }

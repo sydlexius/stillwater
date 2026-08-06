@@ -153,11 +153,18 @@ func TestLibraryScanIdleRaw_EmptyTaskListIsAnErrorNotIdle(t *testing.T) {
 // English name, so an implementation that matched on Name would read the wrong
 // row's state and return the wrong verdict.
 func TestLibraryScanIdleRaw_MatchesOnKeyNotName(t *testing.T) {
+	// The fixture only expresses the Key-vs-Name distinction if the Names
+	// actually DISAGREE with the Keys. Previously both entries omitted Name
+	// entirely, so a Name-matching implementation would have failed to match
+	// anything and the test would still have passed -- for the wrong reason.
 	tr := scanTasksTransport([]scheduledTask{
-		// The real scan task, running, with a localized display name.
-		{Key: "RefreshLibrary", State: "Running"},
-		// A decoy whose English name is what a Name-matcher would look for.
-		{Key: "SomeOtherTask", State: "Idle"},
+		// The REAL scan task, running, as a non-English server presents it:
+		// the stable Key, with a localized display name.
+		{Key: "RefreshLibrary", Name: "Bibliothek aktualisieren", State: "Running"},
+		// A decoy carrying the ENGLISH name a Name-matcher would look for,
+		// and idle. Match on Name and you read this row: idle = true, while a
+		// library scan is actually running.
+		{Key: "SomeOtherTask", Name: "Scan Media Library", State: "Idle"},
 	})
 
 	idle, err := LibraryScanIdleRaw(context.Background(), tr, noopClassifier)

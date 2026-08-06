@@ -105,6 +105,31 @@ func postNoBody(ctx context.Context, t Transport, path string) error {
 // plain error, which a fail-closed caller treats as "keep what you have".
 var ErrItemNotFound = errors.New("mediabrowser: item not found")
 
+// ErrItemMalformedPayload marks a 2xx whose body decoded but carried no Items
+// field at all (`{}` or `{"Items":null}`).
+//
+// SEPARATE from ErrItemNotFound because encoding/json decodes all three of
+// `{}`, `{"Items":null}` and `{"Items":[]}` into the same nil slice, so a
+// len()==0 test cannot tell "the peer said there is no such item" from "the
+// peer did not answer the question". Only the third is proof of absence. The
+// first two are a response that is not the shape this endpoint promises, and
+// treating them as absence would let a malformed reply authorize deleting a
+// valid platform link -- the exact failure this sentinel family exists to
+// prevent.
+
+// ErrItemMalformedPayload marks a 2xx whose body decoded but carried no Items
+// field at all (`{}` or `{"Items":null}`).
+//
+// SEPARATE from ErrItemNotFound because encoding/json decodes all three of
+// `{}`, `{"Items":null}` and `{"Items":[]}` into the same nil slice, so a
+// len()==0 test cannot tell "the peer said there is no such item" from "the
+// peer did not answer the question". Only the third is proof of absence. The
+// first two are a response that is not the shape this endpoint promises, and
+// treating them as absence would let a malformed reply authorize deleting a
+// valid platform link -- the exact failure this sentinel family exists to
+// prevent.
+var ErrItemMalformedPayload = errors.New("mediabrowser: fetch response has no Items field")
+
 // ErrItemAmbiguousPayload marks the peer returning a null Items[0]: a
 // well-formed 200 whose single element is JSON null.
 //
@@ -154,17 +179,33 @@ func FetchItemRaw(ctx context.Context, t Transport, itemID, fields string, class
 		return nil, classifyAuth(errors.Join(formatted, statusErr))
 	}
 
+	// Items is a POINTER so a missing field and a null field stay
+	// distinguishable from a present-but-empty array. encoding/json decodes
+	// `{}` and `{"Items":null}` into the same nil slice as `{"Items":[]}`, so a
+	// len()==0 test would classify a semantically malformed response as proof
+	// of absence -- and this sentinel authorizes deleting a stored platform
+	// link. An absent field means the peer did not answer the question; only an
+	// explicitly empty array means it answered "no such item" (#2426 review).
 	var result struct {
-		Items []map[string]any `json:"Items"`
+		Items *[]map[string]any `json:"Items"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding fetch response: %w", err)
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
-	if len(result.Items) == 0 {
+	if result.Items == nil {
+		// Missing or null Items: well-formed JSON, but it does not carry the
+		// field the answer lives in. Not absence, not ambiguity about a
+		// specific record -- the response simply is not the shape this endpoint
+		// promises, so it proves nothing and must never license a delete.
+		return nil, fmt.Errorf("item %s: fetch response has no Items field: %w",
+			itemID, ErrItemMalformedPayload)
+	}
+	items := *result.Items
+	if len(items) == 0 {
 		// The one state that IS proof of absence: the peer answered, the body
-		// decoded, and it holds no item. Wrapped so callers match with errors.Is
-		// while the message keeps the id for logs.
+		// decoded, and the Items array is PRESENT and empty. Wrapped so callers
+		// match with errors.Is while the message keeps the id for logs.
 		return nil, fmt.Errorf("item %s: %w", itemID, ErrItemNotFound)
 	}
 	// The peer can legitimately return a null Items[0] for a tombstoned or
@@ -172,10 +213,10 @@ func FetchItemRaw(ctx context.Context, t Transport, itemID, fields string, class
 	// cannot tell them apart, so this is explicitly NOT ErrItemNotFound: a
 	// caller that would destroy state on absence must treat it as unknown and
 	// keep what it has. See ErrItemAmbiguousPayload.
-	if result.Items[0] == nil {
+	if items[0] == nil {
 		return nil, fmt.Errorf("item %s: %w", itemID, ErrItemAmbiguousPayload)
 	}
-	return result.Items[0], nil
+	return items[0], nil
 }
 
 // PostFullItemRaw strips readOnlyFields from item, marshals it, and POSTs

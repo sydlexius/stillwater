@@ -53,6 +53,11 @@ var libraryScanTaskKeys = map[string]bool{
 type scheduledTask struct {
 	Key   string `json:"Key"`
 	State string `json:"State"`
+	// Name is decoded but DELIBERATELY never matched on. It exists so a test
+	// can build a fixture where Name and Key disagree and prove the matcher
+	// ignores Name -- without the field, a Key-vs-Name test cannot express the
+	// case it claims to cover (#2426 review).
+	Name string `json:"Name"`
 }
 
 // taskStateIdle is the peer's State value for a task that is not running, and

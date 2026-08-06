@@ -160,19 +160,60 @@ func TestFetchItemRaw_EmptyItemID(t *testing.T) {
 	}
 }
 
-func TestFetchItemRaw_NotFound(t *testing.T) {
-	tr := &rawTransport{doBody: `{"Items":[]}`}
-	_, err := FetchItemRaw(context.Background(), tr, "missing", "Overview", noopClassifier)
-	if err == nil {
-		t.Fatal("expected not-found error for empty Items")
+// TestFetchItemRaw_PayloadClassification pins WHICH sentinel each response
+// shape yields, not merely that an error came back.
+//
+// The distinction is the entire product of this file: ErrItemNotFound is the
+// only value that licenses a caller to delete a stored platform link, so a
+// test asserting `err != nil` would pass just as happily if a malformed
+// response were classified as proof of absence -- the exact defect this table
+// exists to prevent (#2426 review).
+//
+// The nil-vs-empty rows matter because encoding/json decodes `{}`,
+// `{"Items":null}` and `{"Items":[]}` into the SAME nil slice. Only the third
+// is the peer answering "no such item"; the first two are it not answering.
+func TestFetchItemRaw_PayloadClassification(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{"present but empty array is absence", `{"Items":[]}`, ErrItemNotFound},
+		{"missing Items field is malformed", `{}`, ErrItemMalformedPayload},
+		{"null Items field is malformed", `{"Items":null}`, ErrItemMalformedPayload},
+		{"null first item is ambiguous", `{"Items":[null]}`, ErrItemAmbiguousPayload},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := &rawTransport{doBody: tc.body}
+			_, err := FetchItemRaw(context.Background(), tr, "probe", "Overview", noopClassifier)
+			if err == nil {
+				t.Fatalf("body %s: expected an error, got nil", tc.body)
+			}
+			if !errors.Is(err, tc.want) {
+				t.Errorf("body %s classified as %v, want %v", tc.body, err, tc.want)
+			}
+			// Cross-check: a shape must not ALSO satisfy a sibling sentinel.
+			// Without this, a change that wrapped both would satisfy the
+			// assertion above while destroying the distinction.
+			for _, other := range []error{ErrItemNotFound, ErrItemMalformedPayload, ErrItemAmbiguousPayload} {
+				if !errors.Is(other, tc.want) && errors.Is(err, other) {
+					t.Errorf("body %s also matches %v; the sentinels are no longer exclusive", tc.body, other)
+				}
+			}
+		})
 	}
 }
 
-func TestFetchItemRaw_NullFirstItem(t *testing.T) {
-	tr := &rawTransport{doBody: `{"Items":[null]}`}
-	_, err := FetchItemRaw(context.Background(), tr, "tombstoned", "Overview", noopClassifier)
-	if err == nil {
-		t.Fatal("expected error for a null first item")
+// TestFetchItemRaw_SuccessStillReturnsTheItem guards the inverse: the
+// pointer-decode change must not turn a GOOD response into an error.
+func TestFetchItemRaw_SuccessStillReturnsTheItem(t *testing.T) {
+	tr := &rawTransport{doBody: `{"Items":[{"Id":"abc","Name":"Real Artist"}]}`}
+	item, err := FetchItemRaw(context.Background(), tr, "abc", "Overview", noopClassifier)
+	if err != nil {
+		t.Fatalf("a well-formed item response errored: %v", err)
+	}
+	if item["Id"] != "abc" {
+		t.Errorf("item = %+v, want Id=abc", item)
 	}
 }
 
