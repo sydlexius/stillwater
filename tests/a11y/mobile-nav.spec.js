@@ -214,3 +214,55 @@ test('the open sheet is free of axe violations', async ({ page }) => {
   const results = await buildAxeBuilder(page).analyze();
   expect(results.violations, formatViolations(results.violations)).toEqual([]);
 });
+
+// A disabled row must be skipped by BOTH focus paths. The More sheet ships no
+// disabled items today, so the row is injected -- the defect is in the
+// component's focus queries, not in this page's data, and it would otherwise
+// only surface for whichever caller adds the first disabled item.
+//
+// Why it broke: an <a> takes no `disabled` attribute, so a disabled link is
+// marked with aria-disabled + tabindex="-1" -- and `a[href]` matches it anyway.
+// Both queries select on `a[href]`, so initial focus landed on the dead row and
+// the Tab cycle included it. Mutation-proved: reverting either filter puts
+// "Dead Row" back in both.
+test('a disabled sheet row is skipped by initial focus and the trap', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+
+  await page.evaluate(() => {
+    const list = document.querySelector('#bs-more-nav .ctx-sheet-items');
+    const a = document.createElement('a');
+    a.href = '/dead';
+    a.textContent = 'Dead Row';
+    a.className = 'context-menu-item context-menu-item-disabled';
+    a.setAttribute('aria-disabled', 'true');
+    a.setAttribute('tabindex', '-1');
+    list.insertBefore(a, list.firstChild);
+  });
+
+  await page.locator(TRIGGER).first().click();
+  await expect(page.locator(SHEET)).toHaveClass(/ctx-sheet-open/);
+
+  // Precondition: the injected row is really the first candidate, so a broken
+  // query would demonstrably land on it rather than passing by luck.
+  const firstRow = await page.locator(`${SHEET} .ctx-sheet-items > *`).first().innerText();
+  expect(firstRow.trim(), 'the disabled row is not first; this test would not prove anything').toBe('Dead Row');
+
+  await expect.poll(async () =>
+    page.evaluate(() => (document.activeElement.innerText || '').trim()),
+    { message: 'initial focus landed on the disabled row' }).not.toBe('Dead Row');
+
+  const visited = [];
+  for (let i = 0; i < 16; i += 1) {
+    await page.keyboard.press('Tab');
+    visited.push(await page.evaluate(() => (document.activeElement.innerText || '').trim()));
+  }
+  expect(visited, 'the disabled row is reachable by Tab').not.toContain('Dead Row');
+
+  const back = [];
+  for (let i = 0; i < 16; i += 1) {
+    await page.keyboard.press('Shift+Tab');
+    back.push(await page.evaluate(() => (document.activeElement.innerText || '').trim()));
+  }
+  expect(back, 'the disabled row is reachable by Shift+Tab').not.toContain('Dead Row');
+});

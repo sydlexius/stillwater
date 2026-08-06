@@ -400,11 +400,22 @@ templ ContextMenuGlobalJS() {
 					// behind it. The trap held going forward and leaked going
 					// backward, which reads as "trapped" in any test that only
 					// presses Tab (#2382 review).
+					// The disabled filter is NOT redundant with the selector.
+					// `a[href]` matches a disabled ANCHOR regardless of its
+					// tabindex="-1" -- an anchor has no `disabled` attribute, so
+					// BottomSheetItemData.Disabled marks it with aria-disabled +
+					// tabindex="-1" instead. Without this, a disabled link joins
+					// the cycle and Tab lands on something that does nothing.
 					var focusable = Array.prototype.slice.call(
 						openSheet.querySelectorAll(
 							'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
 						)
-					).filter(function(el) { return el.offsetParent !== null; });
+					).filter(function(el) {
+						if (el.offsetParent === null) return false;
+						if (el.getAttribute('aria-disabled') === 'true') return false;
+						if (el.getAttribute('tabindex') === '-1') return false;
+						return true;
+					});
 					if (focusable.length === 0) return;
 					var first = focusable[0];
 					var last = focusable[focusable.length - 1];

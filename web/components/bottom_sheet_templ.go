@@ -502,8 +502,8 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 // with the given id and stores the trigger element for focus restoration.
 func OpenBottomSheet(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_OpenBottomSheet_0ddd`,
-		Function: `function __templ_OpenBottomSheet_0ddd(id){var sheet = document.getElementById('bs-' + id);
+		Name: `__templ_OpenBottomSheet_e091`,
+		Function: `function __templ_OpenBottomSheet_e091(id){var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
 	// Safari/WebKit does NOT focus a <button> on click, so document.activeElement
 	// is <body> there -- which used to be recorded as the trigger, leaving
@@ -526,7 +526,15 @@ func OpenBottomSheet(id string) templ.ComponentScript {
 	setTimeout(function() {
 		if (!sheet.isConnected) return;
 		if (!sheet.classList.contains('ctx-sheet-open')) return;
-		var firstItem = sheet.querySelector('.ctx-sheet-items a[href], .ctx-sheet-items button:not([disabled])');
+		// Same disabled exclusion as the focus trap: an anchor takes no
+		// ` + "`" + `disabled` + "`" + ` attribute, so a disabled item carries aria-disabled +
+		// tabindex="-1" and would otherwise still satisfy ` + "`" + `a[href]` + "`" + ` here --
+		// opening the sheet straight onto a dead row.
+		var firstItem = Array.prototype.slice.call(
+			sheet.querySelectorAll('.ctx-sheet-items a[href], .ctx-sheet-items button:not([disabled])')
+		).filter(function(el) {
+			return el.getAttribute('aria-disabled') !== 'true' && el.getAttribute('tabindex') !== '-1';
+		})[0];
 		if (firstItem) {
 			firstItem.focus();
 		} else {
@@ -535,8 +543,8 @@ func OpenBottomSheet(id string) templ.ComponentScript {
 		}
 	}, 300);
 }`,
-		Call:       templ.SafeScript(`__templ_OpenBottomSheet_0ddd`, id),
-		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_0ddd`, id),
+		Call:       templ.SafeScript(`__templ_OpenBottomSheet_e091`, id),
+		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_e091`, id),
 	}
 }
 

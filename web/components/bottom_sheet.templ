@@ -242,7 +242,15 @@ script OpenBottomSheet(id string) {
 	setTimeout(function() {
 		if (!sheet.isConnected) return;
 		if (!sheet.classList.contains('ctx-sheet-open')) return;
-		var firstItem = sheet.querySelector('.ctx-sheet-items a[href], .ctx-sheet-items button:not([disabled])');
+		// Same disabled exclusion as the focus trap: an anchor takes no
+		// `disabled` attribute, so a disabled item carries aria-disabled +
+		// tabindex="-1" and would otherwise still satisfy `a[href]` here --
+		// opening the sheet straight onto a dead row.
+		var firstItem = Array.prototype.slice.call(
+			sheet.querySelectorAll('.ctx-sheet-items a[href], .ctx-sheet-items button:not([disabled])')
+		).filter(function(el) {
+			return el.getAttribute('aria-disabled') !== 'true' && el.getAttribute('tabindex') !== '-1';
+		})[0];
 		if (firstItem) {
 			firstItem.focus();
 		} else {
