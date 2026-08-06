@@ -162,7 +162,17 @@ func sidebarDestinations(t *testing.T) []string {
 		if err != nil {
 			t.Fatalf("reading %s: %v", f, err)
 		}
-		for _, m := range basePathHref.FindAllStringSubmatch(string(src), -1) {
+		matches := basePathHref.FindAllStringSubmatch(string(src), -1)
+		// PER-FILE, not just a non-empty total. A total-only check cannot see
+		// one source contributing ZERO, which is exactly how an earlier version
+		// of this regex silently dropped every Images destination: it hardcoded
+		// the `data.` receiver while this file uses `v.`, so the guard looked
+		// healthy on the strength of sidebar.templ alone.
+		if len(matches) == 0 {
+			t.Fatalf("no destinations parsed from %s; the extraction regex has "+
+				"drifted and this file's destinations are silently unguarded", f)
+		}
+		for _, m := range matches {
 			d := m[1]
 			// "/" is the Dashboard primary tab, not a sheet item.
 			if d == "" || d == "/" || seen[d] {
@@ -182,11 +192,18 @@ func sidebarDestinations(t *testing.T) []string {
 // basePathHref matches the sidebar's `templ.SafeURL(data.BasePath + "/path")`
 // link form. Pinned as a package-level var so the vacuity check above has a
 // single thing to guard.
-// Anchored to href={ templ.SafeURL(...) } specifically. A bare `BasePath + "..."`
-// also matches hx-redirect and any other attribute built from the base path,
-// which would let a non-navigable value be treated as a mobile destination --
-// it avoided a false match today only because that value happens to be "/".
-var basePathHref = regexp.MustCompile(`href=\{ templ\.SafeURL\(data\.BasePath \+ "([^"]*)"\)`)
+// Anchored to href={ templ.SafeURL(...) } specifically, because a bare
+// `BasePath + "..."` also matches hx-redirect and any other attribute built
+// from the base path, which would let a non-navigable value be read as a
+// mobile destination.
+//
+// The RECEIVER is a wildcard, not `data.`: sidebar.templ writes
+// `data.BasePath` but duplicate_images_nav.templ writes `v.BasePath`, so
+// hardcoding one silently dropped the whole Images section from this guard --
+// it matched 0 of that file's destinations while still looking like it covered
+// both files. Whitespace around `+` is optional for the same reason: a
+// reformat must not be able to quietly narrow the guard.
+var basePathHref = regexp.MustCompile(`href=\{\s*templ\.SafeURL\(\w+\.BasePath\s*\+\s*"([^"]*)"\s*\)`)
 
 // TestBottomTabs_MoreSheet_NoSidebarDestinationIsUnreachable is the real 1:1
 // coverage assertion: EVERY destination the sidebar offers must be reachable
