@@ -7405,11 +7405,14 @@ paths:
                     enum: [idle, running, completed, failed, canceled, timed_out]
                     description: >
                       timed_out means the run hit the server's bulk-action work
-                      deadline with artists still outstanding and was ended so
-                      the singleton slot is released. It is distinct from
-                      canceled (an operator stopped it) and from completed: the
-                      processed count is below total and the remaining artists
-                      were not attempted.
+                      deadline and was ended so the singleton slot is released.
+                      It is distinct from canceled (an operator stopped it) and
+                      from completed (the run finished its work). Do not infer a
+                      count relationship from it: processed is usually below
+                      total, but equals it when the deadline elapsed while the
+                      final artist's work was still in flight, since that artist
+                      is counted as failed. The status, not the counts, is what
+                      says the run ended early.
                   action:
                     type: string
                     enum: [run_rules, re_identify_auto, scan, fetch_images, refresh_metadata, lock, unlock]

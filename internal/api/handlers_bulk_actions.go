@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -70,13 +71,24 @@ var idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // target -- but FINITE, which is the entire point. An operator who wants to
 // stop a pass sooner has the cancel endpoint.
 //
-// A var, not a const, solely so tests can shorten it. That seam is what lets a
-// test exercise THIS deadline: the obvious alternative, canceling the loop
+// Mutable, not a const, solely so tests can shorten it. That seam is what lets
+// a test exercise THIS deadline: the obvious alternative, canceling the loop
 // through the cancel handler, passes just as happily with this bound deleted
 // because it measures the cancel path instead. remediationWorkTimeout carries
-// the same rationale. Production never reassigns it; withBulkActionWorkDeadline
+// the same rationale. Production never writes it; withBulkActionWorkDeadline
 // (test-only) is the sole writer.
-var bulkActionWorkDeadline = 60 * time.Minute
+//
+// Atomic rather than a plain var. The tests that write it are deliberately
+// sequential, and Go pauses top-level t.Parallel() tests until every
+// sequential test has finished, so a plain var does not actually race today.
+// That is a guarantee about testing-package scheduling, though, not about this
+// code -- it would be silently lost the moment someone adds t.Parallel() to a
+// deadline test. An atomic costs one uncontended load on a path that then does
+// per-artist network I/O, and makes the safety a property of the variable
+// instead of a fact a future reader has to rediscover.
+var bulkActionWorkDeadline atomic.Int64 // time.Duration nanoseconds
+
+func init() { bulkActionWorkDeadline.Store(int64(60 * time.Minute)) }
 
 // bulkActionStatus enumerates the terminal and in-flight lifecycle states a
 // BulkActionProgress can occupy. The underlying string type preserves the
@@ -468,8 +480,9 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 	// is blocked inside a context-aware read.
 	// Read the deadline ONCE, synchronously, and pass the value down. The
 	// goroutine outlives the handler call, so reading the package var from
-	// inside it would race with the test-only writer that shortens it.
-	deadline := bulkActionWorkDeadline
+	// inside it would observe a later test-only write rather than the value
+	// this run started with.
+	deadline := time.Duration(bulkActionWorkDeadline.Load())
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(reqCtx), deadline)
 	progress.mu.Lock()
 	progress.cancelFn = cancel

@@ -41,9 +41,9 @@ import (
 // the only way to exercise the thing #2931 added.
 func withBulkActionWorkDeadline(t *testing.T, d time.Duration) {
 	t.Helper()
-	original := bulkActionWorkDeadline
-	bulkActionWorkDeadline = d
-	t.Cleanup(func() { bulkActionWorkDeadline = original })
+	original := bulkActionWorkDeadline.Load()
+	bulkActionWorkDeadline.Store(int64(d))
+	t.Cleanup(func() { bulkActionWorkDeadline.Store(original) })
 }
 
 // TestFinalBulkStatus is the terminal-state decision in isolation. The three
