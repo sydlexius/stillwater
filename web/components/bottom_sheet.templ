@@ -49,7 +49,15 @@ type BottomSheetItemData struct {
 // script function OpenBottomSheet(id) and closed by CloseBottomSheet(id).
 //
 // Accessibility:
-//   - role="menu" and aria-modal="true" on the sheet panel.
+//   - role="dialog" + aria-modal="true" on the container. NOT role="menu":
+//     aria-modal is only valid on dialog/alertdialog (axe aria-allowed-attr),
+//     and role="menu" additionally promises arrow-key menu navigation this
+//     component does not implement. The interaction model here is a modal
+//     overlay -- scrim, scroll lock, focus trap -- so dialog is what it is.
+//   - Item rows carry NO explicit role. <a href> and <button> already expose
+//     link and button semantics; role="menuitem" outside a menu context is an
+//     aria-required-context-role violation, and it put Cancel and the handle
+//     divs under a role="menu" that requires menuitem children.
 //   - Focus is trapped inside the sheet while open.
 //   - Escape closes the sheet and returns focus to the trigger element.
 //   - The scrim is aria-hidden.
@@ -65,7 +73,7 @@ templ BottomSheet(id, label string, items []BottomSheetItemData) {
 	<div
 		id={ "bs-" + id }
 		class="ctx-bottom-sheet"
-		role="menu"
+		role="dialog"
 		aria-modal="true"
 		aria-label={ label }
 		aria-hidden="true"
@@ -147,7 +155,6 @@ templ bottomSheetItem(item BottomSheetItemData) {
 	if item.Href != "" {
 		<a
 			href={ templ.SafeURL(item.Href) }
-			role="menuitem"
 			class={
 				"context-menu-item",
 				templ.KV("context-menu-item-danger", item.Destructive),
@@ -171,7 +178,6 @@ templ bottomSheetItem(item BottomSheetItemData) {
 	} else {
 		<button
 			type="button"
-			role="menuitem"
 			class={
 				"context-menu-item",
 				templ.KV("context-menu-item-danger", item.Destructive),
@@ -236,7 +242,7 @@ script OpenBottomSheet(id string) {
 	setTimeout(function() {
 		if (!sheet.isConnected) return;
 		if (!sheet.classList.contains('ctx-sheet-open')) return;
-		var firstItem = sheet.querySelector('[role="menuitem"]:not([disabled])');
+		var firstItem = sheet.querySelector('.ctx-sheet-items a[href], .ctx-sheet-items button:not([disabled])');
 		if (firstItem) {
 			firstItem.focus();
 		} else {

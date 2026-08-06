@@ -57,7 +57,15 @@ type BottomSheetItemData struct {
 // script function OpenBottomSheet(id) and closed by CloseBottomSheet(id).
 //
 // Accessibility:
-//   - role="menu" and aria-modal="true" on the sheet panel.
+//   - role="dialog" + aria-modal="true" on the container. NOT role="menu":
+//     aria-modal is only valid on dialog/alertdialog (axe aria-allowed-attr),
+//     and role="menu" additionally promises arrow-key menu navigation this
+//     component does not implement. The interaction model here is a modal
+//     overlay -- scrim, scroll lock, focus trap -- so dialog is what it is.
+//   - Item rows carry NO explicit role. <a href> and <button> already expose
+//     link and button semantics; role="menuitem" outside a menu context is an
+//     aria-required-context-role violation, and it put Cancel and the handle
+//     divs under a role="menu" that requires menuitem children.
 //   - Focus is trapped inside the sheet while open.
 //   - Escape closes the sheet and returns focus to the trigger element.
 //   - The scrim is aria-hidden.
@@ -97,20 +105,20 @@ func BottomSheet(id, label string, items []BottomSheetItemData) templ.Component 
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue("bs-" + id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 66, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 74, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"ctx-bottom-sheet\" role=\"menu\" aria-modal=\"true\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"ctx-bottom-sheet\" role=\"dialog\" aria-modal=\"true\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 70, Col: 20}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 78, Col: 20}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -255,13 +263,13 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 			var templ_7745c5c3_Var8 templ.SafeURL
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.Href))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 149, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 157, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" role=\"menuitem\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -311,7 +319,7 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 169, Col: 15}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 176, Col: 15}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -334,7 +342,7 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<button type=\"button\" role=\"menuitem\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<button type=\"button\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -365,7 +373,7 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXPost)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 184, Col: 25}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 190, Col: 25}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 				if templ_7745c5c3_Err != nil {
@@ -383,7 +391,7 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 					var templ_7745c5c3_Var14 string
 					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXTarget)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 186, Col: 30}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 192, Col: 30}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 					if templ_7745c5c3_Err != nil {
@@ -402,7 +410,7 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 					var templ_7745c5c3_Var15 string
 					templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXConfirm)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 189, Col: 32}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 195, Col: 32}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 					if templ_7745c5c3_Err != nil {
@@ -421,7 +429,7 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 					var templ_7745c5c3_Var16 string
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(item.HXRedirect)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 192, Col: 34}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 198, Col: 34}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 					if templ_7745c5c3_Err != nil {
@@ -475,7 +483,7 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 207, Col: 15}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 213, Col: 15}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -494,8 +502,8 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 // with the given id and stores the trigger element for focus restoration.
 func OpenBottomSheet(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_OpenBottomSheet_067d`,
-		Function: `function __templ_OpenBottomSheet_067d(id){var sheet = document.getElementById('bs-' + id);
+		Name: `__templ_OpenBottomSheet_0ddd`,
+		Function: `function __templ_OpenBottomSheet_0ddd(id){var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
 	// Safari/WebKit does NOT focus a <button> on click, so document.activeElement
 	// is <body> there -- which used to be recorded as the trigger, leaving
@@ -518,7 +526,7 @@ func OpenBottomSheet(id string) templ.ComponentScript {
 	setTimeout(function() {
 		if (!sheet.isConnected) return;
 		if (!sheet.classList.contains('ctx-sheet-open')) return;
-		var firstItem = sheet.querySelector('[role="menuitem"]:not([disabled])');
+		var firstItem = sheet.querySelector('.ctx-sheet-items a[href], .ctx-sheet-items button:not([disabled])');
 		if (firstItem) {
 			firstItem.focus();
 		} else {
@@ -527,8 +535,8 @@ func OpenBottomSheet(id string) templ.ComponentScript {
 		}
 	}, 300);
 }`,
-		Call:       templ.SafeScript(`__templ_OpenBottomSheet_067d`, id),
-		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_067d`, id),
+		Call:       templ.SafeScript(`__templ_OpenBottomSheet_0ddd`, id),
+		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_0ddd`, id),
 	}
 }
 

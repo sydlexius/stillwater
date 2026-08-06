@@ -19,6 +19,7 @@
 import { test, expect } from 'playwright/test';
 
 import { disableTransitions } from './helpers/settle.js';
+import { buildAxeBuilder, formatViolations } from './helpers/axe.js';
 
 const TRIGGER = 'button[aria-controls="bs-more-nav"]';
 const SHEET = '#bs-more-nav';
@@ -183,4 +184,33 @@ test('the sheet footer stays on screen on a short phone', async ({ page }) => {
   const logout = sheet.getByText('Log Out', { exact: false }).first();
   await logout.scrollIntoViewIfNeeded();
   await expect(logout).toBeInViewport();
+});
+
+// A real axe scan with the sheet OPEN. The sheet previously declared
+// role="menu" + aria-modal="true" -- aria-modal is only valid on
+// dialog/alertdialog -- and put Cancel and the drag-handle divs under that
+// role="menu" without menuitem roles. Two critical violations that no markup
+// test could see, because the markup was exactly as intended; only a real
+// accessibility engine reading the open sheet reports them.
+test('the open sheet is free of axe violations', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.locator(TRIGGER).first().click();
+
+  const sheet = page.locator(SHEET);
+  await expect(sheet).toHaveClass(/ctx-sheet-open/);
+
+  // Precondition: scanning a CLOSED sheet passes trivially and would make this
+  // test a decoration. Assert the element under test is really in the tree.
+  await expect(sheet).toBeVisible();
+
+  // The container is a modal overlay -- scrim, scroll lock, focus trap -- so it
+  // must say dialog, and its rows must not claim menu semantics outside a menu.
+  await expect(sheet).toHaveAttribute('role', 'dialog');
+  await expect(sheet).toHaveAttribute('aria-modal', 'true');
+  expect(await sheet.locator('[role="menuitem"]').count(),
+    'menuitem outside a menu context is an aria-required-context-role violation').toBe(0);
+
+  const results = await buildAxeBuilder(page).analyze();
+  expect(results.violations, formatViolations(results.violations)).toEqual([]);
 });
