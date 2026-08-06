@@ -396,6 +396,23 @@ templ fieldFindingChip(field string, f FieldFinding) {
 					>
 						{ fixButtonLabel(ctx, f.RuleID) }
 					</button>
+				} else {
+					// #2729, third surface: without this the popover renders a
+					// lone Dismiss and the missing Fix reads as a broken button
+					// rather than a finding nothing can auto-fix. Reachable in
+					// practice -- name_language_pref sets Fixable:false whenever
+					// no localized alias exists, and any Fields-bearing rule
+					// persists Fixable:false in manual mode with no wired fixer.
+					// Not a <button>: there is no action to take, so an
+					// interactive element would be a lie to keyboard and screen
+					// reader users alike. It sits INSIDE sw-ff-pop-actions,
+					// filling the slot the Fix button would have occupied.
+					<span
+						class="sw-ff-pop-unfixable"
+						title={ t(ctx, "common.fix_unavailable_tooltip") }
+					>
+						{ t(ctx, "common.fix_unavailable") }
+					</span>
 				}
 				<button
 					type="button"
