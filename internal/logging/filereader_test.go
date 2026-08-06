@@ -51,17 +51,154 @@ func TestParseLogLine_JSON(t *testing.T) {
 	}
 }
 
-func TestParseLogLine_InvalidJSON(t *testing.T) {
+func TestParseLogLine_Unparsable(t *testing.T) {
+	// A line that is neither valid JSON (sniffed by leading '{') nor valid
+	// logfmt (no key=value pairs at all) must fall through to the explicit,
+	// loud fallback: a distinct Level plus a parse_error attr. Silently
+	// tagging it "info" would make it indistinguishable from a genuine INFO
+	// record, which is the defect #2899 fixes.
 	entry := parseLogLine("not json at all")
-	if entry.Level != "info" {
-		t.Errorf("Level: got %q, want %q", entry.Level, "info")
+	if entry.Level != "unknown" {
+		t.Errorf("Level: got %q, want %q", entry.Level, "unknown")
 	}
 	if entry.Message != "not json at all" {
 		t.Errorf("Message: got %q, want %q", entry.Message, "not json at all")
 	}
 	if !entry.Time.IsZero() {
-		t.Error("Time should be zero for non-JSON lines")
+		t.Error("Time should be zero for unparsable lines")
 	}
+	if entry.Attrs["parse_error"] != true {
+		t.Errorf("Attrs[parse_error]: got %v, want true", entry.Attrs["parse_error"])
+	}
+}
+
+func TestParseLogLine_Logfmt(t *testing.T) {
+	t.Run("basic fields, component, and attrs", func(t *testing.T) {
+		line := `time=2024-03-29T14:00:00.000000000Z level=INFO source=/app/internal/api/handler.go:42 msg="test message" component=scanner key=value`
+		entry := parseLogLine(line)
+
+		if entry.Message != "test message" {
+			t.Errorf("Message: got %q, want %q", entry.Message, "test message")
+		}
+		if entry.Level != "info" {
+			t.Errorf("Level: got %q, want %q", entry.Level, "info")
+		}
+		if entry.Component != "scanner" {
+			t.Errorf("Component: got %q, want %q", entry.Component, "scanner")
+		}
+		if entry.Source != "handler.go:42" {
+			t.Errorf("Source: got %q, want %q", entry.Source, "handler.go:42")
+		}
+		wantTime := time.Date(2024, 3, 29, 14, 0, 0, 0, time.UTC)
+		if !entry.Time.Equal(wantTime) {
+			t.Errorf("Time: got %v, want %v", entry.Time, wantTime)
+		}
+		if entry.Attrs["key"] != "value" {
+			t.Errorf("Attrs[key]: got %v, want %q", entry.Attrs["key"], "value")
+		}
+		if _, ok := entry.Attrs["component"]; ok {
+			t.Error("component should not be in Attrs")
+		}
+	})
+
+	t.Run("quoted msg with spaces and an embedded equals sign", func(t *testing.T) {
+		line := `time=2024-03-29T14:00:00.000000000Z level=ERROR msg="request failed: status=500" key="a=b"`
+		entry := parseLogLine(line)
+		if entry.Message != "request failed: status=500" {
+			t.Errorf("Message: got %q, want %q", entry.Message, "request failed: status=500")
+		}
+		if entry.Attrs["key"] != "a=b" {
+			t.Errorf("Attrs[key]: got %v, want %q", entry.Attrs["key"], "a=b")
+		}
+	})
+
+	t.Run("DEBUG-4 normalizes to trace", func(t *testing.T) {
+		line := `time=2024-03-29T14:00:00.000000000Z level=DEBUG-4 msg="trace entry"`
+		entry := parseLogLine(line)
+		if entry.Level != "trace" {
+			t.Errorf("Level: got %q, want %q", entry.Level, "trace")
+		}
+	})
+
+	t.Run("component auto-derived from source directory when absent", func(t *testing.T) {
+		line := `time=2024-03-29T14:00:00.000000000Z level=INFO source=/app/internal/scanner/scan.go:10 msg="scanning"`
+		entry := parseLogLine(line)
+		if entry.Component != "scanner" {
+			t.Errorf("Component: got %q, want %q", entry.Component, "scanner")
+		}
+	})
+}
+
+func TestReadLogFile_LogfmtFiltering(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.log")
+
+	// Representative slog TextHandler output: this is what production writes
+	// (per #2899) and what the reader must now parse.
+	content := strings.Join([]string{
+		`time=2024-03-29T10:00:00.000000000Z level=DEBUG source=/app/internal/scanner/scan.go:1 msg="debug entry" component=scanner`,
+		`time=2024-03-29T10:00:01.000000000Z level=INFO source=/app/internal/api/handler.go:2 msg="info entry"`,
+		`time=2024-03-29T10:00:02.000000000Z level=WARN source=/app/internal/scanner/scan.go:3 msg="warn entry" component=scanner`,
+		`time=2024-03-29T10:00:03.000000000Z level=ERROR source=/app/internal/api/handler.go:4 msg="error entry"`,
+		`time=2024-03-29T10:00:04.000000000Z level=INFO source=/app/internal/api/handler.go:5 msg="another info"`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("level filter", func(t *testing.T) {
+		// This is the exact scenario reported in #2899: level=error over a
+		// text-format file returned an empty array in production.
+		entries, err := ReadLogFile(path, LogFilter{Level: "error", Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1 (error only)", len(entries))
+		}
+		if entries[0].Message != "error entry" {
+			t.Errorf("Message: got %q, want %q", entries[0].Message, "error entry")
+		}
+	})
+
+	t.Run("component filter", func(t *testing.T) {
+		entries, err := ReadLogFile(path, LogFilter{Component: "scanner", Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("got %d entries, want 2 (scanner entries)", len(entries))
+		}
+		for _, e := range entries {
+			if e.Component != "scanner" {
+				t.Errorf("expected component=scanner, got %q", e.Component)
+			}
+		}
+	})
+
+	t.Run("search filter", func(t *testing.T) {
+		entries, err := ReadLogFile(path, LogFilter{Search: "info", Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("got %d entries, want 2", len(entries))
+		}
+		if entries[0].Message != "another info" || entries[1].Message != "info entry" {
+			t.Fatalf("messages: got %q, %q; want 'another info', 'info entry'", entries[0].Message, entries[1].Message)
+		}
+	})
+
+	t.Run("limit", func(t *testing.T) {
+		entries, err := ReadLogFile(path, LogFilter{Limit: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("got %d entries, want 2", len(entries))
+		}
+	})
 }
 
 func TestReadLogFile_BasicFiltering(t *testing.T) {
