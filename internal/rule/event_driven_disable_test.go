@@ -129,11 +129,14 @@ func TestUpdate_DisablingEventDrivenRulePreservesViolations(t *testing.T) {
 	// who wants collision findings must first turn it on -- which is exactly why
 	// the later toggle-off is dangerous: by then a backlog has accumulated.
 	//
-	// This ordering is load-bearing, not ceremony. Update only runs the cleanup
-	// on the enabled -> disabled TRANSITION, so setting Enabled=false on a rule
-	// that is ALREADY disabled skips cleanup entirely: the violations would
-	// survive, and the test would PASS against the unfixed code while proving
-	// nothing. The enable step is what makes the disable destructive.
+	// This ordering is REALISM, not a correctness requirement, and the
+	// distinction matters to anyone reading this later. Update does NOT gate on
+	// the enabled -> disabled transition: it is a plain `if !r.Enabled` (see
+	// service.go), so cleanup fires on any update that leaves the rule disabled,
+	// including a redundant disable of an already-disabled rule. Verified by
+	// execution -- with the guard removed, a disable with NO preceding enable
+	// still destroyed the violation. So the test would catch the bug either way;
+	// the enable step is here because it is what an operator actually does.
 	r, err := svc.GetByID(ctx, RuleCrossArtistBackdropCollision)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)

@@ -13,7 +13,7 @@ A **rule** is a check Stillwater runs against an artist. It either passes (nothi
 
 Every rule has two independent toggles:
 
-- **Enabled** -- whether the rule runs at all. Disabled rules don't evaluate, don't appear in violation counts, don't surface in the UI's rules tab.
+- **Enabled** -- whether the rule runs at all. Disabled rules don't evaluate, don't appear in violation counts, don't surface in the UI's rules tab. The exception is a rule whose findings are recorded as they happen rather than by a rule run (currently only Cross-artist backdrop collision): disabling it stops new findings being recorded but keeps the ones already found, because nothing can recreate them. See [enable and configure rules](../how-to/enable-and-configure-rules.md).
 - **Automation mode** -- once enabled, the rule is either **manual** (it finds violations; you decide when to apply fixes) or **auto** (the fixer runs on every detected violation as part of evaluation).
 
 Combined, that's three meaningful states:
@@ -38,7 +38,7 @@ Rules fall into three broad categories:
 - **Image** -- the four image slots: presence, dimensions above the configured threshold, aspect ratio sane, no excessive padding (logos), enough fanart variants.
 - **Metadata** -- artist record consistency: directory name matches artist name, IDs not malformed, language of metadata matches the configured preference, etc.
 
-Each rule has a small set of acceptance knobs you can tune -- minimum image dimensions, aspect-ratio tolerance, biography minimum length, article-handling style (prefix / suffix / strip), and so on. The full enumeration lives in the [rules catalogue](../reference/rules-catalogue.md).
+Each rule has a small set of acceptance knobs you can tune -- minimum image dimensions, aspect-ratio tolerance, biography minimum length, article-handling style (prefix / suffix / strip), and so on. The full enumeration lives in the [rules catalog](../reference/rules-catalogue.md).
 
 ## Filesystem-dependent rules
 
@@ -84,4 +84,4 @@ Behind the scenes each fix is identical to a manual click on a single violation 
 - **Conflict-gate coordination.** Fixers consult the gate before disk writes; you don't have to pause rules manually when a platform is meddling.
 - **Concurrent Fix-all.** One run at a time is enforced for you.
 
-What you do think about: which rules to enable, which ones to trust enough to put on auto, and what to do with the violations that the fixer can't auto-resolve. The rules catalogue is the place to start tuning.
+What you do think about: which rules to enable, which ones to trust enough to put on auto, and what to do with the violations that the fixer can't auto-resolve. The rules catalog is the place to start tuning.

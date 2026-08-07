@@ -20,6 +20,8 @@ If you cannot remember which tab a setting lives on, use the search box at the t
 
 A disabled rule never evaluates. It doesn't appear in violation counts and doesn't surface in the artist's violations list. Re-enable to start finding violations again; the next rule run picks them up.
 
+One rule behaves differently on disable: **Cross-artist backdrop collision**. Its findings are not produced by a rule run -- they are recorded at the moment a matching backdrop is imported or pushed, so nothing can recreate them afterward. Disabling it therefore **keeps** its existing findings rather than clearing them, and they continue to count toward compliance. Disabling stops new collisions from being recorded; it does not discard the ones already found. To clear them, dismiss or resolve them individually.
+
 <!-- SCREENSHOT: Settings > Rules | state: rules tab with mix of enabled/disabled + manual/auto + a conflict-gated chip | annotation: enable toggle + mode picker + conflict-gate indicator -->
 
 ## Switch between manual and auto
