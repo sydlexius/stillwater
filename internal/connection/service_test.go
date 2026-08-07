@@ -691,11 +691,23 @@ func TestSetManageServerFiles_RoundTrip(t *testing.T) {
 
 // TestUpdate_DoesNotClobberPreStillwaterSnapshot is the regression guard for
 // issue #2440: a generic connection PUT (GetByID -> mutate -> Update, as
-// handleUpdateConnection does with no lock) must never overwrite the
+// handleUpdateConnection does) must never overwrite the
 // pre_stillwater_config_json snapshot. That column is toggle-lifecycle state
 // owned exclusively by SetPreStillwaterConfig; it is the ONLY copy of the
-// user's original peer config, so a generic edit racing the managed toggle
-// must not be able to destroy it.
+// user's original peer config.
+//
+// THE LOCK IS NOT WHAT MAKES THIS SAFE, which is worth stating because an
+// earlier version of this comment said the handler ran "with no lock" and that
+// is simply false -- handleUpdateConnection does take lockConnection (the
+// per-connection write mutex) around its read-modify-write.
+//
+// The protection this test guards is that Update CANNOT WRITE THE COLUMN AT
+// ALL: it is absent from the SET list. That holds regardless of locking, and
+// it has to, because a lock only serializes writers that both go through it.
+// A PUT whose in-memory struct carries an empty snapshot -- because the
+// handler built it from a request body that has no such field -- destroys the
+// stored value the moment it commits, lock or no lock. Serialization does not
+// help when the losing write is the one that lands.
 func TestUpdate_DoesNotClobberPreStillwaterSnapshot(t *testing.T) {
 	t.Parallel()
 	svc := setupTestService(t)
