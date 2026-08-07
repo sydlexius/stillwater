@@ -245,8 +245,13 @@ func (e *EvaluationContext) FetchImages(ctx context.Context, mbid string, provid
 	// placeholder under dispatch's own lock check, wait on done, and
 	// dedup-count without re-issuing the upstream call.
 	e.mu.Unlock()
-	result, err := e.dispatch(ctx, key, func() *evalCacheEntry {
-		fr, ferr := e.orch.FetchImages(ctx, mbid, providerIDs)
+	result, err := e.dispatch(ctx, key, func(fetchCtx context.Context) *evalCacheEntry {
+		// fetchCtx, not ctx: the coalescer detached it, and re-capturing the
+		// caller's ctx here would reintroduce #2880 verbatim. The timeout is
+		// re-applied because WithoutCancel strips the caller's deadline.
+		sharedCtx, cancel := context.WithTimeout(fetchCtx, fetchTimeout)
+		defer cancel()
+		fr, ferr := e.orch.FetchImages(sharedCtx, mbid, providerIDs)
 		return &evalCacheEntry{fetch: fr, err: ferr}
 	})
 	return result.fetch, err
@@ -276,8 +281,10 @@ func (e *EvaluationContext) FetchMetadata(ctx context.Context, mbid, name string
 		return cached.fetch, cached.err
 	}
 	e.mu.Unlock()
-	result, err := e.dispatch(ctx, key, func() *evalCacheEntry {
-		fr, ferr := e.orch.FetchMetadata(ctx, mbid, name, providerIDs)
+	result, err := e.dispatch(ctx, key, func(fetchCtx context.Context) *evalCacheEntry {
+		sharedCtx, cancel := context.WithTimeout(fetchCtx, fetchTimeout)
+		defer cancel()
+		fr, ferr := e.orch.FetchMetadata(sharedCtx, mbid, name, providerIDs)
 		return &evalCacheEntry{fetch: fr, err: ferr}
 	})
 	return result.fetch, err
@@ -308,8 +315,10 @@ func (e *EvaluationContext) FetchFieldFromProviders(ctx context.Context, mbid, n
 		return cached.field, cached.err
 	}
 	e.mu.Unlock()
-	result, err := e.dispatch(ctx, key, func() *evalCacheEntry {
-		results, ferr := e.orch.FetchFieldFromProviders(ctx, mbid, name, field, providerIDs)
+	result, err := e.dispatch(ctx, key, func(fetchCtx context.Context) *evalCacheEntry {
+		sharedCtx, cancel := context.WithTimeout(fetchCtx, fetchTimeout)
+		defer cancel()
+		results, ferr := e.orch.FetchFieldFromProviders(sharedCtx, mbid, name, field, providerIDs)
 		return &evalCacheEntry{field: results, err: ferr}
 	})
 	return result.field, err
@@ -341,8 +350,10 @@ func (e *EvaluationContext) Search(ctx context.Context, name string) ([]provider
 		return cached.search, cached.err
 	}
 	e.mu.Unlock()
-	result, err := e.dispatch(ctx, key, func() *evalCacheEntry {
-		results, ferr := e.orch.Search(ctx, name)
+	result, err := e.dispatch(ctx, key, func(fetchCtx context.Context) *evalCacheEntry {
+		sharedCtx, cancel := context.WithTimeout(fetchCtx, fetchTimeout)
+		defer cancel()
+		results, ferr := e.orch.Search(sharedCtx, name)
 		return &evalCacheEntry{search: results, err: ferr}
 	})
 	return result.search, err
@@ -383,11 +394,62 @@ func (e *EvaluationContext) GetReleaseGroups(ctx context.Context, mbid string, f
 		return cached.releaseGroups, cached.err
 	}
 	e.mu.Unlock()
-	result, err := e.dispatch(ctx, key, func() *evalCacheEntry {
-		rgs, ferr := fetch(ctx)
+	// The caller's closure receives the coalescer-DETACHED context, not the
+	// caller's own (#2880). Detaching strips the caller's DEADLINE along with
+	// its cancellation, so this method applies fetchTimeout as a BACKSTOP --
+	// not as the intended bound.
+	//
+	// The intended bound belongs to the closure, which knows the right value
+	// (discography and the album gate both cap at discographyFetchTimeout,
+	// which is shorter). Nested WithTimeout takes the MINIMUM, so a closure
+	// that applies its own tighter cap is unaffected by this one: 30s backstop
+	// + 15s call-site cap still expires at 15s. The backstop exists solely so
+	// that a closure which forgets to cap itself runs BOUNDED rather than
+	// forever -- before #2880 such a closure inherited the caller's deadline,
+	// and detachment must not silently turn that into an unbounded fetch.
+	result, err := e.dispatch(ctx, key, func(fetchCtx context.Context) *evalCacheEntry {
+		boundedCtx, cancel := context.WithTimeout(fetchCtx, fetchTimeout)
+		defer cancel()
+		rgs, ferr := fetch(boundedCtx)
 		return &evalCacheEntry{releaseGroups: rgs, err: ferr}
 	})
 	return result.releaseGroups, err
+}
+
+// detachedFetchContext returns the context a COALESCED upstream fetch must run
+// under: the caller's VALUES, none of the caller's CANCELLATION (#2880).
+//
+// The failure this prevents: two rules evaluate the same artist concurrently
+// and coalesce onto one upstream call. Rule A's context is canceled -- its
+// artist finished, its deadline expired, its pass was aborted -- and, if the
+// shared fetch ran under A's context, that fetch dies. Rule B never agreed to
+// A's deadline, is still running, and gets a canceled error. Worse, dispatch
+// CACHES that error under the cache key, so every later caller in the pass is
+// served A's cancellation as though its own fetch had failed.
+//
+// context.WithoutCancel severs cancellation and deadline while KEEPING the
+// values, which is load-bearing here: the EvaluationContext, any PassContext,
+// and the metadata language preferences all ride the context downstream, and a
+// context.Background() would silently drop them.
+//
+// NO TIMEOUT IS APPLIED HERE, deliberately. WithoutCancel strips the caller's
+// deadline, so the fetch must be re-bounded -- but the right VALUE is
+// per-call-site: the discography path caps at discographyFetchTimeout (15s)
+// while the provider paths use fetchTimeout (30s). Each call site therefore
+// applies its own, exactly as ruleAlbumGate.fetchGroups does (#2878).
+//
+// To be precise about why the cap is not simply set here instead: nested
+// WithTimeout takes the MINIMUM, so a central 30s would NOT lengthen a call
+// site that also caps at 15s -- it would just be redundant there. The failure
+// case is a call site that applies NO cap of its own and would then silently
+// inherit 30s where the caller had intended 15s. Keeping the value at the call
+// site keeps that intent explicit and local. Each dispatch entry point still
+// applies fetchTimeout as a BACKSTOP so a closure that forgets to cap itself
+// is bounded rather than unbounded.
+//
+// The coalescer owns DETACHMENT; the call site owns DURATION.
+func detachedFetchContext(ctx context.Context) context.Context {
+	return context.WithoutCancel(ctx)
 }
 
 // dispatch is the singleflight publisher for a coalesced provider call.
@@ -417,7 +479,15 @@ func (e *EvaluationContext) GetReleaseGroups(ctx context.Context, mbid string, f
 // way any other failure is, so subsequent rules in the same pass do not
 // retry; it uses the shared alreadyDoneCh so callers waiting on done
 // observe the populated entry immediately.
-func (e *EvaluationContext) dispatch(ctx context.Context, key evalCacheKey, fetch func() *evalCacheEntry) (*evalCacheEntry, error) {
+//
+// CONTEXT OWNERSHIP (#2880). fetch receives a context this function OWNS,
+// never the caller's. dispatch is a singleflight: whoever loses the race
+// waits on the winner's result, so the winner's fetch is SHARED work. A
+// context belonging to one caller must therefore never reach it -- see
+// detachedFetchContext for the failure mode. Callers that want their own
+// cancellation keep it on their DIRECT (non-coalesced) branch, which never
+// enters dispatch.
+func (e *EvaluationContext) dispatch(ctx context.Context, key evalCacheKey, fetch func(context.Context) *evalCacheEntry) (*evalCacheEntry, error) {
 	if e.orch == nil {
 		entry := &evalCacheEntry{err: errNilEvalContext, done: alreadyDoneCh}
 		e.mu.Lock()
@@ -506,8 +576,10 @@ func (e *EvaluationContext) dispatch(ctx context.Context, key evalCacheKey, fetc
 		e.cache[key] = passEntry
 		e.mu.Unlock()
 
-		// Fetch outside the lock.
-		filled := fetch()
+		// Fetch outside the lock, under a context detached from THIS caller:
+		// the result is written into passEntry, which every other
+		// EvaluationContext in the pass may be waiting on (#2880).
+		filled := fetch(detachedFetchContext(ctx))
 		passEntry.fetch = filled.fetch
 		passEntry.search = filled.search
 		passEntry.field = filled.field
@@ -547,7 +619,12 @@ func (e *EvaluationContext) dispatch(ctx context.Context, key evalCacheKey, fetc
 	// endpoints like RunRule, FixViolation). When a PassContext is present
 	// the entire dispatch is handled in the pass-ctx block above, which
 	// returns early in all code paths.
-	filled := fetch()
+	//
+	// Detached from THIS caller for the #2880 reason: the placeholder is
+	// already published, so a racer on this same EvaluationContext may
+	// already be waiting on it, and this caller's cancellation must not kill
+	// the work that racer is awaiting.
+	filled := fetch(detachedFetchContext(ctx))
 	placeholder.fetch = filled.fetch
 	placeholder.search = filled.search
 	placeholder.field = filled.field
