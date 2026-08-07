@@ -298,7 +298,28 @@ worktree:
 	@row='| stillwater-$(NAME) | $(BRANCH) | $(if $(ISSUE),#$(ISSUE),--) | $(if $(WAVE),$(WAVE),--) | In progress |'; \
 	awk -v row="$$row" 'BEGIN{ins=0} {print} !ins && /^\|---/ {print row; ins=1}' \
 		"$(WORKTREES_MD)" > "$(WORKTREES_MD).tmp" && mv "$(WORKTREES_MD).tmp" "$(WORKTREES_MD)"
-	@echo "Worktree ../stillwater-$(NAME) ready on branch $(BRANCH). Hooks wired. Active table updated."
+# Settings link runs LAST, AFTER the tracker row is inserted. It is the only
+# step here that can legitimately refuse (a regular file at the destination
+# may hold diverged grants, so it declines rather than overwriting). Running
+# it earlier aborted the recipe with the worktree already on disk but ABSENT
+# from the Active table -- a worktree that exists and is untracked is worse
+# than one that exists and is unlinked, since the tracker is how it gets
+# cleaned up later. This ordering means a refusal leaves a fully recorded
+# worktree that is merely missing its link, and the message says how to fix it.
+# It stays FATAL on refusal rather than warning. A warning would let work
+# proceed in a worktree running on the wrong grants, which is the exact silent
+# failure this issue exists to end -- and the operator has to look at the
+# offending file either way. Ordered last, a refusal now leaves a COMPLETE,
+# tracked worktree rather than a half-built one, so failing costs nothing but
+# the operator's attention, which is the thing it is trying to get.
+	@./scripts/link-worktree-settings.sh ../stillwater-$(NAME)
+# The summary must not CLAIM the link. The script exits 0 both when it linked and
+# when it SKIPped (a fresh clone with no .claude/settings.local.json), and an
+# unconditional "Settings linked" told an operator the worktree had project-local
+# grants when it may have none -- the exact silent-wrongness this target exists to
+# prevent. The script prints its own OK:/SKIP: line immediately above, which is
+# the accurate one; this line stops restating it.
+	@echo "Worktree ../stillwater-$(NAME) ready on branch $(BRANCH). Hooks wired. Active table updated. (See the settings line above.)"
 
 ## remove-worktree: Remove a sibling worktree (via cleanup-worktree.sh) and delete its Active-table row
 ##   Usage: make remove-worktree NAME=<slug>
