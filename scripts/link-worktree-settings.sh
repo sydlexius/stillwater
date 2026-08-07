@@ -31,7 +31,10 @@
 #
 # Exit status:
 #   0 = linked, already correct, or nothing to link (no source file)
-#   1 = refused: the destination exists and is NOT our symlink
+#   1 = the worktree did NOT end up with usable grants. Two causes, both loud:
+#       the destination exists and is not our symlink (refused, see below), or
+#       a link this script created does not resolve to a readable file
+#       (assert_resolves removed it). Callers must not read 1 as only the first.
 #   2 = invalid input (missing or nonexistent worktree dir)
 set -euo pipefail
 

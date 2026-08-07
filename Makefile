@@ -313,7 +313,13 @@ worktree:
 # tracked worktree rather than a half-built one, so failing costs nothing but
 # the operator's attention, which is the thing it is trying to get.
 	@./scripts/link-worktree-settings.sh ../stillwater-$(NAME)
-	@echo "Worktree ../stillwater-$(NAME) ready on branch $(BRANCH). Hooks wired. Settings linked. Active table updated."
+# The summary must not CLAIM the link. The script exits 0 both when it linked and
+# when it SKIPped (a fresh clone with no .claude/settings.local.json), and an
+# unconditional "Settings linked" told an operator the worktree had project-local
+# grants when it may have none -- the exact silent-wrongness this target exists to
+# prevent. The script prints its own OK:/SKIP: line immediately above, which is
+# the accurate one; this line stops restating it.
+	@echo "Worktree ../stillwater-$(NAME) ready on branch $(BRANCH). Hooks wired. Active table updated. (See the settings line above.)"
 
 ## remove-worktree: Remove a sibling worktree (via cleanup-worktree.sh) and delete its Active-table row
 ##   Usage: make remove-worktree NAME=<slug>
