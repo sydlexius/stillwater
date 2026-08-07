@@ -381,7 +381,7 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 				if c.OldValue == "" && c.NewValue != "" {
 					<span class="text-green-600 dark:text-green-400">{ tf(ctx, "history.set_to", historyTruncate(c.NewValue, 80)) }</span>
 				} else if c.OldValue != "" && c.NewValue == "" {
-					<span class="text-red-500 dark:text-red-400">{ t(ctx, "history.cleared") }</span>
+					<span class="text-red-600 dark:text-red-400">{ t(ctx, "history.cleared") }</span>
 				} else if c.OldValue != "" && c.NewValue != "" {
 					<span class="text-gray-500 dark:text-gray-400">{ t(ctx, "history.changed") }</span>
 				} else {
@@ -392,7 +392,12 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 				if c.OldValue != "" {
 					<div>
 						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "history.previous") }</span>
-						<p class="text-red-500 dark:text-red-400 line-through break-words whitespace-pre-wrap">{ c.OldValue }</p>
+						<!-- text-red-600, not text-red-500 (#2869): red-500 measures
+						     3.81:1 on the light theme, below the AA body-text floor.
+						     Same struck-through destroyed-value role as the artist
+						     history view and the blast-radius pane, both fixed the
+						     same way. Keep the three in step. -->
+						<p class="text-red-600 dark:text-red-400 line-through break-words whitespace-pre-wrap">{ c.OldValue }</p>
 					</div>
 				}
 				if c.NewValue != "" {

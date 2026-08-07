@@ -3018,10 +3018,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * Worst-case effective bg after the 0.92 clamp = 0.92*surface + 0.08*backdrop.
  * Against the PRIMARY ink (--swd-ink #0f172a light / #e6edf7 dark) that yields
  * ~15:1 (light, black backdrop) / ~12:1 (dark, white backdrop) -- comfortable
- * AA. The quiet meta/label ink (--swd-ink-3, slate-500/400) is only ~4.8:1 on
- * fully-opaque white to begin with, so it can dip toward ~4.0:1 under an 8%
- * backdrop bleed; that is a pre-existing ink-ramp margin (not introduced by the
- * floor) and is confirmed by the lead's rendered axe pass, not this static math.
+ * AA. The quiet meta/label ink (--swd-ink-3) was the thin one here: at its old
+ * slate-500/400 values it managed only ~4.8:1 on fully-opaque white and could
+ * dip toward ~4.0:1 under an 8% backdrop bleed. #2875 retuned it (now 5.66:1
+ * worst-case light / 5.92:1 worst-case dark on the opaque surfaces), so the
+ * bleed case retains AA margin rather than spending it. The opaque pairings are
+ * asserted by tests/a11y/token-pairings.spec.js; the composited case remains
+ * confirmed by a rendered axe pass, not by this static math.
  * ===========================================================================
  */
 
@@ -5617,8 +5620,11 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 .sw-next-artist-detail .sw-next-findings-empty {
   font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   font-style: italic;
-  /* --swd-ink-3 renders at 4.35:1 on the dark card bg (just under AA 4.5 for
-   * this small text); --swd-ink-2 clears AA in both themes (#1784 a11y). */
+  /* --swd-ink-2 rather than the quieter --swd-ink-3, originally because ink-3
+   * rendered at 4.35:1 on the dark card bg (#1784 a11y). That specific reason
+   * is gone: ink-3 was retuned in #2875 and now clears AA on every surface.
+   * Kept at ink-2 anyway -- this is the empty-state message, which should read
+   * at the same weight as body copy rather than as quiet meta text. */
   color: var(--swd-ink-2);
   text-align: center;
   padding: 16px 0;

@@ -47,17 +47,11 @@
  * matching so the debt cannot be forgotten.
  */
 export const KNOWN_VIOLATIONS = [
-  {
-    issue: 2875,
-    ruleId: 'color-contrast',
-    // Matches only the activity-feed timestamps. Deliberately specific: a
-    // contrast violation ANYWHERE else, including elsewhere on these pages,
-    // is not covered by this allowance and still fails.
-    matches: (node) => node.target.some(
-      (t) => typeof t === 'string' && /\.sw-activity-row.*\btime\b/.test(t),
-    ),
-    note: 'dashboard activity timestamps at 4.35:1 (--swd-ink-3 on the activity-row surface)',
-  },
+  // EMPTY, and that is the steady state. #2875 was the sole entry and is fixed:
+  // --swd-ink-3 was retuned in design-tokens.css so the quiet ink clears 4.5:1
+  // on every surface it is painted on, in both themes, and the floor is now
+  // enforced directly by tests/a11y/token-pairings.spec.js rather than tracked
+  // as debt here.
 ];
 
 /**
