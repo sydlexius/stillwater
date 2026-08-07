@@ -191,10 +191,24 @@ func (e *Engine) countMBReleaseGroups(ctx context.Context, a *artist.Artist, cfg
 // the legacy behavior. fetcher is the capability-gated handle the caller
 // already obtained via releaseGroupFetcherFor; it is passed in rather than read
 // off the Engine so the capability gate stays the single access point.
+// The two branches differ in WHO OWNS THE DEADLINE, which is why the coalesced
+// one re-applies its own cap (#2880, mirroring ruleAlbumGate.fetchGroups):
+//
+//   - COALESCED: the fetch is SHARED, so it runs on a context the coalescer
+//     detached from every individual caller. Detaching strips the caller's
+//     deadline along with its cancellation, so the cap is re-applied HERE,
+//     with discography's own 15s rather than leaving the coalescer's 30s
+//     backstop to stand in for it. Nested timeouts take the minimum, so this
+//     15s is what actually governs. The album-evidence gate coalesces onto
+//     this very same fetch and applies the same cap.
+//   - DIRECT: nobody else can be waiting on it, so caller-scoped cancellation
+//     is correct and countMBReleaseGroups' outer timeout already bounds it.
 func (e *Engine) fetchReleaseGroupsCoalesced(ctx context.Context, fetcher ReleaseGroupFetcher, mbid string) ([]provider.ReleaseGroupInfo, error) {
 	if ec := EvaluationContextFromContext(ctx); ec != nil {
 		return ec.GetReleaseGroups(ctx, mbid, func(fetchCtx context.Context) ([]provider.ReleaseGroupInfo, error) {
-			return fetcher.GetReleaseGroups(fetchCtx, mbid)
+			sharedCtx, cancel := context.WithTimeout(fetchCtx, discographyFetchTimeout)
+			defer cancel()
+			return fetcher.GetReleaseGroups(sharedCtx, mbid)
 		})
 	}
 	return fetcher.GetReleaseGroups(ctx, mbid)
