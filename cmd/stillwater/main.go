@@ -1233,6 +1233,21 @@ func (a *Application) startListeners() error {
 		go a.publisher.StartArtworkReconciler(ctx, time.Duration(reconcileHours)*time.Hour, 60*time.Second)
 	}
 
+	// Background relink reconciliation: retries an unverified post-move peer
+	// link on an interval measured in minutes, so a peer whose library scan
+	// takes longer than the rename's poll budget still self-heals without an
+	// operator having to trigger a manual library scan (issue #2426).
+	{
+		interval, enabled := resolveRelinkReconcileInterval(
+			getDBIntSetting(ctx, db, relinkReconcileIntervalSetting, defaultRelinkReconcileMinutes))
+		if !enabled {
+			logger.Info("relink reconciler disabled",
+				slog.String("setting", relinkReconcileIntervalSetting))
+		} else {
+			go a.publisher.StartRelinkReconciler(ctx, interval, 90*time.Second)
+		}
+	}
+
 	// Session cleanup.
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
@@ -2145,6 +2160,59 @@ func getDBIntSetting(ctx context.Context, db *sql.DB, key string, fallback int) 
 		return fallback
 	}
 	return n
+}
+
+const (
+	// relinkReconcileIntervalSetting is the settings key controlling the #2426
+	// background relink reconciler's cadence.
+	relinkReconcileIntervalSetting = "relink_reconcile.interval_minutes"
+	// defaultRelinkReconcileMinutes is its cadence when unset or invalid.
+	defaultRelinkReconcileMinutes = 15
+)
+
+// resolveRelinkReconcileInterval maps the operator's configured minute count
+// onto (interval, enabled), giving each value exactly ONE meaning:
+//
+//   - n > 0  -> run every n minutes, up to maxRelinkReconcileMinutes.
+//   - n == 0 -> DISABLED. An explicit, deliberate off switch.
+//   - n < 0  -> nonsense; fall back to the default rather than guess.
+//   - n above the cap -> equally nonsense; same fallback. See the cap's own
+//     comment: without it the multiplication below OVERFLOWS into a negative
+//     or zero duration while this function still reports enabled == true.
+//
+// This mirrors lock_sync.interval_minutes (startLockSyncScheduler) so the two
+// schedulers cannot disagree about what a stored 0 means.
+//
+// The distinction is the whole point of the function. An earlier version
+// collapsed the last two cases into `<= 0 -> default`, which SILENTLY re-enabled
+// a reconciler the operator had deliberately switched off -- leaving no way at
+// all to stop an unattended job that rewrites platform links, and no log line
+// saying the setting had been overridden.
+//
+// Split out of startListeners (which binds ports and so cannot be unit-tested)
+// purely so this mapping is directly testable. See
+// TestResolveRelinkReconcileInterval.
+func resolveRelinkReconcileInterval(minutes int) (time.Duration, bool) {
+	if minutes == 0 {
+		return 0, false
+	}
+	// UPPER BOUND, not decoration. time.Duration is an int64 of NANOSECONDS, so
+	// `time.Duration(minutes) * time.Minute` overflows above roughly 1.5e11
+	// minutes and wraps to a negative or zero duration -- while this function
+	// still returns enabled == true, breaking the invariant its own doc comment
+	// promises. StartRelinkReconciler's `interval <= 0` guard then refuses to
+	// start and logs a PROGRAMMING-error message for what is really a bad
+	// configuration value, so the operator is told the wrong thing about the
+	// wrong layer and the reconciler silently never runs.
+	//
+	// A year is far past any sane cadence for a 15-minute-default job, so
+	// treating a larger value as nonsense costs nothing and keeps the fallback
+	// identical to the negative case.
+	const maxRelinkReconcileMinutes = 60 * 24 * 365
+	if minutes < 0 || minutes > maxRelinkReconcileMinutes {
+		minutes = defaultRelinkReconcileMinutes
+	}
+	return time.Duration(minutes) * time.Minute, true
 }
 
 // buildTLSStatus condenses the runtime TLS configuration into the read-only
