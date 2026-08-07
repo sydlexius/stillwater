@@ -446,15 +446,24 @@ func TestQuarantine_VanishedSourceIsNotAnError(t *testing.T) {
 // A full renumber must survive the same vanishing act. This exercises the
 // caller's path rather than the helper's, because the consequence Copilot
 // flagged is at that level: an aborted renumber, not a returned error.
-func TestRenumberFanart_SurvivesAStagingPathClearedConcurrently(t *testing.T) {
+func TestRenumberFanart_CompletesWhenNothingIsStranded(t *testing.T) {
 	dir := t.TempDir()
 	survivor := filepath.Join(dir, "fanart1.jpg")
 	if err := os.WriteFile(survivor, []byte("SURVIVOR"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	// PRECONDITION: no staging file exists, standing in for one cleared by a
-	// concurrent run between the check and the link.
+	// PRECONDITION: no staging file exists. This case covers the ORDINARY path
+	// -- the sweep finds nothing and the renumber proceeds -- and nothing more.
+	//
+	// It was previously named ...SurvivesAStagingPathClearedConcurrently and
+	// claimed to exercise the vanish-between-Lstat-and-Link race. It does not:
+	// an absent file returns at the Lstat early-return and never reaches the
+	// link, so the race handling could regress with this test still green.
+	// TestQuarantine_VanishedSourceIsNotAnError covers that race, using a hook
+	// that clears the source between the two operations. Renamed rather than
+	// deleted because the ordinary path is worth pinning -- just not under a
+	// name that overstates it.
 	if _, err := os.Lstat(filepath.Join(dir, stagedTmpName)); !os.IsNotExist(err) {
 		t.Fatalf("precondition: the staging path must start absent, got %v", err)
 	}
