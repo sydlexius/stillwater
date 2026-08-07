@@ -425,3 +425,69 @@ func TestListLogFiles_WithRotated(t *testing.T) {
 		t.Errorf("rotated file name: got %q, want %q", files[1].Name, "stillwater-2024-03-28T10-00-00.000.log")
 	}
 }
+
+// TestParseLogLine_MalformedLogfmt covers the defect both reviewers found on
+// #2958: parseLogfmtLine accepted ANY line carrying one key=value pair, so a
+// corrupt record parsed "successfully" with an EMPTY Level -- and
+// levelSeverity("") sorts as info, so it passed a level filter and read as a
+// genuine INFO record. That is precisely the bug this file exists to fix,
+// reintroduced one level down by the new parser.
+//
+// Each case must reach the loud fallback (Level "unknown" + parse_error)
+// rather than a plausible-looking entry.
+func TestParseLogLine_MalformedLogfmt(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		why  string
+	}{
+		{
+			name: "no level or msg field",
+			line: `foo=bar`,
+			why:  "an empty Level sorts as info, so this would pass an error filter as a valid record",
+		},
+		{
+			name: "unterminated quote",
+			line: `time=2024-03-29T10:00:00.000Z level=ERROR msg="unterminated`,
+			why:  "the raw quoted text was returned as if it had decoded",
+		},
+		{
+			name: "invalid escape sequence",
+			line: `level=ERROR msg="bad\qescape"`,
+			why:  "strconv.Unquote fails and the raw text was passed through",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			entry := parseLogLine(tc.line)
+			if entry.Level != "unknown" {
+				t.Errorf("Level: got %q, want %q -- %s", entry.Level, "unknown", tc.why)
+			}
+			if entry.Attrs["parse_error"] != true {
+				t.Errorf("Attrs[parse_error]: got %v, want true -- a malformed record must be flagged, not silently accepted",
+					entry.Attrs["parse_error"])
+			}
+			// The raw line is preserved so an operator can still see what could
+			// not be parsed.
+			if entry.Message != tc.line {
+				t.Errorf("Message: got %q, want the raw line %q", entry.Message, tc.line)
+			}
+		})
+	}
+}
+
+// A genuinely EMPTY message must still parse. The presence check above is on
+// the FIELD, not on its value -- requiring msg to be non-empty would reject
+// slog's own `msg=""` output, trading one silent drop for another.
+func TestParseLogLine_LogfmtEmptyMessageStillParses(t *testing.T) {
+	entry := parseLogLine(`time=2024-03-29T10:00:00.000Z level=INFO msg=""`)
+	if entry.Level != "info" {
+		t.Errorf("Level: got %q, want %q -- an empty message must not invalidate the record", entry.Level, "info")
+	}
+	if entry.Message != "" {
+		t.Errorf("Message: got %q, want empty", entry.Message)
+	}
+	if entry.Attrs["parse_error"] == true {
+		t.Error("a valid record with an empty message was flagged as a parse error")
+	}
+}

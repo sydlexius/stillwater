@@ -272,8 +272,21 @@ func parseSlogJSONLine(line string) (LogEntry, bool) {
 // contains no key=value pairs at all, signaling the caller to fall through to
 // the explicit fallback rather than silently returning an empty record.
 func parseLogfmtLine(line string) (LogEntry, bool) {
-	pairs := parseLogfmtPairs(line)
-	if len(pairs) == 0 {
+	pairs, wellFormed := parseLogfmtPairs(line)
+	if !wellFormed {
+		return LogEntry{}, false
+	}
+
+	// REQUIRE the two fields every TextHandler record carries. Accepting any
+	// line with a single key=value pair was the defect this parser was written
+	// to fix, reintroduced one level down: `foo=bar` produced an entry with an
+	// EMPTY Level, and levelSeverity("") sorts as info, so a corrupt line
+	// passed a level filter and read as a valid INFO record. Presence is
+	// checked rather than non-emptiness so a genuine `msg=""` still parses.
+	if _, ok := pairs["level"]; !ok {
+		return LogEntry{}, false
+	}
+	if _, ok := pairs["msg"]; !ok {
 		return LogEntry{}, false
 	}
 
@@ -341,7 +354,7 @@ func parseLogfmtLine(line string) (LogEntry, bool) {
 // character, '"', or '='; quoted values are decoded with strconv.Unquote. A
 // token with no '=' is skipped rather than treated as a bare key, since slog's
 // TextHandler never emits one.
-func parseLogfmtPairs(line string) map[string]string {
+func parseLogfmtPairs(line string) (map[string]string, bool) {
 	pairs := make(map[string]string)
 	i, n := 0, len(line)
 	for i < n {
@@ -368,27 +381,34 @@ func parseLogfmtPairs(line string) map[string]string {
 		i++ // skip '='
 
 		var value string
-		value, i = scanLogfmtValue(line, i)
+		var wellFormed bool
+		value, i, wellFormed = scanLogfmtValue(line, i)
+		if !wellFormed {
+			return nil, false
+		}
 		if key != "" {
 			pairs[key] = value
 		}
 	}
-	return pairs
+	return pairs, true
 }
 
 // scanLogfmtValue reads a single logfmt value starting at index i (just past
-// the '='). It returns the decoded value and the index of the next unread
-// byte. A leading '"' selects the quoted form (scanned to its closing,
-// unescaped quote and decoded with strconv.Unquote); otherwise the value runs
-// to the next space or end of line.
-func scanLogfmtValue(line string, i int) (string, int) {
+// the '='). It returns the decoded value, the index of the next unread byte,
+// and whether the value was WELL-FORMED. A leading '"' selects the quoted form
+// (scanned to its closing, unescaped quote and decoded with strconv.Unquote);
+// otherwise the value runs to the next space or end of line.
+//
+// The ok return exists because an unterminated quote or an invalid escape must
+// invalidate the whole record rather than yield raw text that looks parsed.
+func scanLogfmtValue(line string, i int) (string, int, bool) {
 	n := len(line)
 	if i >= n || line[i] != '"' {
 		valStart := i
 		for i < n && line[i] != ' ' {
 			i++
 		}
-		return line[valStart:i], i
+		return line[valStart:i], i, true
 	}
 
 	valStart := i
@@ -405,8 +425,13 @@ func scanLogfmtValue(line string, i int) (string, int) {
 		i++
 	}
 	quoted := line[valStart:i]
-	if unquoted, err := strconv.Unquote(quoted); err == nil {
-		return unquoted, i
+	unquoted, err := strconv.Unquote(quoted)
+	if err != nil {
+		// An unterminated quote or an invalid escape is a MALFORMED record, not
+		// a value that happens to contain quote characters. Returning the raw
+		// text here let a corrupt line through as if it had parsed, which is
+		// the same class of defect this file exists to fix.
+		return "", i, false
 	}
-	return quoted, i
+	return unquoted, i, true
 }
