@@ -632,6 +632,31 @@ func (s *Service) Update(ctx context.Context, r *Rule) error {
 // a hard DELETE because no existing row is authoritative once the rule stops
 // running.
 func (s *Service) cleanupDisabledRuleState(ctx context.Context, ruleID string) error {
+	// #2614: NEVER clean up an event-driven rule's state.
+	//
+	// The cleanup below rests on a premise that holds only for EVALUATED rules:
+	// a disabled rule never runs again, so nothing will ever resolve its
+	// violations, so soft-resolving them now is housekeeping (#1143). A later
+	// Run Rules re-derives an evaluated rule's findings from artist state, so
+	// nothing is lost.
+	//
+	// Event-driven violations are raised at the write/push chokepoints and their
+	// checkers CANNOT re-derive them (the collision checker returns nil for
+	// every artist). For them this is not garbage collection, it is irreversible
+	// data loss: the operator's entire collision backlog, one toggle away.
+	//
+	// The engine already enforces this invariant on the evaluation path --
+	// eligibleRules (engine.go) skips event-driven rules BEFORE the Enabled
+	// check, precisely so "keying that safety off the Enabled toggle would put
+	// silent data loss one UI click away" cannot happen. The disable path is the
+	// other route to that same click; this is the second enforcement point.
+	//
+	// Mirrored in cleanupDisabledRuleStateTx (import.go). Guarding one site and
+	// not the other leaves the hole open on the settings-import path.
+	if IsEventDriven(ruleID) {
+		return nil
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := s.db.ExecContext(ctx,
 		`UPDATE rule_violations

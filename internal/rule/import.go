@@ -74,6 +74,16 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, r *Rule) er
 // cleanupDisabledRuleStateTx mirrors cleanupDisabledRuleState but writes
 // through the supplied executor.
 func (s *Service) cleanupDisabledRuleStateTx(ctx context.Context, db DBExecutor, ruleID string) error {
+	// #2614: the same event-driven guard as cleanupDisabledRuleState, which
+	// carries the full reasoning. Restated here rather than shared because the
+	// two cleaners are deliberately mirrored implementations (one direct, one
+	// tx-scoped) and a reader of either must see the invariant. A settings
+	// import that disabled the rule would otherwise destroy exactly what the
+	// service-path guard protects.
+	if IsEventDriven(ruleID) {
+		return nil
+	}
+
 	now := s.clock.Now().Format(time.RFC3339)
 	if _, err := db.ExecContext(ctx,
 		`UPDATE rule_violations
