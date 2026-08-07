@@ -172,11 +172,16 @@ type artistPlatformLister interface {
 	// re-stamps a dropped link automatically.
 	//
 	// Withholding the capability is what makes that a TYPE-LEVEL guarantee instead
-	// of a policy the next patch can quietly undo. Dropping belongs where the
-	// evidence lives: the merge path, which holds the loser's link outright, and the
-	// background reconciler (#2426), which can let the peer settle for minutes and
-	// then re-resolve. Those callers declare their own capability; this one does not
-	// get it.
+	// of a policy the next patch can quietly undo. Today it belongs where the
+	// evidence lives outright: the merge path, which holds the loser's link
+	// directly. The background reconciler (relink_reconcile.go, #2426) is NOT
+	// a second caller with this capability -- it can let the peer settle for
+	// minutes and then re-resolve, but as shipped it only ever upgrades via
+	// SetPlatformID and never drops; it does not implement or need
+	// DeletePlatformID. Extending it to drop on stale/ambiguous evidence is
+	// separate, gated follow-up work (#2442) and would need its own deliberate
+	// capability grant here, not an assumption that this comment already
+	// promised it one.
 }
 
 // artistGetter loads a full artist record by ID for the background reconciler.
