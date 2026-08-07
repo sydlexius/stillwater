@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -178,15 +179,37 @@ func ReadLogFile(path string, filter LogFilter) ([]LogEntry, error) {
 	return result, nil
 }
 
-// parseLogLine parses a single log line into a LogEntry. Lines that cannot be
-// parsed as slog JSON are returned as plain-text message entries.
+// parseLogLine parses a single log line into a LogEntry. The line is routed to
+// the JSON path or the logfmt path by sniffing its first non-whitespace byte
+// (a leading '{' means JSON), not by reading config, so a directory holding
+// files from both eras (a config change mid-deployment, or a rotated file
+// from before one) still reads correctly. A line that the selected path
+// cannot parse falls through to an explicit, loud fallback: a distinct Level
+// and a parse_error attr, so it can never be mistaken for a genuine INFO
+// record.
 func parseLogLine(line string) LogEntry {
+	trimmed := strings.TrimLeft(line, " \t")
+	if strings.HasPrefix(trimmed, "{") {
+		if entry, ok := parseSlogJSONLine(line); ok {
+			return entry
+		}
+	} else if entry, ok := parseLogfmtLine(line); ok {
+		return entry
+	}
+
+	return LogEntry{
+		Level:   "unknown",
+		Message: line,
+		Attrs:   map[string]any{"parse_error": true},
+	}
+}
+
+// parseSlogJSONLine parses a line written by slog's JSON handler. ok is false
+// if the line is not valid JSON, signaling the caller to fall through.
+func parseSlogJSONLine(line string) (LogEntry, bool) {
 	var known slogJSONLine
 	if err := json.Unmarshal([]byte(line), &known); err != nil {
-		return LogEntry{
-			Level:   "info",
-			Message: line,
-		}
+		return LogEntry{}, false
 	}
 
 	// Second unmarshal to extract arbitrary attrs. Known fields are skipped.
@@ -240,5 +263,175 @@ func parseLogLine(line string) LogEntry {
 		entry.Attrs = attrs
 	}
 
-	return entry
+	return entry, true
+}
+
+// parseLogfmtLine parses a line written by slog's TextHandler (key=value
+// pairs, values quoted per strconv.Quote rules when they contain whitespace,
+// a quote, an '=', or a non-printing character). ok is false if the line
+// contains no key=value pairs at all, signaling the caller to fall through to
+// the explicit fallback rather than silently returning an empty record.
+func parseLogfmtLine(line string) (LogEntry, bool) {
+	pairs, wellFormed := parseLogfmtPairs(line)
+	if !wellFormed {
+		return LogEntry{}, false
+	}
+
+	// REQUIRE the two fields every TextHandler record carries. Accepting any
+	// line with a single key=value pair was the defect this parser was written
+	// to fix, reintroduced one level down: `foo=bar` produced an entry with an
+	// EMPTY Level, and levelSeverity("") sorts as info, so a corrupt line
+	// passed a level filter and read as a valid INFO record. Presence is
+	// checked rather than non-emptiness so a genuine `msg=""` still parses.
+	if _, ok := pairs["level"]; !ok {
+		return LogEntry{}, false
+	}
+	if _, ok := pairs["msg"]; !ok {
+		return LogEntry{}, false
+	}
+
+	entry := LogEntry{}
+
+	if tsStr, ok := pairs["time"]; ok {
+		if ts, err := time.Parse(time.RFC3339Nano, tsStr); err == nil {
+			entry.Time = ts
+		}
+		// If the timestamp does not parse, Time is left zero and parsing
+		// continues; a bad timestamp should not hide an otherwise-good record.
+	}
+
+	// slog serializes custom levels as offsets (e.g. LevelTrace = DEBUG-4 -> "DEBUG-4").
+	// Normalize to the canonical name so filtering and badge styling work
+	// correctly, matching the JSON path.
+	level := strings.ToLower(pairs["level"])
+	if level == "debug-4" {
+		level = "trace"
+	}
+	entry.Level = level
+	entry.Message = pairs["msg"]
+
+	// TextHandler emits source as a single "<file>:<line>" value, unlike the
+	// nested JSON source object. Split on the last ':' to recover the file
+	// and line separately, matching the JSON path's "<basename>:<line>" output.
+	var sourceFile string
+	if src := pairs["source"]; src != "" {
+		if idx := strings.LastIndex(src, ":"); idx >= 0 {
+			sourceFile = src[:idx]
+			entry.Source = fmt.Sprintf("%s:%s", filepath.Base(sourceFile), src[idx+1:])
+		} else {
+			sourceFile = src
+			entry.Source = filepath.Base(src)
+		}
+	}
+
+	if c := pairs["component"]; c != "" {
+		entry.Component = c
+	} else if sourceFile != "" {
+		// Auto-derive component from the Go package directory when not
+		// explicitly set, matching the JSON path.
+		if base := filepath.Base(filepath.Dir(sourceFile)); base != "." && base != "" {
+			entry.Component = base
+		}
+	}
+
+	reserved := map[string]bool{"time": true, "level": true, "msg": true, "source": true, "component": true}
+	attrs := make(map[string]any)
+	for k, v := range pairs {
+		if reserved[k] {
+			continue
+		}
+		attrs[k] = v
+	}
+	if len(attrs) > 0 {
+		entry.Attrs = attrs
+	}
+
+	return entry, true
+}
+
+// parseLogfmtPairs splits a logfmt line into key=value pairs. A value is
+// quoted (strconv.Quote rules) when it contains whitespace, a non-printing
+// character, '"', or '='; quoted values are decoded with strconv.Unquote. A
+// token with no '=' is skipped rather than treated as a bare key, since slog's
+// TextHandler never emits one.
+func parseLogfmtPairs(line string) (map[string]string, bool) {
+	pairs := make(map[string]string)
+	i, n := 0, len(line)
+	for i < n {
+		for i < n && line[i] == ' ' {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		keyStart := i
+		for i < n && line[i] != '=' && line[i] != ' ' {
+			i++
+		}
+		if i >= n || line[i] != '=' {
+			// No '=' before the next space (or EOL): not a key=value token.
+			// Skip past it and keep scanning the rest of the line.
+			for i < n && line[i] != ' ' {
+				i++
+			}
+			continue
+		}
+		key := line[keyStart:i]
+		i++ // skip '='
+
+		var value string
+		var wellFormed bool
+		value, i, wellFormed = scanLogfmtValue(line, i)
+		if !wellFormed {
+			return nil, false
+		}
+		if key != "" {
+			pairs[key] = value
+		}
+	}
+	return pairs, true
+}
+
+// scanLogfmtValue reads a single logfmt value starting at index i (just past
+// the '='). It returns the decoded value, the index of the next unread byte,
+// and whether the value was WELL-FORMED. A leading '"' selects the quoted form
+// (scanned to its closing, unescaped quote and decoded with strconv.Unquote);
+// otherwise the value runs to the next space or end of line.
+//
+// The ok return exists because an unterminated quote or an invalid escape must
+// invalidate the whole record rather than yield raw text that looks parsed.
+func scanLogfmtValue(line string, i int) (string, int, bool) {
+	n := len(line)
+	if i >= n || line[i] != '"' {
+		valStart := i
+		for i < n && line[i] != ' ' {
+			i++
+		}
+		return line[valStart:i], i, true
+	}
+
+	valStart := i
+	i++
+	for i < n {
+		if line[i] == '\\' && i+1 < n {
+			i += 2
+			continue
+		}
+		if line[i] == '"' {
+			i++
+			break
+		}
+		i++
+	}
+	quoted := line[valStart:i]
+	unquoted, err := strconv.Unquote(quoted)
+	if err != nil {
+		// An unterminated quote or an invalid escape is a MALFORMED record, not
+		// a value that happens to contain quote characters. Returning the raw
+		// text here let a corrupt line through as if it had parsed, which is
+		// the same class of defect this file exists to fix.
+		return "", i, false
+	}
+	return unquoted, i, true
 }
