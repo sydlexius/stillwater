@@ -696,6 +696,20 @@ func (e *BulkExecutor) finishJob(ctx context.Context, job *BulkJob, status, errM
 	now := time.Now().UTC()
 	job.Status = status
 	job.CompletedAt = &now
+	// A CANCELED job must never persist a BLANK explanation. Two cancellation
+	// sites in run() pass an empty errMsg, and before the persistence fix below
+	// that did not matter: the write failed on the canceled context, so the
+	// blank never reached the row. Making persistence work made the blank
+	// REACHABLE -- an operator would see a job marked canceled with no reason
+	// given. Fixing one defect exposed a latent second one that the first had
+	// been masking.
+	//
+	// Defaulted HERE rather than at the two call sites so no future caller can
+	// reintroduce it: a boundary that cannot emit a blank is stronger than
+	// three call sites that each remember not to.
+	if status == BulkStatusCanceled && errMsg == "" {
+		errMsg = "bulk job canceled"
+	}
 	job.Error = errMsg
 	// PERSIST ON A LIVE CONTEXT, not the caller's. finishJob's most important
 	// caller is the CANCELLATION path, where ctx is already canceled -- so

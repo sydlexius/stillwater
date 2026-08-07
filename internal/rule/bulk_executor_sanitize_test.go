@@ -568,3 +568,68 @@ func TestItemFailure_RedactsURLsInTheLog(t *testing.T) {
 		t.Errorf("the operator message leaks the token: %q", message)
 	}
 }
+
+// TestFinishJob_CanceledNeverPersistsABlankMessage covers the second-order
+// defect Copilot found on #2960: two cancellation sites in run() pass an EMPTY
+// errMsg, and before the persistence fix that was invisible -- the write failed
+// on the canceled context, so the blank never reached the row. Making
+// persistence work made it REACHABLE, and an operator would then see a job
+// marked "canceled" with no reason given.
+//
+// Measured before the default: PERSISTED status="canceled" error="".
+//
+// The default lives in finishJob rather than at the call sites, so this asserts
+// the BOUNDARY: whatever a caller passes, a canceled job carries an
+// explanation.
+func TestFinishJob_CanceledNeverPersistsABlankMessage(t *testing.T) {
+	db := setupTestDB(t)
+	bulkSvc := NewBulkService(db)
+	job, err := bulkSvc.CreateJob(context.Background(), "blank_cancel_test", BulkModeYOLO, 0)
+	if err != nil {
+		t.Fatalf("creating bulk job: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	e := &BulkExecutor{bulkService: bulkSvc, logger: testLogger()}
+	// Exactly the shape of run()'s two empty-message cancellation sites.
+	e.finishJob(ctx, job, BulkStatusCanceled, "")
+
+	reloaded, err := bulkSvc.GetJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("reloading the job: %v", err)
+	}
+	if reloaded.Status != BulkStatusCanceled {
+		t.Fatalf("PERSISTED status = %q, want %q", reloaded.Status, BulkStatusCanceled)
+	}
+	if reloaded.Error == "" {
+		t.Error("PERSISTED error is BLANK -- an operator sees a canceled job with no explanation")
+	}
+	if reloaded.Error != "bulk job canceled" {
+		t.Errorf("PERSISTED error = %q, want the stable default %q", reloaded.Error, "bulk job canceled")
+	}
+}
+
+// A caller that DOES supply a message must keep it: the default fills a gap, it
+// does not overwrite. Without this, defaulting unconditionally would pass the
+// case above while silently discarding every specific cancellation reason.
+func TestFinishJob_CanceledKeepsAnExplicitMessage(t *testing.T) {
+	db := setupTestDB(t)
+	bulkSvc := NewBulkService(db)
+	job, err := bulkSvc.CreateJob(context.Background(), "explicit_cancel_test", BulkModeYOLO, 0)
+	if err != nil {
+		t.Fatalf("creating bulk job: %v", err)
+	}
+
+	e := &BulkExecutor{bulkService: bulkSvc, logger: testLogger()}
+	e.finishJob(context.Background(), job, BulkStatusCanceled, "canceled by the operator")
+
+	reloaded, err := bulkSvc.GetJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("reloading the job: %v", err)
+	}
+	if reloaded.Error != "canceled by the operator" {
+		t.Errorf("PERSISTED error = %q, want the caller's message preserved", reloaded.Error)
+	}
+}
