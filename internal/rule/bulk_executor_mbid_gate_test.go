@@ -430,8 +430,13 @@ func TestFetchImages_MBIDGate_UpdateErrorSurfaces(t *testing.T) {
 	if status != BulkItemFailed {
 		t.Fatalf("status = %q, want %q (message: %q)", status, BulkItemFailed, msg)
 	}
-	if !strings.Contains(msg, "update failed") {
+	// Issue #2881: the operator-facing message is sanitized and must not
+	// contain the raw driver error text; it still names the failed step.
+	if !strings.Contains(msg, "saving MusicBrainz ID failed") {
 		t.Errorf("message %q does not surface the update failure", msg)
+	}
+	if strings.Contains(msg, errBulkForcedUpdate.Error()) {
+		t.Errorf("message %q leaks the raw driver error %q", msg, errBulkForcedUpdate.Error())
 	}
 
 	// The load-bearing claim: when the identity write FAILS, no audit row may

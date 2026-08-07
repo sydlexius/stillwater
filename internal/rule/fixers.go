@@ -850,7 +850,11 @@ func (f *ImageFixer) downloadAndPersist(ctx context.Context, a *artist.Artist, v
 	for _, c := range candidates {
 		data, err := fetchImageURL(ctx, f.httpClient, c.URL)
 		if err != nil {
-			// Source identifies the provider without leaking the signed URL.
+			// Source identifies the provider. The error is safe to print
+			// because fetchImageURL redacts the URL query string, where a
+			// signed URL carries its credential (#2881) -- the previous form
+			// of this comment claimed the same safety while the raw transport
+			// error on this line still embedded the full signed URL.
 			f.logger.Debug("image download failed", "source", c.Source, "error", err)
 			downloadFails++
 			continue
@@ -1641,14 +1645,25 @@ func (f *LogoPaddingFixer) fixViaAPI(ctx context.Context, a *artist.Artist, v *V
 // its own client so that all outbound rule-engine fetches share the same
 // SSRF-protected transport. Tests may inject a plain *http.Client when
 // targeting httptest servers on the loopback interface.
+//
+// Errors from the request-construction and transport stages are wrapped in
+// redactURLError (issue #2881): both embed the full requested URL in their
+// message, and image URLs are frequently SIGNED, so an unredacted error text
+// puts the credential into any log that prints it. Redacting HERE rather than
+// at each log site is deliberate -- this is the only function that turns a
+// signed URL into an error, so every downstream consumer (the bulk executor's
+// saveBestImage, the single-artist ImageFixer, the apply-candidate API
+// handler) is covered without each one having to remember a helper. The
+// wrapper preserves errors.Is/errors.As, so *url.Error, net.Error and
+// context.Canceled all still match.
 func fetchImageURL(ctx context.Context, client *http.Client, rawURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
-		return nil, err
+		return nil, redactURLError(err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, redactURLError(err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 

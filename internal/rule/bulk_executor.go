@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -80,6 +81,71 @@ type BulkExecutor struct {
 // SetEventBus sets the event bus for publishing bulk job events.
 func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 	e.eventBus = bus
+}
+
+// redactURLQueries strips the QUERY STRING from any URL appearing in an error
+// message, replacing it with "?<redacted>".
+//
+// Go's http.Client embeds the full requested URL in its transport errors --
+// verified: a failed request to `https://host/p?token=SECRET` yields
+// `Get "https://host/p?token=SECRET": dial tcp ...`. (net/url's own
+// *url.Error redaction, stripPassword, removes only USERINFO -- it never
+// touches the query string.) Image downloads use provider URLs that can be
+// SIGNED, so the credential is in the query string, and callers write the raw
+// error text straight to the log. A log is a lower-privilege surface than the
+// request that produced it.
+//
+// The PATH is deliberately preserved: it is what makes the failure diagnosable
+// (which provider, which asset), and it does not carry the signature.
+func redactURLQueries(msg string) string {
+	return urlQueryPattern.ReplaceAllString(msg, "$1?<redacted>")
+}
+
+// redactedURLError wraps an error whose message may embed a signed URL, so
+// that every consumer -- log line, %w wrap, operator-facing string -- sees the
+// query string already stripped. It is applied at the CHOKE POINT that creates
+// such errors (fetchImageURL), not at each log site: the leak was introduced
+// by log sites that did not know they were printing a URL, so a fix requiring
+// every present and future caller to remember a helper reproduces the bug.
+//
+// Unwrap is the load-bearing half. Redacting by rebuilding the message with
+// fmt.Errorf("%s", ...) would sever the error chain, silently breaking any
+// upstream errors.Is/errors.As (context.Canceled, net.Error, and the
+// *url.Error the transport returns). This type changes only what the error
+// SAYS, never what it IS.
+type redactedURLError struct{ err error }
+
+func (e *redactedURLError) Error() string { return redactURLQueries(e.err.Error()) }
+func (e *redactedURLError) Unwrap() error { return e.err }
+
+// redactURLError wraps err so its message carries no URL query string. It
+// returns nil for a nil error so call sites can wrap unconditionally.
+func redactURLError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &redactedURLError{err: err}
+}
+
+// urlQueryPattern matches a scheme-qualified URL's query string. Anchored on
+// `://` so it cannot fire on an ordinary sentence containing a question mark.
+var urlQueryPattern = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://[^\s"?]*)\?[^\s"]*`)
+
+// itemFailure is the sanitization boundary for a per-item bulk failure
+// (issue #2881). Every fetchMetadata/fetchImages failure site that used to
+// interpolate a raw driver or provider error directly into the operator-
+// facing message now goes through here instead: the full error, plus enough
+// context to diagnose it, goes to the server log; only the caller-supplied
+// sanitized message reaches BulkJobItem.Message, which bulk_service.go
+// persists verbatim to bulk_job_items and internal/api/handlers_rule.go
+// marshals with no redaction. message must never itself be built from err.
+func (e *BulkExecutor) itemFailure(a *artist.Artist, operation, message string, err error) (string, string) {
+	e.logger.Warn("bulk item failed",
+		slog.String("artist_id", a.ID),
+		slog.String("artist", a.Name),
+		slog.String("operation", operation),
+		slog.String("error", redactURLQueries(err.Error())))
+	return BulkItemFailed, message
 }
 
 // SetCollisionGuard late-wires the #2540 cross-artist backdrop-collision seam
@@ -242,12 +308,16 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 
 		for {
 			if err := ctx.Err(); err != nil {
-				e.finishJob(ctx, job, BulkStatusCanceled, fmt.Sprintf("bulk job canceled: %v", err))
+				e.logger.Info("bulk job canceled while listing artists",
+					slog.String("job_id", job.ID), slog.String("operation", job.Type), slog.String("error", err.Error()))
+				e.finishJob(ctx, job, BulkStatusCanceled, "bulk job canceled")
 				return
 			}
 			page, _, err := e.artistService.List(ctx, params)
 			if err != nil {
-				e.finishJob(ctx, job, BulkStatusFailed, fmt.Sprintf("listing artists: %v", err))
+				e.logger.Error("listing artists for bulk job",
+					slog.String("job_id", job.ID), slog.String("operation", job.Type), slog.String("error", err.Error()))
+				e.finishJob(ctx, job, BulkStatusFailed, "failed to list artists for the bulk job")
 				return
 			}
 			if len(page) == 0 {
@@ -363,7 +433,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 
 	result, err := e.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
-		return BulkItemFailed, fmt.Sprintf("fetch failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchMetadata, "metadata fetch from providers failed; retry later", err)
 	}
 
 	u := artist.FetchResultToUpdate(result)
@@ -385,7 +455,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 	}
 
 	if err := e.artistService.Update(ctx, a); err != nil {
-		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchMetadata, "saving fetched metadata failed; retry later", err)
 	}
 
 	UpdateProviderFetchTimestamps(ctx, e.artistService, a.ID, result.AttemptedProviders, e.logger)
@@ -419,7 +489,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 
 	imgResult, err := e.orchestrator.FetchImages(ctx, a.MusicBrainzID, a.ProviderIDMap())
 	if err != nil {
-		return BulkItemFailed, fmt.Sprintf("image fetch failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchImages, "image fetch from providers failed; retry later", err)
 	}
 
 	// Track saved file paths so provenance can be recorded after Update()
@@ -443,7 +513,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 	}
 
 	if err := e.artistService.Update(ctx, a); err != nil {
-		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchImages, "saving fetched images failed; retry later", err)
 	}
 
 	// Record provenance after Update() so the artist_images rows exist,
@@ -542,7 +612,7 @@ func (e *BulkExecutor) selfHealMBID(ctx context.Context, a *artist.Artist, mode 
 		} else {
 			delete(a.MetadataSources, artist.SourceKeyMusicBrainzID)
 		}
-		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
+		return e.itemFailure(a, BulkTypeFetchImages, "saving MusicBrainz ID failed; retry later", err)
 	}
 	e.recordBulkMBIDHistory(ctx, a.ID, mbid)
 
@@ -629,7 +699,11 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 			saved, err = SaveImageFromURL(ctx, e.httpClient, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger)
 		}
 		if err != nil {
-			// Source identifies the provider without leaking the signed URL.
+			// Source identifies the provider. The error is safe to print
+			// because fetchImageURL redacts the URL query string, where a
+			// signed URL carries its credential (#2881); SaveImageFromURL's
+			// "downloading image: %w" wrap preserves that redaction, since
+			// the wrapper's Error() delegates to the redacting one.
 			e.logger.Debug("image candidate failed", "source", c.Source, "error", err)
 			continue
 		}
@@ -654,8 +728,35 @@ func (e *BulkExecutor) finishJob(ctx context.Context, job *BulkJob, status, errM
 	now := time.Now().UTC()
 	job.Status = status
 	job.CompletedAt = &now
+	// A CANCELED job must never persist a BLANK explanation. Two cancellation
+	// sites in run() pass an empty errMsg, and before the persistence fix below
+	// that did not matter: the write failed on the canceled context, so the
+	// blank never reached the row. Making persistence work made the blank
+	// REACHABLE -- an operator would see a job marked canceled with no reason
+	// given. Fixing one defect exposed a latent second one that the first had
+	// been masking.
+	//
+	// Defaulted HERE rather than at the two call sites so no future caller can
+	// reintroduce it: a boundary that cannot emit a blank is stronger than
+	// three call sites that each remember not to.
+	if status == BulkStatusCanceled && errMsg == "" {
+		errMsg = "bulk job canceled"
+	}
 	job.Error = errMsg
-	if err := e.bulkService.UpdateJob(ctx, job); err != nil {
+	// PERSIST ON A LIVE CONTEXT, not the caller's. finishJob's most important
+	// caller is the CANCELLATION path, where ctx is already canceled -- so
+	// UpdateJob's write failed and the row stayed `running`/`pending` forever
+	// while the in-memory struct said `canceled`. An operator who cancels a
+	// bulk job then watches it hang permanently. Measured before this fix:
+	// in-memory "canceled", persisted "pending".
+	//
+	// The recording of a terminal state is not part of the work being
+	// canceled; it is what makes the cancellation observable. It gets its own
+	// bounded context so a shutdown cannot leave a job un-finalized, and the
+	// timeout keeps it from hanging a shutdown in turn.
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := e.bulkService.UpdateJob(persistCtx, job); err != nil {
 		e.logger.Error("finishing bulk job", "job_id", job.ID, "error", err)
 	}
 
