@@ -638,7 +638,7 @@ func historyChangeRow(c artist.MetadataChange) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else if c.OldValue != "" && c.NewValue == "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<span class=\"text-red-500 dark:text-red-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<span class=\"text-red-600 dark:text-red-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -656,14 +656,14 @@ func historyChangeRow(c artist.MetadataChange) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else if c.OldValue != "" && c.NewValue != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<span class=\"line-through text-red-500 dark:text-red-400 mr-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<!-- text-red-600, not text-red-500 (#2869): on the light theme\n\t\t\t\t\t     red-500 (#fb2c36) computes to 3.81:1 here, below the 4.5:1\n\t\t\t\t\t     WCAG AA floor for body text; red-600 (#e7000b) measures\n\t\t\t\t\t     4.77:1. This is the struck-through DESTROYED value, the text\n\t\t\t\t\t     an operator reads to decide whether something needs\n\t\t\t\t\t     restoring, and the strike-through already costs legibility\n\t\t\t\t\t     on its own, so the two compound. Matches the blast-radius\n\t\t\t\t\t     pane (reports_page.templ) which was fixed the same way, and\n\t\t\t\t\t     pairs with the text-green-600 sibling. --> <span class=\"line-through text-red-600 dark:text-red-400 mr-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(c.OldValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 172, Col: 101}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 181, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -676,7 +676,7 @@ func historyChangeRow(c artist.MetadataChange) templ.Component {
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(c.NewValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 173, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 182, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -694,7 +694,7 @@ func historyChangeRow(c artist.MetadataChange) templ.Component {
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.no_value"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 175, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 184, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 			if templ_7745c5c3_Err != nil {
@@ -717,20 +717,20 @@ func historyChangeRow(c artist.MetadataChange) templ.Component {
 			var templ_7745c5c3_Var37 string
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.previous"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 181, Col: 111}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 190, Col: 111}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</span><p class=\"text-red-500 dark:text-red-400 line-through break-words whitespace-pre-wrap\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</span><p class=\"text-red-600 dark:text-red-400 line-through break-words whitespace-pre-wrap\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(c.OldValue)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 182, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 191, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
@@ -749,7 +749,7 @@ func historyChangeRow(c artist.MetadataChange) templ.Component {
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.current"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 187, Col: 110}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 196, Col: 110}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -762,7 +762,7 @@ func historyChangeRow(c artist.MetadataChange) templ.Component {
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(c.NewValue)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 188, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 197, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {

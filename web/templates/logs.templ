@@ -416,7 +416,13 @@ templ LogsViewerScript() {
 					} else if (k === 'error') {
 						chips += '<span class="sw-log-chip shrink-0 rounded bg-red-500/15 px-1.5 text-red-700 dark:text-red-300">error:' + esc(val) + '</span>';
 					} else {
-						chips += '<span class="sw-log-chip shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-3)] dark:bg-white/10">' + esc(k) + ':' + esc(val) + '</span>';
+						// --swd-ink-2, not the dimmer --swd-ink-3, for the same reason as
+						// the timestamp above: this chip's bg-black/10 dark:bg-white/10
+						// composites ON TOP of the log-viewer glass surface, and ink-3
+						// measures 4.46:1 on that composite (rendered-pixel measurement,
+						// dark, default 85% opacity) -- just under the AA floor for this
+						// 13px text. ink-2 clears it with margin.
+						chips += '<span class="sw-log-chip shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-2)] dark:bg-white/10">' + esc(k) + ':' + esc(val) + '</span>';
 					}
 				});
 				if (chips) {

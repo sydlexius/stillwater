@@ -167,9 +167,18 @@ templ historyChangeRow(c artist.MetadataChange) {
 				if c.OldValue == "" && c.NewValue != "" {
 					<span class="text-green-600 dark:text-green-400">{ tf(ctx, "history.set_to", historyTruncate(c.NewValue, 120)) }</span>
 				} else if c.OldValue != "" && c.NewValue == "" {
-					<span class="text-red-500 dark:text-red-400">{ t(ctx, "history.cleared") }</span>
+					<span class="text-red-600 dark:text-red-400">{ t(ctx, "history.cleared") }</span>
 				} else if c.OldValue != "" && c.NewValue != "" {
-					<span class="line-through text-red-500 dark:text-red-400 mr-1">{ historyTruncate(c.OldValue, 60) }</span>
+					<!-- text-red-600, not text-red-500 (#2869): on the light theme
+					     red-500 (#fb2c36) computes to 3.81:1 here, below the 4.5:1
+					     WCAG AA floor for body text; red-600 (#e7000b) measures
+					     4.77:1. This is the struck-through DESTROYED value, the text
+					     an operator reads to decide whether something needs
+					     restoring, and the strike-through already costs legibility
+					     on its own, so the two compound. Matches the blast-radius
+					     pane (reports_page.templ) which was fixed the same way, and
+					     pairs with the text-green-600 sibling. -->
+					<span class="line-through text-red-600 dark:text-red-400 mr-1">{ historyTruncate(c.OldValue, 60) }</span>
 					<span class="text-green-600 dark:text-green-400">{ historyTruncate(c.NewValue, 60) }</span>
 				} else {
 					<span class="text-gray-600 dark:text-gray-400 italic">{ t(ctx, "history.no_value") }</span>
@@ -179,7 +188,7 @@ templ historyChangeRow(c artist.MetadataChange) {
 				if c.OldValue != "" {
 					<div>
 						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "history.previous") }</span>
-						<p class="text-red-500 dark:text-red-400 line-through break-words whitespace-pre-wrap">{ c.OldValue }</p>
+						<p class="text-red-600 dark:text-red-400 line-through break-words whitespace-pre-wrap">{ c.OldValue }</p>
 					</div>
 				}
 				if c.NewValue != "" {

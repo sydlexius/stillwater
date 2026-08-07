@@ -135,7 +135,20 @@
   /* Ink ramp: primary / secondary / tertiary text. */
   --swd-ink: #0f172a;           /* slate-900 */
   --swd-ink-2: #334155;         /* slate-700 */
-  --swd-ink-3: #64748b;         /* slate-500 -- AA body on white */
+  /* #2875: was slate-500 #64748b, whose own comment claimed "AA body on white".
+     True on white (4.76) and false everywhere else: it measured 4.34 on the
+     --swd-bg-base panel and 4.55 on --swd-bg-elev, i.e. it passed only on the
+     ONE surface it was designed against and failed on the ones nobody checked.
+     Retuned so the QUIET ink clears 4.5:1 on every OPAQUE surface token: worst
+     is now 5.66 (on --swd-bg-base), vs 6.20 on white and 5.93 on --swd-bg-elev.
+     Enforced by tests/a11y/token-pairings.spec.js, which reads these values off
+     the rendered page and fails on any pairing below the floor. Do not restore
+     a ramp step here without re-running that spec.
+     SCOPE: that guarantee covers the opaque ramp. A translucent fill composited
+     over another surface is a different pairing and is NOT implied by it -- the
+     log-viewer chip is exactly that case and uses --swd-ink-2 for the reason
+     documented at its site. */
+  --swd-ink-3: #556274;
 
   /* Backgrounds. */
   --swd-bg-base: #f1f5f9;       /* slate-100 -- faint base behind cards */
@@ -194,7 +207,12 @@
   --swd-accent: #3b82f6;
   --swd-ink: #e6edf7;
   --swd-ink-2: #b6c2d4;
-  --swd-ink-3: #7d8aa1;
+  /* #2875: was #7d8aa1, which measured 4.36 on --swd-bg-elev and 4.19 on the
+     rendered activity-row card (#1e293b) -- the dashboard-timestamp failure
+     this issue was filed for. slate-400 clears every opaque dark surface with
+     margin: worst is 5.93 (on --swd-bg-elev), and the rendered card measures
+     5.71. See the light-theme note above and token-pairings.spec.js. */
+  --swd-ink-3: #94a3b8;
   --swd-bg-base: #0b1220;
   --swd-bg-raised: #111a2e;
   --swd-line: rgba(148, 163, 184, 0.14);
