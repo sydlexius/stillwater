@@ -144,35 +144,67 @@ export function assertOnlyKnownViolations(expect, violations, label, format) {
 import fs from 'node:fs';
 import path from 'node:path';
 
-// Deliberately derived from the run's output dir rather than a fixed /tmp path,
-// so two concurrent runs (two worktrees, or a local run beside a CI one) cannot
-// read each other's marks.
-export const SEEN_FILE = path.join(
-  process.env.SW_A11Y_SEEN_DIR || path.join(process.cwd(), 'test-results'),
-  '.known-violations-seen',
-);
+// PER-INVOCATION, not merely per-directory. Two Playwright runs started from
+// the SAME checkout (a local run beside a CI one, or two `make test-a11y`
+// invocations) would otherwise share test-results/.known-violations-seen, and
+// run B's globalSetup reset would delete run A's marks mid-flight -- making run
+// A call a LIVE allowance stale. That is the same false positive the
+// cross-process fix removed, reintroduced through a different door.
+//
+// SW_A11Y_SEEN_RUN_ID is stamped once by globalSetup (which runs a single time
+// per invocation, before any worker starts) and inherited by every worker and by
+// globalTeardown through the environment. A run that somehow has no id falls
+// back to a shared path rather than inventing a per-PROCESS id: workers must
+// agree on the file, and a per-process id would silently give each worker its
+// own, which reads as "nothing was ever seen".
+/**
+ * seenFile resolves the marks path AT CALL TIME, never at module load.
+ *
+ * That distinction is load-bearing and was got wrong once: globalTeardown
+ * imports this module, and an ES import is evaluated when the config graph
+ * loads -- BEFORE globalSetup runs and stamps the run id. A module-level
+ * `const` therefore captured the id-less fallback path in the coordinator while
+ * the workers (forked later, after the stamp) wrote to the id-bearing one, so
+ * teardown read a file nothing had written and reported "no scan ran" on every
+ * run. Measured: env id present, SEEN_FILE still `.known-violations-seen`.
+ *
+ * Resolving per call costs nothing here (a handful of calls per run) and cannot
+ * go stale.
+ */
+function seenFile() {
+  const dir = process.env.SW_A11Y_SEEN_DIR
+    || path.join(process.cwd(), 'test-results');
+  const id = process.env.SW_A11Y_SEEN_RUN_ID;
+  return path.join(dir, id ? `.known-violations-seen-${id}` : '.known-violations-seen');
+}
 
+/**
+ * newRunId returns an id for this invocation. Called by globalSetup only.
+ */
+export function newRunId() {
+  return `${process.pid}-${Date.now().toString(36)}`;
+}
+
+// recordSeen and resetSeen deliberately do NOT catch. An I/O failure here is not
+// cosmetic: a lost mark makes a live allowance look stale (a confusing failure)
+// and a failed reset makes a dead one look alive (a SILENT one, which is worse).
+// Swallowing either would resurrect exactly the class of bug this file exists to
+// prevent, so the run fails on the real error instead.
 function recordSeen(issue) {
-  try {
-    fs.mkdirSync(path.dirname(SEEN_FILE), { recursive: true });
-    fs.appendFileSync(SEEN_FILE, `${issue}\n`);
-  } catch (err) {
-    // Loudly, not silently: a lost mark makes a live allowance look stale, and
-    // a silent catch here would resurrect the exact bug this replaces.
-    console.error(`known-violations: could not record issue #${issue} as seen `
-      + `(${err.message}). The staleness check may report it stale in error.`);
-  }
+  const file = seenFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${issue}\n`);
 }
 
 /**
  * resetSeen clears marks from any previous run. Called from globalSetup: a
- * stale file would otherwise make a genuinely-dead allowance look alive, which
- * fails in the silent direction.
+ * stale file would otherwise make a genuinely-dead allowance look alive.
+ *
+ * `force: true` already makes a missing file a no-op, so anything that still
+ * throws is a real filesystem problem and is allowed to propagate.
  */
 export function resetSeen() {
-  try {
-    fs.rmSync(SEEN_FILE, { force: true });
-  } catch { /* nothing recorded yet */ }
+  fs.rmSync(seenFile(), { force: true });
 }
 
 /**
@@ -193,9 +225,14 @@ export function resetSeen() {
 export function reportStaleAllowances() {
   let marks;
   try {
-    marks = fs.readFileSync(SEEN_FILE, 'utf8').split('\n').filter(Boolean);
-  } catch {
-    return null;
+    marks = fs.readFileSync(seenFile(), 'utf8').split('\n').filter(Boolean);
+  } catch (err) {
+    // ENOENT is the expected "no scan ran" case and is the ONLY error that maps
+    // to null. Anything else (EACCES, EIO, a directory in the way) is a real
+    // failure to READ state, and reporting it as "cannot tell" would let a run
+    // pass while the staleness check silently did nothing.
+    if (err.code === 'ENOENT') return null;
+    throw err;
   }
   // No sentinel: the file exists but no scan completed a consult. Inconclusive.
   if (!marks.includes('.')) return null;

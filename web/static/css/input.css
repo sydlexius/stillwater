@@ -3021,7 +3021,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * AA. The quiet meta/label ink (--swd-ink-3) was the thin one here: at its old
  * slate-500/400 values it managed only ~4.8:1 on fully-opaque white and could
  * dip toward ~4.0:1 under an 8% backdrop bleed. #2875 retuned it (now 5.66:1
- * worst-case light / 5.92:1 worst-case dark on the opaque surfaces), so the
+ * worst-case light / 5.93:1 worst-case dark on the opaque surfaces), so the
  * bleed case retains AA margin rather than spending it. The opaque pairings are
  * asserted by tests/a11y/token-pairings.spec.js; the composited case remains
  * confirmed by a rendered axe pass, not by this static math.

@@ -120,8 +120,15 @@ async function contrastMatrix(page, inks, surfaces) {
       if (!m) return null;
       const parts = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
       if (parts.length < 3 || parts.slice(0, 3).some(Number.isNaN)) return null;
-      // A fully transparent resolution means the var() did not land.
-      if (parts.length >= 4 && parts[3] === 0) return null;
+      // REJECT ANY NON-OPAQUE RESOLUTION, not just fully transparent.
+      //
+      // A partially transparent token composites over whatever is behind it, so
+      // its RGB triple is NOT the color a viewer sees and a ratio computed from
+      // it is confidently wrong. Only alpha === 0 was rejected before, which
+      // caught the "var() did not land" case but treated alpha 0.5 as opaque.
+      // The matrix asserts OPAQUE pairings, so a translucent token is out of
+      // scope and must fail loudly as unresolved rather than be measured wrong.
+      if (parts.length >= 4 && parts[3] !== 1) return null;
       return parts.slice(0, 3);
     };
 

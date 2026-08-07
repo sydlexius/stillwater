@@ -20,7 +20,7 @@ import fs from 'node:fs';
 
 import { setupAndLogin } from './helpers/bootstrap.js';
 import { seedBlastRadius } from './helpers/seed-blast-radius.js';
-import { resetSeen } from './helpers/known-violations.js';
+import { newRunId } from './helpers/known-violations.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,11 +34,18 @@ const BASE_URL = process.env.SW_TEST_URL
 export default async function globalSetup() {
   fs.mkdirSync(path.dirname(STORAGE_STATE), { recursive: true });
 
-  // Clear the previous run's known-violation seen-marks. Marks cross the
-  // worker/coordinator process boundary through a file, so a leftover file
-  // would make a now-DEAD allowance look alive and the staleness check would
-  // never fire -- failing in the silent direction.
-  resetSeen();
+  // Stamp a run id for the known-violation seen-marks BEFORE any worker starts.
+  //
+  // The marks cross the worker/coordinator process boundary through a file, and
+  // globalSetup is the only hook that runs exactly once per invocation, so this
+  // is the one place that can mint an id every later process agrees on. Workers
+  // and globalTeardown inherit it through the environment.
+  //
+  // Per-invocation rather than a fixed path: two runs from the same checkout (a
+  // local one beside CI) would otherwise share a file, and one clearing it
+  // mid-flight would make the other call a LIVE allowance stale. A fresh id also
+  // means there is nothing to reset -- the file cannot pre-exist.
+  process.env.SW_A11Y_SEEN_RUN_ID = newRunId();
 
   const ctx = await request.newContext({ baseURL: BASE_URL });
   try {
