@@ -29,11 +29,19 @@
 //
 // The pairings asserted here are ink over the OPAQUE surface tokens. The
 // translucent glass fills (--swd-surface, driven by the Background Opacity
-// preference) composite against an arbitrary backdrop and are governed
-// separately by the #1784 floor (--swd-surface-floor, 0.92 effective alpha);
-// axe cannot evaluate contrast over a dynamic backdrop, and neither can this
-// matrix. The composited case stays the job of the rendered page scans in
-// contrast.spec.js. See the --swd-surface-floor comment in design-tokens.css.
+// preference) composite against a backdrop this matrix cannot know, so they are
+// out of scope here and remain the job of the rendered-page scans in
+// contrast.spec.js -- axe cannot evaluate contrast over a dynamic backdrop
+// either, which is why those surfaces need a rendered measurement rather than a
+// computed one.
+//
+// Do NOT read that exclusion as "the glass surfaces are covered elsewhere by the
+// #1784 floor". Only .sw-next-hero still pins --swd-surface-floor; the #1757
+// PR-2 cutover removed it from .sw-stat-bubble and .sw-dash-card, so the
+// dashboard and most artist-detail cards track --sw-glass-bg down to 0.85 with
+// no floor at all (input.css, the .sw-dash-card block). Ink-3 does hold up on
+// those composites as measured today (5.71-6.02 dark), but nothing ASSERTS it,
+// and a future opacity change is not caught by this file.
 
 import { test, expect } from 'playwright/test';
 
@@ -70,9 +78,15 @@ const SURFACES = ['--swd-bg-base', '--swd-bg-raised', '--swd-bg-elev'];
 // the values are pushed through a real color property on a probe element and
 // read back: that makes the browser normalise every admissible CSS color form
 // (hex, rgb(), color-mix(), a var() chain) into resolved rgb() channels. A
-// regex over the raw token text would silently misread color-mix() -- which
-// the surface ramp already uses -- and a misread here reads as a passing
-// ratio, not as an error.
+// regex over the raw token text would silently misread a computed form, and a
+// misread reads as a passing ratio rather than as an error.
+//
+// Coverage of that normalisation, measured rather than assumed: plain hex,
+// rgb()/rgba() and a var() chain all resolve to rgb() and parse. color-mix()
+// computes to `color(srgb ...)`, which this regex does NOT match -- so it
+// returns null and the run fails LOUDLY as unresolved. That is the safe
+// direction and no color-mix token is in the matrix today, but extend the
+// parser before adding one to SURFACES.
 async function contrastMatrix(page, inks, surfaces) {
   return page.evaluate(({ inks, surfaces }) => {
     const probe = document.createElement('span');
@@ -83,7 +97,22 @@ async function contrastMatrix(page, inks, surfaces) {
     // not resolve to a usable color. Null is reported to the test rather than
     // defaulted: a token that silently resolves to transparent-black would
     // otherwise produce a confident, meaningless ratio.
+    const rootStyle = getComputedStyle(document.documentElement);
     const resolve = (token) => {
+      // CHECK THE TOKEN IS DECLARED AT ALL, FIRST.
+      //
+      // `color: var(--undefined)` is invalid at computed-value time, so color
+      // falls back to the INHERITED value rather than to nothing -- the probe
+      // then reports the page's body text color and the pairing scores a
+      // confident, meaningless ~17:1. Measured: on a page with body color
+      // rgb(1,2,3), `var(--does-not-exist)` computes to exactly rgb(1, 2, 3).
+      //
+      // That fails in the DANGEROUS direction, and on the exact change this
+      // spec exists to survive: rename --swd-ink-3, leave the old name in INKS,
+      // and every pairing passes while measuring body ink against itself. (An
+      // undefined SURFACE fails safe -- body ink vs body ink is ~1:1, i.e. red
+      // -- so only the ink side was unguarded.)
+      if (!rootStyle.getPropertyValue(token).trim()) return null;
       probe.style.color = '';
       probe.style.color = `var(${token})`;
       const computed = getComputedStyle(probe).color;
@@ -147,13 +176,17 @@ for (const theme of ['dark', 'light']) {
 
     const rows = await contrastMatrix(page, INKS, SURFACES);
 
-    // PRECONDITION: the matrix must actually have measured something. Without
-    // this, a page that failed to load the token stylesheet yields all-null
-    // ratios, the filter below finds no FAILING rows, and the test passes
-    // vacuously while measuring nothing at all.
-    expect(rows, 'no ink/surface pairings were measured').toHaveLength(
-      INKS.length * SURFACES.length,
-    );
+    // PRECONDITION: every pairing must have RESOLVED to a real color.
+    //
+    // This is the check that stops a vacuous pass. If the token stylesheet did
+    // not load, or a token was renamed out from under INKS/SURFACES, the
+    // affected rows carry ratio === null and this fails LOUDLY naming them --
+    // rather than the test reporting green having measured nothing.
+    //
+    // (There is deliberately no assertion on rows.length: the matrix is built
+    // by an unconditional nested loop, so its length is INKS x SURFACES by
+    // construction and such an assertion could never fail. A guard that cannot
+    // fail is worse than no guard -- it reads as protection that is not there.)
     const unresolved = rows.filter((r) => r.ratio === null);
     expect(
       unresolved,

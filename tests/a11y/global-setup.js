@@ -20,6 +20,7 @@ import fs from 'node:fs';
 
 import { setupAndLogin } from './helpers/bootstrap.js';
 import { seedBlastRadius } from './helpers/seed-blast-radius.js';
+import { resetSeen } from './helpers/known-violations.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +33,12 @@ const BASE_URL = process.env.SW_TEST_URL
 
 export default async function globalSetup() {
   fs.mkdirSync(path.dirname(STORAGE_STATE), { recursive: true });
+
+  // Clear the previous run's known-violation seen-marks. Marks cross the
+  // worker/coordinator process boundary through a file, so a leftover file
+  // would make a now-DEAD allowance look alive and the staleness check would
+  // never fire -- failing in the silent direction.
+  resetSeen();
 
   const ctx = await request.newContext({ baseURL: BASE_URL });
   try {

@@ -28,6 +28,16 @@ export default async function globalTeardown() {
   if (KNOWN_VIOLATIONS.length === 0) return;
 
   const stale = reportStaleAllowances();
+
+  // null means "cannot tell" (no marks file: no allowlist-consulting scan ran),
+  // NOT "everything is stale". Reporting stale here would fail a run that simply
+  // skipped those specs -- the same false positive the cross-process fix removed.
+  if (stale === null) {
+    console.warn('known-violations: no scan recorded a seen-mark this run, so '
+      + 'allowance staleness could not be evaluated.');
+    return;
+  }
+
   if (stale.length === 0) return;
 
   throw new Error(
