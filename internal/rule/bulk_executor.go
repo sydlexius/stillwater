@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -82,6 +83,26 @@ func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 	e.eventBus = bus
 }
 
+// redactURLQueries strips the QUERY STRING from any URL appearing in an error
+// message, replacing it with "?<redacted>".
+//
+// Go's http.Client embeds the full requested URL in its transport errors --
+// verified: a failed request to `https://host/p?token=SECRET` yields
+// `Get "https://host/p?token=SECRET": dial tcp ...`. Image downloads use
+// provider URLs that can be SIGNED, so the credential is in the query string,
+// and this function's caller writes the raw error text straight to the log.
+// A log is a lower-privilege surface than the request that produced it.
+//
+// The PATH is deliberately preserved: it is what makes the failure diagnosable
+// (which provider, which asset), and it does not carry the signature.
+func redactURLQueries(msg string) string {
+	return urlQueryPattern.ReplaceAllString(msg, "$1?<redacted>")
+}
+
+// urlQueryPattern matches a scheme-qualified URL's query string. Anchored on
+// `://` so it cannot fire on an ordinary sentence containing a question mark.
+var urlQueryPattern = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://[^\s"?]*)\?[^\s"]*`)
+
 // itemFailure is the sanitization boundary for a per-item bulk failure
 // (issue #2881). Every fetchMetadata/fetchImages failure site that used to
 // interpolate a raw driver or provider error directly into the operator-
@@ -95,7 +116,7 @@ func (e *BulkExecutor) itemFailure(a *artist.Artist, operation, message string, 
 		slog.String("artist_id", a.ID),
 		slog.String("artist", a.Name),
 		slog.String("operation", operation),
-		slog.String("error", err.Error()))
+		slog.String("error", redactURLQueries(err.Error())))
 	return BulkItemFailed, message
 }
 
@@ -676,7 +697,20 @@ func (e *BulkExecutor) finishJob(ctx context.Context, job *BulkJob, status, errM
 	job.Status = status
 	job.CompletedAt = &now
 	job.Error = errMsg
-	if err := e.bulkService.UpdateJob(ctx, job); err != nil {
+	// PERSIST ON A LIVE CONTEXT, not the caller's. finishJob's most important
+	// caller is the CANCELLATION path, where ctx is already canceled -- so
+	// UpdateJob's write failed and the row stayed `running`/`pending` forever
+	// while the in-memory struct said `canceled`. An operator who cancels a
+	// bulk job then watches it hang permanently. Measured before this fix:
+	// in-memory "canceled", persisted "pending".
+	//
+	// The recording of a terminal state is not part of the work being
+	// canceled; it is what makes the cancellation observable. It gets its own
+	// bounded context so a shutdown cannot leave a job un-finalized, and the
+	// timeout keeps it from hanging a shutdown in turn.
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := e.bulkService.UpdateJob(persistCtx, job); err != nil {
 		e.logger.Error("finishing bulk job", "job_id", job.ID, "error", err)
 	}
 
