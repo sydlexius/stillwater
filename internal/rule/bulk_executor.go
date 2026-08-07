@@ -88,15 +88,43 @@ func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 //
 // Go's http.Client embeds the full requested URL in its transport errors --
 // verified: a failed request to `https://host/p?token=SECRET` yields
-// `Get "https://host/p?token=SECRET": dial tcp ...`. Image downloads use
-// provider URLs that can be SIGNED, so the credential is in the query string,
-// and this function's caller writes the raw error text straight to the log.
-// A log is a lower-privilege surface than the request that produced it.
+// `Get "https://host/p?token=SECRET": dial tcp ...`. (net/url's own
+// *url.Error redaction, stripPassword, removes only USERINFO -- it never
+// touches the query string.) Image downloads use provider URLs that can be
+// SIGNED, so the credential is in the query string, and callers write the raw
+// error text straight to the log. A log is a lower-privilege surface than the
+// request that produced it.
 //
 // The PATH is deliberately preserved: it is what makes the failure diagnosable
 // (which provider, which asset), and it does not carry the signature.
 func redactURLQueries(msg string) string {
 	return urlQueryPattern.ReplaceAllString(msg, "$1?<redacted>")
+}
+
+// redactedURLError wraps an error whose message may embed a signed URL, so
+// that every consumer -- log line, %w wrap, operator-facing string -- sees the
+// query string already stripped. It is applied at the CHOKE POINT that creates
+// such errors (fetchImageURL), not at each log site: the leak was introduced
+// by log sites that did not know they were printing a URL, so a fix requiring
+// every present and future caller to remember a helper reproduces the bug.
+//
+// Unwrap is the load-bearing half. Redacting by rebuilding the message with
+// fmt.Errorf("%s", ...) would sever the error chain, silently breaking any
+// upstream errors.Is/errors.As (context.Canceled, net.Error, and the
+// *url.Error the transport returns). This type changes only what the error
+// SAYS, never what it IS.
+type redactedURLError struct{ err error }
+
+func (e *redactedURLError) Error() string { return redactURLQueries(e.err.Error()) }
+func (e *redactedURLError) Unwrap() error { return e.err }
+
+// redactURLError wraps err so its message carries no URL query string. It
+// returns nil for a nil error so call sites can wrap unconditionally.
+func redactURLError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &redactedURLError{err: err}
 }
 
 // urlQueryPattern matches a scheme-qualified URL's query string. Anchored on
@@ -671,7 +699,11 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 			saved, err = SaveImageFromURL(ctx, e.httpClient, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger)
 		}
 		if err != nil {
-			// Source identifies the provider without leaking the signed URL.
+			// Source identifies the provider. The error is safe to print
+			// because fetchImageURL redacts the URL query string, where a
+			// signed URL carries its credential (#2881); SaveImageFromURL's
+			// "downloading image: %w" wrap preserves that redaction, since
+			// the wrapper's Error() delegates to the redacting one.
 			e.logger.Debug("image candidate failed", "source", c.Source, "error", err)
 			continue
 		}

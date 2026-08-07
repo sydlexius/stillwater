@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -631,5 +632,98 @@ func TestFinishJob_CanceledKeepsAnExplicitMessage(t *testing.T) {
 	}
 	if reloaded.Error != "canceled by the operator" {
 		t.Errorf("PERSISTED error = %q, want the caller's message preserved", reloaded.Error)
+	}
+}
+
+// closedServerURL starts an httptest server, immediately closes it, and
+// returns a URL on its now-dead address carrying a signed-looking query
+// string. A request to it produces a REAL http.Client transport error -- the
+// exact error shape whose message embeds the full requested URL -- rather than
+// a hand-written string that could drift from what net/http actually emits.
+func closedServerURL(t *testing.T) (rawURL, secret string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	base := srv.URL
+	srv.Close() // nothing is listening now, so the dial fails
+	secret = "SIGNED_SECRET_TOKEN"
+	return base + "/img/a.jpg?token=" + secret + "&exp=99", secret
+}
+
+// TestFetchImageURL_RedactsTheSignedURLInItsError pins the #2881 choke-point
+// fix: fetchImageURL is the ONLY function that turns a (possibly signed) image
+// URL into an error, so it is where redaction belongs. Every leak site the
+// review found -- BulkExecutor.saveBestImage, ImageFixer.downloadAndPersist,
+// and the apply-candidate API handler -- logs an error that originates here.
+//
+// This asserts the real net/http error, not a synthetic string: the leak
+// exists precisely because *url.Error embeds the requested URL, and net/url's
+// own redaction (stripPassword) removes userinfo but never the query string.
+func TestFetchImageURL_RedactsTheSignedURLInItsError(t *testing.T) {
+	rawURL, secret := closedServerURL(t)
+
+	_, err := fetchImageURL(context.Background(), &http.Client{}, rawURL)
+	if err == nil {
+		t.Fatal("expected a transport error from a closed server, got nil")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("the signed token survived in the error text -- any log printing it leaks the credential:\n%s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "<redacted>") {
+		t.Errorf("no redaction marker, so the error never passed through the redactor:\n%s", err.Error())
+	}
+	// Over-redaction check: the path is what makes the failure diagnosable.
+	if !strings.Contains(err.Error(), "/img/a.jpg") {
+		t.Errorf("the URL path was destroyed, so the log cannot say WHICH asset failed:\n%s", err.Error())
+	}
+}
+
+// TestFetchImageURL_RedactionPreservesTheErrorChain guards the subtle half of
+// the fix. Redacting by rebuilding the message (fmt.Errorf("%s", redacted))
+// would sever the chain, and every upstream errors.Is would silently start
+// returning false -- a cancellation would stop being recognized as one, which
+// no message-content assertion can detect.
+func TestFetchImageURL_RedactionPreservesTheErrorChain(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := fetchImageURL(ctx, &http.Client{}, srv.URL+"/img/a.jpg?token=SIGNED_SECRET_TOKEN")
+	if err == nil {
+		t.Fatal("expected an error from a canceled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("errors.Is(err, context.Canceled) = false -- redaction broke the error chain, "+
+			"so callers can no longer distinguish a cancellation from a real failure: %v", err)
+	}
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		t.Errorf("errors.As(err, **url.Error) = false -- redaction replaced the error identity "+
+			"instead of only its message: %v", err)
+	}
+}
+
+// TestSaveImageFromURL_KeepsTheRedactionThroughItsWrap pins the path the bulk
+// executor actually takes. saveBestImage's non-collision branch calls
+// SaveImageFromURL, which wraps the fetch error with "downloading image: %w".
+// A %w wrap calls the wrapped error's Error(), so redaction survives -- but
+// only because the redaction lives in the error VALUE rather than being
+// applied at one log site. This is the assertion that would fail if a later
+// change moved redaction back out to the call sites and missed this one.
+func TestSaveImageFromURL_KeepsTheRedactionThroughItsWrap(t *testing.T) {
+	rawURL, secret := closedServerURL(t)
+	a := &artist.Artist{ID: "artist-id-1", Name: "Redact Target", Path: t.TempDir()}
+
+	_, err := SaveImageFromURL(context.Background(), &http.Client{}, a, "fanart", rawURL,
+		[]string{"fanart.jpg"}, false, nil, nil, testLogger())
+	if err == nil {
+		t.Fatal("expected a download failure from a closed server, got nil")
+	}
+	if !strings.Contains(err.Error(), "downloading image") {
+		t.Fatalf("expected the download-stage wrap, got: %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("the signed token survived SaveImageFromURL's wrap -- saveBestImage logs this error verbatim:\n%s", err.Error())
 	}
 }
