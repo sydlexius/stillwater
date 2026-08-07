@@ -200,6 +200,11 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 		return err
 	}
 
+	// pre_stillwater_config_json is intentionally excluded from this SET
+	// list. It is toggle-lifecycle state, not user-editable connection
+	// config: SetPreStillwaterConfig (serialized under stillwaterManagedMu)
+	// is the exclusive writer. A generic PUT that races the managed toggle
+	// must not be able to overwrite the user's only snapshot copy (#2440).
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE connections SET
 			name = ?, type = ?, url = ?, encrypted_api_key = ?, enabled = ?,
@@ -208,7 +213,6 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 			feature_metadata_push = ?, feature_trigger_refresh = ?,
 			feature_manage_server_files = ?,
 			platform_user_id = ?, platform_server_id = ?,
-			pre_stillwater_config_json = ?,
 			path_mappings = ?
 		WHERE id = ?
 	`,
@@ -219,7 +223,6 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 		dbutil.BoolToInt(c.GetFeatureMetadataPush()), dbutil.BoolToInt(c.GetFeatureTriggerRefresh()),
 		dbutil.BoolToInt(c.FeatureManageServerFiles),
 		c.GetPlatformUserID(), c.GetPlatformServerID(),
-		c.PreStillwaterConfigJSON,
 		pathMappingsJSON,
 		c.ID,
 	)
