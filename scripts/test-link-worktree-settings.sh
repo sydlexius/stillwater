@@ -335,6 +335,33 @@ else
 fi
 
 # --------------------------------------------------------------------------
+# GLOB METACHARACTERS in a path must not corrupt the relative-target
+# computation.
+#
+# relative_path strips the common prefix with ${to#"$from"/}. The QUOTES inside
+# that expansion are load-bearing: unquoted, `${to#$from/}` treats $from as a
+# GLOB PATTERN, so a directory containing [ ] ? or * would misread the prefix
+# and produce a wrong link target -- a dangling link, and a worktree with no
+# grants. Quoted, the prefix is matched literally, which is the documented
+# defense.
+#
+# The code is correct today; this pins it, because the failure is silent and the
+# quotes are exactly the kind of detail a later "simplification" removes.
+# --------------------------------------------------------------------------
+gp="$WORK/glob"
+mkdir -p "$gp/a[x]?b/stillwater/.claude" "$gp/a[x]?b/stillwater-wt"
+printf '{"marker":"MAIN-REPO-GRANTS"}\n' > "$gp/a[x]?b/stillwater/.claude/settings.local.json"
+"$LINK" "$gp/a[x]?b/stillwater-wt" "$gp/a[x]?b/stillwater" >/dev/null 2>&1 || true
+got=$(cat "$gp/a[x]?b/stillwater-wt/.claude/settings.local.json" 2>/dev/null || echo UNREADABLE)
+target=$(readlink "$gp/a[x]?b/stillwater-wt/.claude/settings.local.json" 2>/dev/null || echo NONE)
+if [ "$got" = '{"marker":"MAIN-REPO-GRANTS"}' ] && [ "$target" = "../../stillwater/.claude/settings.local.json" ]; then
+    ok "a path containing glob metacharacters links correctly"
+else
+    bad "a path containing glob metacharacters links correctly" \
+        "target=$target content=$got -- the prefix strip likely glob-matched instead of matching literally"
+fi
+
+# --------------------------------------------------------------------------
 # Bad input.
 # --------------------------------------------------------------------------
 rc=0; "$LINK" >/dev/null 2>&1 || rc=$?
