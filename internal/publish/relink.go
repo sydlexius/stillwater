@@ -58,10 +58,15 @@ import (
 //
 // So the rename path RESOLVES-OR-KEEPS and never drops. Within the budget a
 // positive match (the peer's own item found AT the new directory) upgrades the
-// link; anything else keeps the link we hold and reports the failure loudly. Ghosts
-// are still collected, but where the evidence actually exists: the merge path holds
-// the loser's link directly, and the background reconciler (#2426) has MINUTES to
-// let the peer settle before it re-resolves and drops.
+// link; anything else keeps the link we hold and reports the failure loudly.
+// Ghost collection where a link is dropped outright happens ONLY on the merge
+// path, which holds the loser's link directly. The background reconciler
+// (relink_reconcile.go, #2426) is NOT a second dropping path: it has minutes
+// to let the peer settle and re-resolve, but it is deliberately built without
+// the capability to drop a link at all -- see artistPlatformLister's doc
+// comment in publisher.go for why that capability is withheld at the type
+// level. A drop on stale/ambiguous reconciler evidence is separate, gated
+// follow-up work (#2442), not something this file or the reconciler does today.
 //
 // Package-level vars, not consts, so tests can collapse them and exercise the
 // timeout branch without burning real time.
@@ -111,6 +116,16 @@ func honorsPathWrites(connType string) bool {
 // legitimate identity key ONLY where the peer has no paths to give.
 func peerIsPathless(connType string) bool {
 	return connType == connection.TypeEmby
+}
+
+// peerIsFolderBacked reports whether a peer exposes a real filesystem path
+// for its artists, which is the ONLY evidence the background reconciler
+// (#2426) will act on. It is a positive ALLOW-LIST on purpose: a new peer
+// type must be deliberately enrolled here, never auto-enrolled by adding a
+// case to relinkResolverFactory. The safe default for an unattended,
+// link-rewriting sweep is to do nothing.
+func peerIsFolderBacked(connType string) bool {
+	return connType == connection.TypeJellyfin
 }
 
 type jellyfinResolver struct{ c *jellyfin.Client }
@@ -482,10 +497,37 @@ func (p *Publisher) tryResolve(
 // Uses the AUTHORITATIVE SetPlatformID, not the divergence-aware
 // SetPlatformIDStable the scan-time resolvers use. That distinction is the whole
 // point: those callers are guessing from a library listing and must not clobber a
-// better-known mapping, whereas this caller JUST MOVED THE DIRECTORY and read the
-// peer's own item back at the new path. It knows the truth, so it overwrites.
-// Routing this through the stable set would preserve the very stale row we are
-// here to replace.
+// better-known mapping, whereas this caller read the peer's own item back AT the
+// directory the artist occupies. It knows the truth, so it overwrites. Routing
+// this through the stable set would preserve the very stale row we are here to
+// replace -- concretely, the stable set keeps the LEXICOGRAPHICALLY LOWER of the
+// stored and incoming ids, so a correct re-resolution whose id sorts above the
+// stale one would simply be discarded.
+//
+// THE QUALIFYING TEST IS PATH-BACKED EVIDENCE, NOT PROXIMITY TO THE RENAME. An
+// earlier version of this comment said "JUST MOVED THE DIRECTORY", which read as
+// though only the synchronous rename path could ever qualify. The background
+// reconciler (relink_reconcile.go, #2426) also commits through here, and it is
+// not a counterexample: it writes only ids matched AT the artist's current path
+// on a folder-backed peer. It skips Emby and Lidarr precisely to stay on that
+// footing. A caller that cannot produce a path-backed match does not belong
+// here at all -- and must not "downgrade" to the stable set as a consolation,
+// since a stable-set write is still a write.
+//
+// "OBSERVED LATER" IS NOT "THE SAME EVIDENCE", and an earlier version of this
+// comment overstated that equivalence. The rename path resolves against a
+// listing fetched seconds ago, in the current poll iteration, in direct
+// response to the move. The reconciler resolves against a listing cached at
+// the START of its run -- one fetch shared across every artist on that
+// connection -- which can be MINUTES stale on a large library by the time a
+// later artist's mapping is reconciled, and may predate a rename that has
+// since completed underneath it. reconcileMapping re-reads the stored id
+// immediately before calling in here and aborts the write if it no longer
+// matches what was snapshotted (a concurrent foreground write wins), which
+// narrows that staleness window but does not close it -- it is read-then-write,
+// not compare-and-swap. The residual window is bounded by self-healing: the
+// next reconciler pass re-resolves against a fresh listing and repairs
+// whatever this one missed. Do not read this as the race being eliminated.
 func (p *Publisher) commitRelink(ctx context.Context, conn *connection.Connection, artistID, oldPlatformID, newPlatformID string) error {
 	if oldPlatformID == newPlatformID {
 		// The peer kept the same item (a rename it absorbed in place). Nothing to
