@@ -35,6 +35,7 @@ type ruleResultUpsertExecer interface {
 // pipeline pass or health-subscriber evaluation) so every row written during
 // one artist evaluation shares a timestamp; that makes it cheap to find all
 // rows touched by a single pass without joining on a separate run table.
+//
 // NOT FOR PRODUCTION PASS WRITES. This records the pass row and NOTHING ELSE.
 // Every production path that records a pass must go through RecordRulePass,
 // which also resolves the stale violation atomically -- writing only this half
@@ -86,8 +87,13 @@ func upsertRuleResultPassExec(ctx context.Context, exec ruleResultUpsertExecer, 
 //
 // Fixing that by adding a resolve call to the subscriber would have left the
 // same shape in place for the next path to half-implement. Routing both callers
-// through one routine makes recording a pass WITHOUT resolving structurally
-// impossible instead of merely currently-correct.
+// through one routine makes this the SINGLE SOURCE for a production pass write,
+// so the pair cannot drift apart again in the place it drifted before.
+//
+// That is a convention, not a compiler guarantee: UpsertRuleResultPass is still
+// exported (tests seed pass rows with it) and a determined caller could write
+// half the pair by hand. The enforcement is that there is now one obvious place
+// to change, and its doc says what the other half is.
 //
 // The transaction is not decoration. Two separate statements can be interrupted
 // between them, and the resulting state -- passed=1 with an active violation --
@@ -116,7 +122,7 @@ func (s *Service) RecordRulePass(ctx context.Context, artistID, ruleID string, e
 	if err != nil {
 		return false, fmt.Errorf("beginning record-pass transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after a successful commit is a no-op; on the error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // After a successful Commit this returns sql.ErrTxDone, which is expected and carries no information; on the error path the original error is what callers act on
 
 	if err := upsertRuleResultPassExec(ctx, tx, artistID, ruleID, evaluatedAt); err != nil {
 		return false, err
