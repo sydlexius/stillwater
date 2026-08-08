@@ -32,10 +32,7 @@ func mkfifoAt(t *testing.T, path string) {
 		t.Skipf("mkfifo unavailable on this platform: %v", err)
 	}
 	t.Cleanup(func() {
-		f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0)
-		if err == nil {
-			_ = f.Close()
-		}
+		releaseFifoReader(t, path, before)
 		deadline := time.Now().Add(10 * time.Second)
 		for StalledReadCount() > before {
 			if time.Now().After(deadline) {
@@ -46,6 +43,74 @@ func mkfifoAt(t *testing.T, path string) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	})
+}
+
+// releaseFifoReader opens (and immediately closes) the write end of a FIFO so
+// any abandoned reader blocked on it gets EOF, completes, and gives its slot on
+// the stalled-read gauge back. `before` is the gauge reading from before the
+// wedge was planted: once the gauge is back down to it there is nothing left to
+// release and this returns immediately.
+//
+// IT MUST RETRY, and that is the whole reason this exists as a function.
+// Opening a FIFO for writing with O_NONBLOCK fails immediately with ENXIO when
+// no reader is attached, rather than blocking. The reader here belongs to an
+// ABANDONED goroutine whose caller has already returned, so nothing orders it
+// against this call -- under a full `go test ./...` it frequently has not
+// reached its own open(2) yet, and a single attempt loses that race.
+//
+// The previous form was `if err == nil { close }`: a capability check whose
+// failing branch did nothing at all. On ENXIO it silently skipped the release,
+// the abandoned read was never unblocked, and the gauge stayed elevated -- so
+// the drain loop above, and the self-heal assertion in readio_stall_test.go,
+// failed with "the cap does not self-heal", pointing at production code that
+// was working perfectly. Passing alone and failing under load is the signature.
+//
+// A plain BLOCKING open cannot be used instead: when the readers have ALREADY
+// been released it would wait for a reader that is never coming and hang until
+// the test binary timed out. Measured, both ways: a non-blocking write-open
+// SUCCEEDS against a reader that is merely blocked inside open(2), so polling
+// the non-blocking form covers the case that matters and cannot deadlock.
+//
+// ENXIO for the whole budget is NOT an error. It is the ordinary state when the
+// caller already drained the FIFO itself -- which TestStalledReadCap does
+// inline, leaving mkfifo's cleanup with nothing to do. The `before` check
+// normally exits before that, and this is the backstop for the window where the
+// gauge has not settled yet. The authoritative assertion is the caller's own
+// drain loop against the gauge, so a genuinely unreleased reader is still
+// reported loudly, and by the check that can tell the difference.
+func releaseFifoReader(t *testing.T, path string, before int64) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		// Nothing outstanding on this gauge: every abandoned read that could
+		// be blocked on this FIFO has already completed. This is also the
+		// ordinary exit -- the loop below runs until this becomes true.
+		if StalledReadCount() <= before {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		// ONE open does not necessarily release EVERY abandoned reader, which
+		// is why this repeats rather than returning on the first success. A
+		// write-open releases the readers already blocked INSIDE open(2); a
+		// reader whose goroutine has not been scheduled that far yet arrives
+		// afterwards and blocks again on a FIFO that now has no writer. A test
+		// that abandons a reader per iteration (saturating the cap does exactly
+		// that) reliably leaves a few in that state, which is how the gauge was
+		// still reading 2 after a single release.
+		f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+		if err == nil {
+			_ = f.Close()
+		} else if !errors.Is(err, syscall.ENXIO) {
+			// ENXIO just means "no reader attached at this instant" -- expected
+			// and retryable. Anything else is a real failure, and retrying it
+			// would burn the budget while hiding the reason.
+			t.Errorf("opening the FIFO write end at %s to release a stalled read: %v", path, err)
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // The two backup entry points read the ORIGINAL's bytes immediately before a

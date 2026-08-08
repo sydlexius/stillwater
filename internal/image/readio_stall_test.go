@@ -25,19 +25,21 @@ import (
 // something the fix does not and cannot claim.
 func mkfifo(t *testing.T) string {
 	t.Helper()
+	// The gauge reading from BEFORE the wedge exists, so cleanup can tell
+	// "there is still an abandoned read to release" from "the caller already
+	// released it" -- see releaseFifoReader.
+	before := StalledReadCount()
 	path := filepath.Join(t.TempDir(), "stalled.jpg")
 	if err := syscall.Mkfifo(path, 0o600); err != nil {
 		t.Skipf("mkfifo unavailable on this platform: %v", err)
 	}
 	// Open a writer at test end so the abandoned reader can drain and exit
 	// rather than outliving the test binary and tripping a goroutine leak
-	// check in some later package.
-	t.Cleanup(func() {
-		f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0)
-		if err == nil {
-			_ = f.Close()
-		}
-	})
+	// check in some later package. releaseFifoReader retries, because the
+	// abandoned reader may not have reached its own open(2) yet and a
+	// non-blocking write-open with no reader attached fails with ENXIO -- see
+	// its doc comment in backup_stall_unix_test.go.
+	t.Cleanup(func() { releaseFifoReader(t, path, before) })
 	return path
 }
 
@@ -214,11 +216,15 @@ func TestStalledReadCap_RefusesRatherThanAccumulating(t *testing.T) {
 	// asserts the SELF-HEALING claim readio.go makes: a mount that comes back
 	// must return the gauge to where it started, or the cap is a one-way
 	// ratchet that eventually bricks the process.
-	w, err := os.OpenFile(path, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatalf("opening the FIFO write end to release the stalled reads: %v", err)
-	}
-	_ = w.Close()
+	//
+	// Via releaseFifoReader rather than a bare open: this test saturates the
+	// cap by abandoning maxStalledReads+1 readers, so at cleanup time several
+	// of them may not have reached their own open(2) yet. A blocking open
+	// would deadlock once the last reader had gone, and a single non-blocking
+	// one fails with ENXIO whenever none is attached at that instant -- which
+	// is what left the gauge pinned and failed this very assertion under a
+	// full `go test ./...` run.
+	releaseFifoReader(t, path, 0)
 
 	deadline := time.Now().Add(10 * time.Second)
 	for StalledReadCount() != 0 {

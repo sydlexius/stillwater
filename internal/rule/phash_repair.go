@@ -853,6 +853,34 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 		entry := &entries[i]
 		outcome, err := p.restoreOneQuarantined(ctx, a, entry, opID, primaryName, kodiNumbering)
 		if err != nil {
+			// The SAME distinction the inner loops make, one level up
+			// (#2976 review). restoreOneQuarantined now returns a
+			// cancellation or a stalled-read cap refusal rather than
+			// swallowing it -- and recording that as one entry's failure
+			// and carrying on would rebuild the defect being fixed: every
+			// REMAINING entry reads the same unresponsive mount, so the
+			// operation would grind through the whole manifest producing a
+			// per-entry failure for each and still return a nil top-level
+			// error. An operator would see a "completed" restore whose
+			// failures all share one cause nothing named.
+			//
+			// Abort with the cause instead. Entries already restored keep
+			// their counts in result, which is returned alongside the error,
+			// so the partial progress is still visible and the consumed
+			// entries are not re-offered.
+			if abort := img.ReadFailureDistrustsLoop(ctx, err); abort != nil {
+				p.logger.Error("phash quarantine restore aborted; the remaining entries were not attempted",
+					slog.String("op_id", opID), slog.String("artist_id", a.ID),
+					slog.String("artist", a.Name), slog.String("file", entry.FileName),
+					// The current entry has already been attempted and is named
+					// in "file" above, so it is NOT remaining: len-i-1, not
+					// len-i (#2976 review). Overstating by one is small, but an
+					// operator sizing up how much a stalled mount cost them is
+					// exactly who reads this line.
+					slog.Int("entries_remaining", len(entries)-i-1),
+					slog.Any("error", abort))
+				return result, fmt.Errorf("restoring %s: %w", entry.FileName, abort)
+			}
 			p.logger.Error("restoring quarantined backdrop",
 				slog.String("op_id", opID), slog.String("artist_id", a.ID),
 				slog.String("artist", a.Name), slog.String("file", entry.FileName),
@@ -971,7 +999,13 @@ func (p *Pipeline) restoreOneQuarantined(
 		return restoreOutcomeUnset, fmt.Errorf("discovering fanart: %w", err)
 	}
 	target := filepath.Join(a.Path, img.FanartFilename(primaryName, len(paths), kodiNumbering))
-	if _, statErr := os.Lstat(target); statErr == nil {
+	// Bounded, ctx-aware (#2930). This ran as a raw os.Lstat while every read
+	// around it was already ctx-bound, leaving one unbounded filesystem call on
+	// a path inside a singleton-holding handler -- a stalled mount here wedges
+	// the handler and every later restore gets HTTP 409 for the process's life.
+	// Still Lstat, never Stat: this refuses to CLOBBER whatever occupies the
+	// computed name, so a dangling symlink must read as occupied.
+	if _, statErr := img.LstatBounded(ctx, target); statErr == nil {
 		// Refuse rather than clobber. Discovery only counts recognized
 		// artwork names, so a stray file can occupy the computed target
 		// without being a slot; overwriting it here would destroy a file
@@ -1101,24 +1135,16 @@ func (p *Pipeline) quarantinedImagePresence(ctx context.Context, dir, primaryNam
 	for _, path := range paths {
 		onDisk, readErr := img.ReadImageFileBounded(ctx, path)
 		if readErr != nil {
-			// A canceled/timed-out ctx must PROPAGATE, not be swallowed as
-			// "this path did not match". The other read failures below (a
-			// vanished file, an over-size file, a permissions error) are
-			// legitimately "skip this one candidate and keep looking" --
-			// nothing else in the artist directory is affected. A ctx
-			// deadline is different: it means NO further candidate in this
-			// loop can be trusted either (the same stalled mount would wedge
-			// the next read too), and this result feeds a RESTORE decision
-			// (quarantinedImagePresence's exact/similar answer decides
-			// whether restoreOneQuarantined treats the quarantined bytes as
-			// already present). Continuing past a deadline here would let a
-			// stalled read on ONE candidate silently report "no duplicate
-			// found" for the whole directory, which is the wrong answer to
-			// feed a destructive-adjacent decision. Propagate instead of
-			// continuing so the caller sees the failure rather than a false
-			// negative.
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return false, false, fmt.Errorf("checking %s for quarantine presence: %w", filepath.Base(path), ctxErr)
+			// Some read failures are facts about THIS CANDIDATE and some are
+			// facts about the MOUNT. Only the first kind may be skipped; see
+			// image.ReadFailureDistrustsLoop for which is which and why.
+			//
+			// Getting it wrong here is not data loss: a false "no duplicate
+			// found" takes the append branch, which writes bytes identical to
+			// what the check was looking for, so the worst case is a redundant
+			// slot. That is the mildest of the three call sites.
+			if distrust := img.ReadFailureDistrustsLoop(ctx, readErr); distrust != nil {
+				return false, false, fmt.Errorf("checking %s for quarantine presence: %w", filepath.Base(path), distrust)
 			}
 			continue
 		}

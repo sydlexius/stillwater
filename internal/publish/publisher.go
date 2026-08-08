@@ -816,6 +816,19 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		// their artwork is unreadable and sends them to check the file, when
 		// what actually happened is that they navigated away or the request
 		// timed out. Same context-not-contents rule as everywhere else here.
+		// A stalled mount says the same thing a cancellation does and needs its
+		// own message (#2976 review). This is a SINGLE read rather than a loop,
+		// so the loop-abort question does not arise -- the path already returns
+		// on any failure. What matters is the same misreport the comment above
+		// describes: "failed to read image for upload" sends the operator to
+		// check a file that is fine, when the mount is what stopped answering.
+		if errors.Is(readErr, img.ErrTooManyStalledReads) {
+			p.logger.Error("platform image sync stopped: the library mount is not responding",
+				"artist", a.Name, "type", imageType, "path", filePath, "error", readErr)
+			warnings = append(warnings,
+				"platform sync stopped: the library mount is not responding, so the image could not be read")
+			return warnings
+		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			p.logger.Warn("platform image sync canceled before upload",
 				"artist", a.Name, "type", imageType, "path", filePath, "error", ctxErr)
@@ -987,13 +1000,37 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 	for i, fp := range fanartPaths {
 		data, readErr := img.ReadImageFileBounded(ctx, fp)
 		if readErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				p.logger.Warn("fanart snapshot canceled; no further fanart will be read",
+			// A cancellation is not the only failure that distrusts the whole
+			// loop; the process-wide stalled-read cap says the same thing by a
+			// different route (#2933). Both mean the read did not happen for a
+			// reason that applies to every REMAINING file too.
+			//
+			// This is the most consequential of the three call sites that share
+			// this predicate. These bytes are the ONLY copy that can undo a
+			// peer's delete: a peer does not necessarily remove the file it was
+			// just handed (measured on Emby 4.10, uploading slot 0 deleted the
+			// slot-1 file), and the restore loop SKIPS any entry whose data is
+			// nil. So classifying a cap refusal as per-file kept nil-data
+			// entries, let the push proceed, and left a peer-deleted file with
+			// nothing to restore from -- unrecoverable, not merely redundant.
+			if distrust := img.ReadFailureDistrustsLoop(ctx, readErr); distrust != nil {
+				// Name the CAUSE, not just the effect (#2976 review). A
+				// cancellation is the caller walking away; a cap refusal is
+				// the mount not answering while the caller is still waiting.
+				// Both abort the snapshot, but an operator reading "the
+				// request ended" for a stalled mount goes looking at the
+				// wrong end of the system.
+				reason := "the request ended before all fanart could be read"
+				if errors.Is(distrust, img.ErrTooManyStalledReads) {
+					reason = "the library mount is not responding, so the remaining fanart could not be read"
+				}
+				p.logger.Warn("fanart snapshot aborted; no further fanart will be read",
 					slog.String("path", fp),
 					slog.Int("index", i),
 					slog.Int("captured", len(snapshot)),
-					slog.Any("error", ctxErr))
-				return snapshot, warnings, ctxErr
+					slog.String("reason", reason),
+					slog.Any("error", distrust))
+				return snapshot, warnings, distrust
 			}
 			p.logger.Error("reading fanart for platform sync",
 				slog.String("path", fp),
@@ -1214,6 +1251,19 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		// concurrent operator write. That is the same guard the primary path
 		// applies. The detached-context repair still runs, exactly as intended,
 		// for a cancellation that lands AFTER a peer has been handed a file.
+		// Name the cause HERE too, not just inside snapshotFanart (#2976
+		// review). Fixing the misattribution in the callee and leaving the
+		// caller asserting "the request ended" reproduces the same wrong-cause
+		// message one level up -- and THIS is the string that reaches the
+		// operator, since it lands in the returned warnings.
+		if errors.Is(snapCancelErr, img.ErrTooManyStalledReads) {
+			p.logger.Error("platform fanart sync stopped before upload: the library mount is not responding",
+				slog.String("artist_id", a.ID),
+				slog.Any("error", snapCancelErr))
+			warnings = append(warnings,
+				"platform sync stopped: the library mount is not responding, so the fanart could not be read")
+			return warnings
+		}
 		p.logger.Warn("platform fanart sync canceled before upload",
 			slog.String("artist_id", a.ID),
 			slog.Any("error", snapCancelErr))
