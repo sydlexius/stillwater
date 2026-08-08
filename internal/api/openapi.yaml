@@ -3093,6 +3093,7 @@ paths:
                     description: Number of artists whose collapse failed and were skipped.
                   perceptual_duplicates_remain:
                     type: integer
+                    nullable: true
                     description: >-
                       Redundant slots this run deliberately did NOT remove
                       because they are only visually similar rather than

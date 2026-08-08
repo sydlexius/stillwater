@@ -17,10 +17,18 @@ import { disableTransitions } from './helpers/settle.js';
 
 const PAGE = '/reports/backdrop-duplicates';
 
+// disableTransitions registers an addInitScript, which applies to the NEXT
+// navigation only. Calling it after page.goto attaches nothing to the
+// already-loaded page and silently reads unsettled styles -- the exact
+// no-op class the helper's own doc comment documents. It therefore runs in
+// beforeEach, before any navigation, matching every sibling spec.
+test.beforeEach(async ({ page }) => {
+  await disableTransitions(page);
+});
+
 async function gotoReport(page) {
   await page.goto(PAGE);
   await page.waitForSelector('#backdrop-duplicates-table', { timeout: 15_000 });
-  await disableTransitions(page);
 }
 
 test('perceptual notice, tile, and badge render on the live page', async ({ page }) => {

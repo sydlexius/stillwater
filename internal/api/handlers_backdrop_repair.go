@@ -220,14 +220,27 @@ func (r *Router) handleBackdropDuplicatesRemediate(w http.ResponseWriter, req *h
 	// slightly stale, which the Warn log above already surfaces to the
 	// operator; a stale count is preferable to blocking the response on a
 	// second scan.
-	postRemediationReport, _, _ := r.backdropDupReportSnapshot()
+	//
+	// STALE and UNKNOWN are not the same thing, and this field must not
+	// conflate them. A stale count is a real measurement that has fallen
+	// behind. But if no scan has EVER landed (ok is false), the zero value
+	// would report "0 perceptual duplicates remain" -- a clean bill of health
+	// nothing measured, which is precisely the false-clean claim this field
+	// exists to prevent, just relocated from the page to the API. So the ok
+	// bool is honored and the field goes out as null, meaning "not known",
+	// rather than a fabricated zero.
+	postRemediationReport, _, haveReport := r.backdropDupReportSnapshot()
+	var perceptualRemain *int
+	if haveReport {
+		perceptualRemain = &postRemediationReport.PerceptualRedundantSlots
+	}
 
 	w.Header().Set("HX-Refresh", "true")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"artists_processed":            result.ArtistsProcessed,
 		"slots_removed":                result.SlotsRemoved,
 		"failures":                     len(result.Failures),
-		"perceptual_duplicates_remain": postRemediationReport.PerceptualRedundantSlots,
+		"perceptual_duplicates_remain": perceptualRemain,
 	})
 }
 

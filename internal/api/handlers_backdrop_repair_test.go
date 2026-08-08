@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -685,5 +686,62 @@ func TestStoreBackdropDupReport_NewerScanWins(t *testing.T) {
 	got, _, _ := r.backdropDupReportSnapshot()
 	if got.ExactRedundantSlots != 2 {
 		t.Errorf("ExactRedundantSlots = %d, want 2: a newer scan must replace an older cached report", got.ExactRedundantSlots)
+	}
+}
+
+// TestBackdropDuplicatesRemediate_UnknownPerceptualCountIsNull pins the one
+// case where the surviving-perceptual count is genuinely UNKNOWN rather than
+// merely stale: no scan has ever landed, so the cache snapshot's ok bool is
+// false and its zero value means "nothing measured", not "nothing remains".
+//
+// Reporting 0 there would be a clean bill of health nobody established -- the
+// same false-clean claim #2716 exists to eliminate, relocated from the report
+// page into the API. null says "not known" and cannot be misread as "clean".
+//
+// Serial for the same reason TestBackdropDuplicatesRemediate_Success is: the
+// rescan path runs through the process-wide dupimages.Cache singleton, and a
+// parallel test constructing its own router re-points that singleton mid-run.
+func TestBackdropDuplicatesRemediate_UnknownPerceptualCountIsNull(t *testing.T) {
+	pipeline := &fanartCapablePipeline{
+		stubPipeline: &stubPipeline{},
+		remediateFn: func(_ context.Context) (rule.FanartRepairResult, error) {
+			return rule.FanartRepairResult{ArtistsProcessed: 1, SlotsRemoved: 2}, nil
+		},
+		// The rescan FAILS, so storeBackdropDupReport is never called and the
+		// cache stays unpopulated -- the cold-start shape this test is about.
+		scanFn: func(_ context.Context) (rule.FanartDupReport, error) {
+			return rule.FanartDupReport{}, errors.New("scan unavailable")
+		},
+	}
+	r := testRouterWithFanartPipeline(t, pipeline)
+
+	// Precondition: assert the cache really is empty. Without this the test
+	// would still pass if a snapshot HAD landed and simply happened to carry
+	// zero perceptual slots, which is a different state entirely.
+	if _, _, ok := r.backdropDupReportSnapshot(); ok {
+		t.Fatal("precondition failed: the report cache must be unpopulated for this test to mean anything")
+	}
+
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/backdrop-duplicates/remediate", nil)
+	w := httptest.NewRecorder()
+	r.handleBackdropDuplicatesRemediate(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding response: %v (body: %s)", err, w.Body.String())
+	}
+	v, present := got["perceptual_duplicates_remain"]
+	if !present {
+		t.Fatal("perceptual_duplicates_remain must be PRESENT and null, not omitted: an absent field reads as an older API rather than an unknown count")
+	}
+	if v != nil {
+		t.Errorf("perceptual_duplicates_remain = %v, want null when no scan has ever landed (0 would claim a clean state nothing measured)", v)
+	}
+	// The counts the run DID establish are still reported normally.
+	if got["slots_removed"] != float64(2) {
+		t.Errorf("slots_removed = %v, want 2", got["slots_removed"])
 	}
 }
