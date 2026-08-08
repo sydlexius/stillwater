@@ -35,9 +35,25 @@ type ruleResultUpsertExecer interface {
 // pipeline pass or health-subscriber evaluation) so every row written during
 // one artist evaluation shares a timestamp; that makes it cheap to find all
 // rows touched by a single pass without joining on a separate run table.
+//
+// NOT FOR PRODUCTION PASS WRITES. This records the pass row and NOTHING ELSE.
+// Every production path that records a pass must go through RecordRulePass,
+// which also resolves the stale violation atomically -- writing only this half
+// is the #2519 bug. It stays exported because tests use it to seed a pass row
+// directly, which is a legitimate use with no violation to resolve.
 func (s *Service) UpsertRuleResultPass(ctx context.Context, artistID, ruleID string, evaluatedAt time.Time) error {
+	return upsertRuleResultPassExec(ctx, s.db, artistID, ruleID, evaluatedAt)
+}
+
+// upsertRuleResultPassExec is the pass-row SQL, parameterized over the executor
+// so it can run inside a caller's transaction. Mirrors upsertRuleResultFailExec
+// below, which exists for the same reason on the fail side.
+//
+// Extracted for RecordRulePass (#2519), which must write this row and resolve
+// the matching violation in ONE transaction.
+func upsertRuleResultPassExec(ctx context.Context, exec ruleResultUpsertExecer, artistID, ruleID string, evaluatedAt time.Time) error {
 	ts := evaluatedAt.UTC().Format(time.RFC3339)
-	_, err := s.db.ExecContext(ctx, `
+	_, err := exec.ExecContext(ctx, `
 		INSERT INTO rule_results (
 			artist_id, rule_id, passed, violation_id, evaluated_at,
 			violation_message, first_failed_at, last_passed_at
@@ -54,6 +70,92 @@ func (s *Service) UpsertRuleResultPass(ctx context.Context, artistID, ruleID str
 		return fmt.Errorf("upserting rule_result pass: %w", err)
 	}
 	return nil
+}
+
+// RecordRulePass is the single way to persist a rule that PASSED. It writes the
+// pass row and resolves any active violation for that (artist, rule) pair in ONE
+// transaction, returning whether a violation was actually cleared.
+//
+// # WHY THIS EXISTS RATHER THAN TWO CALLS
+//
+// "Persist an evaluation result" used to be implemented twice, and the two
+// drifted (#2519). The pipeline wrote the pass row AND resolved; the health
+// subscriber wrote the pass row and stopped. So an ArtistUpdated event -- which
+// an image write fires -- recorded the pass and ORPHANED the violation. The UI
+// reads the violation, so the operator saw a failure quoting a deleted image's
+// dimensions, and the only escape was dismissing a finding that was not real.
+//
+// Fixing that by adding a resolve call to the subscriber would have left the
+// same shape in place for the next path to half-implement. Routing both callers
+// through one routine makes this the SINGLE SOURCE for a production pass write,
+// so the pair cannot drift apart again in the place it drifted before.
+//
+// That is a convention, not a compiler guarantee: UpsertRuleResultPass is still
+// exported (tests seed pass rows with it) and a determined caller could write
+// half the pair by hand. The enforcement is that there is now one obvious place
+// to change, and its doc says what the other half is.
+//
+// The transaction is not decoration. Two separate statements can be interrupted
+// between them, and the resulting state -- passed=1 with an active violation --
+// is exactly the #2519 bug, reachable even on the path that "handles" it.
+//
+// SCOPE, deliberately: this clears `open` AND `pending_choice`, matching
+// ResolveViolationIfActive. A rule that RAN and PASSED means the finding is
+// genuinely gone, so a parked human choice about it is moot. That is the precise
+// contrast with RetractRuleVerdict, which clears `open` only because a SKIPPED
+// rule did not run and so cannot overrule a human decision (#1107). Do not
+// unify the two. `dismissed` is terminal on both.
+func (s *Service) RecordRulePass(ctx context.Context, artistID, ruleID string, evaluatedAt time.Time) (bool, error) {
+	// Event-driven rules must never be auto-resolved: their violations are
+	// raised at the write/push chokepoints and their checkers cannot re-derive
+	// them, so resolving one here would destroy a finding nothing can rebuild.
+	// The engine already excludes them from evaluation structurally
+	// (eligibleRules), so this is defense in depth rather than a live path --
+	// but it is the same invariant #2614 had to add a second enforcement point
+	// for, and this routine is exactly the kind of new caller that made the
+	// first one insufficient.
+	if IsEventDriven(ruleID) {
+		return false, nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("beginning record-pass transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // After a successful Commit this returns sql.ErrTxDone, which is expected and carries no information; on the error path the original error is what callers act on
+
+	if err := upsertRuleResultPassExec(ctx, tx, artistID, ruleID, evaluatedAt); err != nil {
+		return false, err
+	}
+
+	// s.clock, not time.Now: the service's clock is injectable, so a test can
+	// pin resolved_at. (ResolveViolationIfActive predates the clock and still
+	// calls time.Now directly; this routine does not inherit that.)
+	now := s.clock.Now().UTC().Format(time.RFC3339)
+	res, err := tx.ExecContext(ctx, `
+		UPDATE rule_violations
+		   SET status = ?, resolved_at = ?, updated_at = ?
+		 WHERE rule_id = ? AND artist_id = ? AND status IN (?, ?)
+	`, ViolationStatusResolved, now, now,
+		ruleID, artistID, ViolationStatusOpen, ViolationStatusPendingChoice)
+	if err != nil {
+		return false, fmt.Errorf("resolving active violation on pass: %w", err)
+	}
+	// Do not discard this error. RowsAffected is driver-dependent, and swallowing
+	// a failure here would report resolved=false when the outcome is actually
+	// UNKNOWN -- a caller cannot tell "no violation to clear" from "the query
+	// worked but we could not read the count". Reporting a confident false about
+	// a violation's fate is the shape of the bug this whole routine exists to
+	// fix, so it fails loudly instead.
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reading resolved-violation row count: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("committing record-pass transaction: %w", err)
+	}
+	return n > 0, nil
 }
 
 // UpsertRuleResultFail records that the given artist currently violates the
