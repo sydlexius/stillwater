@@ -240,15 +240,81 @@ func TestImportUpdateTx_DisablingEventDrivenRulePreservesViolations(t *testing.T
 	}
 }
 
+// seedEvaluatedViolation seeds an artist, an active violation and a
+// rule_results row for an ORDINARY (non-event-driven) rule -- the state that
+// #1143's cleanup is supposed to clear on disable.
+func seedEvaluatedViolation(t *testing.T, db DBExecutor, artistID, violationID string) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+		 VALUES (?, 'Evaluated', 'evaluated', ?, ?, ?)`,
+		artistID, "/tmp/"+artistID, now, now,
+	); err != nil {
+		t.Fatalf("seeding artist %s: %v", artistID, err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO rule_violations
+		   (id, rule_id, artist_id, artist_name, severity, message, fixable, status, created_at, updated_at)
+		 VALUES (?, ?, ?, 'Evaluated', 'warning', 'missing thumb', 1, ?, ?, ?)`,
+		violationID, RuleThumbExists, artistID, ViolationStatusOpen, now, now,
+	); err != nil {
+		t.Fatalf("seeding violation %s: %v", violationID, err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO rule_results (artist_id, rule_id, passed, evaluated_at)
+		 VALUES (?, ?, 0, ?)`,
+		artistID, RuleThumbExists, now,
+	); err != nil {
+		t.Fatalf("seeding rule_results for %s: %v", artistID, err)
+	}
+
+	// Sanity: the rule must NOT be event-driven, or these tests would assert
+	// the guard's behavior rather than the cleanup's.
+	if IsEventDriven(RuleThumbExists) {
+		t.Fatalf("precondition: %s must not be event-driven for this test to mean anything", RuleThumbExists)
+	}
+}
+
+// assertEvaluatedCleanupHappened checks that #1143's cleanup ran: the violation
+// is soft-resolved (UPDATE, preserving audit history) and the rule_results rows
+// are gone (hard DELETE, since no row is authoritative once the rule stops
+// running).
+func assertEvaluatedCleanupHappened(t *testing.T, db DBExecutor, violationID, path string) {
+	t.Helper()
+	var status string
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT status FROM rule_violations WHERE id = ?`, violationID,
+	).Scan(&status); err != nil {
+		t.Fatalf("reading evaluated-rule violation (%s): %v", path, err)
+	}
+	if status != ViolationStatusResolved {
+		t.Errorf("%s: an EVALUATED rule's violation must still soft-resolve on disable (#1143): got %q, want %q",
+			path, status, ViolationStatusResolved)
+	}
+	if n := ruleResultCount(t, db, RuleThumbExists); n != 0 {
+		t.Errorf("%s: an EVALUATED rule's rule_results must still be deleted on disable (#1143): got %d, want 0",
+			path, n)
+	}
+}
+
 // TestUpdate_DisablingEvaluatedRuleStillCleansUp is the OTHER HALF of the
 // guard, and the one that stops it from being a blanket "never clean up".
 //
 // A guard keyed on the wrong predicate -- or one that simply returned early for
-// every rule -- would pass both tests above while silently disabling #1143's
-// cleanup for the entire evaluated catalogue. That regression is invisible to a
-// survival-only test suite, so this asserts the ORIGINAL behavior is intact
-// for an ordinary evaluated rule: its violations still soft-resolve and its
-// rule_results rows are still deleted.
+// every rule -- would pass the preservation tests above while silently
+// disabling #1143's cleanup for the entire evaluated catalog. That regression
+// is invisible to a survival-only test suite, so this asserts the ORIGINAL
+// behavior is intact for an ordinary evaluated rule.
+//
+// PAIRED with the ImportUpdateTx twin below, and the pairing is required rather
+// than tidy. The two cleaners are independent implementations, so ONE
+// evaluated-rule test covers only the path it drives: with this test alone, an
+// over-broad guard on the IMPORT cleaner survived the whole suite (measured),
+// leaving settings imports silently retaining evaluated violations. Preservation
+// is tested on both paths; cleanup has to be too, or the symmetry is half done.
 func TestUpdate_DisablingEvaluatedRuleStillCleansUp(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
@@ -256,36 +322,7 @@ func TestUpdate_DisablingEvaluatedRuleStillCleansUp(t *testing.T) {
 	if err := svc.SeedDefaults(ctx); err != nil {
 		t.Fatalf("SeedDefaults: %v", err)
 	}
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
-		 VALUES ('evaluated-artist', 'Evaluated', 'evaluated', '/tmp/evaluated', ?, ?)`,
-		now, now,
-	); err != nil {
-		t.Fatalf("seeding artist: %v", err)
-	}
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO rule_violations
-		   (id, rule_id, artist_id, artist_name, severity, message, fixable, status, created_at, updated_at)
-		 VALUES ('viol-evaluated', ?, 'evaluated-artist', 'Evaluated', 'warning', 'missing thumb', 1, ?, ?, ?)`,
-		RuleThumbExists, ViolationStatusOpen, now, now,
-	); err != nil {
-		t.Fatalf("seeding violation: %v", err)
-	}
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO rule_results (artist_id, rule_id, passed, evaluated_at)
-		 VALUES ('evaluated-artist', ?, 0, ?)`,
-		RuleThumbExists, now,
-	); err != nil {
-		t.Fatalf("seeding rule_results: %v", err)
-	}
-
-	// Sanity: the rule under test must NOT be event-driven, or this test
-	// would assert the guard's behavior rather than the cleanup's.
-	if IsEventDriven(RuleThumbExists) {
-		t.Fatalf("precondition: %s must not be event-driven for this test to mean anything", RuleThumbExists)
-	}
+	seedEvaluatedViolation(t, db, "evaluated-artist", "viol-evaluated")
 
 	r, err := svc.GetByID(ctx, RuleThumbExists)
 	if err != nil {
@@ -296,17 +333,30 @@ func TestUpdate_DisablingEvaluatedRuleStillCleansUp(t *testing.T) {
 		t.Fatalf("Update disable: %v", err)
 	}
 
-	var status string
-	if err := db.QueryRowContext(ctx,
-		`SELECT status FROM rule_violations WHERE id = 'viol-evaluated'`,
-	).Scan(&status); err != nil {
-		t.Fatalf("reading evaluated-rule violation: %v", err)
+	assertEvaluatedCleanupHappened(t, db, "viol-evaluated", "Update")
+}
+
+// TestImportUpdateTx_DisablingEvaluatedRuleStillCleansUp is the import-path twin
+// of the test above. cleanupDisabledRuleStateTx is a separate implementation, so
+// an over-broad guard there is a distinct defect that the Update-path test
+// cannot see.
+func TestImportUpdateTx_DisablingEvaluatedRuleStillCleansUp(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
 	}
-	if status != ViolationStatusResolved {
-		t.Errorf("an EVALUATED rule's violation must still soft-resolve on disable (#1143): got %q, want %q",
-			status, ViolationStatusResolved)
+	seedEvaluatedViolation(t, db, "import-evaluated-artist", "viol-import-evaluated")
+
+	r, err := svc.GetByID(ctx, RuleThumbExists)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
 	}
-	if n := ruleResultCount(t, db, RuleThumbExists); n != 0 {
-		t.Errorf("an EVALUATED rule's rule_results must still be deleted on disable (#1143): got %d, want 0", n)
+	r.Enabled = false
+	if err := svc.ImportUpdateTx(ctx, db, r); err != nil {
+		t.Fatalf("ImportUpdateTx disable: %v", err)
 	}
+
+	assertEvaluatedCleanupHappened(t, db, "viol-import-evaluated", "ImportUpdateTx")
 }
