@@ -122,6 +122,27 @@ func seedBioViolation(t *testing.T, svc *Service, a *artist.Artist, status strin
 	}
 }
 
+// armRuleResultsUpdateTrap makes any UPDATE of the given rule's rule_results
+// rows fail, so a test can prove what happens when the pass write aborts.
+// Mirrors armRuleResultsDeleteTrap / armViolationUpdateTrap in
+// retract_skipped_results_test.go.
+//
+// Each test gets its own database (setupTestDB copies a template), so there is
+// no cleanup and no cross-test leakage. quoteSQLLiteral stays because a trigger
+// body cannot take bound parameters.
+func armRuleResultsUpdateTrap(t *testing.T, db *sql.DB, ruleID string) {
+	t.Helper()
+	if _, err := db.ExecContext(t.Context(), fmt.Sprintf(`
+		CREATE TRIGGER trap_update_rule_results
+		BEFORE UPDATE ON rule_results
+		WHEN OLD.rule_id = %s
+		BEGIN
+			SELECT RAISE(ABORT, 'injected: rule_results UPDATE failed');
+		END;`, quoteSQLLiteral(ruleID))); err != nil {
+		t.Fatalf("arming the rule_results UPDATE trap: %v", err)
+	}
+}
+
 // TestHealthSubscriber_ResolvesViolationOnFailToPass is the #2519 regression
 // test. It drives a GENUINE fail -> pass transition (the artist starts with no
 // biography and gains one) and asserts the event-driven path resolves the
@@ -366,15 +387,7 @@ func TestRecordRulePass_RollsBackWhenThePassWriteFails(t *testing.T) {
 
 	// Abort the rule_results UPDATE. The seeded violation already left a failing
 	// row, so the pass write takes the ON CONFLICT UPDATE branch.
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
-		CREATE TRIGGER trap_update_rule_results
-		BEFORE UPDATE ON rule_results
-		WHEN OLD.rule_id = %s
-		BEGIN
-			SELECT RAISE(ABORT, 'injected: rule_results UPDATE failed');
-		END;`, quoteSQLLiteral(RuleBioExists))); err != nil {
-		t.Fatalf("arming the rule_results UPDATE trap: %v", err)
-	}
+	armRuleResultsUpdateTrap(t, db, RuleBioExists)
 
 	resolved, err := svc.RecordRulePass(ctx, a.ID, RuleBioExists, time.Now().UTC())
 	if err == nil {
@@ -428,15 +441,7 @@ func TestHealthSubscriber_SurvivesRecordRulePassFailure(t *testing.T) {
 	}
 
 	// Make the persist fail for real, by aborting the rule_results write.
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
-		CREATE TRIGGER trap_update_rule_results_sub
-		BEFORE UPDATE ON rule_results
-		WHEN OLD.rule_id = %s
-		BEGIN
-			SELECT RAISE(ABORT, 'injected: rule_results UPDATE failed');
-		END;`, quoteSQLLiteral(RuleBioExists))); err != nil {
-		t.Fatalf("arming the rule_results UPDATE trap: %v", err)
-	}
+	armRuleResultsUpdateTrap(t, db, RuleBioExists)
 
 	// PRECONDITION: the trap must actually make RecordRulePass fail, or the
 	// error branch is never entered and this test proves nothing.
@@ -503,12 +508,37 @@ func TestPipeline_PassPersistenceIsAtomic(t *testing.T) {
 
 	armViolationUpdateTrap(t, db, RuleBioExists)
 
+	// PRECONDITION: the rule must actually PASS now, or the pipeline never takes
+	// the pass-persistence branch and everything below holds for the wrong reason.
+	passing, err := engine.Evaluate(ctx, a)
+	if err != nil {
+		t.Fatalf("evaluating passing state: %v", err)
+	}
+	assertBioConsidered(t, passing)
+	if len(passing.Violations) != 0 {
+		t.Fatalf("precondition: the artist must PASS so the pipeline reaches pass persistence, "+
+			"got %d violations", len(passing.Violations))
+	}
+
 	// Drive the REAL pipeline, not RecordRulePass directly -- the routing is
 	// exactly what is under test.
 	p := NewPipeline(engine, artistSvc, svc, nil, nil, testLogger())
-	// The run itself is expected to report trouble (the trap aborts a write);
-	// the assertion is about the STATE it leaves, not its return value.
-	_, _ = p.RunForArtist(ctx, a)
+	res, runErr := p.RunForArtist(ctx, a)
+
+	// PRECONDITION: the run must have REACHED the pass write and been stopped by
+	// the trap. Without this the assertion below passes for the wrong reason
+	// whenever the run aborts earlier -- during evaluation, or in a fixer step --
+	// because the row simply stays at its seeded passed=0. That is the same
+	// vacuity trap this file's header warns about, and every other test here
+	// guards against it.
+	// PersistFailures counts artists whose writes did not stick (#2724). The trap
+	// aborts one, so it must be non-zero; a clean run means the pass write was
+	// never attempted.
+	if runErr == nil && (res == nil || res.PersistFailures == 0) {
+		t.Fatalf("precondition: the trap should have made pass persistence fail, but the run "+
+			"reported no failures (err=%v res=%+v) -- the pass branch was probably never reached",
+			runErr, res)
+	}
 
 	// THE ASSERTION: the pass row must NOT have flipped. If it reads passed=1
 	// while the violation is still open, the pipeline wrote the two independently.
@@ -554,6 +584,14 @@ func TestHealthSubscriber_LeavesDismissedViolationDismissed(t *testing.T) {
 		t.Fatalf("evaluating passing state: %v", err)
 	}
 	assertBioConsidered(t, passing)
+	// assertBioConsidered proves the rule was EVALUATED, not that it now PASSES.
+	// Without this the rule could still be failing, the subscriber would never
+	// take the pass branch, and the dismissed row would survive for a reason
+	// unrelated to the invariant under test.
+	if len(passing.Violations) != 0 {
+		t.Fatalf("precondition: the artist must PASS so the subscriber takes the pass branch, "+
+			"got %d violations", len(passing.Violations))
+	}
 
 	NewHealthSubscriber(engine, artistSvc, testLogger()).evaluateArtist(ctx, a.ID)
 
