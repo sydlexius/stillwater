@@ -49,11 +49,39 @@ func saturateCapForExpectedSet(t *testing.T) {
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		t.Skipf("mkfifo unavailable on this platform: %v", err)
 	}
+	before := image.StalledReadCount()
 	t.Cleanup(func() {
 		// Release the abandoned readers so the process-wide gauge self-heals
 		// instead of leaking into later tests in this package.
-		if f, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
-			_ = f.Close()
+		//
+		// REPEATEDLY, not once (#2976 review). Two ways a single non-blocking
+		// open loses, both only under load -- standalone runs pass either way:
+		// it returns ENXIO when no reader is attached at that instant (and the
+		// readers here are abandoned goroutines, ordered against nothing), and
+		// one open frees only the readers already blocked INSIDE open(2), so a
+		// loop that abandons a reader per iteration strands the rest. This
+		// helper abandons up to 40, so it had the most to strand. The old form
+		// -- `if err == nil { close }` -- was a capability check whose failing
+		// branch did nothing at all.
+		deadline := time.Now().Add(30 * time.Second)
+		for image.StalledReadCount() > before && time.Now().Before(deadline) {
+			f, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+			if err == nil {
+				_ = f.Close()
+			} else if !errors.Is(err, syscall.ENXIO) {
+				t.Errorf("opening the FIFO write end to release a stalled read: %v", err)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		// ASSERT the gauge actually came back down; this helper previously had
+		// no drain assertion at all. A gauge left elevated makes every LATER
+		// test in this package start against a primitive that refuses reads --
+		// an order-dependent failure that -shuffle surfaces somewhere else
+		// entirely, as a mystery about unrelated code.
+		if got := image.StalledReadCount(); got > before {
+			t.Errorf("StalledReadCount() = %d, want it back down to %d after the FIFO was released; "+
+				"a gauge left elevated poisons later tests in this package", got, before)
 		}
 	})
 	for i := 0; i < 40; i++ {

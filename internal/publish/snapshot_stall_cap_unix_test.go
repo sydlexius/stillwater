@@ -105,6 +105,15 @@ const maxStalledReadsForTest = 16
 
 // wedgeStalledReads raises the process-wide stalled-read gauge by exactly n and
 // registers the teardown that brings it back down.
+//
+// MUST be called from the TEST GOROUTINE, never from a spawned one (#2976
+// review). It calls t.Skipf when mkfifo is unavailable, and Skipf runs
+// runtime.Goexit -- which exits only the goroutine that called it. From a
+// spawned goroutine that silently kills the helper mid-way, leaving the gauge
+// un-raised while the test proceeds believing it was raised; a deferred
+// close(done) then hands the test a green light for a cap that never engaged.
+// Vacuous rather than failing, which is worse. prepareWedge below exists so a
+// rendezvous goroutine can raise the gauge without touching testing.T at all.
 func wedgeStalledReads(t *testing.T, n int) {
 	t.Helper()
 	before := img.StalledReadCount()
@@ -133,14 +142,95 @@ func wedgeStalledReads(t *testing.T, n int) {
 		if err := syscall.Mkfifo(p, 0o600); err != nil {
 			t.Skipf("mkfifo unavailable on this platform: %v", err)
 		}
-		t.Cleanup(func() {
-			f, err := os.OpenFile(p, os.O_WRONLY|syscall.O_NONBLOCK, 0)
-			if err == nil {
-				_ = f.Close()
-			}
-		})
+		// THIS wedge's own baseline, not the helper's. Passing the helper-wide
+		// `before` makes each per-wedge cleanup wait for EVERY OTHER wedge's
+		// reader too -- readers it cannot release, since they are blocked on
+		// different FIFOs owned by other cleanups. Each release then spins its
+		// full timeout before giving up, serially, and n wedges turn a 9s
+		// package into a 10-minute one. A cleanup must wait only on what it
+		// can itself release; the helper-wide drain above owns the aggregate.
+		wedgeBefore := img.StalledReadCount()
+		t.Cleanup(func() { releaseFifoReaders(t, p, wedgeBefore) })
 		// A short deadline per wedge: the read cannot succeed, and the only
 		// thing being waited for is the caller giving up on it.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+		_, _ = img.ReadImageFileBounded(ctx, p)
+		cancel()
+	}
+}
+
+// releaseFifoReaders opens the write end of a FIFO, repeatedly, until the
+// process-wide stalled-read gauge is back to its pre-wedge reading, so every
+// abandoned reader blocked on it gets EOF and gives its slot back.
+//
+// This mirrors releaseFifoReader in internal/image (unexported there, so it
+// cannot be shared) and exists for the same two reasons, both of which fail
+// only UNDER LOAD -- standalone runs pass either way (#2976 review):
+//
+//   - a non-blocking write-open returns ENXIO when no reader is attached AT
+//     THAT INSTANT, and the reader is an abandoned goroutine whose caller has
+//     already returned, so nothing orders it against this cleanup. The single
+//     shot this replaces was `if err == nil { close }`: a capability check
+//     whose failing branch did nothing, silently skipping the release;
+//   - one open frees only the readers already blocked INSIDE open(2). One
+//     scheduled later arrives afterwards and blocks again on a FIFO that no
+//     longer has a writer, so a helper that abandons a reader per iteration
+//     strands several.
+//
+// A blocking open is not the alternative: with the readers already gone it
+// would wait for one that never comes and hang until the binary timed out.
+//
+// Exhausting the budget is not reported here. The authoritative assertion is
+// the drain loop in wedgeStalledReads, which watches the gauge itself and can
+// tell a genuinely stuck reader from a FIFO whose readers were already
+// released -- this only has a per-path view and would cry wolf on the latter.
+func releaseFifoReaders(t *testing.T, path string, before int64) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for img.StalledReadCount() > before && time.Now().Before(deadline) {
+		f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+		if err == nil {
+			_ = f.Close()
+		} else if !errors.Is(err, syscall.ENXIO) {
+			// ENXIO just means "no reader attached yet" -- expected and
+			// retryable. Anything else is a real failure worth surfacing
+			// rather than burning the budget on.
+			t.Errorf("opening the FIFO write end at %s to release a stalled read: %v", path, err)
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// prepareWedge plants a FIFO and returns a function that abandons one read
+// against it, raising the gauge by one.
+//
+// The split exists so a RENDEZVOUS GOROUTINE can raise the gauge without
+// touching testing.T (#2976 review): everything that can call t.Skipf happens
+// here, on the test goroutine, and the returned closure touches only the
+// filesystem and the gauge. Passing t into a goroutine instead risks a Skipf
+// that exits only that goroutine, leaving the gauge un-raised while the test
+// carries on believing otherwise.
+func prepareWedge(t *testing.T, name string) func() {
+	t.Helper()
+	before := img.StalledReadCount()
+	p := filepath.Join(t.TempDir(), name)
+	if err := syscall.Mkfifo(p, 0o600); err != nil {
+		t.Skipf("mkfifo unavailable on this platform: %v", err)
+	}
+	t.Cleanup(func() {
+		releaseFifoReaders(t, p, before)
+		deadline := time.Now().Add(30 * time.Second)
+		for img.StalledReadCount() > before {
+			if time.Now().After(deadline) {
+				t.Errorf("StalledReadCount() = %d, want it back down to %d after the wedge was released",
+					img.StalledReadCount(), before)
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	})
+	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 		_, _ = img.ReadImageFileBounded(ctx, p)
 		cancel()
@@ -334,6 +424,15 @@ func TestSyncAllFanart_StalledCap_WarningNamesTheMount(t *testing.T) {
 
 	assertOnFanartReadPath(t, dir, fanartPrimaryFixtureName)
 
+	// Built HERE, on the test goroutine, and only INVOKED below in the
+	// rendezvous goroutine. Everything that can call t.Skipf (mkfifo probing,
+	// cleanup registration) therefore stays on the test goroutine; the closure
+	// itself touches only the filesystem and the gauge. Handing t to a
+	// goroutine instead risks a Skipf that exits just that goroutine, leaving
+	// the gauge un-raised while the test proceeds as though it had been raised
+	// -- a vacuous pass rather than a failure (#2976 review).
+	tipGauge := prepareWedge(t, "tipping-wedge.jpg")
+
 	// The rendezvous goroutine. Everything it does is ordered by the blocking
 	// open, so no sleep and no polling is involved.
 	tipped := make(chan struct{})
@@ -347,7 +446,7 @@ func TestSyncAllFanart_StalledCap_WarningNamesTheMount(t *testing.T) {
 		defer func() { _ = w.Close() }()
 		// The loop is now provably inside read one, so read two has not begun.
 		// Tip the gauge to the cap with one more abandoned read.
-		wedgeStalledReads(t, 1)
+		tipGauge()
 		// Let read one COMPLETE. A successful first read is what proves the
 		// abort that follows belongs to the cap and not to this file.
 		_, _ = w.Write([]byte("fake-image"))

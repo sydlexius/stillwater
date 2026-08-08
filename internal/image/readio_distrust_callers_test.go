@@ -326,8 +326,34 @@ func TestAcknowledgedCtxOnlySitesAreStillReal(t *testing.T) {
 				"why is indistinguishable from an oversight", key)
 		}
 		file := key[:strings.LastIndex(key, ":")]
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(file))); err != nil {
+		fnName := key[strings.LastIndex(key, ":")+1:]
+		path := filepath.Join(root, filepath.FromSlash(file))
+		if _, err := os.Stat(path); err != nil {
 			t.Errorf("allow-listed file %s no longer exists: %v", file, err)
+			continue
+		}
+		// Check the FUNCTION, not just the file (#2976 review). Stat-ing the
+		// file half-honors the rule above: rename or delete the function while
+		// the file survives -- the ordinary shape of a refactor -- and the
+		// entry sails through, silently pre-exempting any future function that
+		// takes the freed name. That is precisely the stale-exemption failure
+		// this test exists to catch, so checking only the file left the guard
+		// asserting the easier half of its own contract.
+		parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if parseErr != nil {
+			t.Errorf("parsing allow-listed file %s: %v", file, parseErr)
+			continue
+		}
+		var found bool
+		for _, decl := range parsed.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == fnName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("allow-listed func %s no longer exists in %s; the entry is stale and "+
+				"pre-exempts any future function of that name", fnName, file)
 		}
 	}
 }
