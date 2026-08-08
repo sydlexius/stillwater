@@ -1880,21 +1880,22 @@ func (p *Pipeline) persistPassResults(
 		if _, isViolation := violated[rid]; isViolation {
 			continue
 		}
-		if err := p.ruleService.UpsertRuleResultPass(ctx, a.ID, rid, evaluatedAt); err != nil {
-			p.logger.Warn("persisting pass result",
-				"rule_id", rid, "artist", a.Name, "error", err)
-			ok = false
-		}
-		// Issue #1105: resolve any stale open violation row. A rule that
-		// was considered but did not produce a violation in this pass means
-		// either the auto-fix succeeded (the resolvedRows path already
-		// covered that) OR the underlying condition was corrected
-		// out-of-band (user dropped a file in place, scanner refreshed
-		// metadata, etc.). The latter has no in-memory marker, so without
-		// this reconciliation the dashboard keeps reporting a cleared
+		// Issue #1105: recording the pass MUST also resolve any stale active
+		// violation row. A rule that was considered but did not produce a
+		// violation in this pass means either the auto-fix succeeded (the
+		// resolvedRows path already covered that) OR the underlying condition
+		// was corrected out-of-band (user dropped a file in place, scanner
+		// refreshed metadata, etc.). The latter has no in-memory marker, so
+		// without this reconciliation the dashboard keeps reporting a cleared
 		// violation as open indefinitely.
-		if _, err := p.ruleService.ResolveViolationIfActive(ctx, rid, a.ID); err != nil {
-			p.logger.Warn("resolving stale violation after pass",
+		//
+		// #2519: these were two separate calls here, and the health subscriber
+		// implemented only the first half -- which is how the event-driven path
+		// came to orphan violations. Both callers now go through RecordRulePass,
+		// which does the pair atomically, so no future path can implement half
+		// of it.
+		if _, err := p.ruleService.RecordRulePass(ctx, a.ID, rid, evaluatedAt); err != nil {
+			p.logger.Warn("recording rule pass",
 				"rule_id", rid, "artist", a.Name, "error", err)
 			ok = false
 		}

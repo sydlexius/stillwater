@@ -250,7 +250,12 @@ func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) 
 				}
 				continue
 			}
-			if err := h.engine.service.UpsertRuleResultPass(ctx, artistID, rid, evaluatedAt); err != nil {
+			// RecordRulePass, not UpsertRuleResultPass: a pass must ALSO resolve
+			// any stale violation for this (artist, rule), atomically (#2519).
+			// This path previously wrote only the pass row, so an image replace
+			// that fixed a rule left the old violation active and the UI kept
+			// reporting a failure quoting the deleted image's dimensions.
+			if _, err := h.engine.service.RecordRulePass(ctx, artistID, rid, evaluatedAt); err != nil {
 				h.logger.Warn("health subscriber: persisting pass result",
 					"artist_id", artistID, "artist", a.Name, "rule_id", rid, "error", err)
 			}
