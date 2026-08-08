@@ -352,8 +352,8 @@ var filesystemRules = map[string]bool{
 //
 // The exclusion is load-bearing, not tidiness. Being "considered" is what
 // destroys these violations: a considered rule that reports no violation is
-// recorded as a PASS, and persistPassResults then calls ResolveViolationIfActive
-// for that (rule, artist) pair. An event-driven rule has no checker that can
+// recorded as a PASS, and RecordRulePass resolves the active violation for that
+// (rule, artist) pair in the same transaction (#2519). An event-driven rule has no checker that can
 // re-derive its finding, so its checker always reports nothing -- meaning every
 // evaluation pass would resolve the operator's open entry. Keying that safety off
 // the Enabled toggle would put silent data loss one UI click away, which is why

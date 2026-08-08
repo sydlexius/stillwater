@@ -461,6 +461,66 @@ func TestHealthSubscriber_SurvivesRecordRulePassFailure(t *testing.T) {
 	}
 }
 
+// TestPipeline_PassPersistenceIsAtomic pins that the PIPELINE goes through
+// RecordRulePass, not just that it happens to resolve.
+//
+// Why a separate test when pipeline resolve behavior is already covered:
+// existing tests (TestPipeline_ReEvalPassResolvesStaleViolation and friends)
+// assert the END STATE, which the pre-consolidation two-call form produces just
+// as well. Measured: reverting fixer.go to that two-call form passes the ENTIRE
+// suite -- so the consolidation's central claim, that no future path can
+// implement half of it, was unpinned on the pipeline half. Someone could revert
+// that routing tomorrow and nothing would go red.
+//
+// Atomicity is the property that distinguishes them, because only the shared
+// routine has a transaction. Trap the violation UPDATE and drive the real
+// pipeline: if it routes through RecordRulePass the pass row rolls back with the
+// failed resolve; if it issues two bare statements the pass row survives and the
+// tables disagree -- the #2519 split state, on the path that was supposed to be
+// correct all along.
+func TestPipeline_PassPersistenceIsAtomic(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	engine, svc := bioOnlyEngine(t, db)
+	artistSvc := artist.NewService(db)
+
+	a := apiOnlyArtist(t, db, "Pipeline Atomic")
+	seedBioViolation(t, svc, a, ViolationStatusOpen)
+	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusOpen {
+		t.Fatalf("precondition: seeded violation should be %q, got %q", ViolationStatusOpen, got)
+	}
+	passed, exists := ruleResultRow(t, db, a.ID, RuleBioExists)
+	if !exists || passed {
+		t.Fatalf("precondition: expected a seeded FAILING rule_results row (exists=%v passed=%v)",
+			exists, passed)
+	}
+
+	// Make the rule pass, so the pipeline takes the pass-persistence branch.
+	a.Biography = "A biography comfortably longer than the ten character minimum."
+	if err := artistSvc.Update(ctx, a); err != nil {
+		t.Fatalf("updating artist biography: %v", err)
+	}
+
+	armViolationUpdateTrap(t, db, RuleBioExists)
+
+	// Drive the REAL pipeline, not RecordRulePass directly -- the routing is
+	// exactly what is under test.
+	p := NewPipeline(engine, artistSvc, svc, nil, nil, testLogger())
+	// The run itself is expected to report trouble (the trap aborts a write);
+	// the assertion is about the STATE it leaves, not its return value.
+	_, _ = p.RunForArtist(ctx, a)
+
+	// THE ASSERTION: the pass row must NOT have flipped. If it reads passed=1
+	// while the violation is still open, the pipeline wrote the two independently.
+	if nowPassed, stillExists := ruleResultRow(t, db, a.ID, RuleBioExists); !stillExists {
+		t.Errorf("the rule_results row vanished; the rollback should have left it intact")
+	} else if nowPassed {
+		t.Errorf("rule_results flipped to passed=1 while the violation UPDATE aborted, so the "+
+			"pipeline is NOT routing through RecordRulePass: the row claims a pass but the "+
+			"violation is still %q", violationStatus(t, db, a.ID, RuleBioExists))
+	}
+}
+
 // TestHealthSubscriber_LeavesDismissedViolationDismissed pins AC4. Dismissed is
 // terminal (#1107) and must survive a pass.
 //

@@ -35,6 +35,11 @@ type ruleResultUpsertExecer interface {
 // pipeline pass or health-subscriber evaluation) so every row written during
 // one artist evaluation shares a timestamp; that makes it cheap to find all
 // rows touched by a single pass without joining on a separate run table.
+// NOT FOR PRODUCTION PASS WRITES. This records the pass row and NOTHING ELSE.
+// Every production path that records a pass must go through RecordRulePass,
+// which also resolves the stale violation atomically -- writing only this half
+// is the #2519 bug. It stays exported because tests use it to seed a pass row
+// directly, which is a legitimate use with no violation to resolve.
 func (s *Service) UpsertRuleResultPass(ctx context.Context, artistID, ruleID string, evaluatedAt time.Time) error {
 	return upsertRuleResultPassExec(ctx, s.db, artistID, ruleID, evaluatedAt)
 }

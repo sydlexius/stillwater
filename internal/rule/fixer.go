@@ -1859,7 +1859,7 @@ func (p *Pipeline) ClearRuleCache() {
 // considered AND did not appear in the new violation set, any open or
 // pending_choice rule_violations row for that (rule, artist) pair is stale
 // and is transitioned to resolved. Dismissed and already-resolved rows are
-// left untouched (see ResolveViolationIfActive).
+// left untouched (see RecordRulePass, which performs both writes atomically).
 //
 // Returns true when every pass write succeeded. Failures are warn-logged and
 // fold into the caller's persistOK flag so the artist stays dirty and the
