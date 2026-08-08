@@ -151,8 +151,8 @@ func TestUpdate_DisablingEventDrivenRulePreservesViolations(t *testing.T) {
 		}
 	}
 	if !r.Enabled {
-		t.Fatalf("precondition: rule must be ENABLED before the disable, or the "+
-			"cleanup transition never fires and this test is vacuous (Enabled=%v)", r.Enabled)
+		t.Fatalf("precondition: the enable above did not take effect, so this test "+
+			"is not exercising the operator journey it claims to (Enabled=%v)", r.Enabled)
 	}
 	// The enable must not have disturbed the seeded rows.
 	if n := ruleResultCount(t, db, RuleCrossArtistBackdropCollision); n != 2 {
