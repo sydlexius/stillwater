@@ -209,11 +209,25 @@ func (r *Router) handleBackdropDuplicatesRemediate(w http.ResponseWriter, req *h
 		}
 	}
 
+	// Surviving perceptual duplicates, read off the CACHE the Refresh call
+	// above just (best-effort) repopulated -- never a second scan pass here.
+	// Its own field, never folded into slots_removed, for the same reason
+	// PHashRestoreResult.NeedsReview stays separate from Restored (see
+	// rule.ArtistFanartDup's doc comment): "removed" and "declined to remove,
+	// counted honestly" are different facts, and collapsing them reports a
+	// clean run when a majority of the redundancy is still sitting there.
+	// Best-effort like the rescan itself: under ErrRefreshInFlight this can be
+	// slightly stale, which the Warn log above already surfaces to the
+	// operator; a stale count is preferable to blocking the response on a
+	// second scan.
+	postRemediationReport, _, _ := r.backdropDupReportSnapshot()
+
 	w.Header().Set("HX-Refresh", "true")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"artists_processed": result.ArtistsProcessed,
-		"slots_removed":     result.SlotsRemoved,
-		"failures":          len(result.Failures),
+		"artists_processed":            result.ArtistsProcessed,
+		"slots_removed":                result.SlotsRemoved,
+		"failures":                     len(result.Failures),
+		"perceptual_duplicates_remain": postRemediationReport.PerceptualRedundantSlots,
 	})
 }
 
@@ -267,19 +281,35 @@ func (r *Router) backdropDupReportSnapshot() (report rule.FanartDupReport, at ti
 // template's view model. Extracted as a named function so tests can exercise
 // the conversion independently of HTTP plumbing, mirroring
 // buildArtistDuplicatesView's split for the near-duplicate-artist report.
+//
+// PerceptualRedundantPercent is computed here, not in the templ markup,
+// because it is logic (a ratio with a divide-by-zero guard) and belongs
+// somewhere a unit test can pin it directly. The denominator is
+// report.TotalFanartSlots, which -- per rule.FanartDupReport's doc comment --
+// sums slots only across AFFECTED artists, not the whole library; this
+// percentage is scoped the same way and must never be read as library-wide.
 func buildBackdropDuplicatesView(report rule.FanartDupReport) templates.BackdropDuplicatesPageView {
 	rows := make([]templates.BackdropDupArtistRow, 0, len(report.PerArtist))
 	for _, a := range report.PerArtist {
 		rows = append(rows, templates.BackdropDupArtistRow{
-			ArtistID:   a.ArtistID,
-			Name:       a.Name,
-			ExactDrops: a.ExactDrops,
+			ArtistID:        a.ArtistID,
+			Name:            a.Name,
+			ExactDrops:      a.ExactDrops,
+			PerceptualDrops: a.PerceptualDrops,
+			TotalSlots:      a.TotalSlots,
 		})
 	}
+	var perceptualPercent int
+	if report.TotalFanartSlots > 0 {
+		perceptualPercent = report.PerceptualRedundantSlots * 100 / report.TotalFanartSlots
+	}
 	return templates.BackdropDuplicatesPageView{
-		ArtistsAffected:     report.ArtistsAffected,
-		ExactRedundantSlots: report.ExactRedundantSlots,
-		ScanErrors:          report.ScanErrors,
-		Rows:                rows,
+		ArtistsAffected:            report.ArtistsAffected,
+		ExactRedundantSlots:        report.ExactRedundantSlots,
+		PerceptualRedundantSlots:   report.PerceptualRedundantSlots,
+		TotalFanartSlots:           report.TotalFanartSlots,
+		PerceptualRedundantPercent: perceptualPercent,
+		ScanErrors:                 report.ScanErrors,
+		Rows:                       rows,
 	}
 }

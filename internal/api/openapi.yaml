@@ -3068,7 +3068,11 @@ paths:
         while one is running is rejected with 409. Admin-only. Triggered by
         the "Remediate Exact Duplicates" button on the report page (HTMX
         POST), so a successful response also sets HX-Refresh so the browser
-        reloads the report showing the now-clean state.
+        reloads the report. The reloaded report is not necessarily clean: any
+        visually-similar (perceptual) redundancy survives this endpoint by
+        design and is surfaced there, and in perceptual_duplicates_remain
+        below, so a run that removed only the byte-identical minority is never
+        mistaken for one that had nothing to do.
       operationId: remediateBackdropDuplicates
       responses:
         "200":
@@ -3087,6 +3091,18 @@ paths:
                   failures:
                     type: integer
                     description: Number of artists whose collapse failed and were skipped.
+                  perceptual_duplicates_remain:
+                    type: integer
+                    description: >-
+                      Redundant slots this run deliberately did NOT remove
+                      because they are only visually similar rather than
+                      byte-identical (#2716). Reported as its own field and
+                      never folded into slots_removed: "removed" and "declined
+                      to remove" are different outcomes, and collapsing them
+                      lets a run that left most of the redundancy in place read
+                      as a clean sweep. Read from the post-remediation report
+                      cache, so under a concurrent refresh it may lag the run
+                      that just completed by one scan.
         "401":
           description: >-
             Authentication required. The auth middleware rejects the request
