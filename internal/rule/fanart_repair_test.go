@@ -358,6 +358,13 @@ func TestScanFanartDuplicates_CountsPerceptualOnlyArtist(t *testing.T) {
 	createGradientJPEGQuality(t, filepath.Join(dir, "fanart2.jpg"), 30, 60)
 	createGradientJPEG(t, filepath.Join(dir, "fanart3.jpg"), 0)
 
+	// No non-fanart row is seeded here on purpose: totalFanartSlots' image-type
+	// filter CANNOT be exercised through this path. ScanFanartDuplicates passes
+	// fresh=true, which discards every stored hash, and imageDupRowPath resolves
+	// a path only for fanart -- so a non-fanart row is unusable and never
+	// reaches res.members regardless of how it is seeded. The filter is covered
+	// directly by TestTotalFanartSlots_IgnoresNonFanartMembers instead.
+
 	// Anti-vacuity: if the fixture generator ever produced byte-identical
 	// files for slots 0/1, this degenerates into an ordinary exact-duplicate
 	// case that would pass against the OLD code too. Assert the fixture is
@@ -388,6 +395,18 @@ func TestScanFanartDuplicates_CountsPerceptualOnlyArtist(t *testing.T) {
 	}
 	if report.PerArtist[0].ExactDrops != 0 {
 		t.Fatalf("PerArtist[0].ExactDrops = %d, want 0", report.PerArtist[0].ExactDrops)
+	}
+	// The slot TOTALS are a separate axis from the redundancy counts, and
+	// nothing above reads them: with only the drop assertions, deleting the
+	// TotalSlots/TotalFanartSlots accumulation entirely leaves every test in
+	// this package green. Both are pinned here (3 slots seeded, none removed
+	// by a scan, which never deletes) so a regression in totalFanartSlots or
+	// in either accumulation fails rather than slipping through.
+	if report.PerArtist[0].TotalSlots != 3 {
+		t.Fatalf("PerArtist[0].TotalSlots = %d, want 3", report.PerArtist[0].TotalSlots)
+	}
+	if report.TotalFanartSlots != 3 {
+		t.Fatalf("TotalFanartSlots = %d, want 3 (library-level aggregate)", report.TotalFanartSlots)
 	}
 }
 
@@ -448,6 +467,24 @@ func TestScanFanartDuplicates_ExactAndPerceptualCountsDoNotOverlap(t *testing.T)
 	// this sum would read 3.
 	if sum := got.ExactDrops + got.PerceptualDrops; sum != 2 {
 		t.Fatalf("ExactDrops + PerceptualDrops = %d, want 2 (non-overlapping counts)", sum)
+	}
+	// Every assertion above reads report.PerArtist[0]; none reads the
+	// library-level aggregates, so a broken accumulation (or one wrongly
+	// applying the overlap subtraction a second time at library level) would
+	// pass. On a single-artist fixture each aggregate must equal its
+	// per-artist counterpart exactly, which pins the accumulation without
+	// duplicating the per-artist reasoning.
+	if report.TotalFanartSlots != got.TotalSlots {
+		t.Fatalf("TotalFanartSlots = %d, want %d (must equal the sole artist's TotalSlots)",
+			report.TotalFanartSlots, got.TotalSlots)
+	}
+	if report.ExactRedundantSlots != got.ExactDrops {
+		t.Fatalf("ExactRedundantSlots = %d, want %d (must equal the sole artist's ExactDrops)",
+			report.ExactRedundantSlots, got.ExactDrops)
+	}
+	if report.PerceptualRedundantSlots != got.PerceptualDrops {
+		t.Fatalf("PerceptualRedundantSlots = %d, want %d (must equal the sole artist's PerceptualDrops)",
+			report.PerceptualRedundantSlots, got.PerceptualDrops)
 	}
 }
 
