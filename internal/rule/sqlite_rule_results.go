@@ -135,7 +135,16 @@ func (s *Service) RecordRulePass(ctx context.Context, artistID, ruleID string, e
 	if err != nil {
 		return false, fmt.Errorf("resolving active violation on pass: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	// Do not discard this error. RowsAffected is driver-dependent, and swallowing
+	// a failure here would report resolved=false when the outcome is actually
+	// UNKNOWN -- a caller cannot tell "no violation to clear" from "the query
+	// worked but we could not read the count". Reporting a confident false about
+	// a violation's fate is the shape of the bug this whole routine exists to
+	// fix, so it fails loudly instead.
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reading resolved-violation row count: %w", err)
+	}
 
 	if err := tx.Commit(); err != nil {
 		return false, fmt.Errorf("committing record-pass transaction: %w", err)
