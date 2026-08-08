@@ -16,18 +16,42 @@ import (
 )
 
 // ArtistFanartDup is one artist's within-artist fanart redundancy.
+//
+// ExactDrops and PerceptualDrops are NON-OVERLAPPING counts, not two views of
+// the same redundancy: PerceptualDrops already excludes any slot ExactDrops
+// accounts for (see perceptualOnlyFanartDrops). Do not add them together and
+// then subtract elsewhere, and do not treat a nonzero PerceptualDrops as a
+// safe-to-automate figure the way ExactDrops is -- perceptual matches are a
+// similarity judgment, never byte-proven, so they stay manual the same way
+// PHashRestoreResult.NeedsReview stays manual rather than folding into a
+// success count.
 type ArtistFanartDup struct {
-	ArtistID   string
-	Name       string
-	ExactDrops int // byte-identical redundant slots (safe to auto-collapse)
+	ArtistID        string
+	Name            string
+	TotalSlots      int // usable fanart slots this artist has, regardless of redundancy
+	ExactDrops      int // byte-identical redundant slots (safe to auto-collapse)
+	PerceptualDrops int // visually-redundant slots NOT already counted in ExactDrops (never auto-collapsed; see perceptualOnlyFanartDrops)
 }
 
 // FanartDupReport is the library-wide blast radius.
+//
+// ExactRedundantSlots and PerceptualRedundantSlots are non-overlapping for
+// the same reason ArtistFanartDup's fields are: see that type's doc comment.
+// A slot lacking a usable perceptual hash (undecodable image) can never
+// contribute to PerceptualRedundantSlots, so this figure under-reports on a
+// library that holds such files -- it is a floor, not an exact count.
 type FanartDupReport struct {
-	ArtistsAffected     int
-	ExactRedundantSlots int
-	PerArtist           []ArtistFanartDup
-	ScanErrors          int // artists whose scan failed and were SKIPPED; surfaced so a partial scan is never mistaken for a clean one (no silent truncation)
+	ArtistsAffected int
+	// TotalFanartSlots sums TotalSlots only across AFFECTED artists (the
+	// same scope as ExactRedundantSlots and PerceptualRedundantSlots below),
+	// not every artist the scan walked -- it answers "how many fanart slots
+	// does the affected population hold", not "how many fanart slots exist
+	// in the library".
+	TotalFanartSlots         int
+	ExactRedundantSlots      int
+	PerceptualRedundantSlots int
+	PerArtist                []ArtistFanartDup
+	ScanErrors               int // artists whose scan failed and were SKIPPED; surfaced so a partial scan is never mistaken for a clean one (no silent truncation)
 }
 
 // scanFanartPageSize bounds each artist-list page during a scan. Must be
@@ -72,13 +96,21 @@ func (p *Pipeline) ScanFanartDuplicates(ctx context.Context) (FanartDupReport, e
 				continue
 			}
 			exact := len(res.exactFanartToDelete)
-			if exact == 0 {
+			perceptual := perceptualOnlyFanartDrops(res)
+			total := totalFanartSlots(res)
+			if exact == 0 && perceptual == 0 {
+				// Neither tier found anything redundant for this artist: the
+				// exact-only gate this replaces would also skip an artist
+				// whose ONLY redundancy is perceptual, which is the blind
+				// spot #2716 exists to close.
 				continue
 			}
 			report.ArtistsAffected++
+			report.TotalFanartSlots += total
 			report.ExactRedundantSlots += exact
+			report.PerceptualRedundantSlots += perceptual
 			report.PerArtist = append(report.PerArtist, ArtistFanartDup{
-				ArtistID: a.ID, Name: a.Name, ExactDrops: exact,
+				ArtistID: a.ID, Name: a.Name, TotalSlots: total, ExactDrops: exact, PerceptualDrops: perceptual,
 			})
 		}
 		if len(artists) < scanFanartPageSize {

@@ -423,3 +423,30 @@ func TestImageDuplicateFixer_Fix_RestoresStagedTombsOnRenumberFailure(t *testing
 		t.Errorf("fanart2.jpg should be untouched: %v", statErr)
 	}
 }
+
+// TestTotalFanartSlots_IgnoresNonFanartMembers pins the image-type filter in
+// totalFanartSlots directly, because no scan-level fixture can reach it:
+// ScanFanartDuplicates passes fresh=true (discarding stored hashes) and
+// imageDupRowPath resolves a path only for fanart, so a non-fanart row is
+// unusable there and never lands in res.members. The filter is still
+// load-bearing on the checker path, which runs with fresh=false and so does
+// admit a non-fanart row carrying a stored perceptual hash.
+//
+// Without this test, replacing the whole function body with
+// `return len(res.members)` passes every other test in the package.
+func TestTotalFanartSlots_IgnoresNonFanartMembers(t *testing.T) {
+	res := imageDupResult{members: []imageDupMember{
+		{imageType: "fanart", slotIndex: 0},
+		{imageType: "thumb", slotIndex: 0},
+		{imageType: "fanart", slotIndex: 1},
+		{imageType: "logo", slotIndex: 0},
+		{imageType: "banner", slotIndex: 0},
+	}}
+	// 5 members, only 2 of them fanart: an unfiltered count reads 5.
+	if got := totalFanartSlots(res); got != 2 {
+		t.Fatalf("totalFanartSlots = %d, want 2 (non-fanart members must not be counted)", got)
+	}
+	if got := totalFanartSlots(imageDupResult{}); got != 0 {
+		t.Fatalf("totalFanartSlots(empty) = %d, want 0", got)
+	}
+}
