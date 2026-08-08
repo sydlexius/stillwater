@@ -872,7 +872,12 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 				p.logger.Error("phash quarantine restore aborted; the remaining entries were not attempted",
 					slog.String("op_id", opID), slog.String("artist_id", a.ID),
 					slog.String("artist", a.Name), slog.String("file", entry.FileName),
-					slog.Int("entries_remaining", len(entries)-i),
+					// The current entry has already been attempted and is named
+					// in "file" above, so it is NOT remaining: len-i-1, not
+					// len-i (#2976 review). Overstating by one is small, but an
+					// operator sizing up how much a stalled mount cost them is
+					// exactly who reads this line.
+					slog.Int("entries_remaining", len(entries)-i-1),
 					slog.Any("error", abort))
 				return result, fmt.Errorf("restoring %s: %w", entry.FileName, abort)
 			}

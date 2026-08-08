@@ -16028,6 +16028,28 @@ paths:
                     description: >-
                       Images that genuinely reached the platform before the
                       request was abandoned.
+        "503":
+          description: >-
+            The library mount stopped responding, so the remaining images
+            could not be read. Distinct from 499: the request context is
+            still alive and the client did nothing wrong -- this is a
+            server-side condition, and reporting it as a client cancellation
+            sends an operator to debug the wrong end of the system. Uploads
+            already delivered are listed on the same terms as 499.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  uploaded:
+                    type: array
+                    items:
+                      type: string
+                    description: >-
+                      Images that genuinely reached the platform before the
+                      mount stopped answering.
 
   /artists/{id}/push/images/{type}:
     delete:

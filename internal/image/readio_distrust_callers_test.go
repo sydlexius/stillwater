@@ -56,12 +56,24 @@ func TestReadFailureDistrustsLoop_EveryCallSiteStillRoutesThroughIt(t *testing.T
 			if err != nil {
 				t.Fatalf("reading %s: %v", rel, err)
 			}
-			// Match the CALL, not the name. A bare Contains was tried first and
-			// a mutation survived it: phash_repair.go mentions the predicate in
-			// a doc comment as well as calling it, so replacing the call with a
-			// bare ctx.Err() left the comment behind and the check still passed.
-			// A comment is not a code path.
-			if !regexp.MustCompile(`ReadFailureDistrustsLoop\(`).Match(src) {
+			// Match the QUALIFIED call at the start of a statement, not the
+			// name and not a bare call-shaped string.
+			//
+			// This pattern has now been tightened TWICE, and both loosenings
+			// were caught by someone else:
+			//   1. strings.Contains("ReadFailureDistrustsLoop") -- a mutation
+			//      survived it, because phash_repair.go names the predicate in
+			//      a doc comment as well as calling it.
+			//   2. `ReadFailureDistrustsLoop\(` -- still matches prose, since a
+			//      comment may legitimately write the call with its parens
+			//      (#2976 review). Verified: that pattern matches
+			//      "// call ReadFailureDistrustsLoop(ctx, err) here".
+			//
+			// Every call site is in a package that imports this one as `img`,
+			// so the qualified form is what real code looks like, and requiring
+			// a preceding `:=`/`=`/`(`/whitespace-at-line-start keeps a comment
+			// from satisfying it. A comment is not a code path.
+			if !regexp.MustCompile(`(?m)^[^/\n]*\bimg\.ReadFailureDistrustsLoop\(`).Match(src) {
 				t.Errorf("%s no longer calls ReadFailureDistrustsLoop.\n"+
 					"If this loop was intentionally removed, drop it from distrustCallSites.\n"+
 					"If the check was reverted to a bare ctx.Err(), that is the #2933 regression: "+

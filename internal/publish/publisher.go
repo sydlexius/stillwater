@@ -816,6 +816,19 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		// their artwork is unreadable and sends them to check the file, when
 		// what actually happened is that they navigated away or the request
 		// timed out. Same context-not-contents rule as everywhere else here.
+		// A stalled mount says the same thing a cancellation does and needs its
+		// own message (#2976 review). This is a SINGLE read rather than a loop,
+		// so the loop-abort question does not arise -- the path already returns
+		// on any failure. What matters is the same misreport the comment above
+		// describes: "failed to read image for upload" sends the operator to
+		// check a file that is fine, when the mount is what stopped answering.
+		if errors.Is(readErr, img.ErrTooManyStalledReads) {
+			p.logger.Error("platform image sync stopped: the library mount is not responding",
+				"artist", a.Name, "type", imageType, "path", filePath, "error", readErr)
+			warnings = append(warnings,
+				"platform sync stopped: the library mount is not responding, so the image could not be read")
+			return warnings
+		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			p.logger.Warn("platform image sync canceled before upload",
 				"artist", a.Name, "type", imageType, "path", filePath, "error", ctxErr)
@@ -1238,6 +1251,19 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		// concurrent operator write. That is the same guard the primary path
 		// applies. The detached-context repair still runs, exactly as intended,
 		// for a cancellation that lands AFTER a peer has been handed a file.
+		// Name the cause HERE too, not just inside snapshotFanart (#2976
+		// review). Fixing the misattribution in the callee and leaving the
+		// caller asserting "the request ended" reproduces the same wrong-cause
+		// message one level up -- and THIS is the string that reaches the
+		// operator, since it lands in the returned warnings.
+		if errors.Is(snapCancelErr, img.ErrTooManyStalledReads) {
+			p.logger.Error("platform fanart sync stopped before upload: the library mount is not responding",
+				slog.String("artist_id", a.ID),
+				slog.Any("error", snapCancelErr))
+			warnings = append(warnings,
+				"platform sync stopped: the library mount is not responding, so the fanart could not be read")
+			return warnings
+		}
 		p.logger.Warn("platform fanart sync canceled before upload",
 			slog.String("artist_id", a.ID),
 			slog.Any("error", snapCancelErr))
