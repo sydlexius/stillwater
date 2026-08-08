@@ -13,7 +13,7 @@ A **rule** is a check Stillwater runs against an artist. It either passes (nothi
 
 Every rule has two independent toggles:
 
-- **Enabled** -- whether the rule runs at all. Disabled rules don't evaluate and normally contribute nothing to violation counts. They stay listed in **Settings > Rules** so you can turn them back on. The exception is a rule whose findings are recorded as they happen rather than by a rule run (currently only Cross-artist backdrop collision): disabling it stops new findings being recorded but keeps the existing ones visible and counted, because nothing can recreate them. See [enable and configure rules](../how-to/enable-and-configure-rules.md).
+- **Enabled** -- whether the rule runs at all. Disabled rules don't evaluate and normally contribute nothing to violation counts. They stay listed in **Settings > Rules** so you can turn them back on. There is one exception: a rule whose findings are recorded as they happen rather than by a rule run. Currently that is only Cross-artist backdrop collision. Disabling it keeps the existing findings visible and counted, because nothing can recreate them. It does not stop new ones being recorded either, since those are raised at the import or push moment on a path that never consults the enabled state. See [enable and configure rules](../how-to/enable-and-configure-rules.md).
 - **Automation mode** -- once enabled, the rule is either **manual** (it finds violations; you decide when to apply fixes) or **auto** (the fixer runs on every detected violation as part of evaluation).
 
 Combined, that's three meaningful states:
