@@ -61,7 +61,7 @@ If inference finds a consistent mapping, it's applied automatically and the conn
 - **Post-merge refresh.** After a [merge](../how-to/merge-duplicate-artists.md), Stillwater triggers a refresh on Lidarr (along with any other connected server) so it picks up the surviving artist's new location. Lidarr doesn't drop its own stale entry for the removed (loser) artist automatically the way Emby/Jellyfin do -- remove that manually if it lingers.
 - **Let Stillwater manage images and NFO files.** Same toggle as Emby/Jellyfin: if Lidarr's own metadata writer is enabled and clashing with Stillwater's writes to the same directory, Stillwater's conflict detector surfaces a banner and you can flip this on to make Stillwater the sole writer.
 
-Lidarr does not get a metadata-push or image-write toggle -- those are Emby/Jellyfin-specific, since Lidarr's own library import is what tracks artist metadata for the Lidarr side.
+Lidarr does not get a metadata-push or image-write toggle -- those are Emby/Jellyfin-specific, since Lidarr's own library import is what tracks artist metadata for the Lidarr side. The settings screen simply doesn't show those toggles for a Lidarr connection. If you drive the API directly, sending `feature_image_write`, `feature_metadata_push`, or `feature_trigger_refresh` for a Lidarr connection is rejected with a `400` naming the unsupported fields, rather than being accepted and ignored -- so a request that appears to succeed really did store the setting.
 
 ## Verify the connection works
 

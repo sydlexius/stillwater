@@ -6286,6 +6286,15 @@ paths:
       tags: [Connections]
       summary: Update connection
       operationId: updateConnection
+      description: >
+        Partially updates a connection; an omitted property means "leave
+        unchanged". The three per-feature write toggles (feature_image_write,
+        feature_metadata_push, feature_trigger_refresh) exist only for
+        connection types that perform platform writes (emby, jellyfin).
+        Sending any of them for another type (lidarr) is rejected with 400
+        rather than accepted and silently ignored, and the whole request is
+        refused - no other field in the same body is applied. When the body
+        also changes "type", the toggles are judged against the NEW type.
       parameters:
         - name: id
           in: path
@@ -6312,7 +6321,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConnectionResponse"
         "400":
-          description: Invalid request body.
+          description: >
+            Invalid request body, an unsupported "type" value, or one or more
+            per-feature write toggles that this connection type does not
+            support. No part of the update is applied.
           content:
             application/json:
               schema:
@@ -9532,6 +9544,11 @@ paths:
       tags: [Connections]
       summary: Update connection feature flags
       operationId: updateConnectionFeatures
+      description: >
+        Toggles the per-feature write flags on a connection. The three flags
+        exist only for connection types that perform platform writes (emby,
+        jellyfin); sending any of them for another type (lidarr) is rejected
+        with 400 rather than accepted and discarded.
       parameters:
         - name: id
           in: path
@@ -9558,6 +9575,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "400":
+          description: >
+            One or more of the supplied feature flags is not supported for this
+            connection type. No value is stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Connection not found
           content:

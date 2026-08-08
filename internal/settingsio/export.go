@@ -268,6 +268,13 @@ type ImportResult struct {
 	// and folding them in would overreport on subsequent re-imports
 	// against the same target.
 	UsersImported int `json:"users_imported,omitempty"`
+	// ConnectionFeaturesIgnored counts per-feature write toggles carried in
+	// the envelope for a connection type that does not have them (#2579).
+	// The connection itself still imports -- an envelope is a batch restore,
+	// and refusing one over an inapplicable field would block an operator
+	// recovering a backup -- but the drop is surfaced here rather than being
+	// silent, which is what made the same defect on the PATCH surface a bug.
+	ConnectionFeaturesIgnored int `json:"connection_features_ignored,omitempty"`
 	// OwnershipReassigned counts api_tokens whose original owner is absent
 	// on the target AND who were attributed to the importing admin via the
 	// admin-fallback opt-in. This is a deliberate ownership change and is
