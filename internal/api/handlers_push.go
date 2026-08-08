@@ -235,8 +235,15 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 					// already abandoned. Interrogate the context, not the
 					// error's contents; an ordinary read failure still reports
 					// its own slot and continues.
-					if ctxErr := req.Context().Err(); ctxErr != nil {
-						writeCanceledPush(w, r.logger, a.Name, uploaded, ctxErr)
+					// The stalled-read cap says the same thing a cancellation
+					// does, by a different route (#2933): the read did not
+					// happen for a reason that applies to every remaining slot.
+					// Classified per-slot, the loop kept PUSHING the rest to
+					// the peer while unable to read any of them, and the
+					// handler answered 200 with an errors list -- reporting a
+					// push it could not actually perform.
+					if distrust := img.ReadFailureDistrustsLoop(req.Context(), readErr); distrust != nil {
+						writeCanceledPush(w, r.logger, a.Name, uploaded, distrust)
 						return
 					}
 					r.logger.Error("reading fanart for push",

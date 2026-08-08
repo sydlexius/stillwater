@@ -987,13 +987,26 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 	for i, fp := range fanartPaths {
 		data, readErr := img.ReadImageFileBounded(ctx, fp)
 		if readErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				p.logger.Warn("fanart snapshot canceled; no further fanart will be read",
+			// A cancellation is not the only failure that distrusts the whole
+			// loop; the process-wide stalled-read cap says the same thing by a
+			// different route (#2933). Both mean the read did not happen for a
+			// reason that applies to every REMAINING file too.
+			//
+			// This is the most consequential of the three call sites that share
+			// this predicate. These bytes are the ONLY copy that can undo a
+			// peer's delete: a peer does not necessarily remove the file it was
+			// just handed (measured on Emby 4.10, uploading slot 0 deleted the
+			// slot-1 file), and the restore loop SKIPS any entry whose data is
+			// nil. So classifying a cap refusal as per-file kept nil-data
+			// entries, let the push proceed, and left a peer-deleted file with
+			// nothing to restore from -- unrecoverable, not merely redundant.
+			if distrust := img.ReadFailureDistrustsLoop(ctx, readErr); distrust != nil {
+				p.logger.Warn("fanart snapshot aborted; no further fanart will be read",
 					slog.String("path", fp),
 					slog.Int("index", i),
 					slog.Int("captured", len(snapshot)),
-					slog.Any("error", ctxErr))
-				return snapshot, warnings, ctxErr
+					slog.Any("error", distrust))
+				return snapshot, warnings, distrust
 			}
 			p.logger.Error("reading fanart for platform sync",
 				slog.String("path", fp),

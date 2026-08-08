@@ -49,10 +49,21 @@
 //
 // The counter self-heals: a mount that comes back lets every abandoned read
 // complete, each decrementing on its way out, and the cap stops applying.
+//
+// WHAT THIS FILE DOES NOT COVER (#2930). READS are bounded. WRITES, RENAMES
+// and STATS are not, and that is deliberate rather than an omission: a mount
+// that blocks on rename(2) still wedges a handler exactly as it did before
+// #2689. Abandoning a half-committed rename is worse than blocking on one --
+// a rollback that can be canceled mid-sequence is a data-integrity bug, not a
+// fix -- so the singleton-holding chains remain interruptible on their reads
+// only. Do not read "reads are bounded" as "the singleton is safe from a
+// stalled mount"; a wedge whose stack sits in a write or a rename is exactly
+// the shape this file cannot help with, and is still worth suspecting first.
 package image
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -280,4 +291,68 @@ func statCtx(ctx context.Context, path string) (os.FileInfo, error) {
 	return runCancellable(ctx, func() (os.FileInfo, error) {
 		return os.Stat(path)
 	})
+}
+
+// LstatBounded stats path under context control WITHOUT following a symlink.
+//
+// Exported for the phash-quarantine restore's occupancy check (#2930), which
+// ran a raw os.Lstat while every read around it was already ctx-bound. That
+// check sits inside a singleton-holding handler, so a stalled mount there
+// wedges the handler and every later invocation gets HTTP 409 for the life of
+// the process -- the exact failure mode this file exists to prevent, reached
+// through the one call the original pass did not cover.
+//
+// Lstat, not Stat, and that distinction is load-bearing: the caller is refusing
+// to CLOBBER whatever occupies a computed slot name, so a dangling symlink must
+// read as OCCUPIED. os.Stat would follow it, fail with ENOENT, and report the
+// path free -- licensing a write that replaces the operator's link.
+func LstatBounded(ctx context.Context, path string) (os.FileInfo, error) {
+	return runCancellable(ctx, func() (os.FileInfo, error) {
+		return os.Lstat(path)
+	})
+}
+
+// ReadFailureDistrustsLoop reports the error a failed read inside a
+// MULTI-CANDIDATE LOOP should abort with, or nil when the failure is
+// per-candidate and the loop may skip it and keep going.
+//
+// The distinction is whether the failure is a fact about THIS FILE or about the
+// MOUNT (#2933):
+//
+//   - Per-candidate, keep going: a vanished file, an over-size file, a
+//     permissions error. Each says something about one path and nothing about
+//     the rest of the set.
+//   - Distrusts the whole loop: a canceled/timed-out ctx, and the process-wide
+//     abandoned-read cap (ErrTooManyStalledReads). Both mean the read DID NOT
+//     HAPPEN for a reason that applies equally to every later candidate -- the
+//     same unresponsive mount that wedged this read will wedge the next one.
+//
+// Why the cap belongs here, which is the #2933 fix. Every loop that consulted
+// only ctx.Err() let a cap refusal take the skip branch. But the cap saturates
+// precisely BECAUSE reads are already wedged against an unresponsive mount, so
+// a refusal carries the same information a deadline does, arriving by a
+// different route. The reasoning those call sites had already written down --
+// "no further candidate in this loop can be trusted either" -- covers both
+// causes exactly; only their code enumerated one.
+//
+// It lives in this package, beside the sentinel, because THREE loops in three
+// packages need the same answer and had each spelled out only half of it. The
+// consequence of getting it wrong differs sharply per caller, which is an
+// argument for one shared predicate rather than three local ones: see the call
+// sites in internal/rule (a redundant restored slot), internal/publish (an
+// unrecoverable file -- the snapshot is the only copy that can undo a peer's
+// delete), and internal/api (a push reported as succeeded).
+//
+// ctx is consulted BEFORE the error value so a cancellation still aborts the
+// loop when the failing read reports something else on its way out. A read
+// abandoned mid-flight can surface any error, so keying only on the error would
+// let a cancellation be swallowed as an ordinary skip.
+func ReadFailureDistrustsLoop(ctx context.Context, readErr error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if errors.Is(readErr, ErrTooManyStalledReads) {
+		return readErr
+	}
+	return nil
 }
