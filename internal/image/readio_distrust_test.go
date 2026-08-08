@@ -124,8 +124,16 @@ func TestReadFailureDistrustsLoop_CancellationWinsOverAPerCandidateError(t *test
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if got := ReadFailureDistrustsLoop(ctx, fs.ErrNotExist); got == nil {
-		t.Error("a canceled ctx must abort the loop even when the read reported a skippable error")
+	got := ReadFailureDistrustsLoop(ctx, fs.ErrNotExist)
+	if got == nil {
+		t.Fatal("a canceled ctx must abort the loop even when the read reported a skippable error")
+	}
+	// The EXACT error, not merely non-nil (#2976 review). Accepting any
+	// non-nil value would pass if the predicate returned the fs.ErrNotExist
+	// it was handed -- which is the per-candidate error, the opposite of the
+	// property under test. The abort must name the CAUSE.
+	if !errors.Is(got, context.Canceled) {
+		t.Errorf("got %v, want an error wrapping context.Canceled", got)
 	}
 }
 
@@ -138,5 +146,22 @@ func TestReadFailureDistrustsLoop_NilErrorNeverAborts(t *testing.T) {
 	t.Parallel()
 	if got := ReadFailureDistrustsLoop(context.Background(), nil); got != nil {
 		t.Errorf("ReadFailureDistrustsLoop(bg, nil) = %v, want nil", got)
+	}
+
+	// THE CASE THIS TEST WAS NAMED FOR BUT DID NOT COVER (#2976 review).
+	// With only the live-ctx case above, "never aborts" was asserted against
+	// the one input that could not fail it: the predicate consulted ctx BEFORE
+	// the error, so a nil readErr under a CANCELED ctx returned ctx.Err() --
+	// reporting a successful read as "the mount is unresponsive". Unreachable
+	// today (every caller asks inside an `if readErr != nil` branch), which is
+	// precisely why nothing caught it.
+	//
+	// A read that returned bytes is evidence the mount answered, whatever the
+	// context says.
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := ReadFailureDistrustsLoop(canceled, nil); got != nil {
+		t.Errorf("ReadFailureDistrustsLoop(canceledCtx, nil) = %v, want nil -- "+
+			"a successful read must never be classified as a distrusted loop", got)
 	}
 }

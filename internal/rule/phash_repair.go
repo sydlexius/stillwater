@@ -853,6 +853,29 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 		entry := &entries[i]
 		outcome, err := p.restoreOneQuarantined(ctx, a, entry, opID, primaryName, kodiNumbering)
 		if err != nil {
+			// The SAME distinction the inner loops make, one level up
+			// (#2976 review). restoreOneQuarantined now returns a
+			// cancellation or a stalled-read cap refusal rather than
+			// swallowing it -- and recording that as one entry's failure
+			// and carrying on would rebuild the defect being fixed: every
+			// REMAINING entry reads the same unresponsive mount, so the
+			// operation would grind through the whole manifest producing a
+			// per-entry failure for each and still return a nil top-level
+			// error. An operator would see a "completed" restore whose
+			// failures all share one cause nothing named.
+			//
+			// Abort with the cause instead. Entries already restored keep
+			// their counts in result, which is returned alongside the error,
+			// so the partial progress is still visible and the consumed
+			// entries are not re-offered.
+			if abort := img.ReadFailureDistrustsLoop(ctx, err); abort != nil {
+				p.logger.Error("phash quarantine restore aborted; the remaining entries were not attempted",
+					slog.String("op_id", opID), slog.String("artist_id", a.ID),
+					slog.String("artist", a.Name), slog.String("file", entry.FileName),
+					slog.Int("entries_remaining", len(entries)-i),
+					slog.Any("error", abort))
+				return result, fmt.Errorf("restoring %s: %w", entry.FileName, abort)
+			}
 			p.logger.Error("restoring quarantined backdrop",
 				slog.String("op_id", opID), slog.String("artist_id", a.ID),
 				slog.String("artist", a.Name), slog.String("file", entry.FileName),

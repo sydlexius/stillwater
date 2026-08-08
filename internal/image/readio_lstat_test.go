@@ -2,6 +2,7 @@ package image
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,7 +65,15 @@ func TestLstatBounded_HonorsCanceledContext(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := LstatBounded(ctx, t.TempDir()); err == nil {
-		t.Error("LstatBounded with a canceled ctx returned nil; the ctx bound is not engaging")
+	// A directory that EXISTS, so a non-nil error cannot be an incidental
+	// ENOENT: the only reason to fail here is the context.
+	_, err := LstatBounded(ctx, t.TempDir())
+	if err == nil {
+		t.Fatal("LstatBounded with a canceled ctx returned nil; the ctx bound is not engaging")
+	}
+	// The EXACT error (#2976 review). Any-non-nil would also pass on an
+	// unrelated filesystem failure, which proves nothing about the bound.
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("got %v, want an error wrapping context.Canceled", err)
 	}
 }

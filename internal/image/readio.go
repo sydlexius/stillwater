@@ -50,15 +50,23 @@
 // The counter self-heals: a mount that comes back lets every abandoned read
 // complete, each decrementing on its way out, and the cap stops applying.
 //
-// WHAT THIS FILE DOES NOT COVER (#2930). READS are bounded. WRITES, RENAMES
-// and STATS are not, and that is deliberate rather than an omission: a mount
-// that blocks on rename(2) still wedges a handler exactly as it did before
-// #2689. Abandoning a half-committed rename is worse than blocking on one --
-// a rollback that can be canceled mid-sequence is a data-integrity bug, not a
-// fix -- so the singleton-holding chains remain interruptible on their reads
-// only. Do not read "reads are bounded" as "the singleton is safe from a
-// stalled mount"; a wedge whose stack sits in a write or a rename is exactly
-// the shape this file cannot help with, and is still worth suspecting first.
+// WHAT THIS FILE DOES NOT COVER (#2930). WRITES and RENAMES are NOT bounded,
+// and that is deliberate rather than an omission: a mount that blocks on
+// rename(2) still wedges a handler exactly as it did before #2689. Abandoning
+// a half-committed rename is worse than blocking on one -- a rollback that can
+// be canceled mid-sequence is a data-integrity bug, not a fix -- so the
+// singleton-holding chains stay interruptible on their reads only.
+//
+// STATS are bounded only where a caller ROUTES THROUGH the helpers here
+// (statCtx, LstatBounded). A raw os.Stat / os.Lstat elsewhere is unbounded like
+// any other direct syscall, so "stats are covered" is true of the wrapped calls
+// and false of the rest -- which is why the restore path's occupancy check had
+// to be converted rather than assumed safe.
+//
+// Do not read "reads are bounded" as "the singleton is safe from a stalled
+// mount": a wedge whose stack sits in a write, a rename, or an unwrapped stat
+// is exactly the shape this file cannot help with, and is still worth
+// suspecting first.
 package image
 
 import (
@@ -343,11 +351,22 @@ func LstatBounded(ctx context.Context, path string) (os.FileInfo, error) {
 // unrecoverable file -- the snapshot is the only copy that can undo a peer's
 // delete), and internal/api (a push reported as succeeded).
 //
+// A NIL readErr NEVER ABORTS, and the guard is explicit rather than implied by
+// the call sites. Every caller consults this inside an `if readErr != nil`
+// branch today, so without the guard the nil case is simply unreachable -- but
+// it would start returning ctx.Err() the moment any caller asked
+// unconditionally, turning a SUCCESSFUL read into "the mount is unresponsive"
+// whenever the request happened to be canceled. A read that returned bytes is
+// evidence the mount answered, whatever the context says.
+//
 // ctx is consulted BEFORE the error value so a cancellation still aborts the
 // loop when the failing read reports something else on its way out. A read
 // abandoned mid-flight can surface any error, so keying only on the error would
 // let a cancellation be swallowed as an ordinary skip.
 func ReadFailureDistrustsLoop(ctx context.Context, readErr error) error {
+	if readErr == nil {
+		return nil
+	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return ctxErr
 	}

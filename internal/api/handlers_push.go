@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -108,6 +109,27 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 // omitting them would make a partial push look like no push at all, which is
 // the same class of lie in the opposite direction.
 func writeCanceledPush(w http.ResponseWriter, log *slog.Logger, artistName string, uploaded []string, cause error) {
+	// TWO CAUSES, TWO ANSWERS, and conflating them blames the wrong party
+	// (#2976 review). Both stop the push early, but a cancellation is the
+	// CLIENT ending the request while a stalled-read cap refusal is the
+	// SERVER unable to read its own library -- the request context is still
+	// perfectly alive. Reporting the latter as 499 "the request ended" tells
+	// an operator their browser gave up when what actually happened is that
+	// their mount stopped answering, sending them to debug the wrong end of
+	// the system entirely.
+	if errors.Is(cause, img.ErrTooManyStalledReads) {
+		log.Error("image push stopped: the library mount is not responding",
+			slog.String("artist", artistName),
+			slog.Int("uploaded_before_stall", len(uploaded)),
+			slog.Any("error", cause))
+		// The sentinel's own message names the condition without leaking a
+		// path or an internal error chain, so it is safe to surface verbatim.
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"error":    "push stopped: the library mount is not responding, so the remaining images could not be read",
+			"uploaded": uploaded,
+		})
+		return
+	}
 	log.Warn("image push canceled by the client; stopping before any further upload",
 		slog.String("artist", artistName),
 		slog.Int("uploaded_before_cancel", len(uploaded)),
@@ -197,11 +219,11 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var uploaded []string
-	var errors []string
+	var uploadErrs []string
 
 	for _, imgType := range body.ImageTypes {
 		if !validImageTypes[imgType] {
-			errors = append(errors, fmt.Sprintf("%s: invalid image type", imgType))
+			uploadErrs = append(uploadErrs, fmt.Sprintf("%s: invalid image type", imgType))
 			continue
 		}
 
@@ -213,7 +235,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 				r.logger.Error("discovering fanart for push",
 					slog.String("artist_id", a.ID),
 					slog.String("error", discoverErr.Error()))
-				errors = append(errors, "fanart: failed to read directory")
+				uploadErrs = append(uploadErrs, "fanart: failed to read directory")
 				continue
 			}
 			for i, fp := range fanartPaths {
@@ -251,7 +273,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 						slog.String("artist", a.Name),
 						slog.Int("index", i),
 						slog.String("error", readErr.Error()))
-					errors = append(errors, fmt.Sprintf("fanart[%d]: read failed", i))
+					uploadErrs = append(uploadErrs, fmt.Sprintf("fanart[%d]: read failed", i))
 					continue
 				}
 				ct := "image/jpeg"
@@ -263,7 +285,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 						slog.String("artist", a.Name),
 						slog.Int("index", i),
 						slog.String("error", uploadErr.Error()))
-					errors = append(errors, fmt.Sprintf("fanart[%d]: upload failed", i))
+					uploadErrs = append(uploadErrs, fmt.Sprintf("fanart[%d]: upload failed", i))
 					continue
 				}
 				uploaded = append(uploaded, fmt.Sprintf("fanart[%d]", i))
@@ -292,7 +314,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 				slog.String("artist", a.Name),
 				slog.String("type", imgType),
 				slog.String("error", readErr.Error()))
-			errors = append(errors, fmt.Sprintf("%s: read failed", imgType))
+			uploadErrs = append(uploadErrs, fmt.Sprintf("%s: read failed", imgType))
 			continue
 		}
 
@@ -306,7 +328,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 				slog.String("artist", a.Name),
 				slog.String("type", imgType),
 				slog.String("error", uploadErr.Error()))
-			errors = append(errors, fmt.Sprintf("%s: upload failed", imgType))
+			uploadErrs = append(uploadErrs, fmt.Sprintf("%s: upload failed", imgType))
 			continue
 		}
 
@@ -315,7 +337,10 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"uploaded": uploaded,
-		"errors":   errors,
+		// The JSON KEY stays "errors" -- it is the wire contract clients read.
+		// Only the Go identifier changed, to stop the local slice shadowing the
+		// errors package now that this file calls errors.Is (#2976 review).
+		"errors": uploadErrs,
 	})
 }
 

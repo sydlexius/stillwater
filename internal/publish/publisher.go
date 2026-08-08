@@ -1001,10 +1001,21 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 			// entries, let the push proceed, and left a peer-deleted file with
 			// nothing to restore from -- unrecoverable, not merely redundant.
 			if distrust := img.ReadFailureDistrustsLoop(ctx, readErr); distrust != nil {
+				// Name the CAUSE, not just the effect (#2976 review). A
+				// cancellation is the caller walking away; a cap refusal is
+				// the mount not answering while the caller is still waiting.
+				// Both abort the snapshot, but an operator reading "the
+				// request ended" for a stalled mount goes looking at the
+				// wrong end of the system.
+				reason := "the request ended before all fanart could be read"
+				if errors.Is(distrust, img.ErrTooManyStalledReads) {
+					reason = "the library mount is not responding, so the remaining fanart could not be read"
+				}
 				p.logger.Warn("fanart snapshot aborted; no further fanart will be read",
 					slog.String("path", fp),
 					slog.Int("index", i),
 					slog.Int("captured", len(snapshot)),
+					slog.String("reason", reason),
 					slog.Any("error", distrust))
 				return snapshot, warnings, distrust
 			}
