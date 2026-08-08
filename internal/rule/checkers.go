@@ -744,8 +744,23 @@ func expectedImageFiles(ctx context.Context, profile *platform.Profile, artistPa
 				// must not be missed because the wrapped error reads like an
 				// ordinary read failure. Matches the propagation branch in
 				// phash_repair.go.
-				if ctxErr := ctx.Err(); ctxErr != nil {
-					return nil, fmt.Errorf("building expected-image set for %s: %w", artistPath, ctxErr)
+				//
+				// The stalled-read cap says exactly what a cancellation says
+				// here, and this is the most destructive place in the codebase
+				// to get that wrong (#2976 review). This set is the WHITELIST
+				// the extraneous-images deletion loop deletes AGAINST, so a
+				// short set is not a degraded answer -- it is a list of files
+				// to unlink. A cap refusal made every DiscoverFanart call fail,
+				// dropped every numbered fanart from the whitelist, and still
+				// returned a nil error, so Fix's "HARD STOP before the deletion
+				// loop" never fired and the operator's fanart1/2/3 were
+				// deleted. Reproduced end to end before this fix.
+				//
+				// The doc comment above already stated the rule this violated:
+				// callers must treat a non-nil error as "no safe answer". The
+				// bug was that a cap refusal produced a nil one.
+				if distrust := image.ReadFailureDistrustsLoop(ctx, discoverErr); distrust != nil {
+					return nil, fmt.Errorf("building expected-image set for %s: %w", artistPath, distrust)
 				}
 				slog.Warn("discovering fanart for expected-files whitelist",
 					slog.String("dir", artistPath),

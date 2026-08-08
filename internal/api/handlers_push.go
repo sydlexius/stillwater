@@ -305,8 +305,15 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		if readErr != nil {
 			// Same distinction as the fanart branch above, and it is a separate
 			// read reached through a different path, so it needs its own guard.
-			if ctxErr := req.Context().Err(); ctxErr != nil {
-				writeCanceledPush(w, r.logger, a.Name, uploaded, ctxErr)
+			//
+			// That comment CLAIMED parity with the fanart branch while the code
+			// only checked ctx, so a stalled-read cap refusal was recorded as
+			// one image's "read failed", the loop carried on to the next type,
+			// and the handler answered 200 -- reporting a push it could not
+			// perform (#2976 review). Routed through the shared predicate so
+			// the two branches cannot drift again.
+			if distrust := img.ReadFailureDistrustsLoop(req.Context(), readErr); distrust != nil {
+				writeCanceledPush(w, r.logger, a.Name, uploaded, distrust)
 				return
 			}
 			r.logger.Error("reading image for push",
