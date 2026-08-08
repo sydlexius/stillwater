@@ -467,6 +467,22 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 		existing.Name = body.Name
 	}
 	if body.Type != "" && body.Type != existing.Type {
+		// Reject an unknown type HERE, before it can reach the feature-toggle
+		// gate below. Otherwise a body pairing a bogus type with a toggle
+		// (`{"type":"plex","feature_image_write":true}`) is answered
+		// "feature_image_write is not supported for plex connections" -- which
+		// blames the toggle and implicitly treats "plex" as a real connection
+		// type, masking the actual input error (#2975 review).
+		//
+		// Validate() rejects the same value later in the write path, but by
+		// then the response has already been decided by whichever guard ran
+		// first, so the accurate message has to come from the boundary.
+		if !connection.IsValidType(body.Type) {
+			unlock()
+			writeFormError(w, req, http.StatusBadRequest,
+				"type must be one of: emby, jellyfin, lidarr")
+			return
+		}
 		// A type change invalidates the platform-specific config carried from
 		// the old type; clear all sub-configs so Validate re-allocates the one
 		// matching the new type (#1686).

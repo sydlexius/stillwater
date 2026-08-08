@@ -231,6 +231,104 @@ func TestHandleUpdateConnection_TypeChangeToLidarrRejectsFeatureToggles(t *testi
 	}
 }
 
+// TestHandleUpdateConnection_InvalidTypeReportsTheTypeNotTheToggle covers the
+// #2975 review finding: an unknown type paired with a feature toggle was
+// answered "feature_image_write is not supported for plex connections", which
+// blames the toggle and implicitly treats "plex" as a real connection type,
+// masking the actual input error.
+//
+// The sub-cases are asserted SEPARATELY because they failed differently before
+// the fix -- with a toggle it was a misleading 400, without one it was a 500
+// (Validate rejected the type deep in the write path, where the handler could
+// only render "internal error"). A single combined case would have hidden the
+// second.
+func TestHandleUpdateConnection_InvalidTypeReportsTheTypeNotTheToggle(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"with a feature toggle", map[string]any{"type": "plex", "feature_image_write": true}},
+		{"type alone", map[string]any{"type": "plex"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newConnectionTestRouter(t)
+			c := &connection.Connection{
+				Name: "Peer", Type: connection.TypeEmby,
+				URL: "http://emby.local:8096", APIKey: "k", Enabled: true,
+			}
+			newConnectionTestConn(t, r, c)
+
+			raw, err := json.Marshal(tc.body)
+			if err != nil {
+				t.Fatalf("marshaling body: %v", err)
+			}
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, bytes.NewReader(raw))
+			req.Header.Set("Content-Type", "application/json")
+			req.SetPathValue("id", c.ID)
+			w := httptest.NewRecorder()
+			r.handleUpdateConnection(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400 (body %s)", w.Code, w.Body.String())
+			}
+			// The message must name the TYPE problem, not the toggle.
+			if !strings.Contains(w.Body.String(), "type must be one of") {
+				t.Errorf("error %q does not report the unsupported type", w.Body.String())
+			}
+			if strings.Contains(w.Body.String(), "feature_image_write") {
+				t.Errorf("error %q blames the toggle instead of the type", w.Body.String())
+			}
+			// The bogus type must not have been persisted.
+			got, err := r.connectionService.GetByID(context.Background(), c.ID)
+			if err != nil {
+				t.Fatalf("GetByID: %v", err)
+			}
+			if got.Type != connection.TypeEmby {
+				t.Errorf("Type = %q, want it unchanged at emby", got.Type)
+			}
+		})
+	}
+}
+
+// TestHandleUpdateConnection_ValidTypeChangeStillWorks is the anti-overreach
+// guard on the type check: a legitimate type change must still be accepted, or
+// the assertions above would pass with the endpoint refusing every type change.
+func TestHandleUpdateConnection_ValidTypeChangeStillWorks(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+	c := &connection.Connection{
+		Name: "Peer", Type: connection.TypeEmby,
+		URL: "http://emby.local:8096", APIKey: "k", Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+
+	raw, err := json.Marshal(map[string]any{
+		"type": connection.TypeJellyfin,
+		"url":  "http://jellyfin.local:8096",
+	})
+	if err != nil {
+		t.Fatalf("marshaling body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", c.ID)
+	w := serveValidated(t, http.HandlerFunc(r.handleUpdateConnection), req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+	got, err := r.connectionService.GetByID(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Type != connection.TypeJellyfin {
+		t.Errorf("Type = %q, want jellyfin", got.Type)
+	}
+}
+
 // TestHandleUpdateConnection_LidarrWithoutFeatureTogglesSucceeds is the
 // anti-overreach guard for this surface: an ordinary Lidarr edit carrying none
 // of the three fields must still work. Without it, a gate keyed on the

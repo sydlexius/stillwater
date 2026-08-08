@@ -570,5 +570,13 @@ func (c *Connection) normalizeConfig() error {
 }
 
 func isValidType(t string) bool {
+	return IsValidType(t)
+}
+
+// IsValidType reports whether t is one of the three supported connection
+// types. Exported so an API handler can reject an unknown type at the request
+// boundary, where it can still answer 400 with an accurate message, rather
+// than letting it reach Validate() deeper in the write path (#2975 review).
+func IsValidType(t string) bool {
 	return t == TypeEmby || t == TypeJellyfin || t == TypeLidarr
 }
