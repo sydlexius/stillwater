@@ -37,6 +37,7 @@ package rule
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -289,6 +290,174 @@ func TestRecordRulePass_IsAtomic(t *testing.T) {
 	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusOpen {
 		t.Errorf("the violation should be unchanged after the aborted update: got %q, want %q",
 			got, ViolationStatusOpen)
+	}
+}
+
+// TestRecordRulePass_SkipsEventDrivenRules pins the defensive guard.
+//
+// Event-driven violations are raised at the write/push chokepoints and their
+// checkers cannot re-derive them, so auto-resolving one destroys a finding
+// nothing can rebuild -- the same data loss #2614 had to add a second
+// enforcement point to prevent. The engine already excludes these rules from
+// evaluation structurally, so this is defense in depth and not a live path;
+// an UNTESTED guard is exactly the kind that quietly stops working, which is
+// why it is pinned rather than trusted.
+//
+// Mutant this kills: deleting the IsEventDriven early return.
+func TestRecordRulePass_SkipsEventDrivenRules(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	a := apiOnlyArtist(t, db, "Event Driven Untouched")
+
+	// An active collision violation, exactly as the notifier would leave it.
+	if err := svc.UpsertViolation(ctx, &RuleViolation{
+		RuleID:     RuleCrossArtistBackdropCollision,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "warning",
+		Message:    "shared backdrop with another artist",
+		Fixable:    true,
+		Status:     ViolationStatusOpen,
+	}); err != nil {
+		t.Fatalf("seeding collision violation: %v", err)
+	}
+	if got := violationStatus(t, db, a.ID, RuleCrossArtistBackdropCollision); got != ViolationStatusOpen {
+		t.Fatalf("precondition: seeded violation should be %q, got %q", ViolationStatusOpen, got)
+	}
+	// PRECONDITION: the rule must actually BE event-driven, or this test asserts
+	// nothing about the guard.
+	if !IsEventDriven(RuleCrossArtistBackdropCollision) {
+		t.Fatalf("precondition: %s must be event-driven for this test to mean anything",
+			RuleCrossArtistBackdropCollision)
+	}
+
+	resolved, err := svc.RecordRulePass(ctx, a.ID, RuleCrossArtistBackdropCollision, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("RecordRulePass on an event-driven rule should be a silent no-op, got error: %v", err)
+	}
+	if resolved {
+		t.Errorf("RecordRulePass must not report resolving an event-driven violation, got resolved=true")
+	}
+
+	if got := violationStatus(t, db, a.ID, RuleCrossArtistBackdropCollision); got != ViolationStatusOpen {
+		t.Errorf("an event-driven violation must survive RecordRulePass -- nothing can re-raise it "+
+			"(#2614): got %q, want %q", got, ViolationStatusOpen)
+	}
+}
+
+// TestRecordRulePass_RollsBackWhenThePassWriteFails is the mirror of the
+// atomicity test above: there the violation UPDATE fails, here the pass-row
+// write does. Both directions must leave the pair consistent, and only testing
+// one direction leaves half the transaction unproven.
+func TestRecordRulePass_RollsBackWhenThePassWriteFails(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	_, svc := bioOnlyEngine(t, db)
+
+	a := apiOnlyArtist(t, db, "Pass Write Fails")
+	seedBioViolation(t, svc, a, ViolationStatusOpen)
+	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusOpen {
+		t.Fatalf("precondition: seeded violation should be %q, got %q", ViolationStatusOpen, got)
+	}
+
+	// Abort the rule_results UPDATE. The seeded violation already left a failing
+	// row, so the pass write takes the ON CONFLICT UPDATE branch.
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TRIGGER trap_update_rule_results
+		BEFORE UPDATE ON rule_results
+		WHEN OLD.rule_id = %s
+		BEGIN
+			SELECT RAISE(ABORT, 'injected: rule_results UPDATE failed');
+		END;`, quoteSQLLiteral(RuleBioExists))); err != nil {
+		t.Fatalf("arming the rule_results UPDATE trap: %v", err)
+	}
+
+	resolved, err := svc.RecordRulePass(ctx, a.ID, RuleBioExists, time.Now().UTC())
+	if err == nil {
+		t.Fatalf("precondition: the trap must make this call fail, got nil error (resolved=%v)", resolved)
+	}
+	if resolved {
+		t.Errorf("a failed call must not report a resolved violation, got resolved=true")
+	}
+
+	// The violation must NOT have been resolved by a write that partially applied.
+	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusOpen {
+		t.Errorf("the violation was resolved even though the pass write aborted, so the two writes "+
+			"are not in one transaction: got %q, want %q", got, ViolationStatusOpen)
+	}
+}
+
+// TestHealthSubscriber_SurvivesRecordRulePassFailure covers the subscriber's
+// error branch: a failed persist must be logged and must NOT abort the rest of
+// the evaluation.
+//
+// The subscriber runs off an event with nobody to return an error to, so its
+// only options are "log and continue" or "die silently mid-loop". Continuing is
+// right -- one rule failing to persist should not stop the others -- but that
+// choice is only correct if it is actually exercised, and nothing did.
+//
+// This also closes the one uncovered line the patch-coverage gate flagged on
+// this file. Worth being precise about why it was uncovered: the diff adds a
+// single executable line here (the `if`), and Go splits it into two coverage
+// blocks -- the condition, which the other tests execute, and the error BODY,
+// which nothing reached. The gate attributes the added line to the body.
+func TestHealthSubscriber_SurvivesRecordRulePassFailure(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	engine, svc := bioOnlyEngine(t, db)
+	artistSvc := artist.NewService(db)
+
+	a := apiOnlyArtist(t, db, "Persist Fails")
+	seedBioViolation(t, svc, a, ViolationStatusOpen)
+	a.Biography = "A biography comfortably longer than the ten character minimum."
+	if err := artistSvc.Update(ctx, a); err != nil {
+		t.Fatalf("updating artist biography: %v", err)
+	}
+	passing, err := engine.Evaluate(ctx, a)
+	if err != nil {
+		t.Fatalf("evaluating passing state: %v", err)
+	}
+	assertBioConsidered(t, passing)
+	if len(passing.Violations) != 0 {
+		t.Fatalf("precondition: the artist must PASS so the subscriber takes the pass branch, "+
+			"got %d violations", len(passing.Violations))
+	}
+
+	// Make the persist fail for real, by aborting the rule_results write.
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TRIGGER trap_update_rule_results_sub
+		BEFORE UPDATE ON rule_results
+		WHEN OLD.rule_id = %s
+		BEGIN
+			SELECT RAISE(ABORT, 'injected: rule_results UPDATE failed');
+		END;`, quoteSQLLiteral(RuleBioExists))); err != nil {
+		t.Fatalf("arming the rule_results UPDATE trap: %v", err)
+	}
+
+	// PRECONDITION: the trap must actually make RecordRulePass fail, or the
+	// error branch is never entered and this test proves nothing.
+	if _, err := svc.RecordRulePass(ctx, a.ID, RuleBioExists, time.Now().UTC()); err == nil {
+		t.Fatalf("precondition: the trap should make RecordRulePass fail, got nil error")
+	}
+
+	// The subscriber must not panic or abort; it logs and moves on.
+	NewHealthSubscriber(engine, artistSvc, testLogger()).evaluateArtist(ctx, a.ID)
+
+	// And the failure must be honest: nothing resolved, because nothing was
+	// written. A swallowed error that reported success would be worse than the
+	// bug this PR fixes.
+	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusOpen {
+		t.Errorf("a FAILED persist must leave the violation untouched: got %q, want %q",
+			got, ViolationStatusOpen)
+	}
+	if passed, exists := ruleResultRow(t, db, a.ID, RuleBioExists); !exists {
+		t.Errorf("the pre-existing rule_results row should still be there")
+	} else if passed {
+		t.Errorf("rule_results must not record a pass when the write was aborted")
 	}
 }
 
