@@ -482,6 +482,26 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	if body.Enabled != nil {
 		existing.Enabled = *body.Enabled
 	}
+	// Refuse feature toggles the (possibly just-changed) type does not have
+	// (#2579). Checked AFTER the type assignment above so a request that
+	// switches a connection to Lidarr and sets a toggle in the same body is
+	// judged against the type it is becoming, not the one it was. Without this
+	// the write below is a silent no-op -- SetFeatures has no Lidarr arm -- and
+	// the handler still reports success.
+	//
+	// The edit form renders none of these three inputs (web/templates/
+	// settings.templ gates the whole block on `c.Type != "lidarr"`), so the
+	// urlencoded path reaches here with all three nil and the HTMX form
+	// submission cannot trip this.
+	if fields := unsupportedFeatureFields(existing.Type,
+		body.FeatureImageWrite, body.FeatureMetadataPush, body.FeatureTriggerRefresh); len(fields) > 0 {
+		unlock()
+		r.logger.Warn("rejecting unsupported connection feature toggles",
+			"connection_id", id, "connection_type", existing.Type,
+			"fields", strings.Join(fields, ","))
+		writeFormError(w, req, http.StatusBadRequest, unsupportedFeatureError(existing.Type, fields))
+		return
+	}
 	// Apply the partial feature-flag update against the matching media
 	// sub-config: read current values via the getters, override the fields
 	// present in the request, then write them back. No-op for Lidarr.
@@ -807,6 +827,52 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// unsupportedFeatureFields names the per-feature toggles present in a request
+// that connType does not have, in wire-field terms. It returns nil when the
+// type owns the toggles or when the request carries none of them.
+//
+// The three toggles are stored in shared connections columns but only mapped
+// onto the Emby/Jellyfin sub-configs on read (connection.Service.scanConnection),
+// so accepting one for any other type stores a value no accessor can read back
+// and answers success for a setting that does not exist (#2579). Both write
+// surfaces -- the features PATCH and the general connection update -- consult
+// this, so the two cannot drift into disagreeing about what is supported.
+//
+// Presence is what disqualifies a field, not its value: `false` asserts a
+// stored setting just as much as `true` does. Every offending field is returned
+// at once so a caller fixes the whole body in one round trip.
+func unsupportedFeatureFields(connType string, imageWrite, metadataPush, triggerRefresh *bool) []string {
+	if connection.SupportsFeatureToggles(connType) {
+		return nil
+	}
+	var fields []string
+	if imageWrite != nil {
+		fields = append(fields, "feature_image_write")
+	}
+	if metadataPush != nil {
+		fields = append(fields, "feature_metadata_push")
+	}
+	if triggerRefresh != nil {
+		fields = append(fields, "feature_trigger_refresh")
+	}
+	return fields
+}
+
+// unsupportedFeatureError renders the operator-facing message for the fields
+// unsupportedFeatureFields returned.
+//
+// The verb agrees with the field count. A fixed "is" produced "feature_image_write,
+// feature_metadata_push, feature_trigger_refresh is not supported" in live UAT --
+// this string is read by an operator diagnosing a rejected request, so it reads
+// as written.
+func unsupportedFeatureError(connType string, fields []string) string {
+	verb := " is not supported for "
+	if len(fields) > 1 {
+		verb = " are not supported for "
+	}
+	return strings.Join(fields, ", ") + verb + connType + " connections"
+}
+
 // handleUpdateConnectionFeatures toggles feature flags on a connection.
 // PATCH /api/v1/connections/{id}/features
 func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http.Request) {
@@ -835,6 +901,21 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 	existing, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+
+	// Refuse toggles this connection type does not have, rather than answering
+	// 200 "updated" for a value that can never be read back (#2579). Measured
+	// before the fix: a Lidarr PATCH returned 200, wrote 1 into all three
+	// columns, and every Get* accessor still reported false.
+	if fields := unsupportedFeatureFields(existing.Type,
+		body.FeatureImageWrite, body.FeatureMetadataPush, body.FeatureTriggerRefresh); len(fields) > 0 {
+		r.logger.Warn("rejecting unsupported connection feature toggles",
+			"connection_id", id, "connection_type", existing.Type,
+			"fields", strings.Join(fields, ","))
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": unsupportedFeatureError(existing.Type, fields),
+		})
 		return
 	}
 

@@ -104,11 +104,67 @@ func (s *Service) importProviderKeys(ctx context.Context, db dbExecutor, keys ma
 // carryV17Fields plays the same role for the v1.7-only PathMappings field: a
 // pre-1.7 envelope decoded it as nil, so it must not clobber the target's
 // existing Lidarr path mappings.
+// countIgnoredFeatureToggles reports how many per-feature write toggles the
+// envelope entry sets that its connection type does not have, warning once for
+// the entry when there are any (#2579).
+//
+// applyExportConfig simply has no assignment for these outside its
+// Emby/Jellyfin arms, so such a value was dropped with no error, no warning and
+// no log line while the import reported a plain success. The connection still
+// imports -- an envelope is a batch restore, and refusing one over an
+// inapplicable field would block an operator recovering a backup, a worse
+// outcome than the one being fixed -- but the drop is no longer silent.
+//
+// Called once per entry, BEFORE the create/update branches: those build the
+// connection differently and share only applyExportConfig, so a counter wired
+// into one branch would leave the other silent.
+//
+// Keyed on the value being TRUE rather than merely present: ConnectionExport
+// carries plain bools, so an omitted field and an explicit false are
+// indistinguishable on the wire, and export emits false for all three on every
+// unsupported-type row. Keying on presence would report an ignored field for
+// every ordinary Lidarr envelope.
+func countIgnoredFeatureToggles(ce *ConnectionExport) int {
+	if connection.SupportsFeatureToggles(ce.Type) {
+		return 0
+	}
+	ignored := 0
+	for _, on := range []bool{ce.FeatureImageWrite, ce.FeatureMetadataPush, ce.FeatureTriggerRefresh} {
+		if on {
+			ignored++
+		}
+	}
+	if ignored > 0 {
+		slog.Warn("import: ignoring connection feature toggles not supported by this connection type",
+			"connection_name", ce.Name, "connection_type", ce.Type, "ignored_count", ignored)
+	}
+	return ignored
+}
+
 func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []ConnectionExport, result *ImportResult, carryV14Fields, carryV17Fields bool) error {
 	// Index rather than range-value: ConnectionExport is large enough that a
 	// per-iteration value copy trips gocritic's rangeValCopy.
 	for i := range conns {
 		ce := &conns[i]
+		// Count feature toggles this connection type does not have BEFORE
+		// either branch runs (#2579). applyExportConfig simply has no
+		// assignment for them outside the Emby/Jellyfin arms, so the value was
+		// dropped with no error, no warning, and no log line while the import
+		// reported a plain success. The connection still imports -- see
+		// ImportResult.ConnectionFeaturesIgnored for why refusing would be
+		// worse -- but the drop is now visible to the operator.
+		//
+		// Counted once per envelope entry rather than inside the create/update
+		// branches: those build the connection differently and share only
+		// applyExportConfig, so a counter wired into one would leave the other
+		// silent.
+		//
+		// Keyed on the value being TRUE, not merely present: ConnectionExport
+		// carries plain bools, so an omitted field and an explicit false are
+		// indistinguishable on the wire, and export emits false for all three
+		// on every unsupported-type row. Keying on presence would report an
+		// ignored field for every ordinary Lidarr envelope.
+		result.ConnectionFeaturesIgnored += countIgnoredFeatureToggles(ce)
 		existing, err := s.connectionSvc.ImportGetByTypeAndURLTx(ctx, db, ce.Type, ce.URL)
 		if err != nil {
 			return fmt.Errorf("looking up connection %q: %w", ce.Name, err)

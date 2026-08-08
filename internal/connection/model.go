@@ -282,6 +282,30 @@ func DecodePathMappings(s string) ([]PathMapping, error) {
 	return m, nil
 }
 
+// SupportsFeatureToggles reports whether connType has the three per-feature
+// write toggles (image write, metadata push, trigger refresh) at all.
+//
+// This is a POSITIVE allow-list keyed on the types that own the toggles, not a
+// negated "everything except Lidarr" check. A new connection type added later
+// starts out unsupported and is refused at the API boundary until someone
+// deliberately lists it here -- the safe direction. Inverted, the default for
+// an unrecognized type would be "accepted", which is exactly the accept-and-
+// discard behavior #2579 fixed.
+//
+// The toggles are stored in three shared connections columns but only mapped
+// onto the Emby/Jellyfin sub-configs on read (see Service.scanConnection), so a
+// value written for any other type persists in the column and is invisible to
+// every Get* accessor below. Callers that accept a toggle from an operator MUST
+// consult this before writing, or they store state nothing can read back.
+func SupportsFeatureToggles(connType string) bool {
+	switch connType {
+	case TypeEmby, TypeJellyfin:
+		return true
+	default:
+		return false
+	}
+}
+
 // GetFeatureImageWrite reports the image-write toggle. Nil-safe.
 func (c *Connection) GetFeatureImageWrite() bool {
 	switch {
