@@ -336,6 +336,121 @@ func TestFanartDuplicates_ArtistListError(t *testing.T) {
 	}
 }
 
+// TestScanFanartDuplicates_CountsPerceptualOnlyArtist is the regression pin
+// for #2716's blind spot: an artist whose ONLY redundancy is perceptual
+// (visually near-identical fanart that is byte-different, so the exact tier
+// sees nothing) used to be skipped entirely by the old `if exact == 0 {
+// continue }` gate -- zero ArtistsAffected, no PerArtist entry, nothing. This
+// pins that such an artist is now counted.
+//
+// Slots 0 and 1 are the same gradient re-encoded at two different JPEG
+// qualities (mirrors
+// TestImageDuplicateExact_IgnoresVisuallyIdenticalButDifferentBytes): visually
+// identical, byte-different. Slot 2 is a distinct gradient variant.
+func TestScanFanartDuplicates_CountsPerceptualOnlyArtist(t *testing.T) {
+	p, artistID, dir := newPipelineWithArtistFanart(t)
+	// newPipelineWithArtistFanart seeds slots 0-3; this test only wants 3.
+	if _, err := p.engine.db.Exec(
+		`DELETE FROM artist_images WHERE artist_id = ? AND slot_index = 3`, artistID); err != nil {
+		t.Fatalf("trimming seeded slot 3: %v", err)
+	}
+	createGradientJPEGQuality(t, filepath.Join(dir, "fanart.jpg"), 30, 90)
+	createGradientJPEGQuality(t, filepath.Join(dir, "fanart2.jpg"), 30, 60)
+	createGradientJPEG(t, filepath.Join(dir, "fanart3.jpg"), 0)
+
+	// Anti-vacuity: if the fixture generator ever produced byte-identical
+	// files for slots 0/1, this degenerates into an ordinary exact-duplicate
+	// case that would pass against the OLD code too. Assert the fixture is
+	// actually byte-different before trusting anything the scan reports.
+	if string(readBytes(t, filepath.Join(dir, "fanart.jpg"))) ==
+		string(readBytes(t, filepath.Join(dir, "fanart2.jpg"))) {
+		t.Fatal("fixture is wrong: slots 0 and 1 must be byte-different (perceptual-only case)")
+	}
+
+	report, err := p.ScanFanartDuplicates(context.Background())
+	if err != nil {
+		t.Fatalf("ScanFanartDuplicates: %v", err)
+	}
+	if report.ArtistsAffected != 1 {
+		t.Fatalf("ArtistsAffected = %d, want 1 (perceptual-only redundancy must still count as affected)", report.ArtistsAffected)
+	}
+	if report.ExactRedundantSlots != 0 {
+		t.Fatalf("ExactRedundantSlots = %d, want 0 (no byte-identical pair exists)", report.ExactRedundantSlots)
+	}
+	if report.PerceptualRedundantSlots != 1 {
+		t.Fatalf("PerceptualRedundantSlots = %d, want 1", report.PerceptualRedundantSlots)
+	}
+	if len(report.PerArtist) != 1 || report.PerArtist[0].ArtistID != artistID {
+		t.Fatalf("PerArtist = %+v, want single entry for %s", report.PerArtist, artistID)
+	}
+	if report.PerArtist[0].PerceptualDrops != 1 {
+		t.Fatalf("PerArtist[0].PerceptualDrops = %d, want 1", report.PerArtist[0].PerceptualDrops)
+	}
+	if report.PerArtist[0].ExactDrops != 0 {
+		t.Fatalf("PerArtist[0].ExactDrops = %d, want 0", report.PerArtist[0].ExactDrops)
+	}
+}
+
+// TestScanFanartDuplicates_ExactAndPerceptualCountsDoNotOverlap pins the
+// subtraction in perceptualOnlyFanartDrops: exact and perceptual redundant
+// slots must be non-overlapping counts, never double-counted.
+//
+// The fixture deliberately separates the two axes across FOUR slots forming
+// two DISJOINT pairs -- slots 0/1 byte-identical (the exact pair), slots 2/3
+// visually similar but byte-different (the perceptual-only pair). If the
+// same slot pair were reused for both assertions, a bug that forgot the
+// subtraction would still produce a correct-looking total (because
+// pairImageDuplicates includes byte-identical pairs in the perceptual tier
+// too) and this test would pass vacuously either way.
+func TestScanFanartDuplicates_ExactAndPerceptualCountsDoNotOverlap(t *testing.T) {
+	p, artistID, dir := newPipelineWithArtistFanart(t)
+	dup := readFixture(t, "red.jpg")
+	writeFanartFiles(t, dir, map[string][]byte{
+		"fanart.jpg":  dup, // slot 0
+		"fanart2.jpg": dup, // slot 1: byte-identical to slot 0 (exact pair)
+	})
+	createGradientJPEGQuality(t, filepath.Join(dir, "fanart3.jpg"), 30, 90) // slot 2
+	createGradientJPEGQuality(t, filepath.Join(dir, "fanart4.jpg"), 30, 60) // slot 3: same picture as slot 2, re-encoded (perceptual-only pair)
+
+	// Anti-vacuity: pin both axes independently. Slots 0/1 must actually be
+	// byte-identical (or this is not testing the exact tier at all), and
+	// slots 2/3 must actually be byte-different (or this collapses into the
+	// exact case and proves nothing about the subtraction).
+	if string(readBytes(t, filepath.Join(dir, "fanart.jpg"))) !=
+		string(readBytes(t, filepath.Join(dir, "fanart2.jpg"))) {
+		t.Fatal("fixture is wrong: slots 0 and 1 must be byte-identical")
+	}
+	if string(readBytes(t, filepath.Join(dir, "fanart3.jpg"))) ==
+		string(readBytes(t, filepath.Join(dir, "fanart4.jpg"))) {
+		t.Fatal("fixture is wrong: slots 2 and 3 must be byte-different")
+	}
+
+	report, err := p.ScanFanartDuplicates(context.Background())
+	if err != nil {
+		t.Fatalf("ScanFanartDuplicates: %v", err)
+	}
+	if len(report.PerArtist) != 1 || report.PerArtist[0].ArtistID != artistID {
+		t.Fatalf("PerArtist = %+v, want single entry for %s", report.PerArtist, artistID)
+	}
+	got := report.PerArtist[0]
+	if got.TotalSlots != 4 {
+		t.Fatalf("TotalSlots = %d, want 4", got.TotalSlots)
+	}
+	if got.ExactDrops != 1 {
+		t.Fatalf("ExactDrops = %d, want 1", got.ExactDrops)
+	}
+	if got.PerceptualDrops != 1 {
+		t.Fatalf("PerceptualDrops = %d, want 1", got.PerceptualDrops)
+	}
+	// The whole point: 1 exact + 1 perceptual = 2, never 3. A subtraction
+	// bug would inflate PerceptualDrops to 2 (double-counting slot 1, which
+	// is both byte-identical to slot 0 AND perceptually similar to it) and
+	// this sum would read 3.
+	if sum := got.ExactDrops + got.PerceptualDrops; sum != 2 {
+		t.Fatalf("ExactDrops + PerceptualDrops = %d, want 2 (non-overlapping counts)", sum)
+	}
+}
+
 // TestRemediateFanartDuplicates_PartialLockReportsActualCount pins the honest
 // count: a group of 3 byte-identical slots has 2 redundant copies, but ONE of
 // them is #2533-locked, so Fix removes only the single unlocked redundant copy.

@@ -620,3 +620,52 @@ func nonTransitiveFanartDeletionSet(groups []imageDupGroup) map[int]bool {
 	}
 	return toDelete
 }
+
+// totalFanartSlots counts the usable fanart rows in res.members. members
+// holds every usable image row from the detection pass -- thumb, logo, and
+// banner rows included, since a single query and hash pass serves all image
+// types together -- so a caller that wants a fanart-only slot total has to
+// filter it itself rather than trust len(res.members) directly.
+func totalFanartSlots(res imageDupResult) int {
+	n := 0
+	for _, m := range res.members {
+		if m.imageType == "fanart" {
+			n++
+		}
+	}
+	return n
+}
+
+// perceptualOnlyFanartDrops returns the count of within-type fanart slots
+// that are redundant on PERCEPTUAL similarity alone, with any slot the exact
+// (byte-identical) tier already accounts for subtracted out.
+//
+// The subtraction is load-bearing, not tidying: pairImageDuplicates
+// deliberately does not exclude byte-identical pairs from the perceptual
+// tier (see its doc comment), because the two rules have independent enable
+// toggles and a perceptual-only configuration must still be able to see the
+// most obvious duplicates. That means res.perceptual and
+// res.exactFanartToDelete legitimately overlap, and a caller that wants
+// "redundant slots perceptual catches that exact does not" -- the figure
+// this PR adds to distinguish a genuinely new problem from the one already
+// counted -- must remove the overlap itself or double-count every
+// byte-identical pair under both tiers.
+//
+// Like the rest of within-type fanart detection, this is blind to any slot
+// that has a content hash but no usable perceptual hash (an image that would
+// not decode): nonTransitiveFanartDeletionSet only ever sees pairs that
+// cleared pairImageDuplicates, and pairImageDuplicates excludes any pair
+// where either side's hash is unknown (hashUnknown). A library with
+// undecodable fanart therefore under-reports here, the same structural
+// limitation resolveImageDupHashes and pairImageDuplicates already document.
+func perceptualOnlyFanartDrops(res imageDupResult) int {
+	perceptualSet := nonTransitiveFanartDeletionSet(res.perceptual)
+	count := 0
+	for slot := range perceptualSet {
+		if res.exactFanartToDelete[slot] {
+			continue
+		}
+		count++
+	}
+	return count
+}
