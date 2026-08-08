@@ -36,12 +36,14 @@ package rule
 //     passed=1, so both facts are asserted together.
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 )
 
 // bioOnlyEngine seeds the default rules, disables everything except bio_exists,
@@ -548,6 +550,102 @@ func TestPipeline_PassPersistenceIsAtomic(t *testing.T) {
 		t.Errorf("rule_results flipped to passed=1 while the violation UPDATE aborted, so the "+
 			"pipeline is NOT routing through RecordRulePass: the row claims a pass but the "+
 			"violation is still %q", violationStatus(t, db, a.ID, RuleBioExists))
+	}
+}
+
+// TestHealthSubscriber_ResolvesViolationViaTheRealEventBus proves the WIRING,
+// not the transition logic.
+//
+// Every other test in this file calls evaluateArtist directly, which is the
+// right way to test the transition but leaves the joins BEFORE it unproven:
+//
+//	image write -> Publish(ArtistUpdated) -> bus -> HandleEvent -> debounce
+//	   -> evaluateArtist -> RecordRulePass
+//	                        ^^^^^^^^^^^^^^^^^^^^ everything else covers only this
+//
+// If any earlier join were broken, all six of those tests stay GREEN and the
+// bug stays live in production. That is a false green with full coverage --
+// the same shape as the defect this PR fixes, one level up.
+//
+// This closes the bus -> HandleEvent -> debounce -> evaluateArtist joins by
+// driving a REAL event.Bus with a REAL subscription, exactly as
+// cmd/stillwater/main.go wires it. The remaining join, that the image handler
+// publishes at all, lives in internal/api and is covered there by the handlers'
+// own tests.
+//
+// It costs ~3s of wall clock (a 2s debounce plus a 500ms tick), which is why it
+// is ONE test rather than the pattern for the whole file.
+func TestHealthSubscriber_ResolvesViolationViaTheRealEventBus(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	engine, svc := bioOnlyEngine(t, db)
+	artistSvc := artist.NewService(db)
+
+	a := apiOnlyArtist(t, db, "Real Bus")
+	failing, err := engine.Evaluate(ctx, a)
+	if err != nil {
+		t.Fatalf("evaluating failing state: %v", err)
+	}
+	assertBioConsidered(t, failing)
+	if len(failing.Violations) == 0 {
+		t.Fatalf("precondition: the artist must actually FAIL bio_exists first")
+	}
+	seedBioViolation(t, svc, a, ViolationStatusOpen)
+	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusOpen {
+		t.Fatalf("precondition: seeded violation should be %q, got %q", ViolationStatusOpen, got)
+	}
+
+	a.Biography = "A biography comfortably longer than the ten character minimum."
+	if err := artistSvc.Update(ctx, a); err != nil {
+		t.Fatalf("updating artist biography: %v", err)
+	}
+
+	// Wire it the way main.go does: a real bus, a real subscription, the
+	// subscriber's own goroutine draining the debounce queue.
+	sub := NewHealthSubscriber(engine, artistSvc, testLogger())
+	bus := event.NewBus(testLogger(), 16)
+	bus.Subscribe(event.ArtistUpdated, sub.HandleEvent)
+
+	// BOTH goroutines are required, and forgetting either is silent. Publish only
+	// enqueues onto a channel; without bus.Start draining it the event sits in the
+	// buffer forever and nothing is dispatched. Without sub.Start the debounce
+	// queue is never drained. main.go starts both, so the test must too.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go bus.Start()
+	defer bus.Stop()
+	go sub.Start(runCtx)
+
+	// The event an image write publishes (handlers_image.go).
+	bus.Publish(event.Event{
+		Type: event.ArtistUpdated,
+		Data: map[string]any{"artist_id": a.ID},
+	})
+
+	// Poll rather than sleep a fixed span: the debounce is 2s and the tick 500ms,
+	// so the earliest possible completion is ~2s and a fixed sleep would either
+	// flake or waste time. Deadline is generous because a loaded runner can lag.
+	deadline := time.Now().Add(20 * time.Second)
+	var got string
+	for time.Now().Before(deadline) {
+		if got = violationStatus(t, db, a.ID, RuleBioExists); got == ViolationStatusResolved {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if got != ViolationStatusResolved {
+		t.Errorf("publishing ArtistUpdated on a real bus must reach RecordRulePass and resolve "+
+			"the violation: got status %q, want %q. A broken join anywhere in "+
+			"Publish -> Subscribe -> HandleEvent -> debounce -> evaluateArtist would land here "+
+			"while every direct-call test stays green", got, ViolationStatusResolved)
+	}
+	// Same discriminator as the direct tests: retraction also resolves, but
+	// deletes the row. Only a genuine pass leaves passed=1.
+	if passed, exists := ruleResultRow(t, db, a.ID, RuleBioExists); !exists {
+		t.Errorf("the pass row must exist (a missing row means retraction ran, not a pass)")
+	} else if !passed {
+		t.Errorf("the rule_results row must record passed=1, got passed=0")
 	}
 }
 
