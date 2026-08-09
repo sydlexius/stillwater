@@ -131,6 +131,56 @@ subagent that runs tests, paste this rule into its prompt; subagents do not
 load project memory. The `capture-race-test-output` hookify rule blocks
 uncaptured `go test -race` invocations.
 
+## Who Implements, Who Writes Tests, and Where Tests Must Run
+
+**THE LEAD DOES NOT IMPLEMENT.** Delegate the work, including the fix rounds
+and the follow-on repairs a review surfaces. Every hand-edit the lead makes to
+close "one small gap" is work that skipped the dispatch brief, and so skipped
+the only place a constraint (fixture, environment, harness property) gets
+written down for anyone else to satisfy. The lead's job is the brief, the
+gates, the outward steps, and the judgment calls -- not the patch.
+
+The tell that this rule is being broken: the lead is editing files, running
+targeted tests, and iterating on a fix inline. If that is happening, stop and
+re-dispatch with what was just learned folded into the brief. A lead who
+implements also reviews their own work, which is exactly the review that
+misses things.
+
+**The implementer writes every test the change needs, including browser
+specs.** Tests are part of the deliverable, never a separate lead activity. A
+dispatch prompt must not tell an implementer to skip a test type because the
+lead will "handle verification" -- lead UAT is additional judgment on top of the
+implementer's tests, not a substitute for them. (An implementer told not to
+touch a browser has no way to discover that its surface needs a fixture.)
+
+**A new test must be shown to fail without its fix, and to pass in the
+HARNESS's environment, not the author's.** `make test-a11y` boots a brand-new
+empty database and an empty library (`SW_DB_PATH` / `SW_EMPTY_LIB` in the
+Makefile target), so a spec asserting any data-dependent surface fails there
+unless it seeds its own fixture -- see `tests/a11y/helpers/seed-blast-radius.js`
+and `seed-backdrop-duplicates.js` for the pattern: build the fixture inside the
+harness, against whatever server the run just started, and assert the fixture's
+defining property before trusting what the page reports.
+
+A spec that passes only against a hand-seeded local server is worse than no
+spec: it is a green light wired to one machine, and it looks like coverage.
+Never "fix" that by skipping when the surface is absent -- a conditional skip
+reports green forever while verifying nothing. The gap is the absent DATA, so
+the fix is a fixture, never a softened assertion.
+
+**The hostile reviewer RUNS the new tests. All of them, no carve-outs for slow
+ones.** "Do not repeat the UAT" is not a permitted instruction: duplicated
+verification is cheap, unverified verification is what ships defects. If a test
+type is too slow to run during review, that is an argument about when to
+schedule it, never about trusting it unexecuted. (Measured on #2716: a spec
+passed local UAT, survived a static hostile review, and failed all 8 checks the
+first time the real harness ran it.)
+
+Corollary for gate output: the a11y tier is ADVISORY in the auto path, so
+`pre-push-gate.sh` can print "All hard checks passed" while that tier failed.
+Read the tier's own result; a push that "passed" the gate but whose remote ref
+did not move has not landed.
+
 ## GitHub Issue Hints
 
 When working on a GitHub issue, look for these tags in the issue body:
