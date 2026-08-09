@@ -1008,6 +1008,12 @@ func (r *Router) serveReportsWorkspace(w http.ResponseWriter, req *http.Request,
 			return
 		}
 		data.BlastRadiusData = bd
+	case "nfo-has-mbid":
+		nd, ok := r.loadReportsNFOMBIDData(w, req)
+		if !ok {
+			return
+		}
+		data.NFOMBIDData = nd
 	}
 
 	renderTempl(w, req, templates.ReportsPage(r.assetsFor(req), data))
@@ -1337,5 +1343,62 @@ func (r *Router) loadReportsBlastRadiusData(w http.ResponseWriter, req *http.Req
 		Field:           f.Field,
 		ArtistID:        f.ArtistID,
 		BasePath:        r.basePath,
+	}, true
+}
+
+// loadReportsNFOMBIDData builds a templates.NFOMBIDPaneData value for the
+// reports workspace "nfo-has-mbid" pane (issue #2809). It calls the exact
+// r.historyService.ListNFOMBIDWrites / CountNFOMBIDWrites methods the JSON
+// report (handleReportNFOHasMBID) and CSV export
+// (handleReportNFOHasMBIDExport) already use, so this pane cannot disagree
+// with either about which artists the automatic NFO rule fix touched or how
+// many writes it counts.
+//
+// Filtering is intentionally narrower than the blast-radius pane's: only
+// ArtistID is exposed here (matching NFOMBIDFilter, which has no class or
+// attribution axis -- this report is not a damage classification, it is an
+// enumeration of one rule's writes). Sort/Order stay at nfoMBIDFilterFromRequest's
+// defaults (newest first) because the pane has no sort control yet; the JSON
+// API remains the way to request artist-name ordering.
+func (r *Router) loadReportsNFOMBIDData(w http.ResponseWriter, req *http.Request) (templates.NFOMBIDPaneData, bool) {
+	if r.historyService == nil {
+		http.Error(w, "history service is not available", http.StatusServiceUnavailable)
+		return templates.NFOMBIDPaneData{}, false
+	}
+	ctx := req.Context()
+
+	f := r.nfoMBIDPagedFilterFromRequest(req)
+
+	rows, err := r.historyService.ListNFOMBIDWrites(ctx, f)
+	if err != nil {
+		r.logger.Error("listing rule-written MusicBrainz ID rows for reports workspace", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return templates.NFOMBIDPaneData{}, false
+	}
+	counts, err := r.historyService.CountNFOMBIDWrites(ctx, f)
+	if err != nil {
+		r.logger.Error("counting rule-written MusicBrainz ID rows for reports workspace", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return templates.NFOMBIDPaneData{}, false
+	}
+
+	totalPages := counts.Total / f.Limit
+	if counts.Total%f.Limit > 0 {
+		totalPages++
+	}
+
+	return templates.NFOMBIDPaneData{
+		Rows:   rows,
+		Counts: counts,
+		Pagination: components.PaginationData{
+			CurrentPage: f.Offset/f.Limit + 1,
+			TotalPages:  totalPages,
+			PageSize:    f.Limit,
+			TotalItems:  counts.Total,
+			BaseURL:     "/reports/nfo-has-mbid",
+			TargetID:    "nfo-mbid-results",
+		},
+		ArtistID: f.ArtistID,
+		BasePath: r.basePath,
 	}, true
 }

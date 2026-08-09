@@ -1,8 +1,8 @@
 ---
-description: Browse the two-pane Reports workspace at /reports to view compliance, library health, metadata completeness, and rule pass-rate data across your library, plus the blast-radius report of values an automated change destroyed.
+description: Browse the two-pane Reports workspace at /reports to view compliance, library health, metadata completeness, and rule pass-rate data across your library, plus the blast-radius and rule-written MusicBrainz ID reports of what an automated writer changed.
 ---
 
-<!-- code: web/templates/reports_page.templ, internal/api/handlers_report.go, internal/api/handlers_blast_radius.go -->
+<!-- code: web/templates/reports_page.templ, internal/api/handlers_report.go, internal/api/handlers_blast_radius.go, internal/api/handlers_nfo_mbid.go -->
 
 # View reports
 
@@ -18,7 +18,7 @@ The narrow rail on the left lists all built-in reports. A filter box at the top 
 
 ## Live reports
 
-Four reports have fully implemented right panes:
+Five reports have fully implemented right panes:
 
 ### Compliance overview
 
@@ -106,11 +106,13 @@ The CSV carries the same rows plus the source label on each one. Note rows at th
 
 There is no download button on the pane yet, so this export is reachable only through the API. The [API reference](../api/index.md) has the endpoint and its parameters.
 
-## Rule-Written MusicBrainz IDs (API and CSV)
+## Rule-Written MusicBrainz IDs
 
-This report answers "which artists did the automatic NFO rule fix pick a MusicBrainz ID for". It exists so you can find artists that fix may have misidentified. There is no pane for it in the Reports workspace and nothing to click: you read it through the API, or pull it as a CSV spreadsheet the same way. Both are listed in the [API reference](../api/index.md).
+This report answers "which artists did the automatic NFO rule fix pick a MusicBrainz ID for". It exists so you can find artists that fix may have misidentified. Click **Rule-Written MusicBrainz IDs** in the reports rail to open it, right next to **Blast radius** - both are automated-write reports the rail groups together. The same rows are also available as a CSV spreadsheet or as raw JSON through the API; see [Downloading the CSV](#downloading-the-csv-1) below.
 
-Each row is one ID assignment: the artist, the note the fix recorded at the time, when it happened, and the MusicBrainz ID the artist carries now. If the fix wrote an ID for the same artist twice, you get two rows, because each one was a separate guess worth seeing. You can narrow the report to a single artist and sort by date or artist name.
+Each row is one ID assignment: the artist, the current MusicBrainz ID it carries, the note the fix recorded at the time, and when it happened. If the fix wrote an ID for the same artist twice, you get two rows, because each one was a separate guess worth seeing. Every row has a **Review** link straight to that artist's page, since deciding whether a guessed ID is right means looking the artist up. You can narrow the report to a single artist by adding `?artist_id=` to the page address, the same way the blast-radius pane's filters work; the API also lets you sort by date or artist name.
+
+The pane's caveat band sits directly under the report title, always visible - never behind a toggle you have to open. Read it before trusting the count: this report is a floor, not a census, and the reasons why are below.
 
 Read-only. This report does not contact MusicBrainz, does not check whether an ID is correct, and does not change or undo anything. Deciding what to do about a row is yours.
 
@@ -142,7 +144,7 @@ When you act on a row, use the current MusicBrainz ID, not the note. The ID in t
 
 ### Downloading the CSV
 
-The CSV carries the same rows. Note rows at the end restate every limit above, so a spreadsheet you open weeks later still says what it does not cover. The export is capped at 10,000 rows and tells you when it was truncated.
+Click **Export CSV** at the top of the pane, or reach the same file directly through the API. The CSV carries the same rows. Note rows at the end restate every limit above, so a spreadsheet you open weeks later still says what it does not cover. The export is capped at 10,000 rows and tells you when it was truncated.
 
 ## Additional reports
 

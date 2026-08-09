@@ -20,6 +20,7 @@ import fs from 'node:fs';
 
 import { setupAndLogin } from './helpers/bootstrap.js';
 import { seedBlastRadius } from './helpers/seed-blast-radius.js';
+import { seedNFOMBID } from './helpers/seed-nfo-mbid.js';
 import { newRunId } from './helpers/known-violations.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +72,16 @@ export default async function globalSetup() {
     console.log(
       `[a11y] blast-radius fixture: ${seeded.rows} rows `
       + `(${seeded.automated} automated, ${seeded.unknown} unknown)`,
+    );
+
+    // Seed the nfo-has-mbid fixture (#2809). Same reasoning as blast-radius
+    // above: the empty database means nfo-mbid.spec.js cannot reach a real
+    // row or a populated caveat band without this, and a half-seeded fixture
+    // must fail loudly here rather than surface as a confusing pane defect.
+    const nfoSeeded = await seedNFOMBID(ctx);
+    console.log(
+      `[a11y] nfo-has-mbid fixture: ${nfoSeeded.rows} row(s) `
+      + `(${nfoSeeded.writes} writes across ${nfoSeeded.artists} artist(s))`,
     );
   } finally {
     await ctx.dispose();

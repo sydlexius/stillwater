@@ -30,6 +30,8 @@ type ReportsPageData struct {
 	RulePassRates []RulePassRateData
 	// BlastRadiusData is populated when ActiveReport=="blast-radius".
 	BlastRadiusData BlastRadiusData
+	// NFOMBIDData is populated when ActiveReport=="nfo-has-mbid" (issue #2809).
+	NFOMBIDData NFOMBIDPaneData
 }
 
 // repBuiltinReport is a single entry in the reports rail.
@@ -40,14 +42,23 @@ type repBuiltinReport struct {
 }
 
 // repBuiltinReports is the ordered list of built-in reports shown in the rail.
-// IDs match the {name} path segment in /reports/{name}. The first five
+// IDs match the {name} path segment in /reports/{name}. The first six
 // entries have live right-panes; the remaining six render a placeholder.
 // blast-radius is placed second, ahead of the metadata/rule-pass-rate
 // reports, because it is a data-loss report and should not sit below
 // lower-stakes ones (#2750).
+//
+// nfo-has-mbid sits directly after blast-radius (#2809, the pane half of the
+// issue the maintainer reopened because an API + CSV alone did not meet the
+// "surfaced somewhere an operator can act on it" bar). It belongs beside
+// blast-radius rather than further down the rail: both report writes an
+// automated fixer made without operator confirmation, and this registry
+// already sorts that kind of report above the lower-stakes ones (compliance
+// snapshots, coverage summaries) that follow.
 var repBuiltinReports = []repBuiltinReport{
 	{"compliance", "reports.compliance.label", "reports.compliance.desc"},
 	{"blast-radius", "reports.blast_radius.label", "reports.blast_radius.desc"},
+	{"nfo-has-mbid", "reports.nfo_has_mbid.label", "reports.nfo_has_mbid.desc"},
 	{"health", "reports.health_report.label", "reports.health_report.desc"},
 	{"metadata-completeness", "reports.metadata_completeness.label", "reports.metadata_completeness.desc"},
 	{"rule-pass-rates", "reports.rule_pass_rates.label", "reports.rule_pass_rates.desc"},
@@ -155,6 +166,8 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 						@repPaneCompliance(assets, data.ComplianceData)
 					} else if data.ActiveReport == "blast-radius" {
 						@repPaneBlastRadius(data.BlastRadiusData)
+					} else if data.ActiveReport == "nfo-has-mbid" {
+						@repPaneNFOHasMBID(data.NFOMBIDData)
 					} else if data.ActiveReport == "health" {
 						@repPaneHealth(data.HealthData)
 					} else if data.ActiveReport == "metadata-completeness" {
@@ -1271,6 +1284,213 @@ templ blastRadiusScript() {
 			});
 		}
 	</script>
+}
+
+// NFOMBIDPaneData is the view model for the rule-written MusicBrainz ID pane
+// (issue #2809, reopened because the API + CSV alone did not meet the
+// "surfaced somewhere an operator can act on it" bar). Assembled by
+// loadReportsNFOMBIDData, which calls the same historyService methods the
+// JSON report and CSV export already use, so the three surfaces cannot
+// disagree about which artists a rule-picked MusicBrainz ID touched.
+type NFOMBIDPaneData struct {
+	Rows       []artist.NFOMBIDWriteRow
+	Counts     artist.NFOMBIDCounts
+	Pagination components.PaginationData
+	// ArtistID mirrors the active filter so the pane can reflect current
+	// narrowing back to the operator, matching BlastRadiusData's ArtistID.
+	ArtistID string
+	BasePath string
+}
+
+// repPaneNFOHasMBID renders the right pane for the rule-written MusicBrainz ID
+// report (issue #2809): which artists the automatic NFO rule fix assigned a
+// MusicBrainz ID to, so an operator can review and correct a bad guess.
+//
+// Modeled on repPaneBlastRadius, but simpler: this report is read-only end to
+// end (no restore, no bulk selection, no JS write path) because deciding
+// whether a guessed ID is correct requires the operator to look the artist up
+// on MusicBrainz, which is out of scope here (issue #2810). Every row's action
+// is "go look at this artist", via a plain link to its detail page -- there is
+// nothing this pane itself can commit.
+//
+// THE CAVEAT BAND IS THE SUBSTANCE, NOT DECORATION. This report exists
+// because a rule adopted best-guess matches and some were wrong, so the ways
+// the report can mislead matter more than the ways it can be slow. It is
+// rendered in an always-visible <div role="note"> immediately under the pane
+// header -- never a collapsed <details>, never a tooltip -- because a count
+// presented as complete IS the defect issue #2809 was filed about. All four
+// caveats the API/CSV already ship are repeated here verbatim (via the
+// artist.NFOMBIDCaveat* constants, shared with handlers_nfo_mbid.go) so the
+// three surfaces cannot drift into saying different things about the same
+// limits:
+//
+//  1. SCOPE: only the automatic NFO rule fix is enumerable here.
+//  2. FLOOR: every count is a minimum, never a census.
+//  3. NO PRIOR VALUE: this rule only ever filled a blank, never overwrote an
+//     ID an operator had set -- so there is deliberately no "previous value"
+//     column (see the doc comment on NFOMBIDWriteRow for why one would always
+//     read empty and invite the wrong conclusion).
+//  4. NOT CONFIRMED: an artist absent from this list has not been vetted by
+//     anyone. Nothing today records operator confirmation of an ID, so
+//     absence is UNKNOWN, never evidence of a clean bill of health.
+templ repPaneNFOHasMBID(data NFOMBIDPaneData) {
+	<div class="sw-rep-pane-header">
+		<div class="sw-rep-pane-title-block">
+			<p class="sw-rep-pane-title">{ t(ctx, "reports.nfo_has_mbid.label") }</p>
+			<p class="sw-rep-pane-desc">{ t(ctx, "reports.nfo_has_mbid.desc") }</p>
+		</div>
+		<div class="sw-rep-pane-actions">
+			<a
+				id="nfo-mbid-export-link"
+				href={ templ.SafeURL(data.BasePath + "/api/v1/reports/nfo-has-mbid/export" + nfoMBIDExportQuery(data)) }
+				class="sw-rep-export-btn"
+			>
+				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+				</svg>
+				{ t(ctx, "common.export_csv") }
+			</a>
+		</div>
+	</div>
+	<!-- Caveat band. Always rendered, never conditional on there being rows,
+	     see the doc comment above for why. Every string is a shared constant
+	     also used by the JSON response and the CSV notes, so the three
+	     surfaces cannot drift apart. -->
+	<div id="nfo-mbid-caveats" class="sw-rep-blast-caveat" role="note">
+		<p class="sw-rep-blast-caveat-line">
+			{ tf(ctx, "reports.nfo_has_mbid.summary", data.Counts.Writes, data.Counts.Artists) }
+		</p>
+		<p class="sw-rep-blast-caveat-line">{ artist.NFOMBIDCaveatScope }</p>
+		<p class="sw-rep-blast-caveat-line">{ artist.NFOMBIDCaveatFloor }</p>
+		<p class="sw-rep-blast-caveat-line">{ artist.NFOMBIDCaveatRetention }</p>
+		<p class="sw-rep-blast-caveat-line">{ artist.NFOMBIDCaveatNoPriorValue }</p>
+		<p class="sw-rep-blast-caveat-line">{ artist.NFOMBIDCaveatNotConfirmed }</p>
+		<p class="sw-rep-blast-caveat-line">{ artist.NFOMBIDCaveatMessageWording }</p>
+	</div>
+	<div class="overflow-x-auto" id="nfo-mbid-results">
+		<table id="nfo-mbid-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+			<thead class="bg-gray-50 dark:bg-gray-800">
+				<tr>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.column_artist") }</th>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.nfo_has_mbid.column_current_mbid") }</th>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.nfo_has_mbid.column_note") }</th>
+					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_when") }</th>
+					<th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.nfo_has_mbid.column_review") }</th>
+				</tr>
+			</thead>
+			<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+				if len(data.Rows) == 0 {
+					<tr>
+						<td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+							{ t(ctx, "reports.nfo_has_mbid.empty") }
+						</td>
+					</tr>
+				}
+				for _, row := range data.Rows {
+					@nfoMBIDRow(row)
+				}
+			</tbody>
+		</table>
+	</div>
+	@nfoMBIDPagination(data)
+}
+
+// nfoMBIDCurrentIDLabel renders the current-MusicBrainz-ID cell text. Mirrors
+// nfoMBIDCurrentIDCell in handlers_nfo_mbid.go (that one is CSV-scoped and
+// unexported from this package, so the templ side carries its own copy) --
+// a missing ID is spelled out rather than left blank, because a blank cell in
+// a table reads as "nothing to see" and this is the column an operator acts
+// on.
+func nfoMBIDCurrentIDLabel(ctx context.Context, row artist.NFOMBIDWriteRow) string {
+	if !row.HasCurrentMusicBrainzID {
+		return t(ctx, "reports.nfo_has_mbid.none_recorded")
+	}
+	return row.CurrentMusicBrainzID
+}
+
+// nfoMBIDRow renders one MusicBrainz ID the nfo_has_mbid rule fixer wrote:
+// artist, the ID it carries now, the recorded audit note, when, and a link to
+// the artist's own detail page -- the review action, since this report cannot
+// itself validate or revert an ID (issue #2810).
+templ nfoMBIDRow(row artist.NFOMBIDWriteRow) {
+	<tr id={ "nfo-mbid-row-" + row.ID } class="hover:bg-gray-50 dark:hover:bg-gray-800">
+		<td class="px-4 py-3 text-sm">{ row.ArtistName }</td>
+		<td class="px-4 py-3 text-sm font-mono">
+			if !row.HasCurrentMusicBrainzID {
+				<span class="italic text-gray-500 dark:text-gray-400">{ nfoMBIDCurrentIDLabel(ctx, row) }</span>
+			} else {
+				{ nfoMBIDCurrentIDLabel(ctx, row) }
+			}
+		</td>
+		<td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{ historyTruncate(row.Message, 100) }</td>
+		<td class="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+			<time datetime={ row.CreatedAt.Format(time.RFC3339) } title={ row.CreatedAt.Format("2006-01-02 15:04:05 UTC") }>
+				{ historyTimeAgo(ctx, row.CreatedAt) }
+			</time>
+		</td>
+		<td class="px-4 py-3 text-right">
+			<a
+				href={ templ.SafeURL("/artists/" + row.ArtistID) }
+				class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+			>
+				{ t(ctx, "reports.nfo_has_mbid.review") }
+			</a>
+		</td>
+	</tr>
+}
+
+// nfoMBIDExportQuery carries the active ArtistID filter onto the CSV export
+// link, so the download matches whatever the pane is currently narrowed to --
+// the same reasoning blastRadiusPageURL documents for its own filters.
+func nfoMBIDExportQuery(data NFOMBIDPaneData) string {
+	if data.ArtistID == "" {
+		return ""
+	}
+	q := url.Values{}
+	q.Set("artist_id", data.ArtistID)
+	return "?" + q.Encode()
+}
+
+// nfoMBIDPageURL builds a pager link carrying the page size and the active
+// ArtistID filter forward, mirroring blastRadiusPageURL's reasoning: an
+// omitted page_size falls back to the stored preference, which is how rows go
+// missing between pages of different sizes, and dropping the filter would
+// silently widen page 2 to the unfiltered report.
+func nfoMBIDPageURL(data NFOMBIDPaneData, page int) string {
+	q := url.Values{}
+	if data.ArtistID != "" {
+		q.Set("artist_id", data.ArtistID)
+	}
+	q.Set("page_size", strconv.Itoa(data.Pagination.PageSize))
+	q.Set("page", strconv.Itoa(page))
+	return data.BasePath + "/reports/nfo-has-mbid?" + q.Encode()
+}
+
+// nfoMBIDPagination renders a plain (non-HTMX) prev/next pager, matching
+// blastRadiusPagination: /reports/nfo-has-mbid has no fragment endpoint to
+// swap against, so a full-page navigation link is correct here too.
+templ nfoMBIDPagination(data NFOMBIDPaneData) {
+	if data.Pagination.TotalPages > 1 {
+		<nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3" aria-label={ t(ctx, "reports.nfo_has_mbid.pager_label") }>
+			<p class="text-sm text-gray-700 dark:text-gray-300">
+				{ tf(ctx, "reports.nfo_has_mbid.page_of", data.Pagination.CurrentPage, data.Pagination.TotalPages) }
+			</p>
+			<div class="flex gap-2">
+				if data.Pagination.CurrentPage > 1 {
+					<a
+						href={ templ.SafeURL(nfoMBIDPageURL(data, data.Pagination.CurrentPage-1)) }
+						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+					>{ t(ctx, "common.previous") }</a>
+				}
+				if data.Pagination.CurrentPage < data.Pagination.TotalPages {
+					<a
+						href={ templ.SafeURL(nfoMBIDPageURL(data, data.Pagination.CurrentPage+1)) }
+						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+					>{ t(ctx, "common.next") }</a>
+				}
+			</div>
+		</nav>
+	}
 }
 
 // repComplianceScript renders the JS for the compliance workspace pane so
