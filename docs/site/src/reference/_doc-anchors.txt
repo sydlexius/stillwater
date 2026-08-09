@@ -532,7 +532,7 @@ how-to/view-reports#putting-a-value-back
 how-to/view-reports#reading-the-recorded-note
 how-to/view-reports#restore-a-back-out
 how-to/view-reports#rule-pass-rates
-how-to/view-reports#rule-written-musicbrainz-ids-api-and-csv
+how-to/view-reports#rule-written-musicbrainz-ids
 how-to/view-reports#the-counts-are-a-minimum
 how-to/view-reports#the-reports-rail
 how-to/view-reports#view-reports

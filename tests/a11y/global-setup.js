@@ -72,6 +72,13 @@ export default async function globalSetup() {
       `[a11y] blast-radius fixture: ${seeded.rows} rows `
       + `(${seeded.automated} automated, ${seeded.unknown} unknown)`,
     );
+
+    // The nfo-has-mbid fixture (#2809) is seeded by nfo-mbid.spec.js's own
+    // beforeAll, not here -- the repo rule is that an a11y spec owns its own
+    // fixture against the freshly started harness (see
+    // tests/a11y/backdrop-perceptual.spec.js for the same pattern). Seeding
+    // it globally would seed it on behalf of a spec file that never asked for
+    // it here and duplicate ownership of the same fixture in two places.
   } finally {
     await ctx.dispose();
   }
