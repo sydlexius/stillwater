@@ -525,6 +525,7 @@ how-to/view-reports#live-reports
 how-to/view-reports#metadata-completeness
 how-to/view-reports#one-repair-at-a-time
 how-to/view-reports#open-the-reports-workspace
+how-to/view-reports#perceptual-duplicates
 how-to/view-reports#platform-backdrop-duplicates
 how-to/view-reports#prune-platform-duplicates
 how-to/view-reports#putting-a-value-back

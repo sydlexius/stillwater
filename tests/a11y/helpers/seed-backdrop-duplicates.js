@@ -214,17 +214,35 @@ async function runScan(request) {
 async function waitForReport(request) {
   const deadline = Date.now() + 90_000;
   let last = '';
+  // Wait for the PERCEPTUAL fixture markers specifically, not just the table:
+  // an EMPTY report also renders "id=backdrop-duplicates-table", so gating on
+  // the table alone can return before the fixture's rows have landed, and the
+  // spec then fails on "notice not found" -- a false read of a page defect
+  // when the real cause is a fixture that had not landed yet.
+  //
+  // Deliberately NOT also gating on "id=backdrop-duplicates-remediate-button":
+  // that button renders only when EXACT redundancy is non-zero, a different
+  // and unrelated fixture property from the perceptual notice/badge the spec
+  // actually asserts. Coupling the wait to it would make this wait fragile to
+  // a fixture change that has nothing to do with what it verifies. Do not
+  // "restore" that condition without re-deriving why it was left out.
+  const markers = [
+    'id="backdrop-duplicates-perceptual-notice"',
+    'data-sw-perceptual-only-badge',
+  ];
   while (Date.now() < deadline) {
     const resp = await request.fetch(`${BASE_URL}/reports/backdrop-duplicates`);
     if (resp.ok()) {
       last = await resp.text();
-      if (last.includes('id="backdrop-duplicates-table"')) return;
+      if (markers.every(m => last.includes(m))) return;
     }
     await new Promise(r => setTimeout(r, 2_000));
   }
   const pending = last.includes('backdrop-duplicates-unavailable-notice');
+  const missing = markers.filter(m => !last.includes(m));
   throw new Error(
-    `seed: the duplicate report did not populate within 90s (still ${pending ? 'pending' : 'unrecognised'}). `
+    `seed: the duplicate report did not populate within 90s (still ${pending ? 'pending' : 'unrecognised'}; `
+    + `missing marker(s): ${missing.join(', ') || 'none -- markers present but table check never returned'}). `
     + 'The spec cannot verify a surface that never rendered.',
   );
 }

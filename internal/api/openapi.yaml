@@ -3092,8 +3092,7 @@ paths:
                     type: integer
                     description: Number of artists whose collapse failed and were skipped.
                   perceptual_duplicates_remain:
-                    type: integer
-                    nullable: true
+                    type: [integer, "null"]
                     description: >-
                       Redundant slots this run deliberately did NOT remove
                       because they are only visually similar rather than
@@ -3101,9 +3100,15 @@ paths:
                       never folded into slots_removed: "removed" and "declined
                       to remove" are different outcomes, and collapsing them
                       lets a run that left most of the redundancy in place read
-                      as a clean sweep. Read from the post-remediation report
-                      cache, so under a concurrent refresh it may lag the run
-                      that just completed by one scan.
+                      as a clean sweep. null means NOT KNOWN: no duplicate
+                      report has ever landed, so nothing has been measured. It
+                      does not mean zero, and must not be rendered or
+                      aggregated as zero. An integer is the latest cached
+                      measurement from the post-remediation report cache,
+                      which can predate this remediation when the
+                      post-remediation refresh was dropped because a
+                      concurrent refresh was already running -- so an integer
+                      is not a guarantee of a completed post-remediation scan.
         "401":
           description: >-
             Authentication required. The auth middleware rejects the request
