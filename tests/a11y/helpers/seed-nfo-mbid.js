@@ -283,6 +283,7 @@ export async function seedNFOMBID(request) {
 
   const mock = await startMockMusicBrainz();
   let originalMirror = null;
+  let tryCompletedNormally = false;
   try {
     // Read the CURRENT mirror config before overwriting it, so it can be
     // restored afterward -- this fixture must not leave the server pointed
@@ -317,20 +318,48 @@ export async function seedNFOMBID(request) {
     if (runStatus.status === 'failed') {
       throw new Error(`seed: nfo_has_mbid rule run reported failure: ${JSON.stringify(runStatus)}`);
     }
+    tryCompletedNormally = true;
   } finally {
     // Restore the default (or whatever was configured before this ran) so a
     // later spec file, or a developer re-running against a persistent
     // server, is not left pointed at a mock server this process is about to
-    // tear down.
+    // tear down. This must be checked, not fire-and-forget: playwright.config.js
+    // runs this seeder once per browser project (firefox-a11y, chromium-a11y)
+    // against the SAME server, and startMockMusicBrainz binds an ephemeral
+    // port that differs every run. If a restore call fails silently here, the
+    // second project's run reads back the first run's now-dead mock URL,
+    // sees its port does not match its own mock's port, and "restores" that
+    // dead URL as if it were a real pre-existing mirror -- leaving the shared
+    // server pointed at a port nothing listens on, which then surfaces as
+    // confusing unrelated failures in whatever spec runs next.
+    let cleanupError = null;
     if (originalMirror && originalMirror.base_url && originalMirror.base_url !== `http://127.0.0.1:${mock.port}/ws/2`) {
-      await apiFetch(request, 'PUT', '/api/v1/providers/musicbrainz/mirror', {
+      const restoreResp = await apiFetch(request, 'PUT', '/api/v1/providers/musicbrainz/mirror', {
         base_url: originalMirror.base_url,
         rate_limit: originalMirror.rate_limit || 10,
       });
+      if (!restoreResp.ok()) {
+        cleanupError = new Error(`seed: restoring MusicBrainz mirror failed: ${restoreResp.status()} ${await restoreResp.text()}`);
+      }
     } else {
-      await apiFetch(request, 'DELETE', '/api/v1/providers/musicbrainz/mirror');
+      const deleteResp = await apiFetch(request, 'DELETE', '/api/v1/providers/musicbrainz/mirror');
+      if (!deleteResp.ok()) {
+        cleanupError = new Error(`seed: clearing MusicBrainz mirror failed: ${deleteResp.status()} ${await deleteResp.text()}`);
+      }
     }
     await mock.close();
+    if (cleanupError) {
+      // A finally-block throw REPLACES any in-flight exception from the try
+      // block above, which would turn a precise "the rule run failed" error
+      // into a confusing "mirror restore failed" one. Only throw here when
+      // the try completed normally; otherwise the cleanup failure is still
+      // real and must not be silent, so log it loudly and let the original
+      // error propagate.
+      if (tryCompletedNormally) {
+        throw cleanupError;
+      }
+      console.error(cleanupError.message);
+    }
   }
 
   // Verify against the REPORT, which is the thing under test -- not the rule
