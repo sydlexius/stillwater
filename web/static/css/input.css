@@ -88,6 +88,26 @@
   border-color: rgba(255, 255, 255, 0.09);
 }
 
+/* Accent rule for a notice built on the .sw-card shell.
+ *
+ * `.sw-card border-l-4 border-amber-500` does NOT produce an amber rule: the
+ * width lands, but `.sw-card` sets border-color on all four sides at the same
+ * specificity (0,1,0) and wins on source order, so the accent renders as the
+ * card's own near-transparent hairline. Measured on the live page, not
+ * inferred: the computed border-left-color was rgba(255,255,255,0.09) in dark
+ * mode while the markup carried border-amber-500. Every notice on
+ * /reports/backdrop-duplicates was affected, which is why they are converted
+ * to this class together rather than one at a time.
+ *
+ * Scoped to the left edge only, and deliberately NOT !important: it beats
+ * .sw-card by being defined after it at equal specificity, which is the same
+ * mechanism that caused the bug, used the right way round. A later rule that
+ * genuinely needs to win can still do so.
+ */
+.sw-card-accent-amber {
+  border-left-color: var(--color-amber-500, #f59e0b);
+}
+
 /* LQIP blurred placeholder background for artist grid cards */
 .lqip-placeholder {
   position: absolute;

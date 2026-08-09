@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -263,6 +264,93 @@ func TestBackdropDuplicatesPage_ColdCacheTriggersBackgroundScanAndShowsPendingNo
 	}
 }
 
+// TestBackdropDuplicatesPage_PerceptualNoticeShowsWhenPerceptualPresent
+// asserts the #2716 notice renders (with the affected-population counts and
+// the pre-computed percentage) whenever PerceptualRedundantSlots > 0, and
+// that a perceptual-only artist's row is neither dropped nor rendered as if
+// it were clean -- the "false-clean row" defect PR 1 introduced by widening
+// the affected-gate without threading PerceptualDrops through the view.
+func TestBackdropDuplicatesPage_PerceptualNoticeShowsWhenPerceptualPresent(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithFanartPipeline(t, &fanartCapablePipeline{stubPipeline: &stubPipeline{}})
+	r.storeBackdropDupReport(rule.FanartDupReport{
+		ArtistsAffected:          1,
+		ExactRedundantSlots:      0,
+		PerceptualRedundantSlots: 4,
+		TotalFanartSlots:         31,
+		PerArtist: []rule.ArtistFanartDup{
+			{ArtistID: "a1", Name: "Near Match Artist", ExactDrops: 0, PerceptualDrops: 4, TotalSlots: 31},
+		},
+	}, time.Now())
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/backdrop-duplicates", nil))
+	w := httptest.NewRecorder()
+	r.handleBackdropDuplicatesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="backdrop-duplicates-perceptual-notice"`) {
+		t.Errorf("PerceptualRedundantSlots > 0 must render the perceptual-duplicates notice; body: %s", body)
+	}
+	if !strings.Contains(body, `id="backdrop-duplicates-perceptual-slots"`) {
+		t.Error("page must expose the perceptual-redundant-slots stat tile")
+	}
+	// The row for the perceptual-only artist must carry its PerceptualDrops
+	// count (4) and TotalSlots (31), not read as clean because ExactDrops is 0.
+	if !strings.Contains(body, "Near Match Artist") {
+		t.Fatalf("row for the perceptual-only artist is missing entirely; body: %s", body)
+	}
+	// ExactRedundantSlots is 0, so the exact-only remediate button correctly
+	// does not appear -- but the perceptual-only row must still be visibly
+	// non-clean via the badge below, not silently absent from the page.
+	if !strings.Contains(body, t2716PerceptualOnlyBadgeSubstring) {
+		t.Errorf("perceptual-only row must carry a visible non-clean marker (the perceptual-only badge); body: %s", body)
+	}
+}
+
+// TestBackdropDuplicatesPage_NoPerceptualNoticeWhenZero is the negative half
+// of the notice test above: a report with PerceptualRedundantSlots == 0 must
+// NOT render the notice. Asserting only the present-branch (as the sibling
+// test above does) is vacuous against a mutant that always renders the
+// notice regardless of the count -- this is the test that catches it.
+func TestBackdropDuplicatesPage_NoPerceptualNoticeWhenZero(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithFanartPipeline(t, &fanartCapablePipeline{stubPipeline: &stubPipeline{}})
+	r.storeBackdropDupReport(rule.FanartDupReport{
+		ArtistsAffected:     1,
+		ExactRedundantSlots: 3,
+		PerArtist: []rule.ArtistFanartDup{
+			{ArtistID: "a1", Name: "Exact Only Artist", ExactDrops: 3, TotalSlots: 3},
+		},
+	}, time.Now())
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/backdrop-duplicates", nil))
+	w := httptest.NewRecorder()
+	r.handleBackdropDuplicatesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, `id="backdrop-duplicates-perceptual-notice"`) {
+		t.Error("PerceptualRedundantSlots == 0 must NOT render the perceptual-duplicates notice")
+	}
+	if strings.Contains(body, t2716PerceptualOnlyBadgeSubstring) {
+		t.Error("an exact-only artist row must not carry the perceptual-only badge")
+	}
+}
+
+// t2716PerceptualOnlyBadgeSubstring targets the badge ELEMENT, not its
+// rendered text. An earlier version asserted the text "Perceptual Only" and
+// was VACUOUS: the fixture artist was named "Perceptual Only Artist", so the
+// substring matched that row's own name whether or not the badge rendered.
+// Deleting the badge branch entirely still passed. A marker attribute cannot
+// collide with page copy, and the fixture artist is now named so that it
+// could not collide anyway.
+const t2716PerceptualOnlyBadgeSubstring = "data-sw-perceptual-only-badge"
+
 // TestBackdropDuplicatesRemediate_Error pins the remediate endpoint's error path:
 // if remediation fails, it returns 500 rather than a misleading success summary,
 // and releases the singleton so the next request is not blocked.
@@ -294,14 +382,18 @@ func TestBackdropDuplicatesRemediate_Error(t *testing.T) {
 }
 
 // TestBuildBackdropDuplicatesView pins the report-to-view-model conversion:
-// every PerArtist entry becomes a row and the totals pass through unchanged.
+// every PerArtist entry becomes a row and the totals -- including the #2716
+// perceptual fields -- pass through unchanged, and the percentage is computed
+// correctly for a known input.
 func TestBuildBackdropDuplicatesView(t *testing.T) {
 	report := rule.FanartDupReport{
-		ArtistsAffected:     1,
-		ExactRedundantSlots: 2,
-		ScanErrors:          1,
+		ArtistsAffected:          1,
+		ExactRedundantSlots:      2,
+		PerceptualRedundantSlots: 5,
+		TotalFanartSlots:         20,
+		ScanErrors:               1,
 		PerArtist: []rule.ArtistFanartDup{
-			{ArtistID: "a1", Name: "Artist One", ExactDrops: 2},
+			{ArtistID: "a1", Name: "Artist One", ExactDrops: 2, PerceptualDrops: 5, TotalSlots: 20},
 		},
 	}
 	view := buildBackdropDuplicatesView(report)
@@ -309,12 +401,47 @@ func TestBuildBackdropDuplicatesView(t *testing.T) {
 	if view.ArtistsAffected != 1 || view.ExactRedundantSlots != 2 || view.ScanErrors != 1 {
 		t.Fatalf("totals did not pass through: %+v", view)
 	}
+	if view.PerceptualRedundantSlots != 5 {
+		t.Errorf("PerceptualRedundantSlots = %d, want 5", view.PerceptualRedundantSlots)
+	}
+	if view.TotalFanartSlots != 20 {
+		t.Errorf("TotalFanartSlots = %d, want 20", view.TotalFanartSlots)
+	}
+	// 5 of 20 is 25%.
+	if view.PerceptualRedundantPercent != 25 {
+		t.Errorf("PerceptualRedundantPercent = %d, want 25 (5/20)", view.PerceptualRedundantPercent)
+	}
 	if len(view.Rows) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(view.Rows))
 	}
 	row := view.Rows[0]
 	if row.ArtistID != "a1" || row.Name != "Artist One" || row.ExactDrops != 2 {
 		t.Errorf("row mismatch: %+v", row)
+	}
+	if row.PerceptualDrops != 5 {
+		t.Errorf("row.PerceptualDrops = %d, want 5", row.PerceptualDrops)
+	}
+	if row.TotalSlots != 20 {
+		t.Errorf("row.TotalSlots = %d, want 20", row.TotalSlots)
+	}
+}
+
+// TestBuildBackdropDuplicatesView_ZeroTotalFanartSlots asserts the percentage
+// computation never divides by zero: a report with no affected artists (or,
+// defensively, a nonzero PerceptualRedundantSlots against a zero denominator)
+// must render 0%, not panic or produce NaN/Inf-adjacent garbage.
+func TestBuildBackdropDuplicatesView_ZeroTotalFanartSlots(t *testing.T) {
+	report := rule.FanartDupReport{
+		TotalFanartSlots:         0,
+		PerceptualRedundantSlots: 0,
+	}
+	view := buildBackdropDuplicatesView(report)
+
+	if view.PerceptualRedundantPercent != 0 {
+		t.Errorf("PerceptualRedundantPercent = %d, want 0 when TotalFanartSlots is 0", view.PerceptualRedundantPercent)
+	}
+	if view.TotalFanartSlots != 0 || view.PerceptualRedundantSlots != 0 {
+		t.Errorf("expected zero totals to pass through as zero: %+v", view)
 	}
 }
 
@@ -420,8 +547,11 @@ func TestBackdropDuplicatesRemediate_Success(t *testing.T) {
 			// The post-remediation rescan (#2684): the cache must end up
 			// reflecting THIS report, not whatever (if anything) was cached
 			// before the POST -- otherwise the page's HX-Refresh reload would
-			// show the stale pre-remediation duplicates.
-			return rule.FanartDupReport{ExactRedundantSlots: 0, ArtistsAffected: 0}, nil
+			// show the stale pre-remediation duplicates. Nonzero
+			// PerceptualRedundantSlots here (#2716) so the response's
+			// perceptual_duplicates_remain field has something distinct from
+			// slots_removed to assert against.
+			return rule.FanartDupReport{ExactRedundantSlots: 0, PerceptualRedundantSlots: 4, ArtistsAffected: 1}, nil
 		},
 	}
 	r := testRouterWithFanartPipeline(t, pipeline)
@@ -438,7 +568,7 @@ func TestBackdropDuplicatesRemediate_Success(t *testing.T) {
 		t.Errorf("HX-Refresh = %q, want true", hx)
 	}
 	body := w.Body.String()
-	for _, want := range []string{`"artists_processed":2`, `"slots_removed":3`, `"failures":1`} {
+	for _, want := range []string{`"artists_processed":2`, `"slots_removed":3`, `"failures":1`, `"perceptual_duplicates_remain":4`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q; body: %s", want, body)
 		}
@@ -556,5 +686,62 @@ func TestStoreBackdropDupReport_NewerScanWins(t *testing.T) {
 	got, _, _ := r.backdropDupReportSnapshot()
 	if got.ExactRedundantSlots != 2 {
 		t.Errorf("ExactRedundantSlots = %d, want 2: a newer scan must replace an older cached report", got.ExactRedundantSlots)
+	}
+}
+
+// TestBackdropDuplicatesRemediate_UnknownPerceptualCountIsNull pins the one
+// case where the surviving-perceptual count is genuinely UNKNOWN rather than
+// merely stale: no scan has ever landed, so the cache snapshot's ok bool is
+// false and its zero value means "nothing measured", not "nothing remains".
+//
+// Reporting 0 there would be a clean bill of health nobody established -- the
+// same false-clean claim #2716 exists to eliminate, relocated from the report
+// page into the API. null says "not known" and cannot be misread as "clean".
+//
+// Serial for the same reason TestBackdropDuplicatesRemediate_Success is: the
+// rescan path runs through the process-wide dupimages.Cache singleton, and a
+// parallel test constructing its own router re-points that singleton mid-run.
+func TestBackdropDuplicatesRemediate_UnknownPerceptualCountIsNull(t *testing.T) {
+	pipeline := &fanartCapablePipeline{
+		stubPipeline: &stubPipeline{},
+		remediateFn: func(_ context.Context) (rule.FanartRepairResult, error) {
+			return rule.FanartRepairResult{ArtistsProcessed: 1, SlotsRemoved: 2}, nil
+		},
+		// The rescan FAILS, so storeBackdropDupReport is never called and the
+		// cache stays unpopulated -- the cold-start shape this test is about.
+		scanFn: func(_ context.Context) (rule.FanartDupReport, error) {
+			return rule.FanartDupReport{}, errors.New("scan unavailable")
+		},
+	}
+	r := testRouterWithFanartPipeline(t, pipeline)
+
+	// Precondition: assert the cache really is empty. Without this the test
+	// would still pass if a snapshot HAD landed and simply happened to carry
+	// zero perceptual slots, which is a different state entirely.
+	if _, _, ok := r.backdropDupReportSnapshot(); ok {
+		t.Fatal("precondition failed: the report cache must be unpopulated for this test to mean anything")
+	}
+
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/backdrop-duplicates/remediate", nil)
+	w := httptest.NewRecorder()
+	r.handleBackdropDuplicatesRemediate(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding response: %v (body: %s)", err, w.Body.String())
+	}
+	v, present := got["perceptual_duplicates_remain"]
+	if !present {
+		t.Fatal("perceptual_duplicates_remain must be PRESENT and null, not omitted: an absent field reads as an older API rather than an unknown count")
+	}
+	if v != nil {
+		t.Errorf("perceptual_duplicates_remain = %v, want null when no scan has ever landed (0 would claim a clean state nothing measured)", v)
+	}
+	// The counts the run DID establish are still reported normally.
+	if got["slots_removed"] != float64(2) {
+		t.Errorf("slots_removed = %v, want 2", got["slots_removed"])
 	}
 }

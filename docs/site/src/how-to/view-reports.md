@@ -187,6 +187,14 @@ Remediation is safe by design:
 
 Only the copies stored locally are collapsed; backdrops already pushed to a connected platform are not removed by this action.
 
+### Perceptual duplicates
+
+Some redundant backdrops are visually near-identical but not byte-for-byte the same file -- the same picture saved twice at different quality or resolution, for example. The exact-duplicate scan cannot see these, because it matches by content hash, and a re-encoded copy hashes differently even though it looks the same on screen.
+
+Remediation reports these separately from the exact count it just collapsed, rather than folding them together. A run that removed only the byte-identical minority and left the look-alike majority in place should never read as a clean sweep -- "removed" and "declined to remove" are different outcomes, and the report keeps them distinguishable. This also means a re-run that appears to do nothing can be told apart from one that genuinely had nothing left to do: the first still shows a perceptual count, the second shows none.
+
+If remediation has never run, or no report has ever measured perceptual redundancy, the count is shown as unknown rather than as zero -- an unmeasured library is not the same claim as a clean one.
+
 ## Platform backdrop duplicates
 
 <!-- code: web/templates/platform_backdrop_duplicates.templ, internal/api/handlers_platform_backdrop_prune.go, internal/publish/backdrop_prune.go -->
