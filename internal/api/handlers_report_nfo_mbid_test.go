@@ -196,11 +196,17 @@ func TestNFOMBIDPane_CaveatsAreVisibleOnThePage(t *testing.T) {
 	// regardless of which pane is active -- so pin the assertion to the
 	// caveat band's own id rather than the shared role, or this test passes
 	// even if role="note" is dropped from the caveat band specifically.
-	if !strings.Contains(body, `id="nfo-mbid-caveats"`) {
-		t.Fatalf("pane's caveat band does not carry its id marker (id=\"nfo-mbid-caveats\")")
-	}
-	if !strings.Contains(body, `role="note"`) {
-		t.Fatalf("pane's caveat band does not carry role=\"note\"")
+	// Bind role="note" to the caveat band's OWN opening tag, not just to the
+	// page somewhere. The shared .sw-list-tips footer above also carries
+	// role="note", so a bare Contains(body, `role="note"`) would still pass
+	// if role="note" were deleted from the caveat band specifically -- the
+	// footer's copy alone would satisfy it. Matching the exact opening tag
+	// (id and role as sibling attributes on the same element, in the order
+	// the templ source emits them) ties the assertion to the caveat band
+	// itself.
+	if !strings.Contains(body, `<div id="nfo-mbid-caveats" class="sw-rep-blast-caveat" role="note">`) {
+		t.Fatalf("pane's caveat band element (id=\"nfo-mbid-caveats\") does not carry " +
+			"role=\"note\" on its own opening tag")
 	}
 }
 
@@ -219,6 +225,42 @@ func TestNFOMBIDPane_SummaryStatesTheFloorNotACount(t *testing.T) {
 	}
 }
 
+// TestNFOMBIDPane_OversizedPageClampsInsteadOfClaimingEmpty guards the fix for
+// an out-of-range ?page: requesting a page past the last one used to run
+// ListNFOMBIDWrites at the raw (unclamped) offset, which returns zero rows
+// while CountNFOMBIDWrites still reports the fixture's real total -- the pane
+// then rendered the "No rule-written MusicBrainz IDs recorded." empty state
+// right next to a nonzero count, a false claim. The fixture seeds 2 reported
+// rows at the default page size (50), so page=999 is unreachable by design.
+func TestNFOMBIDPane_OversizedPageClampsInsteadOfClaimingEmpty(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	seedAPIMBIDFixture(t, r)
+
+	req := httptest.NewRequest(http.MethodGet, "/reports/nfo-has-mbid?page=999", nil)
+	req = req.WithContext(middleware.WithTestUserID(req.Context(), "test-user"))
+	req.SetPathValue("name", "nfo-has-mbid")
+	req = withI18nCtx(t, req)
+	w := httptest.NewRecorder()
+	http.HandlerFunc(r.handleReportPage).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+
+	if strings.Contains(body, "No rule-written MusicBrainz IDs recorded.") {
+		t.Fatalf("pane rendered the empty state for ?page=999 even though the fixture " +
+			"has 2 reported rows; an out-of-range page must clamp to the last real page, " +
+			"not fall through to a false \"nothing recorded\" claim")
+	}
+	if !strings.Contains(body, `id="nfo-mbid-row-m-old"`) {
+		t.Fatalf("pane did not render seeded row m-old after clamping ?page=999 to the " +
+			"last valid page; the clamp must actually re-list rows, not just avoid the " +
+			"empty-state string")
+	}
+}
+
 // TestNFOMBIDPane_RowLinksToArtistDetail asserts every row carries a working
 // review link to the artist's own detail page -- the pane's only action,
 // since validating or reverting an ID is out of scope (issue #2810). A row
@@ -231,6 +273,37 @@ func TestNFOMBIDPane_RowLinksToArtistDetail(t *testing.T) {
 	if !strings.Contains(body, `href="/artists/mb-alpha"`) {
 		t.Fatalf("pane's row for artist mb-alpha does not link to its detail page " +
 			"(/artists/mb-alpha); an operator reviewing a rule-picked ID has no route to act on it")
+	}
+}
+
+// TestNFOMBIDPane_RowLinkKeepsBasePath asserts the row's review link is built
+// from the router's configured base path, not a bare "/artists/<id>". With
+// SW_BASE_PATH set (Stillwater served under a sub-path), a bare-rooted link
+// would leave the deployment path entirely -- the operator's browser
+// requests the wrong origin path and 404s. Asserts the full prefixed URL, not
+// a bare substring like "/artists/", which a regressed bare-rooted href would
+// also satisfy.
+func TestNFOMBIDPane_RowLinkKeepsBasePath(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	r.basePath = "/musicbrainz"
+	seedAPIMBIDFixture(t, r)
+
+	req := httptest.NewRequest(http.MethodGet, "/reports/nfo-has-mbid", nil)
+	req = req.WithContext(middleware.WithTestUserID(req.Context(), "test-user"))
+	req.SetPathValue("name", "nfo-has-mbid")
+	req = withI18nCtx(t, req)
+	w := httptest.NewRecorder()
+	http.HandlerFunc(r.handleReportPage).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+
+	if !strings.Contains(body, `href="/musicbrainz/artists/mb-alpha"`) {
+		t.Fatalf("pane's review link for mb-alpha does not carry the configured base "+
+			"path (/musicbrainz); got body without href=\"/musicbrainz/artists/mb-alpha\": %s", body)
 	}
 }
 

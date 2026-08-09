@@ -59,8 +59,8 @@ type repBuiltinReport struct {
 // nfo-has-mbid sits directly after blast-radius (#2809, the pane half of the
 // issue the maintainer reopened because an API + CSV alone did not meet the
 // "surfaced somewhere an operator can act on it" bar). It belongs beside
-// blast-radius rather than further down the rail: both report writes an
-// automated fixer made without operator confirmation, and this registry
+// blast-radius rather than further down the rail: both report on writes that
+// an automated fixer made without operator confirmation, and this registry
 // already sorts that kind of report above the lower-stakes ones (compliance
 // snapshots, coverage summaries) that follow.
 var repBuiltinReports = []repBuiltinReport{
@@ -3111,7 +3111,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 			}
 		}
 		for _, row := range data.Rows {
-			templ_7745c5c3_Err = nfoMBIDRow(row).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = nfoMBIDRow(data.BasePath, row).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3145,7 +3145,7 @@ func nfoMBIDCurrentIDLabel(ctx context.Context, row artist.NFOMBIDWriteRow) stri
 // artist, the ID it carries now, the recorded audit note, when, and a link to
 // the artist's own detail page -- the review action, since this report cannot
 // itself validate or revert an ID (issue #2810).
-func nfoMBIDRow(row artist.NFOMBIDWriteRow) templ.Component {
+func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -3282,9 +3282,9 @@ func nfoMBIDRow(row artist.NFOMBIDWriteRow) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var188 templ.SafeURL
-		templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/artists/" + row.ArtistID))
+		templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + row.ArtistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1433, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1433, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var188))
 		if templ_7745c5c3_Err != nil {

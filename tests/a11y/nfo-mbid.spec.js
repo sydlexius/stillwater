@@ -23,8 +23,29 @@ import { test, expect } from 'playwright/test';
 
 import { disableTransitions } from './helpers/settle.js';
 import { buildAxeBuilder, formatViolations, applyTheme, restorePersistedTheme } from './helpers/axe.js';
+import { seedNFOMBID } from './helpers/seed-nfo-mbid.js';
 
 const PANE_URL = '/reports/nfo-has-mbid';
+
+// The harness boots against an EMPTY library, so none of this pane's rows,
+// the "none recorded" cell, or the caveat band's real-data path exist until
+// the fixture is seeded. Seeded here (this spec's own beforeAll) rather than
+// in global-setup.js: the repo rule is that an a11y spec owns its own
+// fixture against the freshly started harness server, matching
+// backdrop-perceptual.spec.js's pattern. seedNFOMBID throws rather than
+// returning quietly when the report never populates, so a failure here reads
+// as "the fixture did not land", not as a defect in the pane.
+//
+// playwright.config.js declares both firefox-a11y and chromium-a11y, so this
+// beforeAll runs TWICE against the same server; seedNFOMBID is idempotent
+// (its scan step is a no-op on an already-scanned directory and its rule run
+// short-circuits once the target artist already carries the seeded
+// MusicBrainz ID), so the second run reads back the same row count instead of
+// doubling it or throwing.
+test.beforeAll(async ({ request }) => {
+  const seeded = await seedNFOMBID(request);
+  expect(seeded.rows, 'nfo-has-mbid fixture seeded 0 rows; the pane would render its empty state').toBeGreaterThan(0);
+});
 
 test.beforeEach(async ({ page }) => {
   await disableTransitions(page);
@@ -139,14 +160,16 @@ test('nfo-has-mbid pane passes full-page a11y scan (light theme)', async ({ page
 test('caveat band is genuinely visible, not collapsed or hidden', async ({ page }) => {
   await gotoPane(page);
 
-  // Locate by role WITHIN the pane, matching repPaneNFOHasMBID's
-  // role="note" markup. Scoped to #nfo-mbid-results' preceding sibling via
-  // the page's #sw-rep-pane container rather than a bare page.getByRole:
-  // the shared page footer (.sw-list-tips) also carries role="note" for an
-  // unrelated keyboard-shortcuts tip, so an unscoped query matches two
-  // elements and this assertion must not depend on which one axe or
-  // Playwright happens to resolve first.
-  const caveat = page.locator('#sw-rep-pane [role="note"]');
+  // Locate by the caveat band's OWN id, not by role: the shared page footer
+  // (.sw-list-tips) also carries role="note" for an unrelated
+  // keyboard-shortcuts tip, so a role-scoped query (even scoped to
+  // #sw-rep-pane) is ambiguous the moment that footer renders inside the
+  // pane container too, and this assertion must not depend on which
+  // role="note" element axe or Playwright happens to resolve first.
+  // Anchoring on #nfo-mbid-caveats ties the check to the specific element
+  // repPaneNFOHasMBID renders, matching the same id-first pattern the
+  // handler test uses for the same reason.
+  const caveat = page.locator('#nfo-mbid-caveats');
   await expect(caveat).toHaveCount(1);
   await expect(caveat).toBeVisible();
 

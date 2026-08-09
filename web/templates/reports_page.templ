@@ -51,8 +51,8 @@ type repBuiltinReport struct {
 // nfo-has-mbid sits directly after blast-radius (#2809, the pane half of the
 // issue the maintainer reopened because an API + CSV alone did not meet the
 // "surfaced somewhere an operator can act on it" bar). It belongs beside
-// blast-radius rather than further down the rail: both report writes an
-// automated fixer made without operator confirmation, and this registry
+// blast-radius rather than further down the rail: both report on writes that
+// an automated fixer made without operator confirmation, and this registry
 // already sorts that kind of report above the lower-stakes ones (compliance
 // snapshots, coverage summaries) that follow.
 var repBuiltinReports = []repBuiltinReport{
@@ -1387,7 +1387,7 @@ templ repPaneNFOHasMBID(data NFOMBIDPaneData) {
 					</tr>
 				}
 				for _, row := range data.Rows {
-					@nfoMBIDRow(row)
+					@nfoMBIDRow(data.BasePath, row)
 				}
 			</tbody>
 		</table>
@@ -1412,7 +1412,7 @@ func nfoMBIDCurrentIDLabel(ctx context.Context, row artist.NFOMBIDWriteRow) stri
 // artist, the ID it carries now, the recorded audit note, when, and a link to
 // the artist's own detail page -- the review action, since this report cannot
 // itself validate or revert an ID (issue #2810).
-templ nfoMBIDRow(row artist.NFOMBIDWriteRow) {
+templ nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) {
 	<tr id={ "nfo-mbid-row-" + row.ID } class="hover:bg-gray-50 dark:hover:bg-gray-800">
 		<td class="px-4 py-3 text-sm">{ row.ArtistName }</td>
 		<td class="px-4 py-3 text-sm font-mono">
@@ -1430,7 +1430,7 @@ templ nfoMBIDRow(row artist.NFOMBIDWriteRow) {
 		</td>
 		<td class="px-4 py-3 text-right">
 			<a
-				href={ templ.SafeURL("/artists/" + row.ArtistID) }
+				href={ templ.SafeURL(basePath + "/artists/" + row.ArtistID) }
 				class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 			>
 				{ t(ctx, "reports.nfo_has_mbid.review") }

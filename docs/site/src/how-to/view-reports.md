@@ -18,7 +18,7 @@ The narrow rail on the left lists all built-in reports. A filter box at the top 
 
 ## Live reports
 
-Five reports have fully implemented right panes:
+Six reports have fully implemented right panes:
 
 ### Compliance overview
 

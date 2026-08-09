@@ -1369,12 +1369,6 @@ func (r *Router) loadReportsNFOMBIDData(w http.ResponseWriter, req *http.Request
 
 	f := r.nfoMBIDPagedFilterFromRequest(req)
 
-	rows, err := r.historyService.ListNFOMBIDWrites(ctx, f)
-	if err != nil {
-		r.logger.Error("listing rule-written MusicBrainz ID rows for reports workspace", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return templates.NFOMBIDPaneData{}, false
-	}
 	counts, err := r.historyService.CountNFOMBIDWrites(ctx, f)
 	if err != nil {
 		r.logger.Error("counting rule-written MusicBrainz ID rows for reports workspace", "error", err)
@@ -1382,9 +1376,35 @@ func (r *Router) loadReportsNFOMBIDData(w http.ResponseWriter, req *http.Request
 		return templates.NFOMBIDPaneData{}, false
 	}
 
-	totalPages := counts.Total / f.Limit
-	if counts.Total%f.Limit > 0 {
-		totalPages++
+	totalPages := 0
+	if f.Limit > 0 {
+		totalPages = counts.Total / f.Limit
+		if counts.Total%f.Limit > 0 {
+			totalPages++
+		}
+	}
+
+	// Count before listing, and clamp an out-of-range page to the last valid
+	// one before listing it: requesting a page past the end (a stale bookmark,
+	// or the last page shrinking under concurrent deletion) must not leave
+	// rows empty while counts.Total is still positive -- that combination
+	// renders the pane's "no rows" empty state next to a nonzero count, which
+	// is a false claim. Deliberately NOT turning that combination into a 409
+	// for the caller to retry: it is a vanishing race, no sibling report pane
+	// (blast-radius, compliance) special-cases it, and the worst case here is
+	// one stale render a reload already fixes.
+	if counts.Total > 0 && f.Limit > 0 && f.Offset >= counts.Total {
+		f.Offset = (totalPages - 1) * f.Limit
+		if f.Offset < 0 {
+			f.Offset = 0
+		}
+	}
+
+	rows, err := r.historyService.ListNFOMBIDWrites(ctx, f)
+	if err != nil {
+		r.logger.Error("listing rule-written MusicBrainz ID rows for reports workspace", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return templates.NFOMBIDPaneData{}, false
 	}
 
 	return templates.NFOMBIDPaneData{

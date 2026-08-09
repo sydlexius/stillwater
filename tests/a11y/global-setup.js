@@ -20,7 +20,6 @@ import fs from 'node:fs';
 
 import { setupAndLogin } from './helpers/bootstrap.js';
 import { seedBlastRadius } from './helpers/seed-blast-radius.js';
-import { seedNFOMBID } from './helpers/seed-nfo-mbid.js';
 import { newRunId } from './helpers/known-violations.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,15 +73,12 @@ export default async function globalSetup() {
       + `(${seeded.automated} automated, ${seeded.unknown} unknown)`,
     );
 
-    // Seed the nfo-has-mbid fixture (#2809). Same reasoning as blast-radius
-    // above: the empty database means nfo-mbid.spec.js cannot reach a real
-    // row or a populated caveat band without this, and a half-seeded fixture
-    // must fail loudly here rather than surface as a confusing pane defect.
-    const nfoSeeded = await seedNFOMBID(ctx);
-    console.log(
-      `[a11y] nfo-has-mbid fixture: ${nfoSeeded.rows} row(s) `
-      + `(${nfoSeeded.writes} writes across ${nfoSeeded.artists} artist(s))`,
-    );
+    // The nfo-has-mbid fixture (#2809) is seeded by nfo-mbid.spec.js's own
+    // beforeAll, not here -- the repo rule is that an a11y spec owns its own
+    // fixture against the freshly started harness (see
+    // tests/a11y/backdrop-perceptual.spec.js for the same pattern). Seeding
+    // it globally would seed it on behalf of a spec file that never asked for
+    // it here and duplicate ownership of the same fixture in two places.
   } finally {
     await ctx.dispose();
   }
