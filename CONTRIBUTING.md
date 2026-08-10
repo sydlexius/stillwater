@@ -52,25 +52,38 @@ Short version:
    enforces this.
 2. Use a conventional-commit prefix (`feat:`, `fix:`, `docs:`, `chore:`,
    `refactor:`, `perf:`, `ci:`, `test:`, etc.) on the squash commit.
-3. Run `bash scripts/pre-push-gate.sh` before pushing. Every check in its
-   default path is **blocking**: if the gate exits 0 and prints "All hard
-   checks passed", every check that ran, passed (#2983). A check that should
-   not block does not belong in the default path, and
+3. Install the git hooks once with `make hooks`, then just push. The pre-push
+   hook runs `scripts/pre-push-gate.sh` for you, so there is no separate
+   pre-push step to remember and no reason to invoke the gate by hand (a
+   manual standalone run only duplicates the hook's work). Verify the wiring
+   any time with `make doctor`, which checks the hooks without changing
+   anything.
+
+   Every check in the gate's default path is **blocking**: if it exits 0 and
+   prints "All hard checks passed", every check that ran, passed (#2983). A
+   check that should not block does not belong in the default path, and
    `scripts/check-gate-invariant.sh` enforces that from inside the gate and
    from CI's `Gate Invariant` job.
 
    The local test step is a fast, changed-packages-only, non-race run over the
    exact packages whose files changed -- a quick "did I obviously break a
    test" signal, not a full CI-equivalent pass. It blocks on a failing
-   assertion as well as on a compile error (the two are reported differently,
-   since only the latter leaves no coverage profile). Force the full,
-   CI-equivalent local run with `RUN_RACE=1 bash scripts/pre-push-gate.sh`, or
-   skip the local test run and patch-coverage check together with
-   `RUN_RACE=0` -- worth reaching for when the changed package's own suite is
-   expensive. CI's required `Test` job runs the full `-race` suite and its
-   `Coverage Floor` job runs the per-package ratchet; both are authoritative.
-   The opt-in/opt-out accepts any of `1`, `true`, `yes`, `on`, `0`, `false`,
-   `no`, or `off` (case-insensitive, surrounding whitespace ignored).
+   assertion and on a compile error alike; both exit 1. The two get different
+   messages, but the wording is a best-effort **hint** only -- it is picked
+   from whether a coverage profile was produced, and that signal is not
+   reliable (on Go 1.26 a deliberate syntax error produced `[build failed]`
+   *and* a non-empty profile). Read the test output for the real cause.
+
+   Force the full, CI-equivalent local run with
+   `RUN_RACE=1 git push`, or skip the local test run and patch-coverage check
+   together with `RUN_RACE=0` -- worth reaching for when the changed package's
+   own suite is expensive. CI's required `Test` job runs the full `-race`
+   suite and its `Coverage Floor` job runs the per-package ratchet; both are
+   authoritative. The opt-in/opt-out accepts any of `1`, `true`, `yes`, `on`,
+   `0`, `false`, `no`, or `off` (case-insensitive, surrounding whitespace
+   ignored). Anything else is refused: a typo such as `RUN_RACE=truee` exits 2
+   naming the variable and the value, rather than being read as "unset" and
+   silently skipping a tier you asked to run.
 
    The accessibility (axe-core) smoke tests, the provider-failure smoke test,
    and `govulncheck` are **skipped by default** and each has a blocking
@@ -81,9 +94,9 @@ Short version:
    respectively (all configured as required status checks in the `Protect
    main` ruleset, which lives in repo settings rather than in-repo). Run the
    a11y tier locally when your change touches templates, CSS, or
-   `tests/a11y/`: `RUN_A11Y=1 bash scripts/pre-push-gate.sh` downloads the
-   Playwright browsers and boots an ephemeral server, so it adds minutes, but
-   CI catching the same violation costs a red check and a re-push.
+   `tests/a11y/`: `RUN_A11Y=1 git push` downloads the Playwright browsers and
+   boots an ephemeral server, so it adds minutes, but CI catching the same
+   violation costs a red check and a re-push.
 
    Bruno route parity is CI-only; the required "Bruno Route Parity" job runs
    `scripts/check-bruno-parity.sh` on every PR.
