@@ -45,7 +45,7 @@ import (
 //
 // There are three, and the third is the one that matters most. Read the
 // per-constant comments before adding a fourth.
-type MBIDValidationOutcome = string
+type MBIDValidationOutcome string
 
 // The three outcomes. Stored verbatim in mbid_validation.outcome, which
 // carries a CHECK constraint listing exactly these values.
@@ -82,7 +82,7 @@ const (
 // MBIDValidationReason is the machine-readable "why" behind a non-validated
 // outcome. A validated row carries the empty reason; every other row must
 // carry one, which the database enforces.
-type MBIDValidationReason = string
+type MBIDValidationReason string
 
 // The reason vocabulary. Stored verbatim in mbid_validation.reason, which
 // carries a CHECK constraint listing exactly these values plus the empty

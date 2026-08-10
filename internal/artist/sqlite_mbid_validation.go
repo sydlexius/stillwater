@@ -261,10 +261,12 @@ func scanMBIDValidation(s mbidValidationScanner) (*MBIDValidation, error) {
 // second attempt at SQLite's "YYYY-MM-DD HH:MM:SS" form covers that, and an
 // unparsable value is reported rather than swallowed.
 func parseMBIDValidationTimestamp(artistID, raw string) time.Time {
-	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+	t, err := time.Parse(time.RFC3339, raw)
+	if err == nil {
 		return t.UTC()
 	}
-	if t, err := time.Parse(time.DateTime, raw); err == nil {
+	t, err = time.Parse(time.DateTime, raw)
+	if err == nil {
 		return t.UTC()
 	}
 	// Deliberately the zero time, not time.Now(): a zero timestamp reads as
@@ -274,6 +276,7 @@ func parseMBIDValidationTimestamp(artistID, raw string) time.Time {
 	slog.Warn("unparsable checked_at in mbid_validation",
 		"artist_id", artistID,
 		"raw_value", raw,
+		"error", err,
 	)
 	return time.Time{}
 }
