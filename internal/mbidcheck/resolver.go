@@ -151,6 +151,40 @@ type Result struct {
 	// as its own finding rather than as one more low percentage.
 	RemoteReleaseGroupCount int
 
+	// LocalAlbumCount is how many local album titles the comparison actually
+	// ran against, -1 when no comparison was attempted.
+	//
+	// It exists because "found" is a claim and a count is a fact. An AlbumSet
+	// carrying EvidenceFound with an empty title list satisfies every
+	// evidence-based test in this package while having nothing to compare, so
+	// ZeroRemoteCatalogue reads THIS field rather than the evidence state when
+	// it asserts that the operator has albums on disk.
+	LocalAlbumCount int
+
+	// AlbumSourceErr is whatever the album source reported alongside its
+	// answer, nil when it reported none.
+	//
+	// It is carried rather than dropped because an AlbumSource may return a
+	// usable determination AND a non-nil error at the same time, and
+	// ChainAlbumSource does so deliberately: its short-circuit on the first
+	// EvidenceFound returns the failures of the sources tried before it, so a
+	// primary source that is quietly broken while a fallback covers for it is
+	// not invisible. A resolver that inspected only Evidence would close that
+	// channel one level up and re-hide exactly what the chain went to trouble
+	// to expose. Diagnostic only: no classification branches on it.
+	AlbumSourceErr error
+
+	// Anomaly marks a verdict that reflects a defect in STILLWATER rather than
+	// a fact about the artist or about MusicBrainz: an album source that
+	// violated its own contract, an evidence state this code does not
+	// recognize.
+	//
+	// It is separate from Transient (which says "do not overwrite a prior
+	// verdict with this") because the two answer different questions: Transient
+	// drives retry policy, Anomaly says a human should be looking at the code.
+	// Anomalous verdicts are logged at ERROR for that reason.
+	Anomaly bool
+
 	// NameScorePercent is the best 0-100 similarity between the local name and
 	// any name MusicBrainz carries for the id, -1 when the id never resolved.
 	NameScorePercent int
@@ -171,18 +205,42 @@ type Result struct {
 //
 // Exposed as a method so the sweep can raise a distinct operator-facing
 // finding without string-matching Detail.
+//
+// LocalAlbumCount is checked, not just the evidence state, and that is the
+// difference between the sentence above being true and being aspirational.
+// "EvidenceFound" is a source's CLAIM; an AlbumSet carrying EvidenceFound with
+// no titles would satisfy an evidence-only test while the operator holds
+// nothing on disk, and this finding would then fire on the wrong artists --
+// forging the exact 18-artist signal the feature exists to report.
 func (r Result) ZeroRemoteCatalogue() bool {
 	return r.RemoteReleaseGroupCount == 0 &&
 		r.LocalEvidence == artist.EvidenceFound &&
+		r.LocalAlbumCount > 0 &&
 		r.Validation.Outcome == artist.MBIDOutcomeFailed
 }
 
 // Resolver checks one artist's stored MusicBrainz id at a time.
 //
-// It is stateless apart from its dependencies and safe for concurrent use, but
-// note that its dependencies are not necessarily: the MusicBrainz adapter
-// serializes behind a shared rate limiter, so a caller gains nothing by
-// running many Resolve calls in parallel.
+// # CONCURRENCY
+//
+// A Resolver holds no mutable state of its own: every field is set once in New
+// and only read afterwards, and Resolve keeps everything else on the stack. It
+// is therefore safe for concurrent use PROVIDED the dependencies injected into
+// it are, and that is a REQUIREMENT ON THE CALLER, not a property this package
+// can establish. Whoever constructs a Resolver owns proving it:
+//
+//   - MusicBrainzClient: *musicbrainz.Adapter is safe, and serializes behind a
+//     shared rate limiter, so parallel Resolve calls against it buy throughput
+//     only up to that limiter and generally nothing at all.
+//   - artist.AlbumSource: the interface makes NO thread-safety guarantee, and
+//     neither FilesystemAlbumSource nor ChainAlbumSource documents one (both
+//     happen to be stateless today, which is an implementation detail and not
+//     a contract). A caching or connection-pooled source added later is
+//     covered by nothing written down, so a caller that fans Resolve out must
+//     check the source it is injecting rather than assume this sentence
+//     covers it.
+//   - *slog.Logger and the clock func: slog handlers are safe for concurrent
+//     use; a test clock must be.
 type Resolver struct {
 	mb     MusicBrainzClient
 	albums artist.AlbumSource
@@ -282,6 +340,8 @@ func New(mb MusicBrainzClient, albums artist.AlbumSource, opts ...Option) *Resol
 //	GetArtist -> any other error, or nil result  not_checkable  provider_unavailable
 //	local albums EvidenceUnknown                 not_checkable  no_local_albums
 //	local albums EvidenceNone                    not_checkable  no_local_albums
+//	local albums EvidenceFound with NO titles    not_checkable  no_local_albums
+//	local albums, unrecognized evidence state    not_checkable  no_local_albums
 //	GetReleaseGroups -> any error                not_checkable  provider_unavailable
 //	remote catalogue empty, local albums exist    failed         catalogue_mismatch
 //	name below threshold AND catalogue below      failed         resolves_to_different_artist
@@ -307,6 +367,20 @@ func New(mb MusicBrainzClient, albums artist.AlbumSource, opts ...Option) *Resol
 //     through, so an artist whose catalogue cannot be compared is reported as
 //     unverified rather than waved past. LocalEvidence separates "genuinely no
 //     albums" from "could not look".
+//
+//   - EvidenceFound with an EMPTY title list lands there too, and that row is
+//     load-bearing rather than defensive boilerplate. It is a source
+//     contradicting itself: "found" with nothing found. Letting it reach the
+//     comparison is the worst outcome available, because CompareAlbums only
+//     computes MatchPercent when LocalCount > 0, so an empty local side scores
+//     a DEFAULT 0 that is indistinguishable from a measured 0 -- the single
+//     strongest piece of evidence this feature can produce. The id would be
+//     condemned, a non-nil 0 written for a comparison that never ran, and the
+//     operator handed the self-refuting sentence "0 of 0 local albums".
+//     FilesystemAlbumSource cannot produce this state today, but the resolver
+//     accepts any artist.AlbumSource and ChainAlbumSource passes a member
+//     source's answer straight through, so trusting the claim is one buggy
+//     future source away from forging the headline finding.
 //
 //   - an EMPTY remote catalogue with local albums present is catalogue_mismatch
 //     rather than resolves_to_different_artist, matching the ledger's own
@@ -339,10 +413,34 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 		return Result{}, ErrNoStoredMBID
 	}
 
+	// ONE exit point for every classified verdict, and both post-conditions
+	// applied there rather than per-branch.
+	//
+	// They used to sit on the main comparison path only, so six of the eleven
+	// classification rows -- every outage row, every error row, i.e. exactly
+	// where a sweep spends most of a bad day -- returned unvalidated and
+	// unlogged. The Result doc's promise that a verdict always passes Validate
+	// was therefore false on the paths that matter most, and a MusicBrainz
+	// outage produced a nil error, a row the repository rejects three layers
+	// down as an opaque SQLite constraint failure, and not one log line at any
+	// level. A per-branch invariant is an invariant nobody maintains; this one
+	// cannot be forgotten by a future branch because there is nowhere else to
+	// return from.
+	res := r.classify(ctx, a, mbid)
+	if err := res.Validation.Validate(); err != nil {
+		return Result{}, fmt.Errorf("mbidcheck: built an invalid verdict for artist %s: %w", a.ID, err)
+	}
+	r.log(res)
+	return res, nil
+}
+
+// classify is Resolve's decision table. It returns a verdict for every input
+// and never validates or logs; Resolve owns both.
+func (r *Resolver) classify(ctx context.Context, a *artist.Artist, mbid string) Result {
 	// Checked before any work: a canceled sweep must not attribute its own
 	// shutdown to an artist.
 	if err := ctx.Err(); err != nil {
-		return r.transient(a, mbid, "", fmt.Sprintf("check abandoned before starting: %v", err)), nil
+		return r.transient(a, mbid, "", fmt.Sprintf("check abandoned before starting: %v", err))
 	}
 
 	meta, err := r.mb.GetArtist(ctx, mbid)
@@ -350,24 +448,49 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 	case err != nil:
 		var notFound *provider.ErrNotFound
 		if errors.As(err, &notFound) {
-			return r.notFound(a, mbid), nil
+			return r.notFound(a, mbid)
 		}
-		return r.transient(a, mbid, "", fmt.Sprintf("musicbrainz artist lookup failed: %v", err)), nil
+		return r.transient(a, mbid, "", fmt.Sprintf("musicbrainz artist lookup failed: %v", err))
 	case meta == nil:
 		// A nil result with a nil error is a broken client, not a statement
 		// about the artist. Classify it as our problem, never theirs.
-		return r.transient(a, mbid, "", "musicbrainz returned no artist and no error"), nil
+		return r.transient(a, mbid, "", "musicbrainz returned no artist and no error")
 	}
 
 	resolvedName := meta.Name
 	nameScore := bestNameScore(a, meta)
 
 	set, albumErr := r.albums.LocalAlbums(ctx, a)
-	switch set.Evidence {
-	case artist.EvidenceFound:
+	switch {
+	case set.Evidence == artist.EvidenceFound && len(set.Titles) > 0:
 		// The only state with a catalogue to compare. Falls through to the
 		// release-group fetch below.
-	case artist.EvidenceUnknown:
+	case set.Evidence == artist.EvidenceFound:
+		// "Found" with nothing found: the source contradicted its own
+		// contract. See the classification table's reasoning above for why
+		// this must not reach the comparison.
+		//
+		// TRANSIENT, and the call is deliberate rather than obvious. A source
+		// bug is not a retryable network condition, so "transient" reads
+		// wrong; but Transient's documented meaning here is "this verdict
+		// reflects a condition on OUR side rather than anything about the
+		// artist", which is precisely what a self-contradicting source is, and
+		// its only consumer-visible effect is the sweep's skip-don't-clear
+		// policy. Marking it false would let a Stillwater bug OVERWRITE a real
+		// prior finding with "not checkable" -- destroying evidence on account
+		// of our own defect. Anomaly carries the "this is a bug, not the
+		// world" half separately, and drives the ERROR log level.
+		res := r.notCheckable(a, mbid, artist.MBIDReasonNoLocalAlbums,
+			"album source reported albums found but returned no titles, so there was nothing to compare; this is a defect in the album source, not a fact about the artist")
+		res.Validation.ResolvedName = resolvedName
+		res.LocalEvidence = artist.EvidenceFound
+		res.LocalAlbumCount = 0
+		res.NameScorePercent = nameScore
+		res.AlbumSourceErr = albumErr
+		res.Transient = true
+		res.Anomaly = true
+		return res
+	case set.Evidence == artist.EvidenceUnknown:
 		// "I could not look" is NOT "the artist has no albums". Transient,
 		// because a missing mount or a permission problem is worth retrying.
 		res := r.notCheckable(a, mbid, artist.MBIDReasonNoLocalAlbums,
@@ -375,9 +498,10 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 		res.Validation.ResolvedName = resolvedName
 		res.LocalEvidence = artist.EvidenceUnknown
 		res.NameScorePercent = nameScore
+		res.AlbumSourceErr = albumErr
 		res.Transient = true
-		return res, nil
-	case artist.EvidenceNone:
+		return res
+	case set.Evidence == artist.EvidenceNone:
 		// A real determination: the source looked and found nothing. Not
 		// transient, and not a validation either -- there is no catalogue to
 		// compare, and the name alone has already been shown insufficient.
@@ -385,8 +509,10 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 			"artist has no albums on disk, so the catalogue comparison had nothing to compare")
 		res.Validation.ResolvedName = resolvedName
 		res.LocalEvidence = artist.EvidenceNone
+		res.LocalAlbumCount = 0
 		res.NameScorePercent = nameScore
-		return res, nil
+		res.AlbumSourceErr = albumErr
+		return res
 	default:
 		// An AlbumEvidence value this code does not recognize is, by
 		// definition, not a determination. It resolves toward "unknown"
@@ -396,8 +522,10 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 			fmt.Sprintf("album source reported an unrecognized evidence state %q", set.Evidence))
 		res.Validation.ResolvedName = resolvedName
 		res.NameScorePercent = nameScore
+		res.AlbumSourceErr = albumErr
 		res.Transient = true
-		return res, nil
+		res.Anomaly = true
+		return res
 	}
 
 	remote, err := r.mb.GetReleaseGroups(ctx, mbid)
@@ -409,8 +537,10 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 		res := r.transient(a, mbid, resolvedName,
 			fmt.Sprintf("musicbrainz release-group lookup failed: %v", err))
 		res.LocalEvidence = set.Evidence
+		res.LocalAlbumCount = len(set.Titles)
 		res.NameScorePercent = nameScore
-		return res, nil
+		res.AlbumSourceErr = albumErr
+		return res
 	}
 
 	remoteTitles := make([]string, 0, len(remote))
@@ -432,8 +562,10 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 
 	res := Result{
 		LocalEvidence:           set.Evidence,
+		LocalAlbumCount:         comp.LocalCount,
 		RemoteReleaseGroupCount: len(remote),
 		NameScorePercent:        nameScore,
+		AlbumSourceErr:          albumErr,
 		Validation: artist.MBIDValidation{
 			ArtistID:              a.ID,
 			MBID:                  mbid,
@@ -477,11 +609,7 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 			nameScore, comp.MatchPercent, comp.MatchCount, comp.LocalCount, len(remote))
 	}
 
-	if err := res.Validation.Validate(); err != nil {
-		return Result{}, fmt.Errorf("mbidcheck: built an invalid verdict for artist %s: %w", a.ID, err)
-	}
-	r.log(res)
-	return res, nil
+	return res
 }
 
 // notFound builds the "MusicBrainz has no artist under this id" verdict.
@@ -508,6 +636,7 @@ func (r *Resolver) transient(a *artist.Artist, mbid, resolvedName, detail string
 func (r *Resolver) notCheckable(a *artist.Artist, mbid string, reason artist.MBIDValidationReason, detail string) Result {
 	return Result{
 		LocalEvidence:           artist.EvidenceUnknown,
+		LocalAlbumCount:         -1,
 		RemoteReleaseGroupCount: -1,
 		NameScorePercent:        -1,
 		Validation: artist.MBIDValidation{
@@ -521,7 +650,29 @@ func (r *Resolver) notCheckable(a *artist.Artist, mbid string, reason artist.MBI
 	}
 }
 
-// log emits one line per verdict at a level matching its severity.
+// log emits exactly one line per verdict, at a level matching its severity.
+//
+// EVERY verdict is logged, including every not-checkable one. Previously only
+// the main comparison path reached here and anything short of "failed" went to
+// Debug, which is off in production, so a MusicBrainz outage during a sweep
+// produced no line at any level for any affected artist -- "unknown rendered
+// as clean", one level down from the ledger the package exists to prevent it
+// in.
+//
+// The levels:
+//
+//   - ERROR for an anomaly. An album source that broke its own contract, or an
+//     evidence state this code does not recognize, is a programming error in
+//     Stillwater. Nobody will notice it in a Debug line, and it silently
+//     removes artists from the checked population.
+//   - WARN for a failed verdict (an id needing an operator's attention) and
+//     for provider_unavailable (an outage; one line per artist is what makes a
+//     sweep that checked nothing distinguishable from a sweep that found
+//     nothing).
+//   - INFO for the remaining not-checkable verdicts: mbid_not_found and
+//     no_local_albums are ordinary states of a real library, expected in bulk,
+//     and are reported through the ledger rather than the log.
+//   - DEBUG for a validated verdict. It is the common case and the good one.
 func (r *Resolver) log(res Result) {
 	attrs := []any{
 		slog.String("artist_id", res.Validation.ArtistID),
@@ -529,17 +680,36 @@ func (r *Resolver) log(res Result) {
 		slog.String("outcome", string(res.Validation.Outcome)),
 		slog.String("reason", string(res.Validation.Reason)),
 		slog.String("local_evidence", res.LocalEvidence.String()),
+		slog.Int("local_albums", res.LocalAlbumCount),
 		slog.Int("remote_release_groups", res.RemoteReleaseGroupCount),
 		slog.Int("name_similarity_percent", res.NameScorePercent),
+		slog.Bool("transient", res.Transient),
+		slog.String("detail", res.Validation.Detail),
 	}
 	if res.Validation.CatalogueMatchPercent != nil {
 		attrs = append(attrs, slog.Float64("catalogue_match_percent", *res.Validation.CatalogueMatchPercent))
 	}
-	if res.Validation.Outcome == artist.MBIDOutcomeFailed {
-		r.logger.Warn("stored musicbrainz id failed re-validation", attrs...)
-		return
+	// Logged whenever it is non-nil, INCLUDING alongside a usable answer.
+	// ChainAlbumSource returns the failures of earlier sources next to the
+	// first EvidenceFound precisely so a primary source that is quietly broken
+	// while a fallback covers for it is not invisible; dropping the error
+	// because Evidence was usable would close that channel here.
+	if res.AlbumSourceErr != nil {
+		attrs = append(attrs, slog.String("album_source_error", res.AlbumSourceErr.Error()))
 	}
-	r.logger.Debug("stored musicbrainz id re-validated", attrs...)
+
+	switch {
+	case res.Anomaly:
+		r.logger.Error("mbid re-validation hit an internal anomaly", attrs...)
+	case res.Validation.Outcome == artist.MBIDOutcomeFailed:
+		r.logger.Warn("stored musicbrainz id failed re-validation", attrs...)
+	case res.Validation.Reason == artist.MBIDReasonProviderUnavailable:
+		r.logger.Warn("stored musicbrainz id could not be checked: provider unavailable", attrs...)
+	case res.Validation.Outcome == artist.MBIDOutcomeNotCheckable:
+		r.logger.Info("stored musicbrainz id could not be checked", attrs...)
+	default:
+		r.logger.Debug("stored musicbrainz id re-validated", attrs...)
+	}
 }
 
 // bestNameScore scores the local artist name against every name MusicBrainz
@@ -553,8 +723,10 @@ func (r *Resolver) log(res Result) {
 // to scoring the raw strings. provider.NormalizeName strips a LEADING "The "
 // but not a TRAILING ", The", so "Beatles, The" against "The Beatles" scores
 // 64 by raw comparison and would be reported as a name mismatch on an artist
-// whose catalogue matches perfectly. Since a failed row is an operator's time,
-// spending it on a known-benign spelling difference is a defect.
+// whose catalogue matches perfectly. The same holds for a person foldered
+// "Bowie, David", which scores 28 against "David Bowie". Since a failed row is
+// an operator's time, spending it on a known-benign spelling difference is a
+// defect. See unsortNames for which strings get a reordered reading.
 func bestNameScore(a *artist.Artist, meta *provider.ArtistMetadata) int {
 	candidates := make([]string, 0, 2+len(meta.Aliases))
 	candidates = append(candidates, meta.Name, meta.SortName)
@@ -570,17 +742,13 @@ func bestNameScore(a *artist.Artist, meta *provider.ArtistMetadata) int {
 		return best
 	}
 
-	normLocal := make([]string, 0, 2)
+	normLocal := make([]string, 0, 4)
 	for _, n := range []string{a.Name, a.SortName} {
-		if v := unsortName(n); v != "" {
-			normLocal = append(normLocal, v)
-		}
+		normLocal = append(normLocal, unsortNames(n)...)
 	}
-	normRemote := make([]string, 0, len(candidates))
+	normRemote := make([]string, 0, 2*len(candidates))
 	for _, n := range candidates {
-		if v := unsortName(n); v != "" {
-			normRemote = append(normRemote, v)
-		}
+		normRemote = append(normRemote, unsortNames(n)...)
 	}
 	for _, l := range normLocal {
 		if s := provider.BestNameSimilarity(l, normRemote...); s > best {
@@ -590,26 +758,70 @@ func bestNameScore(a *artist.Artist, meta *provider.ArtistMetadata) int {
 	return best
 }
 
-// unsortName rewrites a sort-name-style string into natural order: "Beatles,
-// The" becomes "the beatles", which provider.NormalizeName then reduces to
-// "beatles". A name with no comma is returned normalized but otherwise
-// untouched. Only a SINGLE trailing comma-separated fragment is moved, so
-// "Emerson, Lake & Palmer" is left alone by the trailing-article test below.
-func unsortName(s string) string {
+// unsortNames returns every normalized reading of a possibly sort-ordered
+// name, most literal first: always the string as written, plus the
+// natural-order rewrite when the string looks sort-ordered. "Beatles, The"
+// yields "beatles" (via "the beatles", which provider.NormalizeName reduces)
+// and "beatles, the" -> "beatles the"; "Bowie, David" yields "bowie david" and
+// "david bowie". A name with no comma yields one entry.
+//
+// It returns CANDIDATES rather than picking one, and that is what makes
+// handling people safe. bestNameScore takes the MAXIMUM over candidates, so an
+// extra reading can only ever raise a score, never lower one: a wrong guess
+// about which side of the comma is the surname costs nothing, while the reading
+// that was previously missing is now available. Compare the old single-return
+// form, which had to be right.
+//
+// # WHY THIS EXISTS
+//
+// The previous code moved only a trailing "the"/"a"/"an" and justified leaving
+// people alone on the grounds that reordering "would not change the normalized
+// comparison anyway". That premise was simply false, and measurably so:
+// unsortName("Bowie, David") returned "bowie david", which scores 28 against
+// "David Bowie". An artist foldered surname-first with a perfectly matching
+// catalogue was therefore filed as name_mismatch at 28% -- a failed row costing
+// an operator a look at a benign spelling difference, which is the exact defect
+// the sort-name handling was added to prevent for bands.
+//
+// # THE AMBIGUOUS CASES, AND WHY THEY ARE SAFE
+//
+// A comma in an artist name does not reliably mean "sort order": "Emerson,
+// Lake & Palmer" and "Crosby, Stills & Nash" are names as written. The rewrite
+// is therefore attempted only when the string carries EXACTLY ONE comma and the
+// text after it is a SINGLE word, which excludes both of those (their tails are
+// multi-word) while covering "Surname, Forename" and "Band, The". A band
+// genuinely named "X, Y" gets an extra harmless candidate that no real
+// MusicBrainz name will match, and the max keeps its true reading intact.
+//
+// Names with two or more commas ("Davis, Miles, Jr.") are left as written: the
+// correct rearrangement is genuinely unclear, and the catalogue comparison --
+// not the name -- is this feature's load-bearing signal.
+func unsortNames(s string) []string {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return ""
+		return nil
 	}
-	if idx := strings.LastIndex(s, ","); idx > 0 {
-		head := strings.TrimSpace(s[:idx])
-		tail := strings.TrimSpace(s[idx+1:])
-		// Only articles move. Anything else after a comma is part of the name
-		// (a band with a comma in it, a "Surname, Forename" person whose
-		// reordering would not change the normalized comparison anyway).
-		switch strings.ToLower(tail) {
-		case "the", "a", "an":
-			s = tail + " " + head
-		}
+
+	out := make([]string, 0, 2)
+	// Kept as a separate variable rather than read back as out[0]: a name that
+	// is entirely punctuation ("!!!") normalizes to empty and is not appended,
+	// so out may still be empty here.
+	asWritten := provider.NormalizeName(s)
+	if asWritten != "" {
+		out = append(out, asWritten)
 	}
-	return provider.NormalizeName(s)
+
+	idx := strings.Index(s, ",")
+	if idx <= 0 || strings.Count(s, ",") != 1 {
+		return out
+	}
+	head := strings.TrimSpace(s[:idx])
+	tail := strings.TrimSpace(s[idx+1:])
+	if head == "" || tail == "" || strings.ContainsAny(tail, " \t") {
+		return out
+	}
+	if v := provider.NormalizeName(tail + " " + head); v != "" && v != asWritten {
+		out = append(out, v)
+	}
+	return out
 }

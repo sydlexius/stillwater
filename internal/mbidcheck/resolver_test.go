@@ -114,6 +114,7 @@ func TestResolveClassification(t *testing.T) {
 		wantOutcome   artist.MBIDValidationOutcome
 		wantReason    artist.MBIDValidationReason
 		wantTransient bool
+		wantAnomaly   bool
 		// wantPercent is checked only when wantPercentSet; otherwise the test
 		// asserts CatalogueMatchPercent is nil ("not measured").
 		wantPercent    float64
@@ -334,6 +335,26 @@ func TestResolveClassification(t *testing.T) {
 			wantEvidence:  artist.EvidenceNone,
 			wantResolved:  "Example Band",
 		},
+		{
+			// A source claiming "found" while returning nothing found. It must
+			// never reach the comparison, where an empty local side scores a
+			// DEFAULT 0 indistinguishable from a measured one. See
+			// TestEmptyFoundNeverCondemnsOrForgesTheSignal for the full guard.
+			name:   "not_checkable: evidence found with no titles is a source defect",
+			artist: testArtist(),
+			mb: &fakeMB{
+				meta:   &provider.ArtistMetadata{Name: "Example Band"},
+				groups: rgs("First Record"),
+			},
+			albums:        stubAlbums{set: artist.AlbumSet{Evidence: artist.EvidenceFound}},
+			wantOutcome:   artist.MBIDOutcomeNotCheckable,
+			wantReason:    artist.MBIDReasonNoLocalAlbums,
+			wantTransient: true,
+			wantAnomaly:   true,
+			wantEvidence:  artist.EvidenceFound,
+			wantResolved:  "Example Band",
+			wantDetail:    "returned no titles",
+		},
 	}
 
 	for _, tc := range tests {
@@ -364,6 +385,9 @@ func TestResolveClassification(t *testing.T) {
 			}
 			if got.Transient != tc.wantTransient {
 				t.Errorf("Transient = %v, want %v", got.Transient, tc.wantTransient)
+			}
+			if got.Anomaly != tc.wantAnomaly {
+				t.Errorf("Anomaly = %v, want %v", got.Anomaly, tc.wantAnomaly)
 			}
 			if got.LocalEvidence != tc.wantEvidence {
 				t.Errorf("LocalEvidence = %v, want %v", got.LocalEvidence, tc.wantEvidence)
@@ -831,12 +855,64 @@ func TestThresholdOptions(t *testing.T) {
 
 	// An out-of-range value is ignored, so the default (25) still applies and
 	// the same fixture validates.
-	bogus, err := newTestResolver(mb(), local, WithCatalogueThreshold(-5), WithNameThreshold(9999)).Resolve(t.Context(), testArtist())
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+	//
+	// Both out-of-range values are chosen ABOVE the range rather than below.
+	// A below-range catalogue threshold (-5) would make the fixture validate
+	// whether it were honored or ignored, so that assertion could not fail
+	// either way; 150 and 9999 change the outcome if honored, which is what
+	// makes "ignored" observable at all.
+	for _, tc := range []struct {
+		name string
+		opt  Option
+	}{
+		{"catalogue threshold above range", WithCatalogueThreshold(150)},
+		{"catalogue threshold below range", WithCatalogueThreshold(-5)},
+		{"name threshold above range", WithNameThreshold(9999)},
+		{"name threshold below range", WithNameThreshold(-1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			bogus, err := newTestResolver(mb(), local, tc.opt).Resolve(t.Context(), testArtist())
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if bogus.Validation.Outcome != artist.MBIDOutcomeValidated {
+				t.Errorf("with an out-of-range threshold: outcome = %q/%q, want validated (documented defaults retained)",
+					bogus.Validation.Outcome, bogus.Validation.Reason)
+			}
+		})
 	}
-	if bogus.Validation.Outcome != artist.MBIDOutcomeValidated {
-		t.Errorf("with out-of-range thresholds: outcome = %q, want validated (defaults retained)", bogus.Validation.Outcome)
+}
+
+// TestOutOfRangeThresholdsRetainTheDefaults states the same guard as a direct
+// assertion on the resolver's own fields, so a failure names the defect
+// (a threshold silently took an impossible value) rather than only its effect
+// on one fixture. A below-range value cannot be caught by outcome alone: it
+// makes everything match, which looks exactly like the default validating.
+func TestOutOfRangeThresholdsRetainTheDefaults(t *testing.T) {
+	t.Parallel()
+
+	for _, percent := range []int{-1, -5, 101, 9999} {
+		r := New(&fakeMB{}, found("First Record"),
+			WithLogger(slog.New(slog.DiscardHandler)),
+			WithNameThreshold(percent), WithCatalogueThreshold(percent))
+		if r.nameThreshold != DefaultNameSimilarityPercent {
+			t.Errorf("WithNameThreshold(%d): nameThreshold = %d, want the default %d",
+				percent, r.nameThreshold, DefaultNameSimilarityPercent)
+		}
+		if r.catalogueThreshold != DefaultCatalogueMatchPercent {
+			t.Errorf("WithCatalogueThreshold(%d): catalogueThreshold = %d, want the default %d",
+				percent, r.catalogueThreshold, DefaultCatalogueMatchPercent)
+		}
+	}
+
+	// PRECONDITION-style control: an IN-range value must still reach the
+	// resolver, or the assertions above would pass on an option that does
+	// nothing at all.
+	r := New(&fakeMB{}, found("First Record"), WithLogger(slog.New(slog.DiscardHandler)),
+		WithNameThreshold(55), WithCatalogueThreshold(60))
+	if r.nameThreshold != 55 || r.catalogueThreshold != 60 {
+		t.Errorf("in-range options did not reach the resolver: name=%d catalogue=%d", r.nameThreshold, r.catalogueThreshold)
 	}
 }
 
@@ -1005,4 +1081,639 @@ func TestUnrecognizedEvidenceStateDeclines(t *testing.T) {
 	if mb.groupCalls != 0 {
 		t.Errorf("release groups were fetched (%d calls) for an unrecognized evidence state", mb.groupCalls)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Guards added after the hostile review of the first commit
+// ---------------------------------------------------------------------------
+
+// TestEmptyFoundNeverCondemnsOrForgesTheSignal covers the worst shape an album
+// source can hand this package: EvidenceFound with an EMPTY title list, a
+// source contradicting its own contract.
+//
+// Two distinct defects follow from letting it reach the comparison, and this
+// test pins both:
+//
+//  1. CompareAlbums only computes MatchPercent when LocalCount > 0, so an empty
+//     local side yields a DEFAULT 0 that is arithmetically identical to the
+//     strongest evidence this feature can produce. The id gets condemned, and a
+//     non-nil 0 is written to CatalogueMatchPercent for a comparison that never
+//     ran -- through a side door, the exact "nil means never measured"
+//     invariant the pointer type exists to hold.
+//  2. With an empty REMOTE catalogue too, ZeroRemoteCatalogue() would fire on
+//     an artist holding nothing on disk, forging the headline finding (the 18
+//     production artists whose defining property is albums on disk against an
+//     empty remote catalogue).
+//
+// FilesystemAlbumSource cannot produce this state today. ChainAlbumSource
+// returns a member source's answer as-is, so it is one buggy future source
+// away, and this package's whole thesis is never to trust an unverified claim.
+func TestEmptyFoundNeverCondemnsOrForgesTheSignal(t *testing.T) {
+	t.Parallel()
+
+	emptyFound := stubAlbums{set: artist.AlbumSet{Titles: nil, Evidence: artist.EvidenceFound}}
+
+	// PRECONDITION: the fixture really is the self-contradicting shape, or
+	// every assertion below is about some other case.
+	set, _ := emptyFound.LocalAlbums(t.Context(), testArtist())
+	if set.Evidence != artist.EvidenceFound {
+		t.Fatalf("precondition: fixture evidence = %v, want found", set.Evidence)
+	}
+	if len(set.Titles) != 0 {
+		t.Fatalf("precondition: fixture must carry NO titles, carries %d", len(set.Titles))
+	}
+	// PRECONDITION: and the comparison really would report a bare 0 for it, so
+	// the defect being guarded is real rather than hypothetical.
+	comp := artist.CompareAlbumSet(set, []string{"Some Remote Record", "Another"})
+	if comp.MatchPercent != 0 || comp.LocalCount != 0 {
+		t.Fatalf("precondition: CompareAlbumSet on an empty local side = %d%% over %d local, want 0%% over 0",
+			comp.MatchPercent, comp.LocalCount)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		groups []provider.ReleaseGroupInfo
+	}{
+		{"remote catalogue present", rgs("Some Remote Record", "Another")},
+		{"remote catalogue empty", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: tc.groups}
+			got, err := newTestResolver(mb, emptyFound).Resolve(t.Context(), testArtist())
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+
+			if got.Validation.Outcome == artist.MBIDOutcomeFailed {
+				t.Errorf("an album source that returned no titles produced a FAILED verdict (reason %q, detail %q); "+
+					"a source contradicting its own contract is not evidence against the id",
+					got.Validation.Reason, got.Validation.Detail)
+			}
+			if got.Validation.Outcome == artist.MBIDOutcomeValidated {
+				t.Error("an empty catalogue VALIDATED the id; an uncompared catalogue must never vindicate one")
+			}
+			if got.Validation.Outcome != artist.MBIDOutcomeNotCheckable {
+				t.Errorf("outcome = %q, want not_checkable", got.Validation.Outcome)
+			}
+			if got.Validation.CatalogueMatchPercent != nil {
+				t.Errorf("CatalogueMatchPercent = %v, want nil; NOTHING was compared, and a non-nil 0 is "+
+					"indistinguishable from the strongest evidence this feature produces",
+					*got.Validation.CatalogueMatchPercent)
+			}
+			if got.ZeroRemoteCatalogue() {
+				t.Error("ZeroRemoteCatalogue() = true with no albums on disk; that finding claims the operator HAS albums")
+			}
+			if !got.Transient {
+				t.Error("Transient = false; a Stillwater-side defect must not overwrite a real prior verdict")
+			}
+			if !got.Anomaly {
+				t.Error("Anomaly = false; a source breaking its own contract is a programming error and must log loudly")
+			}
+			if got.LocalAlbumCount != 0 {
+				t.Errorf("LocalAlbumCount = %d, want 0", got.LocalAlbumCount)
+			}
+			// The operator-facing prose must not present a non-comparison as a
+			// below-threshold failure ("0 of 0 local albums").
+			if strings.Contains(got.Validation.Detail, "of 0 local albums") {
+				t.Errorf("Detail = %q reports a below-threshold comparison over an empty catalogue", got.Validation.Detail)
+			}
+			if err := got.Validation.Validate(); err != nil {
+				t.Errorf("emitted verdict is not persistable: %v", err)
+			}
+		})
+	}
+}
+
+// TestZeroRemoteCatalogueRequiresAlbumsOnDisk pins the method's own doc
+// comment: the finding claims the operator HAS albums on disk, so a Result
+// whose local side is empty must not satisfy it however the evidence field
+// reads. Without the count check the sentence was aspirational, and the
+// headline 18-artist signal could fire on artists lacking its defining
+// property.
+func TestZeroRemoteCatalogueRequiresAlbumsOnDisk(t *testing.T) {
+	t.Parallel()
+
+	base := func() Result {
+		return Result{
+			LocalEvidence:           artist.EvidenceFound,
+			LocalAlbumCount:         2,
+			RemoteReleaseGroupCount: 0,
+			Validation:              artist.MBIDValidation{Outcome: artist.MBIDOutcomeFailed},
+		}
+	}
+
+	// PRECONDITION: the base Result really is the headline finding, or the
+	// negative cases below prove nothing.
+	if !base().ZeroRemoteCatalogue() {
+		t.Fatal("precondition: the base fixture should BE the zero-remote-catalogue finding")
+	}
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Result)
+	}{
+		{"no albums on disk", func(r *Result) { r.LocalAlbumCount = 0 }},
+		{"album count never established", func(r *Result) { r.LocalAlbumCount = -1 }},
+		{"local evidence not found", func(r *Result) { r.LocalEvidence = artist.EvidenceUnknown }},
+		{"remote groups never fetched", func(r *Result) { r.RemoteReleaseGroupCount = -1 }},
+		{"outcome not failed", func(r *Result) { r.Validation.Outcome = artist.MBIDOutcomeNotCheckable }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			res := base()
+			tc.mutate(&res)
+			if res.ZeroRemoteCatalogue() {
+				t.Errorf("ZeroRemoteCatalogue() = true for %q; the finding asserts albums on disk against an empty remote catalogue", tc.name)
+			}
+		})
+	}
+}
+
+// TestEveryVerdictIsPersistable is the guard the old suite only appeared to
+// carry. TestResolveClassification calls Validate() on every case, but every
+// fixture there has a valid ArtistID, so that assertion passes whether or not
+// Resolve validates anything -- it tests the fixture, not the code.
+//
+// Here the artist is deliberately unpersistable (no ID), so a path that skips
+// Validate() returns a nil error and a row the repository rejects three layers
+// down as an opaque SQLite constraint failure. Every classification path is
+// walked, because the ones that used to skip validation were exactly the outage
+// and error paths where a sweep spends most of a bad day.
+func TestEveryVerdictIsPersistable(t *testing.T) {
+	t.Parallel()
+
+	// PRECONDITION: the fixture must genuinely fail Validate, or every case is
+	// vacuous in the same way the old assertion was.
+	probe := artist.MBIDValidation{
+		ArtistID:  "",
+		MBID:      "11111111-2222-3333-4444-555555555555",
+		Outcome:   artist.MBIDOutcomeNotCheckable,
+		Reason:    artist.MBIDReasonProviderUnavailable,
+		CheckedAt: time.Now().UTC(),
+	}
+	if err := probe.Validate(); err == nil {
+		t.Fatal("precondition: a row with no artist id should fail Validate; this test cannot detect anything")
+	}
+
+	badArtist := func() *artist.Artist {
+		a := testArtist()
+		a.ID = "" // unpersistable: Validate requires an artist id
+		return a
+	}
+
+	cases := []struct {
+		name   string
+		mb     *fakeMB
+		albums artist.AlbumSource
+		ctx    func(t *testing.T) context.Context
+	}{
+		{
+			name:   "validated",
+			mb:     &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+			albums: found("First Record"),
+		},
+		{
+			name:   "failed",
+			mb:     &fakeMB{meta: &provider.ArtistMetadata{Name: "Someone Else"}, groups: rgs("Unrelated")},
+			albums: found("First Record"),
+		},
+		{
+			name:   "mbid not found",
+			mb:     &fakeMB{metaErr: &provider.ErrNotFound{Provider: provider.NameMusicBrainz, ID: "x"}},
+			albums: found("First Record"),
+		},
+		{
+			name:   "provider unavailable on the artist lookup",
+			mb:     &fakeMB{metaErr: errors.New("dial tcp: i/o timeout")},
+			albums: found("First Record"),
+		},
+		{
+			name:   "client returned no artist and no error",
+			mb:     &fakeMB{},
+			albums: found("First Record"),
+		},
+		{
+			name:   "provider unavailable on the release-group lookup",
+			mb:     &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groupsErr: errors.New("503")},
+			albums: found("First Record"),
+		},
+		{
+			name:   "local albums unknown",
+			mb:     &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+			albums: stubAlbums{set: artist.AlbumSet{Evidence: artist.EvidenceUnknown}, err: errors.New("no mount")},
+		},
+		{
+			name:   "local albums none",
+			mb:     &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+			albums: stubAlbums{set: artist.AlbumSet{Evidence: artist.EvidenceNone}},
+		},
+		{
+			name:   "local albums found but empty",
+			mb:     &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+			albums: stubAlbums{set: artist.AlbumSet{Evidence: artist.EvidenceFound}},
+		},
+		{
+			name:   "unrecognized evidence state",
+			mb:     &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+			albums: stubAlbums{set: artist.AlbumSet{Titles: []string{"First Record"}, Evidence: artist.AlbumEvidence(99)}},
+		},
+		{
+			name:   "context already canceled",
+			mb:     &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+			albums: found("First Record"),
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				return ctx
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			if tc.ctx != nil {
+				ctx = tc.ctx(t)
+			}
+
+			got, err := newTestResolver(tc.mb, tc.albums).Resolve(ctx, badArtist())
+			if err == nil {
+				t.Fatalf("Resolve returned a nil error and outcome %q/%q for an artist that cannot be persisted; "+
+					"the caller would hand this row to the repository and get an opaque constraint failure",
+					got.Validation.Outcome, got.Validation.Reason)
+			}
+			if !strings.Contains(err.Error(), "invalid verdict") {
+				t.Errorf("error = %v, want the resolver's own named invalid-verdict error", err)
+			}
+			// A rejected verdict is returned as the zero Result, so a caller
+			// that ignores the error cannot persist a half-built row either.
+			if got.Validation.Outcome != "" {
+				t.Errorf("outcome = %q alongside an error, want the zero Result", got.Validation.Outcome)
+			}
+		})
+	}
+}
+
+// TestEveryVerdictIsLogged pins the operational half of the same defect: only
+// the main comparison path used to log, and anything short of "failed" went to
+// Debug, which is off in production. A MusicBrainz outage during a sweep
+// therefore produced no line at any level for any affected artist -- a sweep
+// that checked nothing was indistinguishable from a sweep that found nothing.
+//
+// The handler is set to Info so the assertion is about what a PRODUCTION
+// operator would actually see, not about what a debug run could dig out.
+func TestEveryVerdictIsLogged(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		mb        *fakeMB
+		albums    artist.AlbumSource
+		wantLevel slog.Level
+	}{
+		{
+			name:      "provider outage on the artist lookup",
+			mb:        &fakeMB{metaErr: errors.New("dial tcp: i/o timeout")},
+			albums:    found("First Record"),
+			wantLevel: slog.LevelWarn,
+		},
+		{
+			name:      "provider outage on the release-group lookup",
+			mb:        &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groupsErr: errors.New("503")},
+			albums:    found("First Record"),
+			wantLevel: slog.LevelWarn,
+		},
+		{
+			name:      "failed verdict",
+			mb:        &fakeMB{meta: &provider.ArtistMetadata{Name: "Someone Else"}, groups: rgs("Unrelated")},
+			albums:    found("First Record"),
+			wantLevel: slog.LevelWarn,
+		},
+		{
+			name:      "mbid not found",
+			mb:        &fakeMB{metaErr: &provider.ErrNotFound{Provider: provider.NameMusicBrainz, ID: "x"}},
+			albums:    found("First Record"),
+			wantLevel: slog.LevelInfo,
+		},
+		{
+			name:      "no local albums",
+			mb:        &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+			albums:    stubAlbums{set: artist.AlbumSet{Evidence: artist.EvidenceNone}},
+			wantLevel: slog.LevelInfo,
+		},
+		{
+			name:      "unrecognized evidence state is a programming error",
+			mb:        &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+			albums:    stubAlbums{set: artist.AlbumSet{Titles: []string{"First Record"}, Evidence: artist.AlbumEvidence(99)}},
+			wantLevel: slog.LevelError,
+		},
+		{
+			name:      "album source reported found with no titles",
+			mb:        &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+			albums:    stubAlbums{set: artist.AlbumSet{Evidence: artist.EvidenceFound}},
+			wantLevel: slog.LevelError,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+
+			// PRECONDITION: the handler really does drop Debug, so "a line was
+			// seen" cannot be satisfied by a Debug line a production operator
+			// would never get.
+			if handler.Enabled(t.Context(), slog.LevelDebug) {
+				t.Fatal("precondition: the test handler must not be enabled at Debug")
+			}
+
+			r := New(tc.mb, tc.albums, WithLogger(slog.New(handler)))
+			if _, err := r.Resolve(t.Context(), testArtist()); err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+
+			if buf.Len() == 0 {
+				t.Fatalf("no log line at all for %q; an operator watching a sweep sees nothing", tc.name)
+			}
+
+			var rec map[string]any
+			if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+				t.Fatalf("log line is not JSON (%q): %v", buf.String(), err)
+			}
+			if got := rec["level"]; got != tc.wantLevel.String() {
+				t.Errorf("log level = %v, want %v (line: %s)", got, tc.wantLevel, buf.String())
+			}
+			// The line has to identify the artist and say what happened, or it
+			// is noise rather than a report.
+			if rec["artist_id"] != "artist-1" {
+				t.Errorf("log line does not name the artist: %s", buf.String())
+			}
+			if rec["outcome"] == nil || rec["outcome"] == "" {
+				t.Errorf("log line carries no outcome: %s", buf.String())
+			}
+		})
+	}
+}
+
+// TestValidatedVerdictLogsAtDebug is the other half of the level policy: the
+// common, good case must NOT add a line to a production log for every artist in
+// the library. Stated separately so a failure names which direction broke.
+func TestValidatedVerdictLogsAtDebug(t *testing.T) {
+	t.Parallel()
+
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")}
+
+	var atInfo bytes.Buffer
+	r := New(mb, found("First Record"), WithLogger(slog.New(slog.NewJSONHandler(&atInfo, &slog.HandlerOptions{Level: slog.LevelInfo}))))
+	got, err := r.Resolve(t.Context(), testArtist())
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	// PRECONDITION: this really is the validated path.
+	if got.Validation.Outcome != artist.MBIDOutcomeValidated {
+		t.Fatalf("precondition: outcome = %q, want validated (%s)", got.Validation.Outcome, got.Validation.Detail)
+	}
+	if atInfo.Len() != 0 {
+		t.Errorf("a validated verdict logged at Info or above: %s", atInfo.String())
+	}
+
+	// And it is logged, just quietly: a Debug run must still show it.
+	var atDebug bytes.Buffer
+	mb2 := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")}
+	r2 := New(mb2, found("First Record"), WithLogger(slog.New(slog.NewJSONHandler(&atDebug, &slog.HandlerOptions{Level: slog.LevelDebug}))))
+	if _, err := r2.Resolve(t.Context(), testArtist()); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if atDebug.Len() == 0 {
+		t.Error("a validated verdict produced no line even at Debug")
+	}
+}
+
+// TestAlbumSourceErrorIsCarriedAlongsideAUsableAnswer pins the diagnostic
+// channel ChainAlbumSource goes to real trouble to keep open: it returns the
+// failures of earlier sources ALONGSIDE the first EvidenceFound, precisely so a
+// primary source that is quietly broken while a fallback covers for it is not
+// invisible. A resolver that inspected only Evidence would close that channel
+// one level up, re-hiding exactly what the chain exposed.
+func TestAlbumSourceErrorIsCarriedAlongsideAUsableAnswer(t *testing.T) {
+	t.Parallel()
+
+	brokenPrimary := errors.New("primary album source: connection refused")
+	src := stubAlbums{
+		set: artist.AlbumSet{Titles: []string{"First Record"}, Evidence: artist.EvidenceFound},
+		err: brokenPrimary,
+	}
+
+	// PRECONDITION: the fixture is the awkward shape -- a USABLE determination
+	// with a non-nil error. If the source returned Unknown, the error would
+	// already surface through the not-checkable detail string.
+	set, err := src.LocalAlbums(t.Context(), testArtist())
+	if set.Evidence != artist.EvidenceFound || len(set.Titles) == 0 {
+		t.Fatalf("precondition: fixture must carry a usable determination, got %v with %d titles", set.Evidence, len(set.Titles))
+	}
+	if err == nil {
+		t.Fatal("precondition: fixture must return a non-nil error alongside it")
+	}
+
+	var buf bytes.Buffer
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")}
+	r := New(mb, src, WithLogger(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))))
+
+	got, resolveErr := r.Resolve(t.Context(), testArtist())
+	if resolveErr != nil {
+		t.Fatalf("Resolve: %v", resolveErr)
+	}
+
+	// The usable answer still decides the verdict: Evidence is the contract.
+	if got.Validation.Outcome != artist.MBIDOutcomeValidated {
+		t.Errorf("outcome = %q, want validated; the error is diagnostic and must not change the decision", got.Validation.Outcome)
+	}
+	if !errors.Is(got.AlbumSourceErr, brokenPrimary) {
+		t.Errorf("AlbumSourceErr = %v, want the source's error carried through", got.AlbumSourceErr)
+	}
+	if !strings.Contains(buf.String(), "connection refused") {
+		t.Errorf("the album source's error never reached the log: %s", buf.String())
+	}
+}
+
+// TestNameThresholdBoundary mirrors TestCatalogueThresholdBoundary for the
+// other threshold: it pins where the number sits AND that the comparison is
+// inclusive. Without it, mutating `nameScore >= r.nameThreshold` to `>` passed
+// the whole suite, because every other name fixture scores 100 or far below 80.
+//
+// Every fixture here has a perfectly matching catalogue, so the name is the
+// only signal that can decide the outcome.
+func TestNameThresholdBoundary(t *testing.T) {
+	t.Parallel()
+
+	albums := []string{"First Record", "Second Record"}
+
+	// Two 20-character strings differing in the last 4 characters score exactly
+	// 80; differing in the last 5 score 75, the nearest reachable step below.
+	const (
+		localName   = "Abcdefghijklmnopqrst"
+		atThreshold = "Abcdefghijklmnopwxyz"
+		belowThresh = "Abcdefghijklmnovwxyz"
+	)
+
+	// PRECONDITION: the fixtures really do land on and below the threshold, and
+	// the "at" one really is AT it rather than above.
+	if got := provider.NameSimilarity(localName, atThreshold); got != DefaultNameSimilarityPercent {
+		t.Fatalf("precondition: %q vs %q scores %d, want exactly %d", localName, atThreshold, got, DefaultNameSimilarityPercent)
+	}
+	if got := provider.NameSimilarity(localName, belowThresh); got >= DefaultNameSimilarityPercent {
+		t.Fatalf("precondition: %q vs %q scores %d, want below %d", localName, belowThresh, got, DefaultNameSimilarityPercent)
+	}
+
+	run := func(t *testing.T, remoteName string) Result {
+		t.Helper()
+		a := testArtist()
+		a.Name = localName
+		mb := &fakeMB{meta: &provider.ArtistMetadata{Name: remoteName}, groups: rgs(albums...)}
+		got, err := newTestResolver(mb, found(albums...)).Resolve(t.Context(), a)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		// PRECONDITION: the catalogue matches perfectly, so nothing but the
+		// name can move the outcome.
+		if got.Validation.CatalogueMatchPercent == nil || *got.Validation.CatalogueMatchPercent != 100 {
+			t.Fatalf("precondition: catalogue should match 100%%, got %v", got.Validation.CatalogueMatchPercent)
+		}
+		return got
+	}
+
+	at := run(t, atThreshold)
+	if at.NameScorePercent != DefaultNameSimilarityPercent {
+		t.Fatalf("at the threshold: NameScorePercent = %d, want exactly %d", at.NameScorePercent, DefaultNameSimilarityPercent)
+	}
+	if at.Validation.Outcome != artist.MBIDOutcomeValidated {
+		t.Errorf("at the threshold: outcome = %q/%q, want validated (the threshold is INCLUSIVE)",
+			at.Validation.Outcome, at.Validation.Reason)
+	}
+
+	below := run(t, belowThresh)
+	if below.NameScorePercent >= DefaultNameSimilarityPercent {
+		t.Fatalf("below the threshold: NameScorePercent = %d, want below %d", below.NameScorePercent, DefaultNameSimilarityPercent)
+	}
+	if below.Validation.Outcome != artist.MBIDOutcomeFailed || below.Validation.Reason != artist.MBIDReasonNameMismatch {
+		t.Errorf("below the threshold: outcome/reason = %q/%q, want failed/name_mismatch",
+			below.Validation.Outcome, below.Validation.Reason)
+	}
+}
+
+// TestSortNameHandlingCoversPeopleAndLeavesBandsAlone pins unsortNames against
+// the case the original comment waved away: it claimed reordering a "Surname,
+// Forename" person "would not change the normalized comparison anyway", which
+// was measurably false -- "Bowie, David" scored 28 against "David Bowie", so a
+// person foldered surname-first with a perfect catalogue was filed as
+// name_mismatch.
+//
+// The ambiguous direction matters as much: a band whose name genuinely contains
+// a comma must not be mangled. Because bestNameScore takes the MAXIMUM over
+// candidates, an extra reading can only raise a score, so the band cases assert
+// the name as written still scores 100.
+func TestSortNameHandlingCoversPeopleAndLeavesBandsAlone(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unsortNames readings", func(t *testing.T) {
+		t.Parallel()
+
+		for _, tc := range []struct {
+			in   string
+			want []string
+		}{
+			{"Bowie, David", []string{"bowie david", "david bowie"}},
+			{"Beatles, The", []string{"beatles the", "beatles"}},
+			{"Example Band", []string{"example band"}},
+			// Multi-word tails are names as written, not sort order.
+			{"Emerson, Lake & Palmer", []string{"emerson lake  palmer"}},
+			{"Crosby, Stills & Nash", []string{"crosby stills  nash"}},
+			// Two commas: the correct rearrangement is genuinely unclear.
+			{"Davis, Miles, Jr.", []string{"davis miles jr"}},
+			// A name that normalizes to nothing must not panic or invent one.
+			{"!!!", nil},
+			{"", nil},
+		} {
+			got := unsortNames(tc.in)
+			if len(got) != len(tc.want) {
+				t.Errorf("unsortNames(%q) = %v, want %v", tc.in, got, tc.want)
+				continue
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("unsortNames(%q) = %v, want %v", tc.in, got, tc.want)
+					break
+				}
+			}
+		}
+	})
+
+	t.Run("classification", func(t *testing.T) {
+		t.Parallel()
+
+		albums := []string{"First Record", "Second Record"}
+
+		for _, tc := range []struct {
+			name        string
+			localName   string
+			remoteName  string
+			wantOutcome artist.MBIDValidationOutcome
+		}{
+			{
+				name:        "person foldered surname-first",
+				localName:   "Bowie, David",
+				remoteName:  "David Bowie",
+				wantOutcome: artist.MBIDOutcomeValidated,
+			},
+			{
+				name:        "person stored natural-order against a remote sort name",
+				localName:   "David Bowie",
+				remoteName:  "Bowie, David",
+				wantOutcome: artist.MBIDOutcomeValidated,
+			},
+			{
+				name:        "band with a comma in its real name",
+				localName:   "Emerson, Lake & Palmer",
+				remoteName:  "Emerson, Lake & Palmer",
+				wantOutcome: artist.MBIDOutcomeValidated,
+			},
+			{
+				// The control: the extra reading must not start matching
+				// genuinely different people.
+				name:        "different person still fails",
+				localName:   "Bowie, David",
+				remoteName:  "Zzyzx Quartet",
+				wantOutcome: artist.MBIDOutcomeFailed,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				a := testArtist()
+				a.Name = tc.localName
+				mb := &fakeMB{meta: &provider.ArtistMetadata{Name: tc.remoteName}, groups: rgs(albums...)}
+
+				got, err := newTestResolver(mb, found(albums...)).Resolve(t.Context(), a)
+				if err != nil {
+					t.Fatalf("Resolve: %v", err)
+				}
+				// PRECONDITION: the catalogue matches perfectly, so the name is
+				// the only signal in play.
+				if got.Validation.CatalogueMatchPercent == nil || *got.Validation.CatalogueMatchPercent != 100 {
+					t.Fatalf("precondition: catalogue should match 100%%, got %v", got.Validation.CatalogueMatchPercent)
+				}
+				if got.Validation.Outcome != tc.wantOutcome {
+					t.Errorf("local %q vs remote %q: outcome = %q (reason %q, name score %d%%), want %q",
+						tc.localName, tc.remoteName, got.Validation.Outcome, got.Validation.Reason,
+						got.NameScorePercent, tc.wantOutcome)
+				}
+			})
+		}
+	})
 }
