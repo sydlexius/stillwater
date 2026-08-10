@@ -680,6 +680,11 @@ jobs:
   # the strength of this job, so its non-required status weakens no existing
   # coverage -- it is a new backstop, not a replacement.
   #
+  # TODO(#TBD): promote "Gate Invariant" to a required status check once it has
+  # a green track record. Tracked separately so the pending promotion is not
+  # just a comment nobody is accountable for; replace #TBD with the issue
+  # number when it is filed.
+  #
   # Runs unconditionally (no paths-filter): it is three greps over one file,
   # and the always-report property is what would make it safe to require.
   # ---------------------------------------------------------------------------
@@ -692,14 +697,15 @@ jobs:
         with:
           persist-credentials: false
 
-      # The guard's own mutation tests, for the same reason the zizmor guard
-      # runs its self-test above: a guard that quietly returns OK manufactures
-      # confidence. Its first implementation reported every FAIL as exit-less
-      # because an awk look-ahead compared array subscripts lexically -- caught
-      # by these tests, not by reading it.
-      - name: Guard self-test
-        run: bash scripts/test-check-gate-invariant.sh
-
+      # ORDER MATTERS. "Check gate invariant" runs FIRST because the guard's
+      # self-test ends with an assertion against the LIVE pre-push-gate.sh. A
+      # real invariant violation therefore fails BOTH steps, and whichever runs
+      # first is the one the developer reads. Only this step writes the
+      # remediation block to $GITHUB_STEP_SUMMARY, so running the self-test
+      # first would make the most likely real failure the least actionable: the
+      # run would stop at "Guard self-test failed" with no summary and no
+      # instructions. Both still run on a green build, so a genuine guard
+      # regression is caught either way -- only the reporting order changes.
       - name: Check gate invariant
         run: |
           output=$(bash scripts/check-gate-invariant.sh 2>&1) || {
@@ -719,6 +725,22 @@ jobs:
             exit 1
           }
           echo "$output"
+
+      # The guard's own mutation tests, for the same reason the zizmor guard
+      # runs its self-test above: a guard that quietly returns OK manufactures
+      # confidence. Its first implementation reported every FAIL as exit-less
+      # because an awk look-ahead compared array subscripts lexically -- caught
+      # by these tests, not by reading it.
+      - name: Guard self-test
+        run: bash scripts/test-check-gate-invariant.sh
+
+      # Asserts the gate REFUSES an unrecognized RUN_* value instead of folding
+      # it into "unset" and printing "skipped by default" over a tier the
+      # operator asked to run (#2983). Hermetic and sub-second: the invalid
+      # values abort at the top of the gate, before the worktree lock and
+      # before any check runs.
+      - name: RUN_* flag resolution self-test
+        run: bash scripts/test-run-flag-resolution.sh
 
   # ---------------------------------------------------------------------------
   # Shellcheck (#2445)
