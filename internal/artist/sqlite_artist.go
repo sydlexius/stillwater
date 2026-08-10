@@ -422,26 +422,72 @@ func (r *sqliteArtistRepo) ListRefsByLibrary(ctx context.Context, libraryID stri
 // a stable order -- defense-in-depth for the caller's dedup, which is itself
 // order-independent (it skips an MBID that maps to conflicting paths).
 func (r *sqliteArtistRepo) ListMBIDPaths(ctx context.Context) ([]MBIDPath, error) {
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT p.provider_id, a.path FROM artists a
+	return r.queryMBIDPaths(ctx,
+		`SELECT a.id, p.provider_id, a.path FROM artists a
 		JOIN artist_provider_ids p ON p.artist_id = a.id
 		WHERE p.provider = 'musicbrainz' AND p.provider_id != '' AND a.path != ''
-		ORDER BY p.provider_id, a.path`)
+		ORDER BY p.provider_id, a.path`,
+		"listing artist MBID paths")
+}
+
+// ListMBIDPopulation returns one record per artist holding a non-empty
+// MusicBrainz ID, INCLUDING artists with no on-disk path.
+//
+// # WHY THIS IS A SEPARATE QUERY AND NOT A CHANGE TO ListMBIDPaths
+//
+// ListMBIDPaths' `a.path != ”` filter is deliberate and load-bearing for its
+// own caller: Lidarr path-mapping inference compares two mount prefixes, so a
+// pathless artist contributes nothing there and would only add a blank key.
+// Relaxing it would change that feature's semantics to fix a different one.
+//
+// # WHY PATHLESS ARTISTS MUST BE INCLUDED HERE
+//
+// The #2810 ledger's contract is EVERY artist with a non-empty MBID. A
+// platform-only artist has no directory and so cannot have its album catalogue
+// read, which makes its stored id exactly the kind nobody has ever checked.
+// Dropping it from the population would silently shrink the report and leave
+// those artists reading as clean -- the failure mode this feature exists to
+// end. The resolver already handles them honestly: no path yields
+// EvidenceUnknown, hence a not_checkable verdict carrying its reason, which is
+// a truthful "unknown" rather than an absence.
+//
+// # WHAT IS DELIBERATELY NOT FILTERED
+//
+// Provenance. The #2715 marker stamps ids adopted from that point forward and
+// nothing writes an operator-confirmed value today, so it partitions artists
+// into "machine-picked" and "unknown" rather than into "machine-picked" and
+// "confirmed". Every artist damaged before #2715 is unmarked, so a provenance
+// filter here would skip precisely the population being hunted. Do not add one.
+//
+// Ordered by artist id so paging is stable across calls.
+func (r *sqliteArtistRepo) ListMBIDPopulation(ctx context.Context) ([]MBIDPath, error) {
+	return r.queryMBIDPaths(ctx,
+		`SELECT a.id, p.provider_id, COALESCE(a.path, '') FROM artists a
+		JOIN artist_provider_ids p ON p.artist_id = a.id
+		WHERE p.provider = 'musicbrainz' AND p.provider_id != ''
+		ORDER BY a.id`,
+		"listing artist MBID population")
+}
+
+// queryMBIDPaths runs a three-column (id, mbid, path) query and scans it. The
+// two callers share it so their column order cannot drift apart.
+func (r *sqliteArtistRepo) queryMBIDPaths(ctx context.Context, query, what string) ([]MBIDPath, error) {
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("listing artist MBID paths: %w", err)
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var result []MBIDPath
 	for rows.Next() {
 		var mp MBIDPath
-		if err := rows.Scan(&mp.MBID, &mp.Path); err != nil {
+		if err := rows.Scan(&mp.ArtistID, &mp.MBID, &mp.Path); err != nil {
 			return nil, fmt.Errorf("scanning artist MBID path: %w", err)
 		}
 		result = append(result, mp)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating artist MBID paths: %w", err)
+		return nil, fmt.Errorf("iterating rows while %s: %w", what, err)
 	}
 	return result, nil
 }

@@ -56,6 +56,18 @@ type Repository interface {
 	// is not guaranteed.
 	ListMBIDPaths(ctx context.Context) ([]MBIDPath, error)
 
+	// ListMBIDPopulation returns one record for every artist with a non-empty
+	// MusicBrainz ID, WHETHER OR NOT it has a filesystem path. It is the
+	// population for the #2810 re-validation sweep, whose contract is every
+	// artist carrying a stored id.
+	//
+	// Deliberately separate from ListMBIDPaths rather than a relaxation of it:
+	// that method's path filter is correct for Lidarr inference. And
+	// deliberately unfiltered by provenance -- an unmarked id means "nobody
+	// established where this came from", which is a reason to check it, never a
+	// reason to skip it. Ordered by artist id.
+	ListMBIDPopulation(ctx context.Context) ([]MBIDPath, error)
+
 	// ListByIDs returns the artist rows matching the given IDs in a single
 	// query. Order is not guaranteed; callers that need the original
 	// request order should reconstruct it from the returned slice's IDs.
