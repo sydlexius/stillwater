@@ -48,6 +48,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# --- RUN_* flag resolution ----------------------------------------------------
+# Every RUN_* tier below is three-state: truthy => RUN (blocking), falsy =>
+# explicit SKIP, UNSET => the tier's documented default. A fourth state exists
+# -- SET TO SOMETHING UNRECOGNIZED (`RUN_VULN=truee`) -- and must NOT fold into
+# "unset"; see scripts/lib/run-flags.sh for why, and for the exit-code
+# convention. Resolved here, at the top, so a typo costs a second rather than
+# sitting undetected through the tests, lint, and OpenAPI steps.
+. "$SCRIPT_DIR/lib/run-flags.sh"
+
+resolve_run_flag RUN_RACE "${RUN_RACE:-}"; RACE_MODE="$RESOLVED_RUN_FLAG"
+resolve_run_flag RUN_VULN "${RUN_VULN:-}"; VULN_MODE="$RESOLVED_RUN_FLAG"
+resolve_run_flag RUN_PROVIDER_SMOKE "${RUN_PROVIDER_SMOKE:-}"; PROVIDER_SMOKE_MODE="$RESOLVED_RUN_FLAG"
+resolve_run_flag RUN_A11Y "${RUN_A11Y:-}"; A11Y_MODE="$RESOLVED_RUN_FLAG"
+
 BASE=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
 
 # Validate BASE resolves to a real commit so downstream steps that pass it to
@@ -270,7 +285,12 @@ echo "=== Tests ==="
 #     own suite is ~160s locally): `RUN_RACE=0` skips the test run and patch
 #     coverage together. That is an explicit, recorded opt-out, not a silent
 #     downgrade of a failure the gate already observed.
-race_flag="$(printf '%s' "${RUN_RACE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+#
+#   - RUN_RACE set to anything else (`RUN_RACE=truee`): the gate already
+#     aborted with exit 2 at the top of this file. See resolve_run_flag.
+# RACE_MODE is resolved at the top of this file (see resolve_run_flag): "on",
+# "off", or "default". An unrecognized RUN_RACE never reaches here -- it
+# already aborted with exit 2.
 
 run_full_race_suite() {
   # -coverpkg=./... matches CI's methodology (.github/workflows/ci.yml): each
@@ -323,14 +343,14 @@ run_changed_pkgs_test() {
 # coverage wasn't enforced (see the "Patch coverage" section below).
 SKIP_PATCH_COVERAGE=0
 SKIP_PATCH_COVERAGE_REASON=""
-case "$race_flag" in
-  0 | false | no | off)
+case "$RACE_MODE" in
+  off)
     echo "tests: skipped (RUN_RACE=${RUN_RACE} forces opt-out; CI still runs the full race suite)"
     echo "tests: no coverage profile generated -- patch coverage also skipped for this push"
     SKIP_PATCH_COVERAGE_REASON="RUN_RACE=${RUN_RACE} skipped the test run, so no profile is available; CI's Coverage Floor / codecov still gate this"
     SKIP_PATCH_COVERAGE=1
     ;;
-  1 | true | yes | on)
+  on)
     run_full_race_suite
     ;;
   *)
@@ -394,14 +414,14 @@ echo "=== Vulnerability scan (govulncheck) ==="
 #     The authoritative check is CI's required "Go Vulnerability Check" job
 #     (security.yml), which runs unconditionally on every push and PR to main
 #     with no paths-filter on the trigger.
-vuln_flag="$(printf '%s' "${RUN_VULN:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-
+#   - RUN_VULN set to anything else (`RUN_VULN=truee`): the gate already aborted
+#     with exit 2 at the top of this file. See resolve_run_flag.
 run_vuln=0
-case "$vuln_flag" in
-  0 | false | no | off)
+case "$VULN_MODE" in
+  off)
     echo "vuln: skipped (RUN_VULN=${RUN_VULN} forces opt-out; CI still runs govulncheck)"
     ;;
-  1 | true | yes | on)
+  on)
     run_vuln=1
     ;;
   *)
@@ -582,6 +602,16 @@ echo "=== zizmor suppression scope ==="
 # the guard honest.
 bash "$SCRIPT_DIR/test-check-zizmor-suppressions.sh"
 bash "$SCRIPT_DIR/check-zizmor-suppressions.sh"
+
+echo ""
+echo "=== RUN_* flag resolution (#2983) ==="
+# Hermetic, sub-second: asserts this gate still REFUSES an unrecognized RUN_*
+# value rather than folding it into "unset". The regression it guards is
+# invisible by construction -- a mistyped RUN_VULN=truee would print "skipped by
+# default" and the gate would go green, so the operator's evidence that the
+# tier ran is a message saying it did not. Nothing else in the gate can
+# observe that, which is why it gets its own check.
+bash "$SCRIPT_DIR/test-run-flag-resolution.sh"
 
 echo ""
 echo "=== CSS lint (diff-scoped ratchet, #2402) ==="
@@ -860,16 +890,16 @@ echo "=== Provider failure smoke test ==="
 #   - RUN_PROVIDER_SMOKE unset (the DEFAULT since #2983): SKIP. The previous
 #     auto path ran it on any Go change and then treated a failure as
 #     ADVISORY -- the pattern this gate no longer contains.
-provider_smoke_flag="$(printf '%s' "${RUN_PROVIDER_SMOKE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-
+#   - RUN_PROVIDER_SMOKE set to anything else: the gate already aborted with
+#     exit 2 at the top of this file. See resolve_run_flag.
 SMOKE_FAILURE_SCRIPT="$SCRIPT_DIR/smoke-provider-failure.sh"
 
 run_provider_smoke=0
-case "$provider_smoke_flag" in
-  0 | false | no | off)
+case "$PROVIDER_SMOKE_MODE" in
+  off)
     echo "provider-smoke: skipped (RUN_PROVIDER_SMOKE=${RUN_PROVIDER_SMOKE} forces opt-out; CI still runs the provider failure smoke)"
     ;;
-  1 | true | yes | on)
+  on)
     run_provider_smoke=1
     ;;
   *)
@@ -907,6 +937,8 @@ echo "=== Accessibility (axe-core) ==="
 #     the push.
 #   - RUN_A11Y falsy  (0/false/no/off): explicit SKIP.
 #   - RUN_A11Y unset (the DEFAULT since #2983): SKIP.
+#   - RUN_A11Y set to anything else: the gate already aborted with exit 2 at
+#     the top of this file. See resolve_run_flag.
 #
 # Why the default changed: the auto path used to run the tier whenever
 # a11y-relevant files changed and the Playwright engines were installed, and
@@ -920,14 +952,12 @@ echo "=== Accessibility (axe-core) ==="
 # "A11y Smoke Tests (Playwright + axe-core)" check (ci.yml) is the
 # authoritative gate and is not subject to the local flake, since it does not
 # run on a developer machine competing for CPU.
-a11y_flag="$(printf '%s' "${RUN_A11Y:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-
 run_a11y=0
-case "$a11y_flag" in
-  0 | false | no | off)
+case "$A11Y_MODE" in
+  off)
     echo "a11y: skipped (RUN_A11Y=${RUN_A11Y} forces opt-out; CI still gates a11y)"
     ;;
-  1 | true | yes | on)
+  on)
     run_a11y=1
     ;;
   *)
