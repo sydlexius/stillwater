@@ -33,10 +33,13 @@
 #      for a step that did not run and `HINT:` for advice attached to a real
 #      failure. (`WARNING:` is left alone: the two uses in the gate are
 #      bookkeeping about the lint-cache roster, not the verdict of a check.)
-#   3. Every `FAIL`-announcing line is followed by an exit. A `FAIL:` message
-#      that does not exit within the next few lines is an advisory step
-#      wearing a blocking step's words -- the most likely way this regresses,
-#      since it reads as correct at a glance.
+#   3. Every `FAIL`-announcing line is followed by an exit with a literal
+#      NON-ZERO status. A `FAIL:` message that does not exit within the next
+#      few lines is an advisory step wearing a blocking step's words -- the
+#      most likely way this regresses, since it reads as correct at a glance.
+#      "Announcing" covers `echo` and `printf`, single- and double-quoted;
+#      "exit" excludes `exit 0`, a bare `exit`, and `exit "$rc"`, none of
+#      which a STATIC check can show to be non-zero.
 #
 # Scope: the gate script only. It is cheap (three greps) and hermetic, so the
 # gate runs it on itself near the top of every run, and it is also runnable
@@ -61,7 +64,11 @@ exec_lines() {
 status=0
 
 # --- 1. advisory-verdict phrasing --------------------------------------------
-advisory=$(exec_lines | grep -nEi 'not blocking this push|advisory failure' || true)
+# No `-n` on the inner grep: `exec_lines` already prefixed every line with its
+# TRUE line number in the gate file. A second `-n` would prepend a position in
+# the FILTERED stream, so the diagnostic would read `7:64:echo ...` and a
+# reader jumping to line 7 would land somewhere unrelated.
+advisory=$(exec_lines | grep -Ei 'not blocking this push|advisory failure' || true)
 if [ -n "$advisory" ]; then
   echo "FAIL: pre-push-gate.sh contains advisory-verdict phrasing (#2983 invariant):"
   printf '%s\n' "$advisory" | sed 's/^/  /'
@@ -72,7 +79,8 @@ if [ -n "$advisory" ]; then
 fi
 
 # --- 2. WARN: verdicts --------------------------------------------------------
-warns=$(exec_lines | grep -nE '(^|[^A-Za-z])WARN:' || true)
+# No `-n` on the inner grep, for the same reason as check 1 above.
+warns=$(exec_lines | grep -E '(^|[^A-Za-z])WARN:' || true)
 if [ -n "$warns" ]; then
   echo "FAIL: pre-push-gate.sh emits a 'WARN:' verdict (#2983 invariant):"
   printf '%s\n' "$warns" | sed 's/^/  /'
@@ -87,10 +95,22 @@ fi
 # line. The window (5 lines) covers the shapes the gate actually uses: a FAIL
 # echo followed by one or two detail echoes and then `exit`. A wider window
 # would start swallowing genuinely separate branches.
+#
+# The announcement pattern covers `echo` AND `printf`, and BOTH quoting styles
+# ("FAIL: ...", 'FAIL: ...'), because a single-quoted or printf-shaped
+# announcement is exactly as advisory as a double-quoted echo -- and an
+# author working around a detector is not the threat model here; an author
+# reaching for a different-but-equivalent idiom is.
+#
+# The exit pattern requires a literal NON-ZERO status. `exit 0` after a FAIL:
+# is an advisory step with extra steps, and a non-literal `exit "$rc"` cannot
+# be shown STATICALLY to be non-zero -- the guard is a static check, so it
+# refuses rather than assumes. Both forms are rejected; the gate uses only
+# `exit 1` / `exit 2`, so nothing legitimate is caught by the tightening.
 missing_exit=$(awk '
   /^[[:space:]]*#/ { next }
   { line[NR] = $0 }
-  /echo[^#]*"FAIL/ { fails[NR] = $0 }
+  /(echo|printf)[^#]*FAIL:/ { fails[NR] = $0 }
   END {
     for (n in fails) {
       # Array subscripts are STRINGS in awk, so `n` and a bare `n + 5` compare
@@ -100,7 +120,7 @@ missing_exit=$(awk '
       start = n + 0
       found = 0
       for (i = start; i <= start + 5; i++) {
-        if (i in line && line[i] ~ /(^|[[:space:];&|])exit[[:space:]]+[0-9]/) { found = 1; break }
+        if (i in line && line[i] ~ /(^|[[:space:];&|(])exit[[:space:]]+[1-9][0-9]*([[:space:]]|;|$)/) { found = 1; break }
       }
       if (!found) printf "%d:%s\n", start, fails[n]
     }
