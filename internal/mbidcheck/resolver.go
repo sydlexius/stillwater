@@ -428,6 +428,15 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 	// return from.
 	res := r.classify(ctx, a, mbid)
 	if err := res.Validation.Validate(); err != nil {
+		// Logged BEFORE returning, at ERROR, because this is the one verdict an
+		// operator most needs in the log and the only path that used to leave
+		// none. r.log promises every verdict is logged; a rejected verdict is
+		// still a verdict this package built, and it is a Stillwater defect
+		// rather than a fact about the artist, so it belongs at the same level
+		// as the other anomalies. The same attribute set as a normal line, plus
+		// the validation error, so the two are greppable together.
+		r.logger.Error("mbid re-validation built an invalid verdict",
+			append(r.logAttrs(res), slog.String("error", err.Error()))...)
 		return Result{}, fmt.Errorf("mbidcheck: built an invalid verdict for artist %s: %w", a.ID, err)
 	}
 	r.log(res)
@@ -493,8 +502,13 @@ func (r *Resolver) classify(ctx context.Context, a *artist.Artist, mbid string) 
 	case set.Evidence == artist.EvidenceUnknown:
 		// "I could not look" is NOT "the artist has no albums". Transient,
 		// because a missing mount or a permission problem is worth retrying.
+		//
+		// The cause is formatted only when there IS one. AlbumSource's contract
+		// permits EvidenceUnknown alongside a nil error, and %v on a nil error
+		// renders the literal string "<nil>", which this stores in the ledger
+		// and shows an operator as the reason their library could not be read.
 		res := r.notCheckable(a, mbid, artist.MBIDReasonNoLocalAlbums,
-			fmt.Sprintf("local album catalogue could not be read (evidence unknown): %v", albumErr))
+			unknownEvidenceDetail(albumErr))
 		res.Validation.ResolvedName = resolvedName
 		res.LocalEvidence = artist.EvidenceUnknown
 		res.NameScorePercent = nameScore
@@ -612,6 +626,23 @@ func (r *Resolver) classify(ctx context.Context, a *artist.Artist, mbid string) 
 	return res
 }
 
+// unknownEvidenceDetail is the operator-facing prose for an album source that
+// reported EvidenceUnknown, with or without a cause.
+//
+// A source is allowed to report "I could not look" and no error at all, and
+// that case reads WORSE than a reported failure rather than better: nothing
+// explains why. Saying so in words is the point -- the alternative that
+// motivated this (formatting a nil error) printed "<nil>" at an operator, and
+// the alternative of simply omitting the clause leaves a sentence that trails
+// off as though the reason were about to follow.
+func unknownEvidenceDetail(albumErr error) string {
+	const base = "local album catalogue could not be read (evidence unknown)"
+	if albumErr == nil {
+		return base + ": the album source reported no cause"
+	}
+	return fmt.Sprintf("%s: %v", base, albumErr)
+}
+
 // notFound builds the "MusicBrainz has no artist under this id" verdict.
 func (r *Resolver) notFound(a *artist.Artist, mbid string) Result {
 	res := r.notCheckable(a, mbid, artist.MBIDReasonMBIDNotFound,
@@ -674,6 +705,28 @@ func (r *Resolver) notCheckable(a *artist.Artist, mbid string, reason artist.MBI
 //     and are reported through the ledger rather than the log.
 //   - DEBUG for a validated verdict. It is the common case and the good one.
 func (r *Resolver) log(res Result) {
+	attrs := r.logAttrs(res)
+
+	switch {
+	case res.Anomaly:
+		r.logger.Error("mbid re-validation hit an internal anomaly", attrs...)
+	case res.Validation.Outcome == artist.MBIDOutcomeFailed:
+		r.logger.Warn("stored musicbrainz id failed re-validation", attrs...)
+	case res.Validation.Reason == artist.MBIDReasonProviderUnavailable:
+		r.logger.Warn("stored musicbrainz id could not be checked: provider unavailable", attrs...)
+	case res.Validation.Outcome == artist.MBIDOutcomeNotCheckable:
+		r.logger.Info("stored musicbrainz id could not be checked", attrs...)
+	default:
+		r.logger.Debug("stored musicbrainz id re-validated", attrs...)
+	}
+}
+
+// logAttrs is the attribute set every line about a verdict carries.
+//
+// Shared with Resolve's rejected-verdict line rather than duplicated there, so
+// a field added here reaches both surfaces and the two lines stay greppable by
+// the same keys.
+func (r *Resolver) logAttrs(res Result) []any {
 	attrs := []any{
 		slog.String("artist_id", res.Validation.ArtistID),
 		slog.String("mbid", res.Validation.MBID),
@@ -697,19 +750,7 @@ func (r *Resolver) log(res Result) {
 	if res.AlbumSourceErr != nil {
 		attrs = append(attrs, slog.String("album_source_error", res.AlbumSourceErr.Error()))
 	}
-
-	switch {
-	case res.Anomaly:
-		r.logger.Error("mbid re-validation hit an internal anomaly", attrs...)
-	case res.Validation.Outcome == artist.MBIDOutcomeFailed:
-		r.logger.Warn("stored musicbrainz id failed re-validation", attrs...)
-	case res.Validation.Reason == artist.MBIDReasonProviderUnavailable:
-		r.logger.Warn("stored musicbrainz id could not be checked: provider unavailable", attrs...)
-	case res.Validation.Outcome == artist.MBIDOutcomeNotCheckable:
-		r.logger.Info("stored musicbrainz id could not be checked", attrs...)
-	default:
-		r.logger.Debug("stored musicbrainz id re-validated", attrs...)
-	}
+	return attrs
 }
 
 // bestNameScore scores the local artist name against every name MusicBrainz

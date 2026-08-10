@@ -36,15 +36,24 @@ type fakeMB struct {
 	groupsErr error
 
 	artistCalls, groupCalls int
+
+	// The id each call actually received. Recorded rather than discarded
+	// because WHICH id reaches MusicBrainz is the one thing a resolver can get
+	// wrong while satisfying every other assertion in this file: passing a.ID,
+	// a stale field, or an untrimmed string would produce a perfectly shaped
+	// verdict about the wrong artist. See TestProviderReceivesTheTrimmedStoredMBID.
+	artistMBID, groupMBID string
 }
 
-func (f *fakeMB) GetArtist(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+func (f *fakeMB) GetArtist(_ context.Context, mbid string) (*provider.ArtistMetadata, error) {
 	f.artistCalls++
+	f.artistMBID = mbid
 	return f.meta, f.metaErr
 }
 
-func (f *fakeMB) GetReleaseGroups(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+func (f *fakeMB) GetReleaseGroups(_ context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
 	f.groupCalls++
+	f.groupMBID = mbid
 	return f.groups, f.groupsErr
 }
 
@@ -856,11 +865,24 @@ func TestThresholdOptions(t *testing.T) {
 	// An out-of-range value is ignored, so the default (25) still applies and
 	// the same fixture validates.
 	//
-	// Both out-of-range values are chosen ABOVE the range rather than below.
-	// A below-range catalogue threshold (-5) would make the fixture validate
-	// whether it were honored or ignored, so that assertion could not fail
-	// either way; 150 and 9999 change the outcome if honored, which is what
-	// makes "ignored" observable at all.
+	// THE FOUR ROWS BELOW ARE NOT EQUALLY STRONG, and it is worth being blunt
+	// about which is which rather than letting the table read as four proofs.
+	//
+	//   - The ABOVE-range rows (150, 9999) are the load-bearing ones. Honoring
+	//     either would turn this fixture's validated verdict into a failure, so
+	//     "the value was ignored" is observable here through the outcome, and
+	//     the assertion can genuinely fail.
+	//   - The BELOW-range rows (-5, -1) prove much less. A negative threshold
+	//     makes EVERYTHING match, which produces the same validated verdict as
+	//     the retained default, so the outcome assertion passes whether the
+	//     value was honored or ignored. What they establish is only that a
+	//     negative option is accepted without panicking or erroring -- real
+	//     smoke value, and no more than that.
+	//
+	// The below-range direction is covered properly by
+	// TestOutOfRangeThresholdsRetainTheDefaults, which asserts the resolver's
+	// threshold FIELDS directly instead of inferring them from an outcome that
+	// cannot distinguish the two cases.
 	for _, tc := range []struct {
 		name string
 		opt  Option
@@ -1456,6 +1478,231 @@ func TestEveryVerdictIsLogged(t *testing.T) {
 			}
 			if rec["outcome"] == nil || rec["outcome"] == "" {
 				t.Errorf("log line carries no outcome: %s", buf.String())
+			}
+		})
+	}
+}
+
+// TestRejectedVerdictIsLoggedBeforeReturning closes the one hole in "every
+// verdict is logged": the path where Resolve BUILDS a verdict, finds it
+// unpersistable, and returns an error.
+//
+// That verdict is the one an operator most needs in the log -- it is a
+// Stillwater defect, not a fact about the artist or about MusicBrainz -- and it
+// used to leave no line at any level, so the only trace was an error string in
+// whatever the caller decided to do with it. The log's own doc comment promised
+// every verdict was logged, which made the gap invisible to a reader.
+//
+// The handler is set to Info, so this asserts what a PRODUCTION operator would
+// see rather than what a debug run could dig out.
+func TestRejectedVerdictIsLoggedBeforeReturning(t *testing.T) {
+	t.Parallel()
+
+	badArtist := func() *artist.Artist {
+		a := testArtist()
+		a.ID = "" // unpersistable: Validate requires an artist id
+		return a
+	}
+
+	// PRECONDITION: the fixture really does build a verdict that fails Validate,
+	// or this test would be asserting the absence of a line nobody skipped.
+	probe := artist.MBIDValidation{
+		ArtistID:  "",
+		MBID:      "11111111-2222-3333-4444-555555555555",
+		Outcome:   artist.MBIDOutcomeNotCheckable,
+		Reason:    artist.MBIDReasonProviderUnavailable,
+		CheckedAt: time.Now().UTC(),
+	}
+	if err := probe.Validate(); err == nil {
+		t.Fatal("precondition: a row with no artist id should fail Validate; this test cannot detect anything")
+	}
+
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	// PRECONDITION: the handler drops Debug, so a Debug line cannot satisfy the
+	// assertion below on behalf of a production operator who would never see it.
+	if handler.Enabled(t.Context(), slog.LevelDebug) {
+		t.Fatal("precondition: the test handler must not be enabled at Debug")
+	}
+
+	mb := &fakeMB{metaErr: errors.New("dial tcp: i/o timeout")}
+	r := New(mb, found("First Record"), WithLogger(slog.New(handler)))
+
+	got, err := r.Resolve(t.Context(), badArtist())
+	if err == nil {
+		t.Fatalf("precondition: Resolve should have rejected the verdict, got outcome %q", got.Validation.Outcome)
+	}
+
+	if buf.Len() == 0 {
+		t.Fatal("a rejected verdict produced no log line at any level; the one verdict that signals a Stillwater defect is invisible")
+	}
+
+	var rec map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatalf("log line is not JSON (%q): %v", buf.String(), err)
+	}
+	if rec["level"] != slog.LevelError.String() {
+		t.Errorf("log level = %v, want ERROR (line: %s)", rec["level"], buf.String())
+	}
+	// The CONTENT, not merely the existence of a line. A line naming neither
+	// the artist nor what went wrong is noise an operator cannot act on.
+	if _, ok := rec["artist_id"]; !ok {
+		t.Errorf("log line carries no artist_id key: %s", buf.String())
+	}
+	if rec["outcome"] != string(artist.MBIDOutcomeNotCheckable) {
+		t.Errorf("outcome = %v, want %q: %s", rec["outcome"], artist.MBIDOutcomeNotCheckable, buf.String())
+	}
+	if rec["reason"] != string(artist.MBIDReasonProviderUnavailable) {
+		t.Errorf("reason = %v, want %q: %s", rec["reason"], artist.MBIDReasonProviderUnavailable, buf.String())
+	}
+	errAttr, _ := rec["error"].(string)
+	if !strings.Contains(errAttr, "artist id is required") {
+		t.Errorf("log line does not carry the validation error (error = %q): %s", errAttr, buf.String())
+	}
+	if rec["mbid"] != testArtist().MusicBrainzID {
+		t.Errorf("mbid = %v, want %q: %s", rec["mbid"], testArtist().MusicBrainzID, buf.String())
+	}
+}
+
+// TestUnknownEvidenceDetailNeverPrintsANilError pins the operator-facing prose
+// on the EvidenceUnknown branch.
+//
+// artist.AlbumSource permits reporting EvidenceUnknown with a NIL error -- "I
+// could not look" is a determination, and a source is not obliged to attach a
+// cause. Formatting that nil with %v renders the literal string "<nil>", which
+// this package then stores in the ledger and shows an operator as the reason
+// their library could not be read. Both directions are pinned, because a fix
+// that dropped the cause entirely would pass a nil-only assertion while losing
+// the diagnostic on every real failure.
+func TestUnknownEvidenceDetailNeverPrintsANilError(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		albumErr   error
+		wantDetail string
+	}{
+		{"cause reported", errors.New("permission denied"), "permission denied"},
+		{"no cause reported", nil, "no cause"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			src := stubAlbums{set: artist.AlbumSet{Evidence: artist.EvidenceUnknown}, err: tc.albumErr}
+
+			// PRECONDITION: the fixture really is EvidenceUnknown with the
+			// error-ness the case is named for, or the assertions below are
+			// about some other branch.
+			set, err := src.LocalAlbums(t.Context(), testArtist())
+			if set.Evidence != artist.EvidenceUnknown {
+				t.Fatalf("precondition: fixture evidence = %v, want unknown", set.Evidence)
+			}
+			if (err == nil) != (tc.albumErr == nil) {
+				t.Fatalf("precondition: fixture error = %v, want nil-ness %v", err, tc.albumErr == nil)
+			}
+
+			mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")}
+			got, resolveErr := newTestResolver(mb, src).Resolve(t.Context(), testArtist())
+			if resolveErr != nil {
+				t.Fatalf("Resolve: %v", resolveErr)
+			}
+
+			// PRECONDITION: this really is the branch under test.
+			if got.LocalEvidence != artist.EvidenceUnknown || got.Validation.Reason != artist.MBIDReasonNoLocalAlbums {
+				t.Fatalf("precondition: evidence/reason = %v/%q, want unknown/no_local_albums",
+					got.LocalEvidence, got.Validation.Reason)
+			}
+
+			if strings.Contains(got.Validation.Detail, "<nil>") {
+				t.Errorf("Detail = %q shows an operator the literal string \"<nil>\" as the cause", got.Validation.Detail)
+			}
+			if !strings.Contains(got.Validation.Detail, tc.wantDetail) {
+				t.Errorf("Detail = %q, want it to contain %q", got.Validation.Detail, tc.wantDetail)
+			}
+			// The rest of the branch is unchanged and must stay that way.
+			if !got.Transient {
+				t.Error("Transient = false; an unreadable library is worth retrying")
+			}
+			if got.Validation.ResolvedName != "Example Band" {
+				t.Errorf("ResolvedName = %q, want the resolved name carried through", got.Validation.ResolvedName)
+			}
+			if got.Validation.CatalogueMatchPercent != nil {
+				t.Errorf("CatalogueMatchPercent = %v, want nil (nothing was compared)", *got.Validation.CatalogueMatchPercent)
+			}
+		})
+	}
+}
+
+// TestProviderReceivesTheTrimmedStoredMBID pins WHICH id reaches MusicBrainz.
+//
+// Nothing else in this file asserts it: both fake methods used to discard their
+// mbid argument, so a resolver that queried MusicBrainz with a.ID, with a stale
+// field, or with an untrimmed string would pass every other test here while
+// production fetched metadata for the wrong artist -- and would then file a
+// perfectly well-formed verdict about it.
+//
+// The whitespace fixture is the load-bearing one. Resolve trims before use, so
+// the stored value and the value sent differ, which is what makes "the trimmed
+// value was sent" observable at all rather than trivially true.
+func TestProviderReceivesTheTrimmedStoredMBID(t *testing.T) {
+	t.Parallel()
+
+	const stored = "11111111-2222-3333-4444-555555555555"
+
+	for _, tc := range []struct {
+		name  string
+		field string
+	}{
+		{"stored exactly", stored},
+		{"stored with surrounding whitespace", "  \t" + stored + "\n "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := testArtist()
+			a.MusicBrainzID = tc.field
+
+			// PRECONDITION: the whitespace case must genuinely differ from the
+			// trimmed value, or it would assert nothing the first case does not
+			// already cover.
+			if tc.name == "stored with surrounding whitespace" && a.MusicBrainzID == stored {
+				t.Fatalf("precondition: fixture id %q does not differ from the trimmed value", a.MusicBrainzID)
+			}
+			// PRECONDITION: the artist's own primary key must differ from its
+			// MBID, or "the resolver passed a.ID" would be indistinguishable
+			// from passing the id.
+			if a.ID == stored {
+				t.Fatalf("precondition: artist ID %q collides with the stored MBID", a.ID)
+			}
+
+			mb := &fakeMB{
+				meta:   &provider.ArtistMetadata{Name: "Example Band"},
+				groups: rgs("First Record"),
+			}
+			got, err := newTestResolver(mb, found("First Record")).Resolve(t.Context(), a)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+
+			// PRECONDITION: both provider calls actually happened, or an
+			// unrecorded id would read as a matching one.
+			if mb.artistCalls != 1 {
+				t.Fatalf("GetArtist called %d times, want 1", mb.artistCalls)
+			}
+			if mb.groupCalls != 1 {
+				t.Fatalf("GetReleaseGroups called %d times, want 1", mb.groupCalls)
+			}
+
+			if mb.artistMBID != stored {
+				t.Errorf("GetArtist received %q, want the trimmed stored id %q", mb.artistMBID, stored)
+			}
+			if mb.groupMBID != stored {
+				t.Errorf("GetReleaseGroups received %q, want the trimmed stored id %q", mb.groupMBID, stored)
+			}
+			// The ledger row must record the same id that was actually checked,
+			// or the verdict names one id and was measured against another.
+			if got.Validation.MBID != stored {
+				t.Errorf("Validation.MBID = %q, want the trimmed stored id %q", got.Validation.MBID, stored)
 			}
 		})
 	}
