@@ -335,23 +335,28 @@ case "$race_flag" in
     ;;
   *)
     if ! run_changed_pkgs_test; then
-      echo ""
+      # BLOCKING in every failure mode since #2983 -- see the rationale in the
+      # RUN_RACE comment block above. The message distinguishes the two cases
+      # only as a hint, never as a verdict:
+      #
+      # DO NOT restore a behavioral split keyed on the profile being empty.
+      # That discriminator is UNRELIABLE. It rested on "go test emits no
+      # coverage profile when a package doesn't compile", which no longer
+      # holds: on Go 1.26 a deliberate syntax error in a changed package
+      # produced `[build failed]` AND a non-empty $COVER_OUT (verified
+      # 2026-08-10). While the assertion branch was advisory, that made a
+      # genuine build break silently non-blocking -- the exact masking the
+      # comment claimed to prevent. Both branches exit 1 now, so an
+      # unreliable discriminator costs at most a slightly-off hint.
       if [ -s "$COVER_OUT" ]; then
-        # Ordinary test-assertion failure: go test ran to completion and
-        # emitted a real profile. BLOCKING since #2983 -- see the rationale in
-        # the RUN_RACE comment block above.
-        echo "FAIL: changed-packages test run failed (see output above)." >&2
-        echo "      Fix the failing test, or use RUN_RACE=0 to skip the local test run and patch coverage deliberately." >&2
-        exit 1
+        test_fail_hint="Usually a failing assertion; check the output for '[build failed]' too."
       else
-        # Build/compile failure: go test never produced a profile at all,
-        # meaning the changed packages don't even compile. Reported
-        # separately from an ordinary failing assertion because the fix is
-        # different, and because it must never fall through to the
-        # empty-profile skip below, which would let patch-coverage.sh read it
-        # as "nothing to enforce" and exit 0.
-        echo "FAIL: changed-packages test run produced no coverage profile -- this indicates a build/compile error in the changed packages (not just a failing test assertion). Fix the build before pushing." >&2
+        test_fail_hint="No coverage profile was produced, which usually means the changed packages do not compile."
       fi
+      echo ""
+      echo "FAIL: changed-packages test run failed (see output above)." >&2
+      echo "      $test_fail_hint" >&2
+      echo "      Fix it, or use RUN_RACE=0 to skip the local test run and patch coverage deliberately." >&2
       exit 1
     fi
     if [ ! -s "$COVER_OUT" ]; then
