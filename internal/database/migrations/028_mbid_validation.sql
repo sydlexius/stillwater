@@ -75,13 +75,17 @@ CREATE TABLE IF NOT EXISTS mbid_validation (
     -- The MusicBrainz id that was actually checked, recorded rather than
     -- re-read at display time. If the artist's id changes after the check,
     -- the verdict describes the OLD id and this column is what says so.
-    mbid                    TEXT NOT NULL,
+    mbid                    TEXT NOT NULL CHECK (mbid <> ''),
 
     outcome                 TEXT NOT NULL
                                  CHECK (outcome IN ('validated', 'failed', 'not_checkable')),
 
     -- Machine-readable reason, empty only for a validated row. The enumerated
-    -- values are the taxonomy the resolver classifies into.
+    -- values are a CLOSED vocabulary enforced here, because the reasons
+    -- themselves are fixed Go constants. What is NOT constrained is which
+    -- reason may accompany which outcome -- that pairing is the resolver's
+    -- classification job; see the CHECK below for the one pairing rule this
+    -- schema does enforce.
     reason                  TEXT NOT NULL DEFAULT ''
                                  CHECK (reason IN (
                                      '',

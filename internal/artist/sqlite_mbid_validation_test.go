@@ -570,19 +570,21 @@ func TestMBIDValidation_SchemaRejectsMalformedVerdicts(t *testing.T) {
 
 	cases := []struct {
 		name            string
+		mbid            string
 		outcome, reason string
 	}{
-		{"failed with a blank reason", "failed", ""},
-		{"not_checkable with a blank reason", "not_checkable", ""},
-		{"validated carrying a reason", "validated", "name_mismatch"},
-		{"outcome outside the vocabulary", "probably_fine", "name_mismatch"},
-		{"reason outside the vocabulary", "failed", "vibes"},
+		{"failed with a blank reason", "m", "failed", ""},
+		{"not_checkable with a blank reason", "m", "not_checkable", ""},
+		{"validated carrying a reason", "m", "validated", "name_mismatch"},
+		{"outcome outside the vocabulary", "m", "probably_fine", "name_mismatch"},
+		{"reason outside the vocabulary", "m", "failed", "vibes"},
+		{"blank mbid", "", "validated", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := db.ExecContext(ctx,
 				`INSERT INTO mbid_validation (artist_id, mbid, outcome, reason)
-				 VALUES ('a-1', 'm', ?, ?)`, tc.outcome, tc.reason)
+				 VALUES ('a-1', ?, ?, ?)`, tc.mbid, tc.outcome, tc.reason)
 			if err == nil {
 				t.Fatal("expected the schema CHECK constraint to reject this row")
 			}
