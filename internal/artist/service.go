@@ -140,6 +140,12 @@ type Service struct {
 	mbSnapshots  MBSnapshotRepository
 	memberships  MembershipRepository
 
+	// mbidValidation is the MusicBrainz ID re-validation ledger (#2810).
+	// Nil on a Service built by NewServiceWithRepos that has not called
+	// SetMBIDValidationRepository, matching how mbSnapshots and memberships
+	// are optional there.
+	mbidValidation MBIDValidationRepository
+
 	// renameMu serializes the destination-conflict check and the on-disk
 	// rename in RenameDirectory so two concurrent rename requests targeting
 	// the same parent cannot both pass their os.Lstat(newPath) check and
@@ -223,7 +229,30 @@ func NewService(db *sql.DB) *Service {
 		completeness: newSQLiteCompletenessRepo(db),
 		mbSnapshots:  newSQLiteMBSnapshotRepo(db),
 		memberships:  newSQLiteMembershipRepo(db),
+
+		mbidValidation: newSQLiteMBIDValidationRepo(db),
 	}
+}
+
+// SetMBIDValidationRepository attaches the MusicBrainz ID re-validation ledger
+// (#2810) to the Service. Setter form matches SetMBSnapshotRepository so
+// existing NewServiceWithRepos call sites keep working without a signature
+// break.
+func (s *Service) SetMBIDValidationRepository(repo MBIDValidationRepository) {
+	s.mbidValidation = repo
+}
+
+// MBIDValidations returns the ledger repository, or nil when none is
+// configured.
+//
+// It is a plain accessor rather than a set of pass-through wrappers because
+// the ledger's only consumers so far are the sweep and the report that later
+// PRs add, and neither wants a Service method per repository method. Callers
+// MUST check for nil: a Service built by NewServiceWithRepos without
+// SetMBIDValidationRepository has no ledger, exactly as it has no MB snapshot
+// repository.
+func (s *Service) MBIDValidations() MBIDValidationRepository {
+	return s.mbidValidation
 }
 
 // SetMembershipRepository attaches a MembershipRepository to the artist
