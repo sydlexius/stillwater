@@ -176,10 +176,18 @@ schedule it, never about trusting it unexecuted. (Measured on #2716: a spec
 passed local UAT, survived a static hostile review, and failed all 8 checks the
 first time the real harness ran it.)
 
-Corollary for gate output: the a11y tier is ADVISORY in the auto path, so
-`pre-push-gate.sh` can print "All hard checks passed" while that tier failed.
-Read the tier's own result; a push that "passed" the gate but whose remote ref
-did not move has not landed.
+Corollary for gate output: `pre-push-gate.sh` no longer contains an advisory
+step (#2983). Every check in its default path either BLOCKS the push or is not
+in that path at all, so "All hard checks passed" now means exactly what it
+says. The a11y tier, the provider-failure smoke, and govulncheck default to
+SKIP and are covered by required CI checks; run them locally and BLOCKING with
+`RUN_A11Y=1`, `RUN_PROVIDER_SMOKE=1`, `RUN_VULN=1`. A UI change should still be
+verified with `RUN_A11Y=1` before the push -- CI catching it costs a red check
+and a re-push. `scripts/check-gate-invariant.sh` enforces the no-advisory rule
+mechanically, in the gate and in CI's `Gate Invariant` job.
+
+Still true regardless of the banner: a push that "passed" the gate but whose
+remote ref did not move has not landed.
 
 ## GitHub Issue Hints
 
@@ -254,7 +262,9 @@ See `docs/milestone-protocol.md`. Start with scope assessment, create `~/.claude
 
 ## Helper Scripts
 
-- `scripts/pre-push-gate.sh` -- deterministic pre-push checks (tests, OpenAPI, generated files, lint, patch coverage). Run automatically by the pre-push git hook; do not invoke manually as a standalone pre-PR step (see PR Workflow).
+- `scripts/pre-push-gate.sh` -- deterministic pre-push checks (tests, OpenAPI, generated files, lint, patch coverage). Every check in the default path is BLOCKING; the expensive integration tiers (a11y, provider-failure smoke, govulncheck, the full `-race` suite) default to SKIP behind `RUN_A11Y` / `RUN_PROVIDER_SMOKE` / `RUN_VULN` / `RUN_RACE`, each of which is blocking when set (#2983). Run automatically by the pre-push git hook; do not invoke manually as a standalone pre-PR step (see PR Workflow).
+- `scripts/check-gate-invariant.sh` -- assert `pre-push-gate.sh` has no advisory step in its default path: no `WARN:` verdict, no "not blocking this push", no `FAIL:` announcement that fails to exit (#2983). Run by the gate on itself and by CI's `Gate Invariant` job (`gate.yml`), so weakening the gate and pushing with `--no-verify` still gets caught
+- `scripts/test-check-gate-invariant.sh` -- hermetic mutation tests for the above (`bash scripts/test-check-gate-invariant.sh`)
 - `scripts/dev-restart.sh` -- canonical dev rebuild + restart (use this; never kill by port)
 - `~/.claude/scripts/patch-coverage.sh` (orchestrate plugin; not vendored in-repo) -- patch-level coverage check (called by pre-push-gate)
 - `scripts/coverage-floor.sh` -- per-package coverage floor enforcement (called by pre-push-gate)
