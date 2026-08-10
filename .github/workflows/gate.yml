@@ -673,20 +673,15 @@ jobs:
   # inside the thing it guards cannot catch the case where someone weakens the
   # thing and pushes around it.
   #
-  # NOT currently in the `Protect main` ruleset, so per this file's header it
-  # can go red and the PR still merges. Adding "Gate Invariant" to the required
-  # contexts is a repo-settings change only the maintainer can make, and it is
-  # deliberately not assumed here. Nothing was REMOVED from the local gate on
-  # the strength of this job, so its non-required status weakens no existing
-  # coverage -- it is a new backstop, not a replacement.
-  #
-  # TODO(#TBD): promote "Gate Invariant" to a required status check once it has
-  # a green track record. Tracked separately so the pending promotion is not
-  # just a comment nobody is accountable for; replace #TBD with the issue
-  # number when it is filed.
+  # REQUIRED in the `Protect main` ruleset (added 2026-08-10 alongside #2983),
+  # so a red invariant blocks the merge rather than merely reporting. Nothing
+  # was REMOVED from the local gate on the strength of this job -- it is a
+  # backstop against a weakened gate, not a replacement for one.
   #
   # Runs unconditionally (no paths-filter): it is three greps over one file,
-  # and the always-report property is what would make it safe to require.
+  # and that always-report property is what makes it safe to require. A
+  # required check that can be SKIPPED reads as failed and deadlocks every
+  # merge, so do not add a paths filter here.
   # ---------------------------------------------------------------------------
   gate-invariant:
     name: Gate Invariant
