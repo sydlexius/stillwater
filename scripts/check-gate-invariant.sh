@@ -26,13 +26,15 @@
 #      executable lines. This is deliberately phrase-level: it names the
 #      behavior, so the message a future advisory step would print is the
 #      thing that trips it.
-#   2. No `WARN:`-prefixed output. The gate has exactly two verdicts a reader
-#      needs: a step FAILED (and the gate exited), or a step was SKIPped (and
-#      did not run). `WARN:` is the vocabulary of a third, "it ran and failed
-#      and we are continuing anyway", which the invariant forbids. Use `SKIP:`
-#      for a step that did not run and `HINT:` for advice attached to a real
-#      failure. (`WARNING:` is left alone: the two uses in the gate are
-#      bookkeeping about the lint-cache roster, not the verdict of a check.)
+#   2. No `WARN:`/`WARNING:`-prefixed output. The gate has exactly two
+#      verdicts a reader needs: a step FAILED (and the gate exited), or a step
+#      was SKIPped (and did not run). `WARN:`/`WARNING:` is the vocabulary of
+#      a third, "it ran and failed and we are continuing anyway", which the
+#      invariant forbids -- BOTH spellings are reserved for that verdict, so
+#      widening one without the other reopens the hole. Use `SKIP:` for a step
+#      that did not run, `HINT:` for advice attached to a real failure, and
+#      `NOTE:` for bookkeeping that is not a check verdict at all (e.g. the
+#      lint-cache roster housekeeping in pre-push-gate.sh).
 #   3. Every `FAIL`-announcing line is followed by an exit with a literal
 #      NON-ZERO status. A `FAIL:` message that does not exit within the next
 #      few lines is an advisory step wearing a blocking step's words -- the
@@ -78,15 +80,21 @@ if [ -n "$advisory" ]; then
   status=1
 fi
 
-# --- 2. WARN: verdicts --------------------------------------------------------
+# --- 2. WARN:/WARNING: verdicts ------------------------------------------------
 # No `-n` on the inner grep, for the same reason as check 1 above.
-warns=$(exec_lines | grep -E '(^|[^A-Za-z])WARN:' || true)
+# `WARN(ING)?:` catches BOTH spellings deliberately: `WARN:`/`WARNING:` are a
+# single reserved verdict-only vocabulary (#2994), not two independent
+# prefixes to widen separately. Non-verdict bookkeeping uses `NOTE:` instead
+# (see pre-push-gate.sh's worktree-roster housekeeping) so it never collides
+# with this check.
+warns=$(exec_lines | grep -E '(^|[^A-Za-z])WARN(ING)?:' || true)
 if [ -n "$warns" ]; then
-  echo "FAIL: pre-push-gate.sh emits a 'WARN:' verdict (#2983 invariant):"
+  echo "FAIL: pre-push-gate.sh emits a 'WARN:'/'WARNING:' verdict (#2983 invariant):"
   printf '%s\n' "$warns" | sed 's/^/  /'
   echo "  The gate has two verdicts: a check FAILED (and it exits), or a check"
-  echo "  was SKIPped (and did not run). Use 'SKIP:' for the latter, or 'HINT:'"
-  echo "  for advice printed alongside a real failure."
+  echo "  was SKIPped (and did not run). Use 'SKIP:' for the latter, 'HINT:' for"
+  echo "  advice printed alongside a real failure, or 'NOTE:' for bookkeeping"
+  echo "  that is not a check verdict at all."
   status=1
 fi
 

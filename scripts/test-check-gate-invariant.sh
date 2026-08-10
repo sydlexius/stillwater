@@ -57,9 +57,16 @@ echo \"WARNING no verdict word here but: not blocking this push\""
 expect 1 "rejects 'advisory failure'" "$CLEAN
 echo \"tier: advisory failure in the auto path\""
 
-# --- mutation 2: WARN: verdict ------------------------------------------------
+# --- mutation 2: WARN:/WARNING: verdict ----------------------------------------
+# WARN: and WARNING: are a single reserved vocabulary (#2994) -- both spellings
+# must be rejected, or widening one without the other reopens the hole a real
+# CodeRabbit finding caught (a default-path step printing "WARNING: check
+# failed; continuing" reached "All hard checks passed" undetected).
 expect 1 "rejects a WARN: verdict" "$CLEAN
 echo \"WARN: the tier failed but we are continuing\""
+
+expect 1 "rejects a WARNING: verdict" "$CLEAN
+echo \"WARNING: check failed; continuing\""
 
 # --- mutation 3: FAIL without exit -------------------------------------------
 # Each case below is the SAME advisory shape ("we announced a failure and kept
@@ -209,8 +216,8 @@ expect 0 "allows the banned phrases inside full-line comments" "$CLEAN
 # Historical note: this tier used to print 'not blocking this push' and was
 # an advisory failure in the auto path. It no longer is."
 
-expect 0 "allows 'WARNING:' bookkeeping that is not a check verdict" "$CLEAN
-echo \"    WARNING: could not update the roster; next run may miss a removal\" >&2"
+expect 0 "allows 'NOTE:' bookkeeping that is not a check verdict" "$CLEAN
+echo \"    NOTE: could not update the roster; next run may miss a removal\" >&2"
 
 expect 0 "allows HINT: attached to a real failure" '#!/bin/bash
 if ! measure; then

@@ -17,6 +17,13 @@
 #      defect. `scripts/check-gate-invariant.sh` (run near the top of this
 #      gate) mechanizes the rule so it cannot silently regress.
 #
+#      `WARN:`/`WARNING:` are RESERVED for that forbidden third verdict
+#      ("it ran, it failed, we are continuing anyway") and the guard rejects
+#      both spellings wherever they appear in the default path (#2994).
+#      Non-verdict bookkeeping (a best-effort side-note that is not the
+#      outcome of a check -- see the worktree-roster housekeeping below) uses
+#      `NOTE:` instead, so it never gets mistaken for a check result.
+#
 #   2. A CHECK IS ONLY ELIGIBLE TO LEAVE IF A *REQUIRED* CI CHECK COVERS IT.
 #      "There is a CI job that does something similar" is not enough -- a job
 #      that is not in the `Protect main` ruleset can go red and the PR merges
@@ -495,7 +502,7 @@ if [ -f "$WT_ROSTER" ]; then
   if WT_GONE="$(LC_ALL=C comm -23 "$WT_ROSTER" <(printf '%s\n' "$WT_NOW"))" && [ -n "$WT_GONE" ]; then
     echo "==> worktree removed since the last gate run; cleaning the shared lint cache:"
     printf '%s\n' "$WT_GONE" | sed 's/^/      - /'
-    golangci-lint cache clean || echo "    WARNING: cache clean failed; phantom findings may follow" >&2
+    golangci-lint cache clean || echo "    NOTE: cache clean failed; phantom findings may follow" >&2
   fi
 fi
 # WRITE THE ROSTER ATOMICALLY AND BEST-EFFORT. Two distinct failures, both fatal
@@ -519,7 +526,7 @@ if [ -n "$WT_ROSTER_TMP" ] &&
   :
 else
   [ -n "$WT_ROSTER_TMP" ] && rm -f "$WT_ROSTER_TMP"
-  echo "    WARNING: could not update the worktree roster ($WT_ROSTER); a worktree removed before the next gate run may go undetected" >&2
+  echo "    NOTE: could not update the worktree roster ($WT_ROSTER); a worktree removed before the next gate run may go undetected" >&2
 fi
 
 golangci-lint run --new-from-rev="$BASE" ./...
