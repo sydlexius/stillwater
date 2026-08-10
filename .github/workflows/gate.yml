@@ -661,6 +661,83 @@ jobs:
           echo "$output"
 
   # ---------------------------------------------------------------------------
+  # Gate invariant (#2983)
+  #
+  # Mirrors the `check-gate-invariant.sh` step in pre-push-gate.sh: asserts the
+  # gate's default path contains no ADVISORY step -- one that runs, fails, and
+  # then lets the gate print "All hard checks passed" anyway. #2983 removed the
+  # four that had accumulated; this job is what stops a fifth from arriving.
+  #
+  # It exists in CI because the guard's subject IS the local hook, and the local
+  # hook is exactly what a `--no-verify` push skips. A guard that only runs
+  # inside the thing it guards cannot catch the case where someone weakens the
+  # thing and pushes around it.
+  #
+  # REQUIRED in the `Protect main` ruleset (added 2026-08-10 alongside #2983),
+  # so a red invariant blocks the merge rather than merely reporting. Nothing
+  # was REMOVED from the local gate on the strength of this job -- it is a
+  # backstop against a weakened gate, not a replacement for one.
+  #
+  # Runs unconditionally (no paths-filter): it is three greps over one file,
+  # and that always-report property is what makes it safe to require. A
+  # required check that can be SKIPPED reads as failed and deadlocks every
+  # merge, so do not add a paths filter here.
+  # ---------------------------------------------------------------------------
+  gate-invariant:
+    name: Gate Invariant
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # ORDER MATTERS. "Check gate invariant" runs FIRST because the guard's
+      # self-test ends with an assertion against the LIVE pre-push-gate.sh. A
+      # real invariant violation therefore fails BOTH steps, and whichever runs
+      # first is the one the developer reads. Only this step writes the
+      # remediation block to $GITHUB_STEP_SUMMARY, so running the self-test
+      # first would make the most likely real failure the least actionable: the
+      # run would stop at "Guard self-test failed" with no summary and no
+      # instructions. Both still run on a green build, so a genuine guard
+      # regression is caught either way -- only the reporting order changes.
+      - name: Check gate invariant
+        run: |
+          output=$(bash scripts/check-gate-invariant.sh 2>&1) || {
+            echo "$output"
+            {
+              echo "## Gate Invariant -- FAILED"
+              echo ""
+              echo "A step in \`scripts/pre-push-gate.sh\`'s default path can now fail while the gate prints \"All hard checks passed\" (#2983)."
+              echo ""
+              echo "Either make the step BLOCK (exit non-zero on failure), or take it out of the default path: give it a \`RUN_*\` opt-in that defaults to SKIP, and name the REQUIRED CI check that covers it."
+              echo ""
+              echo "Details:"
+              echo '```'
+              echo "$output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          echo "$output"
+
+      # The guard's own mutation tests, for the same reason the zizmor guard
+      # runs its self-test above: a guard that quietly returns OK manufactures
+      # confidence. Its first implementation reported every FAIL as exit-less
+      # because an awk look-ahead compared array subscripts lexically -- caught
+      # by these tests, not by reading it.
+      - name: Guard self-test
+        run: bash scripts/test-check-gate-invariant.sh
+
+      # Asserts the gate REFUSES an unrecognized RUN_* value instead of folding
+      # it into "unset" and printing "skipped by default" over a tier the
+      # operator asked to run (#2983). Hermetic and sub-second: the invalid
+      # values abort at the top of the gate, before the worktree lock and
+      # before any check runs.
+      - name: RUN_* flag resolution self-test
+        run: bash scripts/test-run-flag-resolution.sh
+
+  # ---------------------------------------------------------------------------
   # Shellcheck (#2445)
   #
   # NOT a required status check (new job). Before this, a script-only diff

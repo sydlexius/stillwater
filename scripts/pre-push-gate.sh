@@ -1,5 +1,51 @@
 #!/bin/bash
 # pre-push-gate.sh -- deterministic pre-push checks; run before code review
+#
+# WHAT THIS GATE IS FOR (#2983)
+# -----------------------------
+# The default ("auto") path -- no RUN_* flags set -- contains ONLY checks that
+# are fast AND blocking. Two rules define it, and neither is negotiable:
+#
+#   1. NO ADVISORY STEP IN THE AUTO PATH. Every step either BLOCKS the push or
+#      is not in the default path at all. A step that runs, fails, and then
+#      lets the gate print "All hard checks passed" is worse than an absent
+#      step: it costs wall-clock time and then teaches the reader to distrust
+#      the banner. Before #2983 the a11y tier, govulncheck, the provider
+#      failure smoke, and an ordinary test-assertion failure were all advisory
+#      here, and the repo instructions carried a warning label explaining how
+#      to read the gate's own success message. That warning label was the
+#      defect. `scripts/check-gate-invariant.sh` (run near the top of this
+#      gate) mechanizes the rule so it cannot silently regress.
+#
+#      `WARN:`/`WARNING:` are RESERVED for that forbidden third verdict
+#      ("it ran, it failed, we are continuing anyway") and the guard rejects
+#      both spellings wherever they appear in the default path (#2994).
+#      Non-verdict bookkeeping (a best-effort side-note that is not the
+#      outcome of a check -- see the worktree-roster housekeeping below) uses
+#      `NOTE:` instead, so it never gets mistaken for a check result.
+#
+#   2. A CHECK IS ONLY ELIGIBLE TO LEAVE IF A *REQUIRED* CI CHECK COVERS IT.
+#      "There is a CI job that does something similar" is not enough -- a job
+#      that is not in the `Protect main` ruleset can go red and the PR merges
+#      anyway (#2503). The checks that remain below are here either because
+#      they are cheap and blocking, or because CI does NOT require an
+#      equivalent (patch coverage, the codecov/floor mirror, fuzz-matrix
+#      drift, prefs-coverage, the OpenAPI breaking-change diff, the raw-error
+#      leak sweep) and dropping them would move a defect all the way to a
+#      human reviewer.
+#
+# The expensive integration-shaped tiers keep their code here but default to
+# SKIP, each with a blocking opt-in:
+#
+#   RUN_A11Y=1            accessibility (axe-core)   CI: "A11y Smoke Tests (Playwright + axe-core)" (ci.yml)
+#   RUN_PROVIDER_SMOKE=1  provider failure smoke     CI: "Provider Failure Smoke" (gate.yml)
+#   RUN_VULN=1            govulncheck                CI: "Go Vulnerability Check" (security.yml)
+#   RUN_RACE=1            full -race suite           CI: "Test" (ci.yml)
+#
+# Bruno route parity left this gate entirely; CI's required "Bruno Route
+# Parity" job (gate.yml) owns it. scripts/check-bruno-parity.sh is retained
+# because that job invokes it.
+#
 # Exit status:
 #   0 = all hard checks passed
 #   1 = a hard check failed (test, lint, openapi, etc.)
@@ -9,6 +55,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# --- RUN_* flag resolution ----------------------------------------------------
+# Every RUN_* tier below is three-state: truthy => RUN (blocking), falsy =>
+# explicit SKIP, UNSET => the tier's documented default. A fourth state exists
+# -- SET TO SOMETHING UNRECOGNIZED (`RUN_VULN=truee`) -- and must NOT fold into
+# "unset"; see scripts/lib/run-flags.sh for why, and for the exit-code
+# convention. Resolved here, at the top, so a typo costs a second rather than
+# sitting undetected through the tests, lint, and OpenAPI steps.
+. "$SCRIPT_DIR/lib/run-flags.sh"
+
+resolve_run_flag RUN_RACE "${RUN_RACE:-}"; RACE_MODE="$RESOLVED_RUN_FLAG"
+resolve_run_flag RUN_VULN "${RUN_VULN:-}"; VULN_MODE="$RESOLVED_RUN_FLAG"
+resolve_run_flag RUN_PROVIDER_SMOKE "${RUN_PROVIDER_SMOKE:-}"; PROVIDER_SMOKE_MODE="$RESOLVED_RUN_FLAG"
+resolve_run_flag RUN_A11Y "${RUN_A11Y:-}"; A11Y_MODE="$RESOLVED_RUN_FLAG"
+
 BASE=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
 
 # Validate BASE resolves to a real commit so downstream steps that pass it to
@@ -122,6 +183,18 @@ fi
 echo "OK"
 
 echo ""
+echo "=== Gate invariant (no advisory step in the default path) ==="
+# Assert this script still satisfies the rule in the header block: a check in
+# the default path either BLOCKS or is not in the default path. Three greps
+# over one file, so it runs unconditionally and fail-fasts.
+#
+# The gate checking ITSELF is the point. The advisory steps #2983 removed were
+# each added by someone with a good local reason, so the counter-pressure has
+# to be something that fails rather than something that reminds. Mirrored by
+# CI's "Gate Invariant" job (gate.yml) for the --no-verify path.
+bash "$SCRIPT_DIR/check-gate-invariant.sh"
+
+echo ""
 echo "=== Tool version drift ==="
 # Assert the lint/spell tool versions pinned independently in the bash hook,
 # the pre-commit framework config, and the CI workflows all agree. A drift
@@ -164,11 +237,22 @@ MODIFIED_GO_FILES=$(git diff --name-only --diff-filter=ACMR "$BASE" -- '*.go' \
 # Guard against BSD xargs (macOS) running `dirname` with zero args when the
 # input is empty; GNU xargs has --no-run-if-empty but BSD does not. Empty
 # file list -> empty package list -> callers below skip cleanly.
+#
+# EXACT PACKAGES, NOT `/...` SUBTREES (#2983). This used to emit `./<dir>/...`,
+# which pulls in every SUBPACKAGE of a changed directory even when no file in
+# those subpackages changed: one edit to internal/provider/*.go dragged in all
+# twelve provider adapters, and one edit to internal/api/*.go dragged in
+# filterparams + middleware. Those subpackages are exactly what CI's sharded,
+# required `Test` job exists to run. Patch coverage -- the reason this profile
+# is produced at all -- only ever measures lines in the CHANGED files, so the
+# subtree expansion bought coverage of code no local check reads, at the price
+# of the gate's longest step. The narrower set is a strict subset of what CI
+# runs, so nothing stops being tested; it stops being tested TWICE.
 if [ -n "$MODIFIED_GO_FILES" ]; then
   MODIFIED_GO_PKGS=$(printf '%s\n' "$MODIFIED_GO_FILES" \
     | xargs -n1 dirname \
     | sort -u \
-    | sed 's|^|./|; s|$|/...|')
+    | sed 's|^|./|')
 else
   MODIFIED_GO_PKGS=""
 fi
@@ -183,18 +267,37 @@ echo "=== Tests ==="
 #   - RUN_RACE falsy  (0/false/no/off): skip the test run entirely.
 #   - RUN_RACE unset (the DEFAULT): run ONE fast, changed-packages-only,
 #     NON-race test (`go test -coverprofile=... $MODIFIED_GO_PKGS`, no
-#     `-race`, no `-coverpkg=./...`). This is deliberately narrower than the
-#     full suite: it's a quick "did I obviously break a test" signal, and it
-#     produces the coverage profile the patch-coverage step below consumes.
-#     An ORDINARY TEST-ASSERTION FAILURE in this default path is ADVISORY
-#     (warn, don't block) -- CI's required `Test` job runs the full race
-#     suite across 9 shards and is the authoritative gate. A BUILD/COMPILE
-#     failure in the changed packages is different and always BLOCKS: `go
-#     test` never emits a coverage profile when the package doesn't compile,
-#     so treating it as advisory-only would let the empty-profile fallback
-#     silently swallow it as "nothing to measure" below. If no Go files
-#     changed since BASE, the run is skipped (nothing to test).
-race_flag="$(printf '%s' "${RUN_RACE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+#     `-race`, no `-coverpkg=./...`, EXACT packages rather than `/...`
+#     subtrees -- see the "Changed Go files/packages" step above). This is
+#     deliberately narrower than the full suite: it's a quick "did I obviously
+#     break a test" signal, and it produces the coverage profile the
+#     patch-coverage step below consumes. If no Go files changed since BASE,
+#     the run is skipped (nothing to test).
+#
+#     THIS STEP IS BLOCKING, in every one of its failure modes (#2983). It
+#     used to treat an ordinary test-assertion failure as advisory on the
+#     grounds that CI's required `Test` job is authoritative -- which is true
+#     of the VERDICT and irrelevant to the COST. The whole reason to keep a
+#     test run local is that a break caught here costs a re-run, while the
+#     same break caught in CI costs a red check plus a re-push, and caught by
+#     a reviewer costs an entire review round. An advisory local failure buys
+#     the cost of the run and then discards the only thing it produced.
+#
+#     The build/compile-failure branch is still distinguished from an ordinary
+#     failing assertion, because the two need different MESSAGES and because
+#     `go test` emits no coverage profile when a package does not compile --
+#     but both now exit 1.
+#
+#     Escape hatch for a genuinely expensive changed package (internal/api's
+#     own suite is ~160s locally): `RUN_RACE=0` skips the test run and patch
+#     coverage together. That is an explicit, recorded opt-out, not a silent
+#     downgrade of a failure the gate already observed.
+#
+#   - RUN_RACE set to anything else (`RUN_RACE=truee`): the gate already
+#     aborted with exit 2 at the top of this file. See resolve_run_flag.
+# RACE_MODE is resolved at the top of this file (see resolve_run_flag): "on",
+# "off", or "default". An unrecognized RUN_RACE never reaches here -- it
+# already aborted with exit 2.
 
 run_full_race_suite() {
   # -coverpkg=./... matches CI's methodology (.github/workflows/ci.yml): each
@@ -229,10 +332,11 @@ run_changed_pkgs_test() {
   # invocation's `go test` fails to compile: the build-failure branch below
   # tells a compile failure apart from an ordinary test failure by checking
   # whether $COVER_OUT is non-empty, and a stale non-empty file would make a
-  # genuine build breakage misread as an ordinary (advisory) test failure --
-  # masking it instead of blocking the push. This is belt-and-suspenders on
-  # top of the cleanup() EXIT trap, which only covers the common case where
-  # the script exits normally.
+  # genuine build breakage misread as an ordinary test failure. Both block
+  # now, so the consequence is a misleading MESSAGE rather than a masked
+  # failure -- still worth preventing. This is belt-and-suspenders on top of
+  # the cleanup() EXIT trap, which only covers the common case where the
+  # script exits normally.
   rm -f "$COVER_OUT"
   # shellcheck disable=SC2086  # word-splitting on newlines is intentional
   go test -count=1 -covermode=atomic -coverprofile="$COVER_OUT" $MODIFIED_GO_PKGS
@@ -246,46 +350,51 @@ run_changed_pkgs_test() {
 # coverage wasn't enforced (see the "Patch coverage" section below).
 SKIP_PATCH_COVERAGE=0
 SKIP_PATCH_COVERAGE_REASON=""
-case "$race_flag" in
-  0 | false | no | off)
+case "$RACE_MODE" in
+  off)
     echo "tests: skipped (RUN_RACE=${RUN_RACE} forces opt-out; CI still runs the full race suite)"
     echo "tests: no coverage profile generated -- patch coverage also skipped for this push"
     SKIP_PATCH_COVERAGE_REASON="RUN_RACE=${RUN_RACE} skipped the test run, so no profile is available; CI's Coverage Floor / codecov still gate this"
     SKIP_PATCH_COVERAGE=1
     ;;
-  1 | true | yes | on)
+  on)
     run_full_race_suite
     ;;
   *)
     if ! run_changed_pkgs_test; then
+      # BLOCKING in every failure mode since #2983 -- see the rationale in the
+      # RUN_RACE comment block above. The message distinguishes the two cases
+      # only as a hint, never as a verdict:
+      #
+      # DO NOT restore a behavioral split keyed on the profile being empty.
+      # That discriminator is UNRELIABLE. It rested on "go test emits no
+      # coverage profile when a package doesn't compile", which no longer
+      # holds: on Go 1.26 a deliberate syntax error in a changed package
+      # produced `[build failed]` AND a non-empty $COVER_OUT (verified
+      # 2026-08-10). While the assertion branch was advisory, that made a
+      # genuine build break silently non-blocking -- the exact masking the
+      # comment claimed to prevent. Both branches exit 1 now, so an
+      # unreliable discriminator costs at most a slightly-off hint.
       if [ -s "$COVER_OUT" ]; then
-        # Ordinary test-assertion failure: go test still ran to completion and
-        # emitted a real profile. Advisory only -- CI's full -race suite is
-        # authoritative; patch coverage below still runs against this profile.
-        echo ""
-        echo "WARN: changed-packages test run failed (see output above) -- not blocking this push."
-        echo "WARN: CI's Test job runs the full -race suite and is authoritative; set RUN_RACE=1 to make this blocking locally."
+        test_fail_hint="Usually a failing assertion; check the output for '[build failed]' too."
       else
-        # Build/compile failure: go test never produced a profile at all,
-        # meaning the changed packages don't even compile. This is strictly
-        # worse than an ordinary test failure and must never be masked as
-        # advisory or fall through to the empty-profile skip below, which
-        # would let patch-coverage.sh read it as "nothing to enforce" and
-        # exit 0 -- a silent gate weakening on a genuinely broken build.
-        echo ""
-        echo "FAIL: changed-packages test run produced no coverage profile -- this indicates a build/compile error in the changed packages (not just a failing test assertion). Fix the build before pushing." >&2
-        exit 1
+        test_fail_hint="No coverage profile was produced, which usually means the changed packages do not compile."
       fi
+      echo ""
+      echo "FAIL: changed-packages test run failed (see output above)." >&2
+      echo "      $test_fail_hint" >&2
+      echo "      Fix it, or use RUN_RACE=0 to skip the local test run and patch coverage deliberately." >&2
+      exit 1
     fi
     if [ ! -s "$COVER_OUT" ]; then
       # Reachable only when run_changed_pkgs_test exited 0 (or was skipped
       # outright because no Go files changed) yet left no profile -- there is
       # legitimately nothing to measure. Skip patch coverage explicitly with
-      # a WARN instead of writing a minimal "mode: atomic" placeholder profile:
+      # a SKIP instead of writing a minimal "mode: atomic" placeholder profile:
       # patch-coverage.sh treats an empty profile as "no executable lines,
       # nothing to enforce" and exits 0, which would read identically to a
       # real, passing coverage check for genuine Go changes.
-      echo "WARN: no coverage profile produced by the changed-packages test run -- patch coverage skipped (nothing to measure for this push)"
+      echo "SKIP: no coverage profile produced by the changed-packages test run -- patch coverage skipped (nothing to measure for this push)"
       SKIP_PATCH_COVERAGE_REASON="changed-packages test run produced no coverage profile (no Go packages changed since BASE, or the changed packages have nothing testable)"
       SKIP_PATCH_COVERAGE=1
     fi
@@ -305,42 +414,25 @@ echo "=== Vulnerability scan (govulncheck) ==="
 #     for a full, CI-equivalent local run.
 #   - RUN_VULN falsy  (0/false/no/off): force a SKIP (escape hatch when
 #     offline or the vuln DB fetch is misbehaving; CI still gates this).
-#   - RUN_VULN unset (auto, the DEFAULT): run iff Go-relevant files changed
-#     since BASE (any *.go file -- including generated *_templ.go and
-#     deletions -- or go.mod/go.sum), otherwise SKIP: nothing
-#     reachable-vulnerability-wise could have changed. A failure in this auto
-#     path is ADVISORY (warn, don't block): CI's Go Vulnerability Check job
-#     (required in the branch-protection ruleset) is the strict gate.
-vuln_flag="$(printf '%s' "${RUN_VULN:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-
-# vuln_relevant: did this branch touch any file that could change
-# govulncheck's result -- any Go source file or the dependency manifests?
-# Deliberately NOT reusing MODIFIED_GO_FILES: that list is `--diff-filter=ACMR`
-# (so it drops DELETIONS, which can still change the reachable-vulnerability
-# set) and strips generated `*_templ.go` (which is compiled and scanned by
-# `govulncheck ./...`). A plain name-only diff over every `*.go` avoids both
-# false-skips; being over-inclusive here only ever costs an extra advisory run.
-vuln_relevant() {
-  git diff --name-only "$BASE" HEAD 2>/dev/null \
-    | grep -qE '\.go$|^go\.(mod|sum)$'
-}
-
+#   - RUN_VULN unset (auto, the DEFAULT since #2983): SKIP. The auto path used
+#     to run govulncheck whenever Go-relevant files changed and then treat a
+#     failure as ADVISORY, which is exactly the shape #2983 forbids: 30-60s of
+#     network-dependent work whose verdict the gate then declines to act on.
+#     The authoritative check is CI's required "Go Vulnerability Check" job
+#     (security.yml), which runs unconditionally on every push and PR to main
+#     with no paths-filter on the trigger.
+#   - RUN_VULN set to anything else (`RUN_VULN=truee`): the gate already aborted
+#     with exit 2 at the top of this file. See resolve_run_flag.
 run_vuln=0
-vuln_blocking=0
-case "$vuln_flag" in
-  0 | false | no | off)
+case "$VULN_MODE" in
+  off)
     echo "vuln: skipped (RUN_VULN=${RUN_VULN} forces opt-out; CI still runs govulncheck)"
     ;;
-  1 | true | yes | on)
+  on)
     run_vuln=1
-    vuln_blocking=1
     ;;
   *)
-    if ! vuln_relevant; then
-      echo "vuln: skipped (no Go source or go.mod/go.sum changes since BASE; set RUN_VULN=1 to force)"
-    else
-      run_vuln=1
-    fi
+    echo "vuln: skipped by default -- CI's required 'Go Vulnerability Check' job (security.yml) is authoritative; set RUN_VULN=1 for a blocking local run"
     ;;
 esac
 
@@ -351,15 +443,10 @@ if [ "$run_vuln" -eq 1 ]; then
   # and whole-module ./... scope to match CI's authoritative behavior.
   if ! go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...; then
     echo ""
-    if [ "$vuln_blocking" -eq 1 ]; then
-      echo "FAIL: govulncheck exited non-zero -- a reachable vulnerability, or a tool/download/run error; see the govulncheck output above" >&2
-      exit 1
-    fi
-    echo "WARN: vuln: advisory failure in the auto path -- not blocking this push."
-    echo "WARN: vuln: CI's Go Vulnerability Check job is authoritative; set RUN_VULN=1 to make this blocking locally."
-  else
-    echo "OK"
+    echo "FAIL: govulncheck exited non-zero -- a reachable vulnerability, or a tool/download/run error; see the govulncheck output above" >&2
+    exit 1
   fi
+  echo "OK"
 fi
 
 echo ""
@@ -415,7 +502,7 @@ if [ -f "$WT_ROSTER" ]; then
   if WT_GONE="$(LC_ALL=C comm -23 "$WT_ROSTER" <(printf '%s\n' "$WT_NOW"))" && [ -n "$WT_GONE" ]; then
     echo "==> worktree removed since the last gate run; cleaning the shared lint cache:"
     printf '%s\n' "$WT_GONE" | sed 's/^/      - /'
-    golangci-lint cache clean || echo "    WARNING: cache clean failed; phantom findings may follow" >&2
+    golangci-lint cache clean || echo "    NOTE: cache clean failed; phantom findings may follow" >&2
   fi
 fi
 # WRITE THE ROSTER ATOMICALLY AND BEST-EFFORT. Two distinct failures, both fatal
@@ -439,7 +526,7 @@ if [ -n "$WT_ROSTER_TMP" ] &&
   :
 else
   [ -n "$WT_ROSTER_TMP" ] && rm -f "$WT_ROSTER_TMP"
-  echo "    WARNING: could not update the worktree roster ($WT_ROSTER); a worktree removed before the next gate run may go undetected" >&2
+  echo "    NOTE: could not update the worktree roster ($WT_ROSTER); a worktree removed before the next gate run may go undetected" >&2
 fi
 
 golangci-lint run --new-from-rev="$BASE" ./...
@@ -522,6 +609,16 @@ echo "=== zizmor suppression scope ==="
 # the guard honest.
 bash "$SCRIPT_DIR/test-check-zizmor-suppressions.sh"
 bash "$SCRIPT_DIR/check-zizmor-suppressions.sh"
+
+echo ""
+echo "=== RUN_* flag resolution (#2983) ==="
+# Hermetic, sub-second: asserts this gate still REFUSES an unrecognized RUN_*
+# value rather than folding it into "unset". The regression it guards is
+# invisible by construction -- a mistyped RUN_VULN=truee would print "skipped by
+# default" and the gate would go green, so the operator's evidence that the
+# tier ran is a message saying it did not. Nothing else in the gate can
+# observe that, which is why it gets its own check.
+bash "$SCRIPT_DIR/test-run-flag-resolution.sh"
 
 echo ""
 echo "=== CSS lint (diff-scoped ratchet, #2402) ==="
@@ -760,7 +857,7 @@ else
       bash "$PATCH_COVERAGE_HELPER"; then
     :
   else
-    echo "WARN: if this looks spurious, run \`RUN_RACE=1 bash scripts/pre-push-gate.sh\` for the full-profile (CI-equivalent) coverage." >&2
+    echo "HINT: if this looks spurious, run \`RUN_RACE=1 bash scripts/pre-push-gate.sh\` for the full-profile (CI-equivalent) coverage." >&2
     exit 1
   fi
 fi
@@ -790,57 +887,30 @@ echo "OK: $(wc -l < "$live_fuzz_file" | tr -d ' ') fuzz targets, matrix set matc
 
 echo ""
 echo "=== Provider failure smoke test ==="
-# RUN_PROVIDER_SMOKE three-state gate, mirroring the RUN_RACE / RUN_VULN
-# pattern above: CI's "Provider Failure Smoke" job (gate.yml) is a required
-# check, gated there by a dorny/paths-filter on '**/*.go',
-# scripts/smoke-provider-failure.sh, scripts/pre-push-gate.sh,
-# .github/workflows/gate.yml, go.mod, and go.sum -- so it is CI-authoritative
-# and load-sensitive locally (builds a binary, boots a temporary server).
-# Mirrors that same filter here so the local auto-run tracks CI's own
-# relevance decision instead of drifting.
-#   - RUN_PROVIDER_SMOKE truthy (1/true/yes/on): force a RUN, BLOCKING on
-#     failure regardless of changed files. Prior behavior; the escape hatch
-#     for a full, CI-equivalent local run.
-#   - RUN_PROVIDER_SMOKE falsy  (0/false/no/off): force a SKIP (escape hatch
-#     when the local server can't boot, e.g. a port conflict; CI still gates
-#     this).
-#   - RUN_PROVIDER_SMOKE unset (auto, the DEFAULT): run iff Go source or the
-#     smoke/gate scripts or go.mod/go.sum changed since BASE, otherwise SKIP.
-#     A failure in this auto path is ADVISORY (warn, don't block): CI's
-#     required job is the strict, authoritative gate.
-provider_smoke_flag="$(printf '%s' "${RUN_PROVIDER_SMOKE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-
-# provider_smoke_relevant: mirrors gate.yml's provider-failure-smoke
-# paths-filter (`'**/*.go'`, the smoke/gate scripts themselves, and the
-# dependency manifests). Like vuln_relevant above, it does NOT reuse
-# MODIFIED_GO_FILES: gate.yml's `'**/*.go'` glob matches EVERY Go file,
-# including generated `*_templ.go` and deletions, whereas MODIFIED_GO_FILES
-# strips both -- so reusing it would make the local auto-run under-fire
-# relative to CI's own relevance decision. A plain name-only diff over `*.go`
-# tracks the CI filter exactly.
-provider_smoke_relevant() {
-  git diff --name-only "$BASE" HEAD 2>/dev/null \
-    | grep -qE '\.go$|^go\.(mod|sum)$|^scripts/smoke-provider-failure\.sh$|^scripts/pre-push-gate\.sh$|^\.github/workflows/gate\.yml$'
-}
-
+# RUN_PROVIDER_SMOKE three-state gate, mirroring the RUN_VULN pattern above.
+# CI's "Provider Failure Smoke" job (gate.yml) is a REQUIRED check and is the
+# authoritative gate. Locally the step builds a binary and boots a temporary
+# server (~60s, load-sensitive), so it is exactly the integration-shaped cost
+# #2983 moved out of the default path.
+#   - RUN_PROVIDER_SMOKE truthy (1/true/yes/on): RUN, BLOCKING on failure.
+#   - RUN_PROVIDER_SMOKE falsy  (0/false/no/off): explicit SKIP.
+#   - RUN_PROVIDER_SMOKE unset (the DEFAULT since #2983): SKIP. The previous
+#     auto path ran it on any Go change and then treated a failure as
+#     ADVISORY -- the pattern this gate no longer contains.
+#   - RUN_PROVIDER_SMOKE set to anything else: the gate already aborted with
+#     exit 2 at the top of this file. See resolve_run_flag.
 SMOKE_FAILURE_SCRIPT="$SCRIPT_DIR/smoke-provider-failure.sh"
 
 run_provider_smoke=0
-provider_smoke_blocking=0
-case "$provider_smoke_flag" in
-  0 | false | no | off)
+case "$PROVIDER_SMOKE_MODE" in
+  off)
     echo "provider-smoke: skipped (RUN_PROVIDER_SMOKE=${RUN_PROVIDER_SMOKE} forces opt-out; CI still runs the provider failure smoke)"
     ;;
-  1 | true | yes | on)
+  on)
     run_provider_smoke=1
-    provider_smoke_blocking=1
     ;;
   *)
-    if ! provider_smoke_relevant; then
-      echo "provider-smoke: skipped (no Go/smoke-script/go.mod/go.sum changes since BASE; set RUN_PROVIDER_SMOKE=1 to force)"
-    else
-      run_provider_smoke=1
-    fi
+    echo "provider-smoke: skipped by default -- CI's required 'Provider Failure Smoke' job (gate.yml) is authoritative; set RUN_PROVIDER_SMOKE=1 for a blocking local run"
     ;;
 esac
 
@@ -848,198 +918,67 @@ if [ "$run_provider_smoke" -eq 1 ]; then
   # The script is invoked via `bash` below, so its exec bit is irrelevant --
   # only presence matters (a non-executable-but-present script still runs).
   # A missing script is a local-environment fault (stale checkout, partial
-  # sync); route it through the same advisory/blocking split as a smoke
-  # FAILURE, so the documented "warn, don't block" auto path is not silently
-  # broken into a hard exit.
+  # sync); it blocks, because the only way to reach this branch now is an
+  # explicit RUN_PROVIDER_SMOKE=1, and silently doing nothing in response to
+  # "run this" is the failure mode this whole change exists to remove.
   if [ ! -f "$SMOKE_FAILURE_SCRIPT" ]; then
-    echo "pre-push-gate: smoke-provider-failure.sh not found in scripts/" >&2
-    if [ "$provider_smoke_blocking" -eq 1 ]; then
-      exit 1
-    fi
-    echo "WARN: provider-smoke: smoke script missing -- advisory auto path, not blocking this push."
-    echo "WARN: provider-smoke: CI's Provider Failure Smoke job is authoritative; set RUN_PROVIDER_SMOKE=1 to make this blocking locally."
-  elif ! bash "$SMOKE_FAILURE_SCRIPT" 2>&1; then
-    echo ""
-    if [ "$provider_smoke_blocking" -eq 1 ]; then
-      echo "FAIL: provider failure smoke test reported failures (see output above)."
-      exit 1
-    fi
-    echo "WARN: provider-smoke: advisory failure in the auto path -- not blocking this push."
-    echo "WARN: provider-smoke: CI's Provider Failure Smoke job is authoritative; set RUN_PROVIDER_SMOKE=1 to make this blocking locally."
-  else
-    echo "OK"
+    echo "FAIL: smoke-provider-failure.sh not found in scripts/ (RUN_PROVIDER_SMOKE=1 asked for a blocking run)" >&2
+    exit 1
   fi
+  if ! bash "$SMOKE_FAILURE_SCRIPT" 2>&1; then
+    echo ""
+    echo "FAIL: provider failure smoke test reported failures (see output above)."
+    exit 1
+  fi
+  echo "OK"
 fi
 
 echo ""
 echo "=== Accessibility (axe-core) ==="
-# Runs the axe-core rendered-contrast smoke when a11y-relevant files changed
-# since BASE, mirroring CI's changes filter (.github/workflows/ci.yml a11y
-# paths), so a WCAG regression is caught locally instead of only by the CI a11y
-# job (the #2139 gap, where a borderline /next/settings contrast failure passed
-# the local gate and only CI caught it). `make test-a11y` builds the binary,
-# boots an ephemeral server, and runs Playwright + @axe-core/playwright.
+# RUN_A11Y three-state gate. `make test-a11y` builds the binary, boots an
+# ephemeral server, and drives Playwright + @axe-core/playwright across two
+# browser projects -- ~2.4 minutes, the most expensive step this gate ever ran.
+#   - RUN_A11Y truthy (1/true/yes/on): RUN, BLOCKING on failure. UNCHANGED --
+#     this is the path to use for a round that touches templates, CSS, or
+#     tests/a11y/, and it is what a UI change should be verified with before
+#     the push.
+#   - RUN_A11Y falsy  (0/false/no/off): explicit SKIP.
+#   - RUN_A11Y unset (the DEFAULT since #2983): SKIP.
+#   - RUN_A11Y set to anything else: the gate already aborted with exit 2 at
+#     the top of this file. See resolve_run_flag.
 #
-# Degrades gracefully (#2140), and stays self-contained (no shared state with
-# other steps) to minimize merge conflicts with sibling branches:
-#   - RUN_A11Y truthy (1/true/yes/on): force a RUN, BLOCKING on failure
-#     regardless of changed files.
-#   - RUN_A11Y falsy  (0/false/no/off): force a SKIP (escape hatch when the
-#     Playwright toolchain is unavailable and you must push anyway; CI still
-#     gates a11y).
-#   - RUN_A11Y unset (auto, the default): run iff a11y-relevant files changed
-#     AND the Playwright toolchain is installed; otherwise SKIP -- never FAIL --
-#     so a fresh clone without `npx playwright install` can still push, matching
-#     the oasdiff/python3 optional-tool SKIP pattern above. A failure in this
-#     auto path is ADVISORY (warn, don't block): #2223 root-caused a local-only
-#     harness flake (a CPU-starved theme-toggle timeout, not a real contrast
-#     violation) that hard-blocked pushes on unrelated changes. CI runs the
-#     full suite and remains the strict, authoritative a11y gate.
-a11y_flag="$(printf '%s' "${RUN_A11Y:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-
-# a11y_changed: did this branch touch any file CI's a11y filter watches?
-a11y_changed() {
-  git diff --name-only "$BASE" HEAD 2>/dev/null \
-    | grep -qE '^(web/templates/|web/static/css/|web/static/js/|tests/a11y/|playwright\.config\.js|package(-lock)?\.json)|\.templ$'
-}
-# a11y_missing_engines: which of the engines playwright.config.js declares are
-# NOT installed? Echoes a space-separated list ("firefox", "chromium firefox"),
-# or nothing when all are present. Echoes "npx" if npx itself is unavailable.
-#
-# make test-a11y runs `npm ci` itself (so node deps are not the gating concern)
-# but never `npx playwright install`, so the BROWSER binaries are the real
-# dependency. Their location is platform-specific -- ~/.cache (Linux/CI),
-# ~/Library/Caches (macOS), %LOCALAPPDATA% (Windows) -- and
-# PLAYWRIGHT_BROWSERS_PATH overrides it, so probe all of them.
-#
-# This checks PER ENGINE rather than just "does the browsers directory exist".
-# The directory-only form predates the tier running on more than one engine: on
-# a machine with chromium but no firefox it reported ready, and the run then
-# hard-failed at launch ("Executable doesn't exist"). That is a loud failure
-# rather than a silent pass, so it was never a correctness hole -- but the skip
-# message it produced named neither the missing engine nor a command that would
-# actually fix it. Naming the engine is the whole point of this probe.
-#
-# Playwright lays the binaries out as <engine>-<revision> directories, so a
-# glob for the engine prefix is the check.
-#
-# Accumulates into plain STRINGS rather than arrays on purpose: this script runs
-# under `set -u`, and in bash 3.2 -- which is what /bin/bash still is on macOS --
-# expanding an EMPTY array as "${arr[*]}" aborts with "unbound variable". The
-# all-engines-present path produces exactly that empty case, so the array form
-# would crash the gate on the HAPPY path (verified against bash 3.2.57).
-# That constraint is why the whitespace handling below is done with IFS and the
-# positional parameters rather than with an array, which would be the obvious fix.
-a11y_missing_engines() {
-  command -v npx >/dev/null 2>&1 || { echo "npx"; return; }
-
-  # Roots accumulate NEWLINE-delimited, not space-delimited, and the loop below
-  # reads them with IFS set to a newline. PLAYWRIGHT_BROWSERS_PATH is
-  # operator-set and may contain spaces; a space-delimited accumulator read by
-  # an unquoted `for root in $roots` word-splits such a path into fragments,
-  # none of which is a directory, so every engine reads as MISSING even though
-  # it is installed. That is the dangerous shape of wrong: a plausible-looking
-  # "not installed" answer rather than an error.
-  #
-  # A newline delimiter is safe because a newline cannot appear in a path
-  # component here without the directory test failing anyway, whereas a space
-  # very much can. Arrays would be the obvious fix and are ruled out by the
-  # bash 3.2 constraint above.
-  roots=""
-  for root in "${PLAYWRIGHT_BROWSERS_PATH:-}" "$HOME/.cache/ms-playwright" \
-    "$HOME/Library/Caches/ms-playwright" "${LOCALAPPDATA:-}/ms-playwright"; do
-    if [ -n "$root" ] && [ -d "$root" ]; then
-      roots="$roots$root
-"
-    fi
-  done
-  if [ -z "$roots" ]; then
-    # No browsers directory anywhere: every declared engine is missing. Kept in
-    # step with the engine list below -- both grew together when the
-    # firefox-a11y project landed in this change.
-    echo "chromium firefox"
-    return
-  fi
-
-  # Engines this branch's playwright.config.js actually declares a project for.
-  # This change adds the firefox-a11y project, so firefox joins the list here
-  # and in the no-browsers-directory return above; the two must always name the
-  # same set. Gating on firefox before a project used it would have skipped the
-  # whole a11y run on a machine that could serve every configured project --
-  # which is why it was chromium-only until now.
-  #
-  # Split the accumulator ONCE into the positional parameters, with IFS set to
-  # a newline and globbing disabled, then restore both immediately. After this
-  # "$@" holds one root per entry and every later use is quoted, so no path is
-  # ever re-split. `set --` is safe here: this function takes no arguments.
-  a11y_oldifs=$IFS
-  set -f
-  IFS='
-'
-  # shellcheck disable=SC2086 # deliberate split on the newline delimiter above
-  set -- $roots
-  IFS=$a11y_oldifs
-  set +f
-
-  missing=""
-  for engine in chromium firefox; do
-    found=0
-    for root in "$@"; do
-      # A matching <engine>-<rev> directory means that engine is installed.
-      for candidate in "$root/$engine"-*; do
-        [ -d "$candidate" ] && { found=1; break; }
-      done
-      [ "$found" -eq 1 ] && break
-    done
-    [ "$found" -eq 0 ] && missing="$missing $engine"
-  done
-  # Trim the leading space; empty stays empty.
-  echo "${missing# }"
-}
-
+# Why the default changed: the auto path used to run the tier whenever
+# a11y-relevant files changed and the Playwright engines were installed, and
+# then treat a failure as ADVISORY, because #2223 root-caused a local-only
+# harness flake (a CPU-starved theme-toggle timeout, not a real contrast
+# violation) that hard-blocked unrelated pushes. That fix traded a false block
+# for a false PASS: the gate paid the full 2.4 minutes and then printed "All
+# hard checks passed" over a red tier. The repo instructions had to carry a
+# warning label explaining how to read the gate's own success banner, which is
+# the tell that the step did not belong in the default path. CI's required
+# "A11y Smoke Tests (Playwright + axe-core)" check (ci.yml) is the
+# authoritative gate and is not subject to the local flake, since it does not
+# run on a developer machine competing for CPU.
 run_a11y=0
-a11y_blocking=0
-case "$a11y_flag" in
-  0 | false | no | off)
+case "$A11Y_MODE" in
+  off)
     echo "a11y: skipped (RUN_A11Y=${RUN_A11Y} forces opt-out; CI still gates a11y)"
     ;;
-  1 | true | yes | on)
+  on)
     run_a11y=1
-    a11y_blocking=1
     ;;
   *)
-    if ! a11y_changed; then
-      echo "a11y: skipped (no a11y-relevant changes since BASE; set RUN_A11Y=1 to force)"
-    else
-      a11y_missing=$(a11y_missing_engines)
-      if [ "$a11y_missing" = "npx" ]; then
-        echo "a11y: skipped (npx not found; CI still gates a11y)"
-      elif [ -n "$a11y_missing" ]; then
-        # Name the missing engine AND the command that installs exactly it.
-        # A generic "browsers not installed" hint sent people to
-        # 'install chromium', which leaves the target engine missing and the
-        # run failing at launch.
-        echo "a11y: skipped (Playwright engine(s) not installed: ${a11y_missing} --" \
-          "run 'npx playwright install ${a11y_missing}' to enable locally; CI still gates a11y)"
-      else
-        run_a11y=1
-      fi
-    fi
+    echo "a11y: skipped by default -- CI's required 'A11y Smoke Tests (Playwright + axe-core)' check (ci.yml) is authoritative; set RUN_A11Y=1 for a blocking local run (needs 'npx playwright install chromium firefox')"
     ;;
 esac
 
 if [ "$run_a11y" -eq 1 ]; then
   if ! make test-a11y; then
     echo ""
-    if [ "$a11y_blocking" -eq 1 ]; then
-      echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
-      exit 1
-    fi
-    echo "WARN: a11y: advisory failure in the auto path (see #2223) -- not blocking this push."
-    echo "WARN: a11y: CI runs the full suite and enforces it strictly; set RUN_A11Y=1 to make this blocking locally."
-  else
-    echo "OK"
+    echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
+    exit 1
   fi
+  echo "OK"
 fi
 
 echo "=== UI-preference coverage (prefs-coverage) ==="
@@ -1073,7 +1012,12 @@ if [ ! -f "$PREFS_COVERAGE_HELPER" ]; then
   PREFS_COVERAGE_HELPER="$HOME/.claude/scripts/prefs-coverage.py"
 fi
 if [ ! -f "$PREFS_COVERAGE_HELPER" ]; then
-  echo "pre-push-gate: prefs-coverage.py not found in scripts/ or ~/.claude/scripts/ -- skipping (advisory tool missing)"
+  # The helper is VENDORED in scripts/, so its absence is a broken checkout,
+  # not a missing optional toolchain. Blocking, for the same reason the
+  # golangci-lint absence above is: a step that silently declines to run is
+  # indistinguishable from one that ran and passed (#2983).
+  echo "FAIL: prefs-coverage.py not found in scripts/ or ~/.claude/scripts/ -- the repo-vendored copy is missing (broken checkout?)" >&2
+  exit 1
 elif ! command -v python3 >/dev/null 2>&1; then
   echo "pre-push-gate: python3 not found -- skipping prefs-coverage (install python3.11+ to enable locally; CI still gates this)"
 elif ! python3 -c 'import tomllib' >/dev/null 2>&1; then
@@ -1098,22 +1042,15 @@ else
   esac
 fi
 
-echo "=== Bruno route parity check ==="
-# Verify every /api/v1 route registered in internal/api/router.go is either
-# exercised by a Bruno request (api/bruno/**/*.bru) or explicitly recorded in
-# api/bruno/parity-ignore.json. Catches a new API endpoint shipped without an
-# accompanying Bruno smoke/contract request. Self-contained; mirrors the fuzz
-# matrix drift guard above. Hard-fail on non-zero exit.
-BRUNO_PARITY_SCRIPT="$SCRIPT_DIR/check-bruno-parity.sh"
-if [ ! -x "$BRUNO_PARITY_SCRIPT" ]; then
-  echo "pre-push-gate: check-bruno-parity.sh not found or not executable in scripts/" >&2
-  exit 1
-fi
-if ! bash "$BRUNO_PARITY_SCRIPT"; then
-  echo ""
-  echo "FAIL: Bruno route parity check reported drift (see output above)."
-  exit 1
-fi
+# Bruno route parity ran here until #2983. It is a CI-only check now: the
+# required "Bruno Route Parity" job (.github/workflows/gate.yml) runs the same
+# scripts/check-bruno-parity.sh, and the local copy cost ~7s of the gate to
+# reproduce a verdict a required check already produces. The script itself is
+# retained because that job invokes it.
 
 echo ""
+# EVERY STEP ABOVE EITHER BLOCKS OR IS EXPLICITLY SKIPPED -- no step in this
+# gate can fail while this line prints (#2983). A "SKIP:" line means a check
+# did not run; a check that RAN and FAILED exits non-zero before reaching
+# here. scripts/check-gate-invariant.sh enforces that mechanically.
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."

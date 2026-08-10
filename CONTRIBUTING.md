@@ -52,49 +52,55 @@ Short version:
    enforces this.
 2. Use a conventional-commit prefix (`feat:`, `fix:`, `docs:`, `chore:`,
    `refactor:`, `perf:`, `ci:`, `test:`, etc.) on the squash commit.
-3. Run `bash scripts/pre-push-gate.sh` before pushing. By default the local
-   test step is a fast, changed-packages-only, non-race run -- a quick "did I
-   obviously break a test" signal, not a full CI-equivalent pass. An ordinary
-   test-assertion failure there is **advisory** (warn, don't block); CI's
-   required `Test` job runs the full `-race` suite and `Coverage Floor` job
-   runs the per-package coverage ratchet, and both are authoritative. A
-   failure that prevents the changed packages from **compiling** is
-   different and always **blocks** the push (no coverage profile is produced
-   in that case, which is how the gate tells the two apart). Force the full,
-   CI-equivalent local run (blocking on failure) with `RUN_RACE=1 bash
-   scripts/pre-push-gate.sh`, or skip the local test run and patch-coverage
-   check entirely with `RUN_RACE=0`. The opt-in/opt-out accepts any of `1`,
-   `true`, `yes`, `on`, `0`, `false`, `no`, or `off` (case-insensitive,
-   surrounding whitespace ignored).
+3. Install the git hooks once with `make hooks`, then just push. The pre-push
+   hook runs `scripts/pre-push-gate.sh` for you, so there is no separate
+   pre-push step to remember and no reason to invoke the gate by hand (a
+   manual standalone run only duplicates the hook's work). Verify the wiring
+   any time with `make doctor`, which checks the hooks without changing
+   anything.
 
-   The accessibility (axe-core) smoke tests auto-run when a11y-relevant
-   files changed since `BASE` and the Playwright toolchain is installed, but
-   a failure there is likewise **advisory** -- a local-only harness flake
-   must not hard-block an unrelated push (#2223). Force a blocking local run
-   with `RUN_A11Y=1 bash scripts/pre-push-gate.sh` (or `RUN_A11Y=true bash
-   scripts/pre-push-gate.sh`; downloads a Chromium browser and boots an
-   ephemeral server, so it adds minutes). CI runs the full suite in its
-   dedicated a11y job when a11y-relevant files changed and enforces it
-   strictly; the required "A11y Smoke Tests" check always reports a result
-   (an always-run summary wraps the conditional job so non-a11y PRs report
-   success rather than a permanently-skipped context) -- CI, not the local
-   gate, is the authoritative a11y check.
+   Every check in the gate's default path is **blocking**: if it exits 0 and
+   prints "All hard checks passed", every check that ran, passed (#2983). A
+   check that should not block does not belong in the default path, and
+   `scripts/check-gate-invariant.sh` enforces that from inside the gate and
+   from CI's `Gate Invariant` job.
 
-   `govulncheck` and the provider-failure smoke test are likewise
-   **advisory-by-default**, gated by `RUN_VULN` and `RUN_PROVIDER_SMOKE`
-   (same `1`/`true`/`yes`/`on` / `0`/`false`/`no`/`off` three-state
-   convention as `RUN_RACE`/`RUN_A11Y`). Both run automatically only when
-   Go-relevant files changed since `BASE` (any Go source -- including
-   generated `*_templ.go` and deletions -- `go.mod`/`go.sum`, and for the
-   smoke test also the smoke/gate scripts themselves), and a failure in that
-   auto path warns rather than blocks -- CI's "Go Vulnerability Check" (runs
-   unconditionally on every push/PR) and "Provider Failure Smoke" jobs are
-   the authoritative gates (both configured as required status checks in the
-   `Protect main` branch-protection ruleset, not in-repo). Force a
-   blocking local run with `RUN_VULN=1` / `RUN_PROVIDER_SMOKE=1 bash
-   scripts/pre-push-gate.sh`, or skip either entirely with `RUN_VULN=0` /
-   `RUN_PROVIDER_SMOKE=0` (e.g. when offline, or the smoke test's local
-   server can't boot).
+   The local test step is a fast, changed-packages-only, non-race run over the
+   exact packages whose files changed -- a quick "did I obviously break a
+   test" signal, not a full CI-equivalent pass. It blocks on a failing
+   assertion and on a compile error alike; both exit 1. The two get different
+   messages, but the wording is a best-effort **hint** only -- it is picked
+   from whether a coverage profile was produced, and that signal is not
+   reliable (on Go 1.26 a deliberate syntax error produced `[build failed]`
+   *and* a non-empty profile). Read the test output for the real cause.
+
+   Force the full, CI-equivalent local run with
+   `RUN_RACE=1 git push`, or skip the local test run and patch-coverage check
+   together with `RUN_RACE=0` -- worth reaching for when the changed package's
+   own suite is expensive. CI's required `Test` job runs the full `-race`
+   suite and its `Coverage Floor` job runs the per-package ratchet; both are
+   authoritative. The opt-in/opt-out accepts any of `1`, `true`, `yes`, `on`,
+   `0`, `false`, `no`, or `off` (case-insensitive, surrounding whitespace
+   ignored). Anything else is refused: a typo such as `RUN_RACE=truee` exits 2
+   naming the variable and the value, rather than being read as "unset" and
+   silently skipping a tier you asked to run.
+
+   The accessibility (axe-core) smoke tests, the provider-failure smoke test,
+   and `govulncheck` are **skipped by default** and each has a blocking
+   opt-in: `RUN_A11Y=1`, `RUN_PROVIDER_SMOKE=1`, `RUN_VULN=1`. Each boots a
+   server, drives a browser, or downloads the vulnerability database, and each
+   duplicates a required CI check -- "A11y Smoke Tests (Playwright +
+   axe-core)", "Provider Failure Smoke", and "Go Vulnerability Check"
+   respectively (all configured as required status checks in the `Protect
+   main` ruleset, which lives in repo settings rather than in-repo). Run the
+   a11y tier locally when your change touches templates, CSS, or
+   `tests/a11y/`: `RUN_A11Y=1 git push` downloads the Playwright browsers and
+   boots an ephemeral server, so it adds minutes, but CI catching the same
+   violation costs a red check and a re-push.
+
+   Bruno route parity is CI-only; the required "Bruno Route Parity" job runs
+   `scripts/check-bruno-parity.sh` on every PR.
+
 4. Open one PR per logical change; never stack PRs.
 5. Apply at least one of the labels listed below so the release-notes
    generator (`.github/release.yml`) buckets your change correctly.
