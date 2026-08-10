@@ -202,6 +202,12 @@ func (v *MBIDValidation) Validate() error {
 	if v.ArtistID == "" {
 		return errors.New("mbid validation: artist id is required")
 	}
+	if v.MBID == "" {
+		return errors.New("mbid validation: mbid is required")
+	}
+	if v.CatalogueMatchPercent != nil && (*v.CatalogueMatchPercent < 0 || *v.CatalogueMatchPercent > 100) {
+		return fmt.Errorf("mbid validation: catalogue match percent out of range [0,100], got %v", *v.CatalogueMatchPercent)
+	}
 	switch v.Outcome {
 	case MBIDOutcomeValidated, MBIDOutcomeFailed, MBIDOutcomeNotCheckable:
 	default:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -400,6 +401,60 @@ func TestMBIDValidation_ListPaginationBoundaries(t *testing.T) {
 	}
 }
 
+// TestMBIDValidation_ListPaginationTiebreak pins the artist_id ASC tiebreaker
+// in the ORDER BY. seedThreeOutcomes gives every row a distinct checked_at, so
+// it cannot detect the tiebreaker's removal -- with a shared checked_at, SQLite
+// has no other deterministic order, and a row could appear on two consecutive
+// pages or on none without it.
+//
+// Asserts the exact artist_id order across both pages, not merely that every
+// id appears once: two back-to-back List calls against an UNCHANGED table are
+// self-consistent regardless of whether the tiebreaker is present (SQLite's
+// scan order for a static table does not vary call to call), so a
+// no-duplication check alone cannot detect the tiebreaker's removal. Only
+// checking the order against the known artist_id ASC sequence can.
+func TestMBIDValidation_ListPaginationTiebreak(t *testing.T) {
+	t.Parallel()
+	repo, db := newMBIDValidationRepo(t)
+	ctx := context.Background()
+	seedMBIDValidationArtists(t, db, "a-1", "a-2", "a-3", "a-4")
+
+	// Upserted out of artist_id order so the row's natural (rowid/insertion)
+	// scan order does not coincidentally match artist_id ASC.
+	same := time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC)
+	for _, id := range []string{"a-3", "a-1", "a-4", "a-2"} {
+		rec := MBIDValidation{
+			ArtistID: id, MBID: "m-" + id, Outcome: MBIDOutcomeValidated, CheckedAt: same,
+		}
+		if err := repo.Upsert(ctx, &rec); err != nil {
+			t.Fatalf("seeding verdict for %s: %v", id, err)
+		}
+	}
+	if n := countLedgerRows(t, db); n != 4 {
+		t.Fatalf("precondition: expected 4 ledger rows, got %d", n)
+	}
+
+	want := []string{"a-1", "a-2", "a-3", "a-4"}
+	var got []string
+	for _, page := range []struct{ limit, offset int }{{2, 0}, {2, 2}} {
+		rows, err := repo.List(ctx, MBIDValidationFilter{Limit: page.limit, Offset: page.offset})
+		if err != nil {
+			t.Fatalf("List(limit=%d, offset=%d): %v", page.limit, page.offset, err)
+		}
+		for _, row := range rows {
+			got = append(got, row.ArtistID)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d artist ids across both pages, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("position %d: got artist %q, want %q (full order: %v)", i, got[i], want[i], got)
+		}
+	}
+}
+
 // TestMBIDValidation_ListEmptyLedger pins that an unchecked library yields an
 // empty slice and a zero count, not an error and not a phantom row.
 func TestMBIDValidation_ListEmptyLedger(t *testing.T) {
@@ -456,22 +511,39 @@ func TestMBIDValidation_UpsertRejectsMalformedVerdicts(t *testing.T) {
 	ctx := context.Background()
 
 	cases := []struct {
-		name string
-		rec  MBIDValidation
+		name    string
+		rec     MBIDValidation
+		wantErr string
 	}{
-		{"failed without a reason", MBIDValidation{ArtistID: "a-1", Outcome: MBIDOutcomeFailed}},
-		{"not checkable without a reason", MBIDValidation{ArtistID: "a-1", Outcome: MBIDOutcomeNotCheckable}},
+		{"failed without a reason", MBIDValidation{
+			ArtistID: "a-1", MBID: "m-1", Outcome: MBIDOutcomeFailed}, "requires a reason"},
+		{"not checkable without a reason", MBIDValidation{
+			ArtistID: "a-1", MBID: "m-1", Outcome: MBIDOutcomeNotCheckable}, "requires a reason"},
 		{"validated with a reason", MBIDValidation{
-			ArtistID: "a-1", Outcome: MBIDOutcomeValidated, Reason: MBIDReasonNameMismatch}},
-		{"unknown outcome", MBIDValidation{ArtistID: "a-1", Outcome: "probably_fine", Reason: MBIDReasonNone}},
-		{"unknown reason", MBIDValidation{ArtistID: "a-1", Outcome: MBIDOutcomeFailed, Reason: "vibes"}},
-		{"missing artist id", MBIDValidation{Outcome: MBIDOutcomeValidated}},
+			ArtistID: "a-1", MBID: "m-1", Outcome: MBIDOutcomeValidated, Reason: MBIDReasonNameMismatch},
+			"carries no reason"},
+		{"unknown outcome", MBIDValidation{
+			ArtistID: "a-1", MBID: "m-1", Outcome: "probably_fine", Reason: MBIDReasonNameMismatch},
+			"unknown outcome"},
+		{"unknown reason", MBIDValidation{
+			ArtistID: "a-1", MBID: "m-1", Outcome: MBIDOutcomeFailed, Reason: "vibes"}, "unknown reason"},
+		{"missing artist id", MBIDValidation{
+			MBID: "m-1", Outcome: MBIDOutcomeValidated}, "artist id is required"},
+		{"missing mbid", MBIDValidation{
+			ArtistID: "a-1", Outcome: MBIDOutcomeValidated}, "mbid is required"},
+		{"catalogue match percent out of range", MBIDValidation{
+			ArtistID: "a-1", MBID: "m-1", Outcome: MBIDOutcomeValidated,
+			CatalogueMatchPercent: floatPtr(150)}, "out of range"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := tc.rec
-			if err := repo.Upsert(ctx, &rec); err == nil {
+			err := repo.Upsert(ctx, &rec)
+			if err == nil {
 				t.Fatal("expected Upsert to reject the record")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("expected error to contain %q, got %q", tc.wantErr, err.Error())
 			}
 		})
 	}
