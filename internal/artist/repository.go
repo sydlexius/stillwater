@@ -139,6 +139,38 @@ type ProviderIDRepository interface {
 	UpdateProviderFetchedAt(ctx context.Context, artistID, provider string) error
 }
 
+// MBIDValidationRepository persists and reads the MusicBrainz ID
+// re-validation ledger (#2810). The model, the outcome/reason vocabulary and
+// the filter live in mbid_validation.go; the SQLite implementation is in
+// sqlite_mbid_validation.go.
+//
+// Deliberately narrow: an upsert, a paginated read, a count, and a
+// single-artist getter. There is no Delete -- rows disappear with their artist
+// through the schema's ON DELETE CASCADE, and nothing else should be removing
+// evidence an operator has not seen.
+type MBIDValidationRepository interface {
+	// Upsert writes one artist's verdict, replacing any prior one.
+	//
+	// Idempotent by construction: artist_id is the table's primary key, so
+	// re-running a sweep updates in place and can never accumulate rows for
+	// an artist. A zero CheckedAt is stamped with the current UTC time.
+	Upsert(ctx context.Context, v *MBIDValidation) error
+
+	// List returns a page of ledger rows, newest check first, honoring
+	// filter.Outcome. Returns an empty slice, not nil, when nothing matches.
+	List(ctx context.Context, filter MBIDValidationFilter) ([]MBIDValidation, error)
+
+	// Count returns how many rows match filter.Outcome, ignoring Limit and
+	// Offset -- it describes the whole result set, not the current page.
+	Count(ctx context.Context, filter MBIDValidationFilter) (int, error)
+
+	// GetByArtistID returns one artist's verdict, or
+	// ErrMBIDValidationNotFound when that artist has never been checked.
+	// "Never checked" and "checked and fine" are different facts and stay
+	// distinct all the way out to the caller.
+	GetByArtistID(ctx context.Context, artistID string) (*MBIDValidation, error)
+}
+
 // MemberRepository manages band member records.
 type MemberRepository interface {
 	ListByArtistID(ctx context.Context, artistID string) ([]BandMember, error)
