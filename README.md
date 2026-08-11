@@ -18,7 +18,7 @@ tools blank usually resolve here, and per-library locking keeps your manual
 edits from being clobbered the next time a server refreshes.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/cd51e696-f639-44c4-960d-9cce0c0659a9" poster="docs/hero/hero-static.png" width="800" controls></video>
+  <video src="https://github.com/user-attachments/assets/cd51e696-f639-44c4-960d-9cce0c0659a9" poster="docs/hero/screenshots/dashboard.png" width="800" controls></video>
 </p>
 
 **Full documentation:** <https://sydlexius.github.io/stillwater/>
