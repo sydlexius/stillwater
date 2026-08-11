@@ -974,6 +974,75 @@ func (c *cancelingMB) GetReleaseGroups(context.Context, string) ([]provider.Rele
 	return c.groups, nil
 }
 
+// TestStartStopsOnCanceledContext asserts the scheduler honors ctx.Done()
+// during its startup delay, so a shutdown does not wait out the delay.
+func TestStartStopsOnCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	pop := &fakePopulation{}
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}}
+	sw := newTestSweep(t, pop, &fakeArtists{byID: map[string]*artist.Artist{}}, newFakeLedger(),
+		newTestResolver(mb, found("One")),
+		Config{StartupDelay: time.Hour, Interval: time.Hour})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		sw.Start(ctx)
+		close(done)
+	}()
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after its context was canceled: it ignored ctx.Done()")
+	}
+	if pop.callCount() != 0 {
+		t.Errorf("no pass should have run: population queried %d time(s)", pop.callCount())
+	}
+}
+
+// TestStartRunsAPassThenTicks asserts the startup pass happens (an operator who
+// restarts to pick this feature up should not wait a full interval) and that
+// the ticker drives further passes.
+func TestStartRunsAPassThenTicks(t *testing.T) {
+	t.Parallel()
+
+	pop := &fakePopulation{}
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}}
+	sw := newTestSweep(t, pop, &fakeArtists{byID: map[string]*artist.Artist{}}, newFakeLedger(),
+		newTestResolver(mb, found("One")),
+		Config{StartupDelay: time.Millisecond, Interval: 5 * time.Millisecond})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		sw.Start(ctx)
+		close(done)
+	}()
+
+	deadline := time.After(5 * time.Second)
+	for pop.callCount() < 2 {
+		select {
+		case <-deadline:
+			t.Fatalf("expected at least 2 passes (startup + one tick), got %d", pop.callCount())
+		case <-time.After(2 * time.Millisecond):
+		}
+	}
+	cancel()
+	<-done
+}
+
+// callCount reads calls under the same goroutine discipline the race detector
+// requires: Start runs the passes on its own goroutine.
+func (p *fakePopulation) callCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
+}
+
 // ---------------------------------------------------------------------------
 // Config defaults
 // ---------------------------------------------------------------------------

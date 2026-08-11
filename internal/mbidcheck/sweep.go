@@ -357,6 +357,50 @@ func catalogueBucket(pct float64) int {
 	}
 }
 
+// Start runs a pass after the configured startup delay and then on the
+// configured interval, until ctx is canceled.
+//
+// Mirrors maintenance.Service.StartExistsFlagScanner: the startup pass matters
+// because an operator who has just restarted to pick up this feature should not
+// wait a full day to see whether their library holds a misidentified id.
+//
+// Blocks until ctx is done; the caller launches it with `go`.
+func (s *Sweep) Start(ctx context.Context) {
+	interval := s.cfg.interval()
+	delay := s.cfg.startupDelay()
+
+	s.logger.Info("mbid re-validation sweep started",
+		slog.String("interval", interval.String()),
+		slog.String("startup_delay", delay.String()),
+		slog.Int("max_per_pass", s.cfg.maxPerPass()))
+
+	select {
+	case <-ctx.Done():
+		s.logger.Info("mbid re-validation sweep stopped before its first pass")
+		return
+	case <-time.After(delay):
+	}
+
+	if _, err := s.Run(ctx); err != nil {
+		s.logger.Error("initial mbid re-validation pass failed", slog.Any("error", err))
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("mbid re-validation sweep stopped")
+			return
+		case <-ticker.C:
+			if _, err := s.Run(ctx); err != nil {
+				s.logger.Error("mbid re-validation pass failed", slog.Any("error", err))
+			}
+		}
+	}
+}
+
 // Run performs one pass and returns its counters.
 //
 // It returns an error when the pass could not proceed at all (the population
@@ -377,8 +421,8 @@ func catalogueBucket(pct float64) int {
 // checks errors.Is and stays quiet; a caller that needs to know the cycle was
 // incomplete can, which it could not if this returned nil.
 //
-// NOT safe for concurrent use: it advances the shared cursor. The scheduler is
-// the only production caller and is single-threaded.
+// NOT safe for concurrent use: it advances the shared cursor. Start is the
+// only production caller and is single-threaded.
 func (s *Sweep) Run(ctx context.Context) (Counters, error) {
 	var c Counters
 
