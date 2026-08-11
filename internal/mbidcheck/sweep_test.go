@@ -1324,6 +1324,77 @@ func TestCanceledFlagIsNotBlamedOnTheArtist(t *testing.T) {
 // wording is to have read the method. Reword the resolver's Detail in a future
 // change and this test still holds; swap the method for a prose match and it
 // fails.
+// TestFlagMessageNeverShowsAMachineReason guards the operator-facing message
+// against every reason identifier, not just the one that was reported.
+//
+// The reasons are machine ids frozen in a SQL CHECK (catalogue_mismatch,
+// name_mismatch, ...), so any of them appearing in the Action Queue shows an
+// operator an internal code with underscores in it. Detail already states the
+// same fact in English with the measured numbers, which is why the code could
+// be dropped without losing anything.
+//
+// Table-driven over the whole vocabulary deliberately: a guard that checked
+// only the reason someone happened to notice would pass while a sibling code
+// leaked, and the next reason added to the enum would arrive unguarded.
+func TestFlagMessageNeverShowsAMachineReason(t *testing.T) {
+	t.Parallel()
+
+	for _, reason := range []artist.MBIDValidationReason{
+		artist.MBIDReasonResolvesToDifferentArtist,
+		artist.MBIDReasonNameMismatch,
+		artist.MBIDReasonCatalogueMismatch,
+		artist.MBIDReasonMBIDNotFound,
+		artist.MBIDReasonProviderUnavailable,
+		artist.MBIDReasonNoLocalAlbums,
+	} {
+		t.Run(string(reason), func(t *testing.T) {
+			t.Parallel()
+
+			res := Result{
+				Validation: artist.MBIDValidation{
+					ArtistID:     "a-1",
+					MBID:         "11111111-2222-3333-4444-555555555555",
+					Outcome:      artist.MBIDOutcomeFailed,
+					Reason:       reason,
+					Detail:       "the remote release list does not overlap the albums on disk",
+					ResolvedName: "Someone Else",
+				},
+				LocalEvidence:           artist.EvidenceFound,
+				RemoteReleaseGroupCount: 4,
+				LocalAlbumCount:         3,
+			}
+
+			// PRECONDITIONS. Without the first, "no machine id in the message"
+			// would hold trivially because there is no reason set at all.
+			// Without the second, the generic branch might emit nothing to
+			// inspect. The third keeps this off the zero-catalogue path, which
+			// has its own wording and its own test.
+			if res.Validation.Reason == "" {
+				t.Fatal("precondition: the reason under test must be set")
+			}
+			if res.Validation.Detail == "" {
+				t.Fatal("precondition: Detail must carry the human-readable explanation")
+			}
+			if res.ZeroRemoteCatalogue() {
+				t.Fatalf("precondition: fixture must take the generic branch, not the zero-catalogue one")
+			}
+
+			msg := (&Sweep{}).flagMessage(res)
+
+			if strings.Contains(msg, string(reason)) {
+				t.Errorf("operator-facing message leaks the machine reason %q: %s", reason, msg)
+			}
+			if strings.Contains(msg, "_") {
+				t.Errorf("operator-facing message contains an underscore, which means an internal identifier reached it: %s", msg)
+			}
+			if !strings.Contains(msg, res.Validation.Detail) {
+				t.Errorf("message = %q, want it to carry Detail %q: dropping the code must not drop the explanation",
+					msg, res.Validation.Detail)
+			}
+		})
+	}
+}
+
 func TestFlagMessageReadsTheMethodNotTheDetailProse(t *testing.T) {
 	t.Parallel()
 

@@ -529,7 +529,7 @@ func (r *Resolver) classify(ctx context.Context, a *artist.Artist, mbid string) 
 		// transient, and not a validation either -- there is no catalogue to
 		// compare, and the name alone has already been shown insufficient.
 		res := r.notCheckable(a, mbid, artist.MBIDReasonNoLocalAlbums,
-			"artist has no albums on disk, so the catalogue comparison had nothing to compare")
+			"artist has no albums on disk, so the catalog comparison had nothing to compare")
 		res.Validation.ResolvedName = resolvedName
 		res.LocalEvidence = artist.EvidenceNone
 		res.LocalAlbumCount = 0
@@ -603,32 +603,32 @@ func (r *Resolver) classify(ctx context.Context, a *artist.Artist, mbid string) 
 		res.Validation.Outcome = artist.MBIDOutcomeFailed
 		res.Validation.Reason = artist.MBIDReasonCatalogueMismatch
 		res.Validation.Detail = fmt.Sprintf(
-			"remote catalogue empty: musicbrainz lists no releases for this id, while %d album(s) are on disk (resolved name %q, name similarity %d%%)",
+			"remote catalog empty: musicbrainz lists no releases for this id, while %d album(s) are on disk (resolved name %q, name similarity %d%%)",
 			comp.LocalCount, resolvedName, nameScore)
 	case !nameMatches && !catalogueMatches:
 		res.Validation.Outcome = artist.MBIDOutcomeFailed
 		res.Validation.Reason = artist.MBIDReasonResolvesToDifferentArtist
 		res.Validation.Detail = fmt.Sprintf(
-			"id resolves to %q: name similarity %d%% (threshold %d%%) and catalogue match %d%% (threshold %d%%, %d of %d local albums)",
+			"id resolves to %q: name similarity %d%% (threshold %d%%) and catalog match %d%% (threshold %d%%, %d of %d local albums)",
 			resolvedName, nameScore, r.nameThreshold,
 			comp.MatchPercent, r.catalogueThreshold, comp.MatchCount, comp.LocalCount)
 	case !catalogueMatches:
 		res.Validation.Outcome = artist.MBIDOutcomeFailed
 		res.Validation.Reason = artist.MBIDReasonCatalogueMismatch
 		res.Validation.Detail = fmt.Sprintf(
-			"catalogue match %d%% is below the %d%% threshold: %d of %d local albums appear among %d remote release group(s) for %q",
+			"catalog match %d%% is below the %d%% threshold: %d of %d local albums appear among %d remote release group(s) for %q",
 			comp.MatchPercent, r.catalogueThreshold, comp.MatchCount, comp.LocalCount, len(remote), resolvedName)
 	case !nameMatches:
 		res.Validation.Outcome = artist.MBIDOutcomeFailed
 		res.Validation.Reason = artist.MBIDReasonNameMismatch
 		res.Validation.Detail = fmt.Sprintf(
-			"catalogue matches at %d%% but name similarity is %d%% (threshold %d%%): local %q vs remote %q",
+			"catalog matches at %d%% but name similarity is %d%% (threshold %d%%): local %q vs remote %q",
 			comp.MatchPercent, nameScore, r.nameThreshold, a.Name, resolvedName)
 	default:
 		res.Validation.Outcome = artist.MBIDOutcomeValidated
 		res.Validation.Reason = artist.MBIDReasonNone
 		res.Validation.Detail = fmt.Sprintf(
-			"name similarity %d%%, catalogue match %d%% (%d of %d local albums among %d remote release groups)",
+			"name similarity %d%%, catalog match %d%% (%d of %d local albums among %d remote release groups)",
 			nameScore, comp.MatchPercent, comp.MatchCount, comp.LocalCount, len(remote))
 	}
 
@@ -645,7 +645,7 @@ func (r *Resolver) classify(ctx context.Context, a *artist.Artist, mbid string) 
 // the alternative of simply omitting the clause leaves a sentence that trails
 // off as though the reason were about to follow.
 func unknownEvidenceDetail(albumErr error) string {
-	const base = "local album catalogue could not be read (evidence unknown)"
+	const base = "local album catalog could not be read (evidence unknown)"
 	if albumErr == nil {
 		return base + ": the album source reported no cause"
 	}

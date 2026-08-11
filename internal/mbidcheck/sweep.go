@@ -653,9 +653,14 @@ func (s *Sweep) flagMessage(res Result) string {
 			"The stored MusicBrainz ID resolves to %q, which lists no releases at all, while %d album(s) are on disk. The ID most likely belongs to a different artist of the same name. Nothing has been changed.",
 			res.Validation.ResolvedName, res.LocalAlbumCount)
 	}
+	// The reason is a MACHINE identifier (catalogue_mismatch, name_mismatch,
+	// ...) frozen in a SQL CHECK, so it must never reach an operator: it puts
+	// an internal code with underscores in the Action Queue. Detail already
+	// states the same fact in English, with the measured numbers, so the code
+	// added nothing but noise. Read Detail; never re-introduce Reason here.
 	return fmt.Sprintf(
-		"The stored MusicBrainz ID failed re-validation (%s): %s. Nothing has been changed.",
-		res.Validation.Reason, res.Validation.Detail)
+		"The stored MusicBrainz ID failed re-validation: %s. Nothing has been changed.",
+		res.Validation.Detail)
 }
 
 // logSummary emits the one line per pass an operator reads.

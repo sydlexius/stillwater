@@ -183,7 +183,7 @@ func TestResolveClassification(t *testing.T) {
 			wantEvidence:   artist.EvidenceFound,
 			wantResolved:   "Example Band",
 			wantZeroRemote: true,
-			wantDetail:     "remote catalogue empty",
+			wantDetail:     "remote catalog empty",
 		},
 		{
 			// The empty-catalogue signal takes priority over the generic
@@ -204,7 +204,7 @@ func TestResolveClassification(t *testing.T) {
 			wantEvidence:   artist.EvidenceFound,
 			wantResolved:   "Someone Entirely Else",
 			wantZeroRemote: true,
-			wantDetail:     "remote catalogue empty",
+			wantDetail:     "remote catalog empty",
 		},
 		{
 			// The motivating shape with a non-empty but disjoint catalogue:
@@ -1157,7 +1157,7 @@ func TestEmptyFoundNeverCondemnsOrForgesTheSignal(t *testing.T) {
 		groups []provider.ReleaseGroupInfo
 	}{
 		{"remote catalogue present", rgs("Some Remote Record", "Another")},
-		{"remote catalogue empty", nil},
+		{"remote catalog empty", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
