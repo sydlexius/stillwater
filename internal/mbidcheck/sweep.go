@@ -78,6 +78,21 @@ type Ledger interface {
 	Upsert(ctx context.Context, v *artist.MBIDValidation) error
 }
 
+// Flagger raises the operator-review entry for a failed verdict.
+// *rule.Service satisfies it via RaiseMBIDValidationFailure.
+//
+// A plain-string seam, so this package does not import internal/rule and does
+// not get a vote on the rule id, the severity, or -- the one that matters --
+// whether the entry is fixable. There is no automated fix for this finding and
+// #2810's acceptance criteria forbid one, so that decision stays on the rule
+// side where it cannot be passed in.
+//
+// Optional: a nil Flagger means verdicts reach the ledger and nothing else,
+// which is what the sweep does in a build with no rule service wired.
+type Flagger interface {
+	RaiseMBIDValidationFailure(ctx context.Context, artistID, artistName, message string) error
+}
+
 // Default sweep pacing. All three are overridable through Config.
 const (
 	// DefaultInterval is how often a pass runs. Daily: a stored id changes
@@ -137,6 +152,7 @@ type Sweep struct {
 	population Population
 	artists    ArtistGetter
 	ledger     Ledger
+	flagger    Flagger
 	resolver   *Resolver
 	cfg        Config
 	logger     *slog.Logger
@@ -182,6 +198,20 @@ func NewSweep(population Population, artists ArtistGetter, ledger Ledger, resolv
 		resolver:   resolver,
 		cfg:        cfg,
 		logger:     logger.With(slog.String("component", "mbid-revalidate")),
+	}
+}
+
+// SetFlagger attaches the surface that turns a FAILED verdict into an
+// operator-review entry. Optional; without it the sweep still writes the
+// ledger, which is the record of what was checked.
+//
+// A setter rather than a constructor parameter because the rule service is
+// built after the artist service in main.go's wiring order, matching the
+// late-wiring shape the rule fixers already use. A nil argument is ignored so
+// a call made out of order cannot silently disconnect a working flagger.
+func (s *Sweep) SetFlagger(f Flagger) {
+	if f != nil {
+		s.flagger = f
 	}
 }
 
@@ -494,6 +524,7 @@ func (s *Sweep) checkOne(ctx context.Context, row artist.MBIDPath, c *Counters) 
 		c.Validated++
 	case artist.MBIDOutcomeFailed:
 		c.Failed++
+		s.flag(ctx, a, res, c)
 	case artist.MBIDOutcomeNotCheckable:
 		c.NotCheckable++
 	}
@@ -507,6 +538,50 @@ func (s *Sweep) checkOne(ctx context.Context, row artist.MBIDPath, c *Counters) 
 // work on a bare error silently stop matching the moment anything wraps it.
 func isCanceled(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// flag raises the operator-review entry for a failed verdict.
+//
+// ONLY a failed verdict reaches here, and that restriction is the point.
+// A validated verdict has nothing to review. A not-checkable one is an honest
+// "unknown" -- an id that resolves to nobody may well be correct and merely
+// stale, and an artist with no albums on disk simply could not be compared --
+// and putting either in the review queue would bury the real findings under
+// states that mean nothing is wrong. Those live in the ledger, which is where
+// an operator goes to ask what was checked rather than what was found.
+//
+// A failure to raise is logged and counted, not returned: the verdict is
+// already durably in the ledger at this point, so losing the queue entry costs
+// visibility rather than evidence, and it is not worth abandoning the pass for.
+func (s *Sweep) flag(ctx context.Context, a *artist.Artist, res Result, c *Counters) {
+	if s.flagger == nil {
+		return
+	}
+	if err := s.flagger.RaiseMBIDValidationFailure(ctx, a.ID, a.Name, s.flagMessage(res)); err != nil {
+		c.Errored++
+		s.logger.Error("mbid re-validation could not raise an operator-review entry",
+			slog.String("artist_id", a.ID),
+			slog.Any("error", err))
+	}
+}
+
+// flagMessage is the operator-facing sentence for a failed verdict.
+//
+// The zero-remote-catalogue case gets its own wording, read from
+// Result.ZeroRemoteCatalogue rather than from the detail prose. It is
+// qualitatively different from a low overlap percentage -- the id belongs to
+// someone with no releases at all -- and it is the shape the production
+// snapshot showed, so an operator scanning a queue should be able to recognize
+// it without opening the row.
+func (s *Sweep) flagMessage(res Result) string {
+	if res.ZeroRemoteCatalogue() {
+		return fmt.Sprintf(
+			"The stored MusicBrainz ID resolves to %q, which lists no releases at all, while %d album(s) are on disk. The ID most likely belongs to a different artist of the same name. Nothing has been changed.",
+			res.Validation.ResolvedName, res.LocalAlbumCount)
+	}
+	return fmt.Sprintf(
+		"The stored MusicBrainz ID failed re-validation (%s): %s. Nothing has been changed.",
+		res.Validation.Reason, res.Validation.Detail)
 }
 
 // logSummary emits the one line per pass an operator reads.

@@ -56,6 +56,23 @@ const (
 	// backs the polluting slot out via the #2564 remediation.
 	RuleCrossArtistBackdropCollision = "cross_artist_backdrop_collision"
 
+	// RuleMBIDResolves flags an artist whose STORED MusicBrainz id was checked
+	// against MusicBrainz and did not hold up (#2810). Like
+	// cross_artist_backdrop_collision it is event-driven: the rate-limited
+	// sweep in internal/mbidcheck raises it, and the engine never evaluates it
+	// (there is no way to re-derive the finding without going back to the
+	// network, and a checker that reported nothing would resolve the
+	// operator's open entry on every pass).
+	//
+	// INFORMATIONAL AND NOT FIXABLE, deliberately and permanently. Reverting an
+	// identity automatically would repeat the original defect in the opposite
+	// direction, and the ledger keeps "resolves to somebody else" (wrong)
+	// strictly apart from "resolves to nobody" (quite possibly right and merely
+	// stale, since MusicBrainz merges duplicate entries). Only a "failed"
+	// verdict raises a violation at all; validated and not-checkable stay in
+	// the ledger.
+	RuleMBIDResolves = "mbid_resolves"
+
 	// Deprecated rule IDs kept for migration. These rules have been merged
 	// into other rules but may still have violations in the database.
 	ruleLogoTrimmableDeprecated = "logo_trimmable"
@@ -321,6 +338,22 @@ var defaultRules = []Rule{
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{Severity: "warning", Tolerance: 0.90},
 	},
+	{
+		ID:          RuleMBIDResolves,
+		Name:        "Stored MusicBrainz ID resolves to this artist",
+		Description: "Flags an artist whose stored MusicBrainz ID was re-checked against MusicBrainz and turned out to identify a different artist -- most often one who happens to share the name. The check compares the release catalog, not just the name, because a wrong ID with a matching name is exactly the case a name comparison cannot catch. Findings are raised by a background re-validation pass rather than during Run Rules, and are informational: nothing is changed automatically, because reverting an identity on a machine judgment would repeat the original mistake in the opposite direction.",
+		Category:    RuleCategoryMetadata,
+		// Seeded DISABLED, exactly as cross_artist_backdrop_collision is, and
+		// for the same reason: this rule has no engine checker that could
+		// re-derive its finding without going back to the network, so being
+		// EVALUATED is what would destroy it. A considered rule reporting no
+		// violation is recorded as a PASS, which resolves the operator's open
+		// entry in the same transaction. eventDrivenRules below is the
+		// structural guard; the disabled default is defense in depth.
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "warning"},
+	},
 }
 
 // filesystemRules is the set of rule IDs that are truly filesystem-only with
@@ -364,6 +397,11 @@ var filesystemRules = map[string]bool{
 // that checker from ever being invoked.
 var eventDrivenRules = map[string]bool{
 	RuleCrossArtistBackdropCollision: true,
+	// mbid_resolves is raised by the #2810 re-validation sweep. Its finding
+	// cannot be re-derived locally at all -- it took two MusicBrainz requests
+	// to reach -- so an evaluation pass would resolve every open entry with no
+	// way to bring it back.
+	RuleMBIDResolves: true,
 }
 
 // IsEventDriven reports whether a rule's violations are raised outside engine
@@ -1108,6 +1146,33 @@ func (s *Service) RaiseBackdropCollision(ctx context.Context, destArtistID, dest
 		Severity:   "warning",
 		Message:    message,
 		Fixable:    true,
+		Status:     ViolationStatusOpen,
+	})
+}
+
+// RaiseMBIDValidationFailure records the operator-review entry for a stored
+// MusicBrainz id that failed re-validation (#2810).
+//
+// It is the rule-side seam the internal/mbidcheck sweep reaches through, and it
+// takes plain strings for the same reason RaiseBackdropCollision does: the
+// caller must not need to import this package's rule ids or decide its
+// severity. Keyed on (rule_id, artist_id) by UpsertViolation, so re-checking an
+// artist updates its single open entry rather than accumulating one per pass.
+//
+// Fixable is FALSE and hard-coded, not a parameter. There is no automated fix
+// for this rule and #2810's acceptance criteria forbid one -- "no identity is
+// changed automatically as a result of this pass" -- so leaving it to a caller
+// would put an automatic identity revert one argument away. A true here would
+// also make the Action Queue offer a Fix button that no Fixer.CanFix would
+// answer.
+func (s *Service) RaiseMBIDValidationFailure(ctx context.Context, artistID, artistName, message string) error {
+	return s.UpsertViolation(ctx, &RuleViolation{
+		RuleID:     RuleMBIDResolves,
+		ArtistID:   artistID,
+		ArtistName: artistName,
+		Severity:   "warning",
+		Message:    message,
+		Fixable:    false,
 		Status:     ViolationStatusOpen,
 	})
 }

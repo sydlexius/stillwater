@@ -938,6 +938,8 @@
   "findings.logo_min_res.title": "Logo width too small",
   "findings.logo_padding.fix": "Trim the logo to its content bounds.",
   "findings.logo_padding.title": "Logo has excessive padding",
+  "findings.mbid_resolves.fix": "Review the artist by hand; nothing is changed automatically.",
+  "findings.mbid_resolves.title": "MusicBrainz ID may be wrong",
   "findings.metadata_quality.fix": "Clear the placeholder value and re-fetch the biography.",
   "findings.metadata_quality.title": "Placeholder biography",
   "findings.name_language_pref.fix": "Promote a preferred-language alias or edit the name.",

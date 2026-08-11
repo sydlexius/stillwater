@@ -53,6 +53,11 @@ func TestIsFilesystemDependent(t *testing.T) {
 		// filesystem-dependent. Listing it here asserts that classification
 		// rather than mere membership in the categorized map below.
 		RuleCrossArtistBackdropCollision,
+		// Also event-driven and also API-compatible: the #2810 sweep reads the
+		// stored MusicBrainz id and MusicBrainz's answer. A pathless artist is
+		// checked and reaches a not-checkable verdict, which is a ledger row
+		// rather than a violation.
+		RuleMBIDResolves,
 	}
 	for _, id := range apiRules {
 		if IsFilesystemDependent(id) {
@@ -95,11 +100,17 @@ func TestAllDefaultRulesAreCategorized(t *testing.T) {
 		// seeded disabled, so it is never engine-evaluated, but it must still be
 		// categorized here (and is not in filesystemRules).
 		RuleCrossArtistBackdropCollision: true,
-		RuleBackdropSequencing:           true,
-		RuleBackdropMinCount:             true,
-		RuleNameLanguagePref:             true,
-		RuleOriginMissing:                true,
-		RuleProviderIDMissing:            true,
+		// API-compatible for the same reason: the #2810 sweep reads the stored
+		// MusicBrainz id and MusicBrainz's answer, neither of which needs a
+		// local path. A pathless artist is still checked -- it simply reaches a
+		// not-checkable verdict because its album catalogue cannot be read, and
+		// that verdict lives in the ledger rather than as a violation.
+		RuleMBIDResolves:       true,
+		RuleBackdropSequencing: true,
+		RuleBackdropMinCount:   true,
+		RuleNameLanguagePref:   true,
+		RuleOriginMissing:      true,
+		RuleProviderIDMissing:  true,
 	}
 
 	for _, r := range defaultRules {
