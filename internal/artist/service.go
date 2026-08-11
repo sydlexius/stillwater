@@ -2235,6 +2235,15 @@ func (s *Service) ListMBIDPaths(ctx context.Context) ([]MBIDPath, error) {
 	return s.artists.ListMBIDPaths(ctx)
 }
 
+// ListMBIDPopulation returns one record per artist carrying a non-empty
+// MusicBrainz ID, including artists with no filesystem path. It is the
+// population for the #2810 MusicBrainz ID re-validation sweep; see the
+// repository method for why pathless artists are in scope and why nothing here
+// filters on provenance.
+func (s *Service) ListMBIDPopulation(ctx context.Context) ([]MBIDPath, error) {
+	return s.artists.ListMBIDPopulation(ctx)
+}
+
 // GetByIDsBatch returns the artists matching the supplied IDs as a map keyed
 // by artist ID. Missing IDs are silently dropped (no error). The opts arg
 // controls side-table hydration with the same semantics as GetByID; without

@@ -135,13 +135,30 @@ type ArtistRef struct {
 	Path string
 }
 
-// MBIDPath pairs an artist's MusicBrainz ID with its on-disk path. Both fields
-// are guaranteed non-empty by ListMBIDPaths (the query filters out blanks).
-// Used by Lidarr path-mapping inference to match a Stillwater artist to its
-// Lidarr counterpart by MBID and compare the two mount prefixes (#2329).
+// MBIDPath pairs an artist's MusicBrainz ID with its on-disk path, carrying the
+// artist id the pair came from.
+//
+// Two producers, with DIFFERENT guarantees, and the difference is the whole
+// reason to read this comment:
+//
+//   - ListMBIDPaths guarantees MBID and Path are both non-empty (its query
+//     filters out blanks). Lidarr path-mapping inference matches a Stillwater
+//     artist to its Lidarr counterpart by MBID and compares the two mount
+//     prefixes (#2329), which is meaningless without a path.
+//   - ListMBIDPopulation guarantees only that MBID is non-empty. Path MAY be
+//     empty, on purpose: a platform-only artist has no on-disk directory and is
+//     still carrying a stored MusicBrainz id that has never been checked
+//     (#2810). Excluding it would exclude it from the re-validation ledger,
+//     whose contract is every artist with a non-empty MBID.
+//
+// ArtistID is always populated by both. It exists because the #2810 ledger is
+// keyed on artist_id, so a consumer that only had (MBID, Path) could not write
+// a verdict without a second lookup -- and a duplicate MBID across two artists
+// would make that lookup ambiguous.
 type MBIDPath struct {
-	MBID string
-	Path string
+	ArtistID string
+	MBID     string
+	Path     string
 }
 
 // DiscographyAlbum is the artist-domain representation of a single NFO
