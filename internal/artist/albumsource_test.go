@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -327,7 +329,7 @@ func TestChainAlbumSource_Ordering(t *testing.T) {
 // returned set alone cannot distinguish "we stopped" from "we looked and
 // ignored it".
 func TestChainAlbumSource_ShortCircuitsOnFound(t *testing.T) {
-	var laterCalls int
+	var laterCalls atomic.Int64
 	counting := countingSource{name: "later", calls: &laterCalls}
 
 	chain := NewChainAlbumSource(foundSource("first", "Kid A"), counting)
@@ -339,21 +341,69 @@ func TestChainAlbumSource_ShortCircuitsOnFound(t *testing.T) {
 	if set.Evidence != EvidenceFound {
 		t.Fatalf("Evidence = %v, want EvidenceFound", set.Evidence)
 	}
-	if laterCalls != 0 {
-		t.Errorf("later source consulted %d times, want 0: Found must short-circuit", laterCalls)
+	if n := laterCalls.Load(); n != 0 {
+		t.Errorf("later source consulted %d times, want 0: Found must short-circuit", n)
 	}
 }
 
+// countingSource records how many times it was consulted.
+//
+// The counter is atomic rather than a plain *int because AlbumSource now
+// REQUIRES every implementation to be safe for concurrent use (see the
+// interface's CONCURRENCY section). That contract was added for the mbidcheck
+// sweep, and adding it retroactively made this helper non-conforming: it looks
+// like an AlbumSource, it is passed everywhere one is accepted, and the
+// compiler cannot check the property. A test double that violates the contract
+// it is standing in for is a race waiting for the first concurrent caller, so
+// it conforms rather than documenting an exemption.
 type countingSource struct {
 	name  string
-	calls *int
+	calls *atomic.Int64
 }
 
 func (s countingSource) Name() string { return s.name }
 
 func (s countingSource) LocalAlbums(context.Context, *Artist) (AlbumSet, error) {
-	*s.calls++
+	s.calls.Add(1)
 	return AlbumSet{Evidence: EvidenceNone, Origin: s.name}, nil
+}
+
+// TestChainAlbumSource_IsSafeForConcurrentUse exercises the contract the
+// interface now states, against both the real ChainAlbumSource and the
+// countingSource double inside it. Under -race an unsynchronized counter is
+// reported here; without the concurrent fan-out nothing in this package ever
+// calls a source from two goroutines, so the contract would be unenforced
+// prose.
+//
+// The count assertion is what gives it teeth beyond the race detector: a
+// non-atomic increment loses updates, so the total comes back short even in a
+// run without -race.
+func TestChainAlbumSource_IsSafeForConcurrentUse(t *testing.T) {
+	const goroutines, perGoroutine = 8, 50
+
+	var calls atomic.Int64
+	// noneSource first so the chain does NOT short-circuit and the counting
+	// source is genuinely reached on every call -- otherwise the assertion
+	// below would hold vacuously at zero.
+	chain := NewChainAlbumSource(noneSource("first"), countingSource{name: "later", calls: &calls})
+
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range perGoroutine {
+				if _, err := chain.LocalAlbums(context.Background(), &Artist{Name: "Radiohead"}); err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got, want := calls.Load(), int64(goroutines*perGoroutine); got != want {
+		t.Errorf("counted %d calls, want %d: increments were lost, so the source is not concurrency-safe", got, want)
+	}
 }
 
 // TestChainAlbumSource_ReportsSourceErrors checks the diagnostic error survives

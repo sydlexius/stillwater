@@ -81,6 +81,27 @@ type AlbumSet struct {
 }
 
 // AlbumSource resolves an artist's album titles from one place to look.
+//
+// # CONCURRENCY (#2810)
+//
+// An implementation MUST be safe for concurrent use by multiple goroutines.
+//
+// This was previously unstated, which was tolerable only because nothing called
+// a source concurrently. The MusicBrainz re-validation sweep in
+// internal/mbidcheck is the first caller with a reason to, and mbidcheck's own
+// Resolver already documents its safety as CONDITIONAL on the source injected
+// into it -- a condition nothing on this side promised to meet. So the contract
+// belonged here rather than as a caveat at every call site: a source added
+// later cannot know which callers will fan out, and a per-caller rule would
+// have to be re-derived, correctly, every time.
+//
+// The two implementations in this package satisfy it structurally rather than
+// by locking. FilesystemAlbumSource holds no fields at all, and
+// ChainAlbumSource's only field is set once at construction and read-only
+// afterwards, with each call keeping its state on the stack. A source that
+// later grows a cache, a connection pool, or any mutable field owns
+// synchronizing it; being stateless is how these two satisfy the requirement,
+// not a reason the requirement is optional.
 type AlbumSource interface {
 	// LocalAlbums returns what this source knows about the artist's albums.
 	//
