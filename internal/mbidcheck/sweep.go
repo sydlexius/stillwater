@@ -277,12 +277,27 @@ type Counters struct {
 	NotCheckable int
 
 	// SkippedTransient counts verdicts that did not reach the ledger for a
-	// reason on OUR side: provider outages, unreadable paths, and a write
-	// abandoned mid-flight by cancellation or a deadline. High here with
+	// reason on OUR side: provider outages, unreadable paths, and a LEDGER
+	// write abandoned mid-flight by cancellation or a deadline. High here with
 	// everything else near zero is the signature of a sweep that could not
 	// reach MusicBrainz, and is why a quiet ledger must never be read as a
-	// clean library.
+	// clean library. An abandoned operator-review entry, whose verdict DID
+	// reach the ledger, is SkippedFlag rather than this: counting it here would
+	// blunt that signature with a condition that lost no evidence.
 	SkippedTransient int
+
+	// SkippedFlag counts operator-review entries abandoned mid-flight by
+	// cancellation or a deadline, for a verdict that DID reach the ledger.
+	//
+	// Deliberately not folded into SkippedTransient. By the time the queue
+	// entry is attempted the verdict is durably persisted, so the evidence
+	// survives and only the review entry's visibility is lost -- a materially
+	// different condition from a verdict that never landed at all, and one that
+	// must not blunt SkippedTransient's "the sweep could not reach
+	// MusicBrainz" signature by inflating it from an unrelated cause. High
+	// here means the pass stopped while raising findings; re-running covers
+	// them, since the ledger rows they came from are already durable.
+	SkippedFlag int
 
 	// SkippedNoMBID counts population rows whose artist turned out to carry no
 	// stored id by the time it was loaded (it was cleared between the query and
@@ -296,7 +311,8 @@ type Counters struct {
 	// A write abandoned because the context was canceled or its deadline
 	// expired is NOT counted here: that is our own shutdown, not a fault of the
 	// artist, and blaming individual artists for it would make a routine stop
-	// read as a library-wide failure. It goes to SkippedTransient instead.
+	// read as a library-wide failure. It goes to SkippedTransient (a ledger
+	// write) or SkippedFlag (an operator-review entry) instead.
 	Errored int
 
 	// ZeroRemoteCatalogue counts the headline finding: the id resolves, the
@@ -607,7 +623,10 @@ func (s *Sweep) flag(ctx context.Context, a *artist.Artist, res Result, c *Count
 		// one ERROR line per artist, each naming an artist that is fine, and
 		// inflates Errored against the invariant Counters.Errored documents.
 		if isCanceled(err) {
-			c.SkippedTransient++
+			// SkippedFlag, not SkippedTransient: the verdict itself reached the
+			// ledger a moment ago (Upsert succeeded and Failed was counted), so
+			// this is a lost review entry, not a verdict that never landed.
+			c.SkippedFlag++
 			s.logger.Debug("mbid re-validation abandoned an operator-review entry during shutdown",
 				slog.String("artist_id", a.ID),
 				slog.Any("error", err))
@@ -649,7 +668,7 @@ func (s *Sweep) flagMessage(res Result) string {
 // population AND processed it, never merely the shape of the slice: an
 // abandoned tail must not be reported as a completed cycle.
 func (s *Sweep) logSummary(c Counters, populationSize, sliceSize int, exhausted bool, elapsed time.Duration) {
-	attrs := make([]any, 0, 12+len(catalogueBucketNames))
+	attrs := make([]any, 0, 13+len(catalogueBucketNames))
 	attrs = append(attrs,
 		slog.Int("population", populationSize),
 		slog.Int("attempted", sliceSize),
@@ -658,6 +677,7 @@ func (s *Sweep) logSummary(c Counters, populationSize, sliceSize int, exhausted 
 		slog.Int("failed", c.Failed),
 		slog.Int("not_checkable", c.NotCheckable),
 		slog.Int("skipped_transient", c.SkippedTransient),
+		slog.Int("skipped_flag", c.SkippedFlag),
 		slog.Int("skipped_no_mbid", c.SkippedNoMBID),
 		slog.Int("errored", c.Errored),
 		slog.Int("zero_remote_catalogue", c.ZeroRemoteCatalogue),

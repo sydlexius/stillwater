@@ -366,6 +366,14 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		FixExample: "Before: Artist A holds fanart2.jpg that is 94% similar to Artist B's fanart.jpg\nAfter:  Artist A's fanart2.jpg is quarantined and removed (locally and on platforms); survivors renumbered. Restorable from quarantine if it was a false positive.",
 	},
 	RuleMBIDResolves: {
+		// The finding is about the stored MusicBrainz ID and nothing else, so
+		// the artist-detail screen must chip that row -- the same field
+		// nfo_has_mbid declares. Without it an operator reviewing the artist
+		// sees the finding only in the Open Findings list, with no marker on
+		// the field actually under suspicion, which is the one thing they have
+		// to look at to judge it. None of the documented Fields exclusions
+		// (image, whole-record, cross-field, filesystem) applies here.
+		Fields: []string{"musicbrainz_id"},
 		// No FixBehavior and no FixExample: this rule has no automated fix, and
 		// will not be given one. Resolving a finding means an operator deciding
 		// which artist the folder actually holds.

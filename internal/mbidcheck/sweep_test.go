@@ -1280,9 +1280,17 @@ func TestCanceledFlagIsNotBlamedOnTheArtist(t *testing.T) {
 	if c.Errored != 0 {
 		t.Errorf("Errored = %d, want 0: an abandoned queue write is our shutdown, never the artist's fault (%+v)", c.Errored, c)
 	}
-	if c.SkippedTransient != len(rows) {
-		t.Errorf("SkippedTransient = %d, want %d: an abandoned entry must still be reported as something that did not land (%+v)",
-			c.SkippedTransient, len(rows), c)
+	if c.SkippedFlag != len(rows) {
+		t.Errorf("SkippedFlag = %d, want %d: an abandoned entry must still be reported as something that did not land (%+v)",
+			c.SkippedFlag, len(rows), c)
+	}
+	// And NOT in SkippedTransient, whose documented signature is "the sweep
+	// could not reach MusicBrainz". These verdicts DID reach the ledger, so
+	// counting them there would point an operator at an outage that never
+	// happened.
+	if c.SkippedTransient != 0 {
+		t.Errorf("SkippedTransient = %d, want 0: the verdicts reached the ledger, so only the review entry was lost (%+v)",
+			c.SkippedTransient, c)
 	}
 	if msgs := rec.messagesAtLevel(slog.LevelError); len(msgs) != 0 {
 		t.Errorf("a canceled operator-review write logged at ERROR: %v", msgs)
@@ -1291,6 +1299,16 @@ func TestCanceledFlagIsNotBlamedOnTheArtist(t *testing.T) {
 	// flag is attempted, which is why losing the queue entry is survivable.
 	if _, ok := led.get("a-2"); !ok {
 		t.Error("the verdict must still be persisted when its queue entry is abandoned")
+	}
+	// The counter has to be SURFACED, not merely incremented: a tally no
+	// operator can read is dead weight, and the pass summary is the one line
+	// they see.
+	v, ok := rec.attr("mbid re-validation pass complete", "skipped_flag")
+	if !ok {
+		t.Fatal("the pass summary does not report skipped_flag; a counter nothing surfaces cannot be read")
+	}
+	if got, want := v, int64(len(rows)); got != any(want) {
+		t.Errorf("summary skipped_flag = %v, want %d", got, want)
 	}
 }
 
@@ -1378,19 +1396,29 @@ func TestSetFlaggerIsSafeWhileAPassIsRunning(t *testing.T) {
 		newTestResolver(mb, found("One")), Config{MaxPerPass: len(rows)})
 
 	flag := &fakeFlagger{}
-	done := make(chan Counters, 1)
+	type runResult struct {
+		c   Counters
+		err error
+	}
+	// The error travels back over the channel rather than becoming a panic in
+	// this goroutine: a panic off the test goroutine takes down the whole test
+	// binary, so one failure here would hide every other test's result. t.Fatalf
+	// is equally unavailable off the test goroutine, so the assertion happens
+	// below, where it belongs.
+	done := make(chan runResult, 1)
 	go func() {
 		c, err := sw.Run(context.Background())
-		if err != nil {
-			panic(err)
-		}
-		done <- c
+		done <- runResult{c: c, err: err}
 	}()
 	for range 40 {
 		sw.SetFlagger(flag)
 	}
 
-	c := <-done
+	got := <-done
+	if got.err != nil {
+		t.Fatalf("Run: %v", got.err)
+	}
+	c := got.c
 	// PRECONDITION: the pass really did reach flag. Without a failed verdict the
 	// racing read never happens and -race has nothing to observe.
 	if c.Failed != len(rows) {

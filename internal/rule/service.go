@@ -1185,6 +1185,21 @@ func (s *Service) RaiseMBIDValidationFailure(ctx context.Context, artistID, arti
 	})
 }
 
+// isCanceled reports whether err is our own stop -- a canceled context or an
+// expired deadline -- rather than a fault in the data being processed.
+//
+// A package-level helper rather than an inline check at each site because this
+// package now has more than one caller-side condition to keep out of the
+// artist's ledger, and because the shape is exactly the one that keeps being
+// got wrong: errors.Is, never ==. The repository layer wraps its errors with
+// %w, so a direct comparison compiles, satisfies a bare-sentinel test, and
+// silently stops matching in production. internal/mbidcheck carries the same
+// helper for the same reason; the two packages do not share a dependency worth
+// creating for three lines.
+func isCanceled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
 // configuredSeverity is the operator's severity for a rule, or fallback when
 // the rule cannot be read or carries none.
 //
@@ -1193,9 +1208,23 @@ func (s *Service) RaiseMBIDValidationFailure(ctx context.Context, artistID, arti
 // trade the thing that matters for the thing that does not. The seeded default
 // is what fallback should name, so a caller reads the same value whether or not
 // the lookup succeeded.
+//
+// A cancellation is NOT logged at WARN. RaiseMBIDValidationFailure calls this
+// once per failed artist, on the sweep's own context, so a shutdown mid-sweep
+// would otherwise print one WARN line per artist -- naming artists that are
+// perfectly fine and re-creating one layer down the exact burst the sweep's own
+// cancellation branches exist to prevent. The fallback is unchanged either way;
+// only the level a reader is asked to care about differs.
 func (s *Service) configuredSeverity(ctx context.Context, ruleID, fallback string) string {
 	r, err := s.GetByID(ctx, ruleID)
 	if err != nil {
+		if isCanceled(err) {
+			s.logger.Debug("severity lookup abandoned during shutdown; using the rule's default",
+				slog.String("rule_id", ruleID),
+				slog.String("severity", fallback),
+				slog.Any("error", err))
+			return fallback
+		}
 		s.logger.Warn("could not read a rule's configured severity; using its default",
 			slog.String("rule_id", ruleID),
 			slog.String("severity", fallback),

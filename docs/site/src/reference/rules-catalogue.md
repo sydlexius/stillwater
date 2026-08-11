@@ -341,6 +341,8 @@ After:  Discogs ID and Spotify ID are populated from those relations (existing I
 
 **Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** warning
 
+**Inspects:** `musicbrainz_id`
+
 Flags an artist whose stored MusicBrainz ID was re-checked against MusicBrainz and turned out to identify a different artist -- most often one who happens to share the name. The check compares the release catalog, not just the name, because a wrong ID with a matching name is exactly the case a name comparison cannot catch. Findings are raised by a background re-validation pass rather than during Run Rules, and are informational: nothing is changed automatically, because reverting an identity on a machine judgment would repeat the original mistake in the opposite direction.
 
 Stillwater has never checked a stored MusicBrainz ID beyond confirming it looks like a UUID, which any well-formed ID passes -- including one belonging to a different act that happens to share the artist's name. This rule fires when a background pass fetches the stored ID from MusicBrainz and finds that the release catalog it lists does not overlap the albums on disk, or that the name does not match. The catalog comparison is what makes the check work: in the case that motivated it, the name matched exactly while the ID pointed at someone with no music releases at all.

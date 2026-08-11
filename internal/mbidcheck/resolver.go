@@ -439,7 +439,16 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 			append(r.logAttrs(res), slog.String("error", err.Error()))...)
 		return Result{}, fmt.Errorf("mbidcheck: built an invalid verdict for artist %s: %w", a.ID, err)
 	}
-	r.log(res)
+	// A verdict that is transient AND arrived on a context that has since been
+	// canceled is OUR shutdown, not an outage. Without this the routine stop
+	// prints one WARN per remaining artist reading "provider unavailable" --
+	// classify's first act on a canceled context is to build exactly that
+	// verdict -- so a clean shutdown is indistinguishable in the log from a
+	// MusicBrainz outage, which is the one thing that WARN exists to announce.
+	// Narrowed to transient verdicts on purpose: a real FAILED finding that
+	// happened to land as the sweep was stopping is still a finding, and must
+	// keep its level.
+	r.log(res, res.Transient && isCanceled(ctx.Err()))
 	return res, nil
 }
 
@@ -704,8 +713,19 @@ func (r *Resolver) notCheckable(a *artist.Artist, mbid string, reason artist.MBI
 //     no_local_albums are ordinary states of a real library, expected in bulk,
 //     and are reported through the ledger rather than the log.
 //   - DEBUG for a validated verdict. It is the common case and the good one.
-func (r *Resolver) log(res Result) {
+//
+// duringShutdown demotes the line to DEBUG: the verdict describes our own stop
+// rather than anything about the artist or the provider, and one WARN per
+// remaining artist would make a routine shutdown read as a library-wide
+// outage. The verdict itself is unchanged -- it is still transient, so it is
+// still never persisted -- only the level a reader is asked to care about.
+func (r *Resolver) log(res Result, duringShutdown bool) {
 	attrs := r.logAttrs(res)
+
+	if duringShutdown {
+		r.logger.Debug("mbid re-validation abandoned a check during shutdown", attrs...)
+		return
+	}
 
 	switch {
 	case res.Anomaly:

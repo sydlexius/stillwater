@@ -2,6 +2,9 @@ package rule
 
 import (
 	"context"
+	"errors"
+	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -14,7 +17,7 @@ import (
 // fails in the direction of silently discarding an operator's finding.
 
 // seedMBIDResolvesViolation creates an artist and raises one mbid_resolves
-// entry for it, returning the artist, the services, and the persisted id.
+// entry for it, returning the artist and the persisted violation id.
 func seedMBIDResolvesViolation(t *testing.T, ruleSvc *Service, artistSvc *artist.Service) (*artist.Artist, string) {
 	t.Helper()
 	ctx := context.Background()
@@ -308,5 +311,144 @@ func TestMBIDResolvesCatalogueEntryOffersNoFix(t *testing.T) {
 	}
 	if len(e.Caveats) == 0 {
 		t.Error("Caveats must record that nothing is corrected automatically")
+	}
+}
+
+// TestMBIDResolvesChipsTheMusicBrainzIDField asserts the finding reaches the
+// field it is about.
+//
+// The artist-detail screen reads RuleFields to render an inline chip on each
+// field a live violation touches. This rule inspects the stored MusicBrainz ID
+// and nothing else, so an entry with no Fields would leave an operator
+// reviewing the artist with no marker on the one row they have to look at to
+// judge the finding -- the finding would still be listed, just detached from
+// its evidence.
+func TestMBIDResolvesChipsTheMusicBrainzIDField(t *testing.T) {
+	// PRECONDITION: the field key this rule must declare is the same one the
+	// screen already renders for another rule on that row. Comparing against
+	// nfo_has_mbid rather than a literal means a future rename of the field key
+	// cannot leave this test passing against a key the UI no longer uses.
+	want := RuleFields(RuleNFOHasMBID)
+	if len(want) != 1 || want[0] != "musicbrainz_id" {
+		t.Fatalf("precondition: RuleFields(nfo_has_mbid) = %v, want exactly [musicbrainz_id]", want)
+	}
+
+	got := RuleFields(RuleMBIDResolves)
+	if len(got) != 1 || got[0] != want[0] {
+		t.Errorf("RuleFields(mbid_resolves) = %v, want %v: the finding must chip the field it is about", got, want)
+	}
+}
+
+// severityLogRecorder captures records so a test can assert on the LEVEL a
+// condition was reported at, which is the whole subject of the cancellation
+// test below. A JSON buffer would work too, but the level is what matters here
+// and reading it off the record is exact.
+type severityLogRecorder struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *severityLogRecorder) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *severityLogRecorder) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r.Clone())
+	return nil
+}
+
+func (h *severityLogRecorder) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *severityLogRecorder) WithGroup(string) slog.Handler      { return h }
+
+// messagesAtLevel returns the messages logged at exactly the given level.
+func (h *severityLogRecorder) messagesAtLevel(level slog.Level) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for _, r := range h.records {
+		if r.Level == level {
+			out = append(out, r.Message)
+		}
+	}
+	return out
+}
+
+// TestConfiguredSeverityDoesNotWarnOnCancellation is the rule-side half of the
+// invariant the sweep already holds: a condition on OUR side is never reported
+// as though the artist were at fault.
+//
+// RaiseMBIDValidationFailure reads the configured severity once per failed
+// artist, on the sweep's own context. A shutdown part-way through a pass fails
+// that read for every remaining artist at once, so a WARN there produces one
+// line per artist -- each naming an artist that is fine -- which is exactly the
+// burst the sweep's own cancellation branches were added to prevent, recreated
+// one layer down.
+func TestConfiguredSeverityDoesNotWarnOnCancellation(t *testing.T) {
+	db := setupTestDB(t)
+	rec := &severityLogRecorder{}
+	ruleSvc := NewService(db).WithLogger(slog.New(rec))
+	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// PRECONDITION: the lookup really does fail, and it fails with a WRAPPED
+	// cancellation rather than the bare sentinel. Both halves are load-bearing:
+	// without a failure the branch under test is never entered, and without the
+	// wrapping an == comparison would satisfy this test while silently ceasing
+	// to match in production, where the repository layer wraps with %w.
+	_, err := ruleSvc.GetByID(ctx, RuleMBIDResolves)
+	if err == nil {
+		t.Fatal("precondition: GetByID succeeded on a canceled context; the branch under test is unreachable")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("precondition: GetByID error %v does not wrap context.Canceled", err)
+	}
+	if errors.Unwrap(err) == nil {
+		t.Fatalf("precondition: GetByID error %v is the bare sentinel, so an == comparison could pass this test", err)
+	}
+
+	got := ruleSvc.configuredSeverity(ctx, RuleMBIDResolves, "warning")
+	if got != "warning" {
+		t.Errorf("configuredSeverity = %q, want the seeded default %q: a cancellation must still fall back", got, "warning")
+	}
+	if msgs := rec.messagesAtLevel(slog.LevelWarn); len(msgs) != 0 {
+		t.Errorf("a canceled severity lookup logged at WARN: %v -- a shutdown would print one line per artist", msgs)
+	}
+	if msgs := rec.messagesAtLevel(slog.LevelError); len(msgs) != 0 {
+		t.Errorf("a canceled severity lookup logged at ERROR: %v", msgs)
+	}
+}
+
+// TestConfiguredSeverityStillWarnsOnARealFailure is the other half, and without
+// it the fix above could be a blanket "never warn" that swallows the genuine
+// failures the WARN exists for -- a missing rule row, a broken database -- and
+// nobody would learn that the severity an operator configured is not being
+// read.
+func TestConfiguredSeverityStillWarnsOnARealFailure(t *testing.T) {
+	db := setupTestDB(t)
+	rec := &severityLogRecorder{}
+	ruleSvc := NewService(db).WithLogger(slog.New(rec))
+
+	ctx := context.Background()
+	// PRECONDITION: the rule is deliberately NOT seeded, so the lookup fails
+	// for a real reason, and that reason is NOT a cancellation -- otherwise this
+	// test would be asserting the same branch as the one above.
+	_, err := ruleSvc.GetByID(ctx, RuleMBIDResolves)
+	if err == nil {
+		t.Fatal("precondition: the rule must not be seeded, so the lookup genuinely fails")
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("precondition: the failure must NOT be a cancellation, got %v", err)
+	}
+
+	got := ruleSvc.configuredSeverity(ctx, RuleMBIDResolves, "warning")
+	if got != "warning" {
+		t.Errorf("configuredSeverity = %q, want the fallback %q", got, "warning")
+	}
+	if msgs := rec.messagesAtLevel(slog.LevelWarn); len(msgs) != 1 {
+		t.Errorf("WARN messages = %v, want exactly 1: a real lookup failure must still be reported", msgs)
 	}
 }
