@@ -8500,7 +8500,24 @@ paths:
         minimum similarity score for provider name matching,
         set to 0 to disable validation, default 60),
         images.backdrop.target_count (1-10 integer as string;
-        target number of backdrop/fanart images per artist, default 1).
+        target number of backdrop/fanart images per artist, default 1),
+        mbid_revalidate.enabled (true/false; the MusicBrainz ID re-validation
+        sweep, disabled by default and configurable only through this API),
+        mbid_revalidate.interval_hours (positive integer as string;
+        hours between passes, default 24),
+        mbid_revalidate.max_per_pass (positive integer as string;
+        artists checked per pass, default 200),
+        mbid_revalidate.name_similarity_threshold (0-100 integer as string;
+        the sweep's own name threshold, distinct from
+        provider.name_similarity_threshold above),
+        mbid_revalidate.catalogue_match_percent (0-100 integer as string;
+        minimum release-catalogue overlap before an ID is flagged).
+
+
+        A value that fails validation is rejected with 400 and NOTHING in the
+        request is persisted -- every value is validated before any write, so a
+        batch containing one bad value stores none of it. Keys with no validator
+        are accepted as-is.
       requestBody:
         required: true
         content:
@@ -8516,6 +8533,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "400":
+          description: >
+            The request body was not a JSON object of string values, or a value
+            failed validation. A validation failure names the offending key in
+            the error message; a malformed body reports "invalid request body"
+            and names nothing, since no key was parsed. Either way no setting in
+            the request was persisted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /settings/vocab:
     get:
