@@ -1182,13 +1182,18 @@ func (a *Application) startLockSyncScheduler(ctx context.Context, db *sql.DB, lo
 // under the lint cap, matching startFanartHashBackfill and
 // startLockSyncScheduler above.
 //
-// Defaults to enabled, unlike the opt-in-by-config schedulers above it: this
-// pass only ever raises an operator-review finding
-// (rule.Service.RaiseMBIDValidationFailure) and never changes an artist's
-// stored id itself (issue #2810's acceptance criteria forbid an automated
-// fix), so it carries none of the risk that argues for an opt-in default.
+// Defaults to DISABLED, opt-in like the config-gated schedulers above it.
+// rule.Service seeds mbid_resolves (the rule this sweep's findings land
+// under) with Enabled: false -- see internal/rule/service.go and the
+// precondition asserted in internal/rule/mbid_resolves_test.go -- so a
+// default-ON sweep would raise Action Queue findings attributed to a rule
+// the operator sees as off in Settings. It would also start roughly two
+// outbound MusicBrainz requests per artist, every pass, on every existing
+// install the moment it upgrades, with no UI toggle and no settings
+// validator for the off switch yet. Default-off keeps the producer honest
+// about the surface and leaves opting in to the operator.
 func (a *Application) startMBIDRevalidateSweep(ctx context.Context, db *sql.DB, logger *slog.Logger) {
-	enabled := getDBBoolSetting(ctx, db, "mbid_revalidate.enabled", true)
+	enabled := getDBBoolSetting(ctx, db, "mbid_revalidate.enabled", false)
 	if !enabled {
 		logger.Info("mbid re-validation sweep disabled",
 			slog.String("setting", "mbid_revalidate.enabled"))
@@ -2317,13 +2322,19 @@ func resolveRelinkReconcileInterval(minutes int) (time.Duration, bool) {
 // mbidcheck.Config.interval() and .maxPerPass() already treat any
 // non-positive field as "use the package default", so the only thing this
 // function adds is the upper bound: without it,
-// `time.Duration(hours) * time.Hour` overflows int64 nanoseconds for a
-// sufficiently large hours value and wraps to a negative duration, which
-// Config.interval() would then read as "non-positive" and correctly default
-// -- but only by accident, and only for the interval. maxPerPass has no
-// equivalent overflow (it stays an int, never multiplied into a duration),
-// so it is passed through unclamped; Config.maxPerPass() already turns any
-// non-positive value into DefaultMaxPerPass.
+// `time.Duration(hours) * time.Hour` can overflow int64 nanoseconds for a
+// sufficiently large hours value, and the wrap is NOT reliably negative --
+// integer overflow is modular, not sign-preserving, so it lands on whatever
+// value the modulus produces. Measured: hours=5124096 wraps to a positive
+// 25m26s, hours=10248192 to a positive 50m52s, hours=15372287 to a positive
+// 16m18s. Config.interval() only rejects <= 0, so each of those would be
+// ACCEPTED as the real interval: a nonsense operator-entered value turns into
+// a sweep hammering MusicBrainz every 16-50 minutes instead of degrading
+// safely. The cap is what prevents that -- it is load-bearing, not a
+// belt-and-suspenders accident. maxPerPass has no equivalent overflow (it
+// stays an int, never multiplied into a duration), so it is passed through
+// unclamped; Config.maxPerPass() already turns any non-positive value into
+// DefaultMaxPerPass.
 //
 // Split out of startListeners purely so this mapping is unit-testable, same
 // rationale as resolveRelinkReconcileInterval.

@@ -1346,17 +1346,26 @@ func TestResolveMBIDRevalidateSchedule(t *testing.T) {
 // TestResolveMBIDRevalidateSchedule_NeverReturnsNonPositiveInterval is the
 // same overflow-boundary discipline TestResolveRelinkReconcileInterval_
 // NeverReturnsNonPositiveWhenEnabled applies to the minutes-based scheduler:
-// `time.Duration(hours) * time.Hour` overflows int64 nanoseconds for a
-// sufficiently large hours value and wraps negative, and a narrow -100..100
-// sweep would never reach that region.
+// `time.Duration(hours) * time.Hour` can overflow int64 nanoseconds for a
+// sufficiently large hours value, and the wrap is NOT reliably negative --
+// it is modular, so it can land on a small POSITIVE duration that looks like
+// a perfectly ordinary interval. A bare `d <= 0` assertion would pass right
+// through that case, which is exactly the case the year cap exists to catch,
+// so every input past the cap must resolve to precisely
+// mbidcheck.DefaultInterval, not merely "some positive value".
 func TestResolveMBIDRevalidateSchedule_NeverReturnsNonPositiveInterval(t *testing.T) {
-	inputs := make([]int, 0, 210)
+	inputs := make([]int, 0, 220)
 	for h := -100; h <= 100; h++ {
 		inputs = append(inputs, h)
 	}
 	inputs = append(inputs,
 		maxMBIDRevalidateHoursForTest,
 		maxMBIDRevalidateHoursForTest+1,
+		// These three wrap to small POSITIVE durations (25m26s, 50m52s,
+		// 16m18s respectively) when time.Duration(h)*time.Hour overflows
+		// int64 nanoseconds -- measured directly, not assumed. A test that
+		// only checked d > 0 would accept all three as "fine".
+		5124096, 10248192, 15372287,
 		1<<40, 1<<50, 1<<62,
 		math.MaxInt32, math.MaxInt64, math.MinInt64,
 	)
@@ -1366,6 +1375,19 @@ func TestResolveMBIDRevalidateSchedule_NeverReturnsNonPositiveInterval(t *testin
 		if d <= 0 {
 			t.Fatalf("resolveMBIDRevalidateSchedule(%d, 100) interval = %v -- a non-positive "+
 				"interval would panic time.NewTicker (via Sweep.Start)", h, d)
+		}
+		if h <= 0 || h > maxMBIDRevalidateHoursForTest {
+			// Out of range (including a positive overflow wrap): must
+			// resolve to exactly the package default, not merely "positive".
+			if d != mbidcheck.DefaultInterval {
+				t.Fatalf("resolveMBIDRevalidateSchedule(%d, 100) interval = %v, want exactly "+
+					"mbidcheck.DefaultInterval (%v) -- an out-of-range or overflow-wrapped hours "+
+					"value must default, not silently resolve to whatever the wrap produced",
+					h, d, mbidcheck.DefaultInterval)
+			}
+		} else if d != time.Duration(h)*time.Hour {
+			t.Fatalf("resolveMBIDRevalidateSchedule(%d, 100) interval = %v, want %v",
+				h, d, time.Duration(h)*time.Hour)
 		}
 	}
 }
