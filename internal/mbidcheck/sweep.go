@@ -184,8 +184,8 @@ type Sweep struct {
 	// artists early costs a few requests, while a persisted cursor is a schema
 	// change and a new way for the sweep to get permanently stuck at a bad row.
 	//
-	// Not guarded by a mutex because Run is not safe for concurrent use -- see
-	// its doc comment. Start is the only production caller and is single-threaded.
+	// Not guarded by a mutex because Run is called from one goroutine only --
+	// see its doc comment.
 	cursor string
 }
 
@@ -456,8 +456,8 @@ func (s *Sweep) runOnce(ctx context.Context, failureMsg string) {
 // checks errors.Is and stays quiet; a caller that needs to know the cycle was
 // incomplete can, which it could not if this returned nil.
 //
-// NOT safe for concurrent use: it advances the shared cursor. Start is the
-// only production caller and is single-threaded.
+// NOT safe for concurrent use: it advances the shared cursor. Call it from one
+// goroutine only. Start satisfies that; a second caller would race.
 func (s *Sweep) Run(ctx context.Context) (Counters, error) {
 	var c Counters
 
