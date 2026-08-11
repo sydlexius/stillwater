@@ -8512,6 +8512,12 @@ paths:
         provider.name_similarity_threshold above),
         mbid_revalidate.catalogue_match_percent (0-100 integer as string;
         minimum release-catalogue overlap before an ID is flagged).
+
+
+        A value that fails validation is rejected with 400 and NOTHING in the
+        request is persisted -- every value is validated before any write, so a
+        batch containing one bad value stores none of it. Keys with no validator
+        are accepted as-is.
       requestBody:
         required: true
         content:
@@ -8527,6 +8533,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "400":
+          description: >
+            A value failed validation. The error message names the offending
+            key. No setting in the request was persisted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /settings/vocab:
     get:

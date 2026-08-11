@@ -866,3 +866,44 @@ func TestHasSettingValidator(t *testing.T) {
 		}
 	}
 }
+
+// TestHandleUpdateSettings_BatchRejectionIsAllOrNothing pins the contract the
+// OpenAPI description states: every value is validated before any write, so a
+// batch containing one bad value persists NONE of it.
+//
+// The property is worth a test rather than an assumption because it is purely
+// positional -- it holds only because the validation loop runs to completion
+// and returns before the write loop begins. Moving the upsert into the
+// validation loop, or validating lazily per key, would still pass every
+// single-key test in this file while silently making a rejected batch write
+// its valid prefix. Map iteration order is randomized in Go, so that failure
+// would be non-deterministic: the good key lands only when it sorts first.
+func TestHandleUpdateSettings_BatchRejectionIsAllOrNothing(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	const goodKey = "mbid_revalidate.interval_hours"
+	const badKey = "mbid_revalidate.name_similarity_threshold"
+	payload, _ := json.Marshal(map[string]string{
+		goodKey: "6",   // valid on its own
+		badKey:  "0.5", // rejected, and the reason #3004 exists
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(string(payload)))
+	w := httptest.NewRecorder()
+	r.handleUpdateSettings(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("mixed batch: status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+	// The VALID key must not have landed either. This is the assertion the
+	// contract rests on -- a per-key write loop would leave this row behind.
+	var rows int
+	if err := r.db.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM settings WHERE key = ?`, goodKey).Scan(&rows); err != nil {
+		t.Fatalf("counting rows for %s: %v", goodKey, err)
+	}
+	if rows != 0 {
+		t.Errorf("the valid key %q persisted (%d row(s)) despite the batch being rejected; "+
+			"validation must complete before any write", goodKey, rows)
+	}
+}
