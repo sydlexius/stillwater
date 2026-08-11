@@ -374,11 +374,20 @@ func (s *Sweep) Start(ctx context.Context) {
 		slog.String("startup_delay", delay.String()),
 		slog.Int("max_per_pass", s.cfg.maxPerPass()))
 
+	// NewTimer with an explicit Stop, not time.After: on the cancellation path
+	// time.After leaves the timer armed for the whole delay, and this delay is
+	// minutes in production (hours in a test). Go 1.23+ makes an unreferenced
+	// timer collectable, so this is not a classic leak -- but stopping it hands
+	// the runtime timer back at once instead of waiting on a GC cycle, and it
+	// removes the question rather than leaving a reader to reason about it.
+	startup := time.NewTimer(delay)
+	defer startup.Stop()
+
 	select {
 	case <-ctx.Done():
 		s.logger.Info("mbid re-validation sweep stopped before its first pass")
 		return
-	case <-time.After(delay):
+	case <-startup.C:
 	}
 
 	s.runOnce(ctx, "initial mbid re-validation pass failed")
