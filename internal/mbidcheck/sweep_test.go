@@ -1003,6 +1003,215 @@ func TestStartStopsOnCanceledContext(t *testing.T) {
 	}
 }
 
+// TestStartRunsAPassBeforeTheFirstTick asserts the startup pass exists.
+//
+// It is Start's stated reason for being (an operator who has just restarted to
+// pick this feature up should not wait a full day to find out whether their
+// library holds a misidentified id), and deleting it left the suite green:
+// TestStartRunsAPassThenTicks only asserts "at least 2 passes", which the
+// ticker alone satisfies. So this case separates the two along the axis that
+// distinguishes them -- a short delay against an interval no test run could
+// ever reach -- and asserts EXACTLY one pass. The startup pass is then the only
+// thing that can have produced it.
+//
+// The same fixture closes a second uncaught mutation: with the previous
+// 1ms/5ms pairing, SWAPPING the interval and delay assignments still reached
+// two passes, so the swap was invisible. Here it is not: swapped, the first
+// pass would be an hour away.
+func TestStartRunsAPassBeforeTheFirstTick(t *testing.T) {
+	t.Parallel()
+
+	const (
+		delay    = time.Millisecond
+		interval = time.Hour
+	)
+	// PRECONDITION: the two are separated by orders of magnitude, so a pass
+	// observed inside the window below cannot have come from the ticker.
+	if interval < 1000*delay {
+		t.Fatalf("precondition: interval (%v) must dwarf the startup delay (%v), or a tick could satisfy this test", interval, delay)
+	}
+
+	pop := &fakePopulation{}
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}}
+	sw := newTestSweep(t, pop, &fakeArtists{byID: map[string]*artist.Artist{}}, newFakeLedger(),
+		newTestResolver(mb, found("One")),
+		Config{StartupDelay: delay, Interval: interval})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		sw.Start(ctx)
+		close(done)
+	}()
+
+	deadline := time.After(5 * time.Second)
+	for pop.callCount() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("no pass ran within 5s while the interval is an hour away: the startup pass is missing, so an operator would wait a full interval after every restart")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	// Exactly one: the interval cannot have elapsed, so a second pass would mean
+	// something other than the startup pass is driving them.
+	if got := pop.callCount(); got != 1 {
+		t.Errorf("passes = %d, want exactly 1 before the first tick", got)
+	}
+	cancel()
+	<-done
+}
+
+// TestStartLogsARoutineShutdownWithoutAnError pins the level a canceled pass
+// is reported at.
+//
+// Run deliberately returns ctx.Err() for an abandoned pass, and a pass is
+// minutes of limiter-paced work against a 1 req/sec cap -- so a service stopped
+// mid-pass is the NORMAL case, not a fault. Reporting it at ERROR would put a
+// failure in the log on every clean shutdown, which is this feature's recurring
+// defect (a condition on OUR side attributed to something else) at the pass
+// level.
+//
+// The cancellation is WIRED to land INSIDE the pass rather than before it: the
+// population double blocks until ctx is done, so Run is genuinely mid-flight
+// and returns the WRAPPED error ("mbidcheck: listing the sweep population:
+// context canceled"). That shape is the point -- errors.Is matches it while ==
+// does not, so an == comparison could not satisfy this test.
+func TestStartLogsARoutineShutdownWithoutAnError(t *testing.T) {
+	t.Parallel()
+
+	pop := &blockingPopulation{entered: make(chan struct{}, 1)}
+	rec := &recordingHandler{}
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}}
+	sw := NewSweep(pop, &fakeArtists{byID: map[string]*artist.Artist{}}, newFakeLedger(),
+		newTestResolver(mb, found("One")),
+		Config{StartupDelay: time.Millisecond, Interval: time.Hour}, slog.New(rec))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		sw.Start(ctx)
+		close(done)
+	}()
+
+	// PRECONDITION: the pass is genuinely UNDERWAY before anything is canceled.
+	// Canceling earlier would exercise the pre-pass ctx.Done() branch instead,
+	// which returns before Run is ever called and so proves nothing about how a
+	// canceled Run is reported.
+	select {
+	case <-pop.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("precondition: the startup pass never began, so the cancellation could not land inside it")
+	}
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after cancellation")
+	}
+
+	// PRECONDITION: Run really was reached and really did return a WRAPPED
+	// cancellation. Both halves matter: without the first the assertion holds
+	// vacuously, and without the second an == comparison would pass.
+	err := pop.observedErr()
+	if err == nil {
+		t.Fatal("precondition: the population double never returned an error, so no canceled pass was reported")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("precondition: the pass's error must be a cancellation, got %v", err)
+	}
+
+	if msgs := rec.messagesAtLevel(slog.LevelError); len(msgs) != 0 {
+		t.Errorf("a routine shutdown logged at ERROR: %v -- a service stopped mid-pass is the normal case, not a failure", msgs)
+	}
+	// Quiet is not the goal: SILENT would be its own defect, since an
+	// incomplete cycle means the library is not fully covered and an operator
+	// reading the log should be able to see that. The correction is the LEVEL,
+	// never the reporting.
+	var reported bool
+	for _, m := range rec.messagesAtLevel(slog.LevelInfo) {
+		if strings.Contains(m, "stopped before finishing") {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Errorf("a canceled pass was not reported at all; INFO records = %v", rec.messagesAtLevel(slog.LevelInfo))
+	}
+}
+
+// blockingPopulation blocks inside ListMBIDPopulation until its context is
+// done, so a test can put a cancellation strictly INSIDE a pass. It returns the
+// context's error wrapped the way a real repository wraps its driver's.
+type blockingPopulation struct {
+	mu      sync.Mutex
+	entered chan struct{}
+	err     error
+}
+
+func (p *blockingPopulation) ListMBIDPopulation(ctx context.Context) ([]artist.MBIDPath, error) {
+	select {
+	case p.entered <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	err := fmt.Errorf("querying the population: %w", ctx.Err())
+	p.mu.Lock()
+	p.err = err
+	p.mu.Unlock()
+	return nil, err
+}
+
+func (p *blockingPopulation) observedErr() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.err
+}
+
+// TestStartStillReportsAGenuinePassFailureAtError is the inverse of the case
+// above, and without it that one could be satisfied by a Start that swallowed
+// every pass error. A population query that failed for a real reason must still
+// reach the log at ERROR.
+func TestStartStillReportsAGenuinePassFailureAtError(t *testing.T) {
+	t.Parallel()
+
+	popErr := errors.New("database is locked")
+	// PRECONDITION: the failure is NOT a cancellation, so this really is the
+	// other branch.
+	if isCanceled(popErr) {
+		t.Fatalf("precondition: the fixture error must not be a cancellation, got %v", popErr)
+	}
+
+	pop := &fakePopulation{err: popErr}
+	rec := &recordingHandler{}
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}}
+	sw := NewSweep(pop, &fakeArtists{byID: map[string]*artist.Artist{}}, newFakeLedger(),
+		newTestResolver(mb, found("One")),
+		Config{StartupDelay: time.Millisecond, Interval: time.Hour}, slog.New(rec))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		sw.Start(ctx)
+		close(done)
+	}()
+
+	deadline := time.After(5 * time.Second)
+	for pop.callCount() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("precondition: the startup pass never ran")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	cancel()
+	<-done
+
+	if msgs := rec.messagesAtLevel(slog.LevelError); len(msgs) == 0 {
+		t.Error("a genuine pass failure was not logged at ERROR: an operator has no signal that the sweep is broken")
+	}
+}
+
 // TestStartRunsAPassThenTicks asserts the startup pass happens (an operator who
 // restarts to pick this feature up should not wait a full interval) and that
 // the ticker drives further passes.

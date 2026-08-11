@@ -185,7 +185,7 @@ type Sweep struct {
 	// change and a new way for the sweep to get permanently stuck at a bad row.
 	//
 	// Not guarded by a mutex because Run is not safe for concurrent use -- see
-	// its doc comment. The scheduler is the only caller and is single-threaded.
+	// its doc comment. Start is the only caller and is single-threaded.
 	cursor string
 }
 
@@ -381,9 +381,7 @@ func (s *Sweep) Start(ctx context.Context) {
 	case <-time.After(delay):
 	}
 
-	if _, err := s.Run(ctx); err != nil {
-		s.logger.Error("initial mbid re-validation pass failed", slog.Any("error", err))
-	}
+	s.runOnce(ctx, "initial mbid re-validation pass failed")
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -394,11 +392,39 @@ func (s *Sweep) Start(ctx context.Context) {
 			s.logger.Info("mbid re-validation sweep stopped")
 			return
 		case <-ticker.C:
-			if _, err := s.Run(ctx); err != nil {
-				s.logger.Error("mbid re-validation pass failed", slog.Any("error", err))
-			}
+			s.runOnce(ctx, "mbid re-validation pass failed")
 		}
 	}
+}
+
+// runOnce performs one pass and reports its outcome at the RIGHT level.
+//
+// Run deliberately returns ctx.Err() for a pass abandoned part-way, and a pass
+// is minutes of limiter-paced work, so a service stopping mid-pass is the
+// NORMAL case rather than a fault. Treating every non-nil error as a failure
+// would put an ERROR line in the log on every clean shutdown -- the same
+// "a condition on OUR side reported as a fault" defect this feature has had to
+// correct at each of its write sites, here at the pass level.
+//
+// isCanceled rather than an == comparison, and the distinction is load-bearing
+// here: the two cancellation paths return DIFFERENT shapes. A pass abandoned
+// mid-flight comes back WRAPPED ("mbidcheck: listing the sweep population:
+// context canceled"), where errors.Is is true but == is false, while a
+// pre-canceled context yields the bare sentinel. An == check would quiet only
+// the second, which is the case that barely happens.
+func (s *Sweep) runOnce(ctx context.Context, failureMsg string) {
+	_, err := s.Run(ctx)
+	if err == nil {
+		return
+	}
+	if isCanceled(err) {
+		// Info, not Debug: a shutdown that cut a pass short is worth one line
+		// at the level an operator reads, because it says the cycle was
+		// incomplete and the library is not fully covered.
+		s.logger.Info("mbid re-validation pass stopped before finishing", slog.Any("reason", err))
+		return
+	}
+	s.logger.Error(failureMsg, slog.Any("error", err))
 }
 
 // Run performs one pass and returns its counters.
