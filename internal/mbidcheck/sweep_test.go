@@ -698,6 +698,175 @@ func TestRunDoesNotReportAnAbandonedPassAsExhausted(t *testing.T) {
 	}
 }
 
+// TestRunReportsCancellationDuringTheFinalRow covers the path the between-items
+// check structurally cannot reach.
+//
+// That check runs at the TOP of an iteration, so it only fires when there is a
+// next artist. Cancel during the LAST row's work -- inside the provider call or
+// inside the ledger write -- and the loop ends normally with nothing having
+// observed it, so the pass reported success, cleared the cursor and announced
+// population_exhausted. The population tail would then be re-walked from the
+// head on the next pass while the summary claimed a completed cycle: the exact
+// defect the cursor logic was corrected for, on the one row it could not see.
+//
+// A test that cancels on an EARLIER row passes with or without the post-loop
+// check, which is why the cancellation is pinned to the final row and the
+// preconditions below assert it landed there.
+func TestRunReportsCancellationDuringTheFinalRow(t *testing.T) {
+	t.Parallel()
+
+	rows := []artist.MBIDPath{
+		{ArtistID: "a-1", MBID: "m1"},
+		{ArtistID: "a-2", MBID: "m2"},
+	}
+	byID := map[string]*artist.Artist{}
+	for _, r := range rows {
+		byID[r.ArtistID] = sweepArtist(r.ArtistID, "/library/"+r.ArtistID)
+	}
+
+	// PRECONDITION: the slice reaches the end of the population, so wrapped is
+	// true and the cursor really is a candidate for being cleared. Without this
+	// the assertions below would hold for the wrong reason.
+	if _, wrapped := (&Sweep{}).selectSlice(rows, 10); !wrapped {
+		t.Fatal("precondition: the pass's slice must reach the end of the population")
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	// Cancel from inside the LAST row's provider call: at that moment there is
+	// no next iteration left to notice it.
+	mb := &cancelOnCallMB{cancelAt: len(rows), cancel: cancel,
+		meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("One")}
+	rec := &recordingHandler{}
+	led := newFakeLedger()
+	sw := NewSweep(&fakePopulation{rows: rows}, &fakeArtists{byID: byID}, led,
+		newTestResolver(mb, found("One")), Config{MaxPerPass: 10}, slog.New(rec))
+
+	c, err := sw.Run(ctx)
+
+	// PRECONDITION: the cancellation genuinely landed on the FINAL row. Every
+	// row was reached (so nothing broke out early) and the pass completed all of
+	// them, meaning the in-loop check never fired and only a post-loop read can
+	// have seen the cancellation.
+	if mb.artistCalls != len(rows) {
+		t.Fatalf("precondition: provider was called %d time(s), want %d -- the cancellation must land on the final row, not an earlier one",
+			mb.artistCalls, len(rows))
+	}
+	if c.Checked != len(rows) {
+		t.Fatalf("precondition: checked = %d, want %d -- every row including the canceled one must have been processed (%+v)",
+			c.Checked, len(rows), c)
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Run err = %v, want context.Canceled: a pass canceled during its last row must not report a completed cycle", err)
+	}
+	got, ok := rec.attr("mbid re-validation pass complete", "population_exhausted")
+	if !ok {
+		t.Fatal("no pass summary was logged: an operator has nothing to read")
+	}
+	if got != false {
+		t.Errorf("population_exhausted = %v, want false: the pass was canceled, so it did not complete a cycle", got)
+	}
+	// The cursor must NOT have wrapped. It stays on the last row processed, so
+	// the next pass continues from there rather than restarting at the head.
+	if sw.cursor != "a-2" {
+		t.Errorf("cursor = %q, want %q: a canceled pass cleared its place", sw.cursor, "a-2")
+	}
+}
+
+// TestRunDoesNotBlameArtistsForACanceledLedgerWrite pins the second half of the
+// same principle, on the write side.
+//
+// A ledger write refused because the process is shutting down says nothing
+// about the artist, and the resolver already applies exactly this rule to a
+// provider outage. Counting it as Errored and logging at ERROR turns a routine
+// stop into one error line per remaining artist, each naming an artist that is
+// perfectly fine -- an operator restarting the service would see a burst of
+// failures pointing at their library.
+//
+// The wrapped sentinel is deliberate: a repository wraps its driver errors, so
+// an == comparison would compile, pass a bare-error test, and silently stop
+// matching in production.
+func TestRunDoesNotBlameArtistsForACanceledLedgerWrite(t *testing.T) {
+	t.Parallel()
+
+	const id = "artist-1"
+	led := newFakeLedger()
+	led.err = fmt.Errorf("persisting the verdict: %w", context.Canceled)
+	// PRECONDITION: the fixture's error really is a WRAPPED cancellation, not
+	// the bare sentinel. errors.Is must match it while it is still a wrapper (a
+	// non-nil Unwrap), which is what makes an == comparison in the sweep unable
+	// to satisfy this test.
+	if !errors.Is(led.err, context.Canceled) || errors.Unwrap(led.err) == nil {
+		t.Fatalf("precondition: the ledger error must be a WRAPPED context.Canceled, got %v", led.err)
+	}
+
+	rec := &recordingHandler{}
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("One")}
+	sw := NewSweep(&fakePopulation{rows: []artist.MBIDPath{{ArtistID: id, MBID: "m1"}}},
+		&fakeArtists{byID: map[string]*artist.Artist{id: sweepArtist(id, "/library/"+id)}},
+		led, newTestResolver(mb, found("One")), Config{MaxPerPass: 10}, slog.New(rec))
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// PRECONDITION: the artist really did reach the write. Without this the
+	// zero-Errored assertion would pass over a pass that never got that far.
+	if c.Checked != 1 {
+		t.Fatalf("precondition: checked = %d, want 1 -- the write path must actually have been reached (%+v)", c.Checked, c)
+	}
+
+	if c.Errored != 0 {
+		t.Errorf("Errored = %d, want 0: shutdown is our condition, never the artist's (%+v)", c.Errored, c)
+	}
+	if c.SkippedTransient != 1 {
+		t.Errorf("SkippedTransient = %d, want 1: an abandoned write must still be reported as a verdict that did not land (%+v)",
+			c.SkippedTransient, c)
+	}
+	if msgs := rec.messagesAtLevel(slog.LevelError); len(msgs) != 0 {
+		t.Errorf("a canceled write logged at ERROR: %v", msgs)
+	}
+}
+
+// TestRunStillReportsAGenuineLedgerFailure is the inverse, and without it the
+// test above could be satisfied by a sweep that swallowed every write failure.
+// A real refusal must keep counting and keep logging at ERROR.
+func TestRunStillReportsAGenuineLedgerFailure(t *testing.T) {
+	t.Parallel()
+
+	const id = "artist-1"
+	led := newFakeLedger()
+	led.err = errors.New("disk is full")
+	// PRECONDITION: the fixture's error is NOT a cancellation, so this really is
+	// testing the other branch.
+	if errors.Is(led.err, context.Canceled) || errors.Is(led.err, context.DeadlineExceeded) {
+		t.Fatalf("precondition: the ledger error must not be a cancellation, got %v", led.err)
+	}
+
+	rec := &recordingHandler{}
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("One")}
+	sw := NewSweep(&fakePopulation{rows: []artist.MBIDPath{{ArtistID: id, MBID: "m1"}}},
+		&fakeArtists{byID: map[string]*artist.Artist{id: sweepArtist(id, "/library/"+id)}},
+		led, newTestResolver(mb, found("One")), Config{MaxPerPass: 10}, slog.New(rec))
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if c.Checked != 1 {
+		t.Fatalf("precondition: checked = %d, want 1 (%+v)", c.Checked, c)
+	}
+	if c.Errored != 1 {
+		t.Errorf("Errored = %d, want 1: a real write failure must still be counted (%+v)", c.Errored, c)
+	}
+	if c.SkippedTransient != 0 {
+		t.Errorf("SkippedTransient = %d, want 0: a disk failure is not a transient skip (%+v)", c.SkippedTransient, c)
+	}
+	if msgs := rec.messagesAtLevel(slog.LevelError); len(msgs) != 1 {
+		t.Errorf("ERROR records = %v, want exactly one naming the failed write", msgs)
+	}
+}
+
 // recordingHandler keeps every record's message and attributes so a test can
 // assert what the pass summary actually claimed.
 type recordingHandler struct {
@@ -739,6 +908,45 @@ func (h *recordingHandler) attr(msg, key string) (any, bool) {
 		return found, ok
 	}
 	return nil, false
+}
+
+// messagesAtLevel is every record's message at exactly the given level, so a
+// test can assert what a path did and did not log rather than only its
+// counters.
+func (h *recordingHandler) messagesAtLevel(level slog.Level) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for _, r := range h.records {
+		if r.Level == level {
+			out = append(out, r.Message)
+		}
+	}
+	return out
+}
+
+// cancelOnCallMB cancels the sweep's context during the cancelAt'th GetArtist
+// call, so a test can put the cancellation on a chosen row -- specifically the
+// LAST one, where no next iteration exists to observe it.
+type cancelOnCallMB struct {
+	cancelAt    int
+	cancel      context.CancelFunc
+	meta        *provider.ArtistMetadata
+	groups      []provider.ReleaseGroupInfo
+	artistCalls int
+}
+
+func (c *cancelOnCallMB) GetArtist(context.Context, string) (*provider.ArtistMetadata, error) {
+	c.artistCalls++
+	if c.artistCalls == c.cancelAt && c.cancel != nil {
+		c.cancel()
+		c.cancel = nil
+	}
+	return c.meta, nil
+}
+
+func (c *cancelOnCallMB) GetReleaseGroups(context.Context, string) ([]provider.ReleaseGroupInfo, error) {
+	return c.groups, nil
 }
 
 // cancelingMB cancels the sweep's context during its first GetArtist call, and

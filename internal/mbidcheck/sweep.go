@@ -205,10 +205,12 @@ type Counters struct {
 	Failed       int
 	NotCheckable int
 
-	// SkippedTransient counts verdicts deliberately not persisted: provider
-	// outages, unreadable paths, cancellation. High here with everything else
-	// near zero is the signature of a sweep that could not reach MusicBrainz,
-	// and is why a quiet ledger must never be read as a clean library.
+	// SkippedTransient counts verdicts that did not reach the ledger for a
+	// reason on OUR side: provider outages, unreadable paths, and a write
+	// abandoned mid-flight by cancellation or a deadline. High here with
+	// everything else near zero is the signature of a sweep that could not
+	// reach MusicBrainz, and is why a quiet ledger must never be read as a
+	// clean library.
 	SkippedTransient int
 
 	// SkippedNoMBID counts population rows whose artist turned out to carry no
@@ -218,7 +220,12 @@ type Counters struct {
 
 	// Errored counts artists that could not be processed at all: the record
 	// failed to load, the resolver reported a programmer error, or the ledger
-	// write failed. Each is logged individually at ERROR.
+	// write failed for a real reason. Each is logged individually at ERROR.
+	//
+	// A write abandoned because the context was canceled or its deadline
+	// expired is NOT counted here: that is our own shutdown, not a fault of the
+	// artist, and blaming individual artists for it would make a routine stop
+	// read as a library-wide failure. It goes to SkippedTransient instead.
 	Errored int
 
 	// ZeroRemoteCatalogue counts the headline finding: the id resolves, the
@@ -266,8 +273,9 @@ func catalogueBucket(pct float64) int {
 // Run performs one pass and returns its counters.
 //
 // It returns an error when the pass could not proceed at all (the population
-// query failed) and when the pass was ABANDONED PART-WAY because ctx was
-// canceled -- in that second case the counters are still valid for what it
+// query failed) and whenever ctx was canceled at ANY point during the pass --
+// including during the last row's own work, where there is no next iteration
+// to notice it. In that second case the counters are still valid for what it
 // managed, and the error is ctx.Err(), so errors.Is(err, context.Canceled)
 // distinguishes a normal shutdown from a real failure. A per-artist failure is
 // counted, logged, and stepped over: one unreadable artist must not abort a
@@ -295,20 +303,47 @@ func (s *Sweep) Run(ctx context.Context) (Counters, error) {
 	started := time.Now()
 	slice, wrapped := s.selectSlice(population, s.cfg.maxPerPass())
 
-	var canceled bool
 	for _, row := range slice {
 		// Between items rather than only at the top: a canceled sweep should
-		// stop at the next artist, not after finishing the whole slice, and a
-		// pass abandoned mid-way still logs what it managed.
+		// stop at the next artist, not after finishing the whole slice. This
+		// check exists to STOP WORK PROMPTLY; it is not what decides whether the
+		// pass was abandoned.
 		if ctx.Err() != nil {
-			canceled = true
-			s.logger.Info("mbid re-validation pass canceled part-way",
-				slog.Int("checked", c.Checked),
-				slog.String("last_artist_id", s.cursor))
 			break
 		}
 		s.checkOne(ctx, row, &c)
+
+		// The cursor advances on every row checkOne returned from, including the
+		// row cancellation landed in the middle of. checkOne always reaches a
+		// terminal decision for its row -- persisted, deliberately skipped, or
+		// counted -- and after the fact there is no way to tell "canceled before
+		// any work" from "canceled after the write landed". Rewinding on the
+		// doubt would be worse than the doubt: a sweep canceled at the same
+		// point every pass (a service restarted on a timer, say) would re-check
+		// that one artist forever and never advance, which is the stuck-cursor
+		// failure the cursor exists to prevent. A row whose write WAS cut short
+		// leaves no ledger entry, so it is simply re-checked on the next cycle.
 		s.cursor = row.ArtistID
+	}
+
+	// Cancellation is read AFTER the loop, not from the in-loop break.
+	//
+	// The between-items check can only fire when there IS a next iteration, so a
+	// context canceled during the FINAL row's work -- inside the resolver call
+	// or inside the ledger write -- let the loop end normally and left the pass
+	// claiming a complete cycle: cursor cleared, population_exhausted true, no
+	// error returned. That is the same "abandoned tail reported as clean" defect
+	// this cursor logic already guards, surviving on the one path the in-loop
+	// check cannot reach.
+	//
+	// One post-loop read covers every path because context.Err is monotonic:
+	// once it is non-nil it stays non-nil, so this subsumes the in-loop
+	// observation rather than merely duplicating it.
+	canceled := ctx.Err() != nil
+	if canceled {
+		s.logger.Info("mbid re-validation pass canceled part-way",
+			slog.Int("checked", c.Checked),
+			slog.String("last_artist_id", s.cursor))
 	}
 
 	// The population is exhausted only when the slice both REACHED its end
@@ -362,6 +397,11 @@ func (s *Sweep) selectSlice(population []artist.MBIDPath, limit int) ([]artist.M
 }
 
 // checkOne resolves and persists a single artist's verdict, updating c.
+//
+// It reports nothing back about cancellation and does not need to: Run reads
+// ctx.Err() after the loop, so a pass cut short inside this function is
+// surfaced there. What checkOne owes is that a canceled step never lands in a
+// counter or a log line that blames the artist for it.
 func (s *Sweep) checkOne(ctx context.Context, row artist.MBIDPath, c *Counters) {
 	// ProviderIDs only: the resolver reads Name, SortName, Path and
 	// MusicBrainzID, and the id lives in the artist_provider_ids side table.
@@ -369,6 +409,17 @@ func (s *Sweep) checkOne(ctx context.Context, row artist.MBIDPath, c *Counters) 
 	// hydrating them would be per-artist queries bought for nothing.
 	a, err := s.artists.GetByID(ctx, row.ArtistID, artist.HydrateOpts{ProviderIDs: true})
 	if err != nil {
+		// Same rule as the ledger write below: a read cut short by shutdown is
+		// our condition, not this artist's. Reached earlier in the pass than the
+		// write is, so on a cancellation it is the one that fires for the whole
+		// remaining slice.
+		if isCanceled(err) {
+			c.SkippedTransient++
+			s.logger.Debug("mbid re-validation abandoned an artist load during shutdown",
+				slog.String("artist_id", row.ArtistID),
+				slog.Any("error", err))
+			return
+		}
 		c.Errored++
 		s.logger.Error("mbid re-validation could not load an artist",
 			slog.String("artist_id", row.ArtistID),
@@ -411,6 +462,25 @@ func (s *Sweep) checkOne(ctx context.Context, row artist.MBIDPath, c *Counters) 
 	}
 
 	if err := s.ledger.Upsert(ctx, &res.Validation); err != nil {
+		// A write cut short by shutdown is not this artist's fault, and it is
+		// the same rule the resolver applies to a provider outage: a condition
+		// on OUR side is never attributed to the artist. Counting it as Errored
+		// and logging at ERROR turns a routine stop into a burst of one error
+		// line per remaining artist, each naming an artist that is fine.
+		//
+		// It lands in SkippedTransient, whose documented meaning already covers
+		// cancellation, so the pass still reports that a verdict did not get
+		// written rather than silently losing it. Run's post-loop ctx.Err()
+		// check is what turns this into the pass-level error; no signal has to
+		// be threaded back from here.
+		//
+		if isCanceled(err) {
+			c.SkippedTransient++
+			s.logger.Debug("mbid re-validation abandoned a verdict write during shutdown",
+				slog.String("artist_id", row.ArtistID),
+				slog.Any("error", err))
+			return
+		}
 		c.Errored++
 		s.logger.Error("mbid re-validation could not persist a verdict",
 			slog.String("artist_id", row.ArtistID),
@@ -427,6 +497,16 @@ func (s *Sweep) checkOne(ctx context.Context, row artist.MBIDPath, c *Counters) 
 	case artist.MBIDOutcomeNotCheckable:
 		c.NotCheckable++
 	}
+}
+
+// isCanceled reports whether err is our own shutdown rather than a fault of
+// the artist being processed.
+//
+// errors.Is, never == and never a string match: a repository wraps its driver
+// errors, so the sentinel arrives buried, and the two comparisons that would
+// work on a bare error silently stop matching the moment anything wraps it.
+func isCanceled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // logSummary emits the one line per pass an operator reads.
