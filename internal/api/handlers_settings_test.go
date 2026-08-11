@@ -349,7 +349,7 @@ func TestHandleUpdateSettings_BaselineChoice(t *testing.T) {
 }
 
 // TestHandleUpdateSettings_MBIDRevalidate_Invalid covers the #3004 defect: the
-// five mbid_revalidate.* keys shipped in #3003 with no settingValidators entry,
+// five mbid_revalidate.* keys shipped in #3003 with no validator registry entry,
 // so PUT stored any string with a 200 OK. The boot reader parses with
 // fmt.Sscanf("%d"), which stops at the first non-digit and reports success, so
 // a stored "0.5" was read back as a valid, in-range 0 -- and a name-similarity
@@ -495,7 +495,7 @@ func TestMBIDRevalidateKeysRegistered(t *testing.T) {
 		"mbid_revalidate.catalogue_match_percent",
 	} {
 		if !HasSettingValidator(key) {
-			t.Errorf("%s is read at boot but has no settingValidators entry: "+
+			t.Errorf("%s is read at boot but has no validator registry entry: "+
 				"PUT would store any string with a 200 OK (#3004)", key)
 		}
 	}

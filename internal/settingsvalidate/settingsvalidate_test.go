@@ -1,6 +1,7 @@
 package settingsvalidate
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -324,6 +325,138 @@ func TestValidateLocalAuthEnabled(t *testing.T) {
 		}
 		if got != c.canonical {
 			t.Errorf("input %q: canonical = %q, want %q", c.input, got, c.canonical)
+		}
+	}
+}
+
+// -- Tests for the package's exported API --
+
+// TestValidate covers the three-value contract every consumer depends on.
+//
+// This exists because the package's exported surface was, briefly, guarded
+// only by internal/api's handler tests -- one package away. A hostile review
+// proved it: gutting Validate so it returned the raw value without calling the
+// validator passed every test in this package and failed only in internal/api.
+// That is fine while internal/api is the sole consumer and worthless the
+// moment there is another, which is exactly what #3008 adds (settingsio, whose
+// entire point is that it does NOT route through internal/api).
+//
+// The ok/err split is the part worth pinning: "no rule for this key" and "this
+// value is invalid" are different facts with opposite correct responses, and a
+// consumer that conflates them either rejects every unknown key or accepts
+// every bad value.
+func TestValidate(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name      string
+		key       string
+		value     string
+		canonical string
+		wantOK    bool
+		wantErr   bool
+	}{
+		// A registered key with a valid value: canonical form, ok, no error.
+		{"valid int in range", "provider.name_similarity_threshold", "60", "60", true, false},
+		{"valid bool canonicalised", "scanner.mtime_fast_path", "TRUE", "true", true, false},
+		{"valid bool from 1", "scanner.mtime_fast_path", "1", "true", true, false},
+		{"valid csv normalised", "scanner.exclusions", " VA ,  , OST ", "VA, OST", true, false},
+		{"valid base path coerced", "server.base_path", "", "/", true, false},
+		// The backdrop count's 1-10 bound had no test anywhere in the repo
+		// before this package existed -- a hostile review found that mutating
+		// its lower bound to 0 survived every suite. Both ends pinned here.
+		{"backdrop count lower bound", "images.backdrop.target_count", "1", "1", true, false},
+		{"backdrop count upper bound", "images.backdrop.target_count", "10", "10", true, false},
+
+		// A registered key with an invalid value: ok is TRUE (a rule exists)
+		// and err is non-nil. A caller must not read ok=true as "accepted".
+		{"int out of range", "provider.name_similarity_threshold", "101", "", true, true},
+		{"int fractional", "provider.name_similarity_threshold", "0.5", "", true, true},
+		{"bool unparsable", "scanner.mtime_fast_path", "sometimes", "", true, true},
+		{"positive int zero", "backup.interval_hours", "0", "", true, true},
+		{"backdrop count below range", "images.backdrop.target_count", "0", "", true, true},
+		{"backdrop count above range", "images.backdrop.target_count", "11", "", true, true},
+
+		// An UNREGISTERED key: the value passes through unchanged, ok is
+		// false, and there is no error. Losing the raw value here would make
+		// every unvalidated setting store an empty string.
+		{"unknown key passes through", "definitely.not.registered", "anything", "anything", false, false},
+		{"unknown key keeps empty", "definitely.not.registered", "", "", false, false},
+		{"pre-rename key is unknown", "mbid_revalidate.name_similarity", "60", "60", false, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			canonical, ok, err := Validate(c.key, c.value)
+			if ok != c.wantOK {
+				t.Errorf("Validate(%q, %q) ok = %v, want %v", c.key, c.value, ok, c.wantOK)
+			}
+			if (err != nil) != c.wantErr {
+				t.Errorf("Validate(%q, %q) err = %v, wantErr %v", c.key, c.value, err, c.wantErr)
+			}
+			if canonical != c.canonical {
+				t.Errorf("Validate(%q, %q) canonical = %q, want %q",
+					c.key, c.value, canonical, c.canonical)
+			}
+			// A rejection must name the key, or an operator saving several
+			// settings at once cannot tell which one was refused.
+			if c.wantErr && !strings.Contains(err.Error(), c.key) {
+				t.Errorf("Validate(%q, %q) error %q does not name the key", c.key, c.value, err)
+			}
+		})
+	}
+}
+
+// TestHas covers the predicate the cross-package drift guards use (#3007,
+// #3009). A stub returning a constant fails here in both directions: `true`
+// fails the unregistered cases, `false` the registered ones.
+func TestHas(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		key  string
+		want bool
+	}{
+		{"provider.name_similarity_threshold", true},
+		{"mbid_revalidate.enabled", true},
+		{"server.base_path", true},
+		{"scanner.exclusions", true},
+		// Read at boot but deliberately unvalidated today, tracked in #3005.
+		// If one gains a validator, flip the expectation -- do not delete it.
+		{"logging.level", false},
+		{"db_maintenance.enabled", false},
+		// Renamed away in #3004; must not come back.
+		{"mbid_revalidate.name_similarity", false},
+		{"definitely.not.a.real.setting.key", false},
+	} {
+		if got := Has(c.key); got != c.want {
+			t.Errorf("Has(%q) = %v, want %v", c.key, got, c.want)
+		}
+	}
+}
+
+// TestKeys asserts the enumeration matches the registry and, more importantly,
+// that a caller cannot reach the registry through the returned slice. Keys is
+// consumed by the #3009 gate, which walks every validated key.
+func TestKeys(t *testing.T) {
+	t.Parallel()
+	keys := Keys()
+	if len(keys) != len(registry) {
+		t.Fatalf("Keys() returned %d keys, registry holds %d", len(keys), len(registry))
+	}
+	for _, k := range keys {
+		if !Has(k) {
+			t.Errorf("Keys() returned %q, which Has() does not recognize", k)
+		}
+	}
+	// Mutating the returned slice must not affect the registry. Without the
+	// defensive copy this would corrupt the rules for every later caller in
+	// the process.
+	if len(keys) > 0 {
+		victim := keys[0]
+		keys[0] = "clobbered"
+		if !Has(victim) {
+			t.Errorf("mutating the slice Keys() returned removed %q from the registry", victim)
+		}
+		if Has("clobbered") {
+			t.Error("mutating the slice Keys() returned inserted a key into the registry")
 		}
 	}
 }

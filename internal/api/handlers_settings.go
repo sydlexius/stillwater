@@ -59,13 +59,10 @@ func (r *Router) handleGetSettings(w http.ResponseWriter, req *http.Request) {
 
 // HasSettingValidator reports whether key is validated by PUT /api/v1/settings.
 //
-// Exported for the benefit of tests in other packages that read settings keys
-// at boot and need to assert those keys are validated at the write boundary.
-// settingValidators is unexported and should stay that way -- the map itself is
-// not a public surface -- but "is this key validated?" is a property another
-// package legitimately needs to check, and the alternative is a second
-// hand-maintained copy of the key list that drifts from this one. That drift is
-// exactly the #3004 defect: main.go read five keys that the map did not carry.
+// A thin forwarder to settingsvalidate.Has, kept because the cmd/stillwater
+// drift guard added in #3007 asserts against this name and the question it
+// answers is about THIS endpoint's contract, not the registry's storage. New
+// callers outside internal/api should use settingsvalidate.Has directly.
 func HasSettingValidator(key string) bool {
 	return settingsvalidate.Has(key)
 }
@@ -73,7 +70,7 @@ func HasSettingValidator(key string) bool {
 // handleUpdateSettings upserts one or more application settings.
 // PUT /api/v1/settings
 //
-// Validation is handled by settingValidators: each key present in the request
+// Validation is handled by the settingsvalidate registry: each key present in the request
 // body is looked up in the registry and, if a validator is found, the value is
 // validated and potentially normalised. Keys absent from the registry are
 // accepted without validation. All validations run before any write occurs.
