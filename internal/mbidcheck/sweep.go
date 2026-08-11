@@ -185,7 +185,7 @@ type Sweep struct {
 	// change and a new way for the sweep to get permanently stuck at a bad row.
 	//
 	// Not guarded by a mutex because Run is not safe for concurrent use -- see
-	// its doc comment. Start is the only caller and is single-threaded.
+	// its doc comment. Start is the only production caller and is single-threaded.
 	cursor string
 }
 
