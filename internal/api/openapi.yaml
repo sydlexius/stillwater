@@ -8535,8 +8535,11 @@ paths:
                 $ref: "#/components/schemas/Status"
         "400":
           description: >
-            A value failed validation. The error message names the offending
-            key. No setting in the request was persisted.
+            The request body was not a JSON object of string values, or a value
+            failed validation. A validation failure names the offending key in
+            the error message; a malformed body reports "invalid request body"
+            and names nothing, since no key was parsed. Either way no setting in
+            the request was persisted.
           content:
             application/json:
               schema:

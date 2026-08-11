@@ -907,3 +907,62 @@ func TestHandleUpdateSettings_BatchRejectionIsAllOrNothing(t *testing.T) {
 			"validation must complete before any write", goodKey, rows)
 	}
 }
+
+// TestHandleUpdateSettings_MalformedBody covers the second of the two 400 paths
+// this endpoint documents: a body that is not a JSON object of string values.
+//
+// It exists because the OpenAPI 400 description originally promised that "the
+// error message names the offending key" for every 400 -- true of a validation
+// failure, false here, where nothing was parsed and there is no key to name.
+// A Copilot review caught the overreach. The test pins both halves of the
+// corrected contract so the description cannot drift from the handler again:
+// the malformed case reports "invalid request body" and names no key, and it
+// still persists nothing.
+func TestHandleUpdateSettings_MalformedBody(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		body string
+	}{
+		{"not json", "not json at all"},
+		{"json array", `["mbid_revalidate.enabled"]`},
+		{"non-string value", `{"mbid_revalidate.enabled": true}`},
+		{"truncated object", `{"mbid_revalidate.enabled":`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			r, _ := testRouter(t)
+			var before int
+			if err := r.db.QueryRowContext(context.Background(),
+				`SELECT COUNT(*) FROM settings`).Scan(&before); err != nil {
+				t.Fatalf("counting settings rows before the request: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(c.body))
+			w := httptest.NewRecorder()
+			r.handleUpdateSettings(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("body %q: status = %d, want 400; body: %s", c.body, w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), "invalid request body") {
+				t.Errorf("body %q: error %s, want it to report \"invalid request body\"",
+					c.body, w.Body.String())
+			}
+			// Nothing parsed, so nothing may have been written. Compare
+			// against a BEFORE count rather than expecting an empty table:
+			// migration 001 seeds ~20 default settings rows, so an absolute
+			// "want 0" assertion fails on a correct handler (it did, when this
+			// test was first written). The delta is the real property.
+			var after int
+			if err := r.db.QueryRowContext(context.Background(),
+				`SELECT COUNT(*) FROM settings`).Scan(&after); err != nil {
+				t.Fatalf("counting settings rows: %v", err)
+			}
+			if after != before {
+				t.Errorf("body %q: rejected with 400 but the settings row count moved %d -> %d",
+					c.body, before, after)
+			}
+		})
+	}
+}
