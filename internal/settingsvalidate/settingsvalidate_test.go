@@ -1,7 +1,6 @@
 package settingsvalidate
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -353,35 +352,46 @@ func TestValidate(t *testing.T) {
 		value     string
 		canonical string
 		wantOK    bool
-		wantErr   bool
+		// wantErrMsg is the EXACT user-visible message, empty when no error is
+		// expected. Exact rather than a substring: this text reaches the
+		// operator through PUT /api/v1/settings, so a validator quietly
+		// rewording its rejection is a user-visible change that a
+		// "contains the key" assertion would wave through.
+		wantErrMsg string
 	}{
 		// A registered key with a valid value: canonical form, ok, no error.
-		{"valid int in range", "provider.name_similarity_threshold", "60", "60", true, false},
-		{"valid bool canonicalised", "scanner.mtime_fast_path", "TRUE", "true", true, false},
-		{"valid bool from 1", "scanner.mtime_fast_path", "1", "true", true, false},
-		{"valid csv normalised", "scanner.exclusions", " VA ,  , OST ", "VA, OST", true, false},
-		{"valid base path coerced", "server.base_path", "", "/", true, false},
+		{"valid int in range", "provider.name_similarity_threshold", "60", "60", true, ""},
+		{"valid bool canonicalised", "scanner.mtime_fast_path", "TRUE", "true", true, ""},
+		{"valid bool from 1", "scanner.mtime_fast_path", "1", "true", true, ""},
+		{"valid csv normalised", "scanner.exclusions", " VA ,  , OST ", "VA, OST", true, ""},
+		{"valid base path coerced", "server.base_path", "", "/", true, ""},
 		// The backdrop count's 1-10 bound had no test anywhere in the repo
 		// before this package existed -- a hostile review found that mutating
 		// its lower bound to 0 survived every suite. Both ends pinned here.
-		{"backdrop count lower bound", "images.backdrop.target_count", "1", "1", true, false},
-		{"backdrop count upper bound", "images.backdrop.target_count", "10", "10", true, false},
+		{"backdrop count lower bound", "images.backdrop.target_count", "1", "1", true, ""},
+		{"backdrop count upper bound", "images.backdrop.target_count", "10", "10", true, ""},
 
 		// A registered key with an invalid value: ok is TRUE (a rule exists)
 		// and err is non-nil. A caller must not read ok=true as "accepted".
-		{"int out of range", "provider.name_similarity_threshold", "101", "", true, true},
-		{"int fractional", "provider.name_similarity_threshold", "0.5", "", true, true},
-		{"bool unparsable", "scanner.mtime_fast_path", "sometimes", "", true, true},
-		{"positive int zero", "backup.interval_hours", "0", "", true, true},
-		{"backdrop count below range", "images.backdrop.target_count", "0", "", true, true},
-		{"backdrop count above range", "images.backdrop.target_count", "11", "", true, true},
+		{"int out of range", "provider.name_similarity_threshold", "101", "", true,
+			"provider.name_similarity_threshold must be between 0 and 100"},
+		{"int fractional", "provider.name_similarity_threshold", "0.5", "", true,
+			"provider.name_similarity_threshold must be between 0 and 100"},
+		{"bool unparsable", "scanner.mtime_fast_path", "sometimes", "", true,
+			"scanner.mtime_fast_path must be true or false"},
+		{"positive int zero", "backup.interval_hours", "0", "", true,
+			"backup.interval_hours must be a positive integer"},
+		{"backdrop count below range", "images.backdrop.target_count", "0", "", true,
+			"images.backdrop.target_count must be between 1 and 10"},
+		{"backdrop count above range", "images.backdrop.target_count", "11", "", true,
+			"images.backdrop.target_count must be between 1 and 10"},
 
 		// An UNREGISTERED key: the value passes through unchanged, ok is
 		// false, and there is no error. Losing the raw value here would make
 		// every unvalidated setting store an empty string.
-		{"unknown key passes through", "definitely.not.registered", "anything", "anything", false, false},
-		{"unknown key keeps empty", "definitely.not.registered", "", "", false, false},
-		{"pre-rename key is unknown", "mbid_revalidate.name_similarity", "60", "60", false, false},
+		{"unknown key passes through", "definitely.not.registered", "anything", "anything", false, ""},
+		{"unknown key keeps empty", "definitely.not.registered", "", "", false, ""},
+		{"pre-rename key is unknown", "mbid_revalidate.name_similarity", "60", "60", false, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -389,17 +399,30 @@ func TestValidate(t *testing.T) {
 			if ok != c.wantOK {
 				t.Errorf("Validate(%q, %q) ok = %v, want %v", c.key, c.value, ok, c.wantOK)
 			}
-			if (err != nil) != c.wantErr {
-				t.Errorf("Validate(%q, %q) err = %v, wantErr %v", c.key, c.value, err, c.wantErr)
-			}
 			if canonical != c.canonical {
 				t.Errorf("Validate(%q, %q) canonical = %q, want %q",
 					c.key, c.value, canonical, c.canonical)
 			}
-			// A rejection must name the key, or an operator saving several
-			// settings at once cannot tell which one was refused.
-			if c.wantErr && !strings.Contains(err.Error(), c.key) {
-				t.Errorf("Validate(%q, %q) error %q does not name the key", c.key, c.value, err)
+			// FATAL, not Errorf: everything below dereferences err, and
+			// t.Errorf continues. A mutation that wrongly returns a nil error
+			// on a wantErrMsg case would otherwise panic on err.Error()
+			// instead of reporting a legible failure -- in a test whose whole
+			// job is to be mutated.
+			if c.wantErrMsg == "" {
+				if err != nil {
+					t.Fatalf("Validate(%q, %q) unexpected error: %v", c.key, c.value, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate(%q, %q) expected error %q, got nil", c.key, c.value, c.wantErrMsg)
+			}
+			// Exact, not a substring: the message reaches the operator through
+			// PUT /api/v1/settings, and it must name the offending key so a
+			// multi-key save says which one was refused.
+			if err.Error() != c.wantErrMsg {
+				t.Errorf("Validate(%q, %q) error = %q, want %q",
+					c.key, c.value, err.Error(), c.wantErrMsg)
 			}
 		})
 	}

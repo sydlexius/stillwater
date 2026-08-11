@@ -261,10 +261,11 @@ func TestMBIDRevalidateSettingKeysMatchValidators(t *testing.T) {
 
 	for key, file := range found {
 		if !api.HasSettingValidator(key) {
-			t.Errorf("%s reads settings key %q, which has no validator registry entry "+
-				"in internal/api: PUT /api/v1/settings would store any string for it "+
-				"with a 200 OK, and the boot reader would parse the garbage into a "+
-				"plausible number (#3004)", file, key)
+			t.Errorf("%s reads settings key %q, which api.HasSettingValidator does "+
+				"not recognize: add an entry to the registry in "+
+				"internal/settingsvalidate, or PUT /api/v1/settings would store "+
+				"any string for it with a 200 OK and the boot reader would parse "+
+				"the garbage into a plausible number (#3004)", file, key)
 		}
 	}
 }
