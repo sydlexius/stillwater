@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -1856,5 +1857,77 @@ func TestSweepWithoutAFlaggerStillWritesTheLedger(t *testing.T) {
 	}
 	if flag.count() != 1 {
 		t.Errorf("a nil SetFlagger disconnected the working flagger: raised %d", flag.count())
+	}
+}
+
+// TestSelectSlice_HugeLimitWithAdvancedCursor is CodeRabbit's overflow
+// finding, reproduced as a regression test. mbid_revalidate.max_per_pass has
+// no settings validator yet (#3004), so an operator can persist
+// math.MaxInt; resolveMBIDRevalidateSchedule passes it straight through
+// (deliberately, for the reasons documented on that function), so it reaches
+// selectSlice unclamped.
+//
+// The cursor MUST be non-empty here. With an empty cursor, start is 0, and
+// start+limit does not overflow even at math.MaxInt (0+MaxInt == MaxInt,
+// still positive) -- that shape would pass unconditionally against both the
+// buggy and fixed code and prove nothing. This sweep reaches its second pass
+// specifically: start becomes non-zero only after the cursor has advanced
+// past the first pass, so the overflow is a second-pass failure, not a
+// first-pass one.
+//
+// Before the fix, start+limit == 1 + math.MaxInt overflows int and wraps to
+// math.MinInt (a large NEGATIVE number). The old guard `end >= len(population)`
+// does not catch a negative end, so population[start:end] panicked. This test
+// asserts the returned slice's exact contents and the wrapped flag, not
+// merely the absence of a panic.
+func TestSelectSlice_HugeLimitWithAdvancedCursor(t *testing.T) {
+	population := []artist.MBIDPath{
+		{ArtistID: "a-1", MBID: "m1"},
+		{ArtistID: "a-2", MBID: "m2"},
+		{ArtistID: "a-3", MBID: "m3"},
+	}
+	sw := &Sweep{cursor: "a-1"}
+
+	slice, wrapped := sw.selectSlice(population, math.MaxInt)
+
+	if !wrapped {
+		t.Fatal("wrapped = false, want true: the huge limit reaches the end of the population")
+	}
+	want := []artist.MBIDPath{
+		{ArtistID: "a-2", MBID: "m2"},
+		{ArtistID: "a-3", MBID: "m3"},
+	}
+	if !reflect.DeepEqual(slice, want) {
+		t.Fatalf("slice = %+v, want %+v", slice, want)
+	}
+}
+
+// TestSelectSlice_LimitExactlyMatchesRemaining pins the boundary the huge-limit
+// test above cannot reach: limit == remaining exactly (2 rows left after the
+// cursor, limit 2). Mutating the fixed code's `limit >= remaining` to
+// `limit > remaining` still returns the correct two rows here but leaves
+// wrapped false instead of true -- a real defect (the sweep would think the
+// population was not exhausted and never wrap the cursor) that a test using
+// only a limit strictly greater than or strictly less than remaining would
+// never catch.
+func TestSelectSlice_LimitExactlyMatchesRemaining(t *testing.T) {
+	population := []artist.MBIDPath{
+		{ArtistID: "a-1", MBID: "m1"},
+		{ArtistID: "a-2", MBID: "m2"},
+		{ArtistID: "a-3", MBID: "m3"},
+	}
+	sw := &Sweep{cursor: "a-1"}
+
+	slice, wrapped := sw.selectSlice(population, 2)
+
+	if !wrapped {
+		t.Fatal("wrapped = false, want true: limit exactly consumes the remaining population")
+	}
+	want := []artist.MBIDPath{
+		{ArtistID: "a-2", MBID: "m2"},
+		{ArtistID: "a-3", MBID: "m3"},
+	}
+	if !reflect.DeepEqual(slice, want) {
+		t.Fatalf("slice = %+v, want %+v", slice, want)
 	}
 }

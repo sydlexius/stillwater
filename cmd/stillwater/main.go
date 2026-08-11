@@ -38,6 +38,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/maintenance"
+	"github.com/sydlexius/stillwater/internal/mbidcheck"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -1058,6 +1059,28 @@ func resolveReleaseGroupFetcher(registry *provider.Registry) provider.ReleaseGro
 	return fetcher
 }
 
+// resolveMBIDCheckClient returns the MusicBrainz adapter from the provider
+// registry when it implements mbidcheck.MusicBrainzClient, or nil when the
+// adapter is unregistered. Mirrors resolveReleaseGroupFetcher's shape: same
+// registry lookup, same nil-degrades contract. Unlike the release-group
+// fetcher, a nil return here means the #2810 sweep cannot start at all
+// (mbidcheck.New panics on a nil client), so the caller must check it before
+// constructing the sweep rather than passing it straight through.
+func resolveMBIDCheckClient(registry *provider.Registry) mbidcheck.MusicBrainzClient {
+	if registry == nil {
+		return nil
+	}
+	p := registry.Get(provider.NameMusicBrainz)
+	if p == nil {
+		return nil
+	}
+	client, ok := p.(mbidcheck.MusicBrainzClient)
+	if !ok {
+		return nil
+	}
+	return client
+}
+
 // startListeners starts all background workers and the HTTP listener, then
 // blocks until the server exits. It also performs the graceful shutdown
 // sequence including webhook draining and scanner shutdown.
@@ -1151,6 +1174,82 @@ func (a *Application) startLockSyncScheduler(ctx context.Context, db *sql.DB, lo
 		return
 	}
 	go a.lockSyncService.StartScheduler(ctx, time.Duration(lockSyncMinutes)*time.Minute, 60*time.Second)
+}
+
+// startMBIDRevalidateSweep launches the #2810 background sweep that confirms
+// a stored MusicBrainz id still resolves to the artist it is attached to.
+// Extracted from startListeners to keep that method's cognitive complexity
+// under the lint cap, matching startFanartHashBackfill and
+// startLockSyncScheduler above.
+//
+// Defaults to DISABLED, opt-in like the config-gated schedulers above it.
+// rule.Service seeds mbid_resolves (the rule this sweep's findings land
+// under) with Enabled: false -- see internal/rule/service.go and the
+// precondition asserted in internal/rule/mbid_resolves_test.go -- so a
+// default-ON sweep would raise Action Queue findings attributed to a rule
+// the operator sees as off in Settings. It would also start roughly two
+// outbound MusicBrainz requests per artist, every pass, on every existing
+// install the moment it upgrades, with no UI toggle and no settings
+// validator for the off switch yet. Default-off keeps the producer honest
+// about the surface and leaves opting in to the operator.
+func (a *Application) startMBIDRevalidateSweep(ctx context.Context, db *sql.DB, logger *slog.Logger) {
+	enabled := getDBBoolSetting(ctx, db, "mbid_revalidate.enabled", false)
+	if !enabled {
+		logger.Info("mbid re-validation sweep disabled",
+			slog.String("setting", "mbid_revalidate.enabled"))
+		return
+	}
+
+	mbClient := resolveMBIDCheckClient(a.providerRegistry)
+	if mbClient == nil {
+		// resolveMBIDCheckClient collapses three distinct causes into one nil:
+		// no registry, no musicbrainz provider registered, or a registered
+		// provider whose adapter does not implement mbidcheck.MusicBrainzClient.
+		// The message below has to cover all three, not just the first, so an
+		// operator debugging a wrong-shape adapter is not told to go register
+		// something that is already registered.
+		logger.Warn("mbid re-validation sweep not started: musicbrainz provider not registered, " +
+			"or the registered provider does not support MBID re-validation")
+		return
+	}
+
+	ledger := a.artistService.MBIDValidations()
+	if ledger == nil {
+		// Defense in depth: the production artist.Service always attaches a
+		// ledger (artist.NewService wires it unconditionally in wireAuth), so
+		// this branch is unreached in a real boot. It exists because
+		// mbidcheck.NewSweep panics on a nil Ledger, and a boot panic is the
+		// wrong way to report a wiring gap that a log line can say just as
+		// clearly.
+		logger.Warn("mbid re-validation sweep not started: no MBID validation ledger attached")
+		return
+	}
+
+	interval, maxPerPass := resolveMBIDRevalidateSchedule(
+		getDBIntSetting(ctx, db, "mbid_revalidate.interval_hours", 0),
+		getDBIntSetting(ctx, db, "mbid_revalidate.max_per_pass", 0))
+	// Threshold settings are passed straight through: WithNameThreshold and
+	// WithCatalogueThreshold already ignore any value outside 0-100 and fall
+	// back to their package default, so getDBIntSetting's -1 sentinel for "no
+	// row saved" resolves itself without a second layer of defaulting here.
+	nameThreshold := getDBIntSetting(ctx, db, "mbid_revalidate.name_similarity", -1)
+	catalogueThreshold := getDBIntSetting(ctx, db, "mbid_revalidate.catalogue_match_percent", -1)
+
+	resolver := mbidcheck.New(mbClient, artist.NewFilesystemAlbumSource(),
+		mbidcheck.WithNameThreshold(nameThreshold),
+		mbidcheck.WithCatalogueThreshold(catalogueThreshold),
+		mbidcheck.WithLogger(logger))
+	mbidSweep := mbidcheck.NewSweep(a.artistService, a.artistService, ledger, resolver,
+		mbidcheck.Config{
+			Interval:   interval,
+			MaxPerPass: maxPerPass,
+		}, logger)
+	// Wired before Start launches: Start's goroutine reads the flagger on the
+	// first failed verdict, and SetFlagger's own ordering note is explicit
+	// that late wiring after Start has already begun is a race the mutex
+	// does not resolve on its own.
+	mbidSweep.SetFlagger(a.ruleService)
+	go mbidSweep.Start(ctx)
 }
 
 func (a *Application) startListeners() error {
@@ -1247,6 +1346,9 @@ func (a *Application) startListeners() error {
 			go a.publisher.StartRelinkReconciler(ctx, interval, 90*time.Second)
 		}
 	}
+
+	// MusicBrainz ID re-validation sweep (issue #2810).
+	a.startMBIDRevalidateSweep(ctx, db, logger)
 
 	// Session cleanup.
 	go func() {
@@ -2213,6 +2315,51 @@ func resolveRelinkReconcileInterval(minutes int) (time.Duration, bool) {
 		minutes = defaultRelinkReconcileMinutes
 	}
 	return time.Duration(minutes) * time.Minute, true
+}
+
+// resolveMBIDRevalidateSchedule maps the operator's configured hours-per-pass
+// and artists-per-pass onto the (interval, maxPerPass) pair startListeners
+// passes into mbidcheck.Config, applying the same "reject nonsense, don't
+// silently reinterpret it" policy as resolveRelinkReconcileInterval.
+//
+// Unlike relink_reconcile.interval_minutes, 0 here is NOT a deliberate
+// disable -- that is mbid_revalidate.enabled's job, read separately in
+// startListeners -- so an hours value of 0 (nothing ever saved) falls back to
+// mbidcheck.DefaultInterval exactly like a negative or out-of-range one.
+// mbidcheck.Config.interval() and .maxPerPass() already treat any
+// non-positive field as "use the package default", so the only thing this
+// function adds is the upper bound: without it,
+// `time.Duration(hours) * time.Hour` can overflow int64 nanoseconds for a
+// sufficiently large hours value, and the wrap is NOT reliably negative --
+// integer overflow is modular, not sign-preserving, so it lands on whatever
+// value the modulus produces. Measured: hours=5124096 wraps to a positive
+// 25m26s, hours=10248192 to a positive 50m52s, hours=15372287 to a positive
+// 16m18s. Config.interval() only rejects <= 0, so each of those would be
+// ACCEPTED as the real interval: a nonsense operator-entered value turns into
+// a sweep hammering MusicBrainz every 16-50 minutes instead of degrading
+// safely. The cap is what prevents that -- it is load-bearing, not a
+// belt-and-suspenders accident. maxPerPass has no equivalent DURATION
+// overflow (it stays an int, never multiplied into a duration), so it is
+// passed through unclamped here; Config.maxPerPass() already turns any
+// non-positive value into DefaultMaxPerPass. A large positive maxPerPass
+// (e.g. the int max, reachable because this setting has no validator yet --
+// #3004) is instead bounded where the arithmetic actually happens:
+// Sweep.selectSlice clamps against the remaining population rather than
+// computing start+limit directly, so it is safe for every caller including
+// this one regardless of what value flows through here.
+//
+// Split out of startListeners purely so this mapping is unit-testable, same
+// rationale as resolveRelinkReconcileInterval.
+func resolveMBIDRevalidateSchedule(hours, maxPerPass int) (time.Duration, int) {
+	// A year of hours is far past any sane re-check cadence for a background
+	// sweep whose own default is one day; treating anything past that as
+	// nonsense costs nothing and keeps the fallback identical to the
+	// negative and unset cases.
+	const maxMBIDRevalidateHours = 24 * 365
+	if hours <= 0 || hours > maxMBIDRevalidateHours {
+		return mbidcheck.DefaultInterval, maxPerPass
+	}
+	return time.Duration(hours) * time.Hour, maxPerPass
 }
 
 // buildTLSStatus condenses the runtime TLS configuration into the read-only
