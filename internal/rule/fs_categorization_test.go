@@ -64,6 +64,46 @@ func TestIsFilesystemDependent(t *testing.T) {
 			t.Errorf("expected rule %q to be API-compatible (not filesystem-dependent)", id)
 		}
 	}
+
+	// TEETH. Everything above walks a hand-written list asserting a property of
+	// each entry, so DELETING an entry deletes an assertion rather than
+	// breaking one: the lists were documentary while their comments implied
+	// rigor. This closes that by deriving the expectation from defaultRules --
+	// every default rule is either filesystem-dependent (and so must appear in
+	// fsRules) or API-compatible (and so must appear in apiRules), with no
+	// third option and nothing omitted.
+	listed := make(map[string]bool, len(fsRules)+len(apiRules))
+	for _, id := range fsRules {
+		listed[id] = true
+	}
+	for _, id := range apiRules {
+		if listed[id] {
+			t.Errorf("rule %q appears in BOTH fsRules and apiRules; the two lists must partition the defaults", id)
+		}
+		listed[id] = true
+	}
+	// PRECONDITION: there is something to walk. An empty defaultRules would
+	// make every assertion below vacuous.
+	if len(defaultRules) == 0 {
+		t.Fatal("precondition: defaultRules is empty, so this test would assert nothing")
+	}
+	for _, r := range defaultRules {
+		if !listed[r.ID] {
+			t.Errorf("default rule %q is in neither fsRules nor apiRules; add it to the list matching its IsFilesystemDependent(%v) classification",
+				r.ID, IsFilesystemDependent(r.ID))
+		}
+	}
+	// The other direction: a list entry that is no longer a default rule is a
+	// stale assertion pinning a rule nobody ships.
+	defaultIDs := make(map[string]bool, len(defaultRules))
+	for _, r := range defaultRules {
+		defaultIDs[r.ID] = true
+	}
+	for id := range listed {
+		if !defaultIDs[id] {
+			t.Errorf("rule %q is categorized here but is not a default rule", id)
+		}
+	}
 }
 
 // TestAllDefaultRulesAreCategorized ensures every rule defined in defaultRules

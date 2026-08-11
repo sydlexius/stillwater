@@ -164,6 +164,130 @@ func TestMBIDResolvesIsEventDriven(t *testing.T) {
 	}
 }
 
+// TestMBIDResolvesHonorsTheConfiguredSeverity asserts the one knob the rules
+// catalogue advertises for this rule actually works.
+//
+// The catalogue renders "Configurable: Severity only." for every rule exposing
+// no other parameter, and this rule is raised OUTSIDE an evaluation pass -- so
+// it never reaches the engine's backfill of an unset violation severity from
+// r.Config.Severity. A hard-coded severity here would leave the operator with a
+// documented setting they can change, save, and watch do nothing: they would
+// discover it by finding "warning" rows after asking for "error" ones.
+func TestMBIDResolvesHonorsTheConfiguredSeverity(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// PRECONDITION: the seeded severity is NOT the one this test asks for, so a
+	// hard-coded implementation cannot pass by coincidence.
+	seeded, err := ruleSvc.GetByID(ctx, RuleMBIDResolves)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if seeded.Config.Severity != "warning" {
+		t.Fatalf("precondition: seeded severity = %q, want %q", seeded.Config.Severity, "warning")
+	}
+
+	seeded.Config.Severity = "error"
+	if err := ruleSvc.Update(ctx, seeded); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	// PRECONDITION: the operator's change really is stored. Without this the
+	// assertion below could fail for a reason that has nothing to do with the
+	// raise path.
+	reread, err := ruleSvc.GetByID(ctx, RuleMBIDResolves)
+	if err != nil {
+		t.Fatalf("re-reading the rule: %v", err)
+	}
+	if reread.Config.Severity != "error" {
+		t.Fatalf("precondition: the configured severity did not persist, got %q", reread.Config.Severity)
+	}
+
+	a := &artist.Artist{Name: "Severity Subject", SortName: "Severity Subject", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := ruleSvc.RaiseMBIDValidationFailure(ctx, a.ID, a.Name, "a failed re-validation"); err != nil {
+		t.Fatalf("RaiseMBIDValidationFailure: %v", err)
+	}
+
+	got, _, err := ruleSvc.ListViolationsFilteredPaged(ctx, ViolationListParams{Status: "active"})
+	if err != nil {
+		t.Fatalf("listing violations: %v", err)
+	}
+	var found *RuleViolation
+	for i := range got {
+		if got[i].RuleID == RuleMBIDResolves {
+			found = &got[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("no mbid_resolves violation was raised")
+	}
+	if found.Severity != "error" {
+		t.Errorf("Severity = %q, want %q: the catalogue documents severity as configurable for this rule", found.Severity, "error")
+	}
+}
+
+// TestMBIDResolvesFallsBackToTheDefaultSeverity is the inverse, and without it
+// the test above could be satisfied by an implementation that read severity
+// from somewhere unreliable and left it empty when it could not. An empty
+// severity would reach the Action Queue as an unstyled, unsortable row.
+func TestMBIDResolvesFallsBackToTheDefaultSeverity(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	seeded, err := ruleSvc.GetByID(ctx, RuleMBIDResolves)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	seeded.Config.Severity = ""
+	if err := ruleSvc.Update(ctx, seeded); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	// PRECONDITION: the stored config really carries no severity, so the
+	// fallback branch is the one under test.
+	reread, err := ruleSvc.GetByID(ctx, RuleMBIDResolves)
+	if err != nil {
+		t.Fatalf("re-reading the rule: %v", err)
+	}
+	if reread.Config.Severity != "" {
+		t.Fatalf("precondition: stored severity = %q, want it empty", reread.Config.Severity)
+	}
+
+	a := &artist.Artist{Name: "Fallback Subject", SortName: "Fallback Subject", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := ruleSvc.RaiseMBIDValidationFailure(ctx, a.ID, a.Name, "a failed re-validation"); err != nil {
+		t.Fatalf("RaiseMBIDValidationFailure: %v", err)
+	}
+
+	got, _, err := ruleSvc.ListViolationsFilteredPaged(ctx, ViolationListParams{Status: "active"})
+	if err != nil {
+		t.Fatalf("listing violations: %v", err)
+	}
+	for _, v := range got {
+		if v.RuleID != RuleMBIDResolves {
+			continue
+		}
+		if v.Severity != "warning" {
+			t.Errorf("Severity = %q, want the seeded default %q when the rule carries none", v.Severity, "warning")
+		}
+		return
+	}
+	t.Fatal("no mbid_resolves violation was raised")
+}
+
 // TestMBIDResolvesCatalogueEntryOffersNoFix asserts the documentation surface
 // agrees with the code: no fix behavior, no fix example. A catalogue entry
 // describing a fix for a rule that has none would document a capability the

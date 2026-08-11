@@ -1165,16 +1165,47 @@ func (s *Service) RaiseBackdropCollision(ctx context.Context, destArtistID, dest
 // would put an automatic identity revert one argument away. A true here would
 // also make the Action Queue offer a Fix button that no Fixer.CanFix would
 // answer.
+//
+// Severity, by contrast, IS the operator's. It is read from the stored rule
+// rather than hard-coded, which is what the engine does for every rule it
+// evaluates (engine.go backfills an unset violation severity from
+// r.Config.Severity). Being raised outside an evaluation pass must not cost
+// this rule the one knob every rule has, and the rules catalogue documents it
+// as configurable -- a hard-coded "warning" would make that prose a lie the
+// operator discovers only by changing the setting and watching nothing happen.
 func (s *Service) RaiseMBIDValidationFailure(ctx context.Context, artistID, artistName, message string) error {
 	return s.UpsertViolation(ctx, &RuleViolation{
 		RuleID:     RuleMBIDResolves,
 		ArtistID:   artistID,
 		ArtistName: artistName,
-		Severity:   "warning",
+		Severity:   s.configuredSeverity(ctx, RuleMBIDResolves, "warning"),
 		Message:    message,
 		Fixable:    false,
 		Status:     ViolationStatusOpen,
 	})
+}
+
+// configuredSeverity is the operator's severity for a rule, or fallback when
+// the rule cannot be read or carries none.
+//
+// Falling back rather than failing is deliberate: the severity is a display
+// concern, and losing a real finding because a severity lookup failed would
+// trade the thing that matters for the thing that does not. The seeded default
+// is what fallback should name, so a caller reads the same value whether or not
+// the lookup succeeded.
+func (s *Service) configuredSeverity(ctx context.Context, ruleID, fallback string) string {
+	r, err := s.GetByID(ctx, ruleID)
+	if err != nil {
+		s.logger.Warn("could not read a rule's configured severity; using its default",
+			slog.String("rule_id", ruleID),
+			slog.String("severity", fallback),
+			slog.Any("error", err))
+		return fallback
+	}
+	if r.Config.Severity == "" {
+		return fallback
+	}
+	return r.Config.Severity
 }
 
 // ListViolations returns rule violations filtered by status.

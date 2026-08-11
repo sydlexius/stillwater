@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -152,10 +154,23 @@ type Sweep struct {
 	population Population
 	artists    ArtistGetter
 	ledger     Ledger
-	flagger    Flagger
 	resolver   *Resolver
 	cfg        Config
 	logger     *slog.Logger
+
+	// flaggerMu guards flagger, which is the ONE field written after
+	// construction.
+	//
+	// A mutex rather than a documented "wire it before you launch the
+	// goroutine" contract, because that contract fights the setter's own
+	// justification: SetFlagger exists precisely BECAUSE the rule service is
+	// built late, so the shape it invites is a wiring author calling it after
+	// `go Start(ctx)` has already begun a pass. That is a genuine data race
+	// (write here, read in flag), it is reachable through the documented
+	// wiring, and it only manifests once a FAILED verdict reaches flag -- so a
+	// smoke test over a healthy library would never surface it.
+	flaggerMu sync.RWMutex
+	flagger   Flagger
 
 	// cursor is the artist id the NEXT pass starts after.
 	//
@@ -209,10 +224,36 @@ func NewSweep(population Population, artists ArtistGetter, ledger Ledger, resolv
 // built after the artist service in main.go's wiring order, matching the
 // late-wiring shape the rule fixers already use. A nil argument is ignored so
 // a call made out of order cannot silently disconnect a working flagger.
+//
+// Safe to call at any time, including while Start's goroutine is mid-pass:
+// the field is guarded. See the flaggerMu comment for why that guard is a
+// mutex rather than a "wire it first" instruction.
+//
+// "Nil" here means nil in EITHER of the two ways an interface can be nil. A
+// caller holding a `var svc *rule.Service` that was never built passes a
+// non-nil interface wrapping a nil pointer, for which `f != nil` is TRUE, so a
+// plain check would store it and flag would call a method on a nil receiver on
+// the first failed verdict -- a panic in a background goroutine, hours after
+// the wiring ran. The reflect check is the only way to see through the
+// interface box.
 func (s *Sweep) SetFlagger(f Flagger) {
-	if f != nil {
-		s.flagger = f
+	if f == nil {
+		return
 	}
+	if v := reflect.ValueOf(f); v.Kind() == reflect.Pointer && v.IsNil() {
+		return
+	}
+	s.flaggerMu.Lock()
+	defer s.flaggerMu.Unlock()
+	s.flagger = f
+}
+
+// currentFlagger reads the flagger under its guard. Returns nil when none is
+// wired, which is a supported configuration (see Flagger).
+func (s *Sweep) currentFlagger() Flagger {
+	s.flaggerMu.RLock()
+	defer s.flaggerMu.RUnlock()
+	return s.flagger
 }
 
 // Counters is one pass's tally, returned by Run and logged as its summary.
@@ -554,10 +595,24 @@ func isCanceled(err error) bool {
 // already durably in the ledger at this point, so losing the queue entry costs
 // visibility rather than evidence, and it is not worth abandoning the pass for.
 func (s *Sweep) flag(ctx context.Context, a *artist.Artist, res Result, c *Counters) {
-	if s.flagger == nil {
+	f := s.currentFlagger()
+	if f == nil {
 		return
 	}
-	if err := s.flagger.RaiseMBIDValidationFailure(ctx, a.ID, a.Name, s.flagMessage(res)); err != nil {
+	if err := f.RaiseMBIDValidationFailure(ctx, a.ID, a.Name, s.flagMessage(res)); err != nil {
+		// The same rule the ledger write applies, on the third and last write
+		// this pass performs. RaiseMBIDValidationFailure runs a transaction on
+		// this same ctx, so a shutdown mid-pass fails it for every remaining
+		// failed verdict at once: without this branch a routine stop produces
+		// one ERROR line per artist, each naming an artist that is fine, and
+		// inflates Errored against the invariant Counters.Errored documents.
+		if isCanceled(err) {
+			c.SkippedTransient++
+			s.logger.Debug("mbid re-validation abandoned an operator-review entry during shutdown",
+				slog.String("artist_id", a.ID),
+				slog.Any("error", err))
+			return
+		}
 		c.Errored++
 		s.logger.Error("mbid re-validation could not raise an operator-review entry",
 			slog.String("artist_id", a.ID),

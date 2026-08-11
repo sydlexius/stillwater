@@ -370,7 +370,13 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		// will not be given one. Resolving a finding means an operator deciding
 		// which artist the folder actually holds.
 		FixBehavior: "",
-		Conditional: true,
+		// Conditional is a property of a FIXER ("it can refuse to act for some
+		// violations"), and this rule has none, so false is the only truthful
+		// value. It is currently inert -- the generator reads it only inside
+		// `if entry.FixBehavior != ""` -- but a detection-only entry claiming a
+		// conditional fixer is a trap for the next reader and for any future
+		// consumer that reads the field on its own.
+		Conditional: false,
 		Caveats: []string{
 			"Informational only. Nothing is corrected automatically, because reverting an identity on a machine judgment would repeat the mistake that produced the wrong ID in the first place.",
 			"Raised by a background re-validation pass, not by Run Rules. The pass is paced by the MusicBrainz rate limit, so a large library is covered over several passes rather than all at once.",
