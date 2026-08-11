@@ -187,7 +187,7 @@ func TestMBIDRevalidateSweepSetsFlaggerBeforeStart(t *testing.T) {
 //
 // This is the #3004 defect class as a mechanical guard. The five
 // mbid_revalidate.* keys shipped in #3003 were read here and registered in
-// api.settingValidators under no name at all, so PUT stored any string with a
+// the validator registry under no name at all, so PUT stored any string with a
 // 200 OK and getDBIntSetting -- whose fmt.Sscanf("%d") stops at the first
 // non-digit and reports success -- read the garbage back as a plausible
 // number. A stored "0.5" became a real, in-range 0, and a name-similarity
@@ -261,10 +261,11 @@ func TestMBIDRevalidateSettingKeysMatchValidators(t *testing.T) {
 
 	for key, file := range found {
 		if !api.HasSettingValidator(key) {
-			t.Errorf("%s reads settings key %q, which has no settingValidators entry "+
-				"in internal/api: PUT /api/v1/settings would store any string for it "+
-				"with a 200 OK, and the boot reader would parse the garbage into a "+
-				"plausible number (#3004)", file, key)
+			t.Errorf("%s reads settings key %q, which api.HasSettingValidator does "+
+				"not recognize: add an entry to the registry in "+
+				"internal/settingsvalidate, or PUT /api/v1/settings would store "+
+				"any string for it with a 200 OK and the boot reader would parse "+
+				"the garbage into a plausible number (#3004)", file, key)
 		}
 	}
 }
