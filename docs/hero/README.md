@@ -42,6 +42,14 @@ firefox/webkit - their teardown can kill a live browser). The 12 PD composer
 portraits are committed under `portraits/`; only re-run `fetch-portraits.sh` to
 refresh them (it re-verifies each image's Commons license and rewrites `PD-SOURCES.md`).
 
+> **`tsc` and `remotion studio` do not work until step 4 has run at least once.**
+> `HeroStitched` imports `src/clips.generated.ts`, which `build-clips.mjs` writes
+> and which is deliberately gitignored (it names per-run `.mp4` clips that are
+> themselves never committed, so a checked-in copy would point at files absent
+> from every other clone). Before step 4 a bare `npx tsc --noEmit` reports a
+> missing-module error plus a few implicit-`any` errors that all cascade from it.
+> That is expected on a clean clone, not a defect in the caption source.
+
 ```bash
 # 1. Seed + start the fixture server on :1991 (builds the binary if missing, seeds
 #    the DB from seed/fixture.sql, copies the committed PD portraits into the
