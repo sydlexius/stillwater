@@ -107,17 +107,36 @@ const shot = async (name, body) => {
     await page.keyboard.press('Escape').catch(() => {});
     await sleep(300);
   };
-  // Block until every in-viewport image has actually decoded. Without this the
-  // grid's lazy-loaded poster art can still be blank at capture time, which is
-  // invisible in a video (it pops in a frame later) but permanent in a still.
+  // Block until every in-viewport image is DECODED, not merely loaded. Without
+  // this the grid's lazy-loaded poster art can still be blank at capture time,
+  // which is invisible in a video (it pops in a frame later) but permanent in a
+  // still.
+  //
+  // Two steps, because `complete` is not the property that matters: it goes true
+  // when the FETCH finishes, which can still precede rasterization. So wait for
+  // load first (a cheap synchronous predicate `waitForFunction` can poll), then
+  // await decode() on each image, which resolves only once the frame is ready to
+  // paint. A rejected decode is swallowed per-image: a single broken asset should
+  // degrade that one image, not abort the capture.
   const settleImages = async (timeout = 6000) => {
-    await page.waitForFunction(() => {
-      const imgs = Array.from(document.images).filter((im) => {
-        const r = im.getBoundingClientRect();
-        return r.width > 4 && r.height > 4 && r.bottom > 0 && r.top < window.innerHeight;
+    try {
+      await page.waitForFunction(() => {
+        const imgs = Array.from(document.images).filter((im) => {
+          const r = im.getBoundingClientRect();
+          return r.width > 4 && r.height > 4 && r.bottom > 0 && r.top < window.innerHeight;
+        });
+        return imgs.every((im) => im.complete && im.naturalWidth > 0);
+      }, { timeout });
+      await page.evaluate(async () => {
+        const imgs = Array.from(document.images).filter((im) => {
+          const r = im.getBoundingClientRect();
+          return r.width > 4 && r.height > 4 && r.bottom > 0 && r.top < window.innerHeight;
+        });
+        await Promise.all(imgs.map((im) => (im.decode ? im.decode().catch(() => {}) : null)));
       });
-      return imgs.every((im) => im.complete && im.naturalWidth > 0);
-    }, { timeout }).catch(() => log(`WARN ${name}: images did not all settle; capturing anyway`));
+    } catch {
+      log(`WARN ${name}: images did not all settle; capturing anyway`);
+    }
   };
   const tryStep = async (label, fn) => {
     try { await fn(); } catch (e) { log(`MISS ${name}/${label}: ${e.message}`); }
