@@ -8,7 +8,10 @@ Everything here is **source**. The rendered video, the trimmed clips, the genera
 clip manifest, the fixture database, and the built binary are working-directory artifacts
 and are **not** committed (see the two `.gitignore` files). The final video is
 GitHub-hosted (uploaded as a PR attachment, not stored in git); the committed
-`hero-static.png` is the poster / click-to-play fallback the README links to.
+`screenshots/dashboard.png` is the poster / click-to-play fallback the README
+links to. It doubles as the canonical still for outward listings, which is why
+it is a clean capture rather than an extracted video frame -- see
+`screenshots.mjs`.
 
 Two principles hold throughout:
 
@@ -27,7 +30,7 @@ Two principles hold throughout:
 seed-fixture.sh ──▶ stillwater on :1991 ──▶ nav-clips.mjs ──▶ build-clips.mjs ──▶ remotion render HeroStitched ──▶ ffmpeg encodes
  (fixture DB +        (native, SW_UX=dual)   (per-screen         (trim+transcode;      (stitches clips +           (deliverables:
   PD portraits)                               .webm clips +       WRITES              dip-to-black fades +        hero.mp4/webm +
-                                              clips.json)         clips.generated.ts)  captions + Oleo outro)      hero-static.png)
+                                              clips.json)         clips.generated.ts)  captions + Oleo outro)      hero.mp4/webm)
 ```
 
 The scene stitching, dip-to-black fades, kinetic captions, and the wordmark outro
@@ -41,6 +44,14 @@ Prereqs: Go toolchain; Node + `npm ci` in `docs/hero/captions/`; `ffmpeg` + `ffp
 firefox/webkit - their teardown can kill a live browser). The 12 PD composer
 portraits are committed under `portraits/`; only re-run `fetch-portraits.sh` to
 refresh them (it re-verifies each image's Commons license and rewrites `PD-SOURCES.md`).
+
+> **`tsc` and `remotion studio` do not work until step 4 has run at least once.**
+> `HeroStitched` imports `src/clips.generated.ts`, which `build-clips.mjs` writes
+> and which is deliberately gitignored (it names per-run `.mp4` clips that are
+> themselves never committed, so a checked-in copy would point at files absent
+> from every other clone). Before step 4 a bare `npx tsc --noEmit` reports a
+> missing-module error plus a few implicit-`any` errors that all cascade from it.
+> That is expected on a clean clone, not a defect in the caption source.
 
 ```bash
 # 1. Seed + start the fixture server on :1991 (builds the binary if missing, seeds
@@ -80,8 +91,17 @@ ffmpeg -y -i "$SRC" -c:v libx264 -preset medium -b:v 2000k -pass 2 -an \
 #    b) hero.webm - VP9
 ffmpeg -y -i "$SRC" -c:v libvpx-vp9 -crf 33 -b:v 0 -pix_fmt yuv420p -row-mt 1 \
   -deadline good -cpu-used 5 ../hero.webm
-#    c) hero-static.png - committed poster / click-to-play fallback (a dashboard frame)
-ffmpeg -y -ss 2.0 -i "$SRC" -frames:v 1 -update 1 ../hero-static.png
+```
+
+The poster is NOT extracted from the video. An extracted frame carries the
+burned-in captions and the synthetic cursor, which read as rendering artifacts
+wherever the image appears outside a click-to-play player. `screenshots.mjs`
+captures it cleanly instead:
+
+```bash
+# Poster + the canonical stills for listings and docs. Needs the fixture from
+# step 1 running; needs no Remotion, ffmpeg, or clip pipeline.
+node docs/hero/screenshots.mjs      # -> docs/hero/screenshots/*.png
 ```
 
 ## README wire-in (one-time, manual)
@@ -93,7 +113,7 @@ download link). So the video is hosted, not committed:
 1. Drag `docs/hero/hero.mp4` into a PR/issue comment box - GitHub mints a
    `https://github.com/user-attachments/assets/<uuid>` URL.
 2. Replace the `VIDEO_URL_PLACEHOLDER` token in the top-level `README.md` with that
-   URL. Until then the committed `hero-static.png` renders as the poster.
+   URL. Until then the committed `screenshots/dashboard.png` renders as the poster.
 
 ## Files
 
@@ -103,6 +123,8 @@ download link). So the video is hosted, not committed:
 | `fetch-portraits.sh` | Fetch + license-verify the 12 PD composer portraits from Wikimedia Commons; rewrites `PD-SOURCES.md`. |
 | `fetch-bach-candidates.py` | Fetch + license-verify the PD Bach candidates for the artwork-modal grid. |
 | `nav-clips.mjs` | Record each screen as its own clip (Playwright, chromium-only; synthetic cursor + ripples). |
+| `screenshots.mjs` | Capture caption-free PNG stills into `screenshots/` (Playwright only; no Remotion/ffmpeg). Produces the README poster and the canonical images for outward listings. |
+| `screenshots/` | Committed stills: `dashboard` (also the video poster), `artists-grid`, `artist-detail`, `artwork-candidates`. |
 | `captions/build-clips.mjs` | Trim + transcode the clips and **write `captions/src/clips.generated.ts`**. |
 | `captions/src/` | Remotion project: `HeroStitched` (stitch + fades + captions), `Outro` (Oleo wordmark), `CaptionChip`, `shots`, `Root`. |
 | `gen-wordmark.py` | Emit `docs/img/stillwater-wordmark.svg` (outlined Oleo paths). |
