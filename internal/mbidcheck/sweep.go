@@ -265,10 +265,22 @@ func catalogueBucket(pct float64) int {
 
 // Run performs one pass and returns its counters.
 //
-// It returns an error only when the pass could not proceed at all (the
-// population query failed). A per-artist failure is counted, logged, and
-// stepped over: one unreadable artist must not abort a pass that still has
-// hundreds of usable ones ahead of it.
+// It returns an error when the pass could not proceed at all (the population
+// query failed) and when the pass was ABANDONED PART-WAY because ctx was
+// canceled -- in that second case the counters are still valid for what it
+// managed, and the error is ctx.Err(), so errors.Is(err, context.Canceled)
+// distinguishes a normal shutdown from a real failure. A per-artist failure is
+// counted, logged, and stepped over: one unreadable artist must not abort a
+// pass that still has hundreds of usable ones ahead of it.
+//
+// Reporting cancellation is deliberate, and it is the same principle the rest
+// of this feature is built on: a partial pass must never be indistinguishable
+// from a complete one. The Counters cannot express it -- a pass that stopped
+// after 3 artists and a pass whose whole slice was 3 artists produce identical
+// tallies -- so the return value is the only place the distinction can live. A
+// caller that treats cancellation as routine (the scheduler, on shutdown)
+// checks errors.Is and stays quiet; a caller that needs to know the cycle was
+// incomplete can, which it could not if this returned nil.
 //
 // NOT safe for concurrent use: it advances the shared cursor. The scheduler is
 // the only production caller and is single-threaded.
@@ -283,11 +295,13 @@ func (s *Sweep) Run(ctx context.Context) (Counters, error) {
 	started := time.Now()
 	slice, wrapped := s.selectSlice(population, s.cfg.maxPerPass())
 
+	var canceled bool
 	for _, row := range slice {
 		// Between items rather than only at the top: a canceled sweep should
 		// stop at the next artist, not after finishing the whole slice, and a
 		// pass abandoned mid-way still logs what it managed.
 		if ctx.Err() != nil {
+			canceled = true
 			s.logger.Info("mbid re-validation pass canceled part-way",
 				slog.Int("checked", c.Checked),
 				slog.String("last_artist_id", s.cursor))
@@ -297,13 +311,28 @@ func (s *Sweep) Run(ctx context.Context) (Counters, error) {
 		s.cursor = row.ArtistID
 	}
 
-	if wrapped {
-		// Reset only after the slice is consumed, so the NEXT pass starts from
-		// the top of the population rather than from wherever this one stopped.
+	// The population is exhausted only when the slice both REACHED its end
+	// (wrapped) and was actually PROCESSED to that end (not canceled). Those
+	// are two different facts and conflating them is a way to lose artists
+	// permanently: selectSlice reports the slice's SHAPE, and a pass abandoned
+	// mid-slice has a tail nobody looked at. Clearing the cursor on that would
+	// send the next pass back to the head of the population, so with a
+	// MaxPerPass smaller than the library and cancellation recurring near the
+	// tail, the same artists would be skipped every single pass while the
+	// summary reported a clean, exhausted sweep -- the "unknown rendered as
+	// clean" failure this whole feature exists to prevent, reproduced inside
+	// it.
+	exhausted := wrapped && !canceled
+	if exhausted {
+		// Wrap, so the NEXT pass starts from the top of the population rather
+		// than idling past the end.
 		s.cursor = ""
 	}
 
-	s.logSummary(c, len(population), len(slice), wrapped, time.Since(started))
+	s.logSummary(c, len(population), len(slice), exhausted, time.Since(started))
+	if canceled {
+		return c, ctx.Err()
+	}
 	return c, nil
 }
 
@@ -405,7 +434,11 @@ func (s *Sweep) checkOne(ctx context.Context, row artist.MBIDPath, c *Counters) 
 // At INFO including when nothing was found, because "the sweep ran and found
 // nothing" and "the sweep did not run" must be distinguishable in a log, and a
 // summary that only appears on findings makes them identical.
-func (s *Sweep) logSummary(c Counters, populationSize, sliceSize int, wrapped bool, elapsed time.Duration) {
+//
+// exhausted is the caller's verdict on whether the pass reached the end of the
+// population AND processed it, never merely the shape of the slice: an
+// abandoned tail must not be reported as a completed cycle.
+func (s *Sweep) logSummary(c Counters, populationSize, sliceSize int, exhausted bool, elapsed time.Duration) {
 	attrs := make([]any, 0, 12+len(catalogueBucketNames))
 	attrs = append(attrs,
 		slog.Int("population", populationSize),
@@ -418,7 +451,7 @@ func (s *Sweep) logSummary(c Counters, populationSize, sliceSize int, wrapped bo
 		slog.Int("skipped_no_mbid", c.SkippedNoMBID),
 		slog.Int("errored", c.Errored),
 		slog.Int("zero_remote_catalogue", c.ZeroRemoteCatalogue),
-		slog.Bool("population_exhausted", wrapped),
+		slog.Bool("population_exhausted", exhausted),
 		slog.String("elapsed", elapsed.Round(time.Millisecond).String()),
 	)
 	for i, name := range catalogueBucketNames {

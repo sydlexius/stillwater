@@ -19,8 +19,10 @@ import (
 
 // fakePopulation returns a scripted population.
 type fakePopulation struct {
-	// mu guards calls: Start drives passes on its own goroutine, so a test
-	// reading the count from the test goroutine would otherwise race.
+	// mu guards calls so a test can read the count safely. Run itself is
+	// single-threaded, but the double is shared state read from the test
+	// goroutine after the pass, and the lock keeps that honest under -race
+	// regardless of how a future caller drives it.
 	mu    sync.Mutex
 	rows  []artist.MBIDPath
 	err   error
@@ -575,6 +577,15 @@ func TestRunRequestsProviderIDHydration(t *testing.T) {
 // a context canceled after the first artist must stop the pass rather than
 // letting it grind through the whole slice issuing requests nobody is waiting
 // for.
+//
+// It then asserts the far more important half: the pass KEEPS ITS PLACE. A
+// canceled pass leaves an unprocessed tail, so the cursor must not wrap, and
+// the NEXT pass must resume at the first artist nobody looked at. Stopping
+// early is cheap to get right and was; the earlier version of this test
+// asserted only that, and so passed happily while the cursor was cleared on
+// every cancellation -- sending each pass back to the head of the population
+// and leaving the tail permanently unchecked behind a summary reporting a
+// clean, exhausted sweep.
 func TestRunStopsOnCanceledContext(t *testing.T) {
 	t.Parallel()
 
@@ -588,6 +599,18 @@ func TestRunStopsOnCanceledContext(t *testing.T) {
 		byID[r.ArtistID] = sweepArtist(r.ArtistID, "/library/"+r.ArtistID)
 	}
 
+	// PRECONDITION: the fixture must actually have had more artists left to do.
+	if len(rows) <= 1 {
+		t.Fatal("precondition: need more than one artist to observe an early stop")
+	}
+	// PRECONDITION: with this cap the first pass's slice genuinely REACHES the
+	// end of the population, so wrapped is true and the cursor is a candidate
+	// for being cleared. Without that, the resume assertion below would hold
+	// for the wrong reason -- it would be testing a slice that never wrapped.
+	if _, wrapped := (&Sweep{}).selectSlice(rows, 10); !wrapped {
+		t.Fatal("precondition: the first pass's slice must reach the end of the population")
+	}
+
 	ctx, cancel := context.WithCancel(t.Context())
 	// Cancel from inside the first artist's provider call, so the pass is
 	// genuinely mid-slice when the context goes down. This WIRES the condition
@@ -598,22 +621,129 @@ func TestRunStopsOnCanceledContext(t *testing.T) {
 		newTestResolver(mb, found("One")), Config{MaxPerPass: 10})
 
 	c, err := sw.Run(ctx)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	// PRECONDITION: the fixture must actually have had more artists left to do.
-	if len(rows) <= 1 {
-		t.Fatal("precondition: need more than one artist to observe an early stop")
+	// An abandoned pass reports its cancellation, so a caller can tell a
+	// partial cycle from a complete one; the counters alone cannot say it.
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run err = %v, want a context.Canceled: an abandoned pass must not report success", err)
 	}
 	if mb.artistCalls != 1 {
 		t.Errorf("provider was called %d time(s) after cancellation; want exactly 1", mb.artistCalls)
 	}
-	if c.Checked > 1 {
-		t.Errorf("checked = %d, want at most 1: the pass ignored ctx.Done()", c.Checked)
+	// PRECONDITION for the resume assertion: the first pass really did process
+	// exactly one artist, leaving a-2 and a-3 untouched.
+	if c.Checked != 1 {
+		t.Fatalf("precondition: expected exactly 1 checked artist in the canceled pass, got %d (%+v)", c.Checked, c)
+	}
+	if got := checkedIDs(led); len(got) != 1 || got[0] != "a-1" {
+		t.Fatalf("precondition: canceled pass wrote %v, want [a-1]", got)
+	}
+
+	// THE RESUME. A fresh context, a second pass: it must pick up the tail the
+	// canceled pass abandoned rather than restarting at the head.
+	if _, err := sw.Run(t.Context()); err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	resumed := checkedIDs(led)[1:]
+	if len(resumed) == 0 {
+		t.Fatal("the second pass checked nothing")
+	}
+	if resumed[0] != "a-2" {
+		t.Fatalf("second pass resumed at %q (wrote %v), want a-2: the canceled pass wrapped the cursor and skipped the population tail",
+			resumed[0], resumed)
+	}
+	if len(resumed) != 2 || resumed[1] != "a-3" {
+		t.Errorf("second pass checked %v, want the whole abandoned tail [a-2 a-3]", resumed)
 	}
 }
 
-// cancelingMB cancels the sweep's context during its first GetArtist call.
+// TestRunDoesNotReportAnAbandonedPassAsExhausted pins the summary half of the
+// same correction. population_exhausted is the field an operator reads to know
+// the sweep has been all the way round the library, and it was previously fed
+// the slice's SHAPE rather than what the pass actually did -- so an abandoned
+// tail was announced as a completed cycle. A counters-only assertion cannot see
+// this: the log line is the only place the claim is made.
+func TestRunDoesNotReportAnAbandonedPassAsExhausted(t *testing.T) {
+	t.Parallel()
+
+	rows := []artist.MBIDPath{
+		{ArtistID: "a-1", MBID: "m1"},
+		{ArtistID: "a-2", MBID: "m2"},
+	}
+	byID := map[string]*artist.Artist{}
+	for _, r := range rows {
+		byID[r.ArtistID] = sweepArtist(r.ArtistID, "/library/"+r.ArtistID)
+	}
+	// PRECONDITION: the slice reaches the end of the population, so wrapped is
+	// true and the field would read true if it were still fed from the shape.
+	if _, wrapped := (&Sweep{}).selectSlice(rows, 10); !wrapped {
+		t.Fatal("precondition: the pass's slice must reach the end of the population")
+	}
+
+	rec := &recordingHandler{}
+	ctx, cancel := context.WithCancel(t.Context())
+	mb := &cancelingMB{cancel: cancel, meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("One")}
+	sw := NewSweep(&fakePopulation{rows: rows}, &fakeArtists{byID: byID}, newFakeLedger(),
+		newTestResolver(mb, found("One")), Config{MaxPerPass: 10}, slog.New(rec))
+
+	if _, err := sw.Run(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run err = %v, want context.Canceled", err)
+	}
+
+	got, ok := rec.attr("mbid re-validation pass complete", "population_exhausted")
+	if !ok {
+		t.Fatal("no pass summary was logged: an operator has nothing to read")
+	}
+	if got != false {
+		t.Errorf("population_exhausted = %v on a pass abandoned mid-slice, want false: an unprocessed tail is not a completed cycle", got)
+	}
+}
+
+// recordingHandler keeps every record's message and attributes so a test can
+// assert what the pass summary actually claimed.
+type recordingHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r.Clone())
+	return nil
+}
+
+// WithAttrs and WithGroup return the same handler: the sweep only ever calls
+// With for its component tag, which no assertion here reads.
+func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
+
+// attr returns the named attribute's value from the first record carrying msg.
+func (h *recordingHandler) attr(msg, key string) (any, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, r := range h.records {
+		if r.Message != msg {
+			continue
+		}
+		var found any
+		var ok bool
+		r.Attrs(func(a slog.Attr) bool {
+			if a.Key == key {
+				found, ok = a.Value.Any(), true
+				return false
+			}
+			return true
+		})
+		return found, ok
+	}
+	return nil, false
+}
+
+// cancelingMB cancels the sweep's context during its first GetArtist call, and
+// only that one: a later pass driven by a fresh context must be allowed to run
+// to completion, which is what the resume assertion measures.
 type cancelingMB struct {
 	cancel      context.CancelFunc
 	meta        *provider.ArtistMetadata
@@ -623,7 +753,10 @@ type cancelingMB struct {
 
 func (c *cancelingMB) GetArtist(context.Context, string) (*provider.ArtistMetadata, error) {
 	c.artistCalls++
-	c.cancel()
+	if c.cancel != nil {
+		c.cancel()
+		c.cancel = nil
+	}
 	return c.meta, nil
 }
 
