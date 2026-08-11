@@ -184,8 +184,8 @@ type Sweep struct {
 	// artists early costs a few requests, while a persisted cursor is a schema
 	// change and a new way for the sweep to get permanently stuck at a bad row.
 	//
-	// Not guarded by a mutex because Run is not safe for concurrent use -- see
-	// its doc comment. The scheduler is the only caller and is single-threaded.
+	// Not guarded by a mutex because Run is called from one goroutine only --
+	// see its doc comment.
 	cursor string
 }
 
@@ -357,6 +357,85 @@ func catalogueBucket(pct float64) int {
 	}
 }
 
+// Start runs a pass after the configured startup delay and then on the
+// configured interval, until ctx is canceled.
+//
+// Mirrors maintenance.Service.StartExistsFlagScanner: the startup pass matters
+// because an operator who has just restarted to pick up this feature should not
+// wait a full day to see whether their library holds a misidentified id.
+//
+// Blocks until ctx is done; the caller launches it with `go`.
+func (s *Sweep) Start(ctx context.Context) {
+	interval := s.cfg.interval()
+	delay := s.cfg.startupDelay()
+
+	s.logger.Info("mbid re-validation sweep started",
+		slog.String("interval", interval.String()),
+		slog.String("startup_delay", delay.String()),
+		slog.Int("max_per_pass", s.cfg.maxPerPass()))
+
+	// NewTimer with an explicit Stop, not time.After: on the cancellation path
+	// time.After leaves the timer armed for the whole delay, and this delay is
+	// minutes in production (hours in a test). Go 1.23+ makes an unreferenced
+	// timer collectable, so this is not a classic leak -- but stopping it hands
+	// the runtime timer back at once instead of waiting on a GC cycle, and it
+	// removes the question rather than leaving a reader to reason about it.
+	startup := time.NewTimer(delay)
+	defer startup.Stop()
+
+	select {
+	case <-ctx.Done():
+		s.logger.Info("mbid re-validation sweep stopped before its first pass")
+		return
+	case <-startup.C:
+	}
+
+	s.runOnce(ctx, "initial mbid re-validation pass failed")
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("mbid re-validation sweep stopped")
+			return
+		case <-ticker.C:
+			s.runOnce(ctx, "mbid re-validation pass failed")
+		}
+	}
+}
+
+// runOnce performs one pass and reports its outcome at the RIGHT level.
+//
+// Run deliberately returns ctx.Err() for a pass abandoned part-way, and a pass
+// is minutes of limiter-paced work, so a service stopping mid-pass is the
+// NORMAL case rather than a fault. Treating every non-nil error as a failure
+// would put an ERROR line in the log on every clean shutdown -- the same
+// "a condition on OUR side reported as a fault" defect this feature has had to
+// correct at each of its write sites, here at the pass level.
+//
+// isCanceled rather than an == comparison, and the distinction is load-bearing
+// here: the two cancellation paths return DIFFERENT shapes. A pass abandoned
+// mid-flight comes back WRAPPED ("mbidcheck: listing the sweep population:
+// context canceled"), where errors.Is is true but == is false, while a
+// pre-canceled context yields the bare sentinel. An == check would quiet only
+// the second, which is the case that barely happens.
+func (s *Sweep) runOnce(ctx context.Context, failureMsg string) {
+	_, err := s.Run(ctx)
+	if err == nil {
+		return
+	}
+	if isCanceled(err) {
+		// Info, not Debug: a shutdown that cut a pass short is worth one line
+		// at the level an operator reads, because it says the cycle was
+		// incomplete and the library is not fully covered.
+		s.logger.Info("mbid re-validation pass stopped before finishing", slog.Any("reason", err))
+		return
+	}
+	s.logger.Error(failureMsg, slog.Any("error", err))
+}
+
 // Run performs one pass and returns its counters.
 //
 // It returns an error when the pass could not proceed at all (the population
@@ -377,8 +456,8 @@ func catalogueBucket(pct float64) int {
 // checks errors.Is and stays quiet; a caller that needs to know the cycle was
 // incomplete can, which it could not if this returned nil.
 //
-// NOT safe for concurrent use: it advances the shared cursor. The scheduler is
-// the only production caller and is single-threaded.
+// NOT safe for concurrent use: it advances the shared cursor. Call it from one
+// goroutine only. Start satisfies that; a second caller would race.
 func (s *Sweep) Run(ctx context.Context) (Counters, error) {
 	var c Counters
 
