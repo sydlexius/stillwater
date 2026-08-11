@@ -555,10 +555,16 @@ func (s *Sweep) selectSlice(population []artist.MBIDPath, limit int) ([]artist.M
 		// the top THIS pass rather than burning one doing nothing.
 		start = 0
 	}
-	end := start + limit
-	if end >= len(population) {
+	remaining := len(population) - start
+	if limit < 0 || limit >= remaining {
+		// Clamp instead of computing start+limit directly: with limit near
+		// math.MaxInt and a non-zero start (the cursor has advanced past the
+		// first pass), the raw sum overflows int and wraps negative, which
+		// would slip past an `end >= len(population)` check and panic on the
+		// slice expression below.
 		return population[start:], true
 	}
+	end := start + limit
 	return population[start:end], false
 }
 

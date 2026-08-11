@@ -1202,7 +1202,14 @@ func (a *Application) startMBIDRevalidateSweep(ctx context.Context, db *sql.DB, 
 
 	mbClient := resolveMBIDCheckClient(a.providerRegistry)
 	if mbClient == nil {
-		logger.Warn("mbid re-validation sweep not started: musicbrainz provider not registered")
+		// resolveMBIDCheckClient collapses three distinct causes into one nil:
+		// no registry, no musicbrainz provider registered, or a registered
+		// provider whose adapter does not implement mbidcheck.MusicBrainzClient.
+		// The message below has to cover all three, not just the first, so an
+		// operator debugging a wrong-shape adapter is not told to go register
+		// something that is already registered.
+		logger.Warn("mbid re-validation sweep not started: musicbrainz provider not registered, " +
+			"or the registered provider does not support MBID re-validation")
 		return
 	}
 
@@ -2331,10 +2338,15 @@ func resolveRelinkReconcileInterval(minutes int) (time.Duration, bool) {
 // ACCEPTED as the real interval: a nonsense operator-entered value turns into
 // a sweep hammering MusicBrainz every 16-50 minutes instead of degrading
 // safely. The cap is what prevents that -- it is load-bearing, not a
-// belt-and-suspenders accident. maxPerPass has no equivalent overflow (it
-// stays an int, never multiplied into a duration), so it is passed through
-// unclamped; Config.maxPerPass() already turns any non-positive value into
-// DefaultMaxPerPass.
+// belt-and-suspenders accident. maxPerPass has no equivalent DURATION
+// overflow (it stays an int, never multiplied into a duration), so it is
+// passed through unclamped here; Config.maxPerPass() already turns any
+// non-positive value into DefaultMaxPerPass. A large positive maxPerPass
+// (e.g. the int max, reachable because this setting has no validator yet --
+// #3004) is instead bounded where the arithmetic actually happens:
+// Sweep.selectSlice clamps against the remaining population rather than
+// computing start+limit directly, so it is safe for every caller including
+// this one regardless of what value flows through here.
 //
 // Split out of startListeners purely so this mapping is unit-testable, same
 // rationale as resolveRelinkReconcileInterval.
