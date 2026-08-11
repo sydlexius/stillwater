@@ -212,6 +212,42 @@ func validateLocalAuthEnabled(v string) (string, error) {
 	}
 }
 
+// policyKeys are validators that encode a WRITE-TIME POLICY rather than a
+// data-validity rule: the value they refuse is well-formed and may legitimately
+// already exist in the database, but an operator is not permitted to SET it
+// through the API.
+//
+// The distinction matters because the two answer different questions. A
+// data-validity rule asks "is this a usable value?" and its answer is the same
+// wherever the value comes from. A policy rule asks "may this actor make this
+// change here?" -- and a RESTORE is not an actor making a change: it
+// re-establishes a state that already existed, from a backup the operator
+// chose to take.
+//
+// Applying a policy rule at restore time drops the row, which either silently
+// changes a security posture or makes a legitimate backup unrestorable (#2534).
+// So IsPolicy lets a caller that is re-establishing state skip these while
+// still enforcing every data-validity rule.
+//
+// Keep this set SMALL and justify each entry. A rule belongs here only if its
+// rejection is about WHO IS WRITING rather than WHAT IS WRITTEN.
+var policyKeys = map[string]string{
+	// Refuses any falsy value so local auth cannot be switched off through the
+	// API -- it is the break-glass path when every other provider is
+	// misconfigured. A backup that legitimately recorded it as disabled is a
+	// state to restore, not an operator disabling it now.
+	"auth.providers.local.enabled": "break-glass guard: local auth may not be disabled via the API",
+}
+
+// IsPolicy reports whether key's validator encodes a write-time policy rather
+// than a data-validity rule, along with the reason. Callers re-establishing
+// stored state (settings import) skip these; callers accepting an operator
+// action (PUT /api/v1/settings) must NOT.
+func IsPolicy(key string) (reason string, ok bool) {
+	reason, ok = policyKeys[key]
+	return reason, ok
+}
+
 // Validate applies the registered validator for key, returning the canonical
 // form to persist.
 //

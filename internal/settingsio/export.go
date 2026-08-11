@@ -280,6 +280,31 @@ type ImportResult struct {
 	// admin-fallback opt-in. This is a deliberate ownership change and is
 	// surfaced in the result so it cannot be silent (#1283).
 	OwnershipReassigned int `json:"ownership_reassigned,omitempty"`
+	// SettingsRejected counts settings rows the envelope carried whose value
+	// failed validation and were therefore NOT applied (#3008). Each is also
+	// logged at Warn naming the key and the reason.
+	//
+	// Skipped rather than fatal, matching ConnectionFeaturesIgnored above: an
+	// envelope is a batch restore, and refusing the whole thing over one bad
+	// legacy row would make a backup unrestorable, which #2534 established is
+	// how a bad day becomes a terminal one. Surfaced here rather than silent,
+	// because a restore that quietly drops settings looks like a successful
+	// restore.
+	SettingsRejected int `json:"settings_rejected,omitempty"`
+	// SettingsRejectedKeys names the rejected keys, so an operator can see
+	// WHICH settings did not survive the restore rather than only how many.
+	// Values are deliberately omitted: a rejected value may be malformed
+	// secret-adjacent input, and the count plus the key is enough to act on.
+	SettingsRejectedKeys []string `json:"settings_rejected_keys,omitempty"`
+	// SettingsRenamed counts envelope rows carried under a key that has since
+	// been RENAMED and were applied under the current name instead (#3008).
+	// A restore that quietly relocates a key should say so.
+	SettingsRenamed int `json:"settings_renamed,omitempty"`
+	// SettingsRenamedDropped counts rows carried under a pre-rename key that
+	// were DISCARDED because the envelope also carried the current name, which
+	// wins. Counted separately from SettingsRenamed because the operator loses
+	// a value here (the staler of the two) and that is worth seeing.
+	SettingsRenamedDropped int `json:"settings_renamed_dropped,omitempty"`
 }
 
 // ImportOptions controls optional behaviors at import time. The zero value

@@ -17,6 +17,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/internal/settingsvalidate"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
@@ -53,9 +54,45 @@ func isProviderKeyOwnedSetting(key string) bool {
 // that multiple calls within a single import produce a consistent updated_at.
 // Accepts a dbExecutor so the orchestrator can hand it a *sql.Tx wrapping
 // every s.db-direct import section.
+// renamedSettingKeys maps a settings key that was RENAMED to its current name,
+// so an envelope exported before the rename restores the operator's configured
+// value instead of stranding it under a name nothing reads (#3008).
+//
+// Import is where this has to be handled, not boot. A boot-time migration
+// cannot help: import runs long after boot, and an envelope is not bound to a
+// release, so a pre-rename dev or nightly instance can hand a current build the
+// old key at any time. The old row is dropped rather than kept, so a later
+// export does not carry the dead name forward.
+//
+// Only add an entry here for a key whose MEANING and VALUE DOMAIN are
+// unchanged. A rename that also changes units or scale needs a conversion, not
+// an alias.
+var renamedSettingKeys = map[string]string{
+	// #3004: disambiguated from the differently-scoped
+	// provider.name_similarity_threshold. Same 0-100 percent domain.
+	"mbid_revalidate.name_similarity": "mbid_revalidate.name_similarity_threshold",
+}
+
 func (s *Service) importSettings(ctx context.Context, db dbExecutor, settings map[string]string, result *ImportResult) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range settings {
+		// Apply a rename BEFORE validation, so the value is checked against
+		// the current key's rules. The envelope may legitimately carry both
+		// names (an operator who set the value, upgraded, and set it again);
+		// the CURRENT name wins, because it is the one the running build
+		// reads and the one a later export will carry.
+		if current, renamed := renamedSettingKeys[k]; renamed {
+			if _, hasCurrent := settings[current]; hasCurrent {
+				slog.Warn("import: dropping renamed setting key, the current name is also present",
+					"old_key", k, "current_key", current)
+				result.SettingsRenamedDropped++
+				continue
+			}
+			slog.Info("import: migrating renamed setting key",
+				"old_key", k, "current_key", current)
+			result.SettingsRenamed++
+			k = current
+		}
 		// Provider API keys and their statuses are owned by importProviderKeys,
 		// which runs earlier in the transaction and re-encrypts them under the
 		// target instance key. Skipping them here prevents the generic blob's
@@ -65,10 +102,59 @@ func (s *Service) importSettings(ctx context.Context, db dbExecutor, settings ma
 		if isProviderKeyOwnedSetting(k) {
 			continue
 		}
+		// Validate through the SAME registry PUT /api/v1/settings uses
+		// (#3008). Import is the second write path into this table and was
+		// the unguarded one: an envelope is a file that gets copied between
+		// machines and hand-edited, so a bad value reaches the boot readers
+		// exactly as it would through the API -- and getDBIntSetting parses
+		// with fmt.Sscanf("%d"), which stops at the first non-digit and
+		// reports success, turning a stored "0.5" into a valid, in-range 0.
+		//
+		// ok=false means no validator is registered for this key, which is
+		// the established pass-through: the PUT path stores such keys
+		// unvalidated too, and diverging here would make a restore refuse
+		// keys the API accepts. Whether that default is right at all is
+		// #3005; this change deliberately matches it rather than settling it.
+		canonical, ok, verr := settingsvalidate.Validate(k, v)
+		if ok && verr != nil {
+			// A POLICY validator refuses a well-formed value because an
+			// operator may not SET it through the API -- not because the value
+			// is unusable. A restore is not an operator setting it: it
+			// re-establishes a state the operator already had and chose to back
+			// up. Enforcing it here would either silently change a security
+			// posture on restore or make a legitimate backup unrestorable
+			// (#2534), so the stored value is applied as-is.
+			//
+			// Surfaced by a pre-existing round-trip test: auth.providers.local.enabled
+			// is the break-glass guard, and a backup taken with it disabled must
+			// still restore to that state.
+			if reason, isPolicy := settingsvalidate.IsPolicy(k); isPolicy {
+				slog.Info("import: applying setting that a write-time policy would refuse",
+					"key", k, "policy", reason)
+				canonical = v
+				verr = nil
+			}
+		}
+		if ok && verr != nil {
+			// Skip the row, do not abort the restore. An envelope is a batch
+			// restore and one bad legacy row must not make a backup
+			// unrestorable (#2534). Recorded in ImportResult so a partial
+			// restore cannot pass for a complete one.
+			slog.Warn("import: skipping setting that failed validation",
+				"key", k, "error", verr)
+			result.SettingsRejected++
+			result.SettingsRejectedKeys = append(result.SettingsRejectedKeys, k)
+			continue
+		}
+		// Store the canonical form, not the raw envelope value: validateBool
+		// rewrites "TRUE" to "true", and getDBBoolSetting tests
+		// v == "true" || v == "1", so an un-canonicalised value would read
+		// back as DISABLED -- an operator restoring a backup and silently
+		// losing a setting they had switched on.
 		_, err := db.ExecContext(ctx,
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-			k, v, now)
+			k, canonical, now)
 		if err != nil {
 			return fmt.Errorf("upserting setting %q: %w", k, err)
 		}
