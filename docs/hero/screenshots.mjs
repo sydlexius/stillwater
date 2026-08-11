@@ -71,6 +71,7 @@ if (!session) throw new Error('session cookie missing after login');
 log('authenticated');
 
 const browser = await chromium.launch({ headless: true });
+try {
 const context = await browser.newContext({
   viewport: VIEWPORT, deviceScaleFactor: 2, colorScheme: 'dark', baseURL: BASE,
 });
@@ -185,14 +186,21 @@ await shot('artist-detail', async ({ goto, settleImages }) => {
 });
 
 await shot('artwork-candidates', async ({ page, goto, settleImages, tryStep }) => {
-  await goto(`/next/artists/${ARTIST}`);
-  await tryStep('open modal', () => page.locator('[data-sw-artwork-open]').first().click({ timeout: 4000 }));
-  await page.locator('.sw-artwork-modal-surface').first().waitFor({ timeout: 4000 }).catch(() => {});
-  await page.locator('#image-results img').first().waitFor({ timeout: 4000 }).catch(() => {});
-  await settleImages();
-  await sleep(900);
-});
+    await goto(`/next/artists/${ARTIST}`);
+    await tryStep('open modal', () => page.locator('[data-sw-artwork-open]').first().click({ timeout: 4000 }));
+    await page.locator('.sw-artwork-modal-surface').first().waitFor({ timeout: 4000 }).catch(() => {});
+    await page.locator('#image-results img').first().waitFor({ timeout: 4000 }).catch(() => {});
+    await settleImages();
+    await sleep(900);
+  });
 
-await browser.close();
-await api.dispose();
-log(`done -- ${OUT}`);
+  log(`done -- ${OUT}`);
+} finally {
+  // ALWAYS tear down, including on a throw. Without this a navigation timeout
+  // exits before close() and orphans the Chromium process, leaving node hanging
+  // on open handles -- which in an unattended run looks like a hung script
+  // rather than a failed one. Each teardown is independent so a failure in the
+  // first cannot skip the second.
+  await browser.close().catch(() => {});
+  await api.dispose().catch(() => {});
+}
