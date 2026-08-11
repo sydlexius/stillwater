@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -257,6 +258,48 @@ func TestSqliteListMBIDPopulation_QueryError(t *testing.T) {
 	// THIS caller, not the ListMBIDPaths one it borrows the helper from.
 	if !strings.Contains(err.Error(), "listing artist MBID population") {
 		t.Errorf("error = %q, want it to name the ListMBIDPopulation caller", err)
+	}
+}
+
+// TestSqliteListMBIDPopulation_CanceledContext pins the wrapped-cancellation
+// shape the #2810 sweep's Run/runOnce depend on (internal/mbidcheck/sweep.go
+// isCanceled, cross-referenced in internal/rule/service.go's own isCanceled).
+//
+// database/sql wraps a canceled-context query failure ("context canceled")
+// rather than returning the bare context.Canceled sentinel, and this
+// repository method wraps it AGAIN with its own "%s: %w" prefix
+// ("listing artist MBID population: ... context canceled"). errors.Is sees
+// through both wrap layers; a bare `err == context.Canceled` comparison would
+// not, which is exactly the bug class the sweep's own isCanceled helper
+// exists to avoid at its call site. This test pins the OTHER end of that
+// contract: the repository must actually produce an errors.Is-compatible
+// wrapped error for the sweep to unwrap, not a message that merely CONTAINS
+// the word "canceled".
+//
+// This path was previously untested: TestSqliteListMBIDPopulation_QueryError
+// covers a closed-DB failure but never a canceled context, so a change that
+// stopped wrapping cleanly (e.g. swallowing ctx.Err() into a fresh sentinel)
+// would have shipped silently.
+func TestSqliteListMBIDPopulation_CanceledContext(t *testing.T) {
+	t.Parallel()
+	db := openTestDB(t)
+	seedMBIDPathFixtures(t, db)
+	repo := &sqliteArtistRepo{db: db}
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := repo.ListMBIDPopulation(canceledCtx)
+	if err == nil {
+		t.Fatal("ListMBIDPopulation returned nil for an already-canceled context; " +
+			"a canceled query must fail rather than silently proceed")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ListMBIDPopulation error = %v, want one wrapping context.Canceled "+
+			"(errors.Is, not ==) -- callers distinguish routine shutdown from a real failure", err)
+	}
+	if !strings.Contains(err.Error(), "listing artist MBID population") {
+		t.Errorf("error = %q, want it to still name the ListMBIDPopulation caller", err)
 	}
 }
 

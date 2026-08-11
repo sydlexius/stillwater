@@ -13,6 +13,8 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/mbidcheck"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // --- Helpers ---
@@ -1301,3 +1303,161 @@ func TestResolveRelinkReconcileInterval_NeverReturnsNonPositiveWhenEnabled(t *te
 // the boundary, and widening a production symbol purely for a test is the
 // worse trade.
 const maxRelinkReconcileMinutesForTest = 60 * 24 * 365
+
+// TestResolveMBIDRevalidateSchedule pins resolveMBIDRevalidateSchedule's
+// contract for the #2810 sweep wiring: a positive, sane hours value is
+// honored, and every other shape (unset/zero, negative, or absurdly large)
+// falls back to mbidcheck.DefaultInterval rather than being reinterpreted as
+// a disable -- that job belongs to mbid_revalidate.enabled, read separately
+// in startListeners. maxPerPass passes straight through in every case: it has
+// no overflow path of its own (mbidcheck.Config.maxPerPass() already treats
+// any non-positive int as "use DefaultMaxPerPass"), so this function adds
+// nothing for that field beyond forwarding it.
+func TestResolveMBIDRevalidateSchedule(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		hours       int
+		maxPerPass  int
+		wantDur     time.Duration
+		wantMaxPass int
+	}{
+		{"positive hours honored", 6, 50, 6 * time.Hour, 50},
+		{"one hour honored", 1, 200, time.Hour, 200},
+		{"zero (never saved) falls back to default interval", 0, 100, mbidcheck.DefaultInterval, 100},
+		{"negative falls back to default interval", -3, 100, mbidcheck.DefaultInterval, 100},
+		{"above the year cap falls back to default interval", maxMBIDRevalidateHoursForTest + 1, 100, mbidcheck.DefaultInterval, 100},
+		{"maxPerPass forwarded even when non-positive (Config.maxPerPass defaults it)", 6, 0, 6 * time.Hour, 0},
+		{"maxPerPass forwarded even when negative", 6, -1, 6 * time.Hour, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotDur, gotMaxPass := resolveMBIDRevalidateSchedule(tc.hours, tc.maxPerPass)
+			if gotDur != tc.wantDur {
+				t.Errorf("resolveMBIDRevalidateSchedule(%d, %d) interval = %v, want %v",
+					tc.hours, tc.maxPerPass, gotDur, tc.wantDur)
+			}
+			if gotMaxPass != tc.wantMaxPass {
+				t.Errorf("resolveMBIDRevalidateSchedule(%d, %d) maxPerPass = %v, want %v",
+					tc.hours, tc.maxPerPass, gotMaxPass, tc.wantMaxPass)
+			}
+		})
+	}
+}
+
+// TestResolveMBIDRevalidateSchedule_NeverReturnsNonPositiveInterval is the
+// same overflow-boundary discipline TestResolveRelinkReconcileInterval_
+// NeverReturnsNonPositiveWhenEnabled applies to the minutes-based scheduler:
+// `time.Duration(hours) * time.Hour` overflows int64 nanoseconds for a
+// sufficiently large hours value and wraps negative, and a narrow -100..100
+// sweep would never reach that region.
+func TestResolveMBIDRevalidateSchedule_NeverReturnsNonPositiveInterval(t *testing.T) {
+	inputs := make([]int, 0, 210)
+	for h := -100; h <= 100; h++ {
+		inputs = append(inputs, h)
+	}
+	inputs = append(inputs,
+		maxMBIDRevalidateHoursForTest,
+		maxMBIDRevalidateHoursForTest+1,
+		1<<40, 1<<50, 1<<62,
+		math.MaxInt32, math.MaxInt64, math.MinInt64,
+	)
+
+	for _, h := range inputs {
+		d, _ := resolveMBIDRevalidateSchedule(h, 100)
+		if d <= 0 {
+			t.Fatalf("resolveMBIDRevalidateSchedule(%d, 100) interval = %v -- a non-positive "+
+				"interval would panic time.NewTicker (via Sweep.Start)", h, d)
+		}
+	}
+}
+
+// maxMBIDRevalidateHoursForTest mirrors the cap inside
+// resolveMBIDRevalidateSchedule, duplicated here for the same reason
+// maxRelinkReconcileMinutesForTest is: the test needs to probe the boundary,
+// and widening a production symbol purely for a test is the worse trade.
+const maxMBIDRevalidateHoursForTest = 24 * 365
+
+// fakeMBIDCheckProvider satisfies provider.Provider (so it can be registered)
+// and mbidcheck.MusicBrainzClient (so resolveMBIDCheckClient's type assertion
+// succeeds), standing in for the real musicbrainz.Adapter.
+type fakeMBIDCheckProvider struct{}
+
+func (fakeMBIDCheckProvider) Name() provider.ProviderName { return provider.NameMusicBrainz }
+func (fakeMBIDCheckProvider) RequiresAuth() bool          { return false }
+func (fakeMBIDCheckProvider) SearchArtist(context.Context, string) ([]provider.ArtistSearchResult, error) {
+	return nil, nil
+}
+func (fakeMBIDCheckProvider) GetArtist(context.Context, string) (*provider.ArtistMetadata, error) {
+	return nil, nil
+}
+func (fakeMBIDCheckProvider) GetImages(context.Context, string) ([]provider.ImageResult, error) {
+	return nil, nil
+}
+func (fakeMBIDCheckProvider) GetReleaseGroups(context.Context, string) ([]provider.ReleaseGroupInfo, error) {
+	return nil, nil
+}
+
+// noReleaseGroupsProvider satisfies provider.Provider but NOT
+// mbidcheck.MusicBrainzClient (no GetReleaseGroups), covering the "registered
+// but wrong shape" branch of resolveMBIDCheckClient the same way
+// resolveReleaseGroupFetcher is covered by a provider that lacks
+// GetReleaseGroups.
+type noReleaseGroupsProvider struct{}
+
+func (noReleaseGroupsProvider) Name() provider.ProviderName { return provider.NameMusicBrainz }
+func (noReleaseGroupsProvider) RequiresAuth() bool          { return false }
+func (noReleaseGroupsProvider) SearchArtist(context.Context, string) ([]provider.ArtistSearchResult, error) {
+	return nil, nil
+}
+func (noReleaseGroupsProvider) GetArtist(context.Context, string) (*provider.ArtistMetadata, error) {
+	return nil, nil
+}
+func (noReleaseGroupsProvider) GetImages(context.Context, string) ([]provider.ImageResult, error) {
+	return nil, nil
+}
+
+// TestResolveMBIDCheckClient_NilRegistry covers the nil-registry guard: a
+// caller that has not run wireProviders yet (or whose registry construction
+// failed) must get nil, not a panic on a nil-pointer method call.
+func TestResolveMBIDCheckClient_NilRegistry(t *testing.T) {
+	if got := resolveMBIDCheckClient(nil); got != nil {
+		t.Fatalf("resolveMBIDCheckClient(nil) = %v, want nil", got)
+	}
+}
+
+// TestResolveMBIDCheckClient_Unregistered covers a registry that exists but
+// has no musicbrainz provider registered (e.g. a build/config that dropped
+// it) -- the sweep must not start, and this function's nil is what tells
+// startListeners so.
+func TestResolveMBIDCheckClient_Unregistered(t *testing.T) {
+	reg := provider.NewRegistry()
+	if got := resolveMBIDCheckClient(reg); got != nil {
+		t.Fatalf("resolveMBIDCheckClient(empty registry) = %v, want nil", got)
+	}
+}
+
+// TestResolveMBIDCheckClient_WrongShape covers a musicbrainz provider that is
+// registered but does not implement mbidcheck.MusicBrainzClient (missing
+// GetReleaseGroups) -- the same "registered but degrades gracefully" shape
+// resolveReleaseGroupFetcher already has to handle for the discography rule.
+func TestResolveMBIDCheckClient_WrongShape(t *testing.T) {
+	reg := provider.NewRegistry()
+	reg.Register(noReleaseGroupsProvider{})
+	if got := resolveMBIDCheckClient(reg); got != nil {
+		t.Fatalf("resolveMBIDCheckClient(wrong-shape provider) = %v, want nil", got)
+	}
+}
+
+// TestResolveMBIDCheckClient_Found is the positive case: a registered
+// musicbrainz provider that DOES implement mbidcheck.MusicBrainzClient comes
+// back non-nil, and usable as one.
+func TestResolveMBIDCheckClient_Found(t *testing.T) {
+	reg := provider.NewRegistry()
+	reg.Register(fakeMBIDCheckProvider{})
+	got := resolveMBIDCheckClient(reg)
+	if got == nil {
+		t.Fatal("resolveMBIDCheckClient(registered, correct-shape provider) = nil, want non-nil")
+	}
+	if _, err := got.GetArtist(context.Background(), "mbid-1"); err != nil {
+		t.Fatalf("GetArtist through the resolved client: %v", err)
+	}
+}
