@@ -144,7 +144,14 @@ const shot = async (name, body) => {
 
   await body({ page, goto, settleImages, tryStep });
 
-  await page.waitForLoadState('networkidle').catch(() => {});
+  // NOT networkidle. The /next UI holds an EventSource open
+  // (web/static/js/sse.js) for its live activity feed, so network activity
+  // never drops to zero for the 500ms networkidle requires -- it burns the
+  // full default 30s timeout on EVERY screen and then continues anyway,
+  // which measured as ~33s per capture. `load` plus the decode wait below is
+  // the condition actually being asserted: the document is parsed and every
+  // in-viewport image is ready to paint.
+  await page.waitForLoadState('load').catch(() => {});
   await settleImages(3000);
   const file = join(OUT, `${name}.png`);
   await page.screenshot({ path: file, fullPage: FULL });
