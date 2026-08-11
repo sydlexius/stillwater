@@ -183,7 +183,7 @@ func TestResolveClassification(t *testing.T) {
 			wantEvidence:   artist.EvidenceFound,
 			wantResolved:   "Example Band",
 			wantZeroRemote: true,
-			wantDetail:     "remote catalogue empty",
+			wantDetail:     "remote catalog empty",
 		},
 		{
 			// The empty-catalogue signal takes priority over the generic
@@ -204,7 +204,7 @@ func TestResolveClassification(t *testing.T) {
 			wantEvidence:   artist.EvidenceFound,
 			wantResolved:   "Someone Entirely Else",
 			wantZeroRemote: true,
-			wantDetail:     "remote catalogue empty",
+			wantDetail:     "remote catalog empty",
 		},
 		{
 			// The motivating shape with a non-empty but disjoint catalogue:
@@ -1157,7 +1157,7 @@ func TestEmptyFoundNeverCondemnsOrForgesTheSignal(t *testing.T) {
 		groups []provider.ReleaseGroupInfo
 	}{
 		{"remote catalogue present", rgs("Some Remote Record", "Another")},
-		{"remote catalogue empty", nil},
+		{"remote catalog empty", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -1963,4 +1963,91 @@ func TestSortNameHandlingCoversPeopleAndLeavesBandsAlone(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestCanceledCheckIsNotLoggedAsAnOutage is the SEVENTH instance of this
+// package's dominant defect class: a condition on OUR side reported as though
+// it were the provider's or the artist's.
+//
+// classify's first act on a canceled context is to build a transient
+// provider_unavailable verdict, and log reports provider_unavailable at WARN
+// specifically so a real outage is visible per artist. A shutdown part-way
+// through a pass hits that path for every remaining artist at once, so without
+// the demotion a routine stop produces a burst of "provider unavailable" WARN
+// lines and is indistinguishable in the log from the MusicBrainz outage that
+// WARN exists to announce.
+//
+// The handler is set to Info, so the assertion is about what a PRODUCTION
+// operator sees rather than what a debug run could dig out.
+func TestCanceledCheckIsNotLoggedAsAnOutage(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	// PRECONDITION: the handler drops Debug, so "no WARN was emitted" cannot be
+	// satisfied by a line the demotion did not actually move.
+	if handler.Enabled(t.Context(), slog.LevelDebug) {
+		t.Fatal("precondition: the test handler must not be enabled at Debug")
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	r := New(&fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("First Record")},
+		found("First Record"), WithLogger(slog.New(handler)))
+	res, err := r.Resolve(ctx, testArtist())
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	// PRECONDITION: the cancellation really did produce the transient
+	// provider_unavailable verdict this test is about. Without it the assertion
+	// below would hold over some other verdict that simply never logs at WARN.
+	if !res.Transient {
+		t.Fatalf("precondition: a canceled check must produce a TRANSIENT verdict, got %+v", res.Validation)
+	}
+	if res.Validation.Reason != artist.MBIDReasonProviderUnavailable {
+		t.Fatalf("precondition: reason = %q, want %q -- the WARN path is the one under test",
+			res.Validation.Reason, artist.MBIDReasonProviderUnavailable)
+	}
+
+	if buf.Len() != 0 {
+		t.Errorf("a canceled check logged at Info or above: %s -- a shutdown would read as a provider outage", buf.String())
+	}
+}
+
+// TestARealOutageStillWarnsWhileTheContextIsLive is the other half. Without it
+// the demotion above could be a blanket "never warn on a transient verdict",
+// which would silence the per-artist outage line that makes a sweep which
+// checked nothing distinguishable from one that found nothing -- the exact
+// defect TestEveryVerdictIsLogged was written to close.
+func TestARealOutageStillWarnsWhileTheContextIsLive(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+
+	r := New(&fakeMB{metaErr: errors.New("dial tcp: i/o timeout")}, found("First Record"),
+		WithLogger(slog.New(handler)))
+	res, err := r.Resolve(t.Context(), testArtist())
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	// PRECONDITION: same verdict shape as the canceled case above, so the only
+	// thing that can distinguish the two is the context's state.
+	if !res.Transient || res.Validation.Reason != artist.MBIDReasonProviderUnavailable {
+		t.Fatalf("precondition: want a transient provider_unavailable verdict, got %+v", res.Validation)
+	}
+
+	if buf.Len() == 0 {
+		t.Fatal("a real outage produced no line at Info or above; a sweep that checked nothing looks like one that found nothing")
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatalf("log line is not JSON (%q): %v", buf.String(), err)
+	}
+	if got := rec["level"]; got != slog.LevelWarn.String() {
+		t.Errorf("log level = %v, want WARN for a genuine outage (line: %s)", got, buf.String())
+	}
 }

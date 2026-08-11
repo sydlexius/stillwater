@@ -252,6 +252,11 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	// invariant (every seeded rule has a registered checker); it always returns
 	// nil (no violation) and is never invoked while the rule stays disabled.
 	e.checkers[RuleCrossArtistBackdropCollision] = func(context.Context, *artist.Artist, RuleConfig) *Violation { return nil }
+	// mbid_resolves is likewise event-driven: the #2810 re-validation sweep
+	// raises it after two MusicBrainz requests, which no synchronous checker
+	// can repeat. Registered only to satisfy the checker/rule parity invariant;
+	// eventDrivenRules keeps it from ever being invoked.
+	e.checkers[RuleMBIDResolves] = func(context.Context, *artist.Artist, RuleConfig) *Violation { return nil }
 
 	// Register per-(rule, artist) capability predicates. A rule with no entry
 	// here is always capable and is gated only by Enabled and, for the

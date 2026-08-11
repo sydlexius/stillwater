@@ -365,6 +365,38 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		},
 		FixExample: "Before: Artist A holds fanart2.jpg that is 94% similar to Artist B's fanart.jpg\nAfter:  Artist A's fanart2.jpg is quarantined and removed (locally and on platforms); survivors renumbered. Restorable from quarantine if it was a false positive.",
 	},
+	RuleMBIDResolves: {
+		// The finding is about the stored MusicBrainz ID and nothing else, so
+		// the artist-detail screen must chip that row -- the same field
+		// nfo_has_mbid declares. Without it an operator reviewing the artist
+		// sees the finding only in the Open Findings list, with no marker on
+		// the field actually under suspicion, which is the one thing they have
+		// to look at to judge it. None of the documented Fields exclusions
+		// (image, whole-record, cross-field, filesystem) applies here.
+		Fields: []string{"musicbrainz_id"},
+		// No FixBehavior and no FixExample: this rule has no automated fix, and
+		// will not be given one. Resolving a finding means an operator deciding
+		// which artist the folder actually holds.
+		FixBehavior: "",
+		// Conditional is a property of a FIXER ("it can refuse to act for some
+		// violations"), and this rule has none, so false is the only truthful
+		// value. It is currently inert -- the generator reads it only inside
+		// `if entry.FixBehavior != ""` -- but a detection-only entry claiming a
+		// conditional fixer is a trap for the next reader and for any future
+		// consumer that reads the field on its own.
+		Conditional: false,
+		Caveats: []string{
+			"Informational only. Nothing is corrected automatically, because reverting an identity on a machine judgment would repeat the mistake that produced the wrong ID in the first place.",
+			"Raised by a background re-validation pass, not by Run Rules. The pass is paced by the MusicBrainz rate limit, so a large library is covered over several passes rather than all at once.",
+			"An ID that resolves to nobody is NOT flagged. MusicBrainz merges duplicate artist entries and retires the ID that lost, so an unresolvable ID is quite possibly correct and merely stale; it is recorded as unchecked rather than as a failure.",
+			"An artist with no albums on disk cannot be checked, since the catalog comparison is the load-bearing half. Those artists are recorded as unchecked, never as passing.",
+		},
+		Guards: "Stillwater has never checked a stored MusicBrainz ID beyond confirming it looks like a UUID, which any well-formed ID passes -- including one belonging to a different act that happens to share the artist's name. This rule fires when a background pass fetches the stored ID from MusicBrainz and finds that the release catalog it lists does not overlap the albums on disk, or that the name does not match. The catalog comparison is what makes the check work: in the case that motivated it, the name matched exactly while the ID pointed at someone with no music releases at all.",
+		Examples: []string{
+			"An artist whose stored ID resolves to a MusicBrainz entry with the same name but no releases at all, while the library holds several albums.",
+			"An artist whose stored ID resolves to a different act of the same name in another genre, whose release list has no titles in common with the folder.",
+		},
+	},
 }
 
 // CatalogueEntry returns the documentation metadata for a rule ID.

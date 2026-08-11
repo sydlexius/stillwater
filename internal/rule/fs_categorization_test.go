@@ -53,10 +53,55 @@ func TestIsFilesystemDependent(t *testing.T) {
 		// filesystem-dependent. Listing it here asserts that classification
 		// rather than mere membership in the categorized map below.
 		RuleCrossArtistBackdropCollision,
+		// Also event-driven and also API-compatible: the #2810 sweep reads the
+		// stored MusicBrainz id and MusicBrainz's answer. A pathless artist is
+		// checked and reaches a not-checkable verdict, which is a ledger row
+		// rather than a violation.
+		RuleMBIDResolves,
 	}
 	for _, id := range apiRules {
 		if IsFilesystemDependent(id) {
 			t.Errorf("expected rule %q to be API-compatible (not filesystem-dependent)", id)
+		}
+	}
+
+	// TEETH. Everything above walks a hand-written list asserting a property of
+	// each entry, so DELETING an entry deletes an assertion rather than
+	// breaking one: the lists were documentary while their comments implied
+	// rigor. This closes that by deriving the expectation from defaultRules --
+	// every default rule is either filesystem-dependent (and so must appear in
+	// fsRules) or API-compatible (and so must appear in apiRules), with no
+	// third option and nothing omitted.
+	listed := make(map[string]bool, len(fsRules)+len(apiRules))
+	for _, id := range fsRules {
+		listed[id] = true
+	}
+	for _, id := range apiRules {
+		if listed[id] {
+			t.Errorf("rule %q appears in BOTH fsRules and apiRules; the two lists must partition the defaults", id)
+		}
+		listed[id] = true
+	}
+	// PRECONDITION: there is something to walk. An empty defaultRules would
+	// make every assertion below vacuous.
+	if len(defaultRules) == 0 {
+		t.Fatal("precondition: defaultRules is empty, so this test would assert nothing")
+	}
+	for _, r := range defaultRules {
+		if !listed[r.ID] {
+			t.Errorf("default rule %q is in neither fsRules nor apiRules; add it to the list matching its IsFilesystemDependent(%v) classification",
+				r.ID, IsFilesystemDependent(r.ID))
+		}
+	}
+	// The other direction: a list entry that is no longer a default rule is a
+	// stale assertion pinning a rule nobody ships.
+	defaultIDs := make(map[string]bool, len(defaultRules))
+	for _, r := range defaultRules {
+		defaultIDs[r.ID] = true
+	}
+	for id := range listed {
+		if !defaultIDs[id] {
+			t.Errorf("rule %q is categorized here but is not a default rule", id)
 		}
 	}
 }
@@ -95,11 +140,17 @@ func TestAllDefaultRulesAreCategorized(t *testing.T) {
 		// seeded disabled, so it is never engine-evaluated, but it must still be
 		// categorized here (and is not in filesystemRules).
 		RuleCrossArtistBackdropCollision: true,
-		RuleBackdropSequencing:           true,
-		RuleBackdropMinCount:             true,
-		RuleNameLanguagePref:             true,
-		RuleOriginMissing:                true,
-		RuleProviderIDMissing:            true,
+		// API-compatible for the same reason: the #2810 sweep reads the stored
+		// MusicBrainz id and MusicBrainz's answer, neither of which needs a
+		// local path. A pathless artist is still checked -- it simply reaches a
+		// not-checkable verdict because its album catalogue cannot be read, and
+		// that verdict lives in the ledger rather than as a violation.
+		RuleMBIDResolves:       true,
+		RuleBackdropSequencing: true,
+		RuleBackdropMinCount:   true,
+		RuleNameLanguagePref:   true,
+		RuleOriginMissing:      true,
+		RuleProviderIDMissing:  true,
 	}
 
 	for _, r := range defaultRules {

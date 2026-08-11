@@ -2,11 +2,11 @@
 description: Every built-in rule in Stillwater -- what it checks, what the fix does, what's configurable, and the default state.
 ---
 
-<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer, ImageDuplicateFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/rule/collision_fixer.go (CrossArtistBackdropCollisionFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 27 rules verified. -->
+<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer, ImageDuplicateFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/rule/collision_fixer.go (CrossArtistBackdropCollisionFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 28 rules verified. -->
 
 # Rules catalog
 
-Stillwater ships with 27 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
+Stillwater ships with 28 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
 
 For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-concepts/rules.md). This page is the enumeration.
 
@@ -25,6 +25,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Origin is populated](#origin-is-populated) | Metadata | Disabled, manual | Yes |
 | [Discography is populated](#discography-is-populated) | Metadata | Disabled, manual | Sometimes |
 | [Provider IDs present](#provider-ids-present) | Metadata | Disabled, manual | Sometimes |
+| [Stored MusicBrainz ID resolves to this artist](#stored-musicbrainz-id-resolves-to-this-artist) | Metadata | Disabled, manual | Detection-only |
 | [Thumbnail image exists](#thumbnail-image-exists) | Image | Enabled, auto | Yes |
 | [Thumbnail is square](#thumbnail-is-square) | Image | Enabled, auto | Yes |
 | [Thumbnail minimum resolution](#thumbnail-minimum-resolution) | Image | Enabled, auto | Yes |
@@ -333,6 +334,34 @@ After:  Discogs ID and Spotify ID are populated from those relations (existing I
 - Requires a MusicBrainz ID; without one there are no URL relations to derive provider IDs from.
 - Only fills IDs MusicBrainz actually links to; a provider with no MusicBrainz relation stays missing and must be entered by hand.
 - By default the rule requires only providers you have configured (Discogs, Deezer, Spotify); an unconfigured provider is never flagged.
+
+---
+
+## Stored MusicBrainz ID resolves to this artist
+
+**Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** warning
+
+**Inspects:** `musicbrainz_id`
+
+Flags an artist whose stored MusicBrainz ID was re-checked against MusicBrainz and turned out to identify a different artist -- most often one who happens to share the name. The check compares the release catalog, not just the name, because a wrong ID with a matching name is exactly the case a name comparison cannot catch. Findings are raised by a background re-validation pass rather than during Run Rules, and are informational: nothing is changed automatically, because reverting an identity on a machine judgment would repeat the original mistake in the opposite direction.
+
+Stillwater has never checked a stored MusicBrainz ID beyond confirming it looks like a UUID, which any well-formed ID passes -- including one belonging to a different act that happens to share the artist's name. This rule fires when a background pass fetches the stored ID from MusicBrainz and finds that the release catalog it lists does not overlap the albums on disk, or that the name does not match. The catalog comparison is what makes the check work: in the case that motivated it, the name matched exactly while the ID pointed at someone with no music releases at all.
+
+**When this fires:**
+
+- An artist whose stored ID resolves to a MusicBrainz entry with the same name but no releases at all, while the library holds several albums.
+- An artist whose stored ID resolves to a different act of the same name in another genre, whose release list has no titles in common with the folder.
+
+**Fix:** No automated fix.
+
+**Configurable:** Severity only.
+
+**Caveats:**
+
+- Informational only. Nothing is corrected automatically, because reverting an identity on a machine judgment would repeat the mistake that produced the wrong ID in the first place.
+- Raised by a background re-validation pass, not by Run Rules. The pass is paced by the MusicBrainz rate limit, so a large library is covered over several passes rather than all at once.
+- An ID that resolves to nobody is NOT flagged. MusicBrainz merges duplicate artist entries and retires the ID that lost, so an unresolvable ID is quite possibly correct and merely stale; it is recorded as unchecked rather than as a failure.
+- An artist with no albums on disk cannot be checked, since the catalog comparison is the load-bearing half. Those artists are recorded as unchecked, never as passing.
 
 ---
 

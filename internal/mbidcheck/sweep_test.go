@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1048,5 +1050,533 @@ func TestSweepNeverWritesTheArtistIdentity(t *testing.T) {
 		Update(context.Context, *artist.Artist) error
 	}); ok {
 		t.Fatal("the sweep's ledger seam can write an artist record; #2810 forbids automatic identity change")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Operator-review flagging
+// ---------------------------------------------------------------------------
+
+// fakeFlagger records the operator-review entries the sweep raises.
+type fakeFlagger struct {
+	mu     sync.Mutex
+	raised []struct{ artistID, artistName, message string }
+	err    error
+}
+
+func (f *fakeFlagger) RaiseMBIDValidationFailure(_ context.Context, artistID, artistName, message string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	f.raised = append(f.raised, struct{ artistID, artistName, message string }{artistID, artistName, message})
+	return nil
+}
+
+func (f *fakeFlagger) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.raised)
+}
+
+// TestFlagsOnlyFailedOutcomes is the guard on which verdicts reach the
+// operator's queue.
+//
+// It WIRES a real flagger and a real resolver for each outcome and asserts the
+// effect is present for exactly one of them and ABSENT for the other two. A
+// validated verdict has nothing to review; a not-checkable one is an honest
+// "unknown" (an id resolving to nobody may be correct and merely stale), and
+// queueing either would bury the real findings under states meaning nothing is
+// wrong.
+func TestFlagsOnlyFailedOutcomes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		mb          *fakeMB
+		albums      artist.AlbumSource
+		wantOutcome artist.MBIDValidationOutcome
+		wantRaised  int
+	}{
+		{
+			name:        "validated raises nothing",
+			mb:          &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("One")},
+			albums:      found("One"),
+			wantOutcome: artist.MBIDOutcomeValidated,
+			wantRaised:  0,
+		},
+		{
+			name:        "not checkable raises nothing",
+			mb:          &fakeMB{metaErr: &provider.ErrNotFound{Provider: provider.NameMusicBrainz, ID: "m"}},
+			albums:      found("One"),
+			wantOutcome: artist.MBIDOutcomeNotCheckable,
+			wantRaised:  0,
+		},
+		{
+			name:        "failed raises exactly one entry",
+			mb:          &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("Something Else")},
+			albums:      found("One", "Two", "Three", "Four"),
+			wantOutcome: artist.MBIDOutcomeFailed,
+			wantRaised:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			const id = "artist-1"
+			led := newFakeLedger()
+			flag := &fakeFlagger{}
+			sw := newTestSweep(t, &fakePopulation{rows: []artist.MBIDPath{{ArtistID: id, MBID: "m"}}},
+				&fakeArtists{byID: map[string]*artist.Artist{id: sweepArtist(id, "/library/Example")}},
+				led, newTestResolver(tt.mb, tt.albums), Config{MaxPerPass: 10})
+			sw.SetFlagger(flag)
+
+			if _, err := sw.Run(t.Context()); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+
+			// PRECONDITION: the fixture really produced the outcome this case
+			// is about. Without it, a fixture that silently stopped producing a
+			// "failed" verdict would make "raised nothing" look correct.
+			row, ok := led.get(id)
+			if !ok {
+				t.Fatalf("precondition: expected a persisted verdict for %s", id)
+			}
+			if row.Outcome != tt.wantOutcome {
+				t.Fatalf("precondition: outcome = %q, want %q", row.Outcome, tt.wantOutcome)
+			}
+
+			if got := flag.count(); got != tt.wantRaised {
+				t.Errorf("raised %d operator-review entries, want %d", got, tt.wantRaised)
+			}
+		})
+	}
+}
+
+// TestFlagMessageNamesTheZeroCatalogueCase asserts the headline finding gets
+// its own wording, derived from Result.ZeroRemoteCatalogue rather than by
+// matching detail prose, so an operator can recognize it in a queue without
+// opening the row.
+func TestFlagMessageNamesTheZeroCatalogueCase(t *testing.T) {
+	t.Parallel()
+
+	const id = "artist-1"
+	flag := &fakeFlagger{}
+	// An empty remote catalogue with albums on disk: the motivating shape.
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Someone Else"}, groups: nil}
+	sw := newTestSweep(t, &fakePopulation{rows: []artist.MBIDPath{{ArtistID: id, MBID: "m"}}},
+		&fakeArtists{byID: map[string]*artist.Artist{id: sweepArtist(id, "/library/Example")}},
+		newFakeLedger(), newTestResolver(mb, found("One", "Two")), Config{MaxPerPass: 10})
+	sw.SetFlagger(flag)
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// PRECONDITION: this really is the zero-remote-catalogue case.
+	if c.ZeroRemoteCatalogue != 1 {
+		t.Fatalf("precondition: expected 1 zero-remote-catalogue finding, got %+v", c)
+	}
+	if flag.count() != 1 {
+		t.Fatalf("expected exactly 1 raised entry, got %d", flag.count())
+	}
+	msg := flag.raised[0].message
+	for _, want := range []string{"no releases at all", "Someone Else", "2 album"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q does not mention %q", msg, want)
+		}
+	}
+	if !strings.Contains(msg, "Nothing has been changed") {
+		t.Errorf("message %q must say nothing was changed automatically", msg)
+	}
+}
+
+// TestFlaggerFailureDoesNotAbortThePass asserts a refused queue write is
+// counted and logged rather than aborting: the verdict is already durably in
+// the ledger, so the cost is visibility, not evidence.
+func TestFlaggerFailureDoesNotAbortThePass(t *testing.T) {
+	t.Parallel()
+
+	rows := []artist.MBIDPath{{ArtistID: "a-1", MBID: "m1"}, {ArtistID: "a-2", MBID: "m2"}}
+	byID := map[string]*artist.Artist{
+		"a-1": sweepArtist("a-1", "/library/a-1"),
+		"a-2": sweepArtist("a-2", "/library/a-2"),
+	}
+	led := newFakeLedger()
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: nil}
+	sw := newTestSweep(t, &fakePopulation{rows: rows}, &fakeArtists{byID: byID}, led,
+		newTestResolver(mb, found("One")), Config{MaxPerPass: 10})
+	sw.SetFlagger(&fakeFlagger{err: errors.New("action queue is unavailable")})
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if c.Failed != 2 {
+		t.Errorf("Failed = %d, want 2: both artists must still be checked and persisted", c.Failed)
+	}
+	if c.Errored != 2 {
+		t.Errorf("Errored = %d, want 2 (one per refused queue write)", c.Errored)
+	}
+	if _, ok := led.get("a-2"); !ok {
+		t.Error("the second artist's verdict is missing: a failed flag aborted the pass")
+	}
+}
+
+// TestCanceledFlagIsNotBlamedOnTheArtist is the flag-side half of the rule the
+// ledger write and the artist load already follow: a condition on OUR side is
+// never attributed to the artist being processed.
+//
+// RaiseMBIDValidationFailure runs a transaction on the sweep's own context, so
+// a shutdown part-way through a pass fails it for EVERY remaining failed
+// verdict at once. Without the cancellation branch that is one ERROR line per
+// artist, each naming an artist that is perfectly fine, plus an Errored tally
+// that contradicts what Counters.Errored documents about itself.
+//
+// The wrapped sentinel is deliberate, and matches the ledger test: a service
+// wraps its errors, so an == comparison would compile, satisfy a bare-error
+// test, and stop matching in production.
+func TestCanceledFlagIsNotBlamedOnTheArtist(t *testing.T) {
+	t.Parallel()
+
+	rows := []artist.MBIDPath{{ArtistID: "a-1", MBID: "m1"}, {ArtistID: "a-2", MBID: "m2"}}
+	byID := map[string]*artist.Artist{
+		"a-1": sweepArtist("a-1", "/library/a-1"),
+		"a-2": sweepArtist("a-2", "/library/a-2"),
+	}
+
+	flagErr := fmt.Errorf("raising the operator-review entry: %w", context.Canceled)
+	// PRECONDITION: the fixture's error really is a WRAPPED cancellation, not
+	// the bare sentinel, so an == comparison in the sweep could not satisfy it.
+	if !errors.Is(flagErr, context.Canceled) || errors.Unwrap(flagErr) == nil {
+		t.Fatalf("precondition: the flagger error must be a WRAPPED context.Canceled, got %v", flagErr)
+	}
+
+	rec := &recordingHandler{}
+	led := newFakeLedger()
+	// groups: nil against albums on disk is the FAILED shape, which is the only
+	// outcome that reaches flag at all.
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: nil}
+	sw := NewSweep(&fakePopulation{rows: rows}, &fakeArtists{byID: byID}, led,
+		newTestResolver(mb, found("One")), Config{MaxPerPass: 10}, slog.New(rec))
+	sw.SetFlagger(&fakeFlagger{err: flagErr})
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// PRECONDITION: both artists genuinely reached flag. Without a FAILED
+	// verdict the assertions below would hold over a pass that never called the
+	// flagger at all.
+	if c.Failed != len(rows) {
+		t.Fatalf("precondition: Failed = %d, want %d -- the flag path must actually have been reached (%+v)",
+			c.Failed, len(rows), c)
+	}
+
+	if c.Errored != 0 {
+		t.Errorf("Errored = %d, want 0: an abandoned queue write is our shutdown, never the artist's fault (%+v)", c.Errored, c)
+	}
+	if c.SkippedFlag != len(rows) {
+		t.Errorf("SkippedFlag = %d, want %d: an abandoned entry must still be reported as something that did not land (%+v)",
+			c.SkippedFlag, len(rows), c)
+	}
+	// And NOT in SkippedTransient, whose documented signature is "the sweep
+	// could not reach MusicBrainz". These verdicts DID reach the ledger, so
+	// counting them there would point an operator at an outage that never
+	// happened.
+	if c.SkippedTransient != 0 {
+		t.Errorf("SkippedTransient = %d, want 0: the verdicts reached the ledger, so only the review entry was lost (%+v)",
+			c.SkippedTransient, c)
+	}
+	if msgs := rec.messagesAtLevel(slog.LevelError); len(msgs) != 0 {
+		t.Errorf("a canceled operator-review write logged at ERROR: %v", msgs)
+	}
+	// The ledger row is untouched either way: the verdict is durable before the
+	// flag is attempted, which is why losing the queue entry is survivable.
+	if _, ok := led.get("a-2"); !ok {
+		t.Error("the verdict must still be persisted when its queue entry is abandoned")
+	}
+	// The counter has to be SURFACED, not merely incremented: a tally no
+	// operator can read is dead weight, and the pass summary is the one line
+	// they see.
+	v, ok := rec.attr("mbid re-validation pass complete", "skipped_flag")
+	if !ok {
+		t.Fatal("the pass summary does not report skipped_flag; a counter nothing surfaces cannot be read")
+	}
+	if got, want := v, int64(len(rows)); got != any(want) {
+		t.Errorf("summary skipped_flag = %v, want %d", got, want)
+	}
+}
+
+// TestFlagMessageReadsTheMethodNotTheDetailProse pins the zero-catalogue
+// wording to Result.ZeroRemoteCatalogue rather than to a phrase in
+// Validation.Detail.
+//
+// TestFlagMessageNamesTheZeroCatalogueCase drives the whole sweep, and the
+// resolver's zero-catalogue branch happens to write "no releases" into Detail
+// today -- so a flagMessage that matched that prose instead of calling the
+// method would pass it. This case hands flagMessage a Result whose Detail
+// contains no such phrase, so the only way to produce the zero-catalogue
+// wording is to have read the method. Reword the resolver's Detail in a future
+// change and this test still holds; swap the method for a prose match and it
+// fails.
+// TestFlagMessageNeverShowsAMachineReason guards the operator-facing message
+// against every reason identifier, not just the one that was reported.
+//
+// The reasons are machine ids frozen in a SQL CHECK (catalogue_mismatch,
+// name_mismatch, ...), so any of them appearing in the Action Queue shows an
+// operator an internal code with underscores in it. Detail already states the
+// same fact in English with the measured numbers, which is why the code could
+// be dropped without losing anything.
+//
+// Table-driven over the whole vocabulary deliberately: a guard that checked
+// only the reason someone happened to notice would pass while a sibling code
+// leaked, and the next reason added to the enum would arrive unguarded.
+func TestFlagMessageNeverShowsAMachineReason(t *testing.T) {
+	t.Parallel()
+
+	for _, reason := range []artist.MBIDValidationReason{
+		artist.MBIDReasonResolvesToDifferentArtist,
+		artist.MBIDReasonNameMismatch,
+		artist.MBIDReasonCatalogueMismatch,
+		artist.MBIDReasonMBIDNotFound,
+		artist.MBIDReasonProviderUnavailable,
+		artist.MBIDReasonNoLocalAlbums,
+	} {
+		t.Run(string(reason), func(t *testing.T) {
+			t.Parallel()
+
+			res := Result{
+				Validation: artist.MBIDValidation{
+					ArtistID:     "a-1",
+					MBID:         "11111111-2222-3333-4444-555555555555",
+					Outcome:      artist.MBIDOutcomeFailed,
+					Reason:       reason,
+					Detail:       "the remote release list does not overlap the albums on disk",
+					ResolvedName: "Someone Else",
+				},
+				LocalEvidence:           artist.EvidenceFound,
+				RemoteReleaseGroupCount: 4,
+				LocalAlbumCount:         3,
+			}
+
+			// PRECONDITIONS. Without the first, "no machine id in the message"
+			// would hold trivially because there is no reason set at all.
+			// Without the second, the generic branch might emit nothing to
+			// inspect. The third keeps this off the zero-catalogue path, which
+			// has its own wording and its own test.
+			if res.Validation.Reason == "" {
+				t.Fatal("precondition: the reason under test must be set")
+			}
+			if res.Validation.Detail == "" {
+				t.Fatal("precondition: Detail must carry the human-readable explanation")
+			}
+			if res.ZeroRemoteCatalogue() {
+				t.Fatalf("precondition: fixture must take the generic branch, not the zero-catalogue one")
+			}
+
+			msg := (&Sweep{}).flagMessage(res)
+
+			if strings.Contains(msg, string(reason)) {
+				t.Errorf("operator-facing message leaks the machine reason %q: %s", reason, msg)
+			}
+			if strings.Contains(msg, "_") {
+				t.Errorf("operator-facing message contains an underscore, which means an internal identifier reached it: %s", msg)
+			}
+			if !strings.Contains(msg, res.Validation.Detail) {
+				t.Errorf("message = %q, want it to carry Detail %q: dropping the code must not drop the explanation",
+					msg, res.Validation.Detail)
+			}
+		})
+	}
+}
+
+func TestFlagMessageReadsTheMethodNotTheDetailProse(t *testing.T) {
+	t.Parallel()
+
+	res := Result{
+		Validation: artist.MBIDValidation{
+			ArtistID:     "a-1",
+			MBID:         "11111111-2222-3333-4444-555555555555",
+			Outcome:      artist.MBIDOutcomeFailed,
+			Reason:       artist.MBIDReasonCatalogueMismatch,
+			Detail:       "nothing on the remote side lined up with what is on disk",
+			ResolvedName: "Someone Else",
+		},
+		LocalEvidence:           artist.EvidenceFound,
+		RemoteReleaseGroupCount: 0,
+		LocalAlbumCount:         3,
+	}
+
+	// PRECONDITION: this really is the zero-catalogue case by the METHOD's
+	// judgment, and its Detail carries none of the prose the generic wording
+	// would otherwise be distinguished by. Both halves are load-bearing: the
+	// first makes the assertion meaningful, the second is what makes a prose
+	// match unable to satisfy it.
+	if !res.ZeroRemoteCatalogue() {
+		t.Fatalf("precondition: the fixture must be the zero-remote-catalogue case, got %+v", res)
+	}
+	for _, phrase := range []string{"no releases", "release", "catalog"} {
+		if strings.Contains(strings.ToLower(res.Validation.Detail), phrase) {
+			t.Fatalf("precondition: Detail %q contains %q, so a prose match could still pass this test",
+				res.Validation.Detail, phrase)
+		}
+	}
+
+	sw := &Sweep{}
+	msg := sw.flagMessage(res)
+	if !strings.Contains(msg, "no releases at all") {
+		t.Errorf("flagMessage = %q, want the zero-catalogue wording: it must read ZeroRemoteCatalogue(), not Detail prose", msg)
+	}
+	if !strings.Contains(msg, "Someone Else") || !strings.Contains(msg, "3 album") {
+		t.Errorf("flagMessage = %q, want it to name the resolved artist and the local album count", msg)
+	}
+	if strings.Contains(msg, res.Validation.Detail) {
+		t.Errorf("flagMessage = %q must not fall through to the generic detail wording", msg)
+	}
+}
+
+// TestSetFlaggerIsSafeWhileAPassIsRunning pins the concurrency contract on the
+// one field written after construction.
+//
+// SetFlagger exists BECAUSE the rule service is built late in main.go's wiring
+// order, so the shape it invites is a wiring author calling it after the
+// scheduler goroutine has already started a pass. That is a write racing a read
+// in flag, it is reachable through the documented wiring, and it only manifests
+// once a FAILED verdict reaches flag -- so a probe over a healthy library would
+// never surface it. Run under -race, this test is the guard.
+func TestSetFlaggerIsSafeWhileAPassIsRunning(t *testing.T) {
+	t.Parallel()
+
+	rows := make([]artist.MBIDPath, 0, 40)
+	byID := map[string]*artist.Artist{}
+	for i := range 40 {
+		id := fmt.Sprintf("a-%02d", i)
+		rows = append(rows, artist.MBIDPath{ArtistID: id, MBID: "m"})
+		byID[id] = sweepArtist(id, "/library/"+id)
+	}
+
+	// FAILED verdicts throughout, so every row reaches flag and the racing read
+	// actually happens. A validated fixture would exercise nothing.
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: nil}
+	sw := newTestSweep(t, &fakePopulation{rows: rows}, &fakeArtists{byID: byID}, newFakeLedger(),
+		newTestResolver(mb, found("One")), Config{MaxPerPass: len(rows)})
+
+	flag := &fakeFlagger{}
+	type runResult struct {
+		c   Counters
+		err error
+	}
+	// The error travels back over the channel rather than becoming a panic in
+	// this goroutine: a panic off the test goroutine takes down the whole test
+	// binary, so one failure here would hide every other test's result. t.Fatalf
+	// is equally unavailable off the test goroutine, so the assertion happens
+	// below, where it belongs.
+	done := make(chan runResult, 1)
+	go func() {
+		c, err := sw.Run(context.Background())
+		done <- runResult{c: c, err: err}
+	}()
+	for range 40 {
+		sw.SetFlagger(flag)
+	}
+
+	got := <-done
+	if got.err != nil {
+		t.Fatalf("Run: %v", got.err)
+	}
+	c := got.c
+	// PRECONDITION: the pass really did reach flag. Without a failed verdict the
+	// racing read never happens and -race has nothing to observe.
+	if c.Failed != len(rows) {
+		t.Fatalf("precondition: Failed = %d, want %d -- the flag path must be exercised (%+v)", c.Failed, len(rows), c)
+	}
+}
+
+// TestSetFlaggerRejectsATypedNilPointer covers the trap in the wiring this
+// setter is built for.
+//
+// main.go builds the rule service conditionally, so a `var svc *rule.Service`
+// that stayed nil is passed as a NON-nil interface wrapping a nil pointer. The
+// obvious `f != nil` check is TRUE for that value, so it would be stored, and
+// flag would call a method on a nil receiver at the first failed verdict --
+// panicking in a background goroutine hours after the wiring ran, rather than
+// taking the supported no-flagger path.
+func TestSetFlaggerRejectsATypedNilPointer(t *testing.T) {
+	t.Parallel()
+
+	var typedNil *fakeFlagger
+	var asInterface Flagger = typedNil
+	// PRECONDITION: this value really is the trap -- nil as a POINTER while the
+	// interface box around it is not nil. Asserted through reflect rather than
+	// `asInterface == nil`, which is the very comparison that returns false
+	// here: writing it out would be a comparison staticcheck can prove is never
+	// true, and it would read as if it were checking something.
+	box := reflect.ValueOf(asInterface)
+	if !box.IsValid() {
+		t.Fatal("precondition: the fixture is a nil INTERFACE, not the typed-nil trap this test is about")
+	}
+	if box.Kind() != reflect.Pointer || !box.IsNil() {
+		t.Fatalf("precondition: the fixture must wrap a nil pointer, got kind %v", box.Kind())
+	}
+
+	const id = "artist-1"
+	led := newFakeLedger()
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: nil}
+	sw := newTestSweep(t, &fakePopulation{rows: []artist.MBIDPath{{ArtistID: id, MBID: "m"}}},
+		&fakeArtists{byID: map[string]*artist.Artist{id: sweepArtist(id, "/library/Example")}},
+		led, newTestResolver(mb, found("One")), Config{MaxPerPass: 10})
+	sw.SetFlagger(asInterface)
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if c.Failed != 1 {
+		t.Fatalf("precondition: Failed = %d, want 1 -- the flag path must be reached (%+v)", c.Failed, c)
+	}
+	if _, ok := led.get(id); !ok {
+		t.Error("the verdict must still be persisted")
+	}
+}
+
+// TestSweepWithoutAFlaggerStillWritesTheLedger asserts the flagger is genuinely
+// optional, so a build with no rule service wired still records what it checked
+// rather than panicking on a nil interface.
+func TestSweepWithoutAFlaggerStillWritesTheLedger(t *testing.T) {
+	t.Parallel()
+
+	const id = "artist-1"
+	led := newFakeLedger()
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: nil}
+	sw := newTestSweep(t, &fakePopulation{rows: []artist.MBIDPath{{ArtistID: id, MBID: "m"}}},
+		&fakeArtists{byID: map[string]*artist.Artist{id: sweepArtist(id, "/library/Example")}},
+		led, newTestResolver(mb, found("One")), Config{MaxPerPass: 10})
+	// No SetFlagger call at all.
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if c.Failed != 1 || c.Errored != 0 {
+		t.Fatalf("counters = %+v, want 1 failed and 0 errored", c)
+	}
+	if _, ok := led.get(id); !ok {
+		t.Error("the verdict must still be persisted without a flagger")
+	}
+
+	// A nil SetFlagger must not disconnect a working one either.
+	flag := &fakeFlagger{}
+	sw.SetFlagger(flag)
+	sw.SetFlagger(nil)
+	if _, err := sw.Run(t.Context()); err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	if flag.count() != 1 {
+		t.Errorf("a nil SetFlagger disconnected the working flagger: raised %d", flag.count())
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -78,6 +80,21 @@ type Ledger interface {
 	Upsert(ctx context.Context, v *artist.MBIDValidation) error
 }
 
+// Flagger raises the operator-review entry for a failed verdict.
+// *rule.Service satisfies it via RaiseMBIDValidationFailure.
+//
+// A plain-string seam, so this package does not import internal/rule and does
+// not get a vote on the rule id, the severity, or -- the one that matters --
+// whether the entry is fixable. There is no automated fix for this finding and
+// #2810's acceptance criteria forbid one, so that decision stays on the rule
+// side where it cannot be passed in.
+//
+// Optional: a nil Flagger means verdicts reach the ledger and nothing else,
+// which is what the sweep does in a build with no rule service wired.
+type Flagger interface {
+	RaiseMBIDValidationFailure(ctx context.Context, artistID, artistName, message string) error
+}
+
 // Default sweep pacing. All three are overridable through Config.
 const (
 	// DefaultInterval is how often a pass runs. Daily: a stored id changes
@@ -141,6 +158,20 @@ type Sweep struct {
 	cfg        Config
 	logger     *slog.Logger
 
+	// flaggerMu guards flagger, which is the ONE field written after
+	// construction.
+	//
+	// A mutex rather than a documented "wire it before you launch the
+	// goroutine" contract, because that contract fights the setter's own
+	// justification: SetFlagger exists precisely BECAUSE the rule service is
+	// built late, so the shape it invites is a wiring author calling it after
+	// `go Start(ctx)` has already begun a pass. That is a genuine data race
+	// (write here, read in flag), it is reachable through the documented
+	// wiring, and it only manifests once a FAILED verdict reaches flag -- so a
+	// smoke test over a healthy library would never surface it.
+	flaggerMu sync.RWMutex
+	flagger   Flagger
+
 	// cursor is the artist id the NEXT pass starts after.
 	//
 	// Without it, MaxPerPass would make the sweep re-check the same first N
@@ -185,6 +216,46 @@ func NewSweep(population Population, artists ArtistGetter, ledger Ledger, resolv
 	}
 }
 
+// SetFlagger attaches the surface that turns a FAILED verdict into an
+// operator-review entry. Optional; without it the sweep still writes the
+// ledger, which is the record of what was checked.
+//
+// A setter rather than a constructor parameter because the rule service is
+// built after the artist service in main.go's wiring order, matching the
+// late-wiring shape the rule fixers already use. A nil argument is ignored so
+// a call made out of order cannot silently disconnect a working flagger.
+//
+// Safe to call at any time, including while Start's goroutine is mid-pass:
+// the field is guarded. See the flaggerMu comment for why that guard is a
+// mutex rather than a "wire it first" instruction.
+//
+// "Nil" here means nil in EITHER of the two ways an interface can be nil. A
+// caller holding a `var svc *rule.Service` that was never built passes a
+// non-nil interface wrapping a nil pointer, for which `f != nil` is TRUE, so a
+// plain check would store it and flag would call a method on a nil receiver on
+// the first failed verdict -- a panic in a background goroutine, hours after
+// the wiring ran. The reflect check is the only way to see through the
+// interface box.
+func (s *Sweep) SetFlagger(f Flagger) {
+	if f == nil {
+		return
+	}
+	if v := reflect.ValueOf(f); v.Kind() == reflect.Pointer && v.IsNil() {
+		return
+	}
+	s.flaggerMu.Lock()
+	defer s.flaggerMu.Unlock()
+	s.flagger = f
+}
+
+// currentFlagger reads the flagger under its guard. Returns nil when none is
+// wired, which is a supported configuration (see Flagger).
+func (s *Sweep) currentFlagger() Flagger {
+	s.flaggerMu.RLock()
+	defer s.flaggerMu.RUnlock()
+	return s.flagger
+}
+
 // Counters is one pass's tally, returned by Run and logged as its summary.
 //
 // It exists to answer two different questions with one record. The first is
@@ -206,12 +277,27 @@ type Counters struct {
 	NotCheckable int
 
 	// SkippedTransient counts verdicts that did not reach the ledger for a
-	// reason on OUR side: provider outages, unreadable paths, and a write
-	// abandoned mid-flight by cancellation or a deadline. High here with
+	// reason on OUR side: provider outages, unreadable paths, and a LEDGER
+	// write abandoned mid-flight by cancellation or a deadline. High here with
 	// everything else near zero is the signature of a sweep that could not
 	// reach MusicBrainz, and is why a quiet ledger must never be read as a
-	// clean library.
+	// clean library. An abandoned operator-review entry, whose verdict DID
+	// reach the ledger, is SkippedFlag rather than this: counting it here would
+	// blunt that signature with a condition that lost no evidence.
 	SkippedTransient int
+
+	// SkippedFlag counts operator-review entries abandoned mid-flight by
+	// cancellation or a deadline, for a verdict that DID reach the ledger.
+	//
+	// Deliberately not folded into SkippedTransient. By the time the queue
+	// entry is attempted the verdict is durably persisted, so the evidence
+	// survives and only the review entry's visibility is lost -- a materially
+	// different condition from a verdict that never landed at all, and one that
+	// must not blunt SkippedTransient's "the sweep could not reach
+	// MusicBrainz" signature by inflating it from an unrelated cause. High
+	// here means the pass stopped while raising findings; re-running covers
+	// them, since the ledger rows they came from are already durable.
+	SkippedFlag int
 
 	// SkippedNoMBID counts population rows whose artist turned out to carry no
 	// stored id by the time it was loaded (it was cleared between the query and
@@ -225,7 +311,8 @@ type Counters struct {
 	// A write abandoned because the context was canceled or its deadline
 	// expired is NOT counted here: that is our own shutdown, not a fault of the
 	// artist, and blaming individual artists for it would make a routine stop
-	// read as a library-wide failure. It goes to SkippedTransient instead.
+	// read as a library-wide failure. It goes to SkippedTransient (a ledger
+	// write) or SkippedFlag (an operator-review entry) instead.
 	Errored int
 
 	// ZeroRemoteCatalogue counts the headline finding: the id resolves, the
@@ -494,6 +581,7 @@ func (s *Sweep) checkOne(ctx context.Context, row artist.MBIDPath, c *Counters) 
 		c.Validated++
 	case artist.MBIDOutcomeFailed:
 		c.Failed++
+		s.flag(ctx, a, res, c)
 	case artist.MBIDOutcomeNotCheckable:
 		c.NotCheckable++
 	}
@@ -509,6 +597,72 @@ func isCanceled(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
+// flag raises the operator-review entry for a failed verdict.
+//
+// ONLY a failed verdict reaches here, and that restriction is the point.
+// A validated verdict has nothing to review. A not-checkable one is an honest
+// "unknown" -- an id that resolves to nobody may well be correct and merely
+// stale, and an artist with no albums on disk simply could not be compared --
+// and putting either in the review queue would bury the real findings under
+// states that mean nothing is wrong. Those live in the ledger, which is where
+// an operator goes to ask what was checked rather than what was found.
+//
+// A failure to raise is logged and counted, not returned: the verdict is
+// already durably in the ledger at this point, so losing the queue entry costs
+// visibility rather than evidence, and it is not worth abandoning the pass for.
+func (s *Sweep) flag(ctx context.Context, a *artist.Artist, res Result, c *Counters) {
+	f := s.currentFlagger()
+	if f == nil {
+		return
+	}
+	if err := f.RaiseMBIDValidationFailure(ctx, a.ID, a.Name, s.flagMessage(res)); err != nil {
+		// The same rule the ledger write applies, on the third and last write
+		// this pass performs. RaiseMBIDValidationFailure runs a transaction on
+		// this same ctx, so a shutdown mid-pass fails it for every remaining
+		// failed verdict at once: without this branch a routine stop produces
+		// one ERROR line per artist, each naming an artist that is fine, and
+		// inflates Errored against the invariant Counters.Errored documents.
+		if isCanceled(err) {
+			// SkippedFlag, not SkippedTransient: the verdict itself reached the
+			// ledger a moment ago (Upsert succeeded and Failed was counted), so
+			// this is a lost review entry, not a verdict that never landed.
+			c.SkippedFlag++
+			s.logger.Debug("mbid re-validation abandoned an operator-review entry during shutdown",
+				slog.String("artist_id", a.ID),
+				slog.Any("error", err))
+			return
+		}
+		c.Errored++
+		s.logger.Error("mbid re-validation could not raise an operator-review entry",
+			slog.String("artist_id", a.ID),
+			slog.Any("error", err))
+	}
+}
+
+// flagMessage is the operator-facing sentence for a failed verdict.
+//
+// The zero-remote-catalogue case gets its own wording, read from
+// Result.ZeroRemoteCatalogue rather than from the detail prose. It is
+// qualitatively different from a low overlap percentage -- the id belongs to
+// someone with no releases at all -- and it is the shape the production
+// snapshot showed, so an operator scanning a queue should be able to recognize
+// it without opening the row.
+func (s *Sweep) flagMessage(res Result) string {
+	if res.ZeroRemoteCatalogue() {
+		return fmt.Sprintf(
+			"The stored MusicBrainz ID resolves to %q, which lists no releases at all, while %d album(s) are on disk. The ID most likely belongs to a different artist of the same name. Nothing has been changed.",
+			res.Validation.ResolvedName, res.LocalAlbumCount)
+	}
+	// The reason is a MACHINE identifier (catalogue_mismatch, name_mismatch,
+	// ...) frozen in a SQL CHECK, so it must never reach an operator: it puts
+	// an internal code with underscores in the Action Queue. Detail already
+	// states the same fact in English, with the measured numbers, so the code
+	// added nothing but noise. Read Detail; never re-introduce Reason here.
+	return fmt.Sprintf(
+		"The stored MusicBrainz ID failed re-validation: %s. Nothing has been changed.",
+		res.Validation.Detail)
+}
+
 // logSummary emits the one line per pass an operator reads.
 //
 // At INFO including when nothing was found, because "the sweep ran and found
@@ -519,7 +673,7 @@ func isCanceled(err error) bool {
 // population AND processed it, never merely the shape of the slice: an
 // abandoned tail must not be reported as a completed cycle.
 func (s *Sweep) logSummary(c Counters, populationSize, sliceSize int, exhausted bool, elapsed time.Duration) {
-	attrs := make([]any, 0, 12+len(catalogueBucketNames))
+	attrs := make([]any, 0, 13+len(catalogueBucketNames))
 	attrs = append(attrs,
 		slog.Int("population", populationSize),
 		slog.Int("attempted", sliceSize),
@@ -528,6 +682,7 @@ func (s *Sweep) logSummary(c Counters, populationSize, sliceSize int, exhausted 
 		slog.Int("failed", c.Failed),
 		slog.Int("not_checkable", c.NotCheckable),
 		slog.Int("skipped_transient", c.SkippedTransient),
+		slog.Int("skipped_flag", c.SkippedFlag),
 		slog.Int("skipped_no_mbid", c.SkippedNoMBID),
 		slog.Int("errored", c.Errored),
 		slog.Int("zero_remote_catalogue", c.ZeroRemoteCatalogue),
