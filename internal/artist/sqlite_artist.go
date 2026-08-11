@@ -435,8 +435,9 @@ func (r *sqliteArtistRepo) ListMBIDPaths(ctx context.Context) ([]MBIDPath, error
 //
 // # WHY THIS IS A SEPARATE QUERY AND NOT A CHANGE TO ListMBIDPaths
 //
-// ListMBIDPaths' `a.path != ”` filter is deliberate and load-bearing for its
-// own caller: Lidarr path-mapping inference compares two mount prefixes, so a
+// ListMBIDPaths excludes any artist whose path column is empty, and that
+// filter is deliberate and load-bearing for its own caller: Lidarr
+// path-mapping inference compares two mount prefixes, so a
 // pathless artist contributes nothing there and would only add a blank key.
 // Relaxing it would change that feature's semantics to fix a different one.
 //
@@ -482,7 +483,7 @@ func (r *sqliteArtistRepo) queryMBIDPaths(ctx context.Context, query, what strin
 	for rows.Next() {
 		var mp MBIDPath
 		if err := rows.Scan(&mp.ArtistID, &mp.MBID, &mp.Path); err != nil {
-			return nil, fmt.Errorf("scanning artist MBID path: %w", err)
+			return nil, fmt.Errorf("scanning row while %s: %w", what, err)
 		}
 		result = append(result, mp)
 	}

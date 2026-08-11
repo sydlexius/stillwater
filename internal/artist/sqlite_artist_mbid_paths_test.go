@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 )
 
@@ -103,6 +104,12 @@ func TestSqliteListMBIDPaths_QueryError(t *testing.T) {
 	_, err := repo.ListMBIDPaths(context.Background())
 	if err == nil {
 		t.Fatal("expected an error from ListMBIDPaths on a closed DB")
+	}
+	// queryMBIDPaths is shared with ListMBIDPopulation, so an error must name
+	// the caller that actually failed. A hard-coded message would send whoever
+	// reads the log to the wrong query.
+	if !strings.Contains(err.Error(), "listing artist MBID paths") {
+		t.Errorf("error = %q, want it to name the ListMBIDPaths caller", err)
 	}
 }
 
@@ -242,8 +249,14 @@ func TestSqliteListMBIDPopulation_QueryError(t *testing.T) {
 		t.Fatalf("close db: %v", err)
 	}
 
-	if _, err := repo.ListMBIDPopulation(context.Background()); err == nil {
+	_, err := repo.ListMBIDPopulation(context.Background())
+	if err == nil {
 		t.Fatal("expected an error from ListMBIDPopulation on a closed DB")
+	}
+	// The other half of the shared-helper guard: this caller's error must name
+	// THIS caller, not the ListMBIDPaths one it borrows the helper from.
+	if !strings.Contains(err.Error(), "listing artist MBID population") {
+		t.Errorf("error = %q, want it to name the ListMBIDPopulation caller", err)
 	}
 }
 
@@ -260,5 +273,30 @@ func TestServiceListMBIDPopulation(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("service result = %+v, want 2 rows", got)
+	}
+
+	// A count alone would pass on two entirely wrong records. The identity of
+	// each row is the contract: m-2 is the pathless artist this query exists to
+	// keep, and it must arrive with its id and MBID intact rather than merely
+	// being counted. Keyed by id because the query guarantees no order.
+	byID := make(map[string]MBIDPath, len(got))
+	for _, mp := range got {
+		if _, dup := byID[mp.ArtistID]; dup {
+			t.Fatalf("artist %q appears more than once in %+v", mp.ArtistID, got)
+		}
+		byID[mp.ArtistID] = mp
+	}
+
+	for _, want := range []MBIDPath{
+		{ArtistID: "m-1", MBID: "mbid-alpha", Path: "/music/Alpha"},
+		{ArtistID: "m-2", MBID: "mbid-bravo", Path: ""},
+	} {
+		found, ok := byID[want.ArtistID]
+		if !ok {
+			t.Fatalf("artist %q missing from the population: %+v", want.ArtistID, got)
+		}
+		if found != want {
+			t.Errorf("population row for %q = %+v, want %+v", want.ArtistID, found, want)
+		}
 	}
 }
