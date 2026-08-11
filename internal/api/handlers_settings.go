@@ -39,6 +39,18 @@ var settingValidators = map[string]validator{
 	"scanner.exclusions":         validateCSV,
 	"scanner.mtime_fast_path":    validateBool("scanner.mtime_fast_path"),
 	"backup.interval_hours":      validatePositiveInt("backup.interval_hours"),
+	// MBID re-validation sweep (#2810, wired in #3003). These are read at boot
+	// by getDBIntSetting, which parses with fmt.Sscanf("%d") -- a parse that
+	// stops at the first non-digit and reports success. Without an entry here
+	// "0.5" is stored raw, read back as a valid, in-range 0, and honored: a
+	// name-similarity threshold of 0 matches every name, so the check reports
+	// success while verifying nothing. Validating at the write boundary is what
+	// keeps that value from ever reaching the reader (#3004).
+	"mbid_revalidate.enabled":                   validateBool("mbid_revalidate.enabled"),
+	"mbid_revalidate.interval_hours":            validatePositiveInt("mbid_revalidate.interval_hours"),
+	"mbid_revalidate.max_per_pass":              validatePositiveInt("mbid_revalidate.max_per_pass"),
+	"mbid_revalidate.name_similarity_threshold": validateIntRange("mbid_revalidate.name_similarity_threshold", 0, 100),
+	"mbid_revalidate.catalogue_match_percent":   validateIntRange("mbid_revalidate.catalogue_match_percent", 0, 100),
 }
 
 // validateCSV normalises a comma-separated value the same way config.setCSV
@@ -236,6 +248,20 @@ func (r *Router) handleGetSettings(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, settings)
 }
 
+// HasSettingValidator reports whether key is validated by PUT /api/v1/settings.
+//
+// Exported for the benefit of tests in other packages that read settings keys
+// at boot and need to assert those keys are validated at the write boundary.
+// settingValidators is unexported and should stay that way -- the map itself is
+// not a public surface -- but "is this key validated?" is a property another
+// package legitimately needs to check, and the alternative is a second
+// hand-maintained copy of the key list that drifts from this one. That drift is
+// exactly the #3004 defect: main.go read five keys that the map did not carry.
+func HasSettingValidator(key string) bool {
+	_, ok := settingValidators[key]
+	return ok
+}
+
 // handleUpdateSettings upserts one or more application settings.
 // PUT /api/v1/settings
 //
@@ -277,6 +303,13 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 	for k, v := range body {
 		fn, ok := settingValidators[k]
 		if !ok {
+			// Deliberately fail-open: many legitimate settings are free-form
+			// pass-through and have no validator. Rejecting unknown keys
+			// outright is the stricter fix, but it breaks any caller writing
+			// an unlisted key, so it needs its own assessment rather than
+			// riding along here (#3004). Log at Debug so the gap is at least
+			// observable without adding a line per key to every save.
+			r.logger.Debug("setting stored without validation", "key", k)
 			continue
 		}
 		canonical, err := fn(v)

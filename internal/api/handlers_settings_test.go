@@ -671,3 +671,198 @@ func TestHandleUpdateSettings_BaselineChoice(t *testing.T) {
 		}
 	})
 }
+
+// TestHandleUpdateSettings_MBIDRevalidate_Invalid covers the #3004 defect: the
+// five mbid_revalidate.* keys shipped in #3003 with no settingValidators entry,
+// so PUT stored any string with a 200 OK. The boot reader parses with
+// fmt.Sscanf("%d"), which stops at the first non-digit and reports success, so
+// a stored "0.5" was read back as a valid, in-range 0 -- and a name-similarity
+// threshold of 0 matches every name, making the check pass everything.
+//
+// The fractional cases are the load-bearing ones. "abc" merely falls back to
+// the default, which is benign; "0.5" and "25.5" survive the parse as real
+// values, so only rejection at the write boundary keeps them out.
+func TestHandleUpdateSettings_MBIDRevalidate_Invalid(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{"enabled non-boolean", "mbid_revalidate.enabled", "sometimes"},
+		{"enabled empty", "mbid_revalidate.enabled", ""},
+		{"interval_hours non-integer", "mbid_revalidate.interval_hours", "six"},
+		{"interval_hours zero", "mbid_revalidate.interval_hours", "0"},
+		{"interval_hours negative", "mbid_revalidate.interval_hours", "-1"},
+		{"interval_hours fractional", "mbid_revalidate.interval_hours", "6.5"},
+		{"max_per_pass non-integer", "mbid_revalidate.max_per_pass", "twenty"},
+		{"max_per_pass zero", "mbid_revalidate.max_per_pass", "0"},
+		{"max_per_pass fractional", "mbid_revalidate.max_per_pass", "25.5"},
+		{"name_similarity fractional zero", "mbid_revalidate.name_similarity_threshold", "0.5"},
+		{"name_similarity fractional", "mbid_revalidate.name_similarity_threshold", "25.5"},
+		{"name_similarity scientific", "mbid_revalidate.name_similarity_threshold", "1e3"},
+		{"name_similarity negative", "mbid_revalidate.name_similarity_threshold", "-1"},
+		{"name_similarity above 100", "mbid_revalidate.name_similarity_threshold", "101"},
+		{"catalogue fractional zero", "mbid_revalidate.catalogue_match_percent", "0.5"},
+		{"catalogue negative", "mbid_revalidate.catalogue_match_percent", "-5"},
+		{"catalogue above 100", "mbid_revalidate.catalogue_match_percent", "101"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r, _ := testRouter(t)
+			payload, _ := json.Marshal(map[string]string{tt.key: tt.value})
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(string(payload)))
+			w := httptest.NewRecorder()
+			r.handleUpdateSettings(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("PUT %s=%q: status = %d, want 400; body: %s",
+					tt.key, tt.value, w.Code, w.Body.String())
+			}
+			// The error message must name the key, or an operator saving
+			// several settings at once cannot tell which one was refused.
+			if !strings.Contains(w.Body.String(), tt.key) {
+				t.Errorf("PUT %s=%q: error body %s does not name the key",
+					tt.key, tt.value, w.Body.String())
+			}
+			// A rejected value must not reach the settings table. Without
+			// this the handler could 400 and still upsert, which is the
+			// failure the 400 is supposed to prevent.
+			var rows int
+			if err := r.db.QueryRowContext(context.Background(),
+				`SELECT COUNT(*) FROM settings WHERE key = ?`, tt.key).Scan(&rows); err != nil {
+				t.Fatalf("counting rows for %s: %v", tt.key, err)
+			}
+			if rows != 0 {
+				t.Errorf("PUT %s=%q returned 400 but persisted %d row(s)", tt.key, tt.value, rows)
+			}
+		})
+	}
+}
+
+// TestHandleUpdateSettings_MBIDRevalidate_Valid asserts the accepted values
+// persist in their canonical form. The boolean cases matter beyond acceptance:
+// validateBool rewrites "1" and "TRUE" to "true", and the boot reader
+// (getDBBoolSetting) tests v == "true" || v == "1", so an un-canonicalised
+// "TRUE" would read back as DISABLED -- an operator turning the sweep on and
+// silently getting nothing.
+func TestHandleUpdateSettings_MBIDRevalidate_Valid(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		key   string
+		value string
+		want  string
+	}{
+		{"enabled true", "mbid_revalidate.enabled", "true", "true"},
+		{"enabled uppercase canonicalised", "mbid_revalidate.enabled", "TRUE", "true"},
+		{"enabled one canonicalised", "mbid_revalidate.enabled", "1", "true"},
+		{"enabled false", "mbid_revalidate.enabled", "false", "false"},
+		{"interval_hours", "mbid_revalidate.interval_hours", "6", "6"},
+		{"max_per_pass", "mbid_revalidate.max_per_pass", "200", "200"},
+		{"name_similarity lower bound", "mbid_revalidate.name_similarity_threshold", "0", "0"},
+		{"name_similarity upper bound", "mbid_revalidate.name_similarity_threshold", "100", "100"},
+		{"catalogue lower bound", "mbid_revalidate.catalogue_match_percent", "0", "0"},
+		{"catalogue upper bound", "mbid_revalidate.catalogue_match_percent", "100", "100"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r, _ := testRouter(t)
+			payload, _ := json.Marshal(map[string]string{tt.key: tt.value})
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(string(payload)))
+			w := httptest.NewRecorder()
+			r.handleUpdateSettings(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("PUT %s=%q: status = %d, want 200; body: %s",
+					tt.key, tt.value, w.Code, w.Body.String())
+			}
+			var got string
+			if err := r.db.QueryRowContext(context.Background(),
+				`SELECT value FROM settings WHERE key = ?`, tt.key).Scan(&got); err != nil {
+				t.Fatalf("reading back %s: %v", tt.key, err)
+			}
+			if got != tt.want {
+				t.Errorf("PUT %s=%q persisted %q, want %q", tt.key, tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestMBIDRevalidateKeysRegistered pins the five mbid_revalidate.* keys as
+// registered, and the pre-rename name as absent.
+//
+// SCOPE: this test knows nothing about what the boot path actually reads -- it
+// checks a hand-written list against the map. Deleting a map entry fails it;
+// ADDING a sixth key at boot with no validator does NOT, because nothing here
+// reads cmd/stillwater. That direction is covered by
+// TestMBIDRevalidateSettingKeysMatchValidators in package main, which parses
+// the boot package's source and asserts each key it finds against
+// HasSettingValidator. (An earlier version of this comment claimed the
+// added-key case was covered HERE. It was not, and a review caught it -- a
+// guard that overstates its own coverage is worse than no guard, because it
+// stops anyone looking for the real one.)
+//
+// It also pins the rename decided in #3004: mbid_revalidate.name_similarity was
+// renamed to ...name_similarity_threshold for consistency with the pre-existing
+// provider.name_similarity_threshold, which is a differently-scoped knob that
+// operators were liable to confuse with it.
+func TestMBIDRevalidateKeysRegistered(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{
+		"mbid_revalidate.enabled",
+		"mbid_revalidate.interval_hours",
+		"mbid_revalidate.max_per_pass",
+		"mbid_revalidate.name_similarity_threshold",
+		"mbid_revalidate.catalogue_match_percent",
+	} {
+		if _, ok := settingValidators[key]; !ok {
+			t.Errorf("%s is read at boot but has no settingValidators entry: "+
+				"PUT would store any string with a 200 OK (#3004)", key)
+		}
+	}
+	// The pre-rename key must NOT be registered: a lingering entry would keep
+	// the confusable name alive in the API surface after the rename.
+	if _, ok := settingValidators["mbid_revalidate.name_similarity"]; ok {
+		t.Error("mbid_revalidate.name_similarity is still registered; " +
+			"it was renamed to mbid_revalidate.name_similarity_threshold in #3004")
+	}
+}
+
+// TestHasSettingValidator covers the exported predicate other packages use to
+// assert that a settings key they read is validated at the write boundary.
+//
+// The cases are chosen so the test fails if the function is ever stubbed to a
+// constant: a `return true` passes the registered cases but fails the
+// unregistered ones, and a `return false` does the reverse. That matters more
+// than usual here, because a caller in another package cannot tell a working
+// predicate from a stubbed one -- it would simply report every key as valid
+// and go quietly blind, which is the failure mode this whole issue is about.
+func TestHasSettingValidator(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		key  string
+		want bool
+	}{
+		// Registered: one of each validator shape, so the test keeps meaning
+		// if a single entry is re-typed.
+		{"mbid_revalidate.enabled", true},
+		{"mbid_revalidate.name_similarity_threshold", true},
+		{"provider.name_similarity_threshold", true},
+		{"server.base_path", true},
+		// Not registered: real keys the boot path reads with no validator
+		// today (tracked in #3005), plus the pre-rename name and a key that
+		// cannot exist. If any of the first two gain a validator, flip the
+		// expectation -- do not delete the case.
+		{"logging.level", false},
+		{"db_maintenance.enabled", false},
+		{"mbid_revalidate.name_similarity", false},
+		{"definitely.not.a.real.setting.key", false},
+	} {
+		if got := HasSettingValidator(c.key); got != c.want {
+			t.Errorf("HasSettingValidator(%q) = %v, want %v", c.key, got, c.want)
+		}
+	}
+}

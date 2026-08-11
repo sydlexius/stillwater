@@ -1189,9 +1189,8 @@ func (a *Application) startLockSyncScheduler(ctx context.Context, db *sql.DB, lo
 // default-ON sweep would raise Action Queue findings attributed to a rule
 // the operator sees as off in Settings. It would also start roughly two
 // outbound MusicBrainz requests per artist, every pass, on every existing
-// install the moment it upgrades, with no UI toggle and no settings
-// validator for the off switch yet. Default-off keeps the producer honest
-// about the surface and leaves opting in to the operator.
+// install the moment it upgrades, with no UI toggle. Default-off keeps the
+// producer honest about the surface and leaves opting in to the operator.
 func (a *Application) startMBIDRevalidateSweep(ctx context.Context, db *sql.DB, logger *slog.Logger) {
 	enabled := getDBBoolSetting(ctx, db, "mbid_revalidate.enabled", false)
 	if !enabled {
@@ -1232,7 +1231,7 @@ func (a *Application) startMBIDRevalidateSweep(ctx context.Context, db *sql.DB, 
 	// WithCatalogueThreshold already ignore any value outside 0-100 and fall
 	// back to their package default, so getDBIntSetting's -1 sentinel for "no
 	// row saved" resolves itself without a second layer of defaulting here.
-	nameThreshold := getDBIntSetting(ctx, db, "mbid_revalidate.name_similarity", -1)
+	nameThreshold := getDBIntSetting(ctx, db, "mbid_revalidate.name_similarity_threshold", -1)
 	catalogueThreshold := getDBIntSetting(ctx, db, "mbid_revalidate.catalogue_match_percent", -1)
 
 	resolver := mbidcheck.New(mbClient, artist.NewFilesystemAlbumSource(),
@@ -2342,8 +2341,9 @@ func resolveRelinkReconcileInterval(minutes int) (time.Duration, bool) {
 // overflow (it stays an int, never multiplied into a duration), so it is
 // passed through unclamped here; Config.maxPerPass() already turns any
 // non-positive value into DefaultMaxPerPass. A large positive maxPerPass
-// (e.g. the int max, reachable because this setting has no validator yet --
-// #3004) is instead bounded where the arithmetic actually happens:
+// (e.g. the int max, still reachable because #3004's validator sets a lower
+// bound only -- validatePositiveInt has no ceiling) is instead bounded where
+// the arithmetic actually happens:
 // Sweep.selectSlice clamps against the remaining population rather than
 // computing start+limit directly, so it is safe for every caller including
 // this one regardless of what value flows through here.

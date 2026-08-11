@@ -32,9 +32,14 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/api"
 )
 
 // mainGoFile locates cmd/stillwater/main.go relative to this test file, so
@@ -173,5 +178,93 @@ func TestMBIDRevalidateSweepSetsFlaggerBeforeStart(t *testing.T) {
 		t.Fatalf("SetFlagger (line %d) is ordered AFTER `go ...Start(ctx)` (line %d) -- "+
 			"Start's goroutine can begin reading the flagger before SetFlagger has wired it, "+
 			"the exact race SetFlagger's own doc comment warns against", setLine, goLine)
+	}
+}
+
+// TestMBIDRevalidateSettingKeysMatchValidators asserts that every
+// mbid_revalidate.* settings key this package reads is validated by
+// PUT /api/v1/settings.
+//
+// This is the #3004 defect class as a mechanical guard. The five
+// mbid_revalidate.* keys shipped in #3003 were read here and registered in
+// api.settingValidators under no name at all, so PUT stored any string with a
+// 200 OK and getDBIntSetting -- whose fmt.Sscanf("%d") stops at the first
+// non-digit and reports success -- read the garbage back as a plausible
+// number. A stored "0.5" became a real, in-range 0, and a name-similarity
+// threshold of 0 matches every name.
+//
+// The assertion runs against api.HasSettingValidator, the live map, rather
+// than against a second hand-written list of the same five keys. An earlier
+// version of this test pinned a local `want` set and claimed a matching test
+// in internal/api covered the other direction; it did not -- that test never
+// read this file, so a SIXTH key added here and added to `want` passed both.
+// Reading the real map means a new key cannot be waved through by editing
+// this test's own expectations.
+//
+// SCOPE, and what this does not catch: it parses the .go files in this
+// package directory and matches STRING LITERALS carrying the
+// "mbid_revalidate." prefix. A key assembled at runtime from fragments
+// (prefix + "suffix") is invisible to it, as is one read from a package this
+// test does not parse. Both are deliberate limits of a source-level check --
+// noted here rather than left for the next reader to discover, because an
+// overstated guard is worse than an honest one.
+func TestMBIDRevalidateSettingKeysMatchValidators(t *testing.T) {
+	t.Parallel()
+
+	// Parse every .go file in this package directory, not just main.go: a key
+	// moved to a neighboring file must not escape the check.
+	dir := filepath.Dir(mainGoFile(t))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading package dir %s: %v", dir, err)
+	}
+
+	found := map[string]string{} // key -> the file it was found in
+	fset := token.NewFileSet()
+	parsed := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", name, err)
+		}
+		parsed++
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			v, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				return true
+			}
+			if strings.HasPrefix(v, "mbid_revalidate.") {
+				found[v] = name
+			}
+			return true
+		})
+	}
+
+	// A parse that silently matched nothing would make this test vacuous --
+	// it would pass just as happily if the whole feature were deleted or the
+	// directory walk broke. Assert the preconditions before the real check.
+	if parsed == 0 {
+		t.Fatalf("parsed no non-test .go files in %s; the directory walk is broken", dir)
+	}
+	if len(found) == 0 {
+		t.Fatalf("found no mbid_revalidate.* keys across %d files in %s; "+
+			"either the sweep's settings reads were removed or this scan is broken", parsed, dir)
+	}
+
+	for key, file := range found {
+		if !api.HasSettingValidator(key) {
+			t.Errorf("%s reads settings key %q, which has no settingValidators entry "+
+				"in internal/api: PUT /api/v1/settings would store any string for it "+
+				"with a 200 OK, and the boot reader would parse the garbage into a "+
+				"plausible number (#3004)", file, key)
+		}
 	}
 }
