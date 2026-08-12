@@ -2,6 +2,8 @@ package image
 
 import (
 	"path/filepath"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -178,5 +180,155 @@ func TestDeleteIntent_HasNoSlotComponent(t *testing.T) {
 	// renumber has since moved. It gets a positive answer anyway.
 	if !DeleteIntentAfter(dir, "fanart", snapAt) {
 		t.Fatal("a fanart delete was not visible type-wide; a slot-scoped key would let the repair resurrect a renumbered backdrop")
+	}
+}
+
+// TestDeleteIntent_ConcurrentMarkAndQuery is the race-detector test for the
+// package-level map, and the one that pins MarkDeleteIntent's CompareAndDelete.
+//
+// WHY IT IS NEEDED. deleteIntent is shared mutable state with two distinct
+// classes of writer and reader in production: API delete handlers call
+// MarkDeleteIntent while publish goroutines call DeleteIntentAfter, and nothing
+// serializes them. Every other test in this file is single-goroutine, so the
+// race detector never sees this file's concurrency at all and the repo's own
+// concurrency guideline is unmet.
+//
+// WHAT IT ACTUALLY EXERCISES, which is the part that took thought. The sweep in
+// MarkDeleteIntent only touches entries older than DeleteIntentRetention, so a
+// test whose keys are all fresh walks the Range and prunes NOTHING -- it would
+// run clean against any sweep, including a deleted one, and pin nothing. So the
+// fixture PLANTS A STALE MARKER ON EVERY KEY THE WRITERS USE before the
+// goroutines start. Each writer then overwrites its own key with a fresh time
+// while other writers' sweeps are walking that same key and finding the stale
+// value they read a moment ago.
+//
+// That is exactly the interleaving CompareAndDelete exists for:
+//
+//	Sweeper G1 Ranges and reads (k, stale).
+//	Writer G2 Stores a FRESH time at k and, being the delete handler, now
+//	  depends on that marker being visible to an in-flight push.
+//	G1 removes k.
+//
+// With a bare Delete, G1's removal takes G2's fresh marker with it, the push
+// consults a key that is no longer there, and the operator's delete is
+// resurrected -- #2712 reopened, intermittently and only under load.
+// CompareAndDelete makes G1's removal conditional on the value it actually
+// read, so a fresher Store simply wins.
+//
+// The assertion is therefore each writer re-reading ITS OWN key immediately
+// after writing it. Nothing else in the map may make that read fail: the sweep
+// is the only thing that removes entries, and this key's value is fresh.
+func TestDeleteIntent_ConcurrentMarkAndQuery(t *testing.T) {
+	const (
+		writers  = 8
+		readers  = 4
+		rounds   = 200
+		imgType  = "fanart"
+		staleAge = DeleteIntentRetention + time.Minute
+	)
+
+	base := t.TempDir()
+	dirs := make([]string, writers)
+	for i := range dirs {
+		dirs[i] = filepath.Join(base, "artist"+strconv.Itoa(i))
+	}
+
+	// Plant a stale marker on every key, so the sweep has real pruning work to
+	// do on exactly the keys the writers are racing to refresh.
+	stale := time.Now().Add(-staleAge)
+	for _, dir := range dirs {
+		markAt(dir, imgType, stale)
+	}
+	// PRECONDITION: without live stale entries the Range below never enters its
+	// pruning branch and this test degenerates into a plain concurrency smoke
+	// test that pins nothing about CompareAndDelete.
+	for _, dir := range dirs {
+		v, ok := deleteIntent.Load(deleteIntentKey(dir, imgType))
+		if !ok {
+			t.Fatalf("precondition failed: no planted marker for %s", dir)
+		}
+		at, ok := v.(time.Time)
+		if !ok || !at.Before(time.Now().Add(-DeleteIntentRetention)) {
+			t.Fatalf("precondition failed: the planted marker for %s is not older than the retention "+
+				"window, so no sweep will ever try to prune it", dir)
+		}
+	}
+
+	var wg sync.WaitGroup
+	// vanished collects keys whose fresh marker disappeared. Collected rather
+	// than t.Fatal'd from the goroutine, since Fatal from a non-test goroutine
+	// is undefined.
+	var mu sync.Mutex
+	var vanished []string
+
+	for w := range writers {
+		wg.Add(1)
+		go func(dir string) {
+			defer wg.Done()
+			for range rounds {
+				// RE-PLANT THE STALE VALUE EVERY ROUND, and this is what makes
+				// the test a reliable detector rather than an occasional one.
+				// After the first MarkDeleteIntent a key holds a FRESH time, and
+				// every later sweep skips it as not-yet-expired -- so with a
+				// one-time plant the vulnerable interleaving is only reachable
+				// during the opening rounds, and a bare-Delete sweep survives
+				// the run more often than not. Re-planting keeps this key
+				// eligible for pruning at the instant its owner overwrites it,
+				// so the "sweeper read stale, writer stored fresh" window is
+				// open on every iteration of every writer.
+				markAt(dir, imgType, stale)
+
+				before := time.Now()
+				MarkDeleteIntent(dir, imgType)
+				if !DeleteIntentAfter(dir, imgType, before) {
+					mu.Lock()
+					vanished = append(vanished, dir)
+					mu.Unlock()
+					return
+				}
+			}
+		}(dirs[w])
+	}
+
+	// Readers add no assertion of their own -- their job is to put concurrent
+	// Loads against the Stores and CompareAndDeletes for the race detector.
+	for r := range readers {
+		wg.Add(1)
+		go func(dir string) {
+			defer wg.Done()
+			for range rounds {
+				_ = DeleteIntentAfter(dir, imgType, time.Time{})
+			}
+		}(dirs[r%writers])
+	}
+
+	wg.Wait()
+
+	if len(vanished) > 0 {
+		t.Fatalf("a marker written by MarkDeleteIntent was gone by the time its own caller read it back, "+
+			"for %d of %d writers (first: %s). A concurrent sweep removed a value it had not read: the "+
+			"prune must be a CompareAndDelete against the exact stale value, never a bare Delete, or a "+
+			"delete handler's intent can be swept away between its Store and an in-flight push's Load",
+			len(vanished), writers, vanished[0])
+	}
+
+	// The stale plants must actually be GONE, which proves the sweep ran and
+	// pruned rather than merely being walked. A CompareAndDelete that never
+	// matched would leave them all in place.
+	for _, dir := range dirs {
+		v, ok := deleteIntent.Load(deleteIntentKey(dir, imgType))
+		if !ok {
+			t.Errorf("%s has no marker at all after the run; the last write for it went missing", dir)
+			continue
+		}
+		at, ok := v.(time.Time)
+		if !ok {
+			t.Errorf("%s holds a %T rather than a time.Time", dir, v)
+			continue
+		}
+		if at.Equal(stale) {
+			t.Errorf("%s still holds the planted stale marker, so no sweep ever pruned it and this test "+
+				"never exercised the CompareAndDelete branch", dir)
+		}
 	}
 }

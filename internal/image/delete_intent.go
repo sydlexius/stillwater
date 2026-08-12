@@ -102,8 +102,15 @@ var deleteIntent sync.Map // map[string]time.Time
 // dir is cleaned so that callers holding equivalent spellings of one directory
 // ("/lib/artist" and "/lib/artist/") agree on the key. The writer is an API
 // handler using Router.imageDir and the reader is the publisher using
-// filepath.Dir of a discovered file path, so the two arrive by different routes
-// and must be normalized to meet.
+// Publisher.ImageDir, so the two arrive by different routes and must be
+// normalized to meet.
+//
+// The reader deliberately passes THE RESOLVED IMAGE DIRECTORY, never
+// filepath.Dir of the artwork file it discovered. An image-naming pattern can
+// contain a path separator when it reached the database through the settings
+// import (which does not run platform.ValidateImageNaming), so a discovered
+// file may sit in a subdirectory and its filepath.Dir would be a key the writer
+// never writes. See publish.pushScope for the worked case.
 func deleteIntentKey(dir, imageType string) string {
 	return filepath.Clean(dir) + "\x00" + imageType
 }
@@ -144,8 +151,22 @@ func MarkDeleteIntent(dir, imageType string) {
 // recorded at or after since -- that is, whether a delete landed within the
 // caller's own window rather than at some earlier, unrelated time.
 //
-// since is the instant the caller captured the state it is about to act on (for
-// the post-push repair, the wall-clock time the pre-push bytes were snapshotted).
+// since is the caller's BASELINE: the instant from which it wants to know
+// whether an operator acted. For the post-push repair that is THE INSTANT THE
+// PUSH BEGAN, stamped at the sync function's entry -- deliberately NOT the
+// later instant at which it read the pre-push bytes.
+//
+// The distinction is load-bearing and the earlier baseline is the safe one. A
+// push is already in flight throughout its prologue (platform lookups, a
+// naming-config database read, a discovery stat loop or directory walk, the
+// artwork read), so a delete landing there IS concurrent with the push. Passing
+// the byte-capture time instead makes every such delete look older than the
+// baseline, so this function answers false and the repair resurrects artwork
+// the operator deliberately threw away. Erring early can only make the answer
+// MORE willing to call a delete concurrent, and over-suppressing a repair
+// leaves a file the operator can re-add, while a resurrected delete is not
+// automatically recoverable at all.
+//
 // The comparison is inclusive: a marker whose timestamp equals since is treated
 // as concurrent, because a delete recorded in the same clock tick as the
 // snapshot cannot be ordered against it and the safe reading of an ambiguous

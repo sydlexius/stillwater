@@ -122,8 +122,27 @@ func TestSyncAllFanart_OperatorDeletesDuringPrologue_NotRestored(t *testing.T) {
 	p, a, dir := clobberHarness(t, "fanart1.jpg", "delete", &calls)
 
 	victim := filepath.Join(dir, "fanart1.jpg")
-	writeFile(t, filepath.Join(dir, "fanart.jpg"), []byte("OPERATOR-BACKDROP-0"))
+	// The SURVIVOR. This push snapshotted it too and passes it through the same
+	// reassertLocalImage call, so asserting only the victim is vacuous in two
+	// directions: a gate that stood down for the WRONG file, and a repair that
+	// rewrote a healthy backdrop with its own stale snapshot bytes, both leave
+	// the victim deleted and pass.
+	survivor := filepath.Join(dir, "fanart.jpg")
+	survivorBytes := []byte("OPERATOR-BACKDROP-0")
+	writeFile(t, survivor, survivorBytes)
 	writeFile(t, victim, []byte("OPERATOR-BACKDROP-1"))
+
+	// Identity, not just content. The survivor's snapshot bytes EQUAL what is on
+	// disk, so a spurious repair would rewrite it with the very same bytes and a
+	// content-only assertion could never see it. WriteFileAtomic writes a temp
+	// file and renames it onto the target, so any repair at all replaces the
+	// inode -- os.SameFile is what makes "the repair left this file alone"
+	// checkable rather than merely plausible.
+	survivorBefore, statErr := os.Stat(survivor)
+	if statErr != nil {
+		t.Fatalf("stat'ing the healthy backdrop before the push: %v", statErr)
+	}
+
 	marker := installPrologueMarker(t, p, dir, "fanart")
 
 	p.SyncAllFanartToPlatforms(context.Background(), a)
@@ -140,7 +159,24 @@ func TestSyncAllFanart_OperatorDeletesDuringPrologue_NotRestored(t *testing.T) {
 	}
 	if _, err := os.Stat(victim); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the repair resurrected a backdrop the operator deleted during the push prologue "+
-			"(stat err = %v); the fanart snapAt is stamped after the directory walk, so a delete landing "+
-			"in the prologue is discarded as old and unrelated", err)
+			"(stat err = %v); the fanart push stamp is taken after the directory walk, so a delete "+
+			"landing in the prologue is discarded as old and unrelated", err)
+	}
+	// The survivor is untouched, byte for byte. The uploader never destroyed it,
+	// so the correct outcome for it is that reassertLocalImage's first branch
+	// (bytes equal, return) fires and nothing is written at all.
+	if got := mustRead(t, survivor); string(got) != string(survivorBytes) {
+		t.Errorf("the healthy backdrop reads %q, want the operator's untouched %q; the push also passed "+
+			"this file through the repair, so either the delete gate stood down for the wrong file or the "+
+			"repair rewrote a file no peer had touched", got, survivorBytes)
+	}
+	survivorAfter, statErr := os.Stat(survivor)
+	if statErr != nil {
+		t.Fatalf("the healthy backdrop is not stat-able after the push: %v", statErr)
+	}
+	if !os.SameFile(survivorBefore, survivorAfter) {
+		t.Error("the healthy backdrop was REPLACED during the push (different inode), even though its " +
+			"bytes still match: the repair rewrote a file no peer had touched, and the matching content " +
+			"only hides it because the snapshot bytes happened to equal what was on disk")
 	}
 }

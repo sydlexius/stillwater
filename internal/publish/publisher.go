@@ -779,8 +779,8 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	}
 	// #2712: the wall-clock instant THIS PUSH BEGAN. Stamped as the first
 	// statement of the function, before any I/O or database access, because the
-	// repair's delete gate treats a marker older than snapAt as an unrelated
-	// earlier delete and repairs anyway. Every step between function entry and
+	// repair's delete gate treats a marker older than this instant as an
+	// unrelated earlier delete and repairs anyway. Every step between entry and
 	// the byte read -- GetPlatformIDs, ImageDir, getActiveNamingConfig (a DB
 	// read), FindExistingImage (a stat loop), ReadImageFileBounded (the whole
 	// artwork file, off a network mount) -- is time during which the push is
@@ -793,11 +793,14 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	// the operator can delete during that step. Entry is the only instant that
 	// is provably before everything this push does.
 	//
-	// Erring early is the safe direction and costs nothing: an earlier snapAt
+	// Erring early is the safe direction and costs nothing: an earlier stamp
 	// can only make the gate MORE willing to treat a delete as concurrent, and
 	// suppressing a repair merely leaves a file the operator can re-add, while
 	// resurrecting a deliberate delete is not automatically recoverable at all.
-	snapAt := time.Now()
+	//
+	// push.dir is filled in below, once ImageDir has resolved it. It is threaded
+	// rather than re-derived inside the repair; see pushScope.
+	push := pushScope{at: time.Now()}
 
 	warnings := make([]string, 0)
 
@@ -817,6 +820,9 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		warnings = append(warnings, "platform sync skipped: artist has no image directory configured")
 		return warnings
 	}
+	// The SAME resolved directory the delete handlers key their marker on. The
+	// repair must not re-derive it from the discovered file path; see pushScope.
+	push.dir = dir
 	patterns := p.getActiveNamingConfig(ctx, imageType)
 	filePath, found := img.FindExistingImage(ctx, dir, patterns)
 	if !found {
@@ -938,7 +944,7 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	// delete (the original #2533 concern), and an existence check would call that
 	// clean.
 	if len(uploadedTo) > 0 {
-		p.reassertLocalImage(ctx, a, imageType, filePath, data, snapMod, snapAt, uploadedTo)
+		p.reassertLocalImage(ctx, a, imageType, filePath, data, snapMod, push, uploadedTo)
 	}
 	return warnings
 }
@@ -1083,6 +1089,46 @@ func hasReadableFanart(snapshot []fanartSnapshot) bool {
 	return false
 }
 
+// pushScope carries the facts that belong to a whole push rather than to any
+// one file it touches. Both fields feed the delete gate in reassertLocalImage,
+// and both were positional time.Time / string parameters before.
+//
+// IT IS A STRUCT TO MAKE A TRANSPOSITION IMPOSSIBLE, not for tidiness. The old
+// signature took snapMod and snapAt adjacently, two time.Time values with
+// opposite meanings: snapMod comes from the FILESYSTEM and describes the FILE
+// (its mtime, log-only), while at comes from THIS PROCESS and describes THE
+// PUSH. The compiler cannot catch a swap between two parameters of the same
+// type, and the resulting failure is silent rather than loud -- an mtime is
+// typically far in the past, so a transposed at would make the gate read almost
+// every marker as concurrent and quietly stop repairing peer clobbers, which is
+// #2698 reopened with no symptom anyone would notice. snapMod stays positional
+// precisely so it can no longer sit next to a same-typed value it can be
+// confused with.
+//
+// dir IS THE RESOLVED IMAGE DIRECTORY (Publisher.ImageDir), threaded from the
+// caller rather than re-derived here as filepath.Dir(filePath). Those two are
+// not the same string in general: an image-naming pattern may contain a path
+// separator ("sub/folder.jpg"), because ValidateImageNaming rejects separators
+// only on the platform-profile create/update handlers and the SETTINGS IMPORT
+// path (settingsio -> platform.ImportCreateTx) persists ImageNaming with no
+// validation at all. FindExistingImageStrict then joins dir with the pattern
+// and returns "<dir>/sub/folder.jpg", so filepath.Dir of it is "<dir>/sub"
+// while the delete handler marked "<dir>". The keys never meet, the gate never
+// fires, and the operator's delete IS resurrected -- silently, and only on the
+// configuration that bypassed validation. There is deliberately NO fallback to
+// filepath.Dir: a silent fall back to the wrong key is the whole defect.
+type pushScope struct {
+	// dir is the resolved image directory this push is operating in -- the same
+	// value the delete handlers key their marker on.
+	dir string
+	// at is the wall-clock instant THE PUSH BEGAN, stamped at function entry by
+	// both sync entry points. It is the baseline the delete gate compares a
+	// marker against, and it is NOT the instant the bytes were read: the
+	// prologue between entry and the byte read is time during which the push is
+	// already in flight, so a delete landing there is genuinely concurrent.
+	at time.Time
+}
+
 // reassertLocalImage restores the operator's local image when a platform peer
 // removed or rewrote it during the push, and reports when that happened.
 //
@@ -1123,9 +1169,21 @@ func hasReadableFanart(snapshot []fanartSnapshot) bool {
 // record an explicit, short-lived intent marker (img.MarkDeleteIntent) keyed by
 // (image directory, image type), written IMMEDIATELY BEFORE they touch the
 // filesystem so an already-in-flight push can observe it. The ENOENT branch
-// below consults it against snapAt -- the wall-clock instant these bytes were
-// captured -- and stands down when a delete was recorded at or after that
-// instant. This is the signal neither withdrawn guard had: it is written by THE
+// below consults it against push.at -- the wall-clock instant THE PUSH BEGAN,
+// stamped at the sync function's entry rather than when the bytes were read --
+// and stands down when a delete was recorded at or after that instant.
+//
+// PUSH START, NOT BYTE-CAPTURE TIME, and do not "correct" it back. The whole
+// prologue between entry and the byte read (the platform-ID lookup, ImageDir,
+// the naming-config database read, the discovery stat loop or directory walk,
+// and the artwork read itself) is time during which this push is already in
+// flight, so an operator delete landing there is genuinely concurrent with it.
+// Comparing against the byte-capture instant instead discards every one of
+// those deletes as old and unrelated, which is #2712 unfixed for the early --
+// and on a network mount the slowest -- part of every push. The regression
+// tests in delete_intent_prologue_test.go fail against that ordering.
+//
+// This is the signal neither withdrawn guard had: it is written by THE
 // ACTOR WHOSE INTENT IT RECORDS, rather than inferred from disk state that both
 // the operator and the peer mutate. So:
 //
@@ -1167,16 +1225,13 @@ func hasReadableFanart(snapshot []fanartSnapshot) bool {
 // library are both worse, and both are prevented.
 //
 // snapMod is the file's mtime when its bytes were captured. Retained for the
-// restore log so an operator can see how stale the restored copy was.
+// restore log so an operator can see how stale the restored copy was. It
+// describes the FILE and nothing branches on it.
 //
-// snapAt is the WALL-CLOCK instant those bytes were captured, and it is a
-// different thing from snapMod: snapMod comes from the filesystem and describes
-// the FILE, snapAt comes from this process and describes THE PUSH. Only the
-// latter can be compared against a delete marker, because the question the gate
-// asks is "did the operator delete after I looked?", not "how old is this file?".
-// The fanart caller passes ONE snapAt for every entry in its set -- the whole
-// snapshot is one observation of the directory, and per-file times would make
-// the gate depend on read order within it.
+// push carries the two facts that belong to THE PUSH rather than to any one
+// file -- the resolved image directory and the instant the push began -- and
+// both are load-bearing for the delete gate. See pushScope for why they are a
+// struct rather than two more positional parameters.
 //
 // THE VERIFY READ IS DETACHED FROM ctx AND GIVEN ITS OWN DEADLINE (#2934), and
 // that combination is load-bearing in BOTH directions.
@@ -1194,7 +1249,7 @@ func hasReadableFanart(snapshot []fanartSnapshot) bool {
 // bare os.ReadFile on a dead mount pins this goroutine forever, and it runs in
 // a defer inside a request handler. Its own short deadline is what makes the
 // repair give up on its own terms rather than never.
-func (p *Publisher) reassertLocalImage(ctx context.Context, a *artist.Artist, imageType, filePath string, data []byte, snapMod time.Time, snapAt time.Time, uploadedTo []string) {
+func (p *Publisher) reassertLocalImage(ctx context.Context, a *artist.Artist, imageType, filePath string, data []byte, snapMod time.Time, push pushScope, uploadedTo []string) {
 	verifyCtx, cancelVerify := context.WithTimeout(context.WithoutCancel(ctx), reassertVerifyTimeout)
 	defer cancelVerify()
 
@@ -1228,11 +1283,13 @@ func (p *Publisher) reassertLocalImage(ctx context.Context, a *artist.Artist, im
 		// nothing about a REWRITE, and gating that branch would disable the
 		// #2533 crop-clobber repair, which is the case this whole mechanism
 		// exists to serve.
-		dir := filepath.Dir(filePath)
-		if img.DeleteIntentAfter(dir, imageType, snapAt) {
+		//
+		// THE KEY IS push.dir, NOT filepath.Dir(filePath). See pushScope for the
+		// configuration where those differ and the delete is resurrected.
+		if img.DeleteIntentAfter(push.dir, imageType, push.at) {
 			p.logger.Info("the local image is gone after the push, but the operator deleted it during the push; leaving it deleted",
 				"artist", a.Name, "type", imageType, "path", filePath,
-				"peers", strings.Join(uploadedTo, ","), "captured_at", snapAt.Format(time.RFC3339Nano))
+				"peers", strings.Join(uploadedTo, ","), "push_started_at", push.at.Format(time.RFC3339Nano))
 			return
 		}
 	}
@@ -1293,10 +1350,13 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	// end, and the operator can delete during that step.
 	//
 	// Erring early is the only safe direction and costs nothing: an earlier
-	// snapAt can only make the gate MORE willing to treat a delete as
+	// stamp can only make the gate MORE willing to treat a delete as
 	// concurrent, and a suppressed repair leaves a file the operator can re-add,
 	// while a resurrected delete is not automatically recoverable at all.
-	snapAt := time.Now()
+	//
+	// push.dir is filled in below, once ImageDir has resolved it. It is threaded
+	// rather than re-derived inside the repair; see pushScope.
+	push := pushScope{at: time.Now()}
 
 	warnings := make([]string, 0)
 
@@ -1319,6 +1379,18 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		warnings = append(warnings, "platform sync skipped: artist has no image directory configured")
 		return warnings
 	}
+	// The SAME resolved directory the delete handlers key their marker on. The
+	// repair must not re-derive it from a discovered backdrop path; see
+	// pushScope.
+	//
+	// On THIS path the two happen to coincide today: DiscoverFanart lists dir's
+	// own entries and skips subdirectories, so every backdrop it returns is an
+	// immediate child. That is a property of the discovery function, not of the
+	// repair, and the repair is shared with the single-image path where it does
+	// NOT hold. Threading dir from the one place that resolved it is what makes
+	// the reader's key equal to the writer's by construction rather than by
+	// coincidence in each caller.
+	push.dir = dir
 
 	primary := p.getActiveFanartPrimary(ctx)
 	fanartPaths, discoverErr := img.DiscoverFanart(ctx, dir, primary)
@@ -1402,7 +1474,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			if sf.data == nil {
 				continue // never captured; there is nothing to put back
 			}
-			p.reassertLocalImage(ctx, a, "fanart", sf.path, sf.data, sf.mod, snapAt, uploadedTo)
+			p.reassertLocalImage(ctx, a, "fanart", sf.path, sf.data, sf.mod, push, uploadedTo)
 		}
 	}()
 
