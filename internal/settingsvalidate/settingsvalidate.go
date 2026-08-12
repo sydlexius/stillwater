@@ -212,6 +212,109 @@ func validateLocalAuthEnabled(v string) (string, error) {
 	}
 }
 
+// policyKeys are validators that encode a WRITE-TIME POLICY rather than a
+// data-validity rule: the value they refuse is well-formed and may legitimately
+// already exist in the database, but an operator is not permitted to SET it
+// through the API.
+//
+// The distinction matters because the two answer different questions. A
+// data-validity rule asks "is this a usable value?" and its answer is the same
+// wherever the value comes from. A policy rule asks "may this actor make this
+// change here?" -- and a RESTORE is not an actor making a change: it
+// re-establishes a state that already existed, from a backup the operator
+// chose to take.
+//
+// Applying a policy rule at restore time drops the row, which either silently
+// changes a security posture or makes a legitimate backup unrestorable (#2534).
+// So IsPolicy lets a caller that is re-establishing state skip these while
+// still enforcing every data-validity rule.
+//
+// Keep this set SMALL and justify each entry. A rule belongs here only if its
+// rejection is about WHO IS WRITING rather than WHAT IS WRITTEN.
+var policyKeys = map[string]string{
+	// Refuses any falsy value so local auth cannot be switched off through the
+	// API -- it is the break-glass path when every other provider is
+	// misconfigured. A backup that legitimately recorded it as disabled is a
+	// state to restore, not an operator disabling it now.
+	//
+	// SAFE TO EXEMPT TODAY FOR A SECOND, LOAD-BEARING REASON: no AUTHENTICATION
+	// decision reads this value. It IS read once -- handlers_platform.go
+	// populates templates.AuthProvidersData.LocalEnabled from it -- but that
+	// field appears nowhere in the rendered template (the toggle is hardcoded
+	// disabled), and handleLogin selects the provider from auth.method, never
+	// from this key. So restoring it as false changes no auth behavior.
+	//
+	// Stated precisely because it justifies a security-relevant exemption:
+	// "nothing reads it" would be false and would rot into a wrong premise.
+	//
+	// RE-ASSESS BEFORE WIRING IT INTO THE LOGIN PATH. One of the two import
+	// entry points (POST /api/v1/setup/restore) is UNAUTHENTICATED -- gated on
+	// a zero-user instance and the envelope passphrase, which is why this is
+	// not a bypass today. If this key ever gains a real runtime effect, that
+	// combination becomes an auth-relevant change arriving over an
+	// unauthenticated endpoint, and this entry must be reconsidered rather
+	// than inherited.
+	"auth.providers.local.enabled": "break-glass guard: local auth may not be disabled via the API",
+}
+
+// IsPolicy reports whether key's validator encodes a write-time policy rather
+// than a data-validity rule, along with the reason. Callers re-establishing
+// stored state (settings import) relax these via ValidateStoredState; callers
+// accepting an operator action (PUT /api/v1/settings) must NOT.
+func IsPolicy(key string) (reason string, ok bool) {
+	reason, ok = policyKeys[key]
+	return reason, ok
+}
+
+// policyDataValidators holds the DATA-VALIDITY half of a policy key's rule, for
+// callers that relax the policy half. A policy validator typically refuses two
+// different things at once -- a well-formed value the caller may not set, AND
+// input that is simply malformed -- and only the first is a policy.
+//
+// Without this split, relaxing the policy discards the data rule too, and a
+// boolean setting accepts "banana". That is not a hypothetical: it was the
+// state of this code until a review probed it.
+var policyDataValidators = map[string]validator{
+	// The value is a boolean whatever the policy says. Canonicalises the same
+	// way validateBool does, so a restored value reads back correctly through
+	// getDBBoolSetting (which tests v == "true" || v == "1").
+	"auth.providers.local.enabled": validateBool("auth.providers.local.enabled"),
+}
+
+// ValidateStoredState validates a value that is being RE-ESTABLISHED from
+// stored state (a settings import) rather than SET by an operator.
+//
+// It applies every data-validity rule and relaxes only the write-time policy
+// half: a restore is not an actor making a change, so refusing a value the
+// operator already had either silently alters their configuration or makes a
+// legitimate backup unrestorable (#2534, #3008). It is NOT a way to store
+// anything -- a malformed value is still rejected, and the returned value is
+// still canonical.
+//
+// relaxed reports whether a policy was set aside, so the caller can log it.
+// Never use this for an operator-initiated write; that is Validate.
+func ValidateStoredState(key, value string) (canonical string, ok bool, relaxed bool, err error) {
+	canonical, ok, err = Validate(key, value)
+	if err == nil || !ok {
+		return canonical, ok, false, err
+	}
+	if _, isPolicy := policyKeys[key]; !isPolicy {
+		return canonical, ok, false, err
+	}
+	// Policy key: drop the policy refusal, but hold the value to the data rule.
+	if dataFn, hasData := policyDataValidators[key]; hasData {
+		canonical, err = dataFn(value)
+		if err != nil {
+			// Genuinely malformed, not merely policy-refused.
+			return "", true, false, err
+		}
+		return canonical, true, true, nil
+	}
+	// A policy key with no declared data validator: refuse rather than guess.
+	// Adding an entry to policyKeys without one is the bug this catches.
+	return "", true, false, err
+}
+
 // Validate applies the registered validator for key, returning the canonical
 // form to persist.
 //

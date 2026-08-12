@@ -483,3 +483,138 @@ func TestKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestValidateStoredState covers the restore-path validator directly, in the
+// package that owns it.
+//
+// It exists in this form because the previous PR's review found the same shape:
+// an exported function whose only caller lives in another package is guarded by
+// that caller's tests, which is an accident of who happens to call it rather
+// than a property of this package. The pre-push gate caught the repeat --
+// these 19 lines were at 0% coverage here while passing every test in
+// internal/settingsio.
+//
+// The contract has four outcomes and each is a different fact:
+//   - no validator            -> pass through, ok=false, relaxed=false
+//   - valid                   -> canonical, ok=true,  relaxed=false
+//   - policy-refused but sane -> canonical, ok=true,  relaxed=TRUE
+//   - malformed               -> error even for a policy key
+func TestValidateStoredState(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name        string
+		key         string
+		value       string
+		canonical   string
+		wantOK      bool
+		wantRelaxed bool
+		// wantErrMsg is the EXACT message, empty when no error is expected.
+		// Exact because ValidateStoredState returns errors from two different
+		// branches for a policy key -- the DATA validator's message when the
+		// value is malformed, and the original POLICY refusal when no data
+		// validator is declared. A boolean check cannot tell them apart, so a
+		// regression returning the policy refusal for "banana" would pass.
+		wantErrMsg string
+	}{
+		// Ordinary data rules are unchanged from Validate: a restore does not
+		// get to store a malformed value.
+		{"valid int", "provider.name_similarity_threshold", "60", "60", true, false, ""},
+		{"invalid int still rejected", "provider.name_similarity_threshold", "101", "", true, false,
+			"provider.name_similarity_threshold must be between 0 and 100"},
+		{"fractional still rejected", "provider.name_similarity_threshold", "0.5", "", true, false,
+			"provider.name_similarity_threshold must be between 0 and 100"},
+		{"unknown key passes through", "not.a.registered.key", "anything", "anything", false, false, ""},
+
+		// The policy key. "false" is REFUSED by Validate (the break-glass
+		// guard) but is a legitimate stored state to re-establish.
+		{"policy-refused value is relaxed", "auth.providers.local.enabled", "false", "false", true, true, ""},
+		{"policy-refused, canonicalised", "auth.providers.local.enabled", "  FALSE  ", "false", true, true, ""},
+		{"policy value that is also VALID is not relaxed", "auth.providers.local.enabled", "true", "true", true, false, ""},
+		{"policy value canonicalised without relaxing", "auth.providers.local.enabled", "1", "true", true, false, ""},
+
+		// The half that a previous revision got wrong: relaxing the POLICY
+		// must never relax the DATA rule.
+		{"malformed rejected even for a policy key", "auth.providers.local.enabled", "banana", "", true, false,
+			"auth.providers.local.enabled must be true or false"},
+		{"empty rejected even for a policy key", "auth.providers.local.enabled", "", "", true, false,
+			"auth.providers.local.enabled must be true or false"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			canonical, ok, relaxed, err := ValidateStoredState(c.key, c.value)
+			if ok != c.wantOK {
+				t.Errorf("ok = %v, want %v", ok, c.wantOK)
+			}
+			if relaxed != c.wantRelaxed {
+				t.Errorf("relaxed = %v, want %v", relaxed, c.wantRelaxed)
+			}
+			if c.wantErrMsg == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("expected error %q, got nil", c.wantErrMsg)
+				}
+				if err.Error() != c.wantErrMsg {
+					t.Errorf("error = %q, want %q", err.Error(), c.wantErrMsg)
+				}
+				return
+			}
+			if canonical != c.canonical {
+				t.Errorf("canonical = %q, want %q", canonical, c.canonical)
+			}
+		})
+	}
+}
+
+// TestValidateStoredState_MatchesValidateOffPolicyPath asserts the two entry
+// points agree everywhere except the policy keys. Without this, a future edit
+// could quietly loosen the restore path for ordinary settings -- the exemption
+// is meant to be a narrow carve-out, not a second, weaker validator.
+func TestValidateStoredState_MatchesValidateOffPolicyPath(t *testing.T) {
+	t.Parallel()
+	// Values chosen to exercise both an accept and a reject per key shape.
+	for _, v := range []string{"true", "false", "1", "0", "", "60", "101", "0.5", "banana", "/sw"} {
+		for _, key := range Keys() {
+			if _, isPolicy := IsPolicy(key); isPolicy {
+				continue // the carve-out; covered explicitly above
+			}
+			wantCanonical, wantOK, wantErr := Validate(key, v)
+			gotCanonical, gotOK, relaxed, gotErr := ValidateStoredState(key, v)
+			if relaxed {
+				t.Errorf("key %q value %q: relaxed=true for a NON-policy key", key, v)
+			}
+			if gotOK != wantOK || (gotErr != nil) != (wantErr != nil) || gotCanonical != wantCanonical {
+				t.Errorf("key %q value %q: ValidateStoredState = (%q,%v,%v), Validate = (%q,%v,%v)",
+					key, v, gotCanonical, gotOK, gotErr, wantCanonical, wantOK, wantErr)
+			}
+		}
+	}
+}
+
+// TestPolicyKeysHaveDataValidators pins the fail-closed rule: every policy key
+// must declare the data half of its validator, or ValidateStoredState refuses
+// the value rather than guessing. Adding an entry to policyKeys without one is
+// the mistake this catches, and it would otherwise surface as a restore that
+// silently drops a setting.
+func TestPolicyKeysHaveDataValidators(t *testing.T) {
+	t.Parallel()
+	for key := range policyKeys {
+		if _, ok := policyDataValidators[key]; !ok {
+			t.Errorf("policy key %q has no entry in policyDataValidators: "+
+				"ValidateStoredState will refuse every value for it", key)
+		}
+		if !Has(key) {
+			t.Errorf("policy key %q is not in the validator registry at all", key)
+		}
+	}
+	// And the set stays deliberately small. A second entry is a decision that
+	// warrants review -- one import entry point is unauthenticated -- not a
+	// one-line addition that slips through.
+	if len(policyKeys) != 1 {
+		t.Errorf("policyKeys has %d entries; it had 1 when this guard was written. "+
+			"Adding one is fine, but confirm the new key has no security-relevant "+
+			"runtime reader before updating this count", len(policyKeys))
+	}
+}

@@ -1483,3 +1483,37 @@ func TestResolveMBIDCheckClient_Found(t *testing.T) {
 		t.Fatalf("GetArtist through the resolved client: %v", err)
 	}
 }
+
+// TestApplyPersistedBasePath_RootIsNotAnOverride pins that "/" and "" mean the
+// same thing here: no path prefix, so a configured base path is left alone.
+//
+// They did not behave the same. "" returned early, but "/" fell through and was
+// APPLIED -- normalising back to "" and wiping a base_path set in config.toml.
+// Reachable two ways: the API canonicalises an empty PUT to "/"
+// (validateBasePath), so an operator who cleared the field in the UI already
+// stored the value that took the second branch; and #3008 made settings import
+// store the canonical form too, which is how a hostile review surfaced it.
+func TestApplyPersistedBasePath_RootIsNotAnOverride(t *testing.T) {
+	// "//" and "///" are here because they are the SHARP case, not a variation:
+	// TrimRight reduces them to "", which slipped past the validation guard
+	// (it only checks a non-empty normalized value) and reached the apply step
+	// as a cleared base path. "/" and "" are the ordinary no-prefix spellings.
+	for _, stored := range []string{"/", "", "//", "///"} {
+		t.Run("stored_"+stored, func(t *testing.T) {
+			db := openTestDB(t)
+			cfg := &config.Config{}
+			cfg.Server.BasePath = "/configured"
+			cfg.Server.BasePathFromEnv = false
+			if _, err := db.ExecContext(context.Background(),
+				`INSERT INTO settings (key, value, updated_at) VALUES ('server.base_path', ?, '2024-01-01T00:00:00Z')`,
+				stored); err != nil {
+				t.Fatalf("inserting test row: %v", err)
+			}
+			applyPersistedBasePath(context.Background(), db, cfg, slog.Default())
+			if cfg.Server.BasePath != "/configured" {
+				t.Errorf("stored %q wiped the configured base path: BasePath = %q, want %q",
+					stored, cfg.Server.BasePath, "/configured")
+			}
+		})
+	}
+}

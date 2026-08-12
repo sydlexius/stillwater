@@ -1444,7 +1444,28 @@ func applyPersistedBasePath(ctx context.Context, db *sql.DB, cfg *config.Config,
 		return
 	}
 	override := getDBStringSetting(ctx, db, "server.base_path", "")
-	if override == "" {
+	// "" and "/" both mean "no path prefix" and must behave identically. They
+	// did not: "" returned early leaving a configured base_path alone, while
+	// "/" fell through, normalised back to "" below, and was APPLIED -- wiping
+	// a base path set in config.toml. The API canonicalises an empty PUT to
+	// "/" (validateBasePath), so an operator clearing the field in the UI
+	// already stored the value that takes the second branch; #3008 made import
+	// reach it too by storing the canonical form. Treat them the same here,
+	// which is what the rest of this function already assumes.
+	if override == "" || override == "/" {
+		return
+	}
+	// Reject an ALL-SLASH value BEFORE trimming. TrimRight reduces "//" and
+	// "///" to "", which then slips past the validation guard below (it only
+	// checks a non-empty normalized value) and reaches the apply step as a
+	// cleared base path -- silently wiping a configured one. The guard's own
+	// comment promises to reject a leading "//" (CodeQL "bad redirect check"),
+	// and before this it did so for "//foo" but not for "//" itself.
+	if strings.TrimLeft(override, "/") == "" {
+		logger.Warn("ignoring invalid persisted base_path override",
+			"override", override,
+			"reason", "value is only slashes; use \"/\" for no path prefix",
+		)
 		return
 	}
 	normalized := strings.TrimRight(override, "/")
