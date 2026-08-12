@@ -11,6 +11,8 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/platform"
 )
 
 // #2698: a platform peer can DESTROY the operator's local image during the very
@@ -324,7 +326,7 @@ func TestReassertLocalImage_UnreadableFile_LeftAlone(t *testing.T) {
 	p := New(Deps{Logger: silentLogger()})
 	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
 
-	p.reassertLocalImage(context.Background(), a, "banner", victim, []byte("REPLACEMENT"), time.Now().Add(-time.Hour), []string{"Peer"})
+	p.reassertLocalImage(context.Background(), a, "banner", victim, []byte("REPLACEMENT"), time.Now().Add(-time.Hour), pushScope{dir: dir, at: time.Now()}, []string{"Peer"})
 
 	if err := os.Chmod(victim, 0o600); err != nil {
 		t.Fatalf("restoring read permission: %v", err)
@@ -467,5 +469,328 @@ func TestSyncAllFanart_CanceledAfterPeerDestroyedFile_StillRestored(t *testing.T
 		t.Errorf("restored bytes = %q, want the operator's original %q; the cancellation stop is "+
 			"preventing the deferred repair from running, which loses operator data for exactly the "+
 			"case the repair exists to cover", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #2712: the repair must tell a PEER clobber from an OPERATOR delete.
+//
+// Before this, reassertLocalImage was attribution-blind: it saw only the bytes
+// captured before the push and ENOENT afterwards, so an operator deleting a slot
+// while a background push for that slot was in flight got the artwork put back.
+// The delete handlers now record an explicit intent marker (img.MarkDeleteIntent)
+// before they unlink, and the ENOENT branch consults it against pushScope.at --
+// the instant THE PUSH BEGAN, stamped at the sync function's entry, not the
+// later instant at which it read the bytes.
+//
+// pushScope.at is set to a PAST instant in these tests so that a marker written
+// by img.MarkDeleteIntent (which stamps time.Now) lands strictly after it -- the
+// same ordering a real in-flight push sees when the operator deletes mid-push.
+//
+// pushScope.dir is the RESOLVED image directory, which these tests pass
+// explicitly rather than letting the repair re-derive it from the file path.
+// TestReassertLocalImage_NestedNamingPattern_OperatorDelete_NotRestored below
+// covers the configuration where those two differ.
+// ---------------------------------------------------------------------------
+
+// TestReassertLocalImage_OperatorDeletedDuringPush_NotRestored is the #2712
+// regression. The file is gone AND the operator's intent to remove it was
+// recorded after the push snapshotted its bytes, so the repair must stand down.
+func TestReassertLocalImage_OperatorDeletedDuringPush_NotRestored(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "banner.jpg")
+
+	// The push captured these bytes, then the operator deleted the slot. The
+	// file's absence is the fixture; there is nothing to write here.
+	data := []byte("OPERATOR-BANNER-BYTES")
+	snapAt := time.Now().Add(-time.Second)
+	img.MarkDeleteIntent(dir, "banner")
+
+	if _, err := os.Stat(victim); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("precondition failed: the victim must be absent for the ENOENT branch to run, stat gave %v", err)
+	}
+	if !img.DeleteIntentAfter(dir, "banner", snapAt) {
+		t.Fatal("precondition failed: the delete marker is not visible to the repair, so this test would " +
+			"pass for the wrong reason (it would be asserting nothing about the gate)")
+	}
+
+	p := New(Deps{Logger: silentLogger()})
+	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
+
+	p.reassertLocalImage(context.Background(), a, "banner", victim, data, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+
+	if _, err := os.Stat(victim); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the repair resurrected an image the operator deliberately deleted (stat err = %v); "+
+			"an operator would have to delete it a second time", err)
+	}
+}
+
+// TestReassertLocalImage_PeerDeleteNoIntent_Restored is the anti-over-suppression
+// guard. With no operator delete recorded, an ENOENT after a push is a peer
+// clobber and #2698's repair must still fire. A gate made unconditional -- or one
+// that treated "no marker" as "stand down" -- fails here.
+func TestReassertLocalImage_PeerDeleteNoIntent_Restored(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "banner.jpg")
+	want := []byte("OPERATOR-BANNER-BYTES")
+	snapAt := time.Now().Add(-time.Second)
+
+	if img.DeleteIntentAfter(dir, "banner", snapAt) {
+		t.Fatal("precondition failed: this directory already carries a delete marker, so a stand-down " +
+			"would be correct here and the test would prove nothing")
+	}
+
+	p := New(Deps{Logger: silentLogger()})
+	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
+
+	p.reassertLocalImage(context.Background(), a, "banner", victim, want, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+
+	got := mustRead(t, victim)
+	if string(got) != string(want) {
+		t.Errorf("restored bytes = %q, want %q; the delete gate is suppressing a genuine peer clobber (#2698 regression)", got, want)
+	}
+}
+
+// TestReassertLocalImage_StaleIntentPredatingSnapshot_Restored pins the `since`
+// comparison at the level that matters. A delete the operator performed BEFORE
+// the push looked at the file says nothing about what happened during the push,
+// so a gate that merely asked "is there a marker?" would wrongly abandon a real
+// peer clobber for the rest of the retention window.
+func TestReassertLocalImage_StaleIntentPredatingSnapshot_Restored(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "banner.jpg")
+	want := []byte("OPERATOR-REPLACED-BANNER")
+
+	// The operator deleted, then saved a new image; the push snapshotted AFTER
+	// both. Any marker on record is older than the snapshot.
+	img.MarkDeleteIntent(dir, "banner")
+	snapAt := time.Now().Add(time.Millisecond)
+
+	if !img.DeleteIntentAfter(dir, "banner", time.Time{}) {
+		t.Fatal("precondition failed: no marker was recorded at all, so this test is not exercising the since comparison")
+	}
+	if img.DeleteIntentAfter(dir, "banner", snapAt) {
+		t.Fatal("precondition failed: the marker is not older than the snapshot")
+	}
+
+	p := New(Deps{Logger: silentLogger()})
+	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
+
+	p.reassertLocalImage(context.Background(), a, "banner", victim, want, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+
+	got := mustRead(t, victim)
+	if string(got) != string(want) {
+		t.Errorf("restored bytes = %q, want %q; a delete predating the snapshot must not suppress the repair", got, want)
+	}
+}
+
+// TestSyncImage_FirstEverSave_PeerClobber_Restored is the case the WITHDRAWN
+// exists-flag guard broke: the most ordinary save there is, of a slot nobody has
+// ever deleted, clobbered by a peer. It goes through the full push path rather
+// than calling the repair directly, so it also proves the new snapAt plumbing in
+// SyncImageToPlatforms does not accidentally suppress the common case.
+func TestSyncImage_FirstEverSave_PeerClobber_Restored(t *testing.T) {
+	calls := 0
+	p, a, dir := clobberHarness(t, "banner.jpg", "delete", &calls)
+
+	want := []byte("OPERATOR-FIRST-EVER-BANNER")
+	writeFile(t, filepath.Join(dir, "banner.jpg"), want)
+
+	if img.DeleteIntentAfter(dir, "banner", time.Time{}) {
+		t.Fatal("precondition failed: a first-ever save must have no delete marker of any age")
+	}
+
+	p.SyncImageToPlatforms(context.Background(), a, "banner")
+
+	if calls == 0 {
+		t.Fatal("precondition failed: the uploader never ran, so nothing was destroyed")
+	}
+	if got := mustRead(t, filepath.Join(dir, "banner.jpg")); string(got) != string(want) {
+		t.Errorf("restored bytes = %q, want %q; a first-ever save must still be repaired", got, want)
+	}
+}
+
+// TestReassertLocalImage_OperatorDeleteSuppressesRenumberedPath is THE test the
+// key shape exists for, and the one a per-slot marker fails.
+//
+// The operator deletes one fanart slot. RenumberFanart then COMPACTS survivors
+// to contiguous indices, so the file that was fanart5.jpg is renamed down and
+// fanart5.jpg no longer exists. A push that snapshotted the set BEFORE the
+// renumber still holds fanart5.jpg's path and bytes, reads ENOENT, and -- under a
+// marker keyed by (dir, type, SLOT) -- would find no marker for slot 5 and
+// restore it. That resurrects deleted artwork under a filename the operator
+// never chose and re-grows the set, which is #2712's own bug reproduced by its
+// fix. A type-wide marker suppresses it.
+//
+// The fixture reproduces the compaction concretely rather than asserting on the
+// marker API, so it stays honest if the key shape is ever changed underneath.
+func TestReassertLocalImage_OperatorDeleteSuppressesRenumberedPath(t *testing.T) {
+	dir := t.TempDir()
+
+	// Pre-delete set: six backdrops, slots 0..5.
+	slots := []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg", "fanart3.jpg", "fanart4.jpg", "fanart5.jpg"}
+	for i, name := range slots {
+		writeFile(t, filepath.Join(dir, name), []byte("OPERATOR-BACKDROP-"+string(rune('0'+i))))
+	}
+	// The push snapshotted the whole set here, holding slot 5's path and bytes.
+	snapAt := time.Now().Add(-time.Second)
+	tailPath := filepath.Join(dir, "fanart5.jpg")
+	tailData := []byte("OPERATOR-BACKDROP-5")
+
+	// The operator deletes slot 2. The handler marks intent, unlinks, renumbers.
+	img.MarkDeleteIntent(dir, "fanart")
+	if err := os.Remove(filepath.Join(dir, "fanart2.jpg")); err != nil {
+		t.Fatalf("deleting slot 2: %v", err)
+	}
+	// Compaction: 3->2, 4->3, 5->4. fanart5.jpg ceases to exist.
+	for _, mv := range [][2]string{{"fanart3.jpg", "fanart2.jpg"}, {"fanart4.jpg", "fanart3.jpg"}, {"fanart5.jpg", "fanart4.jpg"}} {
+		if err := os.Rename(filepath.Join(dir, mv[0]), filepath.Join(dir, mv[1])); err != nil {
+			t.Fatalf("renumbering %s -> %s: %v", mv[0], mv[1], err)
+		}
+	}
+
+	// PRECONDITIONS. Without these the test could pass because the renumber
+	// silently did not happen, which is the vacuous version of this assertion.
+	if _, err := os.Stat(tailPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("precondition failed: fanart5.jpg must be gone after compaction, stat gave %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the fanart dir: %v", err)
+	}
+	if len(entries) != 5 {
+		t.Fatalf("precondition failed: expected 5 survivors after deleting 1 of 6, found %d", len(entries))
+	}
+
+	p := New(Deps{Logger: silentLogger()})
+	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
+
+	// The in-flight push verifies its PRE-renumber view of slot 5.
+	p.reassertLocalImage(context.Background(), a, "fanart", tailPath, tailData, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+
+	if _, statErr := os.Stat(tailPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("the repair recreated fanart5.jpg after a renumber (stat err = %v); the operator's "+
+			"deleted backdrop is back under a shifted filename and the set has re-grown -- this is "+
+			"exactly what a per-slot delete marker cannot prevent", statErr)
+	}
+	after, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("re-reading the fanart dir: %v", err)
+	}
+	if len(after) != 5 {
+		t.Errorf("the fanart set holds %d files after the repair, want the 5 survivors", len(after))
+	}
+}
+
+// TestReassertLocalImage_OverwriteIgnoresDeleteIntent keeps the gate confined to
+// the ENOENT branch. A delete marker says nothing about a REWRITE, and gating the
+// bytes-mismatch branch on it would disable the #2533 crop-clobber repair -- the
+// case the whole re-assertion mechanism exists to serve. Deleting one slot must
+// not make a peer's overwrite of another survive.
+func TestReassertLocalImage_OverwriteIgnoresDeleteIntent(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "banner.jpg")
+	want := []byte("OPERATOR-CROPPED-BYTES")
+	writeFile(t, victim, []byte("PEER-OWN-BYTES"))
+
+	snapAt := time.Now().Add(-time.Second)
+	img.MarkDeleteIntent(dir, "banner")
+	if !img.DeleteIntentAfter(dir, "banner", snapAt) {
+		t.Fatal("precondition failed: no live delete marker, so this test does not exercise the gate's scope")
+	}
+
+	p := New(Deps{Logger: silentLogger()})
+	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
+
+	p.reassertLocalImage(context.Background(), a, "banner", victim, want, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+
+	got := mustRead(t, victim)
+	if string(got) == "PEER-OWN-BYTES" {
+		t.Fatal("the peer's bytes survived an overwrite because a delete marker was present; the delete " +
+			"gate has leaked past the ENOENT branch and disabled the #2533 crop-clobber repair")
+	}
+	if string(got) != string(want) {
+		t.Errorf("restored bytes = %q, want the operator's original %q", got, want)
+	}
+}
+
+// TestReassertLocalImage_NestedNamingPattern_OperatorDelete_NotRestored is the
+// regression for the reader and the writer deriving DIFFERENT keys.
+//
+// THE DEFECT. The delete handlers key their marker on the RESOLVED image
+// directory (Router.imageDir). The repair used to key its lookup on
+// filepath.Dir of the artwork file it had discovered. Those two strings are
+// equal for every default naming pattern, which is why every other test in this
+// package passes either way -- but they are not equal in general.
+//
+// HOW THEY COME APART. platform.ValidateImageNaming rejects a filename holding
+// a path separator, and it is called from exactly two places, both on the
+// platform-profile create/update handlers. The SETTINGS IMPORT path does not
+// call it: platform.ImportCreateTx persists the marshaled ImageNaming
+// directly. So an imported profile can carry "sub/folder.jpg", and
+// FindExistingImageStrict, which simply joins the directory with the pattern,
+// then returns "<dir>/sub/folder.jpg". The repair keyed on "<dir>/sub" while
+// the handler marked "<dir>", the keys never met, the gate never fired, and the
+// operator's delete was resurrected -- silently, and only on the exact
+// configuration that had bypassed validation.
+//
+// THE FIXTURE drives the real push so the key is derived the way production
+// derives it, rather than being handed to reassertLocalImage by the test. The
+// operator's delete is recorded during the push's first step (the same prologue
+// hook the prologue tests use), and the file itself is destroyed later by the
+// clobbering uploader, which is the shape a real mid-push delete presents.
+//
+// It goes RED against the filepath.Dir derivation: the marker on "<dir>" is
+// invisible to a lookup on "<dir>/sub", so the repair rewrites the backdrop the
+// operator deleted.
+func TestReassertLocalImage_NestedNamingPattern_OperatorDelete_NotRestored(t *testing.T) {
+	calls := 0
+	p, a, dir := clobberHarness(t, filepath.Join("sub", "folder.jpg"), "delete", &calls)
+
+	// An imported profile whose banner pattern descends into a subdirectory.
+	// ValidateImageNaming would refuse this on the API, and the import path
+	// never asks it.
+	p.platformService = &fakePlatformProvider{profile: &platform.Profile{
+		ImageNaming: platform.ImageNaming{Banner: []string{filepath.Join("sub", "folder.jpg")}},
+	}}
+
+	victim := filepath.Join(dir, "sub", "folder.jpg")
+	if err := os.MkdirAll(filepath.Dir(victim), 0o750); err != nil {
+		t.Fatalf("creating the nested artwork directory: %v", err)
+	}
+	want := []byte("OPERATOR-NESTED-BANNER")
+	writeFile(t, victim, want)
+
+	// PRECONDITION: the fixture is only meaningful if the artwork actually sits
+	// below the resolved image directory. A pattern that quietly lost its
+	// separator would make this test pass against the defect.
+	if filepath.Dir(victim) == filepath.Clean(dir) {
+		t.Fatalf("precondition failed: %s is not nested below the image directory %s, so the reader's "+
+			"old key and the writer's key would coincide and this test proves nothing", victim, dir)
+	}
+
+	marker := installPrologueMarker(t, p, dir, "banner")
+
+	p.SyncImageToPlatforms(context.Background(), a, "banner")
+
+	if !marker.called {
+		t.Fatal("precondition failed: the prologue never asked for platform IDs, so no delete was ever " +
+			"recorded during the push and this test asserts nothing")
+	}
+	if calls == 0 {
+		t.Fatal("precondition failed: the uploader never ran, so the nested banner was never destroyed " +
+			"and the repair was never owed")
+	}
+	// The peer was handed the NESTED file's bytes, which proves discovery
+	// honored the pattern rather than finding some default-named file.
+	assertHandedToPeer(t, want, "banner", "image/jpeg")
+	if !img.DeleteIntentAfter(dir, "banner", time.Time{}) {
+		t.Fatal("precondition failed: no delete marker is on record against the resolved image directory")
+	}
+
+	if _, err := os.Stat(victim); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the repair resurrected a banner the operator deleted during the push (stat err = %v); "+
+			"the lookup key was derived from the artwork path instead of the resolved image directory, "+
+			"so it never matched the key the delete handler wrote", err)
 	}
 }
