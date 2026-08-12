@@ -73,9 +73,17 @@ func sparseFile(t *testing.T, path string, size int64) {
 	if err != nil {
 		t.Fatalf("creating sparse fixture %s: %v", path, err)
 	}
-	defer func() { _ = f.Close() }()
 	if err := f.Truncate(size); err != nil {
+		_ = f.Close()
 		t.Fatalf("sizing sparse fixture %s to %d: %v", path, size, err)
+	}
+	// The Close error is REPORTED rather than deferred away: two tests below
+	// derive their cap expectations from the size requested here rather than
+	// from an os.Stat, so a flush failure that left a short fixture would
+	// surface as a confusing assertion about which cap fired instead of as the
+	// fixture failure it is.
+	if err := f.Close(); err != nil {
+		t.Fatalf("closing sparse fixture %s: %v", path, err)
 	}
 }
 
@@ -159,6 +167,25 @@ func capturedCount(snapshot []fanartSnapshot) int {
 	n := 0
 	for _, sf := range snapshot {
 		if sf.data != nil {
+			n++
+		}
+	}
+	return n
+}
+
+// refusedCount reports how many entries are nil-data placeholders, i.e. slots
+// this push neither captured nor synced.
+//
+// It is the UNCAPPED refusal signal, and that is why it exists rather than
+// counting warnings. The warning list is bounded by maxFanartSnapshotWarnings
+// (#3018 review), so past that bound it stops being a count of anything; the
+// snapshot keeps exactly one placeholder per refused slot no matter how many
+// there are, because those placeholders are what preserve every later slot's
+// true index.
+func refusedCount(snapshot []fanartSnapshot) int {
+	n := 0
+	for _, sf := range snapshot {
+		if sf.data == nil {
 			n++
 		}
 	}
@@ -695,23 +722,32 @@ func TestSnapshotFanart_RefusedSlots_DoNotConsumeTheCountBudget(t *testing.T) {
 	// than starving anything, and the assertions below would pass for a reason
 	// that has nothing to do with the invariant.
 	//
-	// Deliberately a LOWER bound on the warning count rather than an equality.
+	// Deliberately a LOWER bound on the REFUSAL count rather than an equality.
 	// The excess is exactly what the mutation produces (a starved real backdrop
-	// is refused too, and warns), so pinning equality here would make the
-	// mutation fail at a precondition whose message blames the fixture. The
-	// equality belongs below, where it can say what actually went wrong.
-	if len(warnings) < junkCount {
-		t.Fatalf("got %d warnings for %d junk files, want at least one each; the junk was not refused as "+
-			"expected, so nothing below measures what it claims to", len(warnings), junkCount)
+	// is refused too), so pinning equality here would make the mutation fail at
+	// a precondition whose message blames the fixture. The equality belongs
+	// below, where it can say what actually went wrong.
+	//
+	// Measured from the SNAPSHOT, not from the warning list. The junk count
+	// (60) is deliberately past maxFanartSnapshotWarnings (25), so the warning
+	// list is capped and no longer counts refusals -- see the warning-cap
+	// assertions below. The snapshot keeps one nil-data entry per refused slot
+	// regardless of the cap, which makes it both the uncapped signal and the
+	// one this test's invariant is actually about.
+	if refused := refusedCount(snapshot); refused < junkCount {
+		t.Fatalf("got %d refused slots for %d junk files, want at least one each; the junk was not refused "+
+			"as expected, so nothing below measures what it claims to", refused, junkCount)
 	}
 	for i := 0; i < junkCount; i++ {
 		if snapshot[i].data != nil {
 			t.Fatalf("junk slot %d holds %d bytes, so it was captured rather than refused; the fixture "+
 				"is not exercising the refusal path", i, len(snapshot[i].data))
 		}
-		// The pre-read stat is what refused it, not the post-read length: the
-		// junk must never have been allocated. The warnings arrive in slot
-		// order, so the first junkCount of them are the junk's.
+	}
+	// The pre-read stat is what refused the junk, not the post-read length: it
+	// must never have been allocated. Asserted over the warnings that survived
+	// the cap, which arrive in slot order and so are all junk.
+	for i := 0; i < maxFanartSnapshotWarnings; i++ {
 		assertStatRefusal(t, warnings[i])
 		assertNamesBothLosses(t, warnings[i])
 	}
@@ -733,14 +769,79 @@ func TestSnapshotFanart_RefusedSlots_DoNotConsumeTheCountBudget(t *testing.T) {
 	if got := capturedCount(snapshot); got != realCount {
 		t.Errorf("captured %d files, want exactly the %d real backdrops", got, realCount)
 	}
-	// And the warning count exactly matches the junk, now that the junk has
-	// been shown to account for at least that many. An extra warning means a
+	// And the refusal count exactly matches the junk, now that the junk has
+	// been shown to account for at least that many. A surplus refusal means a
 	// real backdrop was refused as well, which is the same defect the loop
 	// above reports and is worth naming separately because it is the operator's
 	// view of it.
-	if len(warnings) != junkCount {
-		t.Errorf("got %d warnings for %d junk files; the surplus is a REAL backdrop refused as well, so "+
-			"the operator is being told a healthy backdrop could not be captured: %v",
-			len(warnings), junkCount, warnings[junkCount:])
+	if refused := refusedCount(snapshot); refused != junkCount {
+		t.Errorf("got %d refused slots for %d junk files; the surplus is a REAL backdrop refused as well, "+
+			"so a healthy backdrop could not be captured", refused, junkCount)
+	}
+
+	// THE WARNING LIST IS BOUNDED, and this fixture is the one place in the
+	// suite where that is visible: 60 refusals is the only case here that
+	// exceeds maxFanartSnapshotWarnings. Without these assertions the cap could
+	// be deleted and the whole file would stay green, since every other test
+	// refuses fewer slots than the cap allows.
+	wantWarnings := maxFanartSnapshotWarnings + 1 // the kept slots plus the overflow summary
+	if len(warnings) != wantWarnings {
+		t.Errorf("got %d warnings for %d refusals, want %d (the first %d slots plus one overflow summary); "+
+			"an unbounded list puts a directory's worth of strings in the API response, which is the same "+
+			"defect the byte caps close, arriving through the response body: %v",
+			len(warnings), junkCount, wantWarnings, maxFanartSnapshotWarnings, warnings)
+	}
+	// The overflow is COUNTED, not silently dropped. A cut that just stopped
+	// appending would report a plausible-looking list understating the loss,
+	// which is the invisible-data-loss failure the loud degrade exists to
+	// prevent.
+	overflow := junkCount - maxFanartSnapshotWarnings
+	last := warnings[len(warnings)-1]
+	if want := fmt.Sprintf("and %d more", overflow); !strings.Contains(last, want) {
+		t.Errorf("final warning %q does not say %q; the operator must be told how many refusals were "+
+			"withheld, or a truncated list reads as the complete one", last, want)
+	}
+}
+
+// TestFanartWarningLog_UnderTheCap_AddsNoSummary pins the other side of the
+// bound: a set that refuses fewer slots than the cap allows must be reported
+// exactly as it was before the cap existed.
+//
+// It is separate from the over-cap test above because the failure it catches is
+// the opposite mutation -- an off-by-one that appends an "and 0 more" line, or
+// a cap applied to a list that never needed one -- and that would be invisible
+// in a fixture built to overflow.
+func TestFanartWarningLog_UnderTheCap_AddsNoSummary(t *testing.T) {
+	// No t.Parallel; see the note at the top of this file.
+	var log fanartWarningLog
+
+	const under = 3
+	if under >= maxFanartSnapshotWarnings {
+		t.Fatalf("precondition failed: %d warnings is not under the %d cap, so this test would measure "+
+			"the overflow path it exists to exclude", under, maxFanartSnapshotWarnings)
+	}
+	for i := 0; i < under; i++ {
+		log.add(fmt.Sprintf("fanart %d refused", i))
+	}
+
+	got := log.result()
+	if len(got) != under {
+		t.Fatalf("got %d warnings for %d added, want them all through untouched: %v", len(got), under, got)
+	}
+	for _, w := range got {
+		if strings.Contains(w, "and ") && strings.Contains(w, " more") {
+			t.Errorf("warning %q is an overflow summary, but nothing overflowed", w)
+		}
+	}
+}
+
+// TestFanartWarningLog_Empty_ReturnsNil keeps the no-warnings case byte-identical
+// to the pre-cap behavior. A healthy push returns no warnings at all, and an
+// empty non-nil slice is a different value for any caller that checks nilness.
+func TestFanartWarningLog_Empty_ReturnsNil(t *testing.T) {
+	// No t.Parallel; see the note at the top of this file.
+	var log fanartWarningLog
+	if got := log.result(); got != nil {
+		t.Errorf("empty log returned %#v, want nil; a healthy push must report no warnings at all", got)
 	}
 }

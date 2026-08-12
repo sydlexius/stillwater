@@ -107,6 +107,26 @@ const (
 	// written explicitly, because mixing the two while reasoning about a 6
 	// percent margin is how a margin gets miscounted.
 	maxFanartSnapshotTotalBytes = 192 << 20
+
+	// maxFanartSnapshotWarnings caps how many per-slot warnings one snapshot
+	// puts in the API response (#3018 review).
+	//
+	// The three caps above bound what a directory can make this push HOLD. They
+	// deliberately do not stop the loop -- every remaining slot is still walked
+	// so its true index survives and its loss is reported -- which left the
+	// REPORT unbounded in exactly the dimension the snapshot no longer is: a
+	// directory holding thousands of files produces one warning per refused
+	// slot, and truncateWarning bounds each string while nothing bounded the
+	// count. That is the same "the artist directory chooses the commitment"
+	// defect arriving through the response body instead of the heap.
+	//
+	// 25 is above the count at which a per-slot list stops being actionable and
+	// well under the maxFanartSnapshotFiles cap, so a legitimately large artist
+	// (42 backdrops measured, 100 allowed) that fails wholesale still names its
+	// first 25 slots and then says how many more there were. The full per-slot
+	// detail, including the path an API response must not carry, is in the
+	// Error log degradeFanartSlot writes for every slot regardless of this cap.
+	maxFanartSnapshotWarnings = 25
 )
 
 // Deps holds all dependencies for a Publisher.
@@ -1052,10 +1072,22 @@ type fanartSnapshot struct {
 // signals rather than a debug line.
 //
 // The bounds do NOT abort the loop. A single over-size file says nothing about
-// the rest of the set, so it is skipped like any other per-file failure; the
-// count and total caps stop capturing further files but still walk the rest so
-// their slots are accounted for and warned about, rather than the set silently
-// ending early.
+// the rest of the set, so it is skipped like any other per-file failure. The
+// two cumulative caps then behave DIFFERENTLY from each other, and the
+// difference is worth stating because "the caps stop capturing" reads as a
+// latch that only one of them has. Once the COUNT cap is reached nothing
+// further is captured, because b.files never decreases. The TOTAL cap is
+// re-evaluated per file against the REMAINING budget, so a later, smaller
+// backdrop that still fits IS captured after a larger one was refused. Either
+// way the loop walks the rest of the set so every slot is accounted for and
+// warned about, rather than the set silently ending early.
+//
+// THE REPORT IS BOUNDED TOO (#3018 review), and separately from the snapshot.
+// Walking every slot is what makes a large directory produce a warning per
+// refused file, so the caps that stop this function holding a directory's worth
+// of bytes did nothing about it returning a directory's worth of strings. See
+// maxFanartSnapshotWarnings: the response carries the first N slots plus a
+// count of the rest, while the Error log still names every one.
 //
 // KNOWN GAP, AND IT IS A REAL REGRESSION -- tracked in #3017, NOT fixed here.
 // Borrowing the unreadable-file shape is where the two cases stop matching.
@@ -1125,7 +1157,7 @@ type fanartSnapshot struct {
 // before the upload loop.
 func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([]fanartSnapshot, []string, error) {
 	snapshot := make([]fanartSnapshot, 0, len(fanartPaths))
-	var warnings []string
+	var warnings fanartWarningLog
 	var budget fanartSnapshotBudget
 	for i, fp := range fanartPaths {
 		// #2712: refuse BEFORE the read, so an over-size or over-budget file is
@@ -1140,7 +1172,7 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 		if reason, refused := budget.refuse(fp, i); refused {
 			entry, warning := p.degradeFanartSlot(fp, i, reason)
 			snapshot = append(snapshot, entry)
-			warnings = append(warnings, warning)
+			warnings.add(warning)
 			continue
 		}
 		data, readErr := img.ReadImageFileBounded(ctx, fp)
@@ -1175,15 +1207,15 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 					slog.Int("captured", len(snapshot)),
 					slog.String("reason", reason),
 					slog.Any("error", distrust))
-				return snapshot, warnings, distrust
+				return snapshot, warnings.result(), distrust
 			}
 			p.logger.Error("reading fanart for platform sync",
 				slog.String("path", fp),
 				slog.String("error", readErr.Error()))
 			if errors.Is(readErr, img.ErrImageTooLarge) {
-				warnings = append(warnings, truncateWarning(fmt.Sprintf("fanart %d exceeds the size limit for upload", i)))
+				warnings.add(truncateWarning(fmt.Sprintf("fanart %d exceeds the size limit for upload", i)))
 			} else {
-				warnings = append(warnings, truncateWarning(fmt.Sprintf("failed to read fanart %d", i)))
+				warnings.add(truncateWarning(fmt.Sprintf("failed to read fanart %d", i)))
 			}
 			// Kept with nil data so the slots AFTER this one keep their real
 			// index; the upload loop skips nil entries.
@@ -1210,13 +1242,56 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 		if reason, refused := budget.refuseResult(int64(len(data)), i); refused {
 			entry, warning := p.degradeFanartSlot(fp, i, reason)
 			snapshot = append(snapshot, entry)
-			warnings = append(warnings, warning)
+			warnings.add(warning)
 			continue
 		}
 		budget.charge(int64(len(data)))
 		snapshot = append(snapshot, fanartSnapshot{path: fp, index: i, data: data, mod: fileModTime(fp)})
 	}
-	return snapshot, warnings, nil
+	return snapshot, warnings.result(), nil
+}
+
+// fanartWarningLog accumulates the per-slot warnings one snapshot produces and
+// bounds how many of them reach the caller (#3018 review).
+//
+// It exists because snapshotFanart deliberately walks EVERY path even after a
+// cap is hit -- that is what keeps each surviving slot's true index -- so the
+// number of warnings scales with the artist directory, which is precisely the
+// input the #2712 caps exist to stop trusting. Each string was already
+// truncateWarning-bounded; nothing bounded the count, so a directory holding
+// thousands of files returned thousands of strings into an API response.
+//
+// The overflow is COUNTED rather than dropped. A silent cut would report a
+// bounded, plausible-looking list that understates the loss, which is the same
+// invisible-data-loss failure the loud degrade was written to prevent. Callers
+// therefore get the first maxFanartSnapshotWarnings slots plus one line saying
+// how many more there were. degradeFanartSlot's Error log is unaffected and
+// still names every slot with its path, so nothing is lost from the record an
+// operator debugs from -- only from the response body a browser renders.
+type fanartWarningLog struct {
+	kept     []string
+	overflow int
+}
+
+// add records one warning, keeping it only while under the cap.
+func (w *fanartWarningLog) add(warning string) {
+	if len(w.kept) < maxFanartSnapshotWarnings {
+		w.kept = append(w.kept, warning)
+		return
+	}
+	w.overflow++
+}
+
+// result returns the bounded warning list, with the overflow summary appended
+// when any warning was withheld. It returns nil for an empty log so the
+// no-warnings case is indistinguishable from the pre-cap behavior.
+func (w *fanartWarningLog) result() []string {
+	if w.overflow == 0 {
+		return w.kept
+	}
+	return append(w.kept, truncateWarning(fmt.Sprintf(
+		"and %d more fanart slots were neither captured for restore nor synced to platforms; see the server log for each one",
+		w.overflow)))
 }
 
 // fanartSnapshotBudget tracks what one snapshot has already committed, so the
