@@ -456,6 +456,19 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	// #2712: mark the operator's delete intent before the unlink, so a push that
+	// was already in flight when this request arrived declines to restore what is
+	// being deleted. The marker is keyed by (dir, "fanart") with NO slot
+	// component: this handler renumbers survivors a few lines down, so a slot
+	// index is not a stable identity for the file an in-flight push is verifying
+	// (see MarkDeleteIntent for the worked case).
+	//
+	// It does NOT self-suppress this handler's own SyncAllFanartToPlatforms call
+	// below: that push takes its snapshot AFTER this line runs, so its snapAt is
+	// later than the marker and DeleteIntentAfter's "recorded at or after snapAt"
+	// test is false for it.
+	img.MarkDeleteIntent(r.imageDir(a), "fanart")
+
 	deleted := filepath.Base(paths[slot])
 	if removeErr := r.fileRemover.Remove(paths[slot]); removeErr != nil {
 		r.logger.Error("deleting fanart slot",

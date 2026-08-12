@@ -1983,6 +1983,14 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read fanart directory"})
 			return
 		}
+		// #2712: record the operator's INTENT before the first unlink, so a push
+		// that is already in flight for this artist's fanart declines to "repair"
+		// what the operator is deliberately throwing away. Marking BEFORE the
+		// filesystem is touched is the load-bearing part: a marker written after
+		// the unlink leaves a window where the file is gone and the intent is
+		// invisible, which is the original bug merely narrowed.
+		img.MarkDeleteIntent(r.imageDir(a), imageType)
+
 		var deleted []string
 		var removeFailed bool
 		for _, p := range fanartPaths {
@@ -2032,6 +2040,10 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		})
 		return
 	}
+
+	// #2712: same intent marker on the single-slot path (thumb/logo/banner),
+	// written before any unlink for the same reason as the fanart branch above.
+	img.MarkDeleteIntent(r.imageDir(a), imageType)
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
 	deleted, deleteFailed := deleteImageFiles(r.fileRemover, r.imageDir(a), patterns, r.logger)
@@ -2928,6 +2940,13 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 			deleteSet[idx] = true
 		}
 	}
+
+	// #2712: mark the operator's delete intent before the first unlink. The key
+	// is (dir, type) with no slot component precisely because this handler
+	// renumbers survivors afterwards -- see MarkDeleteIntent's doc comment for
+	// why a per-slot marker would let the repair resurrect a deleted backdrop
+	// under a shifted filename.
+	img.MarkDeleteIntent(r.imageDir(a), "fanart")
 
 	// Delete the selected files
 	var deleted []string
