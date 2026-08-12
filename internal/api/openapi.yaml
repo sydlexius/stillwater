@@ -576,6 +576,10 @@ components:
             api_tokens_skipped: { type: integer }
             users_imported: { type: integer }
             ownership_reassigned: { type: integer }
+            settings_rejected: { type: integer }
+            settings_rejected_keys: { type: array, items: { type: string } }
+            settings_renamed: { type: integer }
+            settings_renamed_dropped: { type: integer }
     PortableSettingsEnvelopeExport:
       type: object
       description: |
@@ -663,6 +667,34 @@ components:
             ownership_reassigned:
               type: integer
               description: Number of API tokens whose owner was absent on the target and were reassigned to the importing admin via admin_fallback_tokens=true.
+            settings_rejected:
+              type: integer
+              description: >
+                Number of settings rows the envelope carried whose value failed
+                validation and were NOT applied. The rest of the restore still
+                proceeds -- one bad row must not make a backup unrestorable --
+                so a non-zero value here means the restore was PARTIAL.
+            settings_rejected_keys:
+              type: array
+              items:
+                type: string
+              description: >
+                Names of the rejected settings keys. Capped at 100 entries;
+                settings_rejected keeps the true total when the list truncates.
+                Values are never included -- a rejected value may be malformed
+                secret-adjacent input.
+            settings_renamed:
+              type: integer
+              description: >
+                Number of rows carried under a settings key that has since been
+                renamed and were applied under the current name instead.
+            settings_renamed_dropped:
+              type: integer
+              description: >
+                Number of rows carried under a pre-rename key that were
+                DISCARDED because the envelope also carried the current name,
+                which wins. Counted separately from settings_renamed because
+                the operator loses a value here (the staler of the two).
     Status:
       type: object
       properties:

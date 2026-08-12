@@ -1494,7 +1494,11 @@ func TestResolveMBIDCheckClient_Found(t *testing.T) {
 // stored the value that took the second branch; and #3008 made settings import
 // store the canonical form too, which is how a hostile review surfaced it.
 func TestApplyPersistedBasePath_RootIsNotAnOverride(t *testing.T) {
-	for _, stored := range []string{"/", ""} {
+	// "//" and "///" are here because they are the SHARP case, not a variation:
+	// TrimRight reduces them to "", which slipped past the validation guard
+	// (it only checks a non-empty normalized value) and reached the apply step
+	// as a cleared base path. "/" and "" are the ordinary no-prefix spellings.
+	for _, stored := range []string{"/", "", "//", "///"} {
 		t.Run("stored_"+stored, func(t *testing.T) {
 			db := openTestDB(t)
 			cfg := &config.Config{}

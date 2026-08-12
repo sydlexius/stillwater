@@ -49,6 +49,11 @@ func isProviderKeyOwnedSetting(key string) bool {
 		(strings.HasSuffix(key, ".api_key") || strings.HasSuffix(key, ".key_status"))
 }
 
+// maxReportedRejectedKeys caps ImportResult.SettingsRejectedKeys. The count
+// stays exact; only the name list truncates, so an envelope carrying thousands
+// of bad keys cannot inflate the response.
+const maxReportedRejectedKeys = 100
+
 // renamedSettingKeys maps a settings key that was RENAMED to its current name,
 // so an envelope exported before the rename restores the operator's configured
 // value instead of stranding it under a name nothing reads (#3008).
@@ -62,11 +67,6 @@ func isProviderKeyOwnedSetting(key string) bool {
 // Only add an entry here for a key whose MEANING and VALUE DOMAIN are
 // unchanged. A rename that also changes units or scale needs a conversion, not
 // an alias.
-// maxReportedRejectedKeys caps ImportResult.SettingsRejectedKeys. The count
-// stays exact; only the name list truncates, so an envelope carrying thousands
-// of bad keys cannot inflate the response.
-const maxReportedRejectedKeys = 100
-
 var renamedSettingKeys = map[string]string{
 	// #3004: disambiguated from the differently-scoped
 	// provider.name_similarity_threshold. Same 0-100 percent domain.

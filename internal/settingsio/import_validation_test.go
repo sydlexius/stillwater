@@ -191,8 +191,22 @@ func TestImport_MigratesRenamedSettingKey(t *testing.T) {
 	db2 := setupTestDB(t)
 	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
 	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
-	if _, err := svc2.Import(ctx, envelope, "test-passphrase"); err != nil {
+	res, err := svc2.Import(ctx, envelope, "test-passphrase")
+	if err != nil {
 		t.Fatalf("Import: %v", err)
+	}
+
+	// The migration must be REPORTED, not just performed. Without this, a
+	// regression that relocates the key correctly but never increments the
+	// counter passes the whole suite, and the operator sees a restore that
+	// moved a setting without saying so. The only other test touching this
+	// counter pins it at 0, so nothing asserted the non-zero case.
+	if res.SettingsRenamed != 1 {
+		t.Errorf("SettingsRenamed = %d, want 1", res.SettingsRenamed)
+	}
+	if res.SettingsRenamedDropped != 0 {
+		t.Errorf("SettingsRenamedDropped = %d, want 0 -- nothing collided here",
+			res.SettingsRenamedDropped)
 	}
 
 	// The operator's configured value must survive under the CURRENT name --

@@ -1455,6 +1455,19 @@ func applyPersistedBasePath(ctx context.Context, db *sql.DB, cfg *config.Config,
 	if override == "" || override == "/" {
 		return
 	}
+	// Reject an ALL-SLASH value BEFORE trimming. TrimRight reduces "//" and
+	// "///" to "", which then slips past the validation guard below (it only
+	// checks a non-empty normalized value) and reaches the apply step as a
+	// cleared base path -- silently wiping a configured one. The guard's own
+	// comment promises to reject a leading "//" (CodeQL "bad redirect check"),
+	// and before this it did so for "//foo" but not for "//" itself.
+	if strings.TrimLeft(override, "/") == "" {
+		logger.Warn("ignoring invalid persisted base_path override",
+			"override", override,
+			"reason", "value is only slashes; use \"/\" for no path prefix",
+		)
+		return
+	}
 	normalized := strings.TrimRight(override, "/")
 	if normalized == "/" {
 		normalized = ""

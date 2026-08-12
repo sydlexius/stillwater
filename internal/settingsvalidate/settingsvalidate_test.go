@@ -508,26 +508,36 @@ func TestValidateStoredState(t *testing.T) {
 		canonical   string
 		wantOK      bool
 		wantRelaxed bool
-		wantErr     bool
+		// wantErrMsg is the EXACT message, empty when no error is expected.
+		// Exact because ValidateStoredState returns errors from two different
+		// branches for a policy key -- the DATA validator's message when the
+		// value is malformed, and the original POLICY refusal when no data
+		// validator is declared. A boolean check cannot tell them apart, so a
+		// regression returning the policy refusal for "banana" would pass.
+		wantErrMsg string
 	}{
 		// Ordinary data rules are unchanged from Validate: a restore does not
 		// get to store a malformed value.
-		{"valid int", "provider.name_similarity_threshold", "60", "60", true, false, false},
-		{"invalid int still rejected", "provider.name_similarity_threshold", "101", "", true, false, true},
-		{"fractional still rejected", "provider.name_similarity_threshold", "0.5", "", true, false, true},
-		{"unknown key passes through", "not.a.registered.key", "anything", "anything", false, false, false},
+		{"valid int", "provider.name_similarity_threshold", "60", "60", true, false, ""},
+		{"invalid int still rejected", "provider.name_similarity_threshold", "101", "", true, false,
+			"provider.name_similarity_threshold must be between 0 and 100"},
+		{"fractional still rejected", "provider.name_similarity_threshold", "0.5", "", true, false,
+			"provider.name_similarity_threshold must be between 0 and 100"},
+		{"unknown key passes through", "not.a.registered.key", "anything", "anything", false, false, ""},
 
 		// The policy key. "false" is REFUSED by Validate (the break-glass
 		// guard) but is a legitimate stored state to re-establish.
-		{"policy-refused value is relaxed", "auth.providers.local.enabled", "false", "false", true, true, false},
-		{"policy-refused, canonicalised", "auth.providers.local.enabled", "  FALSE  ", "false", true, true, false},
-		{"policy value that is also VALID is not relaxed", "auth.providers.local.enabled", "true", "true", true, false, false},
-		{"policy value canonicalised without relaxing", "auth.providers.local.enabled", "1", "true", true, false, false},
+		{"policy-refused value is relaxed", "auth.providers.local.enabled", "false", "false", true, true, ""},
+		{"policy-refused, canonicalised", "auth.providers.local.enabled", "  FALSE  ", "false", true, true, ""},
+		{"policy value that is also VALID is not relaxed", "auth.providers.local.enabled", "true", "true", true, false, ""},
+		{"policy value canonicalised without relaxing", "auth.providers.local.enabled", "1", "true", true, false, ""},
 
 		// The half that a previous revision got wrong: relaxing the POLICY
 		// must never relax the DATA rule.
-		{"malformed rejected even for a policy key", "auth.providers.local.enabled", "banana", "", true, false, true},
-		{"empty rejected even for a policy key", "auth.providers.local.enabled", "", "", true, false, true},
+		{"malformed rejected even for a policy key", "auth.providers.local.enabled", "banana", "", true, false,
+			"auth.providers.local.enabled must be true or false"},
+		{"empty rejected even for a policy key", "auth.providers.local.enabled", "", "", true, false,
+			"auth.providers.local.enabled must be true or false"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -538,10 +548,17 @@ func TestValidateStoredState(t *testing.T) {
 			if relaxed != c.wantRelaxed {
 				t.Errorf("relaxed = %v, want %v", relaxed, c.wantRelaxed)
 			}
-			if (err != nil) != c.wantErr {
-				t.Fatalf("err = %v, wantErr %v", err, c.wantErr)
-			}
-			if c.wantErr {
+			if c.wantErrMsg == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("expected error %q, got nil", c.wantErrMsg)
+				}
+				if err.Error() != c.wantErrMsg {
+					t.Errorf("error = %q, want %q", err.Error(), c.wantErrMsg)
+				}
 				return
 			}
 			if canonical != c.canonical {

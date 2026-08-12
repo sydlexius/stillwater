@@ -237,12 +237,15 @@ var policyKeys = map[string]string{
 	// misconfigured. A backup that legitimately recorded it as disabled is a
 	// state to restore, not an operator disabling it now.
 	//
-	// SAFE TO EXEMPT TODAY FOR A SECOND, LOAD-BEARING REASON: nothing reads
-	// this value at runtime. Its only non-test consumer is
-	// handlers_platform.go, which feeds templates.AuthProvidersData.LocalEnabled,
-	// and that field appears nowhere in the rendered template -- the toggle is
-	// hardcoded disabled. handleLogin selects the provider from auth.method,
-	// never from this key. So restoring it as false disables nothing.
+	// SAFE TO EXEMPT TODAY FOR A SECOND, LOAD-BEARING REASON: no AUTHENTICATION
+	// decision reads this value. It IS read once -- handlers_platform.go
+	// populates templates.AuthProvidersData.LocalEnabled from it -- but that
+	// field appears nowhere in the rendered template (the toggle is hardcoded
+	// disabled), and handleLogin selects the provider from auth.method, never
+	// from this key. So restoring it as false changes no auth behavior.
+	//
+	// Stated precisely because it justifies a security-relevant exemption:
+	// "nothing reads it" would be false and would rot into a wrong premise.
 	//
 	// RE-ASSESS BEFORE WIRING IT INTO THE LOGIN PATH. One of the two import
 	// entry points (POST /api/v1/setup/restore) is UNAUTHENTICATED -- gated on
