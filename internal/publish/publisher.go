@@ -777,6 +777,28 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	if p == nil {
 		return nil
 	}
+	// #2712: the wall-clock instant THIS PUSH BEGAN. Stamped as the first
+	// statement of the function, before any I/O or database access, because the
+	// repair's delete gate treats a marker older than snapAt as an unrelated
+	// earlier delete and repairs anyway. Every step between function entry and
+	// the byte read -- GetPlatformIDs, ImageDir, getActiveNamingConfig (a DB
+	// read), FindExistingImage (a stat loop), ReadImageFileBounded (the whole
+	// artwork file, off a network mount) -- is time during which the push is
+	// unambiguously in flight and an operator delete is genuinely concurrent.
+	// Stamping after any of them discards those deletes and resurrects the
+	// artwork, which is #2712 unfixed for the early part of every push.
+	//
+	// FUNCTION ENTRY specifically, not merely "before the first read": there is
+	// no defensible later line. Any candidate is some prologue step's end, and
+	// the operator can delete during that step. Entry is the only instant that
+	// is provably before everything this push does.
+	//
+	// Erring early is the safe direction and costs nothing: an earlier snapAt
+	// can only make the gate MORE willing to treat a delete as concurrent, and
+	// suppressing a repair merely leaves a file the operator can re-add, while
+	// resurrecting a deliberate delete is not automatically recoverable at all.
+	snapAt := time.Now()
+
 	warnings := make([]string, 0)
 
 	platformIDs, err := p.artistService.GetPlatformIDs(ctx, a.ID)
@@ -844,10 +866,6 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		return warnings
 	}
 	snapMod := fileModTime(filePath)
-	// #2712: the wall-clock instant these bytes were observed. The repair
-	// compares it against any operator delete marker so it can tell "the
-	// operator threw this away after I looked" from "a peer destroyed it".
-	snapAt := time.Now()
 
 	ct := "image/jpeg"
 	if strings.EqualFold(filepath.Ext(filePath), ".png") {
@@ -1124,10 +1142,18 @@ func hasReadableFanart(snapshot []fanartSnapshot) bool {
 // compacts survivors to contiguous indices on every slot delete, so a slot index
 // is not a stable identity for the file an in-flight push is verifying, and a
 // per-slot marker would let this repair restore a deleted backdrop under a
-// shifted filename. img.MarkDeleteIntent documents the worked case. Erring
-// toward over-suppression is deliberate: a missed repair is recoverable by the
-// next push or the exists-flag reconciler, while resurrecting a deliberate
-// delete is not recoverable at all unless the operator notices and deletes again.
+// shifted filename. img.MarkDeleteIntent documents the worked case.
+//
+// Erring toward over-suppression is deliberate, and the reason is NOT that a
+// missed repair heals itself -- nothing in this codebase restores a local
+// artwork file from a peer. maintenance.ScanExistsFlags only clears exists_flag
+// for vanished files, RestoreExistsFlags only sets it for files confirmed
+// present, and the artwork reconciler in reconcile.go pushes local bytes OUT.
+// The suppressed slot stays missing until the operator re-adds it, prompted by
+// the exists-flag scan surfacing it as gone. That is accepted because the two
+// failures are not comparable: a missing slot is VISIBLE and re-addable by hand,
+// while a resurrected delete is silent, undoes what the operator deliberately
+// did, and is not recoverable at all unless they notice and delete again.
 //
 // The OVERWRITE direction is NOT refused, and that is a deliberate, documented
 // trade rather than an oversight. mtime cannot separate "the peer rewrote it"
@@ -1246,6 +1272,32 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	if p == nil {
 		return nil
 	}
+	// #2712: ONE wall-clock instant for the WHOLE set, stamped as the first
+	// statement of the function.
+	//
+	// ONE instant, not one per file, because the snapshot is a single
+	// observation of this directory and the repair's delete gate asks "did the
+	// operator delete after I looked?" -- a per-file time would make the answer
+	// depend on where in the read order a given backdrop happened to fall, so a
+	// delete landing mid-snapshot would be honored for the files read before it
+	// and ignored for the ones read after.
+	//
+	// FUNCTION ENTRY specifically, not merely "before the first read". The whole
+	// prologue below -- GetPlatformIDs, ImageDir, getActiveFanartPrimary,
+	// DiscoverFanart (a directory walk), fanartIdentityIndex -- is time during
+	// which this push is unambiguously already in flight, so a delete landing
+	// there IS concurrent with it. Stamping after any of those steps makes the
+	// gate read such a delete as an old unrelated one and restore the artwork,
+	// which is #2712 unfixed for the early part of every push. There is no
+	// defensible line later than entry: every candidate is some prologue step's
+	// end, and the operator can delete during that step.
+	//
+	// Erring early is the only safe direction and costs nothing: an earlier
+	// snapAt can only make the gate MORE willing to treat a delete as
+	// concurrent, and a suppressed repair leaves a file the operator can re-add,
+	// while a resurrected delete is not automatically recoverable at all.
+	snapAt := time.Now()
+
 	warnings := make([]string, 0)
 
 	platformIDs, err := p.artistService.GetPlatformIDs(ctx, a.ID)
@@ -1285,17 +1337,6 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	// per-file notified set. Both are inert when the notifier is unwired.
 	fanartIdentityIdx := p.fanartIdentityIndex(ctx, a)
 	collisionNotified := make(map[string]bool)
-
-	// #2712: ONE wall-clock instant for the WHOLE set, captured before the first
-	// read rather than per file. The snapshot is a single observation of this
-	// directory, and the repair's delete gate asks "did the operator delete after
-	// I looked?" -- taking a per-file time would make the answer depend on where
-	// in the read order a given backdrop happened to fall, so a delete landing
-	// mid-snapshot would be honored for the files read before it and ignored for
-	// the ones read after. Capturing before the first read also errs the only
-	// safe way: an earlier snapAt can only make the gate MORE willing to treat a
-	// delete as concurrent.
-	snapAt := time.Now()
 
 	snapshot, snapWarnings, snapCancelErr := p.snapshotFanart(ctx, fanartPaths)
 	warnings = append(warnings, snapWarnings...)

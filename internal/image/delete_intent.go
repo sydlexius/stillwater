@@ -67,13 +67,26 @@ const DeleteIntentRetention = 5 * time.Minute
 //
 // THE TRADE THIS MAKES, stated plainly: a type-wide marker OVER-SUPPRESSES. A
 // genuine peer clobber of a DIFFERENT fanart slot inside the same window is not
-// repaired by that push. That is the correct direction because the asymmetry is
-// not symmetric. A missed repair is RECOVERABLE -- the next push, or the
-// exists-flag reconciler, catches the still-missing file. Resurrecting a
-// deliberate delete is UNRECOVERABLE in any automatic sense: nothing will remove
-// the file again, and the operator only learns of it by noticing the artwork is
-// back and deleting it a second time. Given a choice between repairing late and
-// undoing an operator, repair late.
+// repaired by that push, AND NOTHING WILL PUT THOSE BYTES BACK LATER. Be exact
+// about that, because the obvious consolation is false: no component in this
+// codebase restores a local artwork file from a platform peer.
+// maintenance.ScanExistsFlags only clears exists_flag 1->0 for files it confirms
+// have vanished, maintenance.RestoreExistsFlags is monotone 0->1 and only for
+// files positively confirmed present on disk, and publish's artwork reconciler
+// pushes LOCAL bytes OUT to platforms, never the reverse. Fanart has no
+// .sw-backup either (img.HasBackup is single-slot only), so there is no local
+// copy to revert from. What actually happens is that the exists-flag scan
+// surfaces the slot as missing and the operator re-adds the artwork by hand.
+//
+// The direction of the trade is still right, on the asymmetry of the two
+// outcomes rather than on any automatic recovery. A missed repair is a VISIBLE,
+// MANUALLY RECOVERABLE loss: the slot reads as empty, and re-adding artwork is
+// an ordinary operation the operator already knows how to perform. Resurrecting
+// a deliberate delete is INVISIBLE and unrecoverable in any automatic sense:
+// nothing will remove the file again, and the operator only learns of it by
+// noticing the artwork is back and deleting it a second time. Given a choice
+// between a loss the operator can see and fix and a silent undo of what they
+// deliberately did, take the former.
 //
 // Entries are pruned opportunistically on write (see MarkDeleteIntent); nothing
 // runs a goroutine to expire them. The same unbounded-sync.Map lifetime caveat
