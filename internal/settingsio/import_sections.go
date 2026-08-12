@@ -49,11 +49,6 @@ func isProviderKeyOwnedSetting(key string) bool {
 		(strings.HasSuffix(key, ".api_key") || strings.HasSuffix(key, ".key_status"))
 }
 
-// importSettings upserts every key-value pair from the exported settings map
-// into the settings KV table. The timestamp is fixed for the entire batch so
-// that multiple calls within a single import produce a consistent updated_at.
-// Accepts a dbExecutor so the orchestrator can hand it a *sql.Tx wrapping
-// every s.db-direct import section.
 // renamedSettingKeys maps a settings key that was RENAMED to its current name,
 // so an envelope exported before the rename restores the operator's configured
 // value instead of stranding it under a name nothing reads (#3008).
@@ -67,12 +62,22 @@ func isProviderKeyOwnedSetting(key string) bool {
 // Only add an entry here for a key whose MEANING and VALUE DOMAIN are
 // unchanged. A rename that also changes units or scale needs a conversion, not
 // an alias.
+// maxReportedRejectedKeys caps ImportResult.SettingsRejectedKeys. The count
+// stays exact; only the name list truncates, so an envelope carrying thousands
+// of bad keys cannot inflate the response.
+const maxReportedRejectedKeys = 100
+
 var renamedSettingKeys = map[string]string{
 	// #3004: disambiguated from the differently-scoped
 	// provider.name_similarity_threshold. Same 0-100 percent domain.
 	"mbid_revalidate.name_similarity": "mbid_revalidate.name_similarity_threshold",
 }
 
+// importSettings upserts every key-value pair from the exported settings map
+// into the settings KV table. The timestamp is fixed for the entire batch so
+// that multiple calls within a single import produce a consistent updated_at.
+// Accepts a dbExecutor so the orchestrator can hand it a *sql.Tx wrapping
+// every s.db-direct import section.
 func (s *Service) importSettings(ctx context.Context, db dbExecutor, settings map[string]string, result *ImportResult) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range settings {
@@ -115,25 +120,23 @@ func (s *Service) importSettings(ctx context.Context, db dbExecutor, settings ma
 		// unvalidated too, and diverging here would make a restore refuse
 		// keys the API accepts. Whether that default is right at all is
 		// #3005; this change deliberately matches it rather than settling it.
-		canonical, ok, verr := settingsvalidate.Validate(k, v)
-		if ok && verr != nil {
-			// A POLICY validator refuses a well-formed value because an
-			// operator may not SET it through the API -- not because the value
-			// is unusable. A restore is not an operator setting it: it
-			// re-establishes a state the operator already had and chose to back
-			// up. Enforcing it here would either silently change a security
-			// posture on restore or make a legitimate backup unrestorable
-			// (#2534), so the stored value is applied as-is.
-			//
-			// Surfaced by a pre-existing round-trip test: auth.providers.local.enabled
-			// is the break-glass guard, and a backup taken with it disabled must
-			// still restore to that state.
-			if reason, isPolicy := settingsvalidate.IsPolicy(k); isPolicy {
-				slog.Info("import: applying setting that a write-time policy would refuse",
-					"key", k, "policy", reason)
-				canonical = v
-				verr = nil
-			}
+		// ValidateStoredState, not Validate: an import RE-ESTABLISHES stored
+		// state rather than accepting an operator action. It applies every
+		// data-validity rule and relaxes only the write-time POLICY half --
+		// auth.providers.local.enabled refuses any falsy value so local auth
+		// cannot be switched off through the API, which is a rule about WHO IS
+		// WRITING, not about whether the value is usable. Enforcing that during
+		// a restore either silently changes a security posture or makes a
+		// legitimate backup unrestorable (#2534).
+		//
+		// The value is still held to the data rule and still canonicalised: an
+		// earlier revision of this code relaxed the whole validator and a
+		// review proved it then stored "banana" for a boolean key.
+		canonical, ok, relaxed, verr := settingsvalidate.ValidateStoredState(k, v)
+		if relaxed {
+			reason, _ := settingsvalidate.IsPolicy(k)
+			slog.Info("import: applying setting that a write-time policy would refuse",
+				"key", k, "policy", reason)
 		}
 		if ok && verr != nil {
 			// Skip the row, do not abort the restore. An envelope is a batch
@@ -143,7 +146,9 @@ func (s *Service) importSettings(ctx context.Context, db dbExecutor, settings ma
 			slog.Warn("import: skipping setting that failed validation",
 				"key", k, "error", verr)
 			result.SettingsRejected++
-			result.SettingsRejectedKeys = append(result.SettingsRejectedKeys, k)
+			if len(result.SettingsRejectedKeys) < maxReportedRejectedKeys {
+				result.SettingsRejectedKeys = append(result.SettingsRejectedKeys, k)
+			}
 			continue
 		}
 		// Store the canonical form, not the raw envelope value: validateBool

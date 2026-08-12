@@ -1444,7 +1444,15 @@ func applyPersistedBasePath(ctx context.Context, db *sql.DB, cfg *config.Config,
 		return
 	}
 	override := getDBStringSetting(ctx, db, "server.base_path", "")
-	if override == "" {
+	// "" and "/" both mean "no path prefix" and must behave identically. They
+	// did not: "" returned early leaving a configured base_path alone, while
+	// "/" fell through, normalised back to "" below, and was APPLIED -- wiping
+	// a base path set in config.toml. The API canonicalises an empty PUT to
+	// "/" (validateBasePath), so an operator clearing the field in the UI
+	// already stored the value that takes the second branch; #3008 made import
+	// reach it too by storing the canonical form. Treat them the same here,
+	// which is what the rest of this function already assumes.
+	if override == "" || override == "/" {
 		return
 	}
 	normalized := strings.TrimRight(override, "/")

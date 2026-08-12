@@ -363,3 +363,81 @@ func TestImport_AppliesPolicyRefusedSetting(t *testing.T) {
 			res.SettingsRejected)
 	}
 }
+
+// TestImport_PolicyExemptionStillEnforcesDataRules is the regression test for a
+// defect a hostile review found in the FIRST version of the policy exemption.
+//
+// That version relaxed the whole validator for a policy key, which discarded
+// the data-validity rule along with the policy one: an envelope carrying
+// "banana" for a BOOLEAN setting was stored verbatim, and getDBBoolSetting then
+// read it as false. Relaxing "you may not set this here" must never relax "this
+// is not a usable value".
+//
+// The canonicalisation half matters for the same reason it does everywhere
+// else: " FALSE " has to land as "false", or the boot reader's
+// v == "true" || v == "1" test misreads it.
+func TestImport_PolicyExemptionStillEnforcesDataRules(t *testing.T) {
+	for _, c := range []struct {
+		name         string
+		seeded       string
+		wantStored   string // "" means the row must be absent
+		wantRejected int
+	}{
+		{"policy-refused but valid stays", "false", "false", 0},
+		{"policy-refused, non-canonical, canonicalised", "  FALSE  ", "false", 0},
+		{"malformed is STILL rejected", "banana", "", 1},
+		{"empty is rejected as malformed", "", "", 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			db := setupTestDB(t)
+			ctx := context.Background()
+			provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+
+			now := time.Now().UTC().Format(time.RFC3339)
+			if _, err := db.ExecContext(ctx,
+				`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+				 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+				"auth.providers.local.enabled", c.seeded, now); err != nil {
+				t.Fatalf("seeding %q: %v", c.seeded, err)
+			}
+
+			svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+			envelope, err := svc.Export(ctx, "test-passphrase")
+			if err != nil {
+				t.Fatalf("Export: %v", err)
+			}
+
+			db2 := setupTestDB(t)
+			provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+			svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+			res, err := svc2.Import(ctx, envelope, "test-passphrase")
+			if err != nil {
+				t.Fatalf("Import: %v", err)
+			}
+
+			var got string
+			scanErr := db2.QueryRowContext(ctx,
+				`SELECT value FROM settings WHERE key = ?`,
+				"auth.providers.local.enabled").Scan(&got)
+
+			if c.wantStored == "" {
+				if scanErr == nil {
+					t.Errorf("seeded %q: stored %q, but a malformed value must be REJECTED "+
+						"even for a policy-exempt key", c.seeded, got)
+				}
+			} else {
+				if scanErr != nil {
+					t.Fatalf("seeded %q: expected it to be stored as %q, got error: %v",
+						c.seeded, c.wantStored, scanErr)
+				}
+				if got != c.wantStored {
+					t.Errorf("seeded %q: stored %q, want %q", c.seeded, got, c.wantStored)
+				}
+			}
+			if res.SettingsRejected != c.wantRejected {
+				t.Errorf("seeded %q: SettingsRejected = %d, want %d",
+					c.seeded, res.SettingsRejected, c.wantRejected)
+			}
+		})
+	}
+}

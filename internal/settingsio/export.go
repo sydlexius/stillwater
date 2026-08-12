@@ -295,6 +295,11 @@ type ImportResult struct {
 	// WHICH settings did not survive the restore rather than only how many.
 	// Values are deliberately omitted: a rejected value may be malformed
 	// secret-adjacent input, and the count plus the key is enough to act on.
+	//
+	// CAPPED at maxReportedRejectedKeys. The envelope is attacker-influenced
+	// (one import path is unauthenticated on a zero-user instance) and this
+	// slice is serialized straight into the response, so it must not grow with
+	// the input. SettingsRejected keeps the true total when the list truncates.
 	SettingsRejectedKeys []string `json:"settings_rejected_keys,omitempty"`
 	// SettingsRenamed counts envelope rows carried under a key that has since
 	// been RENAMED and were applied under the current name instead (#3008).
