@@ -869,6 +869,19 @@ func TestFanartWarningLog_Result_DoesNotAliasTheLog(t *testing.T) {
 	// No t.Parallel; see the note at the top of this file.
 	var log fanartWarningLog
 
+	// The spare capacity is ESTABLISHED here rather than inherited from append's
+	// growth (#3018 review). Left to itself, add() grows kept to cap 32 for len
+	// 25 and the alias forms because of Go's growth heuristic -- which is a
+	// runtime implementation detail, not a promise. A future heuristic landing
+	// len == cap at the boundary would make this test fail its own precondition
+	// while the production code was still correct, and a test that fails for a
+	// reason unrelated to the code under test is worse than no test.
+	//
+	// Seeding the capacity makes the hazard reachable by construction. It stays
+	// faithful to production, where kept likewise arrives at result() with room
+	// to spare; it just no longer DEPENDS on that being true.
+	log.kept = make([]string, 0, maxFanartSnapshotWarnings+1)
+
 	// Past the cap, so there IS an overflow summary to clobber. Under the cap
 	// the append never happens and this test would assert nothing.
 	const refusals = maxFanartSnapshotWarnings + 35
@@ -876,9 +889,11 @@ func TestFanartWarningLog_Result_DoesNotAliasTheLog(t *testing.T) {
 		log.add(fmt.Sprintf("fanart %d refused", i))
 	}
 
-	// PRECONDITION. Spare capacity is the whole mechanism: with len == cap the
-	// append would allocate a fresh array, the alias would not form, and a
-	// green result would say nothing about the version that does alias.
+	// PRECONDITION, now guaranteed by the seed above rather than hoped for.
+	// Kept because it is what makes the mechanism explicit: with len == cap the
+	// append would allocate a fresh array, the alias would not form, and a green
+	// result would say nothing about the version that does alias. It also fails
+	// loudly if someone removes the seed.
 	if len(log.kept) == cap(log.kept) {
 		t.Fatalf("precondition failed: kept has len %d == cap %d, so an append would reallocate and the "+
 			"aliasing this test exists to catch cannot occur", len(log.kept), cap(log.kept))
