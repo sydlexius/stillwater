@@ -40,6 +40,17 @@ import (
 // is covered directly in snapshot_bound_test.go; what this file adds is the
 // WIRING -- that snapshotFanart actually consults it and discards the bytes.
 
+// fifoDrainTimeout bounds every wait on a FIFO writer in this file.
+//
+// It is LONG on purpose, and 2s was measurably wrong. These helpers push up to
+// 25 MiB through the pipe, so a deadline chosen for "the writer is wedged in
+// open(2)" also fires on a writer that is simply slow under a loaded CI runner
+// -- which reports a healthy fixture as a failure. A timeout that is too long
+// only costs wall-clock on a run that was already going to fail; one that is
+// too short invents failures on runs that were fine. The sibling FIFO helpers
+// in snapshot_stall_cap_unix_test.go use the same deadline.
+const fifoDrainTimeout = 30 * time.Second
+
 // fifoDeliveringBytes creates a FIFO at path and starts a writer that sends n
 // bytes and closes.
 //
@@ -97,7 +108,12 @@ func fifoDeliveringBytes(t *testing.T, path string, n int64) {
 		go func() { wg.Wait(); close(done) }()
 		select {
 		case <-done:
-		case <-time.After(2 * time.Second):
+		// fifoDrainTimeout, NOT a short local guess. This helper delivers up to
+		// 25 MiB through the pipe, so a deadline sized for "stuck in open(2)"
+		// also fires on a writer that is merely slow on a loaded runner, turning
+		// a healthy test red. Every FIFO helper in this package uses the same
+		// long deadline for the same reason (snapshot_stall_cap_unix_test.go).
+		case <-time.After(fifoDrainTimeout):
 			// The writer is still parked in open(2) because nothing ever read.
 			// Open the READ end NON-BLOCKING to release it: O_RDONLY|O_NONBLOCK
 			// on a FIFO returns immediately whether or not a writer is waiting,
@@ -112,7 +128,7 @@ func fifoDeliveringBytes(t *testing.T, path string, n int64) {
 			// that is exiting anyway is the cheaper failure.
 			select {
 			case <-done:
-			case <-time.After(2 * time.Second):
+			case <-time.After(fifoDrainTimeout):
 				t.Errorf("the FIFO writer for %q never drained; releasing the parked open(2) did not "+
 					"work on this platform", path)
 			}
