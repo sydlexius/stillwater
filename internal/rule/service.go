@@ -1101,6 +1101,27 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	// dismissed_at when the existing row is dismissed, while still letting
 	// resolved -> open transitions happen normally (a user-deleted file
 	// should re-open the violation that previously fixed it).
+	//
+	// Issue #2969: pending_choice is the SECOND piece of decision state stored
+	// in this row, and it was unprotected. Callers are allowed to build a
+	// PARTIAL RuleViolation -- the health subscriber's compensating fail write
+	// sets only Status: open and leaves Candidates nil -- and every column
+	// below that reads excluded.* unconditionally treats "the caller did not
+	// fill this in" as "the caller wants this cleared". That downgraded a
+	// parked human choice to open and wiped the candidate list it was a choice
+	// between. Both guards below are written as positive ALLOW-LISTS: an
+	// incoming value acts only when it is explicitly recognized as carrying
+	// real information, and anything unrecognized leaves the stored value
+	// alone. For a column whose loss is unrecoverable that is the safe
+	// default direction; a negated "clear unless it looks empty" list would
+	// act on every string nobody thought of.
+	//
+	// Nothing traps a row in pending_choice. The paths that legitimately move
+	// it off -- a fix succeeding (finalizeResolvedRows writes 'resolved',
+	// allow-listed below), the rule genuinely passing (RecordRulePass /
+	// ResolveViolationIfActive), the operator dismissing it or applying a
+	// candidate (DismissViolation / ResolveViolation) -- all still work. The
+	// last four are direct UPDATE statements that never reach this clause.
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, candidates, dismissed_at, resolved_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1111,8 +1132,15 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 			fixable = excluded.fixable,
 			status = CASE WHEN rule_violations.status = 'dismissed'
 			              THEN rule_violations.status
-			              ELSE excluded.status END,
-			candidates = excluded.candidates,
+			              WHEN rule_violations.status <> 'pending_choice'
+			              THEN excluded.status
+			              WHEN excluded.status IN ('pending_choice', 'resolved', 'dismissed')
+			              THEN excluded.status
+			              ELSE rule_violations.status END,
+			candidates = CASE WHEN json_valid(excluded.candidates)
+			                       AND json_array_length(excluded.candidates) > 0
+			                  THEN excluded.candidates
+			                  ELSE rule_violations.candidates END,
 			dismissed_at = CASE WHEN rule_violations.status = 'dismissed'
 			                    THEN rule_violations.dismissed_at
 			                    ELSE excluded.dismissed_at END,
