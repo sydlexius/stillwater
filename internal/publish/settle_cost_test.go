@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -29,16 +30,28 @@ import (
 // settleCostUploader is a peer that does nothing but count. The repair has no
 // damage to find, which is the point: this test measures the WAIT, and any
 // restore work would add noise to the only quantity under test.
-type settleCostUploader struct{ calls int }
+type settleCostUploader struct {
+	calls int
+	// got records the BYTES of every upload, because a count cannot tell ten
+	// slots from one slot ten times -- and "ten distinct slots were pushed" is
+	// the premise the elapsed-time assertion rests on. Written only from the
+	// push's own goroutine (UploadImage is synchronous) and read after the push
+	// returns.
+	got []string
+}
 
-func (u *settleCostUploader) UploadImage(_ context.Context, _, _ string, _ []byte, _ string) error {
+func (u *settleCostUploader) record(data []byte) error {
 	u.calls++
+	u.got = append(u.got, string(data))
 	return nil
 }
 
-func (u *settleCostUploader) UploadImageAtIndex(_ context.Context, _, _ string, _ int, _ []byte, _ string) error {
-	u.calls++
-	return nil
+func (u *settleCostUploader) UploadImage(_ context.Context, _, _ string, data []byte, _ string) error {
+	return u.record(data)
+}
+
+func (u *settleCostUploader) UploadImageAtIndex(_ context.Context, _, _ string, _ int, data []byte, _ string) error {
+	return u.record(data)
 }
 
 // TestSettleWait_IsPaidOncePerPush_NotPerFanartSlot pins the cost claim.
@@ -76,9 +89,17 @@ func TestSettleWait_IsPaidOncePerPush_NotPerFanartSlot(t *testing.T) {
 		t.Fatal("precondition failed: no backdrop reached the peer, so the repair was never registered " +
 			"and no settle wait was ever owed -- this test would pass without measuring anything")
 	}
-	if up.calls < slots {
-		t.Fatalf("precondition failed: only %d of %d backdrops reached the peer; the fixture is not "+
-			"exercising a multi-slot push, which is the whole subject of this test", up.calls, slots)
+	// EVERY DISTINCT SLOT, not merely enough requests. A count is satisfied by
+	// one slot uploaded ten times, and a push that walked a single slot would
+	// legitimately pay one settle wait -- so the ceiling below would pass while
+	// measuring nothing about multiplication. Assert the payloads.
+	for i := range slots {
+		want := "BACKDROP-" + itoa(i)
+		if !slices.Contains(up.got, want) {
+			t.Fatalf("precondition failed: slot %d (%q) never reached the peer; the peer got %v. The "+
+				"elapsed time below only means something if the push actually walked all %d slots",
+				i, want, up.got, slots)
+		}
 	}
 	if len(warnings) != 0 {
 		t.Fatalf("precondition failed: the push warned %v; a degraded push may not have walked every "+
@@ -112,10 +133,21 @@ func TestSettleWait_IsPaidOncePerPush_NotPerFanartSlot(t *testing.T) {
 	// also be under the ceiling, so the ceiling alone cannot tell "once" from
 	// "never". This is what keeps the test from passing on a build that deleted
 	// the settle wait outright.
-	if elapsed < reassertSettleDelay {
-		t.Errorf("the push took %v, less than one settle delay (%v); the wait was not paid at all, so "+
-			"the late-delete window this PR exists to cover is open again",
-			elapsed, reassertSettleDelay)
+	//
+	// A LITERAL, like the ceiling, and for a sharper reason than symmetry. If
+	// this floor read reassertSettleDelay while the ceiling stayed a fixed 1s,
+	// the two would CONTRADICT each other the moment the constant were raised
+	// past that ceiling -- the test would demand an elapsed time it also
+	// forbids, and fail on a change that broke nothing. Both bounds are
+	// literals so the pair stays self-consistent whatever the constant becomes;
+	// the mismatch surfaces as this test failing loudly on a retune, which is a
+	// prompt to re-derive both numbers rather than a false alarm.
+	const floor = 200 * time.Millisecond
+	if elapsed < floor {
+		t.Errorf("the push took %v, under the %v floor, so the settle wait was not paid at all and the "+
+			"late-delete window this PR exists to cover is open again. If reassertSettleDelay was "+
+			"deliberately lowered, re-derive BOTH bounds here rather than only this one",
+			elapsed, floor)
 	}
 }
 
