@@ -352,8 +352,14 @@ func TestSnapshotFanart_TotalBytesCap_DegradesLoudly(t *testing.T) {
 	// No t.Parallel; see the note at the top of this file.
 	dir := t.TempDir()
 
-	// Each file is just under the per-file cap, so it takes several to cross the
-	// total. Sparse, so this costs no real disk.
+	// Each file sits EXACTLY AT the per-file cap, which both size checks admit
+	// because they refuse on a strict `>` rather than `>=` (#3018 review; the
+	// comment used to say "just under", which misdescribes the boundary anyone
+	// later reasoning about it would rely on). At the cap is the largest a file
+	// can be without tripping the per-file bound, so it is also the fewest
+	// fixtures needed to cross the TOTAL -- which is the bound this test is
+	// about, and the per-file precondition below pins that separation.
+	// Sparse, so this costs no real disk.
 	const each = int64(maxFanartSnapshotFileBytes)
 	count := int(maxFanartSnapshotTotalBytes/each) + 1
 	paths := make([]string, 0, count)
