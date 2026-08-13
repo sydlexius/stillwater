@@ -415,17 +415,25 @@ func TestSyncAllFanart_StalledCap_WarningNamesTheMount(t *testing.T) {
 	// branch it names.
 	//
 	// READ THE GAUGE; DO NOT PERFORM A READ TO TEST IT (#3016). The obvious
-	// version of this check -- ReadImageFileBounded on a probe file -- is
-	// SELF-POISONING: that read occupies a stalled-read slot for its own
-	// duration, so with the gauge deliberately at cap-1 the probe is the read
-	// that reaches the cap. Standalone it passes, because cap-1 plus one is
-	// still admitted. Under -shuffle=on it fails roughly 1 run in 5: a
-	// neighboring test's not-yet-drained reader has already contributed, the
-	// probe tips over, and the failure blames the fixture for a saturated cap
-	// the fixture did not saturate. Measured on this branch before the fix.
+	// version of this check -- ReadImageFileBounded on a probe file -- does
+	// NOT raise the gauge itself: stalledReads.Add(1) fires only from the
+	// ctx.Done() arm of runCancellable (internal/image/readio.go), on an
+	// abandoned, context-canceled read, and a probe on context.Background()
+	// against a small readable file never hits that arm. What the probe DOES
+	// hit is runCancellable's entry guard, `stalledReads.Load() >=
+	// maxStalledReads`, which refuses the read outright when the gauge is
+	// already saturated -- so the probe is not a contributor to the cap, it is
+	// a casualty OF it. Standalone the fixture's own wedges leave the gauge at
+	// cap-1, so the probe is still admitted and the test passes. Under
+	// -shuffle=on it fails roughly 1 run in 5: a neighboring test's
+	// not-yet-drained abandoned reader has already pushed the process-wide
+	// gauge to the cap, the probe is refused by that guard, and the failure
+	// blames the fixture for a saturated cap the fixture did not saturate.
+	// Measured on this branch before the fix.
 	//
-	// StalledReadCount() answers the same question by observation and consumes
-	// nothing, which is what makes it safe to ask here.
+	// StalledReadCount() answers the same question by observation instead: it
+	// performs no I/O and cannot be refused, and on failure it can report the
+	// actual gauge value and name the neighboring-reader cause directly.
 	if got := img.StalledReadCount(); got >= maxStalledReadsForTest {
 		t.Fatalf("precondition: the stalled-read gauge is at %d, at or over the %d cap, so DISCOVERY "+
 			"would be refused and this would exercise the wrong branch. The wedges raised it to %d; "+
