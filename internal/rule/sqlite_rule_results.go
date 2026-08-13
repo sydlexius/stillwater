@@ -276,6 +276,24 @@ func (s *Service) DeleteRuleResultsForRule(ctx context.Context, ruleID string) e
 // duration rather than releasing it between statements, which is precisely what
 // makes the probe and the writes atomic. Retraction remains idempotent.
 func (s *Service) RetractRuleVerdict(ctx context.Context, artistID, ruleID string) (bool, error) {
+	// Event-driven rules must never be retracted here. Their violations are
+	// raised outside engine evaluation and no checker can re-derive them, so
+	// resolving one destroys a finding nothing can rebuild -- the same loss
+	// RecordRulePass guards against just above.
+	//
+	// To be plain about its status: this is NOT a live bug today. The path is
+	// unreachable, because Engine.eligibleRules never places an event-driven
+	// rule in RulesSkipped and only a skipped rule reaches retraction. It is
+	// worth having anyway because that invariant lives in a DIFFERENT file
+	// (engine.go) with nothing at this write site depending on it: a future
+	// change to eligibleRules that let one of these rules be reported as
+	// skipped would silently arm this routine, and the damage would be
+	// unrecoverable and silent. A guard at the write site costs one comparison
+	// and does not depend on a reader knowing the engine's rules.
+	if IsEventDriven(ruleID) {
+		return false, nil
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("beginning retract-verdict transaction: %w", err)
