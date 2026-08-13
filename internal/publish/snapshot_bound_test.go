@@ -129,6 +129,9 @@ const (
 	// bothLossesPhrase is the #3017 wording every cap refusal carries: the slot
 	// is missing from the push, not just from the restore snapshot.
 	bothLossesPhrase = "nor synced to platforms"
+	// readFailurePhrase is what snapshotFanart emits when the READ itself
+	// failed, which is a third and separate outcome: no cap was involved.
+	readFailurePhrase = "failed to read fanart"
 )
 
 // assertStatRefusal fails unless the warning came from the PRE-READ stat check.
@@ -582,10 +585,9 @@ func TestSnapshotFanart_Refusal_IsLoggedAtError(t *testing.T) {
 // refuseResult and discards the bytes it refuses -- cannot be reached from a
 // portable fixture, because it needs a file whose stat genuinely under-reports
 // what the read then delivers, and the only way to build one is a platform
-// primitive (a FIFO, which stats at zero bytes). That wiring test is therefore
-// carried by the follow-on PR that adds the unix-tagged fixtures for #2712; a
-// predicate nobody calls is not a fix, so both halves are needed and only one
-// of them is here.
+// primitive (a FIFO, which stats at zero bytes). That wiring is covered
+// separately, in snapshot_bound_stat_unix_test.go. A predicate nobody calls is
+// not a fix, so both halves are needed.
 func TestFanartSnapshotBudget_RefuseResult_BoundsWhatWasACTUALLYRead(t *testing.T) {
 	// No t.Parallel; see the note at the top of this file.
 	cases := []struct {
