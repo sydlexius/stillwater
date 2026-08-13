@@ -23,26 +23,31 @@ import (
 // EVERY TEST HERE IS SERIAL -- no t.Parallel, deliberately. They swap the
 // package-level uploader factories, exactly like the other tests that do.
 
-// settleActor is a WELL-BEHAVED peer. It never touches the operator's file.
-// The only actor besides the push is the OPERATOR, who saves new bytes from a
-// timer armed inside the upload, so the save lands after the first repair pass
-// has already found the file healthy and returned -- squarely inside the settle
-// window.
+// settleActor is the peer for the operator-save case. It clobbers the file once
+// during the upload, and the OPERATOR then saves a new crop from a goroutine
+// that waits for the first repair pass to finish undoing that clobber.
 //
-// A TIMER RATHER THAN A RENDEZVOUS, on purpose. A fixture that polls until it
-// can see the first pass's work supplies its own delay (measured at 8 to 15ms
-// on this suite's rendezvous), which is enough to cover the event even if the
-// production wait were deleted outright. A fixed timer makes the production
-// delay the ONLY thing that can cover the event, which is what these tests are
-// for.
+// A RENDEZVOUS ON PASS 1'S OUTPUT, not a timer. An earlier version armed the
+// save on a fixed delay, which could only prove the save landed before the push
+// returned -- never that it landed after pass 1. A pass 1 delayed past that arm
+// would restore the pre-push bytes AFTER the save, and the final assertion would
+// fail blaming pass 2 for a fixture-timing problem. Waiting on bytes that only
+// pass 1 can put on disk makes the ordering true by construction instead of
+// inferred from wall-clock timing.
+//
+// It rendezvouses on the restore's OUTPUT rather than on anything earlier for
+// the reason late_delete_test.go documents: WriteFileAtomic renames a temp file
+// onto the target, so observing the bytes proves the rename completed and the
+// pass is done with this file.
 type settleActor struct {
 	victim   string
+	prePush  []byte // what pass 1 puts back; seeing it on disk means pass 1 finished
 	newBytes []byte
 
-	// armAfter is how long after the upload the operator's save fires. It must
-	// clear the first repair pass (which runs as soon as the upload loop ends,
-	// microseconds later) and stay well inside reassertSettleDelay.
-	armAfter time.Duration
+	// restoredSeenAt is when the fixture observed pass 1's completed work. The
+	// test asserts the operator's save came after it, which is the ordering the
+	// whole scenario depends on.
+	restoredSeenAt time.Time
 
 	// wroteAt is when the operator's save completed. The tests use it to prove
 	// the save landed while the push was still running, without which they
@@ -61,26 +66,62 @@ type settleActor struct {
 	wg    sync.WaitGroup
 }
 
-func newSettleActor(victim string, newBytes []byte, armAfter time.Duration) *settleActor {
-	return &settleActor{victim: victim, newBytes: newBytes, armAfter: armAfter, done: make(chan struct{})}
+func newSettleActor(victim string, prePush, newBytes []byte) *settleActor {
+	return &settleActor{victim: victim, prePush: prePush, newBytes: newBytes, done: make(chan struct{})}
 }
 
 func (u *settleActor) arm() error {
 	u.calls++
+	// The peer CLOBBERS the file during the upload. That is what gives the first
+	// repair pass real work to do, and therefore an observable output the
+	// operator's save can be ordered against. Without it pass 1 is a no-op and
+	// nothing can prove the save followed it.
+	if err := os.WriteFile(u.victim, []byte("PEER-CLOBBER-BYTES"), 0o600); err != nil {
+		// Surface it as an upload failure rather than swallowing it. A clobber
+		// that did not land leaves pass 1 with nothing to repair, so the
+		// rendezvous below would wait out its full timeout and the test would
+		// fail somewhere far from the cause.
+		u.writeErr = err
+		return err
+	}
 	u.once.Do(func() {
 		u.wg.Add(1)
-		time.AfterFunc(u.armAfter, func() {
+		go func() {
 			defer u.wg.Done()
 			defer close(u.done)
+			// RENDEZVOUS ON PASS 1'S COMPLETED OUTPUT, not on a timer. Pass 1
+			// repairs the clobber by writing prePush back, so seeing those bytes
+			// on disk proves the pass finished with this file -- WriteFileAtomic
+			// renames a temp file onto the target, so the bytes appearing means
+			// the rename is done. Latching on anything earlier would let the save
+			// land mid-pass and prove nothing about ordering.
+			if !u.waitForRestore() {
+				return
+			}
+			u.restoredSeenAt = time.Now()
 			if err := os.WriteFile(u.victim, u.newBytes, 0o600); err != nil {
 				u.writeErr = err
 				return
 			}
 			u.wroteAt = time.Now()
 			u.wrote = true
-		})
+		}()
 	})
 	return nil
+}
+
+// waitForRestore blocks until pass 1 has put prePush back, reporting false if it
+// never does. The timeout is generous because exceeding it means the fixture is
+// broken rather than slow.
+func (u *settleActor) waitForRestore() bool {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if got, err := os.ReadFile(u.victim); err == nil && bytes.Equal(got, u.prePush) {
+			return true
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return false
 }
 
 func (u *settleActor) UploadImage(_ context.Context, _, _ string, _ []byte, _ string) error {
@@ -134,14 +175,16 @@ func settleHarness(t *testing.T, single connection.ImageUploader, indexed connec
 // TestSettleWindow_OperatorSaveIsNotReverted is the regression test for the
 // defect the settle pass introduced.
 //
-// THE SHAPE. The peer behaves perfectly and never touches the file. The first
-// repair pass reads exactly the bytes the push captured and returns. The push
-// then waits out reassertSettleDelay, and during that wait the OPERATOR saves a
-// new crop of that same slot. The second pass reads bytes that differ from the
-// PRE-PUSH snapshot -- and if it were allowed the overwrite branch, it would
-// write the pre-push bytes back over the crop the operator saved a moment ago,
-// logging it as a peer clobber. The operator's work is gone and the log blames
-// a peer that did nothing.
+// THE SHAPE. The peer clobbers the file once during the upload, and the first
+// repair pass correctly undoes that -- which is the behavior #2701 exists for
+// and is NOT what is under test here. It is the fixture's clock: the operator's
+// save fires the moment that restore is visible on disk, so it lands after pass
+// 1 by construction rather than by beating a timer. That save happens during
+// reassertSettleDelay, inside the settle window. The second pass then reads
+// bytes that differ from the PRE-PUSH snapshot -- and if it were allowed the
+// overwrite branch, it would write the pre-push bytes back over the crop the
+// operator saved a moment ago, logging it as a peer clobber. The operator's
+// work is gone and the log blames a peer that did nothing.
 //
 // It is RED on the commit that added the settle pass without narrowing it, and
 // green on the base commit that had one pass. Both sync entry points are
@@ -180,10 +223,10 @@ func TestSettleWindow_OperatorSaveIsNotReverted(t *testing.T) {
 			operatorCrop := []byte("THE-CROP-THE-OPERATOR-JUST-SAVED")
 			writeFile(t, victim, prePush)
 
-			// 80ms clears the first pass (which runs microseconds after the
-			// upload loop ends) by a wide margin and leaves 170ms of settle
-			// window before the second pass looks.
-			up := newSettleActor(victim, operatorCrop, 80*time.Millisecond)
+			// No arm delay: the save fires as soon as the fixture SEES pass 1's
+			// restore on disk, so it lands inside the settle window by
+			// construction rather than by clearing a timer.
+			up := newSettleActor(victim, prePush, operatorCrop)
 			p, a := settleHarness(t, up, up, &up.wg, dir)
 
 			tc.push(p, a)
@@ -210,18 +253,21 @@ func TestSettleWindow_OperatorSaveIsNotReverted(t *testing.T) {
 					"returned at %v; the save was not concurrent with the push, so nothing here exercises "+
 					"the settle window", up.wroteAt, pushReturnedAt)
 			}
-			// WHAT THIS PAIR OF CHECKS DOES NOT ESTABLISH, stated because the
-			// failure below is otherwise misread. They prove the save landed
-			// inside the push; they do NOT prove it landed after the FIRST repair
-			// pass. Pass 1 is a no-op in this fixture (the peer never touches the
-			// file, so the pass finds it healthy and writes nothing), which means
-			// there is no observable signal of its completion to assert against.
-			// If pass 1 were ever starved past the 80ms arm, the save would land
-			// first, pass 1 would legitimately restore the pre-push bytes under
-			// repairAllDamage, and the assertion below would fail while blaming
-			// pass 2. That is a fixture-timing failure, not the defect. The margin
-			// is wide (pass 1 runs microseconds after the upload loop ends against
-			// an 80ms arm), so this is a diagnosis note rather than a known flake.
+			// THE ORDERING FACT, asserted rather than assumed. This is what makes
+			// the scenario a settle-window case at all: the save must land AFTER
+			// pass 1 finished, or pass 1 could legitimately restore the pre-push
+			// bytes over it and the assertion below would fail blaming pass 2 for a
+			// fixture-timing problem. The fixture waits on bytes only pass 1 can put
+			// on disk, so this holds by construction; the check keeps it that way.
+			if up.restoredSeenAt.IsZero() {
+				t.Fatal("precondition failed: the fixture never observed the first repair pass restore the " +
+					"file, so the operator's save was never ordered against it")
+			}
+			if !up.restoredSeenAt.Before(up.wroteAt) {
+				t.Fatalf("precondition failed: the operator's save at %v did not follow the first repair "+
+					"pass, observed complete at %v; pass 1 could have restored the pre-push bytes over the "+
+					"save, so a failure below would not implicate pass 2", up.wroteAt, up.restoredSeenAt)
+			}
 
 			got, err := os.ReadFile(victim)
 			if err != nil {
