@@ -49,6 +49,11 @@ type settleActor struct {
 	// assert nothing about concurrency at all.
 	wroteAt time.Time
 	wrote   bool
+	// writeErr is why the save never landed. These fixtures turn on wall-clock
+	// timing, so when one breaks on CI the error text is the only evidence
+	// available: "did not land on disk" alone cannot distinguish a permissions
+	// problem from a torn-down temp dir from a bug in the test.
+	writeErr error
 
 	calls int
 	done  chan struct{}
@@ -68,6 +73,7 @@ func (u *settleActor) arm() error {
 			defer u.wg.Done()
 			defer close(u.done)
 			if err := os.WriteFile(u.victim, u.newBytes, 0o600); err != nil {
+				u.writeErr = err
 				return
 			}
 			u.wroteAt = time.Now()
@@ -87,8 +93,13 @@ func (u *settleActor) UploadImageAtIndex(_ context.Context, _, _ string, _ int, 
 
 // settleHarness wires a publisher whose single peer is the given actor.
 // Serial, like every test that swaps these package-level factories.
+// The armed timer is joined in cleanup via wg, exactly as lateDeleteHarness
+// joins its peer goroutine. Both tests also wait on wg in the body, but only
+// AFTER a select on done -- and if that select times out into t.Fatal, the timer
+// is still armed and can write into or remove from the t.TempDir() the framework
+// is concurrently tearing down. The join has to be in cleanup to cover that path.
 func settleHarness(t *testing.T, single connection.ImageUploader, indexed connection.IndexedImageUploader,
-	dir string,
+	wg *sync.WaitGroup, dir string,
 ) (*Publisher, *artist.Artist) {
 	t.Helper()
 
@@ -107,6 +118,7 @@ func settleHarness(t *testing.T, single connection.ImageUploader, indexed connec
 	t.Cleanup(func() {
 		newImageUploader = origSingle
 		newIndexedImageUploader = origIndexed
+		wg.Wait()
 	})
 
 	p := New(Deps{
@@ -172,7 +184,7 @@ func TestSettleWindow_OperatorSaveIsNotReverted(t *testing.T) {
 			// upload loop ends) by a wide margin and leaves 170ms of settle
 			// window before the second pass looks.
 			up := newSettleActor(victim, operatorCrop, 80*time.Millisecond)
-			p, a := settleHarness(t, up, up, dir)
+			p, a := settleHarness(t, up, up, &up.wg, dir)
 
 			tc.push(p, a)
 			pushReturnedAt := time.Now()
@@ -191,7 +203,7 @@ func TestSettleWindow_OperatorSaveIsNotReverted(t *testing.T) {
 					"and no settle window was ever opened")
 			}
 			if !up.wrote {
-				t.Fatal("precondition failed: the operator's save did not land on disk")
+				t.Fatalf("precondition failed: the operator's save did not land on disk: %v", up.writeErr)
 			}
 			if !up.wroteAt.Before(pushReturnedAt) {
 				t.Fatalf("precondition failed: the operator's save completed at %v but the push had already "+
@@ -233,9 +245,13 @@ type settleDeleter struct {
 	deleted   bool
 
 	calls int
-	done  chan struct{}
-	once  sync.Once
-	wg    sync.WaitGroup
+	// removeErr is why the delete never landed; see settleActor.writeErr for
+	// why a timing fixture must carry the cause rather than only the outcome.
+	removeErr error
+
+	done chan struct{}
+	once sync.Once
+	wg   sync.WaitGroup
 }
 
 func newSettleDeleter(victim string, armAfter time.Duration) *settleDeleter {
@@ -250,6 +266,7 @@ func (u *settleDeleter) arm() error {
 			defer u.wg.Done()
 			defer close(u.done)
 			if err := os.Remove(u.victim); err != nil {
+				u.removeErr = err
 				return
 			}
 			u.deletedAt = time.Now()
@@ -289,7 +306,7 @@ func TestSettleWindow_LateDeleteIsCoveredOnlyByTheDelay(t *testing.T) {
 	writeFile(t, victim, want)
 
 	up := newSettleDeleter(victim, 80*time.Millisecond)
-	p, a := settleHarness(t, up, up, dir)
+	p, a := settleHarness(t, up, up, &up.wg, dir)
 
 	start := time.Now()
 	p.SyncAllFanartToPlatforms(context.Background(), a)
@@ -305,8 +322,8 @@ func TestSettleWindow_LateDeleteIsCoveredOnlyByTheDelay(t *testing.T) {
 		t.Fatal("precondition failed: the peer was never handed the backdrop, so no repair was owed")
 	}
 	if !up.deleted {
-		t.Fatal("precondition failed: the peer's delete did not remove the file, so the second pass had " +
-			"nothing to find")
+		t.Fatalf("precondition failed: the peer's delete did not remove the file, so the second pass had "+
+			"nothing to find: %v", up.removeErr)
 	}
 	// THE LATENESS FACT. The first pass runs the moment the upload loop ends,
 	// microseconds into the push; a delete this far in cannot have been seen by
@@ -348,8 +365,10 @@ func TestRepairAfterPush_WaitsBetweenPassesAndNarrowsTheSecond(t *testing.T) {
 
 	var at []time.Time
 	var scopes []repairScope
-	// Called from repairAfterPush's own goroutine, both times, so no
-	// synchronization is needed and none is implied.
+	// repairAfterPush is SYNCHRONOUS: it calls the pass, sleeps, and calls it
+	// again, all on this goroutine. That is why these appends need no
+	// synchronization. If the passes ever move to a background goroutine, this
+	// fixture needs a mutex and the race detector will say so.
 	p.repairAfterPush(func(s repairScope) {
 		at = append(at, time.Now())
 		scopes = append(scopes, s)

@@ -78,6 +78,12 @@ type lateDeleteUploader struct {
 	// and read only after it, which is what orders them for the race detector.
 	done    chan struct{}
 	deleted bool
+	// removeErr is why the delete never landed. Written before done closes and
+	// read only after it, like every other field here. Without it, a Remove that
+	// failed for an environmental reason is indistinguishable from a bug in the
+	// fixture, and these tests turn on wall-clock timing, so a CI-only failure
+	// has no other evidence to offer.
+	removeErr error
 	// bytesBeforeDelete is what the file actually held at the instant before the
 	// delete, read by the peer's own goroutine. It is the EVIDENCE that the
 	// delete followed the first repair pass rather than racing it: the operator's
@@ -127,9 +133,10 @@ func (u *lateDeleteUploader) lateDelete() {
 	defer u.wg.Done()
 	defer close(u.done)
 
-	if !u.waitForRestore() {
-		return
-	}
+	// ONE rendezvous, not two. waitForRestore polls for a STATE rather than a
+	// transition, so it returns as soon as the file holds u.restored; a second
+	// call would find that state already true and return on its first poll,
+	// adding no wait and proving nothing.
 	if !u.waitForRestore() {
 		return
 	}
@@ -150,6 +157,7 @@ func (u *lateDeleteUploader) lateDelete() {
 		img.MarkDeleteIntent(u.dir, u.imageType)
 	}
 	if err := os.Remove(u.victim); err != nil {
+		u.removeErr = err
 		return
 	}
 	if _, statErr := os.Stat(u.victim); errors.Is(statErr, os.ErrNotExist) {
@@ -237,8 +245,8 @@ func assertLateDeleteHappened(t *testing.T, up *lateDeleteUploader) {
 			up.bytesBeforeDelete, up.restored)
 	}
 	if !up.deleted {
-		t.Fatal("precondition failed: the peer's late delete did not remove the file, so the second pass " +
-			"had nothing to find")
+		t.Fatalf("precondition failed: the peer's late delete did not remove the file, so the second pass "+
+			"had nothing to find: %v", up.removeErr)
 	}
 }
 
@@ -267,7 +275,7 @@ func TestSyncAllFanart_PeerDeletesAfterUploadReturns_Restored(t *testing.T) {
 			"returned, so a single point-in-time repair pass never sees the damage -- and nothing else "+
 			"in this codebase restores a local artwork file from a peer", err)
 	}
-	if string(got) != string(want) {
+	if !bytes.Equal(got, want) {
 		t.Errorf("the backdrop reads %q, want the operator's %q; the file was restored from the wrong bytes",
 			got, want)
 	}
@@ -297,7 +305,7 @@ func TestSyncImage_PeerDeletesAfterUploadReturns_Restored(t *testing.T) {
 		t.Fatalf("the banner is gone after the push (%v); the peer deleted it AFTER UploadImage returned "+
 			"and no second pass looked again", err)
 	}
-	if string(got) != string(want) {
+	if !bytes.Equal(got, want) {
 		t.Errorf("the banner reads %q, want the operator's %q", got, want)
 	}
 }
