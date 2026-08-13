@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // resolveViolationAt backdates a seeded violation to look exactly like a row
@@ -68,6 +69,31 @@ func resolveViolationNullAt(t *testing.T, svc *Service, artistID, ruleID string)
 	}
 	if n != 1 {
 		t.Fatalf("backdating NULL-resolved_at %s updated %d rows, want 1 (fixture did not land)", ruleID, n)
+	}
+}
+
+// resolveViolationRawAt sets a seeded violation's resolved_at to an
+// arbitrary raw string, bypassing resolveViolationAt's RFC3339 formatting.
+// resolveViolationAt can only ever produce well-formed timestamps (it goes
+// through time.RFC3339), so it cannot reproduce a malformed resolved_at
+// value; this sibling helper writes the raw string directly, the same shape
+// as resolveViolationNullAt but for a non-NULL malformed value.
+func resolveViolationRawAt(t *testing.T, svc *Service, artistID, ruleID, raw string) {
+	t.Helper()
+	res, err := svc.db.ExecContext(t.Context(), `
+		UPDATE rule_violations
+		   SET status = ?, resolved_at = ?, updated_at = ?
+		 WHERE artist_id = ? AND rule_id = ?
+	`, ViolationStatusResolved, raw, time.Now().UTC().Format(time.RFC3339), artistID, ruleID)
+	if err != nil {
+		t.Fatalf("backdating raw resolved_at for %s: %v", ruleID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		t.Fatalf("reading rows affected while backdating raw resolved_at %s: %v", ruleID, err)
+	}
+	if n != 1 {
+		t.Fatalf("backdating raw resolved_at %s updated %d rows, want 1 (fixture did not land)", ruleID, n)
 	}
 }
 
@@ -366,11 +392,19 @@ func TestResolvedCollisionViolations_NullResolvedAt(t *testing.T) {
 	for _, v := range report.Violations {
 		got[v.ArtistID] = v
 	}
-	if _, ok := got[nullRow.ID]; !ok {
+	nullV, ok := got[nullRow.ID]
+	if !ok {
 		t.Fatalf("NULL-resolved_at row missing from report; it must be surfaced, not dropped")
 	}
-	if _, ok := got[nullRow2.ID]; !ok {
+	if nullV.ResolvedAt != nil {
+		t.Errorf("NULL-resolved_at row ResolvedAt = %v, want nil (NULL in the database must not flatten to a zero time.Time)", *nullV.ResolvedAt)
+	}
+	null2V, ok := got[nullRow2.ID]
+	if !ok {
 		t.Fatalf("second NULL-resolved_at row missing from report; it must be surfaced, not dropped")
+	}
+	if null2V.ResolvedAt != nil {
+		t.Errorf("second NULL-resolved_at row ResolvedAt = %v, want nil", *null2V.ResolvedAt)
 	}
 
 	// (b) does not inflate any OTHER row's ClusterSize: bugA/bugB must still
@@ -405,5 +439,122 @@ func TestResolvedCollisionViolations_NullResolvedAt(t *testing.T) {
 	}
 	if cs := got[f.operator.ID].ClusterSize; cs != 1 {
 		t.Errorf("operator ClusterSize = %d, want 1", cs)
+	}
+	if operatorV := got[f.operator.ID]; operatorV.ResolvedAt == nil {
+		t.Errorf("operator row ResolvedAt = nil, want a non-nil pointer to %v", f.soloStamp)
+	} else if !operatorV.ResolvedAt.Equal(f.soloStamp) {
+		t.Errorf("operator row ResolvedAt = %v, want %v", *operatorV.ResolvedAt, f.soloStamp)
+	}
+}
+
+// TestResolvedCollisionViolations_LexicalClusteringOnMalformedStamps pins the
+// deliberate choice, documented on ResolvedCollisionViolations, to cluster on
+// the RAW stored resolved_at string rather than a re-parsed time.Time. Every
+// other fixture in this file goes through resolveViolationAt, which formats
+// via time.RFC3339, so every stored value it produces is well-formed --
+// raw-string grouping and parsed-time.Time grouping agree on that fixture and
+// this exact defect could ship undetected. Two DISTINCT malformed strings,
+// each of which parses to the zero time.Time under dbutil.ParseTime, are the
+// only fixture shape that can tell the two implementations apart: lexical
+// clustering reports each as its own cluster of 1, while a
+// parse-then-compare implementation collapses both onto the zero time and
+// reports 2 for each (#2972's trap).
+func TestResolvedCollisionViolations_LexicalClusteringOnMalformedStamps(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	const malformedA = "not-a-timestamp-A"
+	const malformedB = "not-a-timestamp-B"
+
+	rowA := apiOnlyArtist(t, db, "Collision Malformed A")
+	seedViolation(t, svc, rowA, RuleCrossArtistBackdropCollision, ViolationStatusOpen)
+	resolveViolationRawAt(t, svc, rowA.ID, RuleCrossArtistBackdropCollision, malformedA)
+
+	rowB := apiOnlyArtist(t, db, "Collision Malformed B")
+	seedViolation(t, svc, rowB, RuleCrossArtistBackdropCollision, ViolationStatusOpen)
+	resolveViolationRawAt(t, svc, rowB.ID, RuleCrossArtistBackdropCollision, malformedB)
+
+	// Precondition: the stored strings really are the distinct malformed
+	// values intended, and are NOT NULL -- read straight off the raw table,
+	// not through the code under test, or the ClusterSize assertions below
+	// prove nothing.
+	for _, c := range []struct {
+		id   string
+		want string
+	}{{rowA.ID, malformedA}, {rowB.ID, malformedB}} {
+		var resolvedAt sql.NullString
+		if err := db.QueryRowContext(ctx,
+			`SELECT resolved_at FROM rule_violations WHERE artist_id = ?`, c.id,
+		).Scan(&resolvedAt); err != nil {
+			t.Fatalf("reading resolved_at for %s: %v", c.id, err)
+		}
+		if !resolvedAt.Valid {
+			t.Fatalf("precondition: resolved_at for %s is NULL, want %q", c.id, c.want)
+		}
+		if resolvedAt.String != c.want {
+			t.Fatalf("precondition: resolved_at for %s = %q, want %q", c.id, resolvedAt.String, c.want)
+		}
+	}
+	// Both malformed strings really do parse to the zero time under
+	// dbutil.ParseTime -- otherwise a parsed-time.Time implementation would
+	// not collapse them together and this fixture would not discriminate.
+	if zt := dbutil.ParseTime(malformedA); !zt.IsZero() {
+		t.Fatalf("precondition: %q parsed to %v, want the zero time", malformedA, zt)
+	}
+	if zt := dbutil.ParseTime(malformedB); !zt.IsZero() {
+		t.Fatalf("precondition: %q parsed to %v, want the zero time", malformedB, zt)
+	}
+
+	report, err := svc.ResolvedCollisionViolations(ctx)
+	if err != nil {
+		t.Fatalf("ResolvedCollisionViolations: %v", err)
+	}
+	got := make(map[string]ResolvedCollisionViolation, len(report.Violations))
+	for _, v := range report.Violations {
+		got[v.ArtistID] = v
+	}
+
+	rowAV, ok := got[rowA.ID]
+	if !ok {
+		t.Fatalf("malformed-A row missing from report")
+	}
+	rowBV, ok := got[rowB.ID]
+	if !ok {
+		t.Fatalf("malformed-B row missing from report")
+	}
+	if rowAV.ClusterSize != 1 {
+		t.Errorf("malformed-A ClusterSize = %d, want 1 (lexically distinct from malformed-B, must not cluster via a shared zero-time parse)", rowAV.ClusterSize)
+	}
+	if rowBV.ClusterSize != 1 {
+		t.Errorf("malformed-B ClusterSize = %d, want 1 (lexically distinct from malformed-A, must not cluster via a shared zero-time parse)", rowBV.ClusterSize)
+	}
+
+	// Positive control: a well-formed clustered pair in the same result set
+	// still reports its correct cluster size alongside the malformed rows.
+	f := newCollisionFixture(t, db, svc)
+	f.assertPreconditions(t, db)
+	report2, err := svc.ResolvedCollisionViolations(ctx)
+	if err != nil {
+		t.Fatalf("ResolvedCollisionViolations (with clustered fixture added): %v", err)
+	}
+	got2 := make(map[string]ResolvedCollisionViolation, len(report2.Violations))
+	for _, v := range report2.Violations {
+		got2[v.ArtistID] = v
+	}
+	if cs := got2[f.bugA.ID].ClusterSize; cs != 2 {
+		t.Errorf("bugA ClusterSize = %d, want 2 (positive control: well-formed clustering still works alongside malformed rows)", cs)
+	}
+	if cs := got2[f.bugB.ID].ClusterSize; cs != 2 {
+		t.Errorf("bugB ClusterSize = %d, want 2 (positive control: well-formed clustering still works alongside malformed rows)", cs)
+	}
+	if cs := got2[rowA.ID].ClusterSize; cs != 1 {
+		t.Errorf("malformed-A ClusterSize = %d, want 1 (still distinct after adding the clustered fixture)", cs)
+	}
+	if cs := got2[rowB.ID].ClusterSize; cs != 1 {
+		t.Errorf("malformed-B ClusterSize = %d, want 1 (still distinct after adding the clustered fixture)", cs)
 	}
 }

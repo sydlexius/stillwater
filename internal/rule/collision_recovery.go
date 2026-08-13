@@ -44,7 +44,7 @@ type ResolvedCollisionViolation struct {
 	ArtistName string
 	Message    string
 	CreatedAt  time.Time
-	ResolvedAt time.Time
+	ResolvedAt *time.Time
 	UpdatedAt  time.Time
 
 	// ClusterSize is the number of resolved collision rows (within this
@@ -121,7 +121,10 @@ func (s *Service) ResolvedCollisionViolations(ctx context.Context) (*ResolvedCol
 			return nil, fmt.Errorf("scanning resolved collision violation: %w", err)
 		}
 		r.v.CreatedAt = dbutil.ParseTime(createdAtRaw)
-		r.v.ResolvedAt = dbutil.ParseTime(r.resolvedAtRaw.String) // zero time.Time when NULL
+		if r.resolvedAtRaw.Valid {
+			resolvedAt := dbutil.ParseTime(r.resolvedAtRaw.String)
+			r.v.ResolvedAt = &resolvedAt
+		}
 		r.v.UpdatedAt = dbutil.ParseTime(updatedAtRaw)
 		if r.resolvedAtRaw.Valid {
 			clusterCounts[r.resolvedAtRaw.String]++
@@ -142,13 +145,13 @@ func (s *Service) ResolvedCollisionViolations(ctx context.Context) (*ResolvedCol
 		report.Violations = append(report.Violations, collected[i].v)
 	}
 
-	var resultCount int
+	var resultExists bool
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM rule_results WHERE rule_id = ?
-	`, RuleCrossArtistBackdropCollision).Scan(&resultCount); err != nil {
-		return nil, fmt.Errorf("counting rule_results for collision rule: %w", err)
+		SELECT EXISTS (SELECT 1 FROM rule_results WHERE rule_id = ?)
+	`, RuleCrossArtistBackdropCollision).Scan(&resultExists); err != nil {
+		return nil, fmt.Errorf("checking rule_results for collision rule: %w", err)
 	}
-	report.NoRuleResultsExist = resultCount == 0
+	report.NoRuleResultsExist = !resultExists
 
 	return report, nil
 }
