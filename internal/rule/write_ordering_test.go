@@ -45,8 +45,17 @@ type orderingFixture struct {
 // rule nothing ever writes.
 func newOrderingFixture(t *testing.T) (*orderingFixture, *Service) {
 	t.Helper()
+	return newOrderingFixtureWithClock(t, nil)
+}
+
+// newOrderingFixtureWithClock is newOrderingFixture with the service clock
+// injected. Only the unstamped-raise case needs it: that path falls back to the
+// clock, so a test asserting the fallback value must own the clock rather than
+// read whatever the machine's wall time happens to be.
+func newOrderingFixtureWithClock(t *testing.T, clk Clock) (*orderingFixture, *Service) {
+	t.Helper()
 	db := setupSubscriberTestDB(t)
-	svc := NewService(db)
+	svc := NewService(db).WithClock(clk)
 	if err := svc.SeedDefaults(t.Context()); err != nil {
 		t.Fatalf("seeding rule defaults: %v", err)
 	}
@@ -392,6 +401,15 @@ func TestWriteOrdering_DirectResultWritesAreOrdered(t *testing.T) {
 	})
 }
 
+// frozenClock reports one instant forever, unlike FakeClock which advances a
+// second on every call. The unstamped-raise test asserts the EXACT stamp the
+// fallback writes, and with an advancing clock that value depends on how many
+// unrelated service calls happened to run first -- brittle in a different way
+// than the wall clock it replaced.
+type frozenClock struct{ at time.Time }
+
+func (c frozenClock) Now() time.Time { return c.at }
+
 // TestWriteOrdering_UnstampedRaiseStillApplies covers the callers that ran no
 // evaluation at all. RaiseBackdropCollision and RaiseMBIDValidationFailure
 // build a RuleViolation with no EvaluatedAt, because a collision or a failed
@@ -402,12 +420,20 @@ func TestWriteOrdering_DirectResultWritesAreOrdered(t *testing.T) {
 // Mutant this kills: treating a zero EvaluatedAt as "older than everything" and
 // skipping the write, rather than falling back to the service clock.
 func TestWriteOrdering_UnstampedRaiseStillApplies(t *testing.T) {
-	f, svc := newOrderingFixture(t)
+	// A FIXED CLOCK, not the machine's. This test asserts what the fallback
+	// STAMPS, and the fallback is the service clock -- so reading the real wall
+	// time would make the assertion depend on when the suite happens to run.
+	// Worse, it would make the test's PREMISE depend on it: olderEval is a fixed
+	// date, so on a machine whose clock predates it the unstamped raise is
+	// correctly judged stale and the test fails for a reason that has nothing to
+	// do with the code. raiseAt is deliberately one second after olderEval, the
+	// smallest gap the second-granularity comparison can resolve.
+	raiseAt := olderEval.Add(time.Second)
+	f, svc := newOrderingFixtureWithClock(t, frozenClock{at: raiseAt})
 
-	// Seed a pass stamped in the FUTURE relative to the raise's wall-clock
-	// fallback would be the hostile case, but the honest one is a stamp in the
-	// past: an unstamped raise means "now", and now is newer than any stored
-	// evaluation, so it applies.
+	// The stored pass is OLDER than the raise's fallback stamp, which is the
+	// honest case: an unstamped raise means "now", and now is newer than any
+	// stored evaluation, so it applies.
 	f.writePass(t, svc, olderEval)
 	f.assertPrecondition(t, true, olderEval)
 
@@ -430,4 +456,10 @@ func TestWriteOrdering_UnstampedRaiseStillApplies(t *testing.T) {
 	if got := violationStatus(t, f.db, f.a.ID, orderingRuleID); got != ViolationStatusOpen {
 		t.Errorf("unstamped raise did not open a violation: status = %q, want %q", got, ViolationStatusOpen)
 	}
+	// AND IT STAMPED THE CLOCK, which is the half that proves WHICH fallback
+	// ran. The assertions above only show the write was not skipped; they would
+	// equally pass if a zero EvaluatedAt were treated as "beginning of time" and
+	// waved through, leaving the row stamped with a zero value that every later
+	// comparison then reads as older than everything.
+	f.assertStoredEvaluatedAt(t, raiseAt)
 }
