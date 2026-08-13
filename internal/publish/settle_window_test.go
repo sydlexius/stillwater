@@ -210,6 +210,18 @@ func TestSettleWindow_OperatorSaveIsNotReverted(t *testing.T) {
 					"returned at %v; the save was not concurrent with the push, so nothing here exercises "+
 					"the settle window", up.wroteAt, pushReturnedAt)
 			}
+			// WHAT THIS PAIR OF CHECKS DOES NOT ESTABLISH, stated because the
+			// failure below is otherwise misread. They prove the save landed
+			// inside the push; they do NOT prove it landed after the FIRST repair
+			// pass. Pass 1 is a no-op in this fixture (the peer never touches the
+			// file, so the pass finds it healthy and writes nothing), which means
+			// there is no observable signal of its completion to assert against.
+			// If pass 1 were ever starved past the 80ms arm, the save would land
+			// first, pass 1 would legitimately restore the pre-push bytes under
+			// repairAllDamage, and the assertion below would fail while blaming
+			// pass 2. That is a fixture-timing failure, not the defect. The margin
+			// is wide (pass 1 runs microseconds after the upload loop ends against
+			// an 80ms arm), so this is a diagnosis note rather than a known flake.
 
 			got, err := os.ReadFile(victim)
 			if err != nil {
