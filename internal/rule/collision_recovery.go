@@ -135,6 +135,14 @@ func (s *Service) ResolvedCollisionViolations(ctx context.Context) (*ResolvedCol
 		return nil, fmt.Errorf("iterating resolved collision violations: %w", err)
 	}
 
+	// Explicitly close the cursor before the next query. The pool is
+	// single-connection (SetMaxOpenConns(1)), so the next statement must not run
+	// while this cursor could still hold the connection. This prevents a subtle
+	// deadlock if a future code path breaks out of the loop early or falls through.
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("closing resolved collision cursor: %w", err)
+	}
+
 	report := &ResolvedCollisionReport{Violations: make([]ResolvedCollisionViolation, 0, len(collected))}
 	for i := range collected {
 		if collected[i].resolvedAtRaw.Valid {

@@ -558,3 +558,55 @@ func TestResolvedCollisionViolations_LexicalClusteringOnMalformedStamps(t *testi
 		t.Errorf("malformed-B ClusterSize = %d, want 1 (still distinct after adding the clustered fixture)", cs)
 	}
 }
+
+// TestResolvedCollisionViolations_CursorClosedBeforeFollowupQuery verifies
+// that the method properly releases the first query's cursor before executing
+// the second query. With a single-connection pool, a still-held cursor during
+// the second query would deadlock. The test seeds multiple rows to force the
+// cursor to be held during iteration, then verifies the method completes and
+// correctly computes NoRuleResultsExist (the value from the second query).
+func TestResolvedCollisionViolations_CursorClosedBeforeFollowupQuery(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Seed multiple resolved collision rows so the cursor spans multiple
+	// iterations -- the precondition that the cursor would have been held
+	// during the second query if not explicitly closed.
+	f := newCollisionFixture(t, db, svc)
+	f.assertPreconditions(t, db)
+
+	// Verify precondition: multiple resolved rows exist.
+	var resolvedCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM rule_violations
+		WHERE rule_id = ? AND status = ?
+	`, RuleCrossArtistBackdropCollision, ViolationStatusResolved).Scan(&resolvedCount); err != nil {
+		t.Fatalf("counting resolved collision violations: %v", err)
+	}
+	if resolvedCount < 2 {
+		t.Fatalf("precondition: need at least 2 resolved violation rows, fixture seeded %d", resolvedCount)
+	}
+
+	// The method must complete without deadlock and correctly report
+	// NoRuleResultsExist based on the second query.
+	report, err := svc.ResolvedCollisionViolations(ctx)
+	if err != nil {
+		t.Fatalf("ResolvedCollisionViolations: %v", err)
+	}
+
+	// Verify the report has the expected rows from the first query.
+	if len(report.Violations) != resolvedCount {
+		t.Errorf("report has %d violations, want %d", len(report.Violations), resolvedCount)
+	}
+
+	// Verify NoRuleResultsExist reflects the actual state: the fixture leaves
+	// operator's rule_results row in place and deletes bugA/bugB's rows,
+	// so one rule_results row exists.
+	if report.NoRuleResultsExist {
+		t.Errorf("NoRuleResultsExist = true, want false: the operator row's rule_results was seeded and not deleted")
+	}
+}
