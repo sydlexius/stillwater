@@ -45,8 +45,9 @@ import (
 //
 // The writer runs in its own goroutine because opening a FIFO for writing
 // blocks until a reader opens it, and the reader here is the code under test.
-// The returned cleanup joins the writer, so no goroutine outlives the test even
-// when the read side never opens.
+// A t.Cleanup registered here joins the writer, so no goroutine outlives the
+// test even when the read side never opens. Nothing is returned: the caller
+// takes the fixture and the cleanup happens on its own.
 func fifoDeliveringBytes(t *testing.T, path string, n int64) {
 	t.Helper()
 	if err := syscall.Mkfifo(path, 0o600); err != nil {

@@ -513,6 +513,19 @@ func TestSyncAllFanartToPlatforms_ReadOversizeArm_StillReachable(t *testing.T) {
 			"instead, the ErrImageTooLarge arm is now unreachable and should be deleted rather than "+
 			"documented as live", warnings)
 	}
+
+	// The positive assertion alone is not enough. It says the read arm spoke;
+	// it does not say a budget arm stayed silent, and both could speak at once
+	// if a future change refused the slot as well. Since the point of this test
+	// is WHICH arm answered, name the two wordings that must be absent.
+	if strings.Contains(joined, statRefusalPhrase) {
+		t.Errorf("warnings = %v carry the PRE-read refusal wording %q, but the FIFO stats at zero bytes, "+
+			"so the pre-read check cannot legitimately have refused this slot", warnings, statRefusalPhrase)
+	}
+	if strings.Contains(joined, readRefusalPhrase) {
+		t.Errorf("warnings = %v carry the POST-read budget wording %q; the READ refused these bytes on its "+
+			"own terms, so no budget branch can have handled the slot", warnings, readRefusalPhrase)
+	}
 }
 
 // TestSyncAllFanartToPlatforms_CancellationStopsTheSet is the LOAD-BEARING
