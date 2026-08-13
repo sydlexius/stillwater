@@ -1286,6 +1286,16 @@ func (w *fanartWarningLog) add(warning string) {
 // when any warning was withheld. It returns nil for an empty log so the
 // no-warnings case is indistinguishable from the pre-cap behavior.
 //
+// The empty case is returned EXPLICITLY rather than by handing back a kept that
+// happens to be nil (#3018 review). The nil-ness was incidental: it held only
+// because the sole production caller declares the log with var and never
+// preallocates, so any future caller (or test) that built kept with make(...)
+// and then added nothing would return a non-nil empty slice and quietly break
+// the contract this comment states. These warnings are marshaled into an API
+// response, where the difference is visible as "warnings": null versus
+// "warnings": [], so a stated invariant the code does not enforce is the
+// defect rather than a style point.
+//
 // The summary is written into a slice of its OWN rather than appended onto
 // w.kept, and that is a correctness requirement rather than defensive style
 // (#3018 review). w.kept reaches the cap by repeated append, so it arrives here
@@ -1300,6 +1310,9 @@ func (w *fanartWarningLog) add(warning string) {
 // list reading as a complete one, so the aliasing would quietly restore the
 // invisible-data-loss the counted overflow exists to prevent.
 func (w *fanartWarningLog) result() []string {
+	if len(w.kept) == 0 && w.overflow == 0 {
+		return nil
+	}
 	if w.overflow == 0 {
 		return w.kept
 	}

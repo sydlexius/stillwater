@@ -929,11 +929,42 @@ func TestFanartWarningLog_Result_DoesNotAliasTheLog(t *testing.T) {
 
 // TestFanartWarningLog_Empty_ReturnsNil keeps the no-warnings case byte-identical
 // to the pre-cap behavior. A healthy push returns no warnings at all, and an
-// empty non-nil slice is a different value for any caller that checks nilness.
+// empty non-nil slice is a different value for any caller that checks nilness:
+// these warnings are marshaled into an API response, where the difference is
+// "warnings": null versus "warnings": [].
+//
+// BOTH SHAPES OF EMPTY ARE TESTED, and the second is the one that matters
+// (#3018 review). Asserting only the zero-value log passes for the wrong
+// reason: it returns nil because kept ITSELF is nil, so the test holds even
+// when result() enforces nothing. A log whose kept was preallocated and never
+// added to is empty just the same, and before this round it returned a non-nil
+// empty slice -- an invariant the doc comment claimed and the code did not
+// enforce. TestFanartWarningLog_Result_DoesNotAliasTheLog preallocates exactly
+// that way, so the case is not hypothetical.
 func TestFanartWarningLog_Empty_ReturnsNil(t *testing.T) {
 	// No t.Parallel; see the note at the top of this file.
-	var log fanartWarningLog
-	if got := log.result(); got != nil {
-		t.Errorf("empty log returned %#v, want nil; a healthy push must report no warnings at all", got)
-	}
+	t.Run("zero value", func(t *testing.T) {
+		var log fanartWarningLog
+		if got := log.result(); got != nil {
+			t.Errorf("empty log returned %#v, want nil; a healthy push must report no warnings at all", got)
+		}
+	})
+
+	t.Run("preallocated but never added to", func(t *testing.T) {
+		var log fanartWarningLog
+		log.kept = make([]string, 0, maxFanartSnapshotWarnings)
+
+		// PRECONDITION. Without it the case collapses into the one above and
+		// the assertion stops distinguishing "result() returns nil" from
+		// "kept happened to be nil".
+		if log.kept == nil {
+			t.Fatal("precondition failed: kept is nil, so this case is the zero-value one and asserts nothing new")
+		}
+
+		if got := log.result(); got != nil {
+			t.Errorf("a preallocated but empty log returned %#v (len %d), want nil; the nil contract must be "+
+				"enforced by result() rather than inherited from kept, or a caller that preallocates emits "+
+				"\"warnings\": [] where every other healthy push emits \"warnings\": null", got, len(got))
+		}
+	})
 }
