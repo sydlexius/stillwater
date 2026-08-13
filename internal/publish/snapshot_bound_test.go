@@ -847,6 +847,71 @@ func TestFanartWarningLog_UnderTheCap_AddsNoSummary(t *testing.T) {
 	}
 }
 
+// TestFanartWarningLog_Result_DoesNotAliasTheLog pins that the returned slice
+// owns its own memory (#3018 review).
+//
+// The hazard is specific and it is not defensive style. kept reaches the cap by
+// repeated append, so it arrives at result() with SPARE CAPACITY (len 25, cap
+// 32 as the growth lands). append(w.kept, summary) therefore writes the summary
+// into kept's existing backing array rather than a fresh one, and the returned
+// slice aliases the log. A SECOND result() call writes to that same index, so
+// it mutates a slice the first caller is already holding.
+//
+// It lands on the single line whose whole job is to stop a truncated list
+// reading as a complete one, so the aliasing restores exactly the invisible
+// data loss the counted overflow exists to prevent.
+//
+// Note the mutation is driven by a second result() rather than a later add():
+// once the cap is reached add() only increments overflow and never appends
+// again, so an add-driven version of this test would wire a clobber the code
+// cannot perform and pass against the aliasing implementation.
+func TestFanartWarningLog_Result_DoesNotAliasTheLog(t *testing.T) {
+	// No t.Parallel; see the note at the top of this file.
+	var log fanartWarningLog
+
+	// Past the cap, so there IS an overflow summary to clobber. Under the cap
+	// the append never happens and this test would assert nothing.
+	const refusals = maxFanartSnapshotWarnings + 35
+	for i := 0; i < refusals; i++ {
+		log.add(fmt.Sprintf("fanart %d refused", i))
+	}
+
+	// PRECONDITION. Spare capacity is the whole mechanism: with len == cap the
+	// append would allocate a fresh array, the alias would not form, and a
+	// green result would say nothing about the version that does alias.
+	if len(log.kept) == cap(log.kept) {
+		t.Fatalf("precondition failed: kept has len %d == cap %d, so an append would reallocate and the "+
+			"aliasing this test exists to catch cannot occur", len(log.kept), cap(log.kept))
+	}
+
+	first := log.result()
+	summary := first[len(first)-1]
+	if !strings.Contains(summary, "and 35 more") {
+		t.Fatalf("precondition failed: last entry %q is not the overflow summary, so the assertion below "+
+			"would not be measuring the line that matters", summary)
+	}
+
+	// THE MUTATION THE FIX PREVENTS. A second call with a different overflow
+	// count: against an aliasing result() its append lands on the same index of
+	// the same array and rewrites the summary inside `first`.
+	log.overflow += 64
+	second := log.result()
+
+	if after := first[len(first)-1]; after != summary {
+		t.Errorf("the overflow summary in an already-returned slice changed from %q to %q; result() aliased "+
+			"the log's backing array, so a second call rewrote a line the first caller was already "+
+			"holding -- and that line is the only thing telling the operator warnings were withheld, so "+
+			"a truncated list reads as the complete one", summary, after)
+	}
+	// The two results must also be independent slices, which is the property
+	// the assertion above infers. Checking it directly means a future change
+	// that copies only sometimes cannot pass on the strength of one lucky path.
+	if &first[0] == &second[0] {
+		t.Errorf("two result() calls returned slices over the same backing array; each caller must own " +
+			"its own copy or one caller's list mutates under another")
+	}
+}
+
 // TestFanartWarningLog_Empty_ReturnsNil keeps the no-warnings case byte-identical
 // to the pre-cap behavior. A healthy push returns no warnings at all, and an
 // empty non-nil slice is a different value for any caller that checks nilness.

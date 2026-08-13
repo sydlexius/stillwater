@@ -1285,11 +1285,27 @@ func (w *fanartWarningLog) add(warning string) {
 // result returns the bounded warning list, with the overflow summary appended
 // when any warning was withheld. It returns nil for an empty log so the
 // no-warnings case is indistinguishable from the pre-cap behavior.
+//
+// The summary is written into a slice of its OWN rather than appended onto
+// w.kept, and that is a correctness requirement rather than defensive style
+// (#3018 review). w.kept reaches the cap by repeated append, so it arrives here
+// with spare capacity (len 25, cap 32 as the growth lands), which means
+// append(w.kept, ...) writes the summary INTO w.kept's existing backing array
+// and hands back a slice aliasing it. Any later append to w.kept then
+// overwrites that same index, silently replacing the summary in a slice the
+// caller is already holding -- measured: the returned entry became the newly
+// appended warning and "and N more" was gone.
+//
+// That failure lands on the one line whose entire job is to stop a truncated
+// list reading as a complete one, so the aliasing would quietly restore the
+// invisible-data-loss the counted overflow exists to prevent.
 func (w *fanartWarningLog) result() []string {
 	if w.overflow == 0 {
 		return w.kept
 	}
-	return append(w.kept, truncateWarning(fmt.Sprintf(
+	out := make([]string, len(w.kept), len(w.kept)+1)
+	copy(out, w.kept)
+	return append(out, truncateWarning(fmt.Sprintf(
 		"and %d more fanart slots were neither captured for restore nor synced to platforms; see the server log for each one",
 		w.overflow)))
 }
