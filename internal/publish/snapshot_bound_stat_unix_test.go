@@ -60,10 +60,17 @@ func fifoDeliveringBytes(t *testing.T, path string, n int64) {
 		defer wg.Done()
 		// O_WRONLY blocks until a reader arrives. If the read side never opens
 		// (a failing test, an early return), this open never completes, so the
-		// cleanup below cannot join on it alone -- it opens read-write as an
-		// escape hatch instead. See the cleanup.
+		// cleanup below cannot join on it alone -- it opens the READ end
+		// non-blocking as an escape hatch instead. See the cleanup.
 		f, err := os.OpenFile(path, os.O_WRONLY, 0)
 		if err != nil {
+			// FAIL LOUDLY. Returning silently here leaves nothing feeding the
+			// FIFO, so the read under test blocks in open(2) until the package
+			// timeout kills the whole binary -- a hang whose reported cause is
+			// unrelated to the real one. t.Errorf rather than t.Fatal: this is
+			// not the test goroutine, and Fatal from here would not stop it.
+			t.Errorf("fixture failed: cannot open the FIFO %q for writing: %v; the read under test "+
+				"will block with nothing to deliver", path, err)
 			return
 		}
 		defer func() { _ = f.Close() }()
@@ -73,8 +80,10 @@ func fifoDeliveringBytes(t *testing.T, path string, n int64) {
 			if remaining := n - written; remaining < chunk {
 				chunk = remaining
 			}
-			// A short write or a broken pipe means the reader gave up, which is
-			// a test failure that the assertions report; just stop.
+			// A short write or a broken pipe means the reader gave up. That is
+			// EXPECTED here: the code under test refuses the over-budget read
+			// and closes, which breaks the pipe by design, so this is not
+			// reported as a fixture failure the way the open above is.
 			w, writeErr := f.Write(buf[:chunk])
 			if writeErr != nil {
 				return
