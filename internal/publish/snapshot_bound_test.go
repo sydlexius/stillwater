@@ -744,6 +744,18 @@ func TestSnapshotFanart_RefusedSlots_DoNotConsumeTheCountBudget(t *testing.T) {
 				"is not exercising the refusal path", i, len(snapshot[i].data))
 		}
 	}
+	// PRECONDITION for the loop below, which indexes warnings[0:cap] directly.
+	// Without it, a regression that stopped collecting warnings at all fails
+	// here as an index-out-of-range PANIC rather than as an assertion naming
+	// what broke -- and a panic reports the test as failing for a reason that
+	// looks like a test bug (#3018 review). The equality is asserted further
+	// down, where it can explain the bound; this only has to make the indexing
+	// safe and say why the entries are owed.
+	if len(warnings) < maxFanartSnapshotWarnings {
+		t.Fatalf("got %d warnings for %d refused slots, want at least the %d the cap admits; warnings are "+
+			"no longer being collected, so the per-slot assertions below would measure nothing",
+			len(warnings), junkCount, maxFanartSnapshotWarnings)
+	}
 	// The pre-read stat is what refused the junk, not the post-read length: it
 	// must never have been allocated. Asserted over the warnings that survived
 	// the cap, which arrive in slot order and so are all junk.
