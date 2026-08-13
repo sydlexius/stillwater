@@ -410,6 +410,42 @@ func IsEventDriven(ruleID string) bool {
 	return eventDrivenRules[ruleID]
 }
 
+// clearableRuleIDs returns the rule ids whose RESOLVED violations may be
+// permanently deleted by ClearResolvedViolations.
+//
+// This is a POSITIVE ALLOW-LIST, deliberately. The obvious alternative --
+// "delete everything except the event-driven ids" -- is a negated safe-list,
+// and a negated safe-list treats every id it has never heard of as safe to
+// destroy. For a DELETE the default must run the other way: an id this code
+// does not recognize is an id whose recoverability nobody has reasoned about,
+// so it is left alone. The list is built from defaultRules, the same registry
+// that seeds the rules table, so:
+//
+//   - a rule added to eventDrivenRules is protected AUTOMATICALLY, because it
+//     drops out of this list without anyone editing the delete path, and
+//   - a rule id sitting in the database that is NOT in the registry (a rule
+//     removed in a later version, a hand-inserted row) is never swept.
+//
+// Deriving the list from the database instead (SELECT id FROM rules, minus the
+// event-driven ones) was considered and rejected: it would hand exactly those
+// unrecognized ids back to the DELETE, which is the failure mode the allow-list
+// exists to prevent. A dedicated rules column marking event-driven rules was
+// also considered; it would need a migration and a second place to keep in step
+// with eventDrivenRules, for no additional safety.
+//
+// The result is ordered by defaultRules, not by map iteration, so the generated
+// SQL is stable from call to call.
+func clearableRuleIDs() []string {
+	ids := make([]string, 0, len(defaultRules))
+	for i := range defaultRules {
+		if IsEventDriven(defaultRules[i].ID) {
+			continue
+		}
+		ids = append(ids, defaultRules[i].ID)
+	}
+	return ids
+}
+
 // IsFilesystemDependent reports whether a rule requires a local library with a
 // filesystem path. Rules that only inspect database or API metadata return false.
 func IsFilesystemDependent(ruleID string) bool {
@@ -2032,13 +2068,44 @@ func (s *Service) ReopenViolation(ctx context.Context, id string) error {
 	return nil
 }
 
-// ClearResolvedViolations deletes resolved violations older than the given age.
+// ClearResolvedViolations permanently deletes resolved violations older than
+// the given age, for the rules on the clearable allow-list only.
+//
+// The allow-list is the whole point of this routine's shape (#2967). An
+// event-driven rule's violation cannot be re-derived: nothing evaluates those
+// rules, so once the row is gone the finding is gone for good. That matters
+// beyond theory here, because an earlier defect SOFT-RESOLVED a large number of
+// event-driven violations, and a resolved row is the only surviving record of
+// each of those findings. This routine's single caller is an unscheduled,
+// operator-triggered endpoint with a hard-coded 7-day cutoff, so every one of
+// those rows is already past the cutoff and one click would destroy the lot.
+// Restricting the DELETE to clearableRuleIDs keeps them out of reach while
+// ordinary rules -- whose findings the next evaluation pass simply rebuilds --
+// are still cleared as before.
 func (s *Service) ClearResolvedViolations(ctx context.Context, daysOld int) error {
+	ids := clearableRuleIDs()
+	if len(ids) == 0 {
+		// No rule is eligible, so there is nothing this may delete. Returning
+		// early rather than building an empty IN () clause, which is a SQLite
+		// syntax error.
+		return nil
+	}
+
 	cutoff := time.Now().UTC().AddDate(0, 0, -daysOld)
-	_, err := s.db.ExecContext(ctx, `
-		DELETE FROM rule_violations WHERE status = ? AND resolved_at < ?
-	`, ViolationStatusResolved, cutoff.Format(time.RFC3339))
-	if err != nil {
+	placeholders := make([]string, len(ids))
+	args := make([]any, 0, len(ids)+2)
+	args = append(args, ViolationStatusResolved, cutoff.Format(time.RFC3339))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+
+	//nolint:gosec // G201: only "?" placeholders are interpolated; every value is parameterized
+	query := fmt.Sprintf(
+		`DELETE FROM rule_violations WHERE status = ? AND resolved_at < ? AND rule_id IN (%s)`,
+		strings.Join(placeholders, ", "),
+	)
+	if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("clearing resolved violations: %w", err)
 	}
 	return nil
