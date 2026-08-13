@@ -3,6 +3,7 @@ package publish
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -96,6 +97,13 @@ func (u *settleActor) arm() error {
 			// the rename is done. Latching on anything earlier would let the save
 			// land mid-pass and prove nothing about ordering.
 			if !u.waitForRestore() {
+				// RECORD THE CAUSE. Returning bare here leaves writeErr nil, so the
+				// precondition below reports "the save did not land: <nil>" -- a CI
+				// failure with its own diagnosis erased. The rendezvous timing out IS
+				// the fact worth naming: pass 1 never restored the file, so the
+				// operator's save was never attempted.
+				u.writeErr = fmt.Errorf("waited %v for the first repair pass to restore %q and it never "+
+					"did, so the operator's save was never attempted", fixtureWaitTimeout, u.victim)
 				return
 			}
 			u.restoredSeenAt = time.Now()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -172,6 +173,12 @@ func (u *lateDeleteUploader) lateDelete() {
 	// call would find that state already true and return on its first poll,
 	// adding no wait and proving nothing.
 	if !u.waitForRestore() {
+		// Same reason settleActor records it: a bare return leaves removeErr nil
+		// and the precondition prints "<nil>" for a failure whose cause is known.
+		// The rendezvous timing out means pass 1 never restored the file, so the
+		// late delete was never attempted.
+		u.removeErr = fmt.Errorf("waited %v for the first repair pass to restore %q and it never did, "+
+			"so the late delete was never attempted", fixtureWaitTimeout, u.victim)
 		return
 	}
 
@@ -281,10 +288,14 @@ func assertLateDeleteHappened(t *testing.T, up *lateDeleteUploader) {
 	// provably LATE. Without this assertion, removing the rendezvous entirely
 	// leaves every test in this file green while the delete merely races pass 1.
 	if !bytes.Equal(up.bytesBeforeDelete, up.restored) {
+		// removeErr is included because it holds the CAUSE when the rendezvous
+		// timed out, while the bytes alone show only the symptom. Reporting the
+		// symptom and withholding the cause is what makes a CI-only failure take
+		// an afternoon instead of a minute.
 		t.Fatalf("precondition failed: the file held %q immediately before the peer's delete, want the "+
 			"operator's %q; the delete did not follow the first repair pass, so it is not provably late "+
-			"and nothing below proves a second pass exists",
-			up.bytesBeforeDelete, up.restored)
+			"and nothing below proves a second pass exists (cause, if the fixture gave one: %v)",
+			up.bytesBeforeDelete, up.restored, up.removeErr)
 	}
 	if !up.deleted {
 		t.Fatalf("precondition failed: the peer's late delete did not remove the file, so the second pass "+
