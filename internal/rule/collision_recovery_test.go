@@ -1,17 +1,18 @@
 package rule
 
-// collision_recovery_test.go pins the #2967 detection surface added in
+// collision_recovery_test.go pins the #2967 detection/reopen surface added in
 // collision_recovery.go. The MOST IMPORTANT property under test is that
 // ResolvedCollisionViolations never decides anything on its own: it is a
-// read-only report -- an operator-shaped resolved row (distinct resolved_at,
-// a rule_results row present) must be SURFACED here but nothing in this file
-// ever changes its status. "The system does not guess" is the whole reason
-// this shipped as a report instead of a migration; the reopen half of that
-// story (explicit, ID-scoped writes) is a separate follow-on PR (#2967 PR 2)
-// built on top of the shared fixture defined here.
+// read-only report, and ReopenCollisionViolations reopens ONLY the exact IDs
+// an operator passes -- an operator-shaped resolved row (distinct resolved_at,
+// a rule_results row present) must be SURFACED by detection but stay resolved
+// forever unless its ID is explicitly named. "The system does not guess" is
+// the whole reason this shipped as a report instead of a migration.
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -95,6 +96,29 @@ func resolveViolationRawAt(t *testing.T, svc *Service, artistID, ruleID, raw str
 	if n != 1 {
 		t.Fatalf("backdating raw resolved_at %s updated %d rows, want 1 (fixture did not land)", ruleID, n)
 	}
+}
+
+// violationRow is a full snapshot of one rule_violations row, used to assert
+// "byte-unchanged" -- that a row ReopenCollisionViolations refused to touch
+// really was left alone in every column, not merely in the one column a
+// narrower assertion happened to check.
+type violationRow struct {
+	status     string
+	resolvedAt sql.NullString
+	updatedAt  string
+	message    string
+}
+
+func readViolationRow(t *testing.T, db *sql.DB, id string) violationRow {
+	t.Helper()
+	var r violationRow
+	err := db.QueryRowContext(t.Context(),
+		`SELECT status, resolved_at, updated_at, message FROM rule_violations WHERE id = ?`, id,
+	).Scan(&r.status, &r.resolvedAt, &r.updatedAt, &r.message)
+	if err != nil {
+		t.Fatalf("reading violation row %s: %v", id, err)
+	}
+	return r
 }
 
 // deleteRuleResultRow removes the rule_results row for (artistID, ruleID).
@@ -306,6 +330,188 @@ func TestResolvedCollisionViolations_NoRuleResultsExist_TrueWhenNoneSeeded(t *te
 	}
 }
 
+// TestReopenCollisionViolations_ScopedAndRefusals is the reopen test, and its
+// central assertion is the "system does not guess" property: the operator-
+// shaped row (f.operator) is surfaced by detection but is NEVER reopened
+// because its ID was never passed.
+//
+// Mutants this kills: reopening every candidate row instead of only the
+// passed IDs (would flip f.bugB or f.operator too); treating a missing ID as
+// a silent no-op instead of a not_found outcome; reporting a dismissed row
+// under the generic not_resolved code instead of the dedicated dismissed
+// code.
+//
+// Deliberately NOT covered here: dropping the `status = 'resolved'` clause
+// from the reopen UPDATE. That mutant is killed by
+// TestReopenCollisionViolations_RowsAffectedMismatchIsAnError below, which
+// drives the UPDATE with an eligible list whose row no longer qualifies by
+// the time the UPDATE runs -- the only way to make the SQL clause the
+// deciding factor rather than the (already correct) Go pre-check. Likewise
+// dropping the `rule_id = ?` clause: f.otherRule is already filtered out by
+// the Go pre-check before the UPDATE runs, so the SQL clause never decides
+// anything in this test. That mutant is killed by
+// TestReopenCollisionViolations_RuleIDMismatchIsAnError below, for the same
+// reason.
+func TestReopenCollisionViolations_ScopedAndRefusals(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	f := newCollisionFixture(t, db, svc)
+	f.assertPreconditions(t, db)
+
+	bugAID := violationID(t, db, f.bugA.ID, RuleCrossArtistBackdropCollision)
+	bugBID := violationID(t, db, f.bugB.ID, RuleCrossArtistBackdropCollision)
+	operatorID := violationID(t, db, f.operator.ID, RuleCrossArtistBackdropCollision)
+	dismissedID := violationID(t, db, f.dismissed.ID, RuleCrossArtistBackdropCollision)
+	otherRuleID := violationID(t, db, f.otherRule.ID, RuleBioExists)
+	alreadyOpenID := violationID(t, db, f.alreadyOpen.ID, RuleCrossArtistBackdropCollision)
+	const missingID = "does-not-exist-12345"
+
+	// Snapshot every row we expect to be UNTOUCHED, before the call.
+	before := map[string]violationRow{
+		bugBID:        readViolationRow(t, db, bugBID),
+		operatorID:    readViolationRow(t, db, operatorID),
+		dismissedID:   readViolationRow(t, db, dismissedID),
+		otherRuleID:   readViolationRow(t, db, otherRuleID),
+		alreadyOpenID: readViolationRow(t, db, alreadyOpenID),
+	}
+
+	outcomes, err := svc.ReopenCollisionViolations(ctx, []string{
+		bugAID, dismissedID, otherRuleID, alreadyOpenID, missingID,
+	})
+	if err != nil {
+		t.Fatalf("ReopenCollisionViolations: %v", err)
+	}
+
+	reasons := make(map[string]ReopenOutcome, len(outcomes))
+	for _, o := range outcomes {
+		reasons[o.ID] = o
+	}
+	if len(reasons) != 5 {
+		t.Fatalf("got %d outcomes, want 5 (one per requested ID)", len(reasons))
+	}
+
+	// POSITIVE CONTROL: a legitimately-eligible row (bugA) still reopens
+	// successfully and reports Reopened=true truthfully.
+	if o := reasons[bugAID]; !o.Reopened || o.Reason != "" {
+		t.Errorf("bugA outcome = %+v, want Reopened=true Reason=\"\"", o)
+	}
+	if o := reasons[dismissedID]; o.Reopened || o.Reason != ReopenReasonDismissed {
+		t.Errorf("dismissed outcome = %+v, want Reopened=false Reason=%q", o, ReopenReasonDismissed)
+	}
+	if o := reasons[otherRuleID]; o.Reopened || o.Reason != ReopenReasonWrongRule {
+		t.Errorf("other-rule outcome = %+v, want Reopened=false Reason=%q", o, ReopenReasonWrongRule)
+	}
+	if o := reasons[alreadyOpenID]; o.Reopened || o.Reason != ReopenReasonNotResolved {
+		t.Errorf("already-open outcome = %+v, want Reopened=false Reason=%q", o, ReopenReasonNotResolved)
+	}
+	if o := reasons[missingID]; o.Reopened || o.Reason != ReopenReasonNotFound {
+		t.Errorf("missing outcome = %+v, want Reopened=false Reason=%q", o, ReopenReasonNotFound)
+	}
+
+	// THE POSITIVE CHANGE: bugA is now open with resolved_at cleared.
+	got := readViolationRow(t, db, bugAID)
+	if got.status != ViolationStatusOpen {
+		t.Errorf("bugA status = %q, want %q", got.status, ViolationStatusOpen)
+	}
+	if got.resolvedAt.Valid {
+		t.Errorf("bugA resolved_at = %q, want NULL", got.resolvedAt.String)
+	}
+
+	// THE MOST IMPORTANT ASSERTION: every row NOT explicitly passed is
+	// byte-unchanged, including bugB (same cluster as bugA, but its ID was
+	// never in the request), operator (surfaced by detection, still never
+	// reopened without its ID being named), and dismissed (still never
+	// modified -- see also the dedicated positive control below).
+	for id, want := range before {
+		got := readViolationRow(t, db, id)
+		if got != want {
+			t.Errorf("row %s changed despite not being in the reopen request: before=%+v after=%+v", id, want, got)
+		}
+	}
+}
+
+// TestReopenCollisionViolations_DismissedReasonCode is a narrow positive
+// control on I4/dismissed-vs-not-resolved: a dismissed row is refused with
+// the DEDICATED dismissed reason, distinct from a merely-not-resolved row
+// (already-open), and -- the actual behavior guarantee, not just the label --
+// the dismissed row is never modified.
+func TestReopenCollisionViolations_DismissedReasonCode(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	f := newCollisionFixture(t, db, svc)
+	f.assertPreconditions(t, db)
+
+	dismissedID := violationID(t, db, f.dismissed.ID, RuleCrossArtistBackdropCollision)
+	alreadyOpenID := violationID(t, db, f.alreadyOpen.ID, RuleCrossArtistBackdropCollision)
+	before := readViolationRow(t, db, dismissedID)
+
+	outcomes, err := svc.ReopenCollisionViolations(ctx, []string{dismissedID, alreadyOpenID})
+	if err != nil {
+		t.Fatalf("ReopenCollisionViolations: %v", err)
+	}
+	reasons := make(map[string]ReopenOutcome, len(outcomes))
+	for _, o := range outcomes {
+		reasons[o.ID] = o
+	}
+
+	if o := reasons[dismissedID]; o.Reopened || o.Reason != ReopenReasonDismissed {
+		t.Errorf("dismissed outcome = %+v, want Reopened=false Reason=%q", o, ReopenReasonDismissed)
+	}
+	if o := reasons[alreadyOpenID]; o.Reopened || o.Reason != ReopenReasonNotResolved {
+		t.Errorf("already-open outcome = %+v, want Reopened=false Reason=%q", o, ReopenReasonNotResolved)
+	}
+	// The two reason codes must actually differ -- a test that let them
+	// collapse to the same string would prove nothing about I4.
+	if reasons[dismissedID].Reason == reasons[alreadyOpenID].Reason {
+		t.Fatalf("dismissed and already-open share reason %q, want distinct codes", reasons[dismissedID].Reason)
+	}
+
+	// POSITIVE CONTROL: the dismissed row was never modified.
+	after := readViolationRow(t, db, dismissedID)
+	if after != before {
+		t.Errorf("dismissed row changed: before=%+v after=%+v", before, after)
+	}
+}
+
+// TestReopenCollisionViolations_EmptyListIsNoOp pins the SQLite `IN ()`
+// guard: an empty ID slice must never reach the query builder.
+func TestReopenCollisionViolations_EmptyListIsNoOp(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	outcomes, err := svc.ReopenCollisionViolations(ctx, nil)
+	if err != nil {
+		t.Fatalf("ReopenCollisionViolations(nil): %v", err)
+	}
+	if len(outcomes) != 0 {
+		t.Errorf("got %d outcomes for an empty request, want 0", len(outcomes))
+	}
+}
+
+// violationID looks up the persisted id for a (artist, rule) pair.
+func violationID(t *testing.T, db *sql.DB, artistID, ruleID string) string {
+	t.Helper()
+	var id string
+	if err := db.QueryRowContext(t.Context(),
+		`SELECT id FROM rule_violations WHERE artist_id = ? AND rule_id = ?`, artistID, ruleID,
+	).Scan(&id); err != nil {
+		t.Fatalf("reading violation id for (%s, %s): %v", artistID, ruleID, err)
+	}
+	return id
+}
+
 // keysOf is a small debug helper used to render a mismatch's actual IDs in a
 // test failure message.
 func keysOf(m map[string]ResolvedCollisionViolation) []string {
@@ -332,6 +538,22 @@ func TestResolvedCollisionViolations_QueryErrorPropagates(t *testing.T) {
 	}
 	if _, err := svc.ResolvedCollisionViolations(t.Context()); err == nil {
 		t.Error("ResolvedCollisionViolations on a closed db returned nil error, want the query failure")
+	}
+}
+
+// TestReopenCollisionViolations_BeginTxErrorPropagates exercises the
+// BeginTx error path the same way.
+func TestReopenCollisionViolations_BeginTxErrorPropagates(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	if err := svc.SeedDefaults(t.Context()); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+	if _, err := svc.ReopenCollisionViolations(t.Context(), []string{"whatever"}); err == nil {
+		t.Error("ReopenCollisionViolations on a closed db returned nil error, want the BeginTx failure")
 	}
 }
 
@@ -628,5 +850,241 @@ func TestResolvedCollisionViolations_CursorClosedBeforeFollowupQuery(t *testing.
 	// so one rule_results row exists.
 	if report.NoRuleResultsExist {
 		t.Errorf("NoRuleResultsExist = true, want false: the operator row's rule_results was seeded and not deleted")
+	}
+}
+
+// TestReopenCollisionViolations_RowsAffectedMismatchIsAnError is the direct
+// test for I1 and, as a consequence, for C2: it drives the reopen UPDATE
+// with a row that the Go pre-check judged eligible but that no longer
+// qualifies by the time the UPDATE executes (its status flips to dismissed
+// inside the same transaction, via the reopenPreUpdateHook test seam, between
+// the SELECT-based eligibility check and the UPDATE). If RowsAffected is not
+// checked, this looks like a normal successful reopen; with the check, it
+// must surface as an error and the row must be left exactly as the
+// interloper set it -- never silently reported Reopened: true.
+//
+// This is also what proves the doc-comment fix on this test file's earlier
+// claims: dropping the `status = 'resolved'` clause from the UPDATE (mutation
+// a) makes THIS test fail, not the scoped-and-refusals test above, because
+// only here does the SQL clause -- rather than the Go pre-check -- decide
+// anything. See TestReopenCollisionViolations_RuleIDMismatchIsAnError below
+// for the `rule_id = ?` clause (mutation b) counterpart.
+func TestReopenCollisionViolations_RowsAffectedMismatchIsAnError(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	f := newCollisionFixture(t, db, svc)
+	f.assertPreconditions(t, db)
+
+	bugAID := violationID(t, db, f.bugA.ID, RuleCrossArtistBackdropCollision)
+	before := readViolationRow(t, db, bugAID)
+
+	// Simulate a status change landing between the SELECT and the UPDATE:
+	// the row Go judged eligible is flipped to dismissed inside the same
+	// transaction just before the UPDATE runs.
+	svc.reopenPreUpdateHook = func(tx *sql.Tx) {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE rule_violations SET status = ? WHERE id = ?`, ViolationStatusDismissed, bugAID,
+		); err != nil {
+			t.Fatalf("test hook: flipping bugA status: %v", err)
+		}
+	}
+
+	outcomes, err := svc.ReopenCollisionViolations(ctx, []string{bugAID})
+	if err == nil {
+		t.Fatalf("ReopenCollisionViolations = (%v, nil), want an error when RowsAffected disagrees with the eligible count", outcomes)
+	}
+
+	// The WHOLE transaction must have rolled back, including the hook's own
+	// interloping write -- not just the reopen UPDATE. The row must be
+	// byte-identical to its state before the call: never silently reopened,
+	// and not left in the hook's intermediate "dismissed" state either,
+	// since that write happened inside the same transaction this error
+	// unwinds.
+	after := readViolationRow(t, db, bugAID)
+	if after != before {
+		t.Errorf("bugA row after failed reopen = %+v, want unchanged from before (%+v) -- the whole transaction, including the hook's own write, must roll back", after, before)
+	}
+}
+
+// TestReopenCollisionViolations_RuleIDMismatchIsAnError is the rule_id
+// counterpart of the test above, and specifically what kills mutation (b)
+// (dropping the `rule_id = ?` clause from the reopen UPDATE): a row Go's
+// pre-check judged eligible is switched to a DIFFERENT rule between the
+// SELECT and the UPDATE. With the rule_id allow-list clause intact, the
+// UPDATE's WHERE no longer matches the row, RowsAffected comes back short,
+// and the call must error and roll back -- exactly like the status case,
+// but exercising the other clause.
+func TestReopenCollisionViolations_RuleIDMismatchIsAnError(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	f := newCollisionFixture(t, db, svc)
+	f.assertPreconditions(t, db)
+
+	bugAID := violationID(t, db, f.bugA.ID, RuleCrossArtistBackdropCollision)
+	before := readViolationRow(t, db, bugAID)
+
+	svc.reopenPreUpdateHook = func(tx *sql.Tx) {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE rule_violations SET rule_id = ? WHERE id = ?`, RuleBioExists, bugAID,
+		); err != nil {
+			t.Fatalf("test hook: flipping bugA rule_id: %v", err)
+		}
+	}
+
+	outcomes, err := svc.ReopenCollisionViolations(ctx, []string{bugAID})
+	if err == nil {
+		t.Fatalf("ReopenCollisionViolations = (%v, nil), want an error when RowsAffected disagrees with the eligible count", outcomes)
+	}
+
+	// The whole transaction, including the hook's own write, rolled back:
+	// status/resolved_at/updated_at/message are untouched, and rule_id is
+	// back to the collision rule.
+	after := readViolationRow(t, db, bugAID)
+	if after != before {
+		t.Errorf("bugA row after failed reopen = %+v, want unchanged from before (%+v)", after, before)
+	}
+	var ruleID string
+	if err := db.QueryRowContext(ctx, `SELECT rule_id FROM rule_violations WHERE id = ?`, bugAID).Scan(&ruleID); err != nil {
+		t.Fatalf("reading bugA rule_id: %v", err)
+	}
+	if ruleID != RuleCrossArtistBackdropCollision {
+		t.Errorf("bugA rule_id after failed reopen = %q, want %q (hook's write rolled back)", ruleID, RuleCrossArtistBackdropCollision)
+	}
+}
+
+// TestReopenCollisionViolations_UpdatedAtIsStamped is the positive control
+// for mutation (g) (dropping the `updated_at = ?` assignment from the reopen
+// UPDATE): a legitimately-reopened row's updated_at must match the clock
+// value the call used, not be left at its pre-reopen stamp. Uses frozenClock
+// (not FakeClock) because this asserts an EXACT stamp equality, and FakeClock
+// advances on every call including ones this test does not control the count
+// of.
+func TestReopenCollisionViolations_UpdatedAtIsStamped(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	f := newCollisionFixture(t, db, svc)
+	f.assertPreconditions(t, db)
+	bugAID := violationID(t, db, f.bugA.ID, RuleCrossArtistBackdropCollision)
+
+	preReopen := readViolationRow(t, db, bugAID)
+
+	reopenAt := time.Date(2026, 8, 13, 9, 30, 0, 0, time.UTC)
+	svc.clock = frozenClock{at: reopenAt}
+
+	if _, err := svc.ReopenCollisionViolations(ctx, []string{bugAID}); err != nil {
+		t.Fatalf("ReopenCollisionViolations: %v", err)
+	}
+
+	after := readViolationRow(t, db, bugAID)
+	want := reopenAt.Format(time.RFC3339)
+	if after.updatedAt != want {
+		t.Errorf("bugA updated_at after reopen = %q, want %q (the reopen clock stamp)", after.updatedAt, want)
+	}
+	if after.updatedAt == preReopen.updatedAt {
+		t.Errorf("bugA updated_at unchanged by reopen (%q); a stale updated_at poisons later staleness comparisons (#2972)", after.updatedAt)
+	}
+}
+
+// TestReopenCollisionViolations_DuplicateIDsDeduplicated is I2: passing the
+// same ID more than once must produce exactly one outcome for it, and the
+// outcome order for the surviving IDs must match first-occurrence order in
+// the input so a caller aligning outcomes back to its own display list gets a
+// stable, unsurprising result.
+func TestReopenCollisionViolations_DuplicateIDsDeduplicated(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	f := newCollisionFixture(t, db, svc)
+	f.assertPreconditions(t, db)
+
+	bugAID := violationID(t, db, f.bugA.ID, RuleCrossArtistBackdropCollision)
+	bugBID := violationID(t, db, f.bugB.ID, RuleCrossArtistBackdropCollision)
+
+	outcomes, err := svc.ReopenCollisionViolations(ctx, []string{bugAID, bugBID, bugAID, bugAID, bugBID})
+	if err != nil {
+		t.Fatalf("ReopenCollisionViolations: %v", err)
+	}
+
+	if len(outcomes) != 2 {
+		t.Fatalf("got %d outcomes for [bugA, bugB, bugA, bugA, bugB], want 2 (deduplicated, first-occurrence order)", len(outcomes))
+	}
+	if outcomes[0].ID != bugAID || outcomes[1].ID != bugBID {
+		t.Fatalf("outcome order = [%s, %s], want [%s, %s] (first-occurrence order preserved)",
+			outcomes[0].ID, outcomes[1].ID, bugAID, bugBID)
+	}
+	for _, o := range outcomes {
+		if !o.Reopened {
+			t.Errorf("outcome %+v: want Reopened=true for a legitimately-eligible row", o)
+		}
+	}
+
+	// Both rows actually reopened exactly once each -- the dedup must not
+	// have suppressed the real write for the second distinct ID.
+	for _, id := range []string{bugAID, bugBID} {
+		got := readViolationRow(t, db, id)
+		if got.status != ViolationStatusOpen {
+			t.Errorf("row %s status = %q, want %q", id, got.status, ViolationStatusOpen)
+		}
+	}
+}
+
+// TestReopenCollisionViolations_MaxIDsBoundary is I3: at reopenMaxIDs the
+// call must proceed normally (bounded by a named, documented limit rather
+// than failing on the raw SQLite "too many SQL variables" driver string);
+// one ID over the limit must be refused by ErrTooManyReopenIDs before any
+// query runs.
+func TestReopenCollisionViolations_MaxIDsBoundary(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := t.Context()
+	svc := NewService(db)
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// One over the limit: refused by our own error, never reaches the SELECT.
+	tooMany := make([]string, reopenMaxIDs+1)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprintf("nonexistent-%d", i)
+	}
+	outcomes, err := svc.ReopenCollisionViolations(ctx, tooMany)
+	if !errors.Is(err, ErrTooManyReopenIDs) {
+		t.Fatalf("ReopenCollisionViolations(%d ids) error = %v, want ErrTooManyReopenIDs", len(tooMany), err)
+	}
+	if outcomes != nil {
+		t.Errorf("ReopenCollisionViolations(%d ids) outcomes = %v, want nil alongside the error", len(tooMany), outcomes)
+	}
+
+	// At the limit exactly: proceeds (all not_found, since none of these IDs
+	// exist, but that is a normal outcome, not a rejection).
+	atLimit := make([]string, reopenMaxIDs)
+	for i := range atLimit {
+		atLimit[i] = fmt.Sprintf("nonexistent-%d", i)
+	}
+	outcomes, err = svc.ReopenCollisionViolations(ctx, atLimit)
+	if err != nil {
+		t.Fatalf("ReopenCollisionViolations(%d ids, at the limit): %v", len(atLimit), err)
+	}
+	if len(outcomes) != reopenMaxIDs {
+		t.Fatalf("got %d outcomes at the limit, want %d", len(outcomes), reopenMaxIDs)
+	}
+	for _, o := range outcomes {
+		if o.Reopened || o.Reason != ReopenReasonNotFound {
+			t.Fatalf("outcome %+v at the limit, want Reopened=false Reason=%q for a nonexistent id", o, ReopenReasonNotFound)
+		}
 	}
 }
