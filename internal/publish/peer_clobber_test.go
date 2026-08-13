@@ -326,7 +326,7 @@ func TestReassertLocalImage_UnreadableFile_LeftAlone(t *testing.T) {
 	p := New(Deps{Logger: silentLogger()})
 	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
 
-	p.reassertLocalImage(context.Background(), a, "banner", victim, []byte("REPLACEMENT"), time.Now().Add(-time.Hour), pushScope{dir: dir, at: time.Now()}, []string{"Peer"})
+	p.reassertLocalImage(context.Background(), a, "banner", victim, []byte("REPLACEMENT"), time.Now().Add(-time.Hour), pushScope{dir: dir, at: time.Now()}, []string{"Peer"}, repairAllDamage)
 
 	if err := os.Chmod(victim, 0o600); err != nil {
 		t.Fatalf("restoring read permission: %v", err)
@@ -517,7 +517,7 @@ func TestReassertLocalImage_OperatorDeletedDuringPush_NotRestored(t *testing.T) 
 	p := New(Deps{Logger: silentLogger()})
 	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
 
-	p.reassertLocalImage(context.Background(), a, "banner", victim, data, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+	p.reassertLocalImage(context.Background(), a, "banner", victim, data, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"}, repairAllDamage)
 
 	if _, err := os.Stat(victim); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the repair resurrected an image the operator deliberately deleted (stat err = %v); "+
@@ -543,7 +543,7 @@ func TestReassertLocalImage_PeerDeleteNoIntent_Restored(t *testing.T) {
 	p := New(Deps{Logger: silentLogger()})
 	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
 
-	p.reassertLocalImage(context.Background(), a, "banner", victim, want, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+	p.reassertLocalImage(context.Background(), a, "banner", victim, want, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"}, repairAllDamage)
 
 	got := mustRead(t, victim)
 	if string(got) != string(want) {
@@ -576,7 +576,7 @@ func TestReassertLocalImage_StaleIntentPredatingSnapshot_Restored(t *testing.T) 
 	p := New(Deps{Logger: silentLogger()})
 	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
 
-	p.reassertLocalImage(context.Background(), a, "banner", victim, want, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+	p.reassertLocalImage(context.Background(), a, "banner", victim, want, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"}, repairAllDamage)
 
 	got := mustRead(t, victim)
 	if string(got) != string(want) {
@@ -666,7 +666,7 @@ func TestReassertLocalImage_OperatorDeleteSuppressesRenumberedPath(t *testing.T)
 	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
 
 	// The in-flight push verifies its PRE-renumber view of slot 5.
-	p.reassertLocalImage(context.Background(), a, "fanart", tailPath, tailData, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+	p.reassertLocalImage(context.Background(), a, "fanart", tailPath, tailData, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"}, repairAllDamage)
 
 	if _, statErr := os.Stat(tailPath); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("the repair recreated fanart5.jpg after a renumber (stat err = %v); the operator's "+
@@ -702,7 +702,7 @@ func TestReassertLocalImage_OverwriteIgnoresDeleteIntent(t *testing.T) {
 	p := New(Deps{Logger: silentLogger()})
 	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
 
-	p.reassertLocalImage(context.Background(), a, "banner", victim, want, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"})
+	p.reassertLocalImage(context.Background(), a, "banner", victim, want, time.Now().Add(-time.Hour), pushScope{dir: dir, at: snapAt}, []string{"Peer"}, repairAllDamage)
 
 	got := mustRead(t, victim)
 	if string(got) == "PEER-OWN-BYTES" {
