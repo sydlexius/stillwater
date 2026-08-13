@@ -57,6 +57,76 @@ const (
 	// anything slower than this is a mount that has stopped answering, not a
 	// slow disk.
 	reassertVerifyTimeout = 10 * time.Second
+
+	// maxFanartSnapshotFiles caps how many backdrops one push holds in memory
+	// (#2712).
+	//
+	// snapshotFanart must read EVERY backdrop before the first upload -- a peer
+	// was measured deleting a slot the upload loop had not reached yet, and
+	// bytes never held cannot be restored -- so the whole set is resident for
+	// the duration of the push, and concurrent syncs multiply that.
+	//
+	// 100 is chosen from measured reality: the largest artist in the production
+	// library that surfaced this issue holds 42 backdrops, so the cap is a
+	// little over twice the real high-water mark. That leaves generous room for
+	// growth while still refusing a directory holding thousands of files, which
+	// is a broken library or a runaway import rather than an artist.
+	maxFanartSnapshotFiles = 100
+
+	// maxFanartSnapshotFileBytes caps how large ONE backdrop may be and still be
+	// captured for restore (#2712).
+	//
+	// Note this is STRICTER than img.MaxDecodeBytes (25 MB), which is the read
+	// bound and stays where it is: that limit exists to stop a single read
+	// exhausting memory, while this one exists because up to
+	// maxFanartSnapshotFiles of these are held AT ONCE. A 4K-wide JPEG backdrop
+	// is on the order of 1 to 6 MB; 12 MiB is roughly double the top of that
+	// range, so a real backdrop is never refused and a video file or a PSD that
+	// wandered into the artist directory is.
+	maxFanartSnapshotFileBytes = 12 << 20
+
+	// maxFanartSnapshotTotalBytes caps the cumulative bytes ONE push holds
+	// (#2712). The per-file and per-count caps multiply out to 1.2 GB, which is
+	// not a bound worth having, so the total is what actually protects the
+	// process.
+	//
+	// It is a real bound rather than a predicted one because it is enforced
+	// TWICE: once from a stat before the read (so an honestly-huge file is never
+	// allocated) and once from the length actually read (so a file that grew
+	// between the two is discarded instead of retained). A stat-only check would
+	// bound a number while leaving what is resident unbounded; see readio.go's
+	// io.LimitReader argument, and fanartSnapshotBudget.refuseResult.
+	//
+	// 192 MiB is 201.3 MB, and the measured worst case is 42 backdrops. At the
+	// top of the observed per-file range (~4.5 MB) that set is 189 MB, which
+	// clears the cap by only 6 percent -- so the headroom against the EXTREME
+	// case is thin, and it is stated as a number rather than called comfortable.
+	// The headroom against the TYPICAL case is what makes the number safe: real
+	// backdrops run well under 2 MB, so the same 42-file artist is nearer 84 MB,
+	// under half the cap. Units are MB (10^6) throughout except where MiB is
+	// written explicitly, because mixing the two while reasoning about a 6
+	// percent margin is how a margin gets miscounted.
+	maxFanartSnapshotTotalBytes = 192 << 20
+
+	// maxFanartSnapshotWarnings caps how many per-slot warnings one snapshot
+	// puts in the API response (#3018 review).
+	//
+	// The three caps above bound what a directory can make this push HOLD. They
+	// deliberately do not stop the loop -- every remaining slot is still walked
+	// so its true index survives and its loss is reported -- which left the
+	// REPORT unbounded in exactly the dimension the snapshot no longer is: a
+	// directory holding thousands of files produces one warning per refused
+	// slot, and truncateWarning bounds each string while nothing bounded the
+	// count. That is the same "the artist directory chooses the commitment"
+	// defect arriving through the response body instead of the heap.
+	//
+	// 25 is above the count at which a per-slot list stops being actionable and
+	// well under the maxFanartSnapshotFiles cap, so a legitimately large artist
+	// (42 backdrops measured, 100 allowed) that fails wholesale still names its
+	// first 25 slots and then says how many more there were. The full per-slot
+	// detail, including the path an API response must not carry, is in the
+	// Error log degradeFanartSlot writes for every slot regardless of this cap.
+	maxFanartSnapshotWarnings = 25
 )
 
 // Deps holds all dependencies for a Publisher.
@@ -988,6 +1058,69 @@ type fanartSnapshot struct {
 // already deleted -- a hash-only snapshot could DETECT the loss but never repair
 // it.
 //
+// THAT COST IS BOUNDED, in three directions (#2712), because "read everything"
+// with no ceiling is a memory commitment an artist directory gets to choose and
+// concurrent syncs multiply: maxFanartSnapshotFiles files,
+// maxFanartSnapshotFileBytes for any one file, and maxFanartSnapshotTotalBytes
+// cumulative. Each constant documents where its number comes from.
+//
+// EXCEEDING A BOUND DEGRADES LOUDLY, in the same three signals an unreadable
+// file already produces -- an Error log with structured fields, a warning
+// appended for the caller to surface to the operator, and a nil-data entry so
+// every LATER slot keeps its TRUE index. Silence here would turn a memory guard
+// into invisible data loss, which is why the degrade is three simultaneous
+// signals rather than a debug line.
+//
+// The bounds do NOT abort the loop. A single over-size file says nothing about
+// the rest of the set, so it is skipped like any other per-file failure. The
+// two cumulative caps then behave DIFFERENTLY from each other, and the
+// difference is worth stating because "the caps stop capturing" reads as a
+// latch that only one of them has. Once the COUNT cap is reached nothing
+// further is captured, because b.files never decreases. The TOTAL cap is
+// re-evaluated per file against the REMAINING budget, so a later, smaller
+// backdrop that still fits IS captured after a larger one was refused. Either
+// way the loop walks the rest of the set so every slot is accounted for and
+// warned about, rather than the set silently ending early.
+//
+// THE REPORT IS BOUNDED TOO (#3018 review), and separately from the snapshot.
+// Walking every slot is what makes a large directory produce a warning per
+// refused file, so the caps that stop this function holding a directory's worth
+// of bytes did nothing about it returning a directory's worth of strings. See
+// maxFanartSnapshotWarnings: the response carries the first N slots plus a
+// count of the rest, while the Error log still names every one.
+//
+// KNOWN GAP, AND IT IS A REAL REGRESSION -- tracked in #3017, NOT fixed here.
+// Borrowing the unreadable-file shape is where the two cases stop matching.
+// An unreadable file could not have been uploaded either way. A refused one
+// COULD have: a 13 MiB backdrop is under img.MaxDecodeBytes (25 MB), so before
+// these caps existed it was read and pushed to every peer, and now it is
+// refused before the read. Since uploadFanartSet skips every nil-data entry,
+// refusing a slot for RETENTION also drops it from the PUSH, which is a
+// different and larger consequence than "it cannot be repaired". If the refused
+// file is the artist's ONLY backdrop, hasReadableFanart is false and the sync
+// returns before the upload loop runs at all.
+//
+// That is why every refusal message says the slot was neither captured NOR
+// synced: the operator must not be told this is only a restore-snapshot
+// problem. The proper fix is to decouple retention from the push -- read the
+// file, upload it, then drop the bytes instead of retaining them -- which
+// changes the shape of this function and belongs in #3017, not in the change
+// that introduced the bound.
+//
+// A second, smaller consequence rides along and is tracked there too: the
+// fanart sync is additive -- it writes backdrop indices and never deletes
+// surplus ones -- so a platform index a refused slot used to occupy keeps
+// whatever image it already held, indefinitely. Preserving the TRUE index below
+// is what keeps that stale image confined to the refused slots instead of
+// shifting every later backdrop onto the wrong index, which is the worse
+// failure and the one this code does prevent.
+//
+// The per-file cap sits BELOW img.MaxDecodeBytes, so for fanart it now fires
+// first and the read's own ErrImageTooLarge arm below is the narrower case: the
+// pre-read stat did not see the true size, because it failed (a permissions
+// problem, which the read then reports properly) or because the file grew
+// between the stat and the read. That arm stays for exactly those.
+//
 // The reads are ctx-bound and size-bounded (#2934). DiscoverFanart above is
 // already cancellable, so a bare os.ReadFile here left the same defect the
 // primary path had, only worse: this loop reads the WHOLE set, so a mount that
@@ -1024,8 +1157,24 @@ type fanartSnapshot struct {
 // before the upload loop.
 func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([]fanartSnapshot, []string, error) {
 	snapshot := make([]fanartSnapshot, 0, len(fanartPaths))
-	var warnings []string
+	var warnings fanartWarningLog
+	var budget fanartSnapshotBudget
 	for i, fp := range fanartPaths {
+		// #2712: refuse BEFORE the read, so an over-size or over-budget file is
+		// never allocated at all. Checking after the read would make the cap a
+		// bookkeeping exercise rather than a memory guard.
+		//
+		// #3017 IS THE COST OF THAT ORDERING and is deliberately NOT paid here:
+		// a slot refused for RETENTION also stops being PUSHED, because
+		// uploadFanartSet skips every nil-data entry. See the KNOWN GAP note on
+		// snapshotFanart above for why that is a regression rather than a
+		// tradeoff, and what the real fix looks like.
+		if reason, refused := budget.refuse(ctx, fp, i); refused {
+			entry, warning := p.degradeFanartSlot(fp, i, reason)
+			snapshot = append(snapshot, entry)
+			warnings.add(warning)
+			continue
+		}
 		data, readErr := img.ReadImageFileBounded(ctx, fp)
 		if readErr != nil {
 			// A cancellation is not the only failure that distrusts the whole
@@ -1058,24 +1207,238 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 					slog.Int("captured", len(snapshot)),
 					slog.String("reason", reason),
 					slog.Any("error", distrust))
-				return snapshot, warnings, distrust
+				return snapshot, warnings.result(), distrust
 			}
 			p.logger.Error("reading fanart for platform sync",
 				slog.String("path", fp),
 				slog.String("error", readErr.Error()))
 			if errors.Is(readErr, img.ErrImageTooLarge) {
-				warnings = append(warnings, truncateWarning(fmt.Sprintf("fanart %d exceeds the size limit for upload", i)))
+				warnings.add(truncateWarning(fmt.Sprintf("fanart %d exceeds the size limit for upload", i)))
 			} else {
-				warnings = append(warnings, truncateWarning(fmt.Sprintf("failed to read fanart %d", i)))
+				warnings.add(truncateWarning(fmt.Sprintf("failed to read fanart %d", i)))
 			}
 			// Kept with nil data so the slots AFTER this one keep their real
 			// index; the upload loop skips nil entries.
 			snapshot = append(snapshot, fanartSnapshot{path: fp, index: i})
 			continue
 		}
+		// #2712: check the RESULT, not just the stat that preceded it.
+		//
+		// The pre-read refusal above is a stat, and a stat is a prediction: the
+		// file can grow between the stat and the read, so on its own the cap
+		// bounds a NUMBER while the read stays unbounded. internal/image's
+		// readio.go makes exactly this argument for why it uses io.LimitReader
+		// rather than a stat, and it applies here with the multiplier this
+		// function adds -- it holds up to maxFanartSnapshotFiles results at
+		// once, so believing every stat could leave 100 reads of
+		// img.MaxDecodeBytes resident against a documented 192 MiB bound.
+		//
+		// So the stat stays (it is what keeps an honestly-huge file from being
+		// allocated AT ALL, which is the cheap and common case) and this second
+		// check is what makes the bound true: bytes that overshoot are DISCARDED
+		// rather than retained, and the slot degrades exactly like any other
+		// uncaptured one. That bounds what is resident to the total cap plus the
+		// single read in flight, which img.ReadImageFileBounded already caps.
+		if reason, refused := budget.refuseResult(int64(len(data)), i); refused {
+			entry, warning := p.degradeFanartSlot(fp, i, reason)
+			snapshot = append(snapshot, entry)
+			warnings.add(warning)
+			continue
+		}
+		budget.charge(int64(len(data)))
 		snapshot = append(snapshot, fanartSnapshot{path: fp, index: i, data: data, mod: fileModTime(fp)})
 	}
-	return snapshot, warnings, nil
+	return snapshot, warnings.result(), nil
+}
+
+// fanartWarningLog accumulates the per-slot warnings one snapshot produces and
+// bounds how many of them reach the caller (#3018 review).
+//
+// It exists because snapshotFanart deliberately walks EVERY path even after a
+// cap is hit -- that is what keeps each surviving slot's true index -- so the
+// number of warnings scales with the artist directory, which is precisely the
+// input the #2712 caps exist to stop trusting. Each string was already
+// truncateWarning-bounded; nothing bounded the count, so a directory holding
+// thousands of files returned thousands of strings into an API response.
+//
+// The overflow is COUNTED rather than dropped. A silent cut would report a
+// bounded, plausible-looking list that understates the loss, which is the same
+// invisible-data-loss failure the loud degrade was written to prevent. Callers
+// therefore get the first maxFanartSnapshotWarnings slots plus one line saying
+// how many more there were. degradeFanartSlot's Error log is unaffected and
+// still names every slot with its path, so nothing is lost from the record an
+// operator debugs from -- only from the response body a browser renders.
+type fanartWarningLog struct {
+	kept     []string
+	overflow int
+}
+
+// add records one warning, keeping it only while under the cap.
+func (w *fanartWarningLog) add(warning string) {
+	if len(w.kept) < maxFanartSnapshotWarnings {
+		w.kept = append(w.kept, warning)
+		return
+	}
+	w.overflow++
+}
+
+// result returns the bounded warning list, with the overflow summary appended
+// when any warning was withheld. It returns nil for an empty log so the
+// no-warnings case is indistinguishable from the pre-cap behavior.
+//
+// The empty case is returned EXPLICITLY rather than by handing back a kept that
+// happens to be nil (#3018 review). The nil-ness was incidental: it held only
+// because the sole production caller declares the log with var and never
+// preallocates, so any future caller (or test) that built kept with make(...)
+// and then added nothing would return a non-nil empty slice and quietly break
+// the contract this comment states. These warnings are marshaled into an API
+// response, where the difference is visible as "warnings": null versus
+// "warnings": [], so a stated invariant the code does not enforce is the
+// defect rather than a style point.
+//
+// The summary is written into a slice of its OWN rather than appended onto
+// w.kept, and that is a correctness requirement rather than defensive style
+// (#3018 review). w.kept reaches the cap by repeated append, so it arrives here
+// with spare capacity (len 25, cap 32 as the growth lands), which means
+// append(w.kept, ...) writes the summary INTO w.kept's existing backing array
+// and hands back a slice aliasing it. Any later append to w.kept then
+// overwrites that same index, silently replacing the summary in a slice the
+// caller is already holding -- measured: the returned entry became the newly
+// appended warning and "and N more" was gone.
+//
+// That failure lands on the one line whose entire job is to stop a truncated
+// list reading as a complete one, so the aliasing would quietly restore the
+// invisible-data-loss the counted overflow exists to prevent.
+func (w *fanartWarningLog) result() []string {
+	if len(w.kept) == 0 && w.overflow == 0 {
+		return nil
+	}
+	if w.overflow == 0 {
+		return w.kept
+	}
+	out := make([]string, len(w.kept), len(w.kept)+1)
+	copy(out, w.kept)
+	return append(out, truncateWarning(fmt.Sprintf(
+		"and %d more fanart slots were neither captured for restore nor synced to platforms; see the server log for each one",
+		w.overflow)))
+}
+
+// fanartSnapshotBudget tracks what one snapshot has already committed, so the
+// three #2712 caps can be enforced BEFORE each read rather than after it.
+//
+// It deliberately counts only files that were actually CAPTURED. A slot skipped
+// for any reason -- over budget, unreadable, over-size -- holds no bytes, so
+// charging it against the budget would let a directory full of junk starve the
+// real backdrops behind it out of their capture.
+type fanartSnapshotBudget struct {
+	files int
+	bytes int64
+}
+
+// refuse reports whether this file must be skipped to stay inside the caps, and
+// the operator-facing reason if so.
+//
+// The per-file size is taken from a stat rather than from the read, because the
+// whole point is to avoid allocating the file at all. A stat that fails is NOT
+// treated as a refusal: the read that follows will produce the real error with
+// the real cause, and inventing a budget refusal for what is actually a
+// permissions problem would send the operator looking at the wrong thing.
+// EVERY REFUSAL NAMES THE SLOT, and that is not cosmetic. These strings become
+// operator-facing warnings, one per refused file. Without the index, an artist
+// holding 105 backdrops produces five byte-identical sentences and the operator
+// cannot tell which backdrops are now unrepairable -- which is the one fact the
+// warning exists to convey.
+//
+// THE STAT IS CTX-BOUND, and it takes a ctx for that reason alone (#3018
+// review). A raw os.Stat here put an UNBOUNDED call in front of the bounded
+// read that follows, so a hard-mounted export that stopped answering wedged
+// this loop one step before the #2934 bound could apply -- and since
+// snapshotFanart reads the whole set before the first upload, that wedge takes
+// the push with it and no caller deadline reaches it. The stat running FIRST is
+// what makes the cap a memory guard rather than bookkeeping, so the ordering
+// stays and the stat gets the bound instead.
+func (b *fanartSnapshotBudget) refuse(ctx context.Context, path string, index int) (string, bool) {
+	if b.files >= maxFanartSnapshotFiles {
+		return fmt.Sprintf("fanart %d was neither captured for restore nor synced to platforms: the set exceeds the %d-file snapshot limit",
+			index, maxFanartSnapshotFiles), true
+	}
+	// A CANCELED OR STALLED STAT IS NOT A REFUSAL, which keeps this arm's
+	// existing contract intact: the read that follows returns the same failure
+	// in a form the loop already classifies (img.ReadFailureDistrustsLoop
+	// aborts the whole set for a cancellation or the stalled-read cap), so
+	// reporting a budget refusal here would relabel an abandoned request as an
+	// over-size backdrop.
+	info, statErr := img.StatBounded(ctx, path)
+	if statErr != nil {
+		return "", false
+	}
+	size := info.Size()
+	if size > maxFanartSnapshotFileBytes {
+		// "bytes on disk" is what separates this message from refuseResult's
+		// ("bytes read"), and that separation is load-bearing rather than
+		// decorative: it is the only operator-visible difference between the
+		// pre-read stat refusing a file and the post-read length refusing it,
+		// so it is also the only thing a test can assert to prove WHICH check
+		// fired. Do not collapse the two into one sentence.
+		return fmt.Sprintf("fanart %d was neither captured for restore nor synced to platforms: %d bytes on disk, limit %d",
+			index, size, int64(maxFanartSnapshotFileBytes)), true
+	}
+	if b.bytes+size > maxFanartSnapshotTotalBytes {
+		return fmt.Sprintf("fanart %d was neither captured for restore nor synced to platforms: the set exceeds the %d-byte total snapshot limit",
+			index, int64(maxFanartSnapshotTotalBytes)), true
+	}
+	return "", false
+}
+
+// refuseResult re-applies the size caps to the bytes ACTUALLY read, which is
+// what makes them a memory bound rather than a prediction.
+//
+// The pre-read stat can be wrong in exactly one direction that matters: the
+// file grew between the stat and the read (TOCTOU), so a file that measured
+// small can arrive large. Only the value in hand settles it. The caller
+// DISCARDS bytes refused here, so a lying stat costs one over-budget read that
+// img.ReadImageFileBounded already caps, rather than a retained allocation.
+func (b *fanartSnapshotBudget) refuseResult(n int64, index int) (string, bool) {
+	// Both messages say "bytes read", which is what distinguishes them from
+	// refuse's pre-read pair above. See the note there: it is the operator's
+	// only signal for which of the two checks refused the slot, and the tests
+	// assert on exactly that difference to prove the pre-read half still runs.
+	if n > maxFanartSnapshotFileBytes {
+		return fmt.Sprintf("fanart %d was neither captured for restore nor synced to platforms: %d bytes read, limit %d",
+			index, n, int64(maxFanartSnapshotFileBytes)), true
+	}
+	if b.bytes+n > maxFanartSnapshotTotalBytes {
+		return fmt.Sprintf("fanart %d was neither captured for restore nor synced to platforms: %d bytes read would exceed the %d-byte total snapshot limit",
+			index, n, int64(maxFanartSnapshotTotalBytes)), true
+	}
+	return "", false
+}
+
+// charge records bytes actually captured.
+func (b *fanartSnapshotBudget) charge(n int64) {
+	b.files++
+	b.bytes += n
+}
+
+// degradeFanartSlot is the shared degrade path for a slot whose bytes this push
+// will not hold: it logs at Error, builds the operator-facing warning, and
+// returns the nil-data snapshot entry that keeps every LATER slot's TRUE index.
+//
+// It exists so the bound refusals cannot drift away from the unreadable-file
+// convention whose SHAPE they mirror. The shape is shared; the consequence is
+// not (#3017), so the message names both losses.
+//
+// Error rather than Warn is deliberate and is asserted: this is the only signal
+// that a backdrop is silently missing from the operator's peers, and a level a
+// default log configuration might drop would put that loss back out of sight.
+// The path is here and not in the warning because a filesystem path does not
+// belong in an API response, which makes this the only record of WHICH file.
+func (p *Publisher) degradeFanartSlot(path string, index int, reason string) (fanartSnapshot, string) {
+	p.logger.Error("fanart slot NOT captured for restore and NOT synced to platforms; a peer delete of this file cannot be repaired either",
+		slog.String("path", path),
+		slog.Int("index", index),
+		slog.String("reason", reason))
+	return fanartSnapshot{path: path, index: index}, truncateWarning(reason)
 }
 
 // hasReadableFanart reports whether any snapshot entry actually captured bytes.

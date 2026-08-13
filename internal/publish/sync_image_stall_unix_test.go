@@ -426,7 +426,35 @@ func TestSyncImageToPlatforms_OversizeImage_WarnsDistinctly(t *testing.T) {
 }
 
 // TestSyncAllFanartToPlatforms_OversizeFile_WarnsDistinctly is the same guard
-// for the over-size arm added to snapshotFanart, for the same reason.
+// for the over-size arm on the fanart path, and #2712 MOVED which arm answers.
+//
+// The fixture is over img.MaxDecodeBytes (25 MB) and used to be refused by the
+// read, which returns ErrImageTooLarge. The snapshot's per-file cap is 12 MiB,
+// stricter and checked from a stat BEFORE the read, so this file is now refused
+// without ever being opened. Both outcomes are a distinct over-size warning
+// rather than the generic read failure, which is what this test has always been
+// about; only the sentence changed, so the assertion is retargeted rather than
+// relaxed.
+//
+// KNOWN COVERAGE GAP, DELIBERATE AND TEMPORARY, AND IT IS A MEASURED
+// REGRESSION RATHER THAN A THEORETICAL ONE. Retargeting this assertion leaves
+// the read's own ErrImageTooLarge arm on the fanart path with no test at all,
+// because this was the fixture that reached it. Stated checkably: collapse the
+// two arms in snapshotFanart's read-failure branch so the generic "failed to
+// read fanart %d" is emitted in BOTH cases -- exactly the defect this test's
+// _WarnsDistinctly name exists to catch -- and the mutation SURVIVES on this
+// branch with the whole internal/publish suite green, while the same mutation
+// still FAILS this test on base main 85e36d5d. The negative assertion below
+// cannot see it: the fixture is refused by the 12 MiB pre-read stat and never
+// reaches the read, so neither arm runs.
+//
+// snapshotFanart's doc comment still calls that arm live rather than dead, and
+// the only remaining way to reach it is a stat that under-reports what the read
+// delivers -- which needs a platform primitive (a FIFO, which stats at zero
+// bytes) rather than an ordinary file. The follow-on PR for #2712 carries that
+// fixture and TestSyncAllFanartToPlatforms_ReadOversizeArm_StillReachable, the
+// test that drives the arm with it and restores the killed mutation, alongside
+// the rest of the unix-tagged permission and TOCTOU fixtures.
 func TestSyncAllFanartToPlatforms_OversizeFile_WarnsDistinctly(t *testing.T) {
 	dir := t.TempDir()
 	writeOversizeFile(t, filepath.Join(dir, fanartPrimaryFixtureName))
@@ -437,7 +465,7 @@ func TestSyncAllFanartToPlatforms_OversizeFile_WarnsDistinctly(t *testing.T) {
 		&artist.Artist{ID: "a1", Name: "Oversize Fanart", Path: dir})
 
 	joined := strings.Join(warnings, "|")
-	if !strings.Contains(joined, "exceeds the size limit") {
+	if !strings.Contains(joined, statRefusalPhrase) {
 		t.Fatalf("warnings = %v, want the distinct over-size wording", warnings)
 	}
 	if strings.Contains(joined, "failed to read fanart") {

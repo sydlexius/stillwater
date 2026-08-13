@@ -301,6 +301,24 @@ func statCtx(ctx context.Context, path string) (os.FileInfo, error) {
 	})
 }
 
+// StatBounded is statCtx exported, for callers outside this package.
+//
+// Exported for the fanart snapshot's pre-read size cap (#3018 review), which
+// ran a raw os.Stat while the read immediately after it was already ctx-bound.
+// That ordering is deliberate -- the stat is what keeps an honestly-huge file
+// from being allocated at all -- but it put an UNBOUNDED call in front of a
+// bounded one, so a dead mount wedged the loop one step before the bound it
+// was given (#2934) could apply. snapshotFanart reads the WHOLE set before its
+// first upload, so that wedge takes the push with it and no caller deadline
+// reaches it.
+//
+// Stat, not Lstat, and unlike LstatBounded's case the distinction is not
+// load-bearing here: the caller wants the SIZE the read will produce, and a
+// read follows a symlink, so the stat must too.
+func StatBounded(ctx context.Context, path string) (os.FileInfo, error) {
+	return statCtx(ctx, path)
+}
+
 // LstatBounded stats path under context control WITHOUT following a symlink.
 //
 // Exported for the phash-quarantine restore's occupancy check (#2930), which
