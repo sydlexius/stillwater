@@ -154,6 +154,30 @@ type RuleViolation struct {
 	ResolvedAt  *time.Time       `json:"resolved_at,omitempty"`
 	CreatedAt   time.Time        `json:"created_at"`
 	UpdatedAt   time.Time        `json:"updated_at"`
+
+	// EvaluatedAt is WHEN THE EVALUATION THAT PRODUCED THIS VERDICT STARTED,
+	// which is not the same thing as any of the four timestamps above.
+	// CreatedAt / UpdatedAt are WRITE times (when the row reached the
+	// database); ResolvedAt / DismissedAt are EVENT times. Under concurrency
+	// those diverge from evaluation order: a long pipeline evaluation that
+	// began at 12:00:00 can commit after a health-subscriber evaluation that
+	// began at 12:00:05, so its write time is later while its verdict is
+	// older.
+	//
+	// Issue #2972: this is the ordering key. UpsertViolation compares it
+	// against the stored rule_results.evaluated_at for the pair and declines
+	// to apply an evaluation older than the one already recorded. It is not
+	// persisted on the rule_violations row and not exposed over the API
+	// (json:"-"); it is an INPUT to the write, carried on the struct because
+	// UpsertViolation takes no other parameter.
+	//
+	// Zero means "the caller did not stamp this", and the write falls back to
+	// the service clock's current time. That is the truth for every
+	// non-evaluation caller: a backdrop collision or an MBID re-validation
+	// failure is raised AT the moment of the event by code that ran no
+	// evaluation, so "now" is its evaluation time and it correctly wins
+	// against anything older.
+	EvaluatedAt time.Time `json:"-"`
 }
 
 // RuleResult represents a persisted per-artist, per-rule evaluation outcome

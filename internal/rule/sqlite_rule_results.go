@@ -42,7 +42,8 @@ type ruleResultUpsertExecer interface {
 // is the #2519 bug. It stays exported because tests use it to seed a pass row
 // directly, which is a legitimate use with no violation to resolve.
 func (s *Service) UpsertRuleResultPass(ctx context.Context, artistID, ruleID string, evaluatedAt time.Time) error {
-	return upsertRuleResultPassExec(ctx, s.db, artistID, ruleID, evaluatedAt)
+	_, err := upsertRuleResultPassExec(ctx, s.db, artistID, ruleID, evaluatedAt)
+	return err
 }
 
 // upsertRuleResultPassExec is the pass-row SQL, parameterized over the executor
@@ -51,9 +52,67 @@ func (s *Service) UpsertRuleResultPass(ctx context.Context, artistID, ruleID str
 //
 // Extracted for RecordRulePass (#2519), which must write this row and resolve
 // the matching violation in ONE transaction.
-func upsertRuleResultPassExec(ctx context.Context, exec ruleResultUpsertExecer, artistID, ruleID string, evaluatedAt time.Time) error {
+//
+// # THE ORDERING GUARD (#2972)
+//
+// The trailing WHERE on the DO UPDATE branch makes a STALE pass a no-op. Two
+// evaluations of the same artist can be in flight at once (a pipeline run and
+// a health-subscriber evaluation fired by an ArtistUpdated event), and nothing
+// makes them commit in the order they started -- the longer one commits last
+// while carrying the OLDER verdict. Without this predicate the last writer
+// won, so a delayed older pass overwrote a newer failure and the real problem
+// vanished from the compliance report until the next full run.
+//
+// # WHY AN EQUAL TIMESTAMP APPLIES (">=", NOT ">")
+//
+// evaluated_at has one-second granularity, so ties are ordinary rather than
+// exotic, and the obvious-looking answer -- ties go to the FAILURE, because a
+// failure is the conservative verdict -- is WRONG HERE. It would break the
+// ordinary fix flow, which is not a concurrency edge case but what happens
+// every time the pipeline repairs something.
+//
+// One pipeline pass stamps ONE startedAt (fixer.go) and uses it for every row
+// it writes for that artist. For a rule that failed and was then fixed, the
+// pass writes, in this order and all carrying the SAME timestamp T:
+//
+//  1. the fail row + open violation   (dispatchViolations -> UpsertViolation)
+//  2. the violation resolve           (finalizeResolvedRows, deferred by #983)
+//  3. the pass row                    (writeFilteredPassResults -> RecordRulePass)
+//
+// Step 3 is a PASS at T landing on a FAIL at T. Under a strict ">" it would be
+// rejected, leaving passed=0 next to a resolved violation -- a brand-new
+// instance of exactly the two-tables-disagree family this work exists to close.
+//
+// The two cases are indistinguishable from the stored data: "existing FAIL at
+// T, incoming PASS at T, MUST apply" (one pass fixing a rule) and "existing
+// FAIL at T, incoming PASS at T, must NOT apply" (two evaluations that
+// disagree within the same second) are the same three values. Since one of
+// them is a correctness requirement exercised on every fix, ties apply.
+//
+// What that leaves is honest and bounded: a STRICTLY older evaluation can
+// never overwrite a newer one, which is the defect (#2972). Two evaluations
+// that started within the same second are genuinely unordered -- no data
+// exists to rank them -- and the later arrival wins. That self-heals, because
+// the next evaluation of the pair carries a strictly greater timestamp.
+//
+// Storing sub-second precision would shrink the tie window but must NOT be
+// done by widening the format: these comparisons are LEXICAL on the stored
+// string, and "…T00:00:00.5Z" sorts BEFORE "…T00:00:00Z" ('.' < 'Z'), so a
+// mixed-format table would order backwards for existing rows.
+//
+// The predicate applies only to the DO UPDATE branch. A first-ever evaluation
+// for the pair is an INSERT and is unaffected.
+//
+// Both sides of the comparison are RFC3339 UTC strings written by this package,
+// where lexical order equals chronological order. The one shape that is not is
+// the column's schema DEFAULT (datetime('now') renders "YYYY-MM-DD HH:MM:SS",
+// and a space sorts BELOW 'T'), so a row carrying that legacy form reads as
+// older than any real evaluation stamp and never blocks one. That is the safe
+// direction: an unreadable stored timestamp must not be able to freeze a pair's
+// verdict forever. No writer in this package produces that form.
+func upsertRuleResultPassExec(ctx context.Context, exec ruleResultUpsertExecer, artistID, ruleID string, evaluatedAt time.Time) (bool, error) {
 	ts := evaluatedAt.UTC().Format(time.RFC3339)
-	_, err := exec.ExecContext(ctx, `
+	res, err := exec.ExecContext(ctx, `
 		INSERT INTO rule_results (
 			artist_id, rule_id, passed, violation_id, evaluated_at,
 			violation_message, first_failed_at, last_passed_at
@@ -65,11 +124,22 @@ func upsertRuleResultPassExec(ctx context.Context, exec ruleResultUpsertExecer, 
 			violation_message = NULL,
 			first_failed_at   = NULL,
 			last_passed_at    = excluded.last_passed_at
+		WHERE excluded.evaluated_at >= rule_results.evaluated_at
 	`, artistID, ruleID, ts, ts)
 	if err != nil {
-		return fmt.Errorf("upserting rule_result pass: %w", err)
+		return false, fmt.Errorf("upserting rule_result pass: %w", err)
 	}
-	return nil
+	// The caller needs to know whether the guard let this pass through, so it
+	// can keep the violation row consistent with it. Do not swallow this
+	// error: RowsAffected is driver-dependent, and reporting "applied" when
+	// the outcome is UNKNOWN would resolve a violation on a write that may
+	// never have landed -- the same shape of confident-wrong report that
+	// RecordRulePass's own row count deliberately refuses to make.
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reading rule_result pass row count: %w", err)
+	}
+	return n > 0, nil
 }
 
 // RecordRulePass is the single way to persist a rule that PASSED. It writes the
@@ -124,8 +194,23 @@ func (s *Service) RecordRulePass(ctx context.Context, artistID, ruleID string, e
 	}
 	defer tx.Rollback() //nolint:errcheck // After a successful Commit this returns sql.ErrTxDone, which is expected and carries no information; on the error path the original error is what callers act on
 
-	if err := upsertRuleResultPassExec(ctx, tx, artistID, ruleID, evaluatedAt); err != nil {
+	// Issue #2972: the pass row's ordering guard may reject this write as
+	// stale. When it does, the violation resolve below MUST be skipped too.
+	// Resolving anyway is the exact defect this issue names on the pass side:
+	// an older evaluation clearing the violation raised by a newer one, which
+	// erases a real finding and leaves rule_results (still passed=0) and
+	// rule_violations (now resolved) contradicting each other. The two writes
+	// are one verdict, so they stand or fall together.
+	//
+	// Not an error: a stale evaluation is a legitimate outcome of running two
+	// evaluations at once, not a failure the caller should log or retry. It
+	// reports resolved=false, which is accurate -- this call cleared nothing.
+	applied, err := upsertRuleResultPassExec(ctx, tx, artistID, ruleID, evaluatedAt)
+	if err != nil {
 		return false, err
+	}
+	if !applied {
+		return false, nil
 	}
 
 	// s.clock, not time.Now: the service's clock is injectable, so a test can
@@ -166,6 +251,13 @@ func (s *Service) RecordRulePass(ctx context.Context, artistID, ruleID string, e
 //
 // Accepts any execer (DB or Tx) so Service.UpsertViolation can invoke it
 // inside its transaction and keep the violation + result writes atomic.
+//
+// The trailing WHERE is the fail-side half of the #2972 ordering guard. Both
+// sides use the same ">=" comparison, for the reasons set out in full on
+// upsertRuleResultPassExec above: a strictly older evaluation is rejected, and
+// an equal timestamp applies because one pipeline pass stamps every row it
+// writes with a single startedAt and legitimately writes a fail and then a
+// pass at that one timestamp when it repairs a rule.
 func upsertRuleResultFailExec(
 	ctx context.Context,
 	exec ruleResultUpsertExecer,
@@ -184,6 +276,7 @@ func upsertRuleResultFailExec(
 			evaluated_at      = excluded.evaluated_at,
 			violation_message = excluded.violation_message,
 			first_failed_at   = COALESCE(rule_results.first_failed_at, excluded.first_failed_at)
+		WHERE excluded.evaluated_at >= rule_results.evaluated_at
 	`, artistID, ruleID, nullableString(violationID), ts, nullableString(message), ts)
 	if err != nil {
 		return fmt.Errorf("upserting rule_result fail: %w", err)

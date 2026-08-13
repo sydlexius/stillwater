@@ -582,7 +582,7 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 	// regression in the scoping rather than catch it.
 	for j := range eval.Violations {
 		contrib.violationsFound++
-		acc.mergeIntoContrib(p.dispatchViolation(ctx, a, &eval.Violations[j], targetRule), &contrib)
+		acc.mergeIntoContrib(p.dispatchViolation(ctx, a, &eval.Violations[j], targetRule, startedAt), &contrib)
 	}
 
 	// Issue #699 propagation fix: derive the pass/fail skip-set from the
@@ -607,7 +607,7 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 	// Issue #983: only resolve violations once the artist row persisted
 	// cleanly. A failed Update leaves the mutation in memory; marking the
 	// violation resolved anyway would silently drop the fix.
-	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows) {
+	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows, startedAt) {
 		acc.failWrite()
 	}
 	// Gate pass rows on the artist row having persisted: rule_results must not
@@ -845,7 +845,7 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	// "Shield write phase from cancellation to prevent half-applied metadata."
 	writeCtx := context.WithoutCancel(evalCtx)
 
-	p.dispatchViolations(writeCtx, a, eval.Violations, categoryFilter, ruleCache, acc, result)
+	p.dispatchViolations(writeCtx, a, eval.Violations, categoryFilter, ruleCache, acc, result, startedAt)
 	p.finalizeArtistRun(writeCtx, a, ruleCache, acc, categoryFilter, scope, startedAt)
 
 	// #2724: report a run that did not fully persist. The shield above removes
@@ -915,7 +915,7 @@ func (p *Pipeline) logPassCounters(pc *PassContext) {
 // runForArtistFiltered. It walks the violation list (skipping any that do
 // not match categoryFilter), looks up each rule, hands off to the
 // automation-mode strategy, and merges the outcome into acc and result.
-func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, violations []Violation, categoryFilter string, ruleCache map[string]*Rule, acc *runForArtistAccum, result *RunResult) {
+func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, violations []Violation, categoryFilter string, ruleCache map[string]*Rule, acc *runForArtistAccum, result *RunResult, startedAt time.Time) {
 	// Issue #2738: dispatch in producer-before-consumer order (StateProducer
 	// tier), not the "category, name" order violations arrive in. See
 	// orderForDispatch's doc for why a category-scoped run needs this too --
@@ -933,7 +933,7 @@ func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, vio
 			acc.persistOK = false
 			continue
 		}
-		acc.mergeOutcome(p.dispatchViolation(ctx, a, v, r), result)
+		acc.mergeOutcome(p.dispatchViolation(ctx, a, v, r, startedAt), result)
 	}
 }
 
@@ -969,7 +969,7 @@ func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, rule
 	// Issue #983: only resolve violations once the artist row persist
 	// succeeded. A failed Update leaves the mutation in memory; marking
 	// the violation resolved would silently drop the fix.
-	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows) {
+	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows, startedAt) {
 		acc.failWrite()
 	}
 	// Gate pass rows on the artist row having persisted. Previously this was
@@ -1008,11 +1008,11 @@ func (p *Pipeline) lookupRule(ctx context.Context, a *artist.Artist, ruleID stri
 // dispatchViolation routes a violation to the strategy keyed by the
 // rule's AutomationMode. Pulling the dispatch out of the loop keeps the
 // orchestrator under the gocognit gate at threshold 30.
-func (p *Pipeline) dispatchViolation(ctx context.Context, a *artist.Artist, v *Violation, r *Rule) violationOutcome {
+func (p *Pipeline) dispatchViolation(ctx context.Context, a *artist.Artist, v *Violation, r *Rule, startedAt time.Time) violationOutcome {
 	if r.AutomationMode == AutomationModeManual {
-		return p.processManualViolation(ctx, a, v)
+		return p.processManualViolation(ctx, a, v, startedAt)
 	}
-	return p.processAutoFixViolation(ctx, a, v)
+	return p.processAutoFixViolation(ctx, a, v, startedAt)
 }
 
 // processManualViolation is the manual-automation strategy: discover
@@ -1024,10 +1024,10 @@ func (p *Pipeline) dispatchViolation(ctx context.Context, a *artist.Artist, v *V
 // NFOFixer, ExtraneousImagesFixer); when no fixer implements
 // CandidateDiscoverer the row is persisted as open with Fixable
 // reflecting only the canonical-fixer presence.
-func (p *Pipeline) processManualViolation(ctx context.Context, a *artist.Artist, v *Violation) violationOutcome {
+func (p *Pipeline) processManualViolation(ctx context.Context, a *artist.Artist, v *Violation, startedAt time.Time) violationOutcome {
 	fixer := p.findFixer(v)
 	if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
-		ok := p.persistViolation(ctx, a, v, v.Fixable && fixer != nil, ViolationStatusOpen, nil, "manual-mode violation")
+		ok := p.persistViolation(ctx, a, v, v.Fixable && fixer != nil, ViolationStatusOpen, nil, "manual-mode violation", startedAt)
 		return violationOutcome{persistFailed: !ok}
 	}
 
@@ -1038,7 +1038,7 @@ func (p *Pipeline) processManualViolation(ctx context.Context, a *artist.Artist,
 	if len(fr.Candidates) > 0 {
 		status = ViolationStatusPendingChoice
 	}
-	ok := p.persistViolation(ctx, a, v, true, status, fr.Candidates, "manual-mode violation")
+	ok := p.persistViolation(ctx, a, v, true, status, fr.Candidates, "manual-mode violation", startedAt)
 	return violationOutcome{fr: fr, persistFailed: !ok}
 }
 
@@ -1049,9 +1049,9 @@ func (p *Pipeline) processManualViolation(ctx context.Context, a *artist.Artist,
 // per-artist accumulator -- crucially, a non-nil resolvedRow when a fix
 // succeeded so the orchestrator can stamp Resolved only AFTER
 // updateHealthScore persists the artist (the load-bearing #983 ordering).
-func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist, v *Violation) violationOutcome {
+func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist, v *Violation, startedAt time.Time) violationOutcome {
 	if !v.Fixable {
-		ok := p.persistViolation(ctx, a, v, false, ViolationStatusOpen, nil, "unfixable violation")
+		ok := p.persistViolation(ctx, a, v, false, ViolationStatusOpen, nil, "unfixable violation", startedAt)
 		return violationOutcome{persistFailed: !ok}
 	}
 
@@ -1085,7 +1085,7 @@ func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist
 	if len(fr.Candidates) > 0 {
 		status = ViolationStatusPendingChoice
 	}
-	if !p.persistViolation(ctx, a, v, true, status, fr.Candidates, "fix result violation") {
+	if !p.persistViolation(ctx, a, v, true, status, fr.Candidates, "fix result violation", startedAt) {
 		out.persistFailed = true
 	}
 	return out
@@ -1094,7 +1094,7 @@ func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist
 // persistViolation is the shared upsert used by both automation modes.
 // Returns false (and warn-logs) on DB failure so the caller can fold the
 // failure into its persistOK flag.
-func (p *Pipeline) persistViolation(ctx context.Context, a *artist.Artist, v *Violation, fixable bool, status string, candidates []ImageCandidate, logCtx string) bool {
+func (p *Pipeline) persistViolation(ctx context.Context, a *artist.Artist, v *Violation, fixable bool, status string, candidates []ImageCandidate, logCtx string, startedAt time.Time) bool {
 	rv := &RuleViolation{
 		RuleID:     v.RuleID,
 		ArtistID:   a.ID,
@@ -1104,6 +1104,11 @@ func (p *Pipeline) persistViolation(ctx context.Context, a *artist.Artist, v *Vi
 		Fixable:    fixable,
 		Status:     status,
 		Candidates: candidates,
+		// #2972: stamp the row with when this pass's EVALUATION started, not
+		// when the write happens. UpsertViolation orders on this, and commit
+		// order is exactly what cannot be trusted -- a long pass commits after
+		// a short one that started later, while carrying the older verdict.
+		EvaluatedAt: startedAt,
 	}
 	if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 		p.logger.Warn("persisting "+logCtx, "rule_id", v.RuleID, "artist", a.Name, "error", err)
@@ -1116,12 +1121,17 @@ func (p *Pipeline) persistViolation(ctx context.Context, a *artist.Artist, v *Vi
 // Status=ViolationStatusResolved and a fresh ResolvedAt, then upserts. The
 // caller invokes this only AFTER updateHealthScore has persisted the
 // artist (#983 ordering). Returns true when every upsert succeeded.
-func (p *Pipeline) finalizeResolvedRows(ctx context.Context, a *artist.Artist, resolvedRows []*RuleViolation) bool {
+func (p *Pipeline) finalizeResolvedRows(ctx context.Context, a *artist.Artist, resolvedRows []*RuleViolation, startedAt time.Time) bool {
 	ok := true
 	now := time.Now().UTC()
 	for _, rv := range resolvedRows {
 		rv.Status = ViolationStatusResolved
 		rv.ResolvedAt = &now
+		// #2972: these rows are the deferred tail of THIS pass's evaluation
+		// (#983 delays the write, not the evaluation), so they carry the
+		// pass's startedAt. ResolvedAt above stays wall-clock: it is the event
+		// time an operator reads, not an ordering key.
+		rv.EvaluatedAt = startedAt
 		if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 			p.logger.Warn("persisting resolved violation", "rule_id", rv.RuleID, "artist", a.Name, "error", err)
 			ok = false
@@ -1255,7 +1265,7 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 			acc.persistOK = false
 			continue
 		}
-		acc.mergeIntoContrib(p.dispatchViolation(ctx, a, v, r), &contrib)
+		acc.mergeIntoContrib(p.dispatchViolation(ctx, a, v, r, startedAt), &contrib)
 	}
 
 	// Issue #699: derive pass/fail from the POST-fix evaluation so rules
@@ -1267,7 +1277,7 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 	// Issue #983: only resolve violations once the artist row persisted
 	// cleanly. A failed Update leaves the mutation in memory; marking the
 	// violation resolved anyway would silently drop the fix.
-	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows) {
+	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows, startedAt) {
 		acc.failWrite()
 	}
 	if postEval != nil {

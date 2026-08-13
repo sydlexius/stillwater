@@ -243,6 +243,10 @@ func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) 
 					Message:    v.Message,
 					Fixable:    v.Fixable,
 					Status:     ViolationStatusOpen,
+					// #2972: the same stamp the pass writes below use, so
+					// every row this evaluation produces is ordered as one
+					// evaluation rather than by individual commit time.
+					EvaluatedAt: evaluatedAt,
 				}
 				if err := h.engine.service.UpsertViolation(ctx, rv); err != nil {
 					h.logger.Warn("health subscriber: persisting fail result",
