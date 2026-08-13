@@ -2964,7 +2964,7 @@ func TestPipeline_ProcessManualViolation_WithCandidates(t *testing.T) {
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	v := &Violation{RuleID: RuleThumbExists, Fixable: true, Severity: "warning"}
-	out := pipeline.processManualViolation(ctx, a, v)
+	out := pipeline.processManualViolation(ctx, a, v, time.Now().UTC())
 
 	if out.fr == nil {
 		t.Fatal("expected FixResult, got nil")
@@ -3023,7 +3023,7 @@ func TestPipeline_ProcessManualViolation_NoDiscoverer(t *testing.T) {
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{sideEffectFixer}, nil, testLogger())
 
 	v := &Violation{RuleID: RuleNFOExists, Fixable: true, Severity: "warning"}
-	out := pipeline.processManualViolation(ctx, a, v)
+	out := pipeline.processManualViolation(ctx, a, v, time.Now().UTC())
 
 	if out.fr != nil {
 		t.Errorf("expected no FixResult (fixer must not be invoked), got %+v", out.fr)
@@ -3061,7 +3061,7 @@ func TestPipeline_ProcessAutoFixViolation_Success(t *testing.T) {
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	v := &Violation{RuleID: RuleThumbExists, Fixable: true, Severity: "warning"}
-	out := pipeline.processAutoFixViolation(ctx, a, v)
+	out := pipeline.processAutoFixViolation(ctx, a, v, time.Now().UTC())
 
 	if out.fr == nil || !out.fr.Fixed {
 		t.Fatalf("expected fixed FixResult, got %+v", out.fr)
@@ -3103,7 +3103,7 @@ func TestPipeline_ProcessAutoFixViolation_Unfixable(t *testing.T) {
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	v := &Violation{RuleID: RuleNFOExists, Fixable: false, Severity: "warning"}
-	out := pipeline.processAutoFixViolation(ctx, a, v)
+	out := pipeline.processAutoFixViolation(ctx, a, v, time.Now().UTC())
 
 	if out.fr != nil {
 		t.Errorf("expected no FixResult on unfixable, got %+v", out.fr)

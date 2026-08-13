@@ -1082,6 +1082,20 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 		v.CreatedAt = v.UpdatedAt
 	}
 
+	// Issue #2972: the ordering stamp for this write. v.UpdatedAt is COMMIT
+	// time and is useless for ordering -- the whole defect is that a slow
+	// evaluation commits last while carrying the older verdict, so ordering by
+	// commit time would rank precisely backwards. Callers that ran an
+	// evaluation stamp v.EvaluatedAt with the time that evaluation STARTED.
+	// Callers that did not run one (a backdrop collision, an MBID
+	// re-validation failure) leave it zero and get the clock, which is the
+	// truth for them: the event happened now.
+	effectiveEvaluatedAt := v.EvaluatedAt
+	if effectiveEvaluatedAt.IsZero() {
+		effectiveEvaluatedAt = s.clock.Now()
+	}
+	evaluatedAtTS := effectiveEvaluatedAt.UTC().Format(time.RFC3339)
+
 	// Resolved / dismissed violations leave rule_results alone: a resolved
 	// violation means the rule is no longer failing, and the next pipeline
 	// pass will stamp the pass row via UpsertRuleResultPass. Writing fail
@@ -1093,6 +1107,70 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 		return fmt.Errorf("beginning upsert-violation transaction: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+
+	// Issue #2972: decide, BEFORE writing anything, whether this evaluation is
+	// stale -- and if it is, write nothing at all.
+	//
+	// WHY A WHOLE-ROW SKIP RATHER THAN A PER-COLUMN CASE. The two guards
+	// #2969 added just below are per-column CASE expressions, and the natural
+	// reading is that an ordering predicate should compose the same way, as a
+	// leading branch inside each column's CASE. It should not, for two
+	// reasons that do not apply to #2969's guards.
+	//
+	// First, this method issues TWO statements: the violation upsert below and
+	// the paired rule_results fail write after it. A CASE inside the first
+	// statement cannot suppress the second, so a stale write would still be
+	// half-applied.
+	//
+	// Second, "stale" is a property of the WRITE, not of any one column, so a
+	// per-column form has to repeat the same predicate on all eight of them
+	// and is wrong the moment a ninth column is added without it. That is not
+	// hypothetical: updated_at is the column that matters most here and is the
+	// one most easily forgotten. A stale write that changed nothing except
+	// updated_at would leave the row CLAIMING a freshness it does not have,
+	// and every later ordering decision that consulted it would inherit the
+	// lie. One skip covers every column and both statements, and it says
+	// exactly what it means -- a stale evaluation is a no-op.
+	//
+	// THE COMPARISON IS LEXICAL ON THE STORED STRING, deliberately, because
+	// that is what SQLite does for the TEXT column in the two WHERE predicates
+	// in sqlite_rule_results.go. Comparing parsed time.Time values here would
+	// be more idiomatic Go and would be a bug: the Go decision and the SQL
+	// decision could then disagree for a row whose timestamp does not parse,
+	// and the violation row and the result row would part company. Every
+	// timestamp this package writes is RFC3339 UTC, a format whose lexical
+	// order IS its chronological order.
+	//
+	// A pair with no stored result row has no evaluation to be older than, so
+	// the write applies -- that is the first-ever evaluation, not a stale one.
+	var storedEvaluatedAt string
+	switch err := tx.QueryRowContext(ctx,
+		`SELECT evaluated_at FROM rule_results WHERE artist_id = ? AND rule_id = ?`,
+		v.ArtistID, v.RuleID,
+	).Scan(&storedEvaluatedAt); {
+	case errors.Is(err, sql.ErrNoRows):
+		storedEvaluatedAt = ""
+	case err != nil:
+		return fmt.Errorf("reading stored evaluation time for ordering: %w", err)
+	}
+	if storedEvaluatedAt != "" && evaluatedAtTS < storedEvaluatedAt {
+		// Stale. Leave the stored id on v so the caller still holds the
+		// authoritative one rather than the fresh UUID generated above, which
+		// was never persisted.
+		var persistedID string
+		switch err := tx.QueryRowContext(ctx,
+			`SELECT id FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+			v.RuleID, v.ArtistID,
+		).Scan(&persistedID); {
+		case err == nil:
+			v.ID = persistedID
+		case errors.Is(err, sql.ErrNoRows):
+			// No violation row for the pair; v.ID stays as generated.
+		default:
+			return fmt.Errorf("loading persisted violation id for stale write: %w", err)
+		}
+		return nil
+	}
 
 	// Issue #1107: dismissed is terminal from the user's perspective. Once a
 	// row is stored as 'dismissed', re-evaluation must NOT clobber the status
@@ -1177,7 +1255,10 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 		(persistedStatus == ViolationStatusOpen || persistedStatus == ViolationStatusPendingChoice)
 
 	if writeResultRow {
-		if err := upsertRuleResultFailExec(ctx, tx, v.ArtistID, v.RuleID, v.ID, v.Message, v.UpdatedAt); err != nil {
+		// effectiveEvaluatedAt, not v.UpdatedAt: the result row's evaluated_at
+		// is the ordering key (#2972) and must record when the evaluation ran,
+		// not when it committed.
+		if err := upsertRuleResultFailExec(ctx, tx, v.ArtistID, v.RuleID, v.ID, v.Message, effectiveEvaluatedAt); err != nil {
 			return err
 		}
 	}
