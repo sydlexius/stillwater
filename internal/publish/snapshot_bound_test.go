@@ -3,6 +3,7 @@ package publish
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -973,4 +974,82 @@ func TestFanartWarningLog_Empty_ReturnsNil(t *testing.T) {
 				"\"warnings\": [] where every other healthy push emits \"warnings\": null", got, len(got))
 		}
 	})
+}
+
+// TestSnapshotFanart_PreReadStat_IsCancellable pins that the pre-read size
+// check goes through a CONTEXT-BOUND stat (#3018 review).
+//
+// The bound matters because of the ORDERING the cap requires. The stat runs
+// before the read on purpose -- that is what keeps an honestly-huge file from
+// being allocated at all -- so a raw os.Stat there put an unbounded call in
+// FRONT of the bounded read, and a hard-mounted export that stopped answering
+// wedged this loop one step before the #2934 bound could apply. snapshotFanart
+// reads the whole set before the first upload, so that wedge takes the entire
+// push with it and no caller deadline reaches it.
+//
+// THE ASSERTION HAS TO SEPARATE THE STAT FROM THE READ, which is harder than it
+// looks and is why this test asserts on an OVER-SIZE fixture. Every obvious
+// assertion passes against a raw os.Stat:
+//
+//   - "snapshotFanart returns context.Canceled" passes, because with a raw stat
+//     the stat merely succeeds and the BOUNDED READ after it reports the
+//     cancellation, so the loop aborts either way.
+//   - "refuse() does not refuse" passes, because a raw stat on a healthy file
+//     also declines to refuse.
+//
+// The one behavior a raw stat CANNOT produce: on a file that is genuinely over
+// the per-file cap, a bound stat fails with the cancellation and refuse()
+// falls through to "not refused" (a canceled request is not an over-size
+// backdrop), whereas a raw stat succeeds, sees the real size, and REFUSES.
+// Those outcomes are opposite, so the assertion discriminates.
+func TestSnapshotFanart_PreReadStat_IsCancellable(t *testing.T) {
+	// No t.Parallel; see the note at the top of this file.
+	dir := t.TempDir()
+	oversize := filepath.Join(dir, "fanart.jpg")
+	// One byte past the per-file cap, so an UNBOUND stat would refuse it.
+	// Sparse, so it costs no disk.
+	sparseFile(t, oversize, maxFanartSnapshotFileBytes+1)
+
+	// PRECONDITION, measured rather than assumed: the fixture really is over
+	// the cap, so a refusal below is attributable to the stat having succeeded.
+	info, statErr := os.Stat(oversize)
+	if statErr != nil {
+		t.Fatalf("stating fixture: %v", statErr)
+	}
+	if info.Size() <= maxFanartSnapshotFileBytes {
+		t.Fatalf("precondition failed: fixture is %d bytes, not over the %d-byte per-file cap, so an "+
+			"unbound stat would not refuse it and this test could not tell the two apart",
+			info.Size(), int64(maxFanartSnapshotFileBytes))
+	}
+
+	// PRECONDITION: uncanceled, this fixture IS refused. Without it, a mutation
+	// that broke the size check entirely would make the assertion below pass
+	// for the wrong reason.
+	var control fanartSnapshotBudget
+	if _, refused := control.refuse(context.Background(), oversize, 0); !refused {
+		t.Fatal("precondition failed: the over-size fixture was not refused under an uncanceled context, " +
+			"so the per-file check is not firing and the cancellation assertion below proves nothing")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var budget fanartSnapshotBudget
+	if _, refused := budget.refuse(ctx, oversize, 0); refused {
+		t.Error("a canceled context still produced a SIZE REFUSAL on an over-size file, so the stat ran " +
+			"unbound: it consulted the filesystem for a request the caller had already abandoned. That " +
+			"is the wedge this bound exists to prevent -- on a dead mount the stat hangs with no deadline " +
+			"reaching it -- and it also relabels a cancellation as an over-size backdrop, sending the " +
+			"operator to look at their file sizes")
+	}
+
+	// The whole-loop consequence. This one passes against an unbound stat too
+	// (the bounded read reports the cancellation), so it is here to pin the
+	// caller-visible contract, NOT to discriminate: the assertion above does
+	// that.
+	p := boundTestPublisher()
+	if _, _, err := p.snapshotFanart(ctx, []string{oversize}); !errors.Is(err, context.Canceled) {
+		t.Errorf("snapshotFanart returned %v for a canceled context, want context.Canceled; an abandoned "+
+			"request must not walk the fanart set", err)
+	}
 }

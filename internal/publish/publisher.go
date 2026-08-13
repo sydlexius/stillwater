@@ -1169,7 +1169,7 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 		// uploadFanartSet skips every nil-data entry. See the KNOWN GAP note on
 		// snapshotFanart above for why that is a regression rather than a
 		// tradeoff, and what the real fix looks like.
-		if reason, refused := budget.refuse(fp, i); refused {
+		if reason, refused := budget.refuse(ctx, fp, i); refused {
 			entry, warning := p.degradeFanartSlot(fp, i, reason)
 			snapshot = append(snapshot, entry)
 			warnings.add(warning)
@@ -1348,12 +1348,27 @@ type fanartSnapshotBudget struct {
 // holding 105 backdrops produces five byte-identical sentences and the operator
 // cannot tell which backdrops are now unrepairable -- which is the one fact the
 // warning exists to convey.
-func (b *fanartSnapshotBudget) refuse(path string, index int) (string, bool) {
+//
+// THE STAT IS CTX-BOUND, and it takes a ctx for that reason alone (#3018
+// review). A raw os.Stat here put an UNBOUNDED call in front of the bounded
+// read that follows, so a hard-mounted export that stopped answering wedged
+// this loop one step before the #2934 bound could apply -- and since
+// snapshotFanart reads the whole set before the first upload, that wedge takes
+// the push with it and no caller deadline reaches it. The stat running FIRST is
+// what makes the cap a memory guard rather than bookkeeping, so the ordering
+// stays and the stat gets the bound instead.
+func (b *fanartSnapshotBudget) refuse(ctx context.Context, path string, index int) (string, bool) {
 	if b.files >= maxFanartSnapshotFiles {
 		return fmt.Sprintf("fanart %d was neither captured for restore nor synced to platforms: the set exceeds the %d-file snapshot limit",
 			index, maxFanartSnapshotFiles), true
 	}
-	info, statErr := os.Stat(path)
+	// A CANCELED OR STALLED STAT IS NOT A REFUSAL, which keeps this arm's
+	// existing contract intact: the read that follows returns the same failure
+	// in a form the loop already classifies (img.ReadFailureDistrustsLoop
+	// aborts the whole set for a cancellation or the stalled-read cap), so
+	// reporting a budget refusal here would relabel an abandoned request as an
+	// over-size backdrop.
+	info, statErr := img.StatBounded(ctx, path)
 	if statErr != nil {
 		return "", false
 	}
