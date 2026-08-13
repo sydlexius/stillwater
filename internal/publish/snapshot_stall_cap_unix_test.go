@@ -413,13 +413,24 @@ func TestSyncAllFanart_StalledCap_WarningNamesTheMount(t *testing.T) {
 	// PRECONDITION: still UNDER the cap. Without this the test would silently
 	// degrade into the discovery-refused case and assert nothing about the
 	// branch it names.
-	probe := filepath.Join(t.TempDir(), "probe.jpg")
-	if err := os.WriteFile(probe, []byte("readable"), 0o600); err != nil {
-		t.Fatalf("writing sub-cap probe: %v", err)
-	}
-	if _, err := img.ReadImageFileBounded(context.Background(), probe); err != nil {
-		t.Fatalf("precondition: a readable file returned %v with the gauge one under the cap; "+
-			"discovery would be refused and this would exercise the wrong branch", err)
+	//
+	// READ THE GAUGE; DO NOT PERFORM A READ TO TEST IT (#3016). The obvious
+	// version of this check -- ReadImageFileBounded on a probe file -- is
+	// SELF-POISONING: that read occupies a stalled-read slot for its own
+	// duration, so with the gauge deliberately at cap-1 the probe is the read
+	// that reaches the cap. Standalone it passes, because cap-1 plus one is
+	// still admitted. Under -shuffle=on it fails roughly 1 run in 5: a
+	// neighboring test's not-yet-drained reader has already contributed, the
+	// probe tips over, and the failure blames the fixture for a saturated cap
+	// the fixture did not saturate. Measured on this branch before the fix.
+	//
+	// StalledReadCount() answers the same question by observation and consumes
+	// nothing, which is what makes it safe to ask here.
+	if got := img.StalledReadCount(); got >= maxStalledReadsForTest {
+		t.Fatalf("precondition: the stalled-read gauge is at %d, at or over the %d cap, so DISCOVERY "+
+			"would be refused and this would exercise the wrong branch. The wedges raised it to %d; "+
+			"the surplus is a neighboring test's reader that has not drained yet",
+			got, maxStalledReadsForTest, maxStalledReadsForTest-1)
 	}
 
 	assertOnFanartReadPath(t, dir, fanartPrimaryFixtureName)
