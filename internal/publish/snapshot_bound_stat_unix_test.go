@@ -90,11 +90,23 @@ func fifoDeliveringBytes(t *testing.T, path string, n int64) {
 		case <-done:
 		case <-time.After(2 * time.Second):
 			// The writer is still parked in open(2) because nothing ever read.
-			// Opening the FIFO read-write releases it without blocking.
-			if f, err := os.OpenFile(path, os.O_RDWR, 0); err == nil {
+			// Open the READ end NON-BLOCKING to release it: O_RDONLY|O_NONBLOCK
+			// on a FIFO returns immediately whether or not a writer is waiting,
+			// which O_RDWR does not guarantee across every Unix.
+			if f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
 				_ = f.Close()
 			}
-			wg.Wait()
+			// And do NOT wait unguarded afterwards. If the release above failed
+			// for any reason, a bare wg.Wait() here parks forever and takes the
+			// whole test binary down with it on the go-test timeout, reported as
+			// an unrelated panic. A leaked writer goroutine in a test process
+			// that is exiting anyway is the cheaper failure.
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Errorf("the FIFO writer for %q never drained; releasing the parked open(2) did not "+
+					"work on this platform", path)
+			}
 		}
 	})
 }
