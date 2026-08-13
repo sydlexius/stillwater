@@ -114,7 +114,7 @@ func (u *settleActor) arm() error {
 // never does. The timeout is generous because exceeding it means the fixture is
 // broken rather than slow.
 func (u *settleActor) waitForRestore() bool {
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(fixtureWaitTimeout)
 	for time.Now().Before(deadline) {
 		if got, err := os.ReadFile(u.victim); err == nil && bytes.Equal(got, u.prePush) {
 			return true
@@ -159,7 +159,10 @@ func settleHarness(t *testing.T, single connection.ImageUploader, indexed connec
 	t.Cleanup(func() {
 		newImageUploader = origSingle
 		newIndexedImageUploader = origIndexed
-		wg.Wait()
+		// BOUNDED, for the same reason late_delete_test.go bounds its join: this
+		// cleanup runs on the t.Fatal path too, where the fixture goroutine may
+		// still be parked and an unguarded wait would hang the test binary.
+		joinBounded(t, wg, "the settle fixture's goroutine")
 	})
 
 	p := New(Deps{
@@ -237,7 +240,7 @@ func TestSettleWindow_OperatorSaveIsNotReverted(t *testing.T) {
 			// the push had already finished, proves nothing about the window.
 			select {
 			case <-up.done:
-			case <-time.After(10 * time.Second):
+			case <-time.After(fixtureWaitTimeout):
 				t.Fatal("precondition failed: the operator's save timer never fired")
 			}
 			up.wg.Wait()
@@ -372,7 +375,7 @@ func TestSettleWindow_LateDeleteIsCoveredOnlyByTheDelay(t *testing.T) {
 
 	select {
 	case <-up.done:
-	case <-time.After(10 * time.Second):
+	case <-time.After(fixtureWaitTimeout):
 		t.Fatal("precondition failed: the peer's delete timer never fired")
 	}
 	up.wg.Wait()

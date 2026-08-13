@@ -53,6 +53,40 @@ import (
 // the push itself calls, so no ordering argument can call it "earlier and
 // unrelated".
 
+// fixtureWaitTimeout bounds every wait a fixture in the #2712 settle-window
+// tests performs -- rendezvous polls and done-channel selects alike.
+//
+// ONE constant rather than a literal at each site, because these deadlines are
+// not independent judgments: they all answer the same question, "how long
+// before I conclude the fixture is broken rather than slow?", and a review
+// round that tunes one site and misses the others leaves the file inconsistent
+// in a way nothing detects. It is deliberately long. Exceeding it is a fixture
+// failure, so the only cost of generosity is wall-clock on a run that was
+// already going to fail, while a tight deadline turns a loaded CI runner into
+// a red build on healthy code.
+const fixtureWaitTimeout = 30 * time.Second
+
+// joinBounded waits for a fixture goroutine, reporting rather than hanging if it
+// never finishes.
+//
+// A bare wg.Wait() in a t.Cleanup is the trap this exists to close: cleanup also
+// runs after t.Fatal, where the goroutine may still be parked on a rendezvous
+// that will never complete. Waiting unguarded there takes down the whole test
+// binary on the go-test timeout and surfaces as a panic with an unrelated cause,
+// which is strictly worse than leaking one goroutine from a process that is
+// exiting anyway.
+func joinBounded(t *testing.T, wg *sync.WaitGroup, what string) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(fixtureWaitTimeout):
+		t.Errorf("%s never finished within %v; not waiting further, because an unbounded wait here "+
+			"would hang the test binary rather than report this", what, fixtureWaitTimeout)
+	}
+}
+
 // lateDeleteUploader is a peer that overwrites the operator's file during the
 // upload and then, once the first repair pass has provably restored it, deletes
 // it -- the late-delete shape measured on the fanart path.
@@ -169,10 +203,15 @@ func (u *lateDeleteUploader) lateDelete() {
 // false if they never are.
 //
 // The poll interval is far shorter than reassertSettleDelay, so the delete lands
-// well inside the settle window the second pass is waiting out. The timeout is
-// generous because exceeding it means the fixture is broken, not slow.
+// well inside the settle window the second pass is waiting out.
+//
+// THE DEADLINE IS DELIBERATELY LONG. Exceeding it means the fixture is broken
+// rather than slow, and a deadline tight enough to "fail fast" instead fails a
+// healthy run on a loaded CI runner. Too long costs wall-clock only on a run
+// that was already going to fail; too short invents failures on runs that were
+// fine. Same reasoning, same value, as every other fixture wait in this package.
 func (u *lateDeleteUploader) waitForRestore() bool {
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(fixtureWaitTimeout)
 	for time.Now().Before(deadline) {
 		if got, err := os.ReadFile(u.victim); err == nil && bytes.Equal(got, u.restored) {
 			return true
@@ -205,8 +244,11 @@ func lateDeleteHarness(t *testing.T, up *lateDeleteUploader, dir string) (*Publi
 		newImageUploader = origSingle
 		newIndexedImageUploader = origIndexed
 		// The peer's goroutine can outlive the push on the fixture-timeout path.
-		// Join it before the temp dir is torn down.
-		up.wg.Wait()
+		// Join it before the temp dir is torn down -- but BOUNDED. This cleanup
+		// also runs after a t.Fatal, where the goroutine may still be parked on
+		// its rendezvous, and an unguarded wait there hangs the whole test binary
+		// until the go-test timeout and reports an unrelated panic.
+		joinBounded(t, up.wg, "the peer's late-delete goroutine")
 	})
 
 	p := New(Deps{
@@ -229,7 +271,7 @@ func assertLateDeleteHappened(t *testing.T, up *lateDeleteUploader) {
 	}
 	select {
 	case <-up.done:
-	case <-time.After(10 * time.Second):
+	case <-time.After(fixtureWaitTimeout):
 		t.Fatal("precondition failed: the peer's late-delete goroutine never finished")
 	}
 	// THE LATENESS FACT, asserted from what the peer actually read off disk
