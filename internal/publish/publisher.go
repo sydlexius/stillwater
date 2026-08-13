@@ -58,6 +58,55 @@ const (
 	// slow disk.
 	reassertVerifyTimeout = 10 * time.Second
 
+	// reassertSettleDelay is how long the push waits after its first repair pass
+	// before looking at the files ONE more time (#2712).
+	//
+	// WHY A SECOND LOOK AT ALL. The repair is a point-in-time check: it runs
+	// after UploadImage returns and asks "is the file still what I uploaded?".
+	// That question has an answer only for damage that has already landed. In
+	// every case observed on the primary path the peer's delete completed BEFORE
+	// the call returned (204ms before, in the production capture), so one pass
+	// sufficed -- but a peer that schedules the delete during the upload and
+	// performs it after responding defeats a point-in-time check entirely, and
+	// exactly that shape WAS measured on the fanart path: the file vanished
+	// roughly 15ms AFTER UploadImage returned. One pass reports "healthy" and
+	// the operator's backdrop is gone with nothing coming to put it back.
+	//
+	// WHY 250ms. It is an order of magnitude over the ~15ms that was actually
+	// measured, which is the only number this codebase has, and it is small
+	// enough to be invisible next to what it is bolted onto: the pushes that
+	// reach this code are wrapped in a 30-second context by every caller, and a
+	// single peer upload is a network round trip carrying the whole image. 250ms
+	// is under 1% of that budget. Going larger buys diminishing coverage (the
+	// distribution has one observed sample, at 15ms) for latency the operator
+	// pays on EVERY push, including the overwhelming majority where no peer
+	// misbehaves at all.
+	//
+	// COST, stated plainly rather than hidden: every push that reached at least
+	// one peer now takes 250ms longer, plus one extra stat-and-read per file.
+	// The delay is paid ONCE per push, not once per peer or once per file, and
+	// only when uploadedTo is non-empty -- a push that reached nobody skips the
+	// repair entirely and pays nothing. On the fanart path the extra reads are
+	// one per captured backdrop, the same reads the first pass already does. In
+	// particular the 42-backdrop artist pays 250ms for the whole set, not 250ms
+	// per backdrop, because repairAfterPush wraps the WHOLE restore loop.
+	//
+	// WHO PAYS IT, since "250ms" without an owner is not a cost statement. It is
+	// SYNCHRONOUS in the request path: an artwork save or delete in the UI that
+	// reaches a peer returns 250ms later than it used to, on top of the peer
+	// round trip it already waited for. The background artwork reconciler is
+	// serial, so an artist with both a primary image and fanart pays it on each
+	// push -- up to about 1s per artist -- which lengthens a reconcile sweep in
+	// proportion to the artists that actually have peers. That is accepted: the
+	// alternative is a push that reports success over an operator's destroyed
+	// backdrop, and the delay is under 1% of the 30s context each push runs in.
+	//
+	// It is a SLEEP and not a poll loop on purpose. Polling would turn an
+	// unbounded number of reads loose on a mount that may be the reason the
+	// push was slow in the first place, for no additional coverage: the damage
+	// this is chasing is a single event, not a condition that clears.
+	reassertSettleDelay = 250 * time.Millisecond
+
 	// maxFanartSnapshotFiles caps how many backdrops one push holds in memory
 	// (#2712).
 	//
@@ -1000,11 +1049,14 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	// in the production capture on the issue), so this check lands behind the
 	// damage. That is an observation about two processes with no synchronization
 	// between them, NOT a happens-before relation -- a peer that schedules the
-	// delete during the upload but performs it after responding would defeat a
+	// delete during the upload but performs it after responding defeats a
 	// point-in-time check like this one. A late delete of that shape WAS observed
-	// on the fanart path (~15ms after the call returned), so the window is real
-	// and this repair does not close it. Anything left after the window is caught
-	// by the next push or by the exists-flag reconciler, not here.
+	// on the fanart path (~15ms after the call returned), so the window is real.
+	//
+	// #2712: that is why this is a SETTLE-AND-REVERIFY rather than a single
+	// check. repairAfterPush runs the pass, waits reassertSettleDelay, and runs
+	// it once more. Bounded at exactly two passes and one short wait; see the
+	// constant for the cost and why it is not a poll loop.
 	//
 	// It runs after the whole loop, not per connection, because an operator may
 	// run several peers and any one of them can be the deleter -- and `data` was
@@ -1014,10 +1066,109 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	// delete (the original #2533 concern), and an existence check would call that
 	// clean.
 	if len(uploadedTo) > 0 {
-		p.reassertLocalImage(ctx, a, imageType, filePath, data, snapMod, push, uploadedTo)
+		p.repairAfterPush(func(scope repairScope) {
+			p.reassertLocalImage(ctx, a, imageType, filePath, data, snapMod, push, uploadedTo, scope)
+		})
 	}
 	return warnings
 }
+
+// repairAfterPush runs one repair pass, waits for the peer to settle, and runs
+// the SAME pass once more (#2712).
+//
+// WHY A SECOND PASS. The repair it wraps is a point-in-time check: it answers
+// "is the file still what I uploaded?" for damage that has already landed. A
+// peer that performs its delete AFTER responding to the upload is invisible to
+// one pass, and that shape was measured on the fanart path (~15ms after
+// UploadImage returned). The second pass is what sees it.
+//
+// WHY IT REUSES pass RATHER THAN REIMPLEMENTING THE CHECK. Everything that
+// makes the repair safe lives inside reassertLocalImage -- the #2712 delete-
+// intent gate on the ENOENT branch, the detached-but-bounded verify read, the
+// "unreadable is not absent" refusal. A second implementation would be a second
+// place for those to drift, and the one that drifted would be the one running
+// after the operator's delete. So this function knows nothing about repair; it
+// knows about TIMING only.
+//
+// SAFE TO RUN TWICE, which is the property that makes this legal at all.
+// reassertLocalImage is idempotent by construction: its first branch returns
+// immediately when the bytes on disk already equal the snapshot, so a second
+// pass over a healthy file (including one the first pass just restored) writes
+// nothing. It cannot resurrect an operator delete either -- the gate is inside
+// the pass, so the reverify consults the same marker against the same push
+// baseline and stands down for exactly the same deletes.
+//
+// THE TWO PASSES DO NOT REPAIR THE SAME SET OF DAMAGE, and that asymmetry is
+// the whole reason repairScope exists. The first pass keeps both branches: a
+// missing file and a rewritten file are equally the peer's doing at that
+// instant, because the push has not yet let go of the file. The second pass
+// runs AFTER a 250ms window during which the operator's UI is live, so a
+// mismatch it sees can equally well be the operator's own brand-new crop --
+// and restoring the pre-push bytes over that would revert a save the operator
+// just made, while blaming a peer in the log. So the second pass repairs only
+// the ENOENT case. See repairScope for why that is the right side to keep.
+//
+// BOUNDED, and the bound is the point: exactly two passes and one wait of
+// reassertSettleDelay, never a loop and never a retry-until-clean. Every push
+// that reached a peer pays that wait once; see the constant for the cost
+// argument and for why polling would be worse rather than better.
+//
+// THE WAIT IS NOT CANCELLABLE, and that is deliberate rather than an oversight.
+// The obvious refinement is to abort the wait when the caller's context is done,
+// but the canceled push is exactly the case this exists to serve -- the repair
+// itself detaches from ctx for that reason -- and cutting the wait short there
+// makes the second pass run back to back with the first, which is the same
+// point-in-time check twice and covers nothing. The cost of not honoring it is a
+// bounded 250ms on a goroutine that does no I/O while it waits.
+func (p *Publisher) repairAfterPush(pass func(repairScope)) {
+	pass(repairAllDamage)
+	time.Sleep(reassertSettleDelay)
+	pass(repairMissingOnly)
+}
+
+// repairScope says which shapes of damage a given repair pass is allowed to
+// undo (#2712). It exists because the second, post-settle pass looks at the
+// files 250ms later than the first, and 250ms is long enough for the OPERATOR
+// to have acted.
+//
+// THE DEFECT IT PREVENTS, concretely, because this reads like a nicety and is
+// not one. Peer behaves perfectly. Pass 1 reads the file, finds exactly the
+// bytes it pushed, and returns. The push then waits out the settle window, and
+// during that window the operator saves a new crop of that same slot. Pass 2
+// reads the file, sees bytes that differ from the PRE-PUSH snapshot, and -- if
+// it were allowed the overwrite branch -- writes the pre-push bytes back over
+// the crop the operator saved seconds ago, logging it as a peer clobber. The
+// operator's work is gone and the log points at the wrong party. That is a
+// window this settle pass OPENED, so this pass is where it has to be closed.
+//
+// WHY ENOENT IS THE SIDE WORTH KEEPING. A late DELETE is the only shape the
+// issue documents and the only one this codebase has measured (~15ms after
+// UploadImage returned, on the fanart path); a peer that REWRITES the file
+// after it has already answered the upload has never been observed here. And
+// the two shapes are not symmetric in what the gate can do about them: a late
+// delete is still attributable, because img.MarkDeleteIntent lets an operator
+// delete announce itself and the ENOENT branch consults it, so the second pass
+// restores only deletes NOBODY claimed. A late overwrite has no such signal --
+// that is the whole reason the overwrite branch is deliberately ungated -- so
+// there is no version of the second pass that repairs it without also being
+// able to revert an operator save.
+//
+// WHAT PASS 1 KEEPS. Every bit of it. Pass 1 runs the instant UploadImage
+// returns, before any settle window has been waited out, and it is what serves
+// the #2533 crop-clobber repair. Nothing about that branch is gated, narrowed,
+// or made conditional here; only the LATER look is narrowed. A change that
+// gates pass 1's overwrite branch would disable the repair this whole mechanism
+// exists for.
+type repairScope int
+
+const (
+	// repairAllDamage repairs both a missing file and a rewritten one. This is
+	// what the first pass runs with, and it is the historical behavior.
+	repairAllDamage repairScope = iota
+	// repairMissingOnly repairs a file that is GONE and leaves a file whose
+	// bytes merely differ alone. The second pass runs with this.
+	repairMissingOnly
+)
 
 // fanartSnapshot is one fanart file's path, its TRUE slot index, and the bytes
 // it held before any upload ran, which is what a restoration puts back.
@@ -1576,16 +1727,62 @@ type pushScope struct {
 // while a resurrected delete is silent, undoes what the operator deliberately
 // did, and is not recoverable at all unless they notice and delete again.
 //
-// The OVERWRITE direction is NOT refused, and that is a deliberate, documented
-// trade rather than an oversight. mtime cannot separate "the peer rewrote it"
-// from "the operator saved again" -- both land between the snapshot and the
-// check -- so a guard on newness would disable the crop-clobber repair (#2533),
-// which is the case this fix exists to serve. RESIDUAL RISK, accepted: if the
-// operator saves the same slot twice inside one push window, the older push's
-// repair can write the earlier image back. That needs the two saves to overlap
-// within a single 30s push; the losing outcome is a stale image, recoverable by
-// saving again. Resurrecting a deleted image or leaving a peer's artwork in the
-// library are both worse, and both are prevented.
+// The OVERWRITE direction is NOT refused ON THE FIRST PASS, and that is a
+// deliberate, documented trade rather than an oversight. mtime cannot separate
+// "the peer rewrote it" from "the operator saved again" -- both land between the
+// snapshot and the check -- so a guard on newness would disable the crop-clobber
+// repair (#2533), which is the case this fix exists to serve.
+//
+// RESIDUAL RISK IN THE OVERWRITE DIRECTION, accepted, and stated for what it
+// now actually is (#2712). The unattributable window is the interval between
+// the byte capture and the FIRST repair pass, which ends the instant UploadImage
+// returns for the last peer. An operator save landing inside that interval can
+// still be written back by this repair: the losing outcome is a stale image,
+// recoverable by saving again, and the alternative is losing the #2533 repair
+// entirely.
+//
+// It is specifically NOT bounded by "two saves overlapping within a single 30s
+// push" any more, and do not restate it that way -- one save is enough, since
+// this repair puts back bytes the push captured rather than bytes the operator
+// last chose. What the settle pass changed is that the window no longer EXTENDS
+// through the 250ms wait: the second pass runs with repairMissingOnly, so an
+// operator save landing during the settle window is left exactly as the operator
+// left it. See repairScope, and the paragraph below on what the two passes each
+// cover.
+//
+// WHEN THIS RUNS, AND WHAT THE TIMING NOW COVERS (#2712). Callers do not invoke
+// this once. repairAfterPush runs it, waits reassertSettleDelay, and runs it
+// again, because a single call is a POINT-IN-TIME check and answers only for
+// damage that has already landed. In every case observed on the primary path
+// the peer's delete completed BEFORE UploadImage returned, but that is an
+// observation about two unsynchronized processes, not a happens-before
+// relation, and a delete roughly 15ms AFTER the return was measured on the
+// fanart path. The second pass is what catches that shape.
+//
+// STATE THE LIMIT HONESTLY: two passes over a bounded settle window is a wider
+// net, NOT a closed window. A peer that deletes a second after responding still
+// escapes both passes, and nothing here will see it -- and nothing else will
+// either, because no component in this codebase restores a local artwork file
+// from a peer (see the over-suppression paragraph above for why the obvious
+// consolations are false). What actually happens is that the exists-flag scan
+// surfaces the slot as missing and the operator re-adds it. The settle delay is
+// deliberately small rather than generous, because it is latency every push
+// pays including the overwhelming majority where no peer misbehaves; see
+// reassertSettleDelay for that trade.
+//
+// The reverify inherits the delete gate rather than working around it: it is
+// the same function, consulting the same marker against the same push baseline,
+// so it stands down for exactly the same operator deletes the first pass does.
+// A second pass that could resurrect a delete the first pass honored would be
+// this bug reintroduced by its own fix.
+//
+// AND THE SECOND PASS IS NARROWER THAN THE FIRST: it runs with
+// repairMissingOnly, so it repairs a file that is GONE and leaves a file whose
+// bytes merely differ alone. The settle window is live operator time, and a
+// mid-window save is indistinguishable from a late peer rewrite on this branch,
+// so a second pass with the overwrite branch would revert the operator's newest
+// crop back to the pre-push bytes. scope is what says which pass this is; see
+// repairScope for the worked case.
 //
 // snapMod is the file's mtime when its bytes were captured. Retained for the
 // restore log so an operator can see how stale the restored copy was. It
@@ -1612,7 +1809,7 @@ type pushScope struct {
 // bare os.ReadFile on a dead mount pins this goroutine forever, and it runs in
 // a defer inside a request handler. Its own short deadline is what makes the
 // repair give up on its own terms rather than never.
-func (p *Publisher) reassertLocalImage(ctx context.Context, a *artist.Artist, imageType, filePath string, data []byte, snapMod time.Time, push pushScope, uploadedTo []string) {
+func (p *Publisher) reassertLocalImage(ctx context.Context, a *artist.Artist, imageType, filePath string, data []byte, snapMod time.Time, push pushScope, uploadedTo []string, scope repairScope) {
 	verifyCtx, cancelVerify := context.WithTimeout(context.WithoutCancel(ctx), reassertVerifyTimeout)
 	defer cancelVerify()
 
@@ -1633,7 +1830,26 @@ func (p *Publisher) reassertLocalImage(ctx context.Context, a *artist.Artist, im
 	}
 
 	outcome := "rewrote"
-	if errors.Is(readErr, os.ErrNotExist) {
+	if !errors.Is(readErr, os.ErrNotExist) {
+		// The file is present and its bytes differ from what this push captured.
+		//
+		// #2712: on a pass whose scope is repairMissingOnly -- the second,
+		// post-settle pass -- stop here. By the time that pass runs, 250ms of
+		// live UI time has elapsed since the push let go of the file, so those
+		// differing bytes are just as likely the operator's new crop as a peer's
+		// clobber, and nothing on this branch can tell the two apart (that is
+		// exactly why it is ungated for the first pass). Writing here would
+		// revert an operator save and blame a peer for it. See repairScope.
+		//
+		// This is NOT a gate on the first pass. Pass 1 still repairs an
+		// overwrite unconditionally, which is the #2533 crop-clobber repair this
+		// whole mechanism exists to serve.
+		if scope == repairMissingOnly {
+			p.logger.Debug("the local image differs after the settle window; leaving it alone",
+				"artist", a.Name, "type", imageType, "path", filePath)
+			return
+		}
+	} else {
 		outcome = "deleted"
 
 		// #2712: the file is GONE, and this is the only branch where an operator
@@ -1829,16 +2045,24 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	// a file and nothing else will put it back -- while a dead mount can no longer
 	// pin this deferred read forever. ctx is still threaded through for its
 	// VALUES; see reassertLocalImage for the full reasoning.
+	//
+	// #2712: the pass runs TWICE, with a short settle in between, because the
+	// ~15ms-late peer delete that motivates that was measured on THIS path. See
+	// repairAfterPush. The whole set is walked on each pass, not just files the
+	// first pass touched: the late delete can land on any slot, including one
+	// the first pass had just confirmed healthy.
 	defer func() {
 		if len(uploadedTo) == 0 {
 			return
 		}
-		for _, sf := range snapshot {
-			if sf.data == nil {
-				continue // never captured; there is nothing to put back
+		p.repairAfterPush(func(scope repairScope) {
+			for _, sf := range snapshot {
+				if sf.data == nil {
+					continue // never captured; there is nothing to put back
+				}
+				p.reassertLocalImage(ctx, a, "fanart", sf.path, sf.data, sf.mod, push, uploadedTo, scope)
 			}
-			p.reassertLocalImage(ctx, a, "fanart", sf.path, sf.data, sf.mod, push, uploadedTo)
-		}
+		})
 	}()
 
 	for _, pid := range platformIDs {
@@ -1865,9 +2089,10 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		//   Saving image to <emby-config>/metadata/musicartists/<artist>/fanart.jpg
 		//   Deleting previous image <artist-dir>/backdrop.jpg
 		// destroying the operator's file. The deferred re-assertion registered
-		// above -- one pass over the whole snapshot after every peer -- restores
-		// it. It is deliberately NOT per-file-after-its-own-upload: the peer was
-		// measured deleting a file this loop had not reached yet.
+		// above -- a walk of the WHOLE snapshot after every peer, run twice with
+		// the #2712 settle window in between -- restores it. It is deliberately
+		// NOT per-file-after-its-own-upload: the peer was measured deleting a
+		// file this loop had not reached yet.
 		indexedUploader := newIndexedImageUploader(conn, p.logger)
 		if indexedUploader == nil {
 			p.logger.Warn("unsupported connection type for fanart sync",
