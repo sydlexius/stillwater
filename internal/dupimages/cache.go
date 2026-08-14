@@ -197,28 +197,41 @@ type Cache struct {
 	// inFlight. Backs the retry cooldown in TriggerRefresh.
 	lastAttempt time.Time
 
-	// refreshWg counts the background goroutines TriggerRefresh has spawned and
-	// that have not finished yet. Drain waits on it.
+	// backgroundCount is how many background refresh goroutines have been
+	// registered and have not yet finished. idle is closed when that count
+	// drops to zero, and replaced with a fresh open channel when it rises from
+	// zero. Both are guarded by inFlight. Drain waits by receiving on idle.
 	//
-	// The Add happens inside the c.inFlight critical section that takes the
-	// latch, NOT merely "before the go statement". Taking the latch and becoming
-	// visible to Drain must be ONE indivisible step; see
-	// beginBackgroundRefresh for why a gap between them is a hole Drain falls
-	// through.
-	refreshWg sync.WaitGroup
+	// WHY NOT A sync.WaitGroup. This was one, and the WaitGroup contract makes
+	// it unusable here: "calls with a positive delta that start when the counter
+	// is zero must happen before a Wait". Drain cannot honor that. It must
+	// register its intent to wait and then release inFlight (the finishing
+	// goroutine needs that lock), which leaves an Add from a concurrent
+	// TriggerRefresh racing Wait's first read of the counter -- a genuine data
+	// race the detector reports, not a theoretical one.
+	//
+	// A counter plus a channel has no such rule. Every mutation happens under
+	// inFlight, and Drain's only shared read is grabbing the channel VALUE under
+	// that same lock; the blocking receive afterwards touches no cache state at
+	// all. It also removes the waiter goroutine Drain used to spawn, so a
+	// timed-out Drain no longer leaves anything parked.
+	backgroundCount int
+	idle            chan struct{}
 
 	// lifeMu guards the two shutdown fields below and NOTHING else.
 	//
-	// LOCK ORDER: c.inFlight may be held while taking lifeMu (that is how
-	// beginBackgroundRefresh, Drain and Reset make "latch state" and "shutdown
-	// context" agree with each other). The reverse is FORBIDDEN -- nothing ever
-	// holds lifeMu and then reaches for inFlight, mu or srcMu -- so there is no
-	// cycle and no deadlock.
+	// LOCK ORDER: c.inFlight may be held while taking lifeMu -- that is how
+	// beginBackgroundRefresh and Drain make "latch state" and "shutdown
+	// context" agree with each other, and those two are the ONLY places the
+	// locks nest. (Reset takes lifeMu, mu, srcMu and inFlight too, but strictly
+	// one after another, never nested.) The reverse order is FORBIDDEN: nothing
+	// anywhere holds lifeMu and then reaches for inFlight, mu or srcMu. One
+	// direction only means no cycle, hence no deadlock.
 	//
-	// lifeMu is also never held across a wait. That matters: the goroutine being
-	// waited on must take c.inFlight (endRefresh), c.mu (update) and c.srcMu
-	// (sources) before it can finish, so holding a lock it needs across
-	// refreshWg.Wait would deadlock the drain against the very work it is
+	// No lock is held across a WAIT either. That matters: the goroutine being
+	// waited on must take c.inFlight (endBackgroundRefresh), c.mu (update) and
+	// c.srcMu (sources) before it can finish, so holding any of them while
+	// blocking on idle would deadlock the drain against the very work it is
 	// waiting for.
 	lifeMu sync.Mutex
 	// shutdownCtx is the parent of every background refresh context. Canceling
@@ -231,6 +244,20 @@ type Cache struct {
 	// process-wide cache stays usable by the next test after a drain.
 	shutdownCancel context.CancelFunc
 
+	// drainTimeout bounds how long Reset waits for an in-flight background
+	// refresh. Per-cache rather than package-level so a test can shorten its own
+	// cache's value without reaching into state every other test shares; see
+	// defaultDrainTimeout. Set once in New and not written afterwards, so it
+	// needs no lock.
+	drainTimeout time.Duration
+
+	// beforeRegisterHook runs inside beginBackgroundRefresh's critical section,
+	// after the latch is taken and before the refresh becomes drainable. nil in
+	// production; set only by tests in this package, and only before any
+	// concurrent use of the cache begins. See its call site for why the seam is
+	// necessary rather than convenient.
+	beforeRegisterHook func()
+
 	logger *slog.Logger
 }
 
@@ -240,7 +267,7 @@ func New(logger *slog.Logger) *Cache {
 		logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Cache{logger: logger, shutdownCtx: ctx, shutdownCancel: cancel}
+	return &Cache{logger: logger, shutdownCtx: ctx, shutdownCancel: cancel, drainTimeout: defaultDrainTimeout}
 }
 
 var (
@@ -389,9 +416,15 @@ func nonZeroPlatforms(in []PlatformCount) []PlatformCount {
 // fails with a named, explanatory log line instead of wedging the whole package
 // until the go test timeout.
 //
-// A var, not a const, solely so the test that proves the expiry branch actually
-// panics can shorten it. Nothing in production writes it.
-var resetDrainTimeout = 30 * time.Second
+// It is the DEFAULT for the per-cache c.drainTimeout field, which is what Reset
+// actually reads. A test that needs the expiry branch shortens its OWN cache's
+// field. An earlier revision made this package-level value a mutable var for
+// that purpose, which was a hazard held together only by convention: 31 tests
+// in cache_test.go call t.Parallel(), and Go PAUSES rather than finishes
+// previously-started parallel tests while a non-parallel one runs, so a
+// "briefly shortened" global is not provably exclusive and gets less so as the
+// package grows. A field has no such coupling.
+const defaultDrainTimeout = 30 * time.Second
 
 // Reset drops the snapshot and the installed sources, returning the cache to
 // its just-constructed state. Exposed for tests, which share the process-wide
@@ -417,7 +450,7 @@ var resetDrainTimeout = 30 * time.Second
 func (c *Cache) Reset() {
 	// No cache lock is held here: the goroutine being waited on needs c.mu,
 	// c.srcMu and c.inFlight to finish. See Drain's lock-order note.
-	drainCtx, cancelDrain := context.WithTimeout(context.Background(), resetDrainTimeout)
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), c.drainTimeout)
 	defer cancelDrain()
 	if err := c.Drain(drainCtx); err != nil {
 		_, _, logger := c.sources() // logger is guarded by srcMu; do not read the field directly
@@ -452,21 +485,32 @@ func (c *Cache) Reset() {
 	// cache would silently inherit the previous test's cooldown and observe no
 	// trigger at all.
 	//
-	// Clear the single-flight latch as well.
+	// DO NOT CLEAR c.running HERE. An earlier revision did, as "defense in
+	// depth" against a latch stranded by the old Add-window escape. It was a
+	// silent correctness bug: Reset cleared the latch UNCONDITIONALLY, so a
+	// refresh that took it LEGITIMATELY after the drain completed (the drain
+	// only waits for refreshes registered before it started) was erased from
+	// single-flight, and the next TriggerRefresh launched a SECOND CONCURRENT
+	// FULL SCAN -- doubling the I/O and CPU of the most expensive task in the
+	// process, which is the exact failure beginRefresh's latch exists to
+	// prevent. The clear looked harmless because deleting it broke no test;
+	// "nothing depends on it" is not "it is safe", and the question that
+	// mattered was what it does when the invariant it assumes does not hold.
 	//
-	// HONEST SCOPE: this is defense in depth, not a load-bearing step. The drain
-	// above guarantees every background refresh has RETURNED, and each one
-	// releases the latch on its way out (endRefresh), so running is already
-	// false here -- deleting this line breaks no test, which was checked by
-	// mutation rather than assumed. It stays because the cost is one assignment
-	// and the failure it forecloses is the silent kind: a latch still held after
-	// Reset makes the next owner's TriggerRefresh a no-op, so their test passes
-	// while exercising nothing. That is precisely what the old Add-window escape
-	// left behind. Asserting the post-Reset invariant outright is cheaper than
-	// depending on the drain to imply it.
+	// NOR IS AN ASSERTION SOUND HERE, which is the second thing that revision
+	// got wrong. Drain covers BACKGROUND refreshes only -- a direct, blocking
+	// Refresh takes the same latch (beginRefresh) but never registers itself,
+	// because nothing needs to await it. So a held latch at this point is
+	// legitimately reachable, with no bug anywhere, whenever a Refresh is
+	// running concurrently with a Reset. A panic here would be a false alarm,
+	// and a clear here would break that Refresh's single-flight.
+	//
+	// So Reset simply does not touch c.running. The failure the old clear was
+	// aimed at -- a latch stranded by a refresh that escaped the drain -- is
+	// closed at its source by beginBackgroundRefresh's atomicity, which is
+	// where a correctness property belongs.
 	c.inFlight.Lock()
 	c.lastAttempt = time.Time{}
-	c.running = false
 	c.inFlight.Unlock()
 }
 
@@ -545,29 +589,29 @@ func (c *Cache) beginRefresh() bool {
 
 // beginBackgroundRefresh is beginRefresh for the LAZY path, plus the two extra
 // steps that only a background (fire-and-forget) refresh needs: registering
-// with the WaitGroup, and reading the shutdown context the scan will derive
+// itself as drainable, and reading the shutdown context the scan will derive
 // from. It returns that context and whether the caller owns the latch. When it
 // reports false the caller has taken nothing and must not spawn anything.
 //
 // WHY ALL THREE STEPS SHARE ONE CRITICAL SECTION. Taking the latch, becoming
-// countable by Drain, and choosing a parent context must be INDIVISIBLE. When
-// they were three separate steps -- latch, then Add, then read the context --
-// there was a window in which a refresh had already claimed the latch but the
-// WaitGroup counter was still zero. A Drain (or the Drain inside Reset) landing
-// entirely inside that window saw a counter of zero, so Wait returned at once
-// and the drain reported "everything has finished" about a refresh that had not
-// started. Reset then installed a FRESH, LIVE shutdown context -- and the
-// escaping goroutine, still to read it, picked THAT one up and ran the NEXT
-// owner's freshly installed sources on a context nobody would ever cancel.
-// That is #2977 again, just through a narrower window.
+// visible to Drain, and choosing a parent context must be INDIVISIBLE. When
+// they were three separate steps -- latch, then register, then read the context
+// -- there was a window in which a refresh had already claimed the latch but
+// was still uncounted. A Drain (or the Drain inside Reset) landing entirely
+// inside that window saw a count of zero, so it returned at once and reported
+// "everything has finished" about a refresh that had not started. Reset then
+// installed a FRESH, LIVE shutdown context -- and the escaping goroutine, still
+// to read it, picked THAT one up and ran the NEXT owner's freshly installed
+// sources on a context nobody would ever cancel. That is #2977 again, just
+// through a narrower window.
 //
 // Holding c.inFlight while taking c.lifeMu is what closes it: Drain takes
-// c.inFlight around its cancel, so a drain can no longer interleave between
-// these steps. Either it runs entirely before this call (and this call derives
-// from the context Drain just canceled, so the scan aborts immediately), or
-// entirely after (and the WaitGroup counter is already 1, so Drain waits).
-// Neither lock is held across a wait, and nothing takes them in the opposite
-// order, so this cannot deadlock -- see lifeMu's lock-order note.
+// c.inFlight around its cancel AND around grabbing the idle channel, so a drain
+// can no longer interleave between these steps. Either it runs entirely before
+// this call (and this call derives from the context Drain just canceled, so the
+// scan aborts immediately), or entirely after (and the count is already 1, so
+// Drain blocks). Neither lock is held across a wait, and nothing takes them in
+// the opposite order, so this cannot deadlock -- see lifeMu's lock-order note.
 func (c *Cache) beginBackgroundRefresh() (context.Context, bool) {
 	c.inFlight.Lock()
 	defer c.inFlight.Unlock()
@@ -581,9 +625,33 @@ func (c *Cache) beginBackgroundRefresh() (context.Context, bool) {
 	c.running = true
 	c.lastAttempt = time.Now()
 
-	// Countable by Drain BEFORE the latch is released, so there is no instant
-	// at which this refresh exists but is invisible to a drain.
-	c.refreshWg.Add(1)
+	// TEST SEAM, nil in production and never set outside this package's tests.
+	//
+	// It exists because the property this function guarantees -- that taking the
+	// latch and becoming drainable is INDIVISIBLE -- is otherwise untestable.
+	// The window is a few instructions wide, and a test that merely races a
+	// TriggerRefresh against a Reset cannot tell an escapee (a refresh Drain
+	// owed a wait) from an ordinary refresh that legitimately started after
+	// Reset finished: both end up running on the freshly installed context.
+	// Asserting without that distinction produces a test that fails against
+	// correct code, which is precisely the flake an earlier revision shipped.
+	//
+	// Widening the window under a test's control removes the ambiguity: the
+	// test holds a refresh at this exact point, runs a whole Reset, and can then
+	// state without qualification that the refresh was registered first. A seam
+	// is the honest instrument here, not a heuristic loop.
+	if hook := c.beforeRegisterHook; hook != nil {
+		hook()
+	}
+
+	// Visible to Drain BEFORE the latch is released, so there is no instant at
+	// which this refresh exists but a drain cannot see it.
+	if c.backgroundCount == 0 {
+		// Rising from zero: whoever drains from here on must wait for THIS
+		// refresh, so install a fresh open channel for them to block on.
+		c.idle = make(chan struct{})
+	}
+	c.backgroundCount++
 
 	c.lifeMu.Lock()
 	parent := c.shutdownCtx
@@ -591,7 +659,25 @@ func (c *Cache) beginBackgroundRefresh() (context.Context, bool) {
 	return parent, true
 }
 
-// endRefresh releases the single-flight latch.
+// endBackgroundRefresh releases the single-flight latch AND deregisters the
+// refresh, in one critical section. Both must happen together for the same
+// reason they are taken together: a Drain that observed the count hit zero must
+// never then find the latch still held.
+func (c *Cache) endBackgroundRefresh() {
+	c.inFlight.Lock()
+	defer c.inFlight.Unlock()
+	c.running = false
+	c.backgroundCount--
+	if c.backgroundCount == 0 && c.idle != nil {
+		// Quiescent: release every waiting Drain. Closing rather than sending
+		// is what lets any number of concurrent drains observe it.
+		close(c.idle)
+		c.idle = nil
+	}
+}
+
+// endRefresh releases the single-flight latch for a DIRECT Refresh, which was
+// never registered as drainable and so has nothing to deregister.
 func (c *Cache) endRefresh() {
 	c.inFlight.Lock()
 	c.running = false
@@ -739,12 +825,10 @@ func (c *Cache) TriggerRefresh() {
 	}
 
 	go func() {
-		defer c.refreshWg.Done()
-		// endRefresh runs first (defers unwind last-in-first-out), so the
-		// single-flight latch is released before the WaitGroup counter drops.
-		// A drained cache therefore never has running == true left behind,
-		// which would silently swallow the next caller's refresh.
-		defer c.endRefresh()
+		// Releases the latch and deregisters from the drain in ONE critical
+		// section, so a Drain that saw the count reach zero can never then find
+		// the latch still held.
+		defer c.endBackgroundRefresh()
 		ctx, cancel := RefreshContext(parent)
 		defer cancel()
 		// Error already logged inside refresh; nothing actionable here.
@@ -767,54 +851,73 @@ func (c *Cache) TriggerRefresh() {
 // means a scan started by one test's HTTP request runs on into the NEXT test
 // and reads state that test is writing, which is the data race in #2977.
 //
-// WHY THE CANCEL IS TAKEN UNDER c.inFlight. beginBackgroundRefresh holds
-// c.inFlight while it takes the latch, registers with the WaitGroup and reads
-// the shutdown context. Taking the same lock here means a drain can never
-// interleave with those steps: it either happens entirely BEFORE one (so the
-// refresh derives from the context this cancel just killed, and its scan aborts
-// immediately) or entirely AFTER (so the WaitGroup counter is already 1 and the
-// Wait below actually waits). Without this, a drain landing between the latch
-// and the Add saw a zero counter, returned "quiescent", and Reset then handed
-// the escaping goroutine a fresh LIVE context -- #2977 through a narrower
-// window.
+// WHY THE CANCEL AND THE CHANNEL SNAPSHOT ARE TAKEN UNDER c.inFlight.
+// beginBackgroundRefresh holds c.inFlight while it takes the latch, registers
+// itself, and reads the shutdown context. Taking the same lock here means a
+// drain can never interleave with those steps: it either happens entirely
+// BEFORE one (so the refresh derives from the context this cancel just killed,
+// and its scan aborts immediately) or entirely AFTER (so the count is already 1
+// and the receive below actually blocks). Without this, a drain landing between
+// the latch and the registration saw a zero count, returned "quiescent", and
+// Reset then handed the escaping goroutine a fresh LIVE context -- #2977
+// through a narrower window.
 //
-// LOCK ORDER. Both locks are released before the wait. That matters: the
-// goroutine being waited on must take c.inFlight (endRefresh), c.mu (update)
-// and c.srcMu (sources) before it can finish, so holding any of them across the
-// wait would deadlock the drain against the very work it is waiting for. The
-// inFlight-then-lifeMu order matches beginBackgroundRefresh; nothing anywhere
-// takes them the other way round, so there is no cycle.
+// LOCK ORDER. Every lock is released before the receive. That matters: the
+// goroutine being waited on must take c.inFlight (endBackgroundRefresh), c.mu
+// (update) and c.srcMu (sources) before it can finish, so holding any of them
+// across the wait would deadlock the drain against the very work it is waiting
+// for. The inFlight-then-lifeMu order matches beginBackgroundRefresh; nothing
+// anywhere takes them the other way round, so there is no cycle.
 //
-// Calling Drain twice is safe: the second cancel is a no-op and the WaitGroup
-// is already at zero, so it returns nil immediately. After a Drain the cache
+// Calling Drain twice is safe: the second cancel is a no-op and the count is
+// already zero, so it returns nil immediately. After a Drain the cache
 // still serves Get and still accepts a TriggerRefresh -- that refresh just
 // starts on an already-canceled context and gives up at once. Reset is what
 // makes the cache fully live again.
 func (c *Cache) Drain(ctx context.Context) error {
-	c.inFlight.Lock()
-	c.lifeMu.Lock()
-	cancel := c.shutdownCancel
-	c.lifeMu.Unlock()
-	cancel()
-	c.inFlight.Unlock()
-
-	// The waiter goroutine outlives a timed-out Drain on purpose: nothing can
-	// abort a WaitGroup.Wait, so it stays parked until the refresh it is
-	// waiting on finally returns, then closes an unread channel and exits. It
-	// leaks only for as long as that refresh runs, and a refresh is bounded by
-	// refreshTimeout, so this cannot accumulate without bound.
-	done := make(chan struct{})
-	go func() {
-		c.refreshWg.Wait()
-		close(done)
-	}()
+	idle := c.cancelAndSnapshotIdle()
+	if idle == nil {
+		// Nothing was registered, so the cache is already quiescent.
+		return nil
+	}
 
 	select {
-	case <-done:
+	case <-idle:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// cancelAndSnapshotIdle cancels the shutdown context and returns the channel
+// that will be closed when the last in-flight background refresh finishes, or
+// nil if there are none. Split out from Drain so that every unlock can be a
+// DEFER: the previous inline spelling unlocked positionally, so a panicking
+// cancel() (a nil shutdownCancel on a Cache built without New) left c.inFlight
+// held FOREVER and every later Drain, Refresh, TriggerRefresh and
+// endBackgroundRefresh blocked on it -- a one-goroutine failure escalated into
+// a package-wide deadlock. A panic must not be able to strand a lock.
+//
+// Both the cancel and the channel snapshot happen under c.inFlight, which is
+// what makes the drain airtight against a concurrent TriggerRefresh: see
+// beginBackgroundRefresh. Returning the channel rather than waiting here is
+// deliberate -- the caller blocks with NO lock held, because the goroutine it
+// waits for needs c.inFlight, c.mu and c.srcMu to finish.
+func (c *Cache) cancelAndSnapshotIdle() chan struct{} {
+	c.inFlight.Lock()
+	defer c.inFlight.Unlock()
+
+	func() {
+		c.lifeMu.Lock()
+		defer c.lifeMu.Unlock()
+		// Called with lifeMu held, which is safe because it cancels a context
+		// and touches nothing on this cache. Holding it means a Reset cannot
+		// swap in a fresh context between the read and the call, which would
+		// cancel the OLD context after the new one was installed.
+		c.shutdownCancel()
+	}()
+
+	return c.idle
 }
 
 // RefreshContext derives a context bounded by the standard per-refresh
