@@ -3,6 +3,7 @@ package rule
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -254,8 +255,8 @@ func TestIsRuleEnabled(t *testing.T) {
 		t.Errorf("IsRuleEnabled(%s) = false, want true (enabled+manual: reading AutomationMode instead of Enabled would report false here)", RuleExtraneousImages)
 	}
 
-	if _, err := svc.IsRuleEnabled(ctx, "nonexistent_rule_id"); err == nil {
-		t.Error("IsRuleEnabled(nonexistent) expected an error, got nil")
+	if _, err := svc.IsRuleEnabled(ctx, "nonexistent_rule_id"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("IsRuleEnabled(nonexistent) err = %v, want errors.Is(err, ErrNotFound) (must preserve GetByID's not-found contract)", err)
 	}
 }
 

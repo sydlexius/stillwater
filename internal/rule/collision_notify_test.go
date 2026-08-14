@@ -3,6 +3,7 @@ package rule
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -102,9 +103,10 @@ func TestRuleEnabledNotifyFunc_Branches(t *testing.T) {
 		cancel() // canceled before the lookup even runs
 
 		// Precondition: a canceled context really does make IsRuleEnabled
-		// error (otherwise this subtest exercises nothing).
-		if _, err := svc.IsRuleEnabled(cancelCtx, RuleNFOExists); err == nil {
-			t.Skip("driver did not surface an error for a pre-canceled context; nothing to assert")
+		// fail with context.Canceled specifically (otherwise this subtest
+		// exercises some other error path, not our own cancellation).
+		if _, err := svc.IsRuleEnabled(cancelCtx, RuleNFOExists); !errors.Is(err, context.Canceled) {
+			t.Fatalf("precondition failed: IsRuleEnabled(canceled ctx) err = %v, want context.Canceled", err)
 		}
 
 		predicate := RuleEnabledNotifyFunc(svc, RuleNFOExists, logger)

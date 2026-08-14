@@ -347,10 +347,10 @@ func buildBackdropCollisionMsg(data map[string]any) string {
 }
 
 // buildMBIDRevalidationSummaryMsg returns the server-composed sweep-summary
-// sentence. The publisher (internal/mbidcheck, via its injected
-// mbidcheck.NotifyFunc) builds the full sentence -- naming the failure and
-// checked counts for the pass -- and places it on Data["message"], so the hub
-// just surfaces it verbatim (mirrors buildBackdropCollisionMsg).
+// sentence. The publisher (internal/mbidcheck.Sweep, gated by its injected
+// mbidcheck.NotifyEnabledFunc) builds the full sentence -- naming the failure
+// and checked counts for the pass -- and places it on Data["message"], so the
+// hub just surfaces it verbatim (mirrors buildBackdropCollisionMsg).
 func buildMBIDRevalidationSummaryMsg(data map[string]any) string {
 	return strVal(data, "message")
 }

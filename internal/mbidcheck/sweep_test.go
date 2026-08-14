@@ -2078,8 +2078,23 @@ func TestNotifySummary_EnabledEmitsOneToast(t *testing.T) {
 	if got, _ := evs[0].Data["failed"].(int); got != n {
 		t.Errorf("event Data[failed] = %v, want %d", evs[0].Data["failed"], n)
 	}
-	if got, _ := evs[0].Data["message"].(string); got == "" {
-		t.Error("event Data[message] is empty, want an operator-readable sentence")
+	msg, _ := evs[0].Data["message"].(string)
+	if msg == "" {
+		t.Fatal("event Data[message] is empty, want an operator-readable sentence")
+	}
+	// The ledger keeps "resolves to somebody else" (what this rule flags)
+	// strictly apart from "resolves to nobody" (possibly correct and merely
+	// stale) -- see RuleMBIDResolves's doc comment. The message must not
+	// claim the IDs no longer resolve; that names the case the rule
+	// deliberately does NOT flag.
+	if strings.Contains(msg, "no longer resolve") {
+		t.Errorf("message = %q, must not claim the IDs no longer resolve (that is the case this rule does not flag)", msg)
+	}
+	if !strings.Contains(msg, "failed re-validation") {
+		t.Errorf("message = %q, want it to describe re-validation failure", msg)
+	}
+	if !strings.Contains(msg, fmt.Sprintf("%d", n)) {
+		t.Errorf("message = %q, want it to include the failed count %d", msg, n)
 	}
 }
 

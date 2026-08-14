@@ -20,12 +20,12 @@ If you cannot remember which tab a setting lives on, use the search box at the t
 
 A disabled rule never evaluates. It doesn't appear in violation counts and doesn't surface in the artist's violations list. Re-enable to start finding violations again; the next rule run picks them up.
 
-Some rules behave differently on disable. Their findings are not produced by a rule run -- they are recorded at the moment a matching event happens (a backdrop is imported or pushed, an artist's MusicBrainz ID is re-checked), so nothing can recreate a missed finding afterward. For these rules the Enabled toggle never stops recording: a finding is still written to the Action Queue, still counted toward compliance, and still fixable, whether the toggle is on or off. To clear an existing finding, dismiss or resolve it individually.
+Some rules behave differently on disable. Their findings are not produced by a rule run -- they are recorded at the moment a matching event happens (a backdrop is imported or pushed, an artist's MusicBrainz ID is re-checked), so nothing can recreate a missed finding afterward. For these rules the Enabled toggle never stops recording: a finding is still written to the Action Queue and still counted toward compliance, whether the toggle is on or off. To clear an existing finding, dismiss or resolve it individually.
 
-What disabling *does* control for these rules varies by rule, and only some of them currently have anything for the toggle to gate:
+What disabling *does* control for these rules is the pop-up notification shown at the moment the finding is raised:
 
-- **Cross-artist backdrop collision** -- disabling stops the pop-up notification shown at the moment a collision is detected. Turning it off just means you will not see the pop-up in the moment; re-enable it to see the pop-up again for future collisions.
-- **Stored MusicBrainz ID resolves to this artist** -- this rule's findings come from a background re-validation pass and have no pop-up notification today, so its Enabled toggle currently has no effect to disable; findings are recorded regardless of the toggle's position.
+- **Cross-artist backdrop collision** -- disabling stops the pop-up notification shown at the moment a collision is detected. Turning it off just means you will not see the pop-up in the moment; re-enable it to see the pop-up again for future collisions. This rule has a fix path.
+- **Stored MusicBrainz ID resolves to this artist** -- disabling stops the summary notification the background re-validation pass posts when it finds a failure. This rule is detection-only: there is no automated fix, so findings are reviewed and resolved by hand on the Action Queue regardless of the toggle's position.
 
 <!-- SCREENSHOT: Settings > Rules | state: rules tab with mix of enabled/disabled + manual/auto + a conflict-gated chip | annotation: enable toggle + mode picker + conflict-gate indicator -->
 

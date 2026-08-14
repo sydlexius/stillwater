@@ -893,9 +893,9 @@ func (s *Sweep) notifySummary(ctx context.Context, c Counters) {
 
 	var msg string
 	if c.Failed == 1 {
-		msg = "1 artist has a MusicBrainz ID that no longer resolves. Review it on the Action Queue."
+		msg = fmt.Sprintf("1 of %d checked artists has a MusicBrainz ID that failed re-validation. Review it on the Action Queue.", c.Checked)
 	} else {
-		msg = fmt.Sprintf("%d artists have MusicBrainz IDs that no longer resolve. Review them on the Action Queue.", c.Failed)
+		msg = fmt.Sprintf("%d of %d checked artists have MusicBrainz IDs that failed re-validation. Review them on the Action Queue.", c.Failed, c.Checked)
 	}
 
 	pub.Publish(event.Event{
