@@ -982,6 +982,16 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 			}
 			return ca.Name
 		},
+		// #2970: the rule's Enabled toggle gates the ephemeral toast only (see
+		// eventDrivenRules / IsRuleEnabled in internal/rule/service.go). A
+		// lookup failure fails open (emits the toast) rather than risking a
+		// hidden collision. Extracted to rule.RuleEnabledNotifyFunc
+		// (rather than an inline closure here) so the predicate is covered by
+		// the patch-coverage gate: this file is in codecov.yml's ignore list
+		// and a closure built inline here would be permanently invisible to
+		// coverage measurement (see collision_notify.go and
+		// collision_notify_test.go in internal/rule).
+		rule.RuleEnabledNotifyFunc(a.ruleService, rule.RuleCrossArtistBackdropCollision, logger),
 		logger,
 	)
 	a.publisher.SetCollisionNotifier(a.collisionNotifier, a.artistService)
@@ -1248,6 +1258,14 @@ func (a *Application) startMBIDRevalidateSweep(ctx context.Context, db *sql.DB, 
 	// that late wiring after Start has already begun is a race the mutex
 	// does not resolve on its own.
 	mbidSweep.SetFlagger(a.ruleService)
+	// #2970: the same rule's Enabled toggle gates the sweep's ONE-per-pass
+	// summary toast (event.MBIDRevalidationSummary), never the durable ledger
+	// row or the per-artist Action Queue entry SetFlagger above already wires
+	// unconditionally. Reuses rule.RuleEnabledNotifyFunc -- the same
+	// extracted, independently-coverage-tested predicate the collision toast
+	// uses above -- rather than a second inline closure in this
+	// codecov-ignored file.
+	mbidSweep.SetNotifier(a.eventBus, rule.RuleEnabledNotifyFunc(a.ruleService, rule.RuleMBIDResolves, logger))
 	go mbidSweep.Start(ctx)
 }
 

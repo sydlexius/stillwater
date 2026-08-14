@@ -363,6 +363,7 @@ Stillwater has never checked a stored MusicBrainz ID beyond confirming it looks 
 - An ID that resolves to nobody is NOT flagged. MusicBrainz merges duplicate artist entries and retires the ID that lost, so an unresolvable ID is quite possibly correct and merely stale; it is recorded as unchecked rather than as a failure.
 - An artist with no albums on disk cannot be checked, since the catalog comparison is the load-bearing half. Those artists are recorded as unchecked, never as passing.
 - The background re-validation pass is disabled by default and has no toggle in the settings UI yet. Enable it by setting `mbid_revalidate.enabled` to true through the settings API; the pass also reads `mbid_revalidate.interval_hours` (hours between passes, default 24), `mbid_revalidate.max_per_pass` (artists checked per pass, default 200), `mbid_revalidate.name_similarity_threshold`, and `mbid_revalidate.catalogue_match_percent` (0-100 thresholds, each falling back to its own package default when unset). Note that `mbid_revalidate.name_similarity_threshold` is the sweep's own threshold and is separate from `provider.name_similarity_threshold`, which governs provider matching.
+- Disabling this rule does not stop findings from being recorded: every re-validation pass still writes its findings, no matter how many artists it checks. The Enabled toggle here gates only a pop-up notification summarizing the pass -- one summary per pass, not one per artist -- not the findings themselves.
 
 ---
 
@@ -817,4 +818,5 @@ After:  Artist A's fanart2.jpg is quarantined and removed (locally and on platfo
 - Aliases and collaborations legitimately share promo art, so a flagged backdrop is not always pollution; the violation names the colliding artist and the similarity so you can judge before fixing.
 - Detection is notify-only at import and push time: the backdrop is still written and still pushed. This rule records the finding and offers the back-out; it never blocks a write.
 - Only fanart/backdrop images are compared; thumbnails, logos, and banners are out of scope.
+- Disabling this rule does not stop findings from being recorded: findings are raised as collisions happen and cannot be recreated later, so the Enabled toggle here gates only the pop-up notification at the moment of detection, not the finding itself.
 <!-- END GENERATED: rules-catalogue -->

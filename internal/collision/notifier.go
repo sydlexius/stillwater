@@ -55,24 +55,41 @@ type ViolationRaiseFunc func(ctx context.Context, destArtistID, destArtistName, 
 // notifier then falls back to the raw id.
 type ArtistNameFunc func(ctx context.Context, artistID string) string
 
+// NotifyEnabledFunc reports whether the ephemeral SSE toast should currently
+// be emitted. The wiring supplies a closure over rule.Service.IsRuleEnabled
+// so this package never imports internal/rule.
+//
+// This gates ONLY the toast (see Notify). For an event-driven rule, the
+// durable rule_violations row is the only record of a finding that can ever
+// exist -- nothing re-derives it later -- so it is written unconditionally
+// regardless of what this func returns. Keying the durable write off this
+// predicate would be the #2614 data-loss shape all over again, just moved
+// from the engine's evaluation pass to the notify chokepoint.
+//
+// FAIL-OPEN: when this func is nil, or when it cannot determine the answer,
+// the toast is emitted. A transient lookup failure must never silently hide
+// a real collision.
+type NotifyEnabledFunc func(ctx context.Context) bool
+
 // Notifier emits both #2540 notifications on a detected collision.
 type Notifier struct {
-	pub    EventPublisher
-	raise  ViolationRaiseFunc
-	nameOf ArtistNameFunc
-	logger *slog.Logger
+	pub      EventPublisher
+	raise    ViolationRaiseFunc
+	nameOf   ArtistNameFunc
+	notifyOn NotifyEnabledFunc
+	logger   *slog.Logger
 }
 
 // NewNotifier builds a Notifier. Any collaborator may be nil: a nil publisher
 // skips the toast, a nil raise func skips the durable entry, a nil name func
-// falls back to the colliding artist id. A nil *Notifier is itself a safe
-// no-op (see Notify) so wiring never has to special-case the headless/test
-// paths.
-func NewNotifier(pub EventPublisher, raise ViolationRaiseFunc, nameOf ArtistNameFunc, logger *slog.Logger) *Notifier {
+// falls back to the colliding artist id, a nil notifyOn always emits the
+// toast (fail open). A nil *Notifier is itself a safe no-op (see Notify) so
+// wiring never has to special-case the headless/test paths.
+func NewNotifier(pub EventPublisher, raise ViolationRaiseFunc, nameOf ArtistNameFunc, notifyOn NotifyEnabledFunc, logger *slog.Logger) *Notifier {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Notifier{pub: pub, raise: raise, nameOf: nameOf, logger: logger}
+	return &Notifier{pub: pub, raise: raise, nameOf: nameOf, notifyOn: notifyOn, logger: logger}
 }
 
 // Notify emits the ephemeral toast and upserts the durable fixable violation
@@ -98,7 +115,25 @@ func (n *Notifier) Notify(ctx context.Context, destArtistID, destArtistName stri
 	msg := fmt.Sprintf("Backdrop matches %s (%d%% similar, %d artists) - possible cross-artist pollution",
 		label, pct, res.MatchCount)
 
-	if n.pub != nil {
+	emit := true
+	if n.notifyOn != nil {
+		emit = n.notifyOn(ctx)
+	}
+	// Info, not Debug: this is the only forensic trace an operator has that
+	// a toast was intentionally withheld rather than never generated (the
+	// distinction matters on a default install, which does not run at Debug
+	// level). Only log when a toast would otherwise have fired -- gate on
+	// n.pub != nil too, so a headless/test wiring with no publisher (nothing
+	// would have been emitted regardless of notifyOn) does not report a
+	// suppression that never happened. This fires once per detected
+	// collision, which is rare, so it does not risk becoming log noise.
+	if !emit && n.pub != nil {
+		n.logger.Info("backdrop-collision notification suppressed (rule disabled)",
+			slog.String("artist_id", destArtistID),
+			slog.String("colliding_artist_id", res.CollidingArtistID))
+	}
+
+	if emit && n.pub != nil {
 		n.pub.Publish(event.Event{
 			Type: event.BackdropCollision,
 			Data: map[string]any{

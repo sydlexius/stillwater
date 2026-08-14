@@ -59,6 +59,26 @@ const (
 	// artist and the operator can judge before backing the image out.
 	BackdropCollision Type = "backdrop.collision"
 
+	// MBIDRevalidationSummary fires once per completed (or canceled part-way)
+	// mbid_resolves re-validation sweep pass (#2810) that found at least one
+	// artist whose stored MusicBrainz id failed re-validation (#2970). It is
+	// ONE event per pass, never one per failed artist: the sweep processes
+	// artists in bulk (internal/mbidcheck.Sweep.Run), and a per-artist toast
+	// would flood an operator's browser on a library with thousands of stale
+	// ids -- the same burst this event exists to avoid re-creating. Each
+	// failed verdict is still individually durable (see
+	// rule.Service.RaiseMBIDValidationFailure); this event is a pointer at
+	// that queue, not a substitute for it. Data carries the failure count for
+	// this pass and how many artists were checked, so the toast can read "N
+	// of M checked artists have MusicBrainz ids that failed re-validation".
+	//
+	// FAILED RE-VALIDATION, never "no longer resolves": the rule flags a
+	// stored id that resolved to somebody ELSE, and deliberately leaves "id
+	// resolves to nobody" alone (often merely stale, since MusicBrainz merges
+	// duplicate entries). Wording that claims the latter sends an operator
+	// hunting for the one case this rule does not raise.
+	MBIDRevalidationSummary Type = "mbid.revalidation.summary"
+
 	// --- M55 next-channel events (catalog defined by #1341) ---
 
 	// ActivityRecent carries a single recent-activity item for the next

@@ -20,9 +20,12 @@ If you cannot remember which tab a setting lives on, use the search box at the t
 
 A disabled rule never evaluates. It doesn't appear in violation counts and doesn't surface in the artist's violations list. Re-enable to start finding violations again; the next rule run picks them up.
 
-One rule behaves differently on disable: **Cross-artist backdrop collision**. Its findings are not produced by a rule run -- they are recorded at the moment a matching backdrop is imported or pushed, so nothing can recreate them afterward. Disabling it therefore **keeps** its existing findings rather than clearing them, and they continue to count toward compliance. To clear them, dismiss or resolve them individually.
+Some rules behave differently on disable. Their findings are not produced by a rule run -- they are recorded at the moment a matching event happens (a backdrop is imported or pushed, an artist's MusicBrainz ID is re-checked), so nothing can recreate a missed finding afterward. For these rules the Enabled toggle never stops recording: a finding is still written to the Action Queue and still counted toward compliance, whether the toggle is on or off. To clear an existing finding, dismiss or resolve it individually.
 
-Note that disabling this rule does **not** stop new collisions from being recorded either: they are raised at the import/push moment, on a path that does not consult the rule's enabled state. So for this one rule the toggle currently affects neither existing nor future findings.
+What disabling *does* control for these rules is the pop-up notification shown at the moment the finding is raised:
+
+- **Cross-artist backdrop collision** -- disabling stops the pop-up notification shown at the moment a collision is detected. Turning it off just means you will not see the pop-up in the moment; re-enable it to see the pop-up again for future collisions. This rule has a fix path.
+- **Stored MusicBrainz ID resolves to this artist** -- disabling stops the summary notification the background re-validation pass posts when it finds a failure. This rule is detection-only: there is no automated fix, so findings are reviewed and resolved by hand on the Action Queue regardless of the toggle's position.
 
 <!-- SCREENSHOT: Settings > Rules | state: rules tab with mix of enabled/disabled + manual/auto + a conflict-gated chip | annotation: enable toggle + mode picker + conflict-gate indicator -->
 

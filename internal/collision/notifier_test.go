@@ -1,8 +1,10 @@
 package collision
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -38,7 +40,7 @@ func TestNotify_Mismatch_EmitsBothSurfaces(t *testing.T) {
 		}
 		return ""
 	}
-	n := NewNotifier(pub, raise, nameOf, nil)
+	n := NewNotifier(pub, raise, nameOf, nil, nil)
 
 	res := image.IdentityResult{
 		Verdict:           image.IdentityMismatch,
@@ -97,7 +99,7 @@ func TestNotify_FailOpen_Verdicts(t *testing.T) {
 		pub := &fakePublisher{}
 		raisedN := 0
 		raise := func(_ context.Context, _, _, _, _ string) error { raisedN++; return nil }
-		n := NewNotifier(pub, raise, nil, nil)
+		n := NewNotifier(pub, raise, nil, nil, nil)
 
 		n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{Verdict: verdict})
 
@@ -112,7 +114,7 @@ func TestNotify_FailOpen_Verdicts(t *testing.T) {
 
 func TestNotify_MissingCollidingName_FallsBackToID(t *testing.T) {
 	pub := &fakePublisher{}
-	n := NewNotifier(pub, nil, nil, nil) // nil nameOf -> label falls back to id
+	n := NewNotifier(pub, nil, nil, nil, nil) // nil nameOf -> label falls back to id
 	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
 		Verdict:           image.IdentityMismatch,
 		CollidingArtistID: "raw-id-7",
@@ -131,7 +133,7 @@ func TestNotify_MissingCollidingName_FallsBackToID(t *testing.T) {
 func TestNotify_RaiseError_DoesNotPanicOrBlock(t *testing.T) {
 	pub := &fakePublisher{}
 	raise := func(_ context.Context, _, _, _, _ string) error { return errors.New("db down") }
-	n := NewNotifier(pub, raise, nil, nil)
+	n := NewNotifier(pub, raise, nil, nil, nil)
 	// Must still publish the toast and return normally even when the durable
 	// raise fails (notify-only: the caller's write/push must never be blocked).
 	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
@@ -142,6 +144,172 @@ func TestNotify_RaiseError_DoesNotPanicOrBlock(t *testing.T) {
 	})
 	if len(pub.events) != 1 {
 		t.Fatalf("expected the toast to still publish despite raise error, got %d events", len(pub.events))
+	}
+}
+
+// TestNotify_NotifyEnabled_Disabled_SuppressesToastButStillRaises is the
+// #2970 load-bearing test: disabling the rule must suppress ONLY the
+// ephemeral toast. The durable violation write is unconditional, because
+// nothing else can ever re-derive an event-driven finding missed while
+// disabled (see IsRuleEnabled / RaiseBackdropCollision doc comments). An
+// implementation that also skips the raise (the rejected early-return
+// option) would still pass a suppression-only test, so this asserts BOTH
+// halves.
+func TestNotify_NotifyEnabled_Disabled_SuppressesToastButStillRaises(t *testing.T) {
+	pub := &fakePublisher{}
+	raisedN := 0
+	raise := func(_ context.Context, _, _, _, _ string) error { raisedN++; return nil }
+	notifyOn := func(_ context.Context) bool { return false }
+	n := NewNotifier(pub, raise, nil, notifyOn, nil)
+
+	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "c",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if len(pub.events) != 0 {
+		t.Errorf("toast published %d events while disabled, want 0", len(pub.events))
+	}
+	if raisedN != 1 {
+		t.Errorf("durable raise called %d times while disabled, want exactly 1 (the recording must never stop)", raisedN)
+	}
+}
+
+// TestNotify_NotifyEnabled_Enabled_EmitsToast is the positive control for the
+// test above: an implementation that unconditionally suppresses the toast
+// (ignoring notifyOn entirely) would still pass a disabled-only test, so this
+// pins that the predicate is actually consulted both ways.
+func TestNotify_NotifyEnabled_Enabled_EmitsToast(t *testing.T) {
+	pub := &fakePublisher{}
+	raisedN := 0
+	raise := func(_ context.Context, _, _, _, _ string) error { raisedN++; return nil }
+	notifyOn := func(_ context.Context) bool { return true }
+	n := NewNotifier(pub, raise, nil, notifyOn, nil)
+
+	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "c",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if len(pub.events) != 1 {
+		t.Errorf("toast published %d events while enabled, want 1", len(pub.events))
+	}
+	if raisedN != 1 {
+		t.Errorf("durable raise called %d times while enabled, want exactly 1", raisedN)
+	}
+}
+
+// TestNotify_NotifyEnabled_NilPredicate_EmitsToast pins back-compat: existing
+// callers (before #2970) pass nil for notifyOn and must keep emitting.
+func TestNotify_NotifyEnabled_NilPredicate_EmitsToast(t *testing.T) {
+	pub := &fakePublisher{}
+	n := NewNotifier(pub, nil, nil, nil, nil)
+
+	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "c",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if len(pub.events) != 1 {
+		t.Errorf("toast published %d events with nil predicate, want 1 (fail open)", len(pub.events))
+	}
+}
+
+// TestNotify_NotifyEnabled_LookupFails_EmitsToast: a predicate that cannot
+// determine the answer (e.g. a transient DB error) must still favor
+// emitting the toast over silently hiding a real collision. Unlike an
+// earlier version of this test (which hard-coded `return true` and never
+// consulted the constructed error at all -- passing under the exact
+// fail-CLOSED defect it claimed to pin), notifyOn here actually branches on
+// lookupErr, so a predicate that got the fail-open direction backwards
+// makes this test fail.
+func TestNotify_NotifyEnabled_LookupFails_EmitsToast(t *testing.T) {
+	pub := &fakePublisher{}
+	lookupErr := errors.New("db down")
+	notifyOn := func(_ context.Context) bool {
+		if lookupErr != nil {
+			// Fail open: a lookup failure must never suppress the toast.
+			return true
+		}
+		return false
+	}
+	n := NewNotifier(pub, nil, nil, notifyOn, nil)
+
+	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "c",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if len(pub.events) != 1 {
+		t.Errorf("toast published %d events on lookup failure, want 1 (fail open)", len(pub.events))
+	}
+}
+
+// TestNotify_Suppressed_LogsAtInfoWithPublisher pins I4: a suppressed
+// toast (notifyOn returns false, and a real publisher exists so a toast
+// would otherwise have fired) must be visible at Info -- the default level
+// on a production install -- not buried at Debug where an operator would
+// never see the one forensic trace distinguishing "suppressed because
+// disabled" from "the notifier is broken".
+//
+// Mutation-proof: deleting the suppression log entirely, or leaving it at
+// Debug, makes this test fail.
+func TestNotify_Suppressed_LogsAtInfoWithPublisher(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	pub := &fakePublisher{}
+	notifyOn := func(_ context.Context) bool { return false }
+	n := NewNotifier(pub, nil, nil, notifyOn, logger)
+
+	n.Notify(context.Background(), "dest-1", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "colliding-1",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, "level=INFO") {
+		t.Errorf("suppression not logged at Info (an Info-level handler saw nothing): %s", logged)
+	}
+	if !strings.Contains(logged, "suppressed") {
+		t.Errorf("log line missing the suppression message: %s", logged)
+	}
+	if !strings.Contains(logged, "dest-1") || !strings.Contains(logged, "colliding-1") {
+		t.Errorf("log line missing artist identifiers, want both logged: %s", logged)
+	}
+}
+
+// TestNotify_Suppressed_NoPublisher_DoesNotLog pins the other half of I4:
+// when there is no publisher, no toast would ever have been emitted
+// regardless of notifyOn, so logging a "suppressed" line is misleading
+// noise about a notifier that was never going to fire in the first place
+// (the headless/test wiring shape). Verified via a positive control
+// (WithPublisher, above) so this cannot pass merely because the log call
+// was deleted entirely.
+func TestNotify_Suppressed_NoPublisher_DoesNotLog(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	notifyOn := func(_ context.Context) bool { return false }
+	n := NewNotifier(nil, nil, nil, notifyOn, logger) // nil publisher
+
+	n.Notify(context.Background(), "dest-1", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "colliding-1",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if logBuf.Len() != 0 {
+		t.Errorf("logged a suppression with no publisher (nothing would have been emitted anyway): %s", logBuf.String())
 	}
 }
 

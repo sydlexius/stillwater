@@ -25,6 +25,7 @@ var SSEForwardedTypes = []Type{
 	OperationProgress,
 	ConnectionPushFailed,
 	BackdropCollision,
+	MBIDRevalidationSummary,
 	ActivityRecent,
 	SettingsChanged,
 	DashboardActionResolved,
