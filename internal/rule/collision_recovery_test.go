@@ -532,6 +532,26 @@ func TestResolvedCollisionViolations_LexicalClusteringOnMalformedStamps(t *testi
 	if rowBV.ClusterSize != 1 {
 		t.Errorf("malformed-B ClusterSize = %d, want 1 (lexically distinct from malformed-A, must not cluster via a shared zero-time parse)", rowBV.ClusterSize)
 	}
+	// A malformed resolved_at must never surface as a fabricated year-0001
+	// ResolvedAt: it must be nil, exactly like a NULL resolved_at would be.
+	// dbutil.ParseTime returns the zero time (not an error) on a malformed
+	// string, so a naive "always dereference" implementation produces a
+	// non-nil pointer to 0001-01-01 here -- a different bug than "some other
+	// wrong value", so the failure messages below say so explicitly.
+	if rowAV.ResolvedAt != nil {
+		if rowAV.ResolvedAt.IsZero() {
+			t.Errorf("malformed-A ResolvedAt = non-nil pointer to year 0001 (%v), want nil", *rowAV.ResolvedAt)
+		} else {
+			t.Errorf("malformed-A ResolvedAt = %v, want nil", *rowAV.ResolvedAt)
+		}
+	}
+	if rowBV.ResolvedAt != nil {
+		if rowBV.ResolvedAt.IsZero() {
+			t.Errorf("malformed-B ResolvedAt = non-nil pointer to year 0001 (%v), want nil", *rowBV.ResolvedAt)
+		} else {
+			t.Errorf("malformed-B ResolvedAt = %v, want nil", *rowBV.ResolvedAt)
+		}
+	}
 
 	// Positive control: a well-formed clustered pair in the same result set
 	// still reports its correct cluster size alongside the malformed rows.

@@ -121,9 +121,17 @@ func (s *Service) ResolvedCollisionViolations(ctx context.Context) (*ResolvedCol
 			return nil, fmt.Errorf("scanning resolved collision violation: %w", err)
 		}
 		r.v.CreatedAt = dbutil.ParseTime(createdAtRaw)
+		// ResolvedAt is non-nil only when the stored value genuinely parsed,
+		// so a NULL row and an unparsable row are reported the same way and
+		// neither fabricates a year-0001 timestamp (dbutil.ParseTime returns
+		// the zero time, not an error, on a malformed string). ClusterSize
+		// below still keys on the raw string, so an unparsable row can still
+		// cluster correctly even though its ResolvedAt is nil here -- that
+		// asymmetry is deliberate; do not "fix" it into agreement.
 		if r.resolvedAtRaw.Valid {
-			resolvedAt := dbutil.ParseTime(r.resolvedAtRaw.String)
-			r.v.ResolvedAt = &resolvedAt
+			if resolvedAt, ok := dbutil.ParseTimeOK(r.resolvedAtRaw.String); ok {
+				r.v.ResolvedAt = &resolvedAt
+			}
 		}
 		r.v.UpdatedAt = dbutil.ParseTime(updatedAtRaw)
 		if r.resolvedAtRaw.Valid {
