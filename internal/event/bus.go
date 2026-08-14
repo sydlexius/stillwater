@@ -70,7 +70,13 @@ const (
 	// rule.Service.RaiseMBIDValidationFailure); this event is a pointer at
 	// that queue, not a substitute for it. Data carries the failure count for
 	// this pass and how many artists were checked, so the toast can read "N
-	// of M checked artists have MusicBrainz ids that no longer resolve".
+	// of M checked artists have MusicBrainz ids that failed re-validation".
+	//
+	// FAILED RE-VALIDATION, never "no longer resolves": the rule flags a
+	// stored id that resolved to somebody ELSE, and deliberately leaves "id
+	// resolves to nobody" alone (often merely stale, since MusicBrainz merges
+	// duplicate entries). Wording that claims the latter sends an operator
+	// hunting for the one case this rule does not raise.
 	MBIDRevalidationSummary Type = "mbid.revalidation.summary"
 
 	// --- M55 next-channel events (catalog defined by #1341) ---
