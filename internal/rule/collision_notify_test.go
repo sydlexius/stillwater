@@ -118,3 +118,31 @@ func TestRuleEnabledNotifyFunc_Branches(t *testing.T) {
 		}
 	})
 }
+
+// TestRuleEnabledNotifyFunc_NilLogger pins the nil-logger fallback. The
+// dereference it guards sits on the ERROR path inside the predicate, so a
+// nil logger only panics when the enabled lookup is ALREADY failing -- the
+// one moment the gate is being asked to fail open. A test that passed a nil
+// logger down the happy path would never reach the dereference and would
+// pass with the guard removed.
+func TestRuleEnabledNotifyFunc_NilLogger(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Precondition: this rule id must genuinely produce an error, or the
+	// error path is never taken and this test proves nothing.
+	if _, err := svc.IsRuleEnabled(ctx, "no_such_rule_id"); err == nil {
+		t.Fatalf("precondition failed: IsRuleEnabled(unknown id) returned no error")
+	}
+
+	predicate := RuleEnabledNotifyFunc(svc, "no_such_rule_id", nil)
+	got := predicate(ctx) // panics if the nil logger is dereferenced
+	if !got {
+		t.Errorf("predicate = false with a nil logger, want true (fail open)")
+	}
+}

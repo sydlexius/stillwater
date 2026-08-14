@@ -43,6 +43,14 @@ import (
 // (context.Canceled / DeadlineExceeded), which is not a fault worth logging
 // at Error (see isCanceled).
 func RuleEnabledNotifyFunc(svc *Service, ruleID string, logger *slog.Logger) func(context.Context) bool {
+	// A nil logger falls back rather than panicking, matching
+	// collision.NewNotifier and mbidcheck.NewSweep. The dereference below sits
+	// on the error path inside the gate predicate, so an unguarded nil would
+	// panic exactly when the lookup is already failing -- taking out the
+	// gating at the one moment it is being asked to fail open.
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return func(ctx context.Context) bool {
 		enabled, err := svc.IsRuleEnabled(ctx, ruleID)
 		if err != nil {
