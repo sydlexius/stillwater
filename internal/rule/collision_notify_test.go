@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// TestCollisionNotifyEnabledFunc_Branches is the #2970 wiring test C1's
-// hostile review demanded: it drives CollisionNotifyEnabledFunc (the
+// TestRuleEnabledNotifyFunc_Branches is the #2970 wiring test C1's
+// hostile review demanded: it drives RuleEnabledNotifyFunc (the
 // extracted production predicate cmd/stillwater/main.go now calls) against a
 // real *Service and a real database, covering the three branches the
 // predicate must never regress.
@@ -22,7 +22,7 @@ import (
 //   - the error branch "return true" -> "return false" (fail-CLOSED): killed
 //     by the unknown-rule subtest, which fails if the predicate reports
 //     false when IsRuleEnabled errors.
-func TestCollisionNotifyEnabledFunc_Branches(t *testing.T) {
+func TestRuleEnabledNotifyFunc_Branches(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -41,7 +41,7 @@ func TestCollisionNotifyEnabledFunc_Branches(t *testing.T) {
 			t.Fatalf("precondition failed: IsRuleEnabled(%s) = (%v, %v), want (true, nil)", RuleNFOExists, enabled, err)
 		}
 
-		predicate := CollisionNotifyEnabledFunc(svc, RuleNFOExists, logger)
+		predicate := RuleEnabledNotifyFunc(svc, RuleNFOExists, logger)
 		if got := predicate(ctx); !got {
 			t.Errorf("predicate = false for an enabled rule, want true")
 		}
@@ -61,7 +61,7 @@ func TestCollisionNotifyEnabledFunc_Branches(t *testing.T) {
 			t.Fatalf("precondition failed: IsRuleEnabled(%s) = (%v, %v), want (false, nil)", RuleCrossArtistBackdropCollision, enabled, err)
 		}
 
-		predicate := CollisionNotifyEnabledFunc(svc, RuleCrossArtistBackdropCollision, logger)
+		predicate := RuleEnabledNotifyFunc(svc, RuleCrossArtistBackdropCollision, logger)
 		if got := predicate(ctx); got {
 			t.Errorf("predicate = true for a disabled rule, want false -- the Enabled toggle must gate the toast")
 		}
@@ -81,7 +81,7 @@ func TestCollisionNotifyEnabledFunc_Branches(t *testing.T) {
 			t.Fatal("precondition failed: IsRuleEnabled(nonexistent) returned no error")
 		}
 
-		predicate := CollisionNotifyEnabledFunc(svc, "nonexistent_rule_id", logger)
+		predicate := RuleEnabledNotifyFunc(svc, "nonexistent_rule_id", logger)
 		if got := predicate(ctx); !got {
 			t.Errorf("predicate = false on a lookup error, want true (fail open) -- a transient failure must never silently hide a real collision")
 		}
@@ -107,7 +107,7 @@ func TestCollisionNotifyEnabledFunc_Branches(t *testing.T) {
 			t.Skip("driver did not surface an error for a pre-canceled context; nothing to assert")
 		}
 
-		predicate := CollisionNotifyEnabledFunc(svc, RuleNFOExists, logger)
+		predicate := RuleEnabledNotifyFunc(svc, RuleNFOExists, logger)
 		if got := predicate(cancelCtx); !got {
 			t.Errorf("predicate = false on our own cancellation, want true (fail open)")
 		}

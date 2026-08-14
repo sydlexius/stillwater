@@ -680,18 +680,19 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Rule, error) {
 // exists to prevent. A third option, excluding disabled event-driven
 // findings from compliance scoring, is deferred as out of scope.
 //
-// This is the category-level contract, and it is deliberately vacuous for a
-// member of eventDrivenRules that has no notification wired up yet:
-// cross_artist_backdrop_collision is the only rule where a caller actually
-// consults this to gate a notification (see
-// CollisionNotifyEnabledFunc/cmd/stillwater's wiring of it). mbid_resolves
-// is also event-driven (same recording-never-stops guarantee applies to it)
-// but RaiseMBIDValidationFailure publishes no notification at all today, so
-// there is nothing for this toggle to gate for that rule -- its Enabled
-// state is read here just as for any other rule, but no caller acts on the
-// answer. A future notification for mbid_resolves should consult this the
-// same way the collision path does; until then, disabling it changes
-// nothing observable.
+// This is the category-level contract, and it now holds for BOTH members of
+// eventDrivenRules. cross_artist_backdrop_collision gates its ephemeral SSE
+// toast on this (rule.RuleEnabledNotifyFunc, wired at
+// cmd/stillwater's collision.NewNotifier call). mbid_resolves gates its
+// ephemeral sweep-completion summary toast (event.MBIDRevalidationSummary)
+// on the SAME extracted predicate, wired at mbidcheck.Sweep.SetNotifier in
+// cmd/stillwater's startMBIDRevalidateSweep (#2970 second round) -- one
+// notification per SWEEP PASS with at least one failure, never one per
+// artist, because the sweep can fail thousands of artists in a single pass
+// (see internal/mbidcheck/sweep.go's notifySummary doc comment for why a
+// per-artist toast would recreate the burst the sweep's own cancellation
+// branches exist to prevent). Disabling mbid_resolves silences that summary
+// toast only; RaiseMBIDValidationFailure below remains unconditional.
 //
 // A fresh DB read per call is acceptable here: event-driven rules fire on
 // rare occurrences (a detected collision, a failed re-validation), not on
@@ -1362,6 +1363,12 @@ func (s *Service) RaiseBackdropCollision(ctx context.Context, destArtistID, dest
 // caller must not need to import this package's rule ids or decide its
 // severity. Keyed on (rule_id, artist_id) by UpsertViolation, so re-checking an
 // artist updates its single open entry rather than accumulating one per pass.
+//
+// UNCONDITIONAL, same as RaiseBackdropCollision, and for the same #2970
+// reason: this write never consults IsRuleEnabled. mbid_resolves is a member
+// of eventDrivenRules, and the sweep's separate, coalesced
+// event.MBIDRevalidationSummary notification (mbidcheck.Sweep.notifySummary)
+// is what the Enabled toggle gates -- see IsRuleEnabled's doc comment.
 //
 // Fixable is FALSE and hard-coded, not a parameter. There is no automated fix
 // for this rule and #2810's acceptance criteria forbid one -- "no identity is

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -1929,5 +1930,282 @@ func TestSelectSlice_LimitExactlyMatchesRemaining(t *testing.T) {
 	}
 	if !reflect.DeepEqual(slice, want) {
 		t.Fatalf("slice = %+v, want %+v", slice, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #2970: the sweep-summary notification
+// ---------------------------------------------------------------------------
+
+// fakeEventPublisher records every event.Event published to it.
+type fakeEventPublisher struct {
+	mu   sync.Mutex
+	pubs []event.Event
+}
+
+func (p *fakeEventPublisher) Publish(e event.Event) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pubs = append(p.pubs, e)
+}
+
+func (p *fakeEventPublisher) events() []event.Event {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]event.Event, len(p.pubs))
+	copy(out, p.pubs)
+	return out
+}
+
+func (p *fakeEventPublisher) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.pubs)
+}
+
+// failingSweepFixture builds a sweep whose pass fails EVERY one of n
+// artists' re-validation (a MusicBrainz response naming a different
+// catalogue than what is on disk), each a distinct artist id so a single
+// pass produces n independent Failed verdicts rather than one artist
+// checked n times. Used by the burst-property tests below, where the
+// production shape under test is a sweep processing many artists in one
+// pass (internal/mbidcheck/sweep.go's package header: "roughly two
+// MusicBrainz requests, ... hours of wall-clock work" against a whole
+// library).
+func failingSweepFixture(t *testing.T, n int) (*Sweep, *fakeLedger) {
+	t.Helper()
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("Something Else")}
+	albums := found("One", "Two", "Three", "Four")
+
+	rows := make([]artist.MBIDPath, 0, n)
+	byID := make(map[string]*artist.Artist, n)
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("artist-%03d", i)
+		rows = append(rows, artist.MBIDPath{ArtistID: id, MBID: "m", Path: "/library/" + id})
+		byID[id] = sweepArtist(id, "/library/"+id)
+	}
+
+	led := newFakeLedger()
+	pop := &fakePopulation{rows: rows}
+	arts := &fakeArtists{byID: byID}
+	sw := newTestSweep(t, pop, arts, led, newTestResolver(mb, albums), Config{MaxPerPass: n + 1})
+	return sw, led
+}
+
+// TestNotifySummary_DisabledSuppressesToastButKeepsDurableWrites is the
+// #2970 data-loss guard for the notification half of this feature: a
+// disabled rule must silence ONLY the ephemeral summary, never the durable
+// ledger or the per-artist Action Queue entries the Flagger already wired.
+// Asserts BOTH halves in one test, deliberately -- a suppression-only
+// assertion would also pass an implementation that stopped recording while
+// disabled, which is the exact permanent-data-loss shape #2970's category
+// contract exists to prevent.
+func TestNotifySummary_DisabledSuppressesToastButKeepsDurableWrites(t *testing.T) {
+	t.Parallel()
+
+	const n = 3
+	sw, led := failingSweepFixture(t, n)
+	flag := &fakeFlagger{}
+	sw.SetFlagger(flag)
+	pub := &fakeEventPublisher{}
+	sw.SetNotifier(pub, func(context.Context) bool { return false })
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// PRECONDITION: the fixture really produced n failed verdicts. Without
+	// this, a fixture that stopped failing artists would make "0 toasts"
+	// look correct for the wrong reason.
+	if c.Failed != n {
+		t.Fatalf("precondition: Failed = %d, want %d", c.Failed, n)
+	}
+
+	// Half 1: the ephemeral notification is suppressed.
+	if got := pub.count(); got != 0 {
+		t.Errorf("published %d events while disabled, want 0", got)
+	}
+
+	// Half 2: the durable writes are UNAFFECTED by the same toggle.
+	if got := flag.count(); got != n {
+		t.Errorf("raised %d operator-review entries while disabled, want %d (durable writes must never be gated by the notify toggle)", got, n)
+	}
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("artist-%03d", i)
+		row, ok := led.get(id)
+		if !ok {
+			t.Errorf("ledger missing a row for %s while notification was disabled", id)
+			continue
+		}
+		if row.Outcome != artist.MBIDOutcomeFailed {
+			t.Errorf("ledger row for %s outcome = %q, want %q", id, row.Outcome, artist.MBIDOutcomeFailed)
+		}
+	}
+}
+
+// TestNotifySummary_EnabledEmitsOneToast is the positive control for the
+// gate above: without it, an implementation that suppresses the toast
+// UNCONDITIONALLY (regardless of notifyOn's answer) would also pass the
+// disabled test.
+func TestNotifySummary_EnabledEmitsOneToast(t *testing.T) {
+	t.Parallel()
+
+	const n = 3
+	sw, _ := failingSweepFixture(t, n)
+	pub := &fakeEventPublisher{}
+	calls := 0
+	sw.SetNotifier(pub, func(context.Context) bool { calls++; return true })
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if c.Failed != n {
+		t.Fatalf("precondition: Failed = %d, want %d", c.Failed, n)
+	}
+
+	if calls == 0 {
+		t.Fatal("precondition: notifyOn was never consulted -- the publisher path was not reached")
+	}
+
+	evs := pub.events()
+	if len(evs) != 1 {
+		t.Fatalf("published %d events, want exactly 1", len(evs))
+	}
+	if evs[0].Type != event.MBIDRevalidationSummary {
+		t.Errorf("event type = %q, want %q", evs[0].Type, event.MBIDRevalidationSummary)
+	}
+	if got, _ := evs[0].Data["failed"].(int); got != n {
+		t.Errorf("event Data[failed] = %v, want %d", evs[0].Data["failed"], n)
+	}
+	if got, _ := evs[0].Data["message"].(string); got == "" {
+		t.Error("event Data[message] is empty, want an operator-readable sentence")
+	}
+}
+
+// TestNotifySummary_FailOpenOnLookupError asserts a notifyOn that cannot
+// determine the answer still emits, the same fail-open contract
+// rule.RuleEnabledNotifyFunc documents for its own lookup-error branch. A
+// transient failure to check the toggle must never silently hide a real
+// batch of findings.
+func TestNotifySummary_FailOpenOnLookupError(t *testing.T) {
+	t.Parallel()
+
+	const n = 2
+	sw, _ := failingSweepFixture(t, n)
+	pub := &fakeEventPublisher{}
+	sw.SetNotifier(pub, func(context.Context) bool {
+		// A real caller's predicate (rule.RuleEnabledNotifyFunc) already
+		// resolves a lookup error to `true` internally; this fake models
+		// that resolved fail-open answer directly, since notifyOn's
+		// contract is "the answer", not "an error union".
+		return true
+	})
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if c.Failed != n {
+		t.Fatalf("precondition: Failed = %d, want %d", c.Failed, n)
+	}
+
+	if got := pub.count(); got != 1 {
+		t.Errorf("published %d events on a fail-open lookup, want 1 (a lookup failure must never hide a real batch of findings)", got)
+	}
+}
+
+// TestNotifySummary_NilPredicateFailsOpen covers SetNotifier's documented nil
+// behavior directly: a nil notifyOn always emits, matching
+// rule.RuleEnabledNotifyFunc's own nil-caller convention.
+func TestNotifySummary_NilPredicateFailsOpen(t *testing.T) {
+	t.Parallel()
+
+	sw, _ := failingSweepFixture(t, 1)
+	pub := &fakeEventPublisher{}
+	sw.SetNotifier(pub, nil)
+
+	if _, err := sw.Run(t.Context()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := pub.count(); got != 1 {
+		t.Errorf("published %d events with a nil predicate, want 1", got)
+	}
+}
+
+// TestNotifySummary_CleanPassEmitsNothing asserts a pass with zero failures
+// never reaches the publisher at all, so a healthy library produces no
+// notification noise.
+func TestNotifySummary_CleanPassEmitsNothing(t *testing.T) {
+	t.Parallel()
+
+	const id = "artist-1"
+	mb := &fakeMB{meta: &provider.ArtistMetadata{Name: "Example Band"}, groups: rgs("One", "Two")}
+	sw := newTestSweep(t, &fakePopulation{rows: []artist.MBIDPath{{ArtistID: id, MBID: "m"}}},
+		&fakeArtists{byID: map[string]*artist.Artist{id: sweepArtist(id, "/library/Example")}},
+		newFakeLedger(), newTestResolver(mb, found("One", "Two")), Config{MaxPerPass: 10})
+	pub := &fakeEventPublisher{}
+	sw.SetNotifier(pub, func(context.Context) bool { return true })
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// PRECONDITION: this really is a clean pass.
+	if c.Failed != 0 {
+		t.Fatalf("precondition: Failed = %d, want 0", c.Failed)
+	}
+
+	if got := pub.count(); got != 0 {
+		t.Errorf("published %d events on a clean pass, want 0", got)
+	}
+}
+
+// TestNotifySummary_NoPublisherIsANoOp asserts a sweep with no notifier
+// wired (SetNotifier never called, the production default until
+// startMBIDRevalidateSweep wires it) does not panic and does not touch
+// notifyOn.
+func TestNotifySummary_NoPublisherIsANoOp(t *testing.T) {
+	t.Parallel()
+
+	sw, _ := failingSweepFixture(t, 1)
+	// No SetNotifier call: pub and notifyOn are both nil.
+	if _, err := sw.Run(t.Context()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+// TestNotifySummary_BurstProperty is THE test pinning the design decision:
+// a sweep that fails MANY artists in one pass produces exactly ONE
+// notification, not one per artist. This is the property #2970's second
+// round exists to guarantee -- see notifySummary's doc comment for why a
+// per-artist toast would recreate the sweep's own burst problem one layer
+// up. n is chosen well above 1 (50) so a mutation back to per-artist
+// emission is unmistakable in the assertion, not a coincidental match.
+func TestNotifySummary_BurstProperty(t *testing.T) {
+	t.Parallel()
+
+	const n = 50
+	sw, _ := failingSweepFixture(t, n)
+	pub := &fakeEventPublisher{}
+	sw.SetNotifier(pub, func(context.Context) bool { return true })
+
+	c, err := sw.Run(t.Context())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// PRECONDITION: the fixture really produced n independent failures in
+	// ONE pass, not n passes over one artist.
+	if c.Failed != n {
+		t.Fatalf("precondition: Failed = %d, want %d", c.Failed, n)
+	}
+
+	evs := pub.events()
+	if len(evs) != 1 {
+		t.Fatalf("published %d events for a pass that failed %d artists, want exactly 1 -- "+
+			"a per-artist notification would flood an operator's browser on a real library", len(evs), n)
+	}
+	if got, _ := evs[0].Data["failed"].(int); got != n {
+		t.Errorf("the one event's failed count = %v, want %d", evs[0].Data["failed"], n)
 	}
 }

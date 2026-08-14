@@ -346,6 +346,15 @@ func buildBackdropCollisionMsg(data map[string]any) string {
 	return strVal(data, "message")
 }
 
+// buildMBIDRevalidationSummaryMsg returns the server-composed sweep-summary
+// sentence. The publisher (internal/mbidcheck, via its injected
+// mbidcheck.NotifyFunc) builds the full sentence -- naming the failure and
+// checked counts for the pass -- and places it on Data["message"], so the hub
+// just surfaces it verbatim (mirrors buildBackdropCollisionMsg).
+func buildMBIDRevalidationSummaryMsg(data map[string]any) string {
+	return strVal(data, "message")
+}
+
 // buildActivityRecentMsg surfaces the human-readable text of a recent-activity
 // item for the next dashboard's live rail. The rail consumes the structured
 // Data directly; this message is the plain-toast fallback.
@@ -384,6 +393,10 @@ var sseEventMappings = []sseEventMapping{
 	// similarity %, distinct-artist count, and a pre-composed message; the client
 	// renders a warning toast linking the colliding artist. See internal/collision.
 	{event.BackdropCollision, "Possible cross-artist backdrop", buildBackdropCollisionMsg},
+	// MBIDRevalidationSummary Data carries the pass's failed/checked counts
+	// and a pre-composed message; the client renders a warning toast pointing
+	// at the Action Queue. See internal/mbidcheck.
+	{event.MBIDRevalidationSummary, "MusicBrainz IDs need review", buildMBIDRevalidationSummaryMsg},
 	// M55 next-channel events: low-volume cross-tab / dashboard signals whose
 	// consumers read the structured Data, so the Title is a plain-toast fallback.
 	{event.ActivityRecent, "Recent activity", buildActivityRecentMsg},

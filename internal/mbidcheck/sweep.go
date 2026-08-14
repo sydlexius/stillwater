@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 )
 
 // The rate-limited background sweep that drives the resolver (#2810).
@@ -95,6 +96,26 @@ type Flagger interface {
 	RaiseMBIDValidationFailure(ctx context.Context, artistID, artistName, message string) error
 }
 
+// EventPublisher is the subset of *event.Bus the sweep needs to emit its
+// summary notification. *event.Bus satisfies it; tests pass a fake that
+// records published events. Mirrors internal/collision.EventPublisher.
+type EventPublisher interface {
+	Publish(event.Event)
+}
+
+// NotifyEnabledFunc reports whether the sweep-summary notification should
+// currently be emitted. The wiring supplies a closure over
+// rule.Service.IsRuleEnabled (rule.RuleEnabledNotifyFunc) so this package
+// does not import internal/rule. See event.MBIDRevalidationSummary's doc
+// comment for what this does and does not gate: the durable
+// rule_violations rows this pass raises via Flagger are written regardless
+// of this predicate's answer.
+//
+// FAIL-OPEN: when this func is nil, or when it cannot determine the answer,
+// the notification is emitted. A transient lookup failure must never
+// silently hide a real batch of findings.
+type NotifyEnabledFunc func(ctx context.Context) bool
+
 // Default sweep pacing. All three are overridable through Config.
 const (
 	// DefaultInterval is how often a pass runs. Daily: a stored id changes
@@ -171,6 +192,13 @@ type Sweep struct {
 	// smoke test over a healthy library would never surface it.
 	flaggerMu sync.RWMutex
 	flagger   Flagger
+
+	// notifierMu guards pub and notifyOn, the other two fields wired late for
+	// the same reason flagger is (see SetNotifier): the rule service and event
+	// bus are both built after the artist service in main.go's ordering.
+	notifierMu sync.RWMutex
+	pub        EventPublisher
+	notifyOn   NotifyEnabledFunc
 
 	// cursor is the artist id the NEXT pass starts after.
 	//
@@ -254,6 +282,40 @@ func (s *Sweep) currentFlagger() Flagger {
 	s.flaggerMu.RLock()
 	defer s.flaggerMu.RUnlock()
 	return s.flagger
+}
+
+// SetNotifier attaches the surfaces that emit the sweep's ONE-per-pass
+// summary notification (event.MBIDRevalidationSummary; #2970) when a pass
+// finds at least one failed verdict. Optional; without it the sweep still
+// writes the ledger and (via Flagger) the durable per-artist Action Queue
+// entries, which is the complete record regardless of whether anything
+// ephemeral was ever wired.
+//
+// notifyOn may be nil: a nil predicate always emits (fail open), matching
+// rule.RuleEnabledNotifyFunc's own documented behavior for a nil caller.
+//
+// Same late-wiring shape as SetFlagger, for the same reason (the rule
+// service and event bus are both built after the artist service), and the
+// same nil-interface-box guard on pub: a `var bus *event.Bus` that was never
+// built passes a non-nil EventPublisher wrapping a nil pointer.
+func (s *Sweep) SetNotifier(pub EventPublisher, notifyOn NotifyEnabledFunc) {
+	if pub == nil {
+		return
+	}
+	if v := reflect.ValueOf(pub); v.Kind() == reflect.Pointer && v.IsNil() {
+		return
+	}
+	s.notifierMu.Lock()
+	defer s.notifierMu.Unlock()
+	s.pub = pub
+	s.notifyOn = notifyOn
+}
+
+// currentNotifier reads pub and notifyOn under their guard.
+func (s *Sweep) currentNotifier() (EventPublisher, NotifyEnabledFunc) {
+	s.notifierMu.RLock()
+	defer s.notifierMu.RUnlock()
+	return s.pub, s.notifyOn
 }
 
 // Counters is one pass's tally, returned by Run and logged as its summary.
@@ -531,6 +593,7 @@ func (s *Sweep) Run(ctx context.Context) (Counters, error) {
 	}
 
 	s.logSummary(c, len(population), len(slice), exhausted, time.Since(started))
+	s.notifySummary(ctx, c)
 	if canceled {
 		return c, ctx.Err()
 	}
@@ -778,4 +841,69 @@ func (s *Sweep) logSummary(c Counters, populationSize, sliceSize int, exhausted 
 		attrs = append(attrs, slog.Int(name, c.CatalogueBuckets[i]))
 	}
 	s.logger.Info("mbid re-validation pass complete", attrs...)
+}
+
+// notifySummary emits AT MOST ONE event.MBIDRevalidationSummary for the pass
+// that just finished (#2970). It is called once per Run, after the ledger and
+// every per-artist Action Queue entry are already durably written, and does
+// nothing when c.Failed is zero -- a clean pass has nothing an operator needs
+// to act on.
+//
+// ONE per pass, deliberately, never one per failed artist: c.Failed can be in
+// the hundreds on a library whose MusicBrainz ids have drifted, and
+// checkOne/flag already run once per artist in that loop. Hanging a toast off
+// that same per-artist call would flood an operator's browser with one
+// warning per failure -- the exact shape the package header's "WHERE THE
+// COUNTERS COME IN" section and configuredSeverity's doc comment (in
+// internal/rule) both call out as the burst this feature's cancellation and
+// logging already go out of their way to avoid. Coalescing to the pass
+// boundary is the only shape that scales to any library size: a sweep that
+// fails 5,000 artists in one pass still produces exactly one notification,
+// naming the count, rather than 5,000 individual toasts.
+//
+// Gated on the SAME rule.RuleEnabledNotifyFunc predicate the collision toast
+// uses (see event.MBIDRevalidationSummary's doc comment): disabling
+// mbid_resolves silences this notification only. The durable writes this
+// pass already made (the ledger row and, via Flagger, the per-artist
+// rule_violations row) are entirely unaffected -- notifySummary runs after
+// both and never influences whether they happened.
+func (s *Sweep) notifySummary(ctx context.Context, c Counters) {
+	if c.Failed == 0 {
+		return
+	}
+	pub, notifyOn := s.currentNotifier()
+	if pub == nil {
+		return
+	}
+
+	emit := true
+	if notifyOn != nil {
+		emit = notifyOn(ctx)
+	}
+	if !emit {
+		// Info, not Debug: the same "forensic trace of an intentional
+		// suppression" reasoning collision.Notifier.Notify documents -- this
+		// fires once per pass with findings, not once per artist, so it does
+		// not risk becoming log noise.
+		s.logger.Info("mbid re-validation summary notification suppressed (rule disabled)",
+			slog.Int("failed", c.Failed),
+			slog.Int("checked", c.Checked))
+		return
+	}
+
+	var msg string
+	if c.Failed == 1 {
+		msg = "1 artist has a MusicBrainz ID that no longer resolves. Review it on the Action Queue."
+	} else {
+		msg = fmt.Sprintf("%d artists have MusicBrainz IDs that no longer resolve. Review them on the Action Queue.", c.Failed)
+	}
+
+	pub.Publish(event.Event{
+		Type: event.MBIDRevalidationSummary,
+		Data: map[string]any{
+			"failed":  c.Failed,
+			"checked": c.Checked,
+			"message": msg,
+		},
+	})
 }
