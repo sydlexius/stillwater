@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build stage
-FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
+FROM golang:1.26.6-alpine@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
 
 RUN apk add --no-cache curl libstdc++ libgcc
 
@@ -95,6 +95,9 @@ EXPOSE ${SW_TLS_PORT}/udp
 # SW_HEALTH_URL when SW_TLS_CERT_FILE is set so the probe targets HTTPS on
 # the right port. --no-check-certificate is intentional: a localhost
 # healthcheck against a self-signed cert is acceptable.
+# Shell form is required here for the ${VAR:-default} interpolation; JSON
+# notation cannot expand these at container runtime.
+# hadolint ignore=DL3025
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -q -O /dev/null --no-check-certificate "${SW_HEALTH_URL:-http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health}" || exit 1
 
