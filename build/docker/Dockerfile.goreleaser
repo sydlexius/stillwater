@@ -7,7 +7,10 @@
 #     platform buildx context); Dockerfile uses `--from=builder /bin/stillwater`.
 # Any other runtime change (base image digest, apk packages, users, ports,
 # healthcheck, volumes, entrypoint) MUST be mirrored in the runtime stage of
-# Dockerfile.
+# Dockerfile. Any NEW `COPY` of a repo file added here also requires adding
+# that file to `extra_files:` in .goreleaser.yml, or the goreleaser release
+# build breaks (the buildx context for this Dockerfile is assembled only from
+# staged platform binaries plus extra_files).
 # --- END SYNC ---
 
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
@@ -26,7 +29,8 @@ WORKDIR /app
 
 # dockers_v2 runs a single buildx that fans out across platforms and stages
 # each platform's binary under $TARGETPLATFORM/ in the build context.
-# extra_files (entrypoint.sh) keep their original relative path.
+# extra_files (entrypoint.sh, healthcheck.sh) keep their original relative
+# path.
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/stillwater /usr/local/bin/stillwater
 COPY build/docker/entrypoint.sh /entrypoint.sh

@@ -52,6 +52,10 @@ RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minif
 #     (goreleaser's multi-platform buildx context, no builder stage).
 # Any other runtime change (base image digest, apk packages, users, ports,
 # healthcheck, volumes, entrypoint) MUST be mirrored in Dockerfile.goreleaser.
+# Any NEW `COPY` of a repo file added to Dockerfile.goreleaser also requires
+# adding that file to `extra_files:` in .goreleaser.yml, or the goreleaser
+# release build breaks (its buildx context is assembled only from staged
+# platform binaries plus extra_files).
 # --- END SYNC ---
 
 # Runtime stage
