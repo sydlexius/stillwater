@@ -348,7 +348,7 @@ func (s *Service) ReopenCollisionViolations(ctx context.Context, ids []string) (
 
 	if len(eligible) > 0 {
 		updatePlaceholders := make([]string, len(eligible))
-		updateArgs := make([]any, 0, len(eligible)+3)
+		updateArgs := make([]any, 0, len(eligible)+4)
 		now := s.clock.Now().UTC().Format(time.RFC3339)
 		updateArgs = append(updateArgs, ViolationStatusOpen, now)
 		for i, id := range eligible {
