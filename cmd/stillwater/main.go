@@ -28,6 +28,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/dupimages"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -1443,6 +1444,23 @@ func (a *Application) startListeners() error {
 	defer outboundDrainCancel()
 	if err := a.webhookDispatcher.Drain(outboundDrainCtx); err != nil {
 		logger.Warn("webhook drain timed out", slog.String("error", err.Error()))
+	}
+
+	// Drain the background duplicate-image refresh (#2977). It is started
+	// fire-and-forget from the sidebar/report request paths, so nothing else in
+	// this sequence accounts for it, and it reads the library from disk and the
+	// database. Without this it can still be running -- and still querying --
+	// after the database is closed. Done here, after the listeners have drained
+	// (so no new request can start one) and before the scanner shuts down,
+	// which is the same slot the webhook drains occupy. The 30s bound is
+	// deliberately short: stop() has already canceled the shared context and
+	// Drain cancels the cache's own, so a well-behaved scan aborts almost
+	// immediately; the deadline only stops a scan wedged in non-context-aware
+	// I/O from holding up shutdown indefinitely.
+	dupDrainCtx, dupDrainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer dupDrainCancel()
+	if err := dupimages.Shared().Drain(dupDrainCtx); err != nil {
+		logger.Warn("duplicate-image refresh drain did not complete cleanly", slog.String("error", err.Error()))
 	}
 
 	// Stop the scanner -- the listener layer has drained, so no new scan

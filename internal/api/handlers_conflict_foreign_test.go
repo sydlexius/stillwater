@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/conflict"
+	"github.com/sydlexius/stillwater/internal/dupimages"
 	"github.com/sydlexius/stillwater/internal/foreign"
 )
 
@@ -19,8 +20,22 @@ import (
 // back to its clean (all-clear) state and the former slate/blue state E never
 // appears. The companion assertion confirms the same seeded count still drives
 // the sidebar pill, so removing the banner state did not also kill the pill.
+//
+// NOT t.Parallel() (#2977). Its companion assertion below drives
+// handleDuplicateImagesNav against a COLD cache, which fires
+// dupimages.Cache.TriggerRefresh -- a background scan on the process-wide
+// singleton, running whatever scan sources the most recently constructed
+// Router installed. Left parallel and undrained, that goroutine outlived this
+// test and read another test's Router fields while that test wrote them, which
+// is the data race reported in #2977. Two things contain it now: dropping
+// t.Parallel() puts this test in the same serial group as every other
+// dupimages.Shared()-touching test (see handlers_duplicate_images_nav_test.go),
+// and the Reset in the cleanup below DRAINS the in-flight refresh before the
+// test is allowed to return.
 func TestHandleGetConflictBanner_NoForeignFilesStateWhenFilesPresent(t *testing.T) {
-	t.Parallel()
+	dupimages.Shared().Reset()
+	t.Cleanup(func() { dupimages.Shared().Reset() })
+
 	r, db := newTestRouterWithForeign(t)
 	// A detector with no connections yields a clean (no-conflict) ledger, so
 	// the only thing that could promote the banner is the (now removed)

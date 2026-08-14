@@ -964,3 +964,114 @@ func TestBucketByPlatformType_UnknownTypeSurvivesWithTitleCasedLabel(t *testing.
 		t.Errorf("row = %+v, want type=plex label=Plex count=4", got[0])
 	}
 }
+
+// TestDupImagesNav_ColdCacheRefreshIsJoinedBeforeTheTestReturns is the guard
+// for #2977, and it is written to WIRE THE MISBEHAVIOR rather than merely
+// assert a happy path.
+//
+// The misbehavior: the nav handler's cold-cache TriggerRefresh spawned a
+// goroutine that read Router fields (r.libraryDupCount closes over the whole
+// Router) on a context.Background() that nothing could cancel or await. It
+// therefore ran on past the end of the test that started it, into the next
+// test that was writing those same fields -- the data race in the issue.
+//
+// The wiring here reproduces exactly that shape: the scan source READS a
+// Router field and PARKS, still parked at the moment the test performs the
+// cleanup a test's return would perform (the dupimages.Shared().Reset() every
+// such test registers), and only then finishes and WRITES a flag the test
+// checks.
+//
+// WHAT UNPARKS THE SCAN, AND WHY IT MATTERS. The source waits on ITS OWN
+// CONTEXT, which on correct code is canceled by exactly one thing: the drain
+// inside Reset. So the only way this test can reach its assertion is if Reset
+// both CANCELS the refresh and then BLOCKS until it has returned -- which is
+// the entire property being guarded. An earlier revision of this test released
+// the scan just BEFORE calling Reset, which let the goroutine finish on its own
+// and meant the test never required Reset to block at all; it passed against a
+// cache with no drain in it.
+//
+// There is deliberately NO sleep-then-release goroutine here. A timed release
+// makes the test's meaning depend on whether Reset got scheduled within N
+// milliseconds, which on a loaded CI runner is a coin flip between "guards the
+// property" and "passes vacuously". Waiting on the cancellation removes the
+// timing question entirely. The 5s cap below is only a safety net so a
+// REGRESSION surfaces as this test's named failure rather than as the package
+// timeout.
+//
+// THE -race CAVEAT. An earlier version of this comment claimed -race reports
+// the read/write pair on r.pipeline. Measured against a cache mutated back to
+// the #2977 defect, it does not: 50 runs under -race produced failures of the
+// scanFinished assertion and ZERO "WARNING: DATA RACE" lines, because the
+// escaped goroutine usually still wins the race to finish. The deterministic
+// guard is the scanFinished assertion; the r.pipeline access pair is retained
+// because it documents the shape of the real defect and can only help.
+func TestDupImagesNav_ColdCacheRefreshIsJoinedBeforeTheTestReturns(t *testing.T) {
+	r := dupNavRouter(t)
+
+	entered := make(chan struct{})
+	var scanFinished atomic.Bool
+
+	dupNavStubSources(t, r,
+		func(ctx context.Context) (int, error) {
+			close(entered)
+			// Read a Router field, exactly as the real r.libraryDupCount does
+			// (it type-asserts r.pipeline on its first line).
+			_ = r.pipeline
+			select {
+			case <-ctx.Done():
+				// Reset's drain canceled us. This is the expected path.
+			case <-time.After(5 * time.Second):
+				// Safety net: nothing canceled us, so Reset did not drain.
+				// Returning lets the scanFinished assertion below report that
+				// as a named failure instead of wedging the package.
+			}
+			// A second read AFTER the park, so the racing window spans the
+			// whole time the test believes it is finished.
+			_ = r.pipeline
+			scanFinished.Store(true)
+			return 1, nil
+		},
+		nil,
+	)
+
+	// Precondition: the cache really is cold, so the handler will take the
+	// TriggerRefresh branch. Without this the test could pass vacuously
+	// against a warm cache that never spawns anything.
+	if dupimages.Shared().Get().Computed {
+		t.Fatal("precondition: the cache is already warm, so the cold-cache trigger path is not exercised")
+	}
+
+	w := httptest.NewRecorder()
+	r.handleDuplicateImagesNav(w, dupNavReq(t, "administrator"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	// Precondition: the background scan really did start. If TriggerRefresh
+	// stopped spawning anything, everything below would pass for the wrong
+	// reason.
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("precondition: the cold-cache request never started a background refresh")
+	}
+
+	// Precondition: the scan is STILL PARKED as we enter Reset. If it had
+	// already finished, Reset would have nothing to wait for and everything
+	// below would pass without exercising the drain at all.
+	if scanFinished.Load() {
+		t.Fatal("precondition: the background scan finished before Reset was called, so the drain is not exercised")
+	}
+
+	// Stand in for "the test returned": run the same Reset the cleanup runs.
+	// It must both cancel the parked scan and not come back until it is done.
+	dupimages.Shared().Reset()
+
+	if !scanFinished.Load() {
+		t.Fatal("the background refresh goroutine was still running after Reset returned; it can now race the next test's Router state (#2977)")
+	}
+
+	// The write half of the race pair. Ordered after the goroutine's reads
+	// only because Reset joined it.
+	r.pipeline = nil
+}
