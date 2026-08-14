@@ -78,6 +78,7 @@ dockers_v2:
       - linux/arm64
     extra_files:
       - build/docker/entrypoint.sh
+      - build/docker/healthcheck.sh
 
 signs:
   - cmd: cosign

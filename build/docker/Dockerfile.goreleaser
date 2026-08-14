@@ -7,7 +7,10 @@
 #     platform buildx context); Dockerfile uses `--from=builder /bin/stillwater`.
 # Any other runtime change (base image digest, apk packages, users, ports,
 # healthcheck, volumes, entrypoint) MUST be mirrored in the runtime stage of
-# Dockerfile.
+# Dockerfile. Any NEW `COPY` of a repo file added here also requires adding
+# that file to `extra_files:` in .goreleaser.yml, or the goreleaser release
+# build breaks (the buildx context for this Dockerfile is assembled only from
+# staged platform binaries plus extra_files).
 # --- END SYNC ---
 
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
@@ -26,11 +29,13 @@ WORKDIR /app
 
 # dockers_v2 runs a single buildx that fans out across platforms and stages
 # each platform's binary under $TARGETPLATFORM/ in the build context.
-# extra_files (entrypoint.sh) keep their original relative path.
+# extra_files (entrypoint.sh, healthcheck.sh) keep their original relative
+# path.
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/stillwater /usr/local/bin/stillwater
 COPY build/docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY build/docker/healthcheck.sh /healthcheck.sh
+RUN chmod +x /entrypoint.sh /healthcheck.sh
 
 # Advertise both the plain HTTP port and the optional TLS port. EXPOSE is
 # metadata only -- the actual binds come from SW_PORT / SW_TLS_PORT at run
@@ -46,7 +51,7 @@ EXPOSE 1973/udp
 EXPOSE ${SW_TLS_PORT}/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -q -O /dev/null --no-check-certificate "${SW_HEALTH_URL:-http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health}" || exit 1
+  CMD ["/healthcheck.sh"]
 
 VOLUME ["/config", "/music"]
 

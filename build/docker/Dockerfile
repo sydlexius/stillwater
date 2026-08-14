@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build stage
-FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
+FROM golang:1.26.6-alpine@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
 
 RUN apk add --no-cache curl libstdc++ libgcc
 
@@ -52,6 +52,10 @@ RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minif
 #     (goreleaser's multi-platform buildx context, no builder stage).
 # Any other runtime change (base image digest, apk packages, users, ports,
 # healthcheck, volumes, entrypoint) MUST be mirrored in Dockerfile.goreleaser.
+# Any NEW `COPY` of a repo file added to Dockerfile.goreleaser also requires
+# adding that file to `extra_files:` in .goreleaser.yml, or the goreleaser
+# release build breaks (its buildx context is assembled only from staged
+# platform binaries plus extra_files).
 # --- END SYNC ---
 
 # Runtime stage
@@ -74,7 +78,8 @@ RUN mkdir -p /config /music && chown stillwater:stillwater /config /music
 
 COPY --from=builder /bin/stillwater /usr/local/bin/stillwater
 COPY build/docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY build/docker/healthcheck.sh /healthcheck.sh
+RUN chmod +x /entrypoint.sh /healthcheck.sh
 
 WORKDIR /app
 
@@ -91,12 +96,11 @@ EXPOSE ${SW_TLS_PORT}
 EXPOSE 1973/udp
 EXPOSE ${SW_TLS_PORT}/udp
 
-# Healthcheck. The shell-expanded URL lets the entrypoint override
-# SW_HEALTH_URL when SW_TLS_CERT_FILE is set so the probe targets HTTPS on
-# the right port. --no-check-certificate is intentional: a localhost
-# healthcheck against a self-signed cert is acceptable.
+# Healthcheck. Docker runs HEALTHCHECK as a fresh process sourced from the
+# image's Env config, not as a child of PID 1, so it does not see a runtime
+# `export` from PID 1 -- the probe derives its own URL in healthcheck.sh.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -q -O /dev/null --no-check-certificate "${SW_HEALTH_URL:-http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health}" || exit 1
+  CMD ["/healthcheck.sh"]
 
 VOLUME ["/config", "/music"]
 

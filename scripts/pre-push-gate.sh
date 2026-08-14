@@ -586,6 +586,21 @@ echo "=== CSS comments ==="
 bash "$SCRIPT_DIR/check-css-comments.sh"
 
 echo ""
+echo "=== goreleaser extra_files mirror (#3034) ==="
+# Assert every repo-file COPY source in build/docker/Dockerfile.goreleaser is
+# also listed in .goreleaser.yml's extra_files:. goreleaser's dockers_v2
+# buildx context is assembled ONLY from staged platform binaries plus
+# extra_files -- NOT the repo checkout -- so a COPY added to
+# Dockerfile.goreleaser without a matching extra_files: entry builds fine
+# with `docker build` against the OTHER Dockerfile but fails Docker image
+# assembly for every platform on the next real `goreleaser release`. Nothing
+# else in this gate exercises goreleaser's context assembly. Its own
+# hermetic tests run first, proving the check both fires on the missing-entry
+# shape and stays quiet on the clean one.
+bash "$SCRIPT_DIR/test-check-goreleaser-extra-files.sh"
+bash "$SCRIPT_DIR/check-goreleaser-extra-files.sh"
+
+echo ""
 echo "=== Worktree settings link (#2879) ==="
 # Hermetic, no network, sub-second: runs unconditionally rather than diff-scoped.
 # What it guards is invisible at runtime -- a worktree whose Claude Code grants
