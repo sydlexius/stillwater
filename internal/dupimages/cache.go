@@ -221,12 +221,13 @@ type Cache struct {
 	// lifeMu guards the two shutdown fields below and NOTHING else.
 	//
 	// LOCK ORDER: c.inFlight may be held while taking lifeMu -- that is how
-	// beginBackgroundRefresh and Drain make "latch state" and "shutdown
-	// context" agree with each other, and those two are the ONLY places the
-	// locks nest. (Reset takes lifeMu, mu, srcMu and inFlight too, but strictly
-	// one after another, never nested.) The reverse order is FORBIDDEN: nothing
-	// anywhere holds lifeMu and then reaches for inFlight, mu or srcMu. One
-	// direction only means no cycle, hence no deadlock.
+	// beginBackgroundRefresh and cancelAndSnapshotIdle (Drain's helper) make
+	// "latch state" and "shutdown context" agree with each other, and those two
+	// functions are the ONLY places the locks nest. (Reset takes lifeMu, mu,
+	// srcMu and inFlight too, but strictly one after another, never nested.)
+	// The reverse order is FORBIDDEN: nothing anywhere holds lifeMu and then
+	// reaches for inFlight, mu or srcMu. One direction only means no cycle,
+	// hence no deadlock.
 	//
 	// No lock is held across a WAIT either. That matters: the goroutine being
 	// waited on must take c.inFlight (endBackgroundRefresh), c.mu (update) and
@@ -410,10 +411,10 @@ func nonZeroPlatforms(in []PlatformCount) []PlatformCount {
 	return out
 }
 
-// resetDrainTimeout bounds how long Reset waits for an in-flight background
+// defaultDrainTimeout bounds how long Reset waits for an in-flight background
 // refresh. It is far longer than any test's stub scan needs, so on the healthy
 // path it never fires; it exists so a test whose stub source parks forever
-// fails with a named, explanatory log line instead of wedging the whole package
+// fails with a named, explanatory panic instead of wedging the whole package
 // until the go test timeout.
 //
 // It is the DEFAULT for the per-cache c.drainTimeout field, which is what Reset
@@ -444,9 +445,10 @@ const defaultDrainTimeout = 30 * time.Second
 // be left in a state where every subsequent TriggerRefresh aborted instantly,
 // so the next test's lazy path would silently do nothing.
 //
-// It BLOCKS for as long as the in-flight refresh takes, up to
-// resetDrainTimeout, and PANICS if that timeout expires -- see the drain branch
-// below for why proceeding would be worse than failing.
+// It BLOCKS for as long as the in-flight refresh takes, up to c.drainTimeout
+// (defaultDrainTimeout unless a test shortened it), and PANICS if that timeout
+// expires -- see the drain branch below for why proceeding would be worse than
+// failing.
 func (c *Cache) Reset() {
 	// No cache lock is held here: the goroutine being waited on needs c.mu,
 	// c.srcMu and c.inFlight to finish. See Drain's lock-order note.
@@ -486,7 +488,9 @@ func (c *Cache) Reset() {
 	// trigger at all.
 	//
 	// DO NOT CLEAR c.running HERE. An earlier revision did, as "defense in
-	// depth" against a latch stranded by the old Add-window escape. It was a
+	// depth" against a latch stranded by the old register-window escape (the
+	// gap that once existed between taking the latch and becoming drainable,
+	// closed in beginBackgroundRefresh). It was a
 	// silent correctness bug: Reset cleared the latch UNCONDITIONALLY, so a
 	// refresh that took it LEGITIMATELY after the drain completed (the drain
 	// only waits for refreshes registered before it started) was erased from
@@ -549,8 +553,13 @@ func (c *Cache) Refresh(ctx context.Context) error {
 
 // beginRefresh takes the single-flight latch for a DIRECT, blocking Refresh,
 // reporting whether the caller owns it. The caller MUST call endRefresh when it
-// owns the latch. The lazy path takes the same latch through
-// beginBackgroundRefresh, which additionally registers with the WaitGroup.
+// owns the latch.
+//
+// The lazy path takes the same latch through beginBackgroundRefresh, which
+// additionally registers the refresh as drainable (c.backgroundCount and the
+// c.idle channel) and pairs with endBackgroundRefresh rather than endRefresh.
+// A direct Refresh needs no such registration: its caller is already blocked on
+// it, so there is nothing for Drain to await.
 //
 // c.running is the shared latch, which is the point: it used
 // to be set only by TriggerRefresh, so the maintenance scheduler's direct

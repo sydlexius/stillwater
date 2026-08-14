@@ -862,7 +862,8 @@ func drainCtx(t *testing.T) context.Context {
 }
 
 // Drain must not return while a TriggerRefresh goroutine is still running.
-// This is the awaitability half: without the WaitGroup, Drain returns
+// This is the awaitability half: without the registration a background refresh
+// performs (c.backgroundCount and the c.idle channel), Drain returns
 // immediately and the caller is told "quiescent" while a scan is mid-flight.
 func TestDrain_WaitsForInFlightTriggerRefresh(t *testing.T) {
 	t.Parallel()
@@ -1027,7 +1028,8 @@ func TestTriggerRefresh_AfterDrainDoesNotWedgeTheLatch(t *testing.T) {
 	}
 
 	c.TriggerRefresh()
-	// Joinable even post-drain: the WaitGroup still tracks it.
+	// Joinable even post-drain: a post-drain TriggerRefresh still registers
+	// itself, so the next Drain waits for it like any other.
 	if err := c.Drain(drainCtx(t)); err != nil {
 		t.Fatalf("Drain after a post-drain TriggerRefresh: %v", err)
 	}
@@ -1213,28 +1215,6 @@ func TestDrain_PanickingCancelDoesNotStrandTheLatch(t *testing.T) {
 // sources on a context nobody would ever cancel. That is #2977 through a
 // narrower window.
 //
-// HOW IT IS DETECTED. The invariant is expressed in terms an escape must
-// violate: once Reset has RETURNED, no source may still be entering on a LIVE
-// context. The source records exactly that pairing. It is checked from inside
-// the source rather than from a post-hoc flag because the escape is precisely a
-// goroutine the test has no handle on.
-//
-// WHY A LOOP, AND WHY THE TRIGGER IS UNSYNCHRONIZED. The window is a few
-// instructions wide, so the trigger must be left to race Reset freely --
-// waiting for TriggerRefresh to RETURN would guarantee the registration already
-// happened and put the window out of reach, testing nothing. The iteration
-// count is what gives this teeth; the property itself is exact, not
-// statistical. (During development the defect was ALSO reproduced
-// deterministically by widening the window with a temporary hook, which is what
-// proved the fix rather than this loop.)
-//
-// NOTE THE DIVISION OF LABOR. This test deliberately does NOT assert on the
-// single-flight latch. With an unsynchronized trigger, a refresh that takes the
-// latch legitimately AFTER Reset finished is an ordinary interleaving, not a
-// bug, so a latch assertion here would fail against correct code -- it did,
-// about 1 iteration in 12. The latch property needs the opposite fixture (the
-// trigger provably first) and lives in
-// TestReset_LeavesNoLatchHeldByADrainedRefresh.
 // DETERMINISTIC, NOT STATISTICAL. The test pins the refresh at the exact point
 // the bug lived -- latch taken, not yet drainable -- using the
 // beforeRegisterHook seam, and runs an entire Reset while it is held there.
@@ -1247,6 +1227,23 @@ func TestDrain_PanickingCancelDoesNotStrandTheLatch(t *testing.T) {
 // With the hook, the ordering is a fact rather than an inference, and the
 // assertion is exact: Reset must NOT be able to return while this refresh is
 // pending, and the refresh must NOT come back on a live context afterwards.
+//
+// HOW IT IS DETECTED, in two halves. The FIRST and primary assertion is that
+// Reset BLOCKS: the refresh is provably pending, so a Reset that returns has
+// drained something it could not see. The SECOND catches the consequence if it
+// somehow does escape -- the pinned refresh must not reach the sources the NEXT
+// owner installs after Reset returned. A post-hoc flag is sound for that half
+// only because the next owner's sources are installed STRICTLY AFTER Reset
+// returns, so any call to them is unambiguously a late one; there is no
+// legitimate interleaving it could be confused with.
+//
+// NOTE THE DIVISION OF LABOR. This test deliberately does NOT assert on the
+// single-flight latch. A refresh that takes the latch legitimately AFTER Reset
+// finished is an ordinary interleaving rather than a bug, so a latch assertion
+// tied to this fixture would fail against correct code -- it did, about 1
+// iteration in 12, in the version this replaced. The latch property needs the
+// opposite fixture (the trigger provably first) and lives in
+// TestReset_LeavesNoLatchHeldByADrainedRefresh.
 func TestTriggerRefresh_CannotEscapeAConcurrentDrain(t *testing.T) {
 	t.Parallel()
 	c := New(quietLogger())
