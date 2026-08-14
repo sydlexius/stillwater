@@ -20,9 +20,7 @@ If you cannot remember which tab a setting lives on, use the search box at the t
 
 A disabled rule never evaluates. It doesn't appear in violation counts and doesn't surface in the artist's violations list. Re-enable to start finding violations again; the next rule run picks them up.
 
-One rule behaves differently on disable: **Cross-artist backdrop collision**. Its findings are not produced by a rule run -- they are recorded at the moment a matching backdrop is imported or pushed, so nothing can recreate them afterward. Disabling it therefore **keeps** its existing findings rather than clearing them, and they continue to count toward compliance. To clear them, dismiss or resolve them individually.
-
-Note that disabling this rule does **not** stop new collisions from being recorded either: they are raised at the import/push moment, on a path that does not consult the rule's enabled state. So for this one rule the toggle currently affects neither existing nor future findings.
+One rule behaves differently on disable: **Cross-artist backdrop collision**. Its findings are not produced by a rule run -- they are recorded at the moment a matching backdrop is imported or pushed, so nothing can recreate them afterward. Because of that, the Enabled toggle for this rule controls only the pop-up notification shown at the moment a collision is detected. It does **not** stop recording: a collision is still written to the Action Queue, still counted toward compliance, and still fixable, whether the toggle is on or off. Turning it off just means you will not see the pop-up in the moment; re-enable it to see the pop-up again for future collisions. To clear an existing finding, dismiss or resolve it individually.
 
 <!-- SCREENSHOT: Settings > Rules | state: rules tab with mix of enabled/disabled + manual/auto + a conflict-gated chip | annotation: enable toggle + mode picker + conflict-gate indicator -->
 

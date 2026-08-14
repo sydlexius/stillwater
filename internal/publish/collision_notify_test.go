@@ -128,7 +128,7 @@ func TestSyncAllFanart_CollisionNotifiesAndStillUploads(t *testing.T) {
 			raised := 0
 			notifier := collision.NewNotifier(pub,
 				func(context.Context, string, string, string, string) error { raised++; return nil },
-				nil, silentLogger())
+				nil, nil, silentLogger())
 
 			p := New(Deps{
 				Logger: silentLogger(),
@@ -197,7 +197,7 @@ func TestSyncAllFanart_IndexErrorFailsOpen(t *testing.T) {
 	defer srv.Close()
 
 	pub := &recordingPublisher{}
-	notifier := collision.NewNotifier(pub, nil, nil, silentLogger())
+	notifier := collision.NewNotifier(pub, nil, nil, nil, silentLogger())
 
 	p := New(Deps{
 		Logger: silentLogger(),

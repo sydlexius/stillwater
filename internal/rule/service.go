@@ -665,6 +665,32 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Rule, error) {
 	return r, nil
 }
 
+// IsRuleEnabled reports whether a rule's Enabled toggle is currently set.
+//
+// #2970: for an EVENT-DRIVEN rule (see eventDrivenRules above), this is
+// consulted ONLY to gate the ephemeral notification (e.g. the SSE toast) that
+// accompanies a finding -- never the durable rule_violations write itself.
+// Disabling the rule silences the notification; it does not stop recording,
+// does not clear existing findings, and does not remove findings from
+// counts, the Action Queue, or the fix path. The alternative (an early return
+// in the raise path that skips recording while disabled) was rejected: an
+// event-driven finding is derived from the event that produced it and nothing
+// re-derives it later, so anything missed while disabled would be lost
+// permanently -- the exact data-loss shape #2614 exists to prevent. A third
+// option, excluding disabled event-driven findings from compliance scoring,
+// is deferred as out of scope.
+//
+// A fresh DB read per call is acceptable here: event-driven rules fire on
+// rare occurrences (a detected collision, a failed re-validation), not on
+// every evaluation pass.
+func (s *Service) IsRuleEnabled(ctx context.Context, ruleID string) (bool, error) {
+	r, err := s.GetByID(ctx, ruleID)
+	if err != nil {
+		return false, fmt.Errorf("checking rule enabled state: %w", err)
+	}
+	return r.Enabled, nil
+}
+
 // Update modifies a rule's enabled state, automation mode, and config.
 //
 // The bumped rules.updated_at is the dirty-tracking signal: artist.ListDirtyIDs
@@ -1292,6 +1318,16 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 // payload; the human-readable message (which already names the colliding artist
 // and similarity) is the operator-facing surface, so the id is not persisted
 // into the image-shaped Candidates field.
+//
+// #2970: this write is UNCONDITIONAL -- it does not consult the rule's
+// Enabled toggle, and must not. For an event-driven rule (eventDrivenRules
+// above), Enabled gates the ephemeral notification only (see
+// collision.NotifyEnabledFunc / IsRuleEnabled); the durable violation is
+// always recorded, because nothing else can ever re-derive an event-driven
+// finding that was missed while disabled. Gating this write instead (the
+// early-return option considered and rejected for #2970) would silently
+// drop findings for good -- the same permanent-data-loss shape #2614 exists
+// to prevent, just triggered by a toggle instead of an evaluation pass.
 func (s *Service) RaiseBackdropCollision(ctx context.Context, destArtistID, destArtistName, message, collidingArtistID string) error {
 	_ = collidingArtistID
 	return s.UpsertViolation(ctx, &RuleViolation{

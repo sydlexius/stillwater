@@ -196,6 +196,40 @@ func TestGetByID_NotFound(t *testing.T) {
 	}
 }
 
+// TestIsRuleEnabled covers #2970's lookup: enabled, disabled, and unknown
+// rule ids. cross_artist_backdrop_collision is seeded disabled (see
+// eventDrivenRules), so it doubles as the "disabled" case without needing a
+// manual toggle.
+func TestIsRuleEnabled(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	enabled, err := svc.IsRuleEnabled(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("IsRuleEnabled(%s): %v", RuleNFOExists, err)
+	}
+	if !enabled {
+		t.Errorf("IsRuleEnabled(%s) = false, want true (seeded enabled)", RuleNFOExists)
+	}
+
+	enabled, err = svc.IsRuleEnabled(ctx, RuleCrossArtistBackdropCollision)
+	if err != nil {
+		t.Fatalf("IsRuleEnabled(%s): %v", RuleCrossArtistBackdropCollision, err)
+	}
+	if enabled {
+		t.Errorf("IsRuleEnabled(%s) = true, want false (seeded disabled)", RuleCrossArtistBackdropCollision)
+	}
+
+	if _, err := svc.IsRuleEnabled(ctx, "nonexistent_rule_id"); err == nil {
+		t.Error("IsRuleEnabled(nonexistent) expected an error, got nil")
+	}
+}
+
 func TestUpdate(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

@@ -38,7 +38,7 @@ func TestNotify_Mismatch_EmitsBothSurfaces(t *testing.T) {
 		}
 		return ""
 	}
-	n := NewNotifier(pub, raise, nameOf, nil)
+	n := NewNotifier(pub, raise, nameOf, nil, nil)
 
 	res := image.IdentityResult{
 		Verdict:           image.IdentityMismatch,
@@ -97,7 +97,7 @@ func TestNotify_FailOpen_Verdicts(t *testing.T) {
 		pub := &fakePublisher{}
 		raisedN := 0
 		raise := func(_ context.Context, _, _, _, _ string) error { raisedN++; return nil }
-		n := NewNotifier(pub, raise, nil, nil)
+		n := NewNotifier(pub, raise, nil, nil, nil)
 
 		n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{Verdict: verdict})
 
@@ -112,7 +112,7 @@ func TestNotify_FailOpen_Verdicts(t *testing.T) {
 
 func TestNotify_MissingCollidingName_FallsBackToID(t *testing.T) {
 	pub := &fakePublisher{}
-	n := NewNotifier(pub, nil, nil, nil) // nil nameOf -> label falls back to id
+	n := NewNotifier(pub, nil, nil, nil, nil) // nil nameOf -> label falls back to id
 	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
 		Verdict:           image.IdentityMismatch,
 		CollidingArtistID: "raw-id-7",
@@ -131,7 +131,7 @@ func TestNotify_MissingCollidingName_FallsBackToID(t *testing.T) {
 func TestNotify_RaiseError_DoesNotPanicOrBlock(t *testing.T) {
 	pub := &fakePublisher{}
 	raise := func(_ context.Context, _, _, _, _ string) error { return errors.New("db down") }
-	n := NewNotifier(pub, raise, nil, nil)
+	n := NewNotifier(pub, raise, nil, nil, nil)
 	// Must still publish the toast and return normally even when the durable
 	// raise fails (notify-only: the caller's write/push must never be blocked).
 	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
@@ -142,6 +142,108 @@ func TestNotify_RaiseError_DoesNotPanicOrBlock(t *testing.T) {
 	})
 	if len(pub.events) != 1 {
 		t.Fatalf("expected the toast to still publish despite raise error, got %d events", len(pub.events))
+	}
+}
+
+// TestNotify_NotifyEnabled_Disabled_SuppressesToastButStillRaises is the
+// #2970 load-bearing test: disabling the rule must suppress ONLY the
+// ephemeral toast. The durable violation write is unconditional, because
+// nothing else can ever re-derive an event-driven finding missed while
+// disabled (see IsRuleEnabled / RaiseBackdropCollision doc comments). An
+// implementation that also skips the raise (the rejected early-return
+// option) would still pass a suppression-only test, so this asserts BOTH
+// halves.
+func TestNotify_NotifyEnabled_Disabled_SuppressesToastButStillRaises(t *testing.T) {
+	pub := &fakePublisher{}
+	raisedN := 0
+	raise := func(_ context.Context, _, _, _, _ string) error { raisedN++; return nil }
+	notifyOn := func(_ context.Context) bool { return false }
+	n := NewNotifier(pub, raise, nil, notifyOn, nil)
+
+	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "c",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if len(pub.events) != 0 {
+		t.Errorf("toast published %d events while disabled, want 0", len(pub.events))
+	}
+	if raisedN != 1 {
+		t.Errorf("durable raise called %d times while disabled, want exactly 1 (the recording must never stop)", raisedN)
+	}
+}
+
+// TestNotify_NotifyEnabled_Enabled_EmitsToast is the positive control for the
+// test above: an implementation that unconditionally suppresses the toast
+// (ignoring notifyOn entirely) would still pass a disabled-only test, so this
+// pins that the predicate is actually consulted both ways.
+func TestNotify_NotifyEnabled_Enabled_EmitsToast(t *testing.T) {
+	pub := &fakePublisher{}
+	raisedN := 0
+	raise := func(_ context.Context, _, _, _, _ string) error { raisedN++; return nil }
+	notifyOn := func(_ context.Context) bool { return true }
+	n := NewNotifier(pub, raise, nil, notifyOn, nil)
+
+	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "c",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if len(pub.events) != 1 {
+		t.Errorf("toast published %d events while enabled, want 1", len(pub.events))
+	}
+	if raisedN != 1 {
+		t.Errorf("durable raise called %d times while enabled, want exactly 1", raisedN)
+	}
+}
+
+// TestNotify_NotifyEnabled_NilPredicate_EmitsToast pins back-compat: existing
+// callers (before #2970) pass nil for notifyOn and must keep emitting.
+func TestNotify_NotifyEnabled_NilPredicate_EmitsToast(t *testing.T) {
+	pub := &fakePublisher{}
+	n := NewNotifier(pub, nil, nil, nil, nil)
+
+	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "c",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if len(pub.events) != 1 {
+		t.Errorf("toast published %d events with nil predicate, want 1 (fail open)", len(pub.events))
+	}
+}
+
+// TestNotify_NotifyEnabled_LookupFails_EmitsToast: a predicate that cannot
+// determine the answer (e.g. a transient DB error surfaced as false) must
+// still favor emitting the toast over silently hiding a real collision.
+// Modeled here as the predicate itself returning true on its own failure
+// path, mirroring what the cmd/stillwater wiring closure does around
+// rule.Service.IsRuleEnabled's error return.
+func TestNotify_NotifyEnabled_LookupFails_EmitsToast(t *testing.T) {
+	pub := &fakePublisher{}
+	lookupErr := errors.New("db down")
+	notifyOn := func(_ context.Context) bool {
+		// Simulates the wiring closure's fail-open branch: err != nil -> true.
+		_ = lookupErr
+		return true
+	}
+	n := NewNotifier(pub, nil, nil, notifyOn, nil)
+
+	n.Notify(context.Background(), "dest", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "c",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if len(pub.events) != 1 {
+		t.Errorf("toast published %d events on lookup failure, want 1 (fail open)", len(pub.events))
 	}
 }
 

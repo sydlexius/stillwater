@@ -982,6 +982,19 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 			}
 			return ca.Name
 		},
+		// #2970: the rule's Enabled toggle gates the ephemeral toast only (see
+		// eventDrivenRules / IsRuleEnabled in internal/rule/service.go). A
+		// lookup failure fails open (emits the toast) rather than risking a
+		// hidden collision.
+		func(ctx context.Context) bool {
+			enabled, err := a.ruleService.IsRuleEnabled(ctx, rule.RuleCrossArtistBackdropCollision)
+			if err != nil {
+				logger.Error("checking cross_artist_backdrop_collision enabled state; failing open",
+					slog.String("error", err.Error()))
+				return true
+			}
+			return enabled
+		},
 		logger,
 	)
 	a.publisher.SetCollisionNotifier(a.collisionNotifier, a.artistService)

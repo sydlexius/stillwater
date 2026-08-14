@@ -91,7 +91,7 @@ func wireCollisionNotifier(r *Router) (*recordingEventPublisher, *int) {
 	raised := 0
 	r.collisionNotifier = collision.NewNotifier(pub,
 		func(context.Context, string, string, string, string) error { raised++; return nil },
-		nil, r.logger)
+		nil, nil, r.logger)
 	return pub, &raised
 }
 
