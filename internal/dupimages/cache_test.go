@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -929,6 +930,16 @@ func TestDrain_ReturnsContextErrorWhenTheWaitOutlastsIt(t *testing.T) {
 // Drain on an idle cache, and Drain after Drain, must both return nil
 // immediately rather than panicking or blocking. Shutdown paths call it
 // unconditionally.
+//
+// HONEST SCOPE: this is a CRASH/HANG guard, not a behavior assertion, and it
+// has no teeth against a logic change. It survived every mutation tried against
+// the drain, because "returns nil on an idle cache" is true of almost any
+// implementation. What it does catch is real but narrow: a nil shutdownCancel
+// deref (Drain calls cancel unconditionally, so a constructor that forgot to
+// install one panics here), and a Drain that blocks forever when there is
+// nothing to wait for. Keep it for those; do not read a pass here as evidence
+// that draining works. TestDrain_WaitsForInFlightTriggerRefresh and
+// TestTriggerRefresh_CannotEscapeAConcurrentDrain are where that is asserted.
 func TestDrain_IsIdempotentAndSafeWhenIdle(t *testing.T) {
 	t.Parallel()
 	c := New(quietLogger())
@@ -972,6 +983,137 @@ func TestTriggerRefresh_AfterDrainDoesNotWedgeTheLatch(t *testing.T) {
 	}
 	if c.refreshRunning() {
 		t.Fatal("single-flight latch still held after a post-drain TriggerRefresh")
+	}
+}
+
+// A Reset whose drain TIMES OUT must fail loudly, not carry on.
+//
+// WHY THIS MATTERS MORE THAN IT LOOKS. The expiry branch used to log at Error
+// and then proceed: fresh context, zeroed counts, nil sources. But the
+// goroutine that outlived the drain still holds the source funcs it captured at
+// refresh() entry, and it will write its result into the cache the NEXT test is
+// using. Nothing failed; the only trace was one stderr line nobody reads. That
+// degrades to a GREEN test over the exact bug this package's drain exists to
+// prevent, so the signal has to be one a test runner cannot ignore.
+//
+// Reset is test-only (production never calls it), so a panic is the right
+// loudness: inside a test it is a named, stack-carrying failure.
+func TestReset_PanicsWhenTheDrainTimesOut(t *testing.T) {
+	// Not parallel: it writes the package-level resetDrainTimeout.
+	prev := resetDrainTimeout
+	resetDrainTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { resetDrainTimeout = prev })
+
+	c := New(quietLogger())
+
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	c.SetSources(
+		func(context.Context) (int, error) {
+			close(entered)
+			// Park PAST the shortened drain timeout, and ignore cancellation --
+			// this stands in for a scan wedged in a syscall, which is the only
+			// way the timeout can genuinely fire.
+			heldUntil(release)
+			return 1, nil
+		},
+		nil,
+	)
+	// Release it at the end whatever happens, so the goroutine cannot outlive
+	// the test it belongs to.
+	t.Cleanup(func() { close(release) })
+
+	c.TriggerRefresh()
+	<-entered
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Reset returned normally after its drain timed out; a live goroutine is still holding the previous owner's sources and will write into the next test's cache (#2977)")
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, "drain timed out") {
+			t.Fatalf("panic value = %v; want a message naming the timed-out drain", r)
+		}
+	}()
+	c.Reset()
+}
+
+// A refresh must never become invisible to a concurrent drain.
+//
+// THE HOLE THIS GUARDS. Taking the single-flight latch, registering with the
+// WaitGroup and reading the shutdown context were once three separate steps. A
+// Reset landing in the gap between the first and the second saw a WaitGroup
+// counter of zero, so its drain returned "everything has finished" about a
+// refresh that had not started -- and then installed a FRESH, LIVE shutdown
+// context that the escaping goroutine picked up, so it ran the NEXT owner's
+// sources on a context nobody would ever cancel. That is #2977 through a
+// narrower window.
+//
+// HOW IT IS DETECTED. The invariant is expressed in terms an escape must
+// violate: once Reset has RETURNED, no source may still be entering on a LIVE
+// context. The source records exactly that pairing. It is checked from inside
+// the source rather than from a post-hoc flag because the escape is precisely a
+// goroutine the test has no handle on.
+//
+// WHY A LOOP. The real window is a few instructions wide, so a single
+// iteration passes by luck against broken code. The iteration count is what
+// gives this teeth; the property itself is exact, not statistical. (During
+// development the defect was ALSO reproduced deterministically by widening the
+// window with a temporary hook, which is what proved the fix rather than this
+// loop.)
+func TestTriggerRefresh_CannotEscapeAConcurrentDrain(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	var (
+		resetReturned atomic.Bool
+		escaped       atomic.Bool
+		everRan       atomic.Bool
+	)
+	src := func(ctx context.Context) (int, error) {
+		everRan.Store(true)
+		if resetReturned.Load() && ctx.Err() == nil {
+			escaped.Store(true)
+		}
+		return 1, ctx.Err()
+	}
+
+	for i := range 300 {
+		c.SetSources(src, nil)
+		resetReturned.Store(false)
+
+		started := make(chan struct{})
+		go func() {
+			close(started)
+			c.TriggerRefresh()
+		}()
+		<-started
+
+		c.Reset()
+		resetReturned.Store(true)
+
+		// Reset drained, so the cache must be unambiguously idle. A latch left
+		// held would silently swallow the next owner's TriggerRefresh, which is
+		// the same bug wearing a different face: a test that passes while
+		// exercising nothing.
+		if c.refreshRunning() {
+			t.Fatalf("iteration %d: the single-flight latch was still held after Reset returned", i)
+		}
+
+		// Give any goroutine that DID escape a chance to reach the source
+		// before the next iteration flips resetReturned back to false.
+		time.Sleep(time.Millisecond)
+		if escaped.Load() {
+			t.Fatalf("iteration %d: a background refresh entered a source on a LIVE context after Reset returned; it escaped the drain (#2977)", i)
+		}
+	}
+
+	// Precondition: the loop actually exercised the refresh path. If
+	// TriggerRefresh stopped spawning anything (or the cooldown swallowed every
+	// call after the first), the assertions above would all pass vacuously.
+	if !everRan.Load() {
+		t.Fatal("precondition: no background refresh ever reached a source, so nothing was exercised")
 	}
 }
 

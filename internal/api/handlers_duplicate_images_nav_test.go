@@ -976,30 +976,55 @@ func TestBucketByPlatformType_UnknownTypeSurvivesWithTitleCasedLabel(t *testing.
 // test that was writing those same fields -- the data race in the issue.
 //
 // The wiring here reproduces exactly that shape: the scan source READS a
-// Router field and parks, the test performs the cleanup a test's return would
-// perform (the dupimages.Shared().Reset() every such test registers), and then
-// WRITES that same Router field. Under -race, an unjoined goroutine makes this
-// a reported read/write race on r.pipeline -- the same pairing the issue's
-// stack trace shows. With the drain in place, Reset cannot return until the
-// goroutine has finished, so the write is ordered after the read and there is
-// nothing to report.
+// Router field and PARKS, still parked at the moment the test performs the
+// cleanup a test's return would perform (the dupimages.Shared().Reset() every
+// such test registers), and only then finishes and WRITES a flag the test
+// checks.
 //
-// Run this with -race. Without it the test still checks the scanFinished flag,
-// which is a weaker but non-vacuous signal.
+// WHAT UNPARKS THE SCAN, AND WHY IT MATTERS. The source waits on ITS OWN
+// CONTEXT, which on correct code is canceled by exactly one thing: the drain
+// inside Reset. So the only way this test can reach its assertion is if Reset
+// both CANCELS the refresh and then BLOCKS until it has returned -- which is
+// the entire property being guarded. An earlier revision of this test released
+// the scan just BEFORE calling Reset, which let the goroutine finish on its own
+// and meant the test never required Reset to block at all; it passed against a
+// cache with no drain in it.
+//
+// There is deliberately NO sleep-then-release goroutine here. A timed release
+// makes the test's meaning depend on whether Reset got scheduled within N
+// milliseconds, which on a loaded CI runner is a coin flip between "guards the
+// property" and "passes vacuously". Waiting on the cancellation removes the
+// timing question entirely. The 5s cap below is only a safety net so a
+// REGRESSION surfaces as this test's named failure rather than as the package
+// timeout.
+//
+// THE -race CAVEAT. An earlier version of this comment claimed -race reports
+// the read/write pair on r.pipeline. Measured against a cache mutated back to
+// the #2977 defect, it does not: 50 runs under -race produced failures of the
+// scanFinished assertion and ZERO "WARNING: DATA RACE" lines, because the
+// escaped goroutine usually still wins the race to finish. The deterministic
+// guard is the scanFinished assertion; the r.pipeline access pair is retained
+// because it documents the shape of the real defect and can only help.
 func TestDupImagesNav_ColdCacheRefreshIsJoinedBeforeTheTestReturns(t *testing.T) {
 	r := dupNavRouter(t)
 
 	entered := make(chan struct{})
-	release := make(chan struct{})
 	var scanFinished atomic.Bool
 
 	dupNavStubSources(t, r,
-		func(context.Context) (int, error) {
+		func(ctx context.Context) (int, error) {
 			close(entered)
 			// Read a Router field, exactly as the real r.libraryDupCount does
 			// (it type-asserts r.pipeline on its first line).
 			_ = r.pipeline
-			<-release
+			select {
+			case <-ctx.Done():
+				// Reset's drain canceled us. This is the expected path.
+			case <-time.After(5 * time.Second):
+				// Safety net: nothing canceled us, so Reset did not drain.
+				// Returning lets the scanFinished assertion below report that
+				// as a named failure instead of wedging the package.
+			}
 			// A second read AFTER the park, so the racing window spans the
 			// whole time the test believes it is finished.
 			_ = r.pipeline
@@ -1030,10 +1055,16 @@ func TestDupImagesNav_ColdCacheRefreshIsJoinedBeforeTheTestReturns(t *testing.T)
 	case <-time.After(5 * time.Second):
 		t.Fatal("precondition: the cold-cache request never started a background refresh")
 	}
-	close(release)
+
+	// Precondition: the scan is STILL PARKED as we enter Reset. If it had
+	// already finished, Reset would have nothing to wait for and everything
+	// below would pass without exercising the drain at all.
+	if scanFinished.Load() {
+		t.Fatal("precondition: the background scan finished before Reset was called, so the drain is not exercised")
+	}
 
 	// Stand in for "the test returned": run the same Reset the cleanup runs.
-	// It must not come back until the refresh goroutine is done.
+	// It must both cancel the parked scan and not come back until it is done.
 	dupimages.Shared().Reset()
 
 	if !scanFinished.Load() {
