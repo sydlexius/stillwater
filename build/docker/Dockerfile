@@ -93,16 +93,10 @@ EXPOSE 1973/udp
 EXPOSE ${SW_TLS_PORT}/udp
 
 # Healthcheck. Docker runs HEALTHCHECK as a fresh process sourced from the
-# image's Env config, not as a child of PID 1, so it does NOT see
-# entrypoint.sh's runtime `export SW_HEALTH_URL` -- healthcheck.sh
-# re-derives the same HTTPS-on-the-right-port URL itself from variables
-# that ARE visible to it (SW_TLS_CERT_FILE, SW_TLS_PORT, SW_PORT,
-# SW_BASE_PATH are operator-supplied via `docker run -e` / compose, which
-# Docker does propagate). See build/docker/healthcheck.sh for the exact
-# derivation. JSON/exec form here still allows shell parameter expansion
-# because the exec vector is ["sh", "-c", ...].
+# image's Env config, not as a child of PID 1, so it does not see a runtime
+# `export` from PID 1 -- the probe derives its own URL in healthcheck.sh.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["sh", "-c", "/healthcheck.sh"]
+  CMD ["/healthcheck.sh"]
 
 VOLUME ["/config", "/music"]
 

@@ -2,15 +2,12 @@
 # HEALTHCHECK probe for the stillwater container.
 #
 # Docker runs HEALTHCHECK as a fresh process sourced from the image's Env
-# config, not as a child of PID 1 -- it does NOT see entrypoint.sh's runtime
-# `export SW_HEALTH_URL`. So this script re-derives the same URL from
-# variables that ARE visible to it: SW_TLS_CERT_FILE, SW_TLS_PORT, SW_PORT,
-# and SW_BASE_PATH are all operator-supplied via `docker run -e` / compose,
-# which Docker does propagate into the healthcheck process. Only the
-# entrypoint-derived SW_HEALTH_URL is not (unless the operator set it
-# directly, in which case it is in the container env the same way).
+# config, so it derives its own probe URL here rather than relying on
+# anything set at runtime by another process. SW_TLS_CERT_FILE, SW_TLS_PORT,
+# SW_PORT, and SW_BASE_PATH are all operator-supplied via `docker run -e` /
+# compose, which Docker does propagate into the healthcheck process.
 #
-# Mirrors entrypoint.sh's derivation exactly:
+# Derivation:
 #   - an operator-set SW_HEALTH_URL always wins
 #   - TLS mode is SW_TLS_CERT_FILE non-empty -> scheme https
 #   - SW_TLS_PORT wins when set and not the literal "0" (the documented

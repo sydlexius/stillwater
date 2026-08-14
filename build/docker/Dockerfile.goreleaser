@@ -47,7 +47,7 @@ EXPOSE 1973/udp
 EXPOSE ${SW_TLS_PORT}/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["sh", "-c", "/healthcheck.sh"]
+  CMD ["/healthcheck.sh"]
 
 VOLUME ["/config", "/music"]
 
