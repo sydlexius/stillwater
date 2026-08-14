@@ -30,7 +30,8 @@ WORKDIR /app
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/stillwater /usr/local/bin/stillwater
 COPY build/docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY build/docker/healthcheck.sh /healthcheck.sh
+RUN chmod +x /entrypoint.sh /healthcheck.sh
 
 # Advertise both the plain HTTP port and the optional TLS port. EXPOSE is
 # metadata only -- the actual binds come from SW_PORT / SW_TLS_PORT at run
@@ -46,7 +47,7 @@ EXPOSE 1973/udp
 EXPOSE ${SW_TLS_PORT}/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -q -O /dev/null --no-check-certificate "${SW_HEALTH_URL:-http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health}" || exit 1
+  CMD ["sh", "-c", "/healthcheck.sh"]
 
 VOLUME ["/config", "/music"]
 

@@ -74,7 +74,8 @@ RUN mkdir -p /config /music && chown stillwater:stillwater /config /music
 
 COPY --from=builder /bin/stillwater /usr/local/bin/stillwater
 COPY build/docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY build/docker/healthcheck.sh /healthcheck.sh
+RUN chmod +x /entrypoint.sh /healthcheck.sh
 
 WORKDIR /app
 
@@ -91,15 +92,17 @@ EXPOSE ${SW_TLS_PORT}
 EXPOSE 1973/udp
 EXPOSE ${SW_TLS_PORT}/udp
 
-# Healthcheck. The shell-expanded URL lets the entrypoint override
-# SW_HEALTH_URL when SW_TLS_CERT_FILE is set so the probe targets HTTPS on
-# the right port. --no-check-certificate is intentional: a localhost
-# healthcheck against a self-signed cert is acceptable.
-# Shell form is required here for the ${VAR:-default} interpolation; JSON
-# notation cannot expand these at container runtime.
-# hadolint ignore=DL3025
+# Healthcheck. Docker runs HEALTHCHECK as a fresh process sourced from the
+# image's Env config, not as a child of PID 1, so it does NOT see
+# entrypoint.sh's runtime `export SW_HEALTH_URL` -- healthcheck.sh
+# re-derives the same HTTPS-on-the-right-port URL itself from variables
+# that ARE visible to it (SW_TLS_CERT_FILE, SW_TLS_PORT, SW_PORT,
+# SW_BASE_PATH are operator-supplied via `docker run -e` / compose, which
+# Docker does propagate). See build/docker/healthcheck.sh for the exact
+# derivation. JSON/exec form here still allows shell parameter expansion
+# because the exec vector is ["sh", "-c", ...].
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -q -O /dev/null --no-check-certificate "${SW_HEALTH_URL:-http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health}" || exit 1
+  CMD ["sh", "-c", "/healthcheck.sh"]
 
 VOLUME ["/config", "/music"]
 
