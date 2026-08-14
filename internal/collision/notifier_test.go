@@ -1,8 +1,10 @@
 package collision
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -220,18 +222,22 @@ func TestNotify_NotifyEnabled_NilPredicate_EmitsToast(t *testing.T) {
 }
 
 // TestNotify_NotifyEnabled_LookupFails_EmitsToast: a predicate that cannot
-// determine the answer (e.g. a transient DB error surfaced as false) must
-// still favor emitting the toast over silently hiding a real collision.
-// Modeled here as the predicate itself returning true on its own failure
-// path, mirroring what the cmd/stillwater wiring closure does around
-// rule.Service.IsRuleEnabled's error return.
+// determine the answer (e.g. a transient DB error) must still favor
+// emitting the toast over silently hiding a real collision. Unlike an
+// earlier version of this test (which hard-coded `return true` and never
+// consulted the constructed error at all -- passing under the exact
+// fail-CLOSED defect it claimed to pin), notifyOn here actually branches on
+// lookupErr, so a predicate that got the fail-open direction backwards
+// makes this test fail.
 func TestNotify_NotifyEnabled_LookupFails_EmitsToast(t *testing.T) {
 	pub := &fakePublisher{}
 	lookupErr := errors.New("db down")
 	notifyOn := func(_ context.Context) bool {
-		// Simulates the wiring closure's fail-open branch: err != nil -> true.
-		_ = lookupErr
-		return true
+		if lookupErr != nil {
+			// Fail open: a lookup failure must never suppress the toast.
+			return true
+		}
+		return false
 	}
 	n := NewNotifier(pub, nil, nil, notifyOn, nil)
 
@@ -244,6 +250,66 @@ func TestNotify_NotifyEnabled_LookupFails_EmitsToast(t *testing.T) {
 
 	if len(pub.events) != 1 {
 		t.Errorf("toast published %d events on lookup failure, want 1 (fail open)", len(pub.events))
+	}
+}
+
+// TestNotify_Suppressed_LogsAtInfoWithPublisher pins I4: a suppressed
+// toast (notifyOn returns false, and a real publisher exists so a toast
+// would otherwise have fired) must be visible at Info -- the default level
+// on a production install -- not buried at Debug where an operator would
+// never see the one forensic trace distinguishing "suppressed because
+// disabled" from "the notifier is broken".
+//
+// Mutation-proof: deleting the suppression log entirely, or leaving it at
+// Debug, makes this test fail.
+func TestNotify_Suppressed_LogsAtInfoWithPublisher(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	pub := &fakePublisher{}
+	notifyOn := func(_ context.Context) bool { return false }
+	n := NewNotifier(pub, nil, nil, notifyOn, logger)
+
+	n.Notify(context.Background(), "dest-1", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "colliding-1",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, "level=INFO") {
+		t.Errorf("suppression not logged at Info (an Info-level handler saw nothing): %s", logged)
+	}
+	if !strings.Contains(logged, "suppressed") {
+		t.Errorf("log line missing the suppression message: %s", logged)
+	}
+	if !strings.Contains(logged, "dest-1") || !strings.Contains(logged, "colliding-1") {
+		t.Errorf("log line missing artist identifiers, want both logged: %s", logged)
+	}
+}
+
+// TestNotify_Suppressed_NoPublisher_DoesNotLog pins the other half of I4:
+// when there is no publisher, no toast would ever have been emitted
+// regardless of notifyOn, so logging a "suppressed" line is misleading
+// noise about a notifier that was never going to fire in the first place
+// (the headless/test wiring shape). Verified via a positive control
+// (WithPublisher, above) so this cannot pass merely because the log call
+// was deleted entirely.
+func TestNotify_Suppressed_NoPublisher_DoesNotLog(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	notifyOn := func(_ context.Context) bool { return false }
+	n := NewNotifier(nil, nil, nil, notifyOn, logger) // nil publisher
+
+	n.Notify(context.Background(), "dest-1", "Dest", image.IdentityResult{
+		Verdict:           image.IdentityMismatch,
+		CollidingArtistID: "colliding-1",
+		Similarity:        0.95,
+		MatchCount:        1,
+	})
+
+	if logBuf.Len() != 0 {
+		t.Errorf("logged a suppression with no publisher (nothing would have been emitted anyway): %s", logBuf.String())
 	}
 }
 

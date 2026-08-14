@@ -817,4 +817,5 @@ After:  Artist A's fanart2.jpg is quarantined and removed (locally and on platfo
 - Aliases and collaborations legitimately share promo art, so a flagged backdrop is not always pollution; the violation names the colliding artist and the similarity so you can judge before fixing.
 - Detection is notify-only at import and push time: the backdrop is still written and still pushed. This rule records the finding and offers the back-out; it never blocks a write.
 - Only fanart/backdrop images are compared; thumbnails, logos, and banners are out of scope.
+- Disabling this rule does not stop findings from being recorded: findings are raised as collisions happen and cannot be recreated later, so the Enabled toggle here gates only the pop-up notification at the moment of detection, not the finding itself.
 <!-- END GENERATED: rules-catalogue -->

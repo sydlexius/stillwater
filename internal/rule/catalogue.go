@@ -357,6 +357,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 			"Aliases and collaborations legitimately share promo art, so a flagged backdrop is not always pollution; the violation names the colliding artist and the similarity so you can judge before fixing.",
 			"Detection is notify-only at import and push time: the backdrop is still written and still pushed. This rule records the finding and offers the back-out; it never blocks a write.",
 			"Only fanart/backdrop images are compared; thumbnails, logos, and banners are out of scope.",
+			"Disabling this rule does not stop findings from being recorded: findings are raised as collisions happen and cannot be recreated later, so the Enabled toggle here gates only the pop-up notification at the moment of detection, not the finding itself.",
 		},
 		Guards: "When the same promotional image is filed under two different artists, one artist ends up displaying another artist's backdrop. This rule compares a perceptual hash of a fanart image against every other artist's fanart and fires when it matches a different artist at or above the similarity threshold (default 90%). It is raised as it happens -- when a colliding backdrop is imported from a media server or pushed to a platform -- rather than during Run Rules, and the count of distinct colliding artists is reported because a picture shared across many artists is more likely legitimate promo art than a single wrong-artist write.",
 		Examples: []string{

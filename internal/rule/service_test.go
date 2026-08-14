@@ -200,6 +200,14 @@ func TestGetByID_NotFound(t *testing.T) {
 // rule ids. cross_artist_backdrop_collision is seeded disabled (see
 // eventDrivenRules), so it doubles as the "disabled" case without needing a
 // manual toggle.
+//
+// nfo_exists (enabled+auto) and cross_artist_backdrop_collision
+// (disabled+manual) alone correlate Enabled with AutomationMode, so an
+// implementation reading AutomationMode instead of Enabled (`return
+// r.AutomationMode == AutomationModeAuto`) would pass both and the rest of
+// this package would stay green. extraneous_images is seeded
+// enabled+MANUAL specifically to break that correlation: it is the case
+// this bug can only get right by reading the actual Enabled column.
 func TestIsRuleEnabled(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
@@ -223,6 +231,27 @@ func TestIsRuleEnabled(t *testing.T) {
 	}
 	if enabled {
 		t.Errorf("IsRuleEnabled(%s) = true, want false (seeded disabled)", RuleCrossArtistBackdropCollision)
+	}
+
+	// Fixture-discrimination case (I2): enabled + manual. Precondition
+	// checked directly against the stored rule row before trusting
+	// IsRuleEnabled's answer, so this subtest cannot pass vacuously if the
+	// seeded default ever drifts.
+	extraneousRule, err := svc.GetByID(ctx, RuleExtraneousImages)
+	if err != nil {
+		t.Fatalf("GetByID(%s): %v", RuleExtraneousImages, err)
+	}
+	if !extraneousRule.Enabled || extraneousRule.AutomationMode != AutomationModeManual {
+		t.Fatalf("precondition failed: %s seeded as Enabled=%v AutomationMode=%s, want Enabled=true AutomationMode=manual (this test needs an enabled+manual rule to discriminate the axis)",
+			RuleExtraneousImages, extraneousRule.Enabled, extraneousRule.AutomationMode)
+	}
+
+	enabled, err = svc.IsRuleEnabled(ctx, RuleExtraneousImages)
+	if err != nil {
+		t.Fatalf("IsRuleEnabled(%s): %v", RuleExtraneousImages, err)
+	}
+	if !enabled {
+		t.Errorf("IsRuleEnabled(%s) = false, want true (enabled+manual: reading AutomationMode instead of Enabled would report false here)", RuleExtraneousImages)
 	}
 
 	if _, err := svc.IsRuleEnabled(ctx, "nonexistent_rule_id"); err == nil {

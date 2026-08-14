@@ -985,16 +985,13 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		// #2970: the rule's Enabled toggle gates the ephemeral toast only (see
 		// eventDrivenRules / IsRuleEnabled in internal/rule/service.go). A
 		// lookup failure fails open (emits the toast) rather than risking a
-		// hidden collision.
-		func(ctx context.Context) bool {
-			enabled, err := a.ruleService.IsRuleEnabled(ctx, rule.RuleCrossArtistBackdropCollision)
-			if err != nil {
-				logger.Error("checking cross_artist_backdrop_collision enabled state; failing open",
-					slog.String("error", err.Error()))
-				return true
-			}
-			return enabled
-		},
+		// hidden collision. Extracted to rule.CollisionNotifyEnabledFunc
+		// (rather than an inline closure here) so the predicate is covered by
+		// the patch-coverage gate: this file is in codecov.yml's ignore list
+		// and a closure built inline here would be permanently invisible to
+		// coverage measurement (see collision_notify.go and
+		// collision_notify_test.go in internal/rule).
+		rule.CollisionNotifyEnabledFunc(a.ruleService, rule.RuleCrossArtistBackdropCollision, logger),
 		logger,
 	)
 	a.publisher.SetCollisionNotifier(a.collisionNotifier, a.artistService)

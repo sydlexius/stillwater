@@ -668,17 +668,30 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Rule, error) {
 // IsRuleEnabled reports whether a rule's Enabled toggle is currently set.
 //
 // #2970: for an EVENT-DRIVEN rule (see eventDrivenRules above), this is
-// consulted ONLY to gate the ephemeral notification (e.g. the SSE toast) that
-// accompanies a finding -- never the durable rule_violations write itself.
-// Disabling the rule silences the notification; it does not stop recording,
-// does not clear existing findings, and does not remove findings from
-// counts, the Action Queue, or the fix path. The alternative (an early return
-// in the raise path that skips recording while disabled) was rejected: an
-// event-driven finding is derived from the event that produced it and nothing
-// re-derives it later, so anything missed while disabled would be lost
-// permanently -- the exact data-loss shape #2614 exists to prevent. A third
-// option, excluding disabled event-driven findings from compliance scoring,
-// is deferred as out of scope.
+// consulted ONLY to gate an ephemeral notification (e.g. the SSE toast) that
+// may accompany a finding -- never the durable rule_violations write itself.
+// Disabling the rule silences that notification where one exists; it does
+// not stop recording, does not clear existing findings, and does not remove
+// findings from counts, the Action Queue, or the fix path. The alternative
+// (an early return in the raise path that skips recording while disabled)
+// was rejected: an event-driven finding is derived from the event that
+// produced it and nothing re-derives it later, so anything missed while
+// disabled would be lost permanently -- the exact data-loss shape #2614
+// exists to prevent. A third option, excluding disabled event-driven
+// findings from compliance scoring, is deferred as out of scope.
+//
+// This is the category-level contract, and it is deliberately vacuous for a
+// member of eventDrivenRules that has no notification wired up yet:
+// cross_artist_backdrop_collision is the only rule where a caller actually
+// consults this to gate a notification (see
+// CollisionNotifyEnabledFunc/cmd/stillwater's wiring of it). mbid_resolves
+// is also event-driven (same recording-never-stops guarantee applies to it)
+// but RaiseMBIDValidationFailure publishes no notification at all today, so
+// there is nothing for this toggle to gate for that rule -- its Enabled
+// state is read here just as for any other rule, but no caller acts on the
+// answer. A future notification for mbid_resolves should consult this the
+// same way the collision path does; until then, disabling it changes
+// nothing observable.
 //
 // A fresh DB read per call is acceptable here: event-driven rules fire on
 // rare occurrences (a detected collision, a failed re-validation), not on

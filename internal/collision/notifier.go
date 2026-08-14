@@ -119,8 +119,16 @@ func (n *Notifier) Notify(ctx context.Context, destArtistID, destArtistName stri
 	if n.notifyOn != nil {
 		emit = n.notifyOn(ctx)
 	}
-	if !emit {
-		n.logger.Debug("backdrop-collision notification suppressed (rule disabled)",
+	// Info, not Debug: this is the only forensic trace an operator has that
+	// a toast was intentionally withheld rather than never generated (the
+	// distinction matters on a default install, which does not run at Debug
+	// level). Only log when a toast would otherwise have fired -- gate on
+	// n.pub != nil too, so a headless/test wiring with no publisher (nothing
+	// would have been emitted regardless of notifyOn) does not report a
+	// suppression that never happened. This fires once per detected
+	// collision, which is rare, so it does not risk becoming log noise.
+	if !emit && n.pub != nil {
+		n.logger.Info("backdrop-collision notification suppressed (rule disabled)",
 			slog.String("artist_id", destArtistID),
 			slog.String("colliding_artist_id", res.CollidingArtistID))
 	}
