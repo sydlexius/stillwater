@@ -508,6 +508,16 @@ type Service struct {
 	// listCallCount tracks the number of times List has been called.
 	// Accessed atomically; used by tests to verify cache hit behavior.
 	listCallCount int64
+
+	// reopenPreUpdateHook, if set, runs inside ReopenCollisionViolations
+	// after eligibility is determined from the SELECT but before the reopen
+	// UPDATE executes, given the open transaction. Production leaves this
+	// nil. Test-only seam (#2967 fix round) for driving the UPDATE's
+	// allow-list clauses with a row that no longer qualifies by the time the
+	// UPDATE runs -- SetMaxOpenConns(1) makes a genuinely concurrent second
+	// writer impractical to construct, so this lets a test simulate the same
+	// SELECT-then-UPDATE drift within the one transaction the real code uses.
+	reopenPreUpdateHook func(tx *sql.Tx)
 }
 
 // NewService creates a rule service.

@@ -3,7 +3,9 @@ package rule
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/dbutil"
@@ -19,12 +21,10 @@ import (
 // not do anything for violations the pre-#2614 code had already resolved:
 // those rows are indistinguishable, by status alone, from violations an
 // operator resolved on purpose (dismissing a stale collision, or via the
-// fixer). This file adds detection (advisory only) -- a read-only report of
-// candidate rows for a human to judge. An explicit, ID-scoped reopen of those
-// rows is a separate follow-on (#2967 PR 2), never an automatic migration,
-// because a migration runs unattended on every install and a false positive
-// would re-arm a destructive back-out fixer against a row an operator
-// deliberately closed.
+// fixer). This file adds detection (advisory only) and an explicit,
+// ID-scoped reopen -- never an automatic migration, because a migration runs
+// unattended on every install and a false positive would re-arm a
+// destructive back-out fixer against a row an operator deliberately closed.
 
 // ResolvedCollisionViolation is one resolved
 // cross_artist_backdrop_collision row, annotated with advisory signals that
@@ -170,4 +170,244 @@ func (s *Service) ResolvedCollisionViolations(ctx context.Context) (*ResolvedCol
 	report.NoRuleResultsExist = !resultExists
 
 	return report, nil
+}
+
+// Reason codes returned by ReopenCollisionViolations for a violation ID that
+// was NOT reopened.
+const (
+	// ReopenReasonNotFound means no rule_violations row exists with that ID.
+	ReopenReasonNotFound = "not_found"
+	// ReopenReasonNotResolved means the row exists but its status is not
+	// "resolved" (already open or pending_choice). Distinct from
+	// ReopenReasonDismissed: an open/pending_choice row was never resolved at
+	// all, so "reopen" does not apply to it the same way.
+	ReopenReasonNotResolved = "not_resolved"
+	// ReopenReasonDismissed means the row exists but its status is
+	// "dismissed" -- a deliberate operator closure, not merely "not
+	// resolved". Reported separately from ReopenReasonNotResolved so an
+	// operator-facing screen can say "this was dismissed on purpose" rather
+	// than lumping it in with a row that simply never resolved. This changes
+	// only how the refusal is REPORTED: a dismissed row is exactly as
+	// unreachable for reopening as it was before this code existed (it fails
+	// the same status = 'resolved' allow-list clause in the UPDATE below).
+	ReopenReasonDismissed = "dismissed"
+	// ReopenReasonWrongRule means the row exists but belongs to a different
+	// rule than cross_artist_backdrop_collision.
+	ReopenReasonWrongRule = "wrong_rule"
+)
+
+// reopenMaxIDs bounds one ReopenCollisionViolations call. SQLite refuses a
+// statement with more than ~32766 bound parameters ("too many SQL
+// variables"), and this method's UPDATE -- the larger of its two queries --
+// binds one parameter per ID plus 4 fixed ones (status, updated_at, rule_id,
+// status), so an unbounded list eventually fails with that raw driver string
+// instead of a message a recovery screen can show an operator. Set well
+// under the SQLite ceiling, matching the shape (not the exact value) of
+// blastRestoreMaxIDs (handlers_blast_radius_restore.go): a request this
+// large is already far beyond anything a checkbox-driven UI would submit in
+// one call, so refusing early costs nothing real.
+const reopenMaxIDs = 5000
+
+// ErrTooManyReopenIDs is returned by ReopenCollisionViolations when the
+// caller passes more than reopenMaxIDs IDs in one call.
+var ErrTooManyReopenIDs = errors.New("too many violation ids in one reopen request")
+
+// ReopenOutcome reports what happened to one requested violation ID.
+type ReopenOutcome struct {
+	ID       string
+	Reopened bool
+	// Reason is empty when Reopened is true; otherwise one of the
+	// ReopenReason* constants.
+	Reason string
+}
+
+// ReopenCollisionViolations durably reopens the given
+// cross_artist_backdrop_collision violations, by explicit ID list only.
+//
+// This is the scoped counterpart to ReopenViolation (service.go), which is
+// reachable only inside the 30-second undo window via handleUndoFix and so
+// cannot serve a durable, operator-initiated recovery flow (#2967).
+//
+// The UPDATE clause is a POSITIVE ALLOW-LIST -- id IN (...) AND rule_id = ?
+// AND status = 'resolved' -- so it structurally refuses a dismissed row, an
+// already-open row, a row for any other rule, and any row not in the
+// caller's list. There is no "reopen everything resolved" mode: the whole
+// point of shipping a report instead of a migration is that reopening stays
+// an explicit, per-row operator decision.
+//
+// Runs inside a transaction so the per-ID reason codes returned describe
+// exactly what the UPDATE did, not a stale read taken before or after it. The
+// outcomes are additionally verified against RowsAffected before the
+// transaction commits: if fewer rows were updated than the Go pre-check
+// judged eligible, that means a row changed state between the SELECT and the
+// UPDATE (or a bug removed one of the UPDATE's allow-list clauses), and this
+// method returns an error rather than reporting a Reopened: true it cannot
+// back up.
+//
+// Duplicate input IDs are deduplicated (first occurrence kept, order
+// preserved) before any query runs, so passing the same ID twice returns one
+// outcome, not two -- a caller counting Reopened: true outcomes must not be
+// able to inflate a count by repeating an ID.
+//
+// Limitation: cleanupDisabledRuleState (service.go) resolves BOTH open and
+// pending_choice violations in one UPDATE, so in principle the resolved
+// population this method can reopen could include rows that were parked in
+// pending_choice (a candidate awaiting an operator's pick) at the moment they
+// were bulk-resolved. In practice that never happens for THIS rule:
+// pending_choice is set only by the evaluation pipeline (fixer.go,
+// processManualViolation / processAutoFixViolation), and
+// cross_artist_backdrop_collision is event-driven with a registered checker
+// that always returns nil (engine.go), so the pipeline never persists a
+// status for it -- the sole production writer, RaiseBackdropCollision, always
+// passes ViolationStatusOpen. If that ever changed, the original pre-resolve
+// status is not recorded anywhere on the row, so there would be no way to
+// tell which resolved rows were pending_choice versus open, and reopening
+// always lands a row at ViolationStatusOpen -- never back at pending_choice.
+func (s *Service) ReopenCollisionViolations(ctx context.Context, ids []string) ([]ReopenOutcome, error) {
+	ids = dedupeIDs(ids)
+	if len(ids) == 0 {
+		// Returning early rather than building an empty IN () clause, which
+		// is a SQLite syntax error (mirrors the guard in
+		// ClearResolvedViolations).
+		return nil, nil
+	}
+	if len(ids) > reopenMaxIDs {
+		return nil, fmt.Errorf("%w: got %d, max %d", ErrTooManyReopenIDs, len(ids), reopenMaxIDs)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("beginning reopen-collision transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+
+	placeholders := make([]string, len(ids))
+	selectArgs := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		selectArgs[i] = id
+	}
+	inClause := strings.Join(placeholders, ", ")
+
+	//nolint:gosec // G202: only "?" placeholders are interpolated; every value is parameterized
+	selectQuery := fmt.Sprintf(
+		`SELECT id, rule_id, status FROM rule_violations WHERE id IN (%s)`,
+		inClause,
+	)
+	// queryCandidates is an inline function so defer rows.Close() fires the
+	// moment the scan is done, satisfying sqlclosecheck, rather than living
+	// past it inside the outer function body.
+	found := make(map[string]struct{ ruleID, status string })
+	queryErr := func() error {
+		rows, err := tx.QueryContext(ctx, selectQuery, selectArgs...)
+		if err != nil {
+			return fmt.Errorf("reading candidate collision violations: %w", err)
+		}
+		defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+		for rows.Next() {
+			var id, ruleID, status string
+			if err := rows.Scan(&id, &ruleID, &status); err != nil {
+				return fmt.Errorf("scanning candidate collision violation: %w", err)
+			}
+			found[id] = struct{ ruleID, status string }{ruleID, status}
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("iterating candidate collision violations: %w", err)
+		}
+		return nil
+	}()
+	if queryErr != nil {
+		return nil, queryErr
+	}
+
+	// Determine, per input ID, whether it is eligible before issuing the
+	// UPDATE -- this is what lets the reason codes below match reality rather
+	// than being inferred after the fact from a second read.
+	eligible := make([]string, 0, len(ids))
+	outcomes := make([]ReopenOutcome, len(ids))
+	for i, id := range ids {
+		row, ok := found[id]
+		switch {
+		case !ok:
+			outcomes[i] = ReopenOutcome{ID: id, Reason: ReopenReasonNotFound}
+		case row.ruleID != RuleCrossArtistBackdropCollision:
+			outcomes[i] = ReopenOutcome{ID: id, Reason: ReopenReasonWrongRule}
+		case row.status == ViolationStatusDismissed:
+			outcomes[i] = ReopenOutcome{ID: id, Reason: ReopenReasonDismissed}
+		case row.status != ViolationStatusResolved:
+			outcomes[i] = ReopenOutcome{ID: id, Reason: ReopenReasonNotResolved}
+		default:
+			outcomes[i] = ReopenOutcome{ID: id, Reopened: true}
+			eligible = append(eligible, id)
+		}
+	}
+
+	if s.reopenPreUpdateHook != nil {
+		s.reopenPreUpdateHook(tx)
+	}
+
+	if len(eligible) > 0 {
+		updatePlaceholders := make([]string, len(eligible))
+		updateArgs := make([]any, 0, len(eligible)+4)
+		now := s.clock.Now().UTC().Format(time.RFC3339)
+		updateArgs = append(updateArgs, ViolationStatusOpen, now)
+		for i, id := range eligible {
+			updatePlaceholders[i] = "?"
+			updateArgs = append(updateArgs, id)
+		}
+		updateArgs = append(updateArgs, RuleCrossArtistBackdropCollision, ViolationStatusResolved)
+
+		//nolint:gosec // G202: only "?" placeholders are interpolated; every value is parameterized
+		updateQuery := fmt.Sprintf(
+			`UPDATE rule_violations SET status = ?, resolved_at = NULL, updated_at = ?
+			 WHERE id IN (%s) AND rule_id = ? AND status = ?`,
+			strings.Join(updatePlaceholders, ", "),
+		)
+		res, err := tx.ExecContext(ctx, updateQuery, updateArgs...)
+		if err != nil {
+			return nil, fmt.Errorf("reopening collision violations: %w", err)
+		}
+		// Reconcile against the Go pre-check: if the UPDATE's own allow-list
+		// clauses (rule_id, status) ever disagree with what the SELECT above
+		// judged eligible -- a row's status changed between the two reads, or
+		// a future edit drops one of those clauses -- fewer rows are affected
+		// than eligible. The outcomes slice above already marked every
+		// eligible ID Reopened: true before this UPDATE ran, so a silent
+		// mismatch here would report a reopen that never happened. Fail loudly
+		// and roll back (via the deferred tx.Rollback()) instead.
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return nil, fmt.Errorf("reopening collision violations (rows affected): %w", err)
+		}
+		if int(affected) != len(eligible) {
+			return nil, fmt.Errorf("reopening collision violations: expected to update %d rows, updated %d -- refusing to report an unverified outcome",
+				len(eligible), affected)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing reopen-collision transaction: %w", err)
+	}
+
+	return outcomes, nil
+}
+
+// dedupeIDs returns ids with duplicates removed, keeping the first occurrence
+// of each and preserving input order, so the returned outcome list stays
+// deterministic and positionally meaningful to a caller that dedupes its own
+// display list the same way. Unlike dedupeChangeIDs
+// (handlers_blast_radius_restore.go) this does NOT drop empty strings: an
+// empty ID is a legitimate (if useless) input that must still produce its own
+// not_found outcome, not silently vanish from the result.
+func dedupeIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
