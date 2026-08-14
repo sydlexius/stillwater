@@ -775,3 +775,273 @@ func TestShared_IsStable(t *testing.T) {
 		t.Fatal("Shared returned two different caches; the maintenance task and the router would refresh/read different state")
 	}
 }
+
+// --- Background-refresh lifecycle (#2977) -------------------------------
+//
+// TriggerRefresh used to spawn a goroutine on context.Background(): nothing
+// could cancel it and nothing could wait for it. In production that let a scan
+// outlive process shutdown and query a closing database; in tests it let a scan
+// started by one test's HTTP request run on into the next test and race the
+// state that test was writing, failing a dozen unrelated tests at once. The
+// tests below pin both halves of the fix: the refresh is AWAITABLE (Drain
+// joins it) and CANCELABLE (Drain stops it).
+
+// drainDeadline bounds every Drain in these tests. Long enough that a healthy
+// drain never trips it, short enough that a regression surfaces as a named
+// assertion rather than as the package timeout.
+const drainDeadline = 10 * time.Second
+
+// refreshRunning reports the single-flight latch's state. Test-only: a drained
+// cache that still reports true would silently swallow the next refresh.
+func (c *Cache) refreshRunning() bool {
+	c.inFlight.Lock()
+	defer c.inFlight.Unlock()
+	return c.running
+}
+
+// drainCtx returns a context bounded by drainDeadline.
+func drainCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), drainDeadline)
+	t.Cleanup(cancel)
+	return ctx
+}
+
+// Drain must not return while a TriggerRefresh goroutine is still running.
+// This is the awaitability half: without the WaitGroup, Drain returns
+// immediately and the caller is told "quiescent" while a scan is mid-flight.
+func TestDrain_WaitsForInFlightTriggerRefresh(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var finished atomic.Bool
+	c.SetSources(
+		func(context.Context) (int, error) {
+			close(entered)
+			// Park until the test releases us, IGNORING ctx cancellation on
+			// purpose: this test is about Drain WAITING, not about Drain
+			// canceling (that is TestDrain_CancelsInFlightRefresh). A source
+			// that returned early on cancellation would let Drain finish for
+			// the wrong reason.
+			heldUntil(release)
+			finished.Store(true)
+			return 7, nil
+		},
+		nil,
+	)
+
+	c.TriggerRefresh()
+	<-entered // precondition: the scan really is in flight
+
+	ctx := drainCtx(t) // built on the test goroutine; t.Cleanup is not goroutine-safe
+	drained := make(chan error, 1)
+	go func() { drained <- c.Drain(ctx) }()
+
+	// Drain must still be blocked while the scan is parked.
+	select {
+	case err := <-drained:
+		t.Fatalf("Drain returned (%v) while the refresh goroutine was still running", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	if err := <-drained; err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+	if !finished.Load() {
+		t.Fatal("Drain returned before the refresh goroutine finished its work")
+	}
+	// The single-flight latch must be clear after a drain, or the next
+	// caller's refresh is silently swallowed and its test passes vacuously.
+	if c.refreshRunning() {
+		t.Fatal("single-flight latch still held after Drain; the next refresh would be dropped")
+	}
+}
+
+// Drain must CANCEL the in-flight scan, not merely wait it out. This is the
+// half that fails against the old context.Background() goroutine: a scan that
+// honors its context never learns a shutdown began, so Drain blocks until the
+// scan's own 30-minute deadline instead of returning promptly.
+func TestDrain_CancelsInFlightRefresh(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	entered := make(chan struct{})
+	var sawCancel atomic.Bool
+	c.SetSources(
+		func(ctx context.Context) (int, error) {
+			close(entered)
+			// A context-aware scan: parks until ITS context dies. Nothing else
+			// ever releases it, so the only way this test finishes is if Drain
+			// propagated the cancellation.
+			select {
+			case <-ctx.Done():
+				sawCancel.Store(true)
+				return 0, ctx.Err()
+			case <-time.After(singleFlightStallCap):
+				return 0, errors.New("scan was never canceled")
+			}
+		},
+		nil,
+	)
+
+	c.TriggerRefresh()
+	<-entered
+
+	if err := c.Drain(drainCtx(t)); err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+	if !sawCancel.Load() {
+		t.Fatal("the background refresh context was never canceled; it is not derived from the cache shutdown context")
+	}
+}
+
+// A Drain whose context expires first reports ctx.Err() rather than hanging --
+// the shutdown sequence has to be able to move on.
+func TestDrain_ReturnsContextErrorWhenTheWaitOutlastsIt(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	c.SetSources(
+		func(context.Context) (int, error) {
+			close(entered)
+			heldUntil(release) // deliberately ignores cancellation
+			return 1, nil
+		},
+		nil,
+	)
+
+	c.TriggerRefresh()
+	<-entered
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := c.Drain(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Drain err = %v; want context.DeadlineExceeded", err)
+	}
+}
+
+// Drain on an idle cache, and Drain after Drain, must both return nil
+// immediately rather than panicking or blocking. Shutdown paths call it
+// unconditionally.
+func TestDrain_IsIdempotentAndSafeWhenIdle(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	for i := range 3 {
+		if err := c.Drain(drainCtx(t)); err != nil {
+			t.Fatalf("Drain #%d on an idle cache: %v", i+1, err)
+		}
+	}
+}
+
+// A TriggerRefresh issued after a Drain must not panic, hang, or wedge the
+// single-flight latch. It starts on an already-canceled context, so it gives
+// up immediately -- and crucially it RELEASES the latch on the way out.
+func TestTriggerRefresh_AfterDrainDoesNotWedgeTheLatch(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	var sawLiveContext atomic.Bool
+	c.SetSources(
+		func(ctx context.Context) (int, error) {
+			if ctx.Err() == nil {
+				sawLiveContext.Store(true)
+			}
+			return 1, ctx.Err()
+		},
+		nil,
+	)
+
+	if err := c.Drain(drainCtx(t)); err != nil {
+		t.Fatalf("initial Drain: %v", err)
+	}
+
+	c.TriggerRefresh()
+	// Joinable even post-drain: the WaitGroup still tracks it.
+	if err := c.Drain(drainCtx(t)); err != nil {
+		t.Fatalf("Drain after a post-drain TriggerRefresh: %v", err)
+	}
+	if sawLiveContext.Load() {
+		t.Fatal("a post-drain refresh ran on a live context; the shutdown cancellation did not reach it")
+	}
+	if c.refreshRunning() {
+		t.Fatal("single-flight latch still held after a post-drain TriggerRefresh")
+	}
+}
+
+// Reset is the test-isolation entry point, and it has to do BOTH halves: join
+// the in-flight refresh (so no goroutine reads state after Reset returns) and
+// reinstall a live shutdown context (so the NEXT test's lazy path still
+// scans). A Reset that only drained would leave the process-wide cache
+// permanently canceled and every later TriggerRefresh a no-op.
+func TestReset_DrainsThenLeavesTheCacheUsable(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	var running atomic.Bool
+	c.SetSources(
+		func(context.Context) (int, error) {
+			running.Store(true)
+			close(entered)
+			heldUntil(release)
+			running.Store(false)
+			return 5, nil
+		},
+		nil,
+	)
+
+	c.TriggerRefresh()
+	<-entered
+	if !running.Load() {
+		t.Fatal("precondition: the background scan is not running")
+	}
+
+	// Reset must not return until that goroutine is done, so releasing it
+	// concurrently is the only way this completes.
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		close(release)
+	}()
+	c.Reset()
+
+	if running.Load() {
+		t.Fatal("Reset returned while a background refresh goroutine was still running")
+	}
+
+	// Now prove the cache is LIVE again: a fresh refresh must see an
+	// un-canceled context and complete.
+	//
+	// The source signals entry and the test waits for it BEFORE draining. Drain
+	// cancels on entry, so a drain issued before the goroutine reached the
+	// source would observe a canceled context for a reason that has nothing to
+	// do with Reset -- the assertion would then fail against correct code.
+	var sawLiveContext atomic.Bool
+	reached := make(chan struct{})
+	c.SetSources(
+		func(ctx context.Context) (int, error) {
+			sawLiveContext.Store(ctx.Err() == nil)
+			close(reached)
+			return 9, nil
+		},
+		nil,
+	)
+	c.TriggerRefresh()
+	<-reached
+	if err := c.Drain(drainCtx(t)); err != nil {
+		t.Fatalf("Drain after Reset: %v", err)
+	}
+	if !sawLiveContext.Load() {
+		t.Fatal("the refresh after Reset ran on a canceled context; Reset did not reinstall a live shutdown context")
+	}
+	if got := c.Get().Library; got != 9 {
+		t.Fatalf("Library = %d after a post-Reset refresh; want 9 -- the cache did not come back to life", got)
+	}
+}

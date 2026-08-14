@@ -180,6 +180,32 @@ type Cache struct {
 	// inFlight. Backs the retry cooldown in TriggerRefresh.
 	lastAttempt time.Time
 
+	// refreshWg counts the background goroutines TriggerRefresh has spawned and
+	// that have not finished yet. Drain waits on it. Add is always called by
+	// the SPAWNING goroutine before `go`, never inside the goroutine: an Add
+	// inside the goroutine can lose the race with Drain's Wait and let Drain
+	// report "everything finished" before the work has even started.
+	refreshWg sync.WaitGroup
+
+	// lifeMu guards the two shutdown fields below and NOTHING else.
+	//
+	// It is deliberately a LEAF lock: no code holds it while calling another
+	// method on this cache, while taking c.mu / c.srcMu / c.inFlight, or while
+	// waiting on refreshWg. That is what makes a deadlock impossible between a
+	// draining caller and an in-flight refresh, which needs those other locks
+	// (endRefresh takes inFlight, update takes mu, sources takes srcMu) in order
+	// to finish and let the drain complete.
+	lifeMu sync.Mutex
+	// shutdownCtx is the parent of every background refresh context. Canceling
+	// it is how Drain tells an in-flight scan to stop rather than run on past
+	// the lifetime of whoever owns this cache (in production: past process
+	// shutdown, where it could touch a closing database; in tests: past the end
+	// of the test that started it, where it races the next test's state).
+	shutdownCtx context.Context
+	// shutdownCancel cancels shutdownCtx. Reset installs a FRESH pair so the
+	// process-wide cache stays usable by the next test after a drain.
+	shutdownCancel context.CancelFunc
+
 	logger *slog.Logger
 }
 
@@ -188,7 +214,8 @@ func New(logger *slog.Logger) *Cache {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Cache{logger: logger}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Cache{logger: logger, shutdownCtx: ctx, shutdownCancel: cancel}
 }
 
 var (
@@ -331,11 +358,47 @@ func nonZeroPlatforms(in []PlatformCount) []PlatformCount {
 	return out
 }
 
+// resetDrainTimeout bounds how long Reset waits for an in-flight background
+// refresh. It is far longer than any test's stub scan needs, so on the healthy
+// path it never fires; it exists so a test whose stub source parks forever
+// fails with a named, explanatory log line instead of wedging the whole package
+// until the go test timeout.
+const resetDrainTimeout = 30 * time.Second
+
 // Reset drops the snapshot and the installed sources, returning the cache to
 // its just-constructed state. Exposed for tests, which share the process-wide
 // cache and must not bleed state into one another; production code never
 // calls it.
+//
+// It DRAINS FIRST (#2977). A TriggerRefresh started by a request under test
+// runs in the background and, without this, was still running when the test
+// returned -- calling back into the previous test's router closures while the
+// next test wrote that same state. That is a real data race, and because Go
+// attributes it to whatever tests happen to be in flight, it failed a dozen
+// unrelated tests at once. Draining here means "the test that started the
+// refresh is also the test that finishes it".
+//
+// After draining, a FRESH shutdown context is installed, because the drain
+// permanently canceled the old one. Without this the process-wide cache would
+// be left in a state where every subsequent TriggerRefresh aborted instantly,
+// so the next test's lazy path would silently do nothing.
 func (c *Cache) Reset() {
+	// No cache lock is held here: the goroutine being waited on needs c.mu,
+	// c.srcMu and c.inFlight to finish. See Drain's lock-order note.
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), resetDrainTimeout)
+	defer cancelDrain()
+	if err := c.Drain(drainCtx); err != nil {
+		_, _, logger := c.sources() // logger is guarded by srcMu; do not read the field directly
+		logger.Error("duplicate-image cache reset timed out waiting for a background refresh; a scan goroutine is still running",
+			slog.Any("error", err))
+	}
+
+	// Install a fresh shutdown context so the cache is live again.
+	ctx, cancel := context.WithCancel(context.Background())
+	c.lifeMu.Lock()
+	c.shutdownCtx, c.shutdownCancel = ctx, cancel
+	c.lifeMu.Unlock()
+
 	c.mu.Lock()
 	c.counts = Counts{}
 	c.mu.Unlock()
@@ -559,18 +622,93 @@ func (c *Cache) refresh(ctx context.Context) error {
 // Refresh directly and is not subject to it, so a genuine outage is still
 // retried on schedule. Both paths DO share the single-flight latch -- see
 // beginRefresh.
+// The signature stays argument-less ON PURPOSE. Threading the caller's REQUEST
+// context in would be wrong: that context is canceled the moment the response
+// is written, so the scan this call exists to start would be killed seconds
+// into a job measured in minutes. The lifecycle that DOES apply is the cache's
+// own (see Drain), which is why the background context is derived from
+// c.shutdownCtx rather than from context.Background().
 func (c *Cache) TriggerRefresh() {
 	if !c.beginRefresh(true) {
 		return
 	}
 
+	// Add BEFORE `go`, in the caller, and before reading the shutdown context.
+	// See refreshWg for why the Add cannot move inside the goroutine; doing it
+	// before the context read additionally means a Drain racing this call can
+	// never slip fully past (drain, then reinstall a fresh context) while this
+	// goroutine is still pending. Either Drain waits for us, or it has already
+	// canceled the context we are about to derive from and the scan aborts at
+	// once. Both outcomes are correct; a goroutine invisible to Drain is not.
+	c.refreshWg.Add(1)
+	parent := c.refreshParent()
+
 	go func() {
+		defer c.refreshWg.Done()
+		// endRefresh runs first (defers unwind last-in-first-out), so the
+		// single-flight latch is released before the WaitGroup counter drops.
+		// A drained cache therefore never has running == true left behind,
+		// which would silently swallow the next caller's refresh.
 		defer c.endRefresh()
-		ctx, cancel := RefreshContext(context.Background())
+		ctx, cancel := RefreshContext(parent)
 		defer cancel()
 		// Error already logged inside refresh; nothing actionable here.
+		//
+		// A TriggerRefresh issued AFTER a Drain is not an error and does not
+		// spin: parent is already canceled, so the scan sources see a dead
+		// context, return promptly, and the latch is released as usual.
 		_ = c.refresh(ctx)
 	}()
+}
+
+// refreshParent returns the current shutdown context. Held for the duration of
+// a map-free field read only -- see lifeMu's leaf-lock note.
+func (c *Cache) refreshParent() context.Context {
+	c.lifeMu.Lock()
+	defer c.lifeMu.Unlock()
+	return c.shutdownCtx
+}
+
+// Drain cancels any in-flight background refresh and waits for it to finish,
+// mirroring api.Router.DrainWebhooks. It returns nil once every goroutine
+// TriggerRefresh spawned has returned, or ctx.Err() if the supplied context
+// expires first.
+//
+// WHY THIS EXISTS. TriggerRefresh is fire-and-forget, so without Drain nothing
+// could observe or stop the resulting scan. In production that means a refresh
+// could still be reading the database after shutdown closed it. In tests it
+// means a scan started by one test's HTTP request runs on into the NEXT test
+// and reads state that test is writing, which is the data race in #2977.
+//
+// LOCK ORDER. lifeMu is taken and released around the cancel, and is NOT held
+// across the wait. That matters: the goroutine being waited on must take
+// c.inFlight (endRefresh), c.mu (update) and c.srcMu (sources) before it can
+// finish, so holding any cache lock across the wait would deadlock the drain
+// against the very work it is waiting for.
+//
+// Calling Drain twice is safe: the second cancel is a no-op and the WaitGroup
+// is already at zero, so it returns nil immediately. After a Drain the cache
+// still serves Get and still accepts a TriggerRefresh -- that refresh just
+// starts on an already-canceled context and gives up at once. Reset is what
+// makes the cache fully live again.
+func (c *Cache) Drain(ctx context.Context) error {
+	c.lifeMu.Lock()
+	cancel := c.shutdownCancel
+	c.lifeMu.Unlock()
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		c.refreshWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // RefreshContext derives a context bounded by the standard per-refresh
