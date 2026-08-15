@@ -78,9 +78,19 @@ func (c *NameCollision) PlatformOnly() bool {
 //
 // Two cases are deliberately NOT collisions:
 //
-//   - An empty normalized key (newName is blank or punctuation-only). Field
-//     validation rejects those separately; reporting a collision here would
-//     produce a misleading message.
+//   - An empty normalized key. ValidateFieldUpdate refuses a "name" whose key
+//     normalizes to "" (blank, whitespace-only, or made up entirely of dashes
+//     / underscores / spacing characters), so a write arriving through
+//     handleFieldUpdate has already been refused before it reaches here. That
+//     handler is the only production caller of the validator that can supply a
+//     "name" at all -- the other, Service.UpdateProviderField, returns early
+//     for a field outside providerFieldMap, which holds only provider IDs. The
+//     exemption stays because FindNameCollision is also callable directly as a
+//     pre-write probe, where reporting a "collision" for a name that has no
+//     identity at all would produce a misleading message. It is NOT covered on
+//     the paths that reach the name column without that validator, notably
+//     Service.UpdateField, Service.ClearField, Service.Update (the whole-row
+//     persist) and Service.Create (the row INSERT).
 //   - A new name whose key equals the artist's CURRENT key. Editing "The Cure"
 //     to "Cure" is a cosmetic change that does not create a second identity,
 //     so it stays allowed. Without this case the guard would block an operator
@@ -255,10 +265,17 @@ func (s *Service) UpdateNameGuarded(ctx context.Context, artistID, newName strin
 		return nil, false, fmt.Errorf("guarded rename: writing name: %w", err)
 	}
 
-	// Two cases are NOT collisions, matching FindNameCollision exactly:
-	// an empty key (blank or punctuation-only name, which field validation
-	// rejects separately) and a new name whose key equals the artist's OWN
-	// current key ("The Cure" -> "Cure" is cosmetic, not a second identity).
+	// Two cases are NOT collisions, matching FindNameCollision exactly: an
+	// empty key and a new name whose key equals the artist's OWN current key
+	// ("The Cure" -> "Cure" is cosmetic, not a second identity).
+	//
+	// This method does NOT run ValidateFieldUpdate itself, so the empty-key
+	// branch is live here: a direct caller can still reach it with a name that
+	// has no identity key. The API path is covered because handleFieldUpdate
+	// validates before calling. What the branch decides is only "this is not a
+	// collision"; refusing the value is validation's job, and
+	// TestUpdateNameGuarded_EmptyIdentityKeyIsRefusedByValidation pins that
+	// the validator is what stops such a write.
 	newKey := NormalizeIdentityKey(newName)
 	if newKey != "" && NormalizeIdentityKey(currentName) != newKey {
 		collision, err := findCollisionPartner(ctx, tx, artistID, newKey)
