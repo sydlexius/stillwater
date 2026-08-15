@@ -42,20 +42,32 @@ type scannedArtist struct {
 	dirtySince        sql.NullString
 	rulesEvaluatedAt  sql.NullString
 	lastScannedAt     sql.NullString
-	nfo               int
-	isExcluded        int
-	isClassical       int
-	locked            int
-	lockedAt          sql.NullString
-	lockedFields      string
-	createdAt         string
-	updatedAt         string
+	// sortName is scanned through a NullString because sort_name is nullable:
+	// the artists table declares it as a bare `sort_name TEXT`, with neither
+	// NOT NULL nor a default. It is not the only nullable column in
+	// artistColumns -- health_evaluated_at, dirty_since, rules_evaluated_at,
+	// locked_at and last_scanned_at are nullable too -- but each of those
+	// already had a sql.NullString target, and sort_name was still being
+	// scanned straight into a string. That made GetByID fail with "converting
+	// NULL to string is unsupported" for any row inserted without it -- an
+	// artist the service simply could not read. The failure was previously
+	// masked on the Update path, which fetched the row only to skip history on
+	// error; #3037 made that fetch load-bearing, which is how it surfaced.
+	sortName     sql.NullString
+	nfo          int
+	isExcluded   int
+	isClassical  int
+	locked       int
+	lockedAt     sql.NullString
+	lockedFields string
+	createdAt    string
+	updatedAt    string
 }
 
 // scanPtrs returns the ordered slice of pointers matching artistColumns.
 func (s *scannedArtist) scanPtrs() []any {
 	return []any{
-		&s.a.ID, &s.a.Name, &s.a.SortName, &s.a.Type, &s.a.Gender, &s.a.Origin, &s.a.Disambiguation,
+		&s.a.ID, &s.a.Name, &s.sortName, &s.a.Type, &s.a.Gender, &s.a.Origin, &s.a.Disambiguation,
 		&s.genres, &s.styles, &s.moods,
 		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
 		&s.a.Path, &s.nfo,
@@ -69,6 +81,11 @@ func (s *scannedArtist) scanPtrs() []any {
 
 // apply converts intermediate scan values into the Artist struct fields.
 func (s *scannedArtist) apply() {
+	// A NULL sort_name reads as the empty string. That is also what this
+	// package's own writers store for "unset" (Create and Update bind
+	// Artist.SortName, ClearField writes ''), so the in-memory shape is
+	// unchanged for every row Stillwater wrote itself.
+	s.a.SortName = s.sortName.String
 	s.a.Genres = UnmarshalStringSlice(s.genres)
 	s.a.Styles = UnmarshalStringSlice(s.styles)
 	s.a.Moods = UnmarshalStringSlice(s.moods)
