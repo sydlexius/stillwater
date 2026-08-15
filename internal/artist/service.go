@@ -1428,10 +1428,26 @@ func (s *Service) ClearField(ctx context.Context, id, field string) (bool, error
 // audiodb_id, discogs_id, wikidata_id, deezer_id, or spotify_id) on the artist.
 // It re-fetches the artist, applies the field update, and calls Update so
 // that all provider IDs in the normalized table are written consistently.
+//
+// The VALUE is validated here, not only at the API boundary (#3037). On this
+// write path the musicbrainz_id shape rule ran only in handleFieldUpdate, so
+// the method's guarantee depended on each caller checking first -- and the
+// other production caller, the provider_id_missing rule fixer in
+// internal/rule, does not (it writes discogs_id, deezer_id and spotify_id,
+// which carry no rule today). Validating here makes the rule a property of the
+// method rather than of its callers. A refusal comes back as a
+// *FieldValidationError, matchable with errors.Is(err, ErrInvalidFieldValue).
+//
+// ClearProviderField is unaffected: it calls through with "", which
+// ValidateFieldUpdate accepts because clearing a wrong ID is legitimate.
 func (s *Service) UpdateProviderField(ctx context.Context, id, field, value string) error {
 	providerName, ok := providerFieldMap[field]
 	if !ok {
 		return fmt.Errorf("unknown provider field: %s", field)
+	}
+
+	if err := ValidateFieldUpdate(field, value); err != nil {
+		return err
 	}
 
 	a, err := s.GetByID(ctx, id)
@@ -1502,25 +1518,9 @@ func applyProviderFieldToArtist(a *Artist, providerName, value string) {
 	}
 }
 
-// ValidateFieldUpdate returns a non-nil error when the field value is
-// invalid. Validation rules:
-// - "name" must not be empty or whitespace-only.
-// - "musicbrainz_id" must be a valid UUID (or empty, which clears the ID).
-//
-// All other fields are accepted as-is (free-form text).
-func ValidateFieldUpdate(field, value string) error {
-	switch field {
-	case "name":
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("name cannot be empty")
-		}
-	case "musicbrainz_id":
-		if value != "" && !isValidMBID(value) {
-			return fmt.Errorf("invalid MusicBrainz ID format (expected UUID)")
-		}
-	}
-	return nil
-}
+// ValidateFieldUpdate lives in field_validation.go, beside the typed error it
+// returns and the doc comment recording which service methods enforce it
+// (#3037).
 
 // IsValidMBID reports whether s is a syntactically valid MusicBrainz
 // identifier (a UUID).
