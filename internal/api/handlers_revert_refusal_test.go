@@ -11,8 +11,27 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 )
 
+// revertProbeValues are the candidate OLD VALUES the dormancy probe below
+// offers to every history-tracked field. They are curated literals and stay
+// literals -- nothing dynamic is interpolated -- because their job is to be a
+// fixed, reviewable sample of the value SHAPES artist's rules refuse: "" and
+// " " for "name cannot be empty", "-" and "\u200b" (a zero-width space, an
+// escape so a reader can see it) for the empty-identity-key rule, and the two
+// non-UUID strings for the "musicbrainz_id" shape rule. Probing only "" was
+// the defect this replaces: "musicbrainz_id" accepts "" (a clear is
+// legitimate) while refusing "not-a-uuid", so a single-value probe called it
+// unvalidated.
+var revertProbeValues = []string{"", " ", "-", "\u200b", "not-a-uuid", "12345"}
+
+// knownValidatedFields lists every field artist.ValidateFieldUpdate polices.
+// None is history-tracked today, which is why the third check is dormant;
+// TestRevertProbeValues_CoverKnownRules uses it to prove revertProbeValues
+// actually trips each of those rules.
+var knownValidatedFields = []string{"name", "musicbrainz_id"}
+
 // validatedTrackableField reports a history-tracked field whose OLD VALUE
-// artist.ValidateFieldUpdate can refuse, or "" when no such field exists.
+// artist.ValidateFieldUpdate can refuse, together with a probe value it
+// refuses, or ("", "") when no tracked field refuses any of revertProbeValues.
 //
 // It exists because the answer decides which level the refusal path can be
 // tested at, and that answer is a property of two lists that live in another
@@ -20,16 +39,47 @@ import (
 // means the tests below keep testing the real code when either list changes,
 // instead of quietly testing the wrong arm.
 //
-// "" is probed as the old value because it is the value a revert writes back
-// through ClearField, and it is the value the anticipated first case (a "name"
-// change whose old value was empty) carries.
-func validatedTrackableField() string {
+// LIMIT OF THE PROBE, so the next reader does not over-trust it: a rule added
+// to a field NOT in knownValidatedFields, refusing only values outside
+// revertProbeValues, still reads as unvalidated here. The guard is
+// TestRevertProbeValues_CoverKnownRules plus keeping both lists current.
+func validatedTrackableField() (field, oldValue string) {
 	for _, f := range artist.TrackableFields() {
-		if artist.ValidateFieldUpdate(f, "") != nil {
-			return f
+		for _, v := range revertProbeValues {
+			if artist.ValidateFieldUpdate(f, v) != nil {
+				return f, v
+			}
 		}
 	}
-	return ""
+	return "", ""
+}
+
+// TestRevertProbeValues_CoverKnownRules fails loudly when revertProbeValues
+// stops representing a rule artist.ValidateFieldUpdate actually enforces.
+//
+// It is the honesty check under the dormancy assertion below, which reads "no
+// tracked field refuses any probe value" -- evidence of dormancy only if the
+// probe values are known to trip the rules that exist. A rule whose refused
+// values are unrepresented would make the probe call a validated field
+// unvalidated: silently passing while asserting something false.
+func TestRevertProbeValues_CoverKnownRules(t *testing.T) {
+	t.Parallel()
+
+	for _, f := range knownValidatedFields {
+		refused := false
+		for _, v := range revertProbeValues {
+			if artist.ValidateFieldUpdate(f, v) != nil {
+				refused = true
+				break
+			}
+		}
+		if !refused {
+			t.Errorf("no value in revertProbeValues is refused for field %q; "+
+				"its validation rule changed shape, so add a value the current rule "+
+				"refuses (and add the field to knownValidatedFields if a NEW field "+
+				"gained a rule), or the dormancy probe will report it as unvalidated", f)
+		}
+	}
 }
 
 // TestValidateRevertable_OldValueCheck covers validateRevertable's third check
@@ -41,29 +91,38 @@ func validatedTrackableField() string {
 // than skipping, so the dormancy is a checked precondition rather than an
 // assumption, and it runs the real end-to-end assertion the moment the
 // precondition stops holding.
+//
+// Dormancy is decided by offering every tracked field every value in
+// revertProbeValues, not just "". A field can accept "" and still refuse other
+// recorded old values -- "musicbrainz_id" is that shape -- so a probe of ""
+// alone would report "dormant" for a check that is live and rejecting real
+// history rows.
 func TestValidateRevertable_OldValueCheck(t *testing.T) {
 	t.Parallel()
 
-	field := validatedTrackableField()
+	field, oldValue := validatedTrackableField()
 	if field == "" {
-		// Precondition: every tracked field accepts an empty old value, which
-		// is what makes the third check dormant and the unit-level tests below
-		// the only way to exercise it.
+		// Precondition: no tracked field refuses any probe value, which is what
+		// makes the third check dormant and the unit-level tests below the only
+		// way to exercise it.
 		for _, f := range artist.TrackableFields() {
-			if err := artist.ValidateFieldUpdate(f, ""); err != nil {
-				t.Fatalf("ValidateFieldUpdate(%q, \"\") = %v, want nil", f, err)
+			for _, v := range revertProbeValues {
+				if err := artist.ValidateFieldUpdate(f, v); err != nil {
+					t.Fatalf("ValidateFieldUpdate(%q, %q) = %v, want nil", f, v, err)
+				}
 			}
 		}
 		return
 	}
 
-	change := &artist.MetadataChange{Field: field, Source: "manual", OldValue: ""}
+	change := &artist.MetadataChange{Field: field, Source: "manual", OldValue: oldValue}
 	err := validateRevertable(change)
 	if !errors.Is(err, errRevertInvalidOldValue) {
-		t.Fatalf("validateRevertable(%q) = %v, want errRevertInvalidOldValue", field, err)
+		t.Fatalf("validateRevertable(%q, old=%q) = %v, want errRevertInvalidOldValue",
+			field, oldValue, err)
 	}
 	// The wrapped sentence must be the validator's curated Reason.
-	want := fieldRefusalReason(artist.ValidateFieldUpdate(field, ""))
+	want := fieldRefusalReason(artist.ValidateFieldUpdate(field, oldValue))
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("error %q does not carry the refusal reason %q", err, want)
 	}
