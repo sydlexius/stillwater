@@ -5676,7 +5676,25 @@ paths:
                   artist-history row fragment, or a fallback confirmation block
                   if the new history record cannot be located.
         "400":
-          description: Field is not revertible, or change source is "revert".
+          description: |
+            The revert was refused. Three causes produce this status, and each
+            is permanent for a given change row: retrying the same request is
+            refused identically, because a history row's recorded old value
+            never changes.
+
+            - The field is not one history tracks, so it is not revertible.
+            - The change's source is "revert", and a revert cannot itself be
+              reverted.
+            - The recorded old value is not a value the field accepts, so
+              restoring it would damage the row. The message names the specific
+              reason the field gave.
+
+            The last cause is reported both from the pre-write eligibility
+            check and, defensively, from the write itself when the service
+            refuses the value.
+
+            (The handler also answers 400 when the path carries no change id,
+            which the route's own pattern makes unreachable.)
           content:
             application/json:
               schema:

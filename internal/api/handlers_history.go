@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -321,10 +322,40 @@ var errRevertNotTrackable = errors.New("field is not revertible")
 // to revert an entry that was itself produced by a revert.
 var errRevertOfRevert = errors.New("revert entries cannot be reverted")
 
+// errRevertInvalidOldValue is returned by validateRevertable when the value
+// the revert would write back is one the field itself does not accept (#3037).
+// It is wrapped with the validator's own curated sentence, so the operator is
+// told WHICH rule refused rather than only that something did.
+var errRevertInvalidOldValue = errors.New("the previous value cannot be restored")
+
 // validateRevertable returns an error if the change is ineligible for revert.
-// It checks two conditions independently so tests can cover each in isolation:
-// (a) the field must be tracked by the history system, and (b) the source must
-// not already be "revert" (reverting a revert would create infinite chains).
+// It checks three conditions independently so tests can cover each in
+// isolation: (a) the field must be tracked by the history system, (b) the
+// source must not already be "revert" (reverting a revert would create
+// infinite chains), and (c) the OLD VALUE must be one the field accepts.
+//
+// (c) is #3037. A revert writes change.OldValue back, so a row whose old value
+// the field would refuse is not revertible in any useful sense: the only two
+// outcomes are a refusal at write time or a write that damages the row.
+// Service.UpdateField and Service.ClearField refuse such a value regardless --
+// that is the guarantee those methods now carry -- but refusing HERE is what
+// makes the operator's experience honest rather than merely safe. The single
+// revert endpoint's eligibility answer and the blast-radius PREVIEW both
+// consult this function, so the row is reported as unrestorable while the
+// operator is still deciding, instead of only at commit time.
+//
+// The check delegates to artist.ValidateFieldUpdate rather than special-casing
+// a field name, so a field that gains a rule tomorrow is covered without
+// editing this function. That is also why it is DORMANT today: no field is
+// both history-tracked and carrying a validation rule on this base. Checked,
+// not assumed -- the intersection of
+// `sed -n '/^var trackableFields/,/^}/p' internal/artist/service.go` with the
+// switch arms of ValidateFieldUpdate (name, musicbrainz_id) is empty. The
+// anticipated first case is a "name" change whose OldValue is empty, which
+// arrives when a later change adds "name" to trackableFields; putting an empty
+// name back blanks artists.name, which is NOT NULL but carries no non-empty
+// CHECK, so the blank persists and every identity mechanism keyed on the name
+// stops matching the artist.
 func validateRevertable(change *artist.MetadataChange) error {
 	if !artist.IsTrackableField(change.Field) {
 		return errRevertNotTrackable
@@ -332,7 +363,31 @@ func validateRevertable(change *artist.MetadataChange) error {
 	if change.Source == "revert" {
 		return errRevertOfRevert
 	}
+	if err := artist.ValidateFieldUpdate(change.Field, change.OldValue); err != nil {
+		return fmt.Errorf("%w: %s", errRevertInvalidOldValue, fieldRefusalReason(err))
+	}
 	return nil
+}
+
+// fieldRefusalReason extracts the operator-facing sentence from a field
+// validation refusal, for a message that will reach a client.
+//
+// It reads the typed error's Reason FIELD rather than the rendered error
+// string, and that distinction is the point rather than a lint dodge:
+// artist.FieldValidationError.Reason is a hand-written sentence chosen for an
+// operator to read ("name cannot be empty"), while the rendered chain is
+// whatever the wrapping happens to produce -- today the same string, tomorrow
+// one carrying an artist id, a column name, or a driver message. Only the
+// first is safe to put in a response body, so only the first is read here.
+//
+// An error that is not a *artist.FieldValidationError falls back to the
+// generic sentinel text: unknown provenance means it is not shown.
+func fieldRefusalReason(err error) string {
+	var ve *artist.FieldValidationError
+	if errors.As(err, &ve) && ve.Reason != "" {
+		return ve.Reason
+	}
+	return artist.ErrInvalidFieldValue.Error()
 }
 
 // performRevert applies the revert mutation for a single metadata change.
@@ -350,6 +405,15 @@ func validateRevertable(change *artist.MetadataChange) error {
 // ClearField/UpdateField currently succeed silently when the artist ID does
 // not exist (UPDATE affects zero rows). The ErrNotFound guards are defensive:
 // they activate if the repo layer is updated to check RowsAffected.
+//
+// A revert whose OLD VALUE the field refuses is refused twice over (#3037):
+// validateRevertable rejects the row before this function is reached, and the
+// service method refuses it again if anything ever calls here without
+// validating first. That second refusal arrives as a
+// *artist.FieldValidationError, which writeRevertFailure classifies rather
+// than reporting as a server fault. Two layers on purpose: the first is what
+// the operator sees, the second is what makes the guarantee independent of the
+// caller.
 func (r *Router) performRevert(ctx context.Context, change *artist.MetadataChange) (revertChangeID string, changed bool, err error) {
 	revertChangeID = uuid.New().String()
 	ctx = artist.ContextWithSource(ctx, "revert")
@@ -464,6 +528,50 @@ func (r *Router) renderArtistTabRevertFragment(
 	return true
 }
 
+// writeRevertFailure renders the complete response for a revert the service
+// refused or could not perform. Split out of handleRevertHistory so the
+// classification lives in one readable place; it always writes a response, so
+// the caller returns immediately after calling it.
+//
+// The ORDER of the branches is by specificity, not by likelihood: each one
+// exists because falling through to the generic 500 would tell the operator
+// "revert failed" -- a server fault -- for a request that was refused on
+// purpose and will be refused identically on every retry.
+func (r *Router) writeRevertFailure(w http.ResponseWriter, req *http.Request,
+	changeID string, change *artist.MetadataChange, err error,
+) {
+	if errors.Is(err, artist.ErrNotFound) {
+		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+
+	// The service refused the VALUE (#3037). DEFENSIVE, in the same sense as
+	// the ErrNotFound guard above: it is unreachable while validateRevertable
+	// runs ahead of it, because a history row's OldValue is immutable, so a
+	// value that passed the eligibility check cannot have become invalid by
+	// the time the write is attempted.
+	//
+	// It is kept because performRevert is a shared helper whose service calls
+	// now CAN refuse, and the alternative fall-through reports a refused value
+	// as a 500. A caller added later that reaches performRevert without the
+	// eligibility gate gets the honest answer instead of a misleading one.
+	//
+	// The client-visible message is built from the refusal's curated Reason
+	// (fieldRefusalReason), never the rendered error chain; the full error goes
+	// to the server log on the line above it.
+	if errors.Is(err, artist.ErrInvalidFieldValue) {
+		r.logger.Warn("revert refused: the previous value is not one the field accepts",
+			"change_id", changeID, "field", change.Field,
+			"artist_id", change.ArtistID, "error", err)
+		writeError(w, req, http.StatusBadRequest,
+			errRevertInvalidOldValue.Error()+": "+fieldRefusalReason(err))
+		return
+	}
+
+	r.logger.Error("performing revert", "change_id", changeID, "error", err)
+	writeError(w, req, http.StatusInternalServerError, "revert failed")
+}
+
 // handleRevertHistory reverts a single metadata change by restoring the old value.
 // POST /api/v1/history/{id}/revert
 func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
@@ -495,12 +603,7 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 
 	revertChangeID, revertChanged, err := r.performRevert(req.Context(), change)
 	if err != nil {
-		if errors.Is(err, artist.ErrNotFound) {
-			writeError(w, req, http.StatusNotFound, "artist not found")
-			return
-		}
-		r.logger.Error("performing revert", "change_id", changeID, "error", err)
-		writeError(w, req, http.StatusInternalServerError, "revert failed")
+		r.writeRevertFailure(w, req, changeID, change, err)
 		return
 	}
 
