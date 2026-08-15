@@ -15,11 +15,55 @@ package artist
 // two rows the guard just allowed. Keying both on NormalizeIdentityKey means
 // "the guard rejects exactly what the report would have flagged".
 //
-// Enforcement lives at the API boundary (handleFieldUpdate), not inside
-// Service.UpdateField. UpdateField is also driven by the history-revert and
-// platform-state sync paths, which must stay able to restore a prior value;
-// turning the service method itself into a hard gate would break those flows.
-// So this file supplies the DETECTION and the API layer decides the policy.
+// WHERE ENFORCEMENT LIVES (rewritten in #3037; the previous text described the
+// opposite arrangement and is gone rather than left to contradict the code).
+// The guard is a SERVICE-level gate: Service.UpdateField routes a "name" write
+// to UpdateNameGuarded, so a caller cannot reach the name column by picking a
+// different SINGLE-FIELD service method. The API boundary keeps its own
+// pre-write check (guardNameCollision) purely as a fast path that produces a
+// nicer failure before any transaction opens; it is no longer the guarantee.
+//
+// The earlier reasoning -- that history-revert and platform-state sync "must
+// stay able to restore a prior value", so the service must not gate -- was
+// wrong in the one case that mattered. Undoing a rename that DE-DUPLICATED two
+// artists recreates the duplicate, which is the exact state #2730 exists to
+// prevent; "it was the prior value" does not make it safe to write now. Those
+// flows are not broken by the gate, they are CORRECTED by it: a refused revert
+// reports a collision instead of silently recreating one. (Neither flow can
+// actually drive a name write on this base -- see updateNameThroughGuard for
+// why, stated there so this file does not claim a live defect it does not
+// have.)
+//
+// SCOPE, STATED HONESTLY. Every statement in this file's SQL that can write the
+// artists.name column was enumerated with
+// `grep -rn 'UPDATE artists\|INSERT INTO artists' internal/artist --include='*.go' | grep -v _test`
+// and reading each hit for a name assignment -- the sentence is about
+// PRODUCTION statements because that grep filters tests out. Four can:
+// UpdateNameGuarded's own targeted UPDATE, the repository's two dynamic
+// column-map UPDATE statements (which resolve "name" through fieldColumnMap),
+// the whole-row UPDATE in sqlite_artist.go, and the row INSERT. This routing
+// covers the first three -- direct UpdateNameGuarded callers plus
+// Service.UpdateField and Service.ClearField, the only service methods that
+// reach those two. TWO service methods reach the name column
+// WITHOUT it:
+//
+//   - Service.Update, the whole-row persist (the multi-column UPDATE in
+//     sqlite_artist.go). A caller that mutates a.Name and persists the struct
+//     writes the name column with no collision check. Reachable from
+//     applyProviderName (internal/api/handlers_refresh.go), the
+//     name_language_pref fixer (internal/rule/fixers_language.go) and
+//     internal/artist/disambiguation.go.
+//   - Service.Create, the row INSERT. It reaches the raw INSERT INTO artists
+//     with neither validation nor a collision check, so an insert can seed an
+//     artist whose name is empty or one a different artist already holds --
+//     the guard only ever sees an UPDATE. Reachable in production from the
+//     Emby/Jellyfin library populate handlers
+//     (internal/api/handlers_connection_library.go) and the filesystem scanner
+//     (internal/scanner/scanner.go).
+//
+// Both gaps predate #3037 and are deliberately NOT closed here; closing them
+// means deciding what a scanner, an importer and a merge engine should do when
+// the incoming row is invalid or collides, which is its own change.
 
 import (
 	"context"
@@ -60,6 +104,38 @@ func (c *NameCollision) PlatformOnly() bool {
 	return c != nil && strings.TrimSpace(c.Path) == ""
 }
 
+// NameCollisionError is the ERROR form of a refused rename, for the call
+// shapes that have no second return value to carry a *NameCollision.
+//
+// Service.UpdateField is the reason it exists. That method returns
+// (changed bool, err error), and a rename it refuses is neither a successful
+// write nor a no-op: reporting it as (false, nil) would tell the caller
+// "nothing needed doing", which is the exact lie a refusal must never become.
+// So the refusal travels as an error that still carries the colliding artist,
+// letting a caller render the SAME refusal the direct UpdateNameGuarded call
+// site renders.
+//
+// errors.Is(err, ErrNameCollision) matches it, so a caller that only needs to
+// classify the failure never has to type-assert.
+type NameCollisionError struct {
+	// Collision names the artist that already holds the identity. Never nil
+	// for an error this package constructs.
+	Collision *NameCollision
+}
+
+// Error renders the sentinel's text plus the colliding artist's name, so a
+// log line that only prints the error is still actionable.
+func (e *NameCollisionError) Error() string {
+	if e == nil || e.Collision == nil {
+		return ErrNameCollision.Error()
+	}
+	return fmt.Sprintf("%s: %q (artist %s)", ErrNameCollision.Error(), e.Collision.Name, e.Collision.ArtistID)
+}
+
+// Unwrap makes errors.Is(err, ErrNameCollision) true, so callers classify on
+// the sentinel and only type-assert when they need the colliding artist.
+func (e *NameCollisionError) Unwrap() error { return ErrNameCollision }
+
 // FindNameCollision reports whether renaming artistID to newName would land it
 // on an identity key that a different artist already holds.
 //
@@ -80,17 +156,14 @@ func (c *NameCollision) PlatformOnly() bool {
 //
 //   - An empty normalized key. ValidateFieldUpdate refuses a "name" whose key
 //     normalizes to "" (blank, or made up entirely of dashes, underscores,
-//     spacing, or invisible formatting characters), so a write arriving through
-//     handleFieldUpdate has already been refused before it reaches here. That
-//     handler is the only production caller of the validator that can supply a
-//     "name" at all -- the other, Service.UpdateProviderField, returns early
-//     for a field outside providerFieldMap, which holds only provider IDs. The
+//     spacing, or invisible formatting characters), and as of #3037 every
+//     single-field service write verb runs it first, so this exemption is
+//     unreachable from those paths and cannot become the hole it once was. The
 //     exemption stays because FindNameCollision is also callable directly as a
 //     pre-write probe, where reporting a "collision" for a name that has no
 //     identity at all would produce a misleading message. It is NOT covered on
-//     the paths that reach the name column without that validator, notably
-//     Service.UpdateField, Service.ClearField, Service.Update (the whole-row
-//     persist) and Service.Create (the row INSERT).
+//     the two methods named in the scope block above, Service.Update (the
+//     whole-row persist) and Service.Create (the row INSERT).
 //   - A new name whose key equals the artist's CURRENT key. Editing "The Cure"
 //     to "Cure" is a cosmetic change that does not create a second identity,
 //     so it stays allowed. Without this case the guard would block an operator
@@ -232,6 +305,18 @@ func findCollisionPartner(ctx context.Context, q rowQuerier, artistID, newKey st
 // UpdateField: false with a nil collision means the no-op skip fired because
 // the stored name already equals the requested one.
 func (s *Service) UpdateNameGuarded(ctx context.Context, artistID, newName string) (*NameCollision, bool, error) {
+	// The VALUE is refused before anything else. The collision check below
+	// deliberately treats an empty identity key as "not a collision" (see
+	// FindNameCollision), so without this the guard would wave a blanking
+	// write straight through -- the guard's own exemption becoming the hole.
+	// Validated HERE and not only in UpdateField because this method is also
+	// called directly (handleFieldUpdate's transactional path), and a rule
+	// that only one of two entry points enforces is the shape of defect #3037
+	// exists to close.
+	if err := ValidateFieldUpdate(string(FieldArtistName), newName); err != nil {
+		return nil, false, err
+	}
+
 	db, err := s.artistDB()
 	if err != nil {
 		return nil, false, fmt.Errorf("guarded rename: %w", err)
@@ -249,6 +334,24 @@ func (s *Service) UpdateNameGuarded(ctx context.Context, artistID, newName strin
 	var currentName string
 	if err := tx.QueryRowContext(ctx,
 		`SELECT name FROM artists WHERE id = ?`, artistID).Scan(&currentName); err != nil {
+		// A row that is simply ABSENT is reported as ErrNotFound so callers can
+		// tell "this artist does not exist" (a 404) from "the rename could not
+		// be decided" (a 500).
+		//
+		// WHICH CALLER ACTUALLY CONSUMES THIS, stated narrowly because the
+		// obvious wider claim is false. The REVERT path does: Service.UpdateField
+		// routes name writes here (#3037), and writeRevertFailure
+		// (internal/api/handlers_history.go) branches on artist.ErrNotFound to
+		// answer 404. The direct field-edit path does NOT -- handleFieldUpdate
+		// turns every error from this method into a 500. It never observes this
+		// mapping anyway: for the "name" field it runs guardNameCollision FIRST,
+		// which loads the same missing artist through FindNameCollision, fails
+		// closed and writes a 500 before this method is reached. So a 404 branch
+		// added at that call site today would be dead code; the 500 is produced
+		// upstream and predates #3037.
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, fmt.Errorf("guarded rename: loading artist %s: %w", artistID, ErrNotFound)
+		}
 		return nil, false, fmt.Errorf("guarded rename: loading artist %s: %w", artistID, err)
 	}
 
@@ -269,13 +372,11 @@ func (s *Service) UpdateNameGuarded(ctx context.Context, artistID, newName strin
 	// empty key and a new name whose key equals the artist's OWN current key
 	// ("The Cure" -> "Cure" is cosmetic, not a second identity).
 	//
-	// This method does NOT run ValidateFieldUpdate itself, so the empty-key
-	// branch is live here: a direct caller can still reach it with a name that
-	// has no identity key. The API path is covered because handleFieldUpdate
-	// validates before calling. What the branch decides is only "this is not a
-	// collision"; refusing the value is validation's job, and
-	// TestUpdateNameGuarded_EmptyIdentityKeyIsRefusedByValidation pins that
-	// the validator is what stops such a write.
+	// The empty-key branch is now DEAD on this path -- the ValidateFieldUpdate
+	// call at the top of this method already refused a name that normalizes to
+	// "" -- and is kept only so the two scans stay literally identical, which
+	// is the property that keeps the fast path and the authority from
+	// disagreeing about what a duplicate is.
 	newKey := NormalizeIdentityKey(newName)
 	if newKey != "" && NormalizeIdentityKey(currentName) != newKey {
 		collision, err := findCollisionPartner(ctx, tx, artistID, newKey)
@@ -302,4 +403,60 @@ func (s *Service) UpdateNameGuarded(ctx context.Context, artistID, newName strin
 	}
 
 	return nil, true, nil
+}
+
+// updateNameThroughGuard is what Service.UpdateField does when the field is
+// "name". It exists so the collision guard cannot be BYPASSED by choosing a
+// different single-field service method (#3037).
+//
+// THE DEFECT IT CLOSES. Service.UpdateField writes the name column directly
+// through fieldColumnMap, so it never reaches UpdateNameGuarded and no
+// collision check runs. Undoing a rename that had been applied to DE-DUPLICATE
+// two artists would then recreate the duplicate the rename existed to remove
+// -- exactly the state #2730 and #2807 exist to prevent.
+//
+// IS THAT OPERATOR-REACHABLE TODAY? NO, and saying otherwise would be the
+// overstatement this file has already had to correct once. The one production
+// caller that would drive it is the history revert (performRevert,
+// internal/api/handlers_history.go), and validateRevertable refuses any field
+// outside trackableFields BEFORE performRevert runs. trackableFields does not
+// contain "name" on this base -- checked, not assumed:
+// `git show 8ccd74fc:internal/artist/service.go | sed -n '/^var trackableFields/,/^}/p'`
+// -- so a name revert is answered 400 "field is not revertible" and never
+// reaches UpdateField at all. This routing therefore closes the gap by
+// CONSTRUCTION, before the affordance that would open it exists. That is the
+// order the repo wants: the guard lands first, so adding "name" to
+// trackableFields later is a one-line change rather than a change that also
+// has to remember to gate a write path.
+//
+// THE FIX IS THE ROUTE, NOT A CHECK AT THE CALLER. Patching performRevert
+// would leave the next caller of UpdateField("name", ...)
+// unguarded, and this repo has been bitten by exactly that shape before
+// (#2748/#2754 gated six surfaces one at a time). Routing inside the service
+// closes the SINGLE-FIELD bypass: every caller that asks UpdateField (or
+// ClearField) to write "name" gets the transactional guard whether or not it
+// knows the guard exists.
+//
+// WHAT THE ROUTE DOES NOT COVER, stated so the claim above is not read wider
+// than it is true. Service.Update persists a WHOLE Artist struct and never
+// passes through here, and Service.Create inserts one; a caller that assigns
+// a.Name and calls either still writes the name column unguarded. Both predate
+// #3037 and are enumerated in this file's header. "Every caller that writes
+// name is guarded" is therefore FALSE as a general statement and true only of
+// the single-field service methods.
+//
+// THE REFUSAL IS AN ERROR, NOT A SILENT FALSE. UpdateField's (false, nil)
+// means "nothing needed doing", and callers render it as a benign no-op. A
+// refused rename is the opposite of that, so it comes back as a
+// *NameCollisionError carrying the colliding artist; callers that only need to
+// classify it match errors.Is(err, ErrNameCollision).
+func (s *Service) updateNameThroughGuard(ctx context.Context, id, value string) (bool, error) {
+	collision, changed, err := s.UpdateNameGuarded(ctx, id, value)
+	if err != nil {
+		return false, err
+	}
+	if collision != nil {
+		return false, &NameCollisionError{Collision: collision}
+	}
+	return changed, nil
 }

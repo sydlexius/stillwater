@@ -8,12 +8,16 @@ package api
 // context parameter") only under path 'internal/api/handlers.*\.go', and this
 // file renders a templ component.
 //
-// internal/artist supplies the detection (Service.FindNameCollision); this
-// file owns the POLICY: which request paths are gated, what status code the
-// operator gets, and what the response body says. Keeping the policy here is
-// deliberate -- Service.UpdateField is also driven by history-revert and
-// platform-state sync, which must stay able to write a prior value, so the
-// service method itself must not become a hard gate.
+// internal/artist owns the GUARANTEE (#3037): Service.UpdateField routes a
+// name write through UpdateNameGuarded, so no caller can reach the column
+// unguarded by picking a different SINGLE-FIELD service method. (Two methods
+// still reach it without the guard -- Service.Update and Service.Create --
+// enumerated in internal/artist/name_collision.go's scope block; neither is
+// reachable from this handler.) This file owns the PRESENTATION -- what status
+// code the operator gets and what the response body says -- plus a pre-write
+// fast path that fails before a transaction opens. If this file were deleted
+// the rename would still be refused; the operator would just get a worse
+// message.
 
 import (
 	"log/slog"
