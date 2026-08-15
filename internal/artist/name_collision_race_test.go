@@ -483,7 +483,7 @@ func TestUpdateNameGuarded_UnusableDatabaseIsAnError(t *testing.T) {
 // `grep -rn 'UpdateNameGuarded(' --include='*.go' internal/ cmd/ | grep -v _test.go`,
 // which reports production callers only -- the sentence says production
 // because the grep filters tests out. Routing the service write verbs through
-// the validator is a separate change; the file_validation.go header enumerates
+// the validator is a separate change; the field_validation.go header enumerates
 // which methods do and do not run it today.
 func TestUpdateNameGuarded_EmptyIdentityKeyIsRefusedByValidation(t *testing.T) {
 	t.Parallel()

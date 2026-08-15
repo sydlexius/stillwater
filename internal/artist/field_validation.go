@@ -137,10 +137,19 @@ func ValidateFieldUpdate(field, value string) error {
 		// HTTP 400 body verbatim (Error() is passed straight through by
 		// handleFieldUpdate), so it must never carry the rejected value, an
 		// artist id, a column name or driver text.
+		//
+		// The enumeration has to match what NormalizeIdentityKey actually folds
+		// away (dupkey.go), or the operator is told something other than what
+		// happened. It folds spacing (step 4), Unicode format / Cf characters
+		// such as a zero-width space or a soft hyphen (step 2), and dashes plus
+		// underscores (steps 3 and 7) -- and "invisible formatting characters"
+		// is how an operator reads that last class, not "category Cf". It does
+		// NOT fold quotes or apostrophes away, so a name of "'" survives and is
+		// accepted; the wording must not claim otherwise.
 		if NormalizeIdentityKey(value) == "" {
 			return &FieldValidationError{
 				Field:  field,
-				Reason: "name cannot be only dashes, underscores, or spacing characters",
+				Reason: "name cannot be only dashes, underscores, spacing, or invisible formatting characters",
 			}
 		}
 	case "musicbrainz_id":

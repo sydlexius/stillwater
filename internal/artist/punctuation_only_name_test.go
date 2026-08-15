@@ -121,18 +121,19 @@ func TestValidateFieldUpdate_RefusesPunctuationOnlyName(t *testing.T) {
 				"ErrInvalidFieldValue so a caller can classify the refusal without "+
 				"type-asserting; an unclassifiable refusal reads as a 500, not a 400", name, err)
 		}
-		// The Reason reaches an HTTP 400 body verbatim (Error() renders it and
-		// handleFieldUpdate passes that straight through), so it must be the
-		// curated literal and must not echo the rejected input back to a client.
+		// The Reason reaches an HTTP 400 body verbatim (handleFieldUpdate passes
+		// Error() straight through), so it is pinned below character-for-character
+		// and SPELLED OUT, never read from the production symbol -- sharing that
+		// symbol would accept any rewording, an input echo included.
 		var ve *FieldValidationError
 		if !errors.As(err, &ve) {
 			t.Errorf("ValidateFieldUpdate(name, %q) err is not a *FieldValidationError, "+
 				"so no operator-facing Reason reaches the 400 body", name)
 			continue
 		}
-		if ve.Reason == "" {
-			t.Errorf("ValidateFieldUpdate(name, %q) carries an empty Reason; Error() falls "+
-				"back to the generic sentinel and the operator learns nothing", name)
+		const want = "name cannot be only dashes, underscores, spacing, or invisible formatting characters"
+		if ve.Reason != want {
+			t.Errorf("ValidateFieldUpdate(name, %q) Reason = %q, want %q", name, ve.Reason, want)
 		}
 	}
 }

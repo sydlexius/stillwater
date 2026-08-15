@@ -79,8 +79,8 @@ func (c *NameCollision) PlatformOnly() bool {
 // Two cases are deliberately NOT collisions:
 //
 //   - An empty normalized key. ValidateFieldUpdate refuses a "name" whose key
-//     normalizes to "" (blank, whitespace-only, or made up entirely of dashes
-//     / underscores / spacing characters), so a write arriving through
+//     normalizes to "" (blank, or made up entirely of dashes, underscores,
+//     spacing, or invisible formatting characters), so a write arriving through
 //     handleFieldUpdate has already been refused before it reaches here. That
 //     handler is the only production caller of the validator that can supply a
 //     "name" at all -- the other, Service.UpdateProviderField, returns early
