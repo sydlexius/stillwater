@@ -42,11 +42,15 @@ type scannedArtist struct {
 	dirtySince        sql.NullString
 	rulesEvaluatedAt  sql.NullString
 	lastScannedAt     sql.NullString
-	// sortName is scanned through a NullString because sort_name is the ONE
-	// nullable TEXT column in artistColumns (every other one carries NOT NULL
-	// DEFAULT ''). Scanning it straight into a string made GetByID fail with
-	// "converting NULL to string is unsupported" for any row inserted without
-	// it -- an artist the service simply could not read. That was previously
+	// sortName is scanned through a NullString because sort_name is nullable:
+	// the artists table declares it as a bare `sort_name TEXT`, with neither
+	// NOT NULL nor a default. It is not the only nullable column in
+	// artistColumns -- health_evaluated_at, dirty_since, rules_evaluated_at,
+	// locked_at and last_scanned_at are nullable too -- but each of those
+	// already had a sql.NullString target, and sort_name was still being
+	// scanned straight into a string. That made GetByID fail with "converting
+	// NULL to string is unsupported" for any row inserted without it -- an
+	// artist the service simply could not read. The failure was previously
 	// masked on the Update path, which fetched the row only to skip history on
 	// error; #3037 made that fetch load-bearing, which is how it surfaced.
 	sortName     sql.NullString
@@ -77,8 +81,10 @@ func (s *scannedArtist) scanPtrs() []any {
 
 // apply converts intermediate scan values into the Artist struct fields.
 func (s *scannedArtist) apply() {
-	// A NULL sort_name reads as the empty string, which is what every writer
-	// stores for "unset" anyway, so the in-memory shape is unchanged.
+	// A NULL sort_name reads as the empty string. That is also what this
+	// package's own writers store for "unset" (Create and Update bind
+	// Artist.SortName, ClearField writes ''), so the in-memory shape is
+	// unchanged for every row Stillwater wrote itself.
 	s.a.SortName = s.sortName.String
 	s.a.Genres = UnmarshalStringSlice(s.genres)
 	s.a.Styles = UnmarshalStringSlice(s.styles)

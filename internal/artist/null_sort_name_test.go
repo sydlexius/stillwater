@@ -6,11 +6,11 @@ import (
 )
 
 // TestGetByID_NullSortName is the regression test for the read failure fixed in
-// scan.go (#3037). sort_name is the ONE nullable TEXT column in artistColumns:
-// every other one is NOT NULL with an empty-string default. Scanning it
-// straight into a string made GetByID fail with the driver's
-// converting-NULL-to-string error for any row inserted without it, so such an
-// artist could not be read at all.
+// scan.go (#3037). sort_name is declared nullable (a bare `sort_name TEXT`,
+// with neither NOT NULL nor a default) and was being scanned straight into a
+// string, which made GetByID fail with the driver's converting-NULL-to-string
+// error for any row inserted without it, so such an artist could not be read
+// at all.
 //
 // The row is inserted with raw SQL rather than through Service.Create because
 // Create always supplies a sort_name -- the defect is only reachable for rows
@@ -48,7 +48,8 @@ func TestGetByID_NullSortName(t *testing.T) {
 	}
 	if a.SortName != "" {
 		t.Errorf("SortName = %q, want %q: a NULL sort_name reads as the empty "+
-			"string, which is what every writer stores for \"unset\"", a.SortName, "")
+			"string, matching what this package's own writers store for "+
+			"\"unset\"", a.SortName, "")
 	}
 	if a.Name != "Null Sort Artist" {
 		t.Errorf("Name = %q, want %q", a.Name, "Null Sort Artist")
