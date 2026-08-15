@@ -17,6 +17,7 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"testing"
 )
@@ -451,32 +452,72 @@ func TestUpdateNameGuarded_UnusableDatabaseIsAnError(t *testing.T) {
 	}
 }
 
-// TestUpdateNameGuarded_EmptyIdentityKeySkipsCollisionCheck covers the
-// empty-key branch: a name made only of invisible characters normalizes to
-// "", and an empty key is deliberately NOT treated as a collision.
+// TestUpdateNameGuarded_EmptyIdentityKeyIsRefusedByValidation REPLACES
+// TestUpdateNameGuarded_EmptyIdentityKeySkipsCollisionCheck, and the
+// replacement is the point: an assertion was deliberately INVERTED here, not
+// dropped.
 //
-// The fixture is a zero-width space, which is the realistic form of this --
-// invisible characters ride along on names pasted from web pages, and
-// NormalizeIdentityKey strips Unicode Cf characters by design. Punctuation
-// does NOT produce an empty key (it survives the fold), so a punctuation-only
-// name would have exercised the ordinary path instead; the precondition below
-// is what pins that distinction.
+// The old test asserted that a name normalizing to an empty identity key gets
+// WRITTEN, and justified it in its own doc block: "guarding the value itself
+// is validation's job, not this function's". Validation was not in fact doing
+// it -- ValidateFieldUpdate refused only whitespace -- so the two layers each
+// deferred to the other and the write landed. The result was an artist with no
+// identity key, invisible to the collision guard (which skips an empty key by
+// design) and to the duplicates report (unionByNameKey drops empty keys).
+// #3037 makes validation actually do the job the old test assumed it was
+// doing, so the "it is written" assertion is now wrong and is replaced below.
 //
-// Two artists whose names both normalize away would otherwise be reported as
-// colliding with each other, a confusing refusal for a value that field
-// validation rejects on its own terms. Guarding the value itself is
-// validation's job, not this function's.
-func TestUpdateNameGuarded_EmptyIdentityKeySkipsCollisionCheck(t *testing.T) {
+// The old doc block also stated as fact that "punctuation does NOT produce an
+// empty key (it survives the fold)". That is false, and this test asserts it
+// false rather than repeating it: step 7 of NormalizeIdentityKey folds
+// hyphen-minus and underscore into separators, so a name made only of those
+// trims away to nothing.
+//
+// WHAT THIS TEST DOES NOT CLAIM. UpdateNameGuarded does not run
+// ValidateFieldUpdate itself, so calling it directly with such a name still
+// writes -- re-confirmed against this base, not carried forward from an
+// earlier one. That is asserted below rather than hidden, and it is not the
+// operator-reachable hole: handleFieldUpdate (internal/api/handlers_field.go)
+// is the only production caller of UpdateNameGuarded, and it validates first.
+// Established by
+// `grep -rn 'UpdateNameGuarded(' --include='*.go' internal/ cmd/ | grep -v _test.go`,
+// which reports production callers only -- the sentence says production
+// because the grep filters tests out. Routing the service write verbs through
+// the validator is a separate change; the file_validation.go header enumerates
+// which methods do and do not run it today.
+func TestUpdateNameGuarded_EmptyIdentityKeyIsRefusedByValidation(t *testing.T) {
 	t.Parallel()
 	svc, _, platformOnlyID := seedCollisionPair(t, "Southgate Winds", "Northfield Chorale")
 
 	const invisible = "\u200b" // ZERO WIDTH SPACE
-	// Precondition: this really does normalize away, or the test is covering
-	// the ordinary path under a misleading name.
-	if got := NormalizeIdentityKey(invisible); got != "" {
-		t.Fatalf("precondition: NormalizeIdentityKey(%q) = %q, want an empty key", invisible, got)
+	const punctuation = "-"    // HYPHEN-MINUS, folded away by the separator step
+
+	for _, name := range []string{invisible, punctuation} {
+		// Precondition: both really do normalize away, or the refusal below
+		// would pass against a validator that refuses everything.
+		if got := NormalizeIdentityKey(name); got != "" {
+			t.Fatalf("precondition: NormalizeIdentityKey(%q) = %q, want an empty key", name, got)
+		}
+		// THE INVERTED ASSERTION. This value used to be written; it is now
+		// refused before any write path can be reached.
+		err := ValidateFieldUpdate(string(FieldArtistName), name)
+		if err == nil {
+			t.Errorf("ValidateFieldUpdate(name, %q) = nil, want a refusal: this value has no "+
+				"identity key, so a written row is invisible to the collision guard and to "+
+				"the duplicates report", name)
+			continue
+		}
+		if !errors.Is(err, ErrInvalidFieldValue) {
+			t.Errorf("ValidateFieldUpdate(name, %q) err = %v, want one matching "+
+				"ErrInvalidFieldValue: a refusal that cannot be classified is reported as a "+
+				"500 rather than the 400 the operator needs", name, err)
+		}
 	}
 
+	// The collision-skip branch itself is still correct and still reachable by
+	// a direct caller, so it keeps its coverage: an empty key is not reported
+	// as a collision, because two names that both normalize away are not the
+	// same artist and saying so would be a misleading refusal.
 	collision, wrote, err := svc.UpdateNameGuarded(context.Background(), platformOnlyID, invisible)
 	if err != nil {
 		t.Fatalf("UpdateNameGuarded: %v", err)
@@ -485,10 +526,7 @@ func TestUpdateNameGuarded_EmptyIdentityKeySkipsCollisionCheck(t *testing.T) {
 		t.Errorf("collision = %+v, want nil: an empty identity key is not a collision", collision)
 	}
 	if !wrote {
-		t.Error("wrote = false, want true")
-	}
-	if got := nameByID(t, svc, platformOnlyID); got != invisible {
-		t.Errorf("name = %q, want %q", got, invisible)
+		t.Error("wrote = false, want true: this method does not itself validate the value")
 	}
 }
 
