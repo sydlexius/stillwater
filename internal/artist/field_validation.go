@@ -14,8 +14,10 @@ package artist
 // render it as a no-op. A refusal is the opposite of benign.
 //
 // WHICH CODE CALLS THIS VALIDATOR, EXACTLY. The list below is the complete set
-// of call sites in the tree, and it is meant to be kept complete: an
+// of PRODUCTION call sites in the tree, and it is meant to be kept complete: an
 // enumeration that claims more than the code does is a defect, not a nit.
+// (Tests call the validator directly too -- field_test.go exercises it as a
+// unit -- which is why this says production rather than every call site.)
 //
 //   - internal/api's handleFieldUpdate -- pre-existing, answers with a 400.
 //   - Service.UpdateProviderField      -- added by this change.
