@@ -86,9 +86,42 @@ func (e *FieldValidationError) Unwrap() error { return ErrInvalidFieldValue }
 // ValidateFieldUpdate returns a non-nil error when the field value is
 // invalid. Validation rules:
 //   - "name" must not be empty or whitespace-only.
+//   - "name" must not normalize to an EMPTY identity key (see below).
 //   - "musicbrainz_id" must be a valid UUID (or empty, which clears the ID).
 //
 // All other fields are accepted as-is (free-form text).
+//
+// THE EMPTY-IDENTITY-KEY RULE, and why a TrimSpace check is not enough.
+// NormalizeIdentityKey folds dashes, underscores, spacing and Unicode format
+// (Cf) characters out of a name entirely, so a name of "-", "_", an em-dash or
+// a zero-width space passes TrimSpace and still normalizes to "". Everything
+// keyed on identity then stops seeing the row: FindNameCollision and
+// UpdateNameGuarded both treat an empty key as "not a collision" and skip
+// their scan (name_collision.go), and the duplicates report's unionByNameKey
+// skips empty keys too (duplicates.go). Two artists could both be named "-"
+// and be invisible to BOTH -- a duplicate that neither the guard that exists
+// to prevent it nor the report that exists to find it can see, which is
+// strictly worse than the #2730 duplicate.
+//
+// Refusing it HERE, rather than at either of those two sites, is what makes it
+// a class fix: this validator is the shared pre-write check, so one arm covers
+// every path that runs it instead of patching a site. Which paths those are is
+// the enumeration in the file header above, and this rule does not change it:
+// the rule is scoped to "name", and the two entries added by the typed-error
+// change (Service.UpdateProviderField and Service.ClearProviderField) can only
+// ever be reached with a provider-ID field, never with "name".
+//
+// SCOPE: name ONLY. sort_name is deliberately NOT subject to this rule. It
+// feeds display ordering, not identity -- no identity key, collision scan or
+// duplicate grouping reads it -- and clearing it back to empty (so the artist
+// sorts by name) is a legitimate operator act this must not block.
+//
+// NOT AN ALLOW-LIST OF SCRIPTS. The rule refuses a name only when the
+// normalizer yields nothing at all, so scripts that carry an identity pass:
+// CJK, Cyrillic, Greek, Hebrew, Arabic, Thai, Hangul and accented Latin all
+// normalize to a non-empty key. Pinned by
+// TestValidateFieldUpdate_AcceptsNonLatinNames, which exists precisely so a
+// future tightening here cannot quietly start refusing legitimate names.
 //
 // CALLED WITH value == "" IT ALSO ANSWERS "may this field be cleared?", which
 // is what lets a clear path share it instead of keeping a second table of
@@ -99,6 +132,25 @@ func ValidateFieldUpdate(field, value string) error {
 	case string(FieldArtistName):
 		if strings.TrimSpace(value) == "" {
 			return &FieldValidationError{Field: field, Reason: "name cannot be empty"}
+		}
+		// The Reason is a hand-authored literal and stays one: it reaches an
+		// HTTP 400 body verbatim (Error() is passed straight through by
+		// handleFieldUpdate), so it must never carry the rejected value, an
+		// artist id, a column name or driver text.
+		//
+		// The enumeration has to match what NormalizeIdentityKey actually folds
+		// away (dupkey.go), or the operator is told something other than what
+		// happened. It folds spacing (step 4), Unicode format / Cf characters
+		// such as a zero-width space or a soft hyphen (step 2), and dashes plus
+		// underscores (steps 3 and 7) -- and "invisible formatting characters"
+		// is how an operator reads that last class, not "category Cf". It does
+		// NOT fold quotes or apostrophes away, so a name of "'" survives and is
+		// accepted; the wording must not claim otherwise.
+		if NormalizeIdentityKey(value) == "" {
+			return &FieldValidationError{
+				Field:  field,
+				Reason: "name cannot be only dashes, underscores, spacing, or invisible formatting characters",
+			}
 		}
 	case "musicbrainz_id":
 		if value != "" && !isValidMBID(value) {
