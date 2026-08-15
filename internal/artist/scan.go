@@ -42,20 +42,28 @@ type scannedArtist struct {
 	dirtySince        sql.NullString
 	rulesEvaluatedAt  sql.NullString
 	lastScannedAt     sql.NullString
-	nfo               int
-	isExcluded        int
-	isClassical       int
-	locked            int
-	lockedAt          sql.NullString
-	lockedFields      string
-	createdAt         string
-	updatedAt         string
+	// sortName is scanned through a NullString because sort_name is the ONE
+	// nullable TEXT column in artistColumns (every other one carries NOT NULL
+	// DEFAULT ''). Scanning it straight into a string made GetByID fail with
+	// "converting NULL to string is unsupported" for any row inserted without
+	// it -- an artist the service simply could not read. That was previously
+	// masked on the Update path, which fetched the row only to skip history on
+	// error; #3037 made that fetch load-bearing, which is how it surfaced.
+	sortName     sql.NullString
+	nfo          int
+	isExcluded   int
+	isClassical  int
+	locked       int
+	lockedAt     sql.NullString
+	lockedFields string
+	createdAt    string
+	updatedAt    string
 }
 
 // scanPtrs returns the ordered slice of pointers matching artistColumns.
 func (s *scannedArtist) scanPtrs() []any {
 	return []any{
-		&s.a.ID, &s.a.Name, &s.a.SortName, &s.a.Type, &s.a.Gender, &s.a.Origin, &s.a.Disambiguation,
+		&s.a.ID, &s.a.Name, &s.sortName, &s.a.Type, &s.a.Gender, &s.a.Origin, &s.a.Disambiguation,
 		&s.genres, &s.styles, &s.moods,
 		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
 		&s.a.Path, &s.nfo,
@@ -69,6 +77,9 @@ func (s *scannedArtist) scanPtrs() []any {
 
 // apply converts intermediate scan values into the Artist struct fields.
 func (s *scannedArtist) apply() {
+	// A NULL sort_name reads as the empty string, which is what every writer
+	// stores for "unset" anyway, so the in-memory shape is unchanged.
+	s.a.SortName = s.sortName.String
 	s.a.Genres = UnmarshalStringSlice(s.genres)
 	s.a.Styles = UnmarshalStringSlice(s.styles)
 	s.a.Moods = UnmarshalStringSlice(s.moods)
