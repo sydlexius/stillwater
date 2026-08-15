@@ -1326,6 +1326,14 @@ func normalizeFieldValue(field, value string) string {
 // of the data. A refused value comes back as a *FieldValidationError, never as
 // (false, nil).
 //
+// VALIDATION RUNS FIRST, BEFORE THE NO-OP SKIP, and the order is load-bearing
+// rather than incidental. An invalid value is refused even when writing it
+// would have been a no-op, so the answer does not depend on what the row
+// already holds. Were the skip first, a field already holding the invalid
+// value would report (false, nil) -- a silent accept indistinguishable from a
+// successful no-op -- and any test written against such a field would pass
+// without the validator ever running.
+//
 // A "name" write is then DELEGATED to UpdateNameGuarded rather than handled
 // here. See updateNameThroughGuard for why that routing lives in the service
 // and not in each caller.
@@ -1404,6 +1412,10 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) (boo
 // of clearable fields is what makes the two methods incapable of disagreeing;
 // their disagreement WAS the defect (#3037). The refusal is a
 // *FieldValidationError, never (false, nil).
+//
+// As in UpdateField, VALIDATION RUNS FIRST, BEFORE the already-empty skip. A
+// clear of an unclearable field is refused whether or not the field currently
+// holds a value, so the refusal cannot be masked by the row's existing state.
 func (s *Service) ClearField(ctx context.Context, id, field string) (bool, error) {
 	if err := ValidateFieldUpdate(field, ""); err != nil {
 		return false, err
