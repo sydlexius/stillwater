@@ -1319,7 +1319,24 @@ func normalizeFieldValue(field, value string) string {
 // The returned bool is true when a real write (and history record) occurred,
 // false when the no-op skip fired (old == new). Callers that previously
 // treated a nil error as "write happened" must check the bool instead.
+//
+// The VALUE is validated here, not only at the API boundary (#3037). See
+// field_validation.go: enforcement at one handler left every other caller of
+// this method unvalidated, so the rule was a property of one route rather than
+// of the data. A refused value comes back as a *FieldValidationError, never as
+// (false, nil).
+//
+// A "name" write is then DELEGATED to UpdateNameGuarded rather than handled
+// here. See updateNameThroughGuard for why that routing lives in the service
+// and not in each caller.
 func (s *Service) UpdateField(ctx context.Context, id, field, value string) (bool, error) {
+	if err := ValidateFieldUpdate(field, value); err != nil {
+		return false, err
+	}
+	if field == string(FieldArtistName) {
+		return s.updateNameThroughGuard(ctx, id, value)
+	}
+
 	// Fetch current value unconditionally so the no-op check runs regardless
 	// of whether history is enabled.
 	var oldValue string
@@ -1377,7 +1394,21 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) (boo
 // The returned bool is true when a real write (and history record) occurred,
 // false when the no-op skip fired (field already empty). Callers that
 // previously treated a nil error as "write happened" must check the bool.
+//
+// A CLEAR IS AN UPDATE TO THE EMPTY STRING, and is validated as one: the same
+// ValidateFieldUpdate this method's sibling calls decides whether "" is an
+// acceptable value for the field. "name" is refused here, matching
+// handleFieldClear's own 400, because a blank name persists (artists.name is
+// NOT NULL with no non-empty CHECK) and leaves the artist unmatchable by every
+// identity mechanism. Sharing the validator rather than keeping a second table
+// of clearable fields is what makes the two methods incapable of disagreeing;
+// their disagreement WAS the defect (#3037). The refusal is a
+// *FieldValidationError, never (false, nil).
 func (s *Service) ClearField(ctx context.Context, id, field string) (bool, error) {
+	if err := ValidateFieldUpdate(field, ""); err != nil {
+		return false, err
+	}
+
 	// Fetch current value unconditionally so the no-op check runs regardless
 	// of whether history is enabled.
 	var oldValue string

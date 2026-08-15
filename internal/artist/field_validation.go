@@ -3,35 +3,45 @@ package artist
 // field_validation.go -- value-level validation for a single-field write, and
 // the typed error a refusal travels as (#3037).
 //
-// WHERE ENFORCEMENT LIVES. Before this change, ValidateFieldUpdate had exactly
-// one caller in the tree: internal/api's handleFieldUpdate. The rules below
-// were therefore a property of ONE HTTP handler rather than of the data, and
-// any service method reached by another route enforced them only insofar as
-// its own callers happened to check first. This file is where that starts
-// moving. The typed error lands first, so that a refusal on a service method
-// can never be reported as UpdateField's benign (false, nil) -- both
+// WHERE ENFORCEMENT LIVES. Originally ValidateFieldUpdate had exactly one
+// caller in the tree: internal/api's handleFieldUpdate. The rules below were
+// therefore a property of ONE HTTP handler rather than of the data, and any
+// service method reached by another route enforced them only insofar as its
+// own callers happened to check first -- the shape that produces a defect the
+// moment a second route appears. Enforcement now sits on the service write
+// verbs instead. The error is typed so that a refusal on a service
+// method can never be reported as UpdateField's benign (false, nil) -- both
 // UpdateField and ClearField report "no write happened" that way, and callers
 // render it as a no-op. A refusal is the opposite of benign.
 //
 // WHICH CODE CALLS THIS VALIDATOR, EXACTLY. The list below is the complete set
 // of PRODUCTION call sites in the tree, and it is meant to be kept complete: an
 // enumeration that claims more than the code does is a defect, not a nit.
-// (Tests call the validator directly too -- field_test.go exercises it as a
-// unit -- which is why this says production rather than every call site.)
+// Established by
+// `grep -rn 'ValidateFieldUpdate(' internal cmd --include='*.go' | grep -v _test`
+// -- the sentence says PRODUCTION because that grep filters test callers out,
+// and tests do call the validator directly as a unit.
 //
 //   - internal/api's handleFieldUpdate -- pre-existing, answers with a 400.
-//   - Service.UpdateProviderField      -- added by this change.
-//   - Service.ClearProviderField       -- by delegation; calls the above with "".
+//   - Service.UpdateProviderField      -- and Service.ClearProviderField by
+//     delegation, which calls it with "".
+//   - Service.UpdateField              -- added by #3037's routing change.
+//   - Service.ClearField               -- likewise; it asks the SAME validator
+//     with "" rather than keeping a second table of clearable fields, since
+//     the two tables disagreeing is what the defect was.
+//   - Service.UpdateNameGuarded        -- likewise; validated there too because
+//     handleFieldUpdate calls it DIRECTLY on the transactional rename path, so
+//     a rule enforced only one level up in UpdateField would not cover it.
 //
-// NOT COVERED, deliberately: Service.UpdateField, Service.ClearField and
-// Service.UpdateNameGuarded do not call this validator, so an empty "name"
-// reaching one of them is not refused here. Those are separate changes and
-// this list grows when they land. Service.Update, the whole-row persist, is a
-// wider pre-existing gap that is not in scope at all.
+// NOT COVERED, deliberately: Service.Update (the whole-row persist) and
+// Service.Create (the row INSERT) reach the name column without this
+// validator. Both predate #3037 and are enumerated, with their production
+// callers, in name_collision.go's scope block.
 //
-// WHY UpdateProviderField IS FIRST. It is the smallest complete case: it has
-// two production callers, the API handler above (which pre-validates) and the
-// provider_id_missing rule fixer in internal/rule (which does not). That fixer
+// WHY UpdateProviderField IS ON THE LIST at all, given no operator can reach a
+// bad value through it today. It has two production callers, the API handler
+// above (which pre-validates) and the provider_id_missing rule fixer in
+// internal/rule (which does not). That fixer
 // writes only discogs_id, deezer_id and spotify_id, none of which carry a rule
 // below, so this closes the gap by CONSTRUCTION rather than by fixing an
 // operator-reachable defect: the method stops depending on its callers
@@ -106,10 +116,10 @@ func (e *FieldValidationError) Unwrap() error { return ErrInvalidFieldValue }
 // Refusing it HERE, rather than at either of those two sites, is what makes it
 // a class fix: this validator is the shared pre-write check, so one arm covers
 // every path that runs it instead of patching a site. Which paths those are is
-// the enumeration in the file header above, and this rule does not change it:
-// the rule is scoped to "name", and the two entries added by the typed-error
-// change (Service.UpdateProviderField and Service.ClearProviderField) can only
-// ever be reached with a provider-ID field, never with "name".
+// the enumeration in the file header above. Of those, the three that can carry
+// a "name" at all are handleFieldUpdate, Service.UpdateField/ClearField and
+// Service.UpdateNameGuarded; UpdateProviderField and ClearProviderField return
+// early for a field outside providerFieldMap, which holds only provider IDs.
 //
 // SCOPE: name ONLY. sort_name is deliberately NOT subject to this rule. It
 // feeds display ordering, not identity -- no identity key, collision scan or

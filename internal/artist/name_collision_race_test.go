@@ -473,18 +473,15 @@ func TestUpdateNameGuarded_UnusableDatabaseIsAnError(t *testing.T) {
 // hyphen-minus and underscore into separators, so a name made only of those
 // trims away to nothing.
 //
-// WHAT THIS TEST DOES NOT CLAIM. UpdateNameGuarded does not run
-// ValidateFieldUpdate itself, so calling it directly with such a name still
-// writes -- re-confirmed against this base, not carried forward from an
-// earlier one. That is asserted below rather than hidden, and it is not the
-// operator-reachable hole: handleFieldUpdate (internal/api/handlers_field.go)
-// is the only production caller of UpdateNameGuarded, and it validates first.
-// Established by
-// `grep -rn 'UpdateNameGuarded(' --include='*.go' internal/ cmd/ | grep -v _test.go`,
-// which reports production callers only -- the sentence says production
-// because the grep filters tests out. Routing the service write verbs through
-// the validator is a separate change; the field_validation.go header enumerates
-// which methods do and do not run it today.
+// THE SECOND HALF WAS INVERTED IN TURN. This test used to close by asserting
+// that UpdateNameGuarded, called DIRECTLY, still WROTE such a name -- true
+// then, because only the API handler validated ahead of it, and flagged in
+// this comment as waiting on "a separate change". That change is the routing
+// one: UpdateNameGuarded now runs ValidateFieldUpdate itself, so the direct
+// call is refused too and the closing assertion is replaced below. The
+// collision-skip branch it used to cover is now dead on this path and is
+// documented as such in name_collision.go; TestValidateFieldUpdate_* owns the
+// rule, and clear_field_name_test.go owns the refusal through each write verb.
 func TestUpdateNameGuarded_EmptyIdentityKeyIsRefusedByValidation(t *testing.T) {
 	t.Parallel()
 	svc, _, platformOnlyID := seedCollisionPair(t, "Southgate Winds", "Northfield Chorale")
@@ -514,19 +511,15 @@ func TestUpdateNameGuarded_EmptyIdentityKeyIsRefusedByValidation(t *testing.T) {
 		}
 	}
 
-	// The collision-skip branch itself is still correct and still reachable by
-	// a direct caller, so it keeps its coverage: an empty key is not reported
-	// as a collision, because two names that both normalize away are not the
-	// same artist and saying so would be a misleading refusal.
+	// THE INVERTED CLOSING ASSERTION. The DIRECT call is refused now too, so
+	// the guard's own empty-key exemption can no longer be reached as a hole.
 	collision, wrote, err := svc.UpdateNameGuarded(context.Background(), platformOnlyID, invisible)
-	if err != nil {
-		t.Fatalf("UpdateNameGuarded: %v", err)
+	if !errors.Is(err, ErrInvalidFieldValue) {
+		t.Fatalf("UpdateNameGuarded(%q) err = %v, want ErrInvalidFieldValue: a direct caller "+
+			"must not be able to write a name with no identity key", invisible, err)
 	}
-	if collision != nil {
-		t.Errorf("collision = %+v, want nil: an empty identity key is not a collision", collision)
-	}
-	if !wrote {
-		t.Error("wrote = false, want true: this method does not itself validate the value")
+	if collision != nil || wrote {
+		t.Errorf("collision = %+v, wrote = %t; want (nil, false) alongside the refusal", collision, wrote)
 	}
 }
 
