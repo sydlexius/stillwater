@@ -47,12 +47,18 @@ import (
 // operator who believes a field is protected stops watching it. Each item below
 // is out of scope for THIS unit.
 //
-// PROVIDER-ID FIELDS ARE NOT GUARDED. They live in artist_provider_ids, not on
-// the artists row, and a bare Repository.GetByID does not populate them. An
-// un-hydrated comparison would read the stored value as EMPTY and "restore" ""
-// over a real ID -- extending the guard to them without hydration is a DATA-LOSS
-// PATH for the fields it claims to protect. The follow-up unit adds the
-// hydration and widens the set.
+// PROVIDER-ID FIELDS ARE GUARDED, BUT ONLY BECAUSE THE STORED SIDE IS HYDRATED
+// FIRST. They live in artist_provider_ids, not on the artists row, so a bare
+// Repository.GetByID does not populate them. An un-hydrated comparison reads the
+// stored value as EMPTY and "restores" "" over a real ID -- guarding them
+// without hydration is a DATA-LOSS PATH for the fields it claims to protect.
+// enforceLocksBeforeUpdate hydrates before comparing and REFUSES when it cannot.
+// Anyone narrowing that hydration must remove these fields from
+// lockGuardedFields in the same change.
+//
+// An operator's own edit of a pinned provider ID is NOT blocked: the field-edit
+// handler carries a field-scoped grant (see ContextWithLockOverride). Locks gate
+// automated writes.
 //
 // THE SINGLE-COLUMN WRITE VERBS ARE NOT GUARDED. UpdateField, ClearField and
 // UpdateNameGuarded each write their own targeted SQL and never pass through
@@ -70,9 +76,9 @@ import (
 // name_language_pref fixer promotes Name and SortName together; lock only "name"
 // and the row afterwards holds the old name beside the new sort_name. It follows
 // from per-FIELD locking, and refusing the whole write would discard the
-// unlocked change instead. A pair that is one LOGICAL value needs restoring
-// together, which is what the follow-up unit does for a provider ID and its
-// fetched-at timestamp.
+// unlocked change instead. A pair that is one LOGICAL value is restored
+// together instead -- that is what restoreProviderIDCompanions does for a
+// provider ID, its fetched-at timestamp and its provenance marker.
 
 // lockGuardedFields is every field this codebase treats as a meaningful lock
 // token AND can read, compare and restore from a bare Repository.GetByID.
@@ -99,6 +105,41 @@ var lockGuardedFields = func() []FieldName {
 	slices.Sort(out)
 	return out
 }()
+
+// lockOverrideKeyType carries a FIELD-SCOPED operator grant: permission for one
+// named field's lock to be bypassed on writes made with this context.
+type lockOverrideKeyType struct{}
+
+var lockOverrideKey lockOverrideKeyType
+
+// ContextWithLockOverride authorizes writes on ctx to change the named field
+// even though the operator has it locked.
+//
+// WHY THIS EXISTS. A lock gates AUTOMATED writes; the operator keeps control of
+// their own data. That is already true for the fourteen artists-row fields,
+// because an operator edit routes through the single-column Service.UpdateField,
+// which never reaches the chokepoint. The six provider-ID fields have no such
+// verb -- Service.UpdateProviderField ends in a whole-row Service.Update -- so
+// once those fields became guarded, the operator's own edit was silently
+// reverted while the API answered 200. A lock that means "you may still edit
+// this" for fourteen fields and "you are locked out" for six is not a policy,
+// it is an inconsistency.
+//
+// SCOPED TO ONE FIELD, and set only by the operator-facing field-edit handler.
+// A blanket bypass on UpdateProviderField would be wrong: the rule engine's
+// provider-ID backfill calls that same method, and the case the guard genuinely
+// protects there is a field an operator pinned while EMPTY ("do not guess this
+// one"), which the fill-empty fixer would otherwise populate. Granting per
+// field, per request, keeps that protection intact.
+func ContextWithLockOverride(ctx context.Context, field string) context.Context {
+	return context.WithValue(ctx, lockOverrideKey, strings.ToLower(strings.TrimSpace(field)))
+}
+
+// lockOverrideField returns the field this context authorizes bypassing, if any.
+func lockOverrideField(ctx context.Context) (string, bool) {
+	f, ok := ctx.Value(lockOverrideKey).(string)
+	return f, ok && f != ""
+}
 
 // providerIDLockFields are the guarded fields stored in artist_provider_ids
 // rather than on the artists row. Derived from providerFieldMap so it cannot
@@ -177,8 +218,9 @@ func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming
 // RESTORE-AND-CONTINUE rather than refuse. A whole-row persist has no natural
 // refusal: the caller handed over an entire artist, most of it legitimate.
 // Refusing would discard the unlocked changes too and turn every fixer into an
-// all-or-nothing write. The single-field verbs are the ones with a natural
-// refusal, and they refuse (see UpdateProviderField).
+// all-or-nothing write. No verb in this package refuses on a lock today:
+// UpdateProviderField is a whole-row write that lands here like any other, and
+// the operator's own edit through it carries a grant rather than a refusal.
 //
 // The incoming struct is mutated in place. That is the point: the caller
 // persists it, and its in-memory copy carries the protected value onward, so a
@@ -219,12 +261,23 @@ func enforceFieldLocks(ctx context.Context, stored, incoming *Artist) []string {
 	}
 	source := sourceFromContext(ctx)
 
+	granted, hasGrant := lockOverrideField(ctx)
+
 	var restored []string
 	for _, f := range lockGuardedFields {
 		name := string(f)
 		if !isLocked(locked, name) {
 			continue
 		}
+		if hasGrant && granted == name {
+			// The operator authorized this one field on this one request.
+			continue
+		}
+		// Companions are pinned for a locked provider ID whether or not the ID
+		// STRING changed. They are part of the locked field's state, not a
+		// side effect of changing it, so a write carrying the same ID with a
+		// tampered timestamp or provenance marker must not land either.
+		restoreProviderIDCompanions(stored, incoming, name)
 		rejectedLen, changed := restoreLockedField(stored, incoming, name)
 		if !changed {
 			continue
@@ -310,7 +363,6 @@ func restoreLockedField(stored, incoming *Artist, field string) (rejectedLen int
 		return 0, false
 	}
 	setFieldOnArtist(incoming, field, want, nil)
-	restoreProviderIDCompanions(stored, incoming, field)
 	return len(got), true
 }
 

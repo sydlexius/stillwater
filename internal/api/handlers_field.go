@@ -222,7 +222,13 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 
 	switch {
 	case artist.IsProviderIDField(field):
-		if err := r.artistService.UpdateProviderField(req.Context(), artistID, field, value); err != nil {
+		// This is the operator editing their own data, so a lock on this field
+		// must not silently revert the write. The other lockable fields get that
+		// for free -- their edit routes through the single-column UpdateField,
+		// which never reaches the persist chokepoint -- but a provider ID has no
+		// such verb, so the grant is explicit and scoped to this one field.
+		ctx := artist.ContextWithLockOverride(req.Context(), field)
+		if err := r.artistService.UpdateProviderField(ctx, artistID, field, value); err != nil {
 			writeError(w, req, http.StatusInternalServerError, "failed to update field")
 			return
 		}
@@ -327,7 +333,10 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if artist.IsProviderIDField(field) {
-		if err := r.artistService.ClearProviderField(req.Context(), artistID, field); err != nil {
+		// Same operator grant as the update path: clearing a pinned ID is an
+		// operator act, not an automated write.
+		ctx := artist.ContextWithLockOverride(req.Context(), field)
+		if err := r.artistService.ClearProviderField(ctx, artistID, field); err != nil {
 			writeError(w, req, http.StatusInternalServerError, "failed to clear field")
 			return
 		}

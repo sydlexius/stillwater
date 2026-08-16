@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -824,5 +825,173 @@ func TestEnforceLocks_RefusesWhenALockedProviderIDCannotBeRead(t *testing.T) {
 	}
 	if after.Biography != "" {
 		t.Errorf("biography = %q, want it unwritten; the refusal did not prevent the write", after.Biography)
+	}
+}
+
+// failingProviderRepo makes hydration fail. Embedding the interface means a
+// method added later cannot silently turn this into a partial fake.
+type failingProviderRepo struct {
+	ProviderIDRepository
+	err error
+}
+
+func (r *failingProviderRepo) GetForArtist(context.Context, string) ([]ProviderID, error) {
+	return nil, r.err
+}
+
+// TestEnforceLocks_RefusesWhenHydrationErrors covers the hydration-FAILURE
+// branch, as distinct from the nil-repository branch. Both refuse, but only one
+// was tested: swallowing the error and returning nil would compare a locked
+// provider ID against an un-hydrated empty value, conclude nothing changed, and
+// let the write through -- the data-loss path the hydration exists to close.
+func TestEnforceLocks_RefusesWhenHydrationErrors(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Hydration Fails", DiscogsID: "pinned"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"discogs_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+	stored, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if stored.DiscogsID != "pinned" {
+		t.Fatalf("precondition: discogs_id = %q, want the seeded value", stored.DiscogsID)
+	}
+
+	sentinel := errors.New("injected hydration failure")
+	svc.providers = &failingProviderRepo{ProviderIDRepository: svc.providers, err: sentinel}
+
+	stored.Biography = "some other change"
+	updErr := svc.Update(ctx, stored)
+	if updErr == nil {
+		t.Fatal("Update succeeded when hydration failed; an unverifiable lock must not be treated as an absent one")
+	}
+	// The cause chain must survive, or a caller cannot classify the failure.
+	if !errors.Is(updErr, sentinel) {
+		t.Errorf("errors.Is(err, sentinel) = false for %v; the refusal dropped the cause", updErr)
+	}
+	after, getErr := svc.artists.GetByID(ctx, a.ID)
+	if getErr != nil {
+		t.Fatalf("reloading: %v", getErr)
+	}
+	if after.Biography != "" {
+		t.Errorf("biography = %q, want it unwritten; the refusal did not prevent the write", after.Biography)
+	}
+}
+
+// TestUpdate_PinnedProviderIDCompanionsSurviveAnUnchangedID closes the gap
+// where companions were only restored when the ID STRING changed. A write
+// carrying the same ID with a tampered timestamp or provenance is still an
+// automated write to a locked field.
+//
+// Table-driven across the three fields that HAVE a fetched-at column, so
+// dropping any one arm fails here rather than only the discogs one.
+func TestUpdate_PinnedProviderIDCompanionsSurviveAnUnchangedID(t *testing.T) {
+	seeded := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+	tampered := time.Date(2030, time.June, 6, 0, 0, 0, 0, time.UTC)
+
+	for _, tc := range []struct {
+		field string
+		get   func(*Artist) *time.Time
+		set   func(*Artist, *time.Time)
+	}{
+		{"audiodb_id", func(a *Artist) *time.Time { return a.AudioDBIDFetchedAt }, func(a *Artist, t *time.Time) { a.AudioDBIDFetchedAt = t }},
+		{"discogs_id", func(a *Artist) *time.Time { return a.DiscogsIDFetchedAt }, func(a *Artist, t *time.Time) { a.DiscogsIDFetchedAt = t }},
+		{"wikidata_id", func(a *Artist) *time.Time { return a.WikidataIDFetchedAt }, func(a *Artist, t *time.Time) { a.WikidataIDFetchedAt = t }},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			ctx := context.Background()
+			svc := NewService(newTestDB(t))
+
+			a := &Artist{Name: "Unchanged " + tc.field, MusicBrainzID: "mb-stored",
+				MetadataSources: map[string]string{SourceKeyMusicBrainzID: SourceOperatorConfirmed}}
+			setFieldOnArtist(a, tc.field, "id-stored", nil)
+			tc.set(a, &seeded)
+			if err := svc.Create(ctx, a); err != nil {
+				t.Fatalf("creating: %v", err)
+			}
+			if err := svc.SetLockedFields(ctx, a.ID, []string{tc.field, "musicbrainz_id"}); err != nil {
+				t.Fatalf("locking: %v", err)
+			}
+			stored, err := svc.GetByID(ctx, a.ID)
+			if err != nil {
+				t.Fatalf("reloading: %v", err)
+			}
+			if tc.get(stored) == nil || !tc.get(stored).Equal(seeded) {
+				t.Fatalf("precondition: %s fetched_at = %v, want %v seeded", tc.field, tc.get(stored), seeded)
+			}
+
+			// The IDs are left UNCHANGED; only the companions are tampered with.
+			tc.set(stored, &tampered)
+			stored.MetadataSources[SourceKeyMusicBrainzID] = SourceMachinePicked
+			if err := svc.Update(ctx, stored); err != nil {
+				t.Fatalf("Update: %v", err)
+			}
+			after, err := svc.GetByID(ctx, a.ID)
+			if err != nil {
+				t.Fatalf("reloading: %v", err)
+			}
+			if got := tc.get(after); got == nil || !got.Equal(seeded) {
+				t.Errorf("%s fetched_at = %v, want %v; a companion is part of the locked field's state, not a side effect of changing the ID", tc.field, got, seeded)
+			}
+			if got := after.MetadataSources[SourceKeyMusicBrainzID]; got != SourceOperatorConfirmed {
+				t.Errorf("mbid provenance = %q, want %q; an unchanged ID does not license relabelling it", got, SourceOperatorConfirmed)
+			}
+		})
+	}
+}
+
+// TestUpdateProviderField_OperatorGrantBeatsTheLock is the OVER-CORRECTION
+// guard for the widening. A lock gates AUTOMATED writes; the operator keeps
+// control of their own data, which is already true for the fourteen
+// artists-row fields because their edit bypasses the chokepoint entirely.
+//
+// The paired negative is the point: the SAME method without a grant -- which is
+// how the rule engine's backfill calls it -- must still be refused, or the grant
+// would be a blanket bypass rather than an operator affordance.
+func TestUpdateProviderField_OperatorGrantBeatsTheLock(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Operator Edit", DiscogsID: "dg-old"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"discogs_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+
+	// WITHOUT a grant: an automated write is still reverted.
+	if err := svc.UpdateProviderField(ctx, a.ID, "discogs_id", "rule-derived"); err != nil {
+		t.Fatalf("UpdateProviderField (no grant): %v", err)
+	}
+	mid, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if mid.DiscogsID != "dg-old" {
+		t.Fatalf("discogs_id = %q after an ungranted write, want %q; the lock must still stop the rule engine", mid.DiscogsID, "dg-old")
+	}
+
+	// WITH a grant for this field: the operator's own edit lands.
+	granted := ContextWithLockOverride(ctx, "discogs_id")
+	if err := svc.UpdateProviderField(granted, a.ID, "discogs_id", "dg-operator-typed"); err != nil {
+		t.Fatalf("UpdateProviderField (granted): %v", err)
+	}
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.DiscogsID != "dg-operator-typed" {
+		t.Errorf("discogs_id = %q, want the operator's value; refusing an operator's own edit is worse than the bug", after.DiscogsID)
+	}
+	// The grant is FIELD-SCOPED: it must not unlock a different pinned field.
+	if len(after.LockedFields) != 1 || after.LockedFields[0] != "discogs_id" {
+		t.Errorf("locked_fields = %v, want [discogs_id]; the grant must not clear the lock itself", after.LockedFields)
 	}
 }

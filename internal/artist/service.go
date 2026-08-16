@@ -1609,10 +1609,16 @@ func (s *Service) ClearField(ctx context.Context, id, field string) (bool, error
 // ClearProviderField is unaffected: it calls through with "", which
 // ValidateFieldUpdate accepts because clearing a wrong ID is legitimate.
 //
-// A FIELD LOCK IS NOT ENFORCED HERE YET. Service.update guards the whole-row
-// persist; this single-field verb writes the provider-ID table and is a separate
-// path, and provider IDs are outside the guarded set for now (see lockguard.go).
-// A later unit adds the refusal here.
+// A FIELD LOCK IS ENFORCED HERE, by way of Service.update. This method ends in a
+// whole-row persist, and provider IDs are in the chokepoint's guarded set, so a
+// rule writing a pinned ID has that write reverted like any other automated one.
+//
+// The operator's own edit is NOT reverted: internal/api's field-edit handler
+// wraps the context with artist.ContextWithLockOverride for the one field being
+// edited. The grant is deliberately not applied here for every caller -- the
+// rule engine's provider-ID backfill calls this same method, and a field pinned
+// while EMPTY ("do not guess this one") is exactly what it would otherwise
+// fill.
 func (s *Service) UpdateProviderField(ctx context.Context, id, field, value string) error {
 	providerName, ok := providerFieldMap[field]
 	if !ok {
