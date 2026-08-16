@@ -670,9 +670,16 @@ func TestHandleRefreshLink_ReidentifyHonorsFieldLocks(t *testing.T) {
 	ctx := context.Background()
 	a.Origin = pinnedOrigin
 	a.YearsActive = "1970-1980"
-	a.LockedFields = []string{"origin"}
 	if err := svc.Update(ctx, a); err != nil {
 		t.Fatalf("seeding locked origin: %v", err)
+	}
+	// The lock is set through the dedicated mutator, not by putting it on the
+	// struct above. Since #3037 the whole-row persist pins lock state to the
+	// stored row's (pinLockState, internal/artist/lockguard.go), so a
+	// struct-then-Update seed would silently lock nothing and the assertion
+	// below would be vacuous -- which is exactly what the precondition catches.
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"origin"}); err != nil {
+		t.Fatalf("seeding origin lock: %v", err)
 	}
 
 	// Precondition: the lock and the pinned value really persisted. A lock that
