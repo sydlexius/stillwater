@@ -749,10 +749,24 @@ test('a refused row shows WHY it was refused, from the live restore chain', asyn
     });
     if (!resp.ok) return null;
     const plan = await resp.json();
-    // A string field, so the staleness write below is a simple PATCH. genres
-    // takes an array and would need a different body shape.
+    // The staleness write below is a plain PATCH of a free-form string, so the
+    // row must be a field that accepts one. Two kinds are excluded rather than
+    // one, and an ALLOW-list would be the wrong shape here: trackableFields is
+    // free to grow, and a new entry must not silently become eligible for a
+    // write this fixture cannot make.
+    //
+    //   - genres, styles and moods take an ARRAY, so a string body is the
+    //     wrong shape entirely.
+    //   - name carries validation rules (ValidateFieldUpdate refuses an empty,
+    //     whitespace-only or identity-less value) AND routes through the
+    //     collision guard, so a free-form write can be refused for reasons
+    //     that have nothing to do with the staleness this fixture is creating.
+    //
+    // Picking one of those makes the PATCH fail and the test fail LATER, on an
+    // absent element, naming the wrong cause.
+    const unpatchable = new Set(['genres', 'styles', 'moods', 'name']);
     const ok = (plan.items || []).find(
-      i => i.restore_status === 'planned' && i.field !== 'genres',
+      i => i.restore_status === 'planned' && !unpatchable.has(i.field),
     );
     return ok ? { id: ok.change_id, artistId: ok.artist_id, field: ok.field } : null;
   }, rowIds);

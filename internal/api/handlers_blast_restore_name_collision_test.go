@@ -71,7 +71,10 @@ func TestBlastRestore_NameCollisionIsHeldApartFromAFailedWrite(t *testing.T) {
 	// The PREVIEW plans the colliding row. That is not a defect being locked
 	// in, it is the fact that motivates the commit-side classifier: nothing at
 	// plan time can answer this question, so the commit must answer it well.
-	_, preview := postRestore(t, r, fmt.Sprintf(body, false))
+	pw, preview := postRestore(t, r, fmt.Sprintf(body, false))
+	if pw.Code != 200 {
+		t.Fatalf("preview status = %d; body: %s", pw.Code, pw.Body.String())
+	}
 	if got := itemFor(t, preview, nameChangeID); got.Status != blastRestorePlanned {
 		t.Fatalf("preview item = %+v, want status %q; the fixture is not reaching the write "+
 			"path where the collision guard runs", got, blastRestorePlanned)
