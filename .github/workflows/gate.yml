@@ -745,6 +745,7 @@ jobs:
       # push with --no-verify, and this is the surface that still catches it.
       - name: git-clean-env guard
         run: |
+          bash scripts/test-check-git-init-guarded.sh
           bash scripts/check-git-init-guarded.sh
           bash scripts/test-git-clean-env.sh
 

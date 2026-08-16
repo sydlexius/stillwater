@@ -195,6 +195,29 @@ echo "=== Gate invariant (no advisory step in the default path) ==="
 bash "$SCRIPT_DIR/check-gate-invariant.sh"
 
 echo ""
+echo "=== git-init guard presence (#3051) ==="
+# `git init <path>` re-initializes an inherited GIT_DIR and IGNORES <path>. The
+# pre-push hook exports GIT_DIR, this gate inherits it, and several checks below
+# build fixture repositories. From a worktree -- which SHARES the main repo's
+# .git/config -- an unguarded fixture line wrote core.bare=true into the MAIN
+# repository, silently disabling its mass-deletion guard. It fired six times in
+# one session, noticed none of them, and surfaced days later as an unrelated
+# `git merge --ff-only` refusing to run in a work tree.
+#
+# THIS RUNS BEFORE ANY FIXTURE-BUILDING CHECK, and that ordering is the whole
+# point: it PREVENTS the damage rather than reporting it. Placed after those
+# checks (as it first was), a newly-added unguarded `git init` would corrupt the
+# main repository earlier in this same gate run and the checker would announce
+# it too late to matter. The behavioral suite stays late, where it can also
+# confirm the checks above left the repository alone.
+#
+# Its own mutation tests run first, for the reason every guard here self-tests:
+# the first implementation used a bash 4.0 builtin, so on macOS system bash it
+# examined ZERO files and exited 0 -- a guard reporting safety it never checked.
+bash "$SCRIPT_DIR/test-check-git-init-guarded.sh"
+bash "$SCRIPT_DIR/check-git-init-guarded.sh"
+
+echo ""
 echo "=== Tool version drift ==="
 # Assert the lint/spell tool versions pinned independently in the bash hook,
 # the pre-commit framework config, and the CI workflows all agree. A drift
@@ -636,22 +659,14 @@ echo "=== RUN_* flag resolution (#2983) ==="
 bash "$SCRIPT_DIR/test-run-flag-resolution.sh"
 
 echo ""
-echo "=== git-clean-env guard (#3051) ==="
-# `git init <path>` re-initializes an inherited GIT_DIR and IGNORES <path>. The
-# pre-push hook exports GIT_DIR, this gate inherits it, and several checks above
-# build fixture repositories. From a worktree -- which SHARES the main repo's
-# .git/config -- an unguarded fixture line wrote core.bare=true into the MAIN
-# repository, silently disabling its mass-deletion guard. It fired six times in
-# one session, noticed none of them, and surfaced days later as an unrelated
-# `git merge --ff-only` refusing to run in a work tree.
-#
-# Two checks answering different questions: the suite proves the guard WORKS
-# (real worktree, real config read); the static check proves one is PRESENT at
-# every `git init` site, which is what the NEXT such script forgets. Hermetic
-# and sub-second, so both run unconditionally. Positioned AFTER the
-# fixture-building checks on purpose: run first, they would pass while the
-# damage happened later in the same gate run.
-bash "$SCRIPT_DIR/check-git-init-guarded.sh"
+echo "=== git-clean-env behavior (#3051) ==="
+# The BEHAVIORAL half of the #3051 guard (the static half is a pre-flight, up
+# near the top of this gate -- see its block for the mechanism). This runs each
+# affected helper against a real throwaway worktree and reads the main repo's
+# config back, so it proves the guard WORKS rather than merely being present.
+# It belongs AFTER the fixture-building checks: it is a verification, not a
+# prevention, and running it here also confirms the checks above left the
+# repository alone on this very run.
 bash "$SCRIPT_DIR/test-git-clean-env.sh"
 
 echo ""
