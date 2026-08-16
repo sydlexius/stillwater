@@ -736,12 +736,17 @@ func (s *Service) UpdateAfterRuleEvaluation(ctx context.Context, a *Artist) erro
 // returns the error either way, and this function has no say in that.
 //
 // EXACTLY TWO causes are downgraded, and they are enumerated rather than
-// described: context.Canceled and context.DeadlineExceeded. Those are the only
-// two sentinel errors the context package defines, and both mean the CALLER
-// went away -- a client that disconnected, a parent context canceled during a
-// graceful shutdown, or the request's own timeout elapsing. None of those is a
-// fault of this process, and a server logging at Error every time a client
-// hangs up trains its operator to ignore Error.
+// described: context.Canceled and context.DeadlineExceeded. Those are the two
+// error values the context package exports (`go doc context` lists Canceled and
+// DeadlineExceeded and no others), and both mean the CALLER went away -- a
+// client that disconnected, a parent context canceled during a graceful
+// shutdown, or the request's own timeout elapsing. None of those is a fault of
+// this process, and a server logging at Error every time a client hangs up
+// trains its operator to ignore Error.
+//
+// Matched with errors.Is, not ==, because a driver returns its own error
+// wrapping the cause; an == check would fire only on a bare sentinel and miss
+// every real cancellation. The wrapped_cancellation case in the test pins that.
 //
 // Everything else stays at Error, because every other way this read fails is a
 // real fault: a closed or corrupt database, a driver error, a scan failure.
