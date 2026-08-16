@@ -49,15 +49,23 @@
 //     the value about to be written (already recovered, so the write is a
 //     no-op). Anything else means something wrote this field since the damage
 //     landed, and the restore refuses.
+//  5. For a "name" row only: the value about to be written is not an identity
+//     a DIFFERENT artist currently holds. Restoring one would recreate the
+//     duplicate the rename removed. Answered by the SAME service call the
+//     single-edit path's fast path uses (artist.Service.FindNameCollision), so
+//     the preview and the write cannot come to disagree about what a duplicate
+//     is (#3039).
 //
-// PASSING ALL FOUR IS NOT A PROMISE THE WRITE LANDS. One refusal cannot be
-// decided from a change row at all: restoring a "name" change whose old value
-// is an identity a DIFFERENT artist now holds would recreate the duplicate
-// that rename removed, and that is a property of the CURRENT database rather
-// than of the row, so it is answered inside the writing transaction by the
-// service's collision guard. A preview can therefore plan such a row and the
-// commit still refuse it, under its own token (name_collision) rather than the
-// generic restore_failed -- see blastRestoreWriteRefusal.
+// PASSING ALL FIVE IS NOT A PROMISE THE WRITE LANDS, and check 5 is the reason
+// to say so explicitly. Whether a name collides is a property of the CURRENT
+// database rather than of the immutable change row, so unlike checks 1 and 2 it
+// can go stale between the preview and the commit: another artist can take the
+// identity in that window. Check 5 is therefore an HONEST EARLY REPORT, never
+// the guarantee. The authority stays where it was -- inside the writing
+// transaction, in the service's collision guard, surfaced by
+// blastRestoreWriteRefusal under the same name_collision token. Removing either
+// one is a regression: without check 5 the plan overstates what will land,
+// without the commit-side check a race writes the duplicate.
 //
 // Checks 3 and 4 are the load-bearing ones and they are deliberately positive
 // matches rather than "not known to be stale" tests. The report ranks one row
@@ -256,8 +264,15 @@ const (
 	// current name, so renaming or merging that artist clears it and the
 	// identical request then succeeds. That is the mechanism, and it is what
 	// distinguishes the token -- not a count of how many other tokens happen to
-	// share the property. Reported only from a commit; blastRestoreWriteRefusal
-	// explains why no plan-time check can produce it.
+	// share the property.
+	//
+	// Reported from BOTH the plan and the commit (#3039). The plan runs
+	// planNameCollisionRefusal so the operator learns the row cannot be
+	// recovered while still deciding; the commit re-answers it inside the
+	// writing transaction, which is the authority, because the other artist's
+	// name can change in between. One token for both because it is one
+	// refusal asking the operator for one thing -- a plan-only token would
+	// make the two surfaces read as different problems.
 	blastRefuseNameCollision = "name_collision"
 )
 
@@ -418,8 +433,9 @@ func (r *Router) isCurrentBlastRow(ctx context.Context, change *artist.MetadataC
 
 // liveValueRestorable reports whether the artist's field, READ AS IT IS RIGHT
 // NOW, is still a value this restore is allowed to act on. It is check 4 of
-// the allow-list and the only check that is not derived from the history
-// table's ordering.
+// the allow-list. Like check 5 (planNameCollisionRefusal, added in #3039) and
+// unlike checks 1-3, it answers from live artist state rather than from the
+// history table's ordering.
 //
 // Exactly two live values are acceptable:
 //
@@ -477,7 +493,7 @@ func (r *Router) planBlastRestore(ctx context.Context, ids []string) []blastRest
 
 // planOneBlastRestore runs the allow-list for a single change id. Every exit
 // except the final one is a refusal: the function can only reach "planned" by
-// passing all three checks in order.
+// passing all five checks in order.
 func (r *Router) planOneBlastRestore(ctx context.Context, id string) blastRestoreItem {
 	item := blastRestoreItem{ChangeID: id, Status: blastRestoreRefused}
 
@@ -547,9 +563,73 @@ func (r *Router) planOneBlastRestore(ctx context.Context, id string) blastRestor
 		return item
 	}
 
+	// Check 5: a "name" restore must not hand this artist an identity another
+	// artist already holds. Reported HERE and not only from the commit so the
+	// plan the operator approves matches what will land (#3039).
+	if reason, refuse := r.planNameCollisionRefusal(ctx, change); refuse {
+		item.Reason = reason
+		return item
+	}
+
 	item.Status = blastRestorePlanned
 	item.Reason = ""
 	return item
+}
+
+// planNameCollisionRefusal answers, at PLAN time, whether restoring change's
+// old value would collide with another artist's identity. It returns the
+// refusal token and true when the row must be refused.
+//
+// WHY THIS IS NOT A SECOND SOURCE OF TRUTH. It calls
+// artist.Service.FindNameCollision, the same function
+// handlers_name_collision_guard.go's pre-write fast path calls, which shares
+// its scan (findCollisionPartner) with the in-transaction check inside
+// UpdateNameGuarded. All three therefore decide "is this a duplicate?" with one
+// implementation. That is the whole design constraint: a hand-rolled name
+// query here could disagree with the guard, and a preview that disagrees with
+// the writer is a worse defect than the one this closes.
+//
+// WHY ONLY "name". FindNameCollision keys on the artists.name column, and no
+// other field feeds an identity key. Checked rather than assumed, against this
+// tree: `grep -rn 'NormalizeIdentityKey(' internal --include='*.go' | grep -v
+// _test` shows every producer reading either an artist's Name or a raw
+// candidate name, and ValidateFieldUpdate's SCOPE block records that sort_name
+// is deliberately exempt from name rules. Restricting the call by field also
+// keeps the whole-table scan off every OTHER trackable field, each of which
+// would otherwise pay for an answer that is always "no".
+//
+// FAIL CLOSED. A check that could not run is not evidence the restore is safe,
+// which is the standing rule for this guard (guardNameCollision takes the same
+// position, with a 500). Here the row is refused as no_longer_current rather
+// than name_collision: the honest statement is "eligibility could not be
+// decided", not "another artist holds the name", and no_longer_current is
+// already this endpoint's token for a row whose current state could not be
+// confirmed. A refusal at plan time writes nothing, so failing closed costs the
+// operator a reload, never data.
+//
+// That error branch is near-unreachable through the endpoint: check 4
+// (liveValueRestorable) already called GetByID on this same artist a few lines
+// above and refused on its error, so only a DB-level fault arising between the
+// two reads gets here. It is exercised directly by test rather than through
+// planOneBlastRestore for that reason.
+func (r *Router) planNameCollisionRefusal(ctx context.Context, change *artist.MetadataChange) (string, bool) {
+	if change.Field != string(artist.FieldArtistName) {
+		return "", false
+	}
+
+	collision, err := r.artistService.FindNameCollision(ctx, change.ArtistID, change.OldValue)
+	if err != nil {
+		r.logger.Error("blast restore: checking name collision at plan time",
+			"change_id", change.ID, "artist_id", change.ArtistID, "error", err)
+		return blastRefuseNotCurrent, true
+	}
+	if collision == nil {
+		return "", false
+	}
+	r.logger.Info("blast restore: planning refused, restoring this name would collide",
+		"change_id", change.ID, "artist_id", change.ArtistID,
+		"existing_artist_id", collision.ArtistID)
+	return blastRefuseNameCollision, true
 }
 
 // commitBlastRestore writes every planned item and updates its status in
@@ -673,14 +753,16 @@ func (r *Router) commitBlastRestore(ctx context.Context, items []blastRestoreIte
 // cannot succeed.
 //
 // The name_collision arm is LIVE, and the paragraph above does NOT cover it.
-// Nothing at plan time can: whether a name collides is a property of the
-// CURRENT database rather than of the immutable history row, so
-// validateRevertable never sees the fact. A bulk restore of a name change whose
-// old value another artist has since taken therefore plans as "planned",
-// reaches performRevert for real, and comes back refused by the transactional
-// collision guard. Without this arm that live refusal would be filed as
-// restore_failed -- a permanent-looking token on the one refusal that is not
-// permanent.
+// As of #3039 planOneBlastRestore DOES check for a collision (check 5), so the
+// ordinary case is now refused before the operator confirms. That check is a
+// fast path, not a substitute for this arm: whether a name collides is a
+// property of the CURRENT database rather than of the immutable history row, so
+// another artist can take the identity between the preview and the commit. When
+// that happens the row plans as "planned", reaches performRevert for real, and
+// comes back refused by the transactional collision guard -- and without this
+// arm that refusal would be filed as restore_failed, a permanent-looking token
+// on the one refusal that is not permanent. Deleting either half regresses:
+// this one is the guarantee, check 5 is the honesty.
 //
 // DETECTION. errors.Is on the sentinel, matching how the single-revert path
 // classifies the same failure (writeRevertFailure, handlers_history.go). That

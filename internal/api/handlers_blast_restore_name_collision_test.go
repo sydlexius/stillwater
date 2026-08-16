@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -12,16 +15,30 @@ import (
 // A bulk restore refused by the NAME COLLISION guard must report
 // name_collision, not restore_failed (#3037).
 //
-// Unlike every other refusal the endpoint reports, this one cannot be caught
-// at plan time: validateRevertable sees only the immutable history row, while
-// whether a name collides depends on the CURRENT database. So planning says
-// "planned", the commit arm fires for real, and the refusal arrives from
-// inside the writing transaction -- where the generic fall-through would file
-// a refusal the operator CAN clear under a token that reads as a failed write.
+// The plan now runs its own collision check (#3039), so this test drives the
+// one window that check cannot close: the plan-to-commit window INSIDE a single
+// commit request. The handler plans every row once and then writes those same
+// planned items, so a collision created after the plan is seen by nothing but
+// the in-transaction guard.
+//
+// That window is why this test calls planBlastRestore and commitBlastRestore
+// DIRECTLY rather than issuing a preview POST followed by a commit POST. A
+// second HTTP request re-plans from scratch, so the plan-time check (#3039)
+// would refuse the row before the write was ever attempted and this test would
+// pass without the commit-side classifier existing at all. The direct calls are
+// the same two functions handleBlastRadiusRestore invokes, in the same order.
 func TestBlastRestore_NameCollisionIsHeldApartFromAFailedWrite(t *testing.T) {
 	t.Parallel()
 	r, artistSvc, historySvc := restoreTestRouter(t)
 	ctx := context.Background()
+
+	// The refused item's own fields do not record WHERE the refusal was
+	// decided, so the write is observed as ATTEMPTED through the log line
+	// commitBlastRestore emits when performRevert returns an error. Asserted
+	// below so a refactor that once again lets a plan-time check shadow the
+	// commit arm fails loudly instead of passing for a new reason.
+	var logs bytes.Buffer
+	r.logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	// The damaged artist: an operator named it, then a scan renamed it.
 	// Restoring puts the operator's name back.
@@ -29,11 +46,38 @@ func TestBlastRestore_NameCollisionIsHeldApartFromAFailedWrite(t *testing.T) {
 	nameChangeID := damageField(t, r, artistSvc, historySvc, damaged.ID,
 		"name", "Marlowe Ensemble", "Marlowe Ensemble (Remastered)")
 
-	// The squatter, created only AFTER the damage so the operator's own rename
-	// above is not itself refused. Service.Create writes the row with no
-	// collision check, which is how this state arises in production: a scan or
-	// a platform import seeds an artist under a name a history row still holds
-	// as its old value.
+	// The positive control, in the SAME request: a row that is legitimately
+	// restorable. A classifier that refused everything would satisfy every
+	// refusal assertion here without it.
+	good := addTestArtist(t, artistSvc, "Ashgrove Wind Band")
+	goodChangeID := damageField(t, r, artistSvc, historySvc, good.ID,
+		"biography", "an operator wrote this", "a scan overwrote it")
+
+	itemFor := func(t *testing.T, items []blastRestoreItem, id string) blastRestoreItem {
+		t.Helper()
+		for i := range items {
+			if items[i].ChangeID == id {
+				return items[i]
+			}
+		}
+		t.Fatalf("no item for change %s in %+v", id, items)
+		return blastRestoreItem{}
+	}
+
+	// The PLAN is taken while the identity is still FREE, so it plans the row
+	// honestly. The collision is created underneath it below, and the SAME
+	// planned items are then committed -- the window no plan-time check can
+	// close.
+	items := r.planBlastRestore(ctx, []string{nameChangeID, goodChangeID})
+	if got := itemFor(t, items, nameChangeID); got.Status != blastRestorePlanned {
+		t.Fatalf("planned item = %+v, want status %q; the fixture is not reaching the write "+
+			"path where the collision guard runs", got, blastRestorePlanned)
+	}
+
+	// The squatter, created only AFTER the damage AND after the plan.
+	// Service.Create writes the row with no collision check, which is how this
+	// state arises in production: a scan or a platform import seeds an artist
+	// under a name a history row still holds as its old value.
 	squatter := addTestArtist(t, artistSvc, "Marlowe Ensemble")
 
 	// PRECONDITION: the identity really is taken, so the guard has something to
@@ -48,56 +92,31 @@ func TestBlastRestore_NameCollisionIsHeldApartFromAFailedWrite(t *testing.T) {
 			"would succeed and exercise no refusal at all", collision, squatter.ID)
 	}
 
-	// The positive control, in the SAME request: a row that is legitimately
-	// restorable. A classifier that refused everything would satisfy every
-	// refusal assertion here without it.
-	good := addTestArtist(t, artistSvc, "Ashgrove Wind Band")
-	goodChangeID := damageField(t, r, artistSvc, historySvc, good.ID,
-		"biography", "an operator wrote this", "a scan overwrote it")
+	r.commitBlastRestore(ctx, items)
 
-	body := fmt.Sprintf(`{"change_ids":[%q,%q],"commit":%%t}`, nameChangeID, goodChangeID)
-
-	itemFor := func(t *testing.T, resp blastRestoreResponse, id string) blastRestoreItem {
-		t.Helper()
-		for i := range resp.Items {
-			if resp.Items[i].ChangeID == id {
-				return resp.Items[i]
-			}
-		}
-		t.Fatalf("no item for change %s in %+v", id, resp.Items)
-		return blastRestoreItem{}
+	// The write was ATTEMPTED and refused in the transaction. Without this the
+	// name_collision assertion below cannot tell the commit-side classifier
+	// apart from a plan-time refusal that shadowed it.
+	if !strings.Contains(logs.String(), "blast restore: writing restore") {
+		t.Fatalf("the commit logged no write attempt, so performRevert was never reached and "+
+			"the refusal below did not come from the in-transaction guard; logs: %s", logs.String())
 	}
 
-	// The PREVIEW plans the colliding row. That is not a defect being locked
-	// in, it is the fact that motivates the commit-side classifier: nothing at
-	// plan time can answer this question, so the commit must answer it well.
-	pw, preview := postRestore(t, r, fmt.Sprintf(body, false))
-	if pw.Code != 200 {
-		t.Fatalf("preview status = %d; body: %s", pw.Code, pw.Body.String())
-	}
-	if got := itemFor(t, preview, nameChangeID); got.Status != blastRestorePlanned {
-		t.Fatalf("preview item = %+v, want status %q; the fixture is not reaching the write "+
-			"path where the collision guard runs", got, blastRestorePlanned)
-	}
-
-	w, commit := postRestore(t, r, fmt.Sprintf(body, true))
-	if w.Code != 200 {
-		t.Fatalf("commit status = %d; body: %s", w.Code, w.Body.String())
-	}
-
-	refused := itemFor(t, commit, nameChangeID)
+	refused := itemFor(t, items, nameChangeID)
 	if refused.Status != blastRestoreRefused || refused.Reason != blastRefuseNameCollision {
 		t.Errorf("commit item = %+v; want refused as %q. %q would tell the operator to retry the "+
 			"same request, when what clears this is renaming or merging the other artist",
 			refused, blastRefuseNameCollision, blastRefuseWriteFailed)
 	}
-	if got := itemFor(t, commit, goodChangeID); got.Status != blastRestoreRestored {
+	if got := itemFor(t, items, goodChangeID); got.Status != blastRestoreRestored {
 		t.Errorf("positive control = %+v, want status %q; the classifier refused a row it "+
 			"should have written", got, blastRestoreRestored)
 	}
-	if commit.Restored != 1 || commit.Refused != 1 {
+	// The counters the response would carry, through the same function the
+	// handler uses to derive them.
+	if _, restoredN, _, refusedN := summarizeBlastRestore(items); restoredN != 1 || refusedN != 1 {
 		t.Errorf("restored = %d, refused = %d, want 1 and 1; items: %+v",
-			commit.Restored, commit.Refused, commit.Items)
+			restoredN, refusedN, items)
 	}
 
 	// THE ARTIFACTS. The refused write did not land, and the eligible one did.
