@@ -6,8 +6,22 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 )
 
-// refuseLockedProviderIDs answers 409 when any provider-ID field this request
-// would write is pinned, and reports whether it did.
+// refuseLockedProviderIDs answers 423 Locked when any provider-ID field this
+// request would write is pinned, and reports whether it did.
+//
+// 423 rather than 409, and the choice is the house shape rather than a novel
+// one: handlers_artist_duplicates.go:414 already answers 423 for a merge
+// refused on a lock. It is also the only ADDITIVE option here. The Deezer link
+// route already documents a 409 for the conflict gate, so expressing the lock
+// refusal as a second 409 would restructure that response into a oneOf --
+// converting "this field is guaranteed" into "this field might be present",
+// which oasdiff correctly reports as breaking. A new status code is additive;
+// widening an existing one is not.
+//
+// The two older match-by-name flows (handlers_discogs.go, handlers_audiodb.go)
+// still answer 409 for their own lock refusal. That inconsistency is known and
+// left for the unit that revisits them; the body shape is identical, so a
+// client discriminating on the "error" key handles both.
 //
 // WHY A REFUSAL RATHER THAN A GRANT. These are link / identify / re-identify
 // flows: the operator is choosing a NEW identity for the artist, which is
@@ -39,7 +53,7 @@ func (r *Router) refuseLockedProviderIDs(w http.ResponseWriter, a *artist.Artist
 		if f == "" || !r.artistService.IsFieldLocked(a, f) {
 			continue
 		}
-		writeJSON(w, http.StatusConflict, map[string]any{
+		writeJSON(w, http.StatusLocked, map[string]any{
 			"error":  "field_locked",
 			"field":  string(f),
 			"reason": "the " + string(f) + " field is locked; unlock it before changing this artist's identity",

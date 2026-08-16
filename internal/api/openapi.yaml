@@ -7806,10 +7806,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "409":
+        "423":
           description: |
             A provider-ID field this request would write is locked. The stored
-            identity is unchanged; unlock the field to proceed.
+            identity is unchanged; unlock the field to proceed. The link and
+            identify flows choose a NEW identity for the artist, which is what a
+            lock on the identity field forbids; editing a pinned ID directly
+            through the field-edit API is still allowed.
           content:
             application/json:
               schema:
@@ -14329,10 +14332,13 @@ paths:
             text/html:
               schema:
                 type: string
-        "409":
+        "423":
           description: |
             A provider-ID field this request would write is locked. The stored
-            identity is unchanged; unlock the field to proceed.
+            identity is unchanged; unlock the field to proceed. The link and
+            identify flows choose a NEW identity for the artist, which is what a
+            lock on the identity field forbids; editing a pinned ID directly
+            through the field-edit API is still allowed.
           content:
             application/json:
               schema:
@@ -14550,18 +14556,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: |
-            Two conditions share this status. The conflict gate blocked the
-            write (ConflictWriteBlock), or the deezer_id field is locked
-            (FieldLockRefusal) -- the link flow chooses a new identity, which is
-            what a lock on that field forbids. Discriminate on the body's
-            "error" value.
+          description: Conflict gate blocked the write
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ConflictWriteBlock"
-                  - $ref: "#/components/schemas/FieldLockRefusal"
+                $ref: "#/components/schemas/ConflictWriteBlock"
+        "423":
+          description: |
+            The deezer_id field is locked. The stored ID is unchanged; unlock
+            the field to proceed. The link flow chooses a NEW identity for the
+            artist, which is what a lock on that field forbids; editing a pinned
+            ID directly through the field-edit API is still allowed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldLockRefusal"
         "500":
           description: Failed to link Deezer ID
           content:
@@ -14599,14 +14608,6 @@ paths:
             text/html:
               schema:
                 type: string
-        "409":
-          description: |
-            A provider-ID field this request would write is locked. The stored
-            identity is unchanged; unlock the field to proceed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FieldLockRefusal"
         "404":
           description: Artist not found
           content:
@@ -14696,14 +14697,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "409":
-          description: |
-            A provider-ID field this request would write is locked. The stored
-            identity is unchanged; unlock the field to proceed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FieldLockRefusal"
         "404":
           description: Artist not found
           content:

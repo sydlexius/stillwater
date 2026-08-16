@@ -99,9 +99,9 @@ func TestLinkFlows_RefuseALockedProviderID(t *testing.T) {
 			w := httptest.NewRecorder()
 			tc.call(r, w, req)
 
-			if w.Code != http.StatusConflict {
-				t.Fatalf("status = %d, want %d; a 200 tells the operator the link succeeded while the chokepoint silently reverted it. body=%s",
-					w.Code, http.StatusConflict, w.Body.String())
+			if w.Code != http.StatusLocked {
+				t.Fatalf("status = %d, want %d (423 Locked); a 200 tells the operator the link succeeded while the chokepoint silently reverted it. body=%s",
+					w.Code, http.StatusLocked, w.Body.String())
 			}
 			var got map[string]any
 			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
@@ -143,8 +143,8 @@ func TestLinkFlows_UnlockedProviderIDStillLinks(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.handleDeezerLink(w, req)
 
-	if w.Code == http.StatusConflict {
-		t.Fatalf("status = 409 on an UNLOCKED field; the lock check must not refuse an ordinary link. body=%s", w.Body.String())
+	if w.Code == http.StatusLocked {
+		t.Fatalf("status = 423 on an UNLOCKED field; the lock check must not refuse an ordinary link. body=%s", w.Body.String())
 	}
 	after, err := artistSvc.GetByID(ctx, a.ID)
 	if err != nil {
