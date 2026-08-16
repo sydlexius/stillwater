@@ -20,6 +20,18 @@ set -euo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CHECK="$REPO_ROOT/scripts/check-commit-signing.sh"
+CHECK_LIB="$REPO_ROOT/scripts/lib/git-clean-env.sh"
+
+# install_check <fixture-repo> -- copy the check script into a fixture's expected
+# scripts/ layout, WITH the library it sources. Copying the check alone leaves it
+# failing at its source line, which surfaces as "the commit was refused" and
+# reads like the check under test doing its job (#3051).
+install_check() {
+    mkdir -p "$1/scripts/lib"
+    cp "$CHECK" "$1/scripts/check-commit-signing.sh"
+    cp "$CHECK_LIB" "$1/scripts/lib/git-clean-env.sh"
+    chmod +x "$1/scripts/check-commit-signing.sh"
+}
 HOOK="$REPO_ROOT/.githooks/pre-commit"
 POST_HOOK="$REPO_ROOT/.githooks/post-commit"
 
@@ -36,6 +48,14 @@ trap 'rm -rf "$WORK"' EXIT
 # quietly weakening several cases.
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_CONFIG_SYSTEM=/dev/null
+
+# Strip the inherited git LOCATION variables too (#3051). GIT_CONFIG_* above
+# isolates which SETTINGS the fixtures read, not WHICH REPOSITORY they write to:
+# `git init` honors a hook-supplied GIT_DIR and wrote into the MAIN repo's
+# shared config. Sourced AFTER the exports above, which it preserves.
+# shellcheck source=scripts/lib/git-clean-env.sh
+. "$REPO_ROOT/scripts/lib/git-clean-env.sh"
+git_clean_env_unset
 
 PASSED=0
 FAILED=0
@@ -327,8 +347,8 @@ R8=$(new_repo hook-e2e)
 # fixture needs the repo layout it expects.
 mkdir -p "$R8/.githooks" "$R8/scripts"
 cp "$HOOK" "$R8/.githooks/pre-commit"
-cp "$CHECK" "$R8/scripts/check-commit-signing.sh"
-chmod +x "$R8/.githooks/pre-commit" "$R8/scripts/check-commit-signing.sh"
+install_check "$R8"
+chmod +x "$R8/.githooks/pre-commit"
 touch "$R8/.githooks/signed-commits-required"
 git -C "$R8" config core.hooksPath "$R8/.githooks"
 enable_working_signer "$R8"
@@ -393,8 +413,8 @@ if ! require "[ -f '$R9/.git' ]" "fixture must be a LINKED worktree (.git is a f
 fi
 mkdir -p "$R9/.githooks" "$R9/scripts"
 cp "$HOOK" "$R9/.githooks/pre-commit"
-cp "$CHECK" "$R9/scripts/check-commit-signing.sh"
-chmod +x "$R9/.githooks/pre-commit" "$R9/scripts/check-commit-signing.sh"
+install_check "$R9"
+chmod +x "$R9/.githooks/pre-commit"
 touch "$R9/.githooks/signed-commits-required"
 # Unlike Case 8, this case runs the hook all the way THROUGH, so the fixture needs
 # what the hook's later sections read unconditionally. Everything else in the hook
@@ -426,6 +446,17 @@ if require "[ '$BEFORE' -eq 1 ]" "exactly one baseline commit expected"; then
         # consumed the index, the real commit would be empty.
         if git -C "$R9" show --name-only --format= HEAD | grep -q '^real.txt$'; then
             ok "exactly one signed commit, the developer's, with the staged file intact"
+            # And the probe's `git init` must not have re-initialized the
+            # inherited GIT_DIR: a worktree shares the MAIN repo's config, so an
+            # unguarded init writes core.bare=true there and silently disables
+            # its mass-deletion guard (#3051).
+            R9_BARE=$(git -C "$R9_MAIN" config --get core.bare || echo '(unset)')
+            if [ "$R9_BARE" = "false" ]; then
+                ok "the probe left the MAIN repository's core.bare alone"
+            else
+                bad "the probe set core.bare=$R9_BARE on the MAIN repository (#3051)" \
+                    "an inherited GIT_DIR redirected \`git init\` into the shared config"
+            fi
         else
             bad "commit created but real.txt is missing -- the index was consumed" \
                 "$(git -C "$R9" show --name-only --format= HEAD)"
@@ -566,9 +597,8 @@ R12=$(new_repo no-gpg-sign-bypass)
 mkdir -p "$R12/.githooks" "$R12/scripts"
 cp "$HOOK" "$R12/.githooks/pre-commit"
 cp "$POST_HOOK" "$R12/.githooks/post-commit"
-cp "$CHECK" "$R12/scripts/check-commit-signing.sh"
-chmod +x "$R12/.githooks/pre-commit" "$R12/.githooks/post-commit" \
-    "$R12/scripts/check-commit-signing.sh"
+install_check "$R12"
+chmod +x "$R12/.githooks/pre-commit" "$R12/.githooks/post-commit"
 touch "$R12/.githooks/signed-commits-required"
 # The hooks run all the way through, so the fixture needs what the pre-commit
 # hook's later sections read unconditionally (same as Case 9).
