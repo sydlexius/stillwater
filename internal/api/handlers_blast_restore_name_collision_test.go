@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -146,6 +147,26 @@ func TestBlastRestoreWriteRefusal_ClassifiesACollision(t *testing.T) {
 			name: "the bare sentinel matches too",
 			err:  artist.ErrNameCollision,
 			want: blastRefuseNameCollision,
+		},
+		{
+			// ORDER PIN. Nothing in production can hand this function an error
+			// satisfying BOTH sentinels: artist.Service.UpdateField runs
+			// ValidateFieldUpdate first and returns on its error, so a call
+			// yielding ErrInvalidFieldValue never reaches
+			// updateNameThroughGuard, the only producer of ErrNameCollision.
+			// But that is an invariant of internal/artist/service.go, not of
+			// this file, and swapping the two arms here left the entire suite
+			// green -- so the intended winner was documented nowhere and
+			// protected by nothing.
+			//
+			// old_value_invalid wins, and the choice is not arbitrary. It says
+			// no retry can ever succeed; name_collision sends the operator off
+			// to rename or merge another artist first. If both hold, that
+			// errand ends in the same refusal, so the permanent verdict is the
+			// one that does not waste the operator's time.
+			name: "both sentinels at once resolves to the permanent refusal",
+			err:  errors.Join(artist.ErrInvalidFieldValue, artist.ErrNameCollision),
+			want: blastRefuseInvalidOldValue,
 		},
 	}
 

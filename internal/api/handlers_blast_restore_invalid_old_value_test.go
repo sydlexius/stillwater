@@ -99,6 +99,12 @@ func seedEmptyOldNameChange(t *testing.T, artistSvc *artist.Service,
 // for the same row, so an operator is never offered a restore that is only
 // refused after they approve it.
 //
+// That agreement holds for refusals DECIDABLE AT PLAN TIME, which is every
+// refusal that reads only the immutable history row. A name collision is not
+// one of them -- it is a property of the current database, so the plan cannot
+// see it and a collided row legitimately previews as "planned" and commits as
+// "refused" (TestBlastRestore_NameCollisionIsHeldApartFromAFailedWrite).
+//
 // Each request carries a legitimately restorable row alongside the refused
 // one. That is the POSITIVE CONTROL: a classifier that refused everything
 // would satisfy every refusal assertion here.

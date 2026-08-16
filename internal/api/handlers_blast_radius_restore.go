@@ -246,13 +246,18 @@ const (
 	blastRefuseInvalidOldValue = "old_value_invalid"
 	// blastRefuseNameCollision: the row is a name change whose OLD value is an
 	// identity a DIFFERENT artist now holds, so putting it back would recreate
-	// the duplicate the rename removed (#3037). It is the one refusal here
-	// that is NOT permanent -- it clears once the operator renames or merges
-	// that artist, after which the identical request succeeds -- which is why
-	// it is held apart both from blastRefuseWriteFailed (which invites a retry
-	// of the same request) and from blastRefuseInvalidOldValue (unrestorable
-	// forever). Reported only from a commit; blastRestoreWriteRefusal explains
-	// why no plan-time check can produce it.
+	// the duplicate the rename removed (#3037).
+	//
+	// It is held apart from its two neighbors because it asks the operator for
+	// something neither of them does. blastRefuseWriteFailed invites a retry of
+	// the SAME request; retrying this one unchanged always fails again.
+	// blastRefuseInvalidOldValue is a property of the value itself, so no
+	// action anywhere clears it; this one is a property of ANOTHER artist's
+	// current name, so renaming or merging that artist clears it and the
+	// identical request then succeeds. That is the mechanism, and it is what
+	// distinguishes the token -- not a count of how many other tokens happen to
+	// share the property. Reported only from a commit; blastRestoreWriteRefusal
+	// explains why no plan-time check can produce it.
 	blastRefuseNameCollision = "name_collision"
 )
 
@@ -324,9 +329,16 @@ type blastRestoreResponse struct {
 	// Non-zero after a commit means the restore is INCOMPLETE, and the
 	// per-item reason says why. Re-running is always SAFE -- every check is
 	// re-evaluated and nothing is written twice -- but it is not always
-	// USEFUL: some reasons are permanent (old_value_invalid, not_revertible),
-	// and one (name_collision) clears only once the operator has renamed or
-	// merged the other artist.
+	// USEFUL, and the reason is what says which.
+	//
+	// The mechanism, not a tally: a reason describing the VALUE or the FIELD
+	// (old_value_invalid, not_revertible, revert_of_revert) cannot be changed
+	// by re-running, because nothing about the request or the database moves
+	// between attempts. A reason describing the CURRENT STATE of something else
+	// (name_collision, no_longer_current, change_not_found) clears when that
+	// state changes -- the other artist is renamed or merged, the report is
+	// reloaded -- and only then. restore_failed describes the ATTEMPT, so a
+	// plain retry is the right response to it and to nothing else here.
 	Refused int `json:"refused"`
 	// Items carries every requested id in request order.
 	Items []blastRestoreItem `json:"items"`
@@ -677,6 +689,21 @@ func (r *Router) commitBlastRestore(ctx context.Context, items []blastRestoreIte
 // function returns a token and dereferences nothing, so the extra guard would
 // buy no safety and would misfile a nil-Collision refusal -- still a collision
 // -- as a retryable write failure.
+//
+// ARM ORDER. In production the two arms are MUTUALLY EXCLUSIVE, so the order
+// cannot change any real answer: artist.Service.UpdateField calls
+// ValidateFieldUpdate first and RETURNS on its error, so a call that yields
+// ErrInvalidFieldValue never reaches updateNameThroughGuard, which is the only
+// producer of ErrNameCollision (internal/artist/service.go). That disjointness
+// is an invariant of a DIFFERENT file, though, and nothing over there is
+// obliged to preserve it, so the order is pinned deliberately rather than left
+// to whichever arm happens to be typed first: an error carrying BOTH sentinels
+// resolves to old_value_invalid. That is the operator-safe direction.
+// old_value_invalid says no retry can ever work, while name_collision sends the
+// operator off to rename or merge another artist and come back; if both are
+// true that errand ends in the same refusal, so the permanent verdict is the
+// honest one. TestBlastRestoreWriteRefusal_ClassifiesACollision pins the order
+// with an errors.Join case.
 func blastRestoreWriteRefusal(err error) string {
 	if errors.Is(err, artist.ErrInvalidFieldValue) {
 		return blastRefuseInvalidOldValue
