@@ -45,13 +45,11 @@ func seedLockGuardArtist(t *testing.T, svc *Service, name, bio string, fields ..
 // TestUpdate_RestoresLockedFieldAndWritesUnlockedOne is the headline property:
 // a whole-row persist that would change a locked field has that field restored,
 // while the unlocked fields in the SAME write land normally. Asserting the
-// unlocked field in the same call is what proves the guard is per-FIELD rather
-// than an all-or-nothing rejection (see enforceFieldLocks).
+// unlocked field in the same call is what proves the guard is per-FIELD.
 //
-// The CLEAR case is not a variation for completeness. fixJunkBio blanks
-// a.Biography before re-querying providers, so an EMPTY incoming value is the
-// shape that actually lost data in production, and a guard comparing only
-// non-empty values would let exactly it through.
+// The CLEAR case is not padding. fixJunkBio blanks a.Biography before
+// re-querying providers, so an EMPTY incoming value is the shape that actually
+// lost data, and a guard comparing only non-empty values would let it through.
 func TestUpdate_RestoresLockedFieldAndWritesUnlockedOne(t *testing.T) {
 	const pinnedBio = "the operator wrote this by hand"
 	for _, tc := range []struct {
@@ -203,15 +201,9 @@ func TestUpdate_RestoresLockedSliceField(t *testing.T) {
 // reportUnenforceableLocks uses, so a token meaningful there and absent here is
 // a lock the operator was told they have and the chokepoint cannot enforce.
 //
-// TWO exclusions are asserted as exclusions rather than merely tolerated, so a
-// field entering or leaving either category fails here instead of silently
-// changing what is protected:
-//
-//   - "members": no Artist field holds it.
-//   - the provider-ID fields: they are not on the artists row, so guarding them
-//     without hydration would restore an empty ID over a real one. Asserting
-//     they are ABSENT is what stops a well-meaning widening from reintroducing
-//     that data-loss path without also bringing the hydration.
+// Both exclusions are asserted AS exclusions -- "members" (no Artist field holds
+// it) and the provider-ID fields (not on the artists row) -- so a widening that
+// reintroduces the un-hydrated data-loss path fails here.
 func TestLockGuardedFields_CoversEveryArtistsRowLockToken(t *testing.T) {
 	guarded := make(map[string]bool, len(lockGuardedFields))
 	for _, f := range lockGuardedFields {
@@ -242,15 +234,12 @@ func TestLockGuardedFields_CoversEveryArtistsRowLockToken(t *testing.T) {
 }
 
 // TestUpdateField_StillWritesALockedField is the OVER-CORRECTION guard, and it
-// is asserting the opposite of every test above on purpose. Locks gate
-// AUTOMATED writes; the operator's own edit, and the Undo that recovers a value
-// an automated write already changed, are unlocked BY DESIGN (see the
+// asserts the opposite of every test above on purpose. Locks gate AUTOMATED
+// writes; the operator's own edit, and the Undo that recovers a value an
+// automated write already changed, are unlocked BY DESIGN (see the
 // trackableFields comment in service.go). A guard that silently no-opped a
-// manual edit would be worse than the bug it fixes.
-//
-// This is also what keeps the history revert and the blast-radius restore
-// working: both persist through UpdateField / ClearField, which this unit
-// deliberately leaves unguarded.
+// manual edit would be worse than the bug it fixes. This is also what keeps
+// history revert and blast-radius restore working.
 func TestUpdateField_StillWritesALockedField(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(newTestDB(t))
@@ -278,14 +267,11 @@ func TestUpdateField_StillWritesALockedField(t *testing.T) {
 }
 
 // TestUpdate_RestoresEveryGuardedField is the completeness check with teeth.
-// lockGuardedFields is DERIVED, so a field can enter it without anyone writing
-// a restore arm for it -- and setFieldOnArtist would then silently no-op,
-// leaving the guard reporting protection it does not provide for that field.
-// This locks each guarded field in turn, writes a different value, and asserts
-// the stored value came back.
-//
-// It is the reason setFieldOnArtist can stay a plain switch: the switch cannot
-// fall out of step with the field list without failing here.
+// lockGuardedFields is DERIVED, so a field can enter it without anyone writing a
+// restore arm -- setFieldOnArtist would then silently no-op, leaving the guard
+// reporting protection it does not provide. This locks each guarded field in
+// turn, writes a different value, and asserts the stored value came back. It is
+// why setFieldOnArtist can stay a plain switch.
 func TestUpdate_RestoresEveryGuardedField(t *testing.T) {
 	// Distinct per-field seed and attacker values. Both must be non-empty and
 	// different, or the restore assertion cannot tell "restored" from "never
@@ -370,22 +356,13 @@ func valueForTest(a *Artist, field string) string {
 // post-write state, which no other test in this package does on the
 // unreadable-row path.
 //
-// It is deliberately NOT redundant with TestUpdate_RefusesWhenTheStoredRowCannotBeRead
-// (update_fetch_fail_closed_test.go), and the distinction is worth stating
-// because it is easy to get backwards. That test seeds and asserts on Biography
-// ONLY -- it never sets, reads, or asserts a lock column. What it detects is
-// "an unreadable stored row was not refused".
-//
-// Lock erasure is a downstream CONSEQUENCE of failing open, so killing that
-// upstream cause does block this one route to it. But the property here is
-// narrower than its cause: sqliteArtistRepo.Update rewrites locked_fields,
-// locked, lock_source and locked_at from the incoming struct, and a test that
-// only watches the refusal would not notice a guard that reads the snapshot
-// correctly and then restores the WRONG columns. That is why this asserts the
-// columns themselves rather than trusting the refusal to imply them.
-//
-// The damage it guards against is not self-healing: one unguarded write erases
-// the lock set, and every LATER write is then unguarded too.
+// Not redundant with TestUpdate_RefusesWhenTheStoredRowCannotBeRead, which
+// asserts on Biography only and detects "an unreadable row was not refused".
+// Lock erasure is a downstream consequence of failing open, so killing that
+// cause blocks this route -- but a test watching only the refusal would not
+// notice a guard that reads the snapshot correctly and restores the WRONG
+// columns. The damage is not self-healing: one unguarded write erases the lock
+// set, and every later write is then unguarded too.
 func TestUpdate_UnreadableStoredRowDoesNotEraseLockState(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(newTestDB(t))
@@ -430,12 +407,11 @@ func TestUpdate_UnreadableStoredRowDoesNotEraseLockState(t *testing.T) {
 	}
 }
 
-// TestUpdate_ArtistLevelLockSurvivesAnOrdinaryWrite covers the artist-level
-// lock ALONE. TestUpdate_LockSurvivesASecondWrite locks a field as well, so a
-// guard that ran pinLockState only when the stored lock SET is non-empty passes
-// it -- the field lock keeps that condition true and the artist-lock assertion
-// rides along proving nothing. Here nothing but the artist is locked, so the
-// condition is false and the erasure is visible.
+// TestUpdate_ArtistLevelLockSurvivesAnOrdinaryWrite covers the artist-level lock
+// ALONE. TestUpdate_LockSurvivesASecondWrite locks a field as well, so a guard
+// running pinLockState only when the stored lock SET is non-empty passes it --
+// the field lock keeps that condition true and the artist-lock assertion rides
+// along proving nothing. Here nothing but the artist is locked.
 func TestUpdate_ArtistLevelLockSurvivesAnOrdinaryWrite(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(newTestDB(t))
@@ -521,14 +497,14 @@ func TestUpdate_IncomingStructCannotCreateALock(t *testing.T) {
 }
 
 // TestEnforceFieldLocks_ReturnsRestoredNamesInStableOrder gives the documented
-// return contract teeth. The only caller at this commit discards the value, so
-// without this the ordering claim is untested and the accumulation is dead code
-// that a later reader would be right to delete -- taking the follow-up unit's
+// return contract teeth. No production caller reads the value yet, so without
+// this the ordering claim is untested and the accumulation looks like dead code
+// a later reader would be right to delete -- taking the follow-up unit's
 // lock-refusal reporting with it.
 //
 // Order matters because the consumer puts these names in an operator-facing log
-// line; map iteration order would make that line differ run to run for the same
-// artist, which reads as churn rather than as one repeated event.
+// line; map iteration order would make that line differ run to run for one
+// artist, reading as churn rather than one repeated event.
 func TestEnforceFieldLocks_ReturnsRestoredNamesInStableOrder(t *testing.T) {
 	ctx := context.Background()
 

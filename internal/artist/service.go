@@ -105,13 +105,10 @@ func HistoryIDFromContext(ctx context.Context) string {
 // so no automated writer can arrive through THESE TWO routes. That is a claim
 // about the revert routes only, not about UpdateField in general: the "pull
 // from platform" handler (internal/api/handlers_platform_state.go) also writes
-// biography, genres and the date fields through UpdateField, and its VALUES
-// come from an external platform even though an operator clicked the button.
-// It is likewise unguarded, pre-dates #3037, and is left for the scoped
-// operator-grant unit. Enumerated with
-// `grep -rn '\.UpdateField(\|ClearField(' internal --include='*.go' | grep -v _test`,
-// whose Service-level callers are exactly handlers_platform_state.go,
-// handlers_field.go and handlers_history.go. Adding a lock check
+// biography, genres and the date fields through UpdateField, with values from an
+// external platform even though an operator clicked the button. It is likewise
+// unguarded, pre-dates #3037, and is left for the scoped operator-grant unit.
+// Adding a lock check
 // here would instead make the operator unable to undo the very automated write
 // the lock failed to prevent.
 var trackableFields = []string{
@@ -794,13 +791,11 @@ func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
 	// the snapshot.
 	//
 	// Fails closed: an unreadable stored row is an ERROR rather than a
-	// warning-and-continue. As of the lock chokepoint below, that is no longer
-	// only about the history diff. The stored row is the ONLY source of the
-	// lock set, so a write that proceeds without it is a write with locks
-	// silently disabled -- and because sqliteArtistRepo.Update rewrites
-	// locked_fields / locked / lock_source / locked_at from the incoming
+	// warning-and-continue. The stored row is the ONLY source of the lock set,
+	// so a write proceeding without it has locks silently disabled -- and since
+	// sqliteArtistRepo.Update rewrites the four lock columns from the incoming
 	// struct, that same write ERASES the lock state. The damage does not heal:
-	// every later write is then unguarded until an operator re-pins by hand. An
+	// every later write is unguarded until an operator re-pins by hand. An
 	// unverifiable lock must not be treated as an absent one.
 	//
 	// ErrNotFound is handled separately, and it is worth being precise about
@@ -836,10 +831,9 @@ func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
 		old = nil
 	}
 
-	// The per-field lock chokepoint. It restores, onto a, every field the
-	// STORED row has locked, and pins the stored lock state itself. See
-	// lockguard.go for why this sits here rather than in each writer, and for
-	// which paths it does and does not cover.
+	// The per-field lock chokepoint: restores every field the STORED row has
+	// locked, and pins the stored lock state. See lockguard.go for why it sits
+	// here, and for what it does and does not cover.
 	if err := s.enforceLocksBeforeUpdate(ctx, old, a); err != nil {
 		return err
 	}
@@ -1616,11 +1610,9 @@ func (s *Service) ClearField(ctx context.Context, id, field string) (bool, error
 // ValidateFieldUpdate accepts because clearing a wrong ID is legitimate.
 //
 // A FIELD LOCK IS NOT ENFORCED HERE YET. Service.update guards the whole-row
-// persist, but this single-field verb writes the normalized provider-ID table
-// and is a separate path -- and provider IDs are deliberately outside the
-// chokepoint's guarded set for now (see lockguard.go on why guarding them
-// without hydration would restore an empty ID over a real one). A later unit
-// adds the refusal here, with the typed error the API renders as 423 Locked.
+// persist; this single-field verb writes the provider-ID table and is a separate
+// path, and provider IDs are outside the guarded set for now (see lockguard.go).
+// A later unit adds the refusal here.
 func (s *Service) UpdateProviderField(ctx context.Context, id, field, value string) error {
 	providerName, ok := providerFieldMap[field]
 	if !ok {
