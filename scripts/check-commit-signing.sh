@@ -40,6 +40,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/lib/git-clean-env.sh
+. "$SCRIPT_DIR/lib/git-clean-env.sh"
+
 MODE="probe"
 case "${1:-}" in
     "" | --probe) ;;
@@ -255,17 +259,15 @@ mkdir -p "$PROBE_DIR/nohooks" "$PROBE_DIR/repo"
 # The cleaning must cover `git init` too, not only the commit: with an inherited
 # GIT_DIR, `git init <path>` initializes into GIT_DIR and ignores <path>, so the
 # probe repository is never created and the probe fails with a confusing "not a
-# git repository".
-CLEAN_ENV=(env)
-while IFS='=' read -r name _; do
-    case "$name" in
-        GIT_EXEC_PATH) ;;
-        GIT_CONFIG_GLOBAL | GIT_CONFIG_SYSTEM | GIT_CONFIG_NOSYSTEM) ;;
-        GIT_CONFIG_COUNT | GIT_CONFIG_KEY_* | GIT_CONFIG_VALUE_*) ;;
-        GIT_CONFIG_PARAMETERS) ;;
-        GIT_*) CLEAN_ENV+=(-u "$name") ;;
-    esac
-done < <(env)
+# git repository" -- and, from a worktree, the stray re-init writes into the MAIN
+# repository's shared config (#3051).
+#
+# The split above is exactly what scripts/lib/git-clean-env.sh implements, so the
+# array comes from there rather than being rebuilt here. This script keeps the
+# ARRAY form (not git_clean_env_unset): it runs as a hook against the caller's
+# real repository and must clean only the probe's own invocations.
+git_clean_env_array
+CLEAN_ENV=("${GIT_CLEAN_ENV[@]}")
 
 "${CLEAN_ENV[@]}" git init -q "$PROBE_DIR/repo"
 
