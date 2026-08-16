@@ -29,10 +29,12 @@ package artist
 // artists recreates the duplicate, which is the exact state #2730 exists to
 // prevent; "it was the prior value" does not make it safe to write now. Those
 // flows are not broken by the gate, they are CORRECTED by it: a refused revert
-// reports a collision instead of silently recreating one. (Neither flow can
-// actually drive a name write on this base -- see updateNameThroughGuard for
-// why, stated there so this file does not claim a live defect it does not
-// have.)
+// reports a collision instead of silently recreating one. (History revert is
+// LIVE on this base: #3037 added "name" and "sort_name" to trackableFields, so
+// an Undo of a rename now reaches UpdateField and takes this gate -- see
+// updateNameThroughGuard. Platform-state sync still cannot drive a name write
+// at all: it calls UpdateField only for biography, genres and the
+// formed/born and disbanded/died dates.)
 //
 // SCOPE, STATED HONESTLY. Every statement in this file's SQL that can write the
 // artists.name column was enumerated with
