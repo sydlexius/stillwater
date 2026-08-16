@@ -571,6 +571,38 @@ func (r *Router) writeRevertFailure(w http.ResponseWriter, req *http.Request,
 		return
 	}
 
+	// A name revert whose OLD value is an identity another artist now holds
+	// (#3037). Undoing the very rename that de-duplicated the pair would
+	// recreate the duplicate, so Service.UpdateField routes every name write
+	// through the transactional collision guard and refuses. This branch is
+	// LIVE, not defensive: the same change that added "name" to
+	// trackableFields turned on the Undo affordance that reaches it.
+	//
+	// Unlike the two branches above, this one cannot be moved earlier into
+	// validateRevertable. Whether a name collides is a property of the CURRENT
+	// database, not of the immutable history row, so it can only be answered
+	// by the guard inside the writing transaction.
+	//
+	// The response reuses writeNameCollisionRefusal, which is what a refused
+	// manual rename already returns, so the operator sees ONE refusal for one
+	// kind of refusal (409 Conflict, plus the HTMX fragment on an HTMX
+	// request) rather than a second wording that can drift from the first.
+	// It is handed change.OldValue because that is the name the revert tried
+	// to write.
+	//
+	// The nil-Collision check is not ceremony: writeNameCollisionRefusal
+	// dereferences that pointer, so a nil would panic the handler, which is
+	// strictly worse than the 500 below. artist constructs this error only
+	// with a non-nil Collision, and its own Error() method still guards the
+	// nil case, so this branch declines to be the one place that assumes
+	// otherwise. A nil falls through and is reported by the generic arm,
+	// which logs the full error rather than swallowing it.
+	var collisionErr *artist.NameCollisionError
+	if errors.As(err, &collisionErr) && collisionErr.Collision != nil {
+		r.writeNameCollisionRefusal(w, req, change.ArtistID, change.OldValue, collisionErr.Collision)
+		return
+	}
+
 	r.logger.Error("performing revert", "change_id", changeID, "error", err)
 	writeError(w, req, http.StatusInternalServerError, "revert failed")
 }

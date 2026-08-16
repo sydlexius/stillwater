@@ -214,6 +214,24 @@ func TestWriteRevertFailure_Classification(t *testing.T) {
 			notWantBody: "driver said no",
 		},
 		{
+			name: "a name collision is a 409 naming the colliding artist",
+			err: fmt.Errorf("writing field: %w", &artist.NameCollisionError{
+				Collision: &artist.NameCollision{ArtistID: "a2", Name: "Northfield Chorale"},
+			}),
+			wantStatus: http.StatusConflict,
+			wantBody:   "Northfield Chorale",
+		},
+		{
+			// The nil guard, which is why the branch tests Collision != nil
+			// rather than trusting the type: writeNameCollisionRefusal
+			// dereferences that pointer, so reaching it with a nil would panic
+			// the handler. Falling through to the 500 is the correct answer.
+			name:       "a collision error with no colliding artist falls through to 500",
+			err:        fmt.Errorf("writing field: %w", &artist.NameCollisionError{}),
+			wantStatus: http.StatusInternalServerError,
+			wantBody:   "revert failed",
+		},
+		{
 			name:       "anything else is still a 500",
 			err:        errors.New("database is locked"),
 			wantStatus: http.StatusInternalServerError,
@@ -331,20 +349,23 @@ func TestRevertName_IsReachableAndStillGuarded(t *testing.T) {
 	// directly because no service path would record a change INTO a colliding
 	// state, which is exactly why the guard has to hold at revert time.
 	//
-	// The assertion is "not 200", not a specific code. This base answers 500:
-	// the collision refusal reaches writeRevertFailure's fall-through, since
-	// classifying it as a 409 naming the colliding artist is deliberately not
-	// part of this change. Pinning 500 would make the test assert a status the
-	// handler is expected to improve. What matters is that the write is
-	// REFUSED rather than applied, and that is asserted on the DATA below.
+	// The status asserted is 409 Conflict, which is what a refused manual
+	// rename already returns: the refusal is about the CURRENT state of the
+	// database, not a malformed request, and routing it through
+	// writeNameCollisionRefusal is what makes the two the same response by
+	// construction. Before that arm existed the refusal fell through to a
+	// generic 500 "revert failed", which told the operator "server fault" for
+	// a request that was refused on purpose and will be refused identically
+	// on every retry.
 	t.Run("a name revert onto another artist's identity is refused", func(t *testing.T) {
 		addHistoryChange(t, historySvc, subject.ID, "name",
 			occupant.Name, "Southgate Winds", "rule:name_language_pref")
 		w := revert(t, changeIDWithOldValue(t, subject.ID, occupant.Name))
-		if w.Code == http.StatusOK {
-			t.Fatalf("status = 200: a revert onto an identity another artist already holds "+
-				"was APPLIED, recreating the duplicate #2730 and #2807 exist to prevent. Body: %s",
-				w.Body.String())
+		if w.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d: a revert onto an identity another artist "+
+				"already holds must be refused as a CONFLICT, not applied (which would "+
+				"recreate the duplicate #2730 and #2807 exist to prevent) and not reported "+
+				"as a server fault. Body: %s", w.Code, http.StatusConflict, w.Body.String())
 		}
 
 		got, err := artistSvc.GetByID(t.Context(), subject.ID)
