@@ -229,6 +229,13 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		// such verb, so the grant is explicit and scoped to this one field.
 		ctx := artist.ContextWithLockOverride(req.Context(), field)
 		if err := r.artistService.UpdateProviderField(ctx, artistID, field, value); err != nil {
+			// Logged like the name branch below. Since #3037 this can fail
+			// because the lock guard refused a write it could not verify, and a
+			// bare 500 leaves an operator unable to tell that from a DB error.
+			r.logger.Error("updating provider-ID field",
+				slog.String("artist_id", artistID),
+				slog.String("field", field),
+				slog.String("error", err.Error()))
 			writeError(w, req, http.StatusInternalServerError, "failed to update field")
 			return
 		}
@@ -337,6 +344,10 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 		// operator act, not an automated write.
 		ctx := artist.ContextWithLockOverride(req.Context(), field)
 		if err := r.artistService.ClearProviderField(ctx, artistID, field); err != nil {
+			r.logger.Error("clearing provider-ID field",
+				slog.String("artist_id", artistID),
+				slog.String("field", field),
+				slog.String("error", err.Error()))
 			writeError(w, req, http.StatusInternalServerError, "failed to clear field")
 			return
 		}

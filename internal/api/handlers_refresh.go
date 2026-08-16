@@ -356,6 +356,25 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	// MBID has to be cleared explicitly here -- otherwise the operator says
 	// "this is someone else", picks a Discogs candidate, and the artist keeps
 	// the known-wrong MusicBrainz ID alongside its new Discogs one.
+	// Respect a user pin on the identity fields this request would write, BEFORE
+	// any of them are mutated. The operator is choosing a new identity here,
+	// which is what a lock on the identity field says not to do -- so refuse
+	// visibly rather than let the persist chokepoint revert it behind a 200.
+	//
+	// musicbrainz_id is guarded when the request REPLACES it (body.MBID) or
+	// REPUDIATES it (the reidentify discard below). The discard carries no body
+	// value, so keying the check on body.MBID alone would skip the field on
+	// exactly the path that clears it.
+	writesMBID := body.MBID != "" || (reidentify && a.MusicBrainzID != "")
+	var mbidField artist.FieldName
+	if writesMBID {
+		mbidField = artist.FieldMusicBrainzID
+	}
+	if r.refuseLockedProviderIDs(w, a, mbidField,
+		providerIDFieldIf(body.DiscogsID, artist.FieldDiscogsID)) {
+		return
+	}
+
 	if reidentify && body.MBID == "" {
 		r.logger.Info("re-identify: discarding repudiated MusicBrainz identity",
 			slog.String("artist_id", a.ID),
@@ -363,16 +382,6 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 			slog.String("replacement_discogs_id", body.DiscogsID),
 		)
 		a.MusicBrainzID = ""
-	}
-
-	// Respect a user pin on the identity fields this request would write. The
-	// operator is choosing a NEW identity here, which is what a lock on the
-	// identity field says not to do -- so refuse visibly rather than let the
-	// persist chokepoint revert it behind a 200.
-	if r.refuseLockedProviderIDs(w, a,
-		providerIDFieldIf(body.MBID, artist.FieldMusicBrainzID),
-		providerIDFieldIf(body.DiscogsID, artist.FieldDiscogsID)) {
-		return
 	}
 
 	// Store the selected ID(s). This handler is only invoked from the

@@ -25,12 +25,10 @@ func TestLinkFlows_RefuseALockedProviderID(t *testing.T) {
 	ctx := context.Background()
 
 	for _, tc := range []struct {
-		name       string
-		lockField  string
-		body       string
-		call       func(*Router, http.ResponseWriter, *http.Request)
-		seed       func(*testing.T, *Router, string)
-		storedWant func(t *testing.T, r *Router, id string)
+		name      string
+		lockField string
+		body      string
+		call      func(*Router, http.ResponseWriter, *http.Request)
 	}{
 		{
 			name:      "deezer_link",
@@ -48,6 +46,20 @@ func TestLinkFlows_RefuseALockedProviderID(t *testing.T) {
 			name:      "refresh_link_discogs",
 			lockField: "discogs_id",
 			body:      `{"discogs_id":"777"}`,
+			call:      func(r *Router, w http.ResponseWriter, req *http.Request) { r.handleRefreshLink(w, req) },
+		},
+		{
+			// THE REPUDIATION AXIS. clear_ids=true with no mbid is a
+			// re-identify that CLEARS musicbrainz_id -- a write to that field
+			// carrying no body value for it. A guard keyed on the body skips
+			// the field here, the chokepoint silently restores the pinned MBID,
+			// and the handler answers 200 for a repudiation that never
+			// happened. The three cases above all supply the field they lock,
+			// so the table looked exhaustive while missing the axis that
+			// mattered.
+			name:      "refresh_link_reidentify_repudiates_pinned_mbid",
+			lockField: "musicbrainz_id",
+			body:      `{"discogs_id":"777","clear_ids":"true"}`,
 			call:      func(r *Router, w http.ResponseWriter, req *http.Request) { r.handleRefreshLink(w, req) },
 		},
 	} {
@@ -71,6 +83,13 @@ func TestLinkFlows_RefuseALockedProviderID(t *testing.T) {
 			}
 			if len(seeded.LockedFields) != 1 || seeded.LockedFields[0] != tc.lockField {
 				t.Fatalf("precondition: locked_fields = %v, want [%s]", seeded.LockedFields, tc.lockField)
+			}
+			// The seeded IDs too: without this a fixture regression surfaces
+			// below as "the refusal did not prevent the write", blaming the
+			// guard for a broken seed.
+			if seeded.DeezerID != "dz-stored" || seeded.DiscogsID != "dg-stored" || seeded.MusicBrainzID != "mb-stored" {
+				t.Fatalf("precondition: seeded ids = deezer:%q discogs:%q mbid:%q, want all three persisted",
+					seeded.DeezerID, seeded.DiscogsID, seeded.MusicBrainzID)
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/link", strings.NewReader(tc.body))

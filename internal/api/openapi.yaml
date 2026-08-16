@@ -452,6 +452,25 @@ components:
         reason:
           type: string
       required: [error, field, reason]
+    FieldLockRefusal:
+      type: object
+      description: |
+        A write refused because the operator has that provider-ID field locked.
+        Returned by the link and identify flows, which choose a NEW identity for
+        the artist -- exactly what a lock on the identity field forbids. Editing
+        a pinned ID directly through the field-edit API is still allowed.
+      properties:
+        error:
+          type: string
+          enum: [field_locked]
+          description: Fixed discriminator identifying this refusal.
+        field:
+          type: string
+          description: The provider-ID field whose lock refused the write.
+        reason:
+          type: string
+          description: Operator-facing sentence naming the field and the remedy.
+      required: [error, field, reason]
     NameCollisionRefusal:
       type: object
       description: >-
@@ -7787,6 +7806,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            A provider-ID field this request would write is locked. The stored
+            identity is unchanged; unlock the field to proceed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldLockRefusal"
         "404":
           description: Artist not found
           content:
@@ -14302,6 +14329,14 @@ paths:
             text/html:
               schema:
                 type: string
+        "409":
+          description: |
+            A provider-ID field this request would write is locked. The stored
+            identity is unchanged; unlock the field to proceed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldLockRefusal"
         "404":
           description: Artist not found
           content:
@@ -14515,11 +14550,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Conflict gate blocked the write
+          description: |
+            Two conditions share this status. The conflict gate blocked the
+            write (ConflictWriteBlock), or the deezer_id field is locked
+            (FieldLockRefusal) -- the link flow chooses a new identity, which is
+            what a lock on that field forbids. Discriminate on the body's
+            "error" value.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ConflictWriteBlock"
+                oneOf:
+                  - $ref: "#/components/schemas/ConflictWriteBlock"
+                  - $ref: "#/components/schemas/FieldLockRefusal"
         "500":
           description: Failed to link Deezer ID
           content:
@@ -14557,6 +14599,14 @@ paths:
             text/html:
               schema:
                 type: string
+        "409":
+          description: |
+            A provider-ID field this request would write is locked. The stored
+            identity is unchanged; unlock the field to proceed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldLockRefusal"
         "404":
           description: Artist not found
           content:
@@ -14646,6 +14696,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            A provider-ID field this request would write is locked. The stored
+            identity is unchanged; unlock the field to proceed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldLockRefusal"
         "404":
           description: Artist not found
           content:

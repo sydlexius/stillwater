@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -132,7 +133,17 @@ var lockOverrideKey lockOverrideKeyType
 // one"), which the fill-empty fixer would otherwise populate. Granting per
 // field, per request, keeps that protection intact.
 func ContextWithLockOverride(ctx context.Context, field string) context.Context {
-	return context.WithValue(ctx, lockOverrideKey, strings.ToLower(strings.TrimSpace(field)))
+	normalized := strings.ToLower(strings.TrimSpace(field))
+	// A grant naming no guarded field authorizes nothing, and would otherwise
+	// fail the way this whole change exists to prevent: the operator's edit
+	// reverted, the API answering success. The exported entry point cannot
+	// assume every future caller passes a validated name, so say so loudly
+	// rather than let a misspelling read as a grant.
+	if normalized != "" && !slices.Contains(lockGuardedFields, FieldName(normalized)) {
+		slog.Error("lock override names no guarded field; it authorizes nothing and the write will be reverted if that field is locked",
+			"field", field)
+	}
+	return context.WithValue(ctx, lockOverrideKey, normalized)
 }
 
 // lockOverrideField returns the field this context authorizes bypassing, if any.
@@ -140,6 +151,13 @@ func lockOverrideField(ctx context.Context) (string, bool) {
 	f, ok := ctx.Value(lockOverrideKey).(string)
 	return f, ok && f != ""
 }
+
+// ErrNoProviderIDRepository reports that a locked provider ID could not be
+// verified because the Service has no provider-ID repository. It is a sentinel
+// so a caller can classify the refusal with errors.Is rather than matching on
+// message text -- the same contract the hydration-failure path gets for free by
+// wrapping the underlying error.
+var ErrNoProviderIDRepository = errors.New("no provider-ID repository is wired, so a locked provider ID cannot be verified")
 
 // providerIDLockFields are the guarded fields stored in artist_provider_ids
 // rather than on the artists row. Derived from providerFieldMap so it cannot
@@ -192,7 +210,7 @@ func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming
 		if s.providers == nil {
 			slog.Error("refusing artist update: a provider-ID field is locked but this Service has no provider-ID repository, so the stored ID cannot be read",
 				"artist_id", stored.ID)
-			return fmt.Errorf("enforcing field locks for %s: no provider-ID repository is wired, so a locked provider ID cannot be verified", stored.ID)
+			return fmt.Errorf("enforcing field locks for %s: %w", stored.ID, ErrNoProviderIDRepository)
 		}
 		if err := s.hydrateProviderIDs(ctx, stored); err != nil {
 			slog.Error("refusing artist update: a provider-ID field is locked but the stored IDs could not be read",
@@ -376,7 +394,11 @@ func restoreLockedField(stored, incoming *Artist, field string) (rejectedLen int
 }
 
 // restoreProviderIDCompanions copies the state that TRAVELS WITH a provider ID
-// from stored onto incoming, for a field the guard has just restored.
+// from stored onto incoming, for any LOCKED provider-ID field -- whether or not
+// the ID string itself changed. That is deliberate: the companions are part of
+// the locked field's state, not a side effect of changing it, so a write
+// carrying the same ID with a tampered timestamp or provenance marker is still
+// an automated write to a pinned field.
 //
 // Restoring the ID string alone leaves the row self-inconsistent, because
 // persistNormalized -> extractProviderIDs -> UpsertAll is delete-and-replace and

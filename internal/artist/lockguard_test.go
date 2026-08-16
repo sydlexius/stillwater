@@ -815,8 +815,11 @@ func TestEnforceLocks_RefusesWhenALockedProviderIDCannotBeRead(t *testing.T) {
 	stored.Biography = "some other change"
 	if err := svc.Update(ctx, stored); err == nil {
 		t.Fatal("Update succeeded with an unverifiable provider-ID lock; the write must be refused rather than performed unguarded")
-	} else if !strings.Contains(err.Error(), "lock") {
-		t.Errorf("refusal = %v, want it to name the lock it could not verify", err)
+	} else if !errors.Is(err, ErrNoProviderIDRepository) {
+		// errors.Is, not a substring match: a message-text assertion is brittle
+		// under rewording, and the sibling hydration-failure test already pins
+		// its cause chain this way.
+		t.Errorf("errors.Is(err, ErrNoProviderIDRepository) = false for %v; the refusal must be classifiable", err)
 	}
 
 	after, getErr := svc.artists.GetByID(ctx, a.ID)
@@ -948,7 +951,7 @@ func TestUpdate_PinnedProviderIDCompanionsSurviveAnUnchangedID(t *testing.T) {
 
 // TestUpdateProviderField_OperatorGrantBeatsTheLock is the OVER-CORRECTION
 // guard for the widening. A lock gates AUTOMATED writes; the operator keeps
-// control of their own data, which is already true for the fourteen
+// control of their own data, which is already true for the fifteen
 // artists-row fields because their edit bypasses the chokepoint entirely.
 //
 // The paired negative is the point: the SAME method without a grant -- which is
