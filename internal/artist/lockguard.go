@@ -73,10 +73,28 @@ import (
 //     sqliteArtistRepo.SetLock, which writes those three and updated_at only,
 //     under a WHERE precondition on the prior state.
 //
-// The one production writer that does set these fields on a struct is the
-// scanner's NFO lockdata import (internal/scanner/scanner.go), and it reaches
-// the database through Service.Create, not Update, so it is unaffected.
-// Established by `grep -rn '\.LockedFields = \|\.Locked = \|\.LockSource = ' internal cmd --include='*.go' | grep -v _test`.
+// The one production writer that sets these fields on an *Artist BOUND FOR THE
+// ARTIST PERSIST PATH is the scanner's NFO lockdata import
+// (internal/scanner/scanner.go:620-621), and it reaches the database through
+// Service.Create, not Update, so it is unaffected.
+//
+// Enumerated with
+// `grep -rn '\.LockedFields = \|\.Locked = \|\.LockSource = ' internal cmd --include='*.go' | grep -v _test`.
+// Its hits are NOT all writers of artist lock state, so the qualifier above is
+// doing real work rather than hedging -- the command alone does not establish
+// the claim. Discounting the matches inside this comment, the assignments it
+// finds are:
+//
+//   - internal/scanner/scanner.go:620-621 -- the one that matters, described
+//     above.
+//   - internal/connection/emby/push.go:74 -- `body.LockedFields = merged`, where
+//     body is an itemUpdateBody, Emby's own API payload type, not an *Artist.
+//     It never reaches this package.
+//   - internal/artist/lockguard.go -- pinLockState itself, which is the point.
+//   - internal/artist/scan.go:107,112 -- the READ side, hydrating an Artist from
+//     a database row.
+//   - internal/artist/sqlite_image.go:75,881 -- ArtistImage.Locked, an entirely
+//     different lock on a different table.
 //
 // # WHAT THIS CHOKEPOINT DOES NOT COVER
 //
@@ -118,6 +136,28 @@ import (
 // it solely in the comment saying so. The one production honoring of a "members"
 // lock is applyMemberRefresh (internal/api/handlers_refresh.go), which returns
 // early when the token is in the locked set.
+//
+// RESTORE-AND-CONTINUE CAN SPLIT A FIELD PAIR A SINGLE WRITER SET ATOMICALLY,
+// and this is a state the guard CREATES rather than one it declines to cover.
+// The other entries above are things left unguarded; this one is a consequence
+// of guarding per-FIELD on a whole-row write.
+//
+// Concretely: internal/rule's name_language_pref fixer promotes Name and
+// SortName together in one Fix (fixers_language.go, the paired `a.Name =
+// bestName` / `a.SortName = bestSort` assignments). Lock ONLY "name" and the
+// row afterwards holds the OLD name beside the NEW sort_name -- verified by
+// running exactly that pair against a name-locked artist: the result is
+// name="Original Name", sort_name="Name, Localized". At base 742b1f4d both
+// moved together, so this shape is NEW.
+//
+// It is deliberate rather than a defect: per-FIELD locking means the operator
+// pinned name and not sort_name, and refusing the whole write instead would
+// discard the unlocked change, which is the all-or-nothing behavior this design
+// rejects. But a reader of the list above would not predict it, and it is the
+// same shape as the provider-ID-without-its-timestamp split the follow-up unit
+// fixes -- there the two halves are one logical value, so they are restored
+// together. If a future pair turns out to be one logical value rather than two
+// independently lockable fields, it needs the same treatment, not this default.
 
 // lockGuardedFields is every field this codebase already treats as a meaningful
 // lock token, can represent as a value ON THE ARTISTS ROW, and can therefore
@@ -189,7 +229,17 @@ func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming
 
 // enforceFieldLocks restores, onto incoming, every field the STORED artist has
 // locked and the incoming struct would have changed. It returns the names of
-// the fields it restored, in lockGuardedFields order.
+// the fields it restored, in lockGuardedFields order (which is sorted, so the
+// order is stable across runs despite lockableFieldNames being a map).
+//
+// AT THIS COMMIT THE ONLY PRODUCTION CALLER DISCARDS THAT VALUE --
+// enforceLocksBeforeUpdate calls it as a statement. The single other non-comment
+// caller is the ordering test named below. It is kept rather than dropped because the follow-up unit that
+// adds the refusal shape consumes it: internal/rule's pipeline collects the
+// restored names to tell "my fix landed" from "the guard reverted it", and
+// reports a lock-refused fix as dismissed instead of resolved. The ordering is
+// pinned by TestEnforceFieldLocks_ReturnsRestoredNamesInStableOrder so the
+// contract is tested here rather than assumed there.
 //
 // RESTORE-AND-CONTINUE rather than refuse, and the shape is deliberate. A
 // whole-row persist has no natural refusal: the caller did not ask to write one
@@ -247,8 +297,25 @@ func enforceFieldLocks(ctx context.Context, stored, incoming *Artist) []string {
 	return restored
 }
 
-// pinLockState copies the stored row's LOCK STATE onto incoming, so a
-// whole-row persist can never be the thing that changes what is locked.
+// pinLockState copies the stored row's LOCK STATE onto incoming, so no
+// CALLER-SUPPLIED lock state can change what is locked.
+//
+// THE SCOPE OF THAT SENTENCE IS EXACT, and the broader version of it is false.
+// It does NOT say a whole-row persist can never change what is locked. The lock
+// state pinned here is the one read into `stored` by Service.update's snapshot,
+// so a lock an operator takes AFTER that read and BEFORE s.artists.Update
+// commits is reverted by this write -- on that interleaving the persist path is
+// exactly what changed what is locked. Verified by injecting a
+// SetLockedFields between the snapshot and the write: the result is
+// locked_fields=[], not the operator's new lock.
+//
+// That read-to-write window is a TOCTOU (time-of-check to time-of-use) gap that
+// PRE-DATES this change -- the same injection produces the same result at base
+// 742b1f4d -- and closing it needs the write to re-read or lock the row, which
+// is out of scope for this unit. What this function DOES buy is that no caller
+// can switch protection off by handing over a struct with its locks cleared or
+// altered, which is the attack the rule fixers actually present: they build a
+// struct, never populate lock state, and persist it.
 //
 // Unconditional, with no lock required to earn the treatment: an incoming
 // struct that ADDS locks is overridden for the same reason as one that removes

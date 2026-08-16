@@ -519,3 +519,65 @@ func TestUpdate_IncomingStructCannotCreateALock(t *testing.T) {
 		t.Fatalf("biography = %q, want the write to have landed; the assertions above are vacuous otherwise", stored.Biography)
 	}
 }
+
+// TestEnforceFieldLocks_ReturnsRestoredNamesInStableOrder gives the documented
+// return contract teeth. The only caller at this commit discards the value, so
+// without this the ordering claim is untested and the accumulation is dead code
+// that a later reader would be right to delete -- taking the follow-up unit's
+// lock-refusal reporting with it.
+//
+// Order matters because the consumer puts these names in an operator-facing log
+// line; map iteration order would make that line differ run to run for the same
+// artist, which reads as churn rather than as one repeated event.
+func TestEnforceFieldLocks_ReturnsRestoredNamesInStableOrder(t *testing.T) {
+	ctx := context.Background()
+
+	// Locked in an order deliberately unlike the sorted result, so a function
+	// returning "whatever order the lock set iterated" cannot pass by accident.
+	locked := []string{"origin", "biography", "genres", "type"}
+	want := []string{"biography", "genres", "origin", "type"} // lockGuardedFields is sorted
+
+	// Run repeatedly: a single pass can match a randomized order by luck, and
+	// map iteration is randomized per run, so one pass proves little.
+	for i := range 8 {
+		svc := NewService(newTestDB(t))
+		a := &Artist{
+			Name:      "Stable Order",
+			Biography: "stored bio",
+			Origin:    "stored origin",
+			Type:      "Person",
+			Genres:    []string{"stored genre"},
+		}
+		if err := svc.Create(ctx, a); err != nil {
+			t.Fatalf("creating: %v", err)
+		}
+		if err := svc.SetLockedFields(ctx, a.ID, locked); err != nil {
+			t.Fatalf("locking: %v", err)
+		}
+		stored, err := svc.GetByID(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("reloading: %v", err)
+		}
+		if len(stored.LockedFields) != len(locked) {
+			t.Fatalf("precondition: locked_fields = %v, want %d entries", stored.LockedFields, len(locked))
+		}
+
+		// Change every locked field, so every one of them must be restored and
+		// therefore appear in the returned slice.
+		incoming := *stored
+		incoming.Biography = "clobbered bio"
+		incoming.Origin = "clobbered origin"
+		incoming.Type = "Group"
+		incoming.Genres = []string{"clobbered genre"}
+
+		got := enforceFieldLocks(ctx, stored, &incoming)
+		if len(got) != len(want) {
+			t.Fatalf("pass %d: restored = %v, want %v; a field that was restored is missing from the report", i, got, want)
+		}
+		for j := range want {
+			if got[j] != want[j] {
+				t.Fatalf("pass %d: restored = %v, want %v; the order is not stable, so the consumer's log line churns", i, got, want)
+			}
+		}
+	}
+}
