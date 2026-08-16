@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# test-git-clean-env.sh -- behavioural regression tests for #3051: a gate helper
+# test-git-clean-env.sh -- behavioral regression tests for #3051: a gate helper
 # run with an inherited GIT_DIR must not write into the invoking repo's config.
 #
-# `git init <path>` honours an inherited GIT_DIR: it re-initializes GIT_DIR and
+# `git init <path>` honors an inherited GIT_DIR: it re-initializes GIT_DIR and
 # ignores <path>. Git hooks export GIT_DIR, and a worktree SHARES the main
 # repository's `.git/config`, so a fixture line in a gate helper wrote
 # core.bare=true into the MAIN repo, silently disabling its mass-deletion guard.
@@ -168,7 +168,11 @@ HELPERS=(
 # would be vacuous. Covered where it can be exercised honestly -- Case 9 of
 # test-check-commit-signing.sh drives the real hook through a real worktree with
 # an ephemeral signer, then asserts the MAIN repo's core.bare.
-EXCLUDED=(check-commit-signing.sh)
+#
+# The two guard scripts themselves are excluded: check-git-init-guarded.sh's
+# `git init` occurrences are inside its remediation heredoc, and this suite's
+# own are its fixtures, guarded by the library it sources at the top.
+EXCLUDED=(check-commit-signing.sh check-git-init-guarded.sh test-git-clean-env.sh)
 
 n=1
 for helper in "${HELPERS[@]}"; do
@@ -224,8 +228,8 @@ n=$((n + 1))
 echo "Case $n: the full pre-push gate's helper block is covered"
 # Every script running `git init` must appear in HELPERS or EXCLUDED, or this
 # suite silently stops covering a live call site -- the original defect's exact
-# shape. Comment lines are excluded, or a script's own explanatory prose reads
-# as a call site.
+# shape. The list comes from check-git-init-guarded.sh --list, not a second grep
+# here: a separate grep drifts, and the first one matched a script's own prose.
 missing=""
 while IFS= read -r f; do
     base=$(basename "$f")
@@ -233,9 +237,7 @@ while IFS= read -r f; do
         *" $base "*) continue ;;
     esac
     missing="$missing $base"
-done < <(cd "$REPO_ROOT" && git ls-files scripts |
-    xargs grep -lE '^[^#]*(^|[^[:alnum:]_-])git[[:space:]]+init([[:space:]]|$)' 2>/dev/null |
-    grep -v 'scripts/test-git-clean-env.sh' || true)
+done < <(cd "$REPO_ROOT" && bash scripts/check-git-init-guarded.sh --list)
 
 if [ -z "$missing" ]; then
     ok "every script containing \`git init\` is exercised by a case above"

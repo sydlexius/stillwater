@@ -645,11 +645,13 @@ echo "=== git-clean-env guard (#3051) ==="
 # one session, noticed none of them, and surfaced days later as an unrelated
 # `git merge --ff-only` refusing to run in a work tree.
 #
-# The suite runs each helper against a real throwaway worktree and reads the
-# main repo's config, so it proves the guard WORKS rather than merely being
-# present. Hermetic and sub-second, so it runs unconditionally. Positioned AFTER
-# the fixture-building checks on purpose: run first, it would pass while the
+# Two checks answering different questions: the suite proves the guard WORKS
+# (real worktree, real config read); the static check proves one is PRESENT at
+# every `git init` site, which is what the NEXT such script forgets. Hermetic
+# and sub-second, so both run unconditionally. Positioned AFTER the
+# fixture-building checks on purpose: run first, they would pass while the
 # damage happened later in the same gate run.
+bash "$SCRIPT_DIR/check-git-init-guarded.sh"
 bash "$SCRIPT_DIR/test-git-clean-env.sh"
 
 echo ""

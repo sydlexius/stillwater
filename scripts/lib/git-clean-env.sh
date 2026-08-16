@@ -4,7 +4,7 @@
 # against a throwaway fixture repository (#3051).
 #
 # `git init <path>` does not always initialize <path>. With GIT_DIR set, git
-# resolves it BEFORE it honours the path argument or `-C`, re-initializes the
+# resolves it BEFORE it honors the path argument or `-C`, re-initializes the
 # directory GIT_DIR names, and ignores what it was asked for. The tell is
 # `warning: re-init: ignored --initial-branch=...`.
 #

@@ -51,7 +51,7 @@ export GIT_CONFIG_SYSTEM=/dev/null
 
 # Strip the inherited git LOCATION variables too (#3051). GIT_CONFIG_* above
 # isolates which SETTINGS the fixtures read, not WHICH REPOSITORY they write to:
-# `git init` honours a hook-supplied GIT_DIR and wrote into the MAIN repo's
+# `git init` honors a hook-supplied GIT_DIR and wrote into the MAIN repo's
 # shared config. Sourced AFTER the exports above, which it preserves.
 # shellcheck source=scripts/lib/git-clean-env.sh
 . "$REPO_ROOT/scripts/lib/git-clean-env.sh"

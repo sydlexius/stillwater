@@ -737,6 +737,17 @@ jobs:
       - name: RUN_* flag resolution self-test
         run: bash scripts/test-run-flag-resolution.sh
 
+      # An inherited GIT_DIR makes `git init <path>` re-initialize GIT_DIR and
+      # ignore <path>. Run from a worktree by the pre-push hook, that wrote
+      # core.bare=true into the MAIN repository's shared config and silently
+      # disabled its mass-deletion guard (#3051). Mirrored here for the same
+      # reason the checks above are: a developer can weaken the local gate and
+      # push with --no-verify, and this is the surface that still catches it.
+      - name: git-clean-env guard
+        run: |
+          bash scripts/check-git-init-guarded.sh
+          bash scripts/test-git-clean-env.sh
+
   # ---------------------------------------------------------------------------
   # Shellcheck (#2445)
   #
