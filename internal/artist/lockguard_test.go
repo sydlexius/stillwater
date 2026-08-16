@@ -2,6 +2,9 @@ package artist
 
 import (
 	"context"
+	"log/slog"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -555,5 +558,128 @@ func TestEnforceFieldLocks_ReturnsRestoredNamesInStableOrder(t *testing.T) {
 				t.Fatalf("pass %d: restored = %v, want %v; the order is not stable, so the consumer's log line churns", i, got, want)
 			}
 		}
+	}
+}
+
+// attrRecorder captures every attribute of every record, so a test can assert
+// what a log line does NOT contain as well as what it does.
+type attrRecorder struct{ records []map[string]string }
+
+func (h *attrRecorder) Enabled(context.Context, slog.Level) bool { return true }
+func (h *attrRecorder) Handle(_ context.Context, r slog.Record) error {
+	attrs := map[string]string{"__msg": r.Message, "__level": r.Level.String()}
+	r.Attrs(func(a slog.Attr) bool {
+		attrs[a.Key] = a.Value.String()
+		return true
+	})
+	h.records = append(h.records, attrs)
+	return nil
+}
+func (h *attrRecorder) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *attrRecorder) WithGroup(string) slog.Handler      { return h }
+
+// TestEnforceFieldLocks_NeverLogsTheRejectedValue is a PRIVACY assertion, and it
+// exists because the redactor cannot cover this line. internal/logging's
+// RedactingReplaceAttr matches an ALLOWLIST of credential-ish key names
+// (api_key, password, token, ...), so an artist-metadata value handed to a log
+// attribute is written verbatim -- a whole biography, repeatedly, on the
+// automated path, for every artist in a library-wide rule pass.
+//
+// The test asserts on EVERY attribute rather than a named one, so re-adding the
+// payload under any key fails here. It also asserts the length IS reported,
+// because that is what distinguishes a rule clearing a pinned field from one
+// overwriting it, and the two need different operator responses.
+func TestEnforceFieldLocks_NeverLogsTheRejectedValue(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	const pinnedBio = "the operator's own carefully written biography"
+	const rejectedBio = "SECRET-PAYLOAD an automated writer tried to store here"
+	a := seedLockGuardArtist(t, svc, "Privacy", pinnedBio, "biography")
+
+	rec := &attrRecorder{}
+	restore := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(restore) })
+
+	a.Biography = rejectedBio
+	if err := svc.Update(ctx, a); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Precondition: the guard actually fired, or there is no line to inspect and
+	// every assertion below passes vacuously.
+	var line map[string]string
+	for _, r := range rec.records {
+		if strings.Contains(r["__msg"], "refused an automated write") {
+			line = r
+			break
+		}
+	}
+	if line == nil {
+		t.Fatalf("no restoration was logged; captured %d records, so this test asserts nothing", len(rec.records))
+	}
+
+	// THE PRIVACY ASSERTION: the rejected text appears under no key at all.
+	for k, v := range line {
+		if strings.Contains(v, rejectedBio) || strings.Contains(v, "SECRET-PAYLOAD") {
+			t.Errorf("log attr %q = %q contains the rejected value; artist metadata must never reach the log, and the redactor's allowlist does not cover it", k, v)
+		}
+		// The stored value is equally private -- it is the operator's own text.
+		if strings.Contains(v, pinnedBio) {
+			t.Errorf("log attr %q = %q contains the stored value; the pinned text is user data too", k, v)
+		}
+	}
+
+	// The diagnostics an operator does need.
+	if line["artist_id"] != a.ID {
+		t.Errorf("artist_id = %q, want %q; the line must identify which artist", line["artist_id"], a.ID)
+	}
+	if line["field"] != "biography" {
+		t.Errorf("field = %q, want %q", line["field"], "biography")
+	}
+	if got, want := line["rejected_len"], strconv.Itoa(len(rejectedBio)); got != want {
+		t.Errorf("rejected_len = %q, want %q; the length distinguishes a CLEAR of a pinned field from an overwrite", got, want)
+	}
+	if line["__level"] != slog.LevelError.String() {
+		t.Errorf("level = %q, want ERROR; a pinned field colliding with an auto-mode rule recurs every pass until an operator acts", line["__level"])
+	}
+}
+
+// TestRestoreLockedField_ReportsLengthNotValue pins the boundary at the source:
+// the rejected text never leaves restoreLockedField, so no future caller can log
+// it by accident. The zero case is asserted because a rule CLEARING a pinned
+// field is the destructive shape (fixJunkBio blanks a biography), and a length
+// of zero is how an operator tells it apart from an overwrite.
+func TestRestoreLockedField_ReportsLengthNotValue(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		field      string
+		storedVal  string
+		incomingV  string
+		wantLen    int
+		wantChange bool
+	}{
+		{"overwrite", "biography", "stored", "a longer replacement", len("a longer replacement"), true},
+		{"clear", "biography", "stored", "", 0, true},
+		{"unchanged", "biography", "same", "same", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stored := &Artist{ID: "x"}
+			incoming := &Artist{ID: "x"}
+			setFieldOnArtist(stored, tc.field, tc.storedVal, nil)
+			setFieldOnArtist(incoming, tc.field, tc.incomingV, nil)
+
+			gotLen, changed := restoreLockedField(stored, incoming, tc.field)
+			if changed != tc.wantChange {
+				t.Fatalf("changed = %v, want %v", changed, tc.wantChange)
+			}
+			if gotLen != tc.wantLen {
+				t.Errorf("rejectedLen = %d, want %d", gotLen, tc.wantLen)
+			}
+			if tc.wantChange && FieldValueFromArtist(incoming, tc.field) != tc.storedVal {
+				t.Errorf("incoming %s = %q, want the stored value restored", tc.field, FieldValueFromArtist(incoming, tc.field))
+			}
+		})
 	}
 }

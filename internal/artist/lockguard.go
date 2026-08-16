@@ -147,9 +147,14 @@ func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming
 // downstream NFO write or platform publish in the same request does not ship the
 // rejected value.
 //
-// Every restoration is logged at ERROR, with the rejected value, so an operator
-// can learn that an automated writer is repeatedly attacking a pinned field and
-// the attempted write stays recoverable from the log.
+// Every restoration is logged at ERROR with artist_id, field, source and the
+// rejected value's LENGTH -- never the value. ERROR rather than WARN is a
+// decision, not an inheritance: unlike a caller going away, a restoration means
+// two explicit operator intents are in conflict (a field is pinned AND a rule
+// that writes it runs in auto mode), and that conflict recurs every pass until
+// someone re-scopes the rule or unlocks the field. It is exactly the condition
+// an operator must see. source is "rule:<ruleID>", so two rules colliding on one
+// field in the same pass are still told apart.
 func enforceFieldLocks(ctx context.Context, stored, incoming *Artist) []string {
 	if stored == nil || incoming == nil {
 		return nil
@@ -169,7 +174,7 @@ func enforceFieldLocks(ctx context.Context, stored, incoming *Artist) []string {
 		if !isLocked(locked, name) {
 			continue
 		}
-		rejected, changed := restoreLockedField(stored, incoming, name)
+		rejectedLen, changed := restoreLockedField(stored, incoming, name)
 		if !changed {
 			continue
 		}
@@ -177,7 +182,7 @@ func enforceFieldLocks(ctx context.Context, stored, incoming *Artist) []string {
 		slog.Error("refused an automated write to a locked artist field; the stored value was restored",
 			"artist_id", stored.ID,
 			"field", name,
-			"rejected_value", rejected,
+			"rejected_len", rejectedLen,
 			"source", source)
 	}
 	return restored
@@ -219,30 +224,42 @@ func pinLockState(stored, incoming *Artist) {
 }
 
 // restoreLockedField copies one field's stored value onto incoming when the two
-// differ. It returns the rejected incoming value (for the log) and whether a
-// restoration actually happened.
+// differ. It reports the LENGTH of the rejected incoming value and whether a
+// restoration happened.
+//
+// THE REJECTED VALUE ITSELF NEVER LEAVES THIS FUNCTION. It is arbitrary artist
+// metadata -- a full biography in the worst case -- and internal/logging's
+// redactor matches an allowlist of credential-ish key names, so anything handed
+// to a log attribute here would be written verbatim. Returning a length rather
+// than the text means a future caller cannot log the payload by accident.
+//
+// The length is kept because ZERO is the case that matters: a rule CLEARING a
+// pinned field (fixJunkBio blanks a biography before re-querying providers) is
+// destroying curated data, while a non-zero length is an attempted overwrite.
+// An operator triages those differently, and a length is not user text.
 //
 // Slice fields are compared and restored as SLICES, not in their joined string
 // form. Round-tripping through a comma-join would reorder or split entries
 // whose own text contains a comma, making the guard a data-loss path for
-// exactly the fields it is protecting.
-func restoreLockedField(stored, incoming *Artist, field string) (rejected string, changed bool) {
+// exactly the fields it is protecting. The reported length is the joined
+// rendering, so an emptied slice reads as zero exactly like an emptied scalar.
+func restoreLockedField(stored, incoming *Artist, field string) (rejectedLen int, changed bool) {
 	if IsSliceField(field) {
 		want := SliceFieldFromArtist(stored, field)
 		got := SliceFieldFromArtist(incoming, field)
 		if slices.Equal(want, got) {
-			return "", false
+			return 0, false
 		}
 		setFieldOnArtist(incoming, field, "", slices.Clone(want))
-		return strings.Join(got, ", "), true
+		return len(strings.Join(got, ", ")), true
 	}
 	want := FieldValueFromArtist(stored, field)
 	got := FieldValueFromArtist(incoming, field)
 	if want == got {
-		return "", false
+		return 0, false
 	}
 	setFieldOnArtist(incoming, field, want, nil)
-	return got, true
+	return len(got), true
 }
 
 // setFieldOnArtist writes one named field back onto an Artist, the inverse of
