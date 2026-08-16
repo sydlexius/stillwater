@@ -433,8 +433,9 @@ func (r *Router) isCurrentBlastRow(ctx context.Context, change *artist.MetadataC
 
 // liveValueRestorable reports whether the artist's field, READ AS IT IS RIGHT
 // NOW, is still a value this restore is allowed to act on. It is check 4 of
-// the allow-list and the only check that is not derived from the history
-// table's ordering.
+// the allow-list. Like check 5 (planNameCollisionRefusal, added in #3039) and
+// unlike checks 1-3, it answers from live artist state rather than from the
+// history table's ordering.
 //
 // Exactly two live values are acceptable:
 //
@@ -492,7 +493,7 @@ func (r *Router) planBlastRestore(ctx context.Context, ids []string) []blastRest
 
 // planOneBlastRestore runs the allow-list for a single change id. Every exit
 // except the final one is a refusal: the function can only reach "planned" by
-// passing all three checks in order.
+// passing all five checks in order.
 func (r *Router) planOneBlastRestore(ctx context.Context, id string) blastRestoreItem {
 	item := blastRestoreItem{ChangeID: id, Status: blastRestoreRefused}
 
@@ -605,6 +606,12 @@ func (r *Router) planOneBlastRestore(ctx context.Context, id string) blastRestor
 // already this endpoint's token for a row whose current state could not be
 // confirmed. A refusal at plan time writes nothing, so failing closed costs the
 // operator a reload, never data.
+//
+// That error branch is near-unreachable through the endpoint: check 4
+// (liveValueRestorable) already called GetByID on this same artist a few lines
+// above and refused on its error, so only a DB-level fault arising between the
+// two reads gets here. It is exercised directly by test rather than through
+// planOneBlastRestore for that reason.
 func (r *Router) planNameCollisionRefusal(ctx context.Context, change *artist.MetadataChange) (string, bool) {
 	if change.Field != string(artist.FieldArtistName) {
 		return "", false
