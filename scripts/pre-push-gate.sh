@@ -636,6 +636,23 @@ echo "=== RUN_* flag resolution (#2983) ==="
 bash "$SCRIPT_DIR/test-run-flag-resolution.sh"
 
 echo ""
+echo "=== git-clean-env guard (#3051) ==="
+# `git init <path>` re-initializes an inherited GIT_DIR and IGNORES <path>. The
+# pre-push hook exports GIT_DIR, this gate inherits it, and several checks above
+# build fixture repositories. From a worktree -- which SHARES the main repo's
+# .git/config -- an unguarded fixture line wrote core.bare=true into the MAIN
+# repository, silently disabling its mass-deletion guard. It fired six times in
+# one session, noticed none of them, and surfaced days later as an unrelated
+# `git merge --ff-only` refusing to run in a work tree.
+#
+# The suite runs each helper against a real throwaway worktree and reads the
+# main repo's config, so it proves the guard WORKS rather than merely being
+# present. Hermetic and sub-second, so it runs unconditionally. Positioned AFTER
+# the fixture-building checks on purpose: run first, it would pass while the
+# damage happened later in the same gate run.
+bash "$SCRIPT_DIR/test-git-clean-env.sh"
+
+echo ""
 echo "=== CSS lint (diff-scoped ratchet, #2402) ==="
 # Design-token layer stylelint gate. The token migration is not complete
 # (input.css still carries ~135 pre-existing literal-value violations), so

@@ -25,6 +25,12 @@ set -euo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 GATE_SCRIPT_SRC="$REPO_ROOT/scripts/stylelint-diff-gate.sh"
+# Strip the inherited git environment before any fixture is built: `git init`
+# honours a hook-supplied GIT_DIR and would write into the MAIN repository's
+# shared config instead (#3051; see the library header for the mechanism).
+# shellcheck source=scripts/lib/git-clean-env.sh
+. "$REPO_ROOT/scripts/lib/git-clean-env.sh"
+git_clean_env_unset
 
 WORK=$(mktemp -d)
 # Resolve to the physical path (macOS /tmp is a symlink to /private/tmp).
