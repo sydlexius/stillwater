@@ -48,10 +48,27 @@ trap 'rm -rf "$WORK"' EXIT
 
 PASSED=0
 FAILED=0
+SKIPPED=0
 
 ok() {
     echo "  PASS  $1"
     PASSED=$((PASSED + 1))
+}
+
+# skip <what-was-not-verified> <why> -- for a precondition that CANNOT hold on
+# this platform, as opposed to one that failed. A skip is LOUD by design: its
+# own line, its own tally column, and the concrete reason. It is never folded
+# into the pass count, because "we did not check" and "we checked and it was
+# fine" must not read the same to someone scanning output on an unfamiliar
+# machine.
+#
+# Reserved for environment facts the harness cannot supply (no bash 3.x on this
+# host). A behavioral precondition -- a fixture that failed to set itself up --
+# is still a FAILURE: there the environment could have supplied it and did not.
+skip() {
+    echo "  SKIP  $1"
+    printf '        %s\n' "${@:2}"
+    SKIPPED=$((SKIPPED + 1))
 }
 
 bad() {
@@ -101,9 +118,34 @@ echo "=== check-git-init-guarded self-tests (#3051) ==="
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "Case A: runs correctly under macOS system bash 3.2"
+echo "Case A: runs correctly under a bash 3.x (the macOS system shell)"
 # The original used mapfile (bash 4.0) and silently examined zero files here.
-if [ -x /bin/bash ] && /bin/bash --version | head -1 | grep -q 'version 3\.'; then
+#
+# CASE A AND CASE B ARE DELIBERATELY LAYERED, NOT REDUNDANT. A is the direct
+# verification and only a host with a bash 3.x can perform it -- macOS, where
+# /bin/bash is 3.2.57 and where the bug actually bit. B asserts the same
+# property (a scan that examines nothing must not report OK) in a
+# shell-independent way, so CI's Linux runners still cover the regression even
+# though they have no 3.x to run A against. Neither replaces the other: without
+# A the 3.2 path is never really executed, and without B the property goes
+# unchecked everywhere A cannot run.
+#
+# So A SKIPS rather than FAILS when no bash 3.x exists. An unmeetable
+# precondition is not a defect in the code under test, and failing on it made
+# this suite red on every Linux runner while every real assertion passed. The
+# skip is loud, and names the version found, so nobody mistakes a machine that
+# could not check for a machine that checked and was happy.
+BASH3=""
+for cand in /bin/bash /usr/bin/bash bash3 bash-3.2; do
+    p=$(command -v "$cand" 2>/dev/null) || continue
+    [ -x "$p" ] || continue
+    if "$p" --version 2>/dev/null | head -1 | grep -q 'version 3\.'; then
+        BASH3="$p"
+        break
+    fi
+done
+
+if [ -n "$BASH3" ]; then
     D=$(new_repo A)
     cat >"$D/scripts/fixture.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -113,20 +155,25 @@ git init -q "$dir"
 EOF
     git -C "$D" add -A >/dev/null 2>&1
     set +e
-    OUT=$(/bin/bash "$D/scripts/check-git-init-guarded.sh" 2>&1)
+    OUT=$("$BASH3" "$D/scripts/check-git-init-guarded.sh" 2>&1)
     RC=$?
     set -e
+    B3V=$("$BASH3" --version 2>/dev/null | head -1)
     if [ "$RC" -ne 0 ]; then
-        bad "the checker failed under bash 3.2" "$OUT"
+        bad "the checker failed under $BASH3" "$B3V" "$OUT"
     elif printf '%s' "$OUT" | grep -qE '^OK: [1-9][0-9]* files'; then
-        ok "bash 3.2: exits 0 AND reports a non-zero examined count"
+        ok "$BASH3: exits 0 AND reports a non-zero examined count"
     else
-        bad "bash 3.2: exit 0 but the examined count is missing or zero" \
+        bad "$BASH3: exit 0 but the examined count is missing or zero" \
             "this is the silent-pass shape the check exists to prevent" "$OUT"
     fi
 else
-    bad "PRECONDITION: /bin/bash is not 3.x -- cannot verify the 3.2 path here" \
-        "found: $(/bin/bash --version 2>&1 | head -1)"
+    skip "the bash 3.x path was NOT exercised on this host" \
+        "no bash 3.x found (tried: /bin/bash /usr/bin/bash bash3 bash-3.2)" \
+        "this shell is: $(bash --version 2>&1 | head -1)" \
+        "Case B covers the same property shell-independently, so the regression" \
+        "is still guarded here; run this suite on macOS, where /bin/bash is" \
+        "3.2.57, for the direct verification."
 fi
 echo ""
 
@@ -258,10 +305,16 @@ echo "Case J: guard detection survives BSD grep (no GNU-only regex)"
 # script as UNGUARDED -- a false positive that fails the gate. PATH is pinned so
 # a homebrew GNU grep earlier on PATH cannot mask the difference.
 #
-# NOTE: this machine's /usr/bin/grep is "BSD grep, GNU compatible" and does
-# honor \b, so this case cannot reproduce the failure here -- it pins the
-# CURRENT portable form as working under BSD grep rather than proving the GNU
-# form broken. On a stricter BSD grep it would catch the regression.
+# This case RUNS everywhere (Linux CI included), but what it proves depends on
+# the host, so it reports the grep it actually exercised rather than claiming
+# BSD unconditionally. On Linux /usr/bin/grep is GNU, and there this degrades to
+# a plain "still detected with PATH pinned" check -- worth running, but not the
+# portability evidence its name suggests.
+#
+# Even on macOS the evidence is partial: /usr/bin/grep here is "BSD grep, GNU
+# compatible" and DOES honor \b, so this pins the CURRENT portable form as
+# working rather than proving the GNU form broken. A stricter BSD grep would
+# catch that regression; this host cannot.
 D=$(new_repo J)
 cat >"$D/scripts/fixture.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -270,14 +323,21 @@ git init -q "$dir"
 EOF
 git -C "$D" add -A >/dev/null 2>&1
 set +e
+GREPV=$(PATH=/usr/bin:/bin grep --version 2>/dev/null | head -1)
+case "$GREPV" in
+    *BSD*) GREPKIND="BSD grep" ;;
+    *GNU*) GREPKIND="GNU grep (not BSD -- weaker evidence on this host)" ;;
+    *) GREPKIND="grep of unknown flavor" ;;
+esac
 OUT=$(PATH=/usr/bin:/bin /bin/bash "$D/scripts/check-git-init-guarded.sh" 2>&1)
 RC=$?
 set -e
 if [ "$RC" -eq 0 ]; then
-    ok "BSD grep + bash 3.2: \`unset GIT_DIR\` is still detected as a guard"
+    ok "$GREPKIND: \`unset GIT_DIR\` is still detected as a guard"
 else
-    bad "BSD grep run reported the guarded fixture as unguarded (exit $RC)" \
-        "a GNU-only regex construct has crept back in" "$OUT"
+    bad "PATH-pinned run reported the guarded fixture as unguarded (exit $RC)" \
+        "a GNU-only regex construct has crept back in" \
+        "grep was: $GREPV" "$OUT"
 fi
 echo ""
 
@@ -299,5 +359,10 @@ fi
 echo ""
 
 echo "----------------------------------------"
-echo "passed: $PASSED  failed: $FAILED"
+echo "passed: $PASSED  failed: $FAILED  skipped: $SKIPPED"
+if [ "$SKIPPED" -gt 0 ]; then
+    echo "NOTE: $SKIPPED case(s) did NOT run here -- see the SKIP lines above for"
+    echo "      what went unverified on this host. Green with skips is not the"
+    echo "      same as green."
+fi
 [ "$FAILED" -eq 0 ] || exit 1
