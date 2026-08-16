@@ -12,12 +12,12 @@ import (
 // A bulk restore refused by the NAME COLLISION guard must report
 // name_collision, not restore_failed (#3037).
 //
-// Unlike every other refusal the endpoint reports, this one cannot be caught
-// at plan time: validateRevertable sees only the immutable history row, while
-// whether a name collides depends on the CURRENT database. So planning says
-// "planned", the commit arm fires for real, and the refusal arrives from
-// inside the writing transaction -- where the generic fall-through would file
-// a refusal the operator CAN clear under a token that reads as a failed write.
+// The plan now runs its own collision check (#3039), so this test drives the
+// window that check cannot close: the preview is taken BEFORE the other artist
+// exists, the identity is taken afterwards, and the commit is the only thing
+// left that can refuse. That is the case that keeps the in-transaction guard
+// load-bearing -- and where the generic fall-through would file a refusal the
+// operator CAN clear under a token that reads as a failed write.
 func TestBlastRestore_NameCollisionIsHeldApartFromAFailedWrite(t *testing.T) {
 	t.Parallel()
 	r, artistSvc, historySvc := restoreTestRouter(t)
@@ -28,25 +28,6 @@ func TestBlastRestore_NameCollisionIsHeldApartFromAFailedWrite(t *testing.T) {
 	damaged := addTestArtist(t, artistSvc, "Halloway Brass")
 	nameChangeID := damageField(t, r, artistSvc, historySvc, damaged.ID,
 		"name", "Marlowe Ensemble", "Marlowe Ensemble (Remastered)")
-
-	// The squatter, created only AFTER the damage so the operator's own rename
-	// above is not itself refused. Service.Create writes the row with no
-	// collision check, which is how this state arises in production: a scan or
-	// a platform import seeds an artist under a name a history row still holds
-	// as its old value.
-	squatter := addTestArtist(t, artistSvc, "Marlowe Ensemble")
-
-	// PRECONDITION: the identity really is taken, so the guard has something to
-	// refuse. Without this the test would pass vacuously the moment the fixture
-	// stopped colliding.
-	collision, err := artistSvc.FindNameCollision(ctx, damaged.ID, "Marlowe Ensemble")
-	if err != nil {
-		t.Fatalf("fixture: checking for the collision: %v", err)
-	}
-	if collision == nil || collision.ArtistID != squatter.ID {
-		t.Fatalf("fixture: FindNameCollision = %+v, want the squatter %s; the restore below "+
-			"would succeed and exercise no refusal at all", collision, squatter.ID)
-	}
 
 	// The positive control, in the SAME request: a row that is legitimately
 	// restorable. A classifier that refused everything would satisfy every
@@ -68,9 +49,9 @@ func TestBlastRestore_NameCollisionIsHeldApartFromAFailedWrite(t *testing.T) {
 		return blastRestoreItem{}
 	}
 
-	// The PREVIEW plans the colliding row. That is not a defect being locked
-	// in, it is the fact that motivates the commit-side classifier: nothing at
-	// plan time can answer this question, so the commit must answer it well.
+	// The PREVIEW is taken while the identity is still FREE, so it plans the
+	// row honestly. The collision is then created underneath it, reproducing
+	// the plan-to-commit window that no plan-time check can close.
 	pw, preview := postRestore(t, r, fmt.Sprintf(body, false))
 	if pw.Code != 200 {
 		t.Fatalf("preview status = %d; body: %s", pw.Code, pw.Body.String())
@@ -78,6 +59,24 @@ func TestBlastRestore_NameCollisionIsHeldApartFromAFailedWrite(t *testing.T) {
 	if got := itemFor(t, preview, nameChangeID); got.Status != blastRestorePlanned {
 		t.Fatalf("preview item = %+v, want status %q; the fixture is not reaching the write "+
 			"path where the collision guard runs", got, blastRestorePlanned)
+	}
+
+	// The squatter, created only AFTER the damage AND after the preview.
+	// Service.Create writes the row with no collision check, which is how this
+	// state arises in production: a scan or a platform import seeds an artist
+	// under a name a history row still holds as its old value.
+	squatter := addTestArtist(t, artistSvc, "Marlowe Ensemble")
+
+	// PRECONDITION: the identity really is taken, so the guard has something to
+	// refuse. Without this the test would pass vacuously the moment the fixture
+	// stopped colliding.
+	collision, err := artistSvc.FindNameCollision(ctx, damaged.ID, "Marlowe Ensemble")
+	if err != nil {
+		t.Fatalf("fixture: checking for the collision: %v", err)
+	}
+	if collision == nil || collision.ArtistID != squatter.ID {
+		t.Fatalf("fixture: FindNameCollision = %+v, want the squatter %s; the restore below "+
+			"would succeed and exercise no refusal at all", collision, squatter.ID)
 	}
 
 	w, commit := postRestore(t, r, fmt.Sprintf(body, true))

@@ -12062,11 +12062,16 @@ paths:
         commit is refused rather than overwritten.
 
 
-        Passing every check above is not a promise that the write lands. A name
-        change whose previous value is a name another artist now holds is
-        refused inside the writing transaction, with reason name_collision,
-        because whether a name collides depends on the current library rather
-        than on the change row and so cannot be decided while planning.
+        A name change whose previous value is a name another artist currently
+        holds is refused with reason name_collision. The preview reports it, so
+        a plan does not offer a row that cannot land, and the write re-checks it
+        inside its own transaction.
+
+
+        Passing every check above is still not a promise that the write lands.
+        Whether a name collides depends on the current library rather than on
+        the change row, so another artist can take that name between the preview
+        and the commit; the in-transaction check is what decides.
 
 
         Each restore is recorded in the artist's change history with source
@@ -12198,10 +12203,11 @@ paths:
                             above it depends on the current state of the
                             library rather than on the row: the identical
                             request succeeds once that other artist has been
-                            renamed or merged. It is reported only from a
-                            confirmed write, because whether a name collides
-                            cannot be known until the write is attempted, so a
-                            preview can list such a row as restorable.
+                            renamed or merged. Both a preview and a confirmed
+                            write report it. Because it depends on live state a
+                            preview's answer can go stale, so a row planned as
+                            restorable may still be refused for this reason at
+                            commit time.
 
                             Both are held apart from not_revertible, which is a
                             statement about the FIELD's history coverage rather
