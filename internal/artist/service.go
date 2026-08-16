@@ -731,6 +731,38 @@ func (s *Service) UpdateAfterRuleEvaluation(ctx context.Context, a *Artist) erro
 	return s.update(ctx, a, false)
 }
 
+// logUnreadableSnapshot reports a pre-write snapshot read that failed, at a
+// level chosen by CAUSE. The refusal itself is not affected -- Service.update
+// returns the error either way, and this function has no say in that.
+//
+// EXACTLY TWO causes are downgraded, and they are enumerated rather than
+// described: context.Canceled and context.DeadlineExceeded. Those are the only
+// two sentinel errors the context package defines, and both mean the CALLER
+// went away -- a client that disconnected, a parent context canceled during a
+// graceful shutdown, or the request's own timeout elapsing. None of those is a
+// fault of this process, and a server logging at Error every time a client
+// hangs up trains its operator to ignore Error.
+//
+// Everything else stays at Error, because every other way this read fails is a
+// real fault: a closed or corrupt database, a driver error, a scan failure.
+// (ErrNotFound never reaches here -- the caller checks it first and treats a
+// deleted row as the benign case.)
+//
+// WARN, not Debug, for the downgraded pair. The write was still REFUSED, so a
+// change the caller asked for did not happen. Debug is off in ordinary
+// deployments, which would leave an operator investigating "my edit vanished
+// when the service restarted" with no record at all. Warn keeps one line for
+// the dropped write without claiming the process malfunctioned.
+func logUnreadableSnapshot(artistID string, err error) {
+	const msg = "refusing artist update: the stored row could not be read, " +
+		"so this write would proceed without knowing what it overwrites"
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		slog.Warn(msg, "artist_id", artistID, "error", err)
+		return
+	}
+	slog.Error(msg, "artist_id", artistID, "error", err)
+}
+
 func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
 	// Snapshot the stored row before writing.
 	//
@@ -785,9 +817,7 @@ func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
 	old, fetchErr := s.artists.GetByID(ctx, a.ID)
 	if fetchErr != nil {
 		if !errors.Is(fetchErr, ErrNotFound) {
-			slog.Error("refusing artist update: the stored row could not be read, "+
-				"so this write would proceed without knowing what it overwrites",
-				"artist_id", a.ID, "error", fetchErr)
+			logUnreadableSnapshot(a.ID, fetchErr)
 			return fmt.Errorf("reading stored artist %s before update: %w", a.ID, fetchErr)
 		}
 		old = nil
