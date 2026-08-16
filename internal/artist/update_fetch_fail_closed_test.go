@@ -183,9 +183,16 @@ func TestUpdate_UnreadableSnapshotLogLevelDependsOnCause(t *testing.T) {
 			rec := &levelRecorder{}
 			restore := slog.Default()
 			slog.SetDefault(slog.New(rec))
+			// Restored via Cleanup, not a manual call after the write: the
+			// handler is PROCESS-WIDE, and svc.Update sits between the swap and
+			// any manual restore. A panic in there would leak the recorder into
+			// every later test in the package, where it surfaces as failures
+			// that appear to come from unrelated code. Matches the idiom already
+			// used in merge_field_locks_test.go and sqlite_image_test.go. (Also
+			// why these subtests do not call t.Parallel.)
+			t.Cleanup(func() { slog.SetDefault(restore) })
 			stored.Biography = "a replacement"
 			updErr := svc.Update(ctx, stored)
-			slog.SetDefault(restore)
 
 			// The refusal must happen regardless of level. Without this a
 			// downgrade that also stopped refusing would pass.
