@@ -35,10 +35,10 @@
 //  2. validateRevertable passes: the field is history-tracked, the row is not
 //     itself a revert, and the recorded old value is one the field accepts.
 //     All three checks are the single-revert endpoint's, reused rather than
-//     reimplemented. The third is dormant on this base (no history-tracked
-//     field carries a validation rule) and, when it does fire, planOneBlastRestore
-//     reports it under the existing not_revertible token rather than a reason
-//     of its own.
+//     reimplemented. The third is LIVE as of #3037, which made "name" both
+//     history-tracked and subject to a validation rule; planOneBlastRestore
+//     reports it under its own token (old_value_invalid), held apart from
+//     not_revertible because the two say different things to an operator.
 //  3. The row is STILL the row the blast-radius report would list for its
 //     (artist, field) pair -- verified by re-running the report's own query,
 //     narrowed to that artist and field, and requiring the top row's id to
@@ -202,6 +202,30 @@ const (
 	// but errored. The item is reported so a partial bulk restore cannot look
 	// like a clean one.
 	blastRefuseWriteFailed = "restore_failed"
+	// blastRefuseInvalidOldValue: the value this row would put back is one the
+	// field itself does not accept (#3037), so the restore can never succeed
+	// however many times it is retried.
+	//
+	// WHICH ROWS CAN CARRY IT. A row qualifies only when its field is both
+	// history-tracked and policed by artist.ValidateFieldUpdate. That
+	// intersection is exactly {"name"}: the tracked list is
+	// `sed -n '/^var trackableFields/,/^}/p' internal/artist/service.go` and the
+	// validator's switch arms are name and musicbrainz_id, of which
+	// musicbrainz_id is not tracked and sort_name carries no rule. For "name"
+	// the refused shapes are an old value that is empty, whitespace-only, or
+	// one that normalizes to an empty identity key. Restoring any of them
+	// blanks or de-identifies artists.name, which persists (NOT NULL, no
+	// non-empty CHECK) and leaves the artist unmatchable by every mechanism
+	// that keys on the name.
+	//
+	// Held apart from blastRefuseNotRevertible even though validateRevertable
+	// produces both, because the two mean different things to an operator: the
+	// other says "this FIELD is not tracked", which is about the report's
+	// coverage, while this says "this ROW's previous value is unusable", which
+	// is about one specific row and will never change however the coverage
+	// list evolves. Held apart from blastRefuseWriteFailed for the sharper
+	// reason: "restore_failed" invites a retry, and a retry here cannot work.
+	blastRefuseInvalidOldValue = "old_value_invalid"
 )
 
 // blastRestoreRequest is the POST body. The zero value is a preview of nothing.
@@ -431,6 +455,11 @@ func (r *Router) planOneBlastRestore(ctx context.Context, id string) blastRestor
 		switch {
 		case errors.Is(verr, errRevertOfRevert):
 			item.Reason = blastRefuseRevertOfRevert
+		case errors.Is(verr, errRevertInvalidOldValue):
+			// Reported at PLAN time on purpose: the operator learns the row is
+			// unrestorable while still deciding, rather than being offered a
+			// write that is refused after they approve it.
+			item.Reason = blastRefuseInvalidOldValue
 		default:
 			item.Reason = blastRefuseNotRevertible
 		}
@@ -537,11 +566,12 @@ func (r *Router) commitBlastRestore(ctx context.Context, items []blastRestoreIte
 
 		restoreChangeID, changed, err := r.performRevert(ctx, change)
 		if err != nil {
+			reason := blastRestoreWriteRefusal(err)
 			r.logger.Error("blast restore: writing restore",
 				"change_id", it.ChangeID, "artist_id", change.ArtistID,
-				"field", change.Field, "error", err)
+				"field", change.Field, "reason", reason, "error", err)
 			it.Status = blastRestoreRefused
-			it.Reason = blastRefuseWriteFailed
+			it.Reason = reason
 			continue
 		}
 
@@ -565,6 +595,36 @@ func (r *Router) commitBlastRestore(ctx context.Context, items []blastRestoreIte
 		// file's package comment.
 		r.publishActivityRecent("reverted", change.Field+" restored", change.ArtistID)
 	}
+}
+
+// blastRestoreWriteRefusal classifies an error returned by performRevert into
+// the refusal reason the operator is shown.
+//
+// A value the FIELD refuses is held apart from the generic "restore_failed"
+// (#3037). Both are refusals, but they ask different things of the operator:
+// restore_failed says the write was attempted and something went wrong, which
+// invites a retry, while old_value_invalid says the value being put back is
+// not one the field accepts, so every retry produces the same answer.
+//
+// The old_value_invalid arm is DEFENSIVE rather than a live path today.
+// planOneBlastRestore runs validateRevertable, which already rejects a row
+// whose old value the field refuses, and no PRODUCTION code rewrites a
+// metadata_changes row's old_value after insert, so the plan-to-commit window
+// cannot turn an accepted value into a refused one. That second half is
+// checked, not assumed: `grep -rn 'UPDATE metadata_changes' --include='*.go'
+// --include='*.sql' internal cmd | grep -v _test` yields two sites, one
+// setting artist_id (the merge) and one setting created_at (migration 004);
+// the sentence says PRODUCTION because that grep filters test callers out, and
+// this package's own fixtures do rewrite created_at. It stays because the fall-through is
+// actively misleading if the arm ever does become reachable -- a new
+// validation rule, or a plan path that stops consulting validateRevertable --
+// and a misclassification here sends an operator to retry a write that cannot
+// succeed.
+func blastRestoreWriteRefusal(err error) string {
+	if errors.Is(err, artist.ErrInvalidFieldValue) {
+		return blastRefuseInvalidOldValue
+	}
+	return blastRefuseWriteFailed
 }
 
 // summarizeBlastRestore tallies the per-item statuses into the response

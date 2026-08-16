@@ -12167,7 +12167,20 @@ paths:
                             - revert_of_revert
                             - no_longer_current
                             - restore_failed
-                          description: Set only when restore_status is refused.
+                            - old_value_invalid
+                          description: |
+                            Set only when restore_status is refused.
+
+                            old_value_invalid means the value this row would
+                            put back is one the field does not accept, so the
+                            row can never be restored and a retry produces the
+                            same answer. The reachable case is a name change
+                            whose previous value was empty, which would leave
+                            the artist with no name. Held apart from
+                            not_revertible, which is a statement about the
+                            FIELD's history coverage rather than about this one
+                            row, and from restore_failed, which reports an
+                            attempted write that errored and may be retried.
                         restore_change_id:
                           type: string
                           description: >

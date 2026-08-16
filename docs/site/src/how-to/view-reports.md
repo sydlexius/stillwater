@@ -67,7 +67,7 @@ Restore is always two steps, and the first one never writes:
 1. **Preview.** Stillwater checks each selected row against the current state of your library and reports how many of them can be put back, and how many cannot. Nothing has been written at this point.
 2. **Confirm.** Only then does the write happen, and only for the rows the preview listed as restorable.
 
-**A preview is not a promise.** Stillwater re-reads each value immediately before writing it, because a scan, a rule pass, or an edit you made in another tab can land in the gap between the preview and your confirmation. If the value changed in that gap, the restore is refused rather than overwriting the newer value with an older one. A row is also refused when the change record is gone, when the field keeps no change history, or when the row is itself an earlier restore, which would only chain undo onto undo.
+**A preview is not a promise.** Stillwater re-reads each value immediately before writing it, because a scan, a rule pass, or an edit you made in another tab can land in the gap between the preview and your confirmation. If the value changed in that gap, the restore is refused rather than overwriting the newer value with an older one. A row is also refused when the change record is gone, when the field keeps no change history, when the row is itself an earlier restore, which would only chain undo onto undo, or when the old value it would put back is one the field will not accept - a name change whose previous value was empty, for example, since restoring it would leave the artist with no name at all.
 
 That means a confirmed restore can come back reporting fewer values put back than the preview offered, including none at all. Stillwater tells you which happened:
 
@@ -75,7 +75,7 @@ That means a confirmed restore can come back reporting fewer values put back tha
 - Some restored, some refused - a warning naming both numbers. The restore is incomplete.
 - Nothing restored - an error message with the refusal count.
 
-Refused rows stay in the table so you can see they still need attention; only rows that were genuinely put back disappear from it. A refused restore is safe to retry: reload the report so it reflects the current state, then try again.
+Refused rows stay in the table so you can see they still need attention; only rows that were genuinely put back disappear from it. Most refusals are safe to retry: reload the report so it reflects the current state, then try again. The exception is a row refused because its old value is one the field will not accept - that answer never changes, so retrying it gets the same refusal.
 
 Restoring a value does not republish it or re-run the writer that changed it. It does mark the artist for re-evaluation, so the next rule pass looks at it again. Only one restore can run at a time across the whole application; if another is already in progress, Stillwater says so instead of queuing yours.
 
