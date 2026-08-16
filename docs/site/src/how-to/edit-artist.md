@@ -42,6 +42,8 @@ To revert a field:
 
 This is the per-field undo path. There is no global "undo all" -- each field manages its own history independently.
 
+One revert can be refused: restoring a prior **name** that a different artist already holds. Stillwater tells you which artist holds it and leaves the name unchanged, because writing it would give the two records the same identity -- exactly the duplicate a rename may have been made to resolve. No other field can be refused this way; rename or merge the other artist first, then the revert goes through.
+
 !!! note
     The previously separate **History** section (a dedicated tab listing all field changes) has been removed. Per-field prior values replace it for day-to-day revert workflows.
 
