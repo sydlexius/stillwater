@@ -56,6 +56,16 @@ const (
 	// overwrite a user-pinned ID. Its string value matches the audiodb_id key
 	// used throughout the UI and the FieldDisplay switch.
 	FieldAudioDBID FieldName = "audiodb_id"
+
+	// The remaining provider-ID lock keys. They existed only as providerFieldMap
+	// keys until the persist chokepoint began guarding provider IDs (#3037);
+	// naming them keeps the link and identify handlers from spelling lock keys
+	// as string literals. Each value matches its providerFieldMap key exactly --
+	// TestProviderIDFieldNamesMatchProviderFieldMap pins that.
+	FieldMusicBrainzID FieldName = "musicbrainz_id"
+	FieldWikidataID    FieldName = "wikidata_id"
+	FieldDeezerID      FieldName = "deezer_id"
+	FieldSpotifyID     FieldName = "spotify_id"
 )
 
 // AllLockableFields enumerates every field name that may legitimately appear

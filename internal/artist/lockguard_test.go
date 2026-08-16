@@ -2,10 +2,12 @@ package artist
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // #3037: the per-field lock chokepoint on the persist path.
@@ -199,34 +201,34 @@ func TestUpdate_RestoresLockedSliceField(t *testing.T) {
 	}
 }
 
-// TestLockGuardedFields_CoversEveryArtistsRowLockToken guards the derivation.
-// The set comes from lockableFieldNames, the same authority
+// TestLockGuardedFields_CoversEveryStructRepresentableLockToken guards the
+// derivation. The set comes from lockableFieldNames, the same authority
 // reportUnenforceableLocks uses, so a token meaningful there and absent here is
 // a lock the operator was told they have and the chokepoint cannot enforce.
 //
-// Both exclusions are asserted AS exclusions -- "members" (no Artist field holds
-// it) and the provider-ID fields (not on the artists row) -- so a widening that
-// reintroduces the un-hydrated data-loss path fails here.
-func TestLockGuardedFields_CoversEveryArtistsRowLockToken(t *testing.T) {
+// The provider-ID coverage is asserted POSITIVELY, inverting what this test
+// asserted before hydration existed: a widening that dropped the hydration would
+// now have to remove these fields, and that fails here. "members" remains the
+// one permitted absence, asserted AS an absence so a silent departure fails too.
+func TestLockGuardedFields_CoversEveryStructRepresentableLockToken(t *testing.T) {
 	guarded := make(map[string]bool, len(lockGuardedFields))
 	for _, f := range lockGuardedFields {
 		guarded[string(f)] = true
 	}
-	// Precondition: the provider-ID vocabulary is non-empty, or the exclusion
-	// assertions below would hold vacuously against an empty set.
+	// Precondition: the provider-ID vocabulary is non-empty, or "every provider
+	// ID is guarded" holds vacuously.
 	if len(providerFieldMap) == 0 {
-		t.Fatal("precondition: providerFieldMap is empty, so the exclusion assertions would be vacuous")
+		t.Fatal("precondition: providerFieldMap is empty, so the coverage assertion below would be vacuous")
+	}
+	for field := range providerFieldMap {
+		if !guarded[field] {
+			t.Errorf("provider-ID field %q is not guarded; a lock on it protects nothing on the persist path", field)
+		}
 	}
 	for name := range lockableFieldNames {
 		if name == string(FieldMembers) {
 			if guarded[name] {
 				t.Errorf("%q is guarded, but no Artist field holds band members; restoring it cannot work", name)
-			}
-			continue
-		}
-		if _, isProviderID := providerFieldMap[name]; isProviderID {
-			if guarded[name] {
-				t.Errorf("%q is guarded, but it lives in artist_provider_ids and this unit does not hydrate it; the guard would restore an empty ID over a real one", name)
 			}
 			continue
 		}
@@ -681,5 +683,436 @@ func TestRestoreLockedField_ReportsLengthNotValue(t *testing.T) {
 				t.Errorf("incoming %s = %q, want the stored value restored", tc.field, FieldValueFromArtist(incoming, tc.field))
 			}
 		})
+	}
+}
+
+// TestUpdate_RestoresALockedProviderIDAndItsCompanions covers the widening.
+// Each assertion is a distinct defect an ID-string-only restore would leave: an
+// un-hydrated compare reads the stored ID as empty and "restores" "" over it,
+// and the timestamp and provenance travel with the ID because
+// extractProviderIDs persists all three from the same struct.
+func TestUpdate_RestoresALockedProviderIDAndItsCompanions(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	fetched := time.Date(2024, time.March, 4, 5, 6, 7, 0, time.UTC)
+	a := &Artist{
+		Name:               "Pinned Identity",
+		MusicBrainzID:      "stored-mbid",
+		DiscogsID:          "stored-discogs",
+		DiscogsIDFetchedAt: &fetched,
+		MetadataSources:    map[string]string{SourceKeyMusicBrainzID: SourceOperatorConfirmed},
+	}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"musicbrainz_id", "discogs_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+	stored, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading seed: %v", err)
+	}
+	// Preconditions: the side-table seed persisted, or "restored" is
+	// indistinguishable from "never written".
+	if stored.MusicBrainzID != "stored-mbid" || stored.DiscogsID != "stored-discogs" {
+		t.Fatalf("precondition: mbid=%q discogs=%q, want the seeded IDs", stored.MusicBrainzID, stored.DiscogsID)
+	}
+	if stored.DiscogsIDFetchedAt == nil || stored.MetadataSources[SourceKeyMusicBrainzID] != SourceOperatorConfirmed {
+		t.Fatalf("precondition: fetched_at=%v provenance=%q, want both seeded",
+			stored.DiscogsIDFetchedAt, stored.MetadataSources[SourceKeyMusicBrainzID])
+	}
+
+	clobbered := time.Date(2025, time.December, 25, 0, 0, 0, 0, time.UTC)
+	stored.MusicBrainzID = "rule-picked-mbid"
+	stored.DiscogsID = ""
+	stored.DiscogsIDFetchedAt = &clobbered
+	stored.MetadataSources[SourceKeyMusicBrainzID] = SourceMachinePicked
+	stored.Origin = "Somewhere, XX" // unlocked, rides along as the control
+	if err := svc.Update(ctx, stored); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.MusicBrainzID != "stored-mbid" {
+		t.Errorf("musicbrainz_id = %q, want %q restored", after.MusicBrainzID, "stored-mbid")
+	}
+	if after.DiscogsID != "stored-discogs" {
+		t.Errorf("discogs_id = %q, want %q; an un-hydrated compare would have written the empty value", after.DiscogsID, "stored-discogs")
+	}
+	if after.DiscogsIDFetchedAt == nil || !after.DiscogsIDFetchedAt.Equal(fetched) {
+		t.Errorf("discogs fetched_at = %v, want %v; a restored ID with the rejected write's timestamp is false provenance", after.DiscogsIDFetchedAt, fetched)
+	}
+	if got := after.MetadataSources[SourceKeyMusicBrainzID]; got != SourceOperatorConfirmed {
+		t.Errorf("mbid provenance = %q, want %q; the restore relabelled a confirmed identity as a guess", got, SourceOperatorConfirmed)
+	}
+	if after.Origin != "Somewhere, XX" {
+		t.Fatalf("control origin = %q, want the unlocked change to land; the assertions above are vacuous otherwise", after.Origin)
+	}
+}
+
+// TestUpdate_UnlockedProviderIDStillUpdates is the OVER-CORRECTION control.
+// The provider_id_missing fixer backfills empty IDs on unlocked artists; a guard
+// that froze those would break the ordinary path while claiming to protect the
+// pinned one.
+func TestUpdate_UnlockedProviderIDStillUpdates(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Unpinned Identity", DiscogsID: "old-discogs"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	stored, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if len(stored.LockedFields) != 0 {
+		t.Fatalf("precondition: locked_fields = %v, want none", stored.LockedFields)
+	}
+
+	stored.DiscogsID = "provider-supplied-discogs"
+	if err := svc.Update(ctx, stored); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.DiscogsID != "provider-supplied-discogs" {
+		t.Errorf("discogs_id = %q, want the update to land; guarding pinned IDs must not freeze unpinned ones", after.DiscogsID)
+	}
+}
+
+// TestEnforceLocks_RefusesWhenALockedProviderIDCannotBeRead is the fail-loud
+// branch: with no stored ID to compare, treating that as "nothing changed" lets
+// the write through -- the data-loss path the hydration closes.
+func TestEnforceLocks_RefusesWhenALockedProviderIDCannotBeRead(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Unreadable Provider ID", DiscogsID: "pinned"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"discogs_id"}); err != nil {
+		t.Fatalf("locking discogs_id: %v", err)
+	}
+	stored, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if stored.DiscogsID != "pinned" {
+		t.Fatalf("precondition: discogs_id = %q, want the seeded value", stored.DiscogsID)
+	}
+
+	// Strip the capability the hydration needs. NewService always wires it.
+	svc.providers = nil
+
+	stored.Biography = "some other change"
+	if err := svc.Update(ctx, stored); err == nil {
+		t.Fatal("Update succeeded with an unverifiable provider-ID lock; the write must be refused rather than performed unguarded")
+	} else if !errors.Is(err, ErrNoProviderIDRepository) {
+		// errors.Is, not a substring match: a message-text assertion is brittle
+		// under rewording, and the sibling hydration-failure test already pins
+		// its cause chain this way.
+		t.Errorf("errors.Is(err, ErrNoProviderIDRepository) = false for %v; the refusal must be classifiable", err)
+	}
+
+	after, getErr := svc.artists.GetByID(ctx, a.ID)
+	if getErr != nil {
+		t.Fatalf("reloading: %v", getErr)
+	}
+	if after.Biography != "" {
+		t.Errorf("biography = %q, want it unwritten; the refusal did not prevent the write", after.Biography)
+	}
+}
+
+// failingProviderRepo makes hydration fail. Embedding the interface means a
+// method added later cannot silently turn this into a partial fake.
+type failingProviderRepo struct {
+	ProviderIDRepository
+	err error
+}
+
+func (r *failingProviderRepo) GetForArtist(context.Context, string) ([]ProviderID, error) {
+	return nil, r.err
+}
+
+// TestEnforceLocks_RefusesWhenHydrationErrors covers the hydration-FAILURE
+// branch, as distinct from the nil-repository branch. Both refuse, but only one
+// was tested: swallowing the error and returning nil would compare a locked
+// provider ID against an un-hydrated empty value, conclude nothing changed, and
+// let the write through -- the data-loss path the hydration exists to close.
+func TestEnforceLocks_RefusesWhenHydrationErrors(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Hydration Fails", DiscogsID: "pinned"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"discogs_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+	stored, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if stored.DiscogsID != "pinned" {
+		t.Fatalf("precondition: discogs_id = %q, want the seeded value", stored.DiscogsID)
+	}
+
+	sentinel := errors.New("injected hydration failure")
+	svc.providers = &failingProviderRepo{ProviderIDRepository: svc.providers, err: sentinel}
+
+	stored.Biography = "some other change"
+	updErr := svc.Update(ctx, stored)
+	if updErr == nil {
+		t.Fatal("Update succeeded when hydration failed; an unverifiable lock must not be treated as an absent one")
+	}
+	// The cause chain must survive, or a caller cannot classify the failure.
+	if !errors.Is(updErr, sentinel) {
+		t.Errorf("errors.Is(err, sentinel) = false for %v; the refusal dropped the cause", updErr)
+	}
+	after, getErr := svc.artists.GetByID(ctx, a.ID)
+	if getErr != nil {
+		t.Fatalf("reloading: %v", getErr)
+	}
+	if after.Biography != "" {
+		t.Errorf("biography = %q, want it unwritten; the refusal did not prevent the write", after.Biography)
+	}
+}
+
+// TestUpdate_PinnedProviderIDCompanionsSurviveAnUnchangedID closes the gap
+// where companions were only restored when the ID STRING changed. A write
+// carrying the same ID with a tampered timestamp or provenance is still an
+// automated write to a locked field.
+//
+// Table-driven across the three fields that HAVE a fetched-at column, so
+// dropping any one arm fails here rather than only the discogs one.
+func TestUpdate_PinnedProviderIDCompanionsSurviveAnUnchangedID(t *testing.T) {
+	seeded := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+	tampered := time.Date(2030, time.June, 6, 0, 0, 0, 0, time.UTC)
+
+	for _, tc := range []struct {
+		field string
+		get   func(*Artist) *time.Time
+		set   func(*Artist, *time.Time)
+	}{
+		{"audiodb_id", func(a *Artist) *time.Time { return a.AudioDBIDFetchedAt }, func(a *Artist, t *time.Time) { a.AudioDBIDFetchedAt = t }},
+		{"discogs_id", func(a *Artist) *time.Time { return a.DiscogsIDFetchedAt }, func(a *Artist, t *time.Time) { a.DiscogsIDFetchedAt = t }},
+		{"wikidata_id", func(a *Artist) *time.Time { return a.WikidataIDFetchedAt }, func(a *Artist, t *time.Time) { a.WikidataIDFetchedAt = t }},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			ctx := context.Background()
+			svc := NewService(newTestDB(t))
+
+			a := &Artist{Name: "Unchanged " + tc.field, MusicBrainzID: "mb-stored",
+				MetadataSources: map[string]string{SourceKeyMusicBrainzID: SourceOperatorConfirmed}}
+			setFieldOnArtist(a, tc.field, "id-stored", nil)
+			tc.set(a, &seeded)
+			if err := svc.Create(ctx, a); err != nil {
+				t.Fatalf("creating: %v", err)
+			}
+			if err := svc.SetLockedFields(ctx, a.ID, []string{tc.field, "musicbrainz_id"}); err != nil {
+				t.Fatalf("locking: %v", err)
+			}
+			stored, err := svc.GetByID(ctx, a.ID)
+			if err != nil {
+				t.Fatalf("reloading: %v", err)
+			}
+			if tc.get(stored) == nil || !tc.get(stored).Equal(seeded) {
+				t.Fatalf("precondition: %s fetched_at = %v, want %v seeded", tc.field, tc.get(stored), seeded)
+			}
+
+			// The IDs are left UNCHANGED; only the companions are tampered with.
+			tc.set(stored, &tampered)
+			stored.MetadataSources[SourceKeyMusicBrainzID] = SourceMachinePicked
+			if err := svc.Update(ctx, stored); err != nil {
+				t.Fatalf("Update: %v", err)
+			}
+			after, err := svc.GetByID(ctx, a.ID)
+			if err != nil {
+				t.Fatalf("reloading: %v", err)
+			}
+			if got := tc.get(after); got == nil || !got.Equal(seeded) {
+				t.Errorf("%s fetched_at = %v, want %v; a companion is part of the locked field's state, not a side effect of changing the ID", tc.field, got, seeded)
+			}
+			if got := after.MetadataSources[SourceKeyMusicBrainzID]; got != SourceOperatorConfirmed {
+				t.Errorf("mbid provenance = %q, want %q; an unchanged ID does not license relabelling it", got, SourceOperatorConfirmed)
+			}
+		})
+	}
+}
+
+// TestUpdateProviderField_OperatorGrantBeatsTheLock is the OVER-CORRECTION
+// guard for the widening. A lock gates AUTOMATED writes; the operator keeps
+// control of their own data, which is already true for the fifteen
+// artists-row fields because their edit bypasses the chokepoint entirely.
+//
+// The paired negative is the point: the SAME method without a grant -- which is
+// how the rule engine's backfill calls it -- must still be refused, or the grant
+// would be a blanket bypass rather than an operator affordance.
+func TestUpdateProviderField_OperatorGrantBeatsTheLock(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Operator Edit", DiscogsID: "dg-old"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"discogs_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+
+	// WITHOUT a grant: an automated write is still reverted.
+	if err := svc.UpdateProviderField(ctx, a.ID, "discogs_id", "rule-derived"); err != nil {
+		t.Fatalf("UpdateProviderField (no grant): %v", err)
+	}
+	mid, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if mid.DiscogsID != "dg-old" {
+		t.Fatalf("discogs_id = %q after an ungranted write, want %q; the lock must still stop the rule engine", mid.DiscogsID, "dg-old")
+	}
+
+	// WITH a grant for this field: the operator's own edit lands.
+	granted := ContextWithLockOverride(ctx, "discogs_id")
+	if err := svc.UpdateProviderField(granted, a.ID, "discogs_id", "dg-operator-typed"); err != nil {
+		t.Fatalf("UpdateProviderField (granted): %v", err)
+	}
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.DiscogsID != "dg-operator-typed" {
+		t.Errorf("discogs_id = %q, want the operator's value; refusing an operator's own edit is worse than the bug", after.DiscogsID)
+	}
+	if len(after.LockedFields) != 1 || after.LockedFields[0] != "discogs_id" {
+		t.Errorf("locked_fields = %v, want [discogs_id]; the grant must not clear the lock itself", after.LockedFields)
+	}
+}
+
+// TestLockOverride_IsScopedToTheNamedField proves the grant is a per-field
+// affordance rather than a blanket bypass. Without this, `granted == name`
+// could degrade to "any grant unlocks everything" and every test above would
+// still pass -- the operator editing one pinned ID would silently license an
+// automated write to a different pinned field in the same persist.
+func TestLockOverride_IsScopedToTheNamedField(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Scoped Grant", DiscogsID: "dg-stored", SpotifyID: "sp-stored"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"discogs_id", "spotify_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+	stored, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if stored.DiscogsID != "dg-stored" || stored.SpotifyID != "sp-stored" {
+		t.Fatalf("precondition: discogs=%q spotify=%q, want both seeded", stored.DiscogsID, stored.SpotifyID)
+	}
+
+	// One grant, for discogs_id only, on a write that changes BOTH pinned IDs.
+	granted := ContextWithLockOverride(ctx, "discogs_id")
+	stored.DiscogsID = "dg-operator-typed"
+	stored.SpotifyID = "sp-sneaked-in"
+	if err := svc.Update(granted, stored); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.DiscogsID != "dg-operator-typed" {
+		t.Errorf("discogs_id = %q, want the granted field to land", after.DiscogsID)
+	}
+	if after.SpotifyID != "sp-stored" {
+		t.Errorf("spotify_id = %q, want %q; a grant for one field must not unlock another", after.SpotifyID, "sp-stored")
+	}
+}
+
+// TestLockOverrideField_NormalizesTheGrant pins the three normalization
+// behaviors on the grant. All three are currently unreachable -- the handler
+// gates on IsProviderIDField first and providerFieldMap is case-exact -- so
+// this is defense-in-depth, not a live hole. It is tested anyway because an
+// authorization primitive whose normalization has no teeth is one refactor away
+// from mattering: dropping ToLower or TrimSpace would make a grant silently not
+// match, and treating "" as a grant would match the loop's first field.
+func TestLockOverrideField_NormalizesTheGrant(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		grant     string
+		wantField string
+		wantOK    bool
+	}{
+		{"exact", "discogs_id", "discogs_id", true},
+		{"uppercase", "DISCOGS_ID", "discogs_id", true},
+		{"mixed_case", "Discogs_Id", "discogs_id", true},
+		{"padded", "  discogs_id\t", "discogs_id", true},
+		{"padded_and_uppercase", " DISCOGS_ID ", "discogs_id", true},
+		{"empty_is_not_a_grant", "", "", false},
+		{"whitespace_only_is_not_a_grant", "   ", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := ContextWithLockOverride(context.Background(), tc.grant)
+			got, ok := lockOverrideField(ctx)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v for grant %q", ok, tc.wantOK, tc.grant)
+			}
+			if got != tc.wantField {
+				t.Errorf("field = %q, want %q for grant %q", got, tc.wantField, tc.grant)
+			}
+		})
+	}
+	// A context with no grant at all is not a grant.
+	if _, ok := lockOverrideField(context.Background()); ok {
+		t.Error("a bare context reported a grant; only ContextWithLockOverride may authorize a bypass")
+	}
+}
+
+// TestClonedTime_CopiesByValue pins the claim clonedTime's own comment makes.
+// Aliasing the stored pointer would let a later mutation of one struct rewrite
+// the other, which is the hazard pinLockState clones LockedAt to avoid.
+func TestClonedTime_CopiesByValue(t *testing.T) {
+	original := time.Date(2024, time.March, 4, 5, 6, 7, 0, time.UTC)
+	stored := original
+	got := clonedTime(&stored)
+	if got == &stored {
+		t.Fatal("clonedTime returned the SAME pointer; a later mutation of one struct would rewrite the other")
+	}
+	stored = stored.AddDate(1, 0, 0)
+	if !got.Equal(original) {
+		t.Errorf("clone = %v after mutating the source, want %v", got, original)
+	}
+	if clonedTime(nil) != nil {
+		t.Error("clonedTime(nil) must stay nil; an absent timestamp is not the zero time")
+	}
+}
+
+// TestProviderIDFieldNamesMatchProviderFieldMap pins that every provider-ID
+// FieldName constant is spelled exactly as its providerFieldMap key. The
+// handlers pass these constants as lock keys, so a mismatch would make a lock
+// check silently consult a field nobody can lock.
+func TestProviderIDFieldNamesMatchProviderFieldMap(t *testing.T) {
+	for _, f := range []FieldName{
+		FieldMusicBrainzID, FieldAudioDBID, FieldDiscogsID,
+		FieldWikidataID, FieldDeezerID, FieldSpotifyID,
+	} {
+		if _, ok := providerFieldMap[string(f)]; !ok {
+			t.Errorf("FieldName %q is not a providerFieldMap key; a lock check using it would never match", f)
+		}
+	}
+	if len(providerFieldMap) != 6 {
+		t.Errorf("providerFieldMap has %d entries, want 6; a new provider ID needs a FieldName constant and a lock check in the link handlers", len(providerFieldMap))
 	}
 }

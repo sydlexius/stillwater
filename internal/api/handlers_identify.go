@@ -337,6 +337,18 @@ func (r *Router) handleBulkIdentifyLink(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	// Respect a user pin on the identity fields this link would write. Gated
+	// HERE rather than inside applyIdentity on purpose: applyIdentity has five
+	// callers and only this one is an operator acting on a chosen candidate --
+	// the other four are the automated identify sweeps, whose writes the persist
+	// chokepoint is supposed to revert silently. A check in the shared helper
+	// would turn those silent, correct reverts into 409s nobody asked for.
+	if r.refuseLockedProviderIDs(w, a,
+		providerIDFieldIf(body.MBID, artist.FieldMusicBrainzID),
+		providerIDFieldIf(body.DiscogsID, artist.FieldDiscogsID)) {
+		return
+	}
+
 	// The ONLY call site in the tree that sets AllowReplace, which is what makes
 	// it grep-assertable that nothing automated can replace a stored identity.
 	// A human picked this candidate out of the review queue, so it is both

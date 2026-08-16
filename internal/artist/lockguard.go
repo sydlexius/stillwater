@@ -2,9 +2,12 @@ package artist
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Per-field lock enforcement on the PERSIST path (issue #3037).
@@ -45,12 +48,18 @@ import (
 // operator who believes a field is protected stops watching it. Each item below
 // is out of scope for THIS unit.
 //
-// PROVIDER-ID FIELDS ARE NOT GUARDED. They live in artist_provider_ids, not on
-// the artists row, and a bare Repository.GetByID does not populate them. An
-// un-hydrated comparison would read the stored value as EMPTY and "restore" ""
-// over a real ID -- extending the guard to them without hydration is a DATA-LOSS
-// PATH for the fields it claims to protect. The follow-up unit adds the
-// hydration and widens the set.
+// PROVIDER-ID FIELDS ARE GUARDED, BUT ONLY BECAUSE THE STORED SIDE IS HYDRATED
+// FIRST. They live in artist_provider_ids, not on the artists row, so a bare
+// Repository.GetByID does not populate them. An un-hydrated comparison reads the
+// stored value as EMPTY and "restores" "" over a real ID -- guarding them
+// without hydration is a DATA-LOSS PATH for the fields it claims to protect.
+// enforceLocksBeforeUpdate hydrates before comparing and REFUSES when it cannot.
+// Anyone narrowing that hydration must remove these fields from
+// lockGuardedFields in the same change.
+//
+// An operator's own edit of a pinned provider ID is NOT blocked: the field-edit
+// handler carries a field-scoped grant (see ContextWithLockOverride). Locks gate
+// automated writes.
 //
 // THE SINGLE-COLUMN WRITE VERBS ARE NOT GUARDED. UpdateField, ClearField and
 // UpdateNameGuarded each write their own targeted SQL and never pass through
@@ -68,18 +77,18 @@ import (
 // name_language_pref fixer promotes Name and SortName together; lock only "name"
 // and the row afterwards holds the old name beside the new sort_name. It follows
 // from per-FIELD locking, and refusing the whole write would discard the
-// unlocked change instead. A pair that is one LOGICAL value needs restoring
-// together, which is what the follow-up unit does for a provider ID and its
-// fetched-at timestamp.
+// unlocked change instead. A pair that is one LOGICAL value is restored
+// together instead -- that is what restoreProviderIDCompanions does for a
+// provider ID, its fetched-at timestamp and its provenance marker.
 
 // lockGuardedFields is every field this codebase treats as a meaningful lock
 // token AND can read, compare and restore from a bare Repository.GetByID.
 //
 // Derived from lockableFieldNames (merge.go) rather than written by hand, so
 // adding a lockable field anywhere cannot silently leave the chokepoint behind.
-// Two exclusions, both derived so neither can drift: the provider-ID fields (not
-// on the artists row -- see the file comment on why guarding them un-hydrated
-// loses data), and FieldMembers (no Artist field holds it).
+// ONE exclusion: FieldMembers, which no Artist field holds. The provider-ID
+// fields ARE included, which is safe only because enforceLocksBeforeUpdate
+// hydrates the stored side before any comparison -- see its doc comment.
 //
 // Sorted, so the restoration log and the returned slice have a stable order --
 // lockableFieldNames is a map and Go randomizes map iteration.
@@ -92,34 +101,122 @@ var lockGuardedFields = func() []FieldName {
 		if name == string(FieldMembers) {
 			continue
 		}
-		// Provider IDs live in artist_provider_ids and are absent from an
-		// un-hydrated stored artist. Guarding them here would restore an empty
-		// ID over a real one.
-		if _, isProviderID := providerFieldMap[name]; isProviderID {
-			continue
-		}
 		out = append(out, FieldName(name))
 	}
 	slices.Sort(out)
 	return out
 }()
 
-// enforceLocksBeforeUpdate is Service.update's entry point into the guard.
+// lockOverrideKeyType carries a FIELD-SCOPED operator grant: permission for one
+// named field's lock to be bypassed on writes made with this context.
+type lockOverrideKeyType struct{}
+
+var lockOverrideKey lockOverrideKeyType
+
+// ContextWithLockOverride authorizes writes on ctx to change the named field
+// even though the operator has it locked.
 //
-// A thin wrapper today: every guarded field is on the artists row, so the stored
-// artist Service.update already fetched is a complete comparison basis. It
-// exists because the follow-up unit widens the set to the provider-ID fields,
-// which need a hydration step and a refusal when it cannot run -- and that
-// belongs here, not inside enforceFieldLocks, which stays a pure in-memory
-// comparison.
+// WHY THIS EXISTS. A lock gates AUTOMATED writes; the operator keeps control of
+// their own data. That is already true for the fifteen artists-row fields,
+// because an operator edit routes through the single-column Service.UpdateField,
+// which never reaches the chokepoint. The six provider-ID fields have no such
+// verb -- Service.UpdateProviderField ends in a whole-row Service.Update -- so
+// once those fields became guarded, the operator's own edit was silently
+// reverted while the API answered 200. A lock that means "you may still edit
+// this" for fifteen fields and "you are locked out" for six is not a policy,
+// it is an inconsistency.
+//
+// SCOPED TO ONE FIELD, and set only by the operator-facing field-edit handler.
+// A blanket bypass on UpdateProviderField would be wrong: the rule engine's
+// provider-ID backfill calls that same method, and the case the guard genuinely
+// protects there is a field an operator pinned while EMPTY ("do not guess this
+// one"), which the fill-empty fixer would otherwise populate. Granting per
+// field, per request, keeps that protection intact.
+func ContextWithLockOverride(ctx context.Context, field string) context.Context {
+	normalized := strings.ToLower(strings.TrimSpace(field))
+	// A grant naming no guarded field authorizes nothing, and would otherwise
+	// fail the way this whole change exists to prevent: the operator's edit
+	// reverted, the API answering success. The exported entry point cannot
+	// assume every future caller passes a validated name, so say so loudly
+	// rather than let a misspelling read as a grant.
+	if normalized != "" && !slices.Contains(lockGuardedFields, FieldName(normalized)) {
+		slog.Error("lock override names no guarded field; it authorizes nothing and the write will be reverted if that field is locked",
+			"field", field)
+	}
+	return context.WithValue(ctx, lockOverrideKey, normalized)
+}
+
+// lockOverrideField returns the field this context authorizes bypassing, if any.
+func lockOverrideField(ctx context.Context) (string, bool) {
+	f, ok := ctx.Value(lockOverrideKey).(string)
+	return f, ok && f != ""
+}
+
+// ErrNoProviderIDRepository reports that a locked provider ID could not be
+// verified because the Service has no provider-ID repository. It is a sentinel
+// so a caller can classify the refusal with errors.Is rather than matching on
+// message text -- the same contract the hydration-failure path gets for free by
+// wrapping the underlying error.
+var ErrNoProviderIDRepository = errors.New("no provider-ID repository is wired, so a locked provider ID cannot be verified")
+
+// providerIDLockFields are the guarded fields stored in artist_provider_ids
+// rather than on the artists row. Derived from providerFieldMap so it cannot
+// drift from the set of fields that actually live in that table.
+var providerIDLockFields = func() []FieldName {
+	out := make([]FieldName, 0, len(providerFieldMap))
+	for field := range providerFieldMap {
+		out = append(out, FieldName(field))
+	}
+	slices.Sort(out)
+	return out
+}()
+
+// enforceLocksBeforeUpdate is Service.update's entry point into the guard. It
+// hydrates whichever side table the STORED artist's lock set requires before
+// comparing, and refuses the write when it cannot.
+//
+// THE HYDRATION IS THE SAFETY PRECONDITION, not an optimization. A provider ID
+// lives in artist_provider_ids, so an un-hydrated stored artist reads as EMPTY
+// and the guard would "restore" "" over a real ID -- the guard becoming the
+// data-loss path for the fields it protects. Anyone narrowing or reordering this
+// must remove those fields from lockGuardedFields in the same change.
+//
+// Conditional on such a field actually being locked, so an ordinary write costs
+// no extra query. FAILS LOUD when hydration cannot run: an unverifiable lock
+// must not be treated as an absent one, which is the same rule Service.update
+// applies to an unreadable stored row.
 //
 // A nil on either side means there is nothing to compare. Service.update passes
 // a nil stored ONLY for an artist that does not exist; every other read failure
-// is refused before reaching here, because an unverifiable lock must not be
-// treated as an absent one.
+// is refused before reaching here.
 func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming *Artist) error {
 	if stored == nil || incoming == nil {
 		return nil
+	}
+	locked := buildLockedSet(stored.LockedFields)
+	needsProviderIDs := false
+	for _, f := range providerIDLockFields {
+		if isLocked(locked, string(f)) {
+			needsProviderIDs = true
+			break
+		}
+	}
+	if needsProviderIDs {
+		// A nil repository means a hand-assembled Service: NewService wires one
+		// unconditionally and NewServiceWithRepos takes one as a parameter.
+		// Skipping the hydration here would compare a locked provider ID against
+		// an un-hydrated empty value, conclude nothing changed, and let the write
+		// through -- the exact data-loss path this hydration exists to close.
+		if s.providers == nil {
+			slog.Error("refusing artist update: a provider-ID field is locked but this Service has no provider-ID repository, so the stored ID cannot be read",
+				"artist_id", stored.ID)
+			return fmt.Errorf("enforcing field locks for %s: %w", stored.ID, ErrNoProviderIDRepository)
+		}
+		if err := s.hydrateProviderIDs(ctx, stored); err != nil {
+			slog.Error("refusing artist update: a provider-ID field is locked but the stored IDs could not be read",
+				"artist_id", stored.ID, "error", err)
+			return fmt.Errorf("hydrating stored provider IDs for %s to enforce field locks: %w", stored.ID, err)
+		}
 	}
 	enforceFieldLocks(ctx, stored, incoming)
 	return nil
@@ -139,8 +236,9 @@ func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming
 // RESTORE-AND-CONTINUE rather than refuse. A whole-row persist has no natural
 // refusal: the caller handed over an entire artist, most of it legitimate.
 // Refusing would discard the unlocked changes too and turn every fixer into an
-// all-or-nothing write. The single-field verbs are the ones with a natural
-// refusal, and they refuse (see UpdateProviderField).
+// all-or-nothing write. No verb in this package refuses on a lock today:
+// UpdateProviderField is a whole-row write that lands here like any other, and
+// the operator's own edit through it carries a grant rather than a refusal.
 //
 // The incoming struct is mutated in place. That is the point: the caller
 // persists it, and its in-memory copy carries the protected value onward, so a
@@ -163,21 +261,25 @@ func enforceFieldLocks(ctx context.Context, stored, incoming *Artist) []string {
 
 	// The stored row is the ONLY source of the lock set. See the file comment.
 	//
-	// reportUnenforceableLocks is deliberately NOT called here, unlike on the
-	// merge path. It flags tokens absent from lockableFieldNames, but every
-	// token this chokepoint declines to guard -- the six provider IDs and
-	// members -- IS in that set and IS enforced elsewhere, so calling it would
-	// report nothing about them while making the site look as though unenforced
-	// locks were handled. A genuinely unknown token is worth reporting, but not
-	// once per whole-row persist: this runs on every rule pass, so a permanently
-	// misspelled token would log forever. The merge path already reports it on
-	// refresh, bulk fetch and NFO import. Validating at the lock-SETTING API is
-	// the fix that reports once; it is not this unit's.
+	// reportUnenforceableLocks is still deliberately NOT called here, unlike on
+	// the merge path -- but the reason has NARROWED now that the provider IDs
+	// are guarded. Previously seven tokens were known-but-unguarded here; only
+	// "members" remains, and it is honored by applyMemberRefresh, so reporting
+	// it as unenforceable would be false.
+	//
+	// What is left is a genuinely unknown token (a misspelling), which protects
+	// nothing anywhere and IS worth reporting -- just not once per whole-row
+	// persist. This runs on every rule pass, so a permanently misspelled token
+	// would log forever. The merge path already reports it on refresh, bulk
+	// fetch and NFO import. Validating at the lock-SETTING API is the fix that
+	// reports once, and it is still not this unit's.
 	locked := buildLockedSet(stored.LockedFields)
 	if len(locked) == 0 {
 		return nil
 	}
 	source := sourceFromContext(ctx)
+
+	granted, hasGrant := lockOverrideField(ctx)
 
 	var restored []string
 	for _, f := range lockGuardedFields {
@@ -185,6 +287,24 @@ func enforceFieldLocks(ctx context.Context, stored, incoming *Artist) []string {
 		if !isLocked(locked, name) {
 			continue
 		}
+		if hasGrant && granted == name {
+			// The operator authorized this one field on this one request. Logged
+			// because a bypass of a data-protection control should leave a
+			// record: every other outcome of this loop logs, and a silent
+			// exception is how an authorization primitive stops being auditable.
+			// Info rather than Error -- this is the system working as designed,
+			// not a conflict between two intents.
+			slog.Info("field lock bypassed by an operator grant; the write was allowed",
+				"artist_id", stored.ID,
+				"field", name,
+				"source", source)
+			continue
+		}
+		// Companions are pinned for a locked provider ID whether or not the ID
+		// STRING changed. They are part of the locked field's state, not a
+		// side effect of changing it, so a write carrying the same ID with a
+		// tampered timestamp or provenance marker must not land either.
+		restoreProviderIDCompanions(stored, incoming, name)
 		rejectedLen, changed := restoreLockedField(stored, incoming, name)
 		if !changed {
 			continue
@@ -273,15 +393,78 @@ func restoreLockedField(stored, incoming *Artist, field string) (rejectedLen int
 	return len(got), true
 }
 
+// restoreProviderIDCompanions copies the state that TRAVELS WITH a provider ID
+// from stored onto incoming, for any LOCKED provider-ID field -- whether or not
+// the ID string itself changed. That is deliberate: the companions are part of
+// the locked field's state, not a side effect of changing it, so a write
+// carrying the same ID with a tampered timestamp or provenance marker is still
+// an automated write to a pinned field.
+//
+// Restoring the ID string alone leaves the row self-inconsistent, because
+// persistNormalized -> extractProviderIDs -> UpsertAll is delete-and-replace and
+// writes the ID with its companions from the same struct. Two exist:
+//
+//   - The paired fetched-at timestamp. Letting the incoming value through would
+//     record that the operator's pinned ID was fetched at the instant of the
+//     write that was just rejected -- false provenance on curated data.
+//   - MetadataSources[SourceKeyMusicBrainzID], for musicbrainz_id only, which
+//     records machine-picked versus operator-confirmed. Letting an incoming
+//     machine-picked marker land over a pinned MBID relabels a confirmed
+//     identity as a guess, and that key is what the operator-facing re-review
+//     query filters on -- so the artist surfaces to the operator as unverified
+//     work of their own.
+//
+// deezer_id, spotify_id and musicbrainz_id carry no fetched-at column, so their
+// timestamp arms are absent rather than forgotten.
+func restoreProviderIDCompanions(stored, incoming *Artist, field string) {
+	switch field {
+	case "audiodb_id":
+		incoming.AudioDBIDFetchedAt = clonedTime(stored.AudioDBIDFetchedAt)
+	case "discogs_id":
+		incoming.DiscogsIDFetchedAt = clonedTime(stored.DiscogsIDFetchedAt)
+	case "wikidata_id":
+		incoming.WikidataIDFetchedAt = clonedTime(stored.WikidataIDFetchedAt)
+	case "musicbrainz_id":
+		restoreMBIDProvenance(stored, incoming)
+	}
+}
+
+// clonedTime copies a *time.Time by VALUE. Aliasing the stored pointer would let
+// a later mutation of one struct silently rewrite the other -- the same reason
+// pinLockState clones LockedAt.
+func clonedTime(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	at := *t
+	return &at
+}
+
+// restoreMBIDProvenance puts the stored provenance for the MusicBrainz ID back
+// onto incoming, INCLUDING the case where the stored row had no entry -- it
+// deletes the incoming one rather than leaving it, since an absent marker and a
+// machine-picked marker mean different things to the re-review query.
+func restoreMBIDProvenance(stored, incoming *Artist) {
+	want, hadStored := stored.MetadataSources[SourceKeyMusicBrainzID]
+	if !hadStored {
+		delete(incoming.MetadataSources, SourceKeyMusicBrainzID)
+		return
+	}
+	if incoming.MetadataSources == nil {
+		incoming.MetadataSources = make(map[string]string, 1)
+	}
+	incoming.MetadataSources[SourceKeyMusicBrainzID] = want
+}
+
 // setFieldOnArtist writes one named field back onto an Artist, the inverse of
 // FieldValueFromArtist / SliceFieldFromArtist for the ARTISTS-ROW fields. A
 // field outside it is a no-op, matching those readers' default branch.
 //
-// It deliberately has NO provider-ID arm: those fields are not in
-// lockGuardedFields, so an arm here would be unreachable code implying coverage
-// this unit does not provide. TestUpdate_RestoresEveryGuardedField drives every
-// entry in lockGuardedFields through this switch, so a field entering the set
-// without a matching arm fails there rather than silently no-opping.
+// The provider-ID arm writes through applyProviderFieldToArtist, the same setter
+// the normalized-table path uses, so the value lands where extractProviderIDs
+// will read it back. TestUpdate_RestoresEveryGuardedField drives every entry in
+// lockGuardedFields through this switch, so a field entering the set without a
+// matching arm fails there rather than silently no-opping.
 //
 // Scalar callers pass value and a nil slice; slice callers pass "" and the
 // slice. One function rather than two avoids a second field switch that could
@@ -318,5 +501,7 @@ func setFieldOnArtist(a *Artist, field, value string, slice []string) {
 		a.SortName = value
 	case "disambiguation":
 		a.Disambiguation = value
+	case "musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id", "spotify_id":
+		applyProviderFieldToArtist(a, providerFieldMap[field], value)
 	}
 }
