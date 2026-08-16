@@ -366,6 +366,70 @@ func valueForTest(a *Artist, field string) string {
 	return FieldValueFromArtist(a, field)
 }
 
+// TestUpdate_UnreadableStoredRowDoesNotEraseLockState asserts the LOCK COLUMNS'
+// post-write state, which no other test in this package does on the
+// unreadable-row path.
+//
+// It is deliberately NOT redundant with TestUpdate_RefusesWhenTheStoredRowCannotBeRead
+// (update_fetch_fail_closed_test.go), and the distinction is worth stating
+// because it is easy to get backwards. That test seeds and asserts on Biography
+// ONLY -- it never sets, reads, or asserts a lock column. What it detects is
+// "an unreadable stored row was not refused".
+//
+// Lock erasure is a downstream CONSEQUENCE of failing open, so killing that
+// upstream cause does block this one route to it. But the property here is
+// narrower than its cause: sqliteArtistRepo.Update rewrites locked_fields,
+// locked, lock_source and locked_at from the incoming struct, and a test that
+// only watches the refusal would not notice a guard that reads the snapshot
+// correctly and then restores the WRONG columns. That is why this asserts the
+// columns themselves rather than trusting the refusal to imply them.
+//
+// The damage it guards against is not self-healing: one unguarded write erases
+// the lock set, and every LATER write is then unguarded too.
+func TestUpdate_UnreadableStoredRowDoesNotEraseLockState(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	const pinnedBio = "the operator wrote this by hand"
+	a := seedLockGuardArtist(t, svc, "Unreadable And Locked", pinnedBio, "biography")
+	if err := svc.Lock(ctx, a.ID, "user"); err != nil {
+		t.Fatalf("locking artist: %v", err)
+	}
+
+	failing := &failingGetByIDRepo{Repository: svc.artists, failFor: a.ID}
+	svc.artists = failing
+
+	// The caller zeroes the lock state, which is what an ordinary fixer-built
+	// struct looks like, and carries a clobbering value.
+	a.LockedFields = nil
+	a.Locked = false
+	a.LockSource = ""
+	a.LockedAt = nil
+	a.Biography = "an automated writer's replacement"
+
+	if err := svc.Update(ctx, a); err == nil {
+		t.Fatal("Update succeeded while the stored row was unreadable; the write must be refused rather than performed with locks disabled")
+	}
+	// Precondition: the injected failure is what stopped it.
+	if !failing.fired {
+		t.Fatal("precondition: the injected read failure never fired, so this test proves nothing")
+	}
+
+	stored, err := svc.artists.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if len(stored.LockedFields) != 1 || stored.LockedFields[0] != "biography" {
+		t.Errorf("locked_fields = %v, want [biography]; the unguarded write erased the lock, so every later write is unguarded too", stored.LockedFields)
+	}
+	if !stored.Locked || stored.LockSource != "user" {
+		t.Errorf("artist lock: locked=%v source=%q, want the stored user lock intact", stored.Locked, stored.LockSource)
+	}
+	if stored.Biography != pinnedBio {
+		t.Errorf("biography = %q, want %q; the refusal did not prevent the write", stored.Biography, pinnedBio)
+	}
+}
+
 // TestUpdate_ArtistLevelLockSurvivesAnOrdinaryWrite covers the artist-level
 // lock ALONE. TestUpdate_LockSurvivesASecondWrite locks a field as well, so a
 // guard that ran pinLockState only when the stored lock SET is non-empty passes
