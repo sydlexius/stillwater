@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -144,14 +143,12 @@ func seedRepudiatedOrigin(t *testing.T, svc *artist.Service, artistID string) {
 func lockArtist(t *testing.T, svc *artist.Service, artistID string) {
 	t.Helper()
 	ctx := context.Background()
-	a, err := svc.GetByID(ctx, artistID)
-	if err != nil {
-		t.Fatalf("loading artist to lock: %v", err)
-	}
-	lockedAt := time.Date(2024, time.January, 2, 3, 4, 5, 0, time.UTC)
-	a.Locked = true
-	a.LockedAt = &lockedAt
-	if err := svc.Update(ctx, a); err != nil {
+	// Lock through the dedicated mutator rather than by setting the flag on a
+	// struct and calling Update. Since #3037 the whole-row persist PINS lock
+	// state to the stored row's, so a struct-then-Update seed silently locks
+	// nothing -- see pinLockState in internal/artist/lockguard.go. Service.Lock
+	// issues the targeted SQL the lock toggle in the UI uses.
+	if err := svc.Lock(ctx, artistID, "user"); err != nil {
 		t.Fatalf("locking artist: %v", err)
 	}
 	reloaded, err := svc.GetByID(ctx, artistID)

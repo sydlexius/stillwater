@@ -899,13 +899,21 @@ func TestApplyProviderName_RespectsLocks(t *testing.T) {
 	t.Run("sort_name_locked_preserves_user_value", func(t *testing.T) {
 		a := addTestArtist(t, artistSvc, "Unlocked Name")
 		a.SortName = "Locked, Sort"
-		a.LockedFields = []string{"sort_name"}
+		// Persist the VALUE first, then the lock, and in that order: since
+		// #3037 the whole-row persist pins lock state to the stored row's
+		// (pinLockState, internal/artist/lockguard.go), so an Update carrying
+		// the lock set would drop it -- and a lock persisted first would make
+		// the same Update restore the OLD sort_name instead of seeding this one.
 		if err := artistSvc.Update(context.Background(), a); err != nil {
 			t.Fatalf("Update: %v", err)
 		}
-		if err := artistSvc.SetLockedFields(context.Background(), a.ID, a.LockedFields); err != nil {
+		if err := artistSvc.SetLockedFields(context.Background(), a.ID, []string{"sort_name"}); err != nil {
 			t.Fatalf("SetLockedFields: %v", err)
 		}
+		// applyProviderName reads the locks off the in-memory struct, and the
+		// Update above pinned that struct's lock set back to the stored (empty)
+		// one. Re-read it so the fixture matches what a handler would hold.
+		a.LockedFields = []string{"sort_name"}
 		meta := &provider.ArtistMetadata{Name: "Updated Name", SortName: "Provider, Overrides"}
 		failed := r.applyProviderName(context.Background(), a, meta)
 		if failed {
