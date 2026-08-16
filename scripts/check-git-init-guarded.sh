@@ -46,8 +46,18 @@ set -euo pipefail
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_ROOT"
 
-# --list prints one path per file that RUNS `git init` and exits.
-# test-git-clean-env.sh uses it to assert its own coverage, so both agree on
+# --list prints one path per file that CONTAINS an apparent `git init`
+# invocation (comments excluded) and exits.
+#
+# CONTAINS, not RUNS, and the distinction is not pedantry. This is a regex scan,
+# not a shell parser, so it also matches inside string literals -- this very
+# file is in its own --list output because line 178 echoes the phrase in an
+# error message. That over-matching is deliberate and fails CLOSED: the worst
+# case is demanding a guard on a line that never executes, which is
+# conservative. Teaching the regex to parse shell would be a large change for
+# no added safety.
+#
+# test-git-clean-env.sh uses this to assert its own coverage, so both agree on
 # what "a git init site" means from ONE definition. A second grep over there
 # drifts: its first version matched this file's own explanatory prose.
 LIST_ONLY=0
@@ -176,9 +186,10 @@ EOF
 # looked at no files at all -- a green light wired to nothing.
 if [ "$EXAMINED" -eq 0 ]; then
     echo "FAIL: examined 0 files containing \`git init\`." >&2
-    echo "      The repository has such files, so this means the scan itself is" >&2
-    echo "      broken (an empty file list, a shell builtin missing on this" >&2
-    echo "      bash, or a regex that matched nothing) -- not that all is well." >&2
+    echo "      The repository does contain such files, so this means the scan" >&2
+    echo "      itself is broken (an empty file list, a shell builtin missing on" >&2
+    echo "      this bash, or a regex that matched nothing) -- not that all is" >&2
+    echo "      well." >&2
     exit 1
 fi
 
@@ -212,4 +223,4 @@ EOF
     exit 1
 fi
 
-echo "OK: $EXAMINED files run \`git init\`; every invocation clears the inherited git environment."
+echo "OK: $EXAMINED files contain an apparent \`git init\`; every invocation clears the inherited git environment."

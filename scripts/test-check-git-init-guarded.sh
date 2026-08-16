@@ -179,32 +179,50 @@ echo ""
 
 # ---------------------------------------------------------------------------
 echo "Case B: a scan that examines nothing FAILS instead of reporting OK"
-# Shell-independent backstop for Case A: whatever makes the file list empty, the
-# check must never call that success.
-D=$(new_repo B)
-rm -f "$D/scripts/lib/git-clean-env.sh"
-# A repo whose only tracked script is the checker itself still has a `git init`
-# site, so force the empty case by pointing it at a repo with none.
-D2="$WORK/empty"
-mkdir -p "$D2/scripts"
+# Shell-independent backstop for Case A, and on CI the ONLY protection for the
+# silent-pass class: Case A skips on Linux (no bash 3.x), so if this case is
+# wrong the class is unguarded there.
+#
+# THE FIXTURE MUST PUT THE CHECKER AT <repo>/scripts/, not at <repo>/. The
+# checker resolves REPO_ROOT as `dirname $0`/.., so a copy at the repo root
+# makes REPO_ROOT the repo's PARENT -- outside any git repository. Then
+# `git ls-files` FAILS, the file list is empty for that reason, and this case
+# passed on a git error while claiming to exercise the empty-scan path. It even
+# printed `fatal: not a git repository` and still reported PASS.
+#
+# Worth naming because mutation testing cannot catch this shape: mutate the
+# production code and the test still fails, because it was already failing for
+# an unrelated reason that produces the same observable. The assertion was
+# right and the FIXTURE was wrong.
+#
+# So this case now asserts the mechanism, not just the verdict: the run must NOT
+# report a git error, and must reach the real "examined 0 files" path.
+D2=$(new_repo B)
+# The checker must live at <repo>/scripts/ so REPO_ROOT resolves to the FIXTURE
+# repo. It is left UNTRACKED, and its library removed, so `git ls-files` -- which
+# is tracked-only -- legitimately returns no file containing `git init`. That
+# gives a genuine zero-site scan INSIDE a valid repository, and incidentally
+# exercises the checker's tracked-only rule.
+rm -f "$D2/scripts/lib/git-clean-env.sh"
 printf '#!/usr/bin/env bash\necho hi\n' >"$D2/scripts/nothing.sh"
-cp "$CHECK" "$D2/check-copy.sh"
-git init -q "$D2"
-git -C "$D2" config user.email t@e
-git -C "$D2" config user.name T
-git -C "$D2" add -A >/dev/null 2>&1
+git -C "$D2" add scripts/nothing.sh >/dev/null 2>&1
 set +e
-OUT=$(cd "$D2" && bash "$D2/check-copy.sh" 2>&1)
+OUT=$(cd "$D2" && bash "$D2/scripts/check-git-init-guarded.sh" 2>&1)
 RC=$?
 set -e
-if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'examined 0 files'; then
-    ok "a zero-file scan exits non-zero and says so"
-else
+if printf '%s' "$OUT" | grep -qi 'not a git repository'; then
+    bad "the fixture ran OUTSIDE a git repository -- this case proves nothing" \
+        "REPO_ROOT resolved outside the fixture repo; the empty file list is a" \
+        "git failure, not the empty scan this case claims to exercise" "$OUT"
+elif [ "$RC" -eq 0 ]; then
     bad "a zero-file scan reported success (exit $RC)" "$OUT"
+elif printf '%s' "$OUT" | grep -q 'examined 0 files'; then
+    ok "a genuine zero-file scan (inside a repo) exits non-zero and says so"
+else
+    bad "the scan failed, but not via the examined-0 backstop (exit $RC)" "$OUT"
 fi
 echo ""
 
-# ---------------------------------------------------------------------------
 echo "Case C: a correctly guarded script PASSES (no false positive)"
 D=$(new_repo C)
 cat >"$D/scripts/fixture.sh" <<'EOF'
@@ -342,7 +360,7 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "Case I: --list is non-empty and excludes comment-only mentions"
+echo "Case I: --list is non-empty and excludes commented-out mentions"
 set +e
 LIST=$(bash "$CHECK" --list 2>&1)
 LRC=$?
@@ -354,7 +372,7 @@ elif [ -z "$LIST" ]; then
         "test-git-clean-env.sh derives its coverage from this, so an empty" \
         "list would silently make that suite's coverage case vacuous"
 else
-    ok "--list returns $(printf '%s\n' "$LIST" | grep -c .) call sites"
+    ok "--list returns $(printf '%s\n' "$LIST" | grep -c .) files containing an apparent \`git init\`"
 fi
 echo ""
 
