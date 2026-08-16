@@ -34,6 +34,13 @@
 # Prefer git_clean_env_unset: one line, and it cannot be forgotten at the next
 # call site. The array form is for a script that also operates on the invoking
 # repository.
+#
+# THE TWO ARE NOT INTERCHANGEABLE. git_clean_env_unset changes the CURRENT
+# shell's environment, so every git call after it is clean. git_clean_env_array
+# changes NOTHING -- it only populates GIT_CLEAN_ENV, and the protection exists
+# only on lines that actually carry the "${GIT_CLEAN_ENV[@]}" prefix. Calling
+# _array and then invoking git bare is exactly as unguarded as calling neither.
+# scripts/check-git-init-guarded.sh enforces that distinction.
 
 # _git_clean_env_names prints the name of every GIT_* variable to strip.
 _git_clean_env_names() {

@@ -133,9 +133,21 @@ while IFS= read -r f; do
     # Earliest line at which the environment becomes clean for the rest of the
     # file. The library guard counts only if the file also SOURCES the library
     # (a bare call would be an undefined function).
+    #
+    # ONLY git_clean_env_unset SETS A FILE-LEVEL GUARD. The two library
+    # functions have OPPOSITE semantics and must not be flattened into one
+    # alternation: _unset strips the variables from the CURRENT shell, so
+    # everything below it is clean, while _array only POPULATES the
+    # GIT_CLEAN_ENV array and changes the environment not at all. Accepting
+    # _array here blessed every later `git init` in the file even with no
+    # prefix on it -- the checker itself failing OPEN, which is the exact
+    # failure mode it exists to prevent.
+    #
+    # An invocation after _array is guarded only when the LINE carries the
+    # "${GIT_CLEAN_ENV[@]}" prefix, which the line-level rule below handles.
     guard_line=0
     if grep -q 'lib/git-clean-env\.sh' "$f"; then
-        guard_line=$(first_line_matching 'git_clean_env_(unset|array)[[:space:]]*$' "$f")
+        guard_line=$(first_line_matching 'git_clean_env_unset[[:space:]]*$' "$f")
         [ -n "$guard_line" ] || guard_line=0
     fi
     unset_line=$(first_unset_of_git_dir "$f")

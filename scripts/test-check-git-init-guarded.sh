@@ -258,6 +258,38 @@ expect "an explicit \`env -u GIT_DIR\` prefix is accepted" "$D" 0
 echo ""
 
 # ---------------------------------------------------------------------------
+echo "Case K: git_clean_env_array does NOT confer a file-level guard"
+# The two library functions have OPPOSITE semantics: _unset strips the variables
+# from the current shell (everything below it is clean), while _array only
+# POPULATES the GIT_CLEAN_ENV array and changes the environment not at all.
+# An alternation matching both flattened that distinction, so a BARE `git init`
+# anywhere after an _array call was blessed as guarded -- the checker itself
+# failing OPEN, which is precisely what it exists to prevent.
+#
+# K1 is the finding; K2 pins the legitimate use so the fix cannot be "refuse
+# _array entirely". check-commit-signing.sh depends on K2's shape: it runs
+# against the caller's real repository and must clean only its own probe, so it
+# has no file-level guard at all and passes solely on the line prefix.
+D=$(new_repo K1)
+cat >"$D/scripts/fixture.sh" <<'EOF'
+#!/usr/bin/env bash
+. "$R/scripts/lib/git-clean-env.sh"
+git_clean_env_array
+git init -q "$dir"
+EOF
+expect "a BARE \`git init\` after git_clean_env_array is refused" "$D" 1
+
+D=$(new_repo K2)
+cat >"$D/scripts/fixture.sh" <<'EOF'
+#!/usr/bin/env bash
+. "$R/scripts/lib/git-clean-env.sh"
+git_clean_env_array
+"${GIT_CLEAN_ENV[@]}" git init -q "$dir"
+EOF
+expect "git_clean_env_array WITH the line prefix is accepted" "$D" 0
+echo ""
+
+# ---------------------------------------------------------------------------
 echo "Case D: a guard BELOW the invocation is refused (execution order)"
 D=$(new_repo D)
 cat >"$D/scripts/fixture.sh" <<'EOF'
