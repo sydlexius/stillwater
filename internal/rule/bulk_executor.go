@@ -201,6 +201,12 @@ func (e *BulkExecutor) getHistoryService() *artist.HistoryService {
 	return e.historyService
 }
 
+// bulkMBIDSelfHealSource attributes the MusicBrainz ID the bulk fetch-images job
+// adopts on the artist's behalf. Shared by the explicit history record below and
+// by the artist write that adopts the ID (#3037), so both rows name the same
+// writer rather than one of them falling through to "manual".
+const bulkMBIDSelfHealSource = "rule:bulk_fetch_images_mbid"
+
 // recordBulkMBIDHistory records the #2845 audit trail for an MBID the bulk
 // fetch-images job self-healed. Best-effort and never fails the underlying
 // operation: mirrors Pipeline.recordRuleFixHistory's contract in fixer.go,
@@ -214,8 +220,7 @@ func (e *BulkExecutor) recordBulkMBIDHistory(ctx context.Context, artistID, newV
 	if h == nil {
 		return
 	}
-	const source = "rule:bulk_fetch_images_mbid"
-	if err := h.Record(ctx, artistID, "musicbrainz_id", "", newValue, source); err != nil {
+	if err := h.Record(ctx, artistID, "musicbrainz_id", "", newValue, bulkMBIDSelfHealSource); err != nil {
 		e.logger.Warn("recording bulk MBID self-heal history",
 			"artist_id", artistID, "error", err)
 	}
@@ -454,7 +459,13 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 		return BulkItemSkipped, "no new metadata to apply"
 	}
 
-	if err := e.artistService.Update(ctx, a); err != nil {
+	// #3037: attribute the metadata_changes rows this write produces to the
+	// bulk job, not to the "manual" default. This is one of the write paths
+	// that reliably produces such rows today, because ApplyMetadata mutates the
+	// text fields artist.trackableFields covers -- alongside the fixer run
+	// paths, whose fixers mutate biography (fixers.go), origin (fixers.go) and
+	// name/sort_name (fixers_language.go), all of which are trackable too.
+	if err := e.artistService.Update(withRuleHistorySource(ctx, ruleHistorySourceBulkFetchMetadata), a); err != nil {
 		return e.itemFailure(a, BulkTypeFetchMetadata, "saving fetched metadata failed; retry later", err)
 	}
 
@@ -512,7 +523,9 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		return BulkItemSkipped, "no suitable images found"
 	}
 
-	if err := e.artistService.Update(ctx, a); err != nil {
+	// #3037: attribute this write to the bulk fetch-images job. Inert while
+	// only image slots change (see history_source.go), tagged anyway.
+	if err := e.artistService.Update(withRuleHistorySource(ctx, ruleHistorySourceBulkFetchImages), a); err != nil {
 		return e.itemFailure(a, BulkTypeFetchImages, "saving fetched images failed; retry later", err)
 	}
 
@@ -605,7 +618,15 @@ func (e *BulkExecutor) selfHealMBID(ctx context.Context, a *artist.Artist, mode 
 		a.MetadataSources = make(map[string]string)
 	}
 	a.MetadataSources[artist.SourceKeyMusicBrainzID] = artist.SourceMachinePicked
-	if err := e.artistService.Update(ctx, a); err != nil {
+	// #3037: tag this write with the same source the explicit
+	// recordBulkMBIDHistory call below uses. TODAY this write records no
+	// history row of its own -- it changes musicbrainz_id and MetadataSources,
+	// neither of which is in artist.trackableFields, so Service.update diffs
+	// nothing -- and the tag is inert. It is set anyway because the inertness
+	// is a property of that field list, not of this call site: the day
+	// musicbrainz_id becomes trackable, an untagged write here would start
+	// recording an unattributed row, which is the exact defect #3037 is about.
+	if err := e.artistService.Update(withRuleHistorySource(ctx, bulkMBIDSelfHealSource), a); err != nil {
 		a.MusicBrainzID = prevMBID
 		if hadSource {
 			a.MetadataSources[artist.SourceKeyMusicBrainzID] = prevSource
