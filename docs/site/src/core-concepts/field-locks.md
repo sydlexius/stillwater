@@ -52,11 +52,11 @@ Field locks coexist with the artist-level lock. Unlocking the artist does not cl
 
 **Where to find the lock controls:** open an artist from the **Artists** sidebar item; lock icons sit next to the Biography heading, each tag-group label (Genres / Styles / Moods), and every field in the Details panel. When an artist has anything pinned, a **Locked fields** card lists each one as a chip you can unlock in a click.
 
-Locking a field is a read-mode action: every field carries a padlock next to its value (gray and open when unlocked), and clicking it toggles the lock. A locked field's padlock turns **amber and closed**, and its inline editing controls stay hidden even in edit mode. Hover the demo below to see the same field switch from unlocked to locked:
+Locking a field is a read-mode action: every field carries a padlock next to its value (gray and open when unlocked), and clicking it toggles the lock. A locked field's padlock turns **amber and closed**, and the read view shows the value without its inline edit control. A field lock does not disable the editor in edit mode: it stops automated writes from the paths listed above, not your own deliberate edit. Hover the demo below to see the same field switch from unlocked to locked:
 
 <div class="sw-hover-swap" tabindex="0" markdown="span">
 ![Name field unlocked: gray open padlock next to the value 'Johann Sebastian Bach'](../assets/screenshots/artist-field-name-unlocked.png)
-![Name field locked: amber closed padlock; 'Johann Sebastian Bach' is still visible but no longer editable](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
+![Name field locked: amber closed padlock; 'Johann Sebastian Bach' is still visible, with no inline edit control in the read view](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
 <span class="sw-hover-hint">Hover or focus to lock</span>
 </div>
 
