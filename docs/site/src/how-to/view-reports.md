@@ -71,6 +71,8 @@ Restore is always two steps, and the first one never writes:
 
 Two refusals are specific to the value being put back. The first is a value the field will not accept, such as a name whose previous value was nothing but spaces, dashes, or underscores; restoring it would leave the artist with no usable name. The second is a name another artist now holds, since restoring it would recreate the duplicate that rename removed.
 
+The name check runs while you are still deciding, so a row that cannot land is marked refused in the preview rather than at the moment you confirm. It is checked again as the value is written, because another artist can take that name in the gap, and a check that cannot complete refuses the row instead of letting it through.
+
 That means a confirmed restore can come back reporting fewer values put back than the preview offered, including none at all. Stillwater tells you which happened:
 
 - All rows restored - a success message with the count.

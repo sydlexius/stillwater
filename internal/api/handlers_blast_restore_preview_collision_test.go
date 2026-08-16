@@ -99,6 +99,16 @@ func TestBlastRestorePreview_RefusesANameRestoreThatWouldCollide(t *testing.T) {
 	if after.Name != "Marlowe Ensemble (Remastered)" {
 		t.Errorf("name = %q after a preview, want it untouched", after.Name)
 	}
+	// The ELIGIBLE row too, not only the refused one. A preview that wrote the
+	// rows it planned would leave the refused artist untouched and still pass
+	// the assertion above, because the refusal is what kept it clean.
+	freeAfter, err := artistSvc.GetByID(ctx, free.ID)
+	if err != nil {
+		t.Fatalf("GetByID control: %v", err)
+	}
+	if freeAfter.Name != "Ashgrove Winds (Live)" {
+		t.Errorf("control name = %q after a preview, want it untouched", freeAfter.Name)
+	}
 }
 
 // A collision check that could not RUN must refuse, not fall through. "The

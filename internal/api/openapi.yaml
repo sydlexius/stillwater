@@ -12065,7 +12065,9 @@ paths:
         A name change whose previous value is a name another artist currently
         holds is refused with reason name_collision. The preview reports it, so
         a plan does not offer a row that cannot land, and the write re-checks it
-        inside its own transaction.
+        inside its own transaction. A collision check that cannot complete
+        refuses the row rather than treating it as restorable, so a lookup
+        failure never reads as permission to write.
 
 
         Passing every check above is still not a promise that the write lands.
