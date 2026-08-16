@@ -162,6 +162,17 @@ func enforceFieldLocks(ctx context.Context, stored, incoming *Artist) []string {
 	pinLockState(stored, incoming)
 
 	// The stored row is the ONLY source of the lock set. See the file comment.
+	//
+	// reportUnenforceableLocks is deliberately NOT called here, unlike on the
+	// merge path. It flags tokens absent from lockableFieldNames, but every
+	// token this chokepoint declines to guard -- the six provider IDs and
+	// members -- IS in that set and IS enforced elsewhere, so calling it would
+	// report nothing about them while making the site look as though unenforced
+	// locks were handled. A genuinely unknown token is worth reporting, but not
+	// once per whole-row persist: this runs on every rule pass, so a permanently
+	// misspelled token would log forever. The merge path already reports it on
+	// refresh, bulk fetch and NFO import. Validating at the lock-SETTING API is
+	// the fix that reports once; it is not this unit's.
 	locked := buildLockedSet(stored.LockedFields)
 	if len(locked) == 0 {
 		return nil
