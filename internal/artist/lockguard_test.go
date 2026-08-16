@@ -990,8 +990,50 @@ func TestUpdateProviderField_OperatorGrantBeatsTheLock(t *testing.T) {
 	if after.DiscogsID != "dg-operator-typed" {
 		t.Errorf("discogs_id = %q, want the operator's value; refusing an operator's own edit is worse than the bug", after.DiscogsID)
 	}
-	// The grant is FIELD-SCOPED: it must not unlock a different pinned field.
 	if len(after.LockedFields) != 1 || after.LockedFields[0] != "discogs_id" {
 		t.Errorf("locked_fields = %v, want [discogs_id]; the grant must not clear the lock itself", after.LockedFields)
+	}
+}
+
+// TestLockOverride_IsScopedToTheNamedField proves the grant is a per-field
+// affordance rather than a blanket bypass. Without this, `granted == name`
+// could degrade to "any grant unlocks everything" and every test above would
+// still pass -- the operator editing one pinned ID would silently license an
+// automated write to a different pinned field in the same persist.
+func TestLockOverride_IsScopedToTheNamedField(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Scoped Grant", DiscogsID: "dg-stored", SpotifyID: "sp-stored"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"discogs_id", "spotify_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+	stored, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if stored.DiscogsID != "dg-stored" || stored.SpotifyID != "sp-stored" {
+		t.Fatalf("precondition: discogs=%q spotify=%q, want both seeded", stored.DiscogsID, stored.SpotifyID)
+	}
+
+	// One grant, for discogs_id only, on a write that changes BOTH pinned IDs.
+	granted := ContextWithLockOverride(ctx, "discogs_id")
+	stored.DiscogsID = "dg-operator-typed"
+	stored.SpotifyID = "sp-sneaked-in"
+	if err := svc.Update(granted, stored); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.DiscogsID != "dg-operator-typed" {
+		t.Errorf("discogs_id = %q, want the granted field to land", after.DiscogsID)
+	}
+	if after.SpotifyID != "sp-stored" {
+		t.Errorf("spotify_id = %q, want %q; a grant for one field must not unlock another", after.SpotifyID, "sp-stored")
 	}
 }
