@@ -1,76 +1,88 @@
 ---
-description: How locks protect artist metadata from being overwritten by automated refreshes, providers, and connected platforms.
+description: How locks protect artist metadata from being overwritten by automated refreshes, providers, and connected platforms, and which paths each lock layer covers today.
 ---
 
-<!-- code: internal/artist/model.go (Locked, LockSource, LockedAt, LockedFields), internal/artist/service.go (Lock, Unlock, SetLockedFields, AddLockedField, RemoveLockedField, validLockSources), internal/artist/merge.go (LockedFields handling per merge strategy, FilterDatesByArtistType bypass for locked dates), internal/library/model.go (NFOLockData, #1264) -->
-<!-- displaced developer detail: case-insensitive lock comparison, buildLockedSet normalization (drops blanks/whitespace), per-merge-strategy enforcement uniformity, FilterDatesByArtistType bypass mechanics. Belongs in godoc on internal/artist/merge.go. -->
+<!-- code: internal/artist/model.go (Locked, LockSource, LockedAt, LockedFields), internal/artist/service.go (Lock, Unlock, SetLockedFields, AddLockedField, RemoveLockedField, IsFieldLocked, validLockSources, RenameDirectory ErrRenameLocked), internal/artist/merge.go (ApplyMetadata buildLockedSet/isLocked per merge strategy, applyTypeConsistency lock restore), internal/api/handlers_refresh.go (a.Locked gate, applyProviderName IsFieldLocked, applyMemberRefresh), internal/api/handlers_discography.go (a.Locked gate), internal/api/handlers_discogs.go + handlers_audiodb.go (IsFieldLocked 409), internal/scanner/scanner.go (NFOImport merge, initial_import lock source), internal/connection/locksync.go (platform lock source), internal/rule/fixer.go + fixers*.go (a.Locked only; no LockedFields check), internal/library/model.go (NFOLockData, #1264) -->
+<!-- displaced developer detail: case-insensitive lock comparison, buildLockedSet normalization (drops blanks/whitespace), per-merge-strategy enforcement uniformity, applyTypeConsistency restore mechanics. Belongs in godoc on internal/artist/merge.go. -->
+<!-- ACCURACY NOTE (#3037): per-field locks are NOT enforced at the artist persist chokepoint, and the rule engine's metadata fixers consult only the whole-artist lock. The "rule fixers respect a field lock" claim was FALSE and has been removed. Do not reinstate it until the chokepoint guard actually ships. -->
 
 # Field locks
 
-A **lock** is Stillwater's way of saying "don't touch this." It keeps your manual edits from being overwritten the next time a provider refresh runs, a rule fixer fires, or a connected platform pushes its own metadata.
+A **lock** is Stillwater's way of saying "don't touch this." It keeps your manual edits from being overwritten the next time a provider refresh runs or a connected platform pushes its own metadata.
 
-There are two layers of locks, plus a library-wide switch. Each protects against different overwrite paths.
+There are two layers of locks, plus a library-wide switch. They are enforced in different places and cover different overwrite paths, so it is worth knowing which one to reach for.
 
 ## Layer 1: artist lock (the big switch)
 
 The simplest lock: an entire artist is locked or not. When an artist is locked:
 
 - **Provider refreshes** skip the artist entirely -- the per-artist **Refresh** button, a bulk refresh sweep, and the Discography tab's **Fetch discography**.
-- **Rule fixers** see the lock and decline to apply changes.
+- **Rules** skip the artist. A locked artist is not evaluated, and a fix requested against one is declined with "artist is locked."
+- **Renaming the artist's folder** on disk is refused.
 - **The NFO** Stillwater writes for the artist asks Kodi/Emby/Jellyfin not to overwrite it during their own metadata scans (via `<lockdata>true</lockdata>`).
 
-The lock has two sources:
+The lock records where it came from, shown next to the lock chip: **user** (you clicked the toggle, or a bulk action locked the artist), **initial import** (the artist was first discovered with an NFO already carrying the lockdata flag, and only that first discovery sets it, so a rescan does not undo an unlock you made), or **platform** (the scheduled lock sync pulled a change from a connected Emby or Jellyfin server). All three behave identically once set.
 
-- **User** -- you clicked the lock toggle. Stays locked until you unlock it.
-- **Imported** -- the lock was inferred from an existing NFO file's lockdata flag. Treated identically by Stillwater; the source is just metadata for "where did this lock come from."
-
-Manual edits remain allowed when locked -- the lock blocks *automated* overwrites, not your own keyboard.
+Manual edits remain allowed when locked. The artist lock blocks *automated* changes, not your own keyboard.
 
 ## Layer 2: field locks (per-field protection)
 
-Sometimes you want most of an artist's metadata to refresh from providers, but two or three fields you've curated by hand should stay put. That's a per-field lock.
+Sometimes you want most of an artist's metadata to refresh from providers, but two or three fields you have curated by hand should stay put. That is a per-field lock.
 
-You pin a field (biography, sort name, born year, ...) and Stillwater's refresh, fill-empty, and NFO-import paths all skip that field. Pinned date fields also survive the post-merge "this date doesn't apply to this artist type" cleanup -- if you've pinned a born year on a band, it stays.
+You pin a field (biography, sort name, born year, and so on), and the paths listed below leave that field alone. Pinned date and gender fields also survive the post-merge "this value does not apply to this artist type" cleanup, so a born year you pinned on a band stays.
 
-This is the mechanism to reach for whenever you have corrected a value by hand. A refresh replaces most fields with whatever the providers return, and re-identifying an artist runs a refresh against the new identity. An unlocked correction therefore lasts only until the next one of either.
+**A field lock is honored by:**
 
-The [refresh how-to](../how-to/refresh-metadata.md#which-values-a-refresh-replaces) lists which fields are replaced outright, which can be cleared, and which a refresh never touches.
+- **Provider refreshes**, including the Name and Sort name written by a language-preference refresh, and the band-member list.
+- **Bulk fetch metadata**, which fills empty fields. A pinned field is left empty rather than filled.
+- **NFO import during a library scan.**
+- **Matching an artist to a Discogs or TheAudioDB entry by name.** If that provider's ID field is pinned, the match is refused and Stillwater tells you to unlock the field first.
 
-Field locks coexist with the artist-level lock. Unlocking the artist doesn't clear field locks; they're independent layers.
+**A field lock is not honored by the rule engine.** This is the important gap, and the one most likely to surprise you. Rules gate on the whole-artist lock only, so on an artist that is *not* locked, an auto-mode rule can still write a field you pinned. The rules that write artist metadata directly are the ones that fill an empty biography, replace a placeholder biography, fill a missing origin, promote a localized name and sort name, adopt a MusicBrainz ID, and backfill missing Discogs, Deezer, and Spotify IDs. Pinning any of those fields does not stop those rules.
 
-**Where to find the lock controls:** open an artist from the **Artists** sidebar item; lock icons sit next to the Biography heading, each tag-group label (Genres / Styles / Moods), and every field in the Details panel.
+So if you have curated a value one of those rules also writes, the reliable protection today is the **artist lock**, not the field lock: lock the artist, or leave that rule in manual mode so nothing fires without your click.
 
-Locking a field is a read-mode action: every field carries a padlock next to its value (gray and open when unlocked), and clicking it toggles the lock. A locked field's padlock turns **amber and closed**, and its inline editing controls stay hidden even in edit mode, so the value can't be changed by accident. Hover the demo below to see the same field switch from unlocked to locked:
+Your own edits are not blocked by a field lock either. Pinning a field hides its inline edit controls so you do not change it by accident, but an explicit edit or an undo from the history view still writes it. That is deliberate, since an undo is how you recover a value an automated write already changed.
+
+Field locks are still the mechanism to reach for whenever you have corrected a value a refresh would otherwise replace. A refresh rewrites most fields with whatever the providers return, and re-identifying an artist runs a refresh against the new identity, so an unpinned correction lasts only until the next one of either.
+
+The [refresh how-to](../how-to/refresh-metadata.md#which-values-a-refresh-replaces) lists which fields a refresh replaces outright, which it can clear, and which it never touches.
+
+Field locks coexist with the artist-level lock. Unlocking the artist does not clear field locks; they are independent layers.
+
+**Where to find the lock controls:** open an artist from the **Artists** sidebar item; lock icons sit next to the Biography heading, each tag-group label (Genres / Styles / Moods), and every field in the Details panel. When an artist has anything pinned, a **Locked fields** card lists each one as a chip you can unlock in a click.
+
+Locking a field is a read-mode action: every field carries a padlock next to its value (gray and open when unlocked), and clicking it toggles the lock. A locked field's padlock turns **amber and closed**, and the read view shows the value without its inline edit control. A field lock does not disable the editor in edit mode: it stops automated writes from the paths listed above, not your own deliberate edit. Hover the demo below to see the same field switch from unlocked to locked:
 
 <div class="sw-hover-swap" tabindex="0" markdown="span">
 ![Name field unlocked: gray open padlock next to the value 'Johann Sebastian Bach'](../assets/screenshots/artist-field-name-unlocked.png)
-![Name field locked: amber closed padlock; 'Johann Sebastian Bach' is still visible but no longer editable](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
+![Name field locked: amber closed padlock; 'Johann Sebastian Bach' is still visible, with no inline edit control in the read view](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
 <span class="sw-hover-hint">Hover or focus to lock</span>
 </div>
 
-For context, here's the whole Details section showing where the lock controls live -- next to the Biography header, each Tags group, and every field row:
+For context, here is the whole Details section showing where the lock controls live -- next to the Biography header, each Tags group, and every field row:
 
 ![Artist Details section: an Identity list (Name / Sort Name / Type / Disambiguation / Gender / Origin / Formed / Born / Disbanded / Died / Years Active), a Tags block with per-group locks on Genres / Styles / Moods, and a Biography column with a lock icon in its header -- every row and group carries its own open-lock padlock in read mode](../assets/screenshots/artist-overview-fields.jpg)
 
 ## Library-wide: NFO lockdata switch
 
-Each library has an opt-in switch: when on, **every** NFO that library writes asks platforms not to overwrite it, regardless of per-artist lock state. The library-level switch is the right tool when you want the whole library treated as authoritative -- "Stillwater writes the NFOs; nothing else should rewrite them." The per-artist lock is the right tool when most of the library can be platform-managed but a few records are special.
+Each library has an opt-in switch: when on, every NFO that library writes asks platforms not to overwrite it, regardless of per-artist lock state. The library-level switch is the right tool when you want the whole library treated as authoritative -- "Stillwater writes the NFOs; nothing else should rewrite them." The per-artist lock is the right tool when most of the library can be platform-managed but a few records are special.
 
 ## What about platforms pushing back?
 
-Stillwater's locks protect against Stillwater itself making automated changes. The NFO lockdata element extends that protection to Kodi/Emby/Jellyfin -- but only when those platforms honor it (Kodi does; Emby and Jellyfin do for most fields).
+Stillwater's locks govern changes Stillwater itself makes. The NFO lockdata element extends that request to Kodi/Emby/Jellyfin, but only as far as those platforms honor it (Kodi does; Emby and Jellyfin do for most fields).
 
-For the cases where a platform writes anyway, Stillwater has a separate **conflict gate** that watches for incoming writes from connected platforms and pauses Stillwater's own writes when external activity is detected -- preventing a tug-of-war where both sides keep overwriting each other. The "image / NFO writes paused" banner in the UI is the gate in action.
+For the cases where a platform writes anyway, Stillwater has a separate **conflict gate** that watches for incoming writes from connected platforms and pauses Stillwater's own writes when external activity is detected, preventing a tug-of-war where both sides keep overwriting each other. The "image / NFO writes paused" banner in the UI is the gate in action.
 
 The two mechanisms are complementary:
 
-- **Locks** say "this should never change automatically." Set ahead of time, expressing user intent.
-- **The conflict gate** says "right now, something else is writing -- pause until it stops." Reactive, transient, and applies regardless of lock state.
+- **Locks** say "do not change this automatically." Set ahead of time, expressing your intent.
+- **The conflict gate** says "right now, something else is writing, so pause until it stops." Reactive, transient, and applied regardless of lock state.
 
 ## What you don't need to think about
 
-- **Where the lock is enforced.** Every code path that auto-modifies an artist consults the locks. You set them; the rest of the system honors them.
-- **NFO output details.** Locking an artist gets the lockdata flag into the NFO automatically.
-- **Conflict-gate coordination with locks.** Independent. A locked artist still benefits from gate pauses; an unlocked artist still gets the same protection from the gate.
+- **Getting the lockdata flag into the NFO.** Locking an artist, or turning on the library-wide switch, does that for you.
+- **Conflict-gate coordination with locks.** The two are independent. A locked artist still benefits from gate pauses; an unlocked artist gets the same protection from the gate.
+- **Unlocking to make your own correction.** Pinning a field hides its inline controls, but an explicit edit or an undo still goes through.
 
-What you do think about: which artists deserve a lock, which fields you want pinned even on unlocked artists, and whether the per-library lockdata switch is the right shape for your collection. The [edit-artist how-to](../how-to/edit-artist.md) walks through setting locks in the UI.
+What you do think about: which artists deserve the artist lock, which fields are worth pinning on artists you leave unlocked, whether any rule that writes those fields should be left in manual mode, and whether the per-library lockdata switch is the right shape for your collection. The [edit-artist how-to](../how-to/edit-artist.md) walks through setting locks in the UI.
