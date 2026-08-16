@@ -32,9 +32,13 @@
 //  1. The change id resolves to a real metadata_changes row. Nothing is
 //     matched fuzzily -- an id that does not resolve exactly is refused, never
 //     guessed at.
-//  2. validateRevertable passes: the field is history-tracked, and the row is
-//     not itself a revert. Both checks are the single-revert endpoint's, reused
-//     rather than reimplemented.
+//  2. validateRevertable passes: the field is history-tracked, the row is not
+//     itself a revert, and the recorded old value is one the field accepts.
+//     All three checks are the single-revert endpoint's, reused rather than
+//     reimplemented. The third is dormant on this base (no history-tracked
+//     field carries a validation rule) and, when it does fire, planOneBlastRestore
+//     reports it under the existing not_revertible token rather than a reason
+//     of its own.
 //  3. The row is STILL the row the blast-radius report would list for its
 //     (artist, field) pair -- verified by re-running the report's own query,
 //     narrowed to that artist and field, and requiring the top row's id to
@@ -228,10 +232,12 @@ type blastRestoreItem struct {
 	// writer left behind, read live rather than taken from the change row, so
 	// a preview reflects the database as it is at preview time.
 	CurrentValue string `json:"current_value"`
-	// RestoreValue is the operator's value that would be put back. An empty
-	// string is a legitimate restore target only in the sense that
-	// validateRevertable already rejects it as damage -- the report never
-	// lists a row whose old_value is empty.
+	// RestoreValue is the operator's value that would be put back. It is never
+	// empty in practice, but the mechanism is the REPORT's query rather than
+	// validateRevertable, which an earlier version of this comment credited:
+	// the blast-radius query carries an `old_value != ''` predicate
+	// (internal/artist/sqlite_history.go), so no row whose old value is empty
+	// is ever listed to be selected in the first place.
 	RestoreValue string `json:"restore_value"`
 	// Status is one of the blastRestore* status constants.
 	Status string `json:"restore_status"`
