@@ -13,6 +13,10 @@
 //   2. The destructive restore confirm dialog (window.showConfirmDialog) --
 //      the highest-risk keyboard surface on this pane.
 //   3. Keyboard reachability + VISIBLE focus indicator for the pager.
+//   4. Focus survival when the bulk action bar hides.
+//   5. The per-row REFUSAL REASON: that the reason the server returned reaches
+//      the operator on the row it refused, and that every token renders prose
+//      rather than a blank or a raw key.
 //
 // SCOPED TO WHAT THIS INCREMENT SHIPS. The pane's filter controls arrive with
 // the filters increment, so their coverage lives on that side. Nothing here is
@@ -37,8 +41,16 @@
 // DESTRUCTIVE-FLOW POLICY: this spec never CONFIRMS a restore. The dialog is
 // always dismissed with Escape or Cancel. The only network call the restore
 // flow makes before confirmation is the commit:false preview, which the
-// handler treats as a dry run and which writes nothing. Nothing here mutates
-// the UAT database.
+// handler treats as a dry run and which writes nothing. No value is ever put
+// BACK by this file.
+//
+// ONE EXCEPTION, stated rather than buried: the refusal-reason test writes a
+// NEW value into one field of one fixture artist, through the ordinary edit
+// endpoint, because "something changed this field after the report loaded" is
+// the condition it needs and there is no way to produce it without a write.
+// That is a forward edit, not a restore, and it targets only the seeded
+// fixture artists. The policy above is about never COMMITTING a restore, and
+// it is intact.
 
 import { test, expect } from 'playwright/test';
 
@@ -760,6 +772,16 @@ test('a refused row shows WHY it was refused, from the live restore chain', asyn
   // This mutates one field of one fixture artist in the ephemeral a11y
   // database. It is not a restore: nothing is written BACK, and the
   // destructive-flow policy (never confirm a restore) is untouched.
+  //
+  // The value must be UNIQUE PER RUN, not a fixed literal. Service.UpdateField
+  // skips the write entirely when the normalized new value equals the current
+  // one, so a fixed string is a no-op the SECOND time this test runs against
+  // the same server -- and this file runs twice, once per browser project.
+  // Measured: with a literal, firefox-a11y passed and chromium-a11y then wrote
+  // the value firefox had already written, changed nothing, and got a
+  // "planned" row back; the refusal never happened and the test failed on a
+  // hidden element rather than on the thing it tests.
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const patched = await page.evaluate(async (t) => {
     const csrf = (document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/) || [])[1] || '';
     const baseEl = document.querySelector('meta[name="htmx-base-path"]');
@@ -767,15 +789,39 @@ test('a refused row shows WHY it was refused, from the live restore chain', asyn
     const resp = await fetch(`${base}/api/v1/artists/${t.artistId}/fields/${t.field}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-      body: JSON.stringify({ value: 'Edited after the report loaded, by the a11y fixture.' }),
+      body: JSON.stringify({ value: `Edited after the report loaded, by the a11y fixture ${t.stamp}.` }),
     });
     return { ok: resp.ok, status: resp.status, body: resp.ok ? '' : await resp.text() };
-  }, target);
+  }, { ...target, stamp });
   expect(
     patched.ok,
     `could not make the row stale (PATCH ${target.field} -> ${patched.status} ${patched.body}); `
     + 'without a stale row the refusal path is never entered and this test proves nothing',
   ).toBe(true);
+
+  // PRECONDITION ASSERTED, NOT ASSUMED. A 200 from the PATCH says the request
+  // was accepted, NOT that the row is now stale -- a no-op write returns 200
+  // and changes nothing. Ask the server directly, so a fixture that failed to
+  // bite fails HERE, naming the reason, instead of surfacing 15 seconds later
+  // as an element that never appeared.
+  const precondition = await page.evaluate(async (id) => {
+    const csrf = (document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/) || [])[1] || '';
+    const baseEl = document.querySelector('meta[name="htmx-base-path"]');
+    const base = baseEl ? baseEl.content : '';
+    const resp = await fetch(base + '/api/v1/reports/blast-radius/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ change_ids: [id], commit: false }),
+    });
+    if (!resp.ok) return { status: resp.status };
+    const plan = await resp.json();
+    const item = (plan.items || [])[0] || {};
+    return { status: resp.status, restoreStatus: item.restore_status, reason: item.refuse_reason };
+  }, target.id);
+  expect(
+    precondition,
+    'the row is not refused after the staleness write, so the refusal path is never entered',
+  ).toMatchObject({ restoreStatus: 'refused', reason: 'no_longer_current' });
 
   // The operator's own affordance. The page still shows the row as it was, so
   // this is precisely the stale-tab case the refusal exists for.

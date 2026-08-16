@@ -1779,7 +1779,7 @@
   "reports.blast_radius.js.confirm_title": "Restore this value?",
   "reports.blast_radius.js.confirm_title_bulk": "Restore selected values?",
   "reports.blast_radius.js.network_error": "Network error while restoring",
-  "reports.blast_radius.js.plan_refused": "{refused} cannot be restored. Each refused row below says why.",
+  "reports.blast_radius.js.plan_refused": "{refused} cannot be restored. Each refused row says why.",
   "reports.blast_radius.js.plan_summary": "{eligible} of {requested} selected change(s) can be restored.",
   "reports.blast_radius.js.refuse_change_not_found": "The change record is gone, so there is nothing left to restore. Reload the report.",
   "reports.blast_radius.js.refuse_name_collision": "Another artist already holds that name. Rename or merge that artist first, then try again.",
