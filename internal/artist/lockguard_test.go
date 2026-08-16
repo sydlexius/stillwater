@@ -1037,3 +1037,79 @@ func TestLockOverride_IsScopedToTheNamedField(t *testing.T) {
 		t.Errorf("spotify_id = %q, want %q; a grant for one field must not unlock another", after.SpotifyID, "sp-stored")
 	}
 }
+
+// TestLockOverrideField_NormalizesTheGrant pins the three normalization
+// behaviors on the grant. All three are currently unreachable -- the handler
+// gates on IsProviderIDField first and providerFieldMap is case-exact -- so
+// this is defense-in-depth, not a live hole. It is tested anyway because an
+// authorization primitive whose normalization has no teeth is one refactor away
+// from mattering: dropping ToLower or TrimSpace would make a grant silently not
+// match, and treating "" as a grant would match the loop's first field.
+func TestLockOverrideField_NormalizesTheGrant(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		grant     string
+		wantField string
+		wantOK    bool
+	}{
+		{"exact", "discogs_id", "discogs_id", true},
+		{"uppercase", "DISCOGS_ID", "discogs_id", true},
+		{"mixed_case", "Discogs_Id", "discogs_id", true},
+		{"padded", "  discogs_id\t", "discogs_id", true},
+		{"padded_and_uppercase", " DISCOGS_ID ", "discogs_id", true},
+		{"empty_is_not_a_grant", "", "", false},
+		{"whitespace_only_is_not_a_grant", "   ", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := ContextWithLockOverride(context.Background(), tc.grant)
+			got, ok := lockOverrideField(ctx)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v for grant %q", ok, tc.wantOK, tc.grant)
+			}
+			if got != tc.wantField {
+				t.Errorf("field = %q, want %q for grant %q", got, tc.wantField, tc.grant)
+			}
+		})
+	}
+	// A context with no grant at all is not a grant.
+	if _, ok := lockOverrideField(context.Background()); ok {
+		t.Error("a bare context reported a grant; only ContextWithLockOverride may authorize a bypass")
+	}
+}
+
+// TestClonedTime_CopiesByValue pins the claim clonedTime's own comment makes.
+// Aliasing the stored pointer would let a later mutation of one struct rewrite
+// the other, which is the hazard pinLockState clones LockedAt to avoid.
+func TestClonedTime_CopiesByValue(t *testing.T) {
+	original := time.Date(2024, time.March, 4, 5, 6, 7, 0, time.UTC)
+	stored := original
+	got := clonedTime(&stored)
+	if got == &stored {
+		t.Fatal("clonedTime returned the SAME pointer; a later mutation of one struct would rewrite the other")
+	}
+	stored = stored.AddDate(1, 0, 0)
+	if !got.Equal(original) {
+		t.Errorf("clone = %v after mutating the source, want %v", got, original)
+	}
+	if clonedTime(nil) != nil {
+		t.Error("clonedTime(nil) must stay nil; an absent timestamp is not the zero time")
+	}
+}
+
+// TestProviderIDFieldNamesMatchProviderFieldMap pins that every provider-ID
+// FieldName constant is spelled exactly as its providerFieldMap key. The
+// handlers pass these constants as lock keys, so a mismatch would make a lock
+// check silently consult a field nobody can lock.
+func TestProviderIDFieldNamesMatchProviderFieldMap(t *testing.T) {
+	for _, f := range []FieldName{
+		FieldMusicBrainzID, FieldAudioDBID, FieldDiscogsID,
+		FieldWikidataID, FieldDeezerID, FieldSpotifyID,
+	} {
+		if _, ok := providerFieldMap[string(f)]; !ok {
+			t.Errorf("FieldName %q is not a providerFieldMap key; a lock check using it would never match", f)
+		}
+	}
+	if len(providerFieldMap) != 6 {
+		t.Errorf("providerFieldMap has %d entries, want 6; a new provider ID needs a FieldName constant and a lock check in the link handlers", len(providerFieldMap))
+	}
+}

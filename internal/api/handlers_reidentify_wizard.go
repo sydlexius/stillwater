@@ -531,6 +531,15 @@ func (r *Router) handleReIdentifyWizardAccept(w http.ResponseWriter, req *http.R
 		writeError(w, req, http.StatusInternalServerError, "failed to load artist")
 		return
 	}
+	// Respect a user pin on the identity fields this accept would write, for
+	// the same reason as the other link flows: the chokepoint would otherwise
+	// revert the write silently behind a success response.
+	if r.refuseLockedProviderIDs(w, a,
+		providerIDFieldIf(body.MBID, artist.FieldMusicBrainzID),
+		providerIDFieldIf(body.DiscogsID, artist.FieldDiscogsID)) {
+		return
+	}
+
 	a.MusicBrainzID = body.MBID
 	if body.DiscogsID != "" {
 		a.DiscogsID = body.DiscogsID

@@ -138,10 +138,16 @@ func (r *Router) handleDeezerLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Respect a user pin on deezer_id. Since #3037 every provider ID is a
+	// guarded lock token, so without this the write below reaches the persist
+	// chokepoint, is silently reverted, and the operator gets a 200 for a link
+	// that did not happen.
+	if r.refuseLockedProviderIDs(w, a, artist.FieldDeezerID) {
+		return
+	}
+
 	// The refresh below may write images, so gate on the conflict ledger
-	// (returns 409 when blocked). deezer_id is NOT part of the lockable field
-	// vocabulary (see internal/artist/fieldname.go: only metadata fields like
-	// name, biography, genres are lockable), so no field-lock check is needed.
+	// (returns 409 when blocked).
 	if !r.gateImageWrite(w, req) {
 		return
 	}

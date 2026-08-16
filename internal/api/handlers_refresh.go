@@ -365,6 +365,16 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		a.MusicBrainzID = ""
 	}
 
+	// Respect a user pin on the identity fields this request would write. The
+	// operator is choosing a NEW identity here, which is what a lock on the
+	// identity field says not to do -- so refuse visibly rather than let the
+	// persist chokepoint revert it behind a 200.
+	if r.refuseLockedProviderIDs(w, a,
+		providerIDFieldIf(body.MBID, artist.FieldMusicBrainzID),
+		providerIDFieldIf(body.DiscogsID, artist.FieldDiscogsID)) {
+		return
+	}
+
 	// Store the selected ID(s). This handler is only invoked from the
 	// disambiguation UI where the user explicitly chose an identity, so
 	// we overwrite unconditionally (supports re-identification).

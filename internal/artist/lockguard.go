@@ -116,13 +116,13 @@ var lockOverrideKey lockOverrideKeyType
 // even though the operator has it locked.
 //
 // WHY THIS EXISTS. A lock gates AUTOMATED writes; the operator keeps control of
-// their own data. That is already true for the fourteen artists-row fields,
+// their own data. That is already true for the fifteen artists-row fields,
 // because an operator edit routes through the single-column Service.UpdateField,
 // which never reaches the chokepoint. The six provider-ID fields have no such
 // verb -- Service.UpdateProviderField ends in a whole-row Service.Update -- so
 // once those fields became guarded, the operator's own edit was silently
 // reverted while the API answered 200. A lock that means "you may still edit
-// this" for fourteen fields and "you are locked out" for six is not a policy,
+// this" for fifteen fields and "you are locked out" for six is not a policy,
 // it is an inconsistency.
 //
 // SCOPED TO ONE FIELD, and set only by the operator-facing field-edit handler.
@@ -270,7 +270,16 @@ func enforceFieldLocks(ctx context.Context, stored, incoming *Artist) []string {
 			continue
 		}
 		if hasGrant && granted == name {
-			// The operator authorized this one field on this one request.
+			// The operator authorized this one field on this one request. Logged
+			// because a bypass of a data-protection control should leave a
+			// record: every other outcome of this loop logs, and a silent
+			// exception is how an authorization primitive stops being auditable.
+			// Info rather than Error -- this is the system working as designed,
+			// not a conflict between two intents.
+			slog.Info("field lock bypassed by an operator grant; the write was allowed",
+				"artist_id", stored.ID,
+				"field", name,
+				"source", source)
 			continue
 		}
 		// Companions are pinned for a locked provider ID whether or not the ID

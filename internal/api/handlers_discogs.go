@@ -117,9 +117,10 @@ func (r *Router) handleDiscogsSearch(w http.ResponseWriter, req *http.Request) {
 // refresh writes the artist.nfo; the link is therefore guarded twice:
 //
 //  1. Locked-field check: if the discogs_id field is pinned, the write is
-//     refused with 409 so a user lock survives the identify flow. (discogs_id
-//     IS part of the lockable field vocabulary -- see artist.FieldDiscogsID --
-//     unlike deezer_id, which is not lockable.)
+//     refused with 409 so a user lock survives the identify flow. Every
+//     provider ID is a lockable token and every link flow refuses the same way
+//     (see refuseLockedProviderIDs); this handler predates that helper and
+//     keeps its own inline check.
 //  2. Conflict gate: the refresh may write artist.nfo, so the NFO write gate is
 //     consulted and a gated write is refused with the structured 409 payload.
 //
