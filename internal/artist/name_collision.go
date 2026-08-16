@@ -415,19 +415,20 @@ func (s *Service) UpdateNameGuarded(ctx context.Context, artistID, newName strin
 // two artists would then recreate the duplicate the rename existed to remove
 // -- exactly the state #2730 and #2807 exist to prevent.
 //
-// IS THAT OPERATOR-REACHABLE TODAY? NO, and saying otherwise would be the
-// overstatement this file has already had to correct once. The one production
-// caller that would drive it is the history revert (performRevert,
-// internal/api/handlers_history.go), and validateRevertable refuses any field
-// outside trackableFields BEFORE performRevert runs. trackableFields does not
-// contain "name" on this base -- checked, not assumed:
-// `git show 8ccd74fc:internal/artist/service.go | sed -n '/^var trackableFields/,/^}/p'`
-// -- so a name revert is answered 400 "field is not revertible" and never
-// reaches UpdateField at all. This routing therefore closes the gap by
-// CONSTRUCTION, before the affordance that would open it exists. That is the
-// order the repo wants: the guard lands first, so adding "name" to
-// trackableFields later is a one-line change rather than a change that also
-// has to remember to gate a write path.
+// IS THAT OPERATOR-REACHABLE TODAY? YES, as of #3037's trackableFields change,
+// and this route is what makes it safe. The production caller that drives it is
+// the history revert (performRevert, internal/api/handlers_history.go), which
+// validateRevertable gates on trackableFields membership. "name" was absent
+// from that list when this route landed, so the routing closed the gap by
+// CONSTRUCTION before the affordance existed; the same change that added "name"
+// and "sort_name" to trackableFields then opened the door onto an already-locked
+// write path. Checked, not assumed:
+// `sed -n '/^var trackableFields/,/^}/p' internal/artist/service.go`
+// -- so an Undo of a name change now reaches UpdateField and takes the
+// transactional collision guard rather than the raw fieldColumnMap write. That
+// is the order the repo wants: the guard lands first, so turning the affordance
+// on was a one-line change rather than one that also had to remember to gate a
+// write path.
 //
 // THE FIX IS THE ROUTE, NOT A CHECK AT THE CALLER. Patching performRevert
 // would leave the next caller of UpdateField("name", ...)

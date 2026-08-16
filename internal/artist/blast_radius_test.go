@@ -815,7 +815,11 @@ func TestBlastRadiusCoverageIsTrackableFields(t *testing.T) {
 	}
 
 	// Fields the report CAN see. These are the ones Service.update diffs.
-	for _, f := range []string{"biography", "genres", "styles", "moods", "type", "gender", "origin"} {
+	// "name" and "sort_name" MOVED here from the CANNOT-see list below in
+	// #3037: the name_language_pref rule fixer overwrites both on a non-empty
+	// artist, so damage to them had to become observable before it could be
+	// recovered. The move is the assertion, inverted deliberately.
+	for _, f := range []string{"biography", "genres", "styles", "moods", "type", "gender", "origin", "name", "sort_name"} {
 		if !covered[f] {
 			t.Errorf("%q is not in TrackableFields(); the report's coverage claim is wrong", f)
 		}
@@ -825,7 +829,7 @@ func TestBlastRadiusCoverageIsTrackableFields(t *testing.T) {
 	// row on the scan path, so the report must never imply it covers them.
 	// disambiguation is the sharpest case: issue #2748 names it among the worst
 	// fields to clear, and it has no audit trail at all.
-	for _, f := range []string{"disambiguation", "name", "sort_name", "musicbrainz_id"} {
+	for _, f := range []string{"disambiguation", "musicbrainz_id"} {
 		if covered[f] {
 			t.Errorf("%q is now tracked; the coverage caveat claims it is NOT visible "+
 				"to this report and must be revisited", f)

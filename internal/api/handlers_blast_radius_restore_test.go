@@ -712,9 +712,14 @@ func TestBlastRestore_RequiresAdmin(t *testing.T) {
 //
 // The row is inserted directly rather than through the artist service because
 // no service path will record history for an untracked field -- that is the
-// very property being tested. "name" is a real editable field that is
-// deliberately absent from trackableFields, so there is no recorded old value
-// the restore could trust.
+// very property being tested.
+//
+// The field under test was "name" until #3037, which made "name" and
+// "sort_name" trackable so the name_language_pref fixer's damage becomes
+// recoverable. "disambiguation" replaced it: a real editable field that is
+// still deliberately absent from trackableFields, so there is no recorded old
+// value the restore could trust. The precondition below is what forced the
+// swap rather than letting the test quietly stop covering the default arm.
 func TestBlastRestore_RefusesUntrackedField(t *testing.T) {
 	t.Parallel()
 	r, artistSvc, _ := restoreTestRouter(t)
@@ -722,21 +727,22 @@ func TestBlastRestore_RefusesUntrackedField(t *testing.T) {
 
 	// Precondition: the field really is outside history tracking. Without
 	// this the test would silently stop exercising the default arm the day
-	// "name" became trackable, and would keep passing for the wrong reason.
-	if artist.IsTrackableField("name") {
-		t.Fatal("precondition: \"name\" is now a trackable field; " +
-			"pick another untracked field or this test no longer covers the default arm")
+	// the field became trackable, and would keep passing for the wrong reason.
+	const untracked = "disambiguation"
+	if artist.IsTrackableField(untracked) {
+		t.Fatalf("precondition: %q is now a trackable field; "+
+			"pick another untracked field or this test no longer covers the default arm", untracked)
 	}
 
 	const changeID = "untracked-field-change"
 	if _, err := r.db.ExecContext(context.Background(),
 		`INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
-		 VALUES (?, ?, 'name', 'Operator Name', 'Scanner Name', 'scan', ?)`,
-		changeID, a.ID, damageBase.Format(time.RFC3339)); err != nil {
+		 VALUES (?, ?, ?, 'Operator Value', 'Scanner Value', 'scan', ?)`,
+		changeID, a.ID, untracked, damageBase.Format(time.RFC3339)); err != nil {
 		t.Fatalf("seeding untracked-field change: %v", err)
 	}
 
-	nameBefore, err := artistSvc.GetByID(context.Background(), a.ID)
+	before, err := artistSvc.GetByID(context.Background(), a.ID)
 	if err != nil {
 		t.Fatalf("GetByID before: %v", err)
 	}
@@ -754,13 +760,13 @@ func TestBlastRestore_RefusesUntrackedField(t *testing.T) {
 	}
 
 	// And the untracked field was not written.
-	nameAfter, err := artistSvc.GetByID(context.Background(), a.ID)
+	after, err := artistSvc.GetByID(context.Background(), a.ID)
 	if err != nil {
 		t.Fatalf("GetByID after: %v", err)
 	}
-	if nameAfter.Name != nameBefore.Name {
-		t.Errorf("name = %q, want %q unchanged: a refused restore must not write",
-			nameAfter.Name, nameBefore.Name)
+	if after.Disambiguation != before.Disambiguation {
+		t.Errorf("%s = %q, want %q unchanged: a refused restore must not write",
+			untracked, after.Disambiguation, before.Disambiguation)
 	}
 }
 

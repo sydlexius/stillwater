@@ -27,10 +27,14 @@
 //     artist.CountBlastRadius.
 //
 //  2. COVERAGE. The report can only see fields metadata_changes records, which
-//     is exactly artist.TrackableFields(). Damage to disambiguation, name,
-//     sort_name, or the provider IDs leaves no row at all, so this report
-//     cannot show it. The covered and uncovered field lists are computed from
-//     TrackableFields() rather than written out, so they cannot drift.
+//     is exactly artist.TrackableFields(). Damage to disambiguation or to the
+//     provider IDs leaves no row at all, so this report cannot show it. (name
+//     and sort_name WERE in that uncovered set; #3037 moved them into
+//     TrackableFields because the name_language_pref fixer overwrites both.)
+//     The covered and uncovered field lists are computed from
+//     TrackableFields() rather than written out, so they cannot drift -- which
+//     is why this prose naming examples is the only part that can go stale,
+//     and why it names as few as it can.
 //
 // Reporting either of those as a clean zero would be the "unknown rendered as
 // clean" defect (#2692, #2686) that this feature exists to avoid repeating.

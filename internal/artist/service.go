@@ -72,10 +72,43 @@ func HistoryIDFromContext(ctx context.Context) string {
 // trackableFields lists the metadata fields that are tracked by the history
 // system when Update() is called. These correspond to the editable fields
 // exposed by the field-level API.
+//
+// name and sort_name were added in #3037. They had been absent while
+// internal/rule's name_language_pref fixer OVERWRITES a non-empty a.Name and
+// a.SortName, so that damage produced no history row at all: it was invisible
+// to the blast-radius report and, having no recorded old value, unrecoverable.
+// A field an automated writer can destroy must be observable, or the report
+// renders "no damage" for a field the mechanism simply cannot see.
+//
+// Membership here has three consequences, all intended:
+//   - Service.update records a change row when the field moves.
+//   - IsTrackableField reports true, so the per-field Revert affordance and
+//     the blast-radius restore path accept these fields.
+//   - The blast-radius report counts them in its coverage list.
+//
+// THE NEWLY-ENABLED UNDO DOES NOT CONSULT locked_fields, and that is the
+// decision rather than an oversight. Turning on the affordance for name and
+// sort_name (web/templates/artist_history.templ, web/templates/activity.templ)
+// makes an Undo click route through Service.UpdateField, which does not call
+// IsFieldLocked -- so the click writes the field even when the operator has
+// locked it. That matches how locks gate the two automated writers that touch
+// these fields: the refresh path's applyProviderName checks IsFieldLocked for
+// FieldArtistName and FieldSortName (internal/api/handlers_refresh.go), and
+// internal/rule's name fixers skip a locked artist on the artist-level
+// a.Locked flag (internal/rule/fixers_language.go). Those are the automated
+// writers the clobbering in #3037 comes from. An operator editing their own
+// data is not gated by either check. An Undo is an operator
+// act: both routes that reach it, POST /api/v1/history/{id}/revert and POST
+// /api/v1/reports/blast-radius/restore (registered in internal/api/router.go),
+// are authenticated request handlers with no scheduled or rule-engine caller,
+// so no automated writer can arrive through this door. Adding a lock check
+// here would instead make the operator unable to undo the very automated write
+// the lock failed to prevent.
 var trackableFields = []string{
 	"biography", "genres", "styles", "moods",
 	"formed", "born", "disbanded", "died",
 	"years_active", "type", "gender", "origin",
+	"name", "sort_name",
 }
 
 // HydrateOpts selects which side-table hydrations a Get*/batch call should

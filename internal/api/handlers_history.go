@@ -346,16 +346,19 @@ var errRevertInvalidOldValue = errors.New("the previous value cannot be restored
 //
 // The check delegates to artist.ValidateFieldUpdate rather than special-casing
 // a field name, so a field that gains a rule tomorrow is covered without
-// editing this function. That is also why it is DORMANT today: no field is
-// both history-tracked and carrying a validation rule on this base. Checked,
-// not assumed -- the intersection of
+// editing this function. It was DORMANT when it landed -- no field was both
+// history-tracked and carrying a validation rule -- and #3037 made it LIVE by
+// adding "name" and "sort_name" to trackableFields. "name" is the case the
+// check was written for: it carries the empty-name and empty-identity-key
+// rules, so a recorded change whose OldValue is empty or punctuation-only is
+// now answered 400 here instead of reaching a write. Putting such a value back
+// would blank artists.name, which is NOT NULL but carries no non-empty CHECK,
+// so the blank would persist and every identity mechanism keyed on the name
+// would stop matching the artist. Checked, not assumed -- the intersection of
 // `sed -n '/^var trackableFields/,/^}/p' internal/artist/service.go` with the
-// switch arms of ValidateFieldUpdate (name, musicbrainz_id) is empty. The
-// anticipated first case is a "name" change whose OldValue is empty, which
-// arrives when a later change adds "name" to trackableFields; putting an empty
-// name back blanks artists.name, which is NOT NULL but carries no non-empty
-// CHECK, so the blank persists and every identity mechanism keyed on the name
-// stops matching the artist.
+// switch arms of ValidateFieldUpdate (name, musicbrainz_id) is exactly {name}:
+// "sort_name" joined trackableFields in the same change but carries no rule,
+// and "musicbrainz_id" carries a rule but is not tracked.
 func validateRevertable(change *artist.MetadataChange) error {
 	if !artist.IsTrackableField(change.Field) {
 		return errRevertNotTrackable

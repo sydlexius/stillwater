@@ -24,9 +24,9 @@ import (
 var revertProbeValues = []string{"", " ", "-", "\u200b", "not-a-uuid", "12345"}
 
 // knownValidatedFields lists every field artist.ValidateFieldUpdate polices.
-// None is history-tracked today, which is why the third check is dormant;
-// TestRevertProbeValues_CoverKnownRules uses it to prove revertProbeValues
-// actually trips each of those rules.
+// "name" is history-tracked as of #3037, which is what makes the third check
+// LIVE; TestRevertProbeValues_CoverKnownRules uses this list to prove
+// revertProbeValues actually trips each of those rules.
 var knownValidatedFields = []string{"name", "musicbrainz_id"}
 
 // validatedTrackableField reports a history-tracked field whose OLD VALUE
@@ -85,12 +85,15 @@ func TestRevertProbeValues_CoverKnownRules(t *testing.T) {
 // TestValidateRevertable_OldValueCheck covers validateRevertable's third check
 // against whatever the two lists actually say right now.
 //
-// On this base no field is BOTH history-tracked AND carrying a validation
-// rule, so the check is dormant: reachable only once a later change makes a
-// validated field trackable. The test asserts that state positively rather
-// than skipping, so the dormancy is a checked precondition rather than an
-// assumption, and it runs the real end-to-end assertion the moment the
-// precondition stops holding.
+// The test does not hardcode which arm it takes. When it landed, no field was
+// BOTH history-tracked AND carrying a validation rule, so the check was
+// dormant and this asserted that state positively rather than skipping. #3037
+// added "name" to trackableFields, and "name" carries the empty-name and
+// empty-identity-key rules -- so the probe below now returns a real field and
+// this test takes the LIVE end-to-end arm instead. Both arms are kept: the
+// dormancy arm is what makes the live arm's precondition honest rather than
+// assumed, and it would be correct again if the last validated field ever left
+// trackableFields.
 //
 // Dormancy is decided by offering every tracked field every value in
 // revertProbeValues, not just "". A field can accept "" and still refuse other
@@ -237,4 +240,127 @@ func TestWriteRevertFailure_Classification(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRevertName_IsReachableAndStillGuarded is the affordance check for #3037.
+//
+// Adding "name" to trackableFields is the only change in this series that
+// TURNS SOMETHING ON: IsTrackableField("name") becomes true, so the per-field
+// Undo renders and the revert endpoint stops answering 400 "not revertible".
+// The risk that creates is that a newly-reachable write path bypasses a guard
+// installed earlier, so this asserts both halves of the intended behavior --
+// the affordance WORKS, and it is STILL GUARDED -- through the real handler.
+func TestRevertName_IsReachableAndStillGuarded(t *testing.T) {
+	t.Parallel()
+
+	// PRECONDITION: without this the two arms below could both pass for the
+	// wrong reason (a "not revertible" 400 looks like a refusal too).
+	if !artist.IsTrackableField("name") {
+		t.Fatal("precondition: \"name\" is not trackable, so the revert endpoint refuses " +
+			"it before either arm below can be reached")
+	}
+
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	// Without this wiring the service records no history at all, and the
+	// first arm below would fail on an empty change list rather than on the
+	// behavior under test.
+	artistSvc.SetHistoryService(historySvc)
+	occupant := addTestArtist(t, artistSvc, "Northfield Chorale")
+	subject := addTestArtist(t, artistSvc, "Southgate Winds")
+
+	revert := func(t *testing.T, changeID string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+		req.SetPathValue("id", changeID)
+		w := httptest.NewRecorder()
+		r.handleRevertHistory(w, req)
+		return w
+	}
+
+	// changeIDWithOldValue finds the one recorded "name" change carrying the
+	// given old value. It selects on CONTENT rather than taking the newest
+	// row: metadata_changes stores created_at at SECOND resolution, so rows
+	// this test writes within one second tie on the ordering and fall back to
+	// comparing random UUIDs, which would make the fixture pick a different
+	// row on some runs than on others.
+	changeIDWithOldValue := func(t *testing.T, artistID, oldValue string) string {
+		t.Helper()
+		changes, _, err := historySvc.List(t.Context(), artistID, 100, 0)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		var found []string
+		for _, c := range changes {
+			if c.Field == "name" && c.OldValue == oldValue {
+				found = append(found, c.ID)
+			}
+		}
+		if len(found) != 1 {
+			t.Fatalf("%d recorded name changes with old_value %q, want exactly 1: %+v",
+				len(found), oldValue, changes)
+		}
+		return found[0]
+	}
+
+	// THE AFFORDANCE WORKS. A name change to a free name is recorded, and
+	// reverting it puts the operator's name back. This is the POSITIVE
+	// CONTROL for the refusal below: without it, a handler that refused every
+	// name revert would satisfy the refusal assertion vacuously.
+	t.Run("a name revert to a free name is applied", func(t *testing.T) {
+		if _, err := artistSvc.UpdateField(t.Context(), subject.ID, "name", "Harrowdene Ensemble"); err != nil {
+			t.Fatalf("seeding the name change: %v", err)
+		}
+		w := revert(t, changeIDWithOldValue(t, subject.ID, "Southgate Winds"))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; the Undo affordance #3037 turns on must actually "+
+				"work. Body: %s", w.Code, w.Body.String())
+		}
+		got, err := artistSvc.GetByID(t.Context(), subject.ID)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if got.Name != "Southgate Winds" {
+			t.Errorf("name = %q, want %q: the revert reported success without restoring the value",
+				got.Name, "Southgate Winds")
+		}
+	})
+
+	// THE GUARD STILL FIRES. A history row whose old value is a name ANOTHER
+	// artist now holds must not be written back: doing so would recreate the
+	// duplicate the collision guard exists to prevent. The row is seeded
+	// directly because no service path would record a change INTO a colliding
+	// state, which is exactly why the guard has to hold at revert time.
+	//
+	// The assertion is "not 200", not a specific code. This base answers 500:
+	// the collision refusal reaches writeRevertFailure's fall-through, since
+	// classifying it as a 409 naming the colliding artist is deliberately not
+	// part of this change. Pinning 500 would make the test assert a status the
+	// handler is expected to improve. What matters is that the write is
+	// REFUSED rather than applied, and that is asserted on the DATA below.
+	t.Run("a name revert onto another artist's identity is refused", func(t *testing.T) {
+		addHistoryChange(t, historySvc, subject.ID, "name",
+			occupant.Name, "Southgate Winds", "rule:name_language_pref")
+		w := revert(t, changeIDWithOldValue(t, subject.ID, occupant.Name))
+		if w.Code == http.StatusOK {
+			t.Fatalf("status = 200: a revert onto an identity another artist already holds "+
+				"was APPLIED, recreating the duplicate #2730 and #2807 exist to prevent. Body: %s",
+				w.Body.String())
+		}
+
+		got, err := artistSvc.GetByID(t.Context(), subject.ID)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if got.Name != "Southgate Winds" {
+			t.Errorf("name = %q, want %q unchanged: the refused revert wrote anyway",
+				got.Name, "Southgate Winds")
+		}
+		other, err := artistSvc.GetByID(t.Context(), occupant.ID)
+		if err != nil {
+			t.Fatalf("GetByID occupant: %v", err)
+		}
+		if other.Name != "Northfield Chorale" {
+			t.Errorf("occupant name = %q, want %q unchanged", other.Name, "Northfield Chorale")
+		}
+	})
 }

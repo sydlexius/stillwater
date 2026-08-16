@@ -193,7 +193,10 @@ func TestHandleReportBlastRadius_CoverageIsDerivedFromTrackableFields(t *testing
 	for _, f := range got.Coverage.UncoveredFields {
 		uncovered[f] = true
 	}
-	for _, f := range []string{"disambiguation", "name", "sort_name"} {
+	// "name" and "sort_name" MOVED to the COVERED side in #3037, so the
+	// assertion that they appear here is deliberately removed rather than
+	// left to fail. "disambiguation" remains the canonical uncovered case.
+	for _, f := range []string{"disambiguation"} {
 		if !uncovered[f] {
 			t.Errorf("uncovered_fields is missing %q; damage to it leaves no "+
 				"change history, so the response must say it cannot be reported", f)
