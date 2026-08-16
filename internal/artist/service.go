@@ -732,18 +732,65 @@ func (s *Service) UpdateAfterRuleEvaluation(ctx context.Context, a *Artist) erro
 }
 
 func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
-	// Snapshot the old state before writing, so we can diff after the update.
-	var old *Artist
-	if s.history != nil {
-		var err error
-		old, err = s.artists.GetByID(ctx, a.ID)
-		if err != nil {
-			// Artist may not exist yet (first insert via Update), or DB error.
-			// Either way, skip history recording rather than blocking the update.
-			slog.Warn("history: could not fetch old artist for diff",
-				"artist_id", a.ID, "error", err)
-			old = nil
+	// Snapshot the stored row before writing.
+	//
+	// THE FETCH IS UNCONDITIONAL AND FAILS CLOSED. Both halves are changes, and
+	// it is worth being exact about what each one buys TODAY versus what it is
+	// a precondition for, because the two are different.
+	//
+	// Unconditional: it used to run only when a HistoryService was attached.
+	// The stored row is the only trustworthy account of what this artist looked
+	// like before the write, so making a read of it depend on whether an
+	// optional history dependency happens to be wired means the caller's own
+	// struct is the sole input to a whole-row persist in every deployment that
+	// does not use history. That is a fragile shape regardless of who consumes
+	// the snapshot.
+	//
+	// Fails closed: an unreadable stored row is now an ERROR rather than a
+	// warning-and-continue. What that prevents at THIS commit is narrow and
+	// stated narrowly: a whole-row persist that proceeds with no idea what it
+	// is overwriting, which today silently loses the history diff for that
+	// write. It does NOT yet prevent anything about lock state -- sqliteArtistRepo.Update
+	// writes locked_fields / locked / lock_source / locked_at from the incoming
+	// struct on every call, and nothing here reads or restores them. The
+	// per-field lock chokepoint that DOES restore them (#3037) lands in a
+	// follow-up and depends on this snapshot being present and trustworthy;
+	// that is the reason the failure mode is being corrected first, separately,
+	// rather than as a footnote to the guard.
+	//
+	// ErrNotFound is handled separately, and it is worth being precise about
+	// WHY, because the obvious-sounding reason is wrong.
+	//
+	// It is NOT "the artist does not exist yet, this is a first insert". There
+	// is no insert-via-Update path: sqliteArtistRepo.Update is a bare
+	// `UPDATE artists SET ... WHERE id = ?`, the only INSERT INTO artists in
+	// that file is inside Create, and every production creation path calls
+	// Service.Create (internal/scanner/scanner.go, and three sites in
+	// internal/api/handlers_connection_library.go).
+	//
+	// The reachable scenario is a row DELETED between the caller's load and
+	// this write. Refusing there would buy nothing: there is no prior state
+	// left to lose, so no snapshot this branch could obtain would protect
+	// anything. The repo UPDATE then matches zero rows.
+	//
+	// "Matches zero rows" is NOT the same as "the call is a harmless no-op",
+	// and this comment used to claim the latter. Control continues past the
+	// UPDATE: persistNormalized runs unconditionally, and for an artist
+	// carrying any provider ID its UpsertAll hits the artist_provider_ids
+	// REFERENCES artists(id) foreign key and returns
+	// "FOREIGN KEY constraint failed (787)". A provider-ID-free struct returns
+	// nil. Verified at this commit and, identically, at main 054fe121 -- so
+	// this is PRE-EXISTING behavior that the fail-closed branch neither causes
+	// nor changes, not a regression introduced here.
+	old, fetchErr := s.artists.GetByID(ctx, a.ID)
+	if fetchErr != nil {
+		if !errors.Is(fetchErr, ErrNotFound) {
+			slog.Error("refusing artist update: the stored row could not be read, "+
+				"so this write would proceed without knowing what it overwrites",
+				"artist_id", a.ID, "error", fetchErr)
+			return fmt.Errorf("reading stored artist %s before update: %w", a.ID, fetchErr)
 		}
+		old = nil
 	}
 
 	if err := s.artists.Update(ctx, a); err != nil {
