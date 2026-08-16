@@ -183,10 +183,13 @@ func TestBlastRestore_EmptyNameIsRefusedIdenticallyInPreviewAndCommit(t *testing
 }
 
 // TestBlastRestoreWriteRefusal_ClassifiesAFieldRefusal covers the commit-path
-// classifier at unit level. It has to be tested here rather than end to end:
-// planning already refuses these rows, so no request can drive performRevert
-// into returning ErrInvalidFieldValue, and the arm exists for the case where
-// that stops being true.
+// classifier at unit level for the INVALID-OLD-VALUE arm specifically. That
+// arm has to be tested here rather than end to end: planning already refuses
+// these rows, so no request can drive performRevert into returning
+// ErrInvalidFieldValue, and the arm exists for the case where that stops being
+// true. The classifier's other arm is a different story -- a name collision is
+// live and reaches the write, and it is driven through the real endpoint in
+// handlers_blast_restore_name_collision_test.go.
 func TestBlastRestoreWriteRefusal_ClassifiesAFieldRefusal(t *testing.T) {
 	t.Parallel()
 
