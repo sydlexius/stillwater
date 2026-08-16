@@ -711,17 +711,120 @@ func TestHistoryService_ListGlobal_PerFieldLimit(t *testing.T) {
 
 func TestIsTrackableField(t *testing.T) {
 	t.Parallel()
-	trackable := []string{"biography", "genres", "styles", "moods", "formed", "born", "disbanded", "died", "years_active", "type", "gender"}
+	// "name" and "sort_name" MOVED from notTrackable to trackable in #3037,
+	// which is the whole point of that change: the name_language_pref fixer
+	// overwrites both, and untracked damage leaves no old value to recover.
+	// The reversal is spelled out here rather than done silently so a reader
+	// of this test sees that the old assertion was deliberately inverted.
+	trackable := []string{"biography", "genres", "styles", "moods", "formed", "born", "disbanded", "died", "years_active", "type", "gender", "name", "sort_name"}
 	for _, f := range trackable {
 		if !IsTrackableField(f) {
 			t.Errorf("IsTrackableField(%q) = false, want true", f)
 		}
 	}
 
-	notTrackable := []string{"", "name", "id", "path", "nonexistent"}
+	notTrackable := []string{"", "id", "path", "nonexistent"}
 	for _, f := range notTrackable {
 		if IsTrackableField(f) {
 			t.Errorf("IsTrackableField(%q) = true, want false", f)
 		}
 	}
+}
+
+// TestServiceUpdate_RecordsNameAndSortName is the write-side guarantee #3037
+// exists to establish: a name or sort_name change through Service.update must
+// leave a metadata_changes row carrying the OLD value, because that value is
+// the only thing a recovery can restore. Before the change no row was written
+// at all, so the name_language_pref fixer's overwrite was both invisible to
+// the blast-radius report and unrecoverable.
+//
+// The row's CONTENT is asserted, not merely its existence: a row recording the
+// wrong old value would satisfy a count-only test while still being useless to
+// the operator, which is the failure mode that matters here.
+//
+// It runs the mutation TWICE. The second write starts from the value the first
+// one left, so a row that recorded a stale snapshot (the pre-first-write value
+// rather than the current one) is caught, and so is any implementation that
+// only records on a first transition.
+func TestServiceUpdate_RecordsNameAndSortName(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	svc := NewService(db)
+	hsvc := NewHistoryService(db)
+	svc.SetHistoryService(hsvc)
+	ctx := ContextWithSource(context.Background(), "scan")
+
+	a := &Artist{Name: "Harrowdene Ensemble", SortName: "Harrowdene Ensemble", Path: ""}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// PRECONDITION: both fields are tracked. Without this the assertions
+	// below would report "no row" as a test failure without saying why, and a
+	// future change dropping either field would read as a mystery regression.
+	for _, f := range []string{"name", "sort_name"} {
+		if !IsTrackableField(f) {
+			t.Fatalf("precondition: %q is not trackable, so Service.update cannot record it", f)
+		}
+	}
+
+	// assertRecorded requires exactly wantCount rows for the field, exactly
+	// one of which carries the given old and new values, and requires that
+	// row's source to be the one the context named.
+	//
+	// It matches on CONTENT rather than taking the first row List returns.
+	// metadata_changes stores created_at at SECOND resolution, so two writes
+	// inside one second tie on the ORDER BY and fall back to comparing random
+	// UUIDs -- the same fixture hazard internal/api's blast-radius tests
+	// document and work around by backdating. Both rounds below run well
+	// inside one second, so position is not a usable selector; the pair being
+	// present exactly once is the property actually under test anyway.
+	assertRecorded := func(field, wantOld, wantNew string, wantCount int) {
+		t.Helper()
+		changes, _, err := hsvc.List(ctx, a.ID, 100, 0)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		var forField []MetadataChange
+		matches := 0
+		for _, c := range changes {
+			if c.Field != field {
+				continue
+			}
+			forField = append(forField, c)
+			if c.OldValue == wantOld && c.NewValue == wantNew {
+				matches++
+				if c.Source != "scan" {
+					t.Errorf("%s: source = %q, want %q so the blast-radius report can "+
+						"attribute the write to an automated writer", field, c.Source, "scan")
+				}
+			}
+		}
+		if len(forField) != wantCount {
+			t.Fatalf("%d recorded %q changes, want %d: %+v", len(forField), field, wantCount, forField)
+		}
+		if matches != 1 {
+			t.Errorf("%d recorded %q changes carry old=%q new=%q, want exactly 1; the OLD "+
+				"value is what a recovery restores, so a wrong one makes the row useless. Rows: %+v",
+				matches, field, wantOld, wantNew, forField)
+		}
+	}
+
+	// ROUND ONE.
+	a.Name = "Southgate Winds"
+	a.SortName = "Southgate Winds"
+	if err := svc.Update(ctx, a); err != nil {
+		t.Fatalf("Update round one: %v", err)
+	}
+	assertRecorded("name", "Harrowdene Ensemble", "Southgate Winds", 1)
+	assertRecorded("sort_name", "Harrowdene Ensemble", "Southgate Winds", 1)
+
+	// ROUND TWO: the old value must be what round one LEFT, not the original.
+	a.Name = "Northfield Chorale"
+	a.SortName = "Northfield Chorale"
+	if err := svc.Update(ctx, a); err != nil {
+		t.Fatalf("Update round two: %v", err)
+	}
+	assertRecorded("name", "Southgate Winds", "Northfield Chorale", 2)
+	assertRecorded("sort_name", "Southgate Winds", "Northfield Chorale", 2)
 }

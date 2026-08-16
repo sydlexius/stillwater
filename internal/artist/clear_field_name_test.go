@@ -16,12 +16,15 @@ import (
 // (ValidateFieldUpdate) ran in one HTTP handler. A blank name leaves the row
 // unmatchable by every identity mechanism that keys on the name.
 //
-// The caller that WOULD drive it is the history revert: performRevert
+// The caller that drives it is the history revert: performRevert
 // (internal/api/handlers_history.go) branches on change.OldValue == "" and
-// calls ClearField. It cannot reach the name field on this base --
-// validateRevertable rejects any field outside trackableFields, which does not
-// contain "name" -- so this refusal is a guard placed BEFORE the affordance
-// that would open the hole, not a fix for a live one.
+// calls ClearField. That caller could not reach the name field when this
+// refusal landed, because validateRevertable rejects any field outside
+// trackableFields and "name" was outside it then -- so the refusal was a guard
+// placed BEFORE the affordance that would open the hole. #3037's
+// trackableFields change opened that affordance, and validateRevertable now
+// answers such a row 400 before performRevert runs, leaving this refusal as
+// the second of two independent gates rather than the only one.
 //
 // Fixing UpdateField and leaving this one is the exact two-sources-disagree
 // shape the routing exists to close, which is why both verbs share ONE

@@ -346,16 +346,19 @@ var errRevertInvalidOldValue = errors.New("the previous value cannot be restored
 //
 // The check delegates to artist.ValidateFieldUpdate rather than special-casing
 // a field name, so a field that gains a rule tomorrow is covered without
-// editing this function. That is also why it is DORMANT today: no field is
-// both history-tracked and carrying a validation rule on this base. Checked,
-// not assumed -- the intersection of
+// editing this function. It was DORMANT when it landed -- no field was both
+// history-tracked and carrying a validation rule -- and #3037 made it LIVE by
+// adding "name" and "sort_name" to trackableFields. "name" is the case the
+// check was written for: it carries the empty-name and empty-identity-key
+// rules, so a recorded change whose OldValue is empty or punctuation-only is
+// now answered 400 here instead of reaching a write. Putting such a value back
+// would blank artists.name, which is NOT NULL but carries no non-empty CHECK,
+// so the blank would persist and every identity mechanism keyed on the name
+// would stop matching the artist. Checked, not assumed -- the intersection of
 // `sed -n '/^var trackableFields/,/^}/p' internal/artist/service.go` with the
-// switch arms of ValidateFieldUpdate (name, musicbrainz_id) is empty. The
-// anticipated first case is a "name" change whose OldValue is empty, which
-// arrives when a later change adds "name" to trackableFields; putting an empty
-// name back blanks artists.name, which is NOT NULL but carries no non-empty
-// CHECK, so the blank persists and every identity mechanism keyed on the name
-// stops matching the artist.
+// switch arms of ValidateFieldUpdate (name, musicbrainz_id) is exactly {name}:
+// "sort_name" joined trackableFields in the same change but carries no rule,
+// and "musicbrainz_id" carries a rule but is not tracked.
 func validateRevertable(change *artist.MetadataChange) error {
 	if !artist.IsTrackableField(change.Field) {
 		return errRevertNotTrackable
@@ -565,6 +568,38 @@ func (r *Router) writeRevertFailure(w http.ResponseWriter, req *http.Request,
 			"artist_id", change.ArtistID, "error", err)
 		writeError(w, req, http.StatusBadRequest,
 			errRevertInvalidOldValue.Error()+": "+fieldRefusalReason(err))
+		return
+	}
+
+	// A name revert whose OLD value is an identity another artist now holds
+	// (#3037). Undoing the very rename that de-duplicated the pair would
+	// recreate the duplicate, so Service.UpdateField routes every name write
+	// through the transactional collision guard and refuses. This branch is
+	// LIVE, not defensive: the same change that added "name" to
+	// trackableFields turned on the Undo affordance that reaches it.
+	//
+	// Unlike the two branches above, this one cannot be moved earlier into
+	// validateRevertable. Whether a name collides is a property of the CURRENT
+	// database, not of the immutable history row, so it can only be answered
+	// by the guard inside the writing transaction.
+	//
+	// The response reuses writeNameCollisionRefusal, which is what a refused
+	// manual rename already returns, so the operator sees ONE refusal for one
+	// kind of refusal (409 Conflict, plus the HTMX fragment on an HTMX
+	// request) rather than a second wording that can drift from the first.
+	// It is handed change.OldValue because that is the name the revert tried
+	// to write.
+	//
+	// The nil-Collision check is not ceremony: writeNameCollisionRefusal
+	// dereferences that pointer, so a nil would panic the handler, which is
+	// strictly worse than the 500 below. artist constructs this error only
+	// with a non-nil Collision, and its own Error() method still guards the
+	// nil case, so this branch declines to be the one place that assumes
+	// otherwise. A nil falls through and is reported by the generic arm,
+	// which logs the full error rather than swallowing it.
+	var collisionErr *artist.NameCollisionError
+	if errors.As(err, &collisionErr) && collisionErr.Collision != nil {
+		r.writeNameCollisionRefusal(w, req, change.ArtistID, change.OldValue, collisionErr.Collision)
 		return
 	}
 

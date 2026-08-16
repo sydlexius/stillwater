@@ -452,6 +452,46 @@ components:
         reason:
           type: string
       required: [error, field, reason]
+    NameCollisionRefusal:
+      type: object
+      description: >-
+        409 response body returned when a write to an artist's name was
+        refused because the requested name would give that artist the same
+        identity as a DIFFERENT existing artist. One shape, shared by both
+        surfaces that can refuse -- a manual rename and a history revert of a
+        prior name -- because both render the same response body, so a client
+        needs one branch rather than two that can drift.
+
+        The identity comparison folds case, accents, punctuation, and leading
+        articles, so the colliding artist's stored name may differ from the
+        requested one.
+
+        The two records can USUALLY be combined from the duplicates report,
+        but the report may not display the pair at all. Two cases: duplicate
+        detection refuses to group artists bound to different non-empty
+        MusicBrainz IDs (this check considers only the name, so such a pair
+        is refused here yet never forms a group), and the report hides groups
+        the operator previously ignored. Clients must not present the merge
+        flow as guaranteed.
+      properties:
+        error:
+          type: string
+          description: Human-readable reason the write was refused.
+        existing_artist_id:
+          type: string
+          description: ID of the artist that already holds this identity.
+        existing_name:
+          type: string
+          description: >-
+            STORED name of the artist that already holds this identity. May
+            differ from the requested value, which the response never echoes
+            back.
+        detail:
+          type: string
+          description: >-
+            Operator-facing guidance on how to resolve the collision,
+            translated into the caller's locale.
+      required: [error, existing_artist_id, existing_name, detail]
     ConflictWriteBlock:
       type: object
       description: >
@@ -5705,6 +5745,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            The revert targeted a "name" change and the old value it tried to
+            restore is an identity a DIFFERENT artist now holds, so the write
+            was refused. Undoing a rename that had de-duplicated the two
+            records would recreate the duplicate.
+
+            Only a name revert can produce this status. Unlike the 400 causes,
+            this one is not permanent: it depends on the CURRENT database, so
+            the same request succeeds once the other artist is renamed or the
+            pair is merged.
+
+            The body is the same shape a refused manual rename returns, so a
+            client needs one branch for both. An HX-Request receives an HTML
+            warning fragment naming the other artist instead of the JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NameCollisionRefusal"
+            text/html:
+              schema:
+                type: string
         "500":
           description: Internal server error.
           content:
@@ -13609,23 +13671,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    description: Human-readable reason the write was refused.
-                  existing_artist_id:
-                    type: string
-                    description: ID of the artist that already holds this identity.
-                  existing_name:
-                    type: string
-                    description: |
-                      STORED name of the artist that already holds this
-                      identity. May differ from the requested value, which the
-                      response never echoes back.
-                  detail:
-                    type: string
-                    description: Operator-facing guidance on how to resolve the collision.
+                $ref: "#/components/schemas/NameCollisionRefusal"
             text/html:
               schema:
                 type: string
