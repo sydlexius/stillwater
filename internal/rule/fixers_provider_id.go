@@ -204,7 +204,13 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 			continue // no relation to backfill from
 		}
 		field := providerIDBackfillField[name]
-		if err := f.updater.UpdateProviderField(ctx, a.ID, field, derived); err != nil {
+		// #3037: UpdateProviderField ends in artist.Service.Update, so this is
+		// one of the package's tagged write paths and gets the same treatment
+		// as the rest. Inert today -- no provider-ID field is in
+		// artist.trackableFields, so the diff produces no row -- but the tag
+		// follows the call site, not the current field list.
+		tagged := withRuleHistorySource(ctx, ruleHistorySource(RuleProviderIDMissing))
+		if err := f.updater.UpdateProviderField(tagged, a.ID, field, derived); err != nil {
 			return nil, fmt.Errorf("setting %s for %s: %w", field, a.Name, err)
 		}
 		// Mirror the write onto the in-memory artist immediately (issue #2699).

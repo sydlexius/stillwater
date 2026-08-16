@@ -539,7 +539,9 @@ func (p *Pipeline) remediateArtistPHash(
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("error", resyncErr.Error()))
 	}
-	if err := p.artistService.Update(ctx, a); err != nil {
+	// #3037: attribute the field resync that follows a perceptual-hash back-out.
+	// Inert while only fanart slots change (see history_source.go), tagged anyway.
+	if err := p.artistService.Update(withRuleHistorySource(ctx, ruleHistorySourcePHashRemediate), a); err != nil {
 		// The destructive on-disk work is already committed and IRREVERSIBLE
 		// at this point. A metadata sync miss is a cache problem the next scan
 		// re-derives; reporting it as the operation failing would invite an
@@ -914,7 +916,9 @@ func (p *Pipeline) RestorePHashQuarantine(ctx context.Context, artistID, opID st
 			slog.String("op_id", opID), slog.String("artist_id", a.ID),
 			slog.String("error", resyncErr.Error()))
 	}
-	if err := p.artistService.Update(ctx, a); err != nil {
+	// #3037: attribute the field resync that follows a quarantine restore.
+	// Inert while only fanart slots change (see history_source.go), tagged anyway.
+	if err := p.artistService.Update(withRuleHistorySource(ctx, ruleHistorySourcePHashRestore), a); err != nil {
 		// The bytes are already back on disk at this point -- the restore
 		// succeeded. A metadata sync miss is a cache problem the next scan
 		// re-derives; returning it as an error would report a successful

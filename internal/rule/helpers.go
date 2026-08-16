@@ -23,6 +23,10 @@ func EvaluateAndPersistHealth(ctx context.Context, engine *Engine, svc *artist.S
 		return
 	}
 	a.HealthScore = result.HealthScore
+	// #3037: deliberately UNTAGGED, unlike the rest of this package's writes.
+	// This helper is deprecated with no non-test callers, and it mutates only
+	// HealthScore, which is not in artist.trackableFields -- so there is no
+	// field change to attribute and no rule that caused one.
 	if err := svc.Update(ctx, a); err != nil {
 		logger.Warn("persisting health score", "artist_id", a.ID, "artist", a.Name, "error", err)
 	}

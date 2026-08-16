@@ -600,7 +600,7 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 		postEval = nil
 	}
 
-	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles)
+	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles, acc.historySource())
 	if !persistOKHealth {
 		acc.failWrite()
 	}
@@ -666,6 +666,13 @@ type violationOutcome struct {
 	// fixed mirrors fr.Fixed; lifted so the orchestrator does not need to
 	// reach back into the FixResult struct to update FixesSucceeded.
 	fixed bool
+	// fixedRuleID names the rule whose fixer made a successful change. It is
+	// taken from the VIOLATION rather than from fr.RuleID: a fixer sets that
+	// field itself and a stub or a future one can leave it empty, whereas the
+	// violation being dispatched always carries the id. It feeds the write's
+	// history attribution (#3037), so an empty value there would silently
+	// re-open the unattributed hole this exists to close.
+	fixedRuleID string
 	// imageFix is true when a successful fix produced an image write, and
 	// imageType carries the type so publishAccumulated can sync the right
 	// canonical filenames. When false (and fixed is true), the fix touched
@@ -707,6 +714,16 @@ type runForArtistAccum struct {
 	// cannot clear persistOK and silently forget to record the write failure.
 	writeFailed bool
 
+	// fixedRuleID / multipleRulesFixed record WHICH rule caused the artist
+	// mutation this run is about to persist, so the metadata_changes rows the
+	// write produces are attributed to it instead of defaulting to "manual"
+	// (#3037). fixedRuleID holds the first rule whose fixer reported Fixed;
+	// multipleRulesFixed goes true the moment a second, DIFFERENT rule does,
+	// because the run persists once for all of them and the single write can no
+	// longer name one honestly. Read through historySource(), never directly.
+	fixedRuleID        string
+	multipleRulesFixed bool
+
 	// removedFiles is true once any fixer in this run deleted image files.
 	// persistHealthAfterRun passes it to reconcileAfterFix so the run retires
 	// their registry rows; without it the run path persists via
@@ -717,6 +734,35 @@ type runForArtistAccum struct {
 	// way for one fixer's mid-run count to outlive a file another fixer added
 	// after it.
 	removedFiles bool
+}
+
+// noteFixedRule records the rule behind a successful fix. A repeat of the same
+// rule id is not "multiple": one rule fixing two violations for the same artist
+// is still attributable to that rule.
+func (acc *runForArtistAccum) noteFixedRule(ruleID string) {
+	if ruleID == "" {
+		return
+	}
+	switch {
+	case acc.fixedRuleID == "":
+		acc.fixedRuleID = ruleID
+	case acc.fixedRuleID != ruleID:
+		acc.multipleRulesFixed = true
+	}
+}
+
+// historySource returns the metadata_changes source for this artist's writeback,
+// or "" when no fixer mutated anything (a persist that only stores a recomputed
+// health score must not claim a rule changed a field).
+func (acc *runForArtistAccum) historySource() string {
+	switch {
+	case acc.multipleRulesFixed:
+		return ruleHistorySourceMultiple
+	case acc.fixedRuleID != "":
+		return ruleHistorySource(acc.fixedRuleID)
+	default:
+		return ""
+	}
 }
 
 // mergeOutcome folds one violation's delta into the accumulator and the
@@ -735,6 +781,7 @@ func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResu
 	if out.fixed {
 		result.FixesSucceeded++
 		acc.artistDirty = true
+		acc.noteFixedRule(out.fixedRuleID)
 		if out.imageFix {
 			acc.fixedImageTypes = append(acc.fixedImageTypes, out.imageType)
 		} else {
@@ -762,6 +809,7 @@ func (acc *runForArtistAccum) mergeIntoContrib(out violationOutcome, contrib *ar
 	if out.fixed {
 		contrib.fixesSucceeded++
 		acc.artistDirty = true
+		acc.noteFixedRule(out.fixedRuleID)
 		if out.imageFix {
 			acc.fixedImageTypes = append(acc.fixedImageTypes, out.imageType)
 		} else {
@@ -962,7 +1010,7 @@ func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, rule
 		postEval = nil
 	}
 
-	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles)
+	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles, acc.historySource())
 	if !persistOKHealth {
 		acc.failWrite()
 	}
@@ -1059,6 +1107,7 @@ func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist
 	out := violationOutcome{fr: fr}
 	if fr.Fixed {
 		out.fixed = true
+		out.fixedRuleID = v.RuleID
 		if fr.ImageType != "" {
 			out.imageFix = true
 			out.imageType = fr.ImageType
@@ -1270,7 +1319,7 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 
 	// Issue #699: derive pass/fail from the POST-fix evaluation so rules
 	// repaired during this pass are recorded as passed=1 in the same run.
-	postEval, persistOKHealth := p.updateHealthScore(ctx, a, acc.artistDirty, acc.removedFiles)
+	postEval, persistOKHealth := p.updateHealthScore(ctx, a, acc.artistDirty, acc.removedFiles, acc.historySource())
 	if !persistOKHealth {
 		acc.failWrite()
 	}
@@ -1731,6 +1780,10 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 	}
 
 	if fr.Fixed {
+		// #3037: attribute this single-rule fix's history rows to rv.RuleID.
+		// Reassigning ctx carries the tag into the rescore persist below too,
+		// which writes the same artist row.
+		ctx = withRuleHistorySource(ctx, ruleHistorySource(rv.RuleID))
 		if err := p.artistService.Update(ctx, a); err != nil {
 			return nil, fmt.Errorf("updating artist after fix: %w", err)
 		}
@@ -1770,7 +1823,9 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		// removedFiles=false: the reconcile for this fix already ran above,
 		// right after the artist Update. Passing it again would walk and
 		// reconcile a second time for no additional convergence.
-		_ = p.persistHealthAfterRun(ctx, a, postEval, false, false)
+		// ctx already carries the rule tag from the Update above, so pass ""
+		// rather than re-stamping it.
+		_ = p.persistHealthAfterRun(ctx, a, postEval, false, false, "")
 		p.publishAfterFix(ctx, a, fr)
 	}
 
@@ -2207,7 +2262,12 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 // false whenever this run cannot vouch for the artist's post-fix state, which is
 // what stops the caller from stamping rules_evaluated_at, resolving violation
 // rows, or writing pass rows on the strength of a run that did not complete.
-func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, postEval *EvaluationResult, mustPersist, removedFiles bool) bool {
+func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, postEval *EvaluationResult, mustPersist, removedFiles bool, historySource string) bool {
+	// Attribute every metadata_changes row this write produces to the rule that
+	// caused it (#3037). Untagged, artist.Service.update records "manual" and
+	// the blast-radius report cannot tell rule damage from an operator edit.
+	// Empty historySource leaves ctx alone -- see withRuleHistorySource.
+	ctx = withRuleHistorySource(ctx, historySource)
 	// A FAILED post-fix evaluation is never authoritative. The old
 	// updateHealthScore encoded this by returning a nil result with
 	// authoritative=false, and callers leaned on the nil to gate their writes.
@@ -2357,7 +2417,9 @@ func freshResultsFrom(eval *EvaluationResult) map[string]bool {
 	return fresh
 }
 
-func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist, removedFiles bool) (*EvaluationResult, bool) {
+func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist, removedFiles bool, historySource string) (*EvaluationResult, bool) {
+	// Same #3037 attribution as persistHealthAfterRun; see withRuleHistorySource.
+	ctx = withRuleHistorySource(ctx, historySource)
 	eval, err := p.engine.Evaluate(ctx, a)
 	// authoritative is only true when the post-fix evaluation succeeded;
 	// returning true after a failed Evaluate would let callers stamp

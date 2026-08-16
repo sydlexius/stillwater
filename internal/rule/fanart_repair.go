@@ -208,7 +208,11 @@ func (p *Pipeline) remediateOneArtistFanart(ctx context.Context, a *artist.Artis
 		return
 	}
 	// Persist the collapsed fanart rows, mirroring Pipeline.FixViolation.
-	if err := p.artistService.Update(ctx, a); err != nil {
+	// #3037: the collapse is driven by RuleImageDuplicateExact, so any history
+	// row this write produces names that rule rather than defaulting to
+	// "manual". Inert while only fanart slots change (see history_source.go),
+	// tagged anyway.
+	if err := p.artistService.Update(withRuleHistorySource(ctx, ruleHistorySource(RuleImageDuplicateExact)), a); err != nil {
 		msg := fmt.Sprintf("update after collapse: %v", err)
 		p.logger.Warn("fanart collapse persisted to disk but the artist row update failed",
 			slog.String("artist_id", a.ID), slog.String("artist", a.Name), slog.String("error", err.Error()))
