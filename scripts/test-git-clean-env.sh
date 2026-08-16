@@ -169,10 +169,18 @@ HELPERS=(
 # test-check-commit-signing.sh drives the real hook through a real worktree with
 # an ephemeral signer, then asserts the MAIN repo's core.bare.
 #
-# The two guard scripts themselves are excluded: check-git-init-guarded.sh's
-# `git init` occurrences are inside its remediation heredoc, and this suite's
-# own are its fixtures, guarded by the library it sources at the top.
-EXCLUDED=(check-commit-signing.sh check-git-init-guarded.sh test-git-clean-env.sh)
+# The guard scripts themselves are excluded: check-git-init-guarded.sh's `git
+# init` occurrences are its detection regex and remediation text, and the two
+# suites' own are their fixtures, guarded by the library they source at the top.
+# test-check-git-init-guarded.sh additionally proves this property about itself
+# far more directly than a config diff could -- its whole subject is which
+# `git init` forms are guarded.
+EXCLUDED=(
+    check-commit-signing.sh
+    check-git-init-guarded.sh
+    test-check-git-init-guarded.sh
+    test-git-clean-env.sh
+)
 
 n=1
 for helper in "${HELPERS[@]}"; do
