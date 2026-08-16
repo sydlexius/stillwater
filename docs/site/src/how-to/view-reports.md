@@ -69,13 +69,17 @@ Restore is always two steps, and the first one never writes:
 
 **A preview is not a promise.** Stillwater re-reads each value immediately before writing it, because a scan, a rule pass, or an edit you made in another tab can land in the gap between the preview and your confirmation. If the value changed in that gap, the restore is refused rather than overwriting the newer value with an older one. A row is also refused when the change record is gone, when the field keeps no change history, or when the row is itself an earlier restore, which would only chain undo onto undo.
 
+Two refusals are specific to the value being put back. The first is a value the field will not accept, such as a name whose previous value was nothing but spaces, dashes, or underscores; restoring it would leave the artist with no usable name. The second is a name another artist now holds, since restoring it would recreate the duplicate that rename removed.
+
 That means a confirmed restore can come back reporting fewer values put back than the preview offered, including none at all. Stillwater tells you which happened:
 
 - All rows restored - a success message with the count.
 - Some restored, some refused - a warning naming both numbers. The restore is incomplete.
 - Nothing restored - an error message with the refusal count.
 
-Refused rows stay in the table so you can see they still need attention; only rows that were genuinely put back disappear from it. A refused restore is safe to retry: reload the report so it reflects the current state, then try again.
+Refused rows stay in the table so you can see they still need attention; only rows that were genuinely put back disappear from it. Each refused row carries its own reason underneath the Restore button, saying what to do about that particular row - the summary message gives you the counts, the row tells you why. The preview fills these in too, so you can read the reason before you confirm anything.
+
+Whether retrying helps depends on the reason. Some refusals never clear, because they describe the value or the field itself: a field that keeps no change history, an old value the field will not accept, or a row that is itself an undo. Those call for a different fix rather than another attempt. Others describe the current state of something else, and clear once you have dealt with it. Reload the report so it reflects the current state, then try again. For a name another artist holds, rename or merge that artist first. A refusal that says the write was attempted and failed is the one where a plain retry is the right response.
 
 Restoring a value does not republish it or re-run the writer that changed it. It does mark the artist for re-evaluation, so the next rule pass looks at it again. Only one restore can run at a time across the whole application; if another is already in progress, Stillwater says so instead of queuing yours.
 

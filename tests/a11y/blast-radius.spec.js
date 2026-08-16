@@ -13,6 +13,10 @@
 //   2. The destructive restore confirm dialog (window.showConfirmDialog) --
 //      the highest-risk keyboard surface on this pane.
 //   3. Keyboard reachability + VISIBLE focus indicator for the pager.
+//   4. Focus survival when the bulk action bar hides.
+//   5. The per-row REFUSAL REASON: that the reason the server returned reaches
+//      the operator on the row it refused, and that every token renders prose
+//      rather than a blank or a raw key.
 //
 // SCOPED TO WHAT THIS INCREMENT SHIPS. The pane's filter controls arrive with
 // the filters increment, so their coverage lives on that side. Nothing here is
@@ -37,8 +41,16 @@
 // DESTRUCTIVE-FLOW POLICY: this spec never CONFIRMS a restore. The dialog is
 // always dismissed with Escape or Cancel. The only network call the restore
 // flow makes before confirmation is the commit:false preview, which the
-// handler treats as a dry run and which writes nothing. Nothing here mutates
-// the UAT database.
+// handler treats as a dry run and which writes nothing. No value is ever put
+// BACK by this file.
+//
+// ONE EXCEPTION, stated rather than buried: the refusal-reason test writes a
+// NEW value into one field of one fixture artist, through the ordinary edit
+// endpoint, because "something changed this field after the report loaded" is
+// the condition it needs and there is no way to produce it without a write.
+// That is a forward edit, not a restore, and it targets only the seeded
+// fixture artists. The policy above is about never COMMITTING a restore, and
+// it is intact.
 
 import { test, expect } from 'playwright/test';
 
@@ -682,4 +694,262 @@ test('hiding the bulk action bar does not drop focus to the document body', asyn
     type: 'focus-after-bulk-bar-hide',
     description: JSON.stringify(after, null, 2),
   });
+});
+
+// ---------------------------------------------------------------------------
+// 5. The refusal REASON reaches the operator, on the row that was refused.
+//
+// Why this test exists. The endpoint distinguishes seven refusal reasons, and
+// before this every one of them arrived at the operator as the same sentence:
+// a generic toast whose parenthetical asserted "already changed since this
+// report loaded, or no longer eligible". For a name collision that sentence is
+// simply FALSE, and it sends the operator looking for a change nobody made
+// instead of at the artist holding the name. A classifier nobody can read is
+// not a classifier.
+//
+// Two halves, because they prove different things:
+//   (a) the LIVE chain, end to end -- a row is made stale through the API, the
+//       operator presses its own Restore button, and the reason the SERVER
+//       returned is what appears under that button. Nothing here is simulated:
+//       the request, the classification and the render are the real ones.
+//   (b) the RENDER of the tokens a preview cannot produce. A name collision is
+//       decidable only inside the writing transaction, so no dry run can
+//       return one and reaching it in a browser would mean committing a
+//       destructive write -- which this spec never does (see the
+//       DESTRUCTIVE-FLOW POLICY at the top). Its classification is covered in
+//       Go (handlers_blast_restore_name_collision_test.go); what is covered
+//       HERE is that the token renders as prose the operator can act on, in
+//       the real cascade, rather than blank or as a raw key.
+// ---------------------------------------------------------------------------
+
+test('a refused row shows WHY it was refused, from the live restore chain', async ({ page }) => {
+  await gotoPane(page);
+
+  // Find a row the server currently considers restorable, using the pane's own
+  // commit:false preview. An already-refused row would make the assertion
+  // below pass for the wrong reason.
+  const rowIds = await page.evaluate(() => Array.from(
+    document.querySelectorAll('tr[id^="blast-row-"]'),
+    tr => tr.id.replace(/^blast-row-/, ''),
+  ));
+  if (rowIds.length === 0) {
+    throw new Error(
+      'no blast-radius rows on this server, so no row could be refused. This surface is UNVERIFIED.',
+    );
+  }
+
+  const target = await page.evaluate(async (ids) => {
+    const csrf = (document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/) || [])[1] || '';
+    const baseEl = document.querySelector('meta[name="htmx-base-path"]');
+    const base = baseEl ? baseEl.content : '';
+    const resp = await fetch(base + '/api/v1/reports/blast-radius/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ change_ids: ids, commit: false }),
+    });
+    if (!resp.ok) return null;
+    const plan = await resp.json();
+    // The staleness write below is a plain PATCH of a free-form string, so the
+    // row must be a field that accepts one. Two kinds are excluded rather than
+    // one, and an ALLOW-list would be the wrong shape here: trackableFields is
+    // free to grow, and a new entry must not silently become eligible for a
+    // write this fixture cannot make.
+    //
+    //   - genres, styles and moods take an ARRAY, so a string body is the
+    //     wrong shape entirely.
+    //   - name carries validation rules (ValidateFieldUpdate refuses an empty,
+    //     whitespace-only or identity-less value) AND routes through the
+    //     collision guard, so a free-form write can be refused for reasons
+    //     that have nothing to do with the staleness this fixture is creating.
+    //
+    // Picking one of those makes the PATCH fail and the test fail LATER, on an
+    // absent element, naming the wrong cause.
+    const unpatchable = new Set(['genres', 'styles', 'moods', 'name']);
+    const ok = (plan.items || []).find(
+      i => i.restore_status === 'planned' && !unpatchable.has(i.field),
+    );
+    return ok ? { id: ok.change_id, artistId: ok.artist_id, field: ok.field } : null;
+  }, rowIds);
+
+  if (!target) {
+    throw new Error(
+      `none of the ${rowIds.length} blast-radius rows are restore-eligible, so none can be made `
+      + 'stale and refused. This surface is UNVERIFIED.',
+    );
+  }
+
+  // PRECONDITION MADE, NOT ASSUMED. Write a NEW value into the field through
+  // the ordinary edit path. That is exactly the "something changed this field
+  // after the report loaded" condition, produced the way a real operator or a
+  // rule pass produces it -- never by hand-inserting a row.
+  //
+  // This mutates one field of one fixture artist in the ephemeral a11y
+  // database. It is not a restore: nothing is written BACK, and the
+  // destructive-flow policy (never confirm a restore) is untouched.
+  //
+  // The value must be UNIQUE PER RUN, not a fixed literal. Service.UpdateField
+  // skips the write entirely when the normalized new value equals the current
+  // one, so a fixed string is a no-op the SECOND time this test runs against
+  // the same server -- and this file runs twice, once per browser project.
+  // Measured: with a literal, firefox-a11y passed and chromium-a11y then wrote
+  // the value firefox had already written, changed nothing, and got a
+  // "planned" row back; the refusal never happened and the test failed on a
+  // hidden element rather than on the thing it tests.
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const patched = await page.evaluate(async (t) => {
+    const csrf = (document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/) || [])[1] || '';
+    const baseEl = document.querySelector('meta[name="htmx-base-path"]');
+    const base = baseEl ? baseEl.content : '';
+    const resp = await fetch(`${base}/api/v1/artists/${t.artistId}/fields/${t.field}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ value: `Edited after the report loaded, by the a11y fixture ${t.stamp}.` }),
+    });
+    return { ok: resp.ok, status: resp.status, body: resp.ok ? '' : await resp.text() };
+  }, { ...target, stamp });
+  expect(
+    patched.ok,
+    `could not make the row stale (PATCH ${target.field} -> ${patched.status} ${patched.body}); `
+    + 'without a stale row the refusal path is never entered and this test proves nothing',
+  ).toBe(true);
+
+  // PRECONDITION ASSERTED, NOT ASSUMED. A 200 from the PATCH says the request
+  // was accepted, NOT that the row is now stale -- a no-op write returns 200
+  // and changes nothing. Ask the server directly, so a fixture that failed to
+  // bite fails HERE, naming the reason, instead of surfacing 15 seconds later
+  // as an element that never appeared.
+  const precondition = await page.evaluate(async (id) => {
+    const csrf = (document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/) || [])[1] || '';
+    const baseEl = document.querySelector('meta[name="htmx-base-path"]');
+    const base = baseEl ? baseEl.content : '';
+    const resp = await fetch(base + '/api/v1/reports/blast-radius/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ change_ids: [id], commit: false }),
+    });
+    if (!resp.ok) return { status: resp.status };
+    const plan = await resp.json();
+    const item = (plan.items || [])[0] || {};
+    return { status: resp.status, restoreStatus: item.restore_status, reason: item.refuse_reason };
+  }, target.id);
+  expect(
+    precondition,
+    'the row is not refused after the staleness write, so the refusal path is never entered',
+  ).toMatchObject({ restoreStatus: 'refused', reason: 'no_longer_current' });
+
+  // The operator's own affordance. The page still shows the row as it was, so
+  // this is precisely the stale-tab case the refusal exists for.
+  const reason = page.locator(`#blast-reason-${target.id}`);
+  await expect(reason).toBeHidden();
+  await page.locator(`#blast-row-${target.id} td:last-child button`).click();
+
+  // THE ASSERTION. The reason appears, on the refused row, and says what to do
+  // about THIS refusal.
+  await expect(reason).toBeVisible({ timeout: 15_000 });
+  const text = (await reason.textContent()).trim();
+  expect(text, 'the refusal reason rendered empty').not.toBe('');
+  expect(
+    text,
+    `the refused row rendered "${text}", which does not name the no_longer_current remedy`,
+  ).toMatch(/changed this field after this report loaded/i);
+  // Never a raw key or a raw token: both are the failure modes of a missing
+  // translation, and both would still satisfy a bare non-empty check.
+  expect(text).not.toMatch(/reports\.blast_radius/);
+  expect(text).not.toMatch(/\bno_longer_current\b/);
+
+  // No dialog opened: an ineligible plan must not offer a confirmation whose
+  // only honest answer is Cancel.
+  await expect(page.locator('#confirm-modal')).toBeHidden();
+
+  // Rendered, not merely present: a reason nobody can read is the defect in
+  // another costume. Contrast is left to the axe scan below; this checks the
+  // element genuinely paints.
+  const box = await reason.boundingBox();
+  expect(box && box.height > 0, 'the reason element has zero height, so it is not actually shown').toBe(true);
+
+  // And the surface is still clean with a refusal on it. The text is injected
+  // after load, which is exactly the kind of late DOM the page-load scan never
+  // sees -- including its rendered contrast against the row background.
+  const results = await buildAxeBuilder(page).analyze();
+  expect(
+    results.violations,
+    `a11y violations with a refusal reason rendered:\n${formatViolations(results.violations)}`,
+  ).toHaveLength(0);
+
+  test.info().annotations.push({
+    type: 'refusal-reason-rendered',
+    description: JSON.stringify({ changeID: target.id, field: target.field, text }, null, 2),
+  });
+});
+
+test('every refusal token renders operator-actionable prose, and an unknown one degrades loudly', async ({ page }) => {
+  await gotoPane(page);
+
+  const rowId = await page.evaluate(() => {
+    const tr = document.querySelector('tr[id^="blast-row-"]');
+    return tr ? tr.id.replace(/^blast-row-/, '') : null;
+  });
+  if (!rowId) {
+    throw new Error('no blast-radius rows on this server, so no row could carry a reason. UNVERIFIED.');
+  }
+
+  // The seven tokens are the blastRefuse* constants in
+  // internal/api/handlers_blast_radius_restore.go, plus one the page has never
+  // heard of. Rendering is driven through the page's OWN function against a
+  // response shaped exactly like the endpoint's, so the strings, the element
+  // lookup and the cascade are all the real ones.
+  const tokens = [
+    'change_not_found', 'not_revertible', 'revert_of_revert', 'no_longer_current',
+    'restore_failed', 'old_value_invalid', 'name_collision',
+    'a_token_from_a_newer_server',
+  ];
+
+  for (const token of tokens) {
+    const rendered = await page.evaluate(({ id, reason }) => {
+      window.blastApplyRefusalReasons({
+        items: [{ change_id: id, restore_status: 'refused', refuse_reason: reason }],
+      });
+      const el = document.getElementById('blast-reason-' + id);
+      if (!el) return null;
+      return {
+        text: el.textContent.trim(),
+        hidden: el.classList.contains('hidden'),
+        display: getComputedStyle(el).display,
+      };
+    }, { id: rowId, reason: token });
+
+    expect(rendered, `no reason element for row ${rowId}`).not.toBeNull();
+    expect(rendered.hidden, `the reason stayed hidden for ${token}`).toBe(false);
+    expect(rendered.display, `the reason is display:none for ${token}`).not.toBe('none');
+    // Not blank, not a raw key, and for a KNOWN token not the bare token
+    // either -- the three ways an operator ends up with no usable information.
+    expect(rendered.text, `${token} rendered empty`).not.toBe('');
+    expect(rendered.text, `${token} rendered a raw translation key`).not.toMatch(/reports\.blast_radius/);
+    if (token !== 'a_token_from_a_newer_server') {
+      expect(rendered.text, `${token} rendered as the bare token`).not.toMatch(
+        new RegExp(`\\b${token}\\b`),
+      );
+    } else {
+      // The unknown branch does the opposite on purpose: it QUOTES the token,
+      // so an operator has something to search for and a support conversation
+      // has something to quote. Blank would hide the refusal entirely, which
+      // is worse than the wrong sentence this whole change removes.
+      expect(rendered.text, 'an unknown token must quote itself').toMatch(new RegExp(token));
+    }
+
+    test.info().annotations.push({ type: `refusal-${token}`, description: rendered.text });
+  }
+
+  // THE CLEAR ARM. An operator who fixes the cause and previews again must not
+  // be left reading the previous attempt's refusal beside a row that is now
+  // eligible.
+  const cleared = await page.evaluate((id) => {
+    window.blastApplyRefusalReasons({
+      items: [{ change_id: id, restore_status: 'planned' }],
+    });
+    const el = document.getElementById('blast-reason-' + id);
+    return { text: el.textContent, hidden: el.classList.contains('hidden') };
+  }, rowId);
+  expect(cleared.text, 'a stale refusal survived a plan that no longer refuses the row').toBe('');
+  expect(cleared.hidden, 'the emptied reason element stayed visible').toBe(true);
 });

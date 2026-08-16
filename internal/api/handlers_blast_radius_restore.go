@@ -35,10 +35,10 @@
 //  2. validateRevertable passes: the field is history-tracked, the row is not
 //     itself a revert, and the recorded old value is one the field accepts.
 //     All three checks are the single-revert endpoint's, reused rather than
-//     reimplemented. The third is dormant on this base (no history-tracked
-//     field carries a validation rule) and, when it does fire, planOneBlastRestore
-//     reports it under the existing not_revertible token rather than a reason
-//     of its own.
+//     reimplemented. The third is LIVE as of #3037, which made "name" both
+//     history-tracked and subject to a validation rule; planOneBlastRestore
+//     reports it under its own token (old_value_invalid), held apart from
+//     not_revertible because the two say different things to an operator.
 //  3. The row is STILL the row the blast-radius report would list for its
 //     (artist, field) pair -- verified by re-running the report's own query,
 //     narrowed to that artist and field, and requiring the top row's id to
@@ -49,6 +49,15 @@
 //     the value about to be written (already recovered, so the write is a
 //     no-op). Anything else means something wrote this field since the damage
 //     landed, and the restore refuses.
+//
+// PASSING ALL FOUR IS NOT A PROMISE THE WRITE LANDS. One refusal cannot be
+// decided from a change row at all: restoring a "name" change whose old value
+// is an identity a DIFFERENT artist now holds would recreate the duplicate
+// that rename removed, and that is a property of the CURRENT database rather
+// than of the row, so it is answered inside the writing transaction by the
+// service's collision guard. A preview can therefore plan such a row and the
+// commit still refuse it, under its own token (name_collision) rather than the
+// generic restore_failed -- see blastRestoreWriteRefusal.
 //
 // Checks 3 and 4 are the load-bearing ones and they are deliberately positive
 // matches rather than "not known to be stale" tests. The report ranks one row
@@ -202,6 +211,54 @@ const (
 	// but errored. The item is reported so a partial bulk restore cannot look
 	// like a clean one.
 	blastRefuseWriteFailed = "restore_failed"
+	// blastRefuseInvalidOldValue: the value this row would put back is one the
+	// field itself does not accept (#3037), so the restore can never succeed
+	// however many times it is retried.
+	//
+	// WHICH ROWS CAN CARRY IT. A row qualifies only when its field is both
+	// history-tracked and policed by artist.ValidateFieldUpdate. That
+	// intersection is exactly {"name"}: the tracked list is
+	// `sed -n '/^var trackableFields/,/^}/p' internal/artist/service.go` and the
+	// validator's switch arms are name and musicbrainz_id, of which
+	// musicbrainz_id is not tracked and sort_name carries no rule. For "name"
+	// the refused shapes are an old value that is empty, whitespace-only, or
+	// one that normalizes to an empty identity key (a name of only dashes,
+	// underscores, spacing or invisible formatting characters). Restoring any
+	// of them blanks or de-identifies artists.name, which persists (NOT NULL,
+	// no non-empty CHECK) and leaves the artist unmatchable by every mechanism
+	// that keys on the name.
+	//
+	// WHICH OF THOSE SHAPES THE REPORT CAN OFFER. Only the non-empty ones. The
+	// blast-radius query carries an `old_value != ''` predicate
+	// (internal/artist/sqlite_history.go), so a row whose old value is
+	// literally empty is never LISTED and an operator working from the report
+	// cannot select one; it stays reachable only through a hand-crafted call
+	// to this endpoint, which accepts whatever change_ids a client sends and
+	// so classifies on its own rather than trusting the report's filter.
+	//
+	// Held apart from blastRefuseNotRevertible even though validateRevertable
+	// produces both, because the two mean different things to an operator: the
+	// other says "this FIELD is not tracked", which is about the report's
+	// coverage, while this says "this ROW's previous value is unusable", which
+	// is about one specific row and will never change however the coverage
+	// list evolves. Held apart from blastRefuseWriteFailed for the sharper
+	// reason: "restore_failed" invites a retry, and a retry here cannot work.
+	blastRefuseInvalidOldValue = "old_value_invalid"
+	// blastRefuseNameCollision: the row is a name change whose OLD value is an
+	// identity a DIFFERENT artist now holds, so putting it back would recreate
+	// the duplicate the rename removed (#3037).
+	//
+	// It is held apart from its two neighbors because it asks the operator for
+	// something neither of them does. blastRefuseWriteFailed invites a retry of
+	// the SAME request; retrying this one unchanged always fails again.
+	// blastRefuseInvalidOldValue is a property of the value itself, so no
+	// action anywhere clears it; this one is a property of ANOTHER artist's
+	// current name, so renaming or merging that artist clears it and the
+	// identical request then succeeds. That is the mechanism, and it is what
+	// distinguishes the token -- not a count of how many other tokens happen to
+	// share the property. Reported only from a commit; blastRestoreWriteRefusal
+	// explains why no plan-time check can produce it.
+	blastRefuseNameCollision = "name_collision"
 )
 
 // blastRestoreRequest is the POST body. The zero value is a preview of nothing.
@@ -269,8 +326,19 @@ type blastRestoreResponse struct {
 	// value, so nothing was written.
 	Unchanged int `json:"unchanged"`
 	// Refused counts items that failed the allow-list or whose write errored.
-	// Non-zero after a commit means the restore is INCOMPLETE; the per-item
-	// reason says why, and the operation is safe to re-run.
+	// Non-zero after a commit means the restore is INCOMPLETE, and the
+	// per-item reason says why. Re-running is always SAFE -- every check is
+	// re-evaluated and nothing is written twice -- but it is not always
+	// USEFUL, and the reason is what says which.
+	//
+	// The mechanism, not a tally: a reason describing the VALUE or the FIELD
+	// (old_value_invalid, not_revertible, revert_of_revert) cannot be changed
+	// by re-running, because nothing about the request or the database moves
+	// between attempts. A reason describing the CURRENT STATE of something else
+	// (name_collision, no_longer_current, change_not_found) clears when that
+	// state changes -- the other artist is renamed or merged, the report is
+	// reloaded -- and only then. restore_failed describes the ATTEMPT, so a
+	// plain retry is the right response to it and to nothing else here.
 	Refused int `json:"refused"`
 	// Items carries every requested id in request order.
 	Items []blastRestoreItem `json:"items"`
@@ -431,6 +499,11 @@ func (r *Router) planOneBlastRestore(ctx context.Context, id string) blastRestor
 		switch {
 		case errors.Is(verr, errRevertOfRevert):
 			item.Reason = blastRefuseRevertOfRevert
+		case errors.Is(verr, errRevertInvalidOldValue):
+			// Reported at PLAN time on purpose: the operator learns the row is
+			// unrestorable while still deciding, rather than being offered a
+			// write that is refused after they approve it.
+			item.Reason = blastRefuseInvalidOldValue
 		default:
 			item.Reason = blastRefuseNotRevertible
 		}
@@ -537,11 +610,12 @@ func (r *Router) commitBlastRestore(ctx context.Context, items []blastRestoreIte
 
 		restoreChangeID, changed, err := r.performRevert(ctx, change)
 		if err != nil {
+			reason := blastRestoreWriteRefusal(err)
 			r.logger.Error("blast restore: writing restore",
 				"change_id", it.ChangeID, "artist_id", change.ArtistID,
-				"field", change.Field, "error", err)
+				"field", change.Field, "reason", reason, "error", err)
 			it.Status = blastRestoreRefused
-			it.Reason = blastRefuseWriteFailed
+			it.Reason = reason
 			continue
 		}
 
@@ -565,6 +639,79 @@ func (r *Router) commitBlastRestore(ctx context.Context, items []blastRestoreIte
 		// file's package comment.
 		r.publishActivityRecent("reverted", change.Field+" restored", change.ArtistID)
 	}
+}
+
+// blastRestoreWriteRefusal classifies an error returned by performRevert into
+// the refusal reason the operator is shown.
+//
+// Two refusals are held apart from the generic "restore_failed" (#3037). All
+// three are refusals, but they ask different things of the operator:
+// restore_failed says the write was attempted and something went wrong, which
+// invites a retry; old_value_invalid says the value being put back is not one
+// the field accepts, so every retry produces the same answer; name_collision
+// says another artist now holds that identity, so the same request succeeds
+// once the operator has renamed or merged that artist.
+//
+// REACHABILITY, PER ARM. The two arms differ here, and the reasoning below
+// covers each one SEPARATELY rather than the function as a whole.
+//
+// The old_value_invalid arm is DEFENSIVE rather than a live path today.
+// planOneBlastRestore runs validateRevertable, which already rejects a row
+// whose old value the field refuses, and no PRODUCTION code rewrites a
+// metadata_changes row's old_value after insert, so the plan-to-commit window
+// cannot turn an accepted value into a refused one. That second half is
+// checked, not assumed: `grep -rn 'UPDATE metadata_changes' --include='*.go'
+// --include='*.sql' internal cmd | grep -v _test | grep -v handlers_blast_radius_restore.go`
+// yields two sites, one setting artist_id (the merge) and one setting
+// created_at (migration 004); the sentence says PRODUCTION because that grep
+// filters test callers out, and this package's own fixtures do rewrite
+// created_at. The trailing filter excludes THIS file, which quotes the command
+// and would otherwise match itself and report three. The arm stays because the
+// fall-through is actively misleading if it ever does become reachable -- a
+// new validation rule, or a plan path that stops consulting validateRevertable
+// -- and a misclassification there sends an operator to retry a write that
+// cannot succeed.
+//
+// The name_collision arm is LIVE, and the paragraph above does NOT cover it.
+// Nothing at plan time can: whether a name collides is a property of the
+// CURRENT database rather than of the immutable history row, so
+// validateRevertable never sees the fact. A bulk restore of a name change whose
+// old value another artist has since taken therefore plans as "planned",
+// reaches performRevert for real, and comes back refused by the transactional
+// collision guard. Without this arm that live refusal would be filed as
+// restore_failed -- a permanent-looking token on the one refusal that is not
+// permanent.
+//
+// DETECTION. errors.Is on the sentinel, matching how the single-revert path
+// classifies the same failure (writeRevertFailure, handlers_history.go). That
+// path additionally type-asserts and requires a non-nil Collision, because it
+// renders the colliding artist and a nil pointer would panic the handler. This
+// function returns a token and dereferences nothing, so the extra guard would
+// buy no safety and would misfile a nil-Collision refusal -- still a collision
+// -- as a retryable write failure.
+//
+// ARM ORDER. In production the two arms are MUTUALLY EXCLUSIVE, so the order
+// cannot change any real answer: artist.Service.UpdateField calls
+// ValidateFieldUpdate first and RETURNS on its error, so a call that yields
+// ErrInvalidFieldValue never reaches updateNameThroughGuard, which is the only
+// producer of ErrNameCollision (internal/artist/service.go). That disjointness
+// is an invariant of a DIFFERENT file, though, and nothing over there is
+// obliged to preserve it, so the order is pinned deliberately rather than left
+// to whichever arm happens to be typed first: an error carrying BOTH sentinels
+// resolves to old_value_invalid. That is the operator-safe direction.
+// old_value_invalid says no retry can ever work, while name_collision sends the
+// operator off to rename or merge another artist and come back; if both are
+// true that errand ends in the same refusal, so the permanent verdict is the
+// honest one. TestBlastRestoreWriteRefusal_ClassifiesACollision pins the order
+// with an errors.Join case.
+func blastRestoreWriteRefusal(err error) string {
+	if errors.Is(err, artist.ErrInvalidFieldValue) {
+		return blastRefuseInvalidOldValue
+	}
+	if errors.Is(err, artist.ErrNameCollision) {
+		return blastRefuseNameCollision
+	}
+	return blastRefuseWriteFailed
 }
 
 // summarizeBlastRestore tallies the per-item statuses into the response

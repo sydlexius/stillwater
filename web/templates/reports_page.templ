@@ -819,6 +819,15 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		data-confirm-title={ t(ctx, "reports.blast_radius.js.confirm_title") }
 		data-confirm-accept={ t(ctx, "reports.blast_radius.js.confirm_accept") }
 		data-confirm-title-bulk={ t(ctx, "reports.blast_radius.js.confirm_title_bulk") }
+		data-refused-label={ t(ctx, "reports.blast_radius.js.refused_label") }
+		data-refuse-change-not-found={ t(ctx, "reports.blast_radius.js.refuse_change_not_found") }
+		data-refuse-not-revertible={ t(ctx, "reports.blast_radius.js.refuse_not_revertible") }
+		data-refuse-revert-of-revert={ t(ctx, "reports.blast_radius.js.refuse_revert_of_revert") }
+		data-refuse-no-longer-current={ t(ctx, "reports.blast_radius.js.refuse_no_longer_current") }
+		data-refuse-restore-failed={ t(ctx, "reports.blast_radius.js.refuse_restore_failed") }
+		data-refuse-old-value-invalid={ t(ctx, "reports.blast_radius.js.refuse_old_value_invalid") }
+		data-refuse-name-collision={ t(ctx, "reports.blast_radius.js.refuse_name_collision") }
+		data-refuse-unknown={ t(ctx, "reports.blast_radius.js.refuse_unknown") }
 	></div>
 	@blastRadiusScript()
 }
@@ -890,6 +899,39 @@ templ blastRadiusRow(row artist.BlastRadiusRow) {
 			>
 				{ t(ctx, "reports.blast_radius.restore") }
 			</button>
+			<!-- Per-row refusal reason, filled in by blastApplyRefusalReasons
+			     from the response's refuse_reason. Empty and hidden until the
+			     server refuses THIS row.
+
+			     It lives here rather than in the toast because a refusal is a
+			     property of one row: a bulk restore can refuse several rows for
+			     several different reasons at once, and a single toast can only
+			     ever name one of them (which is how the generic toast came to
+			     assert "already changed since this report loaded" for every
+			     refusal, including collisions, where it is simply false).
+			     Refused rows deliberately STAY in the table, so the row is
+			     still on screen to carry its own reason.
+
+			     DELIBERATELY NOT A LIVE REGION. role="status" here would be the
+			     obvious move and it is the wrong one: the pane is server-paged
+			     at up to 500 rows (getUserPageSize clamps to [10, 500]), so a
+			     per-row live region means up to 500 of them on one page, and a
+			     bulk restore that refuses many rows would queue one polite
+			     announcement per refusal with no way to interrupt. The
+			     announcement is already made ONCE, by the toast
+			     (#error-toast-container is role="status" aria-live="polite" in
+			     layout.templ), which reports the counts; this text is the
+			     per-row detail a reader reaches by reading the row, exactly
+			     like every other cell in the table.
+
+			     Rendered empty on page load rather than created on demand so
+			     the JS only ever writes text into an element that already
+			     exists. It carries .hidden while empty so an empty paragraph
+			     never takes vertical space in the action cell. -->
+			<p
+				id={ "blast-reason-" + row.ID }
+				class="hidden mt-1 text-xs text-left text-amber-700 dark:text-amber-300"
+			></p>
 		</td>
 	</tr>
 }
@@ -1062,6 +1104,81 @@ templ blastRadiusScript() {
 			return msg;
 		}
 
+		// blastRefusalText turns a machine-readable refuse_reason token into the
+		// prose an operator is shown. Every branch says what to DO, not only
+		// what happened, because the whole point of holding seven tokens apart
+		// is that they call for seven different responses: reload, retry, fix
+		// something else first, or stop trying.
+		//
+		// The token set is the blastRefuse* constants in
+		// internal/api/handlers_blast_radius_restore.go. It is enumerated here
+		// rather than derived, so a token added there without a string here
+		// falls to the unknown branch instead of silently rendering nothing.
+		//
+		// UNKNOWN TOKENS DEGRADE LOUDLY, NEVER BLANK. A server newer than this
+		// page (a mid-deploy reload, a cached script) can return a token this
+		// map has never heard of. Returning '' would hide a refusal entirely --
+		// the row would sit there refused with no explanation, which is worse
+		// than the wrong-explanation defect this whole function exists to fix.
+		// So an unrecognized token renders the unknown string with the RAW
+		// token interpolated, giving the operator something to search for and a
+		// support conversation something to quote. A missing/empty reason gets
+		// '?' rather than an English literal, since every user-facing word here
+		// comes from the translator.
+		function blastRefusalText(reason) {
+			var i18n = blastRestoreI18n();
+			switch (reason) {
+			case 'change_not_found':
+				return i18n.refuseChangeNotFound || 'The change record is gone, so there is nothing left to restore.';
+			case 'not_revertible':
+				return i18n.refuseNotRevertible || 'This field keeps no change history.';
+			case 'revert_of_revert':
+				return i18n.refuseRevertOfRevert || 'This row is itself an undo, so undoing it would loop.';
+			case 'no_longer_current':
+				return i18n.refuseNoLongerCurrent || 'Something changed this field after this report loaded. Reload and look again.';
+			case 'restore_failed':
+				return i18n.refuseRestoreFailed || 'The write was attempted and failed. Trying again may work.';
+			case 'old_value_invalid':
+				return i18n.refuseOldValueInvalid || 'The previous value is one this field will not accept.';
+			case 'name_collision':
+				return i18n.refuseNameCollision || 'Another artist already holds that name. Rename or merge that artist first.';
+			default:
+				console.error('blast-radius restore returned an unrecognized refuse_reason', reason);
+				return (i18n.refuseUnknown || 'Refused for a reason this page does not recognize ({reason}).')
+					.replace('{reason}', reason || '?');
+			}
+		}
+
+		// blastApplyRefusalReasons writes each item's refusal reason into its
+		// own row, and clears the reason on any row the server did NOT refuse.
+		//
+		// Called for BOTH the preview and the commit. A preview that refuses a
+		// row is exactly as informative as a commit that does, and it arrives
+		// BEFORE the operator commits, which is the cheapest moment to learn a
+		// row cannot be recovered.
+		//
+		// The clear arm matters as much as the set arm: an operator who fixes a
+		// collision and re-previews must not be left reading the stale refusal
+		// from the previous attempt next to a row that is now eligible.
+		function blastApplyRefusalReasons(result) {
+			var i18n = blastRestoreI18n();
+			var label = i18n.refusedLabel || 'Refused:';
+			(result.items || []).forEach(function(item) {
+				var el = document.getElementById('blast-reason-' + item.change_id);
+				// No element is not an error: the bulk path removes the rows it
+				// restored before this runs on a later response, and a row on
+				// another page of a server-paged table was never rendered.
+				if (!el) return;
+				if (item.restore_status !== 'refused') {
+					el.textContent = '';
+					el.classList.add('hidden');
+					return;
+				}
+				el.textContent = label + ' ' + blastRefusalText(item.refuse_reason);
+				el.classList.remove('hidden');
+			});
+		}
+
 		// blastRestoreOutcomeToast reports a COMMITTED restore truthfully.
 		//
 		// commitBlastRestore re-reads the live value immediately before each
@@ -1110,6 +1227,10 @@ templ blastRadiusScript() {
 		function blastRestoreRow(id) {
 			var i18n = blastRestoreI18n();
 			blastRestoreRequest([id], false, function(plan) {
+				// Reason first, dialog second. A plan that refuses this row
+				// puts the WHY on the row before the operator decides, rather
+				// than after they have approved something that cannot land.
+				blastApplyRefusalReasons(plan);
 				if (plan.eligible === 0) {
 					showToast(blastRestorePlanSummary(plan));
 					return;
@@ -1117,6 +1238,10 @@ templ blastRadiusScript() {
 				window.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {
 					blastRestoreRequest([id], true, function(result) {
 						blastRestoreOutcomeToast(result);
+						// Before the removal below: a restored row is about to
+						// leave the table anyway, and a REFUSED one stays and
+						// needs its reason.
+						blastApplyRefusalReasons(result);
 						// Drop the row ONLY when the server says this item was
 						// actually restored. Removing it unconditionally hid a
 						// REFUSED restore: the row is still damaged and still
@@ -1257,6 +1382,10 @@ templ blastRadiusScript() {
 			if (!ids.length) return;
 			var i18n = blastRestoreI18n();
 			blastRestoreRequest(ids, false, function(plan) {
+				// Reason first. A bulk plan can refuse several rows for several
+				// DIFFERENT reasons at once, which is precisely what the
+				// summary line cannot say and the per-row labels can.
+				blastApplyRefusalReasons(plan);
 				// A plan with nothing eligible is reported and stops here rather
 				// than opening a dialog whose only honest action is Cancel.
 				if (plan.eligible === 0) {
@@ -1266,6 +1395,7 @@ templ blastRadiusScript() {
 				window.showConfirmDialog(blastRestorePlanSummary(plan), null, function() {
 					blastRestoreRequest(ids, true, function(result) {
 						blastRestoreOutcomeToast(result);
+						blastApplyRefusalReasons(result);
 						// Drop ONLY the rows the server reports as actually
 						// restored. Removing every requested row would hide the
 						// refusals -- rows still damaged and still needing the
