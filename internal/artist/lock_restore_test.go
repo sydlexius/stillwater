@@ -39,11 +39,12 @@ func (e *lockRestoreEnv) seedArtist(id, name, bio, lockedFieldsJSON string) {
 	}
 }
 
-func (e *lockRestoreEnv) biography(id string) string {
+// biography reads a1's stored biography, the artist every fixture here seeds.
+func (e *lockRestoreEnv) biography() string {
 	e.t.Helper()
 	var bio string
-	if err := e.db.QueryRow(`SELECT biography FROM artists WHERE id = ?`, id).Scan(&bio); err != nil {
-		e.t.Fatalf("reading biography of %s: %v", id, err)
+	if err := e.db.QueryRow(`SELECT biography FROM artists WHERE id = 'a1'`).Scan(&bio); err != nil {
+		e.t.Fatalf("reading biography of a1: %v", err)
 	}
 	return bio
 }
@@ -60,7 +61,7 @@ func TestRestoreLockedFieldGuarded_AppliesAndRecordsHistory(t *testing.T) {
 	if outcome != LockedFieldRestoreApplied {
 		t.Fatalf("outcome = %v, want applied", outcome)
 	}
-	if got := env.biography("a1"); got != "curated bio" {
+	if got := env.biography(); got != "curated bio" {
 		t.Errorf("biography = %q, want the restored value", got)
 	}
 	// The history row carries the context's source and the real old/new pair.
@@ -86,7 +87,7 @@ func TestRestoreLockedFieldGuarded_DivertsWhenValueDiverged(t *testing.T) {
 	if outcome != LockedFieldRestoreValueDiverged {
 		t.Fatalf("outcome = %v, want diverged", outcome)
 	}
-	if got := env.biography("a1"); got != "operator edit" {
+	if got := env.biography(); got != "operator edit" {
 		t.Errorf("biography = %q, want the newer value untouched", got)
 	}
 }
@@ -102,7 +103,7 @@ func TestRestoreLockedFieldGuarded_DivertsWhenUnlocked(t *testing.T) {
 	if outcome != LockedFieldRestoreUnlocked {
 		t.Fatalf("outcome = %v, want unlocked", outcome)
 	}
-	if got := env.biography("a1"); got != "junk bio" {
+	if got := env.biography(); got != "junk bio" {
 		t.Errorf("biography = %q, want it untouched", got)
 	}
 }
@@ -198,3 +199,100 @@ func TestRestoreLockedFieldGuarded_MissingArtistIsNotFound(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
+
+// The verb's failure branches, driven with real SQLite faults rather than
+// mocks: each is an error path the repair loop classifies (transient vs
+// deterministic), so each earns a pin that it surfaces as an ERROR or a
+// decided outcome, never as a false "applied".
+func TestRestoreLockedFieldGuarded_FailureBranches(t *testing.T) {
+	t.Run("a side-table field with no artists column is a typed refusal", func(t *testing.T) {
+		env := newLockRestoreEnv(t)
+		// audiodb_id carries no validation rule, so this reaches the column
+		// map rather than being refused earlier; it lives in the provider
+		// side table, not on the artists row.
+		_, err := env.svc.RestoreLockedFieldGuarded(context.Background(), "a1", "audiodb_id", "old", "new")
+		if !errors.Is(err, ErrInvalidFieldValue) {
+			t.Fatalf("err = %v, want ErrInvalidFieldValue for a side-table field", err)
+		}
+	})
+
+	t.Run("a repository without a DB accessor is an error", func(t *testing.T) {
+		db := newTestDB(t)
+		artists, providers, members, aliases, images, platformIDs, completeness := NewDefaultRepos(db)
+		// noDBRepo hides the DB() accessor the verb's transaction needs.
+		svc := NewServiceWithRepos(noDBRepo{artists}, providers, members, aliases, images, platformIDs, completeness)
+		if _, err := svc.RestoreLockedFieldGuarded(context.Background(), "a1", "biography", "junk", "curated"); err == nil {
+			t.Fatal("want an error when the repository exposes no raw handle")
+		}
+	})
+
+	t.Run("a closed database fails at BeginTx", func(t *testing.T) {
+		env := newLockRestoreEnv(t)
+		env.seedArtist("a1", "Artist", "junk bio", `["biography"]`)
+		if err := env.db.Close(); err != nil {
+			t.Fatalf("closing db: %v", err)
+		}
+		if _, err := env.svc.RestoreLockedFieldGuarded(context.Background(), "a1", "biography", "junk bio", "curated bio"); err == nil {
+			t.Fatal("want an error on a closed database")
+		}
+	})
+
+	t.Run("a load failure that is not no-rows is surfaced", func(t *testing.T) {
+		env := newLockRestoreEnv(t)
+		if _, err := env.db.Exec(`DROP TABLE artists`); err != nil {
+			t.Fatalf("dropping artists: %v", err)
+		}
+		_, err := env.svc.RestoreLockedFieldGuarded(context.Background(), "a1", "biography", "junk", "curated")
+		if err == nil {
+			t.Fatal("want an error when the artists table is unreadable")
+		}
+		if errors.Is(err, ErrNotFound) {
+			t.Fatalf("err = %v; a broken table must not read as a missing artist", err)
+		}
+	})
+
+	t.Run("a refused write surfaces as an error, not applied", func(t *testing.T) {
+		env := newLockRestoreEnv(t)
+		env.seedArtist("a1", "Artist", "junk bio", `["biography"]`)
+		if _, err := env.db.Exec(
+			`CREATE TRIGGER refuse_bio_update BEFORE UPDATE OF biography ON artists
+			 BEGIN SELECT RAISE(ABORT, 'refused by test trigger'); END`); err != nil {
+			t.Fatalf("creating trigger: %v", err)
+		}
+		if _, err := env.svc.RestoreLockedFieldGuarded(context.Background(), "a1", "biography", "junk bio", "curated bio"); err == nil {
+			t.Fatal("want the trigger's refusal surfaced as an error")
+		}
+		if got := env.biography(); got != "junk bio" {
+			t.Errorf("biography = %q, want it untouched by the refused write", got)
+		}
+	})
+
+	t.Run("a write the engine silently skips reports diverged, never applied", func(t *testing.T) {
+		// RAISE(IGNORE) makes SQLite skip the row without erroring: the one
+		// reachable shape of "UPDATE succeeded but wrote 0 rows", which is
+		// exactly what the repeated WHERE condition reports when the value
+		// moved. The verb must read RowsAffected and answer diverged.
+		env := newLockRestoreEnv(t)
+		env.seedArtist("a1", "Artist", "junk bio", `["biography"]`)
+		if _, err := env.db.Exec(
+			`CREATE TRIGGER skip_bio_update BEFORE UPDATE OF biography ON artists
+			 BEGIN SELECT RAISE(IGNORE); END`); err != nil {
+			t.Fatalf("creating trigger: %v", err)
+		}
+		outcome, err := env.svc.RestoreLockedFieldGuarded(context.Background(), "a1", "biography", "junk bio", "curated bio")
+		if err != nil {
+			t.Fatalf("RestoreLockedFieldGuarded: %v", err)
+		}
+		if outcome != LockedFieldRestoreValueDiverged {
+			t.Fatalf("outcome = %v, want diverged for a 0-row write", outcome)
+		}
+		if got := env.biography(); got != "junk bio" {
+			t.Errorf("biography = %q, want it untouched", got)
+		}
+	})
+}
+
+// noDBRepo wraps a Repository and hides any DB accessor, standing in for a
+// deployment where the service was built over a repository that owns no raw
+// handle.
+type noDBRepo struct{ Repository }
