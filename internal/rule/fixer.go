@@ -770,6 +770,10 @@ type runForArtistAccum struct {
 	// the chokepoint restored, so a fix's honesty is not knowable when the fixer
 	// returns; grantFixCredits settles them once it is. See that function for
 	// why the credit is DEFERRED rather than granted and later reversed.
+	//
+	// It is ALSO where splitLockRevertedRows reads each fix's real FixResult, so
+	// the row verdict and the credit verdict cannot be reached from different
+	// inputs. See fixResultForRule.
 	pendingCredits []pendingFixCredit
 }
 

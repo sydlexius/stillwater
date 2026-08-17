@@ -250,9 +250,9 @@ func TestRunForArtist_LockRevertedAutoFixStaysOpenWithItsResultRow(t *testing.T)
 // That row and the activity.recent rail event share one emitter
 // (recordRuleFixHistory), so counting rows is how a test observes whether the
 // un-recallable rail event was pushed.
-func ruleFixHistoryCount(t *testing.T, h *artist.HistoryService, artistID string) int {
+func ruleFixHistoryCount(t *testing.T, ctx context.Context, h *artist.HistoryService, artistID string) int {
 	t.Helper()
-	changes, _, err := h.List(context.Background(), artistID, 100, 0)
+	changes, _, err := h.List(ctx, artistID, 100, 0)
 	if err != nil {
 		t.Fatalf("listing history: %v", err)
 	}
@@ -289,7 +289,7 @@ func bioFixEntry(t *testing.T, results []FixResult) FixResult {
 type runPathCreditCase struct {
 	name string
 	// run executes the path and returns (fixesAttempted, fixesSucceeded, results).
-	run func(t *testing.T, p *Pipeline, a *artist.Artist, ctx context.Context) (int, int, []FixResult)
+	run func(t *testing.T, ctx context.Context, p *Pipeline, a *artist.Artist) (int, int, []FixResult)
 }
 
 // TestRunPaths_LockRevertedAutoFixEarnsNoCredit is finding 1's regression AND
@@ -304,7 +304,7 @@ type runPathCreditCase struct {
 func TestRunPaths_LockRevertedAutoFixEarnsNoCredit(t *testing.T) {
 	cases := []runPathCreditCase{{
 		name: "RunForArtist",
-		run: func(t *testing.T, p *Pipeline, a *artist.Artist, ctx context.Context) (int, int, []FixResult) {
+		run: func(t *testing.T, ctx context.Context, p *Pipeline, a *artist.Artist) (int, int, []FixResult) {
 			t.Helper()
 			res, err := p.RunForArtist(ctx, a)
 			if err != nil {
@@ -317,7 +317,7 @@ func TestRunPaths_LockRevertedAutoFixEarnsNoCredit(t *testing.T) {
 		// updateHealthScore's restored return is consumed only here, so a
 		// mutation dropping it left every RunForArtist test green.
 		name: "processArtistForRunAll",
-		run: func(t *testing.T, p *Pipeline, a *artist.Artist, ctx context.Context) (int, int, []FixResult) {
+		run: func(t *testing.T, ctx context.Context, p *Pipeline, a *artist.Artist) (int, int, []FixResult) {
 			t.Helper()
 			contrib, _ := p.processArtistForRunAll(ctx, a)
 			return contrib.fixesAttempted, contrib.fixesSucceeded, contrib.results
@@ -326,7 +326,7 @@ func TestRunPaths_LockRevertedAutoFixEarnsNoCredit(t *testing.T) {
 		// The single-rule sweep, which reaches persistHealthAfterRun rather
 		// than updateHealthScore.
 		name: "processArtistForRunRule",
-		run: func(t *testing.T, p *Pipeline, a *artist.Artist, ctx context.Context) (int, int, []FixResult) {
+		run: func(t *testing.T, ctx context.Context, p *Pipeline, a *artist.Artist) (int, int, []FixResult) {
 			t.Helper()
 			r, err := p.ruleService.GetByID(ctx, RuleBioExists)
 			if err != nil {
@@ -362,7 +362,7 @@ func TestRunPaths_LockRevertedAutoFixEarnsNoCredit(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// POSITIVE CONTROL first: unlocked, so all three credits are earned.
 			p, a, hist, fixer, ctx := build(t, false)
-			_, succeeded, _ := tc.run(t, p, a, ctx)
+			_, succeeded, _ := tc.run(t, ctx, p, a)
 			if fixer.fixCalls == 0 {
 				t.Fatal("positive control FAILED: the fixer never ran, so this path exercises nothing")
 			}
@@ -370,14 +370,14 @@ func TestRunPaths_LockRevertedAutoFixEarnsNoCredit(t *testing.T) {
 				t.Fatalf("positive control FAILED: FixesSucceeded = %d for an UNLOCKED fix, want 1; "+
 					"the credit path is broken and the locked case below proves nothing", succeeded)
 			}
-			if n := ruleFixHistoryCount(t, hist, a.ID); n != 1 {
+			if n := ruleFixHistoryCount(t, ctx, hist, a.ID); n != 1 {
 				t.Fatalf("positive control FAILED: %d rule_fix history rows for an UNLOCKED fix, want 1", n)
 			}
 
 			// THE REGRESSION: biography pinned, so the guard reverts the only
 			// change the fixer made.
 			p, a, hist, fixer, ctx = build(t, true)
-			attempted, succeeded, results := tc.run(t, p, a, ctx)
+			attempted, succeeded, results := tc.run(t, ctx, p, a)
 			if fixer.fixCalls == 0 {
 				t.Fatal("precondition: no fix was attempted, so the revert path was never reached")
 			}
@@ -390,7 +390,7 @@ func TestRunPaths_LockRevertedAutoFixEarnsNoCredit(t *testing.T) {
 					"run-complete toast tells the operator %d were fixed while the violation "+
 					"correctly stays open (#3037)", succeeded, succeeded)
 			}
-			if n := ruleFixHistoryCount(t, hist, a.ID); n != 0 {
+			if n := ruleFixHistoryCount(t, ctx, hist, a.ID); n != 0 {
 				t.Errorf("%d rule_fix history rows for a reverted fix, want 0. That row is written "+
 					"beside an activity.recent SSE event that CANNOT be recalled, so it must "+
 					"never be emitted rather than emitted and reversed", n)
@@ -465,6 +465,107 @@ func TestLockRevertedFixResult_DiskEffectsDefeatTheRevert(t *testing.T) {
 					"reverted would hide a file the operator now has", got != nil, tc.wantRevert)
 			}
 		})
+	}
+}
+
+// TestFixResultForRule_MatchesOnRuleID pins the lookup key. Without the rule-id
+// match the helper returns the FIRST pending credit whatever rule made it, so a
+// multi-rule pass would judge one rule's row against another rule's disk
+// effects -- silently, and in the direction that GRANTS the resolve.
+func TestFixResultForRule_MatchesOnRuleID(t *testing.T) {
+	other := &FixResult{RuleID: "other_rule", Fixed: true, SavedPath: "/lib/a/fanart.jpg"}
+	mine := &FixResult{RuleID: RuleBioExists, Fixed: true}
+	acc := &runForArtistAccum{pendingCredits: []pendingFixCredit{
+		{ruleID: "other_rule", fr: other},
+		{ruleID: RuleBioExists, fr: mine},
+	}}
+	if got := acc.fixResultForRule(RuleBioExists); got != mine {
+		t.Errorf("fixResultForRule(%q) = %+v, want this rule's own result; a match on position "+
+			"rather than rule id reads another rule's disk effects", RuleBioExists, got)
+	}
+	// No credit for the rule: nil, never a synthesized Fixed stand-in, which
+	// would assert the very property that could not be read.
+	if got := acc.fixResultForRule("absent_rule"); got != nil {
+		t.Errorf("fixResultForRule(absent) = %+v, want nil", got)
+	}
+}
+
+// bioWithDiskEffectFixer writes a guarded field AND reports a disk effect. No
+// SHIPPED fixer does both, which is exactly why the guard needs a synthetic one:
+// it is the only shape that can make the row surface and the credit surface
+// disagree.
+type bioWithDiskEffectFixer struct {
+	ruleID   string
+	newBio   string
+	fixCalls int
+}
+
+func (f *bioWithDiskEffectFixer) CanFix(v *Violation) bool { return v.RuleID == f.ruleID }
+
+func (f *bioWithDiskEffectFixer) Fix(_ context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	f.fixCalls++
+	a.Biography = f.newBio
+	return &FixResult{
+		RuleID:    v.RuleID,
+		Fixed:     true,
+		Message:   "overwrote biography and saved a file",
+		SavedPath: "/lib/a/fanart.jpg",
+	}, nil
+}
+
+// TestRunForArtist_DiskEffectKeepsTheRowAndTheCreditInAgreement is the
+// two-surface consistency regression.
+//
+// splitLockRevertedRows used to build a SYNTHETIC FixResult{Fixed: true} rather
+// than reading the fixer's real one. That stand-in has no SavedPath, no
+// RemovedFiles and no SlotsRemoved, so lockRevertedFixResult's disk-effects arm
+// could never fire on the row path while grantFixCredits -- which passes the
+// real result -- saw the disk effect and granted the credit. The run then
+// reported one fix succeeded while the violation it repaired stayed OPEN: the
+// same split-surface failure this whole change exists to close, reintroduced
+// inside the fix for it.
+//
+// The assertion is AGREEMENT, not a particular verdict. Both surfaces read the
+// same input now, so both must reach "the fix stands".
+func TestRunForArtist_DiskEffectKeepsTheRowAndTheCreditInAgreement(t *testing.T) {
+	db, artistSvc, a, ruleSvc, _, ctx := lockRevertFixture(t, "short", "biography")
+	enableRuleAuto(t, ctx, ruleSvc, RuleBioExists)
+
+	// Still short after the fix: the guard reverts the write, so the rule keeps
+	// failing and the reverted-fix path is genuinely reached.
+	fixer := &bioWithDiskEffectFixer{ruleID: RuleBioExists, newBio: "brief bio"}
+	p := NewPipeline(NewEngine(ruleSvc, nil, nil, nil, testLogger()), artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	res, err := p.RunForArtist(ctx, a)
+	if err != nil {
+		t.Fatalf("RunForArtist: %v", err)
+	}
+	// PRECONDITIONS. Without both, the two surfaces agree for the wrong reason:
+	// no fix ran, or the guard never reverted anything.
+	if fixer.fixCalls == 0 {
+		t.Fatal("precondition: the fixer never ran, so neither surface was exercised")
+	}
+	stored, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if stored.Biography != "short" {
+		t.Fatalf("precondition: the pinned biography is %q, want \"short\" -- the chokepoint did "+
+			"not revert the write, so nothing here tests the reverted path", stored.Biography)
+	}
+
+	// The disk effect defeats the revert, so the credit is granted.
+	if res.FixesSucceeded != 1 {
+		t.Errorf("FixesSucceeded = %d, want 1: the fix left a file on disk, which is real "+
+			"whatever the artists row ended up holding", res.FixesSucceeded)
+	}
+	// ...and the ROW must reach the SAME verdict. A resolved count beside an
+	// open row tells the operator one fix succeeded while its finding is still
+	// outstanding, with no way to tell which claim is true.
+	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusResolved {
+		t.Errorf("violation status = %q, want resolved. The credit surface granted this fix and "+
+			"the row surface re-opened it: splitLockRevertedRows must read the fixer's REAL "+
+			"FixResult, not a synthetic one that can never carry a disk effect", got)
 	}
 }
 

@@ -140,8 +140,9 @@ func (acc *runForArtistAccum) noteIntendedGuardedFields(ruleID string, fields []
 
 // splitLockRevertedRows partitions the pass's deferred resolved rows into the
 // ones that may still be resolved and the ones whose every guarded change the
-// lock guard reverted. It is a pure function of the accumulated intent and the
-// write's restored-field report; the caller does the writing.
+// lock guard reverted. It is a pure function of the accumulated state (intent
+// and the pass's pending credits) and the write's restored-field report; the
+// caller does the writing.
 //
 // An empty restored list short-circuits to "resolve everything", which is the
 // overwhelmingly common case and costs nothing.
@@ -151,13 +152,48 @@ func (acc *runForArtistAccum) splitLockRevertedRows(restored []string) (keep, re
 	}
 	for _, rv := range acc.resolvedRows {
 		intended := acc.intendedGuarded[rv.RuleID]
-		if lockRevertedFixResult(&FixResult{RuleID: rv.RuleID, Fixed: true}, intended, restored) != nil {
+		// THE FIXER'S REAL RESULT, never a synthetic stand-in. A synthesized
+		// FixResult{Fixed: true} has no SavedPath, no RemovedFiles and no
+		// SlotsRemoved, so the disk-effects arm of lockRevertedFixResult could
+		// never fire here while grantFixCredits -- which passes the real one --
+		// saw it and granted the credit. The two surfaces would then disagree
+		// about the same fix: the count says repaired, the row says still open.
+		// That is precisely the split-surface failure this file exists to close.
+		if lockRevertedFixResult(acc.fixResultForRule(rv.RuleID), intended, restored) != nil {
 			reverted = append(reverted, rv)
 			continue
 		}
 		keep = append(keep, rv)
 	}
 	return keep, reverted
+}
+
+// fixResultForRule returns the FixResult the pass recorded for ruleID, or nil
+// when no pending credit carries one.
+//
+// NIL RATHER THAN A SYNTHETIC STAND-IN. lockRevertedFixResult is a positive
+// allow-list -- four conditions, ALL required -- and two of them (Fixed, and the
+// disk effects) are properties of the fixer's result. With no result there is
+// nothing to test them against, so the row cannot be CLASSIFIED as reverted and
+// is left alone; lockRevertedFixResult's own nil guard already spells that.
+// Inventing a Fixed result to stand in would be asserting the very thing that
+// could not be read.
+//
+// Unreachable today, and provably so: a resolvedRow is stashed only inside the
+// `out.fixed` arm of mergeOutcome / mergeIntoContrib, which is entered only when
+// fr.Fixed, and the same arm calls notePendingFixCredit with that same non-nil fr
+// and the same rule id. The lookup is by rule id because that is the key both
+// sides already agree on (violationOutcome.fixedRuleID, never fr.RuleID, which a
+// fixer may leave empty). Two violations of one rule for one artist share the
+// first credit's result -- they also share the intended-fields union, so the two
+// surfaces still read the same input, which is the property that matters here.
+func (acc *runForArtistAccum) fixResultForRule(ruleID string) *FixResult {
+	for _, c := range acc.pendingCredits {
+		if c.ruleID == ruleID && c.fr != nil {
+			return c.fr
+		}
+	}
+	return nil
 }
 
 // grantFixCredits awards -- or withholds -- every credit the pass deferred while
@@ -187,8 +223,12 @@ func (acc *runForArtistAccum) splitLockRevertedRows(restored []string) (keep, re
 func (p *Pipeline) grantFixCredits(ctx context.Context, a *artist.Artist, acc *runForArtistAccum, restored []string, results []FixResult, succeeded *int) {
 	for _, c := range acc.pendingCredits {
 		if reverted := lockRevertedFixResult(c.fr, acc.intendedGuarded[c.ruleID], restored); reverted != nil {
+			// fields is the RULE-scoped intent, not the artist-wide restored set.
+			// The line is keyed by one rule_id and the operator-visible Message
+			// below is built from the same intent, so logging the artist-wide set
+			// would name locks this fixer never touched in a multi-rule pass.
 			p.logger.Error("a rule fix was fully reverted by a field lock; it is not counted as a repair and no history is recorded",
-				"artist_id", a.ID, "rule_id", c.ruleID, "fields", strings.Join(restored, ","))
+				"artist_id", a.ID, "rule_id", c.ruleID, "fields", strings.Join(acc.intendedGuarded[c.ruleID], ","))
 			if c.resultIdx >= 0 && c.resultIdx < len(results) {
 				// Keep the fixer's own RuleID: reverted.RuleID is copied from the
 				// FixResult, which a fixer may leave empty, and blanking a
@@ -273,7 +313,10 @@ func (p *Pipeline) reportIfLockReverted(a *artist.Artist, rv *RuleViolation, fr 
 	if out == nil {
 		return nil
 	}
+	// intended, not restored: this line names one rule, and the FixResult
+	// revertedFixReport just built names the same rule-scoped set. See the
+	// matching site in grantFixCredits.
 	p.logger.Error("a rule fix was fully reverted by a field lock; the violation stays OPEN rather than being resolved",
-		"artist_id", a.ID, "rule_id", rv.RuleID, "fields", strings.Join(restored, ","))
+		"artist_id", a.ID, "rule_id", rv.RuleID, "fields", strings.Join(intended, ","))
 	return out
 }

@@ -830,6 +830,11 @@ func logUnreadableSnapshot(artistID string, err error) {
 // locked fields the guard RESTORED on this write (nil when none), so a caller
 // that needs to tell "my change landed" from "the guard reverted it" can ask.
 // See UpdateReportingLocks for why that report is a return value.
+//
+// ON AN ERROR THE REPORT IS NIL, WITH ONE DELIBERATE EXCEPTION: when the artists
+// row was written and only persistNormalized failed, the restorations already
+// happened, so they are reported BESIDE that error rather than swallowed. A
+// caller that assumes nil on every error path would miss them.
 func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) (restored []string, err error) {
 	// Snapshot the stored row before writing.
 	//

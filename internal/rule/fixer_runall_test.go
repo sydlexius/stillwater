@@ -132,6 +132,15 @@ func TestMergeIntoContrib(t *testing.T) {
 		if len(acc.pendingCredits) != 1 || acc.pendingCredits[0].fr != fr {
 			t.Errorf("pendingCredits = %+v, want exactly this fix awaiting its credit", acc.pendingCredits)
 		}
+		// resultIdx must address the entry this merge just appended -- index 0,
+		// since it is the first. grantFixCredits rewrites results[resultIdx] in
+		// place, so an off-by-one rewrites ANOTHER rule's entry and an
+		// out-of-range value silently skips the rewrite; this is the only place
+		// the value is observed at merge time.
+		if got := acc.pendingCredits[0].resultIdx; got != 0 {
+			t.Errorf("pendingCredits[0].resultIdx = %d, want 0: it must index the contrib.results "+
+				"entry this merge appended, or grantFixCredits corrects the wrong entry", got)
+		}
 		if len(acc.resolvedRows) != 1 || acc.resolvedRows[0] != rv {
 			t.Error("resolvedRow should be stashed in acc.resolvedRows")
 		}
