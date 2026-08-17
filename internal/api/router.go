@@ -298,11 +298,14 @@ type Router struct {
 	// making restore unable to recover the real pre-Stillwater settings
 	// (issue #1190).
 	//
-	// It replaces three formerly-independent mutex pools (a dedicated
-	// per-connection lock scoped to handleSetStillwaterManaged alone, a
-	// dedicated pathMappingsMu, and NO lock at all around the full-row
-	// update in handleUpdateConnection / handleUpdateConnectionFeatures)
-	// that each guarded a different subset of a connection's fields (#2324).
+	// It replaces three formerly independent synchronization arrangements (a
+	// dedicated per-connection lock scoped to handleSetStillwaterManaged
+	// alone, a dedicated pathMappingsMu, and NO lock at all around the
+	// full-row update in handleUpdateConnection /
+	// handleUpdateConnectionFeatures) that each covered a different subset of
+	// a connection's fields (#2324). Only two of the three were locks; the
+	// third was the absence of one, which is why "arrangements" and not
+	// "pools".
 	// Because handleUpdateConnection issues a full-row UPDATE from an
 	// in-memory snapshot, two concurrent writes touching DIFFERENT fields of
 	// the SAME connection under different (or no) locks could each read-modify-write
