@@ -112,21 +112,32 @@ export const STORAGE_STATE = path.join(
   dirname, '.auth', `state-${readable}-${serverDigest}.json`,
 );
 
-// A per-invocation key means `.auth/` accumulates one file per run. Sweep
-// files older than a day -- far longer than any run (the tier is minutes), so
-// a CONCURRENT run's file is never a candidate, which is the one thing this
-// must not delete.
-const STATE_TTL_MS = 24 * 60 * 60 * 1000;
+// A per-invocation key means `.auth/` accumulates one file per run, so sweep
+// old ones. This is housekeeping guarding a hazard: deleting a file some run is
+// still reading reinstates the 401 bug by a new route, so every rule here is a
+// positive ALLOW-list of what may go, never a negated list of what may not.
+//
+// Three independent reasons a file is spared:
+//   - it is younger than the TTL. A day is far longer than any run (the tier
+//     takes minutes), so a CONCURRENT run's live file is never a candidate.
+//   - it is THIS run's own file, whatever its mtime says. A clock skew or a
+//     restored mtime must not let the sweep eat the file the suite is about to
+//     read -- that is the failure worth ruling out by NAME rather than by
+//     arithmetic.
+//   - its name is not a state file. Anything else in `.auth/` is not ours.
+export const STATE_TTL_MS = 24 * 60 * 60 * 1000;
 
-function pruneStaleStateFiles(dir, now = Date.now()) {
+export function pruneStaleStateFiles(dir, { now = Date.now(), keep } = {}) {
   let entries;
   try {
     entries = fs.readdirSync(dir);
   } catch {
-    return; // No directory yet: nothing to prune.
+    return; // No directory yet (or unreadable): nothing to prune.
   }
+  const keepName = path.basename(keep ?? STORAGE_STATE);
   for (const name of entries) {
     if (!/^state-.*\.json$/.test(name)) continue;
+    if (name === keepName) continue;
     const file = path.join(dir, name);
     try {
       if (now - fs.statSync(file).mtimeMs < STATE_TTL_MS) continue;

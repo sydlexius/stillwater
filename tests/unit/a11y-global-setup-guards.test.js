@@ -19,6 +19,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 
 let loginMode = 'ok';
 const srv = http.createServer((req, res) => {
@@ -42,7 +43,9 @@ await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 process.env.SW_TEST_URL = `http://127.0.0.1:${srv.address().port}`;
 
 // SW_A11Y_SEEN_RUN_ID is UNSET here, so this import is what mints it.
-const { default: globalSetup, STORAGE_STATE } = await import('../a11y/global-setup.js');
+const {
+  default: globalSetup, STORAGE_STATE, pruneStaleStateFiles, STATE_TTL_MS,
+} = await import('../a11y/global-setup.js');
 const MINTED_RUN_ID = process.env.SW_A11Y_SEEN_RUN_ID;
 
 after(() => srv.close());
@@ -124,5 +127,116 @@ test('an INHERITED run id is reused, and two runs on one server differ', async (
     b, a1,
     'two invocations against one server share a state file, so a later run '
     + "deletes an earlier run's session and its remaining tests 401",
+  );
+});
+
+// --- pruneStaleStateFiles -------------------------------------------------
+//
+// The per-invocation key makes `.auth/` grow one file per run, so globalSetup
+// sweeps it. The hazard is the OPPOSITE of the one the sweep solves: deleting a
+// file a live run is still reading reinstates the 401 bug by a new route. So
+// the survival cases are the load-bearing ones and get the most weight, and the
+// rules are asserted directly rather than inferred from TTL arithmetic.
+
+/** Creates a temp .auth-alike holding files at the given ages, in ms. */
+function stateDirWith(files) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-prune-'));
+  for (const [name, ageMs] of Object.entries(files)) {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, '{}');
+    const when = new Date(Date.now() - ageMs);
+    fs.utimesSync(file, when, when);
+  }
+  return dir;
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+
+test('prune: a state file older than the TTL is removed', () => {
+  const dir = stateDirWith({ 'state-old-aaaa.json': 3 * DAY });
+  // Precondition, or "it is gone" would be true of a file never created.
+  assert.ok(fs.existsSync(path.join(dir, 'state-old-aaaa.json')), 'fixture not created');
+
+  pruneStaleStateFiles(dir, { keep: 'state-current-zzzz.json' });
+
+  assert.equal(
+    fs.existsSync(path.join(dir, 'state-old-aaaa.json')), false,
+    'a state file well past the TTL was not swept, so .auth/ grows without bound',
+  );
+});
+
+test('prune: a file NEWER than the TTL survives (a concurrent run is reading it)', () => {
+  // THE case this whole guard exists for. A run in flight is minutes old; the
+  // TTL is a day. Asserted explicitly, never inferred from the arithmetic.
+  const dir = stateDirWith({ 'state-live-bbbb.json': 90 * 1000 });
+
+  pruneStaleStateFiles(dir, { keep: 'state-current-zzzz.json' });
+
+  assert.ok(
+    fs.existsSync(path.join(dir, 'state-live-bbbb.json')),
+    "the sweep deleted a live run's session file, so that run's remaining tests 401 "
+    + '-- the original bug, by a new route',
+  );
+  assert.ok(STATE_TTL_MS > 60 * 60 * 1000, 'the TTL is too short to outlast a run');
+});
+
+test("prune: the CURRENT run's own file survives an ancient mtime", () => {
+  // Spared by NAME, not by age. A clock skew, a restored mtime or a machine
+  // resuming from sleep must not let the sweep eat the file THIS suite is about
+  // to read. Age is set well past the TTL precisely so only the name can save it.
+  const dir = stateDirWith({ 'state-current-zzzz.json': 30 * DAY });
+
+  pruneStaleStateFiles(dir, { keep: 'state-current-zzzz.json' });
+
+  assert.ok(
+    fs.existsSync(path.join(dir, 'state-current-zzzz.json')),
+    "the sweep deleted the running suite's OWN state file; every context that "
+    + 'loads it afterwards authenticates as nobody',
+  );
+});
+
+test('prune: only state-named files inside .auth are touched', () => {
+  // A positive allow-list, never a negated safe-list. Every file here is far
+  // past the TTL, so age alone would condemn all of them; only the naming rule
+  // spares the strays.
+  const dir = stateDirWith({
+    'state-old-cccc.json': 5 * DAY,
+    'README.md': 5 * DAY,
+    'notes.json': 5 * DAY,
+    'state-old-cccc.json.bak': 5 * DAY,
+  });
+
+  pruneStaleStateFiles(dir, { keep: 'state-current-zzzz.json' });
+
+  assert.equal(fs.existsSync(path.join(dir, 'state-old-cccc.json')), false,
+    'the matching stale file should have been swept');
+  for (const stray of ['README.md', 'notes.json', 'state-old-cccc.json.bak']) {
+    assert.ok(
+      fs.existsSync(path.join(dir, stray)),
+      `the sweep deleted ${stray}, which it does not own`,
+    );
+  }
+});
+
+test('prune: FAIL-SAFE on a missing directory and an unstattable entry', () => {
+  // Housekeeping must never fail a run. Two real failure modes, both exercised
+  // rather than asserted from the shape of the try/catch.
+  assert.doesNotThrow(
+    () => pruneStaleStateFiles(path.join(os.tmpdir(), 'sw-prune-does-not-exist')),
+    'a missing .auth directory threw, failing a run over housekeeping',
+  );
+
+  // A broken symlink: readdir lists it, statSync throws ENOENT on it. This is
+  // also the benign race -- another process removing a file between the two.
+  const dir = stateDirWith({ 'state-real-dddd.json': 5 * DAY });
+  fs.symlinkSync(path.join(dir, 'gone'), path.join(dir, 'state-broken-eeee.json'));
+  assert.doesNotThrow(
+    () => pruneStaleStateFiles(dir, { keep: 'state-current-zzzz.json' }),
+    'an unstattable entry threw instead of being skipped',
+  );
+  // ...and it kept going: the real stale file after it was still swept.
+  assert.equal(
+    fs.existsSync(path.join(dir, 'state-real-dddd.json')), false,
+    'the sweep aborted on the bad entry instead of continuing',
   );
 });
