@@ -56,6 +56,18 @@ func TestUpdateReportingLocks_NamesTheRestoredField(t *testing.T) {
 		t.Fatalf("restored = %v, want [biography]. A caller reading a nil report treats a reverted "+
 			"write as a successful one, which is the defect (#3037).", restored)
 	}
+	// The run paths use the sibling verb; both funnel through Service.update,
+	// and a report on one and not the other would be an honesty hole in the
+	// UNATTENDED path -- the one that repeats nightly.
+	a2 := seedLockGuardArtist(t, svc, "Run Path", "pinned", "biography")
+	a2.Biography = "replacement"
+	runRestored, err := svc.UpdateAfterRuleEvaluationReportingLocks(ctx, a2)
+	if err != nil {
+		t.Fatalf("UpdateAfterRuleEvaluationReportingLocks: %v", err)
+	}
+	if !slices.Equal(runRestored, []string{"biography"}) {
+		t.Fatalf("the run-path verb reported %v restored, want [biography]", runRestored)
+	}
 	stored, err := svc.GetByID(ctx, locked.ID)
 	if err != nil {
 		t.Fatalf("reloading: %v", err)
@@ -65,24 +77,6 @@ func TestUpdateReportingLocks_NamesTheRestoredField(t *testing.T) {
 	}
 	if stored.Origin != "Somewhere, XX" {
 		t.Errorf("origin = %q, want the unlocked change to have landed", stored.Origin)
-	}
-}
-
-// TestUpdateAfterRuleEvaluationReportingLocks_ReportsToo pins the run paths'
-// verb, which is the one the unattended pass uses. Its report is what stops a
-// scheduled run resolving a violation it never repaired.
-func TestUpdateAfterRuleEvaluationReportingLocks_ReportsToo(t *testing.T) {
-	ctx := context.Background()
-	svc := NewService(newTestDB(t))
-
-	a := seedLockGuardArtist(t, svc, "Run Path", "pinned", "biography")
-	a.Biography = "replacement"
-	restored, err := svc.UpdateAfterRuleEvaluationReportingLocks(ctx, a)
-	if err != nil {
-		t.Fatalf("UpdateAfterRuleEvaluationReportingLocks: %v", err)
-	}
-	if !slices.Equal(restored, []string{"biography"}) {
-		t.Fatalf("restored = %v, want [biography]", restored)
 	}
 }
 

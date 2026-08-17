@@ -10,15 +10,15 @@ import (
 
 // #3037: a fixer must not claim credit for a write the lock guard reverted.
 //
-// READ THIS BEFORE EDITING. Every "the violation was dismissed" assertion is
-// PAIRED with a positive control on an otherwise identical UNLOCKED artist that
-// must be RESOLVED. The dismiss branch is reachable only when a fixer genuinely
-// ran and genuinely wrote a guarded field, so an unpaired assertion would pass
-// the moment the harness stopped reaching the fixer at all.
+// READ THIS BEFORE EDITING. Every "the row stayed open" assertion is PAIRED
+// with a positive control on an otherwise identical UNLOCKED artist that must
+// be RESOLVED. That branch is reachable only when a fixer genuinely ran and
+// genuinely wrote a guarded field, so an unpaired assertion would pass the
+// moment the harness stopped reaching the fixer at all.
 
 // lockRevertFixture seeds one artist with `bio` and an OPEN, fixable
-// bio_exists violation, pinning `lockFields` through the dedicated lock mutator
-// -- not by setting LockedFields on the struct, which the chokepoint pins away.
+// bio_exists violation, pinning `lockFields` through the lock mutator -- not by
+// setting LockedFields on the struct, which the chokepoint pins away.
 func lockRevertFixture(t *testing.T, bio string, lockFields ...string) (*sql.DB, *artist.Service, *artist.Artist, *Service, *RuleViolation, context.Context) {
 	t.Helper()
 	db := setupTestDB(t)
@@ -43,14 +43,13 @@ func lockRevertFixture(t *testing.T, bio string, lockFields ...string) (*sql.DB,
 	if err != nil {
 		t.Fatalf("reloading artist: %v", err)
 	}
-	// PRECONDITIONS. Without both of these the test is about an artist whose
-	// biography was never pinned, and the guard would never fire.
+	// PRECONDITIONS: without both, the guard never fires and every later
+	// assertion holds vacuously.
 	if stored.Biography != bio {
 		t.Fatalf("precondition: biography = %q, want %q", stored.Biography, bio)
 	}
 	if len(stored.LockedFields) != len(lockFields) {
-		t.Fatalf("precondition: locked_fields = %v, want %v; the lock did not persist so the "+
-			"guard will never fire and this test would pass vacuously", stored.LockedFields, lockFields)
+		t.Fatalf("precondition: locked_fields = %v, want %v; the lock did not persist", stored.LockedFields, lockFields)
 	}
 
 	rv := &RuleViolation{
@@ -93,15 +92,15 @@ func TestFixViolation_LockRevertedFixLeavesTheRowOpen(t *testing.T) {
 	}
 	if !fr.Fixed {
 		t.Fatalf("positive control FAILED: an UNLOCKED fix reported Fixed=false (%s); the write "+
-			"under test is not reachable in this harness", fr.Message)
+			"under test is unreachable here", fr.Message)
 	}
 	stored, err := artistSvc.GetByID(ctx, a.ID)
 	if err != nil {
 		t.Fatalf("control reload: %v", err)
 	}
 	if stored.Biography != "a rule wrote this" {
-		t.Fatalf("positive control FAILED: the UNLOCKED biography is %q, so the fixer's write "+
-			"never landed and the locked case proves nothing", stored.Biography)
+		t.Fatalf("positive control FAILED: the UNLOCKED biography is %q, so the write never "+
+			"landed and the locked case proves nothing", stored.Biography)
 	}
 	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusResolved {
 		t.Fatalf("positive control FAILED: an UNLOCKED fix left the violation %q, want resolved", got)
@@ -117,8 +116,7 @@ func TestFixViolation_LockRevertedFixLeavesTheRowOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FixViolation: %v", err)
 	}
-	// PRECONDITION: the fixer must have RUN. A dismiss reached because the
-	// fixer never fired would be the same verdict for an unrelated reason.
+	// PRECONDITION: the fixer must have RUN, or the open row means nothing.
 	if fixer.fixCalls == 0 {
 		t.Fatal("precondition: the fixer was never invoked, so nothing exercised the reverted write")
 	}
@@ -129,7 +127,7 @@ func TestFixViolation_LockRevertedFixLeavesTheRowOpen(t *testing.T) {
 	// PRECONDITION: the guard must actually have reverted it.
 	if stored.Biography != pinned {
 		t.Fatalf("precondition: the pinned biography is %q, want %q -- the chokepoint did not "+
-			"revert the write, so there is no reverted fix to report on", stored.Biography, pinned)
+			"revert the write", stored.Biography, pinned)
 	}
 
 	if fr.Fixed {
@@ -146,11 +144,10 @@ func TestFixViolation_LockRevertedFixLeavesTheRowOpen(t *testing.T) {
 	}
 }
 
-// TestFixViolation_PartiallyRevertedFixStillResolves is the other side of the
-// gate, and it errs the RECOVERABLE way. One surviving change is a real repair,
-// so the row is resolved -- a wrongly-resolved row re-raises on the next
-// evaluation, whereas a wrongly-dismissed one has no un-dismiss route
-// (UpsertViolation pins 'dismissed', ReopenViolation only accepts 'resolved').
+// TestFixViolation_PartiallyRevertedFixStillResolves is the OVER-gating guard:
+// ALL, not ANY. A rule whose fixer writes two fields with one locked still did
+// useful work on the other, and treating that as a failed fix would turn a
+// per-FIELD lock into a per-RULE one.
 func TestFixViolation_PartiallyRevertedFixStillResolves(t *testing.T) {
 	db, artistSvc, a, ruleSvc, rv, ctx := lockRevertFixture(t, "the operator wrote this", "biography")
 	fixer := &bioAndOriginFixer{ruleID: RuleBioExists, newBio: "a rule wrote this", newOrigin: "Somewhere, XX"}
@@ -164,23 +161,20 @@ func TestFixViolation_PartiallyRevertedFixStillResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reloading: %v", err)
 	}
-	// PRECONDITIONS: exactly one of the two writes was reverted. Both surviving
-	// or both reverted would make this a different test.
+	// PRECONDITIONS: exactly one of the two writes was reverted.
 	if stored.Biography != "the operator wrote this" {
 		t.Fatalf("precondition: the LOCKED biography is %q; it should have been reverted", stored.Biography)
 	}
 	if stored.Origin != "Somewhere, XX" {
-		t.Fatalf("precondition: the UNLOCKED origin is %q; it should have landed, so this is not "+
-			"a partial revert at all", stored.Origin)
+		t.Fatalf("precondition: the UNLOCKED origin is %q; it should have landed", stored.Origin)
 	}
 
 	if !fr.Fixed {
-		t.Errorf("Fixed = false for a fix that really did change origin; a partial repair is a "+
-			"repair and denying it costs the operator a Recent Activity entry. Message: %s", fr.Message)
+		t.Errorf("Fixed = false although origin really changed; a lock on ONE of a rule's "+
+			"fields must not disable the rule. Message: %s", fr.Message)
 	}
 	if fr.Dismissed {
-		t.Error("Dismissed = true for a PARTIALLY reverted fix; a dismiss is unrecoverable and " +
-			"this row still describes a real change that landed")
+		t.Error("Dismissed = true for a PARTIALLY reverted fix that really did change a field")
 	}
 	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusResolved {
 		t.Errorf("violation status = %q, want resolved", got)
@@ -200,18 +194,15 @@ func TestFixViolation_PartiallyRevertedFixStillResolves(t *testing.T) {
 // sidesteps the trap rather than managing it, and this test asserts the
 // rule_results row exists to prove that.
 func TestRunForArtist_LockRevertedAutoFixStaysOpenWithItsResultRow(t *testing.T) {
-	// A SHORT pinned biography, so the bio_exists CHECKER genuinely flags this
-	// artist and the auto path actually dispatches a fix. A long one passes the
-	// rule, no violation is raised, and the code under test is never reached.
+	// SHORT, so the bio_exists CHECKER genuinely flags this artist and the auto
+	// path dispatches a fix. A long one passes the rule and reaches nothing.
 	const pinned = "short"
 	db, artistSvc, a, ruleSvc, _, ctx := lockRevertFixture(t, pinned, "biography")
 	enableRuleAuto(t, ctx, ruleSvc, RuleBioExists)
 
-	// FIRST-PASS CONDITIONS. The fixture pre-seeds an open violation for the
-	// FixViolation tests, and that seed also writes the paired rule_results FAIL
-	// row -- which would MASK the trap this test exists to catch. Clearing both
-	// makes this pass the artist's first, so the only writer of either row is
-	// the code under test.
+	// FIRST-PASS CONDITIONS. The fixture's seeded violation also writes the
+	// paired rule_results FAIL row, which would MASK the trap below. Clearing
+	// both makes the code under test the only writer of either row.
 	if _, err := db.ExecContext(ctx, `DELETE FROM rule_violations WHERE artist_id = ?`, a.ID); err != nil {
 		t.Fatalf("clearing seeded violations: %v", err)
 	}
@@ -221,12 +212,10 @@ func TestRunForArtist_LockRevertedAutoFixStaysOpenWithItsResultRow(t *testing.T)
 	if _, exists := ruleResultRow(t, db, a.ID, RuleBioExists); exists {
 		t.Fatal("precondition: a rule_results row survived the clear, so the trap below is masked")
 	}
-	// The replacement is ALSO too short for bio_exists (MinLength 10). That is
-	// the faithful shape: the guard reverts the write, so the rule genuinely
-	// still fails after the pass, and no pass row is written. A replacement long
-	// enough to pass would make the post-fix evaluation -- which runs against
-	// the in-memory struct, BEFORE the persist reverts it -- write a passed=1
-	// row that masks the trap this test exists to catch.
+	// ALSO too short, which is the faithful shape: the guard reverts the write,
+	// so the rule still fails after the pass. A passing replacement would make
+	// the post-fix evaluation (run against the in-memory struct, BEFORE the
+	// persist reverts it) write a passed=1 row that masks the trap below.
 	fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "brief bio"}
 	pipeline := NewPipeline(NewEngine(ruleSvc, nil, nil, nil, testLogger()), artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
@@ -257,8 +246,8 @@ func TestRunForArtist_LockRevertedAutoFixStaysOpenWithItsResultRow(t *testing.T)
 }
 
 // bioAndOriginFixer changes TWO guarded fields, so a test can pin one and leave
-// the other free. That is what makes a PARTIAL revert reachable at all: with a
-// single-field fixer every revert is total and the partial branch is dead code.
+// the other free -- with a single-field fixer every revert is total and the
+// partial branch is unreachable.
 type bioAndOriginFixer struct {
 	ruleID    string
 	newBio    string

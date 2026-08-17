@@ -20,33 +20,41 @@ import (
 // in the same struct -- so it reports instead, via
 // Service.UpdateReportingLocks. This file is the consumer.
 //
-// The report answers "what did the guard revert". A fixer's honesty question is
-// narrower: "was EVERY change I made reverted". Answering it needs the fixer's
-// own intended set, which no fixer declares, so the pipeline recovers it by
+// The report answers "what did the guard revert". The fixer's question is
+// narrower -- "was EVERY change I made reverted" -- and needs the fixer's own
+// intended set, which no fixer declares. The pipeline recovers it by
 // snapshotting artist.GuardedFieldSnapshot before the fixer runs and diffing
-// after. See artist.ChangedGuardedFields for the ways that diff deliberately
-// UNDER-reports.
+// after; see artist.ChangedGuardedFields for how that diff UNDER-reports.
+//
+// POST-HOC RATHER THAN A PRE-CHECK, and deliberately. The alternative is a
+// rule -> lockable-fields map consulted before dispatch, which reads better but
+// DRIFTS: a fixer added tomorrow that writes a lockable field and is not added
+// to the map silently regains the bug, which is the failure mode #2748/#2754
+// already produced twice. Reading what the guard ACTUALLY restored cannot
+// drift. The cost is that the fixer still runs and its provider calls still go
+// out; closing that needs the map, and it is a separate decision.
 
 // lockRevertedFixResult reports the FixResult a fully-reverted fix should carry,
 // or nil when the fix is not fully reverted and the caller should proceed with
 // its normal success path.
 //
-// FIVE CONDITIONS, ALL REQUIRED, and the extra ones past the obvious two are
-// what keep this from over-firing:
+// FOUR CONDITIONS, ALL REQUIRED, and the ones past the obvious two are what
+// keep this from over-firing:
 //
 //   - fr is a Fixed result. A fixer that already reported failure or a terminal
 //     dismiss has its own answer and this must not overwrite it.
-//   - intended is NON-EMPTY. An empty set means the fixer changed no guarded
-//     field at all (an image fixer, the NFO fixer, the directory-rename fixer),
-//     so nothing it did can have been reverted here.
-//   - every intended field appears in restored. One surviving change is a real
-//     repair; #3060 made the same call for a partial provider-ID backfill.
-//   - the fix left NOTHING ON DISK: no saved image, no removed files, no
-//     removed slots. Those effects are real and permanent whatever the artists
-//     row ended up holding, so a result carrying one is not "fully reverted"
-//     even if its guarded-field changes were. No shipped fixer both writes a
-//     guarded field and touches disk, so this arm is a guard against the next
-//     one rather than a live case.
+//   - intended is NON-EMPTY: an empty set means the fixer changed no guarded
+//     field at all (image, NFO, directory-rename fixers), so nothing it did can
+//     have been reverted here.
+//   - EVERY intended field appears in restored. ALL, not ANY: a rule whose
+//     fixer writes two fields with one locked still did useful work on the
+//     other, and treating that as a failed fix turns a per-FIELD lock into a
+//     per-RULE one. #3060 made the same call for a partial provider-ID
+//     backfill.
+//   - the fix left NOTHING ON DISK (no saved image, removed file, or removed
+//     slot). Those effects are real whatever the artists row ended up holding.
+//     No shipped fixer both writes a guarded field and touches disk, so this
+//     arm guards the next one rather than a live case.
 //
 // A NIL RETURN IS THE RECOVERABLE DIRECTION and every ambiguity above resolves
 // to it. The alternative outcome leaves the violation OPEN, which re-raises
@@ -67,31 +75,25 @@ func lockRevertedFixResult(fr *FixResult, intended, restored []string) *FixResul
 			return nil
 		}
 	}
-	// NOT-FIXED AND NOT DISMISSED: the violation stays OPEN. This is the one
-	// place this unit deliberately DIVERGES from #3060, which dismisses when a
-	// lock refuses every field of provider_id_missing, and the divergence is
-	// argued rather than accidental.
-	//
-	// Dismissed is for a TERMINAL outcome, and a lock is not terminal: it is
-	// operator-revocable state. Unlock the field and the very same fixer works
-	// on the next pass. A dismissed row has NO un-dismiss route -- UpsertViolation's
-	// ON CONFLICT pins 'dismissed' (#1107), ReopenViolation is a positive
-	// allow-list on 'resolved' -- so dismissing here means that after the
-	// operator unlocks, the finding never comes back and the field is never
-	// repaired. That failure is silent and permanent.
+	// NOT-FIXED AND NOT DISMISSED: the violation stays OPEN. Dismissed is for a
+	// TERMINAL outcome and a lock is not terminal -- it is operator-revocable
+	// state, and unlocking makes the very same fixer work next pass. A dismissed
+	// row has NO un-dismiss route (UpsertViolation's ON CONFLICT pins
+	// 'dismissed' per #1107; ReopenViolation is a positive allow-list on
+	// 'resolved'), so dismissing here means the finding never returns after the
+	// operator unlocks and the field is never repaired -- silently, permanently.
 	//
 	// Leaving it OPEN costs a Fix button that does nothing until the operator
-	// unlocks, plus an ERROR log line per pass naming the artist and field --
-	// which is the signal an operator needs to notice they have a rule fighting
-	// a lock. That is the recoverable direction.
+	// unlocks, plus one ERROR line per pass naming the artist and field, which
+	// is exactly the signal that a rule is fighting a lock.
 	//
-	// (#3060's dismiss is not being second-guessed here: it ships, its gate is
-	// far stricter, and converging the two is its own unit. This function is
-	// about the whole-row path, which is the one that covers every other fixer.)
+	// This DIVERGES from #3060, which dismisses when a lock refuses every field
+	// of provider_id_missing. That is not being second-guessed: its gate is far
+	// stricter and converging the two is its own unit.
 	//
-	// Fixed is cleared. Callers gate the resolve, the provenance record and the
-	// platform publish on Fixed, and every one of those would be describing a
-	// value the database does not hold.
+	// Fixed is cleared -- callers gate the resolve, the provenance record and
+	// the platform publish on it, and each would describe a value the database
+	// does not hold.
 	return &FixResult{
 		RuleID: fr.RuleID,
 		Fixed:  false,
@@ -101,10 +103,9 @@ func lockRevertedFixResult(fr *FixResult, intended, restored []string) *FixResul
 }
 
 // noteIntendedGuardedFields records, per rule, the guarded fields that rule's
-// fixer changed on this artist during this pass. The auto-fix path persists
-// every violation's changes in ONE whole-row write at the end of the pass, so
-// the per-rule intent has to survive until then to be intersected with that
-// write's restored-field report.
+// fixer changed on this artist. The auto path persists every violation's
+// changes in ONE whole-row write at the end, so per-rule intent has to survive
+// until then to be intersected with that write's restored-field report.
 func (acc *runForArtistAccum) noteIntendedGuardedFields(ruleID string, fields []string) {
 	if ruleID == "" || len(fields) == 0 {
 		return
@@ -112,10 +113,9 @@ func (acc *runForArtistAccum) noteIntendedGuardedFields(ruleID string, fields []
 	if acc.intendedGuarded == nil {
 		acc.intendedGuarded = make(map[string][]string, 1)
 	}
-	// Union rather than overwrite: two fixers for the same rule id in one pass
-	// would otherwise leave only the last one's intent, and a field dropped
-	// from the intended set makes the "every change reverted" test EASIER to
-	// pass, which is the direction that wrongly dismisses.
+	// Union rather than overwrite: two fixers for one rule id would otherwise
+	// leave only the last one's intent, and a dropped field makes the
+	// "every change reverted" test EASIER to pass -- the wrong direction.
 	for _, f := range fields {
 		if !slices.Contains(acc.intendedGuarded[ruleID], f) {
 			acc.intendedGuarded[ruleID] = append(acc.intendedGuarded[ruleID], f)
@@ -165,21 +165,19 @@ func (p *Pipeline) resolveOrDismissRows(ctx context.Context, a *artist.Artist, a
 // reopenLockRevertedRows persists each fully-reverted row as OPEN, and returns
 // true when every write succeeded.
 //
-// ONE UPSERT, AND IT MUST BE AN OPEN ONE. The row is written rather than merely
-// left alone because on a FIRST pass no row exists yet: processAutoFixViolation
-// returns early on a Fixed result and defers the write, so dropping the row
-// here without replacing it would leave the artist with no violation row and no
-// rule_results row at all for a rule that genuinely failed.
+// ONE UPSERT, AND IT MUST BE AN OPEN ONE. The row is written rather than left
+// alone because on a FIRST pass none exists: processAutoFixViolation returns
+// early on a Fixed result and defers the write, so dropping the row without
+// replacing it leaves the artist with no violation row and no rule_results row
+// for a rule that genuinely failed.
 //
-// Writing it OPEN also sidesteps, rather than manages, the trap that a
-// dismissing version would have to handle: UpsertViolation emits the paired
-// rule_results FAIL row only for an open or pending row (#1107), and later
-// passes preserve 'dismissed', so a straight-to-dismissed write would leave the
-// artist permanently unscorable by offlineHealthScore. An open row gets its
-// FAIL row on the first write.
+// Writing it OPEN also sidesteps the trap a dismissing version would have to
+// manage: UpsertViolation emits the paired rule_results FAIL row only for an
+// open/pending row (#1107) and later passes preserve 'dismissed', so a
+// straight-to-dismissed write leaves the artist permanently unscorable by
+// offlineHealthScore. An open row gets its FAIL row on the first write.
 //
-// Candidates are cleared: a fix the lock reverted offers the operator no
-// choice, and a stored list would be a decision that never gets presented.
+// Candidates are cleared: a reverted fix offers no choice to present.
 func (p *Pipeline) reopenLockRevertedRows(ctx context.Context, a *artist.Artist, rows []*RuleViolation, startedAt time.Time) bool {
 	ok := true
 	for _, rv := range rows {
