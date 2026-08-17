@@ -827,3 +827,110 @@ func parseHistoryTimestamp(changeID, raw string) time.Time {
 	}
 	return t.UTC()
 }
+
+// lockDamageQuery selects damage rows that SAY THEY WERE WRITTEN BY A RULE.
+//
+// NO JOIN TO rule_fix, DELIBERATELY (#3074 review). An earlier design joined
+// each damage row to any earlier rule_fix row on the same artist. That proves a
+// rule ran on the artist AT SOME POINT, never that it caused THIS row -- so an
+// operator's own edit, made after any rule ever ran, matched and would have
+// been restored over. The per-row source is the only key that distinguishes a
+// rule write from an operator edit.
+//
+// It is also why there is NO timestamp condition here. The old design ordered
+// damage after its rule_fix row; #3065 deferred that row to grantFixCredits,
+// which runs AFTER the persist in persistHealthAfterRun, so the ordering is now
+// inverted and the condition would reject every genuine candidate.
+//
+// EXACTLY ONE ROW PER (artist_id, field). The ranking CTE partitions on that
+// pair and the damage clause keeps rn = 1, so no duplicate candidate can reach
+// the caller and no field can be restored twice in a pass.
+//
+// The ranking CTE and the damage predicate are REUSED VERBATIM. Both are shared
+// with the blast-radius report, and blastRadiusRankedCTE's own header explains
+// why no damage or source predicate may move inside the frame: it would promote
+// an old damage row to rank 1 and report a recovered field as broken forever.
+// The source test below is therefore applied in the OUTER select, appended to
+// the damage clause rather than pushed into the frame.
+//
+// The source test is capability-blind on purpose: whether the naming rule can
+// write this field is decided in Go against rule.RuleFields.
+const lockDamageQuery = blastRadiusRankedCTE + `
+	SELECT r.id, r.artist_id, r.artist_name, r.field, r.old_value, r.new_value,
+	       SUBSTR(r.source, 6) AS rule_id, r.created_at
+	FROM ranked r
+	%s
+	  AND r.source LIKE 'rule:%%'
+	ORDER BY r.created_at DESC, r.id DESC`
+
+func (r *sqliteHistoryRepo) LockDamageCandidates(ctx context.Context) ([]LockDamageCandidate, error) {
+	//nolint:gosec // G201: both fragments are server-built constants. The CTE
+	// takes no filter here (empty string) and the damage clause is composed
+	// from validated constants, so no caller-supplied text reaches the query.
+	q := fmt.Sprintf(lockDamageQuery, "",
+		blastRadiusDamageWhere(BlastScopeAll, ""))
+
+	rows, err := r.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("querying locked-field damage candidates: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]LockDamageCandidate, 0)
+	for rows.Next() {
+		var c LockDamageCandidate
+		var damagedAt string
+		if err := rows.Scan(&c.ChangeID, &c.ArtistID, &c.ArtistName, &c.Field,
+			&c.OldValue, &c.NewValue, &c.RuleID, &damagedAt); err != nil {
+			return nil, fmt.Errorf("scanning locked-field damage candidate: %w", err)
+		}
+		c.DamagedAt = parseHistoryTimestamp(c.ChangeID, damagedAt)
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating locked-field damage candidates: %w", err)
+	}
+	return out, nil
+}
+
+// lockDamageUnattributedQuery is the COMPLEMENT of lockDamageQuery over the
+// same damage set: newest-per-pair rows that read as damage but whose source
+// names no rule. Together the two queries partition the damage rows, so no
+// damaged pair can vanish from both the candidate list and the unrecoverable
+// report.
+//
+// This is a REPORTING query, never a selection for restore: the NOT LIKE here
+// does not weaken the positive allow-list, because nothing returned by it is
+// ever written back.
+const lockDamageUnattributedQuery = blastRadiusRankedCTE + `
+	SELECT r.artist_id, r.field, r.source
+	FROM ranked r
+	%s
+	  AND r.source NOT LIKE 'rule:%%'
+	ORDER BY r.created_at DESC, r.id DESC`
+
+func (r *sqliteHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]LockDamageUnattributedRow, error) {
+	//nolint:gosec // G201: same constant-composition as LockDamageCandidates;
+	// no caller-supplied text reaches the query.
+	q := fmt.Sprintf(lockDamageUnattributedQuery, "",
+		blastRadiusDamageWhere(BlastScopeAll, ""))
+
+	rows, err := r.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("querying unattributed locked-field damage: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]LockDamageUnattributedRow, 0)
+	for rows.Next() {
+		var u LockDamageUnattributedRow
+		if err := rows.Scan(&u.ArtistID, &u.Field, &u.Source); err != nil {
+			return nil, fmt.Errorf("scanning unattributed locked-field damage row: %w", err)
+		}
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating unattributed locked-field damage rows: %w", err)
+	}
+	return out, nil
+}

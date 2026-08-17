@@ -470,6 +470,14 @@ func (l *listErrCallTrackingHistoryRepo) CountNFOMBIDWrites(ctx context.Context,
 	return l.delegate.CountNFOMBIDWrites(ctx, f)
 }
 
+func (l *listErrCallTrackingHistoryRepo) LockDamageCandidates(ctx context.Context) ([]artist.LockDamageCandidate, error) {
+	return l.delegate.LockDamageCandidates(ctx)
+}
+
+func (l *listErrCallTrackingHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]artist.LockDamageUnattributedRow, error) {
+	return l.delegate.LockDamageUnattributed(ctx)
+}
+
 // countErrCallTrackingHistoryRepo delegates everything to a real repo except
 // CountNFOMBIDWrites, which always fails; ListNFOMBIDWrites is left to
 // succeed so the count-error branch is isolated from the list-error one.
@@ -509,4 +517,12 @@ func (c *countErrCallTrackingHistoryRepo) ListNFOMBIDWrites(ctx context.Context,
 func (c *countErrCallTrackingHistoryRepo) CountNFOMBIDWrites(_ context.Context, _ artist.NFOMBIDFilter) (artist.NFOMBIDCounts, error) {
 	c.countCalled = true
 	return artist.NFOMBIDCounts{}, errors.New("simulated count failure")
+}
+
+func (c *countErrCallTrackingHistoryRepo) LockDamageCandidates(ctx context.Context) ([]artist.LockDamageCandidate, error) {
+	return c.delegate.LockDamageCandidates(ctx)
+}
+
+func (c *countErrCallTrackingHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]artist.LockDamageUnattributedRow, error) {
+	return c.delegate.LockDamageUnattributed(ctx)
 }

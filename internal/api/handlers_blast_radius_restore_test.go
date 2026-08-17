@@ -1300,6 +1300,14 @@ func (l listBlastErrHistoryRepo) CountNFOMBIDWrites(ctx context.Context, f artis
 	return l.delegate.CountNFOMBIDWrites(ctx, f)
 }
 
+func (l listBlastErrHistoryRepo) LockDamageCandidates(ctx context.Context) ([]artist.LockDamageCandidate, error) {
+	return l.delegate.LockDamageCandidates(ctx)
+}
+
+func (l listBlastErrHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]artist.LockDamageUnattributedRow, error) {
+	return l.delegate.LockDamageUnattributed(ctx)
+}
+
 // TestBlastRestore_EligibilityQueryErrorRefuses pins the documented safety
 // property of isCurrentBlastRow: when the eligibility query cannot be answered,
 // the row is REFUSED, never written.

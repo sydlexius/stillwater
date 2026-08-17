@@ -688,6 +688,14 @@ func (l listOKCountErrHistoryRepo) CountNFOMBIDWrites(ctx context.Context, f art
 	return artist.NFOMBIDCounts{}, errors.New("simulated count failure")
 }
 
+func (l listOKCountErrHistoryRepo) LockDamageCandidates(ctx context.Context) ([]artist.LockDamageCandidate, error) {
+	return l.delegate.LockDamageCandidates(ctx)
+}
+
+func (l listOKCountErrHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]artist.LockDamageUnattributedRow, error) {
+	return l.delegate.LockDamageUnattributed(ctx)
+}
+
 // TestHandleReportBlastRadiusExport_RepositoryErrorAbortsCleanly exercises the
 // export handler's error path when the FIRST page load fails, before any
 // bytes have been written. Unlike the JSON handler, the export path collects

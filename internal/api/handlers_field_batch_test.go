@@ -60,6 +60,14 @@ func (s *spyHistoryRepo) CountNFOMBIDWrites(ctx context.Context, f artist.NFOMBI
 	return s.delegate.CountNFOMBIDWrites(ctx, f)
 }
 
+func (s *spyHistoryRepo) LockDamageCandidates(ctx context.Context) ([]artist.LockDamageCandidate, error) {
+	return s.delegate.LockDamageCandidates(ctx)
+}
+
+func (s *spyHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]artist.LockDamageUnattributedRow, error) {
+	return s.delegate.LockDamageUnattributed(ctx)
+}
+
 func (s *spyHistoryRepo) ListGlobal(ctx context.Context, filter artist.GlobalHistoryFilter) ([]artist.MetadataChangeWithArtist, int, error) {
 	s.listGlobalCalls.Add(1)
 	return s.delegate.ListGlobal(ctx, filter)
