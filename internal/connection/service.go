@@ -202,9 +202,12 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 
 	// pre_stillwater_config_json is intentionally excluded from this SET
 	// list. It is toggle-lifecycle state, not user-editable connection
-	// config: SetPreStillwaterConfig (serialized under stillwaterManagedMu)
-	// is the exclusive writer. A generic PUT that races the managed toggle
-	// must not be able to overwrite the user's only snapshot copy (#2440).
+	// config: SetPreStillwaterConfig is the exclusive writer. It takes no
+	// mutex of its own; serialization is provided by the caller in
+	// internal/api, which holds the per-connection lock connWriteMu (via
+	// Router.lockConnection(id)) before calling it. A generic PUT that races
+	// the managed toggle must not be able to overwrite the user's only
+	// snapshot copy (#2440).
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE connections SET
 			name = ?, type = ?, url = ?, encrypted_api_key = ?, enabled = ?,

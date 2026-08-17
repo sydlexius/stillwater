@@ -433,7 +433,7 @@ func RestoreSlot(dir, imageType, fileName string, useSymlinks bool, meta *ExifMe
 //
 // Entries are never evicted: one mutex per slot ever written, for the process
 // lifetime. That is the same unbounded-sync.Map shape as this repo's existing
-// per-ID lock idiom (Router.stillwaterManagedMu in internal/api), and it is bounded
+// per-ID lock idiom (Router.connWriteMu in internal/api), and it is bounded
 // in practice by the number of image slots in the library -- a few bytes each, only
 // for slots actually written. An eviction scheme would need its own lock to close
 // the evict-while-acquiring race, which costs more than it saves.

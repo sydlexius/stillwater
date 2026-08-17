@@ -268,9 +268,15 @@ func parseSlogJSONLine(line string) (LogEntry, bool) {
 
 // parseLogfmtLine parses a line written by slog's TextHandler (key=value
 // pairs, values quoted per strconv.Quote rules when they contain whitespace,
-// a quote, an '=', or a non-printing character). ok is false if the line
-// contains no key=value pairs at all, signaling the caller to fall through to
-// the explicit fallback rather than silently returning an empty record.
+// a quote, an '=', or a non-printing character). ok is false, signaling the
+// caller to fall through to the explicit fallback rather than silently
+// returning an empty record, in any of three cases: a quoted value is
+// malformed (an unterminated quote or an invalid escape, which fails
+// parseLogfmtPairs/scanLogfmtValue outright), the parsed pairs are missing
+// the required "level" key, or they are missing the required "msg" key. A
+// line with no "=" pairs at all is well-formed with an empty pair set (each
+// token with no '=' is skipped, not rejected), so it is caught by the
+// missing-"level" check rather than by parseLogfmtPairs itself.
 func parseLogfmtLine(line string) (LogEntry, bool) {
 	pairs, wellFormed := parseLogfmtPairs(line)
 	if !wellFormed {
