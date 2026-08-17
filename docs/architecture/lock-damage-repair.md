@@ -195,10 +195,18 @@ but it still earns its own test.
 | `musicbrainz_id`, provider IDs | NO | never in `trackableFields`; no row was ever written |
 | locked field, no attributing `rule_fix` row | NO, by design | reported, not repaired, so the operator can act via the pane |
 
-Rules declaring fields (`internal/rule/catalogue.go`): `nfo_has_mbid` and
-`provider_id_missing` (`musicbrainz_id`), `bio_exists` and `metadata_quality`
-(`biography`), `name_language_pref` (`name`, `sort_name`), `origin_missing`
-(`origin`).
+Rules declaring fields (`internal/rule/catalogue.go`, verified by reading the
+map keys that own each `Fields:` entry): `nfo_has_mbid` and `mbid_resolves`
+(`musicbrainz_id`), `bio_exists` and `metadata_quality` (`biography`),
+`name_language_pref` (`name`, `sort_name`), `origin_missing` (`origin`).
+
+`provider_id_missing` declares NO fields, so `RuleFields` returns nil for it and
+it can attribute nothing. That is a real coverage hole rather than an oversight
+in this document: it is one of the rules #3037 named as damaging locked fields,
+and its damage is unattributable by this mechanism. The damage was also to
+provider-ID fields, which were never in `trackableFields`, so no history row
+exists to restore from either way. Both facts point the same direction, and the
+run reports such damage as unrecoverable rather than silently omitting it.
 
 The fill-a-blank fixers (`bio_exists`, `origin_missing`) produce no damage --
 they fire only when the field is already empty.
