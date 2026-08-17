@@ -155,25 +155,32 @@ export async function seedPlatformBackdropScanError(request) {
 
   const fake = await startFakeEmby();
 
-  await ensureLibrary(request, FIXTURE_LIBRARY_NAME, dir);
-  await runScan(request);
-  const artistIDs = await artistIdsByName(request, [FIXTURE_ARTIST]);
-  const artistID = artistIDs.get(FIXTURE_ARTIST);
-  if (!artistID) {
-    await fake.close();
-    throw new Error(`seed: artist "${FIXTURE_ARTIST}" did not appear after scan`);
-  }
-  const connectionID = await ensureConnection(request, fake.port);
-  const mapResp = await apiFetch(
-    request, 'PUT', `/api/v1/artists/${artistID}/platform-ids/${connectionID}`,
-    { platform_artist_id: FIXTURE_PLATFORM_ARTIST_ID },
-  );
-  if (!mapResp.ok()) {
-    await fake.close();
-    throw new Error(`seed: mapping platform id failed: ${mapResp.status()} ${await mapResp.text()}`);
-  }
+  // Everything past this point can throw (a failed fetch, a bad status, a
+  // notice that never renders). Any of those must still close the loopback
+  // listener before propagating -- otherwise the caller never gets `fake.close`
+  // back and the listener leaks for the rest of the test run.
+  try {
+    await ensureLibrary(request, FIXTURE_LIBRARY_NAME, dir);
+    await runScan(request);
+    const artistIDs = await artistIdsByName(request, [FIXTURE_ARTIST]);
+    const artistID = artistIDs.get(FIXTURE_ARTIST);
+    if (!artistID) {
+      throw new Error(`seed: artist "${FIXTURE_ARTIST}" did not appear after scan`);
+    }
+    const connectionID = await ensureConnection(request, fake.port);
+    const mapResp = await apiFetch(
+      request, 'PUT', `/api/v1/artists/${artistID}/platform-ids/${connectionID}`,
+      { platform_artist_id: FIXTURE_PLATFORM_ARTIST_ID },
+    );
+    if (!mapResp.ok()) {
+      throw new Error(`seed: mapping platform id failed: ${mapResp.status()} ${await mapResp.text()}`);
+    }
 
-  await waitForNotice(request);
+    await waitForNotice(request);
+  } catch (err) {
+    await fake.close();
+    throw err;
+  }
 
   return fake.close;
 }
