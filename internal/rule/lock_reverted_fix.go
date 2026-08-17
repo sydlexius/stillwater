@@ -106,7 +106,7 @@ func lockRevertedFixResult(fr *FixResult, intended, restored []string) *FixResul
 }
 
 // revertedFixReport is the one place the reverted-fix verdict is spelled, so the
-// click path (lockRevertedFixResult) and the auto path (retractFixCredit) cannot
+// click path (lockRevertedFixResult) and the auto path (grantFixCredits) cannot
 // drift into telling the operator two different stories about the same event.
 func revertedFixReport(ruleID string, intended []string) FixResult {
 	return FixResult{
