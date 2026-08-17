@@ -310,3 +310,113 @@ func TestProviderIDBackfill_CanFix(t *testing.T) {
 		t.Error("CanFix should return false for a different rule")
 	}
 }
+
+// lockingUpdater refuses the named fields the way artist.Service now does --
+// with a *artist.FieldLockedError -- and records the writes it let through, so a
+// test can assert both halves of the split in one run.
+type lockingUpdater struct {
+	locked  map[string]bool
+	updates map[string]string
+}
+
+func (u *lockingUpdater) UpdateProviderField(_ context.Context, _, field, value string) error {
+	if u.locked[field] {
+		return &artist.FieldLockedError{Field: field, Reason: "the " + field + " field is locked"}
+	}
+	if u.updates == nil {
+		u.updates = make(map[string]string)
+	}
+	u.updates[field] = value
+	return nil
+}
+
+// TestProviderIDBackfill_LockRefusalIsATerminalSkip wires the misbehavior and
+// asserts it absent: an updater that refuses ONE field on a lock must not fail
+// the whole fixer, must not mirror the refused value onto the in-memory artist,
+// and must not count it as filled -- while the two unrefused fields still land.
+//
+// The in-memory assertion is the one that matters most. Pipeline.updateHealthScore
+// re-evaluates this SAME *artist.Artist, so a mirrored value the database refused
+// makes the checker report a violation as repaired when nothing was stored.
+func TestProviderIDBackfill_LockRefusalIsATerminalSkip(t *testing.T) {
+	fetcher := &stubMetadataProvider{metadata: mbURLMetadata()}
+	updater := &lockingUpdater{locked: map[string]bool{"discogs_id": true}}
+	f := NewProviderIDBackfillFixer(fetcher, updater, testLogger())
+
+	a := &artist.Artist{ID: "a1", Name: "Partly Pinned", MusicBrainzID: "mbid-abc"}
+	res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleProviderIDMissing})
+	if err != nil {
+		t.Fatalf("a lock refusal must not fail the fixer, got error: %v", err)
+	}
+	if !res.Fixed {
+		t.Fatalf("expected Fixed=true for the two IDs that DID land, got %+v", res)
+	}
+	if a.DiscogsID != "" {
+		t.Errorf("in-memory DiscogsID = %q, want empty; mirroring a refused write makes the re-evaluation report a repair that never happened", a.DiscogsID)
+	}
+	if a.DeezerID != "3106" || a.SpotifyID != "7dGJo4pcD2V6oG8kP0tJRR" {
+		t.Errorf("unrefused IDs not mirrored: deezer=%q spotify=%q", a.DeezerID, a.SpotifyID)
+	}
+	if _, wrote := updater.updates["discogs_id"]; wrote {
+		t.Errorf("a refused field must not be recorded as written: %+v", updater.updates)
+	}
+	if strings.Contains(res.Message, "discogs") {
+		t.Errorf("message %q counts a refused field as backfilled", res.Message)
+	}
+}
+
+// TestProviderIDBackfill_AllRefusedDismisses is F-4: when a lock refused the
+// fixer's ONLY writes, the result must be Dismissed rather than Fixed.
+// Pipeline.FixViolation turns Fixed=true into ResolveViolation, so reporting a
+// fix here would close a violation nothing repaired and hide the row; leaving it
+// merely open would give the operator a Fix button that can only be refused
+// again. Dismissed is the terminal, honest answer.
+func TestProviderIDBackfill_AllRefusedDismisses(t *testing.T) {
+	fetcher := &stubMetadataProvider{metadata: mbURLMetadata()}
+	updater := &lockingUpdater{locked: map[string]bool{
+		"discogs_id": true, "deezer_id": true, "spotify_id": true,
+	}}
+	f := NewProviderIDBackfillFixer(fetcher, updater, testLogger())
+
+	a := &artist.Artist{ID: "a1", Name: "Fully Pinned", MusicBrainzID: "mbid-abc"}
+	res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleProviderIDMissing})
+	if err != nil {
+		t.Fatalf("Fix returned error: %v", err)
+	}
+	if res.Fixed {
+		t.Errorf("Fixed=true with every write refused; the operator would see a repaired violation that was never repaired")
+	}
+	if !res.Dismissed {
+		t.Errorf("Dismissed=false, got %+v; an all-refused pass is terminal and must not leave the row open", res)
+	}
+	// The nothing-derivable branch is a DIFFERENT outcome and must not be
+	// reported here: it is not terminal (adding the relation upstream fixes it).
+	if strings.Contains(res.Message, "could be derived") {
+		t.Errorf("message %q reports the nothing-derivable branch for a lock refusal", res.Message)
+	}
+	if len(updater.updates) != 0 {
+		t.Errorf("nothing should have been written: %+v", updater.updates)
+	}
+}
+
+// TestProviderIDBackfill_NonLockErrorStillFails is the positive control for the
+// classification. Without it, a `continue` on EVERY error would pass both tests
+// above while silently swallowing a database failure as a skip.
+func TestProviderIDBackfill_NonLockErrorStillFails(t *testing.T) {
+	fetcher := &stubMetadataProvider{metadata: mbURLMetadata()}
+	f := NewProviderIDBackfillFixer(fetcher, &failingUpdater{}, testLogger())
+
+	a := &artist.Artist{ID: "a1", Name: "DB Down", MusicBrainzID: "mbid-abc"}
+	if _, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleProviderIDMissing}); err == nil {
+		t.Fatal("a non-lock error must still fail the fixer; swallowing it hides a real write failure")
+	} else if errors.Is(err, artist.ErrFieldLocked) {
+		t.Fatalf("err classified as a lock refusal: %v", err)
+	}
+}
+
+// failingUpdater fails every write with an ordinary (non-lock) error.
+type failingUpdater struct{}
+
+func (failingUpdater) UpdateProviderField(_ context.Context, _, _, _ string) error {
+	return errors.New("database is unavailable")
+}

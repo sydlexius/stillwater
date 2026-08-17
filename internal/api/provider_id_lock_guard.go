@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -61,6 +63,52 @@ func (r *Router) refuseLockedProviderIDs(w http.ResponseWriter, a *artist.Artist
 		return true
 	}
 	return false
+}
+
+// writeFieldLockRefusal answers 423 Locked when err is a service-layer lock
+// refusal, and reports whether it did. A caller passes every error from a
+// provider-field write verb and falls through to its own handling on false.
+//
+// SAME STATUS AND SAME BODY SHAPE as refuseLockedProviderIDs above, deliberately:
+// an operator meeting a lock refusal on the field-edit API and on a link flow is
+// meeting the same condition, and a client discriminating on the "error" key
+// should not need to know which layer noticed.
+//
+// THE REASON COMES FROM THE TYPED ERROR, never from err.Error() on an untyped
+// one. artist.FieldLockedError.Reason is a hand-authored sentence chosen for an
+// operator; a rendered error chain can carry wrapped driver text, a column name
+// or an id. This is the same rule fieldRefusalReason states for the validation
+// error, and the reason the errors.As below is not a string match.
+//
+// A NON-REFUSAL ERROR RETURNS FALSE and is left entirely alone -- the caller
+// still logs it and still answers 500. This function never swallows an error it
+// did not recognize.
+//
+// NOT REACHABLE FROM TODAY'S TWO CALL SITES, AND SAID SO PLAINLY RATHER THAN
+// IMPLIED. handleFieldUpdate and handleFieldClear each wrap the context with
+// artist.ContextWithLockOverride for the SAME field they then write, and the
+// field name is an exact lowercase key from providerFieldMap (IsEditableField is
+// a map lookup, so no case variant reaches here), so the grant always matches and
+// the service verb never refuses them. This is therefore NOT a new operator-facing
+// status on those routes and openapi.yaml deliberately does not claim one for
+// them. What it buys is that the day a caller of those verbs arrives WITHOUT a
+// grant -- or a future edit drops one -- the operator sees a lock refusal instead
+// of a 500 that reads as a server fault. The alternative, leaving the 500, is a
+// silent misclassification waiting on a one-line change.
+func (r *Router) writeFieldLockRefusal(w http.ResponseWriter, artistID string, err error) bool {
+	var le *artist.FieldLockedError
+	if !errors.As(err, &le) {
+		return false
+	}
+	r.logger.Info("refused a field write: the operator has that field locked",
+		slog.String("artist_id", artistID),
+		slog.String("field", le.Field))
+	writeJSON(w, http.StatusLocked, map[string]any{
+		"error":  "field_locked",
+		"field":  le.Field,
+		"reason": le.Reason,
+	})
+	return true
 }
 
 // providerIDFieldIf returns the lock key for field when value is non-empty, and

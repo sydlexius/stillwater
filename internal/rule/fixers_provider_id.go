@@ -2,6 +2,7 @@ package rule
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -194,6 +195,10 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 	}
 
 	var filled []string
+	// refused collects the fields a lock turned away, so the FixResult can tell
+	// "the operator pinned these" from "MusicBrainz had no relation" -- two very
+	// different things to show an operator, and only one of them terminal.
+	var refused []string
 	for _, name := range inScopeProviderIDs {
 		current := strings.TrimSpace(providerIDForName(a, name))
 		if current != "" {
@@ -211,6 +216,26 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		// follows the call site, not the current field list.
 		tagged := withRuleHistorySource(ctx, ruleHistorySource(RuleProviderIDMissing))
 		if err := f.updater.UpdateProviderField(tagged, a.ID, field, derived); err != nil {
+			// A LOCK REFUSAL IS A SKIP, NOT A FAILURE (#3037). The operator
+			// pinned this field while it was EMPTY -- "do not guess this one" --
+			// which is exactly the case the lock exists to protect, so the fixer
+			// honoring it is the system working. Failing the whole fixer here
+			// would abandon the OTHER derivable IDs in the same pass and surface
+			// an error the operator can only clear by unlocking a field they
+			// deliberately pinned.
+			//
+			// The `continue` is load-bearing twice over: it also skips the
+			// in-memory mirror and the `filled` append below, so a refused write
+			// is neither reported as a backfill nor left on the struct the
+			// pipeline re-evaluates. Mirroring a value the database refused is
+			// how a fixer reports a repair that did not happen.
+			if errors.Is(err, artist.ErrFieldLocked) {
+				f.logger.Info("skipping a provider-ID backfill: the operator has that field locked",
+					slog.String("artist_id", a.ID),
+					slog.String("field", field))
+				refused = append(refused, field)
+				continue
+			}
 			return nil, fmt.Errorf("setting %s for %s: %w", field, a.Name, err)
 		}
 		// Mirror the write onto the in-memory artist immediately (issue #2699).
@@ -231,6 +256,30 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		// didn't.
 		setProviderIDForName(a, name, derived)
 		filled = append(filled, string(name))
+	}
+
+	// EVERY WRITE REFUSED, AND NOTHING ELSE TO DO: report the violation as
+	// DISMISSED rather than open (#3037, F-4). The distinction from the
+	// nothing-derivable branch below is the honesty of the operator's row.
+	//
+	// Terminal, which is what earns Dismissed: re-running this fixer against the
+	// same locked field can only produce the same refusal, so leaving the row
+	// open gives the operator a live Fix button that does nothing every time
+	// they click it. Pipeline.FixViolation already turns a Dismissed-and-not-
+	// Fixed result into DismissViolation, so nothing further is needed there.
+	//
+	// SCOPED TO "refused AND filled nothing". A pass that filled one ID and had
+	// another refused falls through to the success path below and reports the one
+	// it actually wrote -- a partial backfill is a real repair, and `filled`
+	// carries only the writes that landed.
+	if len(filled) == 0 && len(refused) > 0 {
+		return &FixResult{
+			RuleID:    RuleProviderIDMissing,
+			Fixed:     false,
+			Dismissed: true,
+			Message: fmt.Sprintf("provider ID backfill refused for %s: %s locked by the operator",
+				a.Name, strings.Join(refused, ", ")),
+		}, nil
 	}
 
 	if len(filled) == 0 {

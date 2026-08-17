@@ -969,9 +969,25 @@ func TestUpdateProviderField_OperatorGrantBeatsTheLock(t *testing.T) {
 		t.Fatalf("locking: %v", err)
 	}
 
-	// WITHOUT a grant: an automated write is still reverted.
-	if err := svc.UpdateProviderField(ctx, a.ID, "discogs_id", "rule-derived"); err != nil {
-		t.Fatalf("UpdateProviderField (no grant): %v", err)
+	// WITHOUT a grant: an automated write is REFUSED, with a typed error and
+	// without a stored change. It used to return nil and rely on the chokepoint
+	// reverting the value, which told the caller a write landed that did not
+	// (#3037).
+	err := svc.UpdateProviderField(ctx, a.ID, "discogs_id", "rule-derived")
+	if !errors.Is(err, ErrFieldLocked) {
+		t.Fatalf("UpdateProviderField (no grant) err = %v, want ErrFieldLocked; a single-field verb whose only field was refused must not report success", err)
+	}
+	var le *FieldLockedError
+	if !errors.As(err, &le) {
+		t.Fatalf("err is not a *FieldLockedError (%T); callers classify on the type to render the refusal", err)
+	}
+	if le.Field != "discogs_id" {
+		t.Errorf("FieldLockedError.Field = %q, want discogs_id", le.Field)
+	}
+	// The reason reaches an operator verbatim, so it must not carry the rejected
+	// value or the artist id -- the same contract FieldValidationError.Reason has.
+	if strings.Contains(le.Reason, "rule-derived") || strings.Contains(le.Reason, a.ID) {
+		t.Errorf("FieldLockedError.Reason = %q; it must not carry the rejected value or the artist id", le.Reason)
 	}
 	mid, err := svc.GetByID(ctx, a.ID)
 	if err != nil {
@@ -1114,5 +1130,88 @@ func TestProviderIDFieldNamesMatchProviderFieldMap(t *testing.T) {
 	}
 	if len(providerFieldMap) != 6 {
 		t.Errorf("providerFieldMap has %d entries, want 6; a new provider ID needs a FieldName constant and a lock check in the link handlers", len(providerFieldMap))
+	}
+}
+
+// TestClearProviderField_RefusedByTheLock_GrantedByTheOperator pins that the
+// CLEAR verb behaves identically to the update verb. It routes through
+// UpdateProviderField with "", so one validator serves both -- but "" is the
+// value a lock most needs to stop (clearing a pinned ID destroys curated data),
+// and a delegation that quietly lost the check would leave exactly that hole.
+//
+// The paired grant arm is not decoration: without it a refusal that ALSO blocked
+// the operator's own clear would pass the negative arm and ship a lockout.
+func TestClearProviderField_RefusedByTheLock_GrantedByTheOperator(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Clear Verb", DiscogsID: "dg-pinned"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"discogs_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+	// PRECONDITION: the lock and the value are actually in the stored row, or
+	// every assertion below passes vacuously.
+	seeded, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if seeded.DiscogsID != "dg-pinned" || !svc.IsFieldLocked(seeded, FieldDiscogsID) {
+		t.Fatalf("precondition: discogs_id=%q locked=%v, want the value seeded and the field pinned",
+			seeded.DiscogsID, svc.IsFieldLocked(seeded, FieldDiscogsID))
+	}
+
+	if err := svc.ClearProviderField(ctx, a.ID, "discogs_id"); !errors.Is(err, ErrFieldLocked) {
+		t.Fatalf("ClearProviderField (no grant) err = %v, want ErrFieldLocked", err)
+	}
+	mid, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if mid.DiscogsID != "dg-pinned" {
+		t.Fatalf("discogs_id = %q after a refused clear, want it untouched", mid.DiscogsID)
+	}
+
+	if err := svc.ClearProviderField(ContextWithLockOverride(ctx, "discogs_id"), a.ID, "discogs_id"); err != nil {
+		t.Fatalf("ClearProviderField (granted): %v", err)
+	}
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.DiscogsID != "" {
+		t.Errorf("discogs_id = %q after a granted clear, want empty; an operator must be able to clear their own pinned ID", after.DiscogsID)
+	}
+}
+
+// TestUpdateProviderField_UnlockedFieldIsUnaffected is the positive control for
+// the refusal: without it, a refuseIfFieldLocked that returned an error for
+// EVERY field would pass every negative assertion above and break all six
+// provider-ID writes.
+func TestUpdateProviderField_UnlockedFieldIsUnaffected(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Unlocked Control", DiscogsID: "dg-old"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	// A DIFFERENT field is pinned, so the artist genuinely carries a lock set --
+	// a test on an artist with no locks at all would not prove the check is
+	// per-field, only that it is reached.
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"spotify_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+	if err := svc.UpdateProviderField(ctx, a.ID, "discogs_id", "dg-new"); err != nil {
+		t.Fatalf("UpdateProviderField on an unlocked field: %v", err)
+	}
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.DiscogsID != "dg-new" {
+		t.Errorf("discogs_id = %q, want dg-new; an unlocked field must still be writable", after.DiscogsID)
 	}
 }
