@@ -113,7 +113,8 @@ with a different source.
 So condition 3 requires BOTH:
 
 - `damage.source LIKE 'rule:%'` -- the row itself says a rule wrote it, and
-- `RuleFields(<that row's own rule id>)` contains the damaged field.
+- `RuleFields(ruleID)` contains the damaged field, where `ruleID` is parsed
+  from that row's own `source`.
 
 The `rule_fix` join is then no longer load-bearing for attribution and is
 DROPPED from the predicate entirely. It stays useful only as corroboration in the
@@ -146,7 +147,9 @@ safe-list.
    reads as damage.
 3. The damage row's OWN `source` is `rule:<id>` -- per-row causation, not an
    artist-wide coincidence.
-4. `rule.RuleFields(<that row's own id>)` contains the damaged field.
+4. `rule.RuleFields(ruleID)` contains the damaged field, where `ruleID` is the
+   RULE id parsed out of that row's `source` (`"rule:metadata_quality"` ->
+   `"metadata_quality"`), NOT the `metadata_changes` row's `id` column.
 
 There is no longer a condition keyed on a SEPARATE `rule_fix` row, and no
 timestamp-ordering condition at all. Both are gone deliberately: see "The join

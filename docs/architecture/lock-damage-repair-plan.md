@@ -1171,22 +1171,29 @@ Insert after the maintenance scheduler block:
                     "error", err)
                 return
             }
-            logger.Info("locked-field damage repair complete",
-                "restored", len(res.Restored),
-                "unrecoverable", len(res.Unrecoverable),
-                "failed", len(res.Failed))
             // COMPLETION IS RECORDED ONLY ON A CLEAN PASS. A row-level failure
             // means that pair was neither restored nor proven unrecoverable, so
             // stamping the key here would retire the one-shot with work
             // outstanding and nothing would ever retry it. Unrecoverable rows do
             // NOT block completion: they are a decided outcome, and they can
             // never become recoverable on a later boot.
+            //
+            // THE FAILURE GATE COMES BEFORE ANY "complete" LINE. Logging the
+            // pass finished and then warning that it did not is a false success
+            // signal in the startup log, which is the one place an operator
+            // looks to see whether the repair ran (#3074 review).
             if len(res.Failed) > 0 {
-                logger.Warn("locked-field damage repair had row-level failures; "+
-                    "not recording completion, the next start retries them",
+                logger.Warn("locked-field damage repair finished with row-level "+
+                    "failures; not recording completion, the next start retries them",
+                    "restored", len(res.Restored),
+                    "unrecoverable", len(res.Unrecoverable),
                     "failed", len(res.Failed))
                 return
             }
+            logger.Info("locked-field damage repair complete",
+                "restored", len(res.Restored),
+                "unrecoverable", len(res.Unrecoverable),
+                "failed", len(res.Failed))
             if _, err := db.ExecContext(ctx,
                 `INSERT INTO settings (key, value) VALUES (?, ?)
                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
