@@ -68,9 +68,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-
-const BASE_URL = process.env.SW_TEST_URL
-  || `http://127.0.0.1:${process.env.SW_PORT || '1973'}`;
+import {
+  BASE_URL, apiFetch, ensureLibrary, runScan, artistIdsByName,
+} from './api.js';
 
 // More than one page of rows, so the pager renders. page_size is clamped
 // server-side to [10, 500] by getUserPageSize, so 10 is the smallest page
@@ -94,23 +94,6 @@ const DAMAGED_ARTISTS = [
 
 // The artist seeded through a real scan (source="scan" -> "automated").
 const SCANNED_ARTIST = 'Gabbro Fixture';
-
-/**
- * apiFetch issues an authenticated, CSRF-bearing request against the
- * ephemeral server. Playwright's APIRequestContext carries the session
- * cookie from global-setup; the CSRF token is read back off that context's
- * cookie jar because state-changing routes require the header to match.
- */
-async function apiFetch(request, method, url, body) {
-  const state = await request.storageState();
-  const csrf = (state.cookies.find(c => c.name === 'csrf_token') || {}).value || '';
-  const opts = {
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-  };
-  if (body !== undefined) opts.data = JSON.stringify(body);
-  const resp = await request.fetch(`${BASE_URL}${url}`, { method, ...opts });
-  return resp;
-}
 
 /**
  * waitPastSecondBoundary sleeps until created_at is guaranteed to differ.
@@ -142,70 +125,6 @@ function waitPastSecondBoundary() {
 // a fresh database each time, but a developer pointing SW_TEST_URL at a live
 // instance would otherwise hit it on the second run).
 const FIXTURE_LIBRARY_NAME = 'a11y blast-radius fixture';
-
-async function ensureLibrary(request, dir) {
-  const resp = await apiFetch(request, 'POST', '/api/v1/libraries', {
-    name: FIXTURE_LIBRARY_NAME, path: dir, type: 'regular',
-  });
-  if (resp.ok()) return (await resp.json()).id;
-
-  // 409 means a previous run already created it. Reuse that row rather than
-  // failing: the seeder must be safe to re-run. Any OTHER status is a real
-  // failure and still throws -- a silent fallback here would let a broken
-  // library configuration seed an empty fixture.
-  if (resp.status() === 409) {
-    const list = await request.fetch(`${BASE_URL}/api/v1/libraries`);
-    if (list.ok()) {
-      const body = await list.json();
-      const libs = Array.isArray(body) ? body : (body.libraries || []);
-      const existing = libs.find(l => l.name === FIXTURE_LIBRARY_NAME);
-      // Only reuse it if it points where this run expects. A stale row aimed at
-      // a deleted temp dir would scan nothing and seed an empty fixture, which
-      // is the failure this whole helper exists to prevent.
-      if (existing && existing.path === dir) return existing.id;
-      if (existing) {
-        throw new Error(
-          `seed: fixture library exists but points at ${existing.path}, not ${dir}. `
-          + 'Delete it (or use a fresh database) before re-seeding.',
-        );
-      }
-    }
-  }
-  throw new Error(`seed: creating fixture library failed: ${resp.status()} ${await resp.text()}`);
-}
-
-/** runScan triggers a scan and waits for it to finish. */
-async function runScan(request) {
-  const resp = await apiFetch(request, 'POST', '/api/v1/scanner/run');
-  if (!resp.ok()) {
-    throw new Error(`seed: scanner run failed: ${resp.status()} ${await resp.text()}`);
-  }
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    const st = await request.fetch(`${BASE_URL}/api/v1/scanner/status`);
-    if (st.ok()) {
-      const body = await st.json();
-      if (body.status === 'completed' || body.status === 'idle') return;
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-  throw new Error('seed: scan did not complete within 60s');
-}
-
-/** artistIdsByName maps fixture artist names to their ids. */
-async function artistIdsByName(request, names) {
-  const resp = await request.fetch(`${BASE_URL}/api/v1/artists?page_size=500`);
-  if (!resp.ok()) {
-    throw new Error(`seed: listing artists failed: ${resp.status()}`);
-  }
-  const body = await resp.json();
-  const list = Array.isArray(body) ? body : (body.artists || []);
-  const out = new Map();
-  for (const a of list) {
-    if (names.includes(a.name)) out.set(a.name, a.id);
-  }
-  return out;
-}
 
 /** setField writes one field, failing loudly rather than seeding silently. */
 async function setField(request, artistId, field, value) {
@@ -261,7 +180,7 @@ export async function seedBlastRadius(request) {
     fs.mkdirSync(path.join(dir, name), { recursive: true });
   }
 
-  await ensureLibrary(request, dir);
+  await ensureLibrary(request, FIXTURE_LIBRARY_NAME, dir);
   await runScan(request);
 
   const ids = await artistIdsByName(request, [...DAMAGED_ARTISTS, SCANNED_ARTIST]);
