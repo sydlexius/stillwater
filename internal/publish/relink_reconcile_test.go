@@ -1046,9 +1046,10 @@ func (r *reReadFailingLister) GetPlatformIDs(ctx context.Context, artistID strin
 //
 // The load-bearing assertion is therefore the LOG one, and it is not
 // bookkeeping. With the branch removed, a database failure is reported as
-// "concurrent write detected ... yielding to it" -- a confidently WRONG
-// diagnosis that would send an operator hunting a race that never happened
-// while the real fault (their store erroring mid-pass) goes unmentioned.
+// "stored mapping changed ... yielding to the current stored state" -- a
+// confidently WRONG diagnosis that would send an operator hunting a
+// concurrent write or a deletion that never happened, while the real fault
+// (their store erroring mid-pass) goes unmentioned.
 // Verified by mutation: deleting the branch fails this test on that line.
 // The no-write assertions stay as a belt-and-braces check on the pair.
 func TestReconcileRelinks_ReReadErrorNeverWrites(t *testing.T) {

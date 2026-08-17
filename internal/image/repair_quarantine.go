@@ -149,7 +149,7 @@ type RepairManifest struct {
 //
 // Entries are never evicted: one mutex per operation ever run, for the process
 // lifetime. That is the same unbounded-sync.Map shape as slotMu above (and
-// Router.stillwaterManagedMu in internal/api), and it is bounded in practice by
+// Router.connWriteMu in internal/api), and it is bounded in practice by
 // the number of repair operations a process performs -- a few bytes each. An
 // eviction scheme would need its own lock to close the evict-while-acquiring
 // race, which costs more than it saves.
