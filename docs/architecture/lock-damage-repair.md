@@ -37,12 +37,15 @@ Two properties make it usable as the attribution key:
 - **Successful fixes only.** It returns early unless `fr.Fixed`, and since #3065
   its sole call site is `grantFixCredits` (`internal/rule/lock_reverted_fix.go:246`),
   deliberately deferred so a lock-reverted fix emits no row at all.
-- **Ordered before the damage.** The row is written in the same pass as the
-  persist, so `damage.created_at >= rule_fix.created_at` holds by construction.
-  This is the issue's condition 4.
+- **Written AFTER the damage, not before.** The issue body states the audit row
+  precedes the persist; that stopped being true when #3065 deferred it.
+  `persistHealthAfterRun` writes the artist at `internal/rule/fixer.go:1097` and
+  `grantFixCredits` writes the audit row at `:1101`. Any predicate keyed on the
+  ordering is therefore wrong in the direction the issue assumed.
 
-The trail predates every release including `v1.6.1`, so the repair is evaluable
-on real operator databases.
+The trail predates every release including `v1.6.1`. That made it TEMPTING as an
+attribution key, and the next section explains why it cannot serve as one
+anyway.
 
 ### Rejected: parsing logs
 
@@ -54,17 +57,79 @@ than a month is gone. The fixers also barely log field transitions: only
 the exact damage this unit targets. A log parser would be a fragile reader over
 text that is both incomplete and expiring.
 
-### Rejected: selecting on `source LIKE 'rule:%'` on the damage row itself
+### REINSTATED: selecting on `source LIKE 'rule:%'` on the damage row itself
 
-Attribution stamping of the DAMAGE row (`withRuleHistorySource`, #3048) landed
-`fdeb1b6f` on 2026-08-16, and the prevention chokepoint landed `2b50d3b5` the
-same day. A damage row can only carry a `rule:` source if written between the
-two -- a ~16-hour window, on nightly builds, never released. Selecting on it
-would restore approximately zero rows on any real database.
+An earlier draft REJECTED this on coverage grounds, arguing that a damage row
+carries a `rule:` source only inside the window between #3048 (`fdeb1b6f`) and
+the prevention chokepoint (`2b50d3b5`) -- never released, so "approximately zero
+rows on any real database".
 
-The `rule_fix` join gets attribution WITHOUT widening to unattributed damage: an
-operator's own edit has no `rule_fix` row on that artist naming a rule that
-writes that field.
+**The coverage arithmetic was right; the conclusion was wrong**, because it
+weighed coverage without weighing SAFETY. The alternative it chose in preference
+-- the artist-wide `rule_fix` join -- buys its wider coverage by matching rows no
+rule caused, which is not wider coverage at all but false positives that destroy
+operator data. Per-row `source` is the only key that distinguishes a rule write
+from an operator edit, so it is reinstated as the attribution condition.
+
+Two corrections to that draft's reasoning, both worth keeping visible:
+
+- The window is **not** bounded above by the chokepoint. The chokepoint stops a
+  rule from changing a LOCKED field; it does not stop rule writes generally, and
+  a rule that damages a field the operator locks LATER still writes a
+  `rule:`-sourced row today. The upper bound was wrong.
+- "Approximately zero rows" remains true for existing databases, and that is now
+  stated as the design's accepted cost rather than used to justify a
+  false-positive-prone predicate.
+
+### The join alone is NOT a causal link (found in review, #3074)
+
+An earlier draft of this design claimed the `rule_fix` join "gets attribution
+WITHOUT widening to unattributed damage: an operator's own edit has no
+`rule_fix` row on that artist naming a rule that writes that field." **That claim
+was FALSE and the mechanism it described would have destroyed operator data.**
+
+The counter-example is ordinary, not exotic:
+
+1. `metadata_quality` runs on artist A at 10:00 and writes a `rule_fix` row.
+2. At 11:00 the OPERATOR edits `biography` themselves, holding a grant on the
+   locked field.
+3. That operator row satisfies every damage predicate: `old_value != ''`,
+   `old_value != new_value`, `source = 'manual'`, and it is rank 1.
+4. The join matches, because a `rule_fix` row exists on that artist and
+   `metadata_quality` declares `biography`.
+5. The field is locked now.
+
+The repair would restore the value the operator deliberately replaced. The join
+proves only that a rule ran on this artist AT SOME POINT -- never that it caused
+THIS row.
+
+**THE DURABLE CAUSAL LINK IS THE DAMAGE ROW'S OWN SOURCE.**
+`persistHealthAfterRun` wraps the write in `withRuleHistorySource`
+(`internal/rule/fixer.go:2438`), so the damage row itself carries
+`source = "rule:<id>"` on any build shipping #3048. That is per-row and cannot
+name an operator edit, because an operator edit is written on a different path
+with a different source.
+
+So condition 3 requires BOTH:
+
+- `damage.source LIKE 'rule:%'` -- the row itself says a rule wrote it, and
+- `RuleFields(<that row's own rule id>)` contains the damaged field.
+
+The `rule_fix` join is then no longer load-bearing for attribution and is
+DROPPED from the predicate entirely. It stays useful only as corroboration in the
+report.
+
+**THE HONEST COST, stated plainly.** This returns coverage to the post-#3048
+window the `rule_fix` trail was reached for in order to escape. Damage written
+before `fdeb1b6f` carries `source = "manual"` and is byte-identical to an
+operator edit, so it is NOT recoverable by any safe predicate. The repair is
+therefore FORWARD-LOOKING: it protects against a future write path that escapes
+the chokepoint, and it does not repair the historical loss that motivated #3038.
+That is a real reduction in scope and it is the correct one -- a mechanism that
+silently reverts operator edits is worse than one that repairs nothing.
+
+Damage the mechanism cannot attribute is REPORTED as unrecoverable, so the
+operator can act on it through the blast-radius pane, which already surfaces it.
 
 ## Row selection: a positive allow-list
 
@@ -79,18 +144,40 @@ safe-list.
 1. The field is CURRENTLY in that artist's `locked_fields`.
 2. The row is the newest change for its `(artist_id, field)` pair AND still
    reads as damage.
-3. The same artist carries a `field='rule_fix'` row whose `source` is
-   `rule:<id>` where `rule.RuleFields(id)` contains the damaged field.
-4. The damage row is not older than that `rule_fix` row.
+3. The damage row's OWN `source` is `rule:<id>` -- per-row causation, not an
+   artist-wide coincidence.
+4. `rule.RuleFields(<that row's own id>)` contains the damaged field.
+
+There is no longer a condition keyed on a SEPARATE `rule_fix` row, and no
+timestamp-ordering condition at all. Both are gone deliberately: see "The join
+alone is NOT a causal link" above for why the ordering condition was not merely
+unnecessary but BACKWARDS.
+
+### Why the old ordering condition was wrong in BOTH directions
+
+The superseded design required `damage.created_at >= rule_fix.created_at`,
+justified as "the audit row is written before the artist is persisted, so a rule
+cannot have caused a change that predates its own audit entry".
+
+**That ordering is now inverted, and the design never noticed.**
+`persistHealthAfterRun` writes the artist -- and therefore the damage row -- at
+`internal/rule/fixer.go:1097`, and `grantFixCredits` writes the `rule_fix` row
+after it at `:1101`. #3065 deferred the audit row precisely so a lock-reverted
+fix emits none, which moved it AFTER its own damage.
+
+So the condition would have rejected every genuine candidate on a current build,
+and the plan's `TestLockDamageCandidates_ExcludesDamageOlderThanTheRuleFix`
+asserted the wrong direction. A predicate resting on a wall-clock ordering
+between two rows written by different statements is fragile whichever way it
+points, which is the deeper reason the per-row `source` is the right key.
 
 ### The SQL / Go seam
 
-- **SQL answers 2, 3 (the join) and 4:** ranking, the damage test, the
-  `rule_fix` self-join on `artist_id`, and the `created_at` ordering. Returns
-  candidates carrying the damaged field, the old value, and the `rule_id`
-  extracted from the joined row's source.
-- **Go answers 1 and the capability half of 3:** `RuleFields(rule_id)` must
-  contain the damaged field, and the field must currently be locked.
+- **SQL answers 2 and 3:** ranking, the damage test, and
+  `source LIKE 'rule:%'`. Returns candidates carrying the damaged field, the old
+  value, and the `rule_id` parsed from that row's own source.
+- **Go answers 1 and 4:** the field must currently be locked, and
+  `RuleFields(rule_id)` must contain the damaged field.
 
 `RuleFields` is a static Go map (`internal/rule/catalogue.go:421`) and
 `locked_fields` is a JSON array on the artist row. Pushing either into SQL
@@ -189,11 +276,18 @@ but it still earns its own test.
 
 | Field | Recoverable? | Why |
 |---|---|---|
-| `biography` | YES | always in `trackableFields`; written by `metadata_quality` (replaces a non-empty value) |
-| `origin` | YES | always tracked; `origin_missing` declares it |
+| `biography` | YES, post-#3048 only | always in `trackableFields`; `metadata_quality` replaces a non-empty value, so it produces real damage |
+| `origin` | NO damage exists to repair | always tracked and `origin_missing` declares it, but that rule fires ONLY when origin is already empty, so it destroys nothing. Repairable in principle if a future writer of `origin` damages it; nothing to recover today |
 | `name`, `sort_name` | NO, before #3037 | entered `trackableFields` only in #3037, so earlier damage wrote no row |
 | `musicbrainz_id`, provider IDs | NO | never in `trackableFields`; no row was ever written |
-| locked field, no attributing `rule_fix` row | NO, by design | reported, not repaired, so the operator can act via the pane |
+| ANY field damaged before #3048 (`fdeb1b6f`) | NO, by design | the row carries `source = "manual"`, byte-identical to an operator edit. Reported as unrecoverable so the operator can act via the pane |
+
+**The headline consequence, stated where nobody can miss it:** after the review
+correction above, this mechanism repairs only damage written by a build carrying
+#3048. No released build does. The repair is a FORWARD-LOOKING safety net, not a
+recovery for the historical loss that motivated #3038, and the issue's premise
+that damage "must be repaired on upgrade" is not achievable safely. The
+blast-radius pane remains the recovery path for pre-#3048 damage.
 
 Rules declaring fields (`internal/rule/catalogue.go`, verified by reading the
 map keys that own each `Fields:` entry): `nfo_has_mbid` and `mbid_resolves`
