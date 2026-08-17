@@ -68,10 +68,16 @@ func lockRevertFixture(t *testing.T, bio string, lockFields ...string) (*sql.DB,
 	return db, artistSvc, stored, ruleSvc, rv, ctx
 }
 
-// TestFixViolation_LockRevertedFixIsDismissedNotResolved is the headline
-// regression. A fixer whose ONLY change was reverted must not report Fixed and
-// must not resolve the row.
-func TestFixViolation_LockRevertedFixIsDismissedNotResolved(t *testing.T) {
+// TestFixViolation_LockRevertedFixLeavesTheRowOpen is the headline regression.
+// A fixer whose ONLY change was reverted must not report Fixed and must not
+// resolve the row.
+//
+// OPEN, not dismissed, and that is argued: a lock is operator-REVOCABLE, so the
+// outcome is not terminal. A dismissed row has no un-dismiss route
+// (UpsertViolation pins 'dismissed' per #1107; ReopenViolation only accepts
+// 'resolved'), which would mean that after the operator unlocks, the finding
+// never returns and the field is never repaired.
+func TestFixViolation_LockRevertedFixLeavesTheRowOpen(t *testing.T) {
 	const pinned = "the operator wrote this by hand"
 
 	// POSITIVE CONTROL: the identical fixer on an UNLOCKED artist must land,
@@ -130,13 +136,13 @@ func TestFixViolation_LockRevertedFixIsDismissedNotResolved(t *testing.T) {
 		t.Errorf("FixResult.Fixed = true for a change the lock guard reverted; the operator is "+
 			"shown a repair that did not happen (#3037). Message: %s", fr.Message)
 	}
-	if !fr.Dismissed {
-		t.Errorf("FixResult.Dismissed = false; re-running this fixer can only produce the same " +
-			"refusal, so an open row hands the operator a Fix button that does nothing")
+	if fr.Dismissed {
+		t.Errorf("FixResult.Dismissed = true; a lock is operator-REVOCABLE, so this is not a " +
+			"terminal outcome, and a dismissed row can never be un-dismissed")
 	}
-	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusDismissed {
-		t.Errorf("violation status = %q, want dismissed; a resolved row closes a finding that "+
-			"was never repaired", got)
+	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusOpen {
+		t.Errorf("violation status = %q, want open; a resolved row closes a finding that "+
+			"was never repaired, and a dismissed one closes it permanently", got)
 	}
 }
 
@@ -181,14 +187,19 @@ func TestFixViolation_PartiallyRevertedFixStillResolves(t *testing.T) {
 	}
 }
 
-// TestRunForArtist_LockRevertedAutoFixIsDismissedWithABaselineRow covers the
-// UNATTENDED path, which is the one that repeats forever, and pins the
-// two-upsert trap: recording 'dismissed' directly writes NO rule_results row
-// (UpsertViolation emits the paired FAIL row only for open/pending) and every
-// later pass preserves 'dismissed', so the row would never appear and
-// offlineHealthScore would refuse to score the artist -- freezing its health
-// permanently. The baseline open upsert is what prevents that.
-func TestRunForArtist_LockRevertedAutoFixIsDismissedWithABaselineRow(t *testing.T) {
+// TestRunForArtist_LockRevertedAutoFixStaysOpenWithItsResultRow covers the
+// UNATTENDED path. That is the one that matters at scale: FixViolation is one
+// artist at a time, while the scheduled pass sweeps the whole library, so a
+// correction that holds only on the click path protects nothing overnight.
+//
+// It also pins the health trap. Had this path written 'dismissed',
+// UpsertViolation would emit NO paired rule_results FAIL row (#1107 writes it
+// only for an open/pending row) and every later pass would preserve the
+// dismiss, so the row would never appear and offlineHealthScore would refuse to
+// score the artist -- freezing its health permanently. Writing the row OPEN
+// sidesteps the trap rather than managing it, and this test asserts the
+// rule_results row exists to prove that.
+func TestRunForArtist_LockRevertedAutoFixStaysOpenWithItsResultRow(t *testing.T) {
 	// A SHORT pinned biography, so the bio_exists CHECKER genuinely flags this
 	// artist and the auto path actually dispatches a fix. A long one passes the
 	// rule, no violation is raised, and the code under test is never reached.
@@ -228,18 +239,20 @@ func TestRunForArtist_LockRevertedAutoFixIsDismissedWithABaselineRow(t *testing.
 		t.Fatal("precondition: no fix was attempted, so the auto-fix dismiss path was never reached")
 	}
 
-	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusDismissed {
+	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusOpen {
 		t.Fatalf("the auto path left the violation %q for a fix the lock guard fully reverted, "+
-			"want dismissed; an unattended pass will re-attempt and re-open it forever", got)
+			"want open; a resolved row hides a finding that was never repaired, and a "+
+			"dismissed one hides it permanently even after the operator unlocks", got)
 	}
 
 	// THE TRAP: the paired rule_results row must exist. Without the baseline
 	// open upsert it never would, and offlineHealthScore refuses to score an
 	// artist with no complete evaluation -- its health freezes permanently.
 	if _, exists := ruleResultRow(t, db, a.ID, RuleBioExists); !exists {
-		t.Error("no rule_results row exists for the dismissed rule. The dismiss went straight to " +
-			"'dismissed' without the open baseline upsert, so UpsertViolation never wrote the " +
-			"paired FAIL row and this artist's health score is frozen forever (#3060's trap).")
+		t.Error("no rule_results row exists for this rule. UpsertViolation writes the paired FAIL " +
+			"row only for an open/pending row (#1107), so a status that is not open leaves the " +
+			"artist with no evaluation baseline and offlineHealthScore freezes its health " +
+			"permanently -- #3060's trap.")
 	}
 }
 

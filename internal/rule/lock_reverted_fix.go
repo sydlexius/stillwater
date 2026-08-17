@@ -49,11 +49,9 @@ import (
 //     one rather than a live case.
 //
 // A NIL RETURN IS THE RECOVERABLE DIRECTION and every ambiguity above resolves
-// to it. The alternative outcome is Dismissed, and a dismissed row has no
-// un-dismiss route: UpsertViolation's ON CONFLICT pins 'dismissed' (#1107) and
-// ReopenViolation is a positive allow-list on 'resolved'. Wrongly returning nil
-// costs the operator a Fix click on a violation that will re-raise; wrongly
-// returning a dismiss costs them the finding permanently.
+// to it. The alternative outcome leaves the violation OPEN, which re-raises
+// harmlessly; wrongly reporting a repair CLOSES a finding that was never made,
+// and the operator has no signal that anything went wrong.
 func lockRevertedFixResult(fr *FixResult, intended, restored []string) *FixResult {
 	if fr == nil || !fr.Fixed || fr.Dismissed {
 		return nil
@@ -69,19 +67,34 @@ func lockRevertedFixResult(fr *FixResult, intended, restored []string) *FixResul
 			return nil
 		}
 	}
-	// Dismissed rather than left open, matching #3060: the refusal is TERMINAL.
-	// Re-running this fixer against the same pinned field can only produce the
-	// same restoration, so an open row would hand the operator a Fix button
-	// that does nothing every time they press it.
+	// NOT-FIXED AND NOT DISMISSED: the violation stays OPEN. This is the one
+	// place this unit deliberately DIVERGES from #3060, which dismisses when a
+	// lock refuses every field of provider_id_missing, and the divergence is
+	// argued rather than accidental.
 	//
-	// Fixed is cleared as well as Dismissed being set. Callers gate the
-	// resolve, the provenance record and the platform publish on Fixed, and
-	// every one of those would be describing a value the database does not
-	// hold.
+	// Dismissed is for a TERMINAL outcome, and a lock is not terminal: it is
+	// operator-revocable state. Unlock the field and the very same fixer works
+	// on the next pass. A dismissed row has NO un-dismiss route -- UpsertViolation's
+	// ON CONFLICT pins 'dismissed' (#1107), ReopenViolation is a positive
+	// allow-list on 'resolved' -- so dismissing here means that after the
+	// operator unlocks, the finding never comes back and the field is never
+	// repaired. That failure is silent and permanent.
+	//
+	// Leaving it OPEN costs a Fix button that does nothing until the operator
+	// unlocks, plus an ERROR log line per pass naming the artist and field --
+	// which is the signal an operator needs to notice they have a rule fighting
+	// a lock. That is the recoverable direction.
+	//
+	// (#3060's dismiss is not being second-guessed here: it ships, its gate is
+	// far stricter, and converging the two is its own unit. This function is
+	// about the whole-row path, which is the one that covers every other fixer.)
+	//
+	// Fixed is cleared. Callers gate the resolve, the provenance record and the
+	// platform publish on Fixed, and every one of those would be describing a
+	// value the database does not hold.
 	return &FixResult{
-		RuleID:    fr.RuleID,
-		Fixed:     false,
-		Dismissed: true,
+		RuleID: fr.RuleID,
+		Fixed:  false,
 		Message: fmt.Sprintf("fix reverted: %s locked by the operator",
 			strings.Join(intended, ", ")),
 	}
@@ -134,8 +147,8 @@ func (acc *runForArtistAccum) splitLockRevertedRows(restored []string) (keep, re
 
 // resolveOrDismissRows is the run paths' replacement for a bare
 // finalizeResolvedRows call. It splits the pass's deferred rows on the write's
-// restored-field report, resolves the ones whose fix survived, and dismisses
-// the ones whose every guarded change the lock guard reverted (#3037).
+// restored-field report, resolves the ones whose fix survived, and re-opens the
+// ones whose every guarded change the lock guard reverted (#3037).
 //
 // Callers gate this on the artist row having persisted, exactly as they gated
 // finalizeResolvedRows: a failed write leaves the mutation in memory, and
@@ -143,47 +156,42 @@ func (acc *runForArtistAccum) splitLockRevertedRows(restored []string) (keep, re
 func (p *Pipeline) resolveOrDismissRows(ctx context.Context, a *artist.Artist, acc *runForArtistAccum, restored []string, startedAt time.Time) bool {
 	keep, reverted := acc.splitLockRevertedRows(restored)
 	ok := p.finalizeResolvedRows(ctx, a, keep, startedAt)
-	if !p.dismissLockRevertedRows(ctx, a, reverted, startedAt) {
+	if !p.reopenLockRevertedRows(ctx, a, reverted, startedAt) {
 		ok = false
 	}
 	return ok
 }
 
-// dismissLockRevertedRows persists each fully-reverted row as dismissed, and
-// returns true when every write succeeded.
+// reopenLockRevertedRows persists each fully-reverted row as OPEN, and returns
+// true when every write succeeded.
 //
-// TWO UPSERTS PER ROW, AND THE FIRST IS LOAD-BEARING -- the same trap
-// processAutoFixViolation documents. UpsertViolation writes the paired
-// rule_results FAIL row only for an open or pending row (#1107), and every
-// later pass preserves 'dismissed', so going straight to dismissed on a first
-// pass would leave the artist with NO rule_results row for this rule, ever.
-// offlineHealthScore refuses to score an artist in that state, so its health
-// would freeze permanently. Recording the open verdict first is also honest:
-// the evaluation did observe the rule failing, and the dismiss is a statement
-// about the FIX, not about the rule passing.
+// ONE UPSERT, AND IT MUST BE AN OPEN ONE. The row is written rather than merely
+// left alone because on a FIRST pass no row exists yet: processAutoFixViolation
+// returns early on a Fixed result and defers the write, so dropping the row
+// here without replacing it would leave the artist with no violation row and no
+// rule_results row at all for a rule that genuinely failed.
 //
-// Candidates are cleared: a terminal result offers no choice, and a stored list
-// would be a decision that never gets presented.
-func (p *Pipeline) dismissLockRevertedRows(ctx context.Context, a *artist.Artist, rows []*RuleViolation, startedAt time.Time) bool {
+// Writing it OPEN also sidesteps, rather than manages, the trap that a
+// dismissing version would have to handle: UpsertViolation emits the paired
+// rule_results FAIL row only for an open or pending row (#1107), and later
+// passes preserve 'dismissed', so a straight-to-dismissed write would leave the
+// artist permanently unscorable by offlineHealthScore. An open row gets its
+// FAIL row on the first write.
+//
+// Candidates are cleared: a fix the lock reverted offers the operator no
+// choice, and a stored list would be a decision that never gets presented.
+func (p *Pipeline) reopenLockRevertedRows(ctx context.Context, a *artist.Artist, rows []*RuleViolation, startedAt time.Time) bool {
 	ok := true
 	for _, rv := range rows {
-		p.logger.Info("a rule fix was fully reverted by a field lock; the violation is dismissed rather than resolved",
+		p.logger.Error("a rule fix was fully reverted by a field lock; the violation stays OPEN rather than being resolved",
 			"artist_id", a.ID, "rule_id", rv.RuleID)
 		rv.Candidates = nil
 		rv.EvaluatedAt = startedAt
 		rv.Status = ViolationStatusOpen
+		rv.ResolvedAt = nil
 		rv.DismissedAt = nil
 		if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-			p.logger.Warn("persisting lock-reverted violation baseline",
-				"rule_id", rv.RuleID, "artist", a.Name, "error", err)
-			ok = false
-			continue
-		}
-		now := time.Now().UTC()
-		rv.Status = ViolationStatusDismissed
-		rv.DismissedAt = &now
-		if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-			p.logger.Warn("persisting lock-reverted violation dismissal",
+			p.logger.Warn("persisting lock-reverted violation as open",
 				"rule_id", rv.RuleID, "artist", a.Name, "error", err)
 			ok = false
 		}
@@ -191,25 +199,21 @@ func (p *Pipeline) dismissLockRevertedRows(ctx context.Context, a *artist.Artist
 	return ok
 }
 
-// dismissIfLockReverted dismisses rv and returns the replacement FixResult when
-// every guarded change this fix made was restored by the lock guard. It returns
-// (nil, nil) when the fix is not fully reverted and the caller should proceed
-// with its normal success path.
+// reportIfLockReverted returns the replacement FixResult when every guarded
+// change this fix made was restored by the lock guard, or nil when the caller
+// should proceed with its normal success path.
 //
-// DismissViolation on the row the caller already loaded, exactly as the
-// fixer-reported-Dismissed branch does. The two-upsert dance
-// dismissLockRevertedRows needs does NOT apply here: that path may have no row
-// yet, whereas this one loaded an OPEN row by id, so its paired rule_results
-// FAIL row already exists and the artist stays scorable.
-func (p *Pipeline) dismissIfLockReverted(ctx context.Context, a *artist.Artist, rv *RuleViolation, fr *FixResult, intended, restored []string) (*FixResult, error) {
+// IT WRITES NOTHING. The row this path loaded is already open, and the caller
+// simply declines to resolve it, so there is no status to change -- which is
+// why it needs neither DismissViolation nor an upsert. The auto path DOES write
+// (see reopenLockRevertedRows) only because on a first pass its row does not
+// exist yet.
+func (p *Pipeline) reportIfLockReverted(a *artist.Artist, rv *RuleViolation, fr *FixResult, intended, restored []string) *FixResult {
 	out := lockRevertedFixResult(fr, intended, restored)
 	if out == nil {
-		return nil, nil
+		return nil
 	}
-	p.logger.Info("a rule fix was fully reverted by a field lock; the violation is dismissed rather than resolved",
+	p.logger.Error("a rule fix was fully reverted by a field lock; the violation stays OPEN rather than being resolved",
 		"artist_id", a.ID, "rule_id", rv.RuleID, "fields", strings.Join(restored, ","))
-	if err := p.ruleService.DismissViolation(ctx, rv.ID); err != nil {
-		return nil, fmt.Errorf("dismissing violation after a lock-reverted fix: %w", err)
-	}
-	return out, nil
+	return out
 }

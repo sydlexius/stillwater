@@ -613,7 +613,7 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 	// Issue #983: only resolve violations once the artist row persisted
 	// cleanly. A failed Update leaves the mutation in memory; marking the
 	// violation resolved anyway would silently drop the fix. #3037: a row whose
-	// every guarded change the lock guard reverted is dismissed here, not
+	// every guarded change the lock guard reverted stays OPEN here, not
 	// resolved.
 	if persistOKHealth && !p.resolveOrDismissRows(ctx, a, acc, lockRestored, startedAt) {
 		acc.failWrite()
@@ -1018,7 +1018,7 @@ func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, vio
 //     can only fire once we know the artist row reached the DB.
 //   - resolveOrDismissRows stamps the deferred rows, ONLY when
 //     updateHealthScore reported persistOKHealth. Resolved for the fixes
-//     that landed; dismissed for any whose every guarded change the lock
+//     that landed; re-opened for any whose every guarded change the lock
 //     guard reverted (#3037).
 //   - writeFilteredPassResults writes the per-rule pass rows, honoring
 //     categoryFilter so RunImageRulesForArtist does not claim the artist
@@ -1045,7 +1045,7 @@ func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, rule
 	// Issue #983: only resolve violations once the artist row persist
 	// succeeded. A failed Update leaves the mutation in memory; marking
 	// the violation resolved would silently drop the fix. #3037: a row whose
-	// every guarded change the lock guard reverted is dismissed here, not
+	// every guarded change the lock guard reverted stays OPEN here, not
 	// resolved.
 	if persistOKHealth && !p.resolveOrDismissRows(ctx, a, acc, lockRestored, startedAt) {
 		acc.failWrite()
@@ -1247,7 +1247,8 @@ func (p *Pipeline) persistViolation(ctx context.Context, a *artist.Artist, v *Vi
 //
 // The run paths reach it through resolveOrDismissRows, which first removes the
 // rows whose fix the lock guard reverted (#3037) -- resolving one of those would
-// close a violation that was never repaired.
+// close a violation that was never repaired. Those rows are re-persisted OPEN
+// instead.
 func (p *Pipeline) finalizeResolvedRows(ctx context.Context, a *artist.Artist, resolvedRows []*RuleViolation, startedAt time.Time) bool {
 	ok := true
 	now := time.Now().UTC()
@@ -1404,7 +1405,7 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 	// Issue #983: only resolve violations once the artist row persisted
 	// cleanly. A failed Update leaves the mutation in memory; marking the
 	// violation resolved anyway would silently drop the fix. #3037: a row whose
-	// every guarded change the lock guard reverted is dismissed here, not
+	// every guarded change the lock guard reverted stays OPEN here, not
 	// resolved.
 	if persistOKHealth && !p.resolveOrDismissRows(ctx, a, acc, lockRestored, startedAt) {
 		acc.failWrite()
@@ -1882,9 +1883,7 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		// resolving a violation that was never repaired (#3037). Returning here
 		// skips the resolve, the provenance record and the publish, all of which
 		// would be describing a write that did not land.
-		if reverted, err := p.dismissIfLockReverted(ctx, a, rv, fr, intended, restored); err != nil {
-			return nil, err
-		} else if reverted != nil {
+		if reverted := p.reportIfLockReverted(a, rv, fr, intended, restored); reverted != nil {
 			return reverted, nil
 		}
 		// Update is declarative and deletes nothing, so a fixer that removed
