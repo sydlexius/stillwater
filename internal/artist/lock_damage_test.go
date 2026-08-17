@@ -214,3 +214,55 @@ func TestLockDamageQueries_SurfaceQueryErrors(t *testing.T) {
 		t.Error("LockDamageUnattributed returned nil error on a canceled context")
 	}
 }
+
+// The scan-error contract, same rationale as the query-error test above: a
+// malformed row must surface as a wrapped error, never be silently dropped
+// from a RECOVERY-REPORTING result -- a row that vanishes from both the
+// candidate list and the unattributed report is the "unknown rendered as
+// clean" defect this feature exists to prevent. The live schema's NOT NULL
+// constraints make a NULL unreachable through any production writer, so the
+// fixture recreates metadata_changes without them: the test pins how the
+// scanner behaves IF the invariant ever breaks (a hand-edited database, a
+// future migration bug), which is exactly when the answer matters.
+func TestLockDamageQueries_SurfaceScanErrors(t *testing.T) {
+	db := newTestDB(t)
+	repo := newSQLiteHistoryRepo(db)
+	ctx := context.Background()
+
+	seedLockDamageArtist(t, db)
+	if _, err := db.Exec(`DROP TABLE metadata_changes`); err != nil {
+		t.Fatalf("dropping metadata_changes: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE metadata_changes (
+		id TEXT PRIMARY KEY, artist_id TEXT, field TEXT,
+		old_value TEXT, new_value TEXT, source TEXT, created_at TEXT)`); err != nil {
+		t.Fatalf("recreating metadata_changes without NOT NULL: %v", err)
+	}
+
+	// A rule-sourced damage row whose created_at is NULL: passes the damage
+	// predicate, fails the candidate scan (DamagedAt reads a string).
+	if _, err := db.Exec(
+		`INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+		 VALUES ('bad-c', ?, 'biography', 'old', 'new', 'rule:metadata_quality', NULL)`,
+		lockDamageArtistID); err != nil {
+		t.Fatalf("seeding NULL-created_at row: %v", err)
+	}
+	if _, err := repo.LockDamageCandidates(ctx); err == nil {
+		t.Error("LockDamageCandidates returned nil error for an unscannable row")
+	}
+
+	// A manual damage row whose field is NULL: passes the unattributed
+	// predicate, fails its scan (Field reads a string).
+	if _, err := db.Exec(`DELETE FROM metadata_changes`); err != nil {
+		t.Fatalf("clearing rows: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+		 VALUES ('bad-u', ?, NULL, 'old', 'new', 'manual', '2026-05-01T10:00:01Z')`,
+		lockDamageArtistID); err != nil {
+		t.Fatalf("seeding NULL-field row: %v", err)
+	}
+	if _, err := repo.LockDamageUnattributed(ctx); err == nil {
+		t.Error("LockDamageUnattributed returned nil error for an unscannable row")
+	}
+}
