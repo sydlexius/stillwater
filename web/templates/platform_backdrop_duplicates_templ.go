@@ -105,7 +105,7 @@ func PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDupl
 				return templ_7745c5c3_Err
 			}
 			if view.ScanErrors > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div id=\"platform-backdrop-duplicates-partial-notice\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 border-amber-500\" role=\"alert\"><p class=\"text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div id=\"platform-backdrop-duplicates-partial-notice\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\" role=\"alert\"><p class=\"text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
