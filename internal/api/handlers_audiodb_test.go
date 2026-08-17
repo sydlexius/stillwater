@@ -630,10 +630,11 @@ func TestHandleAudioDBLink_ServiceUnavailable(t *testing.T) {
 	}
 }
 
-// TestHandleAudioDBLink_FieldLocked409 covers Guard 1: a pinned audiodb_id field
-// must refuse the identify-flow write with 409 (field_locked) and not overwrite
-// the locked value.
-func TestHandleAudioDBLink_FieldLocked409(t *testing.T) {
+// TestHandleAudioDBLink_FieldLocked423 covers Guard 1: a pinned audiodb_id
+// field must refuse the identify-flow write with 423 Locked (field_locked) and
+// not overwrite the locked value. This converges the match-by-name flow onto
+// the same status the newer link/identify flows already answer (issue #3037).
+func TestHandleAudioDBLink_FieldLocked423(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := &artist.Artist{
@@ -646,6 +647,11 @@ func TestHandleAudioDBLink_FieldLocked409(t *testing.T) {
 	if err := artistSvc.Create(context.Background(), a); err != nil {
 		t.Fatalf("create: %v", err)
 	}
+	// Precondition: the field really is locked, so the refusal below cannot
+	// pass vacuously.
+	if !r.artistService.IsFieldLocked(a, artist.FieldAudioDBID) {
+		t.Fatalf("precondition failed: audiodb_id must be locked")
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/audiodb/link", strings.NewReader(`{"audiodb_id":"111493"}`))
 	req.SetPathValue("id", a.ID)
@@ -654,18 +660,19 @@ func TestHandleAudioDBLink_FieldLocked409(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	r.handleAudioDBLink(w, req)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409; body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusLocked {
+		t.Fatalf("status = %d, want 423; body=%s", w.Code, w.Body.String())
 	}
 	var resp struct {
-		Error string `json:"error"`
-		Field string `json:"field"`
+		Error  string `json:"error"`
+		Field  string `json:"field"`
+		Reason string `json:"reason"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v; body=%s", err, w.Body.String())
 	}
-	if resp.Error != "field_locked" || resp.Field != "audiodb_id" {
-		t.Errorf("unexpected 409 payload: %+v", resp)
+	if resp.Error != "field_locked" || resp.Field != "audiodb_id" || resp.Reason == "" {
+		t.Errorf("unexpected 423 payload: %+v", resp)
 	}
 	// The locked ID must survive untouched.
 	reloaded, err := artistSvc.GetByID(context.Background(), a.ID)

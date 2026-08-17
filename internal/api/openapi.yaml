@@ -437,21 +437,6 @@ components:
           type: string
           enum: [merge_in_progress]
       required: [error]
-    FieldLockedError:
-      type: object
-      description: >-
-        Returned when attempting to modify a user-locked field. Shared
-        across link endpoints, so `field` is a plain string rather than an
-        endpoint-specific enum since the discriminator operates on `error`.
-      properties:
-        error:
-          type: string
-          enum: [field_locked]
-        field:
-          type: string
-        reason:
-          type: string
-      required: [error, field, reason]
     FieldLockRefusal:
       type: object
       description: |
@@ -14724,7 +14709,7 @@ paths:
       description: >
         Persists the selected numeric Discogs ID on the artist and runs a
         metadata refresh. Two guards apply: a locked discogs_id field is refused
-        with 409 (field_locked), and because the refresh may write artist.nfo the
+        with 423 (field_locked), and because the refresh may write artist.nfo the
         request is subject to the NFO conflict gate (409 when blocked). Returns an
         HTML fragment when the HX-Request header is set.
       parameters:
@@ -14789,19 +14774,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: discogs_id field locked or conflict gate blocked the write
+          description: conflict gate blocked the write
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ConflictWriteBlock"
-                  - $ref: "#/components/schemas/FieldLockedError"
-                discriminator:
-                  propertyName: error
-                  mapping:
-                    field_locked: "#/components/schemas/FieldLockedError"
-                    nfo_write_blocked: "#/components/schemas/ConflictWriteBlock"
-                    round_trip_write_blocked: "#/components/schemas/ConflictWriteBlock"
+                $ref: "#/components/schemas/ConflictWriteBlock"
+        "423":
+          description: |
+            The discogs_id field is locked. The stored identity is unchanged;
+            unlock the field to proceed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldLockRefusal"
         "500":
           description: Failed to link Discogs ID
           content:
@@ -14956,7 +14941,7 @@ paths:
       description: >
         Persists the selected numeric TheAudioDB ID on the artist and runs a
         metadata refresh. Two guards apply: a locked audiodb_id field is refused
-        with 409 (field_locked), and because the refresh may write artist.nfo the
+        with 423 (field_locked), and because the refresh may write artist.nfo the
         request is subject to the NFO conflict gate (409 when blocked). Returns an
         HTML fragment when the HX-Request header is set.
       parameters:
@@ -15021,19 +15006,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: audiodb_id field locked or conflict gate blocked the write
+          description: conflict gate blocked the write
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ConflictWriteBlock"
-                  - $ref: "#/components/schemas/FieldLockedError"
-                discriminator:
-                  propertyName: error
-                  mapping:
-                    field_locked: "#/components/schemas/FieldLockedError"
-                    nfo_write_blocked: "#/components/schemas/ConflictWriteBlock"
-                    round_trip_write_blocked: "#/components/schemas/ConflictWriteBlock"
+                $ref: "#/components/schemas/ConflictWriteBlock"
+        "423":
+          description: |
+            The audiodb_id field is locked. The stored identity is unchanged;
+            unlock the field to proceed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldLockRefusal"
         "500":
           description: Failed to link TheAudioDB ID
           content:
