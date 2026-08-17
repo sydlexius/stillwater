@@ -284,33 +284,28 @@ type Router struct {
 	i18nBundle            *i18n.Bundle
 	conflictDetector      *conflict.Detector
 	conflictGate          *conflict.Gate
-	// stillwaterManagedMu serializes read-modify-write inside
-	// handleSetStillwaterManaged on a per-connection basis. Without it,
-	// two concurrent enable=true requests for the same connection could
-	// both observe FeatureManageServerFiles=false on the snapshot loaded
-	// at the top of the handler, both fall through the idempotency guard,
-	// and both run applyStillwaterManaged -- the second snapshot of an
-	// already-managed peer would clobber pre_stillwater_config_json with
-	// the already-cleared library options, making restore unable to
-	// recover the real pre-Stillwater settings (issue #1190).
-	//
-	// Map values are *sync.Mutex pulled via LoadOrStore; entries
-	// accumulate for the lifetime of the process. Cardinality is bounded
-	// by the number of connections (small for realistic deployments) so
-	// we accept the leak rather than racing removal against late-arriving
-	// requests.
 	// connWriteMu is the SINGLE per-connection lock serializing every
 	// connection-write handler's read-modify-write: handleUpdateConnection,
 	// handleUpdateConnectionFeatures, handleSetPathMappings /
 	// handleInferPathMappings / applyInferredPathMappingsIfEmpty, and
-	// handleSetStillwaterManaged. It replaces three formerly-independent
-	// mutex pools (a dedicated stillwaterManagedMu, a dedicated
-	// pathMappingsMu, and NO lock at all around the full-row update in
-	// handleUpdateConnection / handleUpdateConnectionFeatures) that each
-	// guarded a different subset of a connection's fields (#2324). Because
-	// handleUpdateConnection issues a full-row UPDATE from an in-memory
-	// snapshot, two concurrent writes touching DIFFERENT fields of the SAME
-	// connection under different (or no) locks could each read-modify-write
+	// handleSetStillwaterManaged. For handleSetStillwaterManaged specifically,
+	// it is what stops two concurrent enable=true requests for the same
+	// connection from both observing FeatureManageServerFiles=false on the
+	// snapshot loaded at the top of the handler, both falling through the
+	// idempotency guard, and both running applyStillwaterManaged -- the
+	// second snapshot of an already-managed peer would clobber
+	// pre_stillwater_config_json with the already-cleared library options,
+	// making restore unable to recover the real pre-Stillwater settings
+	// (issue #1190).
+	//
+	// It replaces three formerly-independent mutex pools (a dedicated
+	// per-connection lock scoped to handleSetStillwaterManaged alone, a
+	// dedicated pathMappingsMu, and NO lock at all around the full-row
+	// update in handleUpdateConnection / handleUpdateConnectionFeatures)
+	// that each guarded a different subset of a connection's fields (#2324).
+	// Because handleUpdateConnection issues a full-row UPDATE from an
+	// in-memory snapshot, two concurrent writes touching DIFFERENT fields of
+	// the SAME connection under different (or no) locks could each read-modify-write
 	// the row and silently lose the other's change (last writer wins on the
 	// non-overlapping field). Keying every write handler off the SAME
 	// *sync.Mutex per connection ID closes that gap.

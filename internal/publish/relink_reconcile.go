@@ -383,7 +383,7 @@ func (rr *relinkReconcileRun) reconcileMapping(ctx context.Context, artistID, ar
 		}
 	}
 	if !stillMatches {
-		p.logger.Info("relink reconciler: concurrent write detected for this artist/connection; yielding to it this pass",
+		p.logger.Info("relink reconciler: stored mapping changed since it was read for this pass (a concurrent write, or the mapping was deleted, e.g. via the platform-IDs DELETE API); yielding to the current stored state",
 			slog.String("artist_id", artistID),
 			slog.String("connection", conn.Name),
 			slog.String("connection_id", conn.ID))
