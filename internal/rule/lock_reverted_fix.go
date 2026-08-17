@@ -145,7 +145,7 @@ func (acc *runForArtistAccum) splitLockRevertedRows(restored []string) (keep, re
 	return keep, reverted
 }
 
-// resolveOrDismissRows is the run paths' replacement for a bare
+// resolveOrReopenRows is the run paths' replacement for a bare
 // finalizeResolvedRows call. It splits the pass's deferred rows on the write's
 // restored-field report, resolves the ones whose fix survived, and re-opens the
 // ones whose every guarded change the lock guard reverted (#3037).
@@ -153,7 +153,7 @@ func (acc *runForArtistAccum) splitLockRevertedRows(restored []string) (keep, re
 // Callers gate this on the artist row having persisted, exactly as they gated
 // finalizeResolvedRows: a failed write leaves the mutation in memory, and
 // neither verdict below would describe the stored row.
-func (p *Pipeline) resolveOrDismissRows(ctx context.Context, a *artist.Artist, acc *runForArtistAccum, restored []string, startedAt time.Time) bool {
+func (p *Pipeline) resolveOrReopenRows(ctx context.Context, a *artist.Artist, acc *runForArtistAccum, restored []string, startedAt time.Time) bool {
 	keep, reverted := acc.splitLockRevertedRows(restored)
 	ok := p.finalizeResolvedRows(ctx, a, keep, startedAt)
 	if !p.reopenLockRevertedRows(ctx, a, reverted, startedAt) {

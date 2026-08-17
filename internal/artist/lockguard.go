@@ -234,8 +234,8 @@ func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming
 // and UpdateAfterRuleEvaluation that exist so a caller can tell "my change
 // landed" from "the guard reverted it" while the plain verbs keep their
 // signatures. internal/rule's fixer pipeline is the consumer: a fix whose ONLY
-// change was restored here reports Dismissed rather than resolving a violation
-// it did not repair. The ordering is pinned by
+// change was restored here reports NOT-fixed and leaves its violation open,
+// rather than resolving one it did not repair. The ordering is pinned by
 // TestEnforceFieldLocks_ReturnsRestoredNamesInStableOrder so the contract is
 // tested here rather than assumed there.
 //

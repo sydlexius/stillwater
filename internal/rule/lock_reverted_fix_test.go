@@ -81,7 +81,7 @@ func TestFixViolation_LockRevertedFixLeavesTheRowOpen(t *testing.T) {
 
 	// POSITIVE CONTROL: the identical fixer on an UNLOCKED artist must land,
 	// report Fixed, and RESOLVE. If this fails, the harness never reaches the
-	// write and the locked case below would be dismissed for the wrong reason.
+	// write and the locked case below would stay open for the wrong reason.
 	db, artistSvc, a, ruleSvc, rv, ctx := lockRevertFixture(t, pinned)
 	fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "a rule wrote this"}
 	pipeline := NewPipeline(NewEngine(ruleSvc, nil, nil, nil, testLogger()), artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
@@ -225,7 +225,7 @@ func TestRunForArtist_LockRevertedAutoFixStaysOpenWithItsResultRow(t *testing.T)
 	// PRECONDITION: the auto path must have dispatched a fix. A pass where the
 	// checker never flagged the artist reaches none of the code under test.
 	if fixer.fixCalls == 0 {
-		t.Fatal("precondition: no fix was attempted, so the auto-fix dismiss path was never reached")
+		t.Fatal("precondition: no fix was attempted, so the auto-fix revert path was never reached")
 	}
 
 	if got := violationStatus(t, db, a.ID, RuleBioExists); got != ViolationStatusOpen {

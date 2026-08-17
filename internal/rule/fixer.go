@@ -615,7 +615,7 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 	// violation resolved anyway would silently drop the fix. #3037: a row whose
 	// every guarded change the lock guard reverted stays OPEN here, not
 	// resolved.
-	if persistOKHealth && !p.resolveOrDismissRows(ctx, a, acc, lockRestored, startedAt) {
+	if persistOKHealth && !p.resolveOrReopenRows(ctx, a, acc, lockRestored, startedAt) {
 		acc.failWrite()
 	}
 	// Gate pass rows on the artist row having persisted: rule_results must not
@@ -1016,7 +1016,7 @@ func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, vio
 //   - updateHealthScore re-evaluates the artist and persists the row.
 //     Required FIRST because the deferred-resolved-rows logic (#983)
 //     can only fire once we know the artist row reached the DB.
-//   - resolveOrDismissRows stamps the deferred rows, ONLY when
+//   - resolveOrReopenRows stamps the deferred rows, ONLY when
 //     updateHealthScore reported persistOKHealth. Resolved for the fixes
 //     that landed; re-opened for any whose every guarded change the lock
 //     guard reverted (#3037).
@@ -1047,7 +1047,7 @@ func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, rule
 	// the violation resolved would silently drop the fix. #3037: a row whose
 	// every guarded change the lock guard reverted stays OPEN here, not
 	// resolved.
-	if persistOKHealth && !p.resolveOrDismissRows(ctx, a, acc, lockRestored, startedAt) {
+	if persistOKHealth && !p.resolveOrReopenRows(ctx, a, acc, lockRestored, startedAt) {
 		acc.failWrite()
 	}
 	// Gate pass rows on the artist row having persisted. Previously this was
@@ -1245,7 +1245,7 @@ func (p *Pipeline) persistViolation(ctx context.Context, a *artist.Artist, v *Vi
 // caller invokes this only AFTER updateHealthScore has persisted the
 // artist (#983 ordering). Returns true when every upsert succeeded.
 //
-// The run paths reach it through resolveOrDismissRows, which first removes the
+// The run paths reach it through resolveOrReopenRows, which first removes the
 // rows whose fix the lock guard reverted (#3037) -- resolving one of those would
 // close a violation that was never repaired. Those rows are re-persisted OPEN
 // instead.
@@ -1407,7 +1407,7 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 	// violation resolved anyway would silently drop the fix. #3037: a row whose
 	// every guarded change the lock guard reverted stays OPEN here, not
 	// resolved.
-	if persistOKHealth && !p.resolveOrDismissRows(ctx, a, acc, lockRestored, startedAt) {
+	if persistOKHealth && !p.resolveOrReopenRows(ctx, a, acc, lockRestored, startedAt) {
 		acc.failWrite()
 	}
 	if postEval != nil {
