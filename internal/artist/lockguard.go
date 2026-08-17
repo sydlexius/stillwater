@@ -192,9 +192,9 @@ var providerIDLockFields = func() []FieldName {
 // A nil on either side means there is nothing to compare. Service.update passes
 // a nil stored ONLY for an artist that does not exist; every other read failure
 // is refused before reaching here.
-func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming *Artist) error {
+func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming *Artist) ([]string, error) {
 	if stored == nil || incoming == nil {
-		return nil
+		return nil, nil
 	}
 	locked := buildLockedSet(stored.LockedFields)
 	needsProviderIDs := false
@@ -213,26 +213,31 @@ func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming
 		if s.providers == nil {
 			slog.Error("refusing artist update: a provider-ID field is locked but this Service has no provider-ID repository, so the stored ID cannot be read",
 				"artist_id", stored.ID)
-			return fmt.Errorf("enforcing field locks for %s: %w", stored.ID, ErrNoProviderIDRepository)
+			return nil, fmt.Errorf("enforcing field locks for %s: %w", stored.ID, ErrNoProviderIDRepository)
 		}
 		if err := s.hydrateProviderIDs(ctx, stored); err != nil {
 			slog.Error("refusing artist update: a provider-ID field is locked but the stored IDs could not be read",
 				"artist_id", stored.ID, "error", err)
-			return fmt.Errorf("hydrating stored provider IDs for %s to enforce field locks: %w", stored.ID, err)
+			return nil, fmt.Errorf("hydrating stored provider IDs for %s to enforce field locks: %w", stored.ID, err)
 		}
 	}
-	enforceFieldLocks(ctx, stored, incoming)
-	return nil
+	return enforceFieldLocks(ctx, stored, incoming), nil
 }
 
 // enforceFieldLocks restores, onto incoming, every field the STORED artist has
 // locked and the incoming struct would have changed. It returns the restored
 // names in lockGuardedFields order, which is sorted and therefore stable.
 //
-// No production caller reads that return value yet. It is kept because the
-// follow-up unit consumes it: the rule pipeline collects the restored names to
-// tell "my fix landed" from "the guard reverted it", and reports the latter as
-// dismissed rather than resolved. The ordering is pinned by
+// THAT RETURN VALUE IS CONSUMED. enforceLocksBeforeUpdate hands it to
+// Service.update, which surfaces it through Service.UpdateReportingLocks and
+// Service.UpdateAfterRuleEvaluationReportingLocks -- opt-in siblings of Update
+// and UpdateAfterRuleEvaluation that exist so a caller can tell "my change
+// landed" from "the guard reverted it" while the plain verbs keep their
+// signatures. internal/rule's fixer pipeline is the consumer: a fix whose ONLY
+// change was restored here reports NOT-fixed, leaves its violation open rather
+// than resolving one it did not repair, is left out of the run's
+// fixes-succeeded count, and emits no Recent Activity entry. The ordering is
+// pinned by
 // TestEnforceFieldLocks_ReturnsRestoredNamesInStableOrder so the contract is
 // tested here rather than assumed there.
 //
@@ -514,4 +519,59 @@ func setFieldOnArtist(a *Artist, field, value string, slice []string) {
 	case "musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id", "spotify_id":
 		applyProviderFieldToArtist(a, providerFieldMap[field], value)
 	}
+}
+
+// GuardedFieldSnapshot records the current value of every field
+// lockGuardedFields covers, so a caller that is about to mutate an Artist can
+// later ask WHICH guarded fields it changed (#3037).
+//
+// WHY A CALLER NEEDS THIS. Service.update's restored-field report answers "what
+// did the guard revert on this write". On its own that is not enough to judge a
+// rule fixer: a fixer that changed biography and origin, with only biography
+// pinned, still made a real repair. The caller needs its own INTENDED set to
+// intersect with the reverted set, and no fixer declares one -- they mutate the
+// *Artist in place. Snapshotting before the mutation and diffing after is how
+// that set is recovered without touching every fixer.
+//
+// Values are read through FieldValueFromArtist, so a slice field is compared in
+// its joined rendering. That is a DETECTION-only compromise and it errs the safe
+// way: two different slices that join identically read as "unchanged", so the
+// caller under-reports its intent and declines to conclude a fix was reverted.
+// Restoration itself never round-trips through the joined form -- see
+// restoreLockedField, where the same shortcut WOULD be a data-loss path.
+//
+// Provider-ID fields are included and are only meaningful on a HYDRATED artist.
+// An un-hydrated one reads them as empty on both sides, so they simply never
+// appear in the diff -- again the under-reporting direction.
+func GuardedFieldSnapshot(a *Artist) map[string]string {
+	if a == nil {
+		return nil
+	}
+	out := make(map[string]string, len(lockGuardedFields))
+	for _, f := range lockGuardedFields {
+		out[string(f)] = FieldValueFromArtist(a, string(f))
+	}
+	return out
+}
+
+// ChangedGuardedFields reports which guarded fields differ from the snapshot,
+// in lockGuardedFields order (sorted, and therefore stable). It is the inverse
+// half of GuardedFieldSnapshot; see there for why the comparison is by joined
+// value and which way that errs.
+//
+// A nil snapshot returns nil rather than reporting every field as changed: no
+// snapshot means the caller never established a baseline, and inventing one from
+// the zero map would claim an intent it cannot substantiate.
+func ChangedGuardedFields(before map[string]string, a *Artist) []string {
+	if before == nil || a == nil {
+		return nil
+	}
+	var changed []string
+	for _, f := range lockGuardedFields {
+		name := string(f)
+		if before[name] != FieldValueFromArtist(a, name) {
+			changed = append(changed, name)
+		}
+	}
+	return changed
 }

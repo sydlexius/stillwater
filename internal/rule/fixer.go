@@ -606,14 +606,20 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 		postEval = nil
 	}
 
-	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles, acc.historySource())
+	persistOKHealth, lockRestored := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles, acc.historySource())
 	if !persistOKHealth {
 		acc.failWrite()
 	}
+	// #3037: award the deferred success credits now that the write has reported
+	// what it restored. NOT gated on persistOKHealth: an unwritten pass restored
+	// nothing, so every credit is granted, exactly as it was before the deferral.
+	p.grantFixCredits(ctx, a, acc, lockRestored, contrib.results, &contrib.fixesSucceeded)
 	// Issue #983: only resolve violations once the artist row persisted
 	// cleanly. A failed Update leaves the mutation in memory; marking the
-	// violation resolved anyway would silently drop the fix.
-	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows, startedAt) {
+	// violation resolved anyway would silently drop the fix. #3037: a row whose
+	// every guarded change the lock guard reverted stays OPEN here, not
+	// resolved.
+	if persistOKHealth && !p.resolveOrReopenRows(ctx, a, acc, lockRestored, startedAt) {
 		acc.failWrite()
 	}
 	// Gate pass rows on the artist row having persisted: rule_results must not
@@ -694,6 +700,13 @@ type violationOutcome struct {
 	// disable rules_evaluated_at stamping for future strategy authors who
 	// return a bare violationOutcome{} without setting the field.
 	persistFailed bool
+
+	// intendedGuarded names the lock-guarded artist fields this fixer actually
+	// changed (#3037). The pass's single end-of-run write reports which locked
+	// fields it restored, and intersecting the two is what tells a real repair
+	// from one the guard threw away. Empty for every fixer that writes no
+	// guarded field, which is most of them.
+	intendedGuarded []string
 }
 
 // runForArtistAccum is the in-flight per-artist state runForArtistFiltered
@@ -740,6 +753,55 @@ type runForArtistAccum struct {
 	// way for one fixer's mid-run count to outlive a file another fixer added
 	// after it.
 	removedFiles bool
+
+	// intendedGuarded maps a rule id to the lock-guarded artist fields that
+	// rule's fixer CHANGED on this artist during this pass (#3037). The pass
+	// persists every fixer's mutations in ONE whole-row write at the end, and
+	// that write reports which locked fields the chokepoint restored -- but the
+	// report is per-ARTIST, so without a per-RULE record of intent there is no
+	// way to tell whose fix the restoration killed. Written through
+	// noteIntendedGuardedFields; consumed by splitLockRevertedRows.
+	intendedGuarded map[string][]string
+
+	// pendingCredits holds every successful fix this pass made, WITHOUT yet
+	// having granted it the run-level credit -- the FixesSucceeded bump and the
+	// metadata_changes row + activity.recent event recordRuleFixHistory emits
+	// (#3037). Only the pass's single end-of-run write knows which locked fields
+	// the chokepoint restored, so a fix's honesty is not knowable when the fixer
+	// returns; grantFixCredits settles them once it is. See that function for
+	// why the credit is DEFERRED rather than granted and later reversed.
+	//
+	// It is ALSO where splitLockRevertedRows reads each fix's real FixResult, so
+	// the row verdict and the credit verdict cannot be reached from different
+	// inputs. See fixResultForRule.
+	pendingCredits []pendingFixCredit
+}
+
+// pendingFixCredit is one successful fix awaiting the pass's single end-of-run
+// write, which is what decides whether the fix survived the lock guard.
+type pendingFixCredit struct {
+	// ruleID comes from the VIOLATION (violationOutcome.fixedRuleID), never from
+	// fr.RuleID, for the same reason the history attribution does: a fixer sets
+	// that field itself and can leave it empty.
+	ruleID string
+	// fr is the fixer's own result, read by the reverted-fix test (SavedPath /
+	// RemovedFiles / SlotsRemoved) and by the history entry.
+	fr *FixResult
+	// resultIdx is where the merge appended fr into the run-level results slice.
+	// A reverted fix has that entry REWRITTEN in place rather than removed: the
+	// run really did attempt it, so it belongs in the list, just not claiming a
+	// repair. -1 when the caller has no results slice.
+	resultIdx int
+}
+
+// notePendingFixCredit records a successful fix whose credit is not yet earned.
+// resultIdx is the index the caller just appended fr at; a negative value means
+// the caller has no results slice to correct.
+func (acc *runForArtistAccum) notePendingFixCredit(ruleID string, fr *FixResult, resultIdx int) {
+	if fr == nil {
+		return
+	}
+	acc.pendingCredits = append(acc.pendingCredits, pendingFixCredit{ruleID: ruleID, fr: fr, resultIdx: resultIdx})
 }
 
 // noteFixedRule records the rule behind a successful fix. A repeat of the same
@@ -776,7 +838,9 @@ func (acc *runForArtistAccum) historySource() string {
 // inflated runForArtistFiltered's cognitive complexity past the gocognit
 // gate.
 func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResult) {
+	resultIdx := -1
 	if out.fr != nil {
+		resultIdx = len(result.Results)
 		result.Results = append(result.Results, *out.fr)
 		result.FixesAttempted++
 		acc.removedFiles = acc.removedFiles || out.fr.RemovedFiles
@@ -785,9 +849,13 @@ func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResu
 		acc.failWrite()
 	}
 	if out.fixed {
-		result.FixesSucceeded++
+		// FixesSucceeded is NOT bumped here: grantFixCredits does it after the
+		// end-of-run write reports which of these fixes the lock guard reverted
+		// (#3037). See runForArtistAccum.pendingCredits.
+		acc.notePendingFixCredit(out.fixedRuleID, out.fr, resultIdx)
 		acc.artistDirty = true
 		acc.noteFixedRule(out.fixedRuleID)
+		acc.noteIntendedGuardedFields(out.fixedRuleID, out.intendedGuarded)
 		if out.imageFix {
 			acc.fixedImageTypes = append(acc.fixedImageTypes, out.imageType)
 		} else {
@@ -804,7 +872,9 @@ func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResu
 // artistContribution (merged under a mutex by the walker) rather than
 // directly into a *RunResult.
 func (acc *runForArtistAccum) mergeIntoContrib(out violationOutcome, contrib *artistContribution) {
+	resultIdx := -1
 	if out.fr != nil {
+		resultIdx = len(contrib.results)
 		contrib.results = append(contrib.results, *out.fr)
 		contrib.fixesAttempted++
 		acc.removedFiles = acc.removedFiles || out.fr.RemovedFiles
@@ -813,9 +883,11 @@ func (acc *runForArtistAccum) mergeIntoContrib(out violationOutcome, contrib *ar
 		acc.failWrite()
 	}
 	if out.fixed {
-		contrib.fixesSucceeded++
+		// fixesSucceeded is NOT bumped here; see mergeOutcome (#3037).
+		acc.notePendingFixCredit(out.fixedRuleID, out.fr, resultIdx)
 		acc.artistDirty = true
 		acc.noteFixedRule(out.fixedRuleID)
+		acc.noteIntendedGuardedFields(out.fixedRuleID, out.intendedGuarded)
 		if out.imageFix {
 			acc.fixedImageTypes = append(acc.fixedImageTypes, out.imageType)
 		} else {
@@ -900,7 +972,7 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	writeCtx := context.WithoutCancel(evalCtx)
 
 	p.dispatchViolations(writeCtx, a, eval.Violations, categoryFilter, ruleCache, acc, result, startedAt)
-	p.finalizeArtistRun(writeCtx, a, ruleCache, acc, categoryFilter, scope, startedAt)
+	p.finalizeArtistRun(writeCtx, a, ruleCache, acc, result, categoryFilter, scope, startedAt)
 
 	// #2724: report a run that did not fully persist. The shield above removes
 	// the cancellation cause, but any other write failure (a locked DB, a
@@ -996,8 +1068,14 @@ func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, vio
 //   - updateHealthScore re-evaluates the artist and persists the row.
 //     Required FIRST because the deferred-resolved-rows logic (#983)
 //     can only fire once we know the artist row reached the DB.
-//   - finalizeResolvedRows stamps the deferred rows with Resolved status
-//     ONLY when updateHealthScore reported persistOKHealth.
+//   - grantFixCredits awards the deferred FixesSucceeded bumps and Recent
+//     Activity entries, withholding both for a fix the lock guard reverted
+//     (#3037). It runs before the row writes below for no ordering reason;
+//     it just needs the write's restored-field report, like they do.
+//   - resolveOrReopenRows stamps the deferred rows, ONLY when
+//     updateHealthScore reported persistOKHealth. Resolved for the fixes
+//     that landed; re-opened for any whose every guarded change the lock
+//     guard reverted (#3037).
 //   - writeFilteredPassResults writes the per-rule pass rows, honoring
 //     categoryFilter so RunImageRulesForArtist does not claim the artist
 //     "passes" metadata rules it never actually ran.
@@ -1005,7 +1083,7 @@ func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, vio
 //   - markArtistEvaluated stamps rules_evaluated_at only when every
 //     persistence step succeeded AND the run covered every rule (i.e.
 //     categoryFilter was empty).
-func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, ruleCache map[string]*Rule, acc *runForArtistAccum, categoryFilter string, scope map[string]bool, startedAt time.Time) {
+func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, ruleCache map[string]*Rule, acc *runForArtistAccum, result *RunResult, categoryFilter string, scope map[string]bool, startedAt time.Time) {
 	// Re-evaluate at the SAME scope the run used. A whole-artist run (nil scope)
 	// evaluates everything and its HealthScore is authoritative; a category run
 	// evaluates only that category and its health is derived offline, so neither
@@ -1016,14 +1094,18 @@ func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, rule
 		postEval = nil
 	}
 
-	persistOKHealth := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles, acc.historySource())
+	persistOKHealth, lockRestored := p.persistHealthAfterRun(ctx, a, postEval, acc.artistDirty, acc.removedFiles, acc.historySource())
 	if !persistOKHealth {
 		acc.failWrite()
 	}
+	// #3037: award the deferred success credits; see processArtistForRunRule.
+	p.grantFixCredits(ctx, a, acc, lockRestored, result.Results, &result.FixesSucceeded)
 	// Issue #983: only resolve violations once the artist row persist
 	// succeeded. A failed Update leaves the mutation in memory; marking
-	// the violation resolved would silently drop the fix.
-	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows, startedAt) {
+	// the violation resolved would silently drop the fix. #3037: a row whose
+	// every guarded change the lock guard reverted stays OPEN here, not
+	// resolved.
+	if persistOKHealth && !p.resolveOrReopenRows(ctx, a, acc, lockRestored, startedAt) {
 		acc.failWrite()
 	}
 	// Gate pass rows on the artist row having persisted. Previously this was
@@ -1110,18 +1192,28 @@ func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist
 		return violationOutcome{persistFailed: !ok}
 	}
 
+	// #3037: snapshot before the fixer mutates the struct. The pass persists
+	// once, at the end, and that write reports which locked fields it restored;
+	// this diff is the other half of telling whose fix was reverted.
+	beforeFix := artist.GuardedFieldSnapshot(a)
+
 	fr := p.attemptFix(ctx, a, v)
 	out := violationOutcome{fr: fr}
 	if fr.Fixed {
 		out.fixed = true
 		out.fixedRuleID = v.RuleID
+		out.intendedGuarded = artist.ChangedGuardedFields(beforeFix, a)
 		if fr.ImageType != "" {
 			out.imageFix = true
 			out.imageType = fr.ImageType
 		}
-		// Issue #1106: emit a Recent Activity entry. recordRuleFixHistory
-		// warn-logs on failure and never fails the surrounding fix flow.
-		p.recordRuleFixHistory(ctx, a.ID, fr)
+		// Issue #1106's Recent Activity entry is NOT emitted here. It, and the
+		// FixesSucceeded bump, are deferred to grantFixCredits, which runs after
+		// the pass's single write has reported which locked fields the chokepoint
+		// restored (#3037). Emitting them here claimed a repair the guard was
+		// about to throw away, on a surface -- an SSE rail row -- that cannot be
+		// recalled afterwards.
+		//
 		// Issue #983: stash the row but do not write Resolved yet -- the
 		// orchestrator only stamps Resolved after updateHealthScore
 		// persists the mutated artist.
@@ -1214,6 +1306,11 @@ func (p *Pipeline) persistViolation(ctx context.Context, a *artist.Artist, v *Vi
 // Status=ViolationStatusResolved and a fresh ResolvedAt, then upserts. The
 // caller invokes this only AFTER updateHealthScore has persisted the
 // artist (#983 ordering). Returns true when every upsert succeeded.
+//
+// The run paths reach it through resolveOrReopenRows, which first removes the
+// rows whose fix the lock guard reverted (#3037) -- resolving one of those would
+// close a violation that was never repaired. Those rows are re-persisted OPEN
+// instead.
 func (p *Pipeline) finalizeResolvedRows(ctx context.Context, a *artist.Artist, resolvedRows []*RuleViolation, startedAt time.Time) bool {
 	ok := true
 	now := time.Now().UTC()
@@ -1363,14 +1460,18 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 
 	// Issue #699: derive pass/fail from the POST-fix evaluation so rules
 	// repaired during this pass are recorded as passed=1 in the same run.
-	postEval, persistOKHealth := p.updateHealthScore(ctx, a, acc.artistDirty, acc.removedFiles, acc.historySource())
+	postEval, persistOKHealth, lockRestored := p.updateHealthScore(ctx, a, acc.artistDirty, acc.removedFiles, acc.historySource())
 	if !persistOKHealth {
 		acc.failWrite()
 	}
+	// #3037: award the deferred success credits; see processArtistForRunRule.
+	p.grantFixCredits(ctx, a, acc, lockRestored, contrib.results, &contrib.fixesSucceeded)
 	// Issue #983: only resolve violations once the artist row persisted
 	// cleanly. A failed Update leaves the mutation in memory; marking the
-	// violation resolved anyway would silently drop the fix.
-	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows, startedAt) {
+	// violation resolved anyway would silently drop the fix. #3037: a row whose
+	// every guarded change the lock guard reverted stays OPEN here, not
+	// resolved.
+	if persistOKHealth && !p.resolveOrReopenRows(ctx, a, acc, lockRestored, startedAt) {
 		acc.failWrite()
 	}
 	if postEval != nil {
@@ -1809,6 +1910,12 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 	ctx, counters := p.withEvalContext(ctx, a)
 	defer p.logEvalCounters(a, counters)
 
+	// #3037: snapshot the lock-guarded fields BEFORE the fixer mutates the
+	// struct, so the persist below can tell which of this fixer's OWN changes
+	// the chokepoint reverted. Nothing else recovers that set: a fixer declares
+	// no intent, it just assigns onto *a.
+	beforeFix := artist.GuardedFieldSnapshot(a)
+
 	fr := p.attemptFix(ctx, a, v)
 
 	// A fixer that reports Dismissed reached a TERMINAL answer without changing
@@ -1828,8 +1935,20 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		// Reassigning ctx carries the tag into the rescore persist below too,
 		// which writes the same artist row.
 		ctx = withRuleHistorySource(ctx, ruleHistorySource(rv.RuleID))
-		if err := p.artistService.Update(ctx, a); err != nil {
+		// #3037: the guarded-field diff is taken HERE, after the fixer mutated
+		// the struct and before the persist restores anything, because
+		// UpdateReportingLocks rewrites `a` in place.
+		intended := artist.ChangedGuardedFields(beforeFix, a)
+		restored, err := p.artistService.UpdateReportingLocks(ctx, a)
+		if err != nil {
 			return nil, fmt.Errorf("updating artist after fix: %w", err)
+		}
+		// EVERY CHANGE THIS FIX MADE WAS REVERTED BY A LOCK: say so instead of
+		// resolving a violation that was never repaired (#3037). Returning here
+		// skips the resolve, the provenance record and the publish, all of which
+		// would be describing a write that did not land.
+		if reverted := p.reportIfLockReverted(a, rv, fr, intended, restored); reverted != nil {
+			return reverted, nil
 		}
 		// Update is declarative and deletes nothing, so a fixer that removed
 		// files needs a reconcile to retire their rows (#2635).
@@ -1869,7 +1988,7 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		// reconcile a second time for no additional convergence.
 		// ctx already carries the rule tag from the Update above, so pass ""
 		// rather than re-stamping it.
-		_ = p.persistHealthAfterRun(ctx, a, postEval, false, false, "")
+		_, _ = p.persistHealthAfterRun(ctx, a, postEval, false, false, "")
 		p.publishAfterFix(ctx, a, fr)
 	}
 
@@ -2306,7 +2425,12 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 // false whenever this run cannot vouch for the artist's post-fix state, which is
 // what stops the caller from stamping rules_evaluated_at, resolving violation
 // rows, or writing pass rows on the strength of a run that did not complete.
-func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, postEval *EvaluationResult, mustPersist, removedFiles bool, historySource string) bool {
+//
+// The second return is the locked fields the persist chokepoint RESTORED on
+// this write -- the changes the run asked for and did not get (#3037). It is
+// reported even on the non-authoritative branch that still writes, because the
+// restorations there are just as real; it is nil wherever no write happened.
+func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, postEval *EvaluationResult, mustPersist, removedFiles bool, historySource string) (bool, []string) {
 	// Attribute every metadata_changes row this write produces to the rule that
 	// caused it (#3037). Untagged, artist.Service.update records "manual" and
 	// the blast-radius report cannot tell rule damage from an operator edit.
@@ -2323,13 +2447,18 @@ func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, 
 		if mustPersist {
 			// Still flush the fixer's in-memory mutations; just do not claim the
 			// run was authoritative.
-			if err := p.artistService.UpdateAfterRuleEvaluation(ctx, a); err != nil {
+			restored, err := p.artistService.UpdateAfterRuleEvaluationReportingLocks(ctx, a)
+			if err != nil {
 				p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
 			} else {
 				p.reconcileAfterFix(ctx, a, removedFiles)
+				// The run is NOT authoritative on this branch, but the write
+				// still happened and its lock restorations are still real, so
+				// the caller must hear about them (#3037).
+				return false, restored
 			}
 		}
-		return false
+		return false, nil
 	}
 
 	score, ok := postEval.HealthScore, true
@@ -2354,21 +2483,22 @@ func (p *Pipeline) persistHealthAfterRun(ctx context.Context, a *artist.Artist, 
 		// Nothing to score and no fixer mutation to flush: touching the row would
 		// only bump updated_at for nothing. The evaluation itself succeeded, so
 		// the run IS authoritative for the rules it was asked to run.
-		return true
+		return true, nil
 	}
 
 	// UpdateAfterRuleEvaluation (not Update) for the same reason as the full
 	// path: a regular Update would stamp dirty_since and race the walker's
 	// rules_evaluated_at stamp at second-precision boundaries.
-	if err := p.artistService.UpdateAfterRuleEvaluation(ctx, a); err != nil {
+	restored, err := p.artistService.UpdateAfterRuleEvaluationReportingLocks(ctx, a)
+	if err != nil {
 		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
-		return false
+		return false, nil
 	}
 	// UpdateAfterRuleEvaluation is declarative like Update, so a run whose
 	// fixers deleted files needs a reconcile to retire the rows (#2635).
 	// No-op when nothing was removed.
 	p.reconcileAfterFix(ctx, a, removedFiles)
-	return true
+	return true, restored
 }
 
 // offlineHealthScore derives the artist's health score from the rules this run
@@ -2461,7 +2591,13 @@ func freshResultsFrom(eval *EvaluationResult) map[string]bool {
 	return fresh
 }
 
-func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist, removedFiles bool, historySource string) (*EvaluationResult, bool) {
+// updateHealthScore re-evaluates the artist across every enabled rule, persists
+// the resulting score, and reports whether the run is authoritative.
+//
+// The third return is the locked fields the persist chokepoint RESTORED on that
+// write (#3037) -- the run's changes that did not land. It is nil when no write
+// happened or the write failed.
+func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist, removedFiles bool, historySource string) (*EvaluationResult, bool, []string) {
 	// Same #3037 attribution as persistHealthAfterRun; see withRuleHistorySource.
 	ctx = withRuleHistorySource(ctx, historySource)
 	eval, err := p.engine.Evaluate(ctx, a)
@@ -2473,7 +2609,7 @@ func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, must
 	if err != nil {
 		p.logger.Warn("re-evaluating health score", "artist", a.Name, "error", err)
 		if !mustPersist {
-			return nil, false
+			return nil, false, nil
 		}
 	} else {
 		a.HealthScore = eval.HealthScore
@@ -2486,16 +2622,17 @@ func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, must
 	// that stamp at second-precision boundaries (see service.go docs and
 	// #698 follow-up: the scheduler test flaked on CI when dirty_since
 	// happened to round into the next second after startedAt).
-	if err := p.artistService.UpdateAfterRuleEvaluation(ctx, a); err != nil {
-		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
+	restored, updErr := p.artistService.UpdateAfterRuleEvaluationReportingLocks(ctx, a)
+	if updErr != nil {
+		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", updErr)
 		// Return nil eval so callers that gate pass-row writes on
 		// `postEval != nil` cannot upsert passed=1 from in-memory fix
 		// state that never reached the artist row (CR review-body
 		// 4144589645). rule_results must not lead the stored artist.
-		return nil, false
+		return nil, false, nil
 	}
 	// Declarative persist, so replay the reconcile to retire rows for files the
 	// run deleted (#2635). No-op when nothing was removed.
 	p.reconcileAfterFix(ctx, a, removedFiles)
-	return eval, authoritative
+	return eval, authoritative, restored
 }

@@ -65,6 +65,8 @@ Each violation is either **fixable** (it has a recommended action) or **detectio
 - **Dismissed** -- the violation was no longer actionable. Most often because the artist was orphaned (deleted) or no longer matches the rule. The violation is closed without a real change.
 - **Still open** -- the fixer ran but couldn't repair (e.g., no candidate image met the rule's threshold). The violation stays open for you to handle.
 
+A fix a [field lock](field-locks.md) refused also stays open, and is deliberately not counted as fixed: the fixer produced a value, but the lock kept it from being stored. That case is worth telling apart from the one above, because you have a direct remedy -- unlock the field and the same rule repairs it on the next run. The run log names the artist and the field.
+
 Before any fix that produces an image or NFO write, Stillwater consults the **conflict gate** -- the same mechanism that powers the "image / NFO writes paused" banner. When a connected platform appears to be actively rewriting files, the gate blocks the write and the fix is deferred. Reactive protection that doesn't depend on whether you've locked anything.
 
 ## Fix-all

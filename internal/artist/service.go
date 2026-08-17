@@ -715,6 +715,49 @@ func (s *Service) ListIDs(ctx context.Context, params CountParams) (ids []string
 // each field that changed. History recording is best-effort: failures are
 // logged but do not cause the update to fail.
 func (s *Service) Update(ctx context.Context, a *Artist) error {
+	_, err := s.update(ctx, a, true)
+	return err
+}
+
+// UpdateReportingLocks is Update, plus the names of the locked fields the
+// persist chokepoint RESTORED -- the fields this write asked to change and did
+// not get to change (#3037).
+//
+// WHY A SIBLING METHOD RATHER THAN A CONTEXT CARRIER OR A NEW ERROR.
+//
+// The chokepoint RESTORES-AND-CONTINUES (see lockguard.go): a whole-row persist
+// carries mostly-legitimate changes, so refusing it outright to report one
+// pinned field would discard the rest. That is the shipped design and it is not
+// changing here. But it leaves err == nil meaning "the row was written", NOT
+// "your change landed", and an automated caller that reads nil as success
+// reports a repair it did not make.
+//
+// A TYPED ERROR was rejected because it is exactly the hard failure the design
+// forbids: every existing caller checks err != nil and aborts, so returning one
+// would turn a single pinned field into a failed bulk write.
+//
+// A CONTEXT CARRIER (the callee appending into a slice reachable from ctx) was
+// rejected for the reason #3060's reviewer gave: a value a callee mutates is
+// invisible at the call site, so a caller that forgets to read it compiles,
+// passes review, and silently reports the same false success this exists to
+// stop. That objection is WEAKER here than it was there -- restore-and-continue
+// genuinely is a side channel -- but it is not wrong, and nothing about this
+// path needs the carrier's one advantage (reaching a caller that cannot change
+// its signature).
+//
+// CHANGING Update's OWN SIGNATURE was rejected on blast radius: it has callers
+// across the api, rule, scanner and connection packages, and forcing every one
+// of them to acknowledge a return they do not use is churn that buries the two
+// call sites that do.
+//
+// So: an explicit extra return, on an opt-in method, that the compiler makes
+// impossible to receive by accident and trivial to see when reading the caller.
+// Update keeps its signature and its behavior exactly.
+//
+// The returned slice is in lockGuardedFields order (sorted, stable) and is nil
+// when nothing was restored. A non-empty slice does NOT mean the whole write was
+// rejected -- the unlocked changes in the same struct did land.
+func (s *Service) UpdateReportingLocks(ctx context.Context, a *Artist) ([]string, error) {
 	return s.update(ctx, a, true)
 }
 
@@ -735,6 +778,14 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 // those still go through Update (or the event bus DirtySubscriber) and get
 // dirty_since stamped normally.
 func (s *Service) UpdateAfterRuleEvaluation(ctx context.Context, a *Artist) error {
+	_, err := s.update(ctx, a, false)
+	return err
+}
+
+// UpdateAfterRuleEvaluationReportingLocks is UpdateAfterRuleEvaluation, plus the
+// restored-lock report. See UpdateReportingLocks for why the report is an extra
+// return value rather than an error or a context carrier.
+func (s *Service) UpdateAfterRuleEvaluationReportingLocks(ctx context.Context, a *Artist) ([]string, error) {
 	return s.update(ctx, a, false)
 }
 
@@ -775,7 +826,16 @@ func logUnreadableSnapshot(artistID string, err error) {
 	slog.Error(msg, "artist_id", artistID, "error", err)
 }
 
-func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
+// update is the whole-row persist chokepoint. It returns the names of the
+// locked fields the guard RESTORED on this write (nil when none), so a caller
+// that needs to tell "my change landed" from "the guard reverted it" can ask.
+// See UpdateReportingLocks for why that report is a return value.
+//
+// ON AN ERROR THE REPORT IS NIL, WITH ONE DELIBERATE EXCEPTION: when the artists
+// row was written and only persistNormalized failed, the restorations already
+// happened, so they are reported BESIDE that error rather than swallowed. A
+// caller that assumes nil on every error path would miss them.
+func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) (restored []string, err error) {
 	// Snapshot the stored row before writing.
 	//
 	// THE FETCH IS UNCONDITIONAL AND FAILS CLOSED. Both halves are changes, and
@@ -826,7 +886,7 @@ func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
 	if fetchErr != nil {
 		if !errors.Is(fetchErr, ErrNotFound) {
 			logUnreadableSnapshot(a.ID, fetchErr)
-			return fmt.Errorf("reading stored artist %s before update: %w", a.ID, fetchErr)
+			return nil, fmt.Errorf("reading stored artist %s before update: %w", a.ID, fetchErr)
 		}
 		old = nil
 	}
@@ -834,12 +894,18 @@ func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
 	// The per-field lock chokepoint: restores every field the STORED row has
 	// locked, and pins the stored lock state. See lockguard.go for why it sits
 	// here, and for what it does and does not cover.
-	if err := s.enforceLocksBeforeUpdate(ctx, old, a); err != nil {
-		return err
+	//
+	// restored is reported to the caller rather than only logged. A restoration
+	// means the write the caller asked for did NOT fully happen while this
+	// function still returns nil, and a caller that reads nil as "my change
+	// landed" reports a repair it never made (#3037).
+	restored, err = s.enforceLocksBeforeUpdate(ctx, old, a)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := s.artists.Update(ctx, a); err != nil {
-		return err
+		return nil, err
 	}
 
 	if markDirty {
@@ -861,7 +927,7 @@ func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
 		}
 	}
 
-	return s.persistNormalized(ctx, a)
+	return restored, s.persistNormalized(ctx, a)
 }
 
 // Errors returned by RenameDirectory. Callers (HTTP handlers, tests) inspect
