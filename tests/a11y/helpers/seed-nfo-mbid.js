@@ -53,9 +53,9 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-
-const BASE_URL = process.env.SW_TEST_URL
-  || `http://127.0.0.1:${process.env.SW_PORT || '1973'}`;
+import {
+  BASE_URL, apiFetch, ensureLibrary, runScan, artistIdsByName,
+} from './api.js';
 
 const FIXTURE_LIBRARY_NAME = 'a11y nfo-mbid fixture';
 
@@ -79,20 +79,6 @@ const TARGET_MBID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 // look identical to a correct one.
 const CONTROL_ARTIST = 'Malachite Fixture';
 const CONTROL_MBID = '11111111-2222-3333-4444-555555555555';
-
-/**
- * apiFetch issues an authenticated, CSRF-bearing request against the
- * ephemeral server, mirroring seed-blast-radius.js's helper of the same name.
- */
-async function apiFetch(request, method, url, body) {
-  const state = await request.storageState();
-  const csrf = (state.cookies.find(c => c.name === 'csrf_token') || {}).value || '';
-  const opts = {
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-  };
-  if (body !== undefined) opts.data = JSON.stringify(body);
-  return request.fetch(`${BASE_URL}${url}`, { method, ...opts });
-}
 
 /**
  * startMockMusicBrainz starts a tiny local HTTP server implementing exactly
@@ -159,63 +145,6 @@ function startMockMusicBrainz() {
   });
 }
 
-/** ensureLibrary mirrors seed-blast-radius.js's helper of the same name. */
-async function ensureLibrary(request, dir) {
-  const resp = await apiFetch(request, 'POST', '/api/v1/libraries', {
-    name: FIXTURE_LIBRARY_NAME, path: dir, type: 'regular',
-  });
-  if (resp.ok()) return (await resp.json()).id;
-  if (resp.status() === 409) {
-    const list = await request.fetch(`${BASE_URL}/api/v1/libraries`);
-    if (list.ok()) {
-      const body = await list.json();
-      const libs = Array.isArray(body) ? body : (body.libraries || []);
-      const existing = libs.find(l => l.name === FIXTURE_LIBRARY_NAME);
-      if (existing && existing.path === dir) return existing.id;
-      if (existing) {
-        throw new Error(
-          `seed: fixture library exists but points at ${existing.path}, not ${dir}. `
-          + 'Delete it (or use a fresh database) before re-seeding.',
-        );
-      }
-    }
-  }
-  throw new Error(`seed: creating fixture library failed: ${resp.status()} ${await resp.text()}`);
-}
-
-/** runScan mirrors seed-blast-radius.js's helper of the same name. */
-async function runScan(request) {
-  const resp = await apiFetch(request, 'POST', '/api/v1/scanner/run');
-  if (!resp.ok()) {
-    throw new Error(`seed: scanner run failed: ${resp.status()} ${await resp.text()}`);
-  }
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    const st = await request.fetch(`${BASE_URL}/api/v1/scanner/status`);
-    if (st.ok()) {
-      const body = await st.json();
-      if (body.status === 'completed' || body.status === 'idle') return;
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-  throw new Error('seed: scan did not complete within 60s');
-}
-
-/** artistIdsByName mirrors seed-blast-radius.js's helper of the same name. */
-async function artistIdsByName(request, names) {
-  const resp = await request.fetch(`${BASE_URL}/api/v1/artists?page_size=500`);
-  if (!resp.ok()) {
-    throw new Error(`seed: listing artists failed: ${resp.status()}`);
-  }
-  const body = await resp.json();
-  const list = Array.isArray(body) ? body : (body.artists || []);
-  const out = new Map();
-  for (const a of list) {
-    if (names.includes(a.name)) out.set(a.name, a.id);
-  }
-  return out;
-}
-
 /** waitForRuleRun polls the shared single-rule/run-all status slot. */
 async function waitForRuleRun(request) {
   const deadline = Date.now() + 60_000;
@@ -255,7 +184,7 @@ export async function seedNFOMBID(request) {
   fs.mkdirSync(path.join(dir, TARGET_ARTIST), { recursive: true });
   fs.mkdirSync(path.join(dir, CONTROL_ARTIST), { recursive: true });
 
-  await ensureLibrary(request, dir);
+  await ensureLibrary(request, FIXTURE_LIBRARY_NAME, dir);
   await runScan(request);
 
   const ids = await artistIdsByName(request, [TARGET_ARTIST, CONTROL_ARTIST]);
