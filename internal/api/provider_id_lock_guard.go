@@ -20,18 +20,13 @@ import (
 // which oasdiff correctly reports as breaking. A new status code is additive;
 // widening an existing one is not.
 //
-// The two older match-by-name flows (handlers_discogs.go, handlers_audiodb.go)
-// still answer 409 for their own lock refusal. That inconsistency is known and
-// left for the unit that revisits them; the body shape is identical, so a
-// client discriminating on the "error" key handles both.
-//
 // WHY A REFUSAL RATHER THAN A GRANT. These are link / identify / re-identify
 // flows: the operator is choosing a NEW identity for the artist, which is
 // exactly what a lock on the identity field says not to change. That differs
 // from the field-edit API, where the operator is correcting the pinned value
-// itself and carries a scoped grant. It also matches what the Discogs and
-// TheAudioDB match-by-name flows already do (handlers_discogs.go,
-// handlers_audiodb.go), so all six provider IDs now behave alike here.
+// itself and carries a scoped grant. The Discogs and TheAudioDB match-by-name
+// flows (handlers_discogs.go, handlers_audiodb.go) call this same helper for
+// their own lock guard, so all six provider IDs behave alike here.
 //
 // The alternative -- letting the write reach the persist chokepoint -- answers
 // 200 while the guard silently reverts the value, which tells the operator their
@@ -45,7 +40,7 @@ import (
 // supplies it" case, not the rule.
 //
 // Call this BEFORE mutating the artist. A refusal after the fact still returns
-// 409, but leaves the in-memory artist carrying values the operator was told
+// 423, but leaves the in-memory artist carrying values the operator was told
 // were rejected -- and any later code reading that struct sees the write.
 //
 // Only the fields the request writes are checked, so a pinned Discogs ID does

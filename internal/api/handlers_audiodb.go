@@ -121,8 +121,9 @@ func (r *Router) handleAudioDBSearch(w http.ResponseWriter, req *http.Request) {
 // the link is therefore guarded twice:
 //
 //  1. Locked-field check: if the audiodb_id field is pinned, the write is
-//     refused with 409 so a user lock survives the identify flow. (audiodb_id
-//     IS part of the lockable field vocabulary -- see artist.FieldAudioDBID.)
+//     refused with 423 (refuseLockedProviderIDs) so a user lock survives the
+//     identify flow. (audiodb_id IS part of the lockable field vocabulary --
+//     see artist.FieldAudioDBID.)
 //  2. Conflict gate: the refresh may write artist.nfo, so the NFO write gate is
 //     consulted and a gated write is refused with the structured 409 payload.
 //
@@ -150,17 +151,13 @@ func (r *Router) handleAudioDBLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// The two guards below each return a 409 with a distinct body shape
-	// (a field_locked object vs. the conflict-gate ConflictWriteBlock); the
-	// route's OpenAPI 409 schema is a oneOf of both (see internal/api/openapi.yaml).
 	// Guard 1: respect a user pin on the audiodb_id field. A locked field must
-	// not be overwritten by the identify flow.
-	if r.artistService.IsFieldLocked(a, artist.FieldAudioDBID) {
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"error":  "field_locked",
-			"field":  string(artist.FieldAudioDBID),
-			"reason": "the TheAudioDB ID field is locked; unlock it before matching by name",
-		})
+	// not be overwritten by the identify flow. Routed through
+	// refuseLockedProviderIDs (see provider_id_lock_guard.go) rather than a
+	// hand-rolled write so this flow answers the same 423 shape as every other
+	// lock refusal in the API; Guard 2 below still answers 409, so the route's
+	// two guards now answer distinct status codes rather than a shared oneOf.
+	if r.refuseLockedProviderIDs(w, a, artist.FieldAudioDBID) {
 		return
 	}
 
