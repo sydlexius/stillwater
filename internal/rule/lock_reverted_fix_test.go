@@ -195,7 +195,28 @@ func TestRunForArtist_LockRevertedAutoFixIsDismissedWithABaselineRow(t *testing.
 	const pinned = "short"
 	db, artistSvc, a, ruleSvc, _, ctx := lockRevertFixture(t, pinned, "biography")
 	enableRuleAuto(t, ctx, ruleSvc, RuleBioExists)
-	fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "a rule wrote this replacement"}
+
+	// FIRST-PASS CONDITIONS. The fixture pre-seeds an open violation for the
+	// FixViolation tests, and that seed also writes the paired rule_results FAIL
+	// row -- which would MASK the trap this test exists to catch. Clearing both
+	// makes this pass the artist's first, so the only writer of either row is
+	// the code under test.
+	if _, err := db.ExecContext(ctx, `DELETE FROM rule_violations WHERE artist_id = ?`, a.ID); err != nil {
+		t.Fatalf("clearing seeded violations: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM rule_results WHERE artist_id = ?`, a.ID); err != nil {
+		t.Fatalf("clearing seeded rule results: %v", err)
+	}
+	if _, exists := ruleResultRow(t, db, a.ID, RuleBioExists); exists {
+		t.Fatal("precondition: a rule_results row survived the clear, so the trap below is masked")
+	}
+	// The replacement is ALSO too short for bio_exists (MinLength 10). That is
+	// the faithful shape: the guard reverts the write, so the rule genuinely
+	// still fails after the pass, and no pass row is written. A replacement long
+	// enough to pass would make the post-fix evaluation -- which runs against
+	// the in-memory struct, BEFORE the persist reverts it -- write a passed=1
+	// row that masks the trap this test exists to catch.
+	fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "brief bio"}
 	pipeline := NewPipeline(NewEngine(ruleSvc, nil, nil, nil, testLogger()), artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	if _, err := pipeline.RunForArtist(ctx, a); err != nil {
