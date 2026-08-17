@@ -3,6 +3,7 @@ package rule
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -242,6 +243,228 @@ func TestRunForArtist_LockRevertedAutoFixStaysOpenWithItsResultRow(t *testing.T)
 			"row only for an open/pending row (#1107), so a status that is not open leaves the " +
 			"artist with no evaluation baseline and offlineHealthScore freezes its health " +
 			"permanently -- #3060's trap.")
+	}
+}
+
+// ruleFixHistoryCount returns how many "rule_fix" history rows the artist has.
+// That row and the activity.recent rail event share one emitter
+// (recordRuleFixHistory), so counting rows is how a test observes whether the
+// un-recallable rail event was pushed.
+func ruleFixHistoryCount(t *testing.T, h *artist.HistoryService, artistID string) int {
+	t.Helper()
+	changes, _, err := h.List(context.Background(), artistID, 100, 0)
+	if err != nil {
+		t.Fatalf("listing history: %v", err)
+	}
+	n := 0
+	for _, c := range changes {
+		if c.Field == "rule_fix" {
+			n++
+		}
+	}
+	return n
+}
+
+// bioFixEntry returns the single bio_exists entry in a run's results, failing on
+// any other count. Exactly one is the point: two would mean the pass dispatched
+// the rule twice and the assertion could be reading either one.
+func bioFixEntry(t *testing.T, results []FixResult) FixResult {
+	t.Helper()
+	var found []FixResult
+	for _, r := range results {
+		if r.RuleID == RuleBioExists {
+			found = append(found, r)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("results holds %d bio_exists entries, want exactly 1: %+v", len(found), results)
+	}
+	return found[0]
+}
+
+// runPathCreditCase drives one whole-library run path against a locked artist
+// and its unlocked positive control. The paths differ only in which orchestrator
+// they call and where they report the tally, which is exactly what a mutation
+// severing one path's report would hide.
+type runPathCreditCase struct {
+	name string
+	// run executes the path and returns (fixesAttempted, fixesSucceeded, results).
+	run func(t *testing.T, p *Pipeline, a *artist.Artist, ctx context.Context) (int, int, []FixResult)
+}
+
+// TestRunPaths_LockRevertedAutoFixEarnsNoCredit is finding 1's regression AND
+// finding 2's missing RunAll coverage. Correcting only the violation row left
+// every OTHER surface claiming the repair: the run-complete toast reads
+// RunResult.FixesSucceeded, and recordRuleFixHistory writes a metadata_changes
+// row plus pushes an activity.recent rail event that cannot be recalled.
+//
+// Each case is PAIRED with an unlocked positive control that must earn all
+// three, so a harness that stopped reaching the fixer would fail rather than
+// report a satisfying zero.
+func TestRunPaths_LockRevertedAutoFixEarnsNoCredit(t *testing.T) {
+	cases := []runPathCreditCase{{
+		name: "RunForArtist",
+		run: func(t *testing.T, p *Pipeline, a *artist.Artist, ctx context.Context) (int, int, []FixResult) {
+			t.Helper()
+			res, err := p.RunForArtist(ctx, a)
+			if err != nil {
+				t.Fatalf("RunForArtist: %v", err)
+			}
+			return res.FixesAttempted, res.FixesSucceeded, res.Results
+		},
+	}, {
+		// THE SCHEDULED WHOLE-LIBRARY SWEEP, and the reason M12 mattered:
+		// updateHealthScore's restored return is consumed only here, so a
+		// mutation dropping it left every RunForArtist test green.
+		name: "processArtistForRunAll",
+		run: func(t *testing.T, p *Pipeline, a *artist.Artist, ctx context.Context) (int, int, []FixResult) {
+			t.Helper()
+			contrib, _ := p.processArtistForRunAll(ctx, a)
+			return contrib.fixesAttempted, contrib.fixesSucceeded, contrib.results
+		},
+	}, {
+		// The single-rule sweep, which reaches persistHealthAfterRun rather
+		// than updateHealthScore.
+		name: "processArtistForRunRule",
+		run: func(t *testing.T, p *Pipeline, a *artist.Artist, ctx context.Context) (int, int, []FixResult) {
+			t.Helper()
+			r, err := p.ruleService.GetByID(ctx, RuleBioExists)
+			if err != nil {
+				t.Fatalf("loading rule: %v", err)
+			}
+			contrib, _ := p.processArtistForRunRule(ctx, a, RuleBioExists, r)
+			return contrib.fixesAttempted, contrib.fixesSucceeded, contrib.results
+		},
+	}}
+
+	// build wires a pipeline with history recording ON -- without it
+	// recordRuleFixHistory's row write is skipped and the audit assertion below
+	// passes vacuously.
+	build := func(t *testing.T, lock bool) (*Pipeline, *artist.Artist, *artist.HistoryService, *bioOverwritingFixer, context.Context) {
+		t.Helper()
+		locks := []string{}
+		if lock {
+			locks = []string{"biography"}
+		}
+		db, artistSvc, a, ruleSvc, _, ctx := lockRevertFixture(t, "short", locks...)
+		historySvc := artist.NewHistoryService(db)
+		artistSvc.SetHistoryService(historySvc)
+		enableRuleAuto(t, ctx, ruleSvc, RuleBioExists)
+		// Still short after the fix, the faithful shape: the guard reverts the
+		// write, so the rule keeps failing.
+		fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "brief bio"}
+		p := NewPipeline(NewEngine(ruleSvc, nil, nil, nil, testLogger()), artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+		p.SetHistoryService(historySvc)
+		return p, a, historySvc, fixer, ctx
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// POSITIVE CONTROL first: unlocked, so all three credits are earned.
+			p, a, hist, fixer, ctx := build(t, false)
+			_, succeeded, _ := tc.run(t, p, a, ctx)
+			if fixer.fixCalls == 0 {
+				t.Fatal("positive control FAILED: the fixer never ran, so this path exercises nothing")
+			}
+			if succeeded != 1 {
+				t.Fatalf("positive control FAILED: FixesSucceeded = %d for an UNLOCKED fix, want 1; "+
+					"the credit path is broken and the locked case below proves nothing", succeeded)
+			}
+			if n := ruleFixHistoryCount(t, hist, a.ID); n != 1 {
+				t.Fatalf("positive control FAILED: %d rule_fix history rows for an UNLOCKED fix, want 1", n)
+			}
+
+			// THE REGRESSION: biography pinned, so the guard reverts the only
+			// change the fixer made.
+			p, a, hist, fixer, ctx = build(t, true)
+			attempted, succeeded, results := tc.run(t, p, a, ctx)
+			if fixer.fixCalls == 0 {
+				t.Fatal("precondition: no fix was attempted, so the revert path was never reached")
+			}
+			if attempted < 1 {
+				t.Errorf("FixesAttempted = %d, want at least 1: a reverted fix is a REFUSED "+
+					"WRITE, not an error, and the run really did attempt it", attempted)
+			}
+			if succeeded != 0 {
+				t.Errorf("FixesSucceeded = %d for a fix the lock guard reverted, want 0; the "+
+					"run-complete toast tells the operator %d were fixed while the violation "+
+					"correctly stays open (#3037)", succeeded, succeeded)
+			}
+			if n := ruleFixHistoryCount(t, hist, a.ID); n != 0 {
+				t.Errorf("%d rule_fix history rows for a reverted fix, want 0. That row is written "+
+					"beside an activity.recent SSE event that CANNOT be recalled, so it must "+
+					"never be emitted rather than emitted and reversed", n)
+			}
+			// The whole-artist paths evaluate every enabled rule, so index by
+			// rule id rather than by position -- a positional assertion would
+			// break the moment the seeded rule set changes.
+			entry := bioFixEntry(t, results)
+			if entry.Fixed {
+				t.Errorf("the fix's entry in results still reports Fixed=true: %q", entry.Message)
+			}
+		})
+	}
+}
+
+// TestPersistHealthAfterRun_NonAuthoritativeBranchReportsRestorations pins the
+// branch the code comment defends -- "the restorations there are just as real"
+// -- which was the untested one (M11b). It is reached when the post-fix
+// evaluation FAILED but a fixer mutation must still be flushed, so the run is
+// not authoritative and yet a real write, with real lock restorations, happens.
+func TestPersistHealthAfterRun_NonAuthoritativeBranchReportsRestorations(t *testing.T) {
+	_, artistSvc, a, ruleSvc, _, ctx := lockRevertFixture(t, "the operator wrote this", "biography")
+	p := NewPipeline(NewEngine(ruleSvc, nil, nil, nil, testLogger()), artistSvc, ruleSvc, nil, nil, testLogger())
+
+	a.Biography = "a rule wrote this"
+	// postEval nil (evaluation failed) + mustPersist true is the branch.
+	authoritative, restored := p.persistHealthAfterRun(ctx, a, nil, true, false, "")
+	if authoritative {
+		t.Fatal("precondition: a nil postEval must never be authoritative")
+	}
+	stored, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if stored.Biography != "the operator wrote this" {
+		t.Fatalf("precondition: the pinned biography is %q, so the guard never reverted anything "+
+			"and the report below would be empty for the wrong reason", stored.Biography)
+	}
+	if !slices.Contains(restored, "biography") {
+		t.Errorf("restored = %v, want it to contain \"biography\". A non-authoritative run still "+
+			"WROTE, so its restorations are just as real -- dropping them here lets the caller "+
+			"grant credit for a fix the guard threw away", restored)
+	}
+}
+
+// TestLockRevertedFixResult_DiskEffectsDefeatTheRevert is finding 3: the
+// SavedPath / RemovedFiles / SlotsRemoved arm. No shipped fixer both writes a
+// guarded field and touches disk, so this is a forward-guard with no live case
+// -- and an untested forward-guard is one the next reader deletes as dead code.
+func TestLockRevertedFixResult_DiskEffectsDefeatTheRevert(t *testing.T) {
+	base := func(mut func(*FixResult)) *FixResult {
+		fr := &FixResult{RuleID: RuleBioExists, Fixed: true, Message: "wrote it"}
+		mut(fr)
+		return fr
+	}
+	cases := []struct {
+		name       string
+		fr         *FixResult
+		wantRevert bool
+	}{
+		{"no disk effect reverts", base(func(*FixResult) {}), true},
+		{"SavedPath survives", base(func(f *FixResult) { f.SavedPath = "/lib/a/fanart.jpg" }), false},
+		{"RemovedFiles survives", base(func(f *FixResult) { f.RemovedFiles = true }), false},
+		{"SlotsRemoved survives", base(func(f *FixResult) { f.SlotsRemoved = 2 }), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lockRevertedFixResult(tc.fr, []string{"biography"}, []string{"biography"})
+			if tc.wantRevert != (got != nil) {
+				t.Fatalf("lockRevertedFixResult non-nil = %v, want %v. A fix that left something "+
+					"on DISK is real whatever the artists row ended up holding, so reporting it "+
+					"reverted would hide a file the operator now has", got != nil, tc.wantRevert)
+			}
+		})
 	}
 }
 

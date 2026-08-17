@@ -610,6 +610,10 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 	if !persistOKHealth {
 		acc.failWrite()
 	}
+	// #3037: award the deferred success credits now that the write has reported
+	// what it restored. NOT gated on persistOKHealth: an unwritten pass restored
+	// nothing, so every credit is granted, exactly as it was before the deferral.
+	p.grantFixCredits(ctx, a, acc, lockRestored, contrib.results, &contrib.fixesSucceeded)
 	// Issue #983: only resolve violations once the artist row persisted
 	// cleanly. A failed Update leaves the mutation in memory; marking the
 	// violation resolved anyway would silently drop the fix. #3037: a row whose
@@ -758,6 +762,42 @@ type runForArtistAccum struct {
 	// way to tell whose fix the restoration killed. Written through
 	// noteIntendedGuardedFields; consumed by splitLockRevertedRows.
 	intendedGuarded map[string][]string
+
+	// pendingCredits holds every successful fix this pass made, WITHOUT yet
+	// having granted it the run-level credit -- the FixesSucceeded bump and the
+	// metadata_changes row + activity.recent event recordRuleFixHistory emits
+	// (#3037). Only the pass's single end-of-run write knows which locked fields
+	// the chokepoint restored, so a fix's honesty is not knowable when the fixer
+	// returns; grantFixCredits settles them once it is. See that function for
+	// why the credit is DEFERRED rather than granted and later reversed.
+	pendingCredits []pendingFixCredit
+}
+
+// pendingFixCredit is one successful fix awaiting the pass's single end-of-run
+// write, which is what decides whether the fix survived the lock guard.
+type pendingFixCredit struct {
+	// ruleID comes from the VIOLATION (violationOutcome.fixedRuleID), never from
+	// fr.RuleID, for the same reason the history attribution does: a fixer sets
+	// that field itself and can leave it empty.
+	ruleID string
+	// fr is the fixer's own result, read by the reverted-fix test (SavedPath /
+	// RemovedFiles / SlotsRemoved) and by the history entry.
+	fr *FixResult
+	// resultIdx is where the merge appended fr into the run-level results slice.
+	// A reverted fix has that entry REWRITTEN in place rather than removed: the
+	// run really did attempt it, so it belongs in the list, just not claiming a
+	// repair. -1 when the caller has no results slice.
+	resultIdx int
+}
+
+// notePendingFixCredit records a successful fix whose credit is not yet earned.
+// resultIdx is the index the caller just appended fr at; a negative value means
+// the caller has no results slice to correct.
+func (acc *runForArtistAccum) notePendingFixCredit(ruleID string, fr *FixResult, resultIdx int) {
+	if fr == nil {
+		return
+	}
+	acc.pendingCredits = append(acc.pendingCredits, pendingFixCredit{ruleID: ruleID, fr: fr, resultIdx: resultIdx})
 }
 
 // noteFixedRule records the rule behind a successful fix. A repeat of the same
@@ -794,7 +834,9 @@ func (acc *runForArtistAccum) historySource() string {
 // inflated runForArtistFiltered's cognitive complexity past the gocognit
 // gate.
 func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResult) {
+	resultIdx := -1
 	if out.fr != nil {
+		resultIdx = len(result.Results)
 		result.Results = append(result.Results, *out.fr)
 		result.FixesAttempted++
 		acc.removedFiles = acc.removedFiles || out.fr.RemovedFiles
@@ -803,7 +845,10 @@ func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResu
 		acc.failWrite()
 	}
 	if out.fixed {
-		result.FixesSucceeded++
+		// FixesSucceeded is NOT bumped here: grantFixCredits does it after the
+		// end-of-run write reports which of these fixes the lock guard reverted
+		// (#3037). See runForArtistAccum.pendingCredits.
+		acc.notePendingFixCredit(out.fixedRuleID, out.fr, resultIdx)
 		acc.artistDirty = true
 		acc.noteFixedRule(out.fixedRuleID)
 		acc.noteIntendedGuardedFields(out.fixedRuleID, out.intendedGuarded)
@@ -823,7 +868,9 @@ func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResu
 // artistContribution (merged under a mutex by the walker) rather than
 // directly into a *RunResult.
 func (acc *runForArtistAccum) mergeIntoContrib(out violationOutcome, contrib *artistContribution) {
+	resultIdx := -1
 	if out.fr != nil {
+		resultIdx = len(contrib.results)
 		contrib.results = append(contrib.results, *out.fr)
 		contrib.fixesAttempted++
 		acc.removedFiles = acc.removedFiles || out.fr.RemovedFiles
@@ -832,7 +879,8 @@ func (acc *runForArtistAccum) mergeIntoContrib(out violationOutcome, contrib *ar
 		acc.failWrite()
 	}
 	if out.fixed {
-		contrib.fixesSucceeded++
+		// fixesSucceeded is NOT bumped here; see mergeOutcome (#3037).
+		acc.notePendingFixCredit(out.fixedRuleID, out.fr, resultIdx)
 		acc.artistDirty = true
 		acc.noteFixedRule(out.fixedRuleID)
 		acc.noteIntendedGuardedFields(out.fixedRuleID, out.intendedGuarded)
@@ -920,7 +968,7 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	writeCtx := context.WithoutCancel(evalCtx)
 
 	p.dispatchViolations(writeCtx, a, eval.Violations, categoryFilter, ruleCache, acc, result, startedAt)
-	p.finalizeArtistRun(writeCtx, a, ruleCache, acc, categoryFilter, scope, startedAt)
+	p.finalizeArtistRun(writeCtx, a, ruleCache, acc, result, categoryFilter, scope, startedAt)
 
 	// #2724: report a run that did not fully persist. The shield above removes
 	// the cancellation cause, but any other write failure (a locked DB, a
@@ -1016,6 +1064,10 @@ func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, vio
 //   - updateHealthScore re-evaluates the artist and persists the row.
 //     Required FIRST because the deferred-resolved-rows logic (#983)
 //     can only fire once we know the artist row reached the DB.
+//   - grantFixCredits awards the deferred FixesSucceeded bumps and Recent
+//     Activity entries, withholding both for a fix the lock guard reverted
+//     (#3037). It runs before the row writes below for no ordering reason;
+//     it just needs the write's restored-field report, like they do.
 //   - resolveOrReopenRows stamps the deferred rows, ONLY when
 //     updateHealthScore reported persistOKHealth. Resolved for the fixes
 //     that landed; re-opened for any whose every guarded change the lock
@@ -1027,7 +1079,7 @@ func (p *Pipeline) dispatchViolations(ctx context.Context, a *artist.Artist, vio
 //   - markArtistEvaluated stamps rules_evaluated_at only when every
 //     persistence step succeeded AND the run covered every rule (i.e.
 //     categoryFilter was empty).
-func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, ruleCache map[string]*Rule, acc *runForArtistAccum, categoryFilter string, scope map[string]bool, startedAt time.Time) {
+func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, ruleCache map[string]*Rule, acc *runForArtistAccum, result *RunResult, categoryFilter string, scope map[string]bool, startedAt time.Time) {
 	// Re-evaluate at the SAME scope the run used. A whole-artist run (nil scope)
 	// evaluates everything and its HealthScore is authoritative; a category run
 	// evaluates only that category and its health is derived offline, so neither
@@ -1042,6 +1094,8 @@ func (p *Pipeline) finalizeArtistRun(ctx context.Context, a *artist.Artist, rule
 	if !persistOKHealth {
 		acc.failWrite()
 	}
+	// #3037: award the deferred success credits; see processArtistForRunRule.
+	p.grantFixCredits(ctx, a, acc, lockRestored, result.Results, &result.FixesSucceeded)
 	// Issue #983: only resolve violations once the artist row persist
 	// succeeded. A failed Update leaves the mutation in memory; marking
 	// the violation resolved would silently drop the fix. #3037: a row whose
@@ -1149,9 +1203,13 @@ func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist
 			out.imageFix = true
 			out.imageType = fr.ImageType
 		}
-		// Issue #1106: emit a Recent Activity entry. recordRuleFixHistory
-		// warn-logs on failure and never fails the surrounding fix flow.
-		p.recordRuleFixHistory(ctx, a.ID, fr)
+		// Issue #1106's Recent Activity entry is NOT emitted here. It, and the
+		// FixesSucceeded bump, are deferred to grantFixCredits, which runs after
+		// the pass's single write has reported which locked fields the chokepoint
+		// restored (#3037). Emitting them here claimed a repair the guard was
+		// about to throw away, on a surface -- an SSE rail row -- that cannot be
+		// recalled afterwards.
+		//
 		// Issue #983: stash the row but do not write Resolved yet -- the
 		// orchestrator only stamps Resolved after updateHealthScore
 		// persists the mutated artist.
@@ -1402,6 +1460,8 @@ func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist)
 	if !persistOKHealth {
 		acc.failWrite()
 	}
+	// #3037: award the deferred success credits; see processArtistForRunRule.
+	p.grantFixCredits(ctx, a, acc, lockRestored, contrib.results, &contrib.fixesSucceeded)
 	// Issue #983: only resolve violations once the artist row persisted
 	// cleanly. A failed Update leaves the mutation in memory; marking the
 	// violation resolved anyway would silently drop the fix. #3037: a row whose

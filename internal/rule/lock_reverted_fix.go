@@ -33,6 +33,13 @@ import (
 // already produced twice. Reading what the guard ACTUALLY restored cannot
 // drift. The cost is that the fixer still runs and its provider calls still go
 // out; closing that needs the map, and it is a separate decision.
+//
+// "CREDIT" IS FOUR SURFACES, NOT ONE, and a correction that reaches some of them
+// is worse than none -- it makes them contradict each other. All four are
+// handled here: the violation ROW (resolveOrReopenRows), the run's
+// fixes-succeeded COUNT and the Recent Activity ENTRY (grantFixCredits), and the
+// FixResult the caller reads (lockRevertedFixResult on the click path,
+// grantFixCredits rewriting the run's results entry on the auto path).
 
 // lockRevertedFixResult reports the FixResult a fully-reverted fix should carry,
 // or nil when the fix is not fully reverted and the caller should proceed with
@@ -94,8 +101,16 @@ func lockRevertedFixResult(fr *FixResult, intended, restored []string) *FixResul
 	// Fixed is cleared -- callers gate the resolve, the provenance record and
 	// the platform publish on it, and each would describe a value the database
 	// does not hold.
-	return &FixResult{
-		RuleID: fr.RuleID,
+	out := revertedFixReport(fr.RuleID, intended)
+	return &out
+}
+
+// revertedFixReport is the one place the reverted-fix verdict is spelled, so the
+// click path (lockRevertedFixResult) and the auto path (retractFixCredit) cannot
+// drift into telling the operator two different stories about the same event.
+func revertedFixReport(ruleID string, intended []string) FixResult {
+	return FixResult{
+		RuleID: ruleID,
 		Fixed:  false,
 		Message: fmt.Sprintf("fix reverted: %s locked by the operator",
 			strings.Join(intended, ", ")),
@@ -143,6 +158,53 @@ func (acc *runForArtistAccum) splitLockRevertedRows(restored []string) (keep, re
 		keep = append(keep, rv)
 	}
 	return keep, reverted
+}
+
+// grantFixCredits awards -- or withholds -- every credit the pass deferred while
+// waiting to learn what the end-of-run write actually stored (#3037).
+//
+// WHY THE CREDIT IS DEFERRED RATHER THAN GRANTED AND REVERSED. Correcting only
+// the violation row left the auto path claiming the repair on every OTHER
+// surface: the run-complete toast's "N fixed" (handlers_rule.go reads
+// RunResult.FixesSucceeded), the metadata_changes audit row, and the
+// activity.recent dashboard event. processAutoFixViolation wrote all three the
+// moment the fixer returned -- BEFORE the pass's single write, so before anything
+// could know the guard would revert it. Reversing them afterwards is not an
+// equivalent repair: an SSE event cannot be recalled (the rail row is already on
+// the operator's dashboard), and a metadata_changes row written then deleted is
+// WORSE audit than one never written, because the deletion leaves no trace that
+// it was retracted. Deferring has no such asymmetry; it costs only that a new
+// orchestrator must remember to call this.
+//
+// A REVERTED FIX IS NOT A FAILURE. FixesAttempted counted it and stays counted:
+// the run did attempt the write and the guard refused it, which is a state the
+// operator should see. Only the SUCCESS credit is withheld, and the fix's entry
+// in results is rewritten in place to say so.
+//
+// results and succeeded are the run-level tallies to correct: RunResult's for
+// the single-artist path, artistContribution's for the walker paths. results is
+// indexed, never appended to, so the caller's slice header stays valid.
+func (p *Pipeline) grantFixCredits(ctx context.Context, a *artist.Artist, acc *runForArtistAccum, restored []string, results []FixResult, succeeded *int) {
+	for _, c := range acc.pendingCredits {
+		if reverted := lockRevertedFixResult(c.fr, acc.intendedGuarded[c.ruleID], restored); reverted != nil {
+			p.logger.Error("a rule fix was fully reverted by a field lock; it is not counted as a repair and no history is recorded",
+				"artist_id", a.ID, "rule_id", c.ruleID, "fields", strings.Join(restored, ","))
+			if c.resultIdx >= 0 && c.resultIdx < len(results) {
+				// Keep the fixer's own RuleID: reverted.RuleID is copied from the
+				// FixResult, which a fixer may leave empty, and blanking a
+				// populated field here would lose information the entry had.
+				results[c.resultIdx].Fixed = false
+				results[c.resultIdx].Message = revertedFixReport(c.ruleID, acc.intendedGuarded[c.ruleID]).Message
+			}
+			continue
+		}
+		*succeeded++
+		// Issue #1106: the Recent Activity entry and the metadata_changes audit
+		// row. Deferred to here from processAutoFixViolation so a reverted fix
+		// never emits either. recordRuleFixHistory warn-logs on failure and never
+		// fails the surrounding flow.
+		p.recordRuleFixHistory(ctx, a.ID, c.fr)
+	}
 }
 
 // resolveOrReopenRows is the run paths' replacement for a bare

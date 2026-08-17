@@ -121,8 +121,16 @@ func TestMergeIntoContrib(t *testing.T) {
 		if acc.metadataFixed {
 			t.Error("metadataFixed should not be set for an image fix")
 		}
-		if contrib.fixesSucceeded != 1 {
-			t.Errorf("fixesSucceeded = %d, want 1", contrib.fixesSucceeded)
+		// #3037: the SUCCESS credit is DEFERRED here, not granted. Only the
+		// pass's end-of-run write knows whether the lock guard reverted the fix,
+		// so grantFixCredits bumps this later. The merge records the pending
+		// credit instead.
+		if contrib.fixesSucceeded != 0 {
+			t.Errorf("fixesSucceeded = %d, want 0: the merge must defer the credit until "+
+				"grantFixCredits has the write's restored-field report", contrib.fixesSucceeded)
+		}
+		if len(acc.pendingCredits) != 1 || acc.pendingCredits[0].fr != fr {
+			t.Errorf("pendingCredits = %+v, want exactly this fix awaiting its credit", acc.pendingCredits)
 		}
 		if len(acc.resolvedRows) != 1 || acc.resolvedRows[0] != rv {
 			t.Error("resolvedRow should be stashed in acc.resolvedRows")
