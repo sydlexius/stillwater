@@ -113,8 +113,11 @@ func (f *ProviderIDBackfillFixer) fetchMetadata(ctx context.Context, mbid, name 
 // Fix fetches the artist's MusicBrainz URL relations, derives the in-scope
 // provider IDs from them, and fills only the empty ones. A provider ID that is
 // already set is never overwritten; a provider with no derivable relation is
-// left untouched. The operation is a no-op (non-fatal FixResult) when the
-// artist has no MBID, the fetcher is unwired, or nothing new can be derived.
+// left untouched, and a field a LOCK refuses is skipped rather than failing the
+// pass. The operation is a no-op (non-fatal FixResult) when the artist has no
+// MBID, the fetcher is unwired, or nothing new can be derived. It reports
+// Dismissed only when a lock refused every field the violation still covers --
+// the one genuinely terminal outcome; see that branch for why the bar is high.
 func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
 	if a.MusicBrainzID == "" {
 		return &FixResult{
@@ -327,6 +330,16 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		}, nil
 	}
 
+	// A PARTIAL BACKFILL REPORTS Fixed, EVEN WITH A REFUSAL ALONGSIDE IT, and
+	// that is deliberate rather than an oversight. FixViolation then calls
+	// ResolveViolation while the pinned field is still empty, so the next
+	// evaluation re-raises the violation -- which is the CORRECT direction of
+	// error and the opposite of the dismiss above. Resolved is not terminal:
+	// UpsertViolation lets a resolved row go back to open, so the finding
+	// returns on its own. Reporting Fixed=false instead would deny the operator
+	// the Recent Activity entry for writes that genuinely landed, and would make
+	// a real repair look like a no-op. `filled` carries only the writes that
+	// landed, so the message never counts a refused field.
 	f.logger.Info("provider IDs backfilled by rule fixer",
 		slog.String("artist_id", a.ID),
 		slog.String("mbid", a.MusicBrainzID),
