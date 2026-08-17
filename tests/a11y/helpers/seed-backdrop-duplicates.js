@@ -45,9 +45,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
-
-const BASE_URL = process.env.SW_TEST_URL
-  || `http://127.0.0.1:${process.env.SW_PORT || '1973'}`;
+import { BASE_URL, ensureLibrary, runScan } from './api.js';
 
 const FIXTURE_LIBRARY_NAME = 'a11y backdrop-duplicates fixture';
 
@@ -150,61 +148,6 @@ func main() {
 }
 `;
 
-async function apiFetch(request, method, url, body) {
-  const state = await request.storageState();
-  const csrf = (state.cookies.find(c => c.name === 'csrf_token') || {}).value || '';
-  const opts = {
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-  };
-  if (body !== undefined) opts.data = JSON.stringify(body);
-  return request.fetch(`${BASE_URL}${url}`, { method, ...opts });
-}
-
-async function ensureLibrary(request, dir) {
-  const resp = await apiFetch(request, 'POST', '/api/v1/libraries', {
-    name: FIXTURE_LIBRARY_NAME, path: dir, type: 'regular',
-  });
-  if (resp.ok()) return (await resp.json()).id;
-
-  // 409 means a previous run created it. Reuse only when it still points where
-  // this run expects: a stale row aimed at a deleted temp dir would scan
-  // nothing and seed an empty fixture, which is exactly the failure this
-  // helper exists to prevent.
-  if (resp.status() === 409) {
-    const list = await request.fetch(`${BASE_URL}/api/v1/libraries`);
-    if (list.ok()) {
-      const body = await list.json();
-      const libs = Array.isArray(body) ? body : (body.libraries || []);
-      const existing = libs.find(l => l.name === FIXTURE_LIBRARY_NAME);
-      if (existing && existing.path === dir) return existing.id;
-      if (existing) {
-        throw new Error(
-          `seed: fixture library exists but points at ${existing.path}, not ${dir}. `
-          + 'Delete it (or use a fresh database) before re-seeding.',
-        );
-      }
-    }
-  }
-  throw new Error(`seed: creating fixture library failed: ${resp.status()} ${await resp.text()}`);
-}
-
-async function runScan(request) {
-  const resp = await apiFetch(request, 'POST', '/api/v1/scanner/run');
-  if (!resp.ok()) {
-    throw new Error(`seed: scanner run failed: ${resp.status()} ${await resp.text()}`);
-  }
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    const st = await request.fetch(`${BASE_URL}/api/v1/scanner/status`);
-    if (st.ok()) {
-      const body = await st.json();
-      if (body.status === 'completed' || body.status === 'idle') return;
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-  throw new Error('seed: scan did not complete within 60s');
-}
-
 // The duplicate report is served from a CACHE populated by a background scan,
 // not computed on render. The first GET finds a cold cache, renders the
 // pending notice, and TRIGGERS that scan -- so the page must be polled until
@@ -289,7 +232,7 @@ export async function seedBackdropDuplicates(request) {
     throw new Error('seed: the exact-duplicate fixture files differ, so no exact redundancy exists');
   }
 
-  await ensureLibrary(request, dir);
+  await ensureLibrary(request, FIXTURE_LIBRARY_NAME, dir);
   await runScan(request);
   await waitForReport(request);
 }
