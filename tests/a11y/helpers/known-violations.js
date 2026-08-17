@@ -151,9 +151,12 @@ import path from 'node:path';
 // A call a LIVE allowance stale. That is the same false positive the
 // cross-process fix removed, reintroduced through a different door.
 //
-// SW_A11Y_SEEN_RUN_ID is stamped once by globalSetup (which runs a single time
-// per invocation, before any worker starts) and inherited by every worker and by
-// globalTeardown through the environment. A run that somehow has no id falls
+// SW_A11Y_SEEN_RUN_ID is stamped once at MODULE level by global-setup.js -- in
+// the coordinator, when the config graph loads, before any worker is forked --
+// and inherited by every worker and by globalTeardown through the environment.
+// (It moved out of the globalSetup function body in #3057 because the
+// storage-state path is now keyed on it too, and that path is a module-level
+// const the config imports.) A run that somehow has no id falls
 // back to a shared path rather than inventing a per-PROCESS id: workers must
 // agree on the file, and a per-process id would silently give each worker its
 // own, which reads as "nothing was ever seen".
