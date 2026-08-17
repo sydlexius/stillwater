@@ -3,10 +3,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/artist"
 )
 
 // TestLinkFlows_RefuseALockedProviderID pins F5 as a CLASS rather than a site.
@@ -153,4 +157,64 @@ func TestLinkFlows_UnlockedProviderIDStillLinks(t *testing.T) {
 	if after.DeezerID != "4050205" {
 		t.Errorf("deezer_id = %q, want the link to land", after.DeezerID)
 	}
+}
+
+// TestWriteFieldLockRefusal covers the renderer directly, because its two
+// production call sites cannot reach it: both wrap the context with a matching
+// grant, so the service verb never refuses them (see the function's own comment).
+// Testing it through a handler would therefore prove nothing, and testing it not
+// at all would leave the mapping from a typed service error to an operator's
+// response entirely unpinned.
+//
+// The non-refusal arm is the load-bearing half. A renderer that answered 423 for
+// ANY error would swallow a database failure as a lock refusal and satisfy the
+// positive arm on its own.
+func TestWriteFieldLockRefusal(t *testing.T) {
+	r := &Router{logger: testLogger()}
+
+	t.Run("typed lock refusal renders 423 with the house body", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		const wantReason = "the discogs_id field is locked; unlock it before changing this value"
+		err := fmt.Errorf("updating artist: %w",
+			&artist.FieldLockedError{Field: "discogs_id", Reason: wantReason})
+		if !r.writeFieldLockRefusal(w, "a1", err) {
+			t.Fatal("a wrapped *artist.FieldLockedError was not recognized; errors.As must see through a wrap")
+		}
+		if w.Code != http.StatusLocked {
+			t.Errorf("status = %d, want 423", w.Code)
+		}
+		var body map[string]any
+		if decErr := json.NewDecoder(w.Body).Decode(&body); decErr != nil {
+			t.Fatalf("decoding body: %v", decErr)
+		}
+		// Identical key set to refuseLockedProviderIDs, so a client
+		// discriminating on "error" handles both without knowing which layer
+		// noticed.
+		if body["error"] != "field_locked" || body["field"] != "discogs_id" {
+			t.Errorf("body = %+v, want error=field_locked field=discogs_id", body)
+		}
+		// The reason must be EXACTLY the typed literal, not merely absent the
+		// wrap prefix -- a changed, empty, or unrelated reason must fail this
+		// too, since the property under test is that the operator-facing text
+		// is the hand-authored FieldLockedError.Reason and nothing else.
+		if reason, _ := body["reason"].(string); reason != wantReason {
+			t.Errorf("reason = %q, want %q (the typed Reason, verbatim)", reason, wantReason)
+		}
+		// Kept alongside the equality check: it pins the SPECIFIC failure mode
+		// (the wrap's own prefix leaking through) with a message a maintainer
+		// can act on immediately, rather than a generic mismatch diff.
+		if reason, _ := body["reason"].(string); strings.Contains(reason, "updating artist") {
+			t.Errorf("reason = %q; it rendered the error chain instead of the typed Reason", reason)
+		}
+	})
+
+	t.Run("an ordinary error is left to the caller", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		if r.writeFieldLockRefusal(w, "a1", errors.New("database is unavailable")) {
+			t.Fatal("an unrecognized error must return false so the caller still logs it and answers 500")
+		}
+		if w.Code != http.StatusOK || w.Body.Len() != 0 {
+			t.Errorf("the recorder was written to (code=%d body=%q); it must be untouched", w.Code, w.Body.String())
+		}
+	})
 }

@@ -2,6 +2,7 @@ package rule
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -112,8 +113,11 @@ func (f *ProviderIDBackfillFixer) fetchMetadata(ctx context.Context, mbid, name 
 // Fix fetches the artist's MusicBrainz URL relations, derives the in-scope
 // provider IDs from them, and fills only the empty ones. A provider ID that is
 // already set is never overwritten; a provider with no derivable relation is
-// left untouched. The operation is a no-op (non-fatal FixResult) when the
-// artist has no MBID, the fetcher is unwired, or nothing new can be derived.
+// left untouched, and a field a LOCK refuses is skipped rather than failing the
+// pass. The operation is a no-op (non-fatal FixResult) when the artist has no
+// MBID, the fetcher is unwired, or nothing new can be derived. It reports
+// Dismissed only when a lock refused every field the violation still covers --
+// the one genuinely terminal outcome; see that branch for why the bar is high.
 func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
 	if a.MusicBrainzID == "" {
 		return &FixResult{
@@ -194,6 +198,17 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 	}
 
 	var filled []string
+	// refused collects the fields a lock turned away, so the FixResult can tell
+	// "the operator pinned these" from "MusicBrainz had no relation" -- two very
+	// different things to show an operator, and only one of them terminal.
+	var refused []string
+	// skippedNoRelation counts the fields that are STILL EMPTY and were never
+	// attempted, because MusicBrainz carried no relation to derive them from.
+	// It is what makes the Dismissed branch below safe: those fields are part
+	// of the same violation and are NOT terminal (adding the relation upstream
+	// fixes them), so a pass that refused one field and skipped another must
+	// not close the row. See that branch for why closing it is unrecoverable.
+	skippedNoRelation := 0
 	for _, name := range inScopeProviderIDs {
 		current := strings.TrimSpace(providerIDForName(a, name))
 		if current != "" {
@@ -201,6 +216,7 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		}
 		derived := strings.TrimSpace(derivedFor(name))
 		if derived == "" {
+			skippedNoRelation++
 			continue // no relation to backfill from
 		}
 		field := providerIDBackfillField[name]
@@ -211,6 +227,26 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		// follows the call site, not the current field list.
 		tagged := withRuleHistorySource(ctx, ruleHistorySource(RuleProviderIDMissing))
 		if err := f.updater.UpdateProviderField(tagged, a.ID, field, derived); err != nil {
+			// A LOCK REFUSAL IS A SKIP, NOT A FAILURE (#3037). The operator
+			// pinned this field while it was EMPTY -- "do not guess this one" --
+			// which is exactly the case the lock exists to protect, so the fixer
+			// honoring it is the system working. Failing the whole fixer here
+			// would abandon the OTHER derivable IDs in the same pass and surface
+			// an error the operator can only clear by unlocking a field they
+			// deliberately pinned.
+			//
+			// The `continue` is load-bearing twice over: it also skips the
+			// in-memory mirror and the `filled` append below, so a refused write
+			// is neither reported as a backfill nor left on the struct the
+			// pipeline re-evaluates. Mirroring a value the database refused is
+			// how a fixer reports a repair that did not happen.
+			if errors.Is(err, artist.ErrFieldLocked) {
+				f.logger.Info("skipping a provider-ID backfill: the operator has that field locked",
+					slog.String("artist_id", a.ID),
+					slog.String("field", field))
+				refused = append(refused, field)
+				continue
+			}
 			return nil, fmt.Errorf("setting %s for %s: %w", field, a.Name, err)
 		}
 		// Mirror the write onto the in-memory artist immediately (issue #2699).
@@ -233,14 +269,73 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		filled = append(filled, string(name))
 	}
 
-	if len(filled) == 0 {
+	// EVERY EMPTY FIELD THIS VIOLATION COVERS WAS REFUSED: report it as
+	// DISMISSED rather than open (#3037, F-4). The distinction from the
+	// nothing-derivable branch below is the honesty of the operator's row.
+	//
+	// Terminal, which is what earns Dismissed: re-running this fixer against the
+	// same locked field can only produce the same refusal, so leaving the row
+	// open gives the operator a live Fix button that does nothing every time
+	// they click it. Both dispatch paths honor it: Pipeline.FixViolation turns a
+	// Dismissed-and-not-Fixed result into DismissViolation on the row it loaded,
+	// and processAutoFixViolation persists the row at ViolationStatusDismissed
+	// rather than re-opening it every unattended pass.
+	//
+	// A DISMISS HERE IS UNRECOVERABLE, which is why the gate is this strict.
+	// UpsertViolation's ON CONFLICT preserves status='dismissed' (#1107) so no
+	// later evaluation reopens the row; ReopenViolation is a positive allow-list
+	// on 'resolved'; ReopenCollisionViolations is scoped to the backdrop-collision
+	// rule. There is no un-dismiss route for this row, so anything short of
+	// certain terminality must stay open.
+	//
+	// THREE CONDITIONS, ALL REQUIRED. len(filled) == 0 (a pass that wrote
+	// something is a real repair and takes the success path), len(refused) > 0
+	// (something was actually refused), and skippedNoRelation == 0 -- no field
+	// was left empty for a NON-terminal reason. That last one is the fix for the
+	// original defect: a field MusicBrainz has no relation for is still missing,
+	// still fixable upstream, and covered by this SAME violation, so dismissing
+	// on its behalf permanently hides a legitimate finding.
+	//
+	// It errs one way on purpose. The checker can narrow the required set
+	// (provider availability, RequiredProviderIDs) while this fixer iterates all
+	// three in-scope providers, so an unconfigured provider with no relation also
+	// blocks the dismiss. That leaves the row open when it could have closed,
+	// costing a Fix click; the inverse error costs the operator the finding.
+	if len(filled) == 0 && len(refused) > 0 && skippedNoRelation == 0 {
 		return &FixResult{
-			RuleID:  RuleProviderIDMissing,
-			Fixed:   false,
-			Message: fmt.Sprintf("no provider IDs could be derived from MusicBrainz relations for %s", a.Name),
+			RuleID:    RuleProviderIDMissing,
+			Fixed:     false,
+			Dismissed: true,
+			Message: fmt.Sprintf("provider ID backfill refused for %s: %s locked by the operator",
+				a.Name, strings.Join(refused, ", ")),
 		}, nil
 	}
 
+	if len(filled) == 0 {
+		// NOT terminal, so NOT dismissed: the row stays open. When a lock also
+		// refused something, say both -- an operator reading "nothing could be
+		// derived" alone would go looking upstream for a relation that a lock,
+		// not MusicBrainz, is what stopped.
+		msg := fmt.Sprintf("no provider IDs could be derived from MusicBrainz relations for %s", a.Name)
+		if len(refused) > 0 {
+			msg = fmt.Sprintf("%s (%s locked by the operator; the rest have no MusicBrainz relation yet)",
+				msg, strings.Join(refused, ", "))
+		}
+		return &FixResult{
+			RuleID:  RuleProviderIDMissing,
+			Fixed:   false,
+			Message: msg,
+		}, nil
+	}
+
+	// A PARTIAL BACKFILL REPORTS Fixed EVEN WITH A REFUSAL ALONGSIDE IT, on
+	// purpose. FixViolation then resolves the row while the pinned field is
+	// still empty, and the next evaluation re-raises it -- the safe direction of
+	// error, opposite the dismiss above, because 'resolved' is not sticky the
+	// way 'dismissed' is (#1107). Reporting Fixed=false instead would make a
+	// real repair look like a no-op and deny it a Recent Activity entry.
+	// `filled` holds only writes that landed, so the message never counts one
+	// the lock refused.
 	f.logger.Info("provider IDs backfilled by rule fixer",
 		slog.String("artist_id", a.ID),
 		slog.String("mbid", a.MusicBrainzID),

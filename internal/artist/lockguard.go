@@ -59,7 +59,10 @@ import (
 //
 // An operator's own edit of a pinned provider ID is NOT blocked: the field-edit
 // handler carries a field-scoped grant (see ContextWithLockOverride). Locks gate
-// automated writes.
+// automated writes. An ungranted single-field write to a pinned provider ID is
+// REFUSED by Service.UpdateProviderField before it reaches this chokepoint,
+// rather than restored here (see refuseIfFieldLocked); this file's
+// restore-and-continue is for the whole-row writers.
 //
 // THE SINGLE-COLUMN WRITE VERBS ARE NOT GUARDED. UpdateField, ClearField and
 // UpdateNameGuarded each write their own targeted SQL and never pass through
@@ -140,7 +143,7 @@ func ContextWithLockOverride(ctx context.Context, field string) context.Context 
 	// assume every future caller passes a validated name, so say so loudly
 	// rather than let a misspelling read as a grant.
 	if normalized != "" && !slices.Contains(lockGuardedFields, FieldName(normalized)) {
-		slog.Error("lock override names no guarded field; it authorizes nothing and the write will be reverted if that field is locked",
+		slog.Error("lock override names no guarded field; it authorizes nothing and the write will be refused or reverted if that field is locked",
 			"field", field)
 	}
 	return context.WithValue(ctx, lockOverrideKey, normalized)
@@ -233,12 +236,19 @@ func (s *Service) enforceLocksBeforeUpdate(ctx context.Context, stored, incoming
 // TestEnforceFieldLocks_ReturnsRestoredNamesInStableOrder so the contract is
 // tested here rather than assumed there.
 //
-// RESTORE-AND-CONTINUE rather than refuse. A whole-row persist has no natural
-// refusal: the caller handed over an entire artist, most of it legitimate.
-// Refusing would discard the unlocked changes too and turn every fixer into an
-// all-or-nothing write. No verb in this package refuses on a lock today:
-// UpdateProviderField is a whole-row write that lands here like any other, and
-// the operator's own edit through it carries a grant rather than a refusal.
+// RESTORE-AND-CONTINUE rather than refuse, and that is a property of THIS
+// function's shape, not a package-wide policy. A whole-row persist has no
+// natural refusal: the caller handed over an entire artist, most of it
+// legitimate. Refusing would discard the unlocked changes too and turn every
+// fixer into an all-or-nothing write.
+//
+// A SINGLE-FIELD VERB DOES REFUSE, because the tradeoff inverts there: the one
+// field it exists to write is the locked one, so restoring it silently means the
+// whole operation was reverted while the method returned nil.
+// Service.UpdateProviderField (and ClearProviderField through it) therefore
+// returns a *FieldLockedError before it ever reaches this function -- see
+// refuseIfFieldLocked. A write that gets here from that verb is one the operator
+// granted, or one on a field that is not locked.
 //
 // The incoming struct is mutated in place. That is the point: the caller
 // persists it, and its in-memory copy carries the protected value onward, so a

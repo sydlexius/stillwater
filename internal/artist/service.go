@@ -1609,16 +1609,25 @@ func (s *Service) ClearField(ctx context.Context, id, field string) (bool, error
 // ClearProviderField is unaffected: it calls through with "", which
 // ValidateFieldUpdate accepts because clearing a wrong ID is legitimate.
 //
-// A FIELD LOCK IS ENFORCED HERE, by way of Service.update. This method ends in a
-// whole-row persist, and provider IDs are in the chokepoint's guarded set, so a
-// rule writing a pinned ID has that write reverted like any other automated one.
+// A FIELD LOCK IS REFUSED HERE, with a *FieldLockedError matchable by
+// errors.Is(err, ErrFieldLocked). The refusal is what this method returns; the
+// persist chokepoint's restore-and-continue would also protect the stored value,
+// but only after this method had already returned nil and told its caller the
+// write landed. A single-field verb whose one field was reverted did nothing,
+// and must not report success (#3037). The chokepoint stays as the backstop for
+// the whole-row writers it was built for.
 //
-// The operator's own edit is NOT reverted: internal/api's field-edit handler
+// The operator's own edit is NOT refused: internal/api's field-edit handler
 // wraps the context with artist.ContextWithLockOverride for the one field being
 // edited. The grant is deliberately not applied here for every caller -- the
 // rule engine's provider-ID backfill calls this same method, and a field pinned
 // while EMPTY ("do not guess this one") is exactly what it would otherwise
 // fill.
+//
+// THE LOCK CHECK READS THE STORED ROW, so it runs after the GetByID below and
+// not from the caller's arguments. It is also after ValidateFieldUpdate, so a
+// malformed value on a locked field still reports the shape problem: an operator
+// carrying a grant gets the more actionable of the two answers.
 func (s *Service) UpdateProviderField(ctx context.Context, id, field, value string) error {
 	providerName, ok := providerFieldMap[field]
 	if !ok {
@@ -1631,6 +1640,15 @@ func (s *Service) UpdateProviderField(ctx context.Context, id, field, value stri
 
 	a, err := s.GetByID(ctx, id)
 	if err != nil {
+		return err
+	}
+
+	// BEFORE the in-memory mutation below, not after. A refusal after the fact
+	// still returns the error, but leaves the caller's *Artist carrying a value
+	// the operator was told was rejected -- and any later code reading that
+	// struct in the same request sees the write. Same ordering rule the API's
+	// refuseLockedProviderIDs states.
+	if err := s.refuseIfFieldLocked(ctx, a, field); err != nil {
 		return err
 	}
 
