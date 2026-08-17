@@ -15,16 +15,23 @@
 // still rendered, which is why the symptom looked like several unrelated
 // specs failing late rather than like an auth failure.
 //
-// The fix keys the path on the base URL. Two servers cannot share a port, so
-// two runs cannot collide, and every process derives the same path from the
-// same env with no handshake.
+// The fix keys the path on a DIGEST of the canonical server origin plus the
+// per-invocation run id, so distinct servers and distinct runs never share a
+// file while every process in ONE run derives the same path from the same env
+// with no handshake.
 //
 // WHAT THIS TEST PINS
 //
-// That two DIFFERENT server URLs produce two DIFFERENT storage-state paths,
-// and that the same URL is stable across imports (the config, globalSetup and
-// each worker process must all agree). Reverting to a fixed path fails the
-// first assertion.
+// That two DIFFERENT server URLs produce two DIFFERENT storage-state paths --
+// including URL pairs a character-substitution key COLLIDES on, which is what
+// the first implementation used ("a.b" vs "a-b", trailing slash vs none) --
+// and that the same URL under the same run id is stable across imports (the
+// config, globalSetup and each worker process must all agree). Reverting to a
+// fixed path, or back to the lossy substitution, fails these.
+//
+// The run-id component is pinned in a11y-global-setup-run-id.test.js, which
+// needs its own process to observe an UNSET SW_A11Y_SEEN_RUN_ID; the guards
+// inside globalSetup itself are pinned in a11y-global-setup-guards.test.js.
 //
 // The module is imported with a cache-busting query so each case observes a
 // fresh module-level evaluation of SW_PORT, matching what separate Playwright
@@ -34,6 +41,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// Pin the run id for this file. global-setup.js mints one only when the var is
+// unset (`||=`), so fixing it here holds the per-invocation component CONSTANT
+// and isolates the SERVER component, which is what every case below varies.
+process.env.SW_A11Y_SEEN_RUN_ID = 'unit-test-fixed-run-id';
 
 const GLOBAL_SETUP = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -83,16 +95,57 @@ test('the same server resolves to the same storage-state file across imports', a
   );
 });
 
-test('SW_TEST_URL and SW_PORT both key the path', async () => {
-  const viaURL = await storageStateFor({ url: 'http://127.0.0.1:40004' }, 'e');
-  const viaPort = await storageStateFor({ port: '40005' }, 'f');
+test('SW_TEST_URL keys the path, with SW_PORT unset', async () => {
+  // Two SW_TEST_URL values with NO SW_PORT set. The previous form of this test
+  // compared a URL-only case against a port-only one, which passes even if
+  // SW_TEST_URL is ignored entirely and the URL case falls back to the default
+  // port -- the two would still differ. Varying only SW_TEST_URL cannot.
+  const one = await storageStateFor({ url: 'http://127.0.0.1:40004' }, 'e');
+  const two = await storageStateFor({ url: 'http://127.0.0.1:40005' }, 'f');
 
-  assert.notEqual(viaURL, viaPort, 'SW_TEST_URL must key the path the same way SW_PORT does');
+  assert.notEqual(one, two, 'SW_TEST_URL does not key the path at all');
 
   // The path must stay inside the gitignored .auth dir and remain a plain
   // filename: a URL is interpolated into it, so any surviving separator or
   // colon would escape the directory or break on a case-insensitive FS.
-  const base = path.basename(viaURL);
+  const base = path.basename(one);
   assert.match(base, /^state-[A-Za-z0-9-]+\.json$/, `unsafe storage-state filename: ${base}`);
-  assert.equal(path.basename(path.dirname(viaURL)), '.auth');
+  assert.equal(path.basename(path.dirname(one)), '.auth');
+});
+
+test('SW_TEST_URL takes precedence over SW_PORT when both are set', async () => {
+  // playwright.config.js, bootstrap.js and global-setup.js each resolve
+  // `SW_TEST_URL || http://127.0.0.1:${SW_PORT}` independently. If the key
+  // disagreed about which wins, the config and globalSetup would derive
+  // different paths and the workers would load a file nothing wrote.
+  const both = await storageStateFor({ url: 'http://127.0.0.1:40006', port: '40007' }, 'g');
+  const urlOnly = await storageStateFor({ url: 'http://127.0.0.1:40006' }, 'h');
+  const portOnly = await storageStateFor({ port: '40007' }, 'i');
+
+  assert.equal(both, urlOnly, 'SW_TEST_URL must win over SW_PORT');
+  assert.notEqual(both, portOnly, 'SW_PORT keyed the path while SW_TEST_URL was set');
+});
+
+test('distinct hosts a lossy substitution collides on stay distinct', async () => {
+  // "a.b" and "a-b" are DIFFERENT valid hosts that map to ONE key under
+  // `BASE_URL.replace(/[^a-zA-Z0-9]+/g, '-')`, the first implementation. A
+  // collision means two servers share a state file and one run's rmSync
+  // deletes the other's session -- the exact defect this PR fixes.
+  const dotted = await storageStateFor({ url: 'http://a.b:40004' }, 'l');
+  const hyphen = await storageStateFor({ url: 'http://a-b:40004' }, 'm');
+
+  assert.ok(dotted && hyphen, 'STORAGE_STATE did not resolve for both hosts');
+  assert.notEqual(dotted, hyphen, 'a.b and a-b collide on one storage-state file');
+});
+
+test('a trailing slash names the SAME server and so the SAME file', async () => {
+  // The complement: the key digests the CANONICAL origin, so a cosmetic URL
+  // difference denoting one server must not fork into two files -- globalSetup
+  // writing one while the workers read the other is the same 401 by another
+  // route.
+  const bare = await storageStateFor({ url: 'http://127.0.0.1:8080' }, 'j');
+  const slash = await storageStateFor({ url: 'http://127.0.0.1:8080/' }, 'k');
+
+  assert.ok(bare && slash, 'STORAGE_STATE did not resolve for both URL forms');
+  assert.equal(bare, slash, 'a trailing slash forked one server into two state files');
 });

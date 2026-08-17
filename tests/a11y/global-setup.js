@@ -15,6 +15,7 @@
 
 import { request } from 'playwright/test';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -27,8 +28,20 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE_URL = process.env.SW_TEST_URL
   || `http://127.0.0.1:${process.env.SW_PORT || '1973'}`;
 
-// The storage-state path is keyed by the SERVER the session belongs to, not
-// fixed at `.auth/state.json` (#3057).
+// Per-invocation run id, read by the known-violation seen-marks
+// (helpers/known-violations.js) AND by the storage-state path below.
+//
+// At MODULE level, not inside globalSetup: STORAGE_STATE is a module-level
+// const that playwright.config.js imports, so the id must exist before it is
+// computed. The coordinator loads this module before globalSetup runs and
+// every worker is forked afterwards, inheriting the value through the
+// environment, so all of them derive the same paths with no handshake. `||=`
+// rather than a plain assign for the same reason: the config, globalSetup and
+// a spec each import this module and must not re-mint.
+process.env.SW_A11Y_SEEN_RUN_ID ||= newRunId();
+
+// The storage-state path is keyed by the SERVER the session belongs to AND by
+// this invocation, not fixed at `.auth/state.json` (#3057).
 //
 // A session cookie is only meaningful against the server that minted it:
 // `sessions` is a table in that server's own SQLite file, and
@@ -40,9 +53,9 @@ const BASE_URL = process.env.SW_TEST_URL
 // problem.
 //
 // `make test-a11y` picks a RANDOM FREE PORT and a fresh database per
-// invocation, so two runs from this checkout (a local one beside CI, two
-// worktree gates, a re-run started before the first finished) are two
-// different servers. With one fixed path the second run's globalSetup
+// invocation, so two runs FROM THE SAME CHECKOUT (a local one beside CI, or a
+// re-run started before the first finished) are two different servers sharing
+// one `.auth/` directory. With one fixed path the second run's globalSetup
 // overwrites the file the first run is still using, and Playwright re-reads
 // storageState FROM DISK at every context creation -- so the first run's
 // remaining tests all pick up a foreign session and 401. Measured: a run
@@ -50,39 +63,93 @@ const BASE_URL = process.env.SW_TEST_URL
 // onward, in file order, exactly the "several unrelated specs, all late"
 // shape.
 //
-// Keying on the base URL fixes it without any cross-process handshake: the
-// config, globalSetup and every worker process derive the same path from the
-// same env, and two servers can never share a port. This is the same hazard
-// SW_A11Y_SEEN_RUN_ID below was already made per-invocation to avoid; the
-// session file simply never got the same treatment.
-const serverKey = BASE_URL.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '');
+// Sibling WORKTREES are NOT a trigger and never were: this path is anchored to
+// path.dirname(fileURLToPath(import.meta.url)), so each checkout has its own
+// tests/a11y/.auth (verified: two live worktrees' .auth dirs are distinct
+// inodes). Only same-checkout runs share a directory.
+//
+// TWO components, because neither alone suffices:
+//
+//   - the SERVER, so a session is never presented to a server that did not
+//     mint it. A SHA-256 of the canonical ORIGIN, not a character
+//     substitution: `BASE_URL.replace(/[^a-zA-Z0-9]+/g, '-')` is lossy and
+//     collides on inputs that reach here in practice ("http://a.b:x" vs
+//     "http://a-b:x"). The readable prefix is only for eyeballing `ls .auth/`.
+//
+//   - the INVOCATION, because a port is unique at one INSTANT, not over time.
+//     Ports get recycled: run A boots on 55000, run A's server dies while its
+//     Playwright process is still mid-suite, run B's bind(0) draws 55000
+//     again, and run B's rmSync deletes the file run A is still reading. Run
+//     A's remaining contexts authenticate as nobody -- the original bug.
+//
+// So one invocation against one server always resolves to one path (which is
+// what lets the config, globalSetup and every worker agree), and two distinct
+// invocations never share a path whatever the ports did.
+//
+// Origin only: the URL parser normalizes away a trailing slash, a default port
+// and any path/query, so a cosmetic difference cannot fork one server into two
+// files. An unparsable SW_TEST_URL must still yield a path; the digest keeps
+// it unique and login fails loudly against it anyway.
+let canonicalBase = BASE_URL;
+try { canonicalBase = new URL(BASE_URL).origin; } catch { /* keep the raw value */ }
+
+const serverDigest = createHash('sha256')
+  .update(`${canonicalBase}\n${process.env.SW_A11Y_SEEN_RUN_ID}`)
+  .digest('hex')
+  .slice(0, 16);
+
+// Readable, and deliberately lossy (bounded, filename-safe). Two servers may
+// share it; the digest is what keeps the full filename distinct.
+const readable = canonicalBase
+  .replace(/^https?:\/\//, '')
+  .replace(/[^a-zA-Z0-9]+/g, '-')
+  .replace(/^-|-$/g, '')
+  .slice(0, 40);
 
 // Shared with playwright.config.js (`use.storageState`). Kept under the a11y
 // test dir and gitignored.
-export const STORAGE_STATE = path.join(dirname, '.auth', `state-${serverKey}.json`);
+export const STORAGE_STATE = path.join(
+  dirname, '.auth', `state-${readable}-${serverDigest}.json`,
+);
+
+// A per-invocation key means `.auth/` accumulates one file per run. Sweep
+// files older than a day -- far longer than any run (the tier is minutes), so
+// a CONCURRENT run's file is never a candidate, which is the one thing this
+// must not delete.
+const STATE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function pruneStaleStateFiles(dir, now = Date.now()) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return; // No directory yet: nothing to prune.
+  }
+  for (const name of entries) {
+    if (!/^state-.*\.json$/.test(name)) continue;
+    const file = path.join(dir, name);
+    try {
+      if (now - fs.statSync(file).mtimeMs < STATE_TTL_MS) continue;
+      fs.rmSync(file, { force: true });
+    } catch {
+      // A file another process removed between readdir and stat is the wanted
+      // outcome; anything else is housekeeping, never worth failing a run over.
+    }
+  }
+}
 
 export default async function globalSetup() {
   fs.mkdirSync(path.dirname(STORAGE_STATE), { recursive: true });
 
-  // Never inherit a previous run's file for this port. A globalSetup that
-  // died after mkdir but before storageState() would otherwise leave a state
-  // file naming a server that no longer exists, and the run would proceed on
-  // a dead session instead of failing at login. Removing it first means the
-  // only way a state file exists below is that THIS run wrote it.
+  // Never inherit a file at this path. With the run id in the key nothing else
+  // should have written here, so this is belt-and-braces against a globalSetup
+  // that died after mkdir but before storageState(): that leaves a state file
+  // naming a server that no longer exists, and the run proceeds on a dead
+  // session instead of failing at login. Removing it first means the only way
+  // a state file exists below is that THIS run wrote it.
   fs.rmSync(STORAGE_STATE, { force: true });
 
-  // Stamp a run id for the known-violation seen-marks BEFORE any worker starts.
-  //
-  // The marks cross the worker/coordinator process boundary through a file, and
-  // globalSetup is the only hook that runs exactly once per invocation, so this
-  // is the one place that can mint an id every later process agrees on. Workers
-  // and globalTeardown inherit it through the environment.
-  //
-  // Per-invocation rather than a fixed path: two runs from the same checkout (a
-  // local one beside CI) would otherwise share a file, and one clearing it
-  // mid-flight would make the other call a LIVE allowance stale. A fresh id also
-  // means there is nothing to reset -- the file cannot pre-exist.
-  process.env.SW_A11Y_SEEN_RUN_ID = newRunId();
+  pruneStaleStateFiles(path.dirname(STORAGE_STATE));
 
   const ctx = await request.newContext({ baseURL: BASE_URL });
   try {
