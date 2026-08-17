@@ -1137,32 +1137,25 @@ func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist
 		return out
 	}
 
-	// A TERMINAL, NOT-FIXED RESULT IS DISMISSED HERE TOO (#3037, F-4). This is
-	// the UNATTENDED path, so it is the one that matters most: without this
-	// branch every auto-mode pass re-attempts a fix that can only be refused
-	// again and re-persists the row as open, forever. Pipeline.FixViolation
-	// (the manual Fix button) has honored Dismissed for a while; that covers a
-	// human clicking a button, not the scheduled run.
+	// A TERMINAL, NOT-FIXED RESULT IS DISMISSED HERE TOO (#3037, F-4), and this
+	// is the path that matters most: without it every UNATTENDED pass re-attempts
+	// a fix that can only fail the same way and re-persists the row as open,
+	// forever. Pipeline.FixViolation has honored Dismissed for a while, but that
+	// covers a human clicking Fix, not the scheduled run.
 	//
-	// It writes a status rather than calling DismissViolation: this path has no
-	// row id in hand -- the row is addressed by (rule_id, artist_id) through
-	// UpsertViolation, which may not have created it yet on a first pass.
-	// Candidates are deliberately not carried: a terminal result has nothing
-	// for the operator to choose between, and a non-empty list would be
-	// persisted as a decision that will never be offered.
+	// It writes a status rather than calling DismissViolation because this path
+	// holds no row id -- the row is addressed by (rule_id, artist_id) and may not
+	// exist yet. Candidates are dropped: a terminal result offers no choice, and
+	// a stored list would be a decision that never gets presented.
 	//
-	// TWO UPSERTS, AND THE FIRST ONE IS LOAD-BEARING. UpsertViolation writes the
-	// paired rule_results FAIL row only for an open/pending row (#1107: a
-	// dismissed violation must not carry a fresh fail). Going straight to
-	// dismissed on a FIRST pass would therefore leave the artist with no
-	// rule_results row for this rule at all -- and every later pass preserves
-	// 'dismissed' and skips the row again, so it never appears. That is exactly
-	// the state offlineHealthScore refuses to score, and the artist's health
-	// would freeze permanently. Recording the open verdict first is honest on
-	// its own terms: the evaluation really did observe the rule failing, and the
-	// dismiss is a statement about the FIX being terminal, not about the rule
-	// passing. The second upsert then moves the row to dismissed and, seeing the
-	// stored status, correctly declines to write a second fail row.
+	// TWO UPSERTS, AND THE FIRST IS LOAD-BEARING. UpsertViolation writes the
+	// paired rule_results FAIL row only for an open/pending row (#1107). Going
+	// straight to dismissed on a FIRST pass would leave the artist with no row
+	// for this rule at all, and never get one, since every later pass preserves
+	// 'dismissed' -- exactly the state offlineHealthScore refuses to score, so
+	// the artist's health would freeze permanently. Recording the open verdict
+	// first is honest anyway: the evaluation did observe the rule failing, and
+	// the dismiss is a statement about the FIX, not about the rule passing.
 	if fr.Dismissed {
 		if !p.persistViolation(ctx, a, v, true, ViolationStatusOpen, nil, "terminal fix result baseline", startedAt) ||
 			!p.persistViolation(ctx, a, v, true, ViolationStatusDismissed, nil, "terminal fix result violation", startedAt) {

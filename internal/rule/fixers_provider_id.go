@@ -288,21 +288,19 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 	// rule. There is no un-dismiss route for this row, so anything short of
 	// certain terminality must stay open.
 	//
-	// THREE CONDITIONS, ALL REQUIRED:
-	//   - len(filled) == 0: a pass that wrote something is a real repair and
-	//     falls through to the success path, which reports only what landed.
-	//   - len(refused) > 0: something must actually have been refused.
-	//   - skippedNoRelation == 0: no field was left empty for a NON-terminal
-	//     reason. A field MusicBrainz had no relation for is still missing and
-	//     still fixable upstream, and it is covered by this same violation --
-	//     dismissing on its behalf permanently hides a legitimate finding.
+	// THREE CONDITIONS, ALL REQUIRED. len(filled) == 0 (a pass that wrote
+	// something is a real repair and takes the success path), len(refused) > 0
+	// (something was actually refused), and skippedNoRelation == 0 -- no field
+	// was left empty for a NON-terminal reason. That last one is the fix for the
+	// original defect: a field MusicBrainz has no relation for is still missing,
+	// still fixable upstream, and covered by this SAME violation, so dismissing
+	// on its behalf permanently hides a legitimate finding.
 	//
-	// The last condition is deliberately conservative in one direction: the
-	// checker can narrow the required set (provider availability, the rule's
-	// RequiredProviderIDs override) while this fixer iterates all three in-scope
-	// providers, so an unconfigured provider with no relation also blocks the
-	// dismiss. That leaves the row OPEN when it could have been closed, which
-	// costs the operator a Fix click; the inverse error costs them the finding.
+	// It errs one way on purpose. The checker can narrow the required set
+	// (provider availability, RequiredProviderIDs) while this fixer iterates all
+	// three in-scope providers, so an unconfigured provider with no relation also
+	// blocks the dismiss. That leaves the row open when it could have closed,
+	// costing a Fix click; the inverse error costs the operator the finding.
 	if len(filled) == 0 && len(refused) > 0 && skippedNoRelation == 0 {
 		return &FixResult{
 			RuleID:    RuleProviderIDMissing,
@@ -330,16 +328,14 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		}, nil
 	}
 
-	// A PARTIAL BACKFILL REPORTS Fixed, EVEN WITH A REFUSAL ALONGSIDE IT, and
-	// that is deliberate rather than an oversight. FixViolation then calls
-	// ResolveViolation while the pinned field is still empty, so the next
-	// evaluation re-raises the violation -- which is the CORRECT direction of
-	// error and the opposite of the dismiss above. Resolved is not terminal:
-	// UpsertViolation lets a resolved row go back to open, so the finding
-	// returns on its own. Reporting Fixed=false instead would deny the operator
-	// the Recent Activity entry for writes that genuinely landed, and would make
-	// a real repair look like a no-op. `filled` carries only the writes that
-	// landed, so the message never counts a refused field.
+	// A PARTIAL BACKFILL REPORTS Fixed EVEN WITH A REFUSAL ALONGSIDE IT, on
+	// purpose. FixViolation then resolves the row while the pinned field is
+	// still empty, and the next evaluation re-raises it -- the safe direction of
+	// error, opposite the dismiss above, because 'resolved' is not sticky the
+	// way 'dismissed' is (#1107). Reporting Fixed=false instead would make a
+	// real repair look like a no-op and deny it a Recent Activity entry.
+	// `filled` holds only writes that landed, so the message never counts one
+	// the lock refused.
 	f.logger.Info("provider IDs backfilled by rule fixer",
 		slog.String("artist_id", a.ID),
 		slog.String("mbid", a.MusicBrainzID),
