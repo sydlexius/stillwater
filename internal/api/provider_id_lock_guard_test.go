@@ -174,8 +174,9 @@ func TestWriteFieldLockRefusal(t *testing.T) {
 
 	t.Run("typed lock refusal renders 423 with the house body", func(t *testing.T) {
 		w := httptest.NewRecorder()
+		const wantReason = "the discogs_id field is locked; unlock it before changing this value"
 		err := fmt.Errorf("updating artist: %w",
-			&artist.FieldLockedError{Field: "discogs_id", Reason: "the discogs_id field is locked; unlock it before changing this value"})
+			&artist.FieldLockedError{Field: "discogs_id", Reason: wantReason})
 		if !r.writeFieldLockRefusal(w, "a1", err) {
 			t.Fatal("a wrapped *artist.FieldLockedError was not recognized; errors.As must see through a wrap")
 		}
@@ -192,9 +193,16 @@ func TestWriteFieldLockRefusal(t *testing.T) {
 		if body["error"] != "field_locked" || body["field"] != "discogs_id" {
 			t.Errorf("body = %+v, want error=field_locked field=discogs_id", body)
 		}
-		// The reason must be the typed literal, not the rendered chain -- a wrap
-		// can carry driver text or an id, which is exactly what a hand-authored
-		// Reason exists to keep out of a client response.
+		// The reason must be EXACTLY the typed literal, not merely absent the
+		// wrap prefix -- a changed, empty, or unrelated reason must fail this
+		// too, since the property under test is that the operator-facing text
+		// is the hand-authored FieldLockedError.Reason and nothing else.
+		if reason, _ := body["reason"].(string); reason != wantReason {
+			t.Errorf("reason = %q, want %q (the typed Reason, verbatim)", reason, wantReason)
+		}
+		// Kept alongside the equality check: it pins the SPECIFIC failure mode
+		// (the wrap's own prefix leaking through) with a message a maintainer
+		// can act on immediately, rather than a generic mismatch diff.
 		if reason, _ := body["reason"].(string); strings.Contains(reason, "updating artist") {
 			t.Errorf("reason = %q; it rendered the error chain instead of the typed Reason", reason)
 		}
