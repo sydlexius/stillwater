@@ -3299,3 +3299,71 @@ func TestPassesPostDownloadDimensionGate_BelowExisting(t *testing.T) {
 		t.Error("expected false when actual pixel count is below existing image")
 	}
 }
+
+// TestPipeline_ProcessAutoFixViolation_TerminalResultIsDismissed pins F-4 on
+// the UNATTENDED path (#3037). FixViolation (the manual Fix button) honored a
+// Dismissed-and-not-Fixed result; processAutoFixViolation read only fr.Fixed
+// and re-persisted the row as open, so an auto-mode rule re-attempted a
+// terminal fix every pass, forever. WIRES that misbehavior and asserts the
+// stored row is dismissed, running TWICE so a second pass cannot resurrect it.
+func TestPipeline_ProcessAutoFixViolation_TerminalResultIsDismissed(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Terminal Auto", SortName: "Terminal Auto", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	fixer := &mockFixer{
+		canFix: true,
+		result: &FixResult{RuleID: RuleProviderIDMissing, Fixed: false, Dismissed: true, Message: "locked by the operator"},
+	}
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	v := &Violation{RuleID: RuleProviderIDMissing, Fixable: true, Severity: "warning"}
+	for pass := 1; pass <= 2; pass++ {
+		out := pipeline.processAutoFixViolation(ctx, a, v, time.Now().UTC())
+		if out.fixed || out.resolvedRow != nil {
+			t.Fatalf("pass %d: a terminal not-fixed result must not report a fix: %+v", pass, out)
+		}
+		if out.persistFailed {
+			t.Fatalf("pass %d: persistFailed = true", pass)
+		}
+	}
+
+	dismissed, err := ruleSvc.ListViolations(ctx, ViolationStatusDismissed)
+	if err != nil {
+		t.Fatalf("listing dismissed: %v", err)
+	}
+	if len(dismissed) != 1 {
+		t.Fatalf("dismissed violations = %d, want 1; the auto path left the row open and will re-attempt forever", len(dismissed))
+	}
+	if dismissed[0].DismissedAt == nil {
+		t.Error("DismissedAt is nil; a hidden violation with no event time gives the operator no 'when'")
+	}
+	// A rule_results FAIL row must exist. UpsertViolation writes none for a
+	// dismissed violation (#1107), so a straight-to-dismissed first pass would
+	// leave the artist with NO row for this rule and never get one (every later
+	// pass preserves 'dismissed'). offlineHealthScore refuses to score an artist
+	// missing any eligible rule's row, so its health would freeze permanently.
+	rows, err := ruleSvc.GetRuleResultsForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reading rule results: %v", err)
+	}
+	var found bool
+	for i := range rows {
+		if rows[i].RuleID == RuleProviderIDMissing && !rows[i].Passed {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no failing rule_results row for %s; offlineHealthScore will refuse to score this artist forever", RuleProviderIDMissing)
+	}
+}
