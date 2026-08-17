@@ -989,6 +989,12 @@ func TestUpdateProviderField_OperatorGrantBeatsTheLock(t *testing.T) {
 	if strings.Contains(le.Reason, "rule-derived") || strings.Contains(le.Reason, a.ID) {
 		t.Errorf("FieldLockedError.Reason = %q; it must not carry the rejected value or the artist id", le.Reason)
 	}
+	// Error() must render the hand-authored Reason and NOTHING ELSE: any
+	// decoration added here (a wrapping prefix, a value suffix) is an outward
+	// leak the Reason assertion above cannot see.
+	if le.Error() != le.Reason {
+		t.Errorf("Error() = %q, want exactly Reason %q; it is rendered to operators verbatim", le.Error(), le.Reason)
+	}
 	mid, err := svc.GetByID(ctx, a.ID)
 	if err != nil {
 		t.Fatalf("reloading: %v", err)
@@ -1213,5 +1219,60 @@ func TestUpdateProviderField_UnlockedFieldIsUnaffected(t *testing.T) {
 	}
 	if after.DiscogsID != "dg-new" {
 		t.Errorf("discogs_id = %q, want dg-new; an unlocked field must still be writable", after.DiscogsID)
+	}
+}
+
+// TestUpdateProviderField_GrantIsPerField is the teeth on the most load-bearing
+// property in refuseIfFieldLocked: the grant authorizes the field it NAMES and
+// only that field. Mutating the scoped compare to "any grant authorizes any
+// field" previously left internal/artist, internal/api and internal/rule green.
+//
+// The grant is not a request-level "the operator is driving" flag.
+// ContextWithLockOverride's own comment says a blanket bypass would be wrong
+// because the rule backfill calls this same method: an operator editing
+// spotify_id must not hand a fixer in that context a license over discogs_id.
+func TestUpdateProviderField_GrantIsPerField(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newTestDB(t))
+
+	a := &Artist{Name: "Scoped Grant"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"discogs_id", "spotify_id"}); err != nil {
+		t.Fatalf("locking: %v", err)
+	}
+	// PRECONDITION on the STORED row (the only source refuseIfFieldLocked
+	// consults). spotify_id is asserted explicitly because the positive control
+	// below would pass on an UNLOCKED field and prove nothing; discogs_id needs
+	// no such assertion, since the negative arm demands ErrFieldLocked and can
+	// only get it from a real lock.
+	seeded, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if !svc.IsFieldLocked(seeded, FieldSpotifyID) {
+		t.Fatal("precondition: spotify_id is not pinned, so the grant arm proves nothing")
+	}
+
+	// The grant names spotify_id. The write targets discogs_id.
+	granted := ContextWithLockOverride(ctx, "spotify_id")
+	if err := svc.UpdateProviderField(granted, a.ID, "discogs_id", "dg-smuggled"); !errors.Is(err, ErrFieldLocked) {
+		t.Fatalf("UpdateProviderField(discogs_id) under a spotify_id grant err = %v, want ErrFieldLocked; a grant must not authorize a field it does not name", err)
+	}
+	// POSITIVE CONTROL: the same grant DOES authorize the field it names, so a
+	// refusal that ignored the grant entirely cannot pass this test.
+	if err := svc.UpdateProviderField(granted, a.ID, "spotify_id", "sp-granted"); err != nil {
+		t.Fatalf("UpdateProviderField(spotify_id) under its own grant: %v", err)
+	}
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading: %v", err)
+	}
+	if after.DiscogsID != "" {
+		t.Errorf("discogs_id = %q, want it untouched by an out-of-scope grant", after.DiscogsID)
+	}
+	if after.SpotifyID != "sp-granted" {
+		t.Errorf("spotify_id = %q, want sp-granted; the grant must still work for the field it names", after.SpotifyID)
 	}
 }

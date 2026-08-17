@@ -199,6 +199,13 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 	// "the operator pinned these" from "MusicBrainz had no relation" -- two very
 	// different things to show an operator, and only one of them terminal.
 	var refused []string
+	// skippedNoRelation counts the fields that are STILL EMPTY and were never
+	// attempted, because MusicBrainz carried no relation to derive them from.
+	// It is what makes the Dismissed branch below safe: those fields are part
+	// of the same violation and are NOT terminal (adding the relation upstream
+	// fixes them), so a pass that refused one field and skipped another must
+	// not close the row. See that branch for why closing it is unrecoverable.
+	skippedNoRelation := 0
 	for _, name := range inScopeProviderIDs {
 		current := strings.TrimSpace(providerIDForName(a, name))
 		if current != "" {
@@ -206,6 +213,7 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		}
 		derived := strings.TrimSpace(derivedFor(name))
 		if derived == "" {
+			skippedNoRelation++
 			continue // no relation to backfill from
 		}
 		field := providerIDBackfillField[name]
@@ -258,21 +266,41 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		filled = append(filled, string(name))
 	}
 
-	// EVERY WRITE REFUSED, AND NOTHING ELSE TO DO: report the violation as
+	// EVERY EMPTY FIELD THIS VIOLATION COVERS WAS REFUSED: report it as
 	// DISMISSED rather than open (#3037, F-4). The distinction from the
 	// nothing-derivable branch below is the honesty of the operator's row.
 	//
 	// Terminal, which is what earns Dismissed: re-running this fixer against the
 	// same locked field can only produce the same refusal, so leaving the row
 	// open gives the operator a live Fix button that does nothing every time
-	// they click it. Pipeline.FixViolation already turns a Dismissed-and-not-
-	// Fixed result into DismissViolation, so nothing further is needed there.
+	// they click it. Both dispatch paths honor it: Pipeline.FixViolation turns a
+	// Dismissed-and-not-Fixed result into DismissViolation on the row it loaded,
+	// and processAutoFixViolation persists the row at ViolationStatusDismissed
+	// rather than re-opening it every unattended pass.
 	//
-	// SCOPED TO "refused AND filled nothing". A pass that filled one ID and had
-	// another refused falls through to the success path below and reports the one
-	// it actually wrote -- a partial backfill is a real repair, and `filled`
-	// carries only the writes that landed.
-	if len(filled) == 0 && len(refused) > 0 {
+	// A DISMISS HERE IS UNRECOVERABLE, which is why the gate is this strict.
+	// UpsertViolation's ON CONFLICT preserves status='dismissed' (#1107) so no
+	// later evaluation reopens the row; ReopenViolation is a positive allow-list
+	// on 'resolved'; ReopenCollisionViolations is scoped to the backdrop-collision
+	// rule. There is no un-dismiss route for this row, so anything short of
+	// certain terminality must stay open.
+	//
+	// THREE CONDITIONS, ALL REQUIRED:
+	//   - len(filled) == 0: a pass that wrote something is a real repair and
+	//     falls through to the success path, which reports only what landed.
+	//   - len(refused) > 0: something must actually have been refused.
+	//   - skippedNoRelation == 0: no field was left empty for a NON-terminal
+	//     reason. A field MusicBrainz had no relation for is still missing and
+	//     still fixable upstream, and it is covered by this same violation --
+	//     dismissing on its behalf permanently hides a legitimate finding.
+	//
+	// The last condition is deliberately conservative in one direction: the
+	// checker can narrow the required set (provider availability, the rule's
+	// RequiredProviderIDs override) while this fixer iterates all three in-scope
+	// providers, so an unconfigured provider with no relation also blocks the
+	// dismiss. That leaves the row OPEN when it could have been closed, which
+	// costs the operator a Fix click; the inverse error costs them the finding.
+	if len(filled) == 0 && len(refused) > 0 && skippedNoRelation == 0 {
 		return &FixResult{
 			RuleID:    RuleProviderIDMissing,
 			Fixed:     false,
@@ -283,10 +311,19 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 	}
 
 	if len(filled) == 0 {
+		// NOT terminal, so NOT dismissed: the row stays open. When a lock also
+		// refused something, say both -- an operator reading "nothing could be
+		// derived" alone would go looking upstream for a relation that a lock,
+		// not MusicBrainz, is what stopped.
+		msg := fmt.Sprintf("no provider IDs could be derived from MusicBrainz relations for %s", a.Name)
+		if len(refused) > 0 {
+			msg = fmt.Sprintf("%s (%s locked by the operator; the rest have no MusicBrainz relation yet)",
+				msg, strings.Join(refused, ", "))
+		}
 		return &FixResult{
 			RuleID:  RuleProviderIDMissing,
 			Fixed:   false,
-			Message: fmt.Sprintf("no provider IDs could be derived from MusicBrainz relations for %s", a.Name),
+			Message: msg,
 		}, nil
 	}
 

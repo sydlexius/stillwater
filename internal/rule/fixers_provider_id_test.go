@@ -420,3 +420,40 @@ type failingUpdater struct{}
 func (failingUpdater) UpdateProviderField(_ context.Context, _, _, _ string) error {
 	return errors.New("database is unavailable")
 }
+
+// TestProviderIDBackfill_LockedPlusNoRelationStaysOpen guards the Dismissed
+// branch's THIRD condition (skippedNoRelation == 0). The lock refused the only
+// field with a relation, while deezer and spotify are empty for a NON-terminal
+// reason -- MusicBrainz has no relation yet, and adding one upstream fixes
+// them. Dismissing on their behalf is unrecoverable (#1107 preserves
+// 'dismissed'; ReopenViolation only accepts 'resolved'), so one Fix click would
+// permanently hide a legitimate finding.
+func TestProviderIDBackfill_LockedPlusNoRelationStaysOpen(t *testing.T) {
+	fetcher := &stubMetadataProvider{metadata: &provider.ArtistMetadata{
+		URLs: map[string]string{"discogs": "https://www.discogs.com/artist/24941"},
+	}}
+	updater := &lockingUpdater{locked: map[string]bool{"discogs_id": true}}
+	f := NewProviderIDBackfillFixer(fetcher, updater, testLogger())
+
+	a := &artist.Artist{ID: "a1", Name: "Pinned And Unrelated", MusicBrainzID: "mbid-abc"}
+	res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleProviderIDMissing})
+	if err != nil {
+		t.Fatalf("Fix returned error: %v", err)
+	}
+	// PRECONDITION: the fixture really does leave two fields empty-with-no-relation,
+	// or the assertion below passes for the wrong reason.
+	if a.DeezerID != "" || a.SpotifyID != "" {
+		t.Fatalf("precondition: deezer=%q spotify=%q, want both still empty", a.DeezerID, a.SpotifyID)
+	}
+	if res.Dismissed {
+		t.Errorf("Dismissed=true while deezer/spotify are still missing and still fixable upstream; the dismiss is permanent and would hide them")
+	}
+	if res.Fixed {
+		t.Errorf("Fixed=true with nothing written: %+v", res)
+	}
+	// The operator must be told the lock is why discogs was skipped, or they go
+	// hunting upstream for a relation that was found and refused.
+	if !strings.Contains(res.Message, "discogs_id") {
+		t.Errorf("message %q does not name the refused field", res.Message)
+	}
+}

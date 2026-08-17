@@ -67,9 +67,15 @@ type StateProducer interface {
 
 // FixResult describes the outcome of a fix attempt.
 type FixResult struct {
-	RuleID       string           `json:"rule_id"`
-	Fixed        bool             `json:"fixed"`
-	Dismissed    bool             `json:"dismissed,omitempty"` // true when violation was auto-dismissed (e.g. orphaned artist)
+	RuleID string `json:"rule_id"`
+	Fixed  bool   `json:"fixed"`
+	// Dismissed reports a TERMINAL outcome that changed nothing: re-running the
+	// fixer can only produce the same answer (the artist is gone; every field
+	// the violation covers is pinned). Both dispatch paths persist it --
+	// FixViolation via DismissViolation, processAutoFixViolation via a
+	// ViolationStatusDismissed upsert -- and a dismiss is NOT reversible by a
+	// later evaluation (#1107), so a fixer sets it only when it is certain.
+	Dismissed    bool             `json:"dismissed,omitempty"`
 	Message      string           `json:"message"`
 	Candidates   []ImageCandidate `json:"candidates,omitempty"` // set when multiple candidates need user selection
 	SavedPath    string           `json:"-"`                    // set by image fixers for post-Update provenance recording
@@ -1092,11 +1098,12 @@ func (p *Pipeline) processManualViolation(ctx context.Context, a *artist.Artist,
 
 // processAutoFixViolation is the auto-automation strategy: persist
 // unfixable violations as open, attempt fixes on fixable ones, defer
-// resolved-status upserts per #983, and emit Recent Activity history per
-// #1106. Returns the delta that runForArtistFiltered merges into its
-// per-artist accumulator -- crucially, a non-nil resolvedRow when a fix
-// succeeded so the orchestrator can stamp Resolved only AFTER
-// updateHealthScore persists the artist (the load-bearing #983 ordering).
+// resolved-status upserts per #983, persist a TERMINAL not-fixed result as
+// dismissed (#3037), and emit Recent Activity history per #1106. Returns the
+// delta that runForArtistFiltered merges into its per-artist accumulator --
+// crucially, a non-nil resolvedRow when a fix succeeded so the orchestrator
+// can stamp Resolved only AFTER updateHealthScore persists the artist (the
+// load-bearing #983 ordering).
 func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist, v *Violation, startedAt time.Time) violationOutcome {
 	if !v.Fixable {
 		ok := p.persistViolation(ctx, a, v, false, ViolationStatusOpen, nil, "unfixable violation", startedAt)
@@ -1130,6 +1137,40 @@ func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist
 		return out
 	}
 
+	// A TERMINAL, NOT-FIXED RESULT IS DISMISSED HERE TOO (#3037, F-4). This is
+	// the UNATTENDED path, so it is the one that matters most: without this
+	// branch every auto-mode pass re-attempts a fix that can only be refused
+	// again and re-persists the row as open, forever. Pipeline.FixViolation
+	// (the manual Fix button) has honored Dismissed for a while; that covers a
+	// human clicking a button, not the scheduled run.
+	//
+	// It writes a status rather than calling DismissViolation: this path has no
+	// row id in hand -- the row is addressed by (rule_id, artist_id) through
+	// UpsertViolation, which may not have created it yet on a first pass.
+	// Candidates are deliberately not carried: a terminal result has nothing
+	// for the operator to choose between, and a non-empty list would be
+	// persisted as a decision that will never be offered.
+	//
+	// TWO UPSERTS, AND THE FIRST ONE IS LOAD-BEARING. UpsertViolation writes the
+	// paired rule_results FAIL row only for an open/pending row (#1107: a
+	// dismissed violation must not carry a fresh fail). Going straight to
+	// dismissed on a FIRST pass would therefore leave the artist with no
+	// rule_results row for this rule at all -- and every later pass preserves
+	// 'dismissed' and skips the row again, so it never appears. That is exactly
+	// the state offlineHealthScore refuses to score, and the artist's health
+	// would freeze permanently. Recording the open verdict first is honest on
+	// its own terms: the evaluation really did observe the rule failing, and the
+	// dismiss is a statement about the FIX being terminal, not about the rule
+	// passing. The second upsert then moves the row to dismissed and, seeing the
+	// stored status, correctly declines to write a second fail row.
+	if fr.Dismissed {
+		if !p.persistViolation(ctx, a, v, true, ViolationStatusOpen, nil, "terminal fix result baseline", startedAt) ||
+			!p.persistViolation(ctx, a, v, true, ViolationStatusDismissed, nil, "terminal fix result violation", startedAt) {
+			out.persistFailed = true
+		}
+		return out
+	}
+
 	status := ViolationStatusOpen
 	if len(fr.Candidates) > 0 {
 		status = ViolationStatusPendingChoice
@@ -1158,6 +1199,16 @@ func (p *Pipeline) persistViolation(ctx context.Context, a *artist.Artist, v *Vi
 		// order is exactly what cannot be trusted -- a long pass commits after
 		// a short one that started later, while carrying the older verdict.
 		EvaluatedAt: startedAt,
+	}
+	// A dismissed row needs its event time, or the operator sees a hidden
+	// violation with no "when". DismissedAt is an EVENT time, so it is
+	// wall-clock now, not startedAt (which is an ordering key) -- the same
+	// split finalizeResolvedRows makes for ResolvedAt. Only set on the way IN
+	// to dismissed: UpsertViolation preserves the stored dismissed_at when the
+	// row was already dismissed (#1107), so a re-dismiss never re-stamps it.
+	if status == ViolationStatusDismissed {
+		now := time.Now().UTC()
+		rv.DismissedAt = &now
 	}
 	if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 		p.logger.Warn("persisting "+logCtx, "rule_id", v.RuleID, "artist", a.Name, "error", err)
