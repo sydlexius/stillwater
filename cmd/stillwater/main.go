@@ -1850,9 +1850,12 @@ func databaseHasEncryptedSecrets(dbPath string) (bool, error) {
 		return false, nil // freshly created, no schema or rows yet
 	}
 
-	// Read-only DSN: mode=ro forbids any write, so probing the DB cannot alter
-	// it.
-	db, err := sql.Open("sqlite", dbPath+"?mode=ro&_pragma=busy_timeout(2000)")
+	// Read-only DSN. The file: prefix is LOAD-BEARING: modernc's driver
+	// honors mode=ro only in URI form -- without the prefix the parameter is
+	// silently ignored and the handle opens READ-WRITE (verified against the
+	// driver; see the dry run's opener in lock_damage_repair.go for the
+	// enforcement test). With it, probing the DB cannot alter it.
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro&_pragma=busy_timeout(2000)")
 	if err != nil {
 		return false, fmt.Errorf("opening database read-only: %w", err)
 	}
