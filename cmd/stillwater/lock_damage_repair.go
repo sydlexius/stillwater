@@ -155,11 +155,19 @@ func printLockDamageReport(out io.Writer, res *maintenance.LockDamageResult) {
 // key is an optimization only: a restore writes a source="revert" row that
 // drops the pair from the damage query, so a second pass selects nothing on
 // its own merits even with the key absent.
+//
+// a.lockDamageRepairDone is set here and closed when the goroutine returns
+// (#3088), so drainLockDamageRepair in main.go's shutdown sequence has
+// something to wait on. It stays nil when the completion key already gated
+// the pass off -- there is nothing running, so nothing to drain.
 func (a *Application) startLockDamageRepair(ctx context.Context, db *sql.DB, logger *slog.Logger) {
 	if getDBStringSetting(ctx, db, lockDamageRepairKey, "") != "" {
 		return
 	}
+	done := make(chan struct{})
+	a.lockDamageRepairDone = done
 	go func() {
+		defer close(done)
 		defer func() {
 			if r := recover(); r != nil {
 				// Log the TYPE, never the recovered value. A panic from the
@@ -172,6 +180,46 @@ func (a *Application) startLockDamageRepair(ctx context.Context, db *sql.DB, log
 		}()
 		runLockDamageRepairPass(ctx, db, logger, a.maintenanceService)
 	}()
+}
+
+// drainLockDamageRepair waits for the locked-field damage repair goroutine to
+// finish, or for ctx to expire, whichever comes first (#3088).
+//
+// WHY THIS EXISTS. Nothing tracked the goroutine before this: run()'s
+// deferred db.Close() could fire while the pass was still querying, and worse,
+// while RestoreLockedFieldGuarded was between its transaction commit and a
+// separate best-effort history insert -- a window that produced a restored
+// field with no history row to explain it. #3088 closes THAT split by moving
+// the history insert inside the same transaction (see
+// internal/artist/lock_restore.go), so this drain no longer needs to protect
+// that specific window. It still exists for the same reason
+// dupimages.Cache.Drain and the webhook drains exist: db.Close() firing under
+// a still-running query is its own hazard (a query against a closed *sql.DB
+// returns sql.ErrConnDone, logged as an unexplained failure on the next
+// boot's retry), and letting a background query outlive shutdown at all is
+// something every other worker in this sequence is drained against.
+//
+// Called from the same slot the webhook and duplicate-image drains occupy:
+// after the listeners have drained (so nothing new can start -- this is a
+// one-shot pass anyway, gated by the completion key, so it can never be
+// re-triggered) and before db.Close(). The shared ctx is already canceled by
+// stop() before this runs, and RepairLockDamage checks ctx.Err() between
+// candidates (internal/maintenance/lock_damage_repair.go), so a well-behaved
+// pass aborts almost immediately -- the deadline below exists only to bound a
+// pass wedged in non-context-aware I/O (a slow disk read inside GetByID, for
+// instance) so it cannot hang shutdown forever.
+func (a *Application) drainLockDamageRepair(ctx context.Context) error {
+	if a.lockDamageRepairDone == nil {
+		// Never started (the completion key already gated it off) or startup
+		// never reached startLockDamageRepair at all.
+		return nil
+	}
+	select {
+	case <-a.lockDamageRepairDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // runLockDamageRepairPass runs one repair pass and decides whether to record

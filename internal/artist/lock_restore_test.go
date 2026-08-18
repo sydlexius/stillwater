@@ -290,6 +290,41 @@ func TestRestoreLockedFieldGuarded_FailureBranches(t *testing.T) {
 			t.Errorf("biography = %q, want it untouched", got)
 		}
 	})
+
+	t.Run("a history-insert failure rolls back the artist write too (#3088)", func(t *testing.T) {
+		// This is the atomicity guarantee #3088 adds: before the fix, the
+		// artist UPDATE and the metadata_changes INSERT were two separate
+		// statements (the artist write committed, then a best-effort history
+		// insert followed). A trigger that refuses every insert into
+		// metadata_changes proves the two now share one transaction --
+		// without the fix this trigger would fire AFTER the artist row had
+		// already committed, so the biography would read "curated bio" with
+		// no history row to explain it. With the fix, the whole transaction
+		// rolls back and the stored value is untouched.
+		env := newLockRestoreEnv(t)
+		env.seedArtist("a1", "Artist", "junk bio", `["biography"]`)
+		if _, err := env.db.Exec(
+			`CREATE TRIGGER refuse_history_insert BEFORE INSERT ON metadata_changes
+			 BEGIN SELECT RAISE(ABORT, 'refused by test trigger'); END`); err != nil {
+			t.Fatalf("creating trigger: %v", err)
+		}
+		_, err := env.svc.RestoreLockedFieldGuarded(context.Background(), "a1", "biography", "junk bio", "curated bio")
+		if err == nil {
+			t.Fatal("want the history trigger's refusal surfaced as an error")
+		}
+		if got := env.biography(); got != "junk bio" {
+			t.Errorf("biography = %q, want the artist write rolled back with the failed history insert", got)
+		}
+		var n int
+		if err := env.db.QueryRow(
+			`SELECT COUNT(*) FROM metadata_changes WHERE artist_id = 'a1' AND field = 'biography'`).
+			Scan(&n); err != nil {
+			t.Fatalf("counting history rows: %v", err)
+		}
+		if n != 0 {
+			t.Errorf("history rows = %d, want 0 -- no partial history row from the rolled-back transaction", n)
+		}
+	})
 }
 
 // noDBRepo wraps a Repository and hides any DB accessor, standing in for a

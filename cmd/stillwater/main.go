@@ -204,6 +204,15 @@ type Application struct {
 	i18nBundle          *i18n.Bundle
 	router              *api.Router
 
+	// lockDamageRepairDone is closed by startLockDamageRepair's goroutine
+	// when the one-shot pass returns, tracking the ONLY background worker
+	// (#3088) that startListeners launches with no other way to observe
+	// completion. nil until startLockDamageRepair runs; a shutdown that
+	// races the very first line of startListeners (nothing started yet)
+	// finds it nil and skips the drain rather than blocking on a channel
+	// that will never close. See drainLockDamageRepair.
+	lockDamageRepairDone chan struct{}
+
 	// Testing seams: override these via functional options before calling run phases.
 	encKeyResolver func(cfg *config.Config, logger *slog.Logger) (string, error)
 	dbOpener       func(path string) (*sql.DB, error)
@@ -1491,6 +1500,20 @@ func (a *Application) startListeners() error {
 	defer dupDrainCancel()
 	if err := dupimages.Shared().Drain(dupDrainCtx); err != nil {
 		logger.Warn("duplicate-image refresh drain did not complete cleanly", slog.String("error", err.Error()))
+	}
+
+	// Drain the one-shot locked-field damage repair goroutine (#3088). Same
+	// slot as the drains above, and the same short deadline reasoning: stop()
+	// has already canceled ctx and the repair pass checks ctx.Err() between
+	// candidates, so a well-behaved pass aborts almost immediately. The bound
+	// only stops a pass wedged in non-context-aware I/O from holding up
+	// shutdown. See drainLockDamageRepair for why this drain still matters
+	// even though #3088 also closed the commit/history-insert split at its
+	// source (internal/artist/lock_restore.go).
+	lockDamageDrainCtx, lockDamageDrainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer lockDamageDrainCancel()
+	if err := a.drainLockDamageRepair(lockDamageDrainCtx); err != nil {
+		logger.Warn("locked-field damage repair drain did not complete cleanly", slog.String("error", err.Error()))
 	}
 
 	// Stop the scanner -- the listener layer has drained, so no new scan

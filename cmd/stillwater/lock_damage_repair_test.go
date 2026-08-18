@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -749,5 +752,146 @@ func TestLockDamageDryRunDB_SurfacesQueryError(t *testing.T) {
 	var out bytes.Buffer
 	if err := lockDamageDryRunDB(context.Background(), db, &out); err == nil {
 		t.Fatal("lockDamageDryRunDB returned nil error against an unmigrated database")
+	}
+}
+
+// blockingHistoryRepo wraps a real HistoryRepository and makes
+// LockDamageCandidates block on release, signaling entered exactly once
+// (sync.Once) the instant it is called. Used to prove the repair goroutine is
+// GENUINELY in flight before a drain is exercised against it -- without this,
+// a drain test that merely calls startLockDamageRepair then immediately
+// drains cannot tell "the drain waited for a real pass" apart from "the pass
+// had already finished before the drain even started" (#3088 review note:
+// assert the fixture's defining property before trusting what the test
+// reports).
+type blockingHistoryRepo struct {
+	artist.HistoryRepository
+	entered chan struct{}
+	release <-chan struct{}
+	once    sync.Once
+}
+
+func (b *blockingHistoryRepo) LockDamageCandidates(ctx context.Context) ([]artist.LockDamageCandidate, error) {
+	b.once.Do(func() { close(b.entered) })
+	<-b.release
+	return b.HistoryRepository.LockDamageCandidates(ctx)
+}
+
+// TestDrainLockDamageRepair_WaitsForAnInFlightPass proves drainLockDamageRepair
+// (#3088) genuinely blocks on a running repair goroutine and returns only
+// after it finishes, rather than returning immediately regardless of state.
+//
+// Non-vacuity: <-entered blocks the test itself until the repair goroutine's
+// first database read has actually started, so by the time drain is called
+// the pass provably has NOT already completed. Ordering, not timing, is what
+// is asserted: runtime.Gosched gives the drain goroutine a chance to run, a
+// non-blocking receive proves it has NOT returned while the pass is still
+// held on release (this would catch a drain that no-ops and returns
+// immediately -- the actual bug #3088 fixes), then closing release lets both
+// the pass and the drain complete, observed via blocking channel receives
+// with a generous bound, never a fixed sleep duration.
+func TestDrainLockDamageRepair_WaitsForAnInFlightPass(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	seedLockDamageFixture(t, ctx, db)
+
+	artistSvc := artist.NewService(db)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	maint := maintenance.NewService(db, "", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	blocking := &blockingHistoryRepo{HistoryRepository: hist.Repo(), entered: entered, release: release}
+	maint.SetLockDamageDeps(blocking, artistSvc)
+
+	app := &Application{maintenanceService: maint}
+	app.startLockDamageRepair(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// Block until the pass has genuinely started reading candidates.
+	<-entered
+
+	drainDone := make(chan error, 1)
+	go func() { drainDone <- app.drainLockDamageRepair(context.Background()) }()
+
+	// Give the drain goroutine a chance to run, then confirm it has NOT
+	// returned while the pass is still held open. This is the assertion that
+	// catches a no-op drain: without a real wait, drainDone would already
+	// have a value here.
+	for range 100 {
+		runtime.Gosched()
+	}
+	select {
+	case err := <-drainDone:
+		t.Fatalf("drainLockDamageRepair returned (err=%v) before the in-flight pass finished", err)
+	default:
+	}
+
+	// Release the pass and confirm both it and the drain complete.
+	close(release)
+
+	select {
+	case err := <-drainDone:
+		if err != nil {
+			t.Fatalf("drainLockDamageRepair: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("drainLockDamageRepair did not return after the pass was released")
+	}
+
+	select {
+	case <-app.lockDamageRepairDone:
+		// closed, as expected
+	default:
+		t.Error("lockDamageRepairDone was not closed by the time drain returned nil")
+	}
+}
+
+// TestDrainLockDamageRepair_CanceledContextReturnsPromptly proves the
+// deadline path: a context that is ALREADY canceled makes drain return
+// ctx.Err() without waiting for the in-flight pass, so a wedged pass cannot
+// hang shutdown forever. Uses cancellation rather than a wall-clock timeout
+// to stay deterministic (a real short deadline racing goroutine scheduling
+// under load is exactly the flaky pattern issue #2630 warns against).
+func TestDrainLockDamageRepair_CanceledContextReturnsPromptly(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	seedLockDamageFixture(t, ctx, db)
+
+	artistSvc := artist.NewService(db)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	maint := maintenance.NewService(db, "", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	blocking := &blockingHistoryRepo{HistoryRepository: hist.Repo(), entered: entered, release: release}
+	maint.SetLockDamageDeps(blocking, artistSvc)
+
+	app := &Application{maintenanceService: maint}
+	app.startLockDamageRepair(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	<-entered // genuinely in flight, never released within this test
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	drainErr := app.drainLockDamageRepair(canceledCtx)
+	if !errors.Is(drainErr, context.Canceled) {
+		t.Fatalf("drainLockDamageRepair error = %v, want context.Canceled", drainErr)
+	}
+
+	// Clean up the still-blocked goroutine so it does not leak past the test.
+	close(release)
+	<-app.lockDamageRepairDone
+}
+
+// TestDrainLockDamageRepair_NilChannelReturnsImmediately covers the startup
+// race #3088's comment on lockDamageRepairDone documents: a shutdown that
+// lands before startLockDamageRepair ever ran (or after the completion key
+// already gated it off) must not block on a channel nothing will ever close.
+func TestDrainLockDamageRepair_NilChannelReturnsImmediately(t *testing.T) {
+	app := &Application{}
+	if err := app.drainLockDamageRepair(context.Background()); err != nil {
+		t.Fatalf("drainLockDamageRepair on a never-started repair: %v", err)
 	}
 }

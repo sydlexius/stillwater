@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // lock_restore.go -- the guarded write verb for the locked-field damage
@@ -68,8 +69,13 @@ const (
 // caller classifies them via errors.Is(err, ErrInvalidFieldValue) /
 // errors.Is(err, ErrNameCollision).
 //
-// On success a history row is recorded (best-effort, matching UpdateField)
-// with the source carried by ctx.
+// On success a history row is recorded ATOMICALLY, inside the same
+// transaction as the artist write (#3088) -- unlike UpdateField's best-effort,
+// post-commit history write. A history-insert failure here fails the whole
+// restore with the transaction rolled back, rather than leaving the artist
+// row restored with no record it happened. See the comment above the insert
+// for why this verb's contract differs from UpdateField's. The source is
+// carried by ctx.
 func (s *Service) RestoreLockedFieldGuarded(ctx context.Context, id, field, damagedValue, restoreValue string) (LockedFieldRestoreOutcome, error) {
 	if err := ValidateFieldUpdate(field, restoreValue); err != nil {
 		return 0, err
@@ -164,18 +170,81 @@ func (s *Service) RestoreLockedFieldGuarded(ctx context.Context, id, field, dama
 		return LockedFieldRestoreValueDiverged, nil
 	}
 
+	// THE HISTORY ROW COMMITS IN THE SAME TRANSACTION AS THE ARTIST WRITE
+	// (#3088). Service.UpdateField and the other operator-driven verbs
+	// deliberately record history AFTER commit, best-effort: an operator who
+	// just watched the write happen can tolerate a lost history row as a
+	// cosmetic loss, and re-running the read-modify-write inside one
+	// transaction there would widen a lock scope no caller needs. This verb
+	// has no such caller -- RestoreLockedFieldGuarded exists solely for the
+	// unattended startup repair (internal/maintenance), which runs in a
+	// goroutine nobody watches, so a history row lost between commit and a
+	// separate insert is not cosmetic: it is the ONLY record the restore
+	// happened, invisible in Recent Activity and the blast-radius pane. Since
+	// this is the verb's only caller, moving the insert inside the
+	// transaction costs nothing and closes the split outright, rather than
+	// merely narrowing the shutdown-drain window -- see startLockDamageRepair
+	// (cmd/stillwater/lock_damage_repair.go) for the drain that bounds what
+	// this cannot: a boot that never reaches this point at all.
+	if s.history != nil {
+		if err := recordHistoryTx(ctx, tx, id, field, stored, restoreValue, sourceFromContext(ctx)); err != nil {
+			return 0, fmt.Errorf("guarded restore: recording history: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("guarded restore: committing: %w", err)
 	}
 
 	s.markDirtyBestEffort(ctx, id)
 
-	if s.history != nil {
-		if err := s.history.Record(ctx, id, field, stored, restoreValue, sourceFromContext(ctx)); err != nil {
-			slog.Warn("history: failed to record guarded restore",
-				"artist_id", id, "field", field, "error", err)
-		}
-	}
-
 	return LockedFieldRestoreApplied, nil
+}
+
+// recordHistoryTx inserts one metadata_changes row on tx, mirroring
+// HistoryService.Record's validation and ID-assignment rules (same skip on an
+// identical non-empty old/new pair, same "source required" check, same
+// HistoryIDFromContext precedence) without going through the repository's own
+// *sql.DB handle -- HistoryRepository has no INSERT-on-a-transaction method,
+// and adding one would widen an interface every other caller (which does not
+// need transactional history) also has to implement. RestoreLockedFieldGuarded
+// is the ONLY caller that must commit the history row atomically with its
+// artist write (#3088), so the transactional insert lives here rather than on
+// the interface.
+func recordHistoryTx(ctx context.Context, tx *sql.Tx, artistID, field, oldValue, newValue, source string) error {
+	if artistID == "" {
+		return fmt.Errorf("artist_id is required")
+	}
+	if field == "" {
+		return fmt.Errorf("field is required")
+	}
+	if source == "" {
+		return fmt.Errorf("source is required")
+	}
+	// Same skip HistoryService.Record applies: only when BOTH values are
+	// non-empty and identical, so a genuine restore into a field that was
+	// empty still leaves a row.
+	if oldValue != "" && oldValue == newValue {
+		return nil
+	}
+	validSource := source == "manual" || source == "scan" || source == "import" ||
+		source == "revert" ||
+		strings.HasPrefix(source, "provider:") || strings.HasPrefix(source, "rule:")
+	if !validSource {
+		return fmt.Errorf("invalid source: %s", source)
+	}
+	id := HistoryIDFromContext(ctx)
+	if id == "" {
+		id = uuid.New().String()
+	}
+	const q = `
+		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
+	if _, err := tx.ExecContext(ctx, q,
+		id, artistID, field, oldValue, newValue, source,
+		time.Now().UTC().Format(time.RFC3339),
+	); err != nil {
+		return fmt.Errorf("inserting metadata change: %w", err)
+	}
+	return nil
 }
