@@ -35,6 +35,7 @@ The table below is generated from `internal/cli.Flags` and the `Subcommands` sli
 | `--reset-password` | boolean | `false` | Reset the admin user password and exit. Prompts interactively unless --new-password is also set. |
 | `--username` | string | (none) | Username for --reset-password. When omitted, defaults to the sole admin user in the database. |
 | `--new-password` | string | (none) | New password for --reset-password (INSECURE: visible in process listings; prefer the interactive prompt instead). |
+| `--lock-damage-dry-run` | boolean | `false` | Report which locked fields the damage repair would restore, then exit without writing. For validating against a database copy. |
 
 ## Subcommands
 

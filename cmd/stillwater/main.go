@@ -100,14 +100,12 @@ func main() {
 	}
 	flag.Parse()
 
-	if cliFlags.ResetPassword {
-		if cliFlags.NewPassword != "" {
-			fmt.Fprintln(os.Stderr, "warning: --new-password exposes the password in process arguments; consider using the interactive prompt instead")
-		}
-		if err := resetPassword(cliFlags.Username, cliFlags.NewPassword); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+	handled, err := dispatchFlagCommand(cliFlags, os.Stderr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if handled {
 		return
 	}
 
@@ -115,6 +113,30 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// dispatchFlagCommand runs the one-shot flag command selected by flags, if
+// any. It returns handled=true when a flag command ran (successfully or not):
+// THE CALLER MUST NOT FALL THROUGH TO run() ON A HANDLED COMMAND. That
+// non-fall-through is the second half of every flag's contract -- for
+// -lock-damage-dry-run especially, falling through would boot a live server
+// against the operator's database copy and run the REAL write pass the dry
+// run exists to preview. Extracted from main() so a test can pin exactly
+// that: main() itself is untestable (os.Exit, coverage-ignored), which is how
+// the fall-through went unasserted.
+func dispatchFlagCommand(cliFlags cli.Flags, stderr io.Writer) (handled bool, err error) {
+	if cliFlags.ResetPassword {
+		if cliFlags.NewPassword != "" {
+			_, _ = fmt.Fprintln(stderr, "warning: --new-password exposes the password in process arguments; consider using the interactive prompt instead")
+		}
+		return true, resetPassword(cliFlags.Username, cliFlags.NewPassword)
+	}
+
+	if cliFlags.LockDamageDryRun {
+		return true, runLockDamageDryRun()
+	}
+
+	return false, nil
 }
 
 // Application holds all initialized state for a Stillwater server instance.
@@ -527,6 +549,11 @@ func (a *Application) buildServices() error {
 	}
 
 	wireInfraServices(ctx, a, db, cfg, logger)
+	// The locked-field damage repair (#3075) needs the artist service and
+	// history repository, both built by wireAuth above; wireInfraServices
+	// cannot pass them to NewService because it runs with only db and cfg in
+	// its contract.
+	a.maintenanceService.SetLockDamageDeps(a.historyService.Repo(), a.artistService)
 	applyPersistedBasePath(ctx, db, cfg, logger)
 	wireEventSubscriptions(a)
 
@@ -1326,6 +1353,9 @@ func (a *Application) startListeners() error {
 		go a.maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
 	}
 
+	// One-shot repair of locked fields a past rule run overwrote (#3038).
+	a.startLockDamageRepair(ctx, db, logger)
+
 	// Fanart per-slot hash backfill (issue #2564).
 	a.startFanartHashBackfill(ctx, db)
 
@@ -1820,9 +1850,12 @@ func databaseHasEncryptedSecrets(dbPath string) (bool, error) {
 		return false, nil // freshly created, no schema or rows yet
 	}
 
-	// Read-only DSN: mode=ro forbids any write, so probing the DB cannot alter
-	// it.
-	db, err := sql.Open("sqlite", dbPath+"?mode=ro&_pragma=busy_timeout(2000)")
+	// Read-only DSN. The file: prefix is LOAD-BEARING: modernc's driver
+	// honors mode=ro only in URI form -- without the prefix the parameter is
+	// silently ignored and the handle opens READ-WRITE (verified against the
+	// driver; see the dry run's opener in lock_damage_repair.go for the
+	// enforcement test). With it, probing the DB cannot alter it.
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro&_pragma=busy_timeout(2000)")
 	if err != nil {
 		return false, fmt.Errorf("opening database read-only: %w", err)
 	}

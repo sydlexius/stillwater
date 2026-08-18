@@ -16,6 +16,72 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+// AppliedMigrationVersion reports the newest migration recorded as applied in
+// the goose tracker, WITHOUT creating or mutating anything: 0 when the
+// tracker table does not exist (an empty or pre-goose database). Built for
+// read-only inspection bootstraps (the -lock-damage-dry-run preview) that
+// must refuse a behind-on-migrations database rather than migrate it -- the
+// migrations mutate DATA, not just schema (014 rewrites lock state, 024
+// retracts rule results), so "open and migrate first" silently alters the
+// very state such a tool exists to inspect.
+func AppliedMigrationVersion(ctx context.Context, db *sql.DB) (int64, error) {
+	var trackerName string
+	err := db.QueryRowContext(ctx,
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='goose_db_version'`).Scan(&trackerName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("checking goose_db_version presence: %w", err)
+	}
+	var v sql.NullInt64
+	if err := db.QueryRowContext(ctx,
+		`SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1`).Scan(&v); err != nil {
+		return 0, fmt.Errorf("reading applied migration version: %w", err)
+	}
+	return v.Int64, nil
+}
+
+// LatestMigrationVersion reports the newest migration version embedded in
+// this binary, parsed from the migration filenames' numeric prefixes.
+func LatestMigrationVersion() (int64, error) {
+	entries, err := migrations.ReadDir("migrations")
+	if err != nil {
+		return 0, fmt.Errorf("reading embedded migrations: %w", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return latestVersionFromNames(names)
+}
+
+// latestVersionFromNames extracts the newest numeric-prefix version from
+// migration filenames. Split from LatestMigrationVersion so the malformed
+// shapes (no underscore, non-numeric prefix, empty set) are testable: the
+// embedded FS can never produce them, but the parser's behavior when they
+// appear is part of its contract, not an accident.
+func latestVersionFromNames(names []string) (int64, error) {
+	var latest int64
+	for _, name := range names {
+		i := strings.IndexByte(name, '_')
+		if i <= 0 {
+			continue
+		}
+		var v int64
+		if _, err := fmt.Sscanf(name[:i], "%d", &v); err != nil {
+			continue
+		}
+		if v > latest {
+			latest = v
+		}
+	}
+	if latest == 0 {
+		return 0, errors.New("no embedded migrations found")
+	}
+	return latest, nil
+}
+
 // gooseLogger adapts slog to the goose.Logger interface.
 type gooseLogger struct {
 	logger *slog.Logger
