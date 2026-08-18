@@ -526,6 +526,46 @@ func TestLockDamageDryRun_NameFieldCandidateLeaksNoName(t *testing.T) {
 // preview reports on -- under a banner reading "no writes performed". The
 // entry point must refuse loudly instead, and the applied-migration set must
 // be byte-identical before and after the attempt.
+// THE DRY RUN'S HANDLE CANNOT WRITE. "No writes performed" must be a
+// property of the CONNECTION (mode=ro), not of the DryRun boolean inside the
+// repair path -- a boolean a future edit can route around silently, where the
+// read-only handle fails loudly. This pins the difference between "we intend
+// not to write" and "we cannot write"; only the second survives a future
+// edit.
+func TestLockDamageDryRunHandle_RefusesWrites(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/ro.db"
+	// Create and migrate through a normal handle first.
+	mig, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening db for migration: %v", err)
+	}
+	if err := database.Migrate(mig); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+	_ = mig.Close()
+
+	// The dry run's DSN, verbatim. The file: prefix is what makes mode=ro
+	// ENFORCED: without it modernc's driver silently ignores the parameter
+	// and this test fails with a successful write.
+	ro, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro&_pragma=busy_timeout(2000)")
+	if err != nil {
+		t.Fatalf("opening read-only: %v", err)
+	}
+	defer func() { _ = ro.Close() }()
+
+	// Reads work; writes are rejected by SQLite itself.
+	var n int
+	if err := ro.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM artists`).Scan(&n); err != nil {
+		t.Fatalf("read through the read-only handle failed: %v", err)
+	}
+	if _, err := ro.ExecContext(context.Background(),
+		`INSERT INTO settings (key, value) VALUES ('ro-probe', 'x')`); err == nil {
+		t.Fatal("write through the mode=ro handle succeeded; the dry run's no-writes guarantee is not enforced")
+	}
+}
+
 func TestRunLockDamageDryRun_RefusesToMigrateABehindDatabase(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := dir + "/behind.db"
@@ -631,6 +671,27 @@ func TestRunLockDamageRepairPass_ErrorLeavesKeyUnstamped(t *testing.T) {
 	}
 }
 
+// panicValueError is a distinct error type whose MESSAGE stands in for
+// library content (a field value in a panic). The privacy assertion below is
+// that the type name appears in the log and the message does not.
+type panicValueError struct{ msg string }
+
+func (e *panicValueError) Error() string { return e.msg }
+
+// panickingHistoryRepo panics from LockDamageCandidates -- the first repair
+// dependency the pass touches -- with a value whose message must never reach
+// a log line. Injecting the panic through a DEPENDENCY rather than a nil
+// receiver keeps the test anchored to the contract: a nil-receiver panic
+// stops firing the moment RepairLockDamage gains a nil guard, and the test
+// would then pass while exercising nothing.
+type panickingHistoryRepo struct {
+	artist.HistoryRepository
+}
+
+func (panickingHistoryRepo) LockDamageCandidates(context.Context) ([]artist.LockDamageCandidate, error) {
+	panic(&panicValueError{msg: "PRIVATE_FIELD_VALUE_IN_PANIC"})
+}
+
 // THE PANIC HANDLER'S PRIVACY CONTRACT (acceptance criterion: field values
 // never reach a log line, including the panic handler). A panicking pass is
 // caught, the process survives, and the log line carries the panic TYPE only
@@ -643,10 +704,15 @@ func TestStartLockDamageRepair_PanicLogsTypeOnly(t *testing.T) {
 	var logBuf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	// A nil maintenance service makes RepairLockDamage dereference a nil
-	// receiver: a real panic with a runtime error type, standing in for any
-	// restore-path panic whose message could carry library content.
-	app := &Application{maintenanceService: nil}
+	// Wire a real service whose history dependency panics with a
+	// value-bearing message, standing in for any restore-path panic that
+	// embeds library content.
+	artistSvc := artist.NewService(db)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	maint := maintenance.NewService(db, "", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	maint.SetLockDamageDeps(panickingHistoryRepo{hist.Repo()}, artistSvc)
+	app := &Application{maintenanceService: maint}
 	app.startLockDamageRepair(ctx, db, logger)
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -660,12 +726,12 @@ func TestStartLockDamageRepair_PanicLogsTypeOnly(t *testing.T) {
 	if !strings.Contains(logged, "locked-field damage repair panicked") {
 		t.Fatalf("panic was not caught and logged; log:\n%s", logged)
 	}
-	if !strings.Contains(logged, "panic_type=") {
+	if !strings.Contains(logged, "panic_type=") || !strings.Contains(logged, "panicValueError") {
 		t.Errorf("log line does not carry the panic type; log:\n%s", logged)
 	}
-	// The runtime error's MESSAGE ("invalid memory address or nil pointer
-	// dereference") must be absent: only its type may appear.
-	if strings.Contains(logged, "nil pointer dereference") {
+	// The panic value's MESSAGE -- the stand-in for library content -- must
+	// be absent: only the type may appear.
+	if strings.Contains(logged, "PRIVATE_FIELD_VALUE_IN_PANIC") {
 		t.Errorf("log line carries the panic MESSAGE, not just the type; log:\n%s", logged)
 	}
 }

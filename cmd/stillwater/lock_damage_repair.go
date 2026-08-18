@@ -39,21 +39,35 @@ func runLockDamageDryRun() error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// THE DRY RUN NEVER MIGRATES. openMigratedRuntimeDB's first act is
-	// migrateSchema, and the migrations mutate DATA, not just schema (014
-	// rewrites lock state, 024 retracts rule results and edits artists). A
-	// clone of a released deployment is behind on migrations BY CONSTRUCTION,
-	// so migrate-then-preview would silently rewrite the clone -- including
-	// the lock state that is the predicate's own condition 1 -- while
-	// printing "no writes performed". Open read-only-in-spirit instead and
-	// REFUSE loudly on a schema mismatch: the operator's next step (run the
-	// real server against the copy, or accept that the preview requires a
-	// migrated database) is then an informed choice, not a side effect.
-	db, err := database.OpenRuntime(cfg.Database.Path)
+	// THE DRY RUN NEVER MIGRATES AND CANNOT WRITE. openMigratedRuntimeDB's
+	// first act is migrateSchema, and the migrations mutate DATA, not just
+	// schema (014 rewrites lock state, 024 retracts rule results and edits
+	// artists). A clone of a released deployment is behind on migrations BY
+	// CONSTRUCTION, so migrate-then-preview would silently rewrite the clone
+	// -- including the lock state that is the predicate's own condition 1 --
+	// while printing "no writes performed". Two independent defenses:
+	//
+	//   - mode=ro makes the HANDLE refuse writes (the idiom the startup
+	//     scaffolding probe uses), so "no writes performed" is a property of
+	//     the connection, not of a DryRun boolean a future edit in the repair
+	//     path could route around. An accidental write fails loudly.
+	//   - the version check below REFUSES a behind-on-migrations database,
+	//     so the operator's next step (run the real server against a copy
+	//     they are willing to migrate) is an informed choice, never a side
+	//     effect.
+	// The file: prefix is LOAD-BEARING: modernc's driver honors mode=ro only
+	// in URI form. Without it the parameter is silently ignored and the
+	// handle opens read-write -- verified against the driver, and the reason
+	// this DSN does not copy the scaffolding probe's prefix-less form.
+	db, err := sql.Open("sqlite", "file:"+cfg.Database.Path+"?mode=ro&_pragma=busy_timeout(2000)")
 	if err != nil {
-		return fmt.Errorf("opening database: %w", err)
+		return fmt.Errorf("opening database read-only: %w", err)
 	}
 	defer db.Close() //nolint:errcheck // Close error not actionable on cleanup
+	// Surface a bad path or DSN at open, not at first query.
+	if err := db.PingContext(context.Background()); err != nil {
+		return fmt.Errorf("opening database read-only: %w", err)
+	}
 
 	applied, err := database.AppliedMigrationVersion(context.Background(), db)
 	if err != nil {

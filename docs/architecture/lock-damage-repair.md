@@ -312,26 +312,58 @@ they fire only when the field is already empty.
 ## Tests
 
 Both packages use real SQLite via their established `setupTestDB` fixtures.
+The list below names the shipped tests (all in
+`internal/maintenance/lock_damage_repair_test.go` unless noted) so the prose
+cannot drift from the coverage.
 
-1. **The positive control pair (most important).** A locked field damaged by a
-   rule IS restored; an otherwise identical UNLOCKED field damaged the same way
-   is NOT. Same artist, same rule, same damage shape, differing only in
-   `locked_fields`. Without the negative half the positive one can pass while
-   the predicate matches nothing.
-2. **The attribution control.** A locked field whose damage row's own source
-   names NO rule (`source = "manual"`) is NOT restored and DOES appear in the
-   unrecoverable tally. This pins the deliberate decision not to widen to
-   unattributed damage.
-3. **Revert does not revert itself.** Two passes over one fixture; the second
-   restores nothing. Run with the settings flag CLEARED.
-4. **An operator edit after the damage blocks the restore** for that field.
-5. **The unrecoverable tally is non-zero when it should be:** seed
-   `musicbrainz_id` damage on a locked field, assert it is reported rather than
-   silently zero.
-6. **Precondition assertions on every fixture:** the field really is locked, the
-   damage row really carries its `rule:` source, the damage row really is
-   newest -- asserted BEFORE trusting what the run reports. A fixture that silently fails to seed
-   produces a green test that verifies nothing.
+1. **The positive control pair (most important):**
+   `TestRepairLockDamage_RestoresLockedNotUnlocked`. A locked field damaged by
+   a rule IS restored -- and the restore's history row carries
+   `source = "revert"`, the property that drops the pair from the blast-radius
+   predicate; an otherwise identical UNLOCKED field damaged the same way is
+   NOT. Same rule, same damage shape, differing only in `locked_fields`.
+   Without the negative half the positive one can pass while the predicate
+   matches nothing.
+2. **The attribution control:**
+   `TestRepairLockDamage_SkipsDamageWithNoAttributingRuleFix`. A locked field
+   whose damage row's own source names NO rule (`source = "manual"`) is NOT
+   restored, and the candidate query never surfaces it: its REPORTING is the
+   job of the companion `LockDamageUnattributed` query, which returns the
+   manual-sourced complement so those rows land in the unrecoverable tally
+   instead of vanishing. The two queries partition the damage set.
+3. **Rules that cannot write the damaged field:**
+   `TestRepairLockDamage_SkipsFieldTheRuleCannotWrite` -- a source naming a
+   rule whose `RuleFields` omits the field (which is also the shape of an
+   UNKNOWN rule id, since `RuleFields` returns nil for one) is counted
+   unrecoverable, never restored. Pseudo-sources
+   (`TestRepairLockDamage_PseudoSourceGetsAccurateReason`) get their own
+   accurate reason. In every refused case the stored value is asserted
+   untouched, so no `source = "revert"` row can have been recorded for it.
+4. **Revert does not revert itself:**
+   `TestRepairLockDamage_SecondPassRestoresNothing`, two passes over one
+   fixture with the settings flag CLEARED; the second restores nothing.
+5. **An operator edit after the damage blocks the restore:**
+   `TestRepairLockDamage_OperatorEditAfterDamageBlocksRestore` (ranking), and
+   the mid-window variants
+   `TestRepairLockDamage_ConcurrentEditBetweenReadAndWriteIsNotOverwritten` /
+   `TestRepairLockDamage_UnlockBetweenReadAndWriteBlocksRestore` (the guarded
+   conditional write).
+6. **No-op and refused writes are never success:** the guarded verb's own
+   contract tests in `internal/artist/lock_restore_test.go` (a zero-row write
+   reads as diverged, never applied) and
+   `TestRepairLockDamage_DeterministicRefusalIsPermanentNotRetried` (a
+   validation or collision refusal lands in FailedPermanent with exact tally
+   assertions).
+7. **The unrecoverable tally is exact, never silently zero:**
+   `TestRepairLockDamage_ReportsPre3048DamageAsUnrecoverable`,
+   `TestRepairLockDamage_UnattributableListFilteredToLockedFields`, and
+   `TestRepairLockDamage_UnattributableAllCountsUnlockedRows` pin the
+   locked-now list and the wider count against seeded fixtures with exact
+   counts.
+8. **Precondition assertions on every fixture:** the field really is locked,
+   the damage row really carries its `rule:` source, the damage row really is
+   newest -- asserted BEFORE trusting what the run reports. A fixture that
+   silently fails to seed produces a green test that verifies nothing.
 
 ### Mutation proofs
 
@@ -382,12 +414,18 @@ maintainer's production database.
   contain damage the author constructed.
 - The real distribution of the unrecoverable tally by field.
 
-**EXPECT ZERO CANDIDATES, and treat that as the PASS condition rather than a
-bug.** No released build writes the `rule:` source the predicate requires, so
-a clone of any real deployment has nothing for it to match -- zero is the
-predicate agreeing with the coverage analysis above. A NON-ZERO count on such
-a clone means the predicate is matching something it should not: stop and
-investigate before running the write pass.
+**EXPECT ZERO CANDIDATES on a PRE-#3048 clone, and treat that as the PASS
+condition rather than a bug.** As of this writing no released build writes the
+`rule:` source the predicate requires, so a clone of any deployment running a
+released build has nothing for it to match -- zero is the predicate agreeing
+with the coverage analysis above, and a NON-ZERO count on such a clone means
+the predicate is matching something it should not: stop and investigate before
+running the write pass. THE SCOPE OF THAT CLAIM ENDS when a build carrying
+#3048 is deployed: on a clone taken after that, a non-zero count can be a
+GENUINE candidate (a rule write that escaped the chokepoint), which is the
+repair working as designed. The stop-and-investigate instruction still
+applies -- inspect every selected row by hand before any write pass -- but
+non-zero is no longer, by itself, evidence of a broken predicate.
 
 **Run it in report-only mode first** (select and report, write nothing), inspect
 the candidate list by hand, and only then run the write pass against the clone
