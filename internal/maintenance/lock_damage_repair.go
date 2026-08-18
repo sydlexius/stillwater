@@ -171,10 +171,12 @@ func (s *Service) RepairLockDamage(ctx context.Context, opts LockDamageOpts) (*L
 		if err != nil {
 			// A CANCELED PASS HAS DECIDED NOTHING. Filing the remaining
 			// candidates as per-row failures would return a partial result
-			// that looks like a completed pass; abort with the cause instead,
-			// so the startup wiring logs it and the next boot retries the
-			// whole pass (the completion key is only stamped by the caller on
-			// a returned result).
+			// that looks like a completed pass; abort with the cause instead.
+			// CONSTRAINT ON THE FUTURE CALLER (the startup wiring is a later
+			// unit; nothing calls this on the current branch): the completion
+			// key MUST be stamped only on a pass that returned no error. This
+			// function guarantees a canceled pass returns (nil, err), so a
+			// caller honoring that cannot stamp over work it never did.
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, fmt.Errorf("lock damage repair aborted: %w", ctxErr)
 			}

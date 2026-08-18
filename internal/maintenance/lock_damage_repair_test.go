@@ -278,6 +278,134 @@ func TestRepairLockDamage_SkipsFieldTheRuleCannotWrite(t *testing.T) {
 	}
 }
 
+// IDEMPOTENCE. NO settings flag is consulted here: this asserts the QUERY
+// converged -- the restore's source="revert" row is now newest for the pair,
+// so the damage predicate stops matching. A test that relied on the flag would
+// pass even if the predicate had not converged.
+func TestRepairLockDamage_SecondPassRestoresNothing(t *testing.T) {
+	env := newLockDamageEnv(t)
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedBioDamage("a1", "metadata_quality")
+	env.requireLockedBio()
+
+	first, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+	if err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	if len(first.Restored) != 1 {
+		t.Fatalf("first pass restored %d, want 1", len(first.Restored))
+	}
+
+	second, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if len(second.Restored) != 0 {
+		t.Fatalf("second pass restored %d, want 0", len(second.Restored))
+	}
+	if got := env.biography("a1"); got != "curated bio" {
+		t.Errorf("biography = %q after two passes, want the restored value once", got)
+	}
+}
+
+// An operator edit AFTER the damage is the newest row for the pair, so the
+// damage row is no longer rank 1 and must not be restored over.
+func TestRepairLockDamage_OperatorEditAfterDamageBlocksRestore(t *testing.T) {
+	env := newLockDamageEnv(t)
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedBioDamage("a1", "metadata_quality")
+	// The operator then wrote their own value.
+	env.insertChange("a1-edit", "a1", "biography", "junk bio", "operator value",
+		"manual", "2026-05-01T11:00:00Z")
+	// Keep the live row consistent with the newest history row, as it would be
+	// after a real operator edit.
+	env.setBiography("a1", "operator value")
+
+	env.requireLockedBio()
+
+	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+	if err != nil {
+		t.Fatalf("RepairLockDamage: %v", err)
+	}
+	if len(res.Restored) != 0 {
+		t.Fatalf("restored %d pairs, want 0 (operator edited after the damage)", len(res.Restored))
+	}
+	if got := env.biography("a1"); got != "operator value" {
+		t.Errorf("biography = %q, want the operator's value untouched", got)
+	}
+}
+
+// The documented unrecoverable path is PRE-#3048 damage: a manual-sourced row
+// the mechanism cannot attribute. Such a row is filtered by the candidate
+// QUERY, so it never reaches the repair loop -- reporting it is the job of the
+// companion LockDamageUnattributed query, and this test pins that the two
+// views compose into a non-silent tally.
+func TestRepairLockDamage_ReportsPre3048DamageAsUnrecoverable(t *testing.T) {
+	env := newLockDamageEnv(t)
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	// Manual source: exactly what a pre-#3048 rule write looks like on disk,
+	// and byte-identical to an operator edit. No attribution is possible.
+	env.seedDamageWithSource("biography", "curated bio", "junk bio",
+		"manual")
+
+	env.requireLockedBio()
+
+	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+	if err != nil {
+		t.Fatalf("RepairLockDamage: %v", err)
+	}
+	if len(res.Restored) != 0 {
+		t.Fatalf("restored %d, want 0 -- unattributable damage must never be "+
+			"restored, it is indistinguishable from an operator edit", len(res.Restored))
+	}
+	if len(res.Unrecoverable) != 1 {
+		t.Fatalf("unrecoverable = %d, want 1 -- reporting a silent zero for "+
+			"damage the mechanism cannot see is the defect this exists to stop",
+			len(res.Unrecoverable))
+	}
+	if res.Unrecoverable[0].Field != "biography" {
+		t.Errorf("unrecoverable field = %q, want biography", res.Unrecoverable[0].Field)
+	}
+}
+
+// THE UNRECOVERABLE LIST IS SCOPED TO FIELDS LOCKED NOW; THE WIDER COUNT IS
+// ONE NUMBER (fix round for #3075). Unfiltered, the per-row list is dominated
+// by ordinary manual edits to unlocked fields (production clone: 3234 rows,
+// 216 on a field locked today), burying the rows the feature can act on. Both
+// numbers are reported so the filtered list can never read as the whole
+// population; the blast-radius pane surfaces the full set.
+//
+// MUTATION PROOF (mutation G, fix round): delete the IsFieldLocked filter in
+// reportUnattributedLockDamage and this test FAILS: the unlocked
+// origin row joins the list and Unrecoverable becomes 2.
+func TestRepairLockDamage_UnattributableListFilteredToLockedFields(t *testing.T) {
+	env := newLockDamageEnv(t)
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	// Two unattributable damage rows on the same artist: one on the locked
+	// biography, one on the never-locked origin.
+	env.seedDamageWithSource("biography", "curated bio", "junk bio",
+		"manual")
+	env.seedDamageWithSource("origin", "Seattle", "Tacoma",
+		"manual")
+
+	env.requireLockedBio()
+	env.requireNotLocked("a1", "origin")
+
+	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+	if err != nil {
+		t.Fatalf("RepairLockDamage: %v", err)
+	}
+	if res.UnattributableAll != 2 {
+		t.Errorf("UnattributableAll = %d, want 2 (the wider count keeps every row)", res.UnattributableAll)
+	}
+	if len(res.Unrecoverable) != 1 {
+		t.Fatalf("unrecoverable = %d, want exactly 1 (only the locked-field row is actionable)", len(res.Unrecoverable))
+	}
+	if res.Unrecoverable[0].Field != "biography" {
+		t.Errorf("unrecoverable field = %q, want biography (the locked one)", res.Unrecoverable[0].Field)
+	}
+}
+
 // A PSEUDO-SOURCE GETS AN ACCURATE REASON (fix round for #3075).
 // "rule:multiple_rules" and its siblings pass LIKE 'rule:%' but name no
 // catalogue rule, so the capability check's "the attributing rule does not
@@ -454,6 +582,115 @@ func TestRepairLockDamage_MidPassCancellationIsNotARowOutcome(t *testing.T) {
 	}
 }
 
+// cancelAfterReadRepo serves the loop's GetByID successfully and THEN cancels
+// the context, so cancellation lands on the next call: the guarded write.
+type cancelAfterReadRepo struct {
+	artist.Repository
+	cancel context.CancelFunc
+}
+
+func (r *cancelAfterReadRepo) GetByID(ctx context.Context, id string) (*artist.Artist, error) {
+	a, err := r.Repository.GetByID(ctx, id)
+	r.cancel()
+	return a, err
+}
+
+// Guard 2 of 3: cancellation landing on the GUARDED WRITE (the artist read
+// succeeded; the restore's transaction then fails on the canceled context)
+// must abort the pass, never be filed as a transient Failed row that a
+// completed-looking result carries. The tail query is served on a background
+// context for the same reason as the mid-pass test above: without that, a
+// deleted guard still aborts at the tail and this test passes vacuously.
+//
+// MUTATION PROOF: delete the ctx.Err() guard at the top of
+// attemptLockDamageRestore's error path and this test FAILS with a Failed
+// entry inside a non-nil result.
+func TestRepairLockDamage_CancellationDuringWriteIsNotAFailedRow(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	artists, providers, members, aliases, images, platformIDs, completeness :=
+		artist.NewDefaultRepos(db)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	decorated := &cancelAfterReadRepo{Repository: artists, cancel: cancel}
+	artistSvc := artist.NewServiceWithRepos(decorated, providers, members, aliases,
+		images, platformIDs, completeness)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
+	svc.SetLockDamageDeps(bgUnattributedHistoryRepo{hist.Repo()}, artistSvc)
+	env := &lockDamageEnv{t: t, db: db, svc: svc, artistSvc: artistSvc}
+
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedBioDamage("a1", "metadata_quality")
+	env.requireLockedBio()
+
+	res, err := svc.RepairLockDamage(ctx, LockDamageOpts{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled -- the read succeeded, "+
+			"cancellation landed on the write and must abort, not be absorbed", err)
+	}
+	// The ABSENCE of the row outcome is the invariant, not just the error: an
+	// implementation that files the Failed entry AND returns the error would
+	// pass an error-only assertion while still poisoning the result.
+	if res != nil {
+		t.Fatalf("res = %+v, want nil -- the canceled write must not be filed "+
+			"as a transient Failed row", res)
+	}
+	if got := env.biography("a1"); got != "junk bio" {
+		t.Errorf("biography = %q, want the damaged value untouched", got)
+	}
+}
+
+// cancelAfterListHistoryRepo serves LockDamageUnattributed successfully and
+// THEN cancels, so cancellation lands on the report helper's artist read.
+type cancelAfterListHistoryRepo struct {
+	artist.HistoryRepository
+	cancel context.CancelFunc
+}
+
+func (r *cancelAfterListHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]artist.LockDamageUnattributedRow, error) {
+	rows, err := r.HistoryRepository.LockDamageUnattributed(ctx)
+	r.cancel()
+	return rows, err
+}
+
+// Guard 3 of 3, the worst failure direction of the three: cancellation
+// landing on the unattributed REPORT's artist read must abort the pass, never
+// file the row as Unrecoverable -- that category is DECIDED and non-retriable,
+// so a canceled read filed there permanently reports a row that was never
+// examined.
+//
+// MUTATION PROOF: delete the ctx.Err() guard in
+// reportUnattributedLockDamage's read-error path and this test FAILS with an
+// Unrecoverable "lock state could not be read" entry inside a non-nil result.
+func TestRepairLockDamage_CancellationDuringReportIsNotUnrecoverable(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	artistSvc := artist.NewService(db)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	svc.SetLockDamageDeps(&cancelAfterListHistoryRepo{HistoryRepository: hist.Repo(), cancel: cancel}, artistSvc)
+	env := &lockDamageEnv{t: t, db: db, svc: svc, artistSvc: artistSvc}
+
+	// ONLY an unattributable manual row: the candidate loop sees nothing, so
+	// the first read the cancellation can land on is the report helper's.
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedDamageWithSource("biography", "curated bio", "junk bio", "manual")
+	env.requireLockedBio()
+
+	res, err := svc.RepairLockDamage(ctx, LockDamageOpts{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled -- the list succeeded, "+
+			"cancellation landed on the report's read and must abort", err)
+	}
+	if res != nil {
+		t.Fatalf("res = %+v, want nil -- a canceled read must never file an "+
+			"Unrecoverable entry, the one category treated as FINAL", res)
+	}
+}
+
 // STALENESS. The candidate list is read at the top of the pass and the repair
 // runs in a goroutine at startup while the server is serving, so the live
 // value can diverge from the candidate with NO new history row (a direct
@@ -495,6 +732,141 @@ func TestRepairLockDamage_LiveValueDivergedBlocksRestore(t *testing.T) {
 	}
 }
 
+// raceGetByIDRepo wires the actual race the guarded conditional write closes:
+// a concurrent operator edit landing between the repair loop's artist read
+// (its lock check) and the write. After serving the loop's GetByID it edits
+// the field directly, so by the time RestoreLockedFieldGuarded runs, the
+// stored value no longer equals the damaged value the candidate was selected
+// for. DB() is forwarded so the guarded verb can open its transaction through
+// the decorator.
+type raceGetByIDRepo struct {
+	artist.Repository
+	db    *sql.DB
+	calls int
+	tb    testing.TB
+	// mutate runs after the first GetByID returns, standing in for the
+	// concurrent operator action (an edit, or an unlock).
+	mutate func(ctx context.Context)
+}
+
+func (r *raceGetByIDRepo) DB() *sql.DB { return r.db }
+
+func (r *raceGetByIDRepo) GetByID(ctx context.Context, id string) (*artist.Artist, error) {
+	a, err := r.Repository.GetByID(ctx, id)
+	r.calls++
+	if r.calls == 1 && r.mutate != nil {
+		r.mutate(ctx)
+	}
+	return a, err
+}
+
+func newRacedEnv(t *testing.T, mutate func(ctx context.Context, db *sql.DB)) (*lockDamageEnv, *raceGetByIDRepo) {
+	t.Helper()
+	db, dbPath := setupTestDBWithImages(t)
+	artists, providers, members, aliases, images, platformIDs, completeness :=
+		artist.NewDefaultRepos(db)
+	raced := &raceGetByIDRepo{Repository: artists, db: db, tb: t}
+	raced.mutate = func(ctx context.Context) { mutate(ctx, db) }
+	artistSvc := artist.NewServiceWithRepos(raced, providers, members, aliases,
+		images, platformIDs, completeness)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
+	svc.SetLockDamageDeps(hist.Repo(), artistSvc)
+	return &lockDamageEnv{t: t, db: db, svc: svc, artistSvc: artistSvc}, raced
+}
+
+// THE RACE WINDOW IS CLOSED, NOT NARROWED (fix round for #3075). An operator
+// edit landing between the repair's lock-check read and its write must not be
+// overwritten: the guarded verb decides value-still-damaged atomically in the
+// repository layer, so the restore does not land, the operator's edit
+// survives, and the pair is counted as a decided (unrecoverable) outcome that
+// neither blocks completion nor retries.
+//
+// MUTATION PROOF (mutation F, fix round): make the conditional write
+// unconditional (delete the stored-vs-damaged compare AND the repeated
+// `AND <col> = ?` condition in RestoreLockedFieldGuarded's UPDATE) and this
+// test FAILS: the operator's mid-pass edit is overwritten and Restored
+// becomes 1.
+func TestRepairLockDamage_ConcurrentEditBetweenReadAndWriteIsNotOverwritten(t *testing.T) {
+	env, raced := newRacedEnv(t, func(ctx context.Context, db *sql.DB) {
+		if _, err := db.ExecContext(ctx,
+			`UPDATE artists SET biography = 'operator mid-pass edit' WHERE id = 'a1'`); err != nil {
+			t.Fatalf("simulating the concurrent edit: %v", err)
+		}
+	})
+
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedBioDamage("a1", "metadata_quality")
+
+	env.requireLockedBio()
+	if got := env.biography("a1"); got != "junk bio" {
+		t.Fatalf("fixture: biography = %q, want the damaged value", got)
+	}
+
+	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+	if err != nil {
+		t.Fatalf("RepairLockDamage: %v", err)
+	}
+	// PRECONDITION on the race itself: the decorator must have injected the
+	// edit, or the guarded compare was never contested and the assertions
+	// below pass vacuously.
+	if raced.calls < 1 {
+		t.Fatalf("fixture: GetByID never called; the race was never injected")
+	}
+	if got := env.biography("a1"); got != "operator mid-pass edit" {
+		t.Fatalf("biography = %q, want the operator's concurrent edit preserved", got)
+	}
+	if len(res.Restored) != 0 {
+		t.Fatalf("restored %d, want 0 -- the restore must not land over a concurrent edit", len(res.Restored))
+	}
+	if len(res.Failed) != 0 {
+		t.Fatalf("failed = %d, want 0 -- a diverged value is a decided outcome, not a retry", len(res.Failed))
+	}
+	if len(res.Unrecoverable) != 1 || !strings.Contains(res.Unrecoverable[0].Reason, "changed after the candidate") {
+		t.Fatalf("unrecoverable = %+v, want exactly the diverged pair with its reason", res.Unrecoverable)
+	}
+}
+
+// AN UNLOCK IN THE SAME WINDOW ALSO DIVERTS THE RESTORE. The loop's lock
+// check reads the artist once; an operator unlocking the field after that
+// read has withdrawn the intent the repair serves, and the guarded verb
+// re-verifies the lock inside its transaction.
+//
+// MUTATION PROOF (fix round, companion to mutation F): delete the
+// locked-fields recheck inside RestoreLockedFieldGuarded and this test FAILS:
+// the restore lands into the now-unlocked field and Restored becomes 1.
+func TestRepairLockDamage_UnlockBetweenReadAndWriteBlocksRestore(t *testing.T) {
+	env, raced := newRacedEnv(t, func(ctx context.Context, db *sql.DB) {
+		if _, err := db.ExecContext(ctx,
+			`UPDATE artists SET locked_fields = '[]' WHERE id = 'a1'`); err != nil {
+			t.Fatalf("simulating the concurrent unlock: %v", err)
+		}
+	})
+
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedBioDamage("a1", "metadata_quality")
+
+	env.requireLockedBio()
+
+	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+	if err != nil {
+		t.Fatalf("RepairLockDamage: %v", err)
+	}
+	if raced.calls < 1 {
+		t.Fatalf("fixture: GetByID never called; the unlock was never injected")
+	}
+	if got := env.biography("a1"); got != "junk bio" {
+		t.Fatalf("biography = %q, want the damaged value untouched (field was unlocked)", got)
+	}
+	if len(res.Restored) != 0 {
+		t.Fatalf("restored %d, want 0 -- the field was unlocked mid-window", len(res.Restored))
+	}
+	if len(res.Unrecoverable) != 1 || !strings.Contains(res.Unrecoverable[0].Reason, "unlocked after the candidate") {
+		t.Fatalf("unrecoverable = %+v, want exactly the unlocked pair with its reason", res.Unrecoverable)
+	}
+}
+
 func (e *lockDamageEnv) setBiography(artistID, bio string) {
 	e.t.Helper()
 	if _, err := e.db.Exec(
@@ -529,6 +901,18 @@ func TestRepairLockDamage_DryRunWritesNothing(t *testing.T) {
 	}
 	if reverts != 0 {
 		t.Errorf("dry run recorded %d revert rows, want 0", reverts)
+	}
+}
+
+// RepairLockDamage must refuse to run before SetLockDamageDeps: a nil-dep
+// pass would panic in a startup goroutine, and the panic handler there
+// deliberately reports only the type.
+func TestRepairLockDamage_ErrorsWithoutDeps(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
+
+	if _, err := svc.RepairLockDamage(context.Background(), LockDamageOpts{}); err == nil {
+		t.Fatal("RepairLockDamage succeeded without dependencies; want an error")
 	}
 }
 
@@ -604,111 +988,4 @@ func TestRepairLockDamage_DeterministicRefusalIsPermanentNotRetried(t *testing.T
 			t.Errorf("a1 name = %q, want the stored value untouched by the refused restore", name)
 		}
 	})
-}
-
-// RepairLockDamage must refuse to run before SetLockDamageDeps: a nil-dep
-// pass would panic in a startup goroutine, and the panic handler there
-// deliberately reports only the type.
-func TestRepairLockDamage_ErrorsWithoutDeps(t *testing.T) {
-	db, dbPath := setupTestDBWithImages(t)
-	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
-
-	// The SPECIFIC sentinel, not any error: a bare err != nil stays green if
-	// the pass later fails for an unrelated reason, which is a vacuous
-	// assertion on the condition this test exists to pin.
-	if _, err := svc.RepairLockDamage(context.Background(), LockDamageOpts{}); !errors.Is(err, ErrLockDamageDepsNotSet) {
-		t.Fatalf("err = %v, want ErrLockDamageDepsNotSet", err)
-	}
-}
-
-// failingArtistRepo makes GetByID fail on demand, or -- by withholding the
-// DB() accessor the guarded restore verb requires -- makes the write layer
-// fail, driving the two TRANSIENT Failed branches: "could not read the
-// artist" and "the restore write failed". A failed row must not abort the
-// pass.
-type failingArtistRepo struct {
-	artist.Repository
-	db      *sql.DB
-	failGet bool
-	// exposeDB controls whether the decorator forwards the raw handle
-	// RestoreLockedFieldGuarded opens its transaction through. false makes
-	// every guarded restore fail at the write layer while reads still work.
-	exposeDB bool
-}
-
-var errForcedRepoFailure = errors.New("forced repository failure")
-
-func (f *failingArtistRepo) GetByID(ctx context.Context, id string) (*artist.Artist, error) {
-	if f.failGet {
-		return nil, errForcedRepoFailure
-	}
-	return f.Repository.GetByID(ctx, id)
-}
-
-// failingArtistRepoWithDB adds the DB accessor. A separate wrapper type
-// rather than a conditional method: Go interface satisfaction is static, so
-// "has DB()" must be a property of the type.
-type failingArtistRepoWithDB struct{ *failingArtistRepo }
-
-func (f failingArtistRepoWithDB) DB() *sql.DB { return f.db }
-
-func newFailingEnv(t *testing.T, failGet, failWrite bool) *lockDamageEnv {
-	t.Helper()
-	db, dbPath := setupTestDBWithImages(t)
-	artists, providers, members, aliases, images, platformIDs, completeness :=
-		artist.NewDefaultRepos(db)
-	failing := &failingArtistRepo{Repository: artists, db: db, failGet: failGet, exposeDB: !failWrite}
-	var repo artist.Repository = failing
-	if failing.exposeDB {
-		repo = failingArtistRepoWithDB{failing}
-	}
-	artistSvc := artist.NewServiceWithRepos(repo, providers, members, aliases,
-		images, platformIDs, completeness)
-	hist := artist.NewHistoryService(db)
-	artistSvc.SetHistoryService(hist)
-	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
-	svc.SetLockDamageDeps(hist.Repo(), artistSvc)
-	return &lockDamageEnv{t: t, db: db, svc: svc, artistSvc: artistSvc}
-}
-
-func TestRepairLockDamage_ArtistReadFailureIsCountedNotFatal(t *testing.T) {
-	env := newFailingEnv(t, true, false)
-	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
-	env.seedBioDamage("a1", "metadata_quality")
-	env.requireLockedBio()
-
-	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
-	if err != nil {
-		t.Fatalf("RepairLockDamage returned an error; a row-level failure must not abort the pass: %v", err)
-	}
-	if len(res.Restored) != 0 {
-		t.Fatalf("restored %d, want 0", len(res.Restored))
-	}
-	if len(res.Failed) != 1 || !strings.Contains(res.Failed[0].Reason, "could not read") {
-		t.Fatalf("failed = %+v, want one 'could not read the artist' entry", res.Failed)
-	}
-	if got := env.biography("a1"); got != "junk bio" {
-		t.Errorf("biography = %q, want it untouched", got)
-	}
-}
-
-func TestRepairLockDamage_WriteFailureIsCountedNotFatal(t *testing.T) {
-	env := newFailingEnv(t, false, true)
-	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
-	env.seedBioDamage("a1", "metadata_quality")
-	env.requireLockedBio()
-
-	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
-	if err != nil {
-		t.Fatalf("RepairLockDamage returned an error; a row-level failure must not abort the pass: %v", err)
-	}
-	if len(res.Restored) != 0 {
-		t.Fatalf("restored %d, want 0", len(res.Restored))
-	}
-	if len(res.Failed) != 1 || !strings.Contains(res.Failed[0].Reason, "write failed") {
-		t.Fatalf("failed = %+v, want one 'restore write failed' entry", res.Failed)
-	}
-	if got := env.biography("a1"); got != "junk bio" {
-		t.Errorf("biography = %q, want the damaged value still stored", got)
-	}
 }
