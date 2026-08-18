@@ -66,10 +66,10 @@ func (e *lockDamageEnv) seedBioDamage(artistID, ruleID string) {
 }
 
 // seedDamageWithSource seeds a damage row on a1, the locked artist every
-// test here builds its fixture around.
-func (e *lockDamageEnv) seedDamageWithSource(field, oldV, newV, source, at string) {
+// test here builds its fixture around, at the file's canonical damage time.
+func (e *lockDamageEnv) seedDamageWithSource(field, oldV, newV, source string) {
 	e.t.Helper()
-	e.insertChange("a1-dmg-"+field, "a1", field, oldV, newV, source, at)
+	e.insertChange("a1-dmg-"+field, "a1", field, oldV, newV, source, "2026-05-01T10:00:01Z")
 }
 
 func (e *lockDamageEnv) insertChange(id, artistID, field, oldV, newV, source, at string) {
@@ -223,7 +223,7 @@ func TestRepairLockDamage_SkipsDamageWithNoAttributingRuleFix(t *testing.T) {
 	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
 	// Damage, but a manual source: indistinguishable from an operator edit.
 	env.seedDamageWithSource("biography", "curated bio", "junk bio",
-		"manual", "2026-05-01T10:00:01Z")
+		"manual")
 
 	env.requireLockedBio()
 
@@ -310,6 +310,150 @@ func TestRepairLockDamage_PseudoSourceGetsAccurateReason(t *testing.T) {
 	}
 }
 
+// UNATTRIBUTABLE-ALL IS THE WIDER COUNT, NOT THE FILTERED LIST'S LENGTH. The
+// field exists precisely so the locked-now list can never read as the whole
+// population (the 3234-vs-216 property from the production clone, in
+// miniature): a regression that sets it from the filtered list, or leaves it
+// zero, must fail here.
+func TestRepairLockDamage_UnattributableAllCountsUnlockedRows(t *testing.T) {
+	t.Run("locked field: listed and counted", func(t *testing.T) {
+		env := newLockDamageEnv(t)
+		env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+		env.seedDamageWithSource("biography", "curated bio", "junk bio",
+			"manual")
+		env.requireLockedBio()
+
+		res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+		if err != nil {
+			t.Fatalf("RepairLockDamage: %v", err)
+		}
+		if len(res.Unrecoverable) != 1 {
+			t.Fatalf("unrecoverable = %d, want 1 (the locked-field row is actionable)", len(res.Unrecoverable))
+		}
+		if res.UnattributableAll != 1 {
+			t.Errorf("UnattributableAll = %d, want 1", res.UnattributableAll)
+		}
+	})
+
+	t.Run("unlocked field: filtered from the list, still counted", func(t *testing.T) {
+		env := newLockDamageEnv(t)
+		env.seedArtistWithLocks("a1", "Unlocked Artist", nil)
+		env.seedDamageWithSource("biography", "curated bio", "junk bio",
+			"manual")
+		env.requireNotLocked("a1", "biography")
+
+		res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+		if err != nil {
+			t.Fatalf("RepairLockDamage: %v", err)
+		}
+		if len(res.Unrecoverable) != 0 {
+			t.Fatalf("unrecoverable = %+v, want none (the field is not locked now)", res.Unrecoverable)
+		}
+		if res.UnattributableAll != 1 {
+			t.Errorf("UnattributableAll = %d, want 1 -- the wider count keeps every "+
+				"row; zero here means the count was taken from the filtered list", res.UnattributableAll)
+		}
+	})
+}
+
+// A CANCELED PASS HAS DECIDED NOTHING. If the startup context is canceled
+// mid-pass, the remaining candidates must not be filed as per-row outcomes: a
+// Failed entry retries forever against a cause that is not the row's, and an
+// Unrecoverable entry is treated as FINAL, permanently reporting rows that
+// were never examined. The pass must abort with the cancellation as its
+// error, and the caller (which stamps completion only on a returned result)
+// then retries the whole pass next boot.
+//
+// Two windows, two tests: this one cancels BEFORE the pass (the candidate
+// query itself fails, which must surface as an error, never a result);
+// TestRepairLockDamage_MidPassCancellationIsNotARowOutcome below wires the
+// mid-pass window, where selection succeeded and cancellation lands during
+// row processing.
+func TestRepairLockDamage_CancellationAbortsThePass(t *testing.T) {
+	env := newLockDamageEnv(t)
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedBioDamage("a1", "metadata_quality")
+	env.requireLockedBio()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := env.svc.RepairLockDamage(ctx, LockDamageOpts{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if res != nil {
+		t.Fatalf("res = %+v, want nil -- a canceled pass must not return a completed-looking result", res)
+	}
+
+	// The database is untouched: no restore, no revert row.
+	if got := env.biography("a1"); got != "junk bio" {
+		t.Errorf("biography = %q, want the damaged value untouched", got)
+	}
+}
+
+// cancelMidPassRepo delegates both list queries, then cancels the context the
+// moment the loop's first per-row read arrives, wiring the exact mid-pass
+// window: selection succeeded, cancellation lands during row processing.
+type cancelMidPassRepo struct {
+	artist.Repository
+	cancel context.CancelFunc
+}
+
+func (r *cancelMidPassRepo) GetByID(ctx context.Context, id string) (*artist.Artist, error) {
+	r.cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.Repository.GetByID(ctx, id)
+}
+
+// bgUnattributedHistoryRepo serves LockDamageUnattributed on a background
+// context. WHY THE FIXTURE NEEDS THIS: without it, the canceled context also
+// fails the unattributed query AFTER the loop, so the pass aborts there and
+// the test cannot tell whether the LOOP filed the canceled read as a row
+// outcome first -- the guard under test would be decorative and its deletion
+// invisible (verified: with a plain repo, deleting the guard leaves this test
+// green). Serving the tail query out of the canceled context isolates the
+// loop as the only place the abort can come from.
+type bgUnattributedHistoryRepo struct {
+	artist.HistoryRepository
+}
+
+func (r bgUnattributedHistoryRepo) LockDamageUnattributed(context.Context) ([]artist.LockDamageUnattributedRow, error) {
+	return r.HistoryRepository.LockDamageUnattributed(context.Background())
+}
+
+func TestRepairLockDamage_MidPassCancellationIsNotARowOutcome(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	artists, providers, members, aliases, images, platformIDs, completeness :=
+		artist.NewDefaultRepos(db)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	raced := &cancelMidPassRepo{Repository: artists, cancel: cancel}
+	artistSvc := artist.NewServiceWithRepos(raced, providers, members, aliases,
+		images, platformIDs, completeness)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
+	svc.SetLockDamageDeps(bgUnattributedHistoryRepo{hist.Repo()}, artistSvc)
+	env := &lockDamageEnv{t: t, db: db, svc: svc, artistSvc: artistSvc}
+
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedBioDamage("a1", "metadata_quality")
+	env.requireLockedBio()
+
+	res, err := svc.RepairLockDamage(ctx, LockDamageOpts{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled -- selection succeeded, "+
+			"cancellation landed mid-pass and must abort, not be absorbed", err)
+	}
+	if res != nil {
+		t.Fatalf("res = %+v, want nil -- the canceled candidate must not appear "+
+			"as a Failed or Unrecoverable row", res)
+	}
+}
+
 // STALENESS. The candidate list is read at the top of the pass and the repair
 // runs in a goroutine at startup while the server is serving, so the live
 // value can diverge from the candidate with NO new history row (a direct
@@ -318,8 +462,11 @@ func TestRepairLockDamage_PseudoSourceGetsAccurateReason(t *testing.T) {
 // stored value to the candidate's NewValue inside its transaction and diverts
 // on mismatch, so the restore can never overwrite data newer than the damage
 // it attributed. This test seeds the divergence BEFORE the pass; the
-// mid-window variant is TestRepairLockDamage_ConcurrentEditBetweenReadAndWriteIsNotOverwritten
-// (mutation F kills a deletion of the guard for both).
+// mid-window variant (a concurrent edit injected between the loop's artist
+// read and the write, through a repository decorator) lands with the
+// follow-up test unit, and the verb's own transactional guarantee is pinned
+// directly in internal/artist/lock_restore_test.go. Mutation F (making the
+// conditional write unconditional) kills this test either way.
 func TestRepairLockDamage_LiveValueDivergedBlocksRestore(t *testing.T) {
 	env := newLockDamageEnv(t)
 	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
@@ -400,7 +547,7 @@ func TestRepairLockDamage_DeterministicRefusalIsPermanentNotRetried(t *testing.T
 		// identity key). name_language_pref declares "name".
 		env.seedArtistWithLocks("a1", "Damaged Name", []string{"name"})
 		env.seedDamageWithSource("name", "-", "Damaged Name",
-			"rule:name_language_pref", "2026-05-01T10:00:01Z")
+			"rule:name_language_pref")
 
 		if !env.lockedFields("a1")["name"] {
 			t.Fatal("fixture: name is not locked on a1")
@@ -429,7 +576,7 @@ func TestRepairLockDamage_DeterministicRefusalIsPermanentNotRetried(t *testing.T
 		// prevent.
 		env.seedArtistWithLocks("a2", "Original Name", nil)
 		env.seedDamageWithSource("name", "Original Name", "Damaged Name",
-			"rule:name_language_pref", "2026-05-01T10:00:01Z")
+			"rule:name_language_pref")
 
 		if !env.lockedFields("a1")["name"] {
 			t.Fatal("fixture: name is not locked on a1")
@@ -466,8 +613,11 @@ func TestRepairLockDamage_ErrorsWithoutDeps(t *testing.T) {
 	db, dbPath := setupTestDBWithImages(t)
 	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
 
-	if _, err := svc.RepairLockDamage(context.Background(), LockDamageOpts{}); err == nil {
-		t.Fatal("RepairLockDamage succeeded without dependencies; want an error")
+	// The SPECIFIC sentinel, not any error: a bare err != nil stays green if
+	// the pass later fails for an unrelated reason, which is a vacuous
+	// assertion on the condition this test exists to pin.
+	if _, err := svc.RepairLockDamage(context.Background(), LockDamageOpts{}); !errors.Is(err, ErrLockDamageDepsNotSet) {
+		t.Fatalf("err = %v, want ErrLockDamageDepsNotSet", err)
 	}
 }
 

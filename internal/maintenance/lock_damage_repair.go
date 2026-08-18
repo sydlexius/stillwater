@@ -85,6 +85,13 @@ type LockDamageOpts struct {
 	DryRun bool
 }
 
+// ErrLockDamageDepsNotSet reports a RepairLockDamage call before
+// SetLockDamageDeps attached the artist service and history repository. A
+// sentinel rather than an ad-hoc fmt.Errorf so callers and tests can identify
+// the condition with errors.Is instead of matching message text (the repo's
+// established pattern; compare ErrNoProviderIDRepository).
+var ErrLockDamageDepsNotSet = errors.New("lock damage repair: dependencies not set (SetLockDamageDeps)")
+
 // SetLockDamageDeps attaches the dependencies the locked-field damage repair
 // needs. Setter form rather than a NewService widening: the artist service and
 // history repository exist only after wireAuth builds them, while the
@@ -113,7 +120,7 @@ func (s *Service) SetLockDamageDeps(history artist.HistoryRepository, artistSvc 
 // wiring is an optimization; this convergence is the real idempotence.
 func (s *Service) RepairLockDamage(ctx context.Context, opts LockDamageOpts) (*LockDamageResult, error) {
 	if s.lockDamageHistory == nil || s.artistService == nil {
-		return nil, fmt.Errorf("lock damage repair: dependencies not set (SetLockDamageDeps)")
+		return nil, ErrLockDamageDepsNotSet
 	}
 
 	candidates, err := s.lockDamageHistory.LockDamageCandidates(ctx)
@@ -162,6 +169,15 @@ func (s *Service) RepairLockDamage(ctx context.Context, opts LockDamageOpts) (*L
 		// hydrate it or every such candidate misclassifies here.
 		a, err := s.artistService.GetByID(ctx, c.ArtistID, artist.HydrateOpts{})
 		if err != nil {
+			// A CANCELED PASS HAS DECIDED NOTHING. Filing the remaining
+			// candidates as per-row failures would return a partial result
+			// that looks like a completed pass; abort with the cause instead,
+			// so the startup wiring logs it and the next boot retries the
+			// whole pass (the completion key is only stamped by the caller on
+			// a returned result).
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, fmt.Errorf("lock damage repair aborted: %w", ctxErr)
+			}
 			res.Failed = append(res.Failed, LockDamageSkip{
 				ArtistID: c.ArtistID, Field: c.Field, RuleID: c.RuleID,
 				Reason: "could not read the artist",
@@ -184,7 +200,9 @@ func (s *Service) RepairLockDamage(ctx context.Context, opts LockDamageOpts) (*L
 			continue
 		}
 
-		s.attemptLockDamageRestore(ctx, c, res)
+		if err := s.attemptLockDamageRestore(ctx, c, res); err != nil {
+			return nil, err
+		}
 	}
 
 	// The unrecoverable REPORT: newest-per-pair damage whose source names no
@@ -207,7 +225,9 @@ func (s *Service) RepairLockDamage(ctx context.Context, opts LockDamageOpts) (*L
 	if err != nil {
 		return nil, fmt.Errorf("selecting unattributed locked-field damage: %w", err)
 	}
-	s.reportUnattributedLockDamage(ctx, unattributed, res)
+	if err := s.reportUnattributedLockDamage(ctx, unattributed, res); err != nil {
+		return nil, err
+	}
 
 	return res, nil
 }
@@ -230,11 +250,16 @@ func (s *Service) RepairLockDamage(ctx context.Context, opts LockDamageOpts) (*L
 // NOT Service.UpdateField: that verb is deliberately unconditional (the
 // operator's history revert and blast-radius restore write on the operator's
 // say-so), and its callers rely on that contract.
-func (s *Service) attemptLockDamageRestore(ctx context.Context, c artist.LockDamageCandidate, res *LockDamageResult) {
+func (s *Service) attemptLockDamageRestore(ctx context.Context, c artist.LockDamageCandidate, res *LockDamageResult) error {
 	writeCtx := artist.ContextWithSource(ctx, "revert")
 	outcome, err := s.artistService.RestoreLockedFieldGuarded(
 		writeCtx, c.ArtistID, c.Field, c.NewValue, c.OldValue)
 	if err != nil {
+		// A CANCELED PASS HAS DECIDED NOTHING: abort rather than filing the
+		// remaining candidates as failures a completed-looking result carries.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("lock damage repair aborted: %w", ctxErr)
+		}
 		// A DETERMINISTIC refusal recurs identically on every boot: retrying
 		// cannot change the answer, so it must not block completion forever
 		// (the pass would re-run on every start with no way to retire it).
@@ -246,7 +271,7 @@ func (s *Service) attemptLockDamageRestore(ctx context.Context, c artist.LockDam
 				ArtistID: c.ArtistID, Field: c.Field, RuleID: c.RuleID,
 				Reason: "the restore was refused and will be refused identically on retry",
 			})
-			return
+			return nil
 		}
 		// Anything else is TRANSIENT (a read or write error): counted, the
 		// pass continues, and the unstamped completion key retries it next
@@ -255,7 +280,7 @@ func (s *Service) attemptLockDamageRestore(ctx context.Context, c artist.LockDam
 			ArtistID: c.ArtistID, Field: c.Field, RuleID: c.RuleID,
 			Reason: "the restore write failed",
 		})
-		return
+		return nil
 	}
 	switch outcome {
 	case artist.LockedFieldRestoreValueDiverged:
@@ -267,13 +292,13 @@ func (s *Service) attemptLockDamageRestore(ctx context.Context, c artist.LockDam
 			ArtistID: c.ArtistID, Field: c.Field, RuleID: c.RuleID,
 			Reason: "the field changed after the candidate was selected",
 		})
-		return
+		return nil
 	case artist.LockedFieldRestoreUnlocked:
 		res.Unrecoverable = append(res.Unrecoverable, LockDamageSkip{
 			ArtistID: c.ArtistID, Field: c.Field, RuleID: c.RuleID,
 			Reason: "the field was unlocked after the candidate was selected",
 		})
-		return
+		return nil
 	case artist.LockedFieldRestoreApplied:
 		// Fall through to record the restore.
 	}
@@ -289,12 +314,13 @@ func (s *Service) attemptLockDamageRestore(ctx context.Context, c artist.LockDam
 		ArtistID: c.ArtistID, ArtistName: c.ArtistName,
 		Field: c.Field, RuleID: c.RuleID, DamagedAt: c.DamagedAt,
 	})
+	return nil
 }
 
 // reportUnattributedLockDamage files the unattributed damage rows into res:
 // the per-row actionable list filtered to fields locked now, and the wider
 // count kept whole in UnattributableAll.
-func (s *Service) reportUnattributedLockDamage(ctx context.Context, unattributed []artist.LockDamageUnattributedRow, res *LockDamageResult) {
+func (s *Service) reportUnattributedLockDamage(ctx context.Context, unattributed []artist.LockDamageUnattributedRow, res *LockDamageResult) error {
 	res.UnattributableAll = len(unattributed)
 	lockedByArtist := make(map[string]*artist.Artist)
 	for _, u := range unattributed {
@@ -305,6 +331,14 @@ func (s *Service) reportUnattributedLockDamage(ctx context.Context, unattributed
 			var err error
 			a, err = s.artistService.GetByID(ctx, u.ArtistID, artist.HydrateOpts{})
 			if err != nil {
+				// A CANCELED PASS HAS DECIDED NOTHING -- and this category
+				// is worse than Failed: Unrecoverable is treated as a FINAL
+				// outcome, so rows filed here under a canceled read would be
+				// permanently reported as unrecoverable without ever being
+				// examined. Abort with the cause instead.
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return fmt.Errorf("lock damage repair aborted: %w", ctxErr)
+				}
 				// Undecidable rather than decided-unlocked: keep the row in
 				// the actionable list so a read hiccup cannot silently shrink
 				// it. Reported with its own reason.
@@ -326,4 +360,5 @@ func (s *Service) reportUnattributedLockDamage(ctx context.Context, unattributed
 				"indistinguishable from an operator edit",
 		})
 	}
+	return nil
 }
