@@ -84,6 +84,17 @@ type HistoryRepository interface {
 	// CountNFOMBIDWrites counts those writes and the distinct artists they
 	// affect. Both figures are a floor; see NFOMBIDCounts.
 	CountNFOMBIDWrites(ctx context.Context, filter NFOMBIDFilter) (NFOMBIDCounts, error)
+
+	// LockDamageCandidates returns every (artist, field) pair whose newest
+	// change reads as damage and whose own source names the rule that wrote
+	// it. Read-only, and a candidate list rather than a decision: see
+	// LockDamageCandidate.
+	LockDamageCandidates(ctx context.Context) ([]LockDamageCandidate, error)
+
+	// LockDamageUnattributed returns every (artist, field) pair whose newest
+	// change reads as damage but whose source names no rule, so the repair
+	// cannot attribute it. Read-only; feeds the unrecoverable tally.
+	LockDamageUnattributed(ctx context.Context) ([]LockDamageUnattributedRow, error)
 }
 
 // HistoryService provides metadata change tracking for artists.
