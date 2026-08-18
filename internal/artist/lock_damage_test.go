@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 )
 
@@ -128,6 +129,73 @@ func TestLockDamageCandidates_ExcludesAnOperatorEdit(t *testing.T) {
 	}
 }
 
+// THE SOURCE PREDICATE MUST BE APPLIED AFTER RANKING, NOT INSIDE THE CTE FRAME.
+//
+// The test above seeds its rule row on the "rule_fix" pseudo-field, so its two
+// rows land in DIFFERENT (artist_id, field) partitions and the ranking CTE never
+// has to choose between them. This one puts both rows on the SAME field, which
+// is the case that actually constrains where the source test may live:
+//
+//   - older row: rule-sourced damage (a genuine candidate, on its own)
+//   - newer row: the operator's own edit, source "manual"
+//
+// Ranking keeps only the newest row per pair, so the manual row survives to the
+// outer select and fails the source test -- zero candidates. If the source test
+// were pushed INTO the frame, the frame would filter the manual row out FIRST,
+// promoting the older rule row to rank 1 and making stale damage restorable over
+// the operator's newer value. That is the exact data loss the design forbids.
+//
+// MUTATION PROOF: move `AND r.source LIKE 'rule:%'` from the outer select into
+// the ranked CTE and this test fails with a candidate it must never return.
+func TestLockDamageCandidates_SourcePredicateAppliedAfterRanking(t *testing.T) {
+	db := newTestDB(t)
+	repo := newSQLiteHistoryRepo(db)
+
+	seedLockDamageArtist(t, db)
+	// Both rows on biography: ONE partition, so ranking must choose.
+	seedLockDamageChange(t, db, "d1", "biography", "curated bio", "junk bio",
+		"rule:metadata_quality", "2026-05-01T10:00:00Z")
+	seedLockDamageChange(t, db, "d2", "biography", "junk bio", "operator value",
+		"manual", "2026-05-01T11:00:00Z")
+
+	// PRECONDITIONS. Same field on both rows is the DEFINING property here: if a
+	// future edit moved either onto another field the partitions would separate
+	// again and this test would silently stop covering the ranking interaction.
+	requireChange(t, db, "d1", map[string]string{
+		"field": "biography", "source": "rule:metadata_quality",
+	})
+	requireChange(t, db, "d2", map[string]string{
+		"field": "biography", "source": "manual",
+	})
+
+	got, err := repo.LockDamageCandidates(context.Background())
+	if err != nil {
+		t.Fatalf("LockDamageCandidates: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %d candidates, want 0 -- the newest row for this pair is an "+
+			"operator edit, so the older rule-sourced row must NOT be promoted", len(got))
+	}
+
+	// The row is not merely excluded, it is ACCOUNTED FOR. A damage row that
+	// vanishes from both the candidate list and the unattributed report is the
+	// "unknown rendered as clean" defect this feature exists to prevent.
+	unattributed, err := repo.LockDamageUnattributed(context.Background())
+	if err != nil {
+		t.Fatalf("LockDamageUnattributed: %v", err)
+	}
+	if len(unattributed) != 1 {
+		t.Fatalf("got %d unattributed rows, want exactly 1 (the operator edit)",
+			len(unattributed))
+	}
+	if unattributed[0].Field != "biography" {
+		t.Errorf("unattributed field = %q, want biography", unattributed[0].Field)
+	}
+	if unattributed[0].Source != "manual" {
+		t.Errorf("unattributed source = %q, want manual", unattributed[0].Source)
+	}
+}
+
 func TestLockDamageCandidates_ExcludesAlreadyRestored(t *testing.T) {
 	db := newTestDB(t)
 	repo := newSQLiteHistoryRepo(db)
@@ -207,11 +275,14 @@ func TestLockDamageQueries_SurfaceQueryErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := repo.LockDamageCandidates(ctx); err == nil {
-		t.Error("LockDamageCandidates returned nil error on a canceled context")
+	// errors.Is, not merely non-nil: a test that accepts ANY error passes even
+	// when the query fails for a reason unrelated to the cancellation it set up,
+	// so it would not notice the error contract changing underneath it.
+	if _, err := repo.LockDamageCandidates(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("LockDamageCandidates error = %v, want context.Canceled", err)
 	}
-	if _, err := repo.LockDamageUnattributed(ctx); err == nil {
-		t.Error("LockDamageUnattributed returned nil error on a canceled context")
+	if _, err := repo.LockDamageUnattributed(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("LockDamageUnattributed error = %v, want context.Canceled", err)
 	}
 }
 
