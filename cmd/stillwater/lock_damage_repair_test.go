@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/cli"
+	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/maintenance"
 )
 
@@ -117,7 +119,9 @@ func TestLockDamageDryRun_ReportsWithoutWriting(t *testing.T) {
 		t.Fatalf("lockDamageDryRunDB: %v", err)
 	}
 
-	// The report names the candidate WITHOUT its values.
+	// The report names the candidate WITHOUT its values and WITHOUT the
+	// artist's name -- the design doc classes artist names with the private
+	// metadata that must not reach an outward surface.
 	report := out.String()
 	if !strings.Contains(report, "would restore: 1") {
 		t.Errorf("report does not count the candidate:\n%s", report)
@@ -127,6 +131,9 @@ func TestLockDamageDryRun_ReportsWithoutWriting(t *testing.T) {
 	}
 	if strings.Contains(report, "curated bio") || strings.Contains(report, "junk bio") {
 		t.Errorf("report leaks field values:\n%s", report)
+	}
+	if strings.Contains(report, "Locked Artist") {
+		t.Errorf("report leaks the artist name:\n%s", report)
 	}
 
 	if got := tableSnapshot(t, ctx, db, "artists"); got != artistsBefore {
@@ -419,10 +426,13 @@ func TestLockDamageDryRun_ReportsUnrecoverableAndFailedRows(t *testing.T) {
 }
 
 // TestRunLockDamageDryRun_EndToEnd drives the real flag entry point through
-// its env-var bootstrap (config load, migrate, open) against a temp database,
-// asserting it completes and writes nothing. Output goes to os.Stdout, which
-// the test does not capture; the report's content is pinned by the
-// lockDamageDryRunDB tests above.
+// its env-var bootstrap (config load, open, version check) against a temp
+// database, asserting it completes and writes nothing. The database is
+// migrated by the TEST first: the entry point itself refuses to migrate (see
+// the refusal test below), so unlike the pre-review version this test does
+// not lean on the entry point creating its own schema. Output goes to
+// os.Stdout, which the test does not capture; the report's content is pinned
+// by the lockDamageDryRunDB tests above.
 func TestRunLockDamageDryRun_EndToEnd(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := dir + "/dry.db"
@@ -430,7 +440,17 @@ func TestRunLockDamageDryRun_EndToEnd(t *testing.T) {
 	t.Setenv("SW_CONFIG_PATH", dir+"/no-such-config.toml")
 	t.Setenv("SW_MUSIC_PATH", dir)
 
-	// First run migrates and creates the database; no candidates exist.
+	// Migrate the database up front, the way a real clone would have been
+	// migrated by the server that produced it.
+	mig, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening db for migration: %v", err)
+	}
+	if err := database.Migrate(mig); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+	_ = mig.Close()
+
 	if err := runLockDamageDryRun(); err != nil {
 		t.Fatalf("runLockDamageDryRun: %v", err)
 	}
@@ -463,6 +483,133 @@ func TestRunLockDamageDryRun_EndToEnd(t *testing.T) {
 	if n != 0 {
 		t.Errorf("dry-run entry point stamped %s", lockDamageRepairKey)
 	}
+}
+
+// A NAME-FIELD candidate is the sharpest leak fixture: name is a lockable,
+// trackable field, so for a field=name damage row the artist's NAME is
+// itself the damaged value. A report that prints the name prints the value.
+// The biography-only leak test above cannot catch that, which is how the
+// ArtistName column survived review once.
+func TestLockDamageDryRun_NameFieldCandidateLeaksNoName(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path, locked_fields)
+		 VALUES ('n1', 'PRIVATE_DAMAGED_ARTIST_NAME', 'x', '', '["name"]')`); err != nil {
+		t.Fatalf("seeding artist: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+		 VALUES ('nd1', 'n1', 'name', 'PRIVATE_ORIGINAL_NAME', 'PRIVATE_DAMAGED_ARTIST_NAME', 'rule:name_language_pref', '2026-05-01T10:00:01Z')`); err != nil {
+		t.Fatalf("seeding damage: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := lockDamageDryRunDB(ctx, db, &out); err != nil {
+		t.Fatalf("lockDamageDryRunDB: %v", err)
+	}
+	report := out.String()
+	// PRECONDITION: the row is really in the report, or the leak assertions
+	// below pass against an empty section.
+	if !strings.Contains(report, "would restore: 1") || !strings.Contains(report, "artist=n1") {
+		t.Fatalf("fixture: the name-field candidate did not reach the report:\n%s", report)
+	}
+	if strings.Contains(report, "PRIVATE_DAMAGED_ARTIST_NAME") || strings.Contains(report, "PRIVATE_ORIGINAL_NAME") {
+		t.Errorf("report leaks the name-field value (which is also the artist name):\n%s", report)
+	}
+}
+
+// THE DRY RUN MUST NOT MIGRATE THE DATABASE IT INSPECTS. A clone of a
+// released deployment is behind on migrations by construction, and the
+// migrations rewrite DATA (014 rewrites lock state, 024 retracts rule
+// results), so migrate-then-preview would silently alter the very state the
+// preview reports on -- under a banner reading "no writes performed". The
+// entry point must refuse loudly instead, and the applied-migration set must
+// be byte-identical before and after the attempt.
+func TestRunLockDamageDryRun_RefusesToMigrateABehindDatabase(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/behind.db"
+	t.Setenv("SW_DB_PATH", dbPath)
+	t.Setenv("SW_CONFIG_PATH", dir+"/no-such-config.toml")
+	t.Setenv("SW_MUSIC_PATH", dir)
+
+	// Build a database that is BEHIND: migrate fully, then roll the goose
+	// tracker back two versions, the observable shape of a clone from an
+	// older release. (Down-migrating real schema is not required: the entry
+	// point's check reads the tracker, and the assertion below is that the
+	// tracker is untouched.)
+	mig, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening db for migration: %v", err)
+	}
+	if err := database.Migrate(mig); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+	if _, err := mig.Exec(
+		`DELETE FROM goose_db_version WHERE version_id > (SELECT MAX(version_id) - 2 FROM goose_db_version)`); err != nil {
+		t.Fatalf("rolling back tracker: %v", err)
+	}
+	trackerBefore := tableSnapshot(t, context.Background(), mig, "goose_db_version")
+	_ = mig.Close()
+
+	err = runLockDamageDryRun()
+	if err == nil {
+		t.Fatal("runLockDamageDryRun succeeded against a behind-on-migrations database; want a refusal")
+	}
+	if !strings.Contains(err.Error(), "refuses to migrate") {
+		t.Errorf("err = %v, want the migration refusal", err)
+	}
+
+	// THE ASSERTION THAT MATTERS: the applied-version set is unchanged. Every
+	// pre-review dry-run test opened an already-migrated database, which is
+	// why the migration delta was always zero and the defect invisible.
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("reopening db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if got := tableSnapshot(t, context.Background(), db, "goose_db_version"); got != trackerBefore {
+		t.Errorf("goose_db_version changed across the refused dry run:\nbefore:\n%s\nafter:\n%s", trackerBefore, got)
+	}
+}
+
+// THE DISPATCH CONTRACT: a handled flag command must tell main NOT to fall
+// through to run(). For -lock-damage-dry-run the fall-through would boot a
+// live server against the operator's database copy and run the REAL write
+// pass the dry run exists to preview -- the most consequential line in the
+// change, and previously pinned by nothing (main() is coverage-ignored and
+// untested).
+//
+// MUTATION PROOF: make dispatchFlagCommand return handled=false for the
+// dry-run arm (the equivalent of deleting main's `return`) and the first
+// subtest FAILS.
+func TestDispatchFlagCommand_DryRunNeverFallsThrough(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SW_DB_PATH", dir+"/dispatch.db")
+	t.Setenv("SW_CONFIG_PATH", dir+"/no-such-config.toml")
+	t.Setenv("SW_MUSIC_PATH", dir)
+
+	t.Run("dry run is handled, even when it errors", func(t *testing.T) {
+		// The database does not exist and is not migrated, so the command
+		// errors -- and handled must STILL be true: an errored flag command
+		// exits, it does not boot the server.
+		var stderr bytes.Buffer
+		handled, err := dispatchFlagCommand(cli.Flags{LockDamageDryRun: true}, &stderr)
+		if !handled {
+			t.Fatal("handled = false for -lock-damage-dry-run; main would fall through and boot the real server")
+		}
+		if err == nil {
+			t.Error("err = nil against a nonexistent database; the refusal should surface")
+		}
+	})
+
+	t.Run("no flag set falls through to the server path", func(t *testing.T) {
+		var stderr bytes.Buffer
+		handled, err := dispatchFlagCommand(cli.Flags{}, &stderr)
+		if handled || err != nil {
+			t.Fatalf("handled=%v err=%v, want false/nil so main proceeds to run()", handled, err)
+		}
+	})
 }
 
 // A pass-level error (here: dependencies never attached) must leave the

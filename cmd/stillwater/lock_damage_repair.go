@@ -11,6 +11,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/config"
+	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/maintenance"
 )
 
@@ -38,11 +39,37 @@ func runLockDamageDryRun() error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	db, err := openMigratedRuntimeDB(cfg.Database.Path)
+	// THE DRY RUN NEVER MIGRATES. openMigratedRuntimeDB's first act is
+	// migrateSchema, and the migrations mutate DATA, not just schema (014
+	// rewrites lock state, 024 retracts rule results and edits artists). A
+	// clone of a released deployment is behind on migrations BY CONSTRUCTION,
+	// so migrate-then-preview would silently rewrite the clone -- including
+	// the lock state that is the predicate's own condition 1 -- while
+	// printing "no writes performed". Open read-only-in-spirit instead and
+	// REFUSE loudly on a schema mismatch: the operator's next step (run the
+	// real server against the copy, or accept that the preview requires a
+	// migrated database) is then an informed choice, not a side effect.
+	db, err := database.OpenRuntime(cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("opening database: %w", err)
+	}
+	defer db.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	applied, err := database.AppliedMigrationVersion(context.Background(), db)
 	if err != nil {
 		return err
 	}
-	defer db.Close() //nolint:errcheck // Close error not actionable on cleanup
+	latest, err := database.LatestMigrationVersion()
+	if err != nil {
+		return err
+	}
+	if applied != latest {
+		return fmt.Errorf("database at %s is at migration version %d; this build expects %d. "+
+			"The dry run refuses to migrate: migrations rewrite data (lock state among it), "+
+			"which would alter the very state this preview inspects. "+
+			"Start the server once against a copy you are willing to migrate, then re-run the dry run",
+			cfg.Database.Path, applied, latest)
+	}
 
 	return lockDamageDryRunDB(context.Background(), db, os.Stdout)
 }
@@ -51,10 +78,14 @@ func runLockDamageDryRun() error {
 // database and prints the candidate report. Accessible from tests in the same
 // package, mirroring resetPasswordDB.
 //
-// The report carries artist IDs, names, fields, rule IDs, and timestamps --
-// NEVER old or new field values. stdout is a local surface, but a value here
-// would end up copy-pasted into issues and reviews, which is exactly the leak
-// the logging constraint exists to prevent.
+// The report carries artist IDs, fields, rule IDs, and timestamps -- NEVER
+// artist names and NEVER old or new field values. The design doc's
+// clone-handling rules class artist NAMES with the private library metadata
+// that must not reach an outward surface, and worse, name is itself a
+// lockable trackable field: for a field=name row the ArtistName IS the
+// damaged value. stdout is a local surface, but this report exists to be
+// copy-pasted into issues and reviews, which is exactly the leak the
+// constraint prevents.
 func lockDamageDryRunDB(ctx context.Context, db *sql.DB, out io.Writer) error {
 	artistSvc := artist.NewService(db)
 	hist := artist.NewHistoryService(db)
@@ -80,8 +111,8 @@ func printLockDamageReport(out io.Writer, res *maintenance.LockDamageResult) {
 	_, _ = fmt.Fprintf(out, "locked-field damage repair DRY RUN (no writes performed)\n")
 	_, _ = fmt.Fprintf(out, "would restore: %d\n", len(res.Restored))
 	for _, r := range res.Restored {
-		_, _ = fmt.Fprintf(out, "  artist=%s (%s) field=%s rule=%s damaged_at=%s\n",
-			r.ArtistID, r.ArtistName, r.Field, r.RuleID,
+		_, _ = fmt.Fprintf(out, "  artist=%s field=%s rule=%s damaged_at=%s\n",
+			r.ArtistID, r.Field, r.RuleID,
 			r.DamagedAt.UTC().Format(time.RFC3339))
 	}
 	_, _ = fmt.Fprintf(out, "unrecoverable: %d (unattributable_all=%d)\n",

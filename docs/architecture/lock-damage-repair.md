@@ -265,9 +265,8 @@ but it still earns its own test.
 ## Reporting
 
 - **A structured `slog` record per restore:** artist ID, field, attributing rule
-  ID, and the timestamps of both the damage row and the `rule_fix` row. NOT the
-  values -- an old biography is user library content and does not belong in a
-  log line.
+  ID, and the damage row's timestamp. NOT the values -- an old biography is
+  user library content and does not belong in a log line.
 - **Recent Activity and the blast-radius pane, for free.** The write is an
   ordinary `source='revert'` history row, so both surfaces render it through
   existing machinery. This unit adds NO new UI; a conditional banner is #2678.
@@ -319,9 +318,10 @@ Both packages use real SQLite via their established `setupTestDB` fixtures.
    is NOT. Same artist, same rule, same damage shape, differing only in
    `locked_fields`. Without the negative half the positive one can pass while
    the predicate matches nothing.
-2. **The attribution control.** A locked field damaged with NO attributing
-   `rule_fix` row is NOT restored and DOES appear in the unrecoverable tally.
-   This pins the deliberate decision not to widen to unattributed damage.
+2. **The attribution control.** A locked field whose damage row's own source
+   names NO rule (`source = "manual"`) is NOT restored and DOES appear in the
+   unrecoverable tally. This pins the deliberate decision not to widen to
+   unattributed damage.
 3. **Revert does not revert itself.** Two passes over one fixture; the second
    restores nothing. Run with the settings flag CLEARED.
 4. **An operator edit after the damage blocks the restore** for that field.
@@ -329,8 +329,8 @@ Both packages use real SQLite via their established `setupTestDB` fixtures.
    `musicbrainz_id` damage on a locked field, assert it is reported rather than
    silently zero.
 6. **Precondition assertions on every fixture:** the field really is locked, the
-   `rule_fix` row really exists, the damage row really is newest -- asserted
-   BEFORE trusting what the run reports. A fixture that silently fails to seed
+   damage row really carries its `rule:` source, the damage row really is
+   newest -- asserted BEFORE trusting what the run reports. A fixture that silently fails to seed
    produces a green test that verifies nothing.
 
 ### Mutation proofs
@@ -338,7 +338,7 @@ Both packages use real SQLite via their established `setupTestDB` fixtures.
 Each must fail a test:
 
 - Delete the `locked_fields` check -> the unlocked control fails.
-- Delete the `rule_fix` join -> the unattributed control fails.
+- Delete the `source LIKE 'rule:%'` predicate -> the attribution control fails.
 
 If either leaves the suite green, that control is decorative.
 

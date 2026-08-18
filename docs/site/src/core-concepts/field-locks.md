@@ -86,6 +86,8 @@ The repair is deliberately cautious. It restores a field only when all of the fo
 
 Each restored value appears in the artist's Recent Activity as an ordinary revert, and the pair drops out of the blast radius report because the field now holds your value again. The startup log summarizes the run: how many pairs were restored, how many were unrecoverable, and how many failed. The repair runs once per database; a run that hit errors on some rows retries them at the next start, and rows repaired earlier are not touched again.
 
+## Library-wide: NFO lockdata switch
+
 Each library has an opt-in switch: when on, every NFO that library writes asks platforms not to overwrite it, regardless of per-artist lock state. The library-level switch is the right tool when you want the whole library treated as authoritative -- "Stillwater writes the NFOs; nothing else should rewrite them." The per-artist lock is the right tool when most of the library can be platform-managed but a few records are special.
 
 ## What about platforms pushing back?

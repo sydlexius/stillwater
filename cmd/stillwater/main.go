@@ -100,22 +100,12 @@ func main() {
 	}
 	flag.Parse()
 
-	if cliFlags.ResetPassword {
-		if cliFlags.NewPassword != "" {
-			fmt.Fprintln(os.Stderr, "warning: --new-password exposes the password in process arguments; consider using the interactive prompt instead")
-		}
-		if err := resetPassword(cliFlags.Username, cliFlags.NewPassword); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-		return
+	handled, err := dispatchFlagCommand(cliFlags, os.Stderr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
-
-	if cliFlags.LockDamageDryRun {
-		if err := runLockDamageDryRun(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+	if handled {
 		return
 	}
 
@@ -123,6 +113,30 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// dispatchFlagCommand runs the one-shot flag command selected by flags, if
+// any. It returns handled=true when a flag command ran (successfully or not):
+// THE CALLER MUST NOT FALL THROUGH TO run() ON A HANDLED COMMAND. That
+// non-fall-through is the second half of every flag's contract -- for
+// -lock-damage-dry-run especially, falling through would boot a live server
+// against the operator's database copy and run the REAL write pass the dry
+// run exists to preview. Extracted from main() so a test can pin exactly
+// that: main() itself is untestable (os.Exit, coverage-ignored), which is how
+// the fall-through went unasserted.
+func dispatchFlagCommand(cliFlags cli.Flags, stderr io.Writer) (handled bool, err error) {
+	if cliFlags.ResetPassword {
+		if cliFlags.NewPassword != "" {
+			_, _ = fmt.Fprintln(stderr, "warning: --new-password exposes the password in process arguments; consider using the interactive prompt instead")
+		}
+		return true, resetPassword(cliFlags.Username, cliFlags.NewPassword)
+	}
+
+	if cliFlags.LockDamageDryRun {
+		return true, runLockDamageDryRun()
+	}
+
+	return false, nil
 }
 
 // Application holds all initialized state for a Stillwater server instance.
