@@ -327,6 +327,122 @@ func TestRestoreLockedFieldGuarded_FailureBranches(t *testing.T) {
 	})
 }
 
+// TestRecordHistoryTx_ValidationAndSkipBranches pins recordHistoryTx's own
+// contract directly, branch by branch, against a real *sql.Tx -- the
+// validation and skip rules it mirrors from HistoryService.Record but cannot
+// share code with (recordHistoryTx exists purely because HistoryRepository
+// has no INSERT-on-a-transaction method; see the doc comment on
+// recordHistoryTx). RestoreLockedFieldGuarded's own tests exercise these only
+// indirectly through a full restore, which cannot reach the empty-artistID /
+// empty-field / invalid-source branches because ValidateFieldUpdate and the
+// caller's own id argument already rule those inputs out before
+// recordHistoryTx is ever called.
+func TestRecordHistoryTx_ValidationAndSkipBranches(t *testing.T) {
+	// metadata_changes.artist_id carries a foreign key onto artists, so every
+	// case that reaches the actual INSERT needs artist "a1" seeded first --
+	// the validation-only cases below (empty artist_id/field/source, invalid
+	// source) never reach the INSERT and do not need it.
+	newTx := func(t *testing.T) (*sql.DB, *sql.Tx) {
+		t.Helper()
+		env := newLockRestoreEnv(t)
+		env.seedArtist("a1", "Artist", "junk bio", `["biography"]`)
+		tx, err := env.db.BeginTx(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("beginning tx: %v", err)
+		}
+		t.Cleanup(func() { _ = tx.Rollback() })
+		return env.db, tx
+	}
+
+	t.Run("empty artist_id is refused", func(t *testing.T) {
+		_, tx := newTx(t)
+		err := recordHistoryTx(context.Background(), tx, "", "biography", "old", "new", "revert")
+		if err == nil {
+			t.Fatal("want an error for an empty artist_id")
+		}
+	})
+
+	t.Run("empty field is refused", func(t *testing.T) {
+		_, tx := newTx(t)
+		err := recordHistoryTx(context.Background(), tx, "a1", "", "old", "new", "revert")
+		if err == nil {
+			t.Fatal("want an error for an empty field")
+		}
+	})
+
+	t.Run("empty source is refused", func(t *testing.T) {
+		_, tx := newTx(t)
+		err := recordHistoryTx(context.Background(), tx, "a1", "biography", "old", "new", "")
+		if err == nil {
+			t.Fatal("want an error for an empty source")
+		}
+	})
+
+	t.Run("an invalid source is refused", func(t *testing.T) {
+		_, tx := newTx(t)
+		err := recordHistoryTx(context.Background(), tx, "a1", "biography", "old", "new", "bogus")
+		if err == nil {
+			t.Fatal("want an error for a source outside the valid set")
+		}
+	})
+
+	t.Run("identical non-empty old and new values are skipped, not inserted", func(t *testing.T) {
+		db, tx := newTx(t)
+		if err := recordHistoryTx(context.Background(), tx, "a1", "biography", "same", "same", "revert"); err != nil {
+			t.Fatalf("recordHistoryTx: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("committing: %v", err)
+		}
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM metadata_changes WHERE artist_id = 'a1'`).Scan(&n); err != nil {
+			t.Fatalf("counting rows: %v", err)
+		}
+		if n != 0 {
+			t.Errorf("rows = %d, want 0 -- an identical non-empty old/new pair must not insert", n)
+		}
+	})
+
+	t.Run("an empty old value with an empty new value still inserts", func(t *testing.T) {
+		// Mirrors HistoryService.Record's own comment: the skip only fires
+		// when oldValue is non-empty, so a fix result whose old and new are
+		// both "" must still leave an audit trail rather than being silently
+		// dropped by the same guard that skips a genuine no-op.
+		db, tx := newTx(t)
+		if err := recordHistoryTx(context.Background(), tx, "a1", "biography", "", "", "revert"); err != nil {
+			t.Fatalf("recordHistoryTx: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("committing: %v", err)
+		}
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM metadata_changes WHERE artist_id = 'a1'`).Scan(&n); err != nil {
+			t.Fatalf("counting rows: %v", err)
+		}
+		if n != 1 {
+			t.Errorf("rows = %d, want 1 -- an empty/empty pair must still be recorded", n)
+		}
+	})
+
+	t.Run("a pre-assigned history ID from context is used as-is", func(t *testing.T) {
+		db, tx := newTx(t)
+		ctx := ContextWithHistoryID(context.Background(), "preset-id")
+		if err := recordHistoryTx(ctx, tx, "a1", "biography", "old", "new", "revert"); err != nil {
+			t.Fatalf("recordHistoryTx: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("committing: %v", err)
+		}
+		var id string
+		if err := db.QueryRow(`SELECT id FROM metadata_changes WHERE artist_id = 'a1'`).Scan(&id); err != nil {
+			t.Fatalf("reading id: %v", err)
+		}
+		if id != "preset-id" {
+			t.Errorf("id = %q, want the pre-assigned context ID", id)
+		}
+	})
+}
+
 // noDBRepo wraps a Repository and hides any DB accessor, standing in for a
 // deployment where the service was built over a repository that owns no raw
 // handle.
