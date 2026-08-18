@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/foreign"
 	img "github.com/sydlexius/stillwater/internal/image"
 )
@@ -43,6 +44,13 @@ type Service struct {
 	dbPath        string
 	imageCacheDir string
 	logger        *slog.Logger
+
+	// lockDamageHistory and artistService are the locked-field damage
+	// repair's dependencies (#3075), attached via SetLockDamageDeps after
+	// wireAuth constructs them. Nil until then; RepairLockDamage refuses to
+	// run without them.
+	lockDamageHistory artist.HistoryRepository
+	artistService     *artist.Service
 }
 
 // NewService creates a maintenance service. imageCacheDir is the directory
