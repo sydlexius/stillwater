@@ -65,6 +65,14 @@ func (alwaysErrHistoryRepo) CountNFOMBIDWrites(_ context.Context, _ artist.NFOMB
 	return artist.NFOMBIDCounts{}, errors.New("simulated history store failure")
 }
 
+func (alwaysErrHistoryRepo) LockDamageCandidates(_ context.Context) ([]artist.LockDamageCandidate, error) {
+	return nil, errors.New("simulated history store failure")
+}
+
+func (alwaysErrHistoryRepo) LockDamageUnattributed(_ context.Context) ([]artist.LockDamageUnattributedRow, error) {
+	return nil, errors.New("simulated history store failure")
+}
+
 // testRouterWithErrHistoryService creates a Router wired with a HistoryService
 // whose ListGlobal always errors. This is used to verify that handleFieldEdit
 // degrades gracefully when the history pre-load step fails.
