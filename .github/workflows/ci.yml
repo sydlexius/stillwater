@@ -492,7 +492,49 @@ jobs:
         # Always install OS-level deps (libnss3, libgbm, libdbus-glib for
         # firefox, etc.); they are OS packages, not part of the cached
         # browser archive.
-        run: npx playwright install-deps chromium firefox
+        #
+        # BOUNDED AND RETRIED, NEVER SKIPPED. This step shells out to apt-get,
+        # which can block indefinitely on an unreachable mirror or a held dpkg
+        # lock -- it neither progresses nor errors. Observed twice in two days
+        # (runs 32085974911, 32086718187): the step sat for 12+ minutes and the
+        # job burned its whole 20-minute budget before anything failed, which
+        # reads to a maintainer as a hung check rather than a broken one.
+        #
+        # Each attempt gets its own wall-clock bound so a stuck apt is killed
+        # and retried rather than waited on. The retry is what makes this a
+        # transient-fault absorber; the final `exit 1` is what keeps the step
+        # BLOCKING, because this job is a required check and a11y coverage that
+        # can be skipped is a11y coverage nobody has. Do not add
+        # continue-on-error here.
+        timeout-minutes: 10
+        run: |
+          set -u
+          attempts=3
+          for attempt in $(seq 1 "${attempts}"); do
+            if timeout 150s npx playwright install-deps chromium firefox; then
+              echo "install-deps succeeded on attempt ${attempt}"
+              exit 0
+            else
+              # $? MUST be read inside this else branch. After `fi` it is the
+              # status of the whole if-compound (0 when the condition was
+              # false), so a timed-out attempt would be logged as an ordinary
+              # failure with status 0 and the 124 branch would be unreachable.
+              status=$?
+              if [ "${status}" -eq 124 ]; then
+                reason="exceeded 150s (apt appears stuck)"
+              else
+                reason="failed with status ${status}"
+              fi
+              if [ "${attempt}" -lt "${attempts}" ]; then
+                echo "::warning::install-deps attempt ${attempt}/${attempts} ${reason}; retrying"
+                sleep 10
+              else
+                echo "::warning::install-deps attempt ${attempt}/${attempts} ${reason}; no attempts remain"
+              fi
+            fi
+          done
+          echo "::error::install-deps failed after ${attempts} attempts"
+          exit 1
 
       - name: Generate templ
         run: go tool templ generate
