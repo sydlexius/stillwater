@@ -514,14 +514,24 @@ jobs:
             if timeout 150s npx playwright install-deps chromium firefox; then
               echo "install-deps succeeded on attempt ${attempt}"
               exit 0
-            fi
-            status=$?
-            if [ "${status}" -eq 124 ]; then
-              echo "::warning::install-deps attempt ${attempt}/${attempts} exceeded 150s (apt appears stuck); retrying"
             else
-              echo "::warning::install-deps attempt ${attempt}/${attempts} failed with status ${status}; retrying"
+              # $? MUST be read inside this else branch. After `fi` it is the
+              # status of the whole if-compound (0 when the condition was
+              # false), so a timed-out attempt would be logged as an ordinary
+              # failure with status 0 and the 124 branch would be unreachable.
+              status=$?
+              if [ "${status}" -eq 124 ]; then
+                reason="exceeded 150s (apt appears stuck)"
+              else
+                reason="failed with status ${status}"
+              fi
+              if [ "${attempt}" -lt "${attempts}" ]; then
+                echo "::warning::install-deps attempt ${attempt}/${attempts} ${reason}; retrying"
+                sleep 10
+              else
+                echo "::warning::install-deps attempt ${attempt}/${attempts} ${reason}; no attempts remain"
+              fi
             fi
-            sleep 10
           done
           echo "::error::install-deps failed after ${attempts} attempts"
           exit 1
