@@ -111,6 +111,14 @@ func main() {
 		return
 	}
 
+	if cliFlags.LockDamageDryRun {
+		if err := runLockDamageDryRun(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -527,6 +535,11 @@ func (a *Application) buildServices() error {
 	}
 
 	wireInfraServices(ctx, a, db, cfg, logger)
+	// The locked-field damage repair (#3075) needs the artist service and
+	// history repository, both built by wireAuth above; wireInfraServices
+	// cannot pass them to NewService because it runs with only db and cfg in
+	// its contract.
+	a.maintenanceService.SetLockDamageDeps(a.historyService.Repo(), a.artistService)
 	applyPersistedBasePath(ctx, db, cfg, logger)
 	wireEventSubscriptions(a)
 
@@ -1325,6 +1338,9 @@ func (a *Application) startListeners() error {
 		}
 		go a.maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
 	}
+
+	// One-shot repair of locked fields a past rule run overwrote (#3038).
+	a.startLockDamageRepair(ctx, db, logger)
 
 	// Fanart per-slot hash backfill (issue #2564).
 	a.startFanartHashBackfill(ctx, db)

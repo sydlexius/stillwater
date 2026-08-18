@@ -48,6 +48,13 @@ type Flags struct {
 	// argument is insecure because it appears in process listings (ps, top,
 	// /proc); prefer the interactive prompt whenever possible.
 	NewPassword string `flag:"new-password" default:"" desc:"New password for --reset-password (INSECURE: visible in process listings; prefer the interactive prompt instead)."`
+
+	// LockDamageDryRun, when true, runs the locked-field damage repair in
+	// report-only mode and exits: it selects and prints the candidate report,
+	// writes nothing, does not record completion, and never starts a listener.
+	// Built for validating the repair predicate against a database copy before
+	// letting a real pass write (issue #3038 / #3075).
+	LockDamageDryRun bool `flag:"lock-damage-dry-run" default:"false" desc:"Report which locked fields the damage repair would restore, then exit without writing. For validating against a database copy."`
 }
 
 // SubcommandInfo describes a CLI subcommand (os.Args[1] dispatch) that

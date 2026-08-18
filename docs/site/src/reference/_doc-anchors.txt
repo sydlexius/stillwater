@@ -82,10 +82,10 @@ core-concepts/conflict-gate#let-stillwater-manage-and-auto-re-disable
 core-concepts/conflict-gate#relationship-to-field-locks-and-rules
 core-concepts/conflict-gate#the-round-trip-problem
 core-concepts/conflict-gate#what-the-gate-detects
+core-concepts/field-locks#automatic-repair-of-pinned-fields-a-rule-overwrote
 core-concepts/field-locks#field-locks
 core-concepts/field-locks#layer-1-artist-lock-the-big-switch
 core-concepts/field-locks#layer-2-field-locks-per-field-protection
-core-concepts/field-locks#library-wide-nfo-lockdata-switch
 core-concepts/field-locks#what-about-platforms-pushing-back
 core-concepts/field-locks#what-you-dont-need-to-think-about
 core-concepts/images#images

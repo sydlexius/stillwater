@@ -169,8 +169,9 @@ after it at `:1101`. #3065 deferred the audit row precisely so a lock-reverted
 fix emits none, which moved it AFTER its own damage.
 
 So the condition would have rejected every genuine candidate on a current build,
-and the plan's `TestLockDamageCandidates_ExcludesDamageOlderThanTheRuleFix`
-asserted the wrong direction. A predicate resting on a wall-clock ordering
+and the superseded plan's `TestLockDamageCandidates_ExcludesDamageOlderThanTheRuleFix`
+(deleted with that plan; it never existed on this branch) asserted the wrong
+direction. A predicate resting on a wall-clock ordering
 between two rows written by different statements is fragile whichever way it
 points, which is the deeper reason the per-row `source` is the right key.
 
@@ -381,6 +382,13 @@ maintainer's production database.
   contain damage the author constructed.
 - The real distribution of the unrecoverable tally by field.
 
+**EXPECT ZERO CANDIDATES, and treat that as the PASS condition rather than a
+bug.** No released build writes the `rule:` source the predicate requires, so
+a clone of any real deployment has nothing for it to match -- zero is the
+predicate agreeing with the coverage analysis above. A NON-ZERO count on such
+a clone means the predicate is matching something it should not: stop and
+investigate before running the write pass.
+
 **Run it in report-only mode first** (select and report, write nothing), inspect
 the candidate list by hand, and only then run the write pass against the clone
 and diff the result. A predicate that selects a surprising row is a design
@@ -400,5 +408,8 @@ finding, not a tuning problem.
 implementation issue references this document, per the repo rule that a
 design/spec issue needing implementation gets its own impl issue.
 
-The task-by-task implementation plan derived from this design is
-`docs/architecture/lock-damage-repair-plan.md`.
+The task-by-task implementation plan derived from this design was build
+scaffolding and was deleted in the implementation PR (#3075), per that issue.
+The mutation proofs it carried now live as comments on the tests they justify
+(`internal/maintenance/lock_damage_repair_test.go`,
+`internal/artist/lock_damage_test.go`).
