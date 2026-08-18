@@ -100,3 +100,30 @@ func TestAppliedMigrationVersion(t *testing.T) {
 		}
 	})
 }
+
+// The parser's contract over malformed names: shapes the embedded FS can
+// never produce, but which define what the function does rather than what it
+// happens to see today.
+func TestLatestVersionFromNames(t *testing.T) {
+	t.Run("mixed valid and malformed names", func(t *testing.T) {
+		v, err := latestVersionFromNames([]string{
+			"001_initial.sql", "012_mid.sql", "no-underscore.sql",
+			"_leading_underscore.sql", "abc_nonnumeric.sql", "007_older.sql",
+		})
+		if err != nil {
+			t.Fatalf("latestVersionFromNames: %v", err)
+		}
+		if v != 12 {
+			t.Errorf("latest = %d, want 12 (malformed names skipped, not fatal)", v)
+		}
+	})
+
+	t.Run("no parseable names is an error, never zero-as-success", func(t *testing.T) {
+		if _, err := latestVersionFromNames([]string{"junk.sql", "abc_x.sql"}); err == nil {
+			t.Error("want an error when nothing parses; a silent 0 would make every database read as up-to-date")
+		}
+		if _, err := latestVersionFromNames(nil); err == nil {
+			t.Error("want an error on an empty set")
+		}
+	})
+}

@@ -49,9 +49,21 @@ func LatestMigrationVersion() (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("reading embedded migrations: %w", err)
 	}
-	var latest int64
+	names := make([]string, 0, len(entries))
 	for _, e := range entries {
-		name := e.Name()
+		names = append(names, e.Name())
+	}
+	return latestVersionFromNames(names)
+}
+
+// latestVersionFromNames extracts the newest numeric-prefix version from
+// migration filenames. Split from LatestMigrationVersion so the malformed
+// shapes (no underscore, non-numeric prefix, empty set) are testable: the
+// embedded FS can never produce them, but the parser's behavior when they
+// appear is part of its contract, not an accident.
+func latestVersionFromNames(names []string) (int64, error) {
+	var latest int64
+	for _, name := range names {
 		i := strings.IndexByte(name, '_')
 		if i <= 0 {
 			continue
