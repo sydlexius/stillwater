@@ -493,48 +493,37 @@ jobs:
         # firefox, etc.); they are OS packages, not part of the cached
         # browser archive.
         #
-        # BOUNDED AND RETRIED, NEVER SKIPPED. This step shells out to apt-get,
-        # which can block indefinitely on an unreachable mirror or a held dpkg
-        # lock -- it neither progresses nor errors. Observed twice in two days
-        # (runs 32085974911, 32086718187): the step sat for 12+ minutes and the
-        # job burned its whole 20-minute budget before anything failed, which
-        # reads to a maintainer as a hung check rather than a broken one.
+        # NO PER-ATTEMPT TIMEOUT, DELIBERATELY -- IT MADE THINGS WORSE.
+        # An earlier version of this step wrapped each attempt in `timeout` to
+        # bound a hung apt. `timeout` signals only its direct child (npx); the
+        # apt-get GRANDCHILD survived and kept /var/lib/dpkg/lock-frontend, so
+        # attempts 2 and 3 died instantly on "Could not get lock ... held by
+        # process 2821 (apt-get)" -- 2821 being attempt 1's own orphan
+        # (run 32089373725). That converted an intermittent hang into a
+        # DETERMINISTIC failure. Killing the process group instead would work
+        # only on a Linux runner and cannot be verified anywhere else, so the
+        # timeout is removed rather than made more elaborate.
         #
-        # Each attempt gets its own wall-clock bound so a stuck apt is killed
-        # and retried rather than waited on. The retry is what makes this a
-        # transient-fault absorber; the final `exit 1` is what keeps the step
-        # BLOCKING, because this job is a required check and a11y coverage that
-        # can be skipped is a11y coverage nobody has. Do not add
+        # What remains bounds the damage without orphaning anything:
+        #   - APT::Acquire::Retries makes apt itself retry a flaky mirror
+        #     in-process, which is where the transient faults actually are.
+        #   - DEBIAN_FRONTEND=noninteractive removes the prompt-wait class of
+        #     hang entirely.
+        #   - the job-level timeout-minutes below is the backstop for a genuine
+        #     hang; it fails the job rather than silently waiting forever.
+        #
+        # THE STEP REMAINS BLOCKING. The a11y job is a required check, and a11y
+        # coverage that can be skipped is a11y coverage nobody has. Do not add
         # continue-on-error here.
-        timeout-minutes: 10
+        timeout-minutes: 8
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          set -u
-          attempts=3
-          for attempt in $(seq 1 "${attempts}"); do
-            if timeout 150s npx playwright install-deps chromium firefox; then
-              echo "install-deps succeeded on attempt ${attempt}"
-              exit 0
-            else
-              # $? MUST be read inside this else branch. After `fi` it is the
-              # status of the whole if-compound (0 when the condition was
-              # false), so a timed-out attempt would be logged as an ordinary
-              # failure with status 0 and the 124 branch would be unreachable.
-              status=$?
-              if [ "${status}" -eq 124 ]; then
-                reason="exceeded 150s (apt appears stuck)"
-              else
-                reason="failed with status ${status}"
-              fi
-              if [ "${attempt}" -lt "${attempts}" ]; then
-                echo "::warning::install-deps attempt ${attempt}/${attempts} ${reason}; retrying"
-                sleep 10
-              else
-                echo "::warning::install-deps attempt ${attempt}/${attempts} ${reason}; no attempts remain"
-              fi
-            fi
-          done
-          echo "::error::install-deps failed after ${attempts} attempts"
-          exit 1
+          set -eu
+          # Let apt absorb a flaky mirror itself: retried in-process, so no
+          # child is ever killed and no dpkg lock is ever orphaned.
+          echo 'APT::Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/99-ci-retries >/dev/null
+          npx playwright install-deps chromium firefox
 
       - name: Generate templ
         run: go tool templ generate
