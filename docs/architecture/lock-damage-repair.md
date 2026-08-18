@@ -331,14 +331,16 @@ cannot drift from the coverage.
    job of the companion `LockDamageUnattributed` query, which returns the
    manual-sourced complement so those rows land in the unrecoverable tally
    instead of vanishing. The two queries partition the damage set.
-3. **Rules that cannot write the damaged field:**
-   `TestRepairLockDamage_SkipsFieldTheRuleCannotWrite` -- a source naming a
-   rule whose `RuleFields` omits the field (which is also the shape of an
-   UNKNOWN rule id, since `RuleFields` returns nil for one) is counted
-   unrecoverable, never restored. Pseudo-sources
-   (`TestRepairLockDamage_PseudoSourceGetsAccurateReason`) get their own
-   accurate reason. In every refused case the stored value is asserted
-   untouched, so no `source = "revert"` row can have been recorded for it.
+3. **Rules that cannot write the damaged field, and malformed sources:**
+   `TestRepairLockDamage_SkipsFieldTheRuleCannotWrite` covers a real catalog
+   rule whose `RuleFields` omits the field;
+   `TestRepairLockDamage_MalformedRuleSourceIsRefused` covers the rest of the
+   unrecognized-input space -- `source = "rule:"` exactly (the empty rule id)
+   and a rule-prefixed id absent from the catalog -- asserting for each that
+   nothing is restored, the unrecoverable tally counts the pair EXACTLY once,
+   and (by direct count) NO `source = "revert"` history row was written.
+   Pseudo-sources (`TestRepairLockDamage_PseudoSourceGetsAccurateReason`) get
+   their own accurate reason.
 4. **Revert does not revert itself:**
    `TestRepairLockDamage_SecondPassRestoresNothing`, two passes over one
    fixture with the settings flag CLEARED; the second restores nothing.

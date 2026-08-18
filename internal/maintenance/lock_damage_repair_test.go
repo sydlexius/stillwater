@@ -278,6 +278,66 @@ func TestRepairLockDamage_SkipsFieldTheRuleCannotWrite(t *testing.T) {
 	}
 }
 
+// MALFORMED AND UNKNOWN rule: SOURCES. The capability control above uses a
+// REAL catalogue rule that declares a different field; these two shapes are
+// the rest of the unrecognized-input space, and an allow-list whose refusal
+// of unrecognized input is unproven is exactly what the design says must
+// never be assumed:
+//
+//   - source = "rule:" exactly (the empty rule id): SUBSTR(source, 6) yields
+//     "", and RuleFields("") returns nil.
+//   - a rule-prefixed source naming an id absent from the catalogue entirely
+//     (a deprecated or corrupted id): RuleFields returns nil for it too.
+//
+// For each: NOT restored, counted in the unrecoverable tally EXACTLY once,
+// and -- asserted DIRECTLY by count, not inferred from the value being
+// untouched -- NO source="revert" history row is written for the pair.
+func TestRepairLockDamage_MalformedRuleSourceIsRefused(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+	}{
+		{name: "empty rule id (source is exactly rule:)", source: "rule:"},
+		{name: "rule id absent from the catalogue", source: "rule:no_such_rule_ever"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newLockDamageEnv(t)
+			env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+			env.seedDamageWithSource("biography", "curated bio", "junk bio", tc.source)
+			env.requireLockedBio()
+
+			res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+			if err != nil {
+				t.Fatalf("RepairLockDamage: %v", err)
+			}
+			if len(res.Restored) != 0 {
+				t.Fatalf("restored %d, want 0 -- an unrecognized source must never restore", len(res.Restored))
+			}
+			if got := env.biography("a1"); got != "junk bio" {
+				t.Errorf("biography = %q, want it untouched", got)
+			}
+			// EXACT tally: the pair is counted once, not merely "non-zero".
+			if len(res.Unrecoverable) != 1 {
+				t.Fatalf("unrecoverable = %+v, want exactly 1 entry for the refused pair", res.Unrecoverable)
+			}
+			if res.Unrecoverable[0].Field != "biography" {
+				t.Errorf("unrecoverable field = %q, want biography", res.Unrecoverable[0].Field)
+			}
+			// The refusal writes NOTHING: no revert row may exist for the
+			// pair, asserted directly rather than inferred from the value.
+			var reverts int
+			if err := env.db.QueryRow(
+				`SELECT COUNT(*) FROM metadata_changes WHERE artist_id = 'a1' AND source = 'revert'`).Scan(&reverts); err != nil {
+				t.Fatalf("counting revert rows: %v", err)
+			}
+			if reverts != 0 {
+				t.Errorf("revert rows = %d, want 0 -- a refused row must write no history", reverts)
+			}
+		})
+	}
+}
+
 // IDEMPOTENCE. NO settings flag is consulted here: this asserts the QUERY
 // converged -- the restore's source="revert" row is now newest for the pair,
 // so the damage predicate stops matching. A test that relied on the flag would
