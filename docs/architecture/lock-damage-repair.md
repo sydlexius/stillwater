@@ -284,6 +284,7 @@ but it still earns its own test.
 | `name`, `sort_name` | NO, before #3037 | entered `trackableFields` only in #3037, so earlier damage wrote no row |
 | `musicbrainz_id`, provider IDs | NO | never in `trackableFields`; no row was ever written |
 | ANY field damaged before #3048 (`fdeb1b6f`) | NO, by design | the row carries `source = "manual"`, byte-identical to an operator edit. Reported as unrecoverable so the operator can act via the pane |
+| ANY field whose row carries a pseudo-source (`rule:multiple_rules`, the bulk jobs, the phash passes; see `rule.IsPseudoRuleSource`) | NO, by design | the row IS rule-engine damage, but the responsible rule -- and so its declared field set -- is not recorded on the row. Reported as unrecoverable with a batch-write reason, never the false "the attributing rule does not write this field" |
 
 **The headline consequence, stated where nobody can miss it:** after the review
 correction above, this mechanism repairs only damage written by a build carrying

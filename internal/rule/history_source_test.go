@@ -307,3 +307,34 @@ func TestBulkFetchMetadata_StampsBulkSource(t *testing.T) {
 			row.Source, ruleHistorySourceBulkFetchMetadata)
 	}
 }
+
+// IsPseudoRuleSource must recognize exactly the sources this package stamps
+// for writes no single catalogue rule owns -- and nothing else. The negative
+// half matters as much as the positive: a real rule id misclassified as a
+// pseudo-source would get its capability check skipped by the repair's
+// caller, and an id-shaped stranger must fall through to the ordinary
+// unknown-rule handling.
+func TestIsPseudoRuleSource(t *testing.T) {
+	for _, id := range []string{
+		"multiple_rules",
+		"bulk_fetch_metadata",
+		"bulk_fetch_images",
+		"bulk_fetch_images_mbid",
+		"phash_mismatch_remediate",
+		"phash_quarantine_restore",
+	} {
+		if !IsPseudoRuleSource(id) {
+			t.Errorf("IsPseudoRuleSource(%q) = false, want true", id)
+		}
+	}
+	for _, id := range []string{
+		"metadata_quality",    // a real catalogue rule
+		"",                    // empty
+		"rule:multiple_rules", // the caller strips the prefix; the prefixed form is NOT the id
+		"multiple_ruleZ",
+	} {
+		if IsPseudoRuleSource(id) {
+			t.Errorf("IsPseudoRuleSource(%q) = true, want false", id)
+		}
+	}
+}
