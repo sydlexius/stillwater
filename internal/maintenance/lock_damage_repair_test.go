@@ -911,8 +911,11 @@ func TestRepairLockDamage_ErrorsWithoutDeps(t *testing.T) {
 	db, dbPath := setupTestDBWithImages(t)
 	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
 
-	if _, err := svc.RepairLockDamage(context.Background(), LockDamageOpts{}); err == nil {
-		t.Fatal("RepairLockDamage succeeded without dependencies; want an error")
+	// The SPECIFIC sentinel, not any error: a bare err != nil stays green if
+	// the pass later fails for an unrelated reason, which is a vacuous
+	// assertion on the condition this test exists to pin.
+	if _, err := svc.RepairLockDamage(context.Background(), LockDamageOpts{}); !errors.Is(err, ErrLockDamageDepsNotSet) {
+		t.Fatalf("err = %v, want ErrLockDamageDepsNotSet", err)
 	}
 }
 
