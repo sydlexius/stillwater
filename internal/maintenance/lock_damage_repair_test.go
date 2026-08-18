@@ -1052,3 +1052,140 @@ func TestRepairLockDamage_DeterministicRefusalIsPermanentNotRetried(t *testing.T
 		}
 	})
 }
+
+// TRANSIENT ROW FAILURES DO NOT ABORT THE PASS (recovered for #3088).
+// LockDamageResult.Failed is the TRANSIENT bucket -- a row the pass could not
+// read or could not restore, counted so the pass continues and the unstamped
+// completion key retries it next boot. Every other test in THIS file asserts
+// it EMPTY.
+//
+// WHERE THE OTHER COVERAGE IS, so nobody deletes it believing this file is the
+// only place: the READ-failure branch is also covered end-to-end at the entry
+// point, by the errGetByIDRepo fixture in
+// cmd/stillwater/lock_damage_repair_test.go, which exercises the completion
+// gate and the dry-run report printer. The WRITE-failure branch had no test
+// anywhere before these. These two add maintenance-level assertions the entry
+// point does not make on a NON-dry-run pass: that the pass returns a nil
+// error, and that the stored value is left untouched.
+//
+// failingArtistRepo drives both branches. failGet makes GetByID fail outright.
+// Withholding the DB() accessor instead makes the guarded restore fail before
+// it can open its transaction (Service.artistDB type-asserts for it), which is
+// the same non-typed-error path a genuine write failure takes -- so the write
+// test pins the pass's handling of a failed restore, NOT a failing UPDATE.
+// No SQL write is attempted; that branch remains untested.
+//
+// Note the withheld accessor is not a single-variable change: Service's
+// library hydration type-asserts the same interface and silently no-ops
+// without it. Harmless here (neither test touches LibraryID), but a fault
+// injected this way has that blast radius.
+type failingArtistRepo struct {
+	artist.Repository
+	db      *sql.DB
+	failGet bool
+	// exposeDB controls whether the decorator forwards the raw handle
+	// RestoreLockedFieldGuarded opens its transaction through. false makes
+	// every guarded restore fail before it opens that transaction, while
+	// reads still work.
+	exposeDB bool
+}
+
+var errForcedRepoFailure = errors.New("forced repository failure")
+
+func (f *failingArtistRepo) GetByID(ctx context.Context, id string) (*artist.Artist, error) {
+	if f.failGet {
+		return nil, errForcedRepoFailure
+	}
+	return f.Repository.GetByID(ctx, id)
+}
+
+// failingArtistRepoWithDB adds the DB accessor. A separate wrapper type
+// rather than a conditional method: Go interface satisfaction is static, so
+// "has DB()" must be a property of the type.
+type failingArtistRepoWithDB struct{ *failingArtistRepo }
+
+func (f failingArtistRepoWithDB) DB() *sql.DB { return f.db }
+
+func newFailingEnv(t *testing.T, failGet, failWrite bool) *lockDamageEnv {
+	t.Helper()
+	db, dbPath := setupTestDBWithImages(t)
+	artists, providers, members, aliases, images, platformIDs, completeness :=
+		artist.NewDefaultRepos(db)
+	failing := &failingArtistRepo{Repository: artists, db: db, failGet: failGet, exposeDB: !failWrite}
+	var repo artist.Repository = failing
+	if failing.exposeDB {
+		repo = failingArtistRepoWithDB{failing}
+	}
+	artistSvc := artist.NewServiceWithRepos(repo, providers, members, aliases,
+		images, platformIDs, completeness)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	svc := NewService(db, dbPath, t.TempDir(), slog.Default())
+	svc.SetLockDamageDeps(hist.Repo(), artistSvc)
+	return &lockDamageEnv{t: t, db: db, svc: svc, artistSvc: artistSvc}
+}
+
+func TestRepairLockDamage_ArtistReadFailureIsCountedNotFatal(t *testing.T) {
+	env := newFailingEnv(t, true, false)
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedBioDamage("a1", "metadata_quality")
+	env.requireLockedBio()
+
+	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+	if err != nil {
+		t.Fatalf("RepairLockDamage returned an error; a row-level failure must not abort the pass: %v", err)
+	}
+	if len(res.Restored) != 0 {
+		t.Fatalf("restored %d, want 0", len(res.Restored))
+	}
+	if len(res.Failed) != 1 || !strings.Contains(res.Failed[0].Reason, "could not read") {
+		t.Fatalf("failed = %+v, want one 'could not read the artist' entry", res.Failed)
+	}
+	// Pin WHICH row failed, not just that one did. A skip built from the wrong
+	// loop variable names another artist as needing a retry while the damaged
+	// row reads clean in the operator's pane.
+	if got := res.Failed[0]; got.ArtistID != "a1" || got.Field != "biography" || got.RuleID != "metadata_quality" {
+		t.Errorf("failed[0] identity = %+v, want a1/biography/metadata_quality", got)
+	}
+	// A transient failure is retried next boot; it must not ALSO be filed in a
+	// FINAL bucket. Filing both would report the row as permanently decided in
+	// the operator's pane while the pass keeps retrying it forever.
+	if len(res.Unrecoverable) != 0 || len(res.FailedPermanent) != 0 {
+		t.Errorf("unrecoverable = %+v, failedPermanent = %+v, want both empty -- a transient read failure is retried, never also decided",
+			res.Unrecoverable, res.FailedPermanent)
+	}
+	if got := env.biography("a1"); got != "junk bio" {
+		t.Errorf("biography = %q, want it untouched", got)
+	}
+}
+
+func TestRepairLockDamage_WriteFailureIsCountedNotFatal(t *testing.T) {
+	env := newFailingEnv(t, false, true)
+	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
+	env.seedBioDamage("a1", "metadata_quality")
+	env.requireLockedBio()
+
+	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{})
+	if err != nil {
+		t.Fatalf("RepairLockDamage returned an error; a row-level failure must not abort the pass: %v", err)
+	}
+	if len(res.Restored) != 0 {
+		t.Fatalf("restored %d, want 0", len(res.Restored))
+	}
+	if len(res.Failed) != 1 || !strings.Contains(res.Failed[0].Reason, "write failed") {
+		t.Fatalf("failed = %+v, want one 'restore write failed' entry", res.Failed)
+	}
+	if got := res.Failed[0]; got.ArtistID != "a1" || got.Field != "biography" || got.RuleID != "metadata_quality" {
+		t.Errorf("failed[0] identity = %+v, want a1/biography/metadata_quality", got)
+	}
+	// FailedPermanent is the bucket that PERMITS stamping the completion key.
+	// Cross-filing a transient failure into it retires a row the pass never
+	// actually repaired, so the retry it is owed never happens.
+	if len(res.FailedPermanent) != 0 || len(res.Unrecoverable) != 0 {
+		t.Errorf("failedPermanent = %+v, unrecoverable = %+v, want both empty -- a transient write failure is retried, never also decided",
+			res.FailedPermanent, res.Unrecoverable)
+	}
+	if got := env.biography("a1"); got != "junk bio" {
+		t.Errorf("biography = %q, want the damaged value still stored", got)
+	}
+}
