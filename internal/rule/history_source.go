@@ -92,6 +92,34 @@ const (
 	ruleHistorySourcePHashRestore   = "rule:phash_quarantine_restore"
 )
 
+// IsPseudoRuleSource reports whether id (a "rule:" source with the prefix
+// already removed) is one of the pseudo-sources this package stamps for
+// rule-engine writes that no single catalogue rule owns: the multi-rule
+// batched writeback, the bulk jobs, and the perceptual-hash maintenance
+// passes. Such a row IS rule-engine damage, but the responsible rule -- and so
+// its declared field set -- is not recoverable from the row, which is a
+// different fact from "the attributing rule does not write this field".
+// The locked-field damage repair uses this to report an accurate reason;
+// nothing is ever restored on the strength of it.
+//
+// The list is maintained HERE, next to the constants it mirrors, so a new
+// pseudo-source added above is one line away from the classifier that must
+// learn it. "rule:bulk_fetch_images_mbid" lives in bulk_executor.go
+// (bulkMBIDSelfHealSource) rather than above, and is included for the same
+// reason: it names the bulk job, not a catalogue rule.
+func IsPseudoRuleSource(id string) bool {
+	switch "rule:" + id {
+	case ruleHistorySourceMultiple,
+		ruleHistorySourceBulkFetchMetadata,
+		ruleHistorySourceBulkFetchImages,
+		bulkMBIDSelfHealSource,
+		ruleHistorySourcePHashRemediate,
+		ruleHistorySourcePHashRestore:
+		return true
+	}
+	return false
+}
+
 // ruleHistorySource builds the source value for a write caused by one rule.
 func ruleHistorySource(ruleID string) string {
 	return "rule:" + ruleID
