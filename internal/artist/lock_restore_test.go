@@ -229,7 +229,13 @@ func TestRestoreLockedFieldGuarded_SliceFieldFormattingOnlyDiffStillRecordsHisto
 		t.Fatalf("seeding genres: %v", err)
 	}
 
-	outcome, err := env.svc.RestoreLockedFieldGuarded(context.Background(),
+	// source="revert" is what the production caller supplies
+	// (attemptLockDamageRestore), and it is load-bearing for what this test
+	// is about: lockDamageQuery's predicate retires the pair by excluding
+	// source='revert'. A bare context would write a "manual" row and the
+	// mechanism the test argues for would go unexercised.
+	ctx := ContextWithSource(context.Background(), "revert")
+	outcome, err := env.svc.RestoreLockedFieldGuarded(ctx,
 		"a1", "genres", "rock,pop", "rock, pop")
 	if err != nil {
 		t.Fatalf("RestoreLockedFieldGuarded: %v", err)
@@ -247,6 +253,19 @@ func TestRestoreLockedFieldGuarded_SliceFieldFormattingOnlyDiffStillRecordsHisto
 		t.Fatalf("history rows = %d, want 1 -- an outcome=Applied write must always leave an audit row "+
 			"(F1: the old recordHistoryTx no-op skip silently ate this one, reporting Applied with zero "+
 			"history rows, so the pair stayed a damage candidate forever)", n)
+	}
+	// Pin the row's CONTENT, not just that one exists. A count alone survives
+	// a row written with the wrong source or the wrong values, and source is
+	// the field this pair's retirement from the candidate set depends on.
+	var gotOld, gotNew, gotSource string
+	if err := env.db.QueryRow(
+		`SELECT old_value, new_value, source FROM metadata_changes WHERE artist_id = 'a1' AND field = 'genres'`).
+		Scan(&gotOld, &gotNew, &gotSource); err != nil {
+		t.Fatalf("reading the history row: %v", err)
+	}
+	if gotOld != "rock, pop" || gotNew != "rock, pop" || gotSource != "revert" {
+		t.Errorf("history row = (old=%q, new=%q, source=%q), want (\"rock, pop\", \"rock, pop\", \"revert\")",
+			gotOld, gotNew, gotSource)
 	}
 }
 
@@ -515,3 +534,44 @@ func TestRecordHistoryTx_ValidationAndSkipBranches(t *testing.T) {
 // deployment where the service was built over a repository that owns no raw
 // handle.
 type noDBRepo struct{ Repository }
+
+// TestRestoreLockedFieldGuarded_RecordsWithoutAHistoryService pins the N3
+// removal (#3088 fix round): the guarded restore's audit row is part of its
+// transaction, so it must not depend on whether an (unrelated, best-effort)
+// HistoryService happens to be attached to this Service value.
+// recordHistoryTx inserts directly on the transaction and never reads
+// s.history, so the old `if s.history != nil` guard gated nothing about what
+// ran -- it only produced a committed restore with no audit row on a Service
+// built without SetHistoryService. Every other fixture in this file wires a
+// history service, so without this test re-adding the guard breaks nothing.
+func TestRestoreLockedFieldGuarded_RecordsWithoutAHistoryService(t *testing.T) {
+	db := setupTestDB(t)
+	// Deliberately NOT SetHistoryService: that is the whole point.
+	svc := NewService(db)
+
+	if _, err := db.Exec(
+		`INSERT INTO artists (id, name, sort_name, path, biography, locked_fields, created_at, updated_at)
+		 VALUES ('a1', 'Artist', 'Artist', '/tmp/a1', 'damaged bio', '["biography"]', datetime('now'), datetime('now'))`); err != nil {
+		t.Fatalf("seeding the artist: %v", err)
+	}
+
+	ctx := ContextWithSource(context.Background(), "revert")
+	outcome, err := svc.RestoreLockedFieldGuarded(ctx, "a1", "biography", "damaged bio", "curated bio")
+	if err != nil {
+		t.Fatalf("RestoreLockedFieldGuarded: %v", err)
+	}
+	if outcome != LockedFieldRestoreApplied {
+		t.Fatalf("outcome = %v, want applied", outcome)
+	}
+
+	var n int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM metadata_changes WHERE artist_id = 'a1' AND field = 'biography'`).
+		Scan(&n); err != nil {
+		t.Fatalf("counting history rows: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("history rows = %d, want 1 -- the audit row is part of the restore's transaction "+
+			"and must not depend on a HistoryService being attached", n)
+	}
+}

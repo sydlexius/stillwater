@@ -234,12 +234,25 @@ func (s *Service) RestoreLockedFieldGuarded(ctx context.Context, id, field, dama
 // lockDamageQuery), so every future boot restores it again. That is the exact
 // "restored field with no history row" state #3088 exists to eliminate.
 //
-// The fix is to drop the skip, not to normalize its inputs to match: at this
-// call site affected == 1 IS the change decision. The affected == 0 case
-// already returned LockedFieldRestoreValueDiverged above, before this
-// function is ever called, so a genuine no-op (the stored value truly
-// unchanged) can never reach this insert. There is nothing left for a skip to
-// filter.
+// The fix is to drop the skip, not to normalize its inputs to match. Be
+// precise about WHY, because the tempting argument is false: a genuine no-op
+// CAN reach this insert. SQLite reports affected == 1 for a WHERE-matched row
+// even when SET writes a byte-identical value, so affected == 1 means the
+// caller's guarded compare-and-set HELD -- not that the column moved. For a
+// slice field whose damage row differs from the stored value only in comma
+// spacing, stored and restoreValue are byte-identical by the time they get
+// here, and this function is called with oldValue == newValue. Measured, not
+// assumed. The affected == 0 early return above filters DIVERGENCE, not
+// no-ops.
+//
+// The row must be written anyway, and that is the actual justification. It is
+// the newest row for the pair (rn = 1) and carries source="revert", and
+// lockDamageQuery's predicate excludes both source='revert' and
+// old_value == new_value -- so writing it is the ONE thing that retires the
+// pair from the candidate set. Skip it and the pair stays a candidate
+// forever: every boot re-selects it, "restores" it again, counts a Restored,
+// and leaves no trace. A skip here would filter exactly the rows that must
+// not be filtered.
 //
 // Do not backport this removal to HistoryService.Record: Record's callers
 // (UpdateField and friends) pass values with no such decision already made,
