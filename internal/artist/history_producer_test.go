@@ -273,9 +273,9 @@ func TestValidHistoryProducer(t *testing.T) {
 		{"provider:", true},
 		{"platform:emby", true},
 		{"platform:jellyfin", true},
-		{"platform:", true},
+		{"platform:", false}, // a platform type is always known at the write site
 		{"rule:bio_exists", true},
-		{"rule:", true},
+		{"rule:", false}, // a rule ID is always known at the write site
 		{"garbage", false},
 		{"Operator", false}, // case-sensitive
 		{"provider", false}, // missing colon

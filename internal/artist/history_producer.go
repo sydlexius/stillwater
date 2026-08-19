@@ -162,7 +162,21 @@ func validHistoryProducer(producer string) bool {
 	case ProducerUnrecorded, ProducerOperator, ProducerRestore, ProducerNFO, ProducerFilesystem:
 		return true
 	}
-	return strings.HasPrefix(producer, "provider:") ||
-		strings.HasPrefix(producer, "platform:") ||
-		strings.HasPrefix(producer, "rule:")
+	// The bare "provider:" is deliberately valid; the bare "platform:" and
+	// "rule:" are not. A provider refresh that EMPTIED a field has no
+	// FieldSource and so no provider name to record -- "provider:" attributes
+	// it honestly without inventing one (see the doc block above). A platform
+	// type and a rule ID, by contrast, are always known at their write site,
+	// so a bare prefix there is a caller bug and must not validate as a
+	// complete token.
+	if strings.HasPrefix(producer, "provider:") {
+		return true
+	}
+	if after, ok := strings.CutPrefix(producer, "platform:"); ok {
+		return after != ""
+	}
+	if after, ok := strings.CutPrefix(producer, "rule:"); ok {
+		return after != ""
+	}
+	return false
 }
