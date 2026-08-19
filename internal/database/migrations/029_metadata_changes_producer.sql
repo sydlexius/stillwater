@@ -1,0 +1,94 @@
+-- +goose Up
+-- Issue #3078: a second column on metadata_changes recording WHAT SUPPLIED
+-- the value, distinct from `source`, which records WHAT TRIGGERED the write.
+--
+-- THE PROBLEM THIS PREVENTS (it prevents; it does not repair -- see below).
+-- `source = 'manual'` means the write arrived through the operator write
+-- path. It does NOT mean a human typed the value. A provider refresh, a
+-- platform pull, and a metadata fetch launched from the UI all record
+-- `manual`, because that is the handler they route through. A provider write
+-- that silently overwrote an operator's curated field is therefore
+-- byte-identical, in history, to the operator typing that value themselves.
+-- The #3075 repair mechanism validated against a production database and
+-- found 3,234 damage rows unattributable for exactly this reason: the source
+-- names no rule and is indistinguishable from an operator edit.
+--
+-- WHY A SECOND COLUMN, NOT A RICHER `source` VOCABULARY. A Pull from Emby is
+-- both operator-TRIGGERED and platform-AUTHORED; both facts are load-bearing
+-- and neither implies the other. Widening `source` to carry both would
+-- either destroy the trigger information (the Activity feed's "Trigger
+-- source" filter needs `manual` to mean "things I did"), or move rows
+-- between blast-radius attribution buckets as an unreviewed side effect of a
+-- vocabulary edit. A second column keeps `source`'s meaning, vocabulary and
+-- every predicate that reads it completely unchanged, and answers the new
+-- question in a column of its own. See the plan on issue #3078 for the full
+-- comparison against the vocabulary alternative.
+--
+-- THIS MIGRATION SHIPS A COLUMN THAT IS ALWAYS THE EMPTY STRING. Nothing
+-- in this PR stamps a producer at any call site -- that is #3078's PR 2 and
+-- PR 3. This PR is the foundation only: the column, its vocabulary
+-- (internal/artist/history_producer.go), and the plumbing to read and write
+-- it. Landing it alone is independently verifiable: round-trip, default,
+-- migration-does-not-backfill, and the damage predicate provably unchanged.
+--
+-- NO BACKFILL. DEFAULT '' applies to every existing row, and stays applied
+-- to every existing row: there is no UPDATE statement here, and there will
+-- never be one added to this migration. `''` reads as "the writer did not
+-- record this" -- it makes no claim, so it cannot be a wrong one. Defaulting
+-- to a named producer (e.g. 'operator') would back-fill a GUESS into every
+-- historical row, in the single most damaging direction: laundering an
+-- automated write as a human decision. That is precisely the "unknown
+-- rendered as clean" failure this whole area of the codebase exists to stop.
+-- A test (migration 028 -> 029) asserts this migration writes zero non-empty
+-- producers and changes the row count of nothing.
+--
+-- A row written AFTER this migration with producer = '' is therefore a BUG
+-- IN THE WRITER, not a fact about the operator -- every write path is
+-- expected to stamp a producer once PR 2/PR 3 land. created_at makes any such
+-- row findable without new machinery: nothing before this migration's
+-- deploy date can be a writer bug, because nothing before it could stamp
+-- anything.
+--
+-- NO INDEX ON producer, ON PURPOSE. The blast-radius and lock-damage repair
+-- predicates that would consult it (blastRadiusDamageWhere,
+-- blastAttributionPredicate, classifyBlastAttribution,
+-- lockDamageQuery/lockDamageUnattributedQuery) all run in the OUTER select
+-- over blastRadiusRankedCTE's ROW_NUMBER() ranking, not as a direct filter
+-- on the base table, so a plain index on producer would never be consulted
+-- by any query this PR ships -- there is nothing to speed up. Migration 026
+-- set the standard for this table: add an index when EXPLAIN QUERY PLAN
+-- shows it is needed, not on speculation.
+--
+-- Skipping the index also sidesteps a real ordering trap in the Down
+-- migration: SQLite refuses to DROP a column that an index still covers, so
+-- an index on producer would force the Down to drop the index before the
+-- column, in the correct order, forever -- a constraint a future editor
+-- could easily get backwards. No index means the Down is one statement with
+-- no ordering to get wrong.
+--
+-- PRODUCER APPEARS IN NO PREDICATE HERE OR ANYWHERE IN THIS PR. That is the
+-- property a golden-string test (T5 on #3078) pins: blastRadiusDamageWhere
+-- and blastRadiusAutomatedSQL are byte-identical before and after this
+-- migration, so every row the damage predicate selects today it selects
+-- after, and every attribution bucket is unchanged. Widening a predicate to
+-- consult producer is a real and desirable follow-up (it is what makes the
+-- #3075 repair mechanism useful again), but it is a decision for a future
+-- issue with its own safety argument, not a side effect smuggled in here.
+
+-- +goose StatementBegin
+ALTER TABLE metadata_changes ADD COLUMN producer TEXT NOT NULL DEFAULT '';
+-- +goose StatementEnd
+
+-- +goose Down
+-- DROP COLUMN has been supported since SQLite 3.35 (2021-03-12);
+-- modernc.org/sqlite v1.56.0 is well past it, and migrations 013, 021 and 025
+-- already drop columns from live tables the same way. No index exists on
+-- producer (see above), so this is the only statement the rollback needs --
+-- no index-then-column ordering to get wrong.
+--
+-- The rollback loses only information this migration itself introduced (a
+-- column that is always '' in this PR), so it is reversible in the sense
+-- that matters: no pre-existing data is lost by rolling back.
+-- +goose StatementBegin
+ALTER TABLE metadata_changes DROP COLUMN producer;
+-- +goose StatementEnd

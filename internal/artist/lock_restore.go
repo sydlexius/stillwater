@@ -275,11 +275,18 @@ func recordHistoryTx(ctx context.Context, tx *sql.Tx, artistID, field, oldValue,
 	if id == "" {
 		id = uuid.New().String()
 	}
+	// producer is read off ctx the same way Record does (producerForField),
+	// keyed on field like every other producer resolution in this PR. Nothing
+	// in this PR (#3078 PR 1) puts a producer on the context ahead of this
+	// call, so this writes ProducerUnrecorded ("") exactly like every other
+	// path -- see history_producer.go's doc block. This is the ONLY change to
+	// this function; the no-op-skip asymmetry documented above is untouched.
+	producer := producerForField(ctx, field)
 	const q = `
-		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`
+		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, producer, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	if _, err := tx.ExecContext(ctx, q,
-		id, artistID, field, oldValue, newValue, source,
+		id, artistID, field, oldValue, newValue, source, producer,
 		time.Now().UTC().Format(time.RFC3339),
 	); err != nil {
 		return fmt.Errorf("inserting metadata change: %w", err)

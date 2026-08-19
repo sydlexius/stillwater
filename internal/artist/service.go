@@ -919,6 +919,15 @@ func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) (restor
 			oldVal := FieldValueFromArtist(old, field)
 			newVal := FieldValueFromArtist(a, field)
 			if oldVal != newVal {
+				// Producer is resolved inside Record itself (producerForField
+				// keyed on field), reading whatever ContextWithProducer /
+				// ContextWithFieldProducers put on ctx -- see history.go and
+				// history_producer.go. Nothing in this PR (#3078 PR 1) puts
+				// either on the context, so every row this loop writes
+				// carries producer="". PR 2 populates the field-producer
+				// overlay ahead of this call for the refresh path; this loop
+				// itself needs no change to pick that up, because Record
+				// already reads ctx per field.
 				if err := s.history.Record(ctx, a.ID, field, oldVal, newVal, source); err != nil {
 					slog.Warn("history: failed to record change",
 						"artist_id", a.ID, "field", field, "error", err)
@@ -1572,6 +1581,9 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) (boo
 			newValue := FieldValueFromArtist(newA, field)
 			if oldValue != newValue {
 				source := sourceFromContext(ctx)
+				// Producer is resolved inside Record via producerForField (see
+				// history.go / history_producer.go); this PR puts nothing on ctx,
+				// so it is always "" here.
 				if err := s.history.Record(ctx, id, field, oldValue, newValue, source); err != nil {
 					slog.Warn("history: failed to record UpdateField change",
 						"artist_id", id, "field", field, "error", err)
@@ -1647,6 +1659,9 @@ func (s *Service) ClearField(ctx context.Context, id, field string) (bool, error
 			newValue := FieldValueFromArtist(newA, field)
 			if oldValue != newValue {
 				source := sourceFromContext(ctx)
+				// Producer is resolved inside Record via producerForField (see
+				// history.go / history_producer.go); this PR puts nothing on ctx,
+				// so it is always "" here.
 				if err := s.history.Record(ctx, id, field, oldValue, newValue, source); err != nil {
 					slog.Warn("history: failed to record ClearField change",
 						"artist_id", id, "field", field, "error", err)
