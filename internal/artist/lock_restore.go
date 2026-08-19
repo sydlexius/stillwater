@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // lock_restore.go -- the guarded write verb for the locked-field damage
@@ -68,8 +69,13 @@ const (
 // caller classifies them via errors.Is(err, ErrInvalidFieldValue) /
 // errors.Is(err, ErrNameCollision).
 //
-// On success a history row is recorded (best-effort, matching UpdateField)
-// with the source carried by ctx.
+// On success a history row is recorded ATOMICALLY, inside the same
+// transaction as the artist write (#3088) -- unlike UpdateField's best-effort,
+// post-commit history write. A history-insert failure here fails the whole
+// restore with the transaction rolled back, rather than leaving the artist
+// row restored with no record it happened. See the comment above the insert
+// for why this verb's contract differs from UpdateField's. The source is
+// carried by ctx.
 func (s *Service) RestoreLockedFieldGuarded(ctx context.Context, id, field, damagedValue, restoreValue string) (LockedFieldRestoreOutcome, error) {
 	if err := ValidateFieldUpdate(field, restoreValue); err != nil {
 		return 0, err
@@ -164,18 +170,119 @@ func (s *Service) RestoreLockedFieldGuarded(ctx context.Context, id, field, dama
 		return LockedFieldRestoreValueDiverged, nil
 	}
 
+	// THE HISTORY ROW COMMITS IN THE SAME TRANSACTION AS THE ARTIST WRITE
+	// (#3088). Service.UpdateField and the other operator-driven verbs
+	// deliberately record history AFTER commit, best-effort: an operator who
+	// just watched the write happen can tolerate a lost history row as a
+	// cosmetic loss, and re-running the read-modify-write inside one
+	// transaction there would widen a lock scope no caller needs. This verb
+	// has no such caller -- RestoreLockedFieldGuarded exists solely for the
+	// unattended startup repair (internal/maintenance), which runs in a
+	// goroutine nobody watches, so a history row lost between commit and a
+	// separate insert is not cosmetic: it is the ONLY record the restore
+	// happened, invisible in Recent Activity and the blast-radius pane. Since
+	// this is the verb's only caller, moving the insert inside the
+	// transaction costs nothing and closes the split outright, rather than
+	// merely narrowing the shutdown-drain window -- see startLockDamageRepair
+	// (cmd/stillwater/lock_damage_repair.go) for the drain that bounds what
+	// this cannot: a boot that never reaches this point at all.
+	// Recorded unconditionally: this verb's only caller is the unattended
+	// repair, and an audit row for an atomic write must not depend on whether
+	// an (unrelated, best-effort) HistoryService happens to be attached to
+	// this Service value. recordHistoryTx never touches s.history -- it
+	// inserts directly on tx -- so a guard on s.history here gated nothing
+	// about what actually ran; it only produced a restore with no audit row
+	// on a Service built without SetHistoryService (#3088 fix round, N3).
+	if err := recordHistoryTx(ctx, tx, id, field, stored, restoreValue, sourceFromContext(ctx)); err != nil {
+		return 0, fmt.Errorf("guarded restore: recording history: %w", err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("guarded restore: committing: %w", err)
 	}
 
 	s.markDirtyBestEffort(ctx, id)
 
-	if s.history != nil {
-		if err := s.history.Record(ctx, id, field, stored, restoreValue, sourceFromContext(ctx)); err != nil {
-			slog.Warn("history: failed to record guarded restore",
-				"artist_id", id, "field", field, "error", err)
-		}
-	}
-
 	return LockedFieldRestoreApplied, nil
+}
+
+// recordHistoryTx inserts one metadata_changes row on tx, mirroring
+// HistoryService.Record's validation and ID-assignment rules ("source
+// required" check, HistoryIDFromContext precedence) without going through the
+// repository's own *sql.DB handle -- HistoryRepository has no
+// INSERT-on-a-transaction method, and adding one would widen an interface
+// every other caller (which does not need transactional history) also has to
+// implement. RestoreLockedFieldGuarded is the ONLY caller that must commit the
+// history row atomically with its artist write (#3088), so the transactional
+// insert lives here rather than on the interface.
+//
+// DELIBERATELY WITHOUT HistoryService.Record's no-op skip (#3088 fix round,
+// F1). Record's skip -- "don't insert when oldValue and newValue are both
+// non-empty and identical" -- is correct for Record's callers, which pass
+// already-decided changes. It is WRONG at this call site, because the caller
+// decides "did anything change" earlier, with normalizeFieldValue, against
+// values that are NOT the same strings this function receives:
+// RestoreLockedFieldGuarded compares stored (the joined form of the current
+// column) against damagedValue for slice fields, but passes stored and
+// restoreValue here -- restoreValue is never normalized. A slice-field pair
+// that differs only in comma-spacing can pass the caller's normalize-equality
+// check (so the UPDATE fires and affected == 1), and independently have its
+// raw restoreValue happen to string-equal stored -- at which point the old
+// skip fired, the artist row committed, and NOTHING recorded that it
+// happened: outcome reports Applied with zero history rows, and the pair
+// stays a candidate forever (no revert row exists to exclude it from
+// lockDamageQuery), so every future boot restores it again. That is the exact
+// "restored field with no history row" state #3088 exists to eliminate.
+//
+// The fix is to drop the skip, not to normalize its inputs to match. Be
+// precise about WHY, because the tempting argument is false: a genuine no-op
+// CAN reach this insert. SQLite reports affected == 1 for a WHERE-matched row
+// even when SET writes a byte-identical value, so affected == 1 means the
+// caller's guarded compare-and-set HELD -- not that the column moved. For a
+// slice field whose damage row differs from the stored value only in comma
+// spacing, stored and restoreValue are byte-identical by the time they get
+// here, and this function is called with oldValue == newValue. Measured, not
+// assumed. The affected == 0 early return above filters DIVERGENCE, not
+// no-ops.
+//
+// The row must be written anyway, and that is the actual justification. It is
+// the newest row for the pair (rn = 1) and carries source="revert", and
+// lockDamageQuery's predicate excludes both source='revert' and
+// old_value == new_value -- so writing it is the ONE thing that retires the
+// pair from the candidate set. Skip it and the pair stays a candidate
+// forever: every boot re-selects it, "restores" it again, counts a Restored,
+// and leaves no trace. A skip here would filter exactly the rows that must
+// not be filtered.
+//
+// Do not backport this removal to HistoryService.Record: Record's callers
+// (UpdateField and friends) pass values with no such decision already made,
+// and rely on the skip to keep an accidental identical write out of the audit
+// log.
+func recordHistoryTx(ctx context.Context, tx *sql.Tx, artistID, field, oldValue, newValue, source string) error {
+	if artistID == "" {
+		return fmt.Errorf("artist_id is required")
+	}
+	if field == "" {
+		return fmt.Errorf("field is required")
+	}
+	if source == "" {
+		return fmt.Errorf("source is required")
+	}
+	if !validHistorySource(source) {
+		return fmt.Errorf("invalid source: %s", source)
+	}
+	id := HistoryIDFromContext(ctx)
+	if id == "" {
+		id = uuid.New().String()
+	}
+	const q = `
+		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
+	if _, err := tx.ExecContext(ctx, q,
+		id, artistID, field, oldValue, newValue, source,
+		time.Now().UTC().Format(time.RFC3339),
+	); err != nil {
+		return fmt.Errorf("inserting metadata change: %w", err)
+	}
+	return nil
 }

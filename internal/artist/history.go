@@ -113,6 +113,17 @@ func NewHistoryServiceWithRepo(repo HistoryRepository) *HistoryService {
 	return &HistoryService{repo: repo}
 }
 
+// validHistorySource reports whether source is one of the recognized
+// metadata-change source values shared by HistoryService.Record and
+// recordHistoryTx. Both callers apply the same allow-list; they differ only
+// in whether an identical-value write is skipped (see recordHistoryTx's doc
+// comment for why that skip must not be backported).
+func validHistorySource(source string) bool {
+	return source == "manual" || source == "scan" || source == "import" ||
+		source == "revert" ||
+		strings.HasPrefix(source, "provider:") || strings.HasPrefix(source, "rule:")
+}
+
 // Record stores a single field-level metadata change. The source argument
 // should be one of the defined source values: "manual", "provider:<name>",
 // "rule:<rule_id>", "scan", or "import".
@@ -133,10 +144,7 @@ func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, 
 	if oldValue != "" && oldValue == newValue {
 		return nil
 	}
-	validSource := source == "manual" || source == "scan" || source == "import" ||
-		source == "revert" ||
-		strings.HasPrefix(source, "provider:") || strings.HasPrefix(source, "rule:")
-	if !validSource {
+	if !validHistorySource(source) {
 		return fmt.Errorf("invalid source: %s", source)
 	}
 	// If the caller pre-assigned a change ID via ContextWithHistoryID, use it
