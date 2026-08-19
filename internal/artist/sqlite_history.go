@@ -23,8 +23,8 @@ func newSQLiteHistoryRepo(db *sql.DB) HistoryRepository {
 // Record inserts a new metadata change row.
 func (r *sqliteHistoryRepo) Record(ctx context.Context, change *MetadataChange) error {
 	const q = `
-		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`
+		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, producer, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := r.db.ExecContext(ctx, q,
 		change.ID,
 		change.ArtistID,
@@ -32,6 +32,7 @@ func (r *sqliteHistoryRepo) Record(ctx context.Context, change *MetadataChange) 
 		change.OldValue,
 		change.NewValue,
 		change.Source,
+		change.Producer,
 		change.CreatedAt.UTC().Format(time.RFC3339),
 	)
 	if err != nil {
@@ -43,14 +44,14 @@ func (r *sqliteHistoryRepo) Record(ctx context.Context, change *MetadataChange) 
 // GetByID retrieves a single metadata change by its primary key.
 func (r *sqliteHistoryRepo) GetByID(ctx context.Context, id string) (*MetadataChange, error) {
 	const q = `
-		SELECT id, artist_id, field, old_value, new_value, source, created_at
+		SELECT id, artist_id, field, old_value, new_value, source, producer, created_at
 		FROM metadata_changes
 		WHERE id = ?`
 
 	var c MetadataChange
 	var createdAtStr string
 	err := r.db.QueryRowContext(ctx, q, id).Scan(
-		&c.ID, &c.ArtistID, &c.Field, &c.OldValue, &c.NewValue, &c.Source, &createdAtStr,
+		&c.ID, &c.ArtistID, &c.Field, &c.OldValue, &c.NewValue, &c.Source, &c.Producer, &createdAtStr,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -82,7 +83,7 @@ func (r *sqliteHistoryRepo) List(ctx context.Context, artistID string, limit, of
 	// RFC3339, so a plain TEXT compare is monotonic again. Direct ORDER
 	// BY on created_at is index-friendly without a datetime() wrapper.
 	const q = `
-		SELECT id, artist_id, field, old_value, new_value, source, created_at
+		SELECT id, artist_id, field, old_value, new_value, source, producer, created_at
 		FROM metadata_changes
 		WHERE artist_id = ?
 		ORDER BY created_at DESC, id DESC
@@ -98,7 +99,7 @@ func (r *sqliteHistoryRepo) List(ctx context.Context, artistID string, limit, of
 	for rows.Next() {
 		var c MetadataChange
 		var createdAtStr string
-		if err := rows.Scan(&c.ID, &c.ArtistID, &c.Field, &c.OldValue, &c.NewValue, &c.Source, &createdAtStr); err != nil {
+		if err := rows.Scan(&c.ID, &c.ArtistID, &c.Field, &c.OldValue, &c.NewValue, &c.Source, &c.Producer, &createdAtStr); err != nil {
 			return nil, 0, fmt.Errorf("scanning metadata change row: %w", err)
 		}
 		c.CreatedAt = parseHistoryTimestamp(c.ID, createdAtStr)
@@ -188,7 +189,7 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 
 	// Plain TEXT ORDER BY on created_at is monotonic post-migration 004.
 	selectQ := `
-		SELECT mc.id, mc.artist_id, a.name, mc.field, mc.old_value, mc.new_value, mc.source, mc.created_at
+		SELECT mc.id, mc.artist_id, a.name, mc.field, mc.old_value, mc.new_value, mc.source, mc.producer, mc.created_at
 		FROM metadata_changes mc
 		JOIN artists a ON a.id = mc.artist_id
 		` + whereClause + `
@@ -211,7 +212,7 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		var createdAtStr string
 		if err := rows.Scan(
 			&c.ID, &c.ArtistID, &c.ArtistName,
-			&c.Field, &c.OldValue, &c.NewValue, &c.Source, &createdAtStr,
+			&c.Field, &c.OldValue, &c.NewValue, &c.Source, &c.Producer, &createdAtStr,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scanning global metadata change row: %w", err)
 		}
@@ -288,7 +289,7 @@ func (r *sqliteHistoryRepo) listGlobalPerFieldCapped(ctx context.Context, filter
 		WITH ranked AS (
 			SELECT
 				mc.id, mc.artist_id, a.name, mc.field,
-				mc.old_value, mc.new_value, mc.source, mc.created_at,
+				mc.old_value, mc.new_value, mc.source, mc.producer, mc.created_at,
 				ROW_NUMBER() OVER (
 					PARTITION BY mc.field
 					ORDER BY mc.created_at DESC, mc.id DESC
@@ -297,7 +298,7 @@ func (r *sqliteHistoryRepo) listGlobalPerFieldCapped(ctx context.Context, filter
 			JOIN artists a ON a.id = mc.artist_id
 			` + whereClause + `
 		)
-		SELECT id, artist_id, name, field, old_value, new_value, source, created_at
+		SELECT id, artist_id, name, field, old_value, new_value, source, producer, created_at
 		FROM ranked
 		WHERE rn <= ?
 		ORDER BY field, rn`
@@ -318,7 +319,7 @@ func (r *sqliteHistoryRepo) listGlobalPerFieldCapped(ctx context.Context, filter
 		var createdAtStr string
 		if err := rows.Scan(
 			&c.ID, &c.ArtistID, &c.ArtistName,
-			&c.Field, &c.OldValue, &c.NewValue, &c.Source, &createdAtStr,
+			&c.Field, &c.OldValue, &c.NewValue, &c.Source, &c.Producer, &createdAtStr,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scanning per-field-capped metadata change row: %w", err)
 		}
@@ -421,11 +422,18 @@ func blastAttributionPredicate(attribution, col string) string {
 // select sees it, recognizes it as a recovery, and drops the pair from the
 // report. That is the entire mechanism by which restored fields disappear, and
 // it only works while this CTE stays unfiltered.
+// producer is projected here (issue #3078 PR 1) alongside source, purely so
+// callers can read it back on the row -- it is NOT a filter, NOT part of the
+// ranking ORDER BY, and NOT consulted by blastRadiusDamageWhere or any other
+// predicate in this file. Adding it to this SELECT list cannot change which
+// row wins rn = 1 for a partition, and does not change what the outer WHERE
+// clauses below select. See migration 029's header for why producer stays
+// out of every predicate in this PR.
 const blastRadiusRankedCTE = `
 	WITH ranked AS (
 		SELECT
 			mc.id, mc.artist_id, a.name AS artist_name, mc.field,
-			mc.old_value, mc.new_value, mc.source, mc.created_at,
+			mc.old_value, mc.new_value, mc.source, mc.producer, mc.created_at,
 			ROW_NUMBER() OVER (
 				PARTITION BY mc.artist_id, mc.field
 				ORDER BY mc.created_at DESC, mc.id DESC
@@ -543,7 +551,7 @@ func (r *sqliteHistoryRepo) ListBlastRadius(ctx context.Context, f BlastRadiusFi
 	// order clauses are selected by switch from the validated Class/Attribution/
 	// Sort/Order constants. No caller-supplied text reaches the string.
 	q := fmt.Sprintf(blastRadiusRankedCTE, cteWhere) + `
-		SELECT id, artist_id, artist_name, field, old_value, new_value, source, created_at
+		SELECT id, artist_id, artist_name, field, old_value, new_value, source, producer, created_at
 		FROM ranked
 		` + blastRadiusDamageWhere(f.Class, f.Attribution) + `
 		` + blastRadiusOrderBy(f.Sort, f.Order) + `
@@ -565,7 +573,7 @@ func (r *sqliteHistoryRepo) ListBlastRadius(ctx context.Context, f BlastRadiusFi
 		var createdAtStr string
 		if err := rows.Scan(
 			&row.ID, &row.ArtistID, &row.ArtistName,
-			&row.Field, &row.OldValue, &row.NewValue, &row.Source, &createdAtStr,
+			&row.Field, &row.OldValue, &row.NewValue, &row.Source, &row.Producer, &createdAtStr,
 		); err != nil {
 			return nil, fmt.Errorf("scanning blast-radius row: %w", err)
 		}

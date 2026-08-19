@@ -16,6 +16,12 @@ var ErrChangeNotFound = fmt.Errorf("metadata change not found")
 // MetadataChange records a single field-level metadata change for an artist.
 // Source values follow the pattern: "manual", "provider:<name>", "rule:<rule_id>",
 // "scan", "import", or "revert".
+//
+// Producer (issue #3078) is a SEPARATE fact from Source: Source records WHAT
+// TRIGGERED the write, Producer records WHAT SUPPLIED THE VALUE. See
+// history_producer.go for the vocabulary and why the two are independent
+// columns rather than one richer Source. As of this PR every row's Producer
+// is ProducerUnrecorded ("") -- no write path stamps a real value yet.
 type MetadataChange struct {
 	ID        string    `json:"id"`
 	ArtistID  string    `json:"artist_id"`
@@ -23,6 +29,7 @@ type MetadataChange struct {
 	OldValue  string    `json:"old_value"`
 	NewValue  string    `json:"new_value"`
 	Source    string    `json:"source"`
+	Producer  string    `json:"producer"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -161,6 +168,7 @@ func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, 
 		OldValue:  oldValue,
 		NewValue:  newValue,
 		Source:    source,
+		Producer:  producerForField(ctx, field),
 		CreatedAt: time.Now().UTC(),
 	}
 	return h.repo.Record(ctx, change)

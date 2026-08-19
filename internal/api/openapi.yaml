@@ -1644,14 +1644,26 @@ components:
         source:
           type: string
           description: >
-            Origin of the change. One of "manual", "scan", "import",
+            What TRIGGERED the change. One of "manual", "scan", "import",
             "revert", "provider:<name>" (e.g. "provider:musicbrainz"),
             or "rule:<rule_id>" (e.g. "rule:missing_mbid").
+        producer:
+          type: string
+          description: >
+            What SUPPLIED the value, distinct from source (issue #3078).
+            Empty string ("") means unrecorded -- the writer did not say,
+            which is neither a claim that a human nor an automated process
+            supplied the value. Every row currently in the database has
+            producer "" (no write path stamps a real value yet); the
+            non-empty vocabulary ("operator", "restore", "nfo",
+            "filesystem", "provider:<name>", "platform:<type>",
+            "rule:<rule_id>") is defined but not yet written by any
+            handler.
         created_at:
           type: string
           format: date-time
           description: Timestamp when the change was recorded (UTC, RFC 3339).
-      required: [id, artist_id, field, old_value, new_value, source, created_at]
+      required: [id, artist_id, field, old_value, new_value, source, producer, created_at]
     Artist:
       type: object
       description: A music artist or group with full metadata.
@@ -11681,7 +11693,7 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [id, artist_id, artist_name, field, old_value, new_value, source, created_at, class, attribution]
+                      required: [id, artist_id, artist_name, field, old_value, new_value, source, producer, created_at, class, attribution]
                       properties:
                         id:
                           type: string
@@ -11700,6 +11712,12 @@ paths:
                         source:
                           type: string
                           description: The raw recorded source, for example scan, import, manual, or provider:musicbrainz.
+                        producer:
+                          type: string
+                          description: >
+                            What SUPPLIED the value, distinct from source (issue #3078).
+                            Empty string means unrecorded. Not consulted by attribution
+                            (attribution is derived from source, unchanged by this field).
                         created_at:
                           type: string
                           format: date-time
