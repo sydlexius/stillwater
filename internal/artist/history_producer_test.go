@@ -324,3 +324,112 @@ func TestRecordHistoryTx_WritesProducer(t *testing.T) {
 		t.Errorf("producer = %q, want %q", producer, ProducerRestore)
 	}
 }
+
+// --- F1 fix round: producer round-trips through EVERY read path ---------
+
+// TestProducer_RoundTripsEveryReadPath is the F1 fix-round test (#3078 PR 1
+// hostile review). TestRecord_RoundTripsProducerFromContext above only
+// exercises List; GetByID, both branches of ListGlobal, and ListBlastRadius
+// were unpinned -- dropping producer from any of their SELECT/scan pairs
+// left the suite green, because the only other producer-aware test
+// (TestPre029Row_ReadsAsUnrecordedProducer) asserts Producer == "", which is
+// indistinguishable from a column that was never scanned at all.
+//
+// Each row gets a DISTINCT, non-empty producer that also differs from every
+// other column on that row, so a dropped column or a scan-order swap shows
+// up as a wrong string rather than a silent "".
+func TestProducer_RoundTripsEveryReadPath(t *testing.T) {
+	t.Parallel()
+	svc, db := setupHistoryTestDB(t)
+	ctx := context.Background()
+	artistID := "artist-producer-roundtrip"
+	seedTestArtist(t, db, artistID)
+
+	writes := []struct{ field, oldV, newV, source, producer string }{
+		{"biography", "OLDBIO", "NEWBIO", "manual", ProducerOperator},
+		{"genres", "OLDGEN", "NEWGEN", "scan", "provider:musicbrainz"},
+		{"origin", "OLDORI", "NEWORI", "rule:origin_missing", "rule:mbid_validation"},
+	}
+	ids := make(map[string]string, len(writes))
+	want := make(map[string]string, len(writes))
+	for _, w := range writes {
+		c := &MetadataChange{
+			ID:       "mc-producer-rt-" + w.field,
+			ArtistID: artistID,
+			Field:    w.field,
+			OldValue: w.oldV,
+			NewValue: w.newV,
+			Source:   w.source,
+			Producer: w.producer,
+		}
+		if err := svc.Repo().Record(ctx, c); err != nil {
+			t.Fatalf("Record(%s): %v", w.field, err)
+		}
+		ids[w.field] = c.ID
+		want[w.field] = w.producer
+	}
+
+	// check asserts the producer matches, AND that it does not collide with
+	// old_value/new_value/source on the same row -- guarding against a
+	// scan-order swap that would otherwise still pass an equality check.
+	check := func(t *testing.T, path, field, gotProducer, gotOld, gotNew, gotSource string) {
+		t.Helper()
+		if gotProducer != want[field] {
+			t.Errorf("%s[%s]: Producer = %q, want %q", path, field, gotProducer, want[field])
+		}
+		if gotProducer == gotOld || gotProducer == gotNew || gotProducer == gotSource {
+			t.Errorf("%s[%s]: producer %q collides with old=%q new=%q source=%q (possible scan-order swap)",
+				path, field, gotProducer, gotOld, gotNew, gotSource)
+		}
+	}
+
+	// 1. GetByID
+	for field, id := range ids {
+		c, err := svc.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("GetByID(%s): %v", field, err)
+		}
+		check(t, "GetByID", field, c.Producer, c.OldValue, c.NewValue, c.Source)
+	}
+
+	repo := svc.Repo()
+
+	// 2. ListGlobal -- plain branch (PerFieldLimit == 0)
+	g, _, err := repo.ListGlobal(ctx, GlobalHistoryFilter{ArtistID: artistID, Limit: 50})
+	if err != nil {
+		t.Fatalf("ListGlobal: %v", err)
+	}
+	if len(g) != len(writes) {
+		t.Fatalf("ListGlobal len = %d, want %d", len(g), len(writes))
+	}
+	for _, c := range g {
+		check(t, "ListGlobal", c.Field, c.Producer, c.OldValue, c.NewValue, c.Source)
+	}
+
+	// 3. ListGlobal -- per-field-capped branch (PerFieldLimit > 0); a
+	// separate SELECT and scan from the plain branch above.
+	gp, _, err := repo.ListGlobal(ctx, GlobalHistoryFilter{ArtistID: artistID, PerFieldLimit: 5})
+	if err != nil {
+		t.Fatalf("ListGlobal(PerFieldLimit): %v", err)
+	}
+	if len(gp) != len(writes) {
+		t.Fatalf("ListGlobal(PerFieldLimit) len = %d, want %d", len(gp), len(writes))
+	}
+	for _, c := range gp {
+		check(t, "ListGlobal(PerFieldLimit)", c.Field, c.Producer, c.OldValue, c.NewValue, c.Source)
+	}
+
+	// 4. ListBlastRadius -- every row here is old_value != '' and
+	// old_value != new_value and source != 'revert', so all three qualify
+	// as damage and are returned.
+	br, err := repo.ListBlastRadius(ctx, BlastRadiusFilter{ArtistID: artistID})
+	if err != nil {
+		t.Fatalf("ListBlastRadius: %v", err)
+	}
+	if len(br) != len(writes) {
+		t.Fatalf("ListBlastRadius len = %d, want %d", len(br), len(writes))
+	}
+	for _, row := range br {
+		check(t, "ListBlastRadius", row.Field, row.Producer, row.OldValue, row.NewValue, row.Source)
+	}
+}
