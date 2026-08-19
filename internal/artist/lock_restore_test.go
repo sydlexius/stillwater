@@ -191,6 +191,65 @@ func TestRestoreLockedFieldGuarded_SliceFieldComparesJoinedForm(t *testing.T) {
 	}
 }
 
+// TestRestoreLockedFieldGuarded_SliceFieldFormattingOnlyDiffStillRecordsHistory
+// reproduces the hostile-review F1 finding (#3088 fix round). The verb makes
+// TWO different comparisons that must not be conflated:
+//
+//  1. The candidate-selection check (line ~130) compares
+//     normalizeFieldValue(damagedValue) against normalizeFieldValue(stored) --
+//     both round-tripped through splitTags+join, so a raw formatting
+//     difference (extra whitespace, comma spacing) between damagedValue and
+//     the actual column is tolerated: it still counts as "this is the damage
+//     the candidate was selected for" and the guarded UPDATE fires.
+//  2. recordHistoryTx's (now-removed) no-op skip compared oldValue==newValue
+//     as RAW strings -- oldValue is `stored` (the joined form of the CURRENT
+//     column), newValue is `restoreValue` UNNORMALIZED, exactly as the caller
+//     passed it in.
+//
+// Those two comparisons can disagree: damagedValue can raw-differ from stored
+// (satisfying check 1 as a normalize-match) while restoreValue happens to
+// raw-STRING-EQUAL stored's joined form (triggering the old check-2 skip),
+// even though the UPDATE statement itself still reports affected == 1 (SQLite
+// counts a WHERE-matched row as affected regardless of whether SET actually
+// changes its value). Before the fix that combination committed the artist
+// write, then recordHistoryTx's skip silently ate the insert: outcome reports
+// Applied with ZERO history rows, and with no revert row to exclude the pair
+// from lockDamageQuery, the next boot selects and "restores" it again,
+// forever.
+//
+// genres is stored as ["rock","pop"] (joined form "rock, pop"). damagedValue
+// is "rock,pop" (no space) -- normalize-equal to stored, so the UPDATE fires.
+// restoreValue is "rock, pop" -- the exact joined form already stored, so the
+// old raw-string skip fired on it.
+func TestRestoreLockedFieldGuarded_SliceFieldFormattingOnlyDiffStillRecordsHistory(t *testing.T) {
+	env := newLockRestoreEnv(t)
+	env.seedArtist("a1", "Artist", "", `["genres"]`)
+	if _, err := env.db.Exec(
+		`UPDATE artists SET genres = '["rock","pop"]' WHERE id = 'a1'`); err != nil {
+		t.Fatalf("seeding genres: %v", err)
+	}
+
+	outcome, err := env.svc.RestoreLockedFieldGuarded(context.Background(),
+		"a1", "genres", "rock,pop", "rock, pop")
+	if err != nil {
+		t.Fatalf("RestoreLockedFieldGuarded: %v", err)
+	}
+	if outcome != LockedFieldRestoreApplied {
+		t.Fatalf("outcome = %v, want applied", outcome)
+	}
+	var n int
+	if err := env.db.QueryRow(
+		`SELECT COUNT(*) FROM metadata_changes WHERE artist_id = 'a1' AND field = 'genres'`).
+		Scan(&n); err != nil {
+		t.Fatalf("counting history rows: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("history rows = %d, want 1 -- an outcome=Applied write must always leave an audit row "+
+			"(F1: the old recordHistoryTx no-op skip silently ate this one, reporting Applied with zero "+
+			"history rows, so the pair stayed a damage candidate forever)", n)
+	}
+}
+
 func TestRestoreLockedFieldGuarded_MissingArtistIsNotFound(t *testing.T) {
 	env := newLockRestoreEnv(t)
 
@@ -386,7 +445,16 @@ func TestRecordHistoryTx_ValidationAndSkipBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("identical non-empty old and new values are skipped, not inserted", func(t *testing.T) {
+	// UNLIKE HistoryService.Record, recordHistoryTx does NOT skip an
+	// identical non-empty old/new pair (#3088 fix round, F1). At this call
+	// site the caller (RestoreLockedFieldGuarded) has already decided the
+	// change via the guarded UPDATE's affected-row count before ever calling
+	// this function, so a string-equality skip here can eat a row the UPDATE
+	// legitimately counted as applied -- see
+	// TestRestoreLockedFieldGuarded_SliceFieldFormattingOnlyDiffStillRecordsHistory
+	// for the reproduction. This subtest pins the function's OWN contract
+	// directly: an identical pair must always insert.
+	t.Run("identical non-empty old and new values still insert", func(t *testing.T) {
 		db, tx := newTx(t)
 		if err := recordHistoryTx(context.Background(), tx, "a1", "biography", "same", "same", "revert"); err != nil {
 			t.Fatalf("recordHistoryTx: %v", err)
@@ -398,8 +466,8 @@ func TestRecordHistoryTx_ValidationAndSkipBranches(t *testing.T) {
 		if err := db.QueryRow(`SELECT COUNT(*) FROM metadata_changes WHERE artist_id = 'a1'`).Scan(&n); err != nil {
 			t.Fatalf("counting rows: %v", err)
 		}
-		if n != 0 {
-			t.Errorf("rows = %d, want 0 -- an identical non-empty old/new pair must not insert", n)
+		if n != 1 {
+			t.Errorf("rows = %d, want 1 -- recordHistoryTx has no no-op skip, unlike HistoryService.Record", n)
 		}
 	})
 

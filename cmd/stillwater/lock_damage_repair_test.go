@@ -739,6 +739,49 @@ func TestStartLockDamageRepair_PanicLogsTypeOnly(t *testing.T) {
 	}
 }
 
+// TestStartLockDamageRepair_ClosesDoneOnPanic pins the property N2 of the
+// #3088 fix round flags as untested: `defer close(done)` is registered BEFORE
+// the `defer recover()` block in startLockDamageRepair's goroutine, so LIFO
+// order runs recover() first and close(done) second -- meaning close(done)
+// still fires even when the pass panics. That property survived the whole
+// suite when close(done) was moved from a defer to the last statement of the
+// goroutine body (which would make a panicking pass NEVER close done, and
+// drainLockDamageRepair would then block for its full ctx deadline on every
+// panicking pass -- a 30s stall on shutdown with a green suite, undetected
+// until this test).
+//
+// Reuses panickingHistoryRepo (the same fixture
+// TestStartLockDamageRepair_PanicLogsTypeOnly drives) and asserts
+// app.lockDamageRepairDone is closed promptly after the panic, via drain
+// rather than a raw channel read so the assertion exercises the real
+// shutdown path.
+func TestStartLockDamageRepair_ClosesDoneOnPanic(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+
+	artistSvc := artist.NewService(db)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	maint := maintenance.NewService(db, "", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	maint.SetLockDamageDeps(panickingHistoryRepo{hist.Repo()}, artistSvc)
+	app := &Application{maintenanceService: maint}
+	app.startLockDamageRepair(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := app.drainLockDamageRepair(drainCtx); err != nil {
+		t.Fatalf("drainLockDamageRepair after a panicking pass: %v "+
+			"(want done closed promptly -- close(done) must run even when the pass panics)", err)
+	}
+
+	select {
+	case <-app.lockDamageRepairDone:
+		// closed, as expected
+	default:
+		t.Error("lockDamageRepairDone was not closed after the panicking pass returned")
+	}
+}
+
 // A dry run against a database with no schema surfaces the query error
 // rather than reporting an empty (clean-looking) result.
 func TestLockDamageDryRunDB_SurfacesQueryError(t *testing.T) {
