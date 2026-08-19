@@ -268,10 +268,7 @@ func recordHistoryTx(ctx context.Context, tx *sql.Tx, artistID, field, oldValue,
 	if source == "" {
 		return fmt.Errorf("source is required")
 	}
-	validSource := source == "manual" || source == "scan" || source == "import" ||
-		source == "revert" ||
-		strings.HasPrefix(source, "provider:") || strings.HasPrefix(source, "rule:")
-	if !validSource {
+	if !validHistorySource(source) {
 		return fmt.Errorf("invalid source: %s", source)
 	}
 	id := HistoryIDFromContext(ctx)

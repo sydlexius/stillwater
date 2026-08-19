@@ -432,37 +432,60 @@ func TestRecordHistoryTx_ValidationAndSkipBranches(t *testing.T) {
 		return env.db, tx
 	}
 
-	t.Run("empty artist_id is refused", func(t *testing.T) {
-		_, tx := newTx(t)
-		err := recordHistoryTx(context.Background(), tx, "", "biography", "old", "new", "revert")
-		if err == nil {
-			t.Fatal("want an error for an empty artist_id")
-		}
-	})
-
-	t.Run("empty field is refused", func(t *testing.T) {
-		_, tx := newTx(t)
-		err := recordHistoryTx(context.Background(), tx, "a1", "", "old", "new", "revert")
-		if err == nil {
-			t.Fatal("want an error for an empty field")
-		}
-	})
-
-	t.Run("empty source is refused", func(t *testing.T) {
-		_, tx := newTx(t)
-		err := recordHistoryTx(context.Background(), tx, "a1", "biography", "old", "new", "")
-		if err == nil {
-			t.Fatal("want an error for an empty source")
-		}
-	})
-
-	t.Run("an invalid source is refused", func(t *testing.T) {
-		_, tx := newTx(t)
-		err := recordHistoryTx(context.Background(), tx, "a1", "biography", "old", "new", "bogus")
-		if err == nil {
-			t.Fatal("want an error for a source outside the valid set")
-		}
-	})
+	// recordHistoryTx has no sentinel errors, and its four validation
+	// branches all just return an error -- asserting err == nil only proves
+	// SOME error fired, not the RIGHT one, so a subtest here would still pass
+	// if the wrong branch tripped (e.g. a closed transaction or a foreign-key
+	// failure masquerading as the intended validation). Assert the exact
+	// message each branch returns.
+	validationCases := []struct {
+		name     string
+		artistID string
+		field    string
+		source   string
+		wantErr  string
+	}{
+		{
+			name:     "empty artist_id is refused",
+			artistID: "",
+			field:    "biography",
+			source:   "revert",
+			wantErr:  "artist_id is required",
+		},
+		{
+			name:     "empty field is refused",
+			artistID: "a1",
+			field:    "",
+			source:   "revert",
+			wantErr:  "field is required",
+		},
+		{
+			name:     "empty source is refused",
+			artistID: "a1",
+			field:    "biography",
+			source:   "",
+			wantErr:  "source is required",
+		},
+		{
+			name:     "an invalid source is refused",
+			artistID: "a1",
+			field:    "biography",
+			source:   "bogus",
+			wantErr:  "invalid source: bogus",
+		},
+	}
+	for _, tc := range validationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, tx := newTx(t)
+			err := recordHistoryTx(context.Background(), tx, tc.artistID, tc.field, "old", "new", tc.source)
+			if err == nil {
+				t.Fatalf("want an error, got nil")
+			}
+			if err.Error() != tc.wantErr {
+				t.Errorf("err = %q, want %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
 
 	// UNLIKE HistoryService.Record, recordHistoryTx does NOT skip an
 	// identical non-empty old/new pair (#3088 fix round, F1). At this call
