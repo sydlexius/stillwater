@@ -978,7 +978,6 @@ test('every refusal token renders operator-actionable prose, and an unknown one 
 // absent control is a defect and is reported as one.
 // ---------------------------------------------------------------------------
 
-// The controls this pane must expose, keyed by what a failure should say.
 // The narrowing controls this pane exposes, keyed by what a failure should say.
 // The ordering selects live beside these in the same toolbar and carry their own
 // coverage in the slice that adds them: a spec here naming a control this branch
@@ -1078,13 +1077,21 @@ test('the filters trigger is Tab-reachable with a visible focus indicator', asyn
   ).length);
   expect(focusableCount, 'the page reports no focusable elements at all').toBeGreaterThan(0);
 
+  // ORDER IS LOAD-BEARING: the seeding focus() runs BEFORE the listener is
+  // registered. focus() dispatches focusin synchronously, so a listener armed
+  // first would record a hit for the seed element itself. Today the rail toggle
+  // precedes the trigger in DOM order, so seeding never lands on the trigger --
+  // but the day the toolbar moves above the rail, an armed-first listener turns
+  // this into a vacuous pass: the flag is set before a single Tab is pressed,
+  // the loop breaks on iteration one, and the test asserts nothing about Tab
+  // reachability while still reporting green.
   await page.evaluate((s) => {
     window.__swFilterHit = false;
+    const first = document.querySelector('a[href], button:not([disabled])');
+    if (first) first.focus();
     document.addEventListener('focusin', (e) => {
       if (e.target && e.target.matches(s)) window.__swFilterHit = true;
     });
-    const first = document.querySelector('a[href], button:not([disabled])');
-    if (first) first.focus();
   }, sel);
 
   for (let i = 0; i < focusableCount; i++) {
@@ -1201,3 +1208,103 @@ for (const theme of ['dark', 'light']) {
     ).toHaveLength(0);
   });
 }
+
+// ---------------------------------------------------------------------------
+// The active-filter badge survives first paint on a deep link (D-F2).
+//
+// THE DEFECT THIS PINS. The server renders the trigger with `is-active` and a
+// count when the URL narrows the report. swFilterFlyout.initFromURL's last act
+// is refreshActiveCount, which counts controls INSIDE the panel and writes that
+// number to the trigger badge -- so run over a panel holding no axis controls
+// it counts zero and sets the badge to display:none, ERASING the correct
+// server-rendered answer a beat after load.
+//
+// The operator-facing shape is specific and bad: a deep link narrows a
+// multi-thousand-row damage report, the table shows a subset, and the trigger
+// reads a bare "Filters" with no count. Nothing on the pane says rows are being
+// hidden, so the short table reads as the whole report -- an understatement of
+// how much of the library was destroyed, on the surface whose only job is
+// stating that number. It is also intermittent: after any Apply the badge comes
+// back, because refreshActiveCount runs before the swap replaces the trigger.
+//
+// WHY THIS IS A BROWSER TEST AND NOT A GO ONE. The server-rendered markup is
+// already correct -- a Go assertion over the response body passes both before
+// and after the defect. The erasure happens in the DOM, after DOMContentLoaded,
+// and only a real browser running the page's own scripts can see it.
+//
+// The wait is deliberate. The badge is correct at parse time and wrong only
+// once the hydration handler has run, so asserting immediately would pass
+// against the very defect this covers.
+test('a deep-linked filter keeps its trigger badge on first paint', async ({ page }) => {
+  // class=blanked narrows on one axis, and blanked/replaced is a fixed
+  // vocabulary rather than fixture data -- so the URL is genuinely narrowing on
+  // the a11y harness's empty database, where any row-derived value would not be.
+  await gotoPane(page, `${PANE_URL}?class=blanked`);
+
+  // PRECONDITION: the server really did render a badge for this URL. Without
+  // this the assertion below cannot tell "hydration erased the badge" from
+  // "this URL was never narrowing", and a change to the neutral-value handling
+  // would turn the whole test green while proving nothing.
+  const served = await page.evaluate(() => {
+    const trigger = document.getElementById('blast-radius-filter-trigger');
+    if (!trigger) return null;
+    const badge = trigger.querySelector('.sw-filter-trigger-badge');
+    return {
+      active: trigger.classList.contains('is-active'),
+      badgeText: badge ? badge.textContent.trim() : null,
+    };
+  });
+  expect(served, 'the filters trigger is absent').not.toBeNull();
+  expect(
+    served.active,
+    'the server did not mark the trigger active for ?class=blanked, so this URL is not narrowing and the '
+    + 'badge assertion below would be vacuous',
+  ).toBe(true);
+  expect(
+    served.badgeText,
+    'the server rendered no count in the trigger badge for ?class=blanked',
+  ).toBe('1');
+
+  // Give the DOMContentLoaded hydration handler a full turn to run. This is the
+  // window in which the defect lands.
+  await page.waitForFunction(() => document.readyState === 'complete');
+  await page.waitForTimeout(1000);
+
+  const afterHydration = await page.evaluate(() => {
+    const trigger = document.getElementById('blast-radius-filter-trigger');
+    const badge = trigger && trigger.querySelector('.sw-filter-trigger-badge');
+    if (!badge) return { present: false };
+    const cs = getComputedStyle(badge);
+    return {
+      present: true,
+      text: badge.textContent.trim(),
+      display: cs.display,
+      visibility: cs.visibility,
+      // getClientRects() is empty for a box that paints nothing, which catches
+      // display:none set inline as well as by a rule.
+      painted: badge.getClientRects().length > 0,
+      triggerActive: trigger.classList.contains('is-active'),
+    };
+  });
+
+  expect(
+    afterHydration.present,
+    'the trigger badge was removed from the DOM after hydration; a deep-linked narrowing report shows no '
+    + 'sign that rows are hidden',
+  ).toBe(true);
+  expect(
+    afterHydration.painted,
+    `the trigger badge is not painted after hydration (display=${afterHydration.display}, `
+    + `visibility=${afterHydration.visibility}); the operator sees a bare "Filters" over a narrowed table and `
+    + 'reads the short row set as the whole report',
+  ).toBe(true);
+  expect(
+    afterHydration.text,
+    'the trigger badge no longer reports the number of active filters after hydration',
+  ).toBe('1');
+  expect(
+    afterHydration.triggerActive,
+    'the trigger lost its is-active styling after hydration, so the only remaining signal that the report '
+    + 'is narrowed is gone',
+  ).toBe(true);
+});

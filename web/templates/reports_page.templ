@@ -1002,14 +1002,41 @@ templ blastRadiusFilterScript() {
 		// call returns as soon as the first axis lands and the panel has state
 		// worth restoring. The missing-dependency guard below stays LOUD; this
 		// is a deliberate skip on a known-empty panel, not a silent bail.
+		//
+		// THE CONDITION IS "THE PANEL RENDERED NOTHING", NOT "I COUNTED ZERO
+		// CONTROLS OF ONE KIND". An earlier form of this guard counted
+		// [data-filter-key] elements, which is the attribute FilterItem and
+		// friends happen to carry. That is correct only for as long as every
+		// axis is built from those components: an axis added later as a plain
+		// <select>, a range input, or any control with a different attribute
+		// convention would leave the count at zero over a POPULATED panel and
+		// silently disable hydration -- reproducing D-F2 in reverse, an empty
+		// filter panel standing over a narrowed table, which is the same lie to
+		// the operator from the other direction.
+		//
+		// FilterFlyout always renders .sw-filter-flyout-body and puts its
+		// children there, so that element's child-ELEMENT count is the
+		// structural fact: zero means the slice rendered no axes at all,
+		// whatever they would have been built from. Comment nodes (this branch
+		// renders one) are not children, so the shell reads as empty and a
+		// single rendered axis flips it. A MISSING body is a broken component,
+		// not an empty panel, so it reports loudly rather than skipping.
 		document.addEventListener('DOMContentLoaded', function() {
 			if (!window.swFilterFlyout) {
 				console.error('blast-radius: swFilterFlyout is not loaded; the filter panel cannot show which filters are active');
 				return;
 			}
 			var panel = document.getElementById('blast-radius-filter-flyout');
-			var controls = panel ? panel.querySelectorAll('[data-filter-key]').length : 0;
-			if (controls === 0) {
+			if (!panel) {
+				console.error('blast-radius: #blast-radius-filter-flyout is missing; the filter panel cannot be hydrated');
+				return;
+			}
+			var body = panel.querySelector('.sw-filter-flyout-body');
+			if (!body) {
+				console.error('blast-radius: the filter panel has no .sw-filter-flyout-body; its contents cannot be inspected and hydration would run blind');
+				return;
+			}
+			if (body.children.length === 0) {
 				return;
 			}
 			swFilterFlyout.initFromURL('blast-radius-filter-flyout');
@@ -1177,7 +1204,17 @@ func blastRadiusPageURL(data BlastRadiusData, page int) string {
 // correct for this pane's current scope.
 templ blastRadiusPagination(data BlastRadiusData) {
 	if data.Pagination.TotalPages > 1 {
-		<nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3" aria-label={ t(ctx, "reports.blast_radius.pager_label") }>
+		<!-- id is a structural hook, not decoration: the pager's page numbers and
+		     its prev/next hrefs are computed from the ACTIVE filter, so it has to
+		     sit inside #blast-radius-pane or a filter change leaves a pager
+		     describing the previous row set. The swap-contract test asserts that
+		     boundary by id, because the only other stable handles here are the
+		     translated aria-label and the Tailwind class list. -->
+		<nav
+			id="blast-radius-pager"
+			class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3"
+			aria-label={ t(ctx, "reports.blast_radius.pager_label") }
+		>
 			<p class="text-sm text-gray-700 dark:text-gray-300">
 				{ tf(ctx, "reports.blast_radius.page_of", data.Pagination.CurrentPage, data.Pagination.TotalPages) }
 			</p>
