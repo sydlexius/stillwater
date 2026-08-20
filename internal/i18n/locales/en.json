@@ -1783,6 +1783,8 @@
   "reports.blast_radius.js.confirm_accept": "Restore",
   "reports.blast_radius.js.confirm_title": "Restore this value?",
   "reports.blast_radius.js.confirm_title_bulk": "Restore selected values?",
+  "reports.blast_radius.js.filter_badge_many": "{count} active filters",
+  "reports.blast_radius.js.filter_badge_one": "1 active filter",
   "reports.blast_radius.js.filter_reload_failed": "The filtered report could not be loaded. The rows below still show the previous filter.",
   "reports.blast_radius.js.network_error": "Network error while restoring",
   "reports.blast_radius.js.plan_refused": "{refused} cannot be restored. Each refused row says why.",

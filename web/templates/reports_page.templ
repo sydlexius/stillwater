@@ -737,7 +737,9 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 					class={ "sw-rep-filter-btn", templ.KV("is-active", blastRadiusFilterCount(data) > 0) }
 					data-active-classes="is-active"
 					data-badge-classes="sw-filter-trigger-badge"
+					{ templ.Attributes{"data-server-filter-count": fmt.Sprintf("%d", blastRadiusFilterCount(data))}... }
 					aria-label={ t(ctx, "common.open_filter_panel") }
+					aria-describedby="blast-radius-filter-count-desc"
 					aria-expanded="false"
 					aria-controls="blast-radius-filter-flyout"
 					onclick={ components.OpenFilterFlyout("blast-radius-filter-flyout") }
@@ -747,8 +749,35 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 					</svg>
 					<span>{ t(ctx, "common.filters") }</span>
 					if blastRadiusFilterCount(data) > 0 {
-						<span class="sw-filter-trigger-badge">{ fmt.Sprintf("%d", blastRadiusFilterCount(data)) }</span>
+						<!-- aria-hidden: the numeral is meaningless read aloud on its own
+						     ("1" beside "Filters" could count filters, results, anything).
+						     The sentence in the description element below carries it
+						     instead, so assistive tech hears the meaning once rather than
+						     a bare digit twice. -->
+						<span class="sw-filter-trigger-badge" aria-hidden="true">{ fmt.Sprintf("%d", blastRadiusFilterCount(data)) }</span>
 					}
+					<!-- THE COUNT'S ONLY ROUTE TO A SCREEN READER.
+					     This button carries its own aria-label, and per the accname spec
+					     an aria-label REPLACES the element's subtree for naming, so
+					     nothing inside the button, however labelled, contributes to its
+					     accessible name. Measured on the live page in both engines before
+					     this element existed: the badge carried aria-label="1 active
+					     filter" while the button's computed accessible name was "Open
+					     filter panel" and its accessible description was empty.
+					     It is the DESCRIPTION rather than the name on purpose: the name
+					     is the stable action a voice-control user speaks ("Open filter
+					     panel") and must not churn as filters come and go, while the
+					     description is exactly where supplementary state belongs.
+					     Rendered unconditionally, and empty when nothing is narrowing, so
+					     the element the button references always exists: an
+					     aria-describedby pointing at a missing id resolves to no
+					     description at all, which would strand the count again the moment
+					     the first filter was applied. -->
+					<span id="blast-radius-filter-count-desc" class="sr-only">
+						if blastRadiusFilterCount(data) > 0 {
+							{ blastRadiusFilterBadgeLabel(ctx, blastRadiusFilterCount(data)) }
+						}
+					</span>
 				</button>
 			</div>
 		</div>
@@ -792,11 +821,27 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 								// otherwise read an all-clear over a library that still holds
 								// destroyed values, which is the exact failure this pane exists
 								// to prevent. blastRadiusNarrowed reports whether any narrowing
-								// is active; the counts come from CountBlastRadius, which
-								// deliberately ignores the attribution filter so the total
-								// quoted here is the honest library-wide one.
+								// is active.
+								//
+								// THE NUMBER QUOTED IS TotalUnfiltered, NOT Total. Total is the
+								// pagination denominator, scoped to the CURRENT narrowing -- and
+								// this branch renders only when that narrowing matched nothing,
+								// so Total is zero by construction. Quoting it produced "the
+								// report still records 0 change(s) overall" on every filtered
+								// empty state, including one measured over a library holding 12
+								// unattributable destroyed values while the caveat band a few
+								// pixels above correctly said "12 of unknown origin". The pane
+								// contradicted itself in adjacent elements and the reassuring
+								// half was the one in the table.
+								//
+								// Automated+Unknown is not a substitute: those ignore the
+								// attribution filter but still follow class, field and
+								// artist_id (see BlastRadiusCounts), so under any of those axes
+								// they are not library-wide either. TotalUnfiltered is counted
+								// with every axis dropped, which is what makes this sentence
+								// true.
 								if blastRadiusNarrowed(data) {
-									{ tf(ctx, "reports.blast_radius.empty_filtered", data.Counts.Total) }
+									{ tf(ctx, "reports.blast_radius.empty_filtered", data.Counts.TotalUnfiltered) }
 								} else {
 									{ t(ctx, "reports.blast_radius.empty") }
 								}
@@ -871,6 +916,8 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		data-restore-conflict={ t(ctx, "reports.blast_radius.js.restore_conflict") }
 		data-network-error={ t(ctx, "reports.blast_radius.js.network_error") }
 		data-filter-reload-failed={ t(ctx, "reports.blast_radius.js.filter_reload_failed") }
+		data-filter-badge-one={ t(ctx, "reports.blast_radius.js.filter_badge_one") }
+		data-filter-badge-many={ t(ctx, "reports.blast_radius.js.filter_badge_many") }
 		data-plan-summary={ t(ctx, "reports.blast_radius.js.plan_summary") }
 		data-plan-refused={ t(ctx, "reports.blast_radius.js.plan_refused") }
 		data-restored-count={ t(ctx, "reports.blast_radius.js.restored_count") }
@@ -918,9 +965,14 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 // set, so an operator who arrives through one can see it and clear it.
 templ blastRadiusFilterFlyout(data BlastRadiusData) {
 	@components.FilterFlyout("blast-radius-filter-flyout", t(ctx, "reports.blast_radius.filters_title"), "blast-radius-filter-trigger", blastRadiusFilterCount(data), "#blast-radius-results", nil) {
-		<!-- The narrowing sections arrive per axis in the slices that add them.
-		     The shell lands first so each axis is a small, reviewable addition
-		     to a panel whose keyboard behavior and contrast are already proven. -->
+		@components.FilterSection(t(ctx, "reports.blast_radius.column_class")) {
+			@components.FilterItemSingle("blast-radius-filter-flyout", "class", artist.BlastClassBlanked, t(ctx, "reports.blast_radius.class_blanked"), data.Class == artist.BlastClassBlanked, 0)
+			@components.FilterItemSingle("blast-radius-filter-flyout", "class", artist.BlastClassReplaced, t(ctx, "reports.blast_radius.class_replaced"), data.Class == artist.BlastClassReplaced, 0)
+		}
+		@components.FilterSection(t(ctx, "reports.blast_radius.column_attribution")) {
+			@components.FilterItemSingle("blast-radius-filter-flyout", "attribution", artist.BlastAttributionAutomated, t(ctx, "reports.blast_radius.attribution_automated"), data.Attribution == artist.BlastAttributionAutomated, 0)
+			@components.FilterItemSingle("blast-radius-filter-flyout", "attribution", artist.BlastAttributionUnknown, t(ctx, "reports.blast_radius.attribution_unknown"), data.Attribution == artist.BlastAttributionUnknown, 0)
+		}
 	}
 }
 
@@ -1019,54 +1071,135 @@ templ blastRadiusFilterScript() {
 			blastRadiusReload();
 		});
 
-		// Hydrate the flyout chips from the URL on first paint, so a deep link
-		// or a reload shows the filters that are actually in force rather than
-		// an empty panel over a narrowed table.
+		// Hydrate the flyout chips from the URL on first paint, so a deep link or
+		// a reload shows the filters that are actually in force rather than an
+		// empty panel over a narrowed table.
 		//
-		// SKIPPED WHILE THE PANEL HAS NO CONTROLS, which is this slice's state.
+		// THEN PUT THE SERVER'S BADGE COUNT BACK, because hydration is entitled to
+		// set the chips but NOT to answer "how much is hidden".
+		//
 		// initFromURL's last act is refreshActiveCount, which counts controls
-		// INSIDE the panel and then writes that count to the trigger badge. Over
-		// an empty panel it counts zero and sets display:none, HIDING the badge
-		// the server already rendered correctly. Measured on
-		// ?class=blanked&field=biography: the server emits `is-active` and a
-		// badge reading "2", and 1.5s after load the badge is
-		// {"text":"2","style":"display: none;","visible":false}. The compliance
-		// pane, same component and a non-empty panel, keeps its badge.
+		// INSIDE the panel. blastRadiusFilterCount counts AXES -- class,
+		// attribution, field and artist_id -- and the flyout does not render a
+		// control for every one of them. artist_id has none by design (it is a
+		// UUID; a select over every artist is not a usable control) and arrives by
+		// deep link from artist detail. So the panel's control count is a LOWER
+		// BOUND on the narrowing, and letting it overwrite the badge understates
+		// how much of the report is hidden.
 		//
-		// The harm is operator-facing and specific: a deep link narrows the
-		// 3,234-row damage report, the table shows a subset, and the trigger
-		// reads a bare "Filters" with no count -- so nothing on the pane says
-		// rows are being hidden and the operator reads the short table as the
-		// whole report. That is the exact failure blastRadiusFilterCount was
-		// made table-driven to prevent. It is also intermittent: after any Apply
-		// the badge returns, because refreshActiveCount runs before the swap
-		// replaces the trigger, so the same URL answers "how much is hidden" two
-		// different ways.
+		// Measured on this slice: ?field=biography&class=blanked renders a correct
+		// badge of 2, hydration recounts the panel, finds 1, and overwrites it; on
+		// ?field=biography alone the badge is 1 and hydration erases it entirely.
 		//
-		// Hydration is a no-op here regardless -- there are zero controls to
-		// hydrate -- so skipping loses nothing and keeps the server's answer. The
-		// call returns as soon as the first axis lands and the panel has state
-		// worth restoring. The missing-dependency guard below stays LOUD; this
-		// is a deliberate skip on a known-empty panel, not a silent bail.
+		// This is D-F2 in its third form. First it was an EMPTY panel zeroing the
+		// badge (fixed by skipping hydration while the panel had no axes); now it
+		// is a PARTIAL panel undercounting it. Both are the same operator-facing
+		// lie: a deep link narrows a multi-thousand-row damage report, the table
+		// shows a subset, and the trigger understates or omits the count -- so
+		// nothing on the pane says rows are being hidden and the operator reads the
+		// short table as the whole report.
 		//
-		// THE CONDITION IS "THE PANEL RENDERED NOTHING", NOT "I COUNTED ZERO
-		// CONTROLS OF ONE KIND". An earlier form of this guard counted
-		// [data-filter-key] elements, which is the attribute FilterItem and
-		// friends happen to carry. That is correct only for as long as every
-		// axis is built from those components: an axis added later as a plain
-		// <select>, a range input, or any control with a different attribute
-		// convention would leave the count at zero over a POPULATED panel and
-		// silently disable hydration -- reproducing D-F2 in reverse, an empty
-		// filter panel standing over a narrowed table, which is the same lie to
-		// the operator from the other direction.
+		// THE SERVER'S NUMBER IS AUTHORITATIVE and is carried on the trigger as
+		// data-server-filter-count, written from the same blastRadiusFilterCount
+		// the badge itself renders from -- one source of truth, not a reimplemented
+		// count in JS that could drift from the axis table. Restoring it after
+		// initFromURL is deliberately a pane-local fix: refreshActiveCount is
+		// shared by five panes (artists, activity, logs, index, this one) whose
+		// flyouts DO render a control per axis, and changing it for them to fix a
+		// property only this pane has would be the wrong blast radius.
 		//
-		// FilterFlyout always renders .sw-filter-flyout-body and puts its
-		// children there, so that element's child-ELEMENT count is the
-		// structural fact: zero means the slice rendered no axes at all,
-		// whatever they would have been built from. Comment nodes (this branch
-		// renders one) are not children, so the shell reads as empty and a
-		// single rendered axis flips it. A MISSING body is a broken component,
-		// not an empty panel, so it reports loudly rather than skipping.
+		// The skip below stays for the no-axis case, which is what the shell
+		// renders before any axis lands: hydration is a no-op there and
+		// refreshActiveCount would zero a correct badge. It keys on whether the
+		// flyout body rendered ANY children rather than on a count of one attribute
+		// name, so an axis built from a different control type still counts. A
+		// MISSING panel or body is a broken component, not an empty panel, so it
+		// reports loudly rather than skipping.
+		// blastFilterBadgeLabel builds the badge's accessible name from the
+		// TRANSLATED strings on #blast-radius-i18n.
+		//
+		// This was two English literals ('1 active filter' / n + ' active
+		// filters'), which made it the ONLY user-facing string in this script not
+		// read from that element -- the exact thing the comment on
+		// blastRestoreI18n forbids, and for the exact reason it gives: JS has no
+		// access to the request translator, so a literal here is the one
+		// untranslated sentence on the pane. The visible badge is a bare number, so
+		// this label is the ONLY form the count takes for a screen-reader user --
+		// leaving it English means those users, and only those users, lose the
+		// translation on the one control that says how much of the damage report is
+		// hidden.
+		//
+		// The element is read directly rather than through blastRestoreI18n, which
+		// lives in a DIFFERENT script block (blastRadiusScript). Nothing else in
+		// this block reaches across that boundary, and introducing the first such
+		// call would make this block depend on the other one being rendered -- a
+		// coupling that buys nothing over the two lines below.
+		//
+		// {count} interpolation matches the plural pattern the rest of the pane
+		// uses (see #blast-bulk-count's data-many-template). English fallbacks stay
+		// in the || position: a missing dataset entry should degrade to a readable
+		// label, not to "undefined".
+		function blastFilterBadgeLabel(n) {
+			var el = document.getElementById('blast-radius-i18n');
+			var i18n = el && el.dataset ? el.dataset : {};
+			if (n === 1) {
+				return i18n.filterBadgeOne || '1 active filter';
+			}
+			return (i18n.filterBadgeMany || '{count} active filters').replace('{count}', String(n));
+		}
+
+		function blastRestoreServerFilterCount() {
+			var trigger = document.getElementById('blast-radius-filter-trigger');
+			if (!trigger) {
+				console.error('blast-radius: #blast-radius-filter-trigger is missing; the active-filter count cannot be restored');
+				return;
+			}
+			var raw = trigger.getAttribute('data-server-filter-count');
+			var n = parseInt(raw, 10);
+			if (isNaN(n)) {
+				// Loud, not silent: without the server's number this pane cannot
+				// state how much is hidden, and a silently wrong badge is the
+				// defect this whole function exists to prevent.
+				console.error('blast-radius: the trigger carries no readable data-server-filter-count, so the active-filter badge may understate the narrowing', raw);
+				return;
+			}
+			var badge = trigger.querySelector('.sw-filter-trigger-badge');
+			if (n > 0) {
+				if (!badge) {
+					badge = document.createElement('span');
+					badge.className = trigger.getAttribute('data-badge-classes') || 'sw-filter-trigger-badge';
+					trigger.appendChild(badge);
+				}
+				badge.textContent = String(n);
+				// aria-hidden, and the sentence goes in the DESCRIPTION element
+				// instead. An aria-label here reached nobody: this button carries
+				// its own aria-label, which per the accname spec replaces its
+				// subtree for naming, so a nested label never contributes to the
+				// button's accessible name.
+				badge.setAttribute('aria-hidden', 'true');
+				badge.removeAttribute('aria-label');
+				badge.style.display = '';
+				trigger.classList.add('is-active');
+			} else if (badge) {
+				badge.style.display = 'none';
+				trigger.classList.remove('is-active');
+			}
+
+			// Keep the description in step with the badge, so first paint and
+			// post-hydration say the same thing. A mismatch here is the D-F2
+			// defect in a third form: the visible badge and what a screen reader
+			// hears disagreeing about how much of the report is hidden.
+			var desc = document.getElementById('blast-radius-filter-count-desc');
+			if (!desc) {
+				// Loud, not silent. Without this element the count has no route
+				// to assistive technology at all, which is the entire defect this
+				// wiring exists to fix.
+				console.error('blast-radius: #blast-radius-filter-count-desc is missing, so the active-filter count cannot reach a screen reader');
+				return;
+			}
+			desc.textContent = n > 0 ? blastFilterBadgeLabel(n) : '';
+		}
+
 		document.addEventListener('DOMContentLoaded', function() {
 			if (!window.swFilterFlyout) {
 				console.error('blast-radius: swFilterFlyout is not loaded; the filter panel cannot show which filters are active');
@@ -1086,6 +1219,7 @@ templ blastRadiusFilterScript() {
 				return;
 			}
 			swFilterFlyout.initFromURL('blast-radius-filter-flyout');
+			blastRestoreServerFilterCount();
 		});
 	</script>
 }

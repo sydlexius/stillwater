@@ -105,7 +105,6 @@ async function gotoPane(page, url = PANE_URL) {
   await page.waitForSelector('#blast-radius-tbl', { timeout: 10_000 });
 }
 
-
 // ---------------------------------------------------------------------------
 // 1. axe-core, full page, both themes.
 //
@@ -141,7 +140,6 @@ test('blast-radius pane passes full-page a11y scan (dark theme)', async ({ page 
 
 test('blast-radius pane passes full-page a11y scan (light theme)', async ({ page }) => {
   await gotoPane(page);
-
 
   // Switch to light through the REAL sidebar toggle so the whole preference
   // path runs (swPreferences.set -> applySingle -> classList + token
@@ -1031,6 +1029,34 @@ test('every filter control has an accessible name', async ({ page }) => {
     expect(name, `${label} (${sel}) has no accessible name; a screen-reader user is offered an unlabelled control`)
       .toBeTruthy();
   }
+
+  // The field chips inside the flyout are buttons whose label IS their text,
+  // but their pressed state is what tells a screen-reader user whether the
+  // filter is on. A chip with no aria-pressed announces nothing about state.
+  await page.locator('#blast-radius-filter-trigger').click();
+  await page.waitForSelector('#blast-radius-filter-flyout:not([inert])', { timeout: 5000 });
+
+  const chips = await page.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('#blast-radius-filter-flyout [data-filter-mode="single"]').forEach((el) => {
+      out.push({
+        key: el.getAttribute('data-filter-key'),
+        value: el.getAttribute('data-filter-value'),
+        pressed: el.getAttribute('aria-pressed'),
+        name: (el.textContent || '').trim(),
+      });
+    });
+    return out;
+  });
+  // Precondition: the flyout rendered chips. An empty panel would satisfy the
+  // per-chip loop below without checking anything.
+  expect(chips.length, 'the filter flyout rendered no chips; the assertions below would be vacuous')
+    .toBeGreaterThan(0);
+  for (const chip of chips) {
+    expect(chip.name, `chip ${chip.key}=${chip.value} has no visible label`).toBeTruthy();
+    expect(chip.pressed, `chip ${chip.key}=${chip.value} has no aria-pressed, so its on/off state is not announced`)
+      .toMatch(/^(true|false)$/);
+  }
 });
 
 test('the filters trigger is Tab-reachable with a visible focus indicator', async ({ page }) => {
@@ -1646,4 +1672,210 @@ test('a filter swap that removes the focused row does not drop focus to the docu
     after.id,
     `focus survived the swap but landed on <${after.tag}> rather than the filters trigger`,
   ).toBe('blast-radius-filter-trigger');
+});
+
+// ---------------------------------------------------------------------------
+// The badge survives hydration for an axis the flyout has NO control for.
+//
+// THE DEFECT THIS PINS -- D-F2's third form. initFromURL ends in
+// refreshActiveCount, which counts controls INSIDE the panel, while the
+// server's blastRadiusFilterCount counts AXES: class, attribution, field and
+// artist_id. The flyout does not render a control for every one of them --
+// artist_id has none by design (a UUID; a select over every artist is not a
+// usable control) and arrives by deep link from artist detail. So the panel's
+// control count is a LOWER BOUND on the narrowing, and letting it overwrite the
+// badge understates how much of the report is hidden.
+//
+// WHY THIS IS NOT COVERED BY THE FIRST-PAINT BADGE TEST ABOVE. That one uses
+// ?class=blanked, an axis the flyout DOES render a control for, so hydration
+// recounts it to the same number and the badge happens to survive. The defect
+// is only reachable through an axis with no control, which is why this test
+// uses ?field= and asserts the count rather than mere presence.
+//
+// WHY A BROWSER TEST. The server-rendered markup is correct either way -- a Go
+// assertion over the response body passes before and after the defect. The
+// undercount happens in the DOM after DOMContentLoaded, so only a real browser
+// running the page's own scripts can see it.
+test('a deep link on a control-less axis keeps its full badge count through hydration', async ({ page }) => {
+  // field=biography narrows on an axis the flyout renders NO control for on this
+  // slice. The badge counts a non-empty field value whether or not rows match,
+  // so this does not depend on the harness fixture holding biography damage.
+  await gotoPane(page, `${PANE_URL}?field=biography`);
+
+  // PRECONDITION: the server rendered a badge of exactly 1 for this URL. If it
+  // did not, this URL is not narrowing and the assertion below would be
+  // vacuous -- which is exactly how the first-paint test could have been
+  // written wrong.
+  const served = await page.evaluate(() => {
+    const trigger = document.getElementById('blast-radius-filter-trigger');
+    if (!trigger) return null;
+    const badge = trigger.querySelector('.sw-filter-trigger-badge');
+    return {
+      active: trigger.classList.contains('is-active'),
+      badgeText: badge ? badge.textContent.trim() : null,
+    };
+  });
+  expect(served, 'the filters trigger is absent').not.toBeNull();
+  expect(
+    served.active,
+    'the server did not mark the trigger active for ?field=biography, so this URL is not narrowing and the '
+    + 'assertion below would be vacuous',
+  ).toBe(true);
+  expect(served.badgeText, 'the server rendered no count for ?field=biography').toBe('1');
+
+  // PRECONDITION: the flyout genuinely has NO control for this axis. That
+  // absence is the whole reason the defect is reachable, so if a later slice
+  // adds a field control this test must be re-pointed at a still-control-less
+  // axis rather than silently becoming a duplicate of the first-paint test.
+  const fieldControls = await page.evaluate(
+    () => document.querySelectorAll('#blast-radius-filter-flyout [data-filter-key="field"]').length,
+  );
+  expect(
+    fieldControls,
+    'the flyout now renders a control for the field axis, so hydration would recount it correctly and this '
+    + 'test no longer covers the control-less case it exists for -- re-point it at artist_id',
+  ).toBe(0);
+
+  // Let the DOMContentLoaded hydration handler run. This is the window in which
+  // refreshActiveCount would overwrite the server's number.
+  await page.waitForFunction(() => document.readyState === 'complete');
+  await page.waitForTimeout(1000);
+
+  const afterHydration = await page.evaluate(() => {
+    const trigger = document.getElementById('blast-radius-filter-trigger');
+    const badge = trigger && trigger.querySelector('.sw-filter-trigger-badge');
+    if (!badge) return { present: false };
+    const cs = getComputedStyle(badge);
+    return {
+      present: true,
+      text: badge.textContent.trim(),
+      painted: badge.getClientRects().length > 0,
+      display: cs.display,
+      triggerActive: trigger.classList.contains('is-active'),
+    };
+  });
+
+  expect(
+    afterHydration.present,
+    'the trigger badge was removed after hydration; a report narrowed on a control-less axis shows no sign '
+    + 'that rows are hidden',
+  ).toBe(true);
+  expect(
+    afterHydration.painted,
+    `the trigger badge is not painted after hydration (display=${afterHydration.display}); the operator sees a `
+    + 'bare "Filters" over a narrowed table and reads the short row set as the whole report',
+  ).toBe(true);
+  expect(
+    afterHydration.text,
+    'hydration overwrote the badge with the count of controls IN THE PANEL rather than the number of active '
+    + 'axes, understating how much of the damage report is hidden',
+  ).toBe('1');
+  expect(
+    afterHydration.triggerActive,
+    'the trigger lost its is-active styling after hydration',
+  ).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// The active-filter count actually reaches assistive technology.
+//
+// THE DEFECT THIS PINS, and why the previous fix was not enough. The count was
+// localized onto the badge as an aria-label. That reached nobody: the trigger is
+// a <button> carrying its OWN aria-label, and per the accname spec an aria-label
+// REPLACES the element's subtree for naming purposes, so a nested element's
+// label never contributes to the button's accessible name. Measured on the live
+// page in both engines before this fix -- badge aria-label "1 active filter",
+// button computed accessible name "Open filter panel", accessible description
+// "". Translated, rendered, and unreachable.
+//
+// The count is a bare numeral visually, so this description is the ONLY form in
+// which a screen-reader user learns how much of the damage report is hidden.
+//
+// WHY THIS ASSERTS THE COMPUTED VALUE. An attribute-presence check ("the badge
+// has an aria-label", "the button has aria-describedby") passed throughout the
+// broken period and proved nothing -- that is exactly how the defect survived a
+// round of review. Playwright computes name and description per the accname
+// spec, the same way a browser hands them to a screen reader, so these
+// assertions fail when the wiring is wrong even though every attribute is
+// present.
+test('the active-filter count reaches the accessibility tree, not just the DOM', async ({ page }) => {
+  await gotoPane(page, `${PANE_URL}?class=blanked`);
+
+  const trigger = page.locator('#blast-radius-filter-trigger');
+  expect(await trigger.count(), 'the filters trigger is absent').toBe(1);
+
+  // PRECONDITION: this URL is genuinely narrowing, or an empty description
+  // below would be correct rather than a defect.
+  const served = await page.evaluate(() => {
+    const t = document.getElementById('blast-radius-filter-trigger');
+    return t ? { active: t.classList.contains('is-active'), count: t.getAttribute('data-server-filter-count') } : null;
+  });
+  expect(served, 'the filters trigger is absent').not.toBeNull();
+  expect(
+    served.active,
+    'the server did not mark the trigger active, so this URL is not narrowing and the assertions below '
+    + 'would be vacuous',
+  ).toBe(true);
+  expect(served.count, 'the server reported no filter count to render a description from').toBe('1');
+
+  // Let hydration run. The count is written twice -- server render, then
+  // blastRestoreServerFilterCount -- and this reads the state a real user lands
+  // on, after both.
+  await page.waitForFunction(() => document.readyState === 'complete');
+  await page.waitForTimeout(1000);
+
+  const expectedOne = '1 active filter';
+
+  // THE ASSERTION THAT MATTERS: the computed accessible DESCRIPTION carries the
+  // count sentence. This is what a screen reader announces.
+  await expect(
+    trigger,
+    'the filters trigger has no accessible description carrying the active-filter count, so a screen-reader '
+    + 'user is never told the damage report is narrowed -- the badge is a bare numeral and conveys nothing',
+  ).toHaveAccessibleDescription(expectedOne);
+
+  // The NAME stays the stable action. Folding the count into the name would
+  // churn the phrase a voice-control user speaks every time a filter changes.
+  await expect(
+    trigger,
+    'the filters trigger\'s accessible name changed with the filter count; the name is the action a '
+    + 'voice-control user speaks and must stay stable',
+  ).toHaveAccessibleName('Open filter panel');
+
+  // The numeral itself is hidden from the tree, so the count is announced once
+  // as a sentence rather than twice, once meaninglessly.
+  const badgeHidden = await page.evaluate(() => {
+    const b = document.querySelector('#blast-radius-filter-trigger .sw-filter-trigger-badge');
+    return b ? b.getAttribute('aria-hidden') : null;
+  });
+  expect(
+    badgeHidden,
+    'the badge numeral is exposed to assistive technology as well as the description, so the count is '
+    + 'announced twice, once as a meaningless bare digit',
+  ).toBe('true');
+});
+
+// The description survives hydration on an axis with no flyout control, which
+// is the case that strands it: refreshActiveCount recounts panel controls, and
+// artist_id has none.
+test('the accessibility description survives hydration on a control-less axis', async ({ page }) => {
+  await gotoPane(page, `${PANE_URL}?artist_id=sw-no-such-artist`);
+
+  const trigger = page.locator('#blast-radius-filter-trigger');
+  expect(
+    await page.evaluate(() => {
+      const t = document.getElementById('blast-radius-filter-trigger');
+      return t && t.getAttribute('data-server-filter-count');
+    }),
+    'the server did not report a filter count for ?artist_id=, so this URL is not narrowing',
+  ).toBe('1');
+
+  await page.waitForFunction(() => document.readyState === 'complete');
+  await page.waitForTimeout(1000);
+
+  await expect(
+    trigger,
+    'hydration cleared the accessible description on an axis the flyout has no control for, so a '
+    + 'deep-linked screen-reader user is told nothing about why the report is short',
+  ).toHaveAccessibleDescription('1 active filter');
 });

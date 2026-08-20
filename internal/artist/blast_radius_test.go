@@ -836,3 +836,255 @@ func TestBlastRadiusCoverageIsTrackableFields(t *testing.T) {
 		}
 	}
 }
+
+// TestCountBlastRadius_BucketsFollowEveryAxisExceptAttribution pins the counting
+// contract that BlastRadiusCounts' doc comment states.
+//
+// The rule is easy to misread as a bug, which is why it is pinned rather than
+// only described: Class, Field and ArtistID all narrow the bucket counts, and
+// Attribution alone does not. Class reaches the damage clause; Field and
+// ArtistID sit inside the ranking CTE, which the counting query builds too.
+//
+// Only the attribution exemption is a HAZARD requiring protection: it is the one
+// filter whose purpose is to hide a bucket, so letting it shrink the counts would
+// let an operator narrow to "automated" and read "0 of unknown origin" over a
+// library where nothing is attributable. The other axes carry no such hazard.
+//
+// Mutation proving teeth: passing BlastScopeAll for class in CountBlastRadius's
+// damage clause fails the class case; dropping the attribution neutralization
+// fails the attribution cases.
+func TestCountBlastRadius_BucketsFollowEveryAxisExceptAttribution(t *testing.T) {
+	t.Parallel()
+	svc, db := setupHistoryTestDB(t)
+	seedBlastFixture(t, db)
+	ctx := context.Background()
+
+	base, err := svc.CountBlastRadius(ctx, BlastRadiusFilter{})
+	if err != nil {
+		t.Fatalf("CountBlastRadius(neutral): %v", err)
+	}
+	// Precondition: the fixture has rows in BOTH buckets, or "the counts did not
+	// move" is satisfied by a fixture that never had anything to move.
+	if base.Automated == 0 || base.Unknown == 0 {
+		t.Fatalf("precondition: fixture reports automated=%d unknown=%d; both must be non-zero",
+			base.Automated, base.Unknown)
+	}
+
+	// NARROWING axes: each must shrink at least one bucket.
+	for _, tc := range []struct {
+		name string
+		f    BlastRadiusFilter
+	}{
+		{"class", BlastRadiusFilter{Class: BlastClassBlanked}},
+		{"field", BlastRadiusFilter{Field: "biography"}},
+		// a-1, a SEEDED artist. An unseeded id (this read "art-1", which
+		// seedBlastFixture never creates -- it seeds a-1..a-6) matches ZERO
+		// rows, and zero rows satisfies "the buckets moved" for the wrong
+		// reason: the case then proves only that an empty result is empty, and
+		// would keep passing if artist_id narrowing broke entirely. The
+		// dedicated no-match case below covers the empty path deliberately.
+		{"artist_id", BlastRadiusFilter{ArtistID: "a-1"}},
+	} {
+		t.Run(tc.name+" narrows the buckets", func(t *testing.T) {
+			got, err := svc.CountBlastRadius(ctx, tc.f)
+			if err != nil {
+				t.Fatalf("CountBlastRadius: %v", err)
+			}
+			// PRECONDITION: the narrowing MATCHED SOMETHING. Without this, an
+			// axis that matches nothing passes the "buckets moved" assertion
+			// below by collapsing both to zero -- which is what an unseeded id
+			// did here. A narrowing axis has to be shown to narrow, not to
+			// annihilate.
+			if got.Automated == 0 && got.Unknown == 0 {
+				t.Fatalf("%s narrowing matched NO rows (automated=0 unknown=0), so the assertion below would "+
+					"pass whether or not this axis narrows correctly; the filter value is not in the fixture",
+					tc.name)
+			}
+			if got.Automated == base.Automated && got.Unknown == base.Unknown {
+				t.Errorf("%s narrowing left the buckets at automated=%d unknown=%d, unchanged from the "+
+					"unfiltered %d/%d. The doc comment says this axis narrows them; if that changed, the "+
+					"comment and the empty-state sentence that depends on it must change too.",
+					tc.name, got.Automated, got.Unknown, base.Automated, base.Unknown)
+			}
+		})
+	}
+
+	// ATTRIBUTION: must NEVER move either bucket. This is the honesty guarantee.
+	for _, attr := range []string{BlastAttributionAutomated, BlastAttributionUnknown} {
+		t.Run("attribution="+attr+" does NOT narrow the buckets", func(t *testing.T) {
+			got, err := svc.CountBlastRadius(ctx, BlastRadiusFilter{Attribution: attr})
+			if err != nil {
+				t.Fatalf("CountBlastRadius: %v", err)
+			}
+			if got.Automated != base.Automated || got.Unknown != base.Unknown {
+				t.Errorf("attribution=%s moved the buckets to automated=%d unknown=%d from %d/%d. The "+
+					"attribution filter must never be able to hide a bucket: an operator narrowing to one "+
+					"attribution would read the other as zero over a library that is full of it.",
+					attr, got.Automated, got.Unknown, base.Automated, base.Unknown)
+			}
+		})
+	}
+}
+
+// TestCountBlastRadius_TotalUnfilteredIsLibraryWide pins the one count that is
+// genuinely library-wide.
+//
+// The empty-state sentence quotes it ("the report still records N change(s)
+// overall"), and that sentence renders only when a filter matched nothing. Every
+// other count in the struct is filter-scoped, so quoting one there produces a
+// number that is structurally zero on the exact view that displays it -- while
+// the caveat band directly above reports the real damage. The pane contradicting
+// itself in adjacent elements is what this field exists to prevent.
+//
+// Mutation proving teeth: returning counts.Total, or Automated+Unknown, for
+// TotalUnfiltered fails every narrowed case below.
+func TestCountBlastRadius_TotalUnfilteredIsLibraryWide(t *testing.T) {
+	t.Parallel()
+	svc, db := setupHistoryTestDB(t)
+	seedBlastFixture(t, db)
+	ctx := context.Background()
+
+	base, err := svc.CountBlastRadius(ctx, BlastRadiusFilter{})
+	if err != nil {
+		t.Fatalf("CountBlastRadius(neutral): %v", err)
+	}
+	want := base.TotalUnfiltered
+	// Precondition: the library holds damage, or "unchanged" is trivially true.
+	if want == 0 {
+		t.Fatalf("precondition: fixture reports TotalUnfiltered=0; there is nothing for a filter to hide")
+	}
+	if want != base.Automated+base.Unknown {
+		t.Fatalf("on an unfiltered request TotalUnfiltered=%d must equal Automated+Unknown=%d",
+			want, base.Automated+base.Unknown)
+	}
+
+	for _, tc := range []struct {
+		name string
+		f    BlastRadiusFilter
+	}{
+		{"class", BlastRadiusFilter{Class: BlastClassBlanked}},
+		{"field", BlastRadiusFilter{Field: "biography"}},
+		// a-1 is SEEDED. This read "art-1", which seedBlastFixture never
+		// creates, so the case narrowed to nothing -- and TotalUnfiltered is
+		// library-wide precisely BECAUSE it ignores the filter, which makes
+		// "unchanged" true for a no-match filter whether or not the field is
+		// computed correctly. A seeded id means the surrounding counts really
+		// do move while TotalUnfiltered stays put, which is the property.
+		{"artist_id", BlastRadiusFilter{ArtistID: "a-1"}},
+		{"attribution", BlastRadiusFilter{Attribution: BlastAttributionAutomated}},
+		// KEPT DELIBERATELY: a filter that matches nothing is the case the
+		// empty-state sentence actually renders on, so it is worth covering on
+		// purpose -- just not by accident, which is what the unseeded id did.
+		{"a filter matching nothing", BlastRadiusFilter{Field: "no_such_field_xyz"}},
+		{"every axis at once", BlastRadiusFilter{
+			Class: BlastClassBlanked, Attribution: BlastAttributionUnknown,
+			Field: "biography", ArtistID: "a-1",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := svc.CountBlastRadius(ctx, tc.f)
+			if err != nil {
+				t.Fatalf("CountBlastRadius: %v", err)
+			}
+			if got.TotalUnfiltered != want {
+				t.Errorf("TotalUnfiltered=%d under a %s filter, want the library-wide %d. The empty-state "+
+					"sentence quotes this to tell an operator how much the report still holds behind their "+
+					"filter; a filter-scoped value there is zero on the very view that renders it.",
+					got.TotalUnfiltered, tc.name, want)
+			}
+		})
+	}
+}
+
+// TestCountBlastRadius_QueryFailurePropagates covers the database-error branch
+// in CountBlastRadius: a failed count must surface as an error, never as a zero.
+//
+// That distinction is the whole point on this report. A swallowed error returns
+// a zero-valued BlastRadiusCounts, which the pane renders as "0 automated, 0 of
+// unknown origin" -- an all-clear over a library whose damage could not be
+// counted. The buckets exist precisely so an unknown state is never displayed as
+// a clean one.
+//
+// BOTH error branches are covered, one per subtest, and each is injected where
+// it is being asserted rather than upstream. That is why countAllBlastRadius is
+// its own method: inline as the second of two queries against the same tables,
+// no fault could isolate it -- a closed handle or a dropped table fails the
+// FIRST query, so execution never arrived at the second and a test claiming to
+// cover it would have passed for the wrong reason.
+func TestCountBlastRadius_QueryFailurePropagates(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the bucket-count query", func(t *testing.T) {
+		svc, db := setupHistoryTestDB(t)
+		seedBlastFixture(t, db)
+		ctx := context.Background()
+
+		// Precondition: the count succeeds before the fault, so a later error is
+		// attributable to the closed handle rather than to a malformed filter,
+		// and the fixture has damage, so a zero-valued result after the fault is
+		// distinguishable from a correct one.
+		before, err := svc.CountBlastRadius(ctx, BlastRadiusFilter{})
+		if err != nil {
+			t.Fatalf("precondition: CountBlastRadius failed before the fault was injected: %v", err)
+		}
+		if before.Automated+before.Unknown == 0 {
+			t.Fatalf("precondition: the fixture reports no damage")
+		}
+
+		if err := db.Close(); err != nil {
+			t.Fatalf("closing db to inject the query failure: %v", err)
+		}
+
+		counts, err := svc.CountBlastRadius(ctx, BlastRadiusFilter{})
+		if err == nil {
+			t.Fatalf("CountBlastRadius returned a nil error over a closed database, with counts %+v. A "+
+				"swallowed error yields a zero-valued result, which this report renders as an all-clear "+
+				"over a library it could not count.", counts)
+		}
+		if counts.Automated != 0 || counts.Unknown != 0 || counts.TotalUnfiltered != 0 {
+			t.Errorf("the error path returned partially populated counts %+v; a caller that ignores the "+
+				"error would render them as real numbers", counts)
+		}
+	})
+
+	t.Run("the library-wide count", func(t *testing.T) {
+		svc, db := setupHistoryTestDB(t)
+		seedBlastFixture(t, db)
+		ctx := context.Background()
+
+		// Reached through the repository directly, which is the point of the
+		// extraction: called via CountBlastRadius this branch sits behind
+		// another query over the same tables, so any fault big enough to break
+		// it breaks that one first.
+		repo, ok := svc.repo.(*sqliteHistoryRepo)
+		if !ok {
+			t.Fatalf("history service is not backed by sqliteHistoryRepo (%T); this test cannot reach the "+
+				"branch it names", svc.repo)
+		}
+
+		// Precondition: it succeeds before the fault and reports real damage.
+		total, err := repo.countAllBlastRadius(ctx)
+		if err != nil {
+			t.Fatalf("precondition: countAllBlastRadius failed before the fault: %v", err)
+		}
+		if total == 0 {
+			t.Fatalf("precondition: the fixture reports no damage, so a zero after the fault would be " +
+				"indistinguishable from a correct answer")
+		}
+
+		if err := db.Close(); err != nil {
+			t.Fatalf("closing db: %v", err)
+		}
+
+		got, err := repo.countAllBlastRadius(ctx)
+		if err == nil {
+			t.Fatalf("countAllBlastRadius returned a nil error over a closed database, with total %d. The "+
+				"empty-state sentence quotes this number to tell an operator how much the report still "+
+				"holds behind their filter; a swallowed error renders that as zero.", got)
+		}
+		if got != 0 {
+			t.Errorf("the error path returned total=%d; it must return a zero the caller cannot mistake "+
+				"for an answer", got)
+		}
+	})
+}

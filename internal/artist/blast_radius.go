@@ -153,10 +153,27 @@ type BlastRadiusRow struct {
 
 // BlastRadiusCounts reports how the matching rows split by attribution.
 //
-// Automated and Unknown are computed WITHOUT applying the filter's Attribution
-// narrowing, so both are always populated and the operator can never reach a
-// view where the unknown bucket has been silently dropped. Total is the count
-// for the CURRENTLY SELECTED attribution scope, which is what pagination needs.
+// THE RULE, STATED ONCE, BECAUSE IT IS EASY TO MISREAD AS A BUG:
+// the buckets follow EVERY narrowing axis EXCEPT attribution.
+//
+// Class, Field and ArtistID all reach the counting query -- Class through the
+// damage clause, Field and ArtistID inside the ranking CTE -- so narrowing on
+// any of them narrows Automated and Unknown too. Only Attribution is
+// neutralized. Measured on a 4-automated/2-unknown fixture: ?class=blanked
+// reports 2/1, ?field=biography reports 1/0, while ?attribution=automated
+// still reports the full 4/2.
+//
+// That asymmetry is deliberate and is the whole point of the type. The
+// attribution filter is the ONLY one whose job is to hide a bucket, so letting
+// it shrink the bucket counts would let an operator filter to "automated" and
+// read "0 of unknown origin" over a library where nothing is attributable --
+// the "unknown rendered as clean" defect (#2692, #2686) this report exists to
+// prevent. The other axes carry no such hazard: an operator who narrows to one
+// field is asking about that field, and a band describing that field is the
+// honest answer.
+//
+// What this means for a caller wanting a LIBRARY-WIDE number: Automated+Unknown
+// is not one, because those follow class/field/artist_id. Use TotalUnfiltered.
 type BlastRadiusCounts struct {
 	// Automated counts rows whose source names an automated writer.
 	Automated int `json:"automated"`
@@ -167,7 +184,20 @@ type BlastRadiusCounts struct {
 	// Total is Automated+Unknown when the filter's Attribution is
 	// BlastScopeAll, or the single selected bucket otherwise. It is the
 	// denominator for pagination, not a headline "damage" figure.
+	//
+	// It is NOT a library-wide count and must never be quoted as one: it is
+	// scoped to the current narrowing, so on any view that renders because it
+	// has zero rows, Total is zero by construction.
 	Total int `json:"total"`
+	// TotalUnfiltered counts every damaged row in the library, with EVERY
+	// narrowing axis dropped, including attribution.
+	//
+	// It exists for exactly one caller: the empty-state sentence that tells an
+	// operator their filter matched nothing and says how much the report still
+	// holds behind it. Every other count here is filter-scoped, so quoting one
+	// of them there produces a sentence that contradicts the caveat band a few
+	// pixels above it.
+	TotalUnfiltered int `json:"total_unfiltered"`
 }
 
 // AttributionCutoffDate is the date Stillwater began recording scan-driven
