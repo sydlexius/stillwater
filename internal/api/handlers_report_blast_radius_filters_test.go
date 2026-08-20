@@ -618,27 +618,58 @@ func TestBlastRadiusPane_FieldControlOptionsAreTrackableFields(t *testing.T) {
 		}
 	}
 
-	inGot := map[string]bool{}
+	// FREQUENCIES, not sets. The membership checks below prove the two lists
+	// hold the same VALUES; they say nothing about how many times each appears.
+	// Collapsed into sets, a control rendering "biography" twice -- 15 options
+	// against 14 trackable fields -- satisfies every membership check and the
+	// test stays green while the operator sees a duplicated entry in the field
+	// filter.
+	//
+	// That is not a hypothetical shape here. This test exists to prove the
+	// options are GENERATED from TrackableFields() rather than written out, and
+	// a hand-written list is exactly the edit that produces a stray duplicate --
+	// so the defect this test guards against and the defect a set comparison
+	// cannot see are the same defect.
+	countGot := map[string]int{}
 	for _, f := range got {
-		inGot[f] = true
+		countGot[f]++
 	}
-	inWant := map[string]bool{}
+	countWant := map[string]int{}
 	for _, f := range want {
-		inWant[f] = true
+		countWant[f]++
 	}
 
 	for _, f := range want {
-		if !inGot[f] {
+		if countGot[f] == 0 {
 			t.Errorf("field %q is in artist.TrackableFields() but has no option in the field filter. Damage to "+
 				"it is unfilterable while the coverage caveat says the report covers it. The control must be "+
 				"generated from the trackable-field list, never written out.", f)
 		}
 	}
 	for _, f := range got {
-		if !inWant[f] {
+		if countWant[f] == 0 {
 			t.Errorf("the field filter offers %q, which is NOT trackable, so selecting it can only ever return "+
 				"an empty table the operator reads as an all-clear for that field", f)
 		}
+	}
+
+	// MULTIPLICITY, per value. Reported per field rather than as a bare total
+	// so the failure names WHICH option was duplicated, which is what a reader
+	// needs to find the stray line.
+	for _, f := range want {
+		if countGot[f] > countWant[f] {
+			t.Errorf("the field filter offers %q %d times, want %d. A duplicated option gives the operator two "+
+				"identical entries in the field list and no way to tell them apart, on the control whose whole "+
+				"job is saying which fields the report can narrow to.", f, countGot[f], countWant[f])
+		}
+	}
+
+	// And the totals agree, which catches a duplicate of a value that is NOT
+	// trackable -- that one is reported as untrackable above, but its extra
+	// copies would otherwise go unremarked.
+	if len(got) != len(want) {
+		t.Errorf("the field filter rendered %d options against %d trackable fields; the option list is not a "+
+			"one-for-one rendering of artist.TrackableFields()", len(got), len(want))
 	}
 }
 
