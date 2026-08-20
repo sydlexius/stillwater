@@ -2981,7 +2981,7 @@ func blastRadiusFilterScript() templ.Component {
 			templ_7745c5c3_Var165 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 206, "<script>\n\t\t// blastRadiusReload re-requests the pane with the current URL's query\n\t\t// string. window.location.search is the single source of truth: the\n\t\t// flyout has already written its params there, and the selects write\n\t\t// theirs below, so neither has to know what the other set.\n\t\tfunction blastRadiusReload() {\n\t\t\tif (!window.htmx) {\n\t\t\t\tconsole.error('blast-radius: htmx is not loaded; the filter controls cannot reload the report');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\t// The path stays ROOT-RELATIVE. layout.templ installs a global\n\t\t\t// htmx:configRequest listener that prepends the base path to every\n\t\t\t// root-relative htmx path, so prefixing it here would produce\n\t\t\t// /base/base/reports/blast-radius under SW_BASE_PATH. The\n\t\t\t// compliance pane uses the same idiom.\n\t\t\t//\n\t\t\t// THE REJECTION IS HANDLED, because nothing else handles it.\n\t\t\t// layout.templ covers htmx:responseError and htmx:timeout, and\n\t\t\t// htmx.ajax RESOLVES on any HTTP response including a 5xx, so those\n\t\t\t// two cover every case where the request reached the server. A\n\t\t\t// NETWORK failure -- server down, DNS, connection dropped mid-flight\n\t\t\t// -- rejects the promise instead, and no handler anywhere sees it.\n\t\t\t//\n\t\t\t// Unhandled, the operator applies a filter, the URL updates through\n\t\t\t// pushState, the request never lands, and the pane goes on rendering\n\t\t\t// the PREVIOUS filter's rows under the NEW URL with nothing said.\n\t\t\t// The caveat band and the row set then describe a filter the\n\t\t\t// operator is no longer looking at: the same stale-state falsehood\n\t\t\t// the swap boundary guards against, arriving over the network.\n\t\t\t//\n\t\t\t// showToast is the idiom the global handlers already use, so a\n\t\t\t// network failure reads the same as an HTTP one. console.error as\n\t\t\t// well, because a page whose toast container failed to render must\n\t\t\t// not swallow the failure silently -- the same belt-and-braces\n\t\t\t// blastRestoreRequest uses. No timeout handling is added here:\n\t\t\t// htmx:timeout is global and already toasts, and a second handler\n\t\t\t// would report the same timeout twice.\n\t\t\treturn htmx.ajax('GET', '/reports/blast-radius' + window.location.search, {\n\t\t\t\ttarget: '#blast-radius-pane',\n\t\t\t\tswap: 'outerHTML',\n\t\t\t\tselect: '#blast-radius-pane'\n\t\t\t}).catch(function(err) {\n\t\t\t\tconsole.error('blast-radius: the filter reload did not reach the server', err);\n\t\t\t\t// The copy comes from #blast-radius-i18n, the pane's own hidden\n\t\t\t\t// element, for the reason every other string in this script\n\t\t\t\t// does: JS has no access to the request translator, so a\n\t\t\t\t// hardcoded English literal would be the one untranslated\n\t\t\t\t// sentence on the pane.\n\t\t\t\tvar el = document.getElementById('blast-radius-i18n');\n\t\t\t\tvar msg = el && el.dataset ? el.dataset.filterReloadFailed : '';\n\t\t\t\tif (typeof showToast === 'function') {\n\t\t\t\t\tshowToast(msg || 'The filtered report could not be loaded. The rows below still show the previous filter.');\n\t\t\t\t} else {\n\t\t\t\t\t// showToast is installed by the layout, so its absence is a\n\t\t\t\t\t// broken page rather than a supported configuration -- and a\n\t\t\t\t\t// failure the operator never sees is the defect this whole\n\t\t\t\t\t// handler exists to prevent.\n\t\t\t\t\tconsole.error('blast-radius: showToast is not available, so the filter-reload failure reached nobody');\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\t// Re-sync the flyout from the URL after ANY pane swap.\n\t\t//\n\t\t// Chips are a SECOND WRITE PATH the flyout never hears about.\n\t\t// DismissFilterChip does its own history.pushState + htmx.ajax and fires\n\t\t// no sw:filter-applied, and the flyout deliberately lives OUTSIDE\n\t\t// #blast-radius-pane so a swap cannot yank the panel out from under an\n\t\t// operator -- which also means the swap does not refresh it. Before the\n\t\t// chips existed the flyout was the only way to change a filter, so\n\t\t// hydrating once at DOMContentLoaded was sufficient; it is not any more.\n\t\t//\n\t\t// Measured before this handler, dismissing the Class chip from\n\t\t// ?class=blanked&attribution=automated: the URL, rows, chips and trigger\n\t\t// badge all updated correctly, while inside the panel Blanked stayed lit,\n\t\t// data-filter-selected stayed true for class=blanked, and the footer read\n\t\t// \"2 active\" against a trigger reading \"1\". Two badges on one screen\n\t\t// disagreeing about how much of a data-destruction report is hidden is\n\t\t// the falsehood this pane's whole design exists to prevent. Worse, the\n\t\t// panel's own Apply then re-applied the filter the operator had just\n\t\t// cleared, with no interaction asking for it.\n\t\t//\n\t\t// Same fix, same reason, as the artists grid (artists.templ), whose\n\t\t// comment names this exact cause.\n\t\t//\n\t\t// AND RESTORE THE SERVER'S BADGE COUNT AFTERWARDS, for the same reason\n\t\t// the first-paint hydration does. initFromURL ends in\n\t\t// refreshActiveCount, which counts controls INSIDE the panel, and\n\t\t// artist_id has no control by design -- so on a swap that leaves an\n\t\t// artist_id narrowing in the URL, the resync would recount the panel and\n\t\t// understate the badge. The swap replaces the trigger with a freshly\n\t\t// server-rendered one carrying the correct data-server-filter-count, so\n\t\t// reading it back after the resync restores the authoritative number\n\t\t// rather than a stale one.\n\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\tif (!evt.detail || !evt.detail.target || evt.detail.target.id !== 'blast-radius-pane') return;\n\t\t\tif (!window.swFilterFlyout) {\n\t\t\t\tconsole.error('blast-radius: swFilterFlyout is not loaded; the filter panel cannot resync after a swap');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tswFilterFlyout.initFromURL('blast-radius-filter-flyout');\n\t\t\tblastRestoreServerFilterCount();\n\t\t});\n\n\t\t// blastRadiusApplyOrdering writes the sort/order selects to the URL and\n\t\t// reloads. page is dropped because a re-sort renumbers every page: page\n\t\t// 4 of the old order holds different rows than page 4 of the new one,\n\t\t// and staying on it silently shows the operator a different slice than\n\t\t// the one they were looking at.\n\t\tfunction blastRadiusApplyOrdering() {\n\t\t\tvar sort = document.getElementById('blast-radius-sort');\n\t\t\tvar order = document.getElementById('blast-radius-order');\n\t\t\tif (!sort || !order) {\n\t\t\t\tconsole.error('blast-radius: the sort/order controls are missing from the page; ordering cannot be applied');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar url = new URL(window.location.href);\n\t\t\turl.searchParams.set('sort', sort.value);\n\t\t\turl.searchParams.set('order', order.value);\n\t\t\turl.searchParams.delete('page');\n\t\t\thistory.pushState(null, '', url.toString());\n\t\t\tblastRadiusReload();\n\t\t}\n\n\t\t// The flyout's Apply fires sw:filter-applied at its data-target-sel.\n\t\t// Bound on document.body rather than on the results container because\n\t\t// the container is REPLACED by every swap, which would take a listener\n\t\t// bound to it with it and leave the second filter application dead.\n\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\tif (!evt.target || evt.target.id !== 'blast-radius-results') return;\n\t\t\tblastRadiusReload();\n\t\t});\n\n\t\t// Hydrate the flyout chips from the URL on first paint, so a deep link or\n\t\t// a reload shows the filters that are actually in force rather than an\n\t\t// empty panel over a narrowed table.\n\t\t//\n\t\t// THEN PUT THE SERVER'S BADGE COUNT BACK, because hydration is entitled to\n\t\t// set the chips but NOT to answer \"how much is hidden\".\n\t\t//\n\t\t// initFromURL's last act is refreshActiveCount, which counts controls\n\t\t// INSIDE the panel. blastRadiusFilterCount counts AXES -- class,\n\t\t// attribution, field and artist_id -- and the flyout does not render a\n\t\t// control for every one of them. artist_id has none by design (it is a\n\t\t// UUID; a select over every artist is not a usable control) and arrives by\n\t\t// deep link from artist detail. So the panel's control count is a LOWER\n\t\t// BOUND on the narrowing, and letting it overwrite the badge understates\n\t\t// how much of the report is hidden.\n\t\t//\n\t\t// Measured on this slice: ?field=biography&class=blanked renders a correct\n\t\t// badge of 2, hydration recounts the panel, finds 1, and overwrites it; on\n\t\t// ?field=biography alone the badge is 1 and hydration erases it entirely.\n\t\t//\n\t\t// This is D-F2 in its third form. First it was an EMPTY panel zeroing the\n\t\t// badge (fixed by skipping hydration while the panel had no axes); now it\n\t\t// is a PARTIAL panel undercounting it. Both are the same operator-facing\n\t\t// lie: a deep link narrows a multi-thousand-row damage report, the table\n\t\t// shows a subset, and the trigger understates or omits the count -- so\n\t\t// nothing on the pane says rows are being hidden and the operator reads the\n\t\t// short table as the whole report.\n\t\t//\n\t\t// THE SERVER'S NUMBER IS AUTHORITATIVE and is carried on the trigger as\n\t\t// data-server-filter-count, written from the same blastRadiusFilterCount\n\t\t// the badge itself renders from -- one source of truth, not a reimplemented\n\t\t// count in JS that could drift from the axis table. Restoring it after\n\t\t// initFromURL is deliberately a pane-local fix: refreshActiveCount is\n\t\t// shared by five panes (artists, activity, logs, index, this one) whose\n\t\t// flyouts DO render a control per axis, and changing it for them to fix a\n\t\t// property only this pane has would be the wrong blast radius.\n\t\t//\n\t\t// The skip below stays for the no-axis case, which is what the shell\n\t\t// renders before any axis lands: hydration is a no-op there and\n\t\t// refreshActiveCount would zero a correct badge. It keys on whether the\n\t\t// flyout body rendered ANY children rather than on a count of one attribute\n\t\t// name, so an axis built from a different control type still counts. A\n\t\t// MISSING panel or body is a broken component, not an empty panel, so it\n\t\t// reports loudly rather than skipping.\n\t\t// blastFilterBadgeLabel builds the badge's accessible name from the\n\t\t// TRANSLATED strings on #blast-radius-i18n.\n\t\t//\n\t\t// This was two English literals ('1 active filter' / n + ' active\n\t\t// filters'), which made it the ONLY user-facing string in this script not\n\t\t// read from that element -- the exact thing the comment on\n\t\t// blastRestoreI18n forbids, and for the exact reason it gives: JS has no\n\t\t// access to the request translator, so a literal here is the one\n\t\t// untranslated sentence on the pane. The visible badge is a bare number, so\n\t\t// this label is the ONLY form the count takes for a screen-reader user --\n\t\t// leaving it English means those users, and only those users, lose the\n\t\t// translation on the one control that says how much of the damage report is\n\t\t// hidden.\n\t\t//\n\t\t// The element is read directly rather than through blastRestoreI18n, which\n\t\t// lives in a DIFFERENT script block (blastRadiusScript). Nothing else in\n\t\t// this block reaches across that boundary, and introducing the first such\n\t\t// call would make this block depend on the other one being rendered -- a\n\t\t// coupling that buys nothing over the two lines below.\n\t\t//\n\t\t// {count} interpolation matches the plural pattern the rest of the pane\n\t\t// uses (see #blast-bulk-count's data-many-template). English fallbacks stay\n\t\t// in the || position: a missing dataset entry should degrade to a readable\n\t\t// label, not to \"undefined\".\n\t\tfunction blastFilterBadgeLabel(n) {\n\t\t\tvar el = document.getElementById('blast-radius-i18n');\n\t\t\tvar i18n = el && el.dataset ? el.dataset : {};\n\t\t\tif (n === 1) {\n\t\t\t\treturn i18n.filterBadgeOne || '1 active filter';\n\t\t\t}\n\t\t\treturn (i18n.filterBadgeMany || '{count} active filters').replace('{count}', String(n));\n\t\t}\n\n\t\tfunction blastRestoreServerFilterCount() {\n\t\t\tvar trigger = document.getElementById('blast-radius-filter-trigger');\n\t\t\tif (!trigger) {\n\t\t\t\tconsole.error('blast-radius: #blast-radius-filter-trigger is missing; the active-filter count cannot be restored');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar raw = trigger.getAttribute('data-server-filter-count');\n\t\t\tvar n = parseInt(raw, 10);\n\t\t\tif (isNaN(n)) {\n\t\t\t\t// Loud, not silent: without the server's number this pane cannot\n\t\t\t\t// state how much is hidden, and a silently wrong badge is the\n\t\t\t\t// defect this whole function exists to prevent.\n\t\t\t\tconsole.error('blast-radius: the trigger carries no readable data-server-filter-count, so the active-filter badge may understate the narrowing', raw);\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar badge = trigger.querySelector('.sw-filter-trigger-badge');\n\t\t\tif (n > 0) {\n\t\t\t\tif (!badge) {\n\t\t\t\t\tbadge = document.createElement('span');\n\t\t\t\t\tbadge.className = trigger.getAttribute('data-badge-classes') || 'sw-filter-trigger-badge';\n\t\t\t\t\ttrigger.appendChild(badge);\n\t\t\t\t}\n\t\t\t\tbadge.textContent = String(n);\n\t\t\t\t// aria-hidden, and the sentence goes in the DESCRIPTION element\n\t\t\t\t// instead. An aria-label here reached nobody: this button carries\n\t\t\t\t// its own aria-label, which per the accname spec replaces its\n\t\t\t\t// subtree for naming, so a nested label never contributes to the\n\t\t\t\t// button's accessible name.\n\t\t\t\tbadge.setAttribute('aria-hidden', 'true');\n\t\t\t\tbadge.removeAttribute('aria-label');\n\t\t\t\tbadge.style.display = '';\n\t\t\t\ttrigger.classList.add('is-active');\n\t\t\t} else if (badge) {\n\t\t\t\tbadge.style.display = 'none';\n\t\t\t\ttrigger.classList.remove('is-active');\n\t\t\t}\n\n\t\t\t// Keep the description in step with the badge, so first paint and\n\t\t\t// post-hydration say the same thing. A mismatch here is the D-F2\n\t\t\t// defect in a third form: the visible badge and what a screen reader\n\t\t\t// hears disagreeing about how much of the report is hidden.\n\t\t\tvar desc = document.getElementById('blast-radius-filter-count-desc');\n\t\t\tif (!desc) {\n\t\t\t\t// Loud, not silent. Without this element the count has no route\n\t\t\t\t// to assistive technology at all, which is the entire defect this\n\t\t\t\t// wiring exists to fix.\n\t\t\t\tconsole.error('blast-radius: #blast-radius-filter-count-desc is missing, so the active-filter count cannot reach a screen reader');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tdesc.textContent = n > 0 ? blastFilterBadgeLabel(n) : '';\n\t\t}\n\n\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\tif (!window.swFilterFlyout) {\n\t\t\t\tconsole.error('blast-radius: swFilterFlyout is not loaded; the filter panel cannot show which filters are active');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar panel = document.getElementById('blast-radius-filter-flyout');\n\t\t\tif (!panel) {\n\t\t\t\tconsole.error('blast-radius: #blast-radius-filter-flyout is missing; the filter panel cannot be hydrated');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar body = panel.querySelector('.sw-filter-flyout-body');\n\t\t\tif (!body) {\n\t\t\t\tconsole.error('blast-radius: the filter panel has no .sw-filter-flyout-body; its contents cannot be inspected and hydration would run blind');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (body.children.length === 0) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tswFilterFlyout.initFromURL('blast-radius-filter-flyout');\n\t\t\tblastRestoreServerFilterCount();\n\t\t});\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 206, "<script>\n\t\t// blastRadiusReload re-requests the pane with the current URL's query\n\t\t// string. window.location.search is the single source of truth: the\n\t\t// flyout has already written its params there, and the selects write\n\t\t// theirs below, so neither has to know what the other set.\n\t\t// SERIALIZE PANE RELOADS, AND RE-RESOLVE THE TARGET AT REQUEST TIME.\n\t\t//\n\t\t// THE REPORTED DEFECT was out-of-order responses: two rapid changes, the\n\t\t// older response landing last, the pane rendering one ordering while the\n\t\t// URL says another. Measured on the live page, the actual failure is worse\n\t\t// and arrives sooner -- the second request never swaps AT ALL.\n\t\t//\n\t\t// WHY. htmx resolves the target element when htmx.ajax is CALLED and holds\n\t\t// that node reference for the life of the request. blastRadiusReload swaps\n\t\t// #blast-radius-pane with outerHTML, which REPLACES the node -- so a second\n\t\t// call issued while the first is in flight captures the node that the first\n\t\t// swap is about to detach. Measured event trace, without any guard present:\n\t\t//\n\t\t//   req1 beforeRequest  target.isConnected = true\n\t\t//   req1 beforeSwap     target.isConnected = true\n\t\t//   req1 afterSwap      target.isConnected = FALSE   <- node replaced\n\t\t//   req2 beforeRequest  target.isConnected = FALSE   <- stale node captured\n\t\t//   req2 afterRequest   (no beforeSwap, no afterSwap)\n\t\t//\n\t\t// req2 completes and is silently discarded: htmx has nowhere to put it. The\n\t\t// operator changes sort, changes order, and the pane keeps the FIRST\n\t\t// ordering while the URL shows the second -- the pane lying about its own\n\t\t// state, reached by a dropped swap rather than an inverted one.\n\t\t//\n\t\t// THE FIX IS TWO PARTS, and both are needed.\n\t\t//\n\t\t// 1. DEFER an overlapping reload instead of issuing it against a doomed\n\t\t//    node. While a pane request is in flight, the newest requested URL is\n\t\t//    parked and re-issued once the swap completes, so it resolves a target\n\t\t//    that is actually in the document. Only the NEWEST is kept: intermediate\n\t\t//    states the operator has already moved past are not worth a round trip.\n\t\t//\n\t\t// 2. Re-read window.location.search AT ISSUE TIME rather than capturing it,\n\t\t//    so the deferred request reflects the operator's latest intent even if\n\t\t//    the URL moved again while waiting.\n\t\t//\n\t\t// This also makes out-of-order responses impossible by construction: there\n\t\t// is never more than one pane request in flight, so the reported race is\n\t\t// closed as a consequence rather than by a separate discard rule.\n\t\t//\n\t\t// KEYED ON THE TARGET, NOT ON blastRadiusReload. There are THREE entry\n\t\t// points and only TWO call that function (see the header comment above);\n\t\t// chip dismissal runs DismissFilterChip's own htmx.ajax in\n\t\t// web/components/filter_flyout.templ. Verified on the live page that chip\n\t\t// dismissal fires with target.id === 'blast-radius-pane', so tracking the\n\t\t// in-flight state on the TARGET covers all three paths -- including any\n\t\t// future one -- without each having to know about this guard.\n\t\t//\n\t\t// The state lives in a script rendered OUTSIDE the swapped container (after\n\t\t// #blast-bulk-bar), so it survives every swap and these listeners bind\n\t\t// exactly once. A script inside the container would reset it and double-bind.\n\t\tvar blastPaneInFlight = false;\n\t\tvar blastPaneDeferred = false;\n\n\t\tfunction blastPaneIsPaneRequest(evt) {\n\t\t\treturn !!(evt.detail && evt.detail.target && evt.detail.target.id === 'blast-radius-pane');\n\t\t}\n\n\t\tdocument.body.addEventListener('htmx:beforeRequest', function(evt) {\n\t\t\tif (!blastPaneIsPaneRequest(evt)) return;\n\t\t\tblastPaneInFlight = true;\n\t\t});\n\n\t\t// afterSettle, not afterSwap: the replacement node is in the document and\n\t\t// settled by then, so a deferred request resolves a live target.\n\t\tdocument.body.addEventListener('htmx:afterSettle', function(evt) {\n\t\t\tif (!blastPaneIsPaneRequest(evt)) return;\n\t\t\tblastPaneInFlight = false;\n\t\t\tif (blastPaneDeferred) {\n\t\t\t\tblastPaneDeferred = false;\n\t\t\t\tblastRadiusReload();\n\t\t\t}\n\t\t});\n\n\t\t// A request that errors or is aborted never settles, so clear the flag here\n\t\t// too. Without this a failed reload would wedge the pane: every later change\n\t\t// would defer forever behind an in-flight request that already finished.\n\t\tdocument.body.addEventListener('htmx:afterRequest', function(evt) {\n\t\t\tif (!blastPaneIsPaneRequest(evt)) return;\n\t\t\tif (evt.detail && evt.detail.successful && evt.detail.target && evt.detail.target.isConnected) {\n\t\t\t\t// A successful swap is finished by afterSettle above.\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tblastPaneInFlight = false;\n\t\t\tif (blastPaneDeferred) {\n\t\t\t\tblastPaneDeferred = false;\n\t\t\t\tblastRadiusReload();\n\t\t\t}\n\t\t});\n\n\t\tfunction blastRadiusReload() {\n\t\t\tif (!window.htmx) {\n\t\t\t\tconsole.error('blast-radius: htmx is not loaded; the filter controls cannot reload the report');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\t// The path stays ROOT-RELATIVE. layout.templ installs a global\n\t\t\t// htmx:configRequest listener that prepends the base path to every\n\t\t\t// root-relative htmx path, so prefixing it here would produce\n\t\t\t// /base/base/reports/blast-radius under SW_BASE_PATH. The\n\t\t\t// compliance pane uses the same idiom.\n\t\t\t//\n\t\t\t// THE REJECTION IS HANDLED, because nothing else handles it.\n\t\t\t// layout.templ covers htmx:responseError and htmx:timeout, and\n\t\t\t// htmx.ajax RESOLVES on any HTTP response including a 5xx, so those\n\t\t\t// two cover every case where the request reached the server. A\n\t\t\t// NETWORK failure -- server down, DNS, connection dropped mid-flight\n\t\t\t// -- rejects the promise instead, and no handler anywhere sees it.\n\t\t\t//\n\t\t\t// Unhandled, the operator applies a filter, the URL updates through\n\t\t\t// pushState, the request never lands, and the pane goes on rendering\n\t\t\t// the PREVIOUS filter's rows under the NEW URL with nothing said.\n\t\t\t// The caveat band and the row set then describe a filter the\n\t\t\t// operator is no longer looking at: the same stale-state falsehood\n\t\t\t// the swap boundary guards against, arriving over the network.\n\t\t\t//\n\t\t\t// showToast is the idiom the global handlers already use, so a\n\t\t\t// network failure reads the same as an HTTP one. console.error as\n\t\t\t// well, because a page whose toast container failed to render must\n\t\t\t// not swallow the failure silently -- the same belt-and-braces\n\t\t\t// blastRestoreRequest uses. No timeout handling is added here:\n\t\t\t// htmx:timeout is global and already toasts, and a second handler\n\t\t\t// would report the same timeout twice.\n\t\t\t// Defer rather than issue against a node the in-flight swap is about\n\t\t\t// to replace. Re-read the URL when the deferred request actually goes\n\t\t\t// out, so it carries the operator's latest intent.\n\t\t\tif (blastPaneInFlight) {\n\t\t\t\tblastPaneDeferred = true;\n\t\t\t\treturn;\n\t\t\t}\n\t\t\treturn htmx.ajax('GET', '/reports/blast-radius' + window.location.search, {\n\t\t\t\ttarget: '#blast-radius-pane',\n\t\t\t\tswap: 'outerHTML',\n\t\t\t\tselect: '#blast-radius-pane'\n\t\t\t}).catch(function(err) {\n\t\t\t\tconsole.error('blast-radius: the filter reload did not reach the server', err);\n\t\t\t\t// The copy comes from #blast-radius-i18n, the pane's own hidden\n\t\t\t\t// element, for the reason every other string in this script\n\t\t\t\t// does: JS has no access to the request translator, so a\n\t\t\t\t// hardcoded English literal would be the one untranslated\n\t\t\t\t// sentence on the pane.\n\t\t\t\tvar el = document.getElementById('blast-radius-i18n');\n\t\t\t\tvar msg = el && el.dataset ? el.dataset.filterReloadFailed : '';\n\t\t\t\tif (typeof showToast === 'function') {\n\t\t\t\t\tshowToast(msg || 'The filtered report could not be loaded. The rows below still show the previous filter.');\n\t\t\t\t} else {\n\t\t\t\t\t// showToast is installed by the layout, so its absence is a\n\t\t\t\t\t// broken page rather than a supported configuration -- and a\n\t\t\t\t\t// failure the operator never sees is the defect this whole\n\t\t\t\t\t// handler exists to prevent.\n\t\t\t\t\tconsole.error('blast-radius: showToast is not available, so the filter-reload failure reached nobody');\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\t// Re-sync the flyout from the URL after ANY pane swap.\n\t\t//\n\t\t// Chips are a SECOND WRITE PATH the flyout never hears about.\n\t\t// DismissFilterChip does its own history.pushState + htmx.ajax and fires\n\t\t// no sw:filter-applied, and the flyout deliberately lives OUTSIDE\n\t\t// #blast-radius-pane so a swap cannot yank the panel out from under an\n\t\t// operator -- which also means the swap does not refresh it. Before the\n\t\t// chips existed the flyout was the only way to change a filter, so\n\t\t// hydrating once at DOMContentLoaded was sufficient; it is not any more.\n\t\t//\n\t\t// Measured before this handler, dismissing the Class chip from\n\t\t// ?class=blanked&attribution=automated: the URL, rows, chips and trigger\n\t\t// badge all updated correctly, while inside the panel Blanked stayed lit,\n\t\t// data-filter-selected stayed true for class=blanked, and the footer read\n\t\t// \"2 active\" against a trigger reading \"1\". Two badges on one screen\n\t\t// disagreeing about how much of a data-destruction report is hidden is\n\t\t// the falsehood this pane's whole design exists to prevent. Worse, the\n\t\t// panel's own Apply then re-applied the filter the operator had just\n\t\t// cleared, with no interaction asking for it.\n\t\t//\n\t\t// Same fix, same reason, as the artists grid (artists.templ), whose\n\t\t// comment names this exact cause.\n\t\t//\n\t\t// AND RESTORE THE SERVER'S BADGE COUNT AFTERWARDS, for the same reason\n\t\t// the first-paint hydration does. initFromURL ends in\n\t\t// refreshActiveCount, which counts controls INSIDE the panel, and\n\t\t// artist_id has no control by design -- so on a swap that leaves an\n\t\t// artist_id narrowing in the URL, the resync would recount the panel and\n\t\t// understate the badge. The swap replaces the trigger with a freshly\n\t\t// server-rendered one carrying the correct data-server-filter-count, so\n\t\t// reading it back after the resync restores the authoritative number\n\t\t// rather than a stale one.\n\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\tif (!evt.detail || !evt.detail.target || evt.detail.target.id !== 'blast-radius-pane') return;\n\t\t\tif (!window.swFilterFlyout) {\n\t\t\t\tconsole.error('blast-radius: swFilterFlyout is not loaded; the filter panel cannot resync after a swap');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tswFilterFlyout.initFromURL('blast-radius-filter-flyout');\n\t\t\tblastRestoreServerFilterCount();\n\t\t});\n\n\t\t// blastRadiusApplyOrdering writes the sort/order selects to the URL and\n\t\t// reloads. page is dropped because a re-sort renumbers every page: page\n\t\t// 4 of the old order holds different rows than page 4 of the new one,\n\t\t// and staying on it silently shows the operator a different slice than\n\t\t// the one they were looking at.\n\t\tfunction blastRadiusApplyOrdering() {\n\t\t\tvar sort = document.getElementById('blast-radius-sort');\n\t\t\tvar order = document.getElementById('blast-radius-order');\n\t\t\tif (!sort || !order) {\n\t\t\t\tconsole.error('blast-radius: the sort/order controls are missing from the page; ordering cannot be applied');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar url = new URL(window.location.href);\n\t\t\turl.searchParams.set('sort', sort.value);\n\t\t\turl.searchParams.set('order', order.value);\n\t\t\turl.searchParams.delete('page');\n\t\t\thistory.pushState(null, '', url.toString());\n\t\t\tblastRadiusReload();\n\t\t}\n\n\t\t// The flyout's Apply fires sw:filter-applied at its data-target-sel.\n\t\t// Bound on document.body rather than on the results container because\n\t\t// the container is REPLACED by every swap, which would take a listener\n\t\t// bound to it with it and leave the second filter application dead.\n\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\tif (!evt.target || evt.target.id !== 'blast-radius-results') return;\n\t\t\tblastRadiusReload();\n\t\t});\n\n\t\t// Hydrate the flyout chips from the URL on first paint, so a deep link or\n\t\t// a reload shows the filters that are actually in force rather than an\n\t\t// empty panel over a narrowed table.\n\t\t//\n\t\t// THEN PUT THE SERVER'S BADGE COUNT BACK, because hydration is entitled to\n\t\t// set the chips but NOT to answer \"how much is hidden\".\n\t\t//\n\t\t// initFromURL's last act is refreshActiveCount, which counts controls\n\t\t// INSIDE the panel. blastRadiusFilterCount counts AXES -- class,\n\t\t// attribution, field and artist_id -- and the flyout does not render a\n\t\t// control for every one of them. artist_id has none by design (it is a\n\t\t// UUID; a select over every artist is not a usable control) and arrives by\n\t\t// deep link from artist detail. So the panel's control count is a LOWER\n\t\t// BOUND on the narrowing, and letting it overwrite the badge understates\n\t\t// how much of the report is hidden.\n\t\t//\n\t\t// Measured on this slice: ?field=biography&class=blanked renders a correct\n\t\t// badge of 2, hydration recounts the panel, finds 1, and overwrites it; on\n\t\t// ?field=biography alone the badge is 1 and hydration erases it entirely.\n\t\t//\n\t\t// This is D-F2 in its third form. First it was an EMPTY panel zeroing the\n\t\t// badge (fixed by skipping hydration while the panel had no axes); now it\n\t\t// is a PARTIAL panel undercounting it. Both are the same operator-facing\n\t\t// lie: a deep link narrows a multi-thousand-row damage report, the table\n\t\t// shows a subset, and the trigger understates or omits the count -- so\n\t\t// nothing on the pane says rows are being hidden and the operator reads the\n\t\t// short table as the whole report.\n\t\t//\n\t\t// THE SERVER'S NUMBER IS AUTHORITATIVE and is carried on the trigger as\n\t\t// data-server-filter-count, written from the same blastRadiusFilterCount\n\t\t// the badge itself renders from -- one source of truth, not a reimplemented\n\t\t// count in JS that could drift from the axis table. Restoring it after\n\t\t// initFromURL is deliberately a pane-local fix: refreshActiveCount is\n\t\t// shared by five panes (artists, activity, logs, index, this one) whose\n\t\t// flyouts DO render a control per axis, and changing it for them to fix a\n\t\t// property only this pane has would be the wrong blast radius.\n\t\t//\n\t\t// The skip below stays for the no-axis case, which is what the shell\n\t\t// renders before any axis lands: hydration is a no-op there and\n\t\t// refreshActiveCount would zero a correct badge. It keys on whether the\n\t\t// flyout body rendered ANY children rather than on a count of one attribute\n\t\t// name, so an axis built from a different control type still counts. A\n\t\t// MISSING panel or body is a broken component, not an empty panel, so it\n\t\t// reports loudly rather than skipping.\n\t\t// blastFilterBadgeLabel builds the badge's accessible name from the\n\t\t// TRANSLATED strings on #blast-radius-i18n.\n\t\t//\n\t\t// This was two English literals ('1 active filter' / n + ' active\n\t\t// filters'), which made it the ONLY user-facing string in this script not\n\t\t// read from that element -- the exact thing the comment on\n\t\t// blastRestoreI18n forbids, and for the exact reason it gives: JS has no\n\t\t// access to the request translator, so a literal here is the one\n\t\t// untranslated sentence on the pane. The visible badge is a bare number, so\n\t\t// this label is the ONLY form the count takes for a screen-reader user --\n\t\t// leaving it English means those users, and only those users, lose the\n\t\t// translation on the one control that says how much of the damage report is\n\t\t// hidden.\n\t\t//\n\t\t// The element is read directly rather than through blastRestoreI18n, which\n\t\t// lives in a DIFFERENT script block (blastRadiusScript). Nothing else in\n\t\t// this block reaches across that boundary, and introducing the first such\n\t\t// call would make this block depend on the other one being rendered -- a\n\t\t// coupling that buys nothing over the two lines below.\n\t\t//\n\t\t// {count} interpolation matches the plural pattern the rest of the pane\n\t\t// uses (see #blast-bulk-count's data-many-template). English fallbacks stay\n\t\t// in the || position: a missing dataset entry should degrade to a readable\n\t\t// label, not to \"undefined\".\n\t\tfunction blastFilterBadgeLabel(n) {\n\t\t\tvar el = document.getElementById('blast-radius-i18n');\n\t\t\tvar i18n = el && el.dataset ? el.dataset : {};\n\t\t\tif (n === 1) {\n\t\t\t\treturn i18n.filterBadgeOne || '1 active filter';\n\t\t\t}\n\t\t\treturn (i18n.filterBadgeMany || '{count} active filters').replace('{count}', String(n));\n\t\t}\n\n\t\tfunction blastRestoreServerFilterCount() {\n\t\t\tvar trigger = document.getElementById('blast-radius-filter-trigger');\n\t\t\tif (!trigger) {\n\t\t\t\tconsole.error('blast-radius: #blast-radius-filter-trigger is missing; the active-filter count cannot be restored');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar raw = trigger.getAttribute('data-server-filter-count');\n\t\t\tvar n = parseInt(raw, 10);\n\t\t\tif (isNaN(n)) {\n\t\t\t\t// Loud, not silent: without the server's number this pane cannot\n\t\t\t\t// state how much is hidden, and a silently wrong badge is the\n\t\t\t\t// defect this whole function exists to prevent.\n\t\t\t\tconsole.error('blast-radius: the trigger carries no readable data-server-filter-count, so the active-filter badge may understate the narrowing', raw);\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar badge = trigger.querySelector('.sw-filter-trigger-badge');\n\t\t\tif (n > 0) {\n\t\t\t\tif (!badge) {\n\t\t\t\t\tbadge = document.createElement('span');\n\t\t\t\t\tbadge.className = trigger.getAttribute('data-badge-classes') || 'sw-filter-trigger-badge';\n\t\t\t\t\ttrigger.appendChild(badge);\n\t\t\t\t}\n\t\t\t\tbadge.textContent = String(n);\n\t\t\t\t// aria-hidden, and the sentence goes in the DESCRIPTION element\n\t\t\t\t// instead. An aria-label here reached nobody: this button carries\n\t\t\t\t// its own aria-label, which per the accname spec replaces its\n\t\t\t\t// subtree for naming, so a nested label never contributes to the\n\t\t\t\t// button's accessible name.\n\t\t\t\tbadge.setAttribute('aria-hidden', 'true');\n\t\t\t\tbadge.removeAttribute('aria-label');\n\t\t\t\tbadge.style.display = '';\n\t\t\t\ttrigger.classList.add('is-active');\n\t\t\t} else if (badge) {\n\t\t\t\tbadge.style.display = 'none';\n\t\t\t\ttrigger.classList.remove('is-active');\n\t\t\t}\n\n\t\t\t// Keep the description in step with the badge, so first paint and\n\t\t\t// post-hydration say the same thing. A mismatch here is the D-F2\n\t\t\t// defect in a third form: the visible badge and what a screen reader\n\t\t\t// hears disagreeing about how much of the report is hidden.\n\t\t\tvar desc = document.getElementById('blast-radius-filter-count-desc');\n\t\t\tif (!desc) {\n\t\t\t\t// Loud, not silent. Without this element the count has no route\n\t\t\t\t// to assistive technology at all, which is the entire defect this\n\t\t\t\t// wiring exists to fix.\n\t\t\t\tconsole.error('blast-radius: #blast-radius-filter-count-desc is missing, so the active-filter count cannot reach a screen reader');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tdesc.textContent = n > 0 ? blastFilterBadgeLabel(n) : '';\n\t\t}\n\n\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\tif (!window.swFilterFlyout) {\n\t\t\t\tconsole.error('blast-radius: swFilterFlyout is not loaded; the filter panel cannot show which filters are active');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar panel = document.getElementById('blast-radius-filter-flyout');\n\t\t\tif (!panel) {\n\t\t\t\tconsole.error('blast-radius: #blast-radius-filter-flyout is missing; the filter panel cannot be hydrated');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar body = panel.querySelector('.sw-filter-flyout-body');\n\t\t\tif (!body) {\n\t\t\t\tconsole.error('blast-radius: the filter panel has no .sw-filter-flyout-body; its contents cannot be inspected and hydration would run blind');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (body.children.length === 0) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tswFilterFlyout.initFromURL('blast-radius-filter-flyout');\n\t\t\tblastRestoreServerFilterCount();\n\t\t});\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3021,7 +3021,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var167 string
 		templ_7745c5c3_Var167, templ_7745c5c3_Err = templ.ResolveAttributeValue("blast-row-" + row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1367, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1464, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var167)
 		if templ_7745c5c3_Err != nil {
@@ -3034,7 +3034,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var168 string
 		templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1376, Col: 18}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1473, Col: 18}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var168)
 		if templ_7745c5c3_Err != nil {
@@ -3047,7 +3047,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var169 string
 		templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "reports.blast_radius.select_row", row.ArtistName, historyFieldLabel(ctx, row.Field)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1378, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1475, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var169)
 		if templ_7745c5c3_Err != nil {
@@ -3060,7 +3060,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var170 string
 		templ_7745c5c3_Var170, templ_7745c5c3_Err = templ.JoinStringErrs(row.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1381, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1478, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var170))
 		if templ_7745c5c3_Err != nil {
@@ -3073,7 +3073,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var171 string
 		templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(historyFieldLabel(ctx, row.Field))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1382, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1479, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var171))
 		if templ_7745c5c3_Err != nil {
@@ -3091,7 +3091,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			var templ_7745c5c3_Var172 string
 			templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.OldValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1392, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1489, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
 			if templ_7745c5c3_Err != nil {
@@ -3110,7 +3110,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			var templ_7745c5c3_Var173 string
 			templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.NewValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1395, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1492, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
 			if templ_7745c5c3_Err != nil {
@@ -3128,7 +3128,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			var templ_7745c5c3_Var174 string
 			templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.cleared"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1397, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1494, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
 			if templ_7745c5c3_Err != nil {
@@ -3168,7 +3168,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var177 string
 		templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowClassLabel(ctx, row.Class))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1402, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1499, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
 		if templ_7745c5c3_Err != nil {
@@ -3205,7 +3205,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var180 string
 		templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.Attribution)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1410, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1507, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var180)
 		if templ_7745c5c3_Err != nil {
@@ -3218,7 +3218,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var181 string
 		templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowAttributionLabel(ctx, row.Attribution))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1412, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1509, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var181))
 		if templ_7745c5c3_Err != nil {
@@ -3231,7 +3231,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var182 string
 		templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format(time.RFC3339))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1416, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1513, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var182)
 		if templ_7745c5c3_Err != nil {
@@ -3244,7 +3244,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var183 string
 		templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1416, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1513, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var183)
 		if templ_7745c5c3_Err != nil {
@@ -3257,7 +3257,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var184 string
 		templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(ctx, row.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1417, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1514, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
 		if templ_7745c5c3_Err != nil {
@@ -3287,7 +3287,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var186 string
 		templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.restore_row_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1425, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1522, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var186)
 		if templ_7745c5c3_Err != nil {
@@ -3300,7 +3300,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var187 string
 		templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.restore"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1427, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1524, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 		if templ_7745c5c3_Err != nil {
@@ -3313,7 +3313,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var188 string
 		templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.ResolveAttributeValue("blast-reason-" + row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1459, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1556, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var188)
 		if templ_7745c5c3_Err != nil {
@@ -3410,7 +3410,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 			var templ_7745c5c3_Var190 string
 			templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.pager_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1531, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1628, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var190)
 			if templ_7745c5c3_Err != nil {
@@ -3423,7 +3423,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 			var templ_7745c5c3_Var191 string
 			templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.page_of", data.Pagination.CurrentPage, data.Pagination.TotalPages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1534, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1631, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var191))
 			if templ_7745c5c3_Err != nil {
@@ -3441,7 +3441,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var192 templ.SafeURL
 				templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(blastRadiusPageURL(data, data.Pagination.CurrentPage-1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1539, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1636, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
 				if templ_7745c5c3_Err != nil {
@@ -3454,7 +3454,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var193 string
 				templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.previous"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1541, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1638, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var193))
 				if templ_7745c5c3_Err != nil {
@@ -3473,7 +3473,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var194 templ.SafeURL
 				templ_7745c5c3_Var194, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(blastRadiusPageURL(data, data.Pagination.CurrentPage+1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1545, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1642, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var194))
 				if templ_7745c5c3_Err != nil {
@@ -3486,7 +3486,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var195 string
 				templ_7745c5c3_Var195, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.next"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1547, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1644, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var195))
 				if templ_7745c5c3_Err != nil {
@@ -3618,7 +3618,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var198 string
 		templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2097, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2194, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
 		if templ_7745c5c3_Err != nil {
@@ -3631,7 +3631,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var199 string
 		templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2098, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2195, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var199))
 		if templ_7745c5c3_Err != nil {
@@ -3644,7 +3644,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var200 templ.SafeURL
 		templ_7745c5c3_Var200, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.BasePath + "/api/v1/reports/nfo-has-mbid/export" + nfoMBIDExportQuery(data)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2103, Col: 106}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2200, Col: 106}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var200))
 		if templ_7745c5c3_Err != nil {
@@ -3657,7 +3657,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var201 string
 		templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.export_csv"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2109, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2206, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var201))
 		if templ_7745c5c3_Err != nil {
@@ -3670,7 +3670,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var202 string
 		templ_7745c5c3_Var202, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.nfo_has_mbid.summary", data.Counts.Writes, data.Counts.Artists))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2119, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2216, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var202))
 		if templ_7745c5c3_Err != nil {
@@ -3683,7 +3683,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var203 string
 		templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatScope)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2121, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2218, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
 		if templ_7745c5c3_Err != nil {
@@ -3696,7 +3696,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var204 string
 		templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatFloor)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2122, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2219, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
 		if templ_7745c5c3_Err != nil {
@@ -3709,7 +3709,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var205 string
 		templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatRetention)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2123, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2220, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
 		if templ_7745c5c3_Err != nil {
@@ -3722,7 +3722,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var206 string
 		templ_7745c5c3_Var206, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatNoPriorValue)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2124, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2221, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var206))
 		if templ_7745c5c3_Err != nil {
@@ -3735,7 +3735,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var207 string
 		templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatNotConfirmed)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2125, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2222, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
 		if templ_7745c5c3_Err != nil {
@@ -3748,7 +3748,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var208 string
 		templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatMessageWording)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2126, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2223, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var208))
 		if templ_7745c5c3_Err != nil {
@@ -3761,7 +3761,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var209 string
 		templ_7745c5c3_Var209, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.column_artist"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2132, Col: 145}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2229, Col: 145}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var209))
 		if templ_7745c5c3_Err != nil {
@@ -3774,7 +3774,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var210 string
 		templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.column_current_mbid"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2133, Col: 164}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2230, Col: 164}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var210))
 		if templ_7745c5c3_Err != nil {
@@ -3787,7 +3787,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var211 string
 		templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.column_note"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2134, Col: 156}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2231, Col: 156}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
 		if templ_7745c5c3_Err != nil {
@@ -3800,7 +3800,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var212 string
 		templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_when"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2135, Col: 156}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2232, Col: 156}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var212))
 		if templ_7745c5c3_Err != nil {
@@ -3813,7 +3813,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var213 string
 		templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.column_review"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2136, Col: 159}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2233, Col: 159}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var213))
 		if templ_7745c5c3_Err != nil {
@@ -3831,7 +3831,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 			var templ_7745c5c3_Var214 string
 			templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.empty"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2143, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2240, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var214))
 			if templ_7745c5c3_Err != nil {
@@ -3905,7 +3905,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var216 string
 		templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.ResolveAttributeValue("nfo-mbid-row-" + row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2174, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2271, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var216)
 		if templ_7745c5c3_Err != nil {
@@ -3918,7 +3918,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var217 string
 		templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.JoinStringErrs(row.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2175, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2272, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var217))
 		if templ_7745c5c3_Err != nil {
@@ -3936,7 +3936,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 			var templ_7745c5c3_Var218 string
 			templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.JoinStringErrs(nfoMBIDCurrentIDLabel(ctx, row))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2178, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2275, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var218))
 			if templ_7745c5c3_Err != nil {
@@ -3950,7 +3950,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 			var templ_7745c5c3_Var219 string
 			templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinStringErrs(nfoMBIDCurrentIDLabel(ctx, row))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2180, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2277, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
 			if templ_7745c5c3_Err != nil {
@@ -3964,7 +3964,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var220 string
 		templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.Message, 100))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2183, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2280, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var220))
 		if templ_7745c5c3_Err != nil {
@@ -3977,7 +3977,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var221 string
 		templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format(time.RFC3339))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2185, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2282, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var221)
 		if templ_7745c5c3_Err != nil {
@@ -3990,7 +3990,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var222 string
 		templ_7745c5c3_Var222, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2185, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2282, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var222)
 		if templ_7745c5c3_Err != nil {
@@ -4003,7 +4003,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var223 string
 		templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(ctx, row.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2186, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2283, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var223))
 		if templ_7745c5c3_Err != nil {
@@ -4016,7 +4016,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var224 templ.SafeURL
 		templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + row.ArtistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2191, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2288, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
 		if templ_7745c5c3_Err != nil {
@@ -4029,7 +4029,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var225 string
 		templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.review"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2194, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2291, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
 		if templ_7745c5c3_Err != nil {
@@ -4102,7 +4102,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 			var templ_7745c5c3_Var227 string
 			templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.nfo_has_mbid.pager_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2232, Col: 160}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2329, Col: 160}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var227)
 			if templ_7745c5c3_Err != nil {
@@ -4115,7 +4115,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 			var templ_7745c5c3_Var228 string
 			templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.nfo_has_mbid.page_of", data.Pagination.CurrentPage, data.Pagination.TotalPages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2234, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2331, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var228))
 			if templ_7745c5c3_Err != nil {
@@ -4133,7 +4133,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 				var templ_7745c5c3_Var229 templ.SafeURL
 				templ_7745c5c3_Var229, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(nfoMBIDPageURL(data, data.Pagination.CurrentPage-1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2239, Col: 79}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2336, Col: 79}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var229))
 				if templ_7745c5c3_Err != nil {
@@ -4146,7 +4146,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 				var templ_7745c5c3_Var230 string
 				templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.previous"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2241, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2338, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var230))
 				if templ_7745c5c3_Err != nil {
@@ -4165,7 +4165,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 				var templ_7745c5c3_Var231 templ.SafeURL
 				templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(nfoMBIDPageURL(data, data.Pagination.CurrentPage+1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2245, Col: 79}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2342, Col: 79}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var231))
 				if templ_7745c5c3_Err != nil {
@@ -4178,7 +4178,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 				var templ_7745c5c3_Var232 string
 				templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.next"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2247, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2344, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var232))
 				if templ_7745c5c3_Err != nil {

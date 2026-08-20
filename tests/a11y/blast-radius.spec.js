@@ -2057,3 +2057,86 @@ test('dismissing a filter chip leaves exactly one pane and one UNFILTERED caveat
   expect(after.dupIDs, `dismissing the chip duplicated ${after.dupIDs.length} DOM ids, so getElementById now `
     + `returns the stale copy: ${after.dupIDs.slice(0, 8).join(', ')}`).toEqual([]);
 });
+
+// ---------------------------------------------------------------------------
+// Two rapid ordering changes cannot leave the pane contradicting its own URL.
+//
+// THE DEFECT THIS PINS. Every path that re-requests this pane fires htmx.ajax
+// with no in-flight tracking. Two select changes made before the first response
+// lands can settle in EITHER order, and the older response arriving last leaves
+// #blast-radius-pane rendering one ordering while window.location.search says
+// another. The operator reads rows that are not the ordering they asked for,
+// with nothing on screen saying so -- the pane lying about its own state, the
+// same class as a stale caveat band but reached through request timing rather
+// than a swap boundary.
+//
+// Reachable in ordinary use: the sort and order selects sit adjacent in the
+// toolbar, and changing one then the other is a two-interaction sequence that
+// does not wait for the first response.
+//
+// HOW THE RACE IS FORCED, rather than hoped for. Playwright's route handler
+// delays the FIRST pane request past the second, so the responses are
+// guaranteed to arrive inverted. A test that simply fired two changes and
+// checked the result would pass on a fast local server whether or not the fix
+// exists -- which is exactly the shape that ships a broken guard.
+//
+// The assertion is CONSISTENCY WITH THE FINAL URL, not merely that the pane
+// settled. A pane showing the older ordering has settled perfectly; it is just
+// wrong.
+test('two rapid ordering changes leave the pane consistent with the final URL', async ({ page }) => {
+  await gotoPane(page);
+
+  // Delay only the FIRST pane reload. The second overtakes it, so without
+  // serialization the stale response swaps in last.
+  let seen = 0;
+  await page.route((url) => url.pathname.endsWith('/reports/blast-radius'), async (route) => {
+    seen += 1;
+    if (seen === 1) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await route.continue();
+  });
+
+  // Fire two ordering changes back to back, without awaiting the first.
+  await page.evaluate(() => {
+    const sort = document.getElementById('blast-radius-sort');
+    const order = document.getElementById('blast-radius-order');
+    sort.value = 'artist_name';
+    order.value = 'asc';
+    blastRadiusApplyOrdering();
+    // Second interaction, issued while the first request is still in flight.
+    sort.value = 'field';
+    order.value = 'desc';
+    blastRadiusApplyOrdering();
+  });
+
+  // PRECONDITION: both requests really were issued, or the race never happened
+  // and the assertions below would pass over an untested path.
+  await page.waitForFunction(() => true);
+  await page.waitForTimeout(3500);
+  expect(
+    seen,
+    `only ${seen} pane request(s) were issued; the race this test exists to force did not occur`,
+  ).toBeGreaterThanOrEqual(2);
+
+  // The URL is the operator's stated intent: the LAST thing they asked for.
+  const finalURL = await page.evaluate(() => window.location.search);
+  expect(finalURL, 'the URL does not carry the final ordering').toContain('sort=field');
+  expect(finalURL, 'the URL does not carry the final direction').toContain('order=desc');
+
+  // THE ASSERTION THAT MATTERS: what the pane RENDERS agrees with that URL.
+  const rendered = await page.evaluate(() => {
+    const sort = document.getElementById('blast-radius-sort');
+    const order = document.getElementById('blast-radius-order');
+    return { sort: sort && sort.value, order: order && order.value };
+  });
+  expect(
+    rendered.sort,
+    `the pane renders sort=${rendered.sort} while the URL says sort=field; an older response swapped in last `
+    + 'and the operator is reading rows in an ordering they did not ask for',
+  ).toBe('field');
+  expect(
+    rendered.order,
+    `the pane renders order=${rendered.order} while the URL says order=desc`,
+  ).toBe('desc');
+});

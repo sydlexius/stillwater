@@ -1154,9 +1154,17 @@ func TestBlastRadiusPane_OrderingControlsRoundTrip(t *testing.T) {
 		sort  string
 		order string
 	}{
+		// EVERY sort key in BOTH directions. blastRadiusOrderBy builds a
+		// different ORDER BY clause per key AND interpolates the direction into
+		// it, so key and direction are independent axes -- covering three of the
+		// six combinations left an inverted comparator free to hide in whichever
+		// half went unexercised. artist_name descending and field ascending were
+		// the two missing.
 		{artist.BlastSortCreatedAt, "desc"},
 		{artist.BlastSortCreatedAt, "asc"},
 		{artist.BlastSortArtistName, "asc"},
+		{artist.BlastSortArtistName, "desc"},
+		{artist.BlastSortField, "asc"},
 		{artist.BlastSortField, "desc"},
 	}
 

@@ -1078,6 +1078,96 @@ templ blastRadiusFilterScript() {
 		// string. window.location.search is the single source of truth: the
 		// flyout has already written its params there, and the selects write
 		// theirs below, so neither has to know what the other set.
+		// SERIALIZE PANE RELOADS, AND RE-RESOLVE THE TARGET AT REQUEST TIME.
+		//
+		// THE REPORTED DEFECT was out-of-order responses: two rapid changes, the
+		// older response landing last, the pane rendering one ordering while the
+		// URL says another. Measured on the live page, the actual failure is worse
+		// and arrives sooner -- the second request never swaps AT ALL.
+		//
+		// WHY. htmx resolves the target element when htmx.ajax is CALLED and holds
+		// that node reference for the life of the request. blastRadiusReload swaps
+		// #blast-radius-pane with outerHTML, which REPLACES the node -- so a second
+		// call issued while the first is in flight captures the node that the first
+		// swap is about to detach. Measured event trace, without any guard present:
+		//
+		//   req1 beforeRequest  target.isConnected = true
+		//   req1 beforeSwap     target.isConnected = true
+		//   req1 afterSwap      target.isConnected = FALSE   <- node replaced
+		//   req2 beforeRequest  target.isConnected = FALSE   <- stale node captured
+		//   req2 afterRequest   (no beforeSwap, no afterSwap)
+		//
+		// req2 completes and is silently discarded: htmx has nowhere to put it. The
+		// operator changes sort, changes order, and the pane keeps the FIRST
+		// ordering while the URL shows the second -- the pane lying about its own
+		// state, reached by a dropped swap rather than an inverted one.
+		//
+		// THE FIX IS TWO PARTS, and both are needed.
+		//
+		// 1. DEFER an overlapping reload instead of issuing it against a doomed
+		//    node. While a pane request is in flight, the newest requested URL is
+		//    parked and re-issued once the swap completes, so it resolves a target
+		//    that is actually in the document. Only the NEWEST is kept: intermediate
+		//    states the operator has already moved past are not worth a round trip.
+		//
+		// 2. Re-read window.location.search AT ISSUE TIME rather than capturing it,
+		//    so the deferred request reflects the operator's latest intent even if
+		//    the URL moved again while waiting.
+		//
+		// This also makes out-of-order responses impossible by construction: there
+		// is never more than one pane request in flight, so the reported race is
+		// closed as a consequence rather than by a separate discard rule.
+		//
+		// KEYED ON THE TARGET, NOT ON blastRadiusReload. There are THREE entry
+		// points and only TWO call that function (see the header comment above);
+		// chip dismissal runs DismissFilterChip's own htmx.ajax in
+		// web/components/filter_flyout.templ. Verified on the live page that chip
+		// dismissal fires with target.id === 'blast-radius-pane', so tracking the
+		// in-flight state on the TARGET covers all three paths -- including any
+		// future one -- without each having to know about this guard.
+		//
+		// The state lives in a script rendered OUTSIDE the swapped container (after
+		// #blast-bulk-bar), so it survives every swap and these listeners bind
+		// exactly once. A script inside the container would reset it and double-bind.
+		var blastPaneInFlight = false;
+		var blastPaneDeferred = false;
+
+		function blastPaneIsPaneRequest(evt) {
+			return !!(evt.detail && evt.detail.target && evt.detail.target.id === 'blast-radius-pane');
+		}
+
+		document.body.addEventListener('htmx:beforeRequest', function(evt) {
+			if (!blastPaneIsPaneRequest(evt)) return;
+			blastPaneInFlight = true;
+		});
+
+		// afterSettle, not afterSwap: the replacement node is in the document and
+		// settled by then, so a deferred request resolves a live target.
+		document.body.addEventListener('htmx:afterSettle', function(evt) {
+			if (!blastPaneIsPaneRequest(evt)) return;
+			blastPaneInFlight = false;
+			if (blastPaneDeferred) {
+				blastPaneDeferred = false;
+				blastRadiusReload();
+			}
+		});
+
+		// A request that errors or is aborted never settles, so clear the flag here
+		// too. Without this a failed reload would wedge the pane: every later change
+		// would defer forever behind an in-flight request that already finished.
+		document.body.addEventListener('htmx:afterRequest', function(evt) {
+			if (!blastPaneIsPaneRequest(evt)) return;
+			if (evt.detail && evt.detail.successful && evt.detail.target && evt.detail.target.isConnected) {
+				// A successful swap is finished by afterSettle above.
+				return;
+			}
+			blastPaneInFlight = false;
+			if (blastPaneDeferred) {
+				blastPaneDeferred = false;
+				blastRadiusReload();
+			}
+		});
+
 		function blastRadiusReload() {
 			if (!window.htmx) {
 				console.error('blast-radius: htmx is not loaded; the filter controls cannot reload the report');
@@ -1110,6 +1200,13 @@ templ blastRadiusFilterScript() {
 			// blastRestoreRequest uses. No timeout handling is added here:
 			// htmx:timeout is global and already toasts, and a second handler
 			// would report the same timeout twice.
+			// Defer rather than issue against a node the in-flight swap is about
+			// to replace. Re-read the URL when the deferred request actually goes
+			// out, so it carries the operator's latest intent.
+			if (blastPaneInFlight) {
+				blastPaneDeferred = true;
+				return;
+			}
 			return htmx.ajax('GET', '/reports/blast-radius' + window.location.search, {
 				target: '#blast-radius-pane',
 				swap: 'outerHTML',
