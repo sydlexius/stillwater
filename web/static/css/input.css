@@ -1811,9 +1811,24 @@ input:-webkit-autofill:focus {
   cursor: pointer;
   border: 1px solid transparent;
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-  /* neutral state */
+  /* neutral state.
+   *
+   * The ink is slate-600 in light mode rather than the shared
+   * --sw-content-text-secondary (slate-500, #64748b). At this chip's size the
+   * token misses AA: 12px/400 normal text needs 4.5:1 and slate-500 on the
+   * flyout's light panel (#f2f4f6) measures 4.31:1, which axe reports as a
+   * serious color-contrast violation on EVERY neutral chip in EVERY filter
+   * flyout (measured with axe-core against the open blast-radius flyout,
+   * #3093). slate-600 measures 6.87:1 on the same surface.
+   *
+   * Uses the small-text secondary token rather than retuning the shared one:
+   * --sw-content-text-secondary is used on ~50 surfaces, most at larger sizes
+   * where it passes, so moving it would be a site-wide visual change to fix a
+   * defect that only bites at this chip's 12px. The -sm token maps to the same
+   * value as the plain one in dark mode, whose #94a3b8 already clears AA on the
+   * dark panel, so this needs no per-theme branch. */
   background: rgba(148, 163, 184, 0.12);
-  color: var(--sw-content-text-secondary);
+  color: var(--sw-content-text-secondary-sm);
   border-color: rgba(148, 163, 184, 0.18);
 }
 
