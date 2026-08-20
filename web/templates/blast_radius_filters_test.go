@@ -323,3 +323,53 @@ func TestBlastRadiusFilterBadgeLabel(t *testing.T) {
 		t.Errorf("counts 2 and 3 produce the same label %q, so the number is not reaching the sentence", a)
 	}
 }
+
+// TestBlastRadiusFieldControlLabels_MatchTheTableAndAreNeverBareKeys pins the
+// field chips' labels to the SAME function the pane's own table column uses.
+//
+// The pane briefly carried a private blastRadiusFieldLabel whose fallback
+// returned the raw field name, justified in its docstring as matching "the name
+// the operator sees in the table's Field column". That was factually wrong: the
+// table renders historyFieldLabel -> fieldLabel, which HUMANIZES an untranslated
+// name. Measured for an untranslated "new_thing": the chip said "new_thing"
+// while the table said "New Thing". Two labels for one field, on one screen, is
+// the divergence a shared helper exists to prevent, so the copy is gone and both
+// surfaces call fieldLabel.
+//
+// The precondition loop here previously compared fieldLabel's OUTPUT against the
+// i18n key, which no fallback can ever return -- so it was false in both
+// branches and caught nothing. Proven: adding an untranslated field to
+// trackableFields left the whole suite green while the control rendered a bare
+// name. It now asks the TRANSLATOR directly, which is the only thing that knows
+// whether a key exists.
+func TestBlastRadiusFieldControlLabels_MatchTheTableAndAreNeverBareKeys(tt *testing.T) {
+	tt.Parallel()
+	ctx := testCtx(tt)
+
+	// Every trackable field has a translation today, so every chip renders a
+	// real label rather than a humanized fallback. Asked of the translator, not
+	// of fieldLabel: fieldLabel never returns the key, so comparing its output
+	// against the key can only ever be false.
+	for _, field := range artist.TrackableFields() {
+		if key := "field." + field; t(ctx, key) == key {
+			tt.Errorf("trackable field %q has no %s translation, so its filter chip renders a humanized "+
+				"fallback rather than the curated label", field, key)
+		}
+	}
+
+	// The chip and the table must agree, because they name the same field a few
+	// pixels apart.
+	for _, field := range artist.TrackableFields() {
+		if chip, table := fieldLabel(ctx, field), historyFieldLabel(ctx, field); chip != table {
+			tt.Errorf("field %q renders as %q in the filter chip and %q in the table column; one field must "+
+				"not have two names on one screen", field, chip, table)
+		}
+	}
+
+	// And the fallback is humanized, not raw, for a field with no key yet.
+	const unknown = "not_a_real_field_xyz"
+	if got := fieldLabel(ctx, unknown); got != "Not A Real Field Xyz" {
+		tt.Errorf("fieldLabel(%q) = %q, want the humanized form; an untranslated field must not render as a "+
+			"bare snake_case name in a control", unknown, got)
+	}
+}

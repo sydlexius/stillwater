@@ -1697,10 +1697,21 @@ test('a filter swap that removes the focused row does not drop focus to the docu
 // undercount happens in the DOM after DOMContentLoaded, so only a real browser
 // running the page's own scripts can see it.
 test('a deep link on a control-less axis keeps its full badge count through hydration', async ({ page }) => {
-  // field=biography narrows on an axis the flyout renders NO control for on this
-  // slice. The badge counts a non-empty field value whether or not rows match,
-  // so this does not depend on the harness fixture holding biography damage.
-  await gotoPane(page, `${PANE_URL}?field=biography`);
+  // artist_id is the PERMANENTLY control-less axis: it is a UUID, so a select
+  // over every artist in the library is not a usable control and a free-text box
+  // for a UUID is not either. It stays reachable by deep link from the artist
+  // detail page, which is exactly how an operator arrives at a narrowed report
+  // with no panel control explaining it.
+  //
+  // This spec used ?field= while the field axis had no control. The slice that
+  // added one tripped the precondition below rather than letting the test
+  // quietly become a duplicate of the first-paint test -- which is what that
+  // precondition is for. artist_id needs no such migration: no slice gives it a
+  // control.
+  //
+  // The badge counts a non-empty artist_id whether or not rows match, so this
+  // does not depend on the harness fixture holding damage for that id.
+  await gotoPane(page, `${PANE_URL}?artist_id=sw-no-such-artist`);
 
   // PRECONDITION: the server rendered a badge of exactly 1 for this URL. If it
   // did not, this URL is not narrowing and the assertion below would be
@@ -1718,22 +1729,23 @@ test('a deep link on a control-less axis keeps its full badge count through hydr
   expect(served, 'the filters trigger is absent').not.toBeNull();
   expect(
     served.active,
-    'the server did not mark the trigger active for ?field=biography, so this URL is not narrowing and the '
+    'the server did not mark the trigger active for ?artist_id=, so this URL is not narrowing and the '
     + 'assertion below would be vacuous',
   ).toBe(true);
-  expect(served.badgeText, 'the server rendered no count for ?field=biography').toBe('1');
+  expect(served.badgeText, 'the server rendered no count for ?artist_id=').toBe('1');
 
   // PRECONDITION: the flyout genuinely has NO control for this axis. That
   // absence is the whole reason the defect is reachable, so if a later slice
   // adds a field control this test must be re-pointed at a still-control-less
   // axis rather than silently becoming a duplicate of the first-paint test.
-  const fieldControls = await page.evaluate(
-    () => document.querySelectorAll('#blast-radius-filter-flyout [data-filter-key="field"]').length,
+  const axisControls = await page.evaluate(
+    () => document.querySelectorAll('#blast-radius-filter-flyout [data-filter-key="artist_id"]').length,
   );
   expect(
-    fieldControls,
-    'the flyout now renders a control for the field axis, so hydration would recount it correctly and this '
-    + 'test no longer covers the control-less case it exists for -- re-point it at artist_id',
+    axisControls,
+    'the flyout now renders a control for the artist_id axis, so hydration would recount it correctly and '
+    + 'this test no longer covers the control-less case it exists for -- re-point it at whichever axis the '
+    + 'panel still has no control for',
   ).toBe(0);
 
   // Let the DOMContentLoaded hydration handler run. This is the window in which

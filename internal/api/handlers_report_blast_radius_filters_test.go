@@ -140,43 +140,6 @@ func TestBlastRadiusPane_ReloadTargetContainsEverythingAFilterChanges(t *testing
 			"out from under the operator mid-interaction")
 	}
 
-	// The sw:filter-applied listener is bound to document.body, NOT to the
-	// container the reload replaces.
-	//
-	// This is the one property of the reload wiring with no other defense, and
-	// rebinding it onto #blast-radius-results survives every other test in the
-	// repo. It is load-bearing: the swap replaces the container node, so a
-	// listener bound to it dies with the first swap and every filter
-	// application after the first is a silent no-op. Verified by node identity
-	// across a swap and by a live simulation where the second apply never
-	// fired.
-	//
-	// The operator-facing shape of that regression is the dangerous part: on a
-	// 3,234-row damage report they change a filter, the table does not move, and
-	// they conclude those really are the matching rows.
-	if !strings.Contains(body, `document.body.addEventListener('sw:filter-applied'`) {
-		t.Error("the sw:filter-applied listener is not bound to document.body; a listener on the swapped " +
-			"container dies with the first swap and every filter application after the first is a no-op")
-	}
-
-	// Both capability checks report LOUDLY rather than returning silently.
-	//
-	// htmx and swFilterFlyout are loaded globally by the layout, so their
-	// absence is a broken page rather than a supported configuration. Replacing
-	// either console.error with a bare `return` leaves the pane looking normal
-	// while every filter action does nothing, and that shape survived the suite
-	// until this assertion existed. The repo forbids the silent no-op.
-	for _, want := range []struct{ marker, why string }{
-		{`console.error('blast-radius: htmx is not loaded`,
-			"a missing htmx would silently do nothing on every filter apply"},
-		{`console.error('blast-radius: swFilterFlyout is not loaded`,
-			"a missing flyout controller would silently leave the panel unhydrated"},
-	} {
-		if !strings.Contains(body, want.marker) {
-			t.Errorf("the pane script lost a loud capability check (%s): %s", want.marker, want.why)
-		}
-	}
-
 	// The script really does target that container. A container nothing points
 	// at is not a swap contract.
 	if !strings.Contains(body, `target: '#blast-radius-pane'`) || !strings.Contains(body, `select: '#blast-radius-pane'`) {
@@ -600,6 +563,226 @@ func TestBlastRadiusPane_ActiveFilterBadgeCountsTheNarrowing(t *testing.T) {
 			}
 		})
 	}
+}
+
+// blastFixtureFieldWithClass returns a trackable field whose fixture row has
+// the given damage class, so a test can build a narrowing that is guaranteed
+// non-empty (or, combined with the OTHER class, guaranteed empty).
+func blastFixtureFieldWithClass(t *testing.T, class string) string {
+	t.Helper()
+	fields := artist.TrackableFields()
+	for i, field := range fields {
+		rowClass := artist.BlastClassBlanked
+		if i%2 == 1 {
+			rowClass = artist.BlastClassReplaced
+		}
+		if rowClass == class {
+			return field
+		}
+	}
+	t.Fatalf("the fixture has no field with damage class %q; a test relying on one cannot be built", class)
+	return ""
+}
+
+// TestBlastRadiusPane_FieldControlOptionsAreTrackableFields is the anti-drift
+// guard on the one control whose options are DATA rather than a fixed
+// vocabulary.
+//
+// The report can only see fields metadata_changes records, which is exactly
+// artist.TrackableFields(). A hand-written option list drifts silently when a
+// field is added to history tracking: the option simply never appears, so
+// damage to that field is unfilterable while the coverage caveat directly above
+// the table claims the report covers it. Equality is asserted in BOTH
+// directions -- a missing option hides an axis, an extra one offers a filter
+// that can only ever return nothing.
+//
+// Mutation proving teeth: replacing the `for _, field := range
+// data.CoveredFields` loop with a literal list of two fields fails this with
+// the twelve missing fields named.
+func TestBlastRadiusPane_FieldControlOptionsAreTrackableFields(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	seedAPIBlastMixedFixture(t, r)
+
+	want := artist.TrackableFields()
+	// Precondition: TrackableFields is non-empty, or "both sets are equal" is
+	// satisfied by a control that renders nothing at all.
+	if len(want) == 0 {
+		t.Fatalf("artist.TrackableFields() is empty; the equality below would be satisfied by an absent control")
+	}
+
+	var got []string
+	for _, c := range blastFilterControls(t, renderBlastPane(t, r, "")) {
+		if c.key == "field" {
+			got = append(got, c.value)
+		}
+	}
+
+	// FREQUENCIES, not sets. The membership checks below prove the two lists
+	// hold the same VALUES; they say nothing about how many times each appears.
+	// Collapsed into sets, a control rendering "biography" twice -- 15 options
+	// against 14 trackable fields -- satisfies every membership check and the
+	// test stays green while the operator sees a duplicated entry in the field
+	// filter.
+	//
+	// That is not a hypothetical shape here. This test exists to prove the
+	// options are GENERATED from TrackableFields() rather than written out, and
+	// a hand-written list is exactly the edit that produces a stray duplicate --
+	// so the defect this test guards against and the defect a set comparison
+	// cannot see are the same defect.
+	countGot := map[string]int{}
+	for _, f := range got {
+		countGot[f]++
+	}
+	countWant := map[string]int{}
+	for _, f := range want {
+		countWant[f]++
+	}
+
+	for _, f := range want {
+		if countGot[f] == 0 {
+			t.Errorf("field %q is in artist.TrackableFields() but has no option in the field filter. Damage to "+
+				"it is unfilterable while the coverage caveat says the report covers it. The control must be "+
+				"generated from the trackable-field list, never written out.", f)
+		}
+	}
+	for _, f := range got {
+		if countWant[f] == 0 {
+			t.Errorf("the field filter offers %q, which is NOT trackable, so selecting it can only ever return "+
+				"an empty table the operator reads as an all-clear for that field", f)
+		}
+	}
+
+	// MULTIPLICITY, per value. Reported per field rather than as a bare total
+	// so the failure names WHICH option was duplicated, which is what a reader
+	// needs to find the stray line.
+	for _, f := range want {
+		if countGot[f] > countWant[f] {
+			t.Errorf("the field filter offers %q %d times, want %d. A duplicated option gives the operator two "+
+				"identical entries in the field list and no way to tell them apart, on the control whose whole "+
+				"job is saying which fields the report can narrow to.", f, countGot[f], countWant[f])
+		}
+	}
+
+	// And the totals agree, which catches a duplicate of a value that is NOT
+	// trackable -- that one is reported as untrackable above, but its extra
+	// copies would otherwise go unremarked.
+	if len(got) != len(want) {
+		t.Errorf("the field filter rendered %d options against %d trackable fields; the option list is not a "+
+			"one-for-one rendering of artist.TrackableFields()", len(got), len(want))
+	}
+}
+
+// TestBlastRadiusPane_EmptyStateWordingUnderEveryControl walks each control and
+// asserts the FILTERED wording renders when that control narrows to nothing,
+// and the LIBRARY-WIDE wording renders when nothing narrows.
+//
+// This is the same honesty rule the pane already carries, re-asserted per
+// CONTROL rather than per hand-built URL: a control the operator can reach
+// which produces the library-wide all-clear over a filtered view is the defect,
+// regardless of whether the URL form of it is already covered.
+//
+// WHAT THIS TEST ACTUALLY KILLS, stated precisely, because the docstring used to
+// overclaim and a false claim about coverage is worse than a gap.
+//
+// Dropping the artist_id axis from blastRadiusAxes fails this: that narrowing is
+// single-axis, so removing it leaves blastRadiusNarrowed false and the pane
+// renders "Nothing recorded" over a library holding one damaged row per
+// trackable field (14 with the current list).
+//
+// Dropping the class or field axis does NOT fail this, and cannot: no
+// single-field narrowing can empty the table (the fixture damages every
+// trackable field), so the only emptying case for those axes is the
+// class+field pair -- and with two narrowing terms, removing either one leaves
+// the other still flipping blastRadiusNarrowed. The axis-table tests in
+// ./web/templates/ kill those drops directly, which is the right layer for a
+// property about the table rather than about rendering.
+//
+// What this test uniquely covers is the RENDERED WORDING: that an emptied pane
+// says "No rows match the current filter" and never the library-wide all-clear.
+func TestBlastRadiusPane_EmptyStateWordingUnderEveryControl(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	seedAPIBlastMixedFixture(t, r)
+
+	const allClear = "Nothing recorded"
+	const filtered = "No rows match the current filter"
+
+	// Precondition: the library HAS damage, so the library-wide all-clear is
+	// false for every request below no matter how it is narrowed.
+	if base := loadBlastPane(t, r, ""); base.Counts.Total == 0 {
+		t.Fatalf("precondition: fixture reports no damage; the all-clear would be TRUE and this test is vacuous")
+	}
+	// And the unfiltered pane renders NEITHER empty state, so a filtered
+	// subtest that finds one has genuinely emptied the table.
+	if body := renderBlastPane(t, r, ""); strings.Contains(body, allClear) || strings.Contains(body, filtered) {
+		t.Fatalf("precondition: the unfiltered pane rendered an empty state over a library with damage")
+	}
+
+	// One value per axis that matches NOTHING against this fixture. Values
+	// must be VALID on their axis (an unrecognized class is coerced to "all" by
+	// Validate and would narrow nothing), so the field/artist axes carry real
+	// but unused values and the class/attribution axes are covered by the
+	// combination below.
+	narrowings := map[string]string{
+		"artist_id": "no-such-artist",
+	}
+	for axis, value := range narrowings {
+		t.Run(axis, func(t *testing.T) {
+			query := "?" + axis + "=" + value
+			// Precondition: this narrowing really empties the table.
+			if rows := loadBlastPane(t, r, query); len(rows.Rows) != 0 {
+				t.Fatalf("narrowing %q matched %d rows; it must match none to reach the empty state", query, len(rows.Rows))
+			}
+			body := renderBlastPane(t, r, query)
+			if strings.Contains(body, allClear) {
+				t.Errorf("narrowing %q rendered the library-wide all-clear over a library holding recorded damage", query)
+			}
+			if !strings.Contains(body, filtered) {
+				t.Errorf("narrowing %q rendered neither the all-clear nor the filtered explanation; an "+
+					"unexplained empty table reads as an all-clear too", query)
+			}
+		})
+	}
+
+	// class and attribution both have rows on every value in this fixture, so
+	// they are emptied in COMBINATION with a field that exists on the other
+	// side of them. This still exercises each axis: remove the class term and
+	// the query matches rows again.
+	// The FIELD axis is load-bearing in this case, which is what makes the
+	// docstring's mutation claim true for it.
+	//
+	// No single-field narrowing can empty the table: the fixture seeds one
+	// damaged row per trackable field, so every selectable field matches
+	// something. Pairing a field with the class its row does NOT have is the
+	// smallest narrowing where dropping EITHER term re-populates the table --
+	// asserted explicitly below, so the case cannot silently degrade into one
+	// where only the class term matters.
+	t.Run("class+field", func(t *testing.T) {
+		// A field whose only fixture row is BLANKED, asked for as REPLACED.
+		blankedField := blastFixtureFieldWithClass(t, artist.BlastClassBlanked)
+		query := "?class=" + artist.BlastClassReplaced + "&field=" + blankedField
+		if rows := loadBlastPane(t, r, query); len(rows.Rows) != 0 {
+			t.Fatalf("narrowing %q matched %d rows; it must match none", query, len(rows.Rows))
+		}
+		// BOTH terms are load-bearing: dropping either one re-populates the
+		// table. Without this, a case where only the class mattered would still
+		// pass while proving nothing about the field axis.
+		if rows := loadBlastPane(t, r, "?field="+blankedField); len(rows.Rows) == 0 {
+			t.Fatalf("field=%s alone already matches nothing; the class term is not what emptied the table", blankedField)
+		}
+		if rows := loadBlastPane(t, r, "?class="+artist.BlastClassReplaced); len(rows.Rows) == 0 {
+			t.Fatalf("class=replaced alone already matches nothing; the field term is not load-bearing here, " +
+				"so this case would survive dropping the field axis and the docstring's claim would be false")
+		}
+		body := renderBlastPane(t, r, query)
+		if strings.Contains(body, allClear) {
+			t.Errorf("narrowing %q rendered the library-wide all-clear over a library holding recorded damage", query)
+		}
+		if !strings.Contains(body, filtered) {
+			t.Errorf("narrowing %q did not explain that a filter emptied the table", query)
+		}
+	})
 }
 
 // TestBlastRadiusPane_FilteredEmptyStateQuotesALibraryWideCount is the

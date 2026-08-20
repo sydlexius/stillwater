@@ -973,6 +973,18 @@ templ blastRadiusFilterFlyout(data BlastRadiusData) {
 			@components.FilterItemSingle("blast-radius-filter-flyout", "attribution", artist.BlastAttributionAutomated, t(ctx, "reports.blast_radius.attribution_automated"), data.Attribution == artist.BlastAttributionAutomated, 0)
 			@components.FilterItemSingle("blast-radius-filter-flyout", "attribution", artist.BlastAttributionUnknown, t(ctx, "reports.blast_radius.attribution_unknown"), data.Attribution == artist.BlastAttributionUnknown, 0)
 		}
+		<!-- The FIELD section is GENERATED, never written out. data.CoveredFields
+		     IS artist.TrackableFields() as the loader computed it for this
+		     request, the same slice the coverage caveat above the table quotes.
+		     A hand-written list would drift the moment a field is added to
+		     history tracking, and it would drift SILENTLY: the missing option
+		     simply never appears, so damage to that field stays unfilterable
+		     while the caveat band claims the report covers it. -->
+		@components.FilterSection(t(ctx, "reports.blast_radius.column_field")) {
+			for _, field := range data.CoveredFields {
+				@components.FilterItemSingle("blast-radius-filter-flyout", "field", field, fieldLabel(ctx, field), data.Field == field, 0)
+			}
+		}
 	}
 }
 
