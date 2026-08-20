@@ -549,7 +549,23 @@ type BlastRadiusData struct {
 	Attribution string
 	Field       string
 	ArtistID    string
-	BasePath    string
+	// Sort and Order mirror the active ordering. They are NOT narrowing axes
+	// (see blastRadiusAxes): they reorder the same rows and never remove one,
+	// so they are held apart from the four above and never reach
+	// blastRadiusNarrowed.
+	//
+	// NOTHING IN THIS SLICE READS THEM YET, and that is deliberate rather than
+	// an oversight. They are populated here so a later slice's sort controls
+	// can render the ordering actually in force rather than always showing the
+	// default, and so that slice's blastRadiusPageURL can carry the ordering
+	// onto the pager links. blastRadiusPageURL below emits six parameters and
+	// does NOT include sort or order: a reader who greps this function for
+	// "sort" and finds nothing is looking at the correct state of this commit,
+	// not a regression. The carry, and the test that defends it, ship with the
+	// ordering controls.
+	Sort     string
+	Order    string
+	BasePath string
 }
 
 // blastRadiusClassBadgeClass styles the damage-class badge.
@@ -574,29 +590,17 @@ func blastRadiusClassBadgeClass(class string) string {
 	return "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300"
 }
 
-// blastRadiusNarrowed reports whether any filter is restricting the pane's view.
+// blastRadiusNarrowed and the axis table it walks live in
+// blast_radius_filters.go, together with the active-filter count derived from
+// the same table. They moved out of this file when the pane's narrowing model
+// was made table-driven (#3093): both readings must agree about whether rows
+// are being hidden, and keeping them beside the markup that renders them hid
+// that requirement.
 //
-// It exists so the empty state can tell "this library has no damage" apart from
-// "no damage matches what you asked for". Those are opposite answers on a
-// recovery surface and only one of them can be true at a time: an operator who
-// reads a library-wide all-clear stops looking, so rendering it under an active
-// filter would hide exactly the destroyed values the report is for.
-//
-// Every narrowing axis the loader carries is checked. Adding a filter without
-// adding it here would silently reintroduce the false all-clear for that axis,
-// which is why this reads the same four fields the loader populates rather than
-// re-deriving them from the request.
-//
-// Class and Attribution default to the literal "all" rather than empty (their
-// scope values are all/blanked/replaced and all/automated/unknown), so an
-// emptiness check alone reports EVERY request as narrowed and the library-wide
-// sentence could never render. Field and ArtistID are genuinely empty when
-// unset. Both shapes are checked here rather than normalized at the loader,
-// because "all" is the value the query layer wants.
-func blastRadiusNarrowed(data BlastRadiusData) bool {
-	narrowed := func(v string) bool { return v != "" && v != artist.BlastScopeAll }
-	return narrowed(data.Class) || narrowed(data.Attribution) || data.Field != "" || data.ArtistID != ""
-}
+// A THIRD reader of that table, the dismissable filter chips, arrives with the
+// slice that renders them; it is not in this file or that one yet. See that
+// file's header for why the model is a table rather than a chain of field
+// comparisons.
 
 // blastRadiusRowClassLabel and blastRadiusRowAttributionLabel key i18n
 // lookups for the row-level class/attribution badges.
