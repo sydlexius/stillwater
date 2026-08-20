@@ -976,12 +976,24 @@ test('every refusal token renders operator-actionable prose, and an unknown one 
 // absent control is a defect and is reported as one.
 // ---------------------------------------------------------------------------
 
-// The narrowing controls this pane exposes, keyed by what a failure should say.
-// The ordering selects live beside these in the same toolbar and carry their own
-// coverage in the slice that adds them: a spec here naming a control this branch
-// does not render would fail as a missing control rather than as a real defect.
+// Every control in the pane's toolbar, keyed by what a failure should say.
+//
+// This holds BOTH the narrowing trigger and the two ordering selects. They are
+// different things to the report -- the trigger opens the filters that hide
+// rows, the selects only reorder the rows already chosen, which is why only the
+// trigger carries an active-filter badge -- but they are the same thing to a
+// screen reader: adjacent toolbar controls that each need an accessible name
+// and a Tab-reachable focus indicator. This map drives those two assertions, so
+// it is keyed on that shared requirement rather than on the narrowing/ordering
+// split.
+//
+// A control named here that this branch does not render fails as a missing
+// control, which is the intended behavior: the entry is the claim that the
+// surface exists.
 const FILTER_CONTROLS = {
   'filters trigger': '#blast-radius-filter-trigger',
+  'sort select': '#blast-radius-sort',
+  'order select': '#blast-radius-order',
 };
 
 // accessibleNameOf reads the name a screen reader would announce, in the same
@@ -2044,4 +2056,144 @@ test('dismissing a filter chip leaves exactly one pane and one UNFILTERED caveat
     .toBeNull();
   expect(after.dupIDs, `dismissing the chip duplicated ${after.dupIDs.length} DOM ids, so getElementById now `
     + `returns the stale copy: ${after.dupIDs.slice(0, 8).join(', ')}`).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// Two rapid ordering changes cannot leave the pane contradicting its own URL.
+//
+// THE DEFECT THIS PINS. Every path that re-requests this pane fires htmx.ajax
+// with no in-flight tracking. Two select changes made before the first response
+// lands can settle in EITHER order, and the older response arriving last leaves
+// #blast-radius-pane rendering one ordering while window.location.search says
+// another. The operator reads rows that are not the ordering they asked for,
+// with nothing on screen saying so -- the pane lying about its own state, the
+// same class as a stale caveat band but reached through request timing rather
+// than a swap boundary.
+//
+// Reachable in ordinary use: the sort and order selects sit adjacent in the
+// toolbar, and changing one then the other is a two-interaction sequence that
+// does not wait for the first response.
+//
+// HOW THE RACE IS FORCED, rather than hoped for. Playwright's route handler
+// delays the FIRST pane request past the second, so the responses are
+// guaranteed to arrive inverted. A test that simply fired two changes and
+// checked the result would pass on a fast local server whether or not the fix
+// exists -- which is exactly the shape that ships a broken guard.
+//
+// The assertion is CONSISTENCY WITH THE FINAL URL, not merely that the pane
+// settled. A pane showing the older ordering has settled perfectly; it is just
+// wrong.
+test('two rapid ordering changes leave the pane consistent with the final URL', async ({ page }) => {
+  await gotoPane(page);
+
+  // Delay only the FIRST pane reload. The second overtakes it, so without
+  // serialization the stale response swaps in last.
+  let seen = 0;
+  await page.route((url) => url.pathname.endsWith('/reports/blast-radius'), async (route) => {
+    seen += 1;
+    if (seen === 1) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await route.continue();
+  });
+
+  // TAG THE PRE-SWAP PANE NODE. This is what keeps the poll below honest.
+  //
+  // The test sets the selects to their FINAL values by hand before firing, and
+  // the URL ends up carrying those same values -- so a poll that only asked
+  // "do the selects match the URL?" would return true on its first sample,
+  // BEFORE any response had swapped, and would keep returning true with the fix
+  // removed. That is a vacuous pass wearing the shape of a wait.
+  //
+  // An attribute set on the live node cannot survive an outerHTML swap, because
+  // the server's markup does not carry it. Requiring the tag to be GONE means
+  // the poll cannot succeed until server-rendered markup has actually replaced
+  // what the test typed.
+  await page.evaluate(() => {
+    const pane = document.getElementById('blast-radius-pane');
+    if (pane) pane.setAttribute('data-sw-preswap', '1');
+  });
+  expect(
+    await page.evaluate(() => document.querySelectorAll('#blast-radius-pane[data-sw-preswap]').length),
+    'the pre-swap pane could not be tagged, so the poll below could pass before any swap landed',
+  ).toBe(1);
+
+  // Fire two ordering changes back to back, without awaiting the first.
+  await page.evaluate(() => {
+    const sort = document.getElementById('blast-radius-sort');
+    const order = document.getElementById('blast-radius-order');
+    sort.value = 'artist_name';
+    order.value = 'asc';
+    blastRadiusApplyOrdering();
+    // Second interaction, issued while the first request is still in flight.
+    sort.value = 'field';
+    order.value = 'desc';
+    blastRadiusApplyOrdering();
+  });
+
+  // POLL FOR THE OBSERVABLE END STATE. THE WAIT IS THE ASSERTION: if a reload is
+  // dropped or an older response swaps in last, the pane never agrees with the
+  // URL and this times out -- the timeout IS the failure this test looks for.
+  //
+  // This replaces a fixed sleep, which was the worst of both: it cost its full
+  // duration on every run AND still failed a slower machine that needed longer.
+  // A poll finishes as soon as the state is right and waits as long as it must.
+  try {
+    await page.waitForFunction(() => {
+      if (document.querySelector('#blast-radius-pane[data-sw-preswap]')) return false;
+      const sort = document.getElementById('blast-radius-sort');
+      const order = document.getElementById('blast-radius-order');
+      if (!sort || !order) return false;
+      const params = new URLSearchParams(window.location.search);
+      return sort.value === params.get('sort') && order.value === params.get('order');
+    }, null, { timeout: 10_000 });
+  } catch (err) {
+    // Re-thrown with the measured state so the failure names the DEFECT rather
+    // than reporting a bare timeout that a reader has to go diagnose.
+    const state = await page.evaluate(() => {
+      const sort = document.getElementById('blast-radius-sort');
+      const order = document.getElementById('blast-radius-order');
+      return {
+        url: window.location.search,
+        sort: sort ? sort.value : null,
+        order: order ? order.value : null,
+        swapped: !document.querySelector('#blast-radius-pane[data-sw-preswap]'),
+      };
+    });
+    throw new Error(
+      `the pane never caught up with its own URL. It renders sort=${state.sort} order=${state.order} while `
+      + `the URL says ${state.url} (a swap did${state.swapped ? '' : ' NOT'} land). A pane reload was dropped `
+      + 'or an older response swapped in last, so the operator is reading rows in an ordering they did not '
+      + 'ask for, with nothing on screen saying so.',
+    );
+  }
+
+  // PRECONDITION, checked after the poll because it is the poll that waits for
+  // the requests to happen: both really were issued, or the race this test
+  // exists to force never occurred and everything above proved nothing.
+  expect(
+    seen,
+    `only ${seen} pane request(s) were issued; the race this test exists to force did not occur`,
+  ).toBeGreaterThanOrEqual(2);
+
+  // The URL is the operator's stated intent: the LAST thing they asked for.
+  const finalURL = await page.evaluate(() => window.location.search);
+  expect(finalURL, 'the URL does not carry the final ordering').toContain('sort=field');
+  expect(finalURL, 'the URL does not carry the final direction').toContain('order=desc');
+
+  // THE ASSERTION THAT MATTERS: what the pane RENDERS agrees with that URL.
+  const rendered = await page.evaluate(() => {
+    const sort = document.getElementById('blast-radius-sort');
+    const order = document.getElementById('blast-radius-order');
+    return { sort: sort && sort.value, order: order && order.value };
+  });
+  expect(
+    rendered.sort,
+    `the pane renders sort=${rendered.sort} while the URL says sort=field; an older response swapped in last `
+    + 'and the operator is reading rows in an ordering they did not ask for',
+  ).toBe('field');
+  expect(
+    rendered.order,
+    `the pane renders order=${rendered.order} while the URL says order=desc`,
+  ).toBe('desc');
 });

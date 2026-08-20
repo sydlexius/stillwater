@@ -118,6 +118,8 @@ func TestBlastRadiusPane_ReloadTargetContainsEverythingAFilterChanges(t *testing
 		{`id="blast-radius-results"`, "the rows themselves"},
 		{`id="blast-radius-filter-trigger"`, "the active-filter badge counts the current narrowing"},
 		{`id="blast-radius-pager"`, "the page count and the prev/next hrefs are computed from the ACTIVE filter"},
+		{`id="blast-radius-sort"`, "the sort select shows the ordering in force"},
+		{`id="blast-radius-order"`, "the order select shows the ordering in force"},
 	} {
 		// PRECONDITION, not decoration. Each marker has to be in the document at
 		// all before "is it inside the container" means anything: a marker the
@@ -1131,4 +1133,181 @@ func TestBlastRadiusPane_FilterScriptHasNoHardcodedUserFacingStrings(t *testing.
 		t.Error("the badge's plural label does not interpolate {count}; a concatenated number cannot render " +
 			"a translation that places the count anywhere but the front")
 	}
+}
+
+// TestBlastRadiusPane_OrderingControlsRoundTrip covers the sort/order selects,
+// which are NOT filters and so are not part of the flyout parity test above.
+//
+// Two things are asserted per case: the select renders the option in force as
+// selected, and the rows actually come back in that order. Asserting only the
+// markup would pass a control that displays a sort the query never applied.
+//
+// Mutation proving teeth: dropping Sort/Order from the loader's BlastRadiusData
+// makes every non-default case fail the "renders as selected" half, because the
+// selects fall back to showing the default.
+func TestBlastRadiusPane_OrderingControlsRoundTrip(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	seedAPIBlastMixedFixture(t, r)
+
+	cases := []struct {
+		sort  string
+		order string
+	}{
+		// EVERY sort key in BOTH directions. blastRadiusOrderBy builds a
+		// different ORDER BY clause per key AND interpolates the direction into
+		// it, so key and direction are independent axes -- covering three of the
+		// six combinations left an inverted comparator free to hide in whichever
+		// half went unexercised. artist_name descending and field ascending were
+		// the two missing.
+		{artist.BlastSortCreatedAt, "desc"},
+		{artist.BlastSortCreatedAt, "asc"},
+		{artist.BlastSortArtistName, "asc"},
+		{artist.BlastSortArtistName, "desc"},
+		{artist.BlastSortField, "asc"},
+		{artist.BlastSortField, "desc"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.sort+"/"+tc.order, func(t *testing.T) {
+			query := fmt.Sprintf("?sort=%s&order=%s", tc.sort, tc.order)
+			body := renderBlastPane(t, r, query)
+
+			if !blastSelectHasSelected(t, body, "blast-radius-sort", tc.sort) {
+				t.Errorf("the sort select does not show %q as selected after a reload with %s; the control "+
+					"reports an ordering the rows were not fetched in", tc.sort, query)
+			}
+			if !blastSelectHasSelected(t, body, "blast-radius-order", tc.order) {
+				t.Errorf("the order select does not show %q as selected after a reload with %s", tc.order, query)
+			}
+
+			// The rows really are in that order, read from the loader (the
+			// markup renders the same slice).
+			data := loadBlastPane(t, r, query)
+			if len(data.Rows) < 2 {
+				t.Fatalf("precondition: %d rows returned; ordering is unobservable below 2 rows", len(data.Rows))
+			}
+			if data.Sort != tc.sort || data.Order != tc.order {
+				t.Errorf("loader recorded sort=%q order=%q, want %q/%q", data.Sort, data.Order, tc.sort, tc.order)
+			}
+			if !blastRowsAreOrdered(data.Rows, tc.sort, tc.order) {
+				t.Errorf("rows are not in %s %s order; the control claims an ordering the query did not apply",
+					tc.sort, tc.order)
+			}
+		})
+	}
+}
+
+// blastSelectHasSelected reports whether the <select id=selectID> rendered
+// optionValue as its selected option. Scoped to that one select's markup so a
+// matching option in a sibling select cannot satisfy it.
+func blastSelectHasSelected(t *testing.T, body, selectID, optionValue string) bool {
+	t.Helper()
+	start := strings.Index(body, `id="`+selectID+`"`)
+	if start < 0 {
+		t.Fatalf("select %q is absent from the page", selectID)
+	}
+	end := strings.Index(body[start:], "</select>")
+	if end < 0 {
+		t.Fatalf("select %q is not closed", selectID)
+	}
+	region := body[start : start+end]
+
+	// EXACTLY ONE option may carry `selected`, and it must be the expected one.
+	//
+	// Asserting only that the target option is selected is not enough: in a
+	// non-multiple <select> the LAST selected option wins, so marking every
+	// option selected leaves the target's own check passing while the control
+	// displays something else. Measured on a mutant build with all three sort
+	// options selected: ?sort=artist_name displayed "Field" and
+	// ?sort=created_at displayed "Field", while the rows came back correctly
+	// ordered in both cases. blastRowsAreOrdered cannot catch that -- the rows
+	// really are right -- so only the DISPLAY lies, which is exactly the
+	// "control shows a sort the query never applied" failure this helper's
+	// caller exists to prevent.
+	var selectedValues []string
+	seenTarget := false
+	for _, m := range blastOptionRE.FindAllStringSubmatch(region, -1) {
+		value, attrs := m[1], m[2]
+		if value == optionValue {
+			seenTarget = true
+		}
+		if strings.Contains(attrs, "selected") {
+			selectedValues = append(selectedValues, value)
+		}
+	}
+	if !seenTarget {
+		t.Fatalf("select %q has no option with value %q", selectID, optionValue)
+	}
+	if len(selectedValues) != 1 {
+		t.Errorf("select %q marks %d options selected (%v); a non-multiple select displays the LAST of "+
+			"them, so the control reports an ordering unrelated to the request",
+			selectID, len(selectedValues), selectedValues)
+		return false
+	}
+	return selectedValues[0] == optionValue
+}
+
+// blastOptionRE captures each <option>'s value and the rest of its attributes,
+// so a caller can count how many are marked selected rather than only asking
+// whether one particular option is.
+var blastOptionRE = regexp.MustCompile(`<option value="([^"]*)"([^>]*)>`)
+
+// blastRowsAreOrdered reports whether rows are non-decreasing (asc) or
+// non-increasing (desc) on the named sort key.
+//
+// THE DATE KEY IS COMPARED AS A TIME, THE TEXT KEYS AS STRINGS. That split is
+// deliberate and load-bearing.
+//
+// created_at was previously formatted with RFC3339Nano and compared as text.
+// That format STRIPS TRAILING ZEROS from the fractional second, so within one
+// second "...T00:00:00.5Z" sorts BEFORE "...T00:00:00Z" -- '.' is 46 and 'Z' is
+// 90 in ASCII, so the LATER timestamp compares as smaller. Verified in Go:
+// b.After(a) is true while the formatted sb > sa is false. The current fixture
+// uses whole-minute timestamps and never renders a fractional second, so it
+// passed; a fixture with sub-second values would make this helper report a
+// correct ordering as broken, or miss a real inversion. Comparing time.Time
+// directly removes the format from the comparison entirely.
+//
+// The two TEXT keys keep the string path, and that path carries a known,
+// accepted limitation: it uses Go's byte-wise operators while the rows were
+// ordered by SQLite. Those agree today because the columns use the default
+// BINARY collation, which is also byte-wise. They would diverge under COLLATE
+// NOCASE or for non-ASCII artist names, where SQLite and Go disagree and this
+// helper would call a correct ordering broken. Left as is deliberately: unlike
+// the timestamp defect above, it has no reachable failure with the schema and
+// fixture in force, and expressing SQLite's collation in Go would be a
+// re-implementation that could disagree in its own way.
+func blastRowsAreOrdered(rows []artist.BlastRadiusRow, sort, order string) bool {
+	// Date key: compare the instants, never their rendering.
+	if sort != artist.BlastSortArtistName && sort != artist.BlastSortField {
+		for i := 1; i < len(rows); i++ {
+			prev, cur := rows[i-1].CreatedAt, rows[i].CreatedAt
+			if order == "asc" && prev.After(cur) {
+				return false
+			}
+			if order != "asc" && prev.Before(cur) {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Text keys: byte-wise, matching the BINARY collation the rows came back in.
+	keyOf := func(row artist.BlastRadiusRow) string {
+		if sort == artist.BlastSortArtistName {
+			return row.ArtistName
+		}
+		return row.Field
+	}
+	for i := 1; i < len(rows); i++ {
+		prev, cur := keyOf(rows[i-1]), keyOf(rows[i])
+		if order == "asc" && prev > cur {
+			return false
+		}
+		if order != "asc" && prev < cur {
+			return false
+		}
+	}
+	return true
 }
