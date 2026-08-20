@@ -391,6 +391,14 @@
   --sw-content-bg: #f8f9fa;
   --sw-content-text: #1e293b;
   --sw-content-text-secondary: #64748b;
+  /* Secondary ink for SMALL text (<=12px). --sw-content-text-secondary is
+     slate-500, which measures 4.31:1 on the light panel surfaces and so misses
+     the 4.5:1 AA floor for normal-weight text at that size, while passing
+     comfortably at the larger sizes most of its users render at. This is
+     slate-600 (6.87:1 on #f2f4f6) for the small-text cases. Dark mode maps it
+     to the same value as the plain secondary token, which already clears AA
+     there, so a rule using it needs no per-theme branch. */
+  --sw-content-text-secondary-sm: #475569;
 
   /* -- Glass -------------------------------------------------------------- */
   /* Pre-hydration fallback alpha matches bg_opacity=85 (preferences.js maps
@@ -452,6 +460,7 @@
   --sw-content-bg: #0f172a;
   --sw-content-text: #e2e8f0;
   --sw-content-text-secondary: #94a3b8;
+  --sw-content-text-secondary-sm: #94a3b8;
   /* Subtle danger surfaces (dark): red-300 text for AA on dark, with a slightly
      stronger tint/border -- matches the current discard-row rendering. */
   --sw-danger-bg-subtle: rgba(239, 68, 68, 0.12);
