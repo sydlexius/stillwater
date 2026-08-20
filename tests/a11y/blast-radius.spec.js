@@ -2097,6 +2097,27 @@ test('two rapid ordering changes leave the pane consistent with the final URL', 
     await route.continue();
   });
 
+  // TAG THE PRE-SWAP PANE NODE. This is what keeps the poll below honest.
+  //
+  // The test sets the selects to their FINAL values by hand before firing, and
+  // the URL ends up carrying those same values -- so a poll that only asked
+  // "do the selects match the URL?" would return true on its first sample,
+  // BEFORE any response had swapped, and would keep returning true with the fix
+  // removed. That is a vacuous pass wearing the shape of a wait.
+  //
+  // An attribute set on the live node cannot survive an outerHTML swap, because
+  // the server's markup does not carry it. Requiring the tag to be GONE means
+  // the poll cannot succeed until server-rendered markup has actually replaced
+  // what the test typed.
+  await page.evaluate(() => {
+    const pane = document.getElementById('blast-radius-pane');
+    if (pane) pane.setAttribute('data-sw-preswap', '1');
+  });
+  expect(
+    await page.evaluate(() => document.querySelectorAll('#blast-radius-pane[data-sw-preswap]').length),
+    'the pre-swap pane could not be tagged, so the poll below could pass before any swap landed',
+  ).toBe(1);
+
   // Fire two ordering changes back to back, without awaiting the first.
   await page.evaluate(() => {
     const sort = document.getElementById('blast-radius-sort');
@@ -2110,10 +2131,46 @@ test('two rapid ordering changes leave the pane consistent with the final URL', 
     blastRadiusApplyOrdering();
   });
 
-  // PRECONDITION: both requests really were issued, or the race never happened
-  // and the assertions below would pass over an untested path.
-  await page.waitForFunction(() => true);
-  await page.waitForTimeout(3500);
+  // POLL FOR THE OBSERVABLE END STATE. THE WAIT IS THE ASSERTION: if a reload is
+  // dropped or an older response swaps in last, the pane never agrees with the
+  // URL and this times out -- the timeout IS the failure this test looks for.
+  //
+  // This replaces a fixed sleep, which was the worst of both: it cost its full
+  // duration on every run AND still failed a slower machine that needed longer.
+  // A poll finishes as soon as the state is right and waits as long as it must.
+  try {
+    await page.waitForFunction(() => {
+      if (document.querySelector('#blast-radius-pane[data-sw-preswap]')) return false;
+      const sort = document.getElementById('blast-radius-sort');
+      const order = document.getElementById('blast-radius-order');
+      if (!sort || !order) return false;
+      const params = new URLSearchParams(window.location.search);
+      return sort.value === params.get('sort') && order.value === params.get('order');
+    }, null, { timeout: 10_000 });
+  } catch (err) {
+    // Re-thrown with the measured state so the failure names the DEFECT rather
+    // than reporting a bare timeout that a reader has to go diagnose.
+    const state = await page.evaluate(() => {
+      const sort = document.getElementById('blast-radius-sort');
+      const order = document.getElementById('blast-radius-order');
+      return {
+        url: window.location.search,
+        sort: sort ? sort.value : null,
+        order: order ? order.value : null,
+        swapped: !document.querySelector('#blast-radius-pane[data-sw-preswap]'),
+      };
+    });
+    throw new Error(
+      `the pane never caught up with its own URL. It renders sort=${state.sort} order=${state.order} while `
+      + `the URL says ${state.url} (a swap did${state.swapped ? '' : ' NOT'} land). A pane reload was dropped `
+      + 'or an older response swapped in last, so the operator is reading rows in an ordering they did not '
+      + 'ask for, with nothing on screen saying so.',
+    );
+  }
+
+  // PRECONDITION, checked after the poll because it is the poll that waits for
+  // the requests to happen: both really were issued, or the race this test
+  // exists to force never occurred and everything above proved nothing.
   expect(
     seen,
     `only ${seen} pane request(s) were issued; the race this test exists to force did not occur`,

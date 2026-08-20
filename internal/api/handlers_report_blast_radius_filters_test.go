@@ -1256,21 +1256,49 @@ var blastOptionRE = regexp.MustCompile(`<option value="([^"]*)"([^>]*)>`)
 // blastRowsAreOrdered reports whether rows are non-decreasing (asc) or
 // non-increasing (desc) on the named sort key.
 //
-// Compares with Go's byte-wise string operators while the rows were ordered by
-// SQLite. That agrees today because the columns use the default BINARY
-// collation, which is also byte-wise. It would diverge silently under COLLATE
-// NOCASE or for non-ASCII artist names, where SQLite and Go disagree about
-// order and this helper would report a correct ordering as broken.
+// THE DATE KEY IS COMPARED AS A TIME, THE TEXT KEYS AS STRINGS. That split is
+// deliberate and load-bearing.
+//
+// created_at was previously formatted with RFC3339Nano and compared as text.
+// That format STRIPS TRAILING ZEROS from the fractional second, so within one
+// second "...T00:00:00.5Z" sorts BEFORE "...T00:00:00Z" -- '.' is 46 and 'Z' is
+// 90 in ASCII, so the LATER timestamp compares as smaller. Verified in Go:
+// b.After(a) is true while the formatted sb > sa is false. The current fixture
+// uses whole-minute timestamps and never renders a fractional second, so it
+// passed; a fixture with sub-second values would make this helper report a
+// correct ordering as broken, or miss a real inversion. Comparing time.Time
+// directly removes the format from the comparison entirely.
+//
+// The two TEXT keys keep the string path, and that path carries a known,
+// accepted limitation: it uses Go's byte-wise operators while the rows were
+// ordered by SQLite. Those agree today because the columns use the default
+// BINARY collation, which is also byte-wise. They would diverge under COLLATE
+// NOCASE or for non-ASCII artist names, where SQLite and Go disagree and this
+// helper would call a correct ordering broken. Left as is deliberately: unlike
+// the timestamp defect above, it has no reachable failure with the schema and
+// fixture in force, and expressing SQLite's collation in Go would be a
+// re-implementation that could disagree in its own way.
 func blastRowsAreOrdered(rows []artist.BlastRadiusRow, sort, order string) bool {
-	keyOf := func(row artist.BlastRadiusRow) string {
-		switch sort {
-		case artist.BlastSortArtistName:
-			return row.ArtistName
-		case artist.BlastSortField:
-			return row.Field
-		default:
-			return row.CreatedAt.UTC().Format(time.RFC3339Nano)
+	// Date key: compare the instants, never their rendering.
+	if sort != artist.BlastSortArtistName && sort != artist.BlastSortField {
+		for i := 1; i < len(rows); i++ {
+			prev, cur := rows[i-1].CreatedAt, rows[i].CreatedAt
+			if order == "asc" && prev.After(cur) {
+				return false
+			}
+			if order != "asc" && prev.Before(cur) {
+				return false
+			}
 		}
+		return true
+	}
+
+	// Text keys: byte-wise, matching the BINARY collation the rows came back in.
+	keyOf := func(row artist.BlastRadiusRow) string {
+		if sort == artist.BlastSortArtistName {
+			return row.ArtistName
+		}
+		return row.Field
 	}
 	for i := 1; i < len(rows); i++ {
 		prev, cur := keyOf(rows[i-1]), keyOf(rows[i])
