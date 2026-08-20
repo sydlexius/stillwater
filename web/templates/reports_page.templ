@@ -554,24 +554,15 @@ type BlastRadiusData struct {
 	// so they are held apart from the four above and never reach
 	// blastRadiusNarrowed.
 	//
-	// NO CONTROL SETS THEM ON THIS SLICE; the sort and order selects arrive with
-	// the ordering slice. They are populated from the request here for two
-	// reasons that are already live:
+	// Both are LIVE on this slice: the toolbar's sort and order selects set them,
+	// and blastRadiusPageURL below carries them onto the pager links (it emits
+	// eight parameters: the four narrowing axes, sort, order, page_size and
+	// page).
 	//
-	//   - blastRadiusPageURL below DOES carry them onto the pager links (it
-	//     emits eight parameters: the four narrowing axes, sort, order,
-	//     page_size and page). ?sort= and ?order= are hand-reachable today and
-	//     the loader honours them, so without the carry an operator who reaches
-	//     an ordered view walks to page 2 and the server falls back to its
-	//     default, silently handing them the descending continuation of an
-	//     ascending list.
-	//   - the ordering slice's selects render the order actually in force
-	//     rather than always showing the default.
-	//
-	// An earlier revision of this comment said the function emitted six
-	// parameters and excluded sort/order. That was true of the parent slice and
-	// this commit made it false; it is corrected here rather than left for a
-	// reader to trip over.
+	// The pager carry itself is NOT this slice's work -- it landed with the
+	// filter shell -- but the tests that pin it are, because until these
+	// controls existed the property was reachable only by hand-editing a URL
+	// and nothing defended it.
 	Sort     string
 	Order    string
 	BasePath string
@@ -779,6 +770,33 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 						}
 					</span>
 				</button>
+				<!-- Sort and order are plain selects in the toolbar rather than
+				     chips in the flyout, because they are not narrowing: they
+				     reorder the rows the filters already chose. Putting them in the
+				     flyout would badge a re-sort as an active filter and imply rows
+				     were being hidden. Each carries a visible-to-assistive-tech
+				     label; the visual context is the toolbar itself. -->
+				<label class="sr-only" for="blast-radius-sort">{ t(ctx, "reports.blast_radius.sort_label") }</label>
+				<select
+					id="blast-radius-sort"
+					name="sort"
+					class="sw-rep-filter-btn"
+					onchange="blastRadiusApplyOrdering()"
+				>
+					<option value={ artist.BlastSortCreatedAt } selected?={ data.Sort == artist.BlastSortCreatedAt }>{ t(ctx, "reports.blast_radius.sort_created_at") }</option>
+					<option value={ artist.BlastSortArtistName } selected?={ data.Sort == artist.BlastSortArtistName }>{ t(ctx, "reports.blast_radius.sort_artist_name") }</option>
+					<option value={ artist.BlastSortField } selected?={ data.Sort == artist.BlastSortField }>{ t(ctx, "reports.blast_radius.sort_field") }</option>
+				</select>
+				<label class="sr-only" for="blast-radius-order">{ t(ctx, "reports.blast_radius.order_label") }</label>
+				<select
+					id="blast-radius-order"
+					name="order"
+					class="sw-rep-filter-btn"
+					onchange="blastRadiusApplyOrdering()"
+				>
+					<option value="desc" selected?={ data.Order != "asc" }>{ t(ctx, "reports.blast_radius.order_desc") }</option>
+					<option value="asc" selected?={ data.Order == "asc" }>{ t(ctx, "reports.blast_radius.order_asc") }</option>
+				</select>
 			</div>
 		</div>
 		<!-- Active-filter chips. Every narrowing axis gets one, INCLUDING artist_id,
@@ -1129,6 +1147,26 @@ templ blastRadiusFilterScript() {
 			swFilterFlyout.initFromURL('blast-radius-filter-flyout');
 			blastRestoreServerFilterCount();
 		});
+
+		// blastRadiusApplyOrdering writes the sort/order selects to the URL and
+		// reloads. page is dropped because a re-sort renumbers every page: page
+		// 4 of the old order holds different rows than page 4 of the new one,
+		// and staying on it silently shows the operator a different slice than
+		// the one they were looking at.
+		function blastRadiusApplyOrdering() {
+			var sort = document.getElementById('blast-radius-sort');
+			var order = document.getElementById('blast-radius-order');
+			if (!sort || !order) {
+				console.error('blast-radius: the sort/order controls are missing from the page; ordering cannot be applied');
+				return;
+			}
+			var url = new URL(window.location.href);
+			url.searchParams.set('sort', sort.value);
+			url.searchParams.set('order', order.value);
+			url.searchParams.delete('page');
+			history.pushState(null, '', url.toString());
+			blastRadiusReload();
+		}
 
 		// The flyout's Apply fires sw:filter-applied at its data-target-sel.
 		// Bound on document.body rather than on the results container because

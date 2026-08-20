@@ -982,6 +982,8 @@ test('every refusal token renders operator-actionable prose, and an unknown one 
 // does not render would fail as a missing control rather than as a real defect.
 const FILTER_CONTROLS = {
   'filters trigger': '#blast-radius-filter-trigger',
+  'sort select': '#blast-radius-sort',
+  'order select': '#blast-radius-order',
 };
 
 // accessibleNameOf reads the name a screen reader would announce, in the same
