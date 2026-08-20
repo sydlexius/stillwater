@@ -705,10 +705,41 @@ func clearAllFilterFlyout(id string) templ.ComponentScript {
 // HTMX target region. Called by the X button on active filter chips.
 // targetSel is the CSS selector for the HTMX content region to reload
 // (e.g. "#artist-content"). Defaults to "#artist-content" when empty.
-func DismissFilterChip(key string, targetSel string) templ.ComponentScript {
+//
+// selectSel is OPTIONAL and names an element to extract from the response
+// before swapping (htmx's `select`, the scripted equivalent of hx-select).
+// Empty or absent means "swap whatever the response body is", which is the
+// behavior every caller had before this parameter existed and which the only
+// current caller keeps.
+//
+// THIS COMMIT CHANGES NO RENDERED BEHAVIOR. It adds a capability to a shared
+// component and nothing more. The one live caller of ActiveFilters is the
+// compliance report (web/templates/compliance.templ), whose chips do not set
+// SelectSel, so every chip in the application renders and dismisses exactly as
+// it did before. The FIRST CONSUMER is the blast-radius filter-chips slice,
+// which sets SelectSel: "#blast-radius-pane" on every chip it builds. Read this
+// file expecting an unused parameter: that is the intended state of this slice.
+//
+// WHY THE CAPABILITY IS NEEDED (#3093). A route with a FRAGMENT handler returns
+// just the region, so a bare swap is correct. A route WITHOUT one returns the
+// full page, and htmx's makeFragment turns an <html> response into a fragment
+// of the ENTIRE BODY, so the bare swap injects a whole second copy of the page
+// into the target.
+//
+// That was measured on /reports/blast-radius, which has no fragment handler:
+// dismissing one chip produced two #blast-radius-pane elements, 71 duplicated
+// DOM ids, and a STALE caveat band reading "4 of unknown origin" sitting
+// directly above a table of 21 unfiltered rows. On a data-recovery surface that
+// is a wrong statement about how much data was destroyed.
+//
+// To be precise about what fixed what: the consuming slice fixes that defect,
+// USING this parameter. The symbols in that account (#blast-radius-pane, the
+// caveat band, the pane's own reload) belong to that slice and do not exist at
+// this commit. Nothing here fixes anything on its own.
+func DismissFilterChip(key string, targetSel string, selectSel string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_DismissFilterChip_d251`,
-		Function: `function __templ_DismissFilterChip_d251(key, targetSel){var url = new URL(window.location.href);
+		Name: `__templ_DismissFilterChip_359e`,
+		Function: `function __templ_DismissFilterChip_359e(key, targetSel, selectSel){var url = new URL(window.location.href);
 	url.searchParams.delete(key);
 	url.searchParams.delete('page');
 	history.pushState(null, '', url.toString());
@@ -721,10 +752,39 @@ func DismissFilterChip(key string, targetSel string) templ.ComponentScript {
 		path = path.slice(bp.length) || '/';
 	}
 	var sel = targetSel || '#artist-content';
-	htmx.ajax('GET', path + url.search, {target: sel, swap: 'outerHTML'});
+	var opts = {target: sel, swap: 'outerHTML'};
+	// Set ` + "`" + `select` + "`" + ` only when the caller asked for one.
+	//
+	// This guard is DEFENSIVE, not load-bearing, and the distinction matters
+	// for anyone designing around it. htmx 2.0.8 normalizes a falsy select to
+	// null at every gate it passes -- ` + "`" + `const F=i.select||null` + "`" + ` on the request,
+	// ` + "`" + `if(i){d=i}` + "`" + ` on the response, ` + "`" + `d||b` + "`" + ` when computing the swap spec, and
+	// ` + "`" + `if(g.select)` + "`" + ` before extraction -- so a PRESENT-but-EMPTY select is
+	// indistinguishable from an absent one. Verified two ways against the
+	// vendored file: by reading those four expressions, and by driving a real
+	// Chromium page where {} , {select:''} and a real selector were compared
+	// (the first two produced byte-identical DOM).
+	//
+	// So this is not preventing a blank swap; htmx would not perform one. It
+	// keeps the emitted options object honest -- a key present only when it
+	// carries meaning -- which is what makes the behavioral test below able to
+	// assert on hasOwnProperty rather than on a value that means nothing.
+	if (selectSel) {
+		opts.select = selectSel;
+	}
+	// Fail loudly when htmx is missing. This script is wired to an inline
+	// onclick, so a bare reference to an absent global throws a ReferenceError
+	// that surfaces only in the console with no indication of the cause, and
+	// the chip silently does nothing. The repo forbids a silent no-op on a
+	// missing capability.
+	if (!window.htmx) {
+		console.error('DismissFilterChip: htmx is not loaded; the filter chip cannot reload ' + sel);
+		return;
+	}
+	htmx.ajax('GET', path + url.search, opts);
 }`,
-		Call:       templ.SafeScript(`__templ_DismissFilterChip_d251`, key, targetSel),
-		CallInline: templ.SafeScriptInline(`__templ_DismissFilterChip_d251`, key, targetSel),
+		Call:       templ.SafeScript(`__templ_DismissFilterChip_359e`, key, targetSel, selectSel),
+		CallInline: templ.SafeScriptInline(`__templ_DismissFilterChip_359e`, key, targetSel, selectSel),
 	}
 }
 
@@ -734,10 +794,19 @@ func DismissFilterChip(key string, targetSel string) templ.ComponentScript {
 // dashboard tri-state chips (M55 #1334) where one key (e.g. "severity") can hold
 // several include/exclude values. targetSel is the CSS selector for the HTMX
 // content region to reload; defaults to "#action-queue" when empty.
-func DismissFilterValueChip(key string, prefixedValue string, targetSel string) templ.ComponentScript {
+//
+// selectSel carries the same meaning as in DismissFilterChip, and it is here
+// because FilterChipSpec is ONE type serving BOTH branches of FilterChip2. A
+// spec that set SelectSel alongside Value used to render a perfectly ordinary
+// chip whose dismiss quietly did a bare full-page swap, because this script had
+// nowhere to put the value: the field was accepted, ignored, and dropped with
+// no error. That is the silent-failure shape this repo forbids, and it
+// reintroduced the very defect the parameter exists to prevent, on the one
+// branch nobody was looking at.
+func DismissFilterValueChip(key string, prefixedValue string, targetSel string, selectSel string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_DismissFilterValueChip_45e3`,
-		Function: `function __templ_DismissFilterValueChip_45e3(key, prefixedValue, targetSel){var url = new URL(window.location.href);
+		Name: `__templ_DismissFilterValueChip_a9d7`,
+		Function: `function __templ_DismissFilterValueChip_a9d7(key, prefixedValue, targetSel, selectSel){var url = new URL(window.location.href);
 	// Read every value under this key, drop the one matching prefixedValue,
 	// then rewrite the key with the survivors (URLSearchParams has no
 	// remove-one-value primitive, so delete-all + re-append is the idiom).
@@ -757,10 +826,21 @@ func DismissFilterValueChip(key string, prefixedValue string, targetSel string) 
 		path = path.slice(bp.length) || '/';
 	}
 	var sel = targetSel || '#action-queue';
-	htmx.ajax('GET', path + url.search, {target: sel, swap: 'innerHTML'});
+	var opts = {target: sel, swap: 'innerHTML'};
+	// Same defensive guard, same reasoning, as DismissFilterChip above: htmx
+	// treats a falsy select as absent, so this keeps the emitted object honest
+	// rather than preventing a blank swap.
+	if (selectSel) {
+		opts.select = selectSel;
+	}
+	if (!window.htmx) {
+		console.error('DismissFilterValueChip: htmx is not loaded; the filter chip cannot reload ' + sel);
+		return;
+	}
+	htmx.ajax('GET', path + url.search, opts);
 }`,
-		Call:       templ.SafeScript(`__templ_DismissFilterValueChip_45e3`, key, prefixedValue, targetSel),
-		CallInline: templ.SafeScriptInline(`__templ_DismissFilterValueChip_45e3`, key, prefixedValue, targetSel),
+		Call:       templ.SafeScript(`__templ_DismissFilterValueChip_a9d7`, key, prefixedValue, targetSel, selectSel),
+		CallInline: templ.SafeScriptInline(`__templ_DismissFilterValueChip_a9d7`, key, prefixedValue, targetSel, selectSel),
 	}
 }
 
@@ -823,7 +903,7 @@ func FilterItemSingle(flyoutID, key, value, label string, selected bool, count i
 		var templ_7745c5c3_Var35 string
 		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(flyoutID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 297, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 377, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 		if templ_7745c5c3_Err != nil {
@@ -836,7 +916,7 @@ func FilterItemSingle(flyoutID, key, value, label string, selected bool, count i
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 298, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 378, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 		if templ_7745c5c3_Err != nil {
@@ -849,7 +929,7 @@ func FilterItemSingle(flyoutID, key, value, label string, selected bool, count i
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(value)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 299, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 379, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 		if templ_7745c5c3_Err != nil {
@@ -862,7 +942,7 @@ func FilterItemSingle(flyoutID, key, value, label string, selected bool, count i
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterItemSelectedAttr(selected))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 301, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 381, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 		if templ_7745c5c3_Err != nil {
@@ -875,7 +955,7 @@ func FilterItemSingle(flyoutID, key, value, label string, selected bool, count i
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterItemSelectedAttr(selected))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 302, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 382, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 		if templ_7745c5c3_Err != nil {
@@ -898,7 +978,7 @@ func FilterItemSingle(flyoutID, key, value, label string, selected bool, count i
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 310, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 390, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -916,7 +996,7 @@ func FilterItemSingle(flyoutID, key, value, label string, selected bool, count i
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 312, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 392, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -982,7 +1062,7 @@ func FilterRange(flyoutID, key, label string, min, max int) templ.Component {
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 338, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 418, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -995,7 +1075,7 @@ func FilterRange(flyoutID, key, label string, min, max int) templ.Component {
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(flyoutID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 341, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 421, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 		if templ_7745c5c3_Err != nil {
@@ -1008,7 +1088,7 @@ func FilterRange(flyoutID, key, label string, min, max int) templ.Component {
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(key)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 342, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 422, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 		if templ_7745c5c3_Err != nil {
@@ -1021,7 +1101,7 @@ func FilterRange(flyoutID, key, label string, min, max int) templ.Component {
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(key + "_min")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 350, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 430, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 		if templ_7745c5c3_Err != nil {
@@ -1034,7 +1114,7 @@ func FilterRange(flyoutID, key, label string, min, max int) templ.Component {
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterRangeValue(min))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 351, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 431, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 		if templ_7745c5c3_Err != nil {
@@ -1047,7 +1127,7 @@ func FilterRange(flyoutID, key, label string, min, max int) templ.Component {
 		var templ_7745c5c3_Var48 string
 		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue(label + " min")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 352, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 432, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var48)
 		if templ_7745c5c3_Err != nil {
@@ -1060,7 +1140,7 @@ func FilterRange(flyoutID, key, label string, min, max int) templ.Component {
 		var templ_7745c5c3_Var49 string
 		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(key + "_max")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 361, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 441, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 		if templ_7745c5c3_Err != nil {
@@ -1073,7 +1153,7 @@ func FilterRange(flyoutID, key, label string, min, max int) templ.Component {
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterRangeValue(max))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 362, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 442, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 		if templ_7745c5c3_Err != nil {
@@ -1086,7 +1166,7 @@ func FilterRange(flyoutID, key, label string, min, max int) templ.Component {
 		var templ_7745c5c3_Var51 string
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(label + " max")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 363, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 443, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
 		if templ_7745c5c3_Err != nil {
@@ -1121,10 +1201,16 @@ func filterRangeValue(v int) string {
 // value are visually distinguishable. Both fields are zero-valued for the
 // single-value-per-key callers (artists, reports), which keep the original
 // whole-key dismiss + neutral styling.
+//
+// SelectSel is optional and names the element to extract from the response
+// before swapping. Leave it empty unless the chip's TargetSel lives on a route
+// with NO fragment handler, in which case the response is a full page and a
+// bare swap injects a second copy of it -- see DismissFilterChip's comment.
 type FilterChipSpec struct {
 	Label     string
 	Key       string
 	TargetSel string
+	SelectSel string
 	Value     string
 	Exclude   bool
 }
@@ -1163,7 +1249,7 @@ func ActiveFilters(targetSel, clearAllHref, clearAllLabel, headerLabel string, c
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(headerLabel)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 405, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 491, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 			if templ_7745c5c3_Err != nil {
@@ -1181,7 +1267,7 @@ func ActiveFilters(targetSel, clearAllHref, clearAllLabel, headerLabel string, c
 				var templ_7745c5c3_Var54 string
 				templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(headerLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 407, Col: 97}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 493, Col: 97}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 				if templ_7745c5c3_Err != nil {
@@ -1206,7 +1292,7 @@ func ActiveFilters(targetSel, clearAllHref, clearAllLabel, headerLabel string, c
 				var templ_7745c5c3_Var55 templ.SafeURL
 				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(clearAllHref))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 414, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 500, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 				if templ_7745c5c3_Err != nil {
@@ -1219,7 +1305,7 @@ func ActiveFilters(targetSel, clearAllHref, clearAllLabel, headerLabel string, c
 				var templ_7745c5c3_Var56 string
 				templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(clearAllLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 417, Col: 20}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 503, Col: 20}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 				if templ_7745c5c3_Err != nil {
@@ -1252,7 +1338,10 @@ func targetSelOr(chipTarget, fallback string) string {
 // the named URL key and re-fetching targetSel via HTMX. label is the visible
 // text. The DismissFilterChip script (in this package) handles URL surgery
 // plus the htmx.ajax call.
-func FilterChip(label, key, targetSel string) templ.Component {
+//
+// selectSel is optional; see DismissFilterChip. Empty preserves the original
+// behavior exactly.
+func FilterChip(label, key, targetSel, selectSel string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1280,7 +1369,7 @@ func FilterChip(label, key, targetSel string) templ.Component {
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 439, Col: 9}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 528, Col: 9}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -1290,7 +1379,7 @@ func FilterChip(label, key, targetSel string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, DismissFilterChip(key, targetSel))
+		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, DismissFilterChip(key, targetSel, selectSel))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1301,7 +1390,7 @@ func FilterChip(label, key, targetSel string) templ.Component {
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "common.remove_filter", label))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 443, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 532, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 		if templ_7745c5c3_Err != nil {
@@ -1311,7 +1400,7 @@ func FilterChip(label, key, targetSel string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var60 templ.ComponentScript = DismissFilterChip(key, targetSel)
+		var templ_7745c5c3_Var60 templ.ComponentScript = DismissFilterChip(key, targetSel, selectSel)
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60.Call)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -1355,7 +1444,7 @@ func FilterChip2(c FilterChipSpec, targetSel string) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if c.Value == "" {
-			templ_7745c5c3_Err = FilterChip(c.Label, c.Key, targetSel).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = FilterChip(c.Label, c.Key, targetSel, c.SelectSel).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1385,7 +1474,7 @@ func FilterChip2(c FilterChipSpec, targetSel string) templ.Component {
 			var templ_7745c5c3_Var64 string
 			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(c.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 467, Col: 12}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 556, Col: 12}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 			if templ_7745c5c3_Err != nil {
@@ -1400,7 +1489,7 @@ func FilterChip2(c FilterChipSpec, targetSel string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, DismissFilterValueChip(c.Key, filterChipPrefixedValue(c.Exclude, c.Value), targetSel))
+			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, DismissFilterValueChip(c.Key, filterChipPrefixedValue(c.Exclude, c.Value), targetSel, c.SelectSel))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1424,7 +1513,7 @@ func FilterChip2(c FilterChipSpec, targetSel string) templ.Component {
 			var templ_7745c5c3_Var67 string
 			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "common.remove_filter", c.Label))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 471, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 560, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var67)
 			if templ_7745c5c3_Err != nil {
@@ -1434,7 +1523,7 @@ func FilterChip2(c FilterChipSpec, targetSel string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var68 templ.ComponentScript = DismissFilterValueChip(c.Key, filterChipPrefixedValue(c.Exclude, c.Value), targetSel)
+			var templ_7745c5c3_Var68 templ.ComponentScript = DismissFilterValueChip(c.Key, filterChipPrefixedValue(c.Exclude, c.Value), targetSel, c.SelectSel)
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68.Call)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
