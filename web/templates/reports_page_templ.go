@@ -2910,11 +2910,40 @@ func blastRadiusFilterFlyout(data BlastRadiusData) templ.Component {
 
 // blastRadiusFilterScript wires the pane's filter controls to a reload.
 //
-// TWO ENTRY POINTS, ONE RELOAD. The flyout's Apply writes the chosen params to
-// the URL and fires sw:filter-applied at #blast-radius-results (filter-flyout.js);
-// the sort/order selects change the URL themselves. Both then call the same
-// reload, so a filter and a re-sort cannot diverge in how they rebuild the
-// request.
+// TWO FUNCTIONS, THREE ENTRY POINTS, ONE SWAP CONTRACT. Stated that way on
+// purpose, because the shorter version ("they all call the same reload") claims
+// a safety property this code does not have.
+//
+// blastRadiusReload has exactly TWO callers, both in this file: the sort/order
+// selects, and the flyout's Apply via the sw:filter-applied listener below.
+// Those two genuinely cannot diverge, because they share a function.
+//
+// The THIRD entry point is chip dismissal, and it does NOT call blastRadiusReload
+// at all. It runs DismissFilterChip's own htmx.ajax in
+// web/components/filter_flyout.templ. It lands on the same swap contract only
+// because two values are set to match by hand: blastRadiusReload passes
+// target/select of #blast-radius-pane, and blastRadiusChips sets TargetSel and
+// SelectSel to the same selector (web/templates/blast_radius_filters.go).
+//
+// That convergence is DELIBERATE WIRING, not structure, so it is breakable by an
+// edit that looks local. Dropping SelectSel from a chip spec reopens the
+// full-page-injection defect: the response is a whole page with no fragment
+// handler to narrow it, so the swap injects the entire body into the pane
+// wrapper. Measured when that was the live behavior (see blastRadiusChips in
+// web/templates/blast_radius_filters.go): dismissing one chip produced two
+// #blast-radius-pane elements, 71 duplicated DOM ids, and a stale band reading
+// the FILTERED counts directly above a table of unfiltered rows. Anyone
+// touching either side has to check the other; nothing in the type system
+// pairs them.
+//
+// POSITIONAL CONSTRAINT, invisible unless written down. swFilterFlyout's
+// refreshActiveCount counts controls INSIDE the flyout panel, and the
+// active-filter badge is meant to count NARROWING axes only. The sort/order
+// selects are narrowing-neutral -- they reorder the rows a filter already chose
+// -- and they stay correct today only because they live in the TOOLBAR, outside
+// the panel, so refreshActiveCount never sees them. Moving them into the flyout
+// would badge a plain re-sort as an active filter and tell the operator rows are
+// being hidden when none are. Keep them in the toolbar.
 //
 // The reload targets /reports/blast-radius, which serves the WHOLE pane rather
 // than a fragment: unlike /reports/compliance there is no fragment handler for
@@ -2992,7 +3021,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var167 string
 		templ_7745c5c3_Var167, templ_7745c5c3_Err = templ.ResolveAttributeValue("blast-row-" + row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1338, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1367, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var167)
 		if templ_7745c5c3_Err != nil {
@@ -3005,7 +3034,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var168 string
 		templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1347, Col: 18}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1376, Col: 18}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var168)
 		if templ_7745c5c3_Err != nil {
@@ -3018,7 +3047,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var169 string
 		templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "reports.blast_radius.select_row", row.ArtistName, historyFieldLabel(ctx, row.Field)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1349, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1378, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var169)
 		if templ_7745c5c3_Err != nil {
@@ -3031,7 +3060,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var170 string
 		templ_7745c5c3_Var170, templ_7745c5c3_Err = templ.JoinStringErrs(row.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1352, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1381, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var170))
 		if templ_7745c5c3_Err != nil {
@@ -3044,7 +3073,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var171 string
 		templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(historyFieldLabel(ctx, row.Field))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1353, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1382, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var171))
 		if templ_7745c5c3_Err != nil {
@@ -3062,7 +3091,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			var templ_7745c5c3_Var172 string
 			templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.OldValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1363, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1392, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
 			if templ_7745c5c3_Err != nil {
@@ -3081,7 +3110,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			var templ_7745c5c3_Var173 string
 			templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.NewValue, 60))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1366, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1395, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
 			if templ_7745c5c3_Err != nil {
@@ -3099,7 +3128,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 			var templ_7745c5c3_Var174 string
 			templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.cleared"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1368, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1397, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
 			if templ_7745c5c3_Err != nil {
@@ -3139,7 +3168,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var177 string
 		templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowClassLabel(ctx, row.Class))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1373, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1402, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
 		if templ_7745c5c3_Err != nil {
@@ -3176,7 +3205,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var180 string
 		templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.Attribution)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1381, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1410, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var180)
 		if templ_7745c5c3_Err != nil {
@@ -3189,7 +3218,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var181 string
 		templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.JoinStringErrs(blastRadiusRowAttributionLabel(ctx, row.Attribution))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1383, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1412, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var181))
 		if templ_7745c5c3_Err != nil {
@@ -3202,7 +3231,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var182 string
 		templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format(time.RFC3339))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1387, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1416, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var182)
 		if templ_7745c5c3_Err != nil {
@@ -3215,7 +3244,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var183 string
 		templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1387, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1416, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var183)
 		if templ_7745c5c3_Err != nil {
@@ -3228,7 +3257,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var184 string
 		templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(ctx, row.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1388, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1417, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
 		if templ_7745c5c3_Err != nil {
@@ -3258,7 +3287,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var186 string
 		templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.restore_row_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1396, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1425, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var186)
 		if templ_7745c5c3_Err != nil {
@@ -3271,7 +3300,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var187 string
 		templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.restore"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1398, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1427, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 		if templ_7745c5c3_Err != nil {
@@ -3284,7 +3313,7 @@ func blastRadiusRow(row artist.BlastRadiusRow) templ.Component {
 		var templ_7745c5c3_Var188 string
 		templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.ResolveAttributeValue("blast-reason-" + row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1430, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1459, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var188)
 		if templ_7745c5c3_Err != nil {
@@ -3381,7 +3410,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 			var templ_7745c5c3_Var190 string
 			templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.blast_radius.pager_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1502, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1531, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var190)
 			if templ_7745c5c3_Err != nil {
@@ -3394,7 +3423,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 			var templ_7745c5c3_Var191 string
 			templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.blast_radius.page_of", data.Pagination.CurrentPage, data.Pagination.TotalPages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1505, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1534, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var191))
 			if templ_7745c5c3_Err != nil {
@@ -3412,7 +3441,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var192 templ.SafeURL
 				templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(blastRadiusPageURL(data, data.Pagination.CurrentPage-1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1510, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1539, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
 				if templ_7745c5c3_Err != nil {
@@ -3425,7 +3454,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var193 string
 				templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.previous"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1512, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1541, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var193))
 				if templ_7745c5c3_Err != nil {
@@ -3444,7 +3473,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var194 templ.SafeURL
 				templ_7745c5c3_Var194, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(blastRadiusPageURL(data, data.Pagination.CurrentPage+1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1516, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1545, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var194))
 				if templ_7745c5c3_Err != nil {
@@ -3457,7 +3486,7 @@ func blastRadiusPagination(data BlastRadiusData) templ.Component {
 				var templ_7745c5c3_Var195 string
 				templ_7745c5c3_Var195, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.next"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1518, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 1547, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var195))
 				if templ_7745c5c3_Err != nil {
@@ -3589,7 +3618,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var198 string
 		templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2068, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2097, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
 		if templ_7745c5c3_Err != nil {
@@ -3602,7 +3631,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var199 string
 		templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2069, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2098, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var199))
 		if templ_7745c5c3_Err != nil {
@@ -3615,7 +3644,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var200 templ.SafeURL
 		templ_7745c5c3_Var200, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.BasePath + "/api/v1/reports/nfo-has-mbid/export" + nfoMBIDExportQuery(data)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2074, Col: 106}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2103, Col: 106}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var200))
 		if templ_7745c5c3_Err != nil {
@@ -3628,7 +3657,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var201 string
 		templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.export_csv"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2080, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2109, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var201))
 		if templ_7745c5c3_Err != nil {
@@ -3641,7 +3670,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var202 string
 		templ_7745c5c3_Var202, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.nfo_has_mbid.summary", data.Counts.Writes, data.Counts.Artists))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2090, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2119, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var202))
 		if templ_7745c5c3_Err != nil {
@@ -3654,7 +3683,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var203 string
 		templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatScope)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2092, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2121, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
 		if templ_7745c5c3_Err != nil {
@@ -3667,7 +3696,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var204 string
 		templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatFloor)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2093, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2122, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
 		if templ_7745c5c3_Err != nil {
@@ -3680,7 +3709,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var205 string
 		templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatRetention)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2094, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2123, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
 		if templ_7745c5c3_Err != nil {
@@ -3693,7 +3722,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var206 string
 		templ_7745c5c3_Var206, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatNoPriorValue)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2095, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2124, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var206))
 		if templ_7745c5c3_Err != nil {
@@ -3706,7 +3735,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var207 string
 		templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatNotConfirmed)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2096, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2125, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
 		if templ_7745c5c3_Err != nil {
@@ -3719,7 +3748,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var208 string
 		templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.JoinStringErrs(artist.NFOMBIDCaveatMessageWording)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2097, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2126, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var208))
 		if templ_7745c5c3_Err != nil {
@@ -3732,7 +3761,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var209 string
 		templ_7745c5c3_Var209, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.column_artist"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2103, Col: 145}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2132, Col: 145}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var209))
 		if templ_7745c5c3_Err != nil {
@@ -3745,7 +3774,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var210 string
 		templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.column_current_mbid"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2104, Col: 164}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2133, Col: 164}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var210))
 		if templ_7745c5c3_Err != nil {
@@ -3758,7 +3787,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var211 string
 		templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.column_note"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2105, Col: 156}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2134, Col: 156}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
 		if templ_7745c5c3_Err != nil {
@@ -3771,7 +3800,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var212 string
 		templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.blast_radius.column_when"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2106, Col: 156}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2135, Col: 156}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var212))
 		if templ_7745c5c3_Err != nil {
@@ -3784,7 +3813,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 		var templ_7745c5c3_Var213 string
 		templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.column_review"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2107, Col: 159}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2136, Col: 159}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var213))
 		if templ_7745c5c3_Err != nil {
@@ -3802,7 +3831,7 @@ func repPaneNFOHasMBID(data NFOMBIDPaneData) templ.Component {
 			var templ_7745c5c3_Var214 string
 			templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.empty"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2114, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2143, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var214))
 			if templ_7745c5c3_Err != nil {
@@ -3876,7 +3905,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var216 string
 		templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.ResolveAttributeValue("nfo-mbid-row-" + row.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2145, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2174, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var216)
 		if templ_7745c5c3_Err != nil {
@@ -3889,7 +3918,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var217 string
 		templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.JoinStringErrs(row.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2146, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2175, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var217))
 		if templ_7745c5c3_Err != nil {
@@ -3907,7 +3936,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 			var templ_7745c5c3_Var218 string
 			templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.JoinStringErrs(nfoMBIDCurrentIDLabel(ctx, row))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2149, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2178, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var218))
 			if templ_7745c5c3_Err != nil {
@@ -3921,7 +3950,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 			var templ_7745c5c3_Var219 string
 			templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinStringErrs(nfoMBIDCurrentIDLabel(ctx, row))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2151, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2180, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
 			if templ_7745c5c3_Err != nil {
@@ -3935,7 +3964,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var220 string
 		templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(row.Message, 100))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2154, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2183, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var220))
 		if templ_7745c5c3_Err != nil {
@@ -3948,7 +3977,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var221 string
 		templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format(time.RFC3339))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2156, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2185, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var221)
 		if templ_7745c5c3_Err != nil {
@@ -3961,7 +3990,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var222 string
 		templ_7745c5c3_Var222, templ_7745c5c3_Err = templ.ResolveAttributeValue(row.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2156, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2185, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var222)
 		if templ_7745c5c3_Err != nil {
@@ -3974,7 +4003,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var223 string
 		templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(ctx, row.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2157, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2186, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var223))
 		if templ_7745c5c3_Err != nil {
@@ -3987,7 +4016,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var224 templ.SafeURL
 		templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + row.ArtistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2162, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2191, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
 		if templ_7745c5c3_Err != nil {
@@ -4000,7 +4029,7 @@ func nfoMBIDRow(basePath string, row artist.NFOMBIDWriteRow) templ.Component {
 		var templ_7745c5c3_Var225 string
 		templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "reports.nfo_has_mbid.review"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2165, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2194, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
 		if templ_7745c5c3_Err != nil {
@@ -4073,7 +4102,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 			var templ_7745c5c3_Var227 string
 			templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "reports.nfo_has_mbid.pager_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2203, Col: 160}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2232, Col: 160}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var227)
 			if templ_7745c5c3_Err != nil {
@@ -4086,7 +4115,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 			var templ_7745c5c3_Var228 string
 			templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "reports.nfo_has_mbid.page_of", data.Pagination.CurrentPage, data.Pagination.TotalPages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2205, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2234, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var228))
 			if templ_7745c5c3_Err != nil {
@@ -4104,7 +4133,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 				var templ_7745c5c3_Var229 templ.SafeURL
 				templ_7745c5c3_Var229, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(nfoMBIDPageURL(data, data.Pagination.CurrentPage-1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2210, Col: 79}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2239, Col: 79}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var229))
 				if templ_7745c5c3_Err != nil {
@@ -4117,7 +4146,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 				var templ_7745c5c3_Var230 string
 				templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.previous"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2212, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2241, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var230))
 				if templ_7745c5c3_Err != nil {
@@ -4136,7 +4165,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 				var templ_7745c5c3_Var231 templ.SafeURL
 				templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(nfoMBIDPageURL(data, data.Pagination.CurrentPage+1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2216, Col: 79}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2245, Col: 79}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var231))
 				if templ_7745c5c3_Err != nil {
@@ -4149,7 +4178,7 @@ func nfoMBIDPagination(data NFOMBIDPaneData) templ.Component {
 				var templ_7745c5c3_Var232 string
 				templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.next"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2218, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reports_page.templ`, Line: 2247, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var232))
 				if templ_7745c5c3_Err != nil {
