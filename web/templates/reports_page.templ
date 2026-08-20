@@ -704,112 +704,112 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 	     container, so a swap cannot yank the panel out from under an operator
 	     who is still using it. -->
 	<div id="blast-radius-pane">
-	<!-- Attribution + coverage caveat band. Both counts are always shown side
+		<!-- Attribution + coverage caveat band. Both counts are always shown side
 	     by side (never just the automated headline), and the field lists are
 	     rendered from data.CoveredFields/UncoveredFields, which the loader
 	     computes from artist.TrackableFields() at request time. -->
-	<div class="sw-rep-blast-caveat" role="note">
-		<p class="sw-rep-blast-caveat-line">
-			{ tf(ctx, "reports.blast_radius.attribution_summary",
-				data.Counts.Automated, data.Counts.Unknown, data.CutoffDate) }
-		</p>
-		<p class="sw-rep-blast-caveat-line">
-			{ tf(ctx, "reports.blast_radius.coverage_covered", strings.Join(data.CoveredFields, ", ")) }
-		</p>
-		if len(data.UncoveredFields) > 0 {
+		<div class="sw-rep-blast-caveat" role="note">
 			<p class="sw-rep-blast-caveat-line">
-				{ tf(ctx, "reports.blast_radius.coverage_uncovered", strings.Join(data.UncoveredFields, ", ")) }
+				{ tf(ctx, "reports.blast_radius.attribution_summary",
+				data.Counts.Automated, data.Counts.Unknown, data.CutoffDate) }
 			</p>
-		}
-		<p class="sw-rep-blast-caveat-line">{ t(ctx, "reports.blast_radius.retention_note") }</p>
-	</div>
-	<!-- Filter toolbar (#3093). Pane-local, exactly like the compliance pane's:
+			<p class="sw-rep-blast-caveat-line">
+				{ tf(ctx, "reports.blast_radius.coverage_covered", strings.Join(data.CoveredFields, ", ")) }
+			</p>
+			if len(data.UncoveredFields) > 0 {
+				<p class="sw-rep-blast-caveat-line">
+					{ tf(ctx, "reports.blast_radius.coverage_uncovered", strings.Join(data.UncoveredFields, ", ")) }
+				</p>
+			}
+			<p class="sw-rep-blast-caveat-line">{ t(ctx, "reports.blast_radius.retention_note") }</p>
+		</div>
+		<!-- Filter toolbar (#3093). Pane-local, exactly like the compliance pane's:
 	     the two panes narrow on different axes, so a shared toolbar would have
 	     to render controls that do nothing on whichever pane is active.
 	     Before this, class/attribution/field/sort/order were reachable only by
 	     hand-editing the URL, which on a 3,000-row damage report means the
 	     operator gets an undifferentiated pile and no way to cut it down. -->
-	<div class="sw-rep-toolbar">
-		<div class="sw-rep-toolbar-actions">
-			<button
-				id="blast-radius-filter-trigger"
-				type="button"
-				class={ "sw-rep-filter-btn", templ.KV("is-active", blastRadiusFilterCount(data) > 0) }
-				data-active-classes="is-active"
-				data-badge-classes="sw-filter-trigger-badge"
-				aria-label={ t(ctx, "common.open_filter_panel") }
-				aria-expanded="false"
-				aria-controls="blast-radius-filter-flyout"
-				onclick={ components.OpenFilterFlyout("blast-radius-filter-flyout") }
-			>
-				<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-					<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
-				</svg>
-				<span>{ t(ctx, "common.filters") }</span>
-				if blastRadiusFilterCount(data) > 0 {
-					<span class="sw-filter-trigger-badge">{ fmt.Sprintf("%d", blastRadiusFilterCount(data)) }</span>
-				}
-			</button>
+		<div class="sw-rep-toolbar">
+			<div class="sw-rep-toolbar-actions">
+				<button
+					id="blast-radius-filter-trigger"
+					type="button"
+					class={ "sw-rep-filter-btn", templ.KV("is-active", blastRadiusFilterCount(data) > 0) }
+					data-active-classes="is-active"
+					data-badge-classes="sw-filter-trigger-badge"
+					aria-label={ t(ctx, "common.open_filter_panel") }
+					aria-expanded="false"
+					aria-controls="blast-radius-filter-flyout"
+					onclick={ components.OpenFilterFlyout("blast-radius-filter-flyout") }
+				>
+					<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+						<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
+					</svg>
+					<span>{ t(ctx, "common.filters") }</span>
+					if blastRadiusFilterCount(data) > 0 {
+						<span class="sw-filter-trigger-badge">{ fmt.Sprintf("%d", blastRadiusFilterCount(data)) }</span>
+					}
+				</button>
+			</div>
 		</div>
-	</div>
-	<div class="overflow-x-auto" id="blast-radius-results">
-		<table id="blast-radius-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-			<thead class="bg-gray-50 dark:bg-gray-800">
-				<tr>
-					<th scope="col" class="px-4 py-3 text-center w-10">
-						<!-- Select-all covers ONLY the rows currently rendered. The pane
+		<div class="overflow-x-auto" id="blast-radius-results">
+			<table id="blast-radius-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+				<thead class="bg-gray-50 dark:bg-gray-800">
+					<tr>
+						<th scope="col" class="px-4 py-3 text-center w-10">
+							<!-- Select-all covers ONLY the rows currently rendered. The pane
 						     is server-paged, so there is no honest way to select rows this
 						     page never fetched, and a control implying otherwise would
 						     misreport the size of a destructive operation. The accessible
 						     name sits on the input; the visible column header is the
 						     sr-only span beside it. -->
-						<input
-							type="checkbox"
-							id="blast-select-all"
-							onchange="blastToggleSelectAll(this)"
-							class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-							aria-label={ t(ctx, "reports.blast_radius.select_all_rows") }
-						/>
-						<span class="sr-only">{ t(ctx, "reports.blast_radius.select_column") }</span>
-					</th>
-					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.column_artist") }</th>
-					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_field") }</th>
-					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_change") }</th>
-					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_class") }</th>
-					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_attribution") }</th>
-					<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_when") }</th>
-					<th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_restore") }</th>
-				</tr>
-			</thead>
-			<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
-				if len(data.Rows) == 0 {
-					<tr>
-						<td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-							// Two DIFFERENT statements, because only one of them is ever
-							// true. "Nothing recorded" is a claim about the whole library
-							// and is false the moment a filter is narrowing the view: an
-							// operator who filters to a field with no damage would
-							// otherwise read an all-clear over a library that still holds
-							// destroyed values, which is the exact failure this pane exists
-							// to prevent. blastRadiusNarrowed reports whether any narrowing
-							// is active; the counts come from CountBlastRadius, which
-							// deliberately ignores the attribution filter so the total
-							// quoted here is the honest library-wide one.
-							if blastRadiusNarrowed(data) {
-								{ tf(ctx, "reports.blast_radius.empty_filtered", data.Counts.Total) }
-							} else {
-								{ t(ctx, "reports.blast_radius.empty") }
-							}
-						</td>
+							<input
+								type="checkbox"
+								id="blast-select-all"
+								onchange="blastToggleSelectAll(this)"
+								class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+								aria-label={ t(ctx, "reports.blast_radius.select_all_rows") }
+							/>
+							<span class="sr-only">{ t(ctx, "reports.blast_radius.select_column") }</span>
+						</th>
+						<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.column_artist") }</th>
+						<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_field") }</th>
+						<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_change") }</th>
+						<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_class") }</th>
+						<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_attribution") }</th>
+						<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_when") }</th>
+						<th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "reports.blast_radius.column_restore") }</th>
 					</tr>
-				}
-				for _, row := range data.Rows {
-					@blastRadiusRow(row)
-				}
-			</tbody>
-		</table>
-	</div>
-	@blastRadiusPagination(data)
+				</thead>
+				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+					if len(data.Rows) == 0 {
+						<tr>
+							<td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+								// Two DIFFERENT statements, because only one of them is ever
+								// true. "Nothing recorded" is a claim about the whole library
+								// and is false the moment a filter is narrowing the view: an
+								// operator who filters to a field with no damage would
+								// otherwise read an all-clear over a library that still holds
+								// destroyed values, which is the exact failure this pane exists
+								// to prevent. blastRadiusNarrowed reports whether any narrowing
+								// is active; the counts come from CountBlastRadius, which
+								// deliberately ignores the attribution filter so the total
+								// quoted here is the honest library-wide one.
+								if blastRadiusNarrowed(data) {
+									{ tf(ctx, "reports.blast_radius.empty_filtered", data.Counts.Total) }
+								} else {
+									{ t(ctx, "reports.blast_radius.empty") }
+								}
+							</td>
+						</tr>
+					}
+					for _, row := range data.Rows {
+						@blastRadiusRow(row)
+					}
+				</tbody>
+			</table>
+		</div>
+		@blastRadiusPagination(data)
 	</div>
 	<!-- Bulk action bar. Rendered hidden and revealed by blastUpdateBulkBar
 	     once at least one row is selected.
@@ -870,6 +870,7 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		data-restore-failed={ t(ctx, "reports.blast_radius.js.restore_failed") }
 		data-restore-conflict={ t(ctx, "reports.blast_radius.js.restore_conflict") }
 		data-network-error={ t(ctx, "reports.blast_radius.js.network_error") }
+		data-filter-reload-failed={ t(ctx, "reports.blast_radius.js.filter_reload_failed") }
 		data-plan-summary={ t(ctx, "reports.blast_radius.js.plan_summary") }
 		data-plan-refused={ t(ctx, "reports.blast_radius.js.plan_refused") }
 		data-restored-count={ t(ctx, "reports.blast_radius.js.restored_count") }
@@ -957,10 +958,55 @@ templ blastRadiusFilterScript() {
 				console.error('blast-radius: htmx is not loaded; the filter controls cannot reload the report');
 				return;
 			}
-			htmx.ajax('GET', '/reports/blast-radius' + window.location.search, {
+			// The path stays ROOT-RELATIVE. layout.templ installs a global
+			// htmx:configRequest listener that prepends the base path to every
+			// root-relative htmx path, so prefixing it here would produce
+			// /base/base/reports/blast-radius under SW_BASE_PATH. The
+			// compliance pane uses the same idiom.
+			//
+			// THE REJECTION IS HANDLED, because nothing else handles it.
+			// layout.templ covers htmx:responseError and htmx:timeout, and
+			// htmx.ajax RESOLVES on any HTTP response including a 5xx, so those
+			// two cover every case where the request reached the server. A
+			// NETWORK failure -- server down, DNS, connection dropped mid-flight
+			// -- rejects the promise instead, and no handler anywhere sees it.
+			//
+			// Unhandled, the operator applies a filter, the URL updates through
+			// pushState, the request never lands, and the pane goes on rendering
+			// the PREVIOUS filter's rows under the NEW URL with nothing said.
+			// The caveat band and the row set then describe a filter the
+			// operator is no longer looking at: the same stale-state falsehood
+			// the swap boundary guards against, arriving over the network.
+			//
+			// showToast is the idiom the global handlers already use, so a
+			// network failure reads the same as an HTTP one. console.error as
+			// well, because a page whose toast container failed to render must
+			// not swallow the failure silently -- the same belt-and-braces
+			// blastRestoreRequest uses. No timeout handling is added here:
+			// htmx:timeout is global and already toasts, and a second handler
+			// would report the same timeout twice.
+			return htmx.ajax('GET', '/reports/blast-radius' + window.location.search, {
 				target: '#blast-radius-pane',
 				swap: 'outerHTML',
 				select: '#blast-radius-pane'
+			}).catch(function(err) {
+				console.error('blast-radius: the filter reload did not reach the server', err);
+				// The copy comes from #blast-radius-i18n, the pane's own hidden
+				// element, for the reason every other string in this script
+				// does: JS has no access to the request translator, so a
+				// hardcoded English literal would be the one untranslated
+				// sentence on the pane.
+				var el = document.getElementById('blast-radius-i18n');
+				var msg = el && el.dataset ? el.dataset.filterReloadFailed : '';
+				if (typeof showToast === 'function') {
+					showToast(msg || 'The filtered report could not be loaded. The rows below still show the previous filter.');
+				} else {
+					// showToast is installed by the layout, so its absence is a
+					// broken page rather than a supported configuration -- and a
+					// failure the operator never sees is the defect this whole
+					// handler exists to prevent.
+					console.error('blast-radius: showToast is not available, so the filter-reload failure reached nobody');
+				}
 			});
 		}
 
@@ -1636,9 +1682,54 @@ templ blastRadiusScript() {
 		// resyncs the select-all checkbox and its indeterminate state, and moves
 		// focus out first if it is inside the bar. Reusing it means the reset
 		// cannot drift from the hide path the rest of the pane already uses.
+		// Recorded BEFORE the swap, because afterSwap is too late to ask: by
+		// then the old node is gone and document.activeElement already reads
+		// <body>, which is indistinguishable from a page nobody had focused.
+		var blastFocusWasInPane = false;
+
+		document.body.addEventListener('htmx:beforeSwap', function(evt) {
+			if (!evt.detail || !evt.detail.target || evt.detail.target.id !== 'blast-radius-pane') return;
+			var pane = document.getElementById('blast-radius-pane');
+			blastFocusWasInPane = !!(pane && document.activeElement && pane.contains(document.activeElement));
+		});
+
 		document.body.addEventListener('htmx:afterSwap', function(evt) {
 			if (!evt.detail || !evt.detail.target || evt.detail.target.id !== 'blast-radius-pane') return;
+
+			// Bulk bar FIRST. Its n === 0 branch may deliberately move focus to
+			// #blast-select-all when focus is inside the bar, and the
+			// restore below must not override that decision -- hence the
+			// "focus is still on <body>" condition, which is false once the bar
+			// has placed it somewhere.
 			blastUpdateBulkBar();
+
+			// RESTORE FOCUS THE SWAP TOOK.
+			//
+			// The flyout's Apply starts this reload and then closes the panel,
+			// and closing returns focus to #blast-radius-filter-trigger -- which
+			// lives INSIDE #blast-radius-pane, so the outerHTML swap then
+			// removes the very node holding focus. A browser blurs a removed
+			// element and focus resets to <body>, which drops a keyboard
+			// operator at the top of the document immediately after acting, with
+			// the whole page to Tab back through. Same shape as the bulk bar's
+			// hide-with-focus-inside defect, one control over.
+			//
+			// Both conditions are required. blastFocusWasInPane says the swap is
+			// what took focus rather than the page never having had any, and the
+			// activeElement check says nothing has since claimed it.
+			var lost = !document.activeElement || document.activeElement === document.body;
+			if (blastFocusWasInPane && lost) {
+				var trigger = document.getElementById('blast-radius-filter-trigger');
+				if (trigger) {
+					trigger.focus();
+				} else {
+					// Loud, not silent: focus is on <body> and we cannot place
+					// it. Saying so beats leaving an a11y defect to be noticed
+					// by the person it strands.
+					console.error('blast-radius: #blast-radius-filter-trigger is missing after a swap, so focus stays lost at the top of the document');
+				}
+			}
+			blastFocusWasInPane = false;
 		});
 
 		// blastRestoreSelected is the bulk mirror of blastRestoreRow: DRY RUN

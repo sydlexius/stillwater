@@ -1384,25 +1384,42 @@ test('applying a filter clears the bulk selection bar rather than leaving a dead
   expect(before.countText, 'the bulk bar is visible but reports no count, so there is nothing that could go stale')
     .not.toBe('');
 
+  // TAG THE PRE-SWAP TABLE so the wait below measures NODE IDENTITY.
+  //
+  // The obvious wait -- getElementById('blast-radius-tbl') then checking its id
+  // -- is a tautology: the node was looked up BY that id, so the comparison is
+  // true for the old node and the new one alike, and the wait returns
+  // immediately having established nothing. An attribute set on the current
+  // node cannot survive an outerHTML swap (the server's markup does not carry
+  // it), so its disappearance is positive evidence that THIS node was replaced.
+  await page.evaluate(() => {
+    const tbl = document.getElementById('blast-radius-tbl');
+    if (tbl) tbl.setAttribute('data-sw-preswap', '1');
+  });
+  const tagged = await page.evaluate(
+    () => document.querySelectorAll('#blast-radius-tbl[data-sw-preswap]').length,
+  );
+  expect(tagged, 'the pre-swap table could not be tagged, so the swap below cannot be detected').toBe(1);
+
   // Now apply a filter through the pane's OWN reload path -- the same
-  // htmx.ajax the flyout's Apply and the ordering selects both call -- and wait
-  // for the swapped-in table rather than a timeout.
+  // htmx.ajax the flyout's Apply and the ordering selects both call.
   await page.evaluate(() => {
     const url = new URL(window.location.href);
     url.searchParams.set('class', 'blanked');
     window.history.pushState({}, '', url);
     blastRadiusReload();
   });
+
+  // The swap really happened: the tagged node is gone and a table is present
+  // again. Both halves matter -- "the tag is gone" alone would also be true
+  // mid-swap with no table at all.
   await page.waitForFunction(
-    (id) => {
-      const tbl = document.getElementById('blast-radius-tbl');
-      return !!tbl && tbl.id === id && !document.querySelector('.htmx-request');
-    },
-    'blast-radius-tbl',
+    () => !document.querySelector('#blast-radius-tbl[data-sw-preswap]')
+      && !!document.getElementById('blast-radius-tbl'),
+    null,
     { timeout: 10_000 },
   );
-  // The swap really happened: the table node is a fresh one, so any selection
-  // made before it is gone from the DOM.
+  // And the fresh table carries no selection, which is what strands the bar.
   await page.waitForFunction(
     () => document.querySelectorAll('.blast-select:checked').length === 0,
     null,
@@ -1449,4 +1466,184 @@ test('applying a filter clears the bulk selection bar rather than leaving a dead
     after.masterIndeterminate,
     'the select-all box still reads indeterminate, announcing a partial selection that does not exist',
   ).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// A filter reload that never reaches the server tells the operator so.
+//
+// THE GAP THIS PINS. layout.templ handles htmx:responseError and htmx:timeout,
+// and htmx.ajax RESOLVES on any HTTP response including a 5xx -- so every case
+// where the request reached the server is already covered. A NETWORK failure
+// (server down, DNS, connection dropped mid-flight) REJECTS the promise
+// instead, and before this fix no handler anywhere saw that rejection.
+//
+// Unhandled, the operator applies a filter, the URL updates through pushState,
+// the request never lands, and the pane goes on rendering the PREVIOUS filter's
+// rows under the NEW URL with nothing said. The caveat band and the row set
+// then describe a filter the operator is not looking at -- the same stale-state
+// falsehood the swap boundary guards against, arriving over the network instead
+// of over a container edge.
+//
+// THE FAILURE IS INJECTED AT THE NETWORK LEVEL, not as a 500. route.abort() is
+// what makes this test cover the uncovered path: a 500 would be caught by the
+// global htmx:responseError handler and would pass with or without the fix.
+test('a filter reload that never reaches the server surfaces a failure to the operator', async ({ page }) => {
+  await gotoPane(page);
+
+  // Fail ONLY the pane reload. Anything else the page fetches (assets, the SSE
+  // stream) must still work, or the failure under test could not be attributed.
+  await page.route((url) => url.pathname.endsWith('/reports/blast-radius'), (route) => route.abort('failed'));
+
+  // PRECONDITION: the toast surface exists. Without it a passing assertion
+  // below would mean "nothing was shown and nothing could have been", which is
+  // the failure this test exists to catch rather than a green.
+  const container = page.locator('#error-toast-container');
+  expect(await container.count(), 'the layout rendered no toast container, so no failure could ever be surfaced')
+    .toBe(1);
+  expect(
+    await page.evaluate(() => typeof showToast === 'function'),
+    'showToast is not installed, so this page cannot report any failure at all',
+  ).toBe(true);
+
+  const before = await container.evaluate((el) => el.children.length);
+
+  await page.evaluate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('class', 'blanked');
+    window.history.pushState({}, '', url);
+    blastRadiusReload();
+  });
+
+  // A toast appears. Waiting on the container's child count rather than on text
+  // keeps this independent of the translated copy.
+  await page.waitForFunction(
+    (n) => {
+      const el = document.getElementById('error-toast-container');
+      return !!el && el.children.length > n;
+    },
+    before,
+    { timeout: 10_000 },
+  );
+
+  const toastText = await container.evaluate((el) => el.textContent.trim());
+  expect(
+    toastText,
+    'a toast appeared but carries no text, so the operator is shown an empty box rather than a reason',
+  ).not.toBe('');
+
+  // The pane is still standing and still rendering rows -- the point being that
+  // it now says so rather than silently presenting them as the filtered set.
+  expect(
+    await page.locator('#blast-radius-pane').count(),
+    'the failed reload destroyed the pane; a network failure must leave the previous view intact',
+  ).toBe(1);
+});
+
+
+// ---------------------------------------------------------------------------
+// A filter swap does not strand a keyboard operator at <body>.
+//
+// WHAT IS AND IS NOT ALREADY COVERED -- this distinction is the whole test.
+//
+// htmx restores focus across a swap BY ID: it reads the focused element's id
+// before the swap and, if an element with that id exists afterwards, focuses it
+// (see the focus-restore branch in htmx.min.js). So every control on this pane
+// that carries an id -- #blast-radius-filter-trigger, #blast-select-all, the
+// ordering selects -- already survives, and a test that focused one of those
+// would pass with or without the handler below. Measured, not assumed: with the
+// pane's own focus restore removed, focus after a swap from the trigger came
+// back {"id":"blast-radius-filter-trigger","isBody":false}.
+//
+// THE ROWS ARE THE GAP. Row checkboxes (.blast-select) and per-row Restore
+// buttons carry NO id -- they are per-row controls identified by value and
+// aria-label -- so htmx has nothing to match and focus falls to <body>. That is
+// the reachable defect: a keyboard operator ticking through rows applies a
+// filter and is dropped at the top of the document, with the whole page to Tab
+// back through, right after the action whose result they wanted to read.
+//
+// So this test focuses a ROW CHECKBOX, which is the case nothing else defends.
+test('a filter swap that removes the focused row does not drop focus to the document body', async ({ page }) => {
+  await gotoPane(page);
+
+  const checkboxes = page.locator('.blast-select');
+  const rows = await checkboxes.count();
+  if (rows === 0) {
+    // A DATA condition, not a pass -- the same refusal the other row-dependent
+    // tests in this file make.
+    throw new Error(
+      'no blast-radius rows on this server, so no id-less row control could be focused. '
+      + 'This surface is UNVERIFIED -- seed at least one tracked automated field change before trusting a green run.',
+    );
+  }
+
+  await checkboxes.first().focus();
+
+  // PRECONDITION: focus is on a control INSIDE the swap target that carries NO
+  // id. Both halves are load-bearing. Inside the pane means the swap will take
+  // it; no id means htmx cannot put it back, which is what makes this the
+  // uncovered path rather than a re-test of htmx's own behavior.
+  const beforeSwap = await page.evaluate(() => {
+    const pane = document.getElementById('blast-radius-pane');
+    const active = document.activeElement;
+    return {
+      insidePane: !!(pane && active && pane.contains(active)),
+      id: active ? active.id : null,
+      isRowBox: !!(active && active.classList.contains('blast-select')),
+    };
+  });
+  expect(beforeSwap.isRowBox, 'focus did not land on a row checkbox').toBe(true);
+  expect(
+    beforeSwap.insidePane,
+    'the row checkboxes are not inside #blast-radius-pane, so the swap cannot take focus from them and this '
+    + 'test would prove nothing',
+  ).toBe(true);
+  expect(
+    beforeSwap.id,
+    'the focused row checkbox now carries an id, so htmx would restore focus on its own and this test no longer '
+    + 'covers the id-less case it exists for',
+  ).toBe('');
+
+  // Tag the pre-swap table so the wait measures NODE IDENTITY rather than an id
+  // it was looked up by. The attribute cannot survive an outerHTML swap.
+  await page.evaluate(() => {
+    const tbl = document.getElementById('blast-radius-tbl');
+    if (tbl) tbl.setAttribute('data-sw-preswap', '1');
+  });
+
+  await page.evaluate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('class', 'blanked');
+    window.history.pushState({}, '', url);
+    blastRadiusReload();
+  });
+
+  await page.waitForFunction(
+    () => !document.querySelector('#blast-radius-tbl[data-sw-preswap]')
+      && !!document.getElementById('blast-radius-tbl'),
+    null,
+    { timeout: 10_000 },
+  );
+
+  const after = await page.evaluate(() => {
+    const active = document.activeElement;
+    return {
+      id: active ? active.id : null,
+      tag: active ? active.tagName : null,
+      isBody: active === document.body,
+    };
+  });
+
+  expect(
+    after.isBody,
+    'focus fell to <body> when the filter swap removed the focused row control, so a keyboard operator who just '
+    + 'applied a filter has to Tab from the top of the document back to the report',
+  ).toBe(false);
+  // And it landed somewhere USEFUL: the filters trigger, which is the control
+  // that caused the change and the one most likely to be used next. The row
+  // that held focus may legitimately no longer exist, so restoring "the same
+  // place" is not available -- landing on a stable, relevant control is.
+  expect(
+    after.id,
+    `focus survived the swap but landed on <${after.tag}> rather than the filters trigger`,
+  ).toBe('blast-radius-filter-trigger');
 });
