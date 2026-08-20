@@ -1331,9 +1331,17 @@ func (r *Router) loadReportsBlastRadiusData(w http.ResponseWriter, req *http.Req
 			PageSize:    view.PageSize,
 			TotalItems:  view.Counts.Total,
 			BaseURL:     "/reports/blast-radius",
-			TargetID:    "blast-radius-results",
-			Filter:      f.Class,
-			Status:      f.Attribution,
+			// No TargetID. blastRadiusPagination renders plain <a> links rather
+			// than components.Pagination (this route has no fragment handler,
+			// so an hx-get pager would target a swap that never responds), so
+			// nothing on this pane ever read the field. It named
+			// "blast-radius-results", which is the wrong swap target for this
+			// pane in any case: the caveat band sits outside that element and
+			// changes with the filter, so a swap scoped there leaves a stale
+			// band. Removed rather than corrected, since a dead field naming a
+			// selector the pane deliberately does not use is worse than absent.
+			Filter: f.Class,
+			Status: f.Attribution,
 		},
 		CutoffDate:      artist.AttributionCutoffDate,
 		CoveredFields:   view.CoveredFields,
@@ -1342,7 +1350,14 @@ func (r *Router) loadReportsBlastRadiusData(w http.ResponseWriter, req *http.Req
 		Attribution:     f.Attribution,
 		Field:           f.Field,
 		ArtistID:        f.ArtistID,
-		BasePath:        r.basePath,
+		// Sort/Order come from the SAME validated filter as the narrowing
+		// axes, so the toolbar's selects show the ordering the query actually
+		// used. Reading them off the raw query string instead would render an
+		// unrecognized ?sort=whatever as selected while the rows came back in
+		// the default order.
+		Sort:     f.Sort,
+		Order:    f.Order,
+		BasePath: r.basePath,
 	}, true
 }
 
