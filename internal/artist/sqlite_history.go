@@ -639,7 +639,54 @@ func (r *sqliteHistoryRepo) CountBlastRadius(ctx context.Context, f BlastRadiusF
 	default:
 		counts.Total = counts.Automated + counts.Unknown
 	}
+
+	// TotalUnfiltered: every damaged row in the library, every axis dropped.
+	//
+	// A SECOND QUERY rather than arithmetic on the values above, because none of
+	// them is library-wide. Automated and Unknown ignore attribution but still
+	// follow class, field and artist_id (see BlastRadiusCounts), so their sum is
+	// only library-wide when no narrowing is active -- which is precisely the
+	// case where nobody needs this number. The one caller is the empty-state
+	// sentence, which by definition renders when a filter IS active.
+	//
+	// Skipped entirely when nothing is narrowing: the answer is already in hand,
+	// and this is on the render path of a report that holds thousands of rows.
+	if f.Class == BlastScopeAll && f.Field == "" && f.ArtistID == "" {
+		counts.TotalUnfiltered = counts.Automated + counts.Unknown
+		return counts, nil
+	}
+
+	total, err := r.countAllBlastRadius(ctx)
+	if err != nil {
+		return BlastRadiusCounts{}, err
+	}
+	counts.TotalUnfiltered = total
+
 	return counts, nil
+}
+
+// countAllBlastRadius counts every damaged row in the library, with EVERY
+// narrowing axis dropped, including attribution.
+//
+// Extracted from CountBlastRadius rather than inlined so its error path is
+// reachable from a test. Inline, it was the SECOND of two queries against the
+// same tables, and no fault could isolate it: a closed handle or a dropped
+// table fails the first query, so execution never arrived here and the branch
+// stayed uncovered while a test claiming to cover it passed for the wrong
+// reason. As its own method it is callable directly, so the failure can be
+// injected exactly where it is being asserted.
+func (r *sqliteHistoryRepo) countAllBlastRadius(ctx context.Context) (int, error) {
+	cteWhere, args := blastRadiusRankedWhere(BlastRadiusFilter{})
+	q := fmt.Sprintf(blastRadiusRankedCTE, cteWhere) + `
+		SELECT COUNT(*) FROM ranked ` + blastRadiusDamageWhere(BlastScopeAll, BlastScopeAll)
+
+	// SUM/COUNT over zero rows is scanned as nullable for the same reason the
+	// bucket counts are: an empty library must read as an honest zero.
+	var total sql.NullInt64
+	if err := r.db.QueryRowContext(ctx, q, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("counting all blast-radius rows: %w", err)
+	}
+	return int(total.Int64), nil
 }
 
 // classifyBlastDamage labels a row by what happened to the operator's value.

@@ -792,11 +792,27 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 								// otherwise read an all-clear over a library that still holds
 								// destroyed values, which is the exact failure this pane exists
 								// to prevent. blastRadiusNarrowed reports whether any narrowing
-								// is active; the counts come from CountBlastRadius, which
-								// deliberately ignores the attribution filter so the total
-								// quoted here is the honest library-wide one.
+								// is active.
+								//
+								// THE NUMBER QUOTED IS TotalUnfiltered, NOT Total. Total is the
+								// pagination denominator, scoped to the CURRENT narrowing -- and
+								// this branch renders only when that narrowing matched nothing,
+								// so Total is zero by construction. Quoting it produced "the
+								// report still records 0 change(s) overall" on every filtered
+								// empty state, including one measured over a library holding 12
+								// unattributable destroyed values while the caveat band a few
+								// pixels above correctly said "12 of unknown origin". The pane
+								// contradicted itself in adjacent elements and the reassuring
+								// half was the one in the table.
+								//
+								// Automated+Unknown is not a substitute: those ignore the
+								// attribution filter but still follow class, field and
+								// artist_id (see BlastRadiusCounts), so under any of those axes
+								// they are not library-wide either. TotalUnfiltered is counted
+								// with every axis dropped, which is what makes this sentence
+								// true.
 								if blastRadiusNarrowed(data) {
-									{ tf(ctx, "reports.blast_radius.empty_filtered", data.Counts.Total) }
+									{ tf(ctx, "reports.blast_radius.empty_filtered", data.Counts.TotalUnfiltered) }
 								} else {
 									{ t(ctx, "reports.blast_radius.empty") }
 								}
@@ -918,9 +934,14 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 // set, so an operator who arrives through one can see it and clear it.
 templ blastRadiusFilterFlyout(data BlastRadiusData) {
 	@components.FilterFlyout("blast-radius-filter-flyout", t(ctx, "reports.blast_radius.filters_title"), "blast-radius-filter-trigger", blastRadiusFilterCount(data), "#blast-radius-results", nil) {
-		<!-- The narrowing sections arrive per axis in the slices that add them.
-		     The shell lands first so each axis is a small, reviewable addition
-		     to a panel whose keyboard behavior and contrast are already proven. -->
+		@components.FilterSection(t(ctx, "reports.blast_radius.column_class")) {
+			@components.FilterItemSingle("blast-radius-filter-flyout", "class", artist.BlastClassBlanked, t(ctx, "reports.blast_radius.class_blanked"), data.Class == artist.BlastClassBlanked, 0)
+			@components.FilterItemSingle("blast-radius-filter-flyout", "class", artist.BlastClassReplaced, t(ctx, "reports.blast_radius.class_replaced"), data.Class == artist.BlastClassReplaced, 0)
+		}
+		@components.FilterSection(t(ctx, "reports.blast_radius.column_attribution")) {
+			@components.FilterItemSingle("blast-radius-filter-flyout", "attribution", artist.BlastAttributionAutomated, t(ctx, "reports.blast_radius.attribution_automated"), data.Attribution == artist.BlastAttributionAutomated, 0)
+			@components.FilterItemSingle("blast-radius-filter-flyout", "attribution", artist.BlastAttributionUnknown, t(ctx, "reports.blast_radius.attribution_unknown"), data.Attribution == artist.BlastAttributionUnknown, 0)
+		}
 	}
 }
 

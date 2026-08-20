@@ -105,7 +105,6 @@ async function gotoPane(page, url = PANE_URL) {
   await page.waitForSelector('#blast-radius-tbl', { timeout: 10_000 });
 }
 
-
 // ---------------------------------------------------------------------------
 // 1. axe-core, full page, both themes.
 //
@@ -141,7 +140,6 @@ test('blast-radius pane passes full-page a11y scan (dark theme)', async ({ page 
 
 test('blast-radius pane passes full-page a11y scan (light theme)', async ({ page }) => {
   await gotoPane(page);
-
 
   // Switch to light through the REAL sidebar toggle so the whole preference
   // path runs (swPreferences.set -> applySingle -> classList + token
@@ -1030,6 +1028,34 @@ test('every filter control has an accessible name', async ({ page }) => {
     const name = await accessibleNameOf(page, sel);
     expect(name, `${label} (${sel}) has no accessible name; a screen-reader user is offered an unlabelled control`)
       .toBeTruthy();
+  }
+
+  // The field chips inside the flyout are buttons whose label IS their text,
+  // but their pressed state is what tells a screen-reader user whether the
+  // filter is on. A chip with no aria-pressed announces nothing about state.
+  await page.locator('#blast-radius-filter-trigger').click();
+  await page.waitForSelector('#blast-radius-filter-flyout:not([inert])', { timeout: 5000 });
+
+  const chips = await page.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('#blast-radius-filter-flyout [data-filter-mode="single"]').forEach((el) => {
+      out.push({
+        key: el.getAttribute('data-filter-key'),
+        value: el.getAttribute('data-filter-value'),
+        pressed: el.getAttribute('aria-pressed'),
+        name: (el.textContent || '').trim(),
+      });
+    });
+    return out;
+  });
+  // Precondition: the flyout rendered chips. An empty panel would satisfy the
+  // per-chip loop below without checking anything.
+  expect(chips.length, 'the filter flyout rendered no chips; the assertions below would be vacuous')
+    .toBeGreaterThan(0);
+  for (const chip of chips) {
+    expect(chip.name, `chip ${chip.key}=${chip.value} has no visible label`).toBeTruthy();
+    expect(chip.pressed, `chip ${chip.key}=${chip.value} has no aria-pressed, so its on/off state is not announced`)
+      .toMatch(/^(true|false)$/);
   }
 });
 
