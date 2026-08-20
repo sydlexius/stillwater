@@ -1,12 +1,14 @@
 package templates
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/i18n"
 )
 
 // blastRadiusNonNarrowingFields lists the artist.BlastRadiusFilter fields that
@@ -371,5 +373,179 @@ func TestBlastRadiusFieldControlLabels_MatchTheTableAndAreNeverBareKeys(tt *test
 	if got := fieldLabel(ctx, unknown); got != "Not A Real Field Xyz" {
 		tt.Errorf("fieldLabel(%q) = %q, want the humanized form; an untranslated field must not render as a "+
 			"bare snake_case name in a control", unknown, got)
+	}
+}
+
+// TestBlastRadiusChips_OnePerNarrowingAxis pins the chips against the same axis
+// table the badge and the empty-state wording read.
+//
+// The chips are the operator's only way OFF a filter that is not set by a
+// control -- artist_id arrives by deep link and has no chip in the flyout -- so
+// a missing chip leaves rows hidden with no visible way to clear them.
+//
+// Mutation proving teeth: dropping the artist_id axis from blastRadiusAxes
+// makes the artist_id case render no chip; removing the axis.active() check in
+// blastRadiusChips makes the neutral case render four.
+func TestBlastRadiusChips_OnePerNarrowingAxis(t *testing.T) {
+	t.Parallel()
+	ctx := testCtx(t)
+
+	neutral := BlastRadiusData{Class: artist.BlastScopeAll, Attribution: artist.BlastScopeAll}
+	if chips := blastRadiusChips(ctx, neutral); len(chips) != 0 {
+		t.Fatalf("an unfiltered request produced %d chips, want 0; the operator is shown filters that are "+
+			"not in force. chips: %+v", len(chips), chips)
+	}
+
+	cases := []struct {
+		name      string
+		data      BlastRadiusData
+		wantKeys  []string
+		wantLabel string
+	}{
+		{
+			name:      "class",
+			data:      BlastRadiusData{Class: artist.BlastClassBlanked, Attribution: artist.BlastScopeAll},
+			wantKeys:  []string{"class"},
+			wantLabel: "Class: Blanked",
+		},
+		{
+			name:      "attribution",
+			data:      BlastRadiusData{Class: artist.BlastScopeAll, Attribution: artist.BlastAttributionUnknown},
+			wantKeys:  []string{"attribution"},
+			wantLabel: "Attribution: Unknown",
+		},
+		{
+			name:      "field",
+			data:      BlastRadiusData{Class: artist.BlastScopeAll, Attribution: artist.BlastScopeAll, Field: "genres"},
+			wantKeys:  []string{"field"},
+			wantLabel: "Field: Genres",
+		},
+		{
+			// The axis no control sets. It must still get a chip, or a deep
+			// link narrows the report with no visible way back.
+			name:      "artist_id",
+			data:      BlastRadiusData{Class: artist.BlastScopeAll, Attribution: artist.BlastScopeAll, ArtistID: "art-1"},
+			wantKeys:  []string{"artist_id"},
+			wantLabel: "Artist: art-1",
+		},
+		{
+			name: "all four",
+			data: BlastRadiusData{
+				Class:       artist.BlastClassReplaced,
+				Attribution: artist.BlastAttributionAutomated,
+				Field:       "moods",
+				ArtistID:    "art-2",
+			},
+			wantKeys: []string{"class", "attribution", "field", "artist_id"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			chips := blastRadiusChips(ctx, tc.data)
+			if len(chips) != len(tc.wantKeys) {
+				t.Fatalf("got %d chips, want %d: %+v", len(chips), len(tc.wantKeys), chips)
+			}
+			for i, key := range tc.wantKeys {
+				if chips[i].Key != key {
+					t.Errorf("chip[%d].Key = %q, want %q; the dismiss button would remove the wrong "+
+						"query parameter", i, chips[i].Key, key)
+				}
+				// Every chip reloads the PANE container, not the bare table:
+				// dismissing a filter changes the caveat band too, and a band
+				// left behind reports the OLD filter's attribution split over
+				// the new rows.
+				//
+				// This assertion previously demanded "#blast-radius-results"
+				// while this very comment said the pane -- so the test PINNED
+				// the defect and would have failed the fix. Measured live
+				// before the fix: dismissing one chip left two
+				// #blast-radius-pane elements, 71 duplicated DOM ids, and a
+				// stale band reading "4 of unknown origin" above 21 unfiltered
+				// rows.
+				if chips[i].TargetSel != "#blast-radius-pane" {
+					t.Errorf("chip[%d].TargetSel = %q, want %q; dismissing this chip would leave a stale "+
+						"caveat band standing over freshly loaded rows", i, chips[i].TargetSel, "#blast-radius-pane")
+				}
+				// SelectSel is required WITH it, not optional here. This route
+				// has no fragment handler, so without a select the response is
+				// a full page and htmx swaps the entire body into the target.
+				if chips[i].SelectSel != "#blast-radius-pane" {
+					t.Errorf("chip[%d].SelectSel = %q, want %q; without it the dismiss swaps a whole second "+
+						"copy of the page into the pane", i, chips[i].SelectSel, "#blast-radius-pane")
+				}
+			}
+			if tc.wantLabel != "" && chips[0].Label != tc.wantLabel {
+				t.Errorf("chip label = %q, want %q; the chip and the table's own badges must describe the "+
+					"same state in the same words", chips[0].Label, tc.wantLabel)
+			}
+		})
+	}
+}
+
+// TestBlastRadiusChipLabels_GoThroughTheTranslator proves the chip labels are
+// TRANSLATED rather than assembled from Go string literals.
+//
+// Replacing all four tf() calls with `"Class: " + ...` concatenation left every
+// package green, because two blind spots stack. The chip assertions elsewhere
+// compare against the ENGLISH rendering, which hardcoded English satisfies
+// perfectly; and the i18n drift guard checks used-but-undefined, not
+// defined-but-unused, so keys that stop being consumed raise nothing. (That
+// direction is deliberately out of scope repo-wide -- keys are also consumed
+// from Go and via dynamic names -- so this is a site-level assertion rather
+// than a change to the shared guard.)
+//
+// The test renders each chip under a translator with a DELIBERATELY DIFFERENT
+// value for every chip key. Anything that ignores the translator keeps emitting
+// English and fails. That is a property no English-text comparison can express.
+func TestBlastRadiusChipLabels_GoThroughTheTranslator(t *testing.T) {
+	t.Parallel()
+
+	// Sentinels, not translations: each is unmistakable in a failure message
+	// and shares no substring with the English form.
+	tr := i18n.NewTranslator("xx", map[string]string{
+		"reports.blast_radius.chip_class":       "XLOCALE_CLASS=%s",
+		"reports.blast_radius.chip_attribution": "XLOCALE_ATTR=%s",
+		"reports.blast_radius.chip_field":       "XLOCALE_FIELD=%s",
+		"reports.blast_radius.chip_artist":      "XLOCALE_ARTIST=%s",
+		// The nested labels the chip interpolates, so a failure below is
+		// attributable to the CHIP key rather than to a missing inner one.
+		"reports.blast_radius.class_blanked":       "XVAL_BLANKED",
+		"reports.blast_radius.attribution_unknown": "XVAL_UNKNOWN",
+		"field.biography":                          "XVAL_BIO",
+	})
+	ctx := i18n.WithTranslator(context.Background(), tr)
+
+	data := BlastRadiusData{
+		Class:       artist.BlastClassBlanked,
+		Attribution: artist.BlastAttributionUnknown,
+		Field:       "biography",
+		ArtistID:    "art-1",
+	}
+	chips := blastRadiusChips(ctx, data)
+	// Precondition: all four axes produced a chip, or an absent chip would let
+	// its assertion pass by never running.
+	if len(chips) != 4 {
+		t.Fatalf("got %d chips, want 4 (one per narrowing axis); the assertions below would not cover them all", len(chips))
+	}
+
+	want := map[string]string{
+		"class":       "XLOCALE_CLASS=XVAL_BLANKED",
+		"attribution": "XLOCALE_ATTR=XVAL_UNKNOWN",
+		"field":       "XLOCALE_FIELD=XVAL_BIO",
+		"artist_id":   "XLOCALE_ARTIST=art-1",
+	}
+	for _, c := range chips {
+		w, ok := want[c.Key]
+		if !ok {
+			t.Errorf("unexpected chip key %q; this test has no expectation for it, so a new axis is "+
+				"UNVERIFIED rather than passing", c.Key)
+			continue
+		}
+		if c.Label != w {
+			t.Errorf("chip %q rendered %q, want %q. The label did not come from the translator: a hardcoded "+
+				"Go literal renders identical English under every locale, and no English-text assertion can "+
+				"tell the difference.", c.Key, c.Label, w)
+		}
 	}
 }

@@ -781,6 +781,20 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 				</button>
 			</div>
 		</div>
+		<!-- Active-filter chips. Every narrowing axis gets one, INCLUDING artist_id,
+		     which no control on this pane sets but a deep link from the artist
+		     detail page does: an axis that hides rows with no visible way to clear
+		     it leaves the operator staring at a short table with no stated reason
+		     for it, which is the unexplained-short-table half of the same false
+		     reassurance the empty state guards against.
+		     The row-wide fallback target is the PANE, matching every chip's own
+		     TargetSel. A chip that fell back to the results table would swap a full
+		     page into it, because this route has no fragment handler. -->
+		if blastRadiusFilterCount(data) > 0 {
+			<div class="px-4">
+				@components.ActiveFilters("#blast-radius-pane", "", "", t(ctx, "reports.blast_radius.active_filters"), blastRadiusChips(ctx, data))
+			</div>
+		}
 		<div class="overflow-x-auto" id="blast-radius-results">
 			<table id="blast-radius-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
@@ -1073,6 +1087,48 @@ templ blastRadiusFilterScript() {
 				}
 			});
 		}
+
+		// Re-sync the flyout from the URL after ANY pane swap.
+		//
+		// Chips are a SECOND WRITE PATH the flyout never hears about.
+		// DismissFilterChip does its own history.pushState + htmx.ajax and fires
+		// no sw:filter-applied, and the flyout deliberately lives OUTSIDE
+		// #blast-radius-pane so a swap cannot yank the panel out from under an
+		// operator -- which also means the swap does not refresh it. Before the
+		// chips existed the flyout was the only way to change a filter, so
+		// hydrating once at DOMContentLoaded was sufficient; it is not any more.
+		//
+		// Measured before this handler, dismissing the Class chip from
+		// ?class=blanked&attribution=automated: the URL, rows, chips and trigger
+		// badge all updated correctly, while inside the panel Blanked stayed lit,
+		// data-filter-selected stayed true for class=blanked, and the footer read
+		// "2 active" against a trigger reading "1". Two badges on one screen
+		// disagreeing about how much of a data-destruction report is hidden is
+		// the falsehood this pane's whole design exists to prevent. Worse, the
+		// panel's own Apply then re-applied the filter the operator had just
+		// cleared, with no interaction asking for it.
+		//
+		// Same fix, same reason, as the artists grid (artists.templ), whose
+		// comment names this exact cause.
+		//
+		// AND RESTORE THE SERVER'S BADGE COUNT AFTERWARDS, for the same reason
+		// the first-paint hydration does. initFromURL ends in
+		// refreshActiveCount, which counts controls INSIDE the panel, and
+		// artist_id has no control by design -- so on a swap that leaves an
+		// artist_id narrowing in the URL, the resync would recount the panel and
+		// understate the badge. The swap replaces the trigger with a freshly
+		// server-rendered one carrying the correct data-server-filter-count, so
+		// reading it back after the resync restores the authoritative number
+		// rather than a stale one.
+		document.body.addEventListener('htmx:afterSwap', function(evt) {
+			if (!evt.detail || !evt.detail.target || evt.detail.target.id !== 'blast-radius-pane') return;
+			if (!window.swFilterFlyout) {
+				console.error('blast-radius: swFilterFlyout is not loaded; the filter panel cannot resync after a swap');
+				return;
+			}
+			swFilterFlyout.initFromURL('blast-radius-filter-flyout');
+			blastRestoreServerFilterCount();
+		});
 
 		// The flyout's Apply fires sw:filter-applied at its data-target-sel.
 		// Bound on document.body rather than on the results container because

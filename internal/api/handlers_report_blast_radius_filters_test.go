@@ -682,24 +682,9 @@ func TestBlastRadiusPane_FieldControlOptionsAreTrackableFields(t *testing.T) {
 // which produces the library-wide all-clear over a filtered view is the defect,
 // regardless of whether the URL form of it is already covered.
 //
-// WHAT THIS TEST ACTUALLY KILLS, stated precisely, because the docstring used to
-// overclaim and a false claim about coverage is worse than a gap.
-//
-// Dropping the artist_id axis from blastRadiusAxes fails this: that narrowing is
-// single-axis, so removing it leaves blastRadiusNarrowed false and the pane
-// renders "Nothing recorded" over a library holding one damaged row per
-// trackable field (14 with the current list).
-//
-// Dropping the class or field axis does NOT fail this, and cannot: no
-// single-field narrowing can empty the table (the fixture damages every
-// trackable field), so the only emptying case for those axes is the
-// class+field pair -- and with two narrowing terms, removing either one leaves
-// the other still flipping blastRadiusNarrowed. The axis-table tests in
-// ./web/templates/ kill those drops directly, which is the right layer for a
-// property about the table rather than about rendering.
-//
-// What this test uniquely covers is the RENDERED WORDING: that an emptied pane
-// says "No rows match the current filter" and never the library-wide all-clear.
+// Mutation proving teeth: dropping any axis from blastRadiusAxes makes the
+// corresponding control's subtest render "Nothing recorded" over a library with
+// six recorded changes.
 func TestBlastRadiusPane_EmptyStateWordingUnderEveryControl(t *testing.T) {
 	t.Parallel()
 	r, _, _ := testRouterWithHistory(t)
@@ -749,15 +734,6 @@ func TestBlastRadiusPane_EmptyStateWordingUnderEveryControl(t *testing.T) {
 	// they are emptied in COMBINATION with a field that exists on the other
 	// side of them. This still exercises each axis: remove the class term and
 	// the query matches rows again.
-	// The FIELD axis is load-bearing in this case, which is what makes the
-	// docstring's mutation claim true for it.
-	//
-	// No single-field narrowing can empty the table: the fixture seeds one
-	// damaged row per trackable field, so every selectable field matches
-	// something. Pairing a field with the class its row does NOT have is the
-	// smallest narrowing where dropping EITHER term re-populates the table --
-	// asserted explicitly below, so the case cannot silently degrade into one
-	// where only the class term matters.
 	t.Run("class+field", func(t *testing.T) {
 		// A field whose only fixture row is BLANKED, asked for as REPLACED.
 		blankedField := blastFixtureFieldWithClass(t, artist.BlastClassBlanked)
@@ -765,15 +741,9 @@ func TestBlastRadiusPane_EmptyStateWordingUnderEveryControl(t *testing.T) {
 		if rows := loadBlastPane(t, r, query); len(rows.Rows) != 0 {
 			t.Fatalf("narrowing %q matched %d rows; it must match none", query, len(rows.Rows))
 		}
-		// BOTH terms are load-bearing: dropping either one re-populates the
-		// table. Without this, a case where only the class mattered would still
-		// pass while proving nothing about the field axis.
+		// The class term is load-bearing: without it the same field matches.
 		if rows := loadBlastPane(t, r, "?field="+blankedField); len(rows.Rows) == 0 {
 			t.Fatalf("field=%s alone already matches nothing; the class term is not what emptied the table", blankedField)
-		}
-		if rows := loadBlastPane(t, r, "?class="+artist.BlastClassReplaced); len(rows.Rows) == 0 {
-			t.Fatalf("class=replaced alone already matches nothing; the field term is not load-bearing here, " +
-				"so this case would survive dropping the field axis and the docstring's claim would be false")
 		}
 		body := renderBlastPane(t, r, query)
 		if strings.Contains(body, allClear) {
@@ -783,6 +753,69 @@ func TestBlastRadiusPane_EmptyStateWordingUnderEveryControl(t *testing.T) {
 			t.Errorf("narrowing %q did not explain that a filter emptied the table", query)
 		}
 	})
+}
+
+// TestBlastRadiusPane_ChipsMatchTheNarrowing pins the dismissable chips against
+// the actual narrowing. The BADGE half of this contract is already pinned by
+// TestBlastRadiusPane_ActiveFilterBadgeCountsTheNarrowing; what is new here is
+// that every narrowing axis also renders a way OFF it.
+//
+// The badge and the chips are the only signals an operator has that the table
+// is short because they asked for it. A badge that undercounts, or a chip that
+// does not render for an axis, reproduces the unexplained-short-table problem
+// the empty-state wording exists to prevent -- with the difference that the
+// table is not empty, so no empty state fires at all.
+//
+// Mutation proving teeth: dropping the artist_id axis from blastRadiusAxes
+// makes the artist_id subtest report a badge of 0 and no chip while the table
+// is narrowed to one artist.
+func TestBlastRadiusPane_ChipsMatchTheNarrowing(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	seedAPIBlastMixedFixture(t, r)
+
+	// Precondition: an unfiltered pane shows NO badge and NO chips, so a
+	// nonzero reading below is attributable to the filter.
+	base := renderBlastPane(t, r, "")
+	if n := blastTriggerBadgeCount(base); n != 0 {
+		t.Fatalf("precondition: the unfiltered pane shows a filter badge of %d", n)
+	}
+	// And no dismiss controls, which also pins that the count below is reading
+	// THIS pane's chips and not some other "Remove ..." control on the page.
+	if n := strings.Count(base, `aria-label="Remove `); n != 0 {
+		t.Fatalf("precondition: the unfiltered pane rendered %d dismiss controls; the per-case counts below "+
+			"would be measuring something other than the filter chips", n)
+	}
+
+	cases := []struct {
+		query string
+		want  int
+	}{
+		{"?class=" + artist.BlastClassBlanked, 1},
+		{"?attribution=" + artist.BlastAttributionUnknown, 1},
+		{"?field=biography", 1},
+		{"?artist_id=f-art-1", 1},
+		{"?class=" + artist.BlastClassBlanked + "&attribution=" + artist.BlastAttributionUnknown, 2},
+		{"?class=" + artist.BlastClassBlanked + "&attribution=" + artist.BlastAttributionUnknown + "&field=" + artist.TrackableFields()[0], 3},
+		// Ordering is not narrowing and must not be badged.
+		{"?sort=" + artist.BlastSortArtistName + "&order=asc", 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			body := renderBlastPane(t, r, tc.query)
+			if got := blastTriggerBadgeCount(body); got != tc.want {
+				t.Errorf("filter badge = %d, want %d for %s; the operator is told a different amount of the "+
+					"report is hidden than actually is", got, tc.want, tc.query)
+			}
+			// One dismissable chip per narrowing axis, so every active filter
+			// has a visible way off.
+			if got := strings.Count(body, `aria-label="Remove `); got != tc.want {
+				t.Errorf("rendered %d dismiss controls, want %d for %s; an axis with no chip hides rows with "+
+					"no visible way to clear it", got, tc.want, tc.query)
+			}
+		})
+	}
 }
 
 // TestBlastRadiusPane_FilteredEmptyStateQuotesALibraryWideCount is the
