@@ -1775,3 +1775,107 @@ test('a deep link on a control-less axis keeps its full badge count through hydr
     'the trigger lost its is-active styling after hydration',
   ).toBe(true);
 });
+
+// ---------------------------------------------------------------------------
+// The active-filter count actually reaches assistive technology.
+//
+// THE DEFECT THIS PINS, and why the previous fix was not enough. The count was
+// localized onto the badge as an aria-label. That reached nobody: the trigger is
+// a <button> carrying its OWN aria-label, and per the accname spec an aria-label
+// REPLACES the element's subtree for naming purposes, so a nested element's
+// label never contributes to the button's accessible name. Measured on the live
+// page in both engines before this fix -- badge aria-label "1 active filter",
+// button computed accessible name "Open filter panel", accessible description
+// "". Translated, rendered, and unreachable.
+//
+// The count is a bare numeral visually, so this description is the ONLY form in
+// which a screen-reader user learns how much of the damage report is hidden.
+//
+// WHY THIS ASSERTS THE COMPUTED VALUE. An attribute-presence check ("the badge
+// has an aria-label", "the button has aria-describedby") passed throughout the
+// broken period and proved nothing -- that is exactly how the defect survived a
+// round of review. Playwright computes name and description per the accname
+// spec, the same way a browser hands them to a screen reader, so these
+// assertions fail when the wiring is wrong even though every attribute is
+// present.
+test('the active-filter count reaches the accessibility tree, not just the DOM', async ({ page }) => {
+  await gotoPane(page, `${PANE_URL}?class=blanked`);
+
+  const trigger = page.locator('#blast-radius-filter-trigger');
+  expect(await trigger.count(), 'the filters trigger is absent').toBe(1);
+
+  // PRECONDITION: this URL is genuinely narrowing, or an empty description
+  // below would be correct rather than a defect.
+  const served = await page.evaluate(() => {
+    const t = document.getElementById('blast-radius-filter-trigger');
+    return t ? { active: t.classList.contains('is-active'), count: t.getAttribute('data-server-filter-count') } : null;
+  });
+  expect(served, 'the filters trigger is absent').not.toBeNull();
+  expect(
+    served.active,
+    'the server did not mark the trigger active, so this URL is not narrowing and the assertions below '
+    + 'would be vacuous',
+  ).toBe(true);
+  expect(served.count, 'the server reported no filter count to render a description from').toBe('1');
+
+  // Let hydration run. The count is written twice -- server render, then
+  // blastRestoreServerFilterCount -- and this reads the state a real user lands
+  // on, after both.
+  await page.waitForFunction(() => document.readyState === 'complete');
+  await page.waitForTimeout(1000);
+
+  const expectedOne = '1 active filter';
+
+  // THE ASSERTION THAT MATTERS: the computed accessible DESCRIPTION carries the
+  // count sentence. This is what a screen reader announces.
+  await expect(
+    trigger,
+    'the filters trigger has no accessible description carrying the active-filter count, so a screen-reader '
+    + 'user is never told the damage report is narrowed -- the badge is a bare numeral and conveys nothing',
+  ).toHaveAccessibleDescription(expectedOne);
+
+  // The NAME stays the stable action. Folding the count into the name would
+  // churn the phrase a voice-control user speaks every time a filter changes.
+  await expect(
+    trigger,
+    'the filters trigger\'s accessible name changed with the filter count; the name is the action a '
+    + 'voice-control user speaks and must stay stable',
+  ).toHaveAccessibleName('Open filter panel');
+
+  // The numeral itself is hidden from the tree, so the count is announced once
+  // as a sentence rather than twice, once meaninglessly.
+  const badgeHidden = await page.evaluate(() => {
+    const b = document.querySelector('#blast-radius-filter-trigger .sw-filter-trigger-badge');
+    return b ? b.getAttribute('aria-hidden') : null;
+  });
+  expect(
+    badgeHidden,
+    'the badge numeral is exposed to assistive technology as well as the description, so the count is '
+    + 'announced twice, once as a meaningless bare digit',
+  ).toBe('true');
+});
+
+// The description survives hydration on an axis with no flyout control, which
+// is the case that strands it: refreshActiveCount recounts panel controls, and
+// artist_id has none.
+test('the accessibility description survives hydration on a control-less axis', async ({ page }) => {
+  await gotoPane(page, `${PANE_URL}?artist_id=sw-no-such-artist`);
+
+  const trigger = page.locator('#blast-radius-filter-trigger');
+  expect(
+    await page.evaluate(() => {
+      const t = document.getElementById('blast-radius-filter-trigger');
+      return t && t.getAttribute('data-server-filter-count');
+    }),
+    'the server did not report a filter count for ?artist_id=, so this URL is not narrowing',
+  ).toBe('1');
+
+  await page.waitForFunction(() => document.readyState === 'complete');
+  await page.waitForTimeout(1000);
+
+  await expect(
+    trigger,
+    'hydration cleared the accessible description on an axis the flyout has no control for, so a '
+    + 'deep-linked screen-reader user is told nothing about why the report is short',
+  ).toHaveAccessibleDescription('1 active filter');
+});

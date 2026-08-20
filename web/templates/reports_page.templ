@@ -739,6 +739,7 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 					data-badge-classes="sw-filter-trigger-badge"
 					{ templ.Attributes{"data-server-filter-count": fmt.Sprintf("%d", blastRadiusFilterCount(data))}... }
 					aria-label={ t(ctx, "common.open_filter_panel") }
+					aria-describedby="blast-radius-filter-count-desc"
 					aria-expanded="false"
 					aria-controls="blast-radius-filter-flyout"
 					onclick={ components.OpenFilterFlyout("blast-radius-filter-flyout") }
@@ -748,8 +749,35 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 					</svg>
 					<span>{ t(ctx, "common.filters") }</span>
 					if blastRadiusFilterCount(data) > 0 {
-						<span class="sw-filter-trigger-badge">{ fmt.Sprintf("%d", blastRadiusFilterCount(data)) }</span>
+						<!-- aria-hidden: the numeral is meaningless read aloud on its own
+						     ("1" beside "Filters" could count filters, results, anything).
+						     The sentence in the description element below carries it
+						     instead, so assistive tech hears the meaning once rather than
+						     a bare digit twice. -->
+						<span class="sw-filter-trigger-badge" aria-hidden="true">{ fmt.Sprintf("%d", blastRadiusFilterCount(data)) }</span>
 					}
+					<!-- THE COUNT'S ONLY ROUTE TO A SCREEN READER.
+					     This button carries its own aria-label, and per the accname spec
+					     an aria-label REPLACES the element's subtree for naming, so
+					     nothing inside the button, however labelled, contributes to its
+					     accessible name. Measured on the live page in both engines before
+					     this element existed: the badge carried aria-label="1 active
+					     filter" while the button's computed accessible name was "Open
+					     filter panel" and its accessible description was empty.
+					     It is the DESCRIPTION rather than the name on purpose: the name
+					     is the stable action a voice-control user speaks ("Open filter
+					     panel") and must not churn as filters come and go, while the
+					     description is exactly where supplementary state belongs.
+					     Rendered unconditionally, and empty when nothing is narrowing, so
+					     the element the button references always exists: an
+					     aria-describedby pointing at a missing id resolves to no
+					     description at all, which would strand the count again the moment
+					     the first filter was applied. -->
+					<span id="blast-radius-filter-count-desc" class="sr-only">
+						if blastRadiusFilterCount(data) > 0 {
+							{ blastRadiusFilterBadgeLabel(ctx, blastRadiusFilterCount(data)) }
+						}
+					</span>
 				</button>
 			</div>
 		</div>
@@ -1143,13 +1171,33 @@ templ blastRadiusFilterScript() {
 					trigger.appendChild(badge);
 				}
 				badge.textContent = String(n);
-				badge.setAttribute('aria-label', blastFilterBadgeLabel(n));
+				// aria-hidden, and the sentence goes in the DESCRIPTION element
+				// instead. An aria-label here reached nobody: this button carries
+				// its own aria-label, which per the accname spec replaces its
+				// subtree for naming, so a nested label never contributes to the
+				// button's accessible name.
+				badge.setAttribute('aria-hidden', 'true');
+				badge.removeAttribute('aria-label');
 				badge.style.display = '';
 				trigger.classList.add('is-active');
 			} else if (badge) {
 				badge.style.display = 'none';
 				trigger.classList.remove('is-active');
 			}
+
+			// Keep the description in step with the badge, so first paint and
+			// post-hydration say the same thing. A mismatch here is the D-F2
+			// defect in a third form: the visible badge and what a screen reader
+			// hears disagreeing about how much of the report is hidden.
+			var desc = document.getElementById('blast-radius-filter-count-desc');
+			if (!desc) {
+				// Loud, not silent. Without this element the count has no route
+				// to assistive technology at all, which is the entire defect this
+				// wiring exists to fix.
+				console.error('blast-radius: #blast-radius-filter-count-desc is missing, so the active-filter count cannot reach a screen reader');
+				return;
+			}
+			desc.textContent = n > 0 ? blastFilterBadgeLabel(n) : '';
 		}
 
 		document.addEventListener('DOMContentLoaded', function() {

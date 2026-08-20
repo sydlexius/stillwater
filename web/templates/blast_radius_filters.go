@@ -1,6 +1,10 @@
 package templates
 
 import (
+	"context"
+	"strconv"
+	"strings"
+
 	"github.com/sydlexius/stillwater/internal/artist"
 )
 
@@ -113,4 +117,41 @@ func blastRadiusFilterCount(data BlastRadiusData) int {
 		}
 	}
 	return n
+}
+
+// blastRadiusFilterBadgeLabel renders the active-filter count as a sentence for
+// assistive technology, from the SAME i18n keys the pane's script uses.
+//
+// WHY THIS EXISTS AS A SEPARATE STRING AT ALL. The badge renders the count as a
+// bare numeral, which conveys nothing on its own to a screen-reader user: "1"
+// next to "Filters" could be a count of filters, of results, or of anything
+// else. The sentence is the only form that says what the number MEANS.
+//
+// WHY IT IS NOT AN aria-label ON THE BADGE. It was, and that reached nobody.
+// The trigger is a <button> carrying its own aria-label, and per the accname
+// spec an aria-label on an element REPLACES its subtree for naming purposes --
+// so a nested element's aria-label never contributes to the button's accessible
+// name. Measured on the live page in both engines before this fix: the badge
+// carried aria-label="1 active filter" while the button's computed accessible
+// name was "Open filter panel" and its accessible description was empty. The
+// string was localized, rendered, and unreachable.
+//
+// It is now the content of a visually-hidden element referenced by the button's
+// aria-describedby, so it reaches the accessibility tree as the button's
+// DESCRIPTION -- deliberately not folded into the NAME, which must stay the
+// stable action ("Open filter panel") that a voice-control user speaks and that
+// should not change as filters come and go.
+//
+// The Go and JS sides must agree, because the count is written twice: server
+// rendering on first paint, and blastRestoreServerFilterCount after hydration.
+// Both read these two keys and both substitute {count}, so a divergence would
+// need someone to change one and not the other -- which the badge-label test
+// asserts against.
+func blastRadiusFilterBadgeLabel(ctx context.Context, n int) string {
+	if n == 1 {
+		return t(ctx, "reports.blast_radius.js.filter_badge_one")
+	}
+	return strings.ReplaceAll(
+		t(ctx, "reports.blast_radius.js.filter_badge_many"),
+		"{count}", strconv.Itoa(n))
 }

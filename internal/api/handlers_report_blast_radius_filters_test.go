@@ -482,7 +482,16 @@ func blastLoadedAxisValue(data templates.BlastRadiusData, key string) string {
 
 // blastTriggerBadgeCount reads the number in the Filters trigger badge, or 0
 // when no badge rendered.
-var blastBadgeRE = regexp.MustCompile(`<span class="sw-filter-trigger-badge">(\d+)</span>`)
+//
+// The pattern matches the badge by its CLASS and tolerates other attributes on
+// the same span. It previously pinned the exact opening tag
+// `<span class="sw-filter-trigger-badge">`, so adding aria-hidden to the badge
+// made every count read 0 and reported it as "the operator is told a different
+// amount of the report is hidden than actually is" -- a real-looking failure
+// with a purely cosmetic cause. A helper that reads a value should not also
+// assert the tag's full attribute set; the tests that care about aria-hidden
+// assert it directly.
+var blastBadgeRE = regexp.MustCompile(`<span[^>]*class="sw-filter-trigger-badge"[^>]*>(\d+)</span>`)
 
 func blastTriggerBadgeCount(body string) int {
 	m := blastBadgeRE.FindStringSubmatch(body)
