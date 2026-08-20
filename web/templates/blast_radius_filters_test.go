@@ -1,7 +1,9 @@
 package templates
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -271,4 +273,53 @@ func blastRadiusAxisValue(data BlastRadiusData, param string) string {
 		}
 	}
 	return ""
+}
+
+// TestBlastRadiusFilterBadgeLabel covers the sentence that carries the
+// active-filter count to assistive technology.
+//
+// This label is the ONLY form in which a screen-reader user learns the damage
+// report is narrowed: the badge renders a bare numeral, which announces nothing
+// useful on its own, and the trigger's accessible name is the stable action
+// ("Open filter panel") rather than the count. So a wrong or unsubstituted
+// value here is not cosmetic -- it is the operator being told nothing about how
+// much of a data-destruction report is hidden.
+//
+// The Go side and the pane's JS blastFilterBadgeLabel must produce the SAME
+// string from the SAME keys, because the count is written twice: server render
+// on first paint, then blastRestoreServerFilterCount after hydration. A
+// divergence would make the visible badge and the announced sentence disagree.
+// This test pins the Go half; a Playwright spec asserts the computed accessible
+// description after hydration, which is the JS half.
+func TestBlastRadiusFilterBadgeLabel(t *testing.T) {
+	t.Parallel()
+	ctx := testCtx(t)
+
+	// The singular key is a distinct string, not the plural with "1" in it, so
+	// a locale can inflect it. Asserted separately for that reason.
+	if got, want := blastRadiusFilterBadgeLabel(ctx, 1), "1 active filter"; got != want {
+		t.Errorf("blastRadiusFilterBadgeLabel(1) = %q, want %q", got, want)
+	}
+
+	for _, n := range []int{0, 2, 4, 11} {
+		got := blastRadiusFilterBadgeLabel(ctx, n)
+		want := fmt.Sprintf("%d active filters", n)
+		if got != want {
+			t.Errorf("blastRadiusFilterBadgeLabel(%d) = %q, want %q", n, got, want)
+		}
+		// The placeholder is SUBSTITUTED, never emitted. A template returned
+		// verbatim would read "{count} active filters" aloud, and the assertion
+		// above would already have caught it -- this names the cause when it
+		// happens rather than reporting a wording mismatch.
+		if strings.Contains(got, "{count}") {
+			t.Errorf("blastRadiusFilterBadgeLabel(%d) left the {count} placeholder unsubstituted: %q", n, got)
+		}
+	}
+
+	// The count really varies the output. Two different counts producing the
+	// same sentence would mean the number never reaches the reader, which is
+	// the whole defect this label exists to fix.
+	if a, b := blastRadiusFilterBadgeLabel(ctx, 2), blastRadiusFilterBadgeLabel(ctx, 3); a == b {
+		t.Errorf("counts 2 and 3 produce the same label %q, so the number is not reaching the sentence", a)
+	}
 }
