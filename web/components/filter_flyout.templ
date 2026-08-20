@@ -228,8 +228,37 @@ script clearAllFilterFlyout(id string) {
 // HTMX target region. Called by the X button on active filter chips.
 // targetSel is the CSS selector for the HTMX content region to reload
 // (e.g. "#artist-content"). Defaults to "#artist-content" when empty.
+//
+// selectSel is OPTIONAL and names an element to extract from the response
+// before swapping (htmx's `select`, the scripted equivalent of hx-select).
+// Empty or absent means "swap whatever the response body is".
+//
+// WHEN TO SET IT. A route with a FRAGMENT handler returns just the region, so a
+// bare swap is correct and selectSel should stay empty. A route WITHOUT one
+// returns the full page, and htmx's makeFragment turns an <html> response into
+// a fragment of the ENTIRE BODY -- so a bare swap injects a whole second copy
+// of the page into the target, duplicating every id inside it and leaving stale
+// summary text standing over freshly loaded rows. Naming the target element in
+// selectSel extracts just that element from the full-page response.
 
-script DismissFilterChip(key string, targetSel string) {
+script DismissFilterChip(key string, targetSel string, selectSel string) {
+	// Fail loudly, and BEFORE any side effect.
+	//
+	// This script is wired to an inline onclick, so a bare reference to an
+	// absent global throws a ReferenceError that surfaces only in the console
+	// with no indication of the cause, and the chip silently does nothing. The
+	// repo forbids a silent no-op on a missing capability.
+	//
+	// The guard is FIRST because failing loudly and failing without side
+	// effects are different properties and both are required. A guard placed
+	// after the URL surgery below would let history.pushState strip the filter
+	// from the address bar while nothing reloads: the chip stays on screen, the
+	// URL and the rendered content disagree, and a later manual refresh applies
+	// a filter state the operator never saw applied.
+	if (!window.htmx) {
+		console.error('DismissFilterChip: htmx is not loaded; the filter chip cannot reload ' + (targetSel || '#artist-content'));
+		return;
+	}
 	var url = new URL(window.location.href);
 	url.searchParams.delete(key);
 	url.searchParams.delete('page');
@@ -243,7 +272,21 @@ script DismissFilterChip(key string, targetSel string) {
 		path = path.slice(bp.length) || '/';
 	}
 	var sel = targetSel || '#artist-content';
-	htmx.ajax('GET', path + url.search, {target: sel, swap: 'outerHTML'});
+	var opts = {target: sel, swap: 'outerHTML'};
+	// Set `select` only when the caller asked for one.
+	//
+	// This guard is DEFENSIVE, not load-bearing. htmx normalizes a falsy select
+	// to null at every gate it passes -- `const F=i.select||null` on the
+	// request, `if(i){d=i}` on the response, `d||b` when computing the swap
+	// spec, and `if(g.select)` before extraction -- so a present-but-empty
+	// select is indistinguishable from an absent one and htmx would not perform
+	// a blank swap either way. What the guard buys is an options object whose
+	// keys all carry meaning, which is what lets the behavioral test assert on
+	// hasOwnProperty rather than on a value that means nothing.
+	if (selectSel) {
+		opts.select = selectSel;
+	}
+	htmx.ajax('GET', path + url.search, opts);
 }
 
 // DismissFilterValueChip removes a single prefixed value (e.g. "+error" or
@@ -252,8 +295,21 @@ script DismissFilterChip(key string, targetSel string) {
 // dashboard tri-state chips (M55 #1334) where one key (e.g. "severity") can hold
 // several include/exclude values. targetSel is the CSS selector for the HTMX
 // content region to reload; defaults to "#action-queue" when empty.
+//
+// selectSel carries the same meaning as in DismissFilterChip. It is accepted
+// here as well because FilterChipSpec is ONE type serving BOTH branches of
+// FilterChip2: without it, a spec that set SelectSel alongside Value would
+// render an ordinary-looking chip whose dismiss quietly did a bare full-page
+// swap, the field accepted, ignored, and dropped with no error.
 
-script DismissFilterValueChip(key string, prefixedValue string, targetSel string) {
+script DismissFilterValueChip(key string, prefixedValue string, targetSel string, selectSel string) {
+	// Same guard, same position, same reasoning as DismissFilterChip above: it
+	// must run before the URL surgery below, so a missing htmx leaves the
+	// address bar untouched instead of stripping a filter nothing reloads.
+	if (!window.htmx) {
+		console.error('DismissFilterValueChip: htmx is not loaded; the filter chip cannot reload ' + (targetSel || '#action-queue'));
+		return;
+	}
 	var url = new URL(window.location.href);
 	// Read every value under this key, drop the one matching prefixedValue,
 	// then rewrite the key with the survivors (URLSearchParams has no
@@ -274,7 +330,14 @@ script DismissFilterValueChip(key string, prefixedValue string, targetSel string
 		path = path.slice(bp.length) || '/';
 	}
 	var sel = targetSel || '#action-queue';
-	htmx.ajax('GET', path + url.search, {target: sel, swap: 'innerHTML'});
+	var opts = {target: sel, swap: 'innerHTML'};
+	// Same defensive select guard, same reasoning, as DismissFilterChip above:
+	// htmx treats a falsy select as absent, so this keeps the emitted object
+	// honest rather than preventing a blank swap.
+	if (selectSel) {
+		opts.select = selectSel;
+	}
+	htmx.ajax('GET', path + url.search, opts);
 }
 
 // FilterItemSingle renders a single-select chip for filters where exactly one
@@ -387,10 +450,17 @@ func filterRangeValue(v int) string {
 // value are visually distinguishable. Both fields are zero-valued for the
 // single-value-per-key callers (artists, reports), which keep the original
 // whole-key dismiss + neutral styling.
+//
+// SelectSel is optional and names the element to extract from the response
+// before swapping. Leave it empty unless the chip's TargetSel lives on a route
+// with NO fragment handler, in which case the response is a full page and a
+// bare swap injects a second copy of it -- see DismissFilterChip's comment.
+// It is honored on both branches of FilterChip2.
 type FilterChipSpec struct {
 	Label     string
 	Key       string
 	TargetSel string
+	SelectSel string
 	Value     string
 	Exclude   bool
 }
@@ -434,14 +504,17 @@ func targetSelOr(chipTarget, fallback string) string {
 // the named URL key and re-fetching targetSel via HTMX. label is the visible
 // text. The DismissFilterChip script (in this package) handles URL surgery
 // plus the htmx.ajax call.
-templ FilterChip(label, key, targetSel string) {
+//
+// selectSel is optional; see DismissFilterChip. Empty preserves the original
+// behavior exactly.
+templ FilterChip(label, key, targetSel, selectSel string) {
 	<span class="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-300">
 		{ label }
 		<button
 			type="button"
 			class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
 			aria-label={ tf(ctx, "common.remove_filter", label) }
-			onclick={ DismissFilterChip(key, targetSel) }
+			onclick={ DismissFilterChip(key, targetSel, selectSel) }
 		>
 			<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
 				<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"></path>
@@ -461,7 +534,7 @@ templ FilterChip(label, key, targetSel string) {
 //     (M55 #1334) where a key such as "severity" can carry several values.
 templ FilterChip2(c FilterChipSpec, targetSel string) {
 	if c.Value == "" {
-		@FilterChip(c.Label, c.Key, targetSel)
+		@FilterChip(c.Label, c.Key, targetSel, c.SelectSel)
 	} else {
 		<span class={ "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs", filterChipColorClasses(c.Exclude) }>
 			{ c.Label }
@@ -469,7 +542,7 @@ templ FilterChip2(c FilterChipSpec, targetSel string) {
 				type="button"
 				class={ "inline-flex h-3.5 w-3.5 items-center justify-center rounded-full focus:outline-none focus:ring-1 focus:ring-blue-500", filterChipDismissHoverClasses(c.Exclude) }
 				aria-label={ tf(ctx, "common.remove_filter", c.Label) }
-				onclick={ DismissFilterValueChip(c.Key, filterChipPrefixedValue(c.Exclude, c.Value), targetSel) }
+				onclick={ DismissFilterValueChip(c.Key, filterChipPrefixedValue(c.Exclude, c.Value), targetSel, c.SelectSel) }
 			>
 				<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
 					<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"></path>
