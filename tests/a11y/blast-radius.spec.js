@@ -953,3 +953,697 @@ test('every refusal token renders operator-actionable prose, and an unknown one 
   expect(cleared.text, 'a stale refusal survived a plan that no longer refuses the row').toBe('');
   expect(cleared.hidden, 'the emptied reason element stayed visible').toBe(true);
 });
+
+// ---------------------------------------------------------------------------
+// 6. The filter controls (#3093).
+//
+// The pane's filters are the newest interactive surface on it, and the
+// chip-based flyout is the control type a11y regressions land on hardest: one
+// that traps focus, loses it, or announces no state.
+//
+// Covered here, in BOTH themes where the assertion is a rendered-appearance
+// one:
+//   1. Every control has an accessible NAME (axe's own rules cover the
+//      generic case; this asserts it per control, so a failure names the
+//      control rather than a rule id).
+//   2. Every control is Tab-REACHABLE with a visible focus indicator.
+//   3. The flyout opens from the keyboard, moves focus INTO the panel, and
+//      returns focus to its trigger on Escape.
+//   4. A full axe scan with the flyout OPEN, in both themes -- the panel is
+//      inert while closed, so the scans at the top of this file never see it.
+//
+// Nothing here is scoped away when the fixture is thin: the filter controls
+// render regardless of how many rows the report holds (they are generated from
+// artist.TrackableFields() and a fixed vocabulary, not from the rows), so an
+// absent control is a defect and is reported as one.
+// ---------------------------------------------------------------------------
+
+// The narrowing controls this pane exposes, keyed by what a failure should say.
+// The ordering selects live beside these in the same toolbar and carry their own
+// coverage in the slice that adds them: a spec here naming a control this branch
+// does not render would fail as a missing control rather than as a real defect.
+const FILTER_CONTROLS = {
+  'filters trigger': '#blast-radius-filter-trigger',
+};
+
+// accessibleNameOf reads the name a screen reader would announce, in the same
+// precedence order the accname spec uses for these control types. Deliberately
+// NOT reading textContent alone: a <select> announces its label, not its
+// options, so a textContent check would pass a select with no label at all.
+async function accessibleNameOf(page, selector) {
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const labelledBy = el.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const parts = labelledBy.split(/\s+/)
+        .map(id => document.getElementById(id))
+        .filter(Boolean)
+        .map(n => n.textContent.trim());
+      if (parts.join(' ').trim()) return parts.join(' ').trim();
+    }
+    const ariaLabel = (el.getAttribute('aria-label') || '').trim();
+    if (ariaLabel) return ariaLabel;
+    if (el.id) {
+      const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (label && label.textContent.trim()) return label.textContent.trim();
+    }
+    const closest = el.closest('label');
+    if (closest && closest.textContent.trim()) return closest.textContent.trim();
+    return (el.textContent || '').trim();
+  }, selector);
+}
+
+test('every filter control has an accessible name', async ({ page }) => {
+  await gotoPane(page);
+
+  // Precondition: the controls are on the page at all. Without this an absent
+  // control would report as an empty name, reading as a labelling defect when
+  // the real fault is that the toolbar never rendered.
+  const missing = [];
+  for (const [label, sel] of Object.entries(FILTER_CONTROLS)) {
+    if (await page.locator(sel).count() === 0) missing.push(`${label} (${sel})`);
+  }
+  expect(missing, `filter controls absent from the pane:\n${missing.join('\n')}`).toEqual([]);
+
+  for (const [label, sel] of Object.entries(FILTER_CONTROLS)) {
+    const name = await accessibleNameOf(page, sel);
+    expect(name, `${label} (${sel}) has no accessible name; a screen-reader user is offered an unlabelled control`)
+      .toBeTruthy();
+  }
+});
+
+test('the filters trigger is Tab-reachable with a visible focus indicator', async ({ page }) => {
+  await gotoPane(page);
+
+  const sel = FILTER_CONTROLS['filters trigger'];
+  // Precondition: the control exists. Absent, the walk below would report it as
+  // unreachable, which reads as a keyboard defect rather than a missing
+  // control.
+  expect(await page.locator(sel).count(), `the filters trigger (${sel}) is absent from the pane`).toBe(1);
+
+  const baseline = await page.evaluate(([s, props]) => {
+    const cs = getComputedStyle(document.querySelector(s));
+    return Object.fromEntries(props.map(p => [p, cs[p]]));
+  }, [sel, FOCUS_PROPS]);
+
+  const focused = await page.evaluate(([s, props]) => {
+    const el = document.querySelector(s);
+    el.focus();
+    const cs = getComputedStyle(el);
+    return Object.fromEntries(props.map(p => [p, cs[p]]));
+  }, [sel, FOCUS_PROPS]);
+
+  // A control that renders identically focused and unfocused leaves a keyboard
+  // user with no way to tell where they are. Both mechanisms the codebase uses
+  // count: a drawn ring, or a deliberate style swap. See focusIndicatorFor.
+  expect(
+    focusIndicatorFor(baseline, focused).visible,
+    `the filters trigger renders identically focused and unfocused, so a keyboard user cannot tell where they are`,
+  ).toBe(true);
+
+  // Reachability is measured separately from the indicator: a control can be
+  // focusable by script and still be skipped by Tab.
+  //
+  // The walk starts at the first focusable element and is bounded by the
+  // document's own focusable count. Measured on a live page: pressing Tab a
+  // fixed number of times from <body> runs focus off the end of the document
+  // and into BROWSER chrome, where presses no longer reach the page at all, so
+  // a generous fixed bound wastes every press after the first wrap rather than
+  // "keeping looking".
+  const focusableCount = await page.evaluate(() => document.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+    + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  ).length);
+  expect(focusableCount, 'the page reports no focusable elements at all').toBeGreaterThan(0);
+
+  // ORDER IS LOAD-BEARING: the seeding focus() runs BEFORE the listener is
+  // registered. focus() dispatches focusin synchronously, so a listener armed
+  // first would record a hit for the seed element itself. Today the rail toggle
+  // precedes the trigger in DOM order, so seeding never lands on the trigger --
+  // but the day the toolbar moves above the rail, an armed-first listener turns
+  // this into a vacuous pass: the flag is set before a single Tab is pressed,
+  // the loop breaks on iteration one, and the test asserts nothing about Tab
+  // reachability while still reporting green.
+  await page.evaluate((s) => {
+    window.__swFilterHit = false;
+    const first = document.querySelector('a[href], button:not([disabled])');
+    if (first) first.focus();
+    document.addEventListener('focusin', (e) => {
+      if (e.target && e.target.matches(s)) window.__swFilterHit = true;
+    });
+  }, sel);
+
+  for (let i = 0; i < focusableCount; i++) {
+    await page.keyboard.press('Tab');
+    if (await page.evaluate(() => window.__swFilterHit)) break;
+  }
+
+  expect(
+    await page.evaluate(() => window.__swFilterHit),
+    `the filters trigger was never reached by Tab within ${focusableCount} presses (one per focusable element `
+    + 'on the page), so a keyboard-only operator cannot filter the damage report at all',
+  ).toBe(true);
+});
+
+test('the filter flyout opens from the keyboard and returns focus on Escape', async ({ page }) => {
+  await gotoPane(page);
+
+  const trigger = page.locator('#blast-radius-filter-trigger');
+  expect(await trigger.count(), 'the filters trigger is absent').toBe(1);
+
+  await trigger.focus();
+  expect(await page.evaluate(() => document.activeElement.id), 'focusing the trigger did not take')
+    .toBe('blast-radius-filter-trigger');
+
+  await page.keyboard.press('Enter');
+  // The default 'visible' state is correct here: an OPEN panel is painted.
+  await page.waitForSelector('#blast-radius-filter-flyout:not([inert])', { timeout: 5000 });
+
+  // Focus must land INSIDE the panel. A panel that opens without moving focus
+  // strands a keyboard user behind it: the controls are ahead in the tab order
+  // only by accident of DOM position, and the scrim swallows the pointer.
+  const focusInside = await page.evaluate(() => {
+    const panel = document.getElementById('blast-radius-filter-flyout');
+    return !!(panel && document.activeElement && panel.contains(document.activeElement)
+      && document.activeElement !== document.body);
+  });
+  expect(focusInside, 'opening the filter flyout left focus outside the panel').toBe(true);
+
+  expect(
+    await trigger.getAttribute('aria-expanded'),
+    'the trigger still reports aria-expanded=false while the panel is open',
+  ).toBe('true');
+
+  await page.keyboard.press('Escape');
+  // state:'attached', NOT the default 'visible'. A CLOSED flyout is
+  // visibility:hidden by design (the panel is removed from paint, find-in-page
+  // and the tab order once the slide-out finishes), so the default wait can
+  // never resolve on a correctly closed panel and times out on success. Measured
+  // against a live page: after Escape the panel really does carry inert and
+  // focus really does return to the trigger; only this wait was wrong.
+  await page.waitForSelector('#blast-radius-filter-flyout[inert]', { state: 'attached', timeout: 5000 });
+
+  // Focus returns to the trigger. Dropping it to <body> is the classic
+  // dialog-dismiss defect: the next Tab restarts from the top of the document.
+  const returned = await page.evaluate(() => document.activeElement && document.activeElement.id);
+  expect(returned, 'closing the filter flyout did not return focus to its trigger; the next Tab restarts '
+    + 'from the top of the document').toBe('blast-radius-filter-trigger');
+
+  expect(
+    await trigger.getAttribute('aria-expanded'),
+    'the trigger still reports aria-expanded=true after the panel closed',
+  ).toBe('false');
+});
+
+for (const theme of ['dark', 'light']) {
+  test(`the open filter flyout passes a full-page a11y scan (${theme} theme)`, async ({ page }) => {
+    // The panel is inert while closed, so the scans at the top of this file
+    // never measure it. Its contrast and labelling are only observable open.
+    if (theme === 'dark') {
+      await page.emulateMedia({ colorScheme: 'dark' });
+    }
+    await gotoPane(page);
+    await applyTheme(expect, page, theme);
+
+    await page.locator('#blast-radius-filter-trigger').click();
+    await page.waitForSelector('#blast-radius-filter-flyout:not([inert])', { timeout: 5000 });
+
+    // Precondition: the panel is genuinely rendered and visible, or the scan
+    // below measures a hidden subtree and reports a meaningless green.
+    //
+    // The vacuity guard counts FOCUSABLE CONTROLS, not filter chips. This slice
+    // ships the flyout deliberately empty of axes, so a chip count is zero here
+    // and a `chips > 0` precondition fails on this branch -- which it did:
+    // 4 failed / 76 passed on both engines, while the scan itself reported zero
+    // violations in all four combinations. The precondition was wrong, not the
+    // page, and the pre-push gate missed it because the a11y tier defaults to
+    // SKIP.
+    //
+    // Focusables is the honest property: the panel always ships its close,
+    // Clear All and Apply controls (3 on this branch), and the number only grows
+    // as axes land, so this keeps its teeth through the later slices without
+    // needing a re-edit. Deleting the guard instead would leave a scan that
+    // passes over a hidden or empty subtree, which is a green light wired to
+    // nothing.
+    const visible = await page.evaluate(() => {
+      const panel = document.getElementById('blast-radius-filter-flyout');
+      if (!panel) return { open: false, focusables: 0 };
+      const cs = getComputedStyle(panel);
+      return {
+        open: cs.display !== 'none' && cs.visibility !== 'hidden',
+        focusables: panel.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), '
+          + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ).length,
+      };
+    });
+    expect(visible.open, 'the filter flyout is not visibly open; the scan would measure a hidden subtree').toBe(true);
+    expect(visible.focusables, 'the open flyout exposes no controls; there is nothing to scan').toBeGreaterThan(0);
+
+    const results = await buildAxeBuilder(page).analyze();
+    expect(
+      results.violations,
+      `Blast-radius filter flyout ${theme}-theme a11y violations:\n${formatViolations(results.violations)}`,
+    ).toHaveLength(0);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The active-filter badge survives first paint on a deep link (D-F2).
+//
+// THE DEFECT THIS PINS. The server renders the trigger with `is-active` and a
+// count when the URL narrows the report. swFilterFlyout.initFromURL's last act
+// is refreshActiveCount, which counts controls INSIDE the panel and writes that
+// number to the trigger badge -- so run over a panel holding no axis controls
+// it counts zero and sets the badge to display:none, ERASING the correct
+// server-rendered answer a beat after load.
+//
+// The operator-facing shape is specific and bad: a deep link narrows a
+// multi-thousand-row damage report, the table shows a subset, and the trigger
+// reads a bare "Filters" with no count. Nothing on the pane says rows are being
+// hidden, so the short table reads as the whole report -- an understatement of
+// how much of the library was destroyed, on the surface whose only job is
+// stating that number. It is also intermittent: after any Apply the badge comes
+// back, because refreshActiveCount runs before the swap replaces the trigger.
+//
+// WHY THIS IS A BROWSER TEST AND NOT A GO ONE. The server-rendered markup is
+// already correct -- a Go assertion over the response body passes both before
+// and after the defect. The erasure happens in the DOM, after DOMContentLoaded,
+// and only a real browser running the page's own scripts can see it.
+//
+// The wait is deliberate. The badge is correct at parse time and wrong only
+// once the hydration handler has run, so asserting immediately would pass
+// against the very defect this covers.
+test('a deep-linked filter keeps its trigger badge on first paint', async ({ page }) => {
+  // class=blanked narrows on one axis, and blanked/replaced is a fixed
+  // vocabulary rather than fixture data -- so the URL is genuinely narrowing on
+  // the a11y harness's empty database, where any row-derived value would not be.
+  await gotoPane(page, `${PANE_URL}?class=blanked`);
+
+  // PRECONDITION: the server really did render a badge for this URL. Without
+  // this the assertion below cannot tell "hydration erased the badge" from
+  // "this URL was never narrowing", and a change to the neutral-value handling
+  // would turn the whole test green while proving nothing.
+  const served = await page.evaluate(() => {
+    const trigger = document.getElementById('blast-radius-filter-trigger');
+    if (!trigger) return null;
+    const badge = trigger.querySelector('.sw-filter-trigger-badge');
+    return {
+      active: trigger.classList.contains('is-active'),
+      badgeText: badge ? badge.textContent.trim() : null,
+    };
+  });
+  expect(served, 'the filters trigger is absent').not.toBeNull();
+  expect(
+    served.active,
+    'the server did not mark the trigger active for ?class=blanked, so this URL is not narrowing and the '
+    + 'badge assertion below would be vacuous',
+  ).toBe(true);
+  expect(
+    served.badgeText,
+    'the server rendered no count in the trigger badge for ?class=blanked',
+  ).toBe('1');
+
+  // Give the DOMContentLoaded hydration handler a full turn to run. This is the
+  // window in which the defect lands.
+  await page.waitForFunction(() => document.readyState === 'complete');
+  await page.waitForTimeout(1000);
+
+  const afterHydration = await page.evaluate(() => {
+    const trigger = document.getElementById('blast-radius-filter-trigger');
+    const badge = trigger && trigger.querySelector('.sw-filter-trigger-badge');
+    if (!badge) return { present: false };
+    const cs = getComputedStyle(badge);
+    return {
+      present: true,
+      text: badge.textContent.trim(),
+      display: cs.display,
+      visibility: cs.visibility,
+      // getClientRects() is empty for a box that paints nothing, which catches
+      // display:none set inline as well as by a rule.
+      painted: badge.getClientRects().length > 0,
+      triggerActive: trigger.classList.contains('is-active'),
+    };
+  });
+
+  expect(
+    afterHydration.present,
+    'the trigger badge was removed from the DOM after hydration; a deep-linked narrowing report shows no '
+    + 'sign that rows are hidden',
+  ).toBe(true);
+  expect(
+    afterHydration.painted,
+    `the trigger badge is not painted after hydration (display=${afterHydration.display}, `
+    + `visibility=${afterHydration.visibility}); the operator sees a bare "Filters" over a narrowed table and `
+    + 'reads the short row set as the whole report',
+  ).toBe(true);
+  expect(
+    afterHydration.text,
+    'the trigger badge no longer reports the number of active filters after hydration',
+  ).toBe('1');
+  expect(
+    afterHydration.triggerActive,
+    'the trigger lost its is-active styling after hydration, so the only remaining signal that the report '
+    + 'is narrowed is gone',
+  ).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// The bulk action bar does not survive a filter swap holding a dead selection.
+//
+// THE DEFECT THIS PINS. #blast-bulk-bar is rendered AFTER #blast-radius-pane
+// closes, so it is OUTSIDE the container the filter reload replaces. The swap
+// therefore removes every checked .blast-select with the old table while the
+// bar and its count survive untouched: the bar goes on reading "3 selected"
+// over a table in which nothing is selected.
+//
+// The consequence is not cosmetic. Restore Selected calls blastSelectedIDs(),
+// which queries .blast-select:checked in the POST-SWAP DOM, gets an empty list,
+// and returns having done nothing and said nothing -- a destructive-recovery
+// control reporting a selection that does not exist, on the pane whose whole
+// purpose is putting destroyed values back. Same class as a stale caveat band
+// over fresh rows, one control over.
+//
+// WHY THE BAR IS NOT SIMPLY MOVED INSIDE THE CONTAINER. Its position in normal
+// document order after the table is load-bearing for accessibility: it is
+// reachable and escapable by Tab rather than a focus trap, and its live region
+// is scoped to #blast-bulk-count alone. The fix is a reset on the swap instead,
+// which keeps all of that and is what this test measures.
+//
+// WHY A BROWSER TEST. Nothing about this is visible server-side: the markup is
+// identical before and after, and the defect exists only in the DOM that
+// survives an htmx swap. Only a real browser running the page's own scripts
+// and a real swap can observe it.
+test('applying a filter clears the bulk selection bar rather than leaving a dead count', async ({ page }) => {
+  await gotoPane(page);
+
+  const checkboxes = page.locator('.blast-select');
+  const rows = await checkboxes.count();
+  if (rows === 0) {
+    // A DATA condition, not a pass -- the same refusal the other row-dependent
+    // tests in this file make.
+    throw new Error(
+      'no blast-radius rows on this server, so the bulk selection bar could not be revealed. '
+      + 'This surface is UNVERIFIED -- seed at least one tracked automated field change before trusting a green run.',
+    );
+  }
+
+  // PRECONDITION: the real stylesheet is in force, so .hidden means
+  // display:none. Without it the bar never visibly hides and the assertion
+  // below could not tell a working reset from a missing stylesheet.
+  const hiddenComputes = await page.evaluate(() => {
+    const el = document.getElementById('blast-bulk-bar');
+    return el ? getComputedStyle(el).display : null;
+  });
+  expect(
+    hiddenComputes,
+    'the bulk bar starts hidden but .hidden does not compute to display:none, so the built stylesheet is not in '
+    + 'force and this test would report a green that means nothing',
+  ).toBe('none');
+
+  // Tick a row and reveal the bar.
+  await checkboxes.first().focus();
+  await page.keyboard.press('Space');
+  await page.waitForSelector('#blast-bulk-bar:not(.hidden)', { timeout: 10_000 });
+
+  // PRECONDITION: the bar is genuinely showing a non-empty selection, or the
+  // "it is empty afterwards" assertion below passes without a state change.
+  const before = await page.evaluate(() => {
+    const bar = document.getElementById('blast-bulk-bar');
+    const count = document.getElementById('blast-bulk-count');
+    return {
+      visible: bar ? getComputedStyle(bar).display !== 'none' : false,
+      countText: count ? count.textContent.trim() : '',
+      checked: document.querySelectorAll('.blast-select:checked').length,
+    };
+  });
+  expect(before.visible, 'the bulk bar did not become visible after selecting a row').toBe(true);
+  expect(before.checked, 'no row is actually checked, so there is no selection for the swap to strand')
+    .toBeGreaterThan(0);
+  expect(before.countText, 'the bulk bar is visible but reports no count, so there is nothing that could go stale')
+    .not.toBe('');
+
+  // TAG THE PRE-SWAP TABLE so the wait below measures NODE IDENTITY.
+  //
+  // The obvious wait -- getElementById('blast-radius-tbl') then checking its id
+  // -- is a tautology: the node was looked up BY that id, so the comparison is
+  // true for the old node and the new one alike, and the wait returns
+  // immediately having established nothing. An attribute set on the current
+  // node cannot survive an outerHTML swap (the server's markup does not carry
+  // it), so its disappearance is positive evidence that THIS node was replaced.
+  await page.evaluate(() => {
+    const tbl = document.getElementById('blast-radius-tbl');
+    if (tbl) tbl.setAttribute('data-sw-preswap', '1');
+  });
+  const tagged = await page.evaluate(
+    () => document.querySelectorAll('#blast-radius-tbl[data-sw-preswap]').length,
+  );
+  expect(tagged, 'the pre-swap table could not be tagged, so the swap below cannot be detected').toBe(1);
+
+  // Now apply a filter through the pane's OWN reload path -- the same
+  // htmx.ajax the flyout's Apply and the ordering selects both call.
+  await page.evaluate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('class', 'blanked');
+    window.history.pushState({}, '', url);
+    blastRadiusReload();
+  });
+
+  // The swap really happened: the tagged node is gone and a table is present
+  // again. Both halves matter -- "the tag is gone" alone would also be true
+  // mid-swap with no table at all.
+  await page.waitForFunction(
+    () => !document.querySelector('#blast-radius-tbl[data-sw-preswap]')
+      && !!document.getElementById('blast-radius-tbl'),
+    null,
+    { timeout: 10_000 },
+  );
+  // And the fresh table carries no selection, which is what strands the bar.
+  await page.waitForFunction(
+    () => document.querySelectorAll('.blast-select:checked').length === 0,
+    null,
+    { timeout: 10_000 },
+  );
+
+  const after = await page.evaluate(() => {
+    const bar = document.getElementById('blast-bulk-bar');
+    const count = document.getElementById('blast-bulk-count');
+    const master = document.getElementById('blast-select-all');
+    return {
+      barPresent: !!bar,
+      display: bar ? getComputedStyle(bar).display : null,
+      painted: bar ? bar.getClientRects().length > 0 : false,
+      countText: count ? count.textContent.trim() : null,
+      checked: document.querySelectorAll('.blast-select:checked').length,
+      masterChecked: master ? master.checked : null,
+      masterIndeterminate: master ? master.indeterminate : null,
+      // What the destructive control would actually act on right now.
+      wouldRestore: typeof blastSelectedIDs === 'function' ? blastSelectedIDs().length : -1,
+    };
+  });
+
+  expect(after.barPresent, 'the bulk bar vanished from the DOM entirely after the swap').toBe(true);
+  expect(
+    after.painted,
+    `the bulk action bar is still painted after a filter swap (display=${after.display}, `
+    + `count=${JSON.stringify(after.countText)}) while ${after.checked} rows are selected; it offers a destructive `
+    + 'Restore Selected over a selection that no longer exists',
+  ).toBe(false);
+  expect(
+    after.countText,
+    `the bulk bar still reports ${JSON.stringify(after.countText)} after the swap emptied the selection`,
+  ).toBe('');
+  expect(
+    after.wouldRestore,
+    'blastSelectedIDs() and the visible bar disagree: the bar was left standing over an empty selection, so '
+    + 'Restore Selected would run against nothing and report nothing',
+  ).toBe(0);
+  // The select-all checkbox is resynced too, so it does not read as a partial
+  // selection over a table where nothing is ticked.
+  expect(after.masterChecked, 'the select-all box still reads checked after the selection was cleared').toBe(false);
+  expect(
+    after.masterIndeterminate,
+    'the select-all box still reads indeterminate, announcing a partial selection that does not exist',
+  ).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// A filter reload that never reaches the server tells the operator so.
+//
+// THE GAP THIS PINS. layout.templ handles htmx:responseError and htmx:timeout,
+// and htmx.ajax RESOLVES on any HTTP response including a 5xx -- so every case
+// where the request reached the server is already covered. A NETWORK failure
+// (server down, DNS, connection dropped mid-flight) REJECTS the promise
+// instead, and before this fix no handler anywhere saw that rejection.
+//
+// Unhandled, the operator applies a filter, the URL updates through pushState,
+// the request never lands, and the pane goes on rendering the PREVIOUS filter's
+// rows under the NEW URL with nothing said. The caveat band and the row set
+// then describe a filter the operator is not looking at -- the same stale-state
+// falsehood the swap boundary guards against, arriving over the network instead
+// of over a container edge.
+//
+// THE FAILURE IS INJECTED AT THE NETWORK LEVEL, not as a 500. route.abort() is
+// what makes this test cover the uncovered path: a 500 would be caught by the
+// global htmx:responseError handler and would pass with or without the fix.
+test('a filter reload that never reaches the server surfaces a failure to the operator', async ({ page }) => {
+  await gotoPane(page);
+
+  // Fail ONLY the pane reload. Anything else the page fetches (assets, the SSE
+  // stream) must still work, or the failure under test could not be attributed.
+  await page.route((url) => url.pathname.endsWith('/reports/blast-radius'), (route) => route.abort('failed'));
+
+  // PRECONDITION: the toast surface exists. Without it a passing assertion
+  // below would mean "nothing was shown and nothing could have been", which is
+  // the failure this test exists to catch rather than a green.
+  const container = page.locator('#error-toast-container');
+  expect(await container.count(), 'the layout rendered no toast container, so no failure could ever be surfaced')
+    .toBe(1);
+  expect(
+    await page.evaluate(() => typeof showToast === 'function'),
+    'showToast is not installed, so this page cannot report any failure at all',
+  ).toBe(true);
+
+  const before = await container.evaluate((el) => el.children.length);
+
+  await page.evaluate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('class', 'blanked');
+    window.history.pushState({}, '', url);
+    blastRadiusReload();
+  });
+
+  // A toast appears. Waiting on the container's child count rather than on text
+  // keeps this independent of the translated copy.
+  await page.waitForFunction(
+    (n) => {
+      const el = document.getElementById('error-toast-container');
+      return !!el && el.children.length > n;
+    },
+    before,
+    { timeout: 10_000 },
+  );
+
+  const toastText = await container.evaluate((el) => el.textContent.trim());
+  expect(
+    toastText,
+    'a toast appeared but carries no text, so the operator is shown an empty box rather than a reason',
+  ).not.toBe('');
+
+  // The pane is still standing and still rendering rows -- the point being that
+  // it now says so rather than silently presenting them as the filtered set.
+  expect(
+    await page.locator('#blast-radius-pane').count(),
+    'the failed reload destroyed the pane; a network failure must leave the previous view intact',
+  ).toBe(1);
+});
+
+
+// ---------------------------------------------------------------------------
+// A filter swap does not strand a keyboard operator at <body>.
+//
+// WHAT IS AND IS NOT ALREADY COVERED -- this distinction is the whole test.
+//
+// htmx restores focus across a swap BY ID: it reads the focused element's id
+// before the swap and, if an element with that id exists afterwards, focuses it
+// (see the focus-restore branch in htmx.min.js). So every control on this pane
+// that carries an id -- #blast-radius-filter-trigger, #blast-select-all, the
+// ordering selects -- already survives, and a test that focused one of those
+// would pass with or without the handler below. Measured, not assumed: with the
+// pane's own focus restore removed, focus after a swap from the trigger came
+// back {"id":"blast-radius-filter-trigger","isBody":false}.
+//
+// THE ROWS ARE THE GAP. Row checkboxes (.blast-select) and per-row Restore
+// buttons carry NO id -- they are per-row controls identified by value and
+// aria-label -- so htmx has nothing to match and focus falls to <body>. That is
+// the reachable defect: a keyboard operator ticking through rows applies a
+// filter and is dropped at the top of the document, with the whole page to Tab
+// back through, right after the action whose result they wanted to read.
+//
+// So this test focuses a ROW CHECKBOX, which is the case nothing else defends.
+test('a filter swap that removes the focused row does not drop focus to the document body', async ({ page }) => {
+  await gotoPane(page);
+
+  const checkboxes = page.locator('.blast-select');
+  const rows = await checkboxes.count();
+  if (rows === 0) {
+    // A DATA condition, not a pass -- the same refusal the other row-dependent
+    // tests in this file make.
+    throw new Error(
+      'no blast-radius rows on this server, so no id-less row control could be focused. '
+      + 'This surface is UNVERIFIED -- seed at least one tracked automated field change before trusting a green run.',
+    );
+  }
+
+  await checkboxes.first().focus();
+
+  // PRECONDITION: focus is on a control INSIDE the swap target that carries NO
+  // id. Both halves are load-bearing. Inside the pane means the swap will take
+  // it; no id means htmx cannot put it back, which is what makes this the
+  // uncovered path rather than a re-test of htmx's own behavior.
+  const beforeSwap = await page.evaluate(() => {
+    const pane = document.getElementById('blast-radius-pane');
+    const active = document.activeElement;
+    return {
+      insidePane: !!(pane && active && pane.contains(active)),
+      id: active ? active.id : null,
+      isRowBox: !!(active && active.classList.contains('blast-select')),
+    };
+  });
+  expect(beforeSwap.isRowBox, 'focus did not land on a row checkbox').toBe(true);
+  expect(
+    beforeSwap.insidePane,
+    'the row checkboxes are not inside #blast-radius-pane, so the swap cannot take focus from them and this '
+    + 'test would prove nothing',
+  ).toBe(true);
+  expect(
+    beforeSwap.id,
+    'the focused row checkbox now carries an id, so htmx would restore focus on its own and this test no longer '
+    + 'covers the id-less case it exists for',
+  ).toBe('');
+
+  // Tag the pre-swap table so the wait measures NODE IDENTITY rather than an id
+  // it was looked up by. The attribute cannot survive an outerHTML swap.
+  await page.evaluate(() => {
+    const tbl = document.getElementById('blast-radius-tbl');
+    if (tbl) tbl.setAttribute('data-sw-preswap', '1');
+  });
+
+  await page.evaluate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('class', 'blanked');
+    window.history.pushState({}, '', url);
+    blastRadiusReload();
+  });
+
+  await page.waitForFunction(
+    () => !document.querySelector('#blast-radius-tbl[data-sw-preswap]')
+      && !!document.getElementById('blast-radius-tbl'),
+    null,
+    { timeout: 10_000 },
+  );
+
+  const after = await page.evaluate(() => {
+    const active = document.activeElement;
+    return {
+      id: active ? active.id : null,
+      tag: active ? active.tagName : null,
+      isBody: active === document.body,
+    };
+  });
+
+  expect(
+    after.isBody,
+    'focus fell to <body> when the filter swap removed the focused row control, so a keyboard operator who just '
+    + 'applied a filter has to Tab from the top of the document back to the report',
+  ).toBe(false);
+  // And it landed somewhere USEFUL: the filters trigger, which is the control
+  // that caused the change and the one most likely to be used next. The row
+  // that held focus may legitimately no longer exist, so restoring "the same
+  // place" is not available -- landing on a stable, relevant control is.
+  expect(
+    after.id,
+    `focus survived the swap but landed on <${after.tag}> rather than the filters trigger`,
+  ).toBe('blast-radius-filter-trigger');
+});
