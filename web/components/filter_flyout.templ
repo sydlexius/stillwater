@@ -231,36 +231,34 @@ script clearAllFilterFlyout(id string) {
 //
 // selectSel is OPTIONAL and names an element to extract from the response
 // before swapping (htmx's `select`, the scripted equivalent of hx-select).
-// Empty or absent means "swap whatever the response body is", which is the
-// behavior every caller had before this parameter existed and which the only
-// current caller keeps.
+// Empty or absent means "swap whatever the response body is".
 //
-// THIS COMMIT CHANGES NO RENDERED BEHAVIOR. It adds a capability to a shared
-// component and nothing more. The one live caller of ActiveFilters is the
-// compliance report (web/templates/compliance.templ), whose chips do not set
-// SelectSel, so every chip in the application renders and dismisses exactly as
-// it did before. The FIRST CONSUMER is the blast-radius filter-chips slice,
-// which sets SelectSel: "#blast-radius-pane" on every chip it builds. Read this
-// file expecting an unused parameter: that is the intended state of this slice.
-//
-// WHY THE CAPABILITY IS NEEDED (#3093). A route with a FRAGMENT handler returns
-// just the region, so a bare swap is correct. A route WITHOUT one returns the
-// full page, and htmx's makeFragment turns an <html> response into a fragment
-// of the ENTIRE BODY, so the bare swap injects a whole second copy of the page
-// into the target.
-//
-// That was measured on /reports/blast-radius, which has no fragment handler:
-// dismissing one chip produced two #blast-radius-pane elements, 71 duplicated
-// DOM ids, and a STALE caveat band reading "4 of unknown origin" sitting
-// directly above a table of 21 unfiltered rows. On a data-recovery surface that
-// is a wrong statement about how much data was destroyed.
-//
-// To be precise about what fixed what: the consuming slice fixes that defect,
-// USING this parameter. The symbols in that account (#blast-radius-pane, the
-// caveat band, the pane's own reload) belong to that slice and do not exist at
-// this commit. Nothing here fixes anything on its own.
+// WHEN TO SET IT. A route with a FRAGMENT handler returns just the region, so a
+// bare swap is correct and selectSel should stay empty. A route WITHOUT one
+// returns the full page, and htmx's makeFragment turns an <html> response into
+// a fragment of the ENTIRE BODY -- so a bare swap injects a whole second copy
+// of the page into the target, duplicating every id inside it and leaving stale
+// summary text standing over freshly loaded rows. Naming the target element in
+// selectSel extracts just that element from the full-page response.
 
 script DismissFilterChip(key string, targetSel string, selectSel string) {
+	// Fail loudly, and BEFORE any side effect.
+	//
+	// This script is wired to an inline onclick, so a bare reference to an
+	// absent global throws a ReferenceError that surfaces only in the console
+	// with no indication of the cause, and the chip silently does nothing. The
+	// repo forbids a silent no-op on a missing capability.
+	//
+	// The guard is FIRST because failing loudly and failing without side
+	// effects are different properties and both are required. A guard placed
+	// after the URL surgery below would let history.pushState strip the filter
+	// from the address bar while nothing reloads: the chip stays on screen, the
+	// URL and the rendered content disagree, and a later manual refresh applies
+	// a filter state the operator never saw applied.
+	if (!window.htmx) {
+		console.error('DismissFilterChip: htmx is not loaded; the filter chip cannot reload ' + (targetSel || '#artist-content'));
+		return;
+	}
 	var url = new URL(window.location.href);
 	url.searchParams.delete(key);
 	url.searchParams.delete('page');
@@ -277,31 +275,16 @@ script DismissFilterChip(key string, targetSel string, selectSel string) {
 	var opts = {target: sel, swap: 'outerHTML'};
 	// Set `select` only when the caller asked for one.
 	//
-	// This guard is DEFENSIVE, not load-bearing, and the distinction matters
-	// for anyone designing around it. htmx 2.0.8 normalizes a falsy select to
-	// null at every gate it passes -- `const F=i.select||null` on the request,
-	// `if(i){d=i}` on the response, `d||b` when computing the swap spec, and
-	// `if(g.select)` before extraction -- so a PRESENT-but-EMPTY select is
-	// indistinguishable from an absent one. Verified two ways against the
-	// vendored file: by reading those four expressions, and by driving a real
-	// Chromium page where {} , {select:''} and a real selector were compared
-	// (the first two produced byte-identical DOM).
-	//
-	// So this is not preventing a blank swap; htmx would not perform one. It
-	// keeps the emitted options object honest -- a key present only when it
-	// carries meaning -- which is what makes the behavioral test below able to
-	// assert on hasOwnProperty rather than on a value that means nothing.
+	// This guard is DEFENSIVE, not load-bearing. htmx normalizes a falsy select
+	// to null at every gate it passes -- `const F=i.select||null` on the
+	// request, `if(i){d=i}` on the response, `d||b` when computing the swap
+	// spec, and `if(g.select)` before extraction -- so a present-but-empty
+	// select is indistinguishable from an absent one and htmx would not perform
+	// a blank swap either way. What the guard buys is an options object whose
+	// keys all carry meaning, which is what lets the behavioral test assert on
+	// hasOwnProperty rather than on a value that means nothing.
 	if (selectSel) {
 		opts.select = selectSel;
-	}
-	// Fail loudly when htmx is missing. This script is wired to an inline
-	// onclick, so a bare reference to an absent global throws a ReferenceError
-	// that surfaces only in the console with no indication of the cause, and
-	// the chip silently does nothing. The repo forbids a silent no-op on a
-	// missing capability.
-	if (!window.htmx) {
-		console.error('DismissFilterChip: htmx is not loaded; the filter chip cannot reload ' + sel);
-		return;
 	}
 	htmx.ajax('GET', path + url.search, opts);
 }
@@ -313,16 +296,20 @@ script DismissFilterChip(key string, targetSel string, selectSel string) {
 // several include/exclude values. targetSel is the CSS selector for the HTMX
 // content region to reload; defaults to "#action-queue" when empty.
 //
-// selectSel carries the same meaning as in DismissFilterChip, and it is here
-// because FilterChipSpec is ONE type serving BOTH branches of FilterChip2. A
-// spec that set SelectSel alongside Value used to render a perfectly ordinary
-// chip whose dismiss quietly did a bare full-page swap, because this script had
-// nowhere to put the value: the field was accepted, ignored, and dropped with
-// no error. That is the silent-failure shape this repo forbids, and it
-// reintroduced the very defect the parameter exists to prevent, on the one
-// branch nobody was looking at.
+// selectSel carries the same meaning as in DismissFilterChip. It is accepted
+// here as well because FilterChipSpec is ONE type serving BOTH branches of
+// FilterChip2: without it, a spec that set SelectSel alongside Value would
+// render an ordinary-looking chip whose dismiss quietly did a bare full-page
+// swap, the field accepted, ignored, and dropped with no error.
 
 script DismissFilterValueChip(key string, prefixedValue string, targetSel string, selectSel string) {
+	// Same guard, same position, same reasoning as DismissFilterChip above: it
+	// must run before the URL surgery below, so a missing htmx leaves the
+	// address bar untouched instead of stripping a filter nothing reloads.
+	if (!window.htmx) {
+		console.error('DismissFilterValueChip: htmx is not loaded; the filter chip cannot reload ' + (targetSel || '#action-queue'));
+		return;
+	}
 	var url = new URL(window.location.href);
 	// Read every value under this key, drop the one matching prefixedValue,
 	// then rewrite the key with the survivors (URLSearchParams has no
@@ -344,15 +331,11 @@ script DismissFilterValueChip(key string, prefixedValue string, targetSel string
 	}
 	var sel = targetSel || '#action-queue';
 	var opts = {target: sel, swap: 'innerHTML'};
-	// Same defensive guard, same reasoning, as DismissFilterChip above: htmx
-	// treats a falsy select as absent, so this keeps the emitted object honest
-	// rather than preventing a blank swap.
+	// Same defensive select guard, same reasoning, as DismissFilterChip above:
+	// htmx treats a falsy select as absent, so this keeps the emitted object
+	// honest rather than preventing a blank swap.
 	if (selectSel) {
 		opts.select = selectSel;
-	}
-	if (!window.htmx) {
-		console.error('DismissFilterValueChip: htmx is not loaded; the filter chip cannot reload ' + sel);
-		return;
 	}
 	htmx.ajax('GET', path + url.search, opts);
 }
@@ -472,6 +455,7 @@ func filterRangeValue(v int) string {
 // before swapping. Leave it empty unless the chip's TargetSel lives on a route
 // with NO fragment handler, in which case the response is a full page and a
 // bare swap injects a second copy of it -- see DismissFilterChip's comment.
+// It is honored on both branches of FilterChip2.
 type FilterChipSpec struct {
 	Label     string
 	Key       string

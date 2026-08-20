@@ -7,15 +7,15 @@
 // site passes a given argument, and that the emitted script contains the guard.
 // Both are necessary and neither is sufficient, because templ inlines a script
 // body verbatim -- so a text assertion passes for any code that merely CONTAINS
-// those characters. Measured against the first version of this work, two
-// mutations survived the whole Go suite:
+// those characters. Two mutations survive the whole Go suite:
 //
 //   1. guard kept, body changed to `opts.select = selectSel || '#artist-content'`
 //   2. guard kept, `else { opts.select = 'body' }` added
 //
 // Mutation 2 makes EVERY caller emit select:'body', which is the real blanking
-// scenario, and the suite stayed green. The Go call-site test guards ARGUMENTS;
-// the Go script-body test guards THE GUARD'S TEXT; neither guards BEHAVIOR.
+// scenario, and the Go suite stays green. The Go call-site test guards
+// ARGUMENTS; the Go script-body test guards THE GUARD'S TEXT; neither guards
+// BEHAVIOR.
 //
 // This test guards behavior: it EXECUTES the real emitted function against a
 // stubbed htmx and inspects the options object that reaches htmx.ajax.
@@ -78,31 +78,62 @@ function extractScript(src, name) {
   throw new Error(`unbalanced braces while extracting __templ_${name}_*`);
 }
 
+const DEFAULT_HREF = 'http://localhost/reports/example?class=blanked&page=2';
+
 /**
- * runDismiss executes one extracted dismiss function against a stubbed htmx and
- * returns the options object it passed to htmx.ajax.
+ * makeSandbox builds the vm context these scripts run in, and RECORDS every
+ * outside effect they can have: htmx.ajax calls, history.pushState calls, and
+ * console.error messages. One builder rather than a literal per test, so a new
+ * recorder reaches every case at once.
+ *
+ * `htmx` selects which of two shapes the context has:
+ *
+ *   'present' (default) -- the browser shape. `window` IS the global object, so
+ *   `window.htmx` and a bare `htmx` are the same recording stub.
+ *
+ *   'missing' -- `window` is a SEPARATE object carrying only `location`, so the
+ *   scripts' `!window.htmx` predicate is true, while the recording stub stays
+ *   reachable through the bare global as a TRIPWIRE. That split does not exist
+ *   in a browser and is not meant to model one: it exists so that "the script
+ *   did not reach htmx.ajax" is an assertion about a recorder that EXISTS. With
+ *   no stub anywhere, `calls.length === 0` holds for any code at all, which is
+ *   what made the original version of this assertion vacuous.
+ */
+function makeSandbox({ href = DEFAULT_HREF, htmx = 'present' } = {}) {
+  const calls = [];
+  const errors = [];
+  const pushes = [];
+  const stub = { ajax: (method, url, opts) => { calls.push({ method, url, opts }); } };
+  const sandbox = {
+    console: { error: (...a) => errors.push(a.join(' ')) },
+    history: { pushState: (...a) => { pushes.push(a); } },
+    document: { querySelector: () => null },
+    URL,
+    URLSearchParams,
+    htmx: stub,
+  };
+  if (htmx === 'missing') {
+    sandbox.window = { location: { href } };
+  } else {
+    sandbox.window = sandbox;
+    sandbox.window.location = { href };
+  }
+  vm.createContext(sandbox);
+  return { sandbox, calls, errors, pushes };
+}
+
+/**
+ * runDismiss executes one extracted dismiss function in a fresh sandbox and
+ * returns everything that sandbox recorded.
  *
  * The stub records rather than acts, so the assertion can inspect the exact
  * object shape -- specifically whether `select` is a PRESENT KEY, which is the
  * property no string match can see.
  */
-function runDismiss(fnSource, fnName, args) {
-  const calls = [];
-  const errors = [];
-  const sandbox = {
-    console: { error: (...a) => errors.push(a.join(' ')) },
-    history: { pushState() {} },
-    document: { querySelector: () => null },
-    URL,
-    URLSearchParams,
-  };
-  sandbox.window = sandbox;
-  sandbox.window.location = { href: 'http://localhost/reports/blast-radius?class=blanked&page=2' };
-  sandbox.htmx = { ajax: (method, url, opts) => { calls.push({ method, url, opts }); } };
-
-  vm.createContext(sandbox);
+function runDismiss(fnSource, fnName, args, opts = {}) {
+  const { sandbox, calls, errors, pushes } = makeSandbox(opts);
   vm.runInContext(`${fnSource}\nvar __result = ${fnName}(${args.map(a => JSON.stringify(a)).join(', ')});`, sandbox);
-  return { calls, errors };
+  return { calls, errors, pushes };
 }
 
 let source;
@@ -117,17 +148,15 @@ before(() => {
   // Reading the generated file rather than a pasted copy is what lets this tier
   // claim the bytes under test are the bytes that ship. That claim is FALSE
   // against an un-regenerated tree: edit the .templ, skip `templ generate`, and
-  // this tier happily tests the previous version and goes green. Measured --
-  // applying a real mutation to the .templ without regenerating left both
-  // suites passing.
+  // this tier happily tests the previous version and goes green: applying a real
+  // mutation to the .templ without regenerating leaves both suites passing.
   //
   // CHECKED BY CONTENT, NOT MTIME. An mtime comparison is the obvious form and
   // it is wrong twice over: `templ generate` does not rewrite an output whose
   // content is unchanged, so an ordinary `git checkout` or `cp` of the source
   // leaves it NEWER than a perfectly current artifact and the check fires on a
-  // correct tree. (Measured while writing this: source 01:40:03, generated
-  // 01:39:15, content identical and correct.) A false alarm that a regenerate
-  // cannot clear is worse than no check, because the way out is to delete it.
+  // correct tree. A false alarm that a regenerate cannot clear is worse than no
+  // check, because the way out is to delete it.
   //
   // So: extract each script body from BOTH files and compare. templ inlines the
   // body verbatim, so the generated copy must contain the source's, modulo the
@@ -148,8 +177,8 @@ before(() => {
     // marker. A single sentinel (the last statement, say) only detects edits
     // that happen to touch that line: the mutation this tier exists to catch --
     // adding `else { opts.select = 'body' }` in the middle of the body -- leaves
-    // the last statement untouched and slips straight past. Measured: a
-    // last-statement marker reported 8/8 green against exactly that stale tree.
+    // the last statement untouched and slips straight past: a last-statement
+    // marker reports green against exactly that stale tree.
     //
     // Comments are skipped because templ ships them verbatim but they carry no
     // behavior, and blank lines because indentation is normalized.
@@ -195,9 +224,9 @@ describe('DismissFilterChip select option', () => {
   });
 
   it('passes the caller\'s selector through when one IS supplied', () => {
-    const { calls } = runDismiss(chipFn, chipName, ['class', '#blast-radius-pane', '#blast-radius-pane']);
+    const { calls } = runDismiss(chipFn, chipName, ['class', '#report-pane', '#report-pane']);
     assert.equal(calls.length, 1, 'the dismiss script did not call htmx.ajax exactly once');
-    assert.equal(calls[0].opts.select, '#blast-radius-pane',
+    assert.equal(calls[0].opts.select, '#report-pane',
       'a supplied select selector did not reach the htmx options object');
   });
 
@@ -207,37 +236,59 @@ describe('DismissFilterChip select option', () => {
     assert.ok(!calls[0].url.includes('class='), `the dismissed key survived into the reload URL: ${calls[0].url}`);
   });
 
-  it('fails loudly rather than silently when htmx is absent', () => {
+  it('fails loudly AND without side effects when htmx is absent', () => {
     // The scripts are wired to inline onclick handlers, so a bare reference to
     // a missing global throws a ReferenceError with no indication of the cause
     // and the chip simply does nothing. The repo forbids that silent no-op.
-    const calls = [];
-    const errors = [];
-    const sandbox = {
-      console: { error: (...a) => errors.push(a.join(' ')) },
-      history: { pushState() {} },
-      document: { querySelector: () => null },
-      URL, URLSearchParams,
-    };
-    sandbox.window = sandbox;
-    sandbox.window.location = { href: 'http://localhost/reports/blast-radius?class=blanked' };
-    // No htmx on the sandbox at all.
-    vm.createContext(sandbox);
+    //
+    // FAILING LOUDLY AND FAILING WITHOUT SIDE EFFECTS ARE DIFFERENT PROPERTIES
+    // and this asserts both. A guard that sits below the URL surgery reports the
+    // missing dependency correctly and still leaves history.pushState having
+    // stripped the filter from the address bar with nothing reloaded: the chip
+    // stays on screen, URL and rendered content disagree, and a later manual
+    // refresh applies a filter state the operator never saw applied. The
+    // pushes assertion below is what catches that ordering; the errors
+    // assertion alone passes for it.
+    const { sandbox, calls, errors, pushes } = makeSandbox({
+      href: 'http://localhost/reports/example?class=blanked',
+      htmx: 'missing',
+    });
     assert.doesNotThrow(
       () => vm.runInContext(`${chipFn}\n${chipName}('class', '#compliance-results', '');`, sandbox),
       'the dismiss script threw when htmx was missing instead of reporting it',
     );
-    assert.equal(calls.length, 0);
+    assert.deepEqual(
+      pushes, [],
+      'the dismiss script rewrote the address bar before discovering htmx was missing, so the filter is gone '
+      + 'from the URL while the chip and the rendered rows still show it applied. The guard must run before '
+      + `any URL mutation. history.pushState arguments: ${JSON.stringify(pushes)}`,
+    );
+    assert.equal(
+      calls.length, 0,
+      'the dismiss script reached htmx.ajax despite window.htmx being absent; the guard did not return',
+    );
     assert.equal(errors.length, 1, 'no console.error was emitted for the missing htmx dependency');
     assert.ok(/htmx/i.test(errors[0]), `the error does not name the missing dependency: ${errors[0]}`);
+    assert.ok(/#compliance-results/.test(errors[0]),
+      `the error does not name the target that failed to reload: ${errors[0]}`);
+  });
+
+  it('reaches htmx.ajax and rewrites the URL on the ordinary path', () => {
+    // The complement of the guard test: it proves the guard does not fire when
+    // htmx IS present, so "no ajax, no pushState" above is a property of the
+    // missing-dependency case rather than of the script always doing nothing.
+    const { calls, errors, pushes } = runDismiss(chipFn, chipName, ['class', '#compliance-results', '']);
+    assert.equal(calls.length, 1, 'with htmx present the script must reach htmx.ajax');
+    assert.equal(pushes.length, 1, 'with htmx present the script must rewrite the address bar');
+    assert.deepEqual(errors, [], `the guard reported an error while htmx was present: ${JSON.stringify(errors)}`);
   });
 });
 
 describe('DismissFilterValueChip select option', () => {
-  // The multi-value branch of FilterChip2 routes here. It previously had no
-  // select parameter at all, so a FilterChipSpec setting both Value and
-  // SelectSel rendered a working chip whose dismiss did a bare full-page swap
-  // -- the field was accepted, ignored and dropped with no error.
+  // The multi-value branch of FilterChip2 routes here. Without a select
+  // parameter of its own, a FilterChipSpec setting both Value and SelectSel
+  // renders a working chip whose dismiss does a bare full-page swap -- the
+  // field accepted, ignored and dropped with no error.
   it('omits the select KEY entirely when no caller asked for one', () => {
     const { calls } = runDismiss(valueChipFn, valueChipName, ['severity', '+error', '#action-queue', '']);
     assert.equal(calls.length, 1, 'the value-chip dismiss script did not call htmx.ajax exactly once');
@@ -249,87 +300,71 @@ describe('DismissFilterValueChip select option', () => {
   });
 
   it('carries a supplied selector through, rather than silently dropping it', () => {
-    const { calls } = runDismiss(valueChipFn, valueChipName, ['severity', '+error', '#blast-radius-pane', '#blast-radius-pane']);
+    const { calls } = runDismiss(valueChipFn, valueChipName, ['severity', '+error', '#report-pane', '#report-pane']);
     assert.equal(calls.length, 1);
     assert.equal(
-      calls[0].opts.select, '#blast-radius-pane',
+      calls[0].opts.select, '#report-pane',
       'the value-chip dismiss dropped the caller\'s SelectSel. The chip renders and dismisses normally, so '
       + 'nothing fails visibly, but the swap takes the whole response body -- reintroducing exactly the '
-      + 'defect the parameter exists to prevent, on the branch nobody looks at.',
+      + 'defect the parameter exists to prevent, on the branch that is easiest to miss.',
     );
   });
 
   it('fails loudly rather than silently when htmx is absent, BEFORE calling ajax', () => {
-    // The F7 guard on this script was entirely unproven: deleting it outright
-    // left every suite in the repo green. Its sibling has this coverage; the
-    // branch that needed the select-forwarding fix had an identical hole one
-    // line below it.
-    //
     // POSITION IS ASSERTED, NOT JUST PRESENCE. A guard that sits AFTER
     // htmx.ajax is a live failure mode, not a cosmetic one: the ReferenceError
     // fires first and the console.error never runs, so the operator gets the
     // silent no-op the guard exists to prevent while the code still LOOKS
     // guarded. Asserting only that some console.error exists would pass that.
-    const calls = [];
-    const errors = [];
-    const sandbox = {
-      console: { error: (...a) => errors.push(a.join(' ')) },
-      history: { pushState() {} },
-      document: { querySelector: () => null },
-      URL, URLSearchParams,
-    };
-    sandbox.window = sandbox;
-    sandbox.window.location = { href: 'http://localhost/dash?severity=%2Berror' };
-    // No htmx on the sandbox at all.
-    vm.createContext(sandbox);
+    const { sandbox, calls, errors, pushes } = makeSandbox({
+      href: 'http://localhost/dash?severity=%2Berror',
+      htmx: 'missing',
+    });
     assert.doesNotThrow(
       () => vm.runInContext(`${valueChipFn}\n${valueChipName}('severity', '+error', '#action-queue', '');`, sandbox),
       'the value-chip dismiss threw when htmx was missing instead of reporting it',
     );
-    assert.equal(calls.length, 0);
+    assert.deepEqual(
+      pushes, [],
+      'the value-chip dismiss rewrote the address bar before discovering htmx was missing, dropping the value '
+      + 'from the URL while the chip still shows it applied and nothing reloaded. The guard must run before any '
+      + `URL mutation. history.pushState arguments: ${JSON.stringify(pushes)}`,
+    );
+    assert.equal(
+      calls.length, 0,
+      'the value-chip dismiss reached htmx.ajax despite window.htmx being absent; the guard did not return',
+    );
     assert.equal(errors.length, 1,
       'no console.error was emitted for the missing htmx dependency; the chip fails silently');
     assert.ok(/htmx/i.test(errors[0]), `the error does not name the missing dependency: ${errors[0]}`);
+    assert.ok(/#action-queue/.test(errors[0]),
+      `the error does not name the target that failed to reload: ${errors[0]}`);
 
     // Position: the guard must precede the ajax call. Executed rather than
-    // pattern-matched -- with htmx PRESENT but throwing, a guard placed after
-    // the call would let the throw escape.
-    const late = [];
-    const s2 = {
-      console: { error: (...a) => late.push('ERR:' + a.join(' ')) },
-      history: { pushState() {} },
-      document: { querySelector: () => null },
-      URL, URLSearchParams,
-    };
-    s2.window = s2;
-    s2.window.location = { href: 'http://localhost/dash?severity=%2Berror' };
-    let ajaxRan = false;
-    s2.htmx = { ajax: () => { ajaxRan = true; } };
-    vm.createContext(s2);
-    vm.runInContext(`${valueChipFn}\n${valueChipName}('severity', '+error', '#action-queue', '');`, s2);
-    assert.equal(ajaxRan, true, 'with htmx present the script must reach htmx.ajax');
-    assert.equal(late.length, 0, 'the guard reported an error while htmx was present');
+    // pattern-matched -- with htmx PRESENT the script must run all the way
+    // through without the guard firing.
+    const present = runDismiss(valueChipFn, valueChipName, ['severity', '+error', '#action-queue', ''], {
+      href: 'http://localhost/dash?severity=%2Berror',
+    });
+    assert.equal(present.calls.length, 1, 'with htmx present the script must reach htmx.ajax');
+    assert.equal(present.pushes.length, 1, 'with htmx present the script must rewrite the address bar');
+    assert.deepEqual(present.errors, [],
+      `the guard reported an error while htmx was present: ${JSON.stringify(present.errors)}`);
   });
 
   it('keeps sibling values under the same key and removes only the dismissed one', () => {
-    const calls = [];
-    const sandbox = {
-      console: { error() {} }, history: { pushState() {} },
-      document: { querySelector: () => null }, URL, URLSearchParams,
-    };
-    sandbox.window = sandbox;
-    sandbox.window.location = { href: 'http://localhost/dash?severity=%2Berror&severity=-info&page=3' };
-    sandbox.htmx = { ajax: (m, u, o) => calls.push({ m, u, o }) };
-    vm.createContext(sandbox);
-    vm.runInContext(`${valueChipFn}\n${valueChipName}('severity', '+error', '#action-queue', '');`, sandbox);
+    const { calls } = runDismiss(
+      valueChipFn, valueChipName, ['severity', '+error', '#action-queue', ''],
+      { href: 'http://localhost/dash?severity=%2Berror&severity=-info&page=3' },
+    );
 
     assert.equal(calls.length, 1);
-    const q = new URLSearchParams(calls[0].u.split('?')[1] || '');
+    const q = new URLSearchParams(calls[0].url.split('?')[1] || '');
     const remaining = q.getAll('severity');
     // Precondition: the fixture really did carry two values, or "one survived"
     // is satisfied by a URL that only ever had one.
-    assert.ok(!calls[0].u.includes('%2Berror') && !calls[0].u.includes('+error'),
-      `the dismissed value survived: ${calls[0].u}`);
+    assert.ok(!calls[0].url.includes('%2Berror') && !calls[0].url.includes('+error'),
+      `the dismissed value survived: ${calls[0].url}`);
     assert.deepEqual(remaining, ['-info'],
       `sibling values under the same key were not preserved: ${JSON.stringify(remaining)}`);
   });

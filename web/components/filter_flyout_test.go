@@ -3,6 +3,9 @@ package components
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"html"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -196,338 +199,299 @@ func TestActiveFilters_PerChipTargetSelOverride(t *testing.T) {
 	}
 }
 
-// TestDismissFilterChip_SelectIsGenuinelyOptional pins the RENDERED SHAPE of
-// the `select` parameter added for #3093.
+// TestDismissFilterChip_ScriptGuardsTheSelectAssignment pins the emitted SCRIPT
+// BODY: that `opts.select` is assigned only inside a guard on selectSel.
 //
-// SCOPE, STATED HONESTLY: this test guards the emitted text, not behavior. It
-// proves the guard is present in the script and that a supplied selector
-// reaches the payload while an omitted one does not. It CANNOT prove what the
-// script does, because templ inlines a script body verbatim, so any of these
-// assertions passes for code that merely CONTAINS the matched characters.
+// SCOPE, STATED HONESTLY: this guards the emitted text, not behavior. templ
+// inlines a script body verbatim, so this assertion passes for any code that
+// merely CONTAINS the matched characters. Two mutations survive it:
 //
-// That is not hypothetical. Two mutations survived this file:
 //  1. `opts.select = selectSel || '#artist-content'` inside the guard
 //  2. `else { opts.select = 'body' }` after the guard
 //
-// The second makes EVERY caller emit select:'body' and this test stayed green.
+// The second makes EVERY caller emit select:'body' and this test stays green.
 // The behavioral coverage lives in tests/unit/filter-chip-dismiss-select.test.js,
 // which EXECUTES the generated function against a stubbed htmx and asserts on
 // hasOwnProperty(opts, 'select'). Mutation 2 fails there. This test is kept as
-// the cheap structural companion, not as the proof.
-//
-// WHO CALLS THIS. DismissFilterChip is shared through ActiveFilters/FilterChip2,
-// but the only LIVE caller today is the compliance report
-// (web/templates/compliance.templ:154). The artists and logs panes mention the
-// script only in comments explaining why they do NOT use it. An earlier version
-// of this comment claimed five callers; that was wrong, and the count matters
-// because it is the whole blast radius of a change to the shared default.
-func TestDismissFilterChip_SelectIsGenuinelyOptional(t *testing.T) {
+// the cheap structural companion, not as the proof; the ARGUMENTS each caller
+// passes are covered by TestFilterChipDismiss_SelectSelForwarding below.
+func TestDismissFilterChip_ScriptGuardsTheSelectAssignment(t *testing.T) {
 	tr := i18n.NewTranslator("en", map[string]string{
 		"common.remove_filter": "Remove %s filter",
 	})
 	ctx := i18n.WithTranslator(context.Background(), tr)
 
-	var omitted bytes.Buffer
-	if err := FilterChip("Error", "severity", "#action-queue", "").Render(ctx, &omitted); err != nil {
-		t.Fatalf("render (omitted select): %v", err)
+	var buf bytes.Buffer
+	if err := FilterChip("Error", "severity", "#action-queue", "").Render(ctx, &buf); err != nil {
+		t.Fatalf("render: %v", err)
 	}
-	var supplied bytes.Buffer
-	if err := FilterChip("Error", "severity", "#blast-radius-pane", "#blast-radius-pane").Render(ctx, &supplied); err != nil {
-		t.Fatalf("render (supplied select): %v", err)
+	out := buf.String()
+
+	// Precondition: the render produced the dismiss wiring. Without it the
+	// assertions below would be satisfied by empty output.
+	if !strings.Contains(out, "DismissFilterChip") {
+		t.Fatalf("the render did not emit the DismissFilterChip wiring; the assertions below are vacuous:\n%s", out)
 	}
 
-	// Precondition: both renders produced the dismiss wiring. Without it every
-	// assertion below would be satisfied by empty output.
-	for name, out := range map[string]string{"omitted": omitted.String(), "supplied": supplied.String()} {
-		if !strings.Contains(out, "DismissFilterChip") {
-			t.Fatalf("%s render did not emit the DismissFilterChip wiring; the assertions below are vacuous:\n%s", name, out)
-		}
-	}
-
-	// The guard must be present in the emitted script.
+	// The select guard must be present in the emitted script.
 	//
-	// It is DEFENSIVE, not load-bearing: htmx 2.0.8 normalizes a falsy select to
-	// null (`const F=i.select||null`, `if(i){d=i}`, `d||b`, `if(g.select)`), so
-	// a present-but-empty select is indistinguishable from an absent one --
-	// verified by reading the vendored file and by driving a real Chromium page
-	// where {}, {select:''} and a real selector were compared. What the guard
-	// buys is an options object whose keys all carry meaning, which is what lets
-	// the behavioral test assert on hasOwnProperty rather than on a value that
-	// would mean nothing either way.
-	if !strings.Contains(omitted.String(), "if (selectSel)") {
+	// It is DEFENSIVE, not load-bearing: htmx normalizes a falsy select to null
+	// (`const F=i.select||null`, `if(i){d=i}`, `d||b`, `if(g.select)`), so a
+	// present-but-empty select is indistinguishable from an absent one. What
+	// the guard buys is an options object whose keys all carry meaning, which
+	// is what lets the behavioral test assert on hasOwnProperty rather than on
+	// a value that would mean nothing either way.
+	if !strings.Contains(out, "if (selectSel)") {
 		t.Errorf("the emitted DismissFilterChip script does not guard the select assignment, so the emitted "+
-			"options object carries a `select` key for callers that never asked for one. Script:\n%s",
-			omitted.String())
+			"options object carries a `select` key for callers that never asked for one. Script:\n%s", out)
 	}
 
-	// The caller that DOES ask for one has its selector carried through, and
-	// the omitted case does not smuggle one in from anywhere.
-	if !strings.Contains(supplied.String(), "blast-radius-pane") {
-		t.Errorf("a supplied select selector did not reach the emitted onclick payload:\n%s", supplied.String())
-	}
-	if strings.Contains(omitted.String(), "blast-radius-pane") {
-		t.Errorf("the omitted-select render leaked a selector into its payload:\n%s", omitted.String())
-	}
-}
-
-// TestActiveFilters_ExistingCallersEmitNoSelect pins the pre-existing caller's
-// shape at the level it actually uses: a FilterChipSpec with no SelectSel,
-// routed through ActiveFilters.
-//
-// The specs here mirror the real ones in compliance.templ
-// (complianceActiveChips), which is the only live ActiveFilters caller in the
-// app: Label + Key, everything else zero. If a future change made SelectSel
-// required, or gave it a non-empty default, this fails.
-func TestActiveFilters_ExistingCallersEmitNoSelect(t *testing.T) {
-	// Shaped exactly like complianceActiveChips' output.
-	chips := []FilterChipSpec{
-		{Key: "status", Label: "Non-Compliant"},
-		{Key: "filter", Label: "Missing Metadata"},
-		{Key: "library_id", Label: "Music"},
-	}
-	// Precondition: none of these declares a select, which is the property
-	// under test. A fixture that set one would test the opposite case.
-	for i := range chips {
-		if chips[i].SelectSel != "" {
-			t.Fatalf("fixture chip %d declares SelectSel=%q; this test is about callers that do NOT", i, chips[i].SelectSel)
-		}
-	}
-
-	var buf bytes.Buffer
-	if err := ActiveFilters("#compliance-results", "/clear", "Clear all", "Active:", chips).Render(context.Background(), &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	out := buf.String()
-
-	// Precondition: the chips rendered at all.
-	for _, want := range []string{"Non-Compliant", "Missing Metadata", "Music", "compliance-results"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("chip row did not render %q; the assertion below would be vacuous:\n%s", want, out)
-		}
-	}
-
-	// Every chip's ONCLICK CALL passes an empty third argument.
+	// The htmx guard must precede the URL mutation.
 	//
-	// Asserting on the call site, not the script body: the script body is
-	// emitted once and always contains the guarded `opts.select = selectSel`
-	// assignment, so searching the whole output for "opts.select" finds the
-	// shared definition and proves nothing about any caller. What distinguishes
-	// a pre-existing caller from an opted-in one is the ARGUMENT it passes.
-	// (This assertion was first written against the script body and failed on
-	// its first run for exactly that reason, which is how the distinction was
-	// found -- and it is the same confusion that later let two behavior-changing
-	// mutations survive this file. See the header above.)
-	calls := dismissChipCallArgs(out)
-	if len(calls) != len(chips) {
-		t.Fatalf("found %d DismissFilterChip call sites, want %d (one per chip); the assertion below would "+
-			"not cover every chip:\n%s", len(calls), len(chips), out)
+	// Failing loudly and failing WITHOUT SIDE EFFECTS are different properties.
+	// A guard below the pushState reports the missing dependency correctly and
+	// still leaves the address bar stripped of a filter that nothing reloaded,
+	// so the chip, the URL and the rendered rows disagree and a later manual
+	// refresh applies a state the operator never saw applied. Asserted here as
+	// TEXT ORDER; the executed version is in the js tier, which drives the
+	// script with htmx absent and asserts history.pushState never ran.
+	//
+	// COMMENTS ARE STRIPPED FIRST. templ inlines a script body verbatim,
+	// comments included, and both of these scripts DISCUSS the ordering in
+	// prose sitting above the code. Matching the raw output finds the prose
+	// mention of history.pushState above the guard and reports a violation on
+	// correct code.
+	code := stripJSLineComments(out)
+	guardAt := strings.Index(code, "if (!window.htmx)")
+	pushAt := strings.Index(code, "history.pushState")
+	if guardAt < 0 {
+		t.Fatalf("the emitted DismissFilterChip script has no htmx guard at all:\n%s", out)
 	}
-	for i, args := range calls {
-		if len(args) != 3 {
-			t.Fatalf("call site %d has %d arguments, want 3 (key, targetSel, selectSel): %v", i, len(args), args)
-		}
-		if args[2] != "" {
-			t.Errorf("chip %d passes selectSel=%q despite declaring none. A non-empty select on a caller that "+
-				"did not ask for one changes what htmx swaps into that caller's content region.", i, args[2])
-		}
-		if args[1] != "#compliance-results" {
-			t.Errorf("chip %d targets %q, want the row-wide %q", i, args[1], "#compliance-results")
-		}
+	if pushAt < 0 {
+		t.Fatalf("the emitted DismissFilterChip script no longer calls history.pushState; this test's "+
+			"ordering assertion is vacuous:\n%s", out)
+	}
+	if guardAt > pushAt {
+		t.Errorf("the htmx guard is emitted AFTER history.pushState, so a page without htmx loses the filter "+
+			"from its URL while nothing reloads. Script:\n%s", out)
 	}
 }
 
-// dismissChipCallArgs extracts the argument lists from every generated
-// DismissFilterChip onclick call in rendered output.
+// stripJSLineComments drops whole-line `//` comments from rendered output so an
+// ordering assertion measures CODE position rather than a prose mention of the
+// same symbol. templ ships script comments verbatim, so the two are otherwise
+// indistinguishable to a substring search.
+func stripJSLineComments(out string) string {
+	lines := strings.Split(out, "\n")
+	kept := lines[:0]
+	for _, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "//") {
+			continue
+		}
+		kept = append(kept, l)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// TestFilterChipDismiss_SelectSelForwarding pins, for every branch of
+// FilterChip2, the ARGUMENTS each chip's dismiss call site receives.
 //
-// templ HTML-escapes the quotes inside an onclick attribute, so the emitted
-// form is onclick="__templ_DismissFilterChip_xxxx(&#34;key&#34;,&#34;#target&#34;,&#34;&#34;)".
+// Asserted at the CALL SITE, not in the script body: the script body is emitted
+// once and always contains the guarded `opts.select = selectSel` assignment, so
+// searching the whole output for "opts.select" finds the shared definition and
+// proves nothing about any caller. What distinguishes a chip that opted in from
+// one that did not is the ARGUMENT it passes.
+//
+// FilterChipSpec is ONE type serving BOTH branches: Value == "" routes to
+// FilterChip/DismissFilterChip, Value != "" to DismissFilterValueChip. A branch
+// that accepts SelectSel and drops it renders a perfectly ordinary chip whose
+// dismiss swaps the whole response body -- the field accepted, ignored, and
+// dropped with no error anywhere. Nothing throws, the chip looks right, it
+// dismisses, and the only symptom is a duplicated page injected into the
+// target. Both branches are rowed here so neither can regress unobserved.
+//
+// Every row renders through ActiveFilters, which is the entry point real
+// callers use, so the row-wide target and the per-chip argument list are
+// exercised together.
+//
+// Mutation proving teeth: passing a literal "" instead of c.SelectSel in either
+// arm of FilterChip2 fails this and nothing else in the repo.
+func TestFilterChipDismiss_SelectSelForwarding(t *testing.T) {
+	tests := []struct {
+		name string
+		// rowTarget is ActiveFilters' row-wide target selector.
+		rowTarget string
+		chips     []FilterChipSpec
+		// script is the dismiss script the chips must route to; the other one
+		// must be absent, which is what proves the intended branch was taken.
+		script string
+		// wantArgs is the full argument list per chip, in render order.
+		// DismissFilterChip:      key, targetSel, selectSel
+		// DismissFilterValueChip: key, prefixedValue, targetSel, selectSel
+		//
+		// Whole lists rather than a single index: checking only the select lets
+		// a change that passes SelectSel as BOTH target and select survive, and
+		// such a chip reloads into whatever SelectSel names while ignoring the
+		// target its caller asked for.
+		wantArgs [][]string
+	}{
+		{
+			// The shape a caller on a route with no fragment handler builds:
+			// SelectSel set, Value empty, so it takes the single-value branch.
+			name:      "single-value branch forwards SelectSel",
+			rowTarget: "#report-pane",
+			chips:     []FilterChipSpec{{Key: "class", Label: "Class: Blanked", SelectSel: "#report-pane"}},
+			script:    "DismissFilterChip",
+			wantArgs:  [][]string{{"class", "#report-pane", "#report-pane"}},
+		},
+		{
+			// A selector containing a comma is a legitimate CSS selector list.
+			// It is rowed because the argument extractor below has to split a
+			// rendered argument list, and a naive split on "," reports four
+			// arguments for a three-argument call -- a confusing len(args)
+			// failure that has nothing to do with the code under test.
+			name:      "single-value branch forwards a comma-bearing selector intact",
+			rowTarget: "#report-pane",
+			chips:     []FilterChipSpec{{Key: "class", Label: "Class: Blanked", SelectSel: "#report-pane, #report-summary"}},
+			script:    "DismissFilterChip",
+			wantArgs:  [][]string{{"class", "#report-pane", "#report-pane, #report-summary"}},
+		},
+		{
+			name:      "multi-value branch forwards SelectSel",
+			rowTarget: "#action-queue",
+			chips:     []FilterChipSpec{{Key: "severity", Label: "Error", Value: "error", SelectSel: "#report-pane"}},
+			script:    "DismissFilterValueChip",
+			wantArgs:  [][]string{{"severity", "+error", "#action-queue", "#report-pane"}},
+		},
+		{
+			// A spec that asks for nothing still gets nothing, on each branch,
+			// so the capability did not hand every existing caller a select it
+			// never requested.
+			name:      "single-value branch declaring no SelectSel passes an empty argument",
+			rowTarget: "#compliance-results",
+			chips:     []FilterChipSpec{{Key: "status", Label: "Non-Compliant"}},
+			script:    "DismissFilterChip",
+			wantArgs:  [][]string{{"status", "#compliance-results", ""}},
+		},
+		{
+			name:      "multi-value branch declaring no SelectSel passes an empty argument",
+			rowTarget: "#action-queue",
+			chips:     []FilterChipSpec{{Key: "severity", Label: "Error", Value: "error"}},
+			script:    "DismissFilterValueChip",
+			wantArgs:  [][]string{{"severity", "+error", "#action-queue", ""}},
+		},
+		{
+			// The pre-existing live caller, shaped exactly like
+			// complianceActiveChips' output: Label + Key, everything else zero.
+			// If a future change made SelectSel required, or gave it a
+			// non-empty default, this row fails.
+			name:      "existing multi-chip caller emits no select on any chip",
+			rowTarget: "#compliance-results",
+			chips: []FilterChipSpec{
+				{Key: "status", Label: "Non-Compliant"},
+				{Key: "filter", Label: "Missing Metadata"},
+				{Key: "library_id", Label: "Music"},
+			},
+			script: "DismissFilterChip",
+			wantArgs: [][]string{
+				{"status", "#compliance-results", ""},
+				{"filter", "#compliance-results", ""},
+				{"library_id", "#compliance-results", ""},
+			},
+		},
+	}
+
+	tr := i18n.NewTranslator("en", map[string]string{
+		"common.remove_filter": "Remove %s filter",
+	})
+	ctx := i18n.WithTranslator(context.Background(), tr)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := ActiveFilters(tt.rowTarget, "", "", "Active:", tt.chips).Render(ctx, &buf); err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			out := buf.String()
+
+			// Precondition: every chip rendered. Without it the argument
+			// assertions could be satisfied by output that dropped a chip.
+			for _, c := range tt.chips {
+				if !strings.Contains(out, c.Label) {
+					t.Fatalf("chip %q did not render; the assertions below would be vacuous:\n%s", c.Label, out)
+				}
+			}
+
+			// Precondition: the intended branch was taken. A spec that fell
+			// through to the other branch would be covered by a different row,
+			// and this one would pass for the wrong reason.
+			//
+			// Matched on CALL SITES, not on the name appearing anywhere: each
+			// script's inlined comments name its sibling, so a raw substring
+			// search finds the other name in every render.
+			other := otherDismissScript(tt.script)
+			if n := len(dismissCallArgs(t, out, other)); n > 0 {
+				t.Fatalf("the chips produced %d %s call site(s); this row exercises the %s branch:\n%s",
+					n, other, tt.script, out)
+			}
+
+			got := dismissCallArgs(t, out, tt.script)
+			if !reflect.DeepEqual(got, tt.wantArgs) {
+				t.Errorf("%s call-site arguments\n got: %#v\nwant: %#v\n\nA branch that accepts SelectSel and "+
+					"drops it renders a working chip whose dismiss swaps the whole response body, injecting a "+
+					"second copy of the page into the target. A branch that passes one where none was asked for "+
+					"changes what htmx extracts for a caller that never opted in.\nRendered:\n%s",
+					tt.script, got, tt.wantArgs, out)
+			}
+		})
+	}
+}
+
+// otherDismissScript names the dismiss script a given row must NOT emit, so a
+// row asserts which branch of FilterChip2 it took rather than assuming it.
+func otherDismissScript(script string) string {
+	if script == "DismissFilterChip" {
+		return "DismissFilterValueChip"
+	}
+	return "DismissFilterChip"
+}
+
+// dismissCallArgs extracts the argument lists from every generated onclick call
+// to the named dismiss script in rendered output. Parameterized on the script
+// name because the two extractors it replaced were identical but for that name.
+//
+// templ builds an onclick attribute by JSON-encoding each argument and then
+// HTML-escaping the result, so the emitted form is
+// onclick="__templ_DismissFilterChip_xxxx(&#34;key&#34;,&#34;#target&#34;,&#34;&#34;)".
+// This reverses exactly that: unescape, wrap the comma-separated JSON values in
+// brackets, and decode as a JSON array.
+//
+// DECODED, NOT SPLIT ON ",". A CSS selector list is a legitimate selector
+// ("#a, #b"), and splitting the raw argument text on a bare comma reports one
+// argument too many for such a call -- surfacing as a confusing len(args)
+// mismatch in a helper the whole suite leans on rather than as anything to do
+// with the code under test. JSON decoding also restores any escaped quote or
+// backslash a selector carries, which no split can do.
+//
 // Anchored on `onclick="` so this matches CALL SITES only: an unanchored
-// pattern also matches the script's own `function __templ_DismissFilterChip_xxxx(...)`
-// definition line, which made the count come back one too high on first run.
-func dismissChipCallArgs(out string) [][]string {
-	re := regexp.MustCompile(`onclick="__templ_DismissFilterChip_[0-9a-f]+\(([^)]*)\)"`)
+// pattern also matches the script's own `function __templ_..._xxxx(...)`
+// definition line, which makes the count come back one too high. Terminated on
+// `)"` rather than the first `)` so an argument containing a parenthesis
+// (":not(.x)" is a selector too) is not truncated -- a literal `"` inside an
+// argument is escaped to `&#34;`, so `)"` cannot occur mid-attribute.
+func dismissCallArgs(t *testing.T, out, script string) [][]string {
+	t.Helper()
+	re := regexp.MustCompile(`onclick="__templ_` + regexp.QuoteMeta(script) + `_[0-9a-f]+\((.*?)\)"`)
 	var calls [][]string
 	for _, m := range re.FindAllStringSubmatch(out, -1) {
-		raw := strings.ReplaceAll(m[1], "&#34;", `"`)
+		raw := html.UnescapeString(m[1])
 		var args []string
-		for _, part := range strings.Split(raw, ",") {
-			args = append(args, strings.Trim(strings.TrimSpace(part), `"`))
+		if err := json.Unmarshal([]byte("["+raw+"]"), &args); err != nil {
+			t.Fatalf("could not decode the %s argument list %q as JSON: %v. templ JSON-encodes each script "+
+				"argument, so a decode failure means the emitted form changed and this helper no longer reads "+
+				"it.", script, raw, err)
 		}
 		calls = append(calls, args)
 	}
 	return calls
-}
-
-// TestFilterChip2_MultiValueBranchForwardsSelectSel closes a silent-failure gap
-// in the tri-state (multi-value) chip branch.
-//
-// FilterChipSpec is ONE type serving BOTH branches of FilterChip2: the
-// single-value branch routes to DismissFilterChip, the Value != "" branch to
-// DismissFilterValueChip. When the select parameter was added, only the first
-// branch was wired. A spec that set both Value and SelectSel therefore rendered
-// a perfectly ordinary chip whose dismiss did a bare full-page swap -- the field
-// was accepted, ignored, and dropped with no error anywhere.
-//
-// That is the silent-failure shape this repo forbids, and the failure mode is
-// the nastiest kind: nothing throws, the chip looks right, it dismisses, and the
-// only symptom is a duplicated page injected into the target. It reintroduced
-// the exact defect the parameter exists to prevent, on the branch nobody was
-// looking at.
-//
-// Asserted at the CALL SITE, like its single-value sibling: the emitted script
-// body is shared, so only the argument distinguishes a forwarded selector from
-// a dropped one. The behavioral half (that the forwarded value actually reaches
-// htmx's options object) lives in tests/unit/filter-chip-dismiss-select.test.js.
-//
-// Mutation proving teeth: reverting FilterChip2's else-branch call to
-// DismissFilterValueChip(c.Key, prefixed, targetSel) fails this.
-func TestFilterChip2_MultiValueBranchForwardsSelectSel(t *testing.T) {
-	tr := i18n.NewTranslator("en", map[string]string{
-		"common.remove_filter": "Remove %s filter",
-	})
-	ctx := i18n.WithTranslator(context.Background(), tr)
-
-	// Value != "" selects the tri-state branch; SelectSel is what must survive it.
-	spec := FilterChipSpec{Key: "severity", Label: "Error", Value: "error", SelectSel: "#blast-radius-pane"}
-	var buf bytes.Buffer
-	if err := FilterChip2(spec, "#action-queue").Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	out := buf.String()
-
-	// Precondition: this really is the multi-value branch. If the spec fell
-	// through to the single-value one, the assertion below would pass for the
-	// wrong reason and the gap would stay open.
-	if !strings.Contains(out, "DismissFilterValueChip") {
-		t.Fatalf("a spec with Value=%q did not route to the multi-value branch; this test is not exercising "+
-			"the branch it exists to cover:\n%s", spec.Value, out)
-	}
-
-	calls := dismissValueChipCallArgs(out)
-	if len(calls) != 1 {
-		t.Fatalf("found %d DismissFilterValueChip call sites, want exactly 1:\n%s", len(calls), out)
-	}
-	args := calls[0]
-	if len(args) != 4 {
-		t.Fatalf("call site has %d arguments, want 4 (key, prefixedValue, targetSel, selectSel): %v", len(args), args)
-	}
-	// args[2] is the TARGET, args[3] the SELECT. Checking only the select lets a
-	// change that passes c.SelectSel as BOTH survive: the chip would then reload
-	// into whatever SelectSel names and ignore the row-wide target entirely. Its
-	// single-value sibling checks the equivalent position for the same reason.
-	if args[2] != "#action-queue" {
-		t.Errorf("the multi-value chip targets %q, want the row-wide %q; a chip that reloads into its own "+
-			"select selector ignores the target its caller asked for", args[2], "#action-queue")
-	}
-	if args[3] != "#blast-radius-pane" {
-		t.Errorf("the multi-value chip passes selectSel=%q, want %q. A spec that sets SelectSel alongside "+
-			"Value renders a working chip whose dismiss swaps the whole response body -- silently "+
-			"reintroducing the duplicated-page defect on the branch nobody looks at.", args[3], "#blast-radius-pane")
-	}
-
-	// And a spec that asks for nothing still gets nothing, so the fix did not
-	// hand every tri-state caller a select they never requested.
-	var bare bytes.Buffer
-	if err := FilterChip2(FilterChipSpec{Key: "severity", Label: "Error", Value: "error"}, "#action-queue").Render(ctx, &bare); err != nil {
-		t.Fatalf("render (no SelectSel): %v", err)
-	}
-	bareCalls := dismissValueChipCallArgs(bare.String())
-	if len(bareCalls) != 1 {
-		t.Fatalf("found %d call sites for the bare spec, want 1", len(bareCalls))
-	}
-	if bareCalls[0][3] != "" {
-		t.Errorf("a tri-state chip declaring no SelectSel passes %q; it must pass an empty argument",
-			bareCalls[0][3])
-	}
-}
-
-// dismissValueChipCallArgs is the DismissFilterValueChip counterpart of
-// dismissChipCallArgs. Anchored on `onclick="` for the same reason: an
-// unanchored pattern also matches the script's own function definition line.
-func dismissValueChipCallArgs(out string) [][]string {
-	re := regexp.MustCompile(`onclick="__templ_DismissFilterValueChip_[0-9a-f]+\(([^)]*)\)"`)
-	var calls [][]string
-	for _, m := range re.FindAllStringSubmatch(out, -1) {
-		raw := strings.ReplaceAll(m[1], "&#34;", `"`)
-		var args []string
-		for _, part := range strings.Split(raw, ",") {
-			args = append(args, strings.Trim(strings.TrimSpace(part), `"`))
-		}
-		calls = append(calls, args)
-	}
-	return calls
-}
-
-// TestFilterChip2_SingleValueBranchForwardsSelectSel is the sibling of the
-// multi-value test above, and it covers THE BRANCH THE FIRST CONSUMER ACTUALLY
-// TAKES.
-//
-// blastRadiusChips builds specs with SelectSel set and Value EMPTY, so every
-// chip on the blast-radius pane routes through `c.Value == ""` to FilterChip.
-// The multi-value test proved forwarding on the tri-state branch; this one was
-// missing, and its absence meant a change dropping SelectSel on the
-// single-value branch left the whole suite green while restoring the
-// full-page-injection defect for the one caller that exists:
-//
-//	baseline  ARGS: [[class #blast-radius-pane #blast-radius-pane]]
-//	mutated   ARGS: [[class #blast-radius-pane <empty>]]
-//
-// The gap was closed on the branch nobody uses and left open on the branch the
-// consumer takes, which is the more dangerous half of the same defect.
-//
-// Mutation proving teeth: changing FilterChip2's `c.Value == ""` arm to pass a
-// literal "" instead of c.SelectSel fails this and nothing else in the repo.
-func TestFilterChip2_SingleValueBranchForwardsSelectSel(t *testing.T) {
-	tr := i18n.NewTranslator("en", map[string]string{
-		"common.remove_filter": "Remove %s filter",
-	})
-	ctx := i18n.WithTranslator(context.Background(), tr)
-
-	// Shaped exactly like blastRadiusChips' output: SelectSel set, Value empty.
-	spec := FilterChipSpec{Key: "class", Label: "Class: Blanked", SelectSel: "#blast-radius-pane"}
-	var buf bytes.Buffer
-	if err := FilterChip2(spec, "#blast-radius-pane").Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	out := buf.String()
-
-	// Precondition: this really is the SINGLE-value branch. A spec that fell
-	// through to the tri-state one would be covered by the other test, and this
-	// one would pass for the wrong reason.
-	if strings.Contains(out, "DismissFilterValueChip") {
-		t.Fatalf("a spec with an empty Value routed to the multi-value branch; this test is not exercising "+
-			"the branch it exists to cover:\n%s", out)
-	}
-
-	calls := dismissChipCallArgs(out)
-	if len(calls) != 1 {
-		t.Fatalf("found %d DismissFilterChip call sites, want exactly 1:\n%s", len(calls), out)
-	}
-	args := calls[0]
-	if len(args) != 3 {
-		t.Fatalf("call site has %d arguments, want 3 (key, targetSel, selectSel): %v", len(args), args)
-	}
-	if args[1] != "#blast-radius-pane" {
-		t.Errorf("the chip targets %q, want %q", args[1], "#blast-radius-pane")
-	}
-	if args[2] != "#blast-radius-pane" {
-		t.Errorf("the single-value chip passes selectSel=%q, want %q. Every blast-radius chip takes this "+
-			"branch, so dropping the select here means the dismiss swaps the whole response body: two panes, "+
-			"~71 duplicated DOM ids, and a stale caveat band standing over freshly loaded rows.",
-			args[2], "#blast-radius-pane")
-	}
-
-	// And a spec asking for nothing still gets nothing, so the fix did not hand
-	// every single-value caller a select it never requested.
-	var bare bytes.Buffer
-	if err := FilterChip2(FilterChipSpec{Key: "status", Label: "Non-Compliant"}, "#compliance-results").Render(ctx, &bare); err != nil {
-		t.Fatalf("render (no SelectSel): %v", err)
-	}
-	bareCalls := dismissChipCallArgs(bare.String())
-	if len(bareCalls) != 1 {
-		t.Fatalf("found %d call sites for the bare spec, want 1", len(bareCalls))
-	}
-	if bareCalls[0][2] != "" {
-		t.Errorf("a chip declaring no SelectSel passes %q; it must pass an empty argument", bareCalls[0][2])
-	}
 }
