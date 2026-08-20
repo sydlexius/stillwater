@@ -1605,6 +1605,42 @@ templ blastRadiusScript() {
 			blastUpdateBulkBar();
 		}
 
+		// THE BULK BAR IS OUTSIDE THE SWAP TARGET, SO THE SWAP MUST RESET IT.
+		//
+		// #blast-bulk-bar is deliberately rendered AFTER #blast-radius-pane
+		// closes, and that position is load-bearing for accessibility: the bar
+		// sits in normal document order after the table, so it is reachable and
+		// escapable by Tab rather than being a focus trap, and its live region
+		// is scoped to #blast-bulk-count alone. Moving it inside the container
+		// to let the swap clear it would put those properties at risk for a
+		// problem that is cheaper to fix here.
+		//
+		// Being outside means the filter reload replaces the TABLE -- removing
+		// every checked .blast-select with it -- while the bar and its count
+		// survive untouched. Measured before this handler: tick three rows,
+		// apply a filter, and the bar still reads "3 selected" over a table
+		// whose rows are all unticked. Pressing Restore Selected then calls
+		// blastSelectedIDs(), which queries .blast-select:checked in the FRESH
+		// DOM, gets an empty list, and the action returns having done nothing
+		// and said nothing.
+		//
+		// A destructive-recovery control reporting a selection that does not
+		// exist is the same class of defect as the stale caveat band, one
+		// control over: the pane states something about the operator's data
+		// that is not true, on the surface whose whole job is putting destroyed
+		// values back.
+		//
+		// blastUpdateBulkBar is the whole fix rather than a bespoke reset: it
+		// recounts .blast-select:checked in the post-swap DOM, finds zero, and
+		// takes its own n === 0 branch -- which hides the bar, clears the count,
+		// resyncs the select-all checkbox and its indeterminate state, and moves
+		// focus out first if it is inside the bar. Reusing it means the reset
+		// cannot drift from the hide path the rest of the pane already uses.
+		document.body.addEventListener('htmx:afterSwap', function(evt) {
+			if (!evt.detail || !evt.detail.target || evt.detail.target.id !== 'blast-radius-pane') return;
+			blastUpdateBulkBar();
+		});
+
 		// blastRestoreSelected is the bulk mirror of blastRestoreRow: DRY RUN
 		// first (commit:false writes nothing), show the plan, and commit only on
 		// an explicit second affirmative action in the confirm dialog. The first

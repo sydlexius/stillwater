@@ -1308,3 +1308,145 @@ test('a deep-linked filter keeps its trigger badge on first paint', async ({ pag
     + 'is narrowed is gone',
   ).toBe(true);
 });
+
+// ---------------------------------------------------------------------------
+// The bulk action bar does not survive a filter swap holding a dead selection.
+//
+// THE DEFECT THIS PINS. #blast-bulk-bar is rendered AFTER #blast-radius-pane
+// closes, so it is OUTSIDE the container the filter reload replaces. The swap
+// therefore removes every checked .blast-select with the old table while the
+// bar and its count survive untouched: the bar goes on reading "3 selected"
+// over a table in which nothing is selected.
+//
+// The consequence is not cosmetic. Restore Selected calls blastSelectedIDs(),
+// which queries .blast-select:checked in the POST-SWAP DOM, gets an empty list,
+// and returns having done nothing and said nothing -- a destructive-recovery
+// control reporting a selection that does not exist, on the pane whose whole
+// purpose is putting destroyed values back. Same class as a stale caveat band
+// over fresh rows, one control over.
+//
+// WHY THE BAR IS NOT SIMPLY MOVED INSIDE THE CONTAINER. Its position in normal
+// document order after the table is load-bearing for accessibility: it is
+// reachable and escapable by Tab rather than a focus trap, and its live region
+// is scoped to #blast-bulk-count alone. The fix is a reset on the swap instead,
+// which keeps all of that and is what this test measures.
+//
+// WHY A BROWSER TEST. Nothing about this is visible server-side: the markup is
+// identical before and after, and the defect exists only in the DOM that
+// survives an htmx swap. Only a real browser running the page's own scripts
+// and a real swap can observe it.
+test('applying a filter clears the bulk selection bar rather than leaving a dead count', async ({ page }) => {
+  await gotoPane(page);
+
+  const checkboxes = page.locator('.blast-select');
+  const rows = await checkboxes.count();
+  if (rows === 0) {
+    // A DATA condition, not a pass -- the same refusal the other row-dependent
+    // tests in this file make.
+    throw new Error(
+      'no blast-radius rows on this server, so the bulk selection bar could not be revealed. '
+      + 'This surface is UNVERIFIED -- seed at least one tracked automated field change before trusting a green run.',
+    );
+  }
+
+  // PRECONDITION: the real stylesheet is in force, so .hidden means
+  // display:none. Without it the bar never visibly hides and the assertion
+  // below could not tell a working reset from a missing stylesheet.
+  const hiddenComputes = await page.evaluate(() => {
+    const el = document.getElementById('blast-bulk-bar');
+    return el ? getComputedStyle(el).display : null;
+  });
+  expect(
+    hiddenComputes,
+    'the bulk bar starts hidden but .hidden does not compute to display:none, so the built stylesheet is not in '
+    + 'force and this test would report a green that means nothing',
+  ).toBe('none');
+
+  // Tick a row and reveal the bar.
+  await checkboxes.first().focus();
+  await page.keyboard.press('Space');
+  await page.waitForSelector('#blast-bulk-bar:not(.hidden)', { timeout: 10_000 });
+
+  // PRECONDITION: the bar is genuinely showing a non-empty selection, or the
+  // "it is empty afterwards" assertion below passes without a state change.
+  const before = await page.evaluate(() => {
+    const bar = document.getElementById('blast-bulk-bar');
+    const count = document.getElementById('blast-bulk-count');
+    return {
+      visible: bar ? getComputedStyle(bar).display !== 'none' : false,
+      countText: count ? count.textContent.trim() : '',
+      checked: document.querySelectorAll('.blast-select:checked').length,
+    };
+  });
+  expect(before.visible, 'the bulk bar did not become visible after selecting a row').toBe(true);
+  expect(before.checked, 'no row is actually checked, so there is no selection for the swap to strand')
+    .toBeGreaterThan(0);
+  expect(before.countText, 'the bulk bar is visible but reports no count, so there is nothing that could go stale')
+    .not.toBe('');
+
+  // Now apply a filter through the pane's OWN reload path -- the same
+  // htmx.ajax the flyout's Apply and the ordering selects both call -- and wait
+  // for the swapped-in table rather than a timeout.
+  await page.evaluate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('class', 'blanked');
+    window.history.pushState({}, '', url);
+    blastRadiusReload();
+  });
+  await page.waitForFunction(
+    (id) => {
+      const tbl = document.getElementById('blast-radius-tbl');
+      return !!tbl && tbl.id === id && !document.querySelector('.htmx-request');
+    },
+    'blast-radius-tbl',
+    { timeout: 10_000 },
+  );
+  // The swap really happened: the table node is a fresh one, so any selection
+  // made before it is gone from the DOM.
+  await page.waitForFunction(
+    () => document.querySelectorAll('.blast-select:checked').length === 0,
+    null,
+    { timeout: 10_000 },
+  );
+
+  const after = await page.evaluate(() => {
+    const bar = document.getElementById('blast-bulk-bar');
+    const count = document.getElementById('blast-bulk-count');
+    const master = document.getElementById('blast-select-all');
+    return {
+      barPresent: !!bar,
+      display: bar ? getComputedStyle(bar).display : null,
+      painted: bar ? bar.getClientRects().length > 0 : false,
+      countText: count ? count.textContent.trim() : null,
+      checked: document.querySelectorAll('.blast-select:checked').length,
+      masterChecked: master ? master.checked : null,
+      masterIndeterminate: master ? master.indeterminate : null,
+      // What the destructive control would actually act on right now.
+      wouldRestore: typeof blastSelectedIDs === 'function' ? blastSelectedIDs().length : -1,
+    };
+  });
+
+  expect(after.barPresent, 'the bulk bar vanished from the DOM entirely after the swap').toBe(true);
+  expect(
+    after.painted,
+    `the bulk action bar is still painted after a filter swap (display=${after.display}, `
+    + `count=${JSON.stringify(after.countText)}) while ${after.checked} rows are selected; it offers a destructive `
+    + 'Restore Selected over a selection that no longer exists',
+  ).toBe(false);
+  expect(
+    after.countText,
+    `the bulk bar still reports ${JSON.stringify(after.countText)} after the swap emptied the selection`,
+  ).toBe('');
+  expect(
+    after.wouldRestore,
+    'blastSelectedIDs() and the visible bar disagree: the bar was left standing over an empty selection, so '
+    + 'Restore Selected would run against nothing and report nothing',
+  ).toBe(0);
+  // The select-all checkbox is resynced too, so it does not read as a partial
+  // selection over a table where nothing is ticked.
+  expect(after.masterChecked, 'the select-all box still reads checked after the selection was cleared').toBe(false);
+  expect(
+    after.masterIndeterminate,
+    'the select-all box still reads indeterminate, announcing a partial selection that does not exist',
+  ).toBe(false);
+});
