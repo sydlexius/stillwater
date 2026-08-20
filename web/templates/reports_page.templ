@@ -888,6 +888,8 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		data-restore-conflict={ t(ctx, "reports.blast_radius.js.restore_conflict") }
 		data-network-error={ t(ctx, "reports.blast_radius.js.network_error") }
 		data-filter-reload-failed={ t(ctx, "reports.blast_radius.js.filter_reload_failed") }
+		data-filter-badge-one={ t(ctx, "reports.blast_radius.js.filter_badge_one") }
+		data-filter-badge-many={ t(ctx, "reports.blast_radius.js.filter_badge_many") }
 		data-plan-summary={ t(ctx, "reports.blast_radius.js.plan_summary") }
 		data-plan-refused={ t(ctx, "reports.blast_radius.js.plan_refused") }
 		data-restored-count={ t(ctx, "reports.blast_radius.js.restored_count") }
@@ -1085,6 +1087,39 @@ templ blastRadiusFilterScript() {
 		// name, so an axis built from a different control type still counts. A
 		// MISSING panel or body is a broken component, not an empty panel, so it
 		// reports loudly rather than skipping.
+		// blastFilterBadgeLabel builds the badge's accessible name from the
+		// TRANSLATED strings on #blast-radius-i18n.
+		//
+		// This was two English literals ('1 active filter' / n + ' active
+		// filters'), which made it the ONLY user-facing string in this script not
+		// read from that element -- the exact thing the comment on
+		// blastRestoreI18n forbids, and for the exact reason it gives: JS has no
+		// access to the request translator, so a literal here is the one
+		// untranslated sentence on the pane. The visible badge is a bare number, so
+		// this label is the ONLY form the count takes for a screen-reader user --
+		// leaving it English means those users, and only those users, lose the
+		// translation on the one control that says how much of the damage report is
+		// hidden.
+		//
+		// The element is read directly rather than through blastRestoreI18n, which
+		// lives in a DIFFERENT script block (blastRadiusScript). Nothing else in
+		// this block reaches across that boundary, and introducing the first such
+		// call would make this block depend on the other one being rendered -- a
+		// coupling that buys nothing over the two lines below.
+		//
+		// {count} interpolation matches the plural pattern the rest of the pane
+		// uses (see #blast-bulk-count's data-many-template). English fallbacks stay
+		// in the || position: a missing dataset entry should degrade to a readable
+		// label, not to "undefined".
+		function blastFilterBadgeLabel(n) {
+			var el = document.getElementById('blast-radius-i18n');
+			var i18n = el && el.dataset ? el.dataset : {};
+			if (n === 1) {
+				return i18n.filterBadgeOne || '1 active filter';
+			}
+			return (i18n.filterBadgeMany || '{count} active filters').replace('{count}', String(n));
+		}
+
 		function blastRestoreServerFilterCount() {
 			var trigger = document.getElementById('blast-radius-filter-trigger');
 			if (!trigger) {
@@ -1108,7 +1143,7 @@ templ blastRadiusFilterScript() {
 					trigger.appendChild(badge);
 				}
 				badge.textContent = String(n);
-				badge.setAttribute('aria-label', n === 1 ? '1 active filter' : n + ' active filters');
+				badge.setAttribute('aria-label', blastFilterBadgeLabel(n));
 				badge.style.display = '';
 				trigger.classList.add('is-active');
 			} else if (badge) {

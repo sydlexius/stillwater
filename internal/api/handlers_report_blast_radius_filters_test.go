@@ -340,6 +340,18 @@ func TestBlastRadiusPane_ControlsMatchTheAPIAndRoundTrip(t *testing.T) {
 	if want := len(artist.TrackableFields()); len(unfiltered) != want {
 		t.Fatalf("precondition: unfiltered pane rendered %d rows, want %d (one per trackable field)", len(unfiltered), want)
 	}
+	// Indexed once for every parity check below, rather than reloaded per row.
+	rowIndex := blastUnfilteredRowIndex(t, r)
+	// Precondition: the index really covers the whole rendered report. If
+	// page_size clipped it, a row could be missing from the index for a paging
+	// reason and be reported as "the filter rendered a row the report does not
+	// hold", which names the wrong defect.
+	if len(rowIndex) != len(unfiltered) {
+		t.Fatalf("the unfiltered row index holds %d rows but the pane rendered %d; the index does not cover "+
+			"the whole report and a parity failure below would be attributed to the wrong cause",
+			len(rowIndex), len(unfiltered))
+	}
+
 	controls := blastFilterControls(t, base)
 	if len(controls) == 0 {
 		t.Fatalf("the filter flyout rendered no single-select controls; this test would verify nothing")
@@ -373,7 +385,7 @@ func TestBlastRadiusPane_ControlsMatchTheAPIAndRoundTrip(t *testing.T) {
 			// recomputing the class/attribution rules here (recomputing would
 			// let the test and the query agree on the same mistake).
 			for _, id := range got {
-				if !blastRowMatchesAxis(t, r, id, c.key, c.value) {
+				if !blastRowMatchesAxis(t, rowIndex, id, c.key, c.value) {
 					t.Errorf("control %s=%s rendered row %q, which does not match that filter; the UI narrows "+
 						"differently from the API", c.key, c.value, id)
 				}
@@ -482,27 +494,54 @@ func blastTriggerBadgeCount(body string) int {
 	return n
 }
 
+// blastUnfilteredRowIndex loads the unfiltered report ONCE and indexes it by
+// change id, for the parity checks below.
+//
+// Loaded once rather than per row. The previous shape re-ran this load inside
+// the per-row loop, so each subtest performed one full load PER RENDERED ROW --
+// controls x rows loads of identical, unchanging data, each re-running the
+// loader and its SQLite queries. The report is a fixed fixture for the whole
+// test; nothing between rows can change it.
+//
+// page_size=500 is deliberately far above the fixture's row count so the index
+// holds the WHOLE report. The caller asserts that below rather than trusting it.
+func blastUnfilteredRowIndex(t *testing.T, r *Router) map[string]artist.BlastRadiusRow {
+	t.Helper()
+	rows := loadBlastPane(t, r, "?page_size=500").Rows
+	idx := make(map[string]artist.BlastRadiusRow, len(rows))
+	for _, row := range rows {
+		idx[row.ID] = row
+	}
+	if len(idx) != len(rows) {
+		t.Fatalf("the unfiltered report holds %d rows but only %d distinct change ids; the index would "+
+			"silently drop rows and the parity check below would read the wrong one", len(rows), len(idx))
+	}
+	return idx
+}
+
 // blastRowMatchesAxis reports whether the row with this change id satisfies the
 // named narrowing, read back from the unfiltered report rather than recomputed
 // here (recomputing the class/attribution rules in the test would let the test
 // and the query agree on the same mistake).
-func blastRowMatchesAxis(t *testing.T, r *Router, changeID, key, value string) bool {
+//
+// A row absent from the index is a t.Fatalf, NOT a false. That branch is a real
+// assertion -- the filtered view rendered a row the unfiltered report does not
+// hold, which is a broken query rather than a failed match -- and reporting it
+// as "does not match this filter" would name the wrong defect.
+func blastRowMatchesAxis(t *testing.T, idx map[string]artist.BlastRadiusRow, changeID, key, value string) bool {
 	t.Helper()
-	for _, row := range loadBlastPane(t, r, "?page_size=500").Rows {
-		if row.ID != changeID {
-			continue
-		}
-		switch key {
-		case "class":
-			return row.Class == value
-		case "attribution":
-			return row.Attribution == value
-		case "field":
-			return row.Field == value
-		}
-		return false
+	row, ok := idx[changeID]
+	if !ok {
+		t.Fatalf("row %q is not in the unfiltered report at all; the filter rendered a row the report does not hold", changeID)
 	}
-	t.Fatalf("row %q is not in the unfiltered report at all; the filter rendered a row the report does not hold", changeID)
+	switch key {
+	case "class":
+		return row.Class == value
+	case "attribution":
+		return row.Attribution == value
+	case "field":
+		return row.Field == value
+	}
 	return false
 }
 
@@ -600,6 +639,35 @@ func TestBlastRadiusPane_FilteredEmptyStateQuotesALibraryWideCount(t *testing.T)
 	// report records N overall" a few pixels beneath "N of automated origin" --
 	// the two statements have to agree, and before this fix the sentence said 0.
 	tr := blastTestTranslator(t)
+
+	// Resolve the empty-state key ONCE, and prove it resolved before formatting
+	// it. Both matter, and the heading test below already does the same thing --
+	// this assertion was the inconsistent one.
+	//
+	// i18n.Translator.T returns the KEY ITSELF when the key is missing, and this
+	// value is then handed to fmt.Sprintf with a count. A missing key would
+	// therefore format as "reports.blast_radius.empty_filtered%!(EXTRA int=5)",
+	// fail the Contains check, and report a confusing wording mismatch instead
+	// of naming the real problem, which is that the key is gone.
+	//
+	// Resolving once rather than per call site is the other half: the two
+	// Sprintf calls below must format the SAME template with different counts,
+	// so that a divergence between them is impossible by construction rather
+	// than by two lookups happening to agree.
+	emptyFilteredTmpl := tr.T("reports.blast_radius.empty_filtered")
+	if emptyFilteredTmpl == "" || emptyFilteredTmpl == "reports.blast_radius.empty_filtered" {
+		t.Fatalf("the empty-state key did not resolve (got %q); the assertions below would compare the "+
+			"rendered page against a raw key name", emptyFilteredTmpl)
+	}
+	// And it really does carry the count verb the assertions interpolate. A
+	// value that lost its %d would format identically for every count, so the
+	// "quotes the library-wide number, never 0" assertion would pass whatever
+	// the page said.
+	if !strings.Contains(emptyFilteredTmpl, "%d") {
+		t.Fatalf("the empty-state template %q carries no %%d verb, so the count assertions below cannot "+
+			"distinguish the library-wide number from 0", emptyFilteredTmpl)
+	}
+
 	for _, query := range []string{
 		"?class=" + artist.BlastClassBlanked + "&attribution=" + artist.BlastAttributionUnknown,
 		"?class=" + artist.BlastClassReplaced + "&attribution=" + artist.BlastAttributionAutomated,
@@ -625,7 +693,7 @@ func TestBlastRadiusPane_FilteredEmptyStateQuotesALibraryWideCount(t *testing.T)
 			// and the assertion could not run under another locale at all. What
 			// is actually under test is WHICH NUMBER the sentence carries, and
 			// resolving the key checks that without freezing the wording.
-			wantSentence := fmt.Sprintf(tr.T("reports.blast_radius.empty_filtered"), want)
+			wantSentence := fmt.Sprintf(emptyFilteredTmpl, want)
 			if !strings.Contains(body, wantSentence) {
 				t.Errorf("the filtered empty state does not read %q. It must quote the LIBRARY-WIDE count; a "+
 					"filter-scoped count renders as 0 here and contradicts the caveat band directly above, "+
@@ -634,7 +702,7 @@ func TestBlastRadiusPane_FilteredEmptyStateQuotesALibraryWideCount(t *testing.T)
 			// And specifically not the zero-valued form, which is what a
 			// filter-scoped count produces on exactly this view.
 			if want != 0 {
-				zeroSentence := fmt.Sprintf(tr.T("reports.blast_radius.empty_filtered"), 0)
+				zeroSentence := fmt.Sprintf(emptyFilteredTmpl, 0)
 				if strings.Contains(body, zeroSentence) {
 					t.Errorf("the filtered empty state quotes a count of 0, over a library holding %d "+
 						"recorded changes", want)
@@ -762,4 +830,80 @@ func blastTestTranslator(t *testing.T) *i18n.Translator {
 		t.Fatalf("loading i18n bundle: %v", err)
 	}
 	return bundle.Translator("en")
+}
+
+// TestBlastRadiusPane_FilterScriptHasNoHardcodedUserFacingStrings pins the rule
+// the pane's own comments state: JS has no access to the request translator, so
+// every user-facing string a script block renders comes from the hidden
+// #blast-radius-i18n element rather than an English literal.
+//
+// THIS EXISTS BECAUSE THE RULE WAS BROKEN BY A FIX THAT CITED IT. The
+// active-filter badge's aria-label shipped as '1 active filter' / n + ' active
+// filters', hardcoded, in a function added a few lines below a comment block
+// spelling out why that is wrong. Nothing failed: the visible pane was fully
+// translated, and the only surface carrying the English was an aria-label, so
+// the defect was invisible to every rendered-output assertion and to a reader
+// skimming the diff.
+//
+// The operator-facing shape is narrow and easy to miss: on a non-English locale
+// a screen-reader user hears English on the ONE control that says how much of
+// the damage report is hidden, while every sighted user sees it translated.
+//
+// WHAT THIS CHECKS, and why it is shaped this way. It asserts the two known
+// label strings resolve from the i18n element -- not that no literal exists
+// anywhere, which a script full of legitimate non-user-facing literals (class
+// names, event names, console.error text for developers) cannot support. A
+// blanket English-word grep would be noise. What it can state precisely is: the
+// keys exist, the element carries them, and the script reads them.
+func TestBlastRadiusPane_FilterScriptHasNoHardcodedUserFacingStrings(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	seedAPIBlastMixedFixture(t, r)
+
+	tr := blastTestTranslator(t)
+	body := renderBlastPane(t, r, "?class="+artist.BlastClassBlanked)
+
+	// The keys resolve. Translator.T returns the key itself when missing, so
+	// this catches a key deleted from en.json, which would otherwise render the
+	// raw key name into the aria-label as if it were copy.
+	for _, key := range []string{
+		"reports.blast_radius.js.filter_badge_one",
+		"reports.blast_radius.js.filter_badge_many",
+	} {
+		if v := tr.T(key); v == "" || v == key {
+			t.Fatalf("the badge label key %q did not resolve (got %q); the aria-label would render a raw key "+
+				"name to a screen-reader user", key, v)
+		}
+	}
+
+	// The hidden element CARRIES them, keyed as the script reads them. The
+	// dataset name is the camelCase of the data- attribute, so these two must
+	// stay in step: data-filter-badge-one is read as dataset.filterBadgeOne.
+	for _, attr := range []struct{ name, key string }{
+		{"data-filter-badge-one", "reports.blast_radius.js.filter_badge_one"},
+		{"data-filter-badge-many", "reports.blast_radius.js.filter_badge_many"},
+	} {
+		want := attr.name + `="` + tr.T(attr.key) + `"`
+		if !strings.Contains(body, want) {
+			t.Errorf("#blast-radius-i18n does not carry %s with the translated value; the script falls back to "+
+				"its English literal and a non-English screen-reader user hears English on the one control "+
+				"that reports how much of the damage report is hidden", attr.name)
+		}
+	}
+
+	// And the script READS them rather than hardcoding the label. Both halves
+	// are needed: the element could carry the strings while the script ignores
+	// them, which is exactly the state this test was written for.
+	if !strings.Contains(body, "i18n.filterBadgeOne") || !strings.Contains(body, "i18n.filterBadgeMany") {
+		t.Error("the filter script does not read the badge label from the i18n element's dataset; a literal " +
+			"there is the one untranslated string on the pane")
+	}
+
+	// The plural form interpolates rather than concatenating a number onto an
+	// English word. A translation whose count sits elsewhere in the sentence --
+	// which is most of them -- cannot be expressed by concatenation.
+	if !strings.Contains(body, "'{count}'") {
+		t.Error("the badge's plural label does not interpolate {count}; a concatenated number cannot render " +
+			"a translation that places the count anywhere but the front")
+	}
 }

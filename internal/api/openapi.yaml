@@ -11729,7 +11729,7 @@ paths:
                           enum: [automated, unknown]
                   counts:
                     type: object
-                    required: [automated, unknown, total]
+                    required: [automated, unknown, total, total_unfiltered]
                     properties:
                       automated:
                         type: integer
