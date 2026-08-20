@@ -93,9 +93,22 @@ func TestLocaleCompleteness(t *testing.T) {
 }
 
 // templKeyRE matches the canonical translation call in templ sources:
-// t(ctx, "some.key"). Only string-literal keys are extracted; dynamically
-// built keys (t(ctx, "prefix."+x)) are intentionally out of scope.
-var templKeyRE = regexp.MustCompile(`\bt\(ctx,\s*"([^"]+)"\)`)
+// t(ctx, "some.key") and tf(ctx, "some.key", ...). Only string-literal keys are
+// extracted; dynamically built keys (t(ctx, "prefix."+x)) are intentionally out
+// of scope.
+//
+// tf is included because it is the same lookup with interpolation, and a key
+// consumed only through tf was invisible to this guard: every chip label on the
+// blast-radius pane is a tf call, so replacing all four with hardcoded English
+// left the whole repo green (#3093). A guard that covers one of two call shapes
+// protects neither reliably.
+//
+// The trailing (,|\)) is load-bearing: it requires the string literal to END
+// the argument, so a DYNAMIC key like t(ctx, "field."+field) is not captured as
+// the literal "field.". Without it this guard reported "field." and
+// "artists.coverage." as undefined keys -- false positives on correct code,
+// which is the fastest way to get a guard deleted.
+var templKeyRE = regexp.MustCompile(`\btf?\(ctx,\s*"([^"]+)"\s*(?:,|\))`)
 
 // stripLineComments removes `//` line comments from templ source so that an
 // example call written in a doc comment (e.g. `// fetched via t(ctx, "key")`)
@@ -141,7 +154,21 @@ func TestTranslationKeysDefined(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if d.IsDir() || filepath.Ext(path) != ".templ" {
+			// .go as well as .templ. templ compiles to Go, but plenty of
+			// t()/tf() calls live in hand-written .go helpers beside the
+			// templates (blast_radius_filters.go builds every filter-chip label
+			// that way), and those keys were entirely unguarded: the scan looked
+			// only at .templ, so a Go-side key could be deleted from en.json or
+			// replaced by a hardcoded string with nothing noticing.
+			//
+			// Generated *_templ.go is skipped: it is a compiled copy of the
+			// .templ this walk already reads, so including it would double-count
+			// every key and report a template's own keys as Go-side ones.
+			ext := filepath.Ext(path)
+			if d.IsDir() || (ext != ".templ" && ext != ".go") {
+				return nil
+			}
+			if strings.HasSuffix(path, "_templ.go") || strings.HasSuffix(path, "_test.go") {
 				return nil
 			}
 			src, err := os.ReadFile(path)

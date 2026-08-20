@@ -1891,3 +1891,157 @@ test('the accessibility description survives hydration on a control-less axis', 
     + 'deep-linked screen-reader user is told nothing about why the report is short',
   ).toHaveAccessibleDescription('1 active filter');
 });
+
+// ---------------------------------------------------------------------------
+// 7. The chip DISMISS path (#3093 fix round).
+//
+// This is a REGRESSION spec for a live defect, not a coverage exercise. Before
+// the fix, dismissing a chip swapped the ENTIRE PAGE into the results slot,
+// because /reports/blast-radius has no fragment handler and the shared
+// DismissFilterChip script issued its htmx.ajax with no `select`. Measured:
+// two #blast-radius-pane elements, 71 duplicated DOM ids, and a STALE caveat
+// band still reading the FILTERED counts sitting directly above a table of
+// unfiltered rows.
+//
+// The band is the reason this is a browser spec and not a Go one. A Go test can
+// assert the chip's TargetSel/SelectSel values (and does), but only a real swap
+// shows whether the band the operator is reading matches the rows underneath
+// it. On a data-destruction recovery surface, a band claiming less damage than
+// the table holds is the single worst thing this pane can render.
+//
+// The fixture guarantees the two states differ: seed-blast-radius seeds both
+// damage classes, so ?class=blanked is a strict subset of the whole report.
+// Every assertion below is preceded by a precondition that the FILTERED state
+// really is narrower, so a fixture that stopped narrowing fails loudly instead
+// of passing vacuously.
+// ---------------------------------------------------------------------------
+
+test('dismissing a filter chip leaves exactly one pane and one UNFILTERED caveat band', async ({ page }) => {
+  // Land on the deep-link shape the chips exist for -- this is what the artist
+  // detail page links into, and the reason an operator meets a chip at all.
+  await gotoPane(page, '/reports/blast-radius?class=blanked');
+
+  const measure = () => page.evaluate(() => {
+    const ids = {};
+    document.querySelectorAll('[id]').forEach((e) => { ids[e.id] = (ids[e.id] || 0) + 1; });
+    return {
+      panes: document.querySelectorAll('#blast-radius-pane').length,
+      bands: [...document.querySelectorAll('.sw-rep-blast-caveat')]
+        .map(b => b.textContent.trim().replace(/\s+/g, ' ')),
+      rows: document.querySelectorAll('[id^="blast-row-"]').length,
+      chips: [...document.querySelectorAll('[aria-label^="Remove "]')].length,
+      badge: (document.querySelector('.sw-filter-trigger-badge') || {}).textContent ?? null,
+      dupIDs: Object.entries(ids).filter(([, n]) => n > 1).map(([k]) => k),
+    };
+  });
+
+  const filtered = await measure();
+  // Preconditions. Each one, if violated, would let a broken dismiss pass.
+  expect(filtered.panes, 'the filtered page did not render exactly one pane').toBe(1);
+  expect(filtered.bands, 'the filtered page did not render exactly one caveat band').toHaveLength(1);
+  expect(filtered.chips, 'no dismissable chip rendered for ?class=blanked, so there is nothing to dismiss')
+    .toBeGreaterThan(0);
+  expect(filtered.rows, 'the filtered view rendered no rows; a dismiss that widened it would be unobservable')
+    .toBeGreaterThan(0);
+  expect(filtered.dupIDs, `the filtered page already carries duplicate ids: ${filtered.dupIDs.join(', ')}`)
+    .toEqual([]);
+
+  // Remember which axis is being cleared, so the flyout assertion below can
+  // name it rather than asserting "nothing is selected" (which would be wrong
+  // whenever more than one filter is active).
+  const dismissedKey = await page.evaluate(() => {
+    const chip = document.querySelector('[aria-label^="Remove "]');
+    const label = chip ? chip.getAttribute('aria-label') : '';
+    if (/Class/i.test(label)) return 'class';
+    if (/Attribution/i.test(label)) return 'attribution';
+    if (/Field/i.test(label)) return 'field';
+    return 'artist_id';
+  });
+  await page.locator('[aria-label^="Remove "]').first().click();
+
+  // Wait for the swap to LAND, keyed on the ROW COUNT changing rather than on
+  // the chip disappearing.
+  //
+  // This matters for the diagnostic, not the verdict. Waiting on "the chip is
+  // gone" is a condition the BROKEN behavior never satisfies (the injected
+  // duplicate page carries its own stale chip), so a regression failed as a
+  // 60-second timeout naming the wait, rather than as the assertions below
+  // naming two panes and a stale band. Row count changes under BOTH behaviors,
+  // so the wait resolves either way and the failure is reported by whichever
+  // property actually broke. Verified by re-running with the defect
+  // reintroduced.
+  await page.waitForFunction(
+    (before) => document.querySelectorAll('[id^="blast-row-"]').length !== before,
+    filtered.rows,
+    { timeout: 15_000 },
+  );
+
+  const after = await measure();
+
+  // WHICH ASSERTION GUARDS WHICH HALF -- they are load-bearing for different
+  // things, and an earlier version of this comment pointed at the wrong one.
+  //
+  // The pane/band count below guards the TargetSel half: pointing the chip at
+  // the results table instead of the pane leaves a stale caveat band standing
+  // over fresh rows, which shows up here as a second band.
+  //
+  // It does NOT catch a missing SelectSel. With swap:'outerHTML' on
+  // #blast-radius-pane and a full-page response, htmx replaces the element with
+  // the whole page, so there is still exactly one pane and one band -- the
+  // duplicates are the surrounding chrome. That half is caught by the dupIDs
+  // assertion further down (measured: 68 duplicated ids). Both checks stay;
+  // neither is redundant.
+  //
+  // One pane, one band. Two of either means the swap targeted the wrong node.
+  expect(after.panes, 'dismissing the chip injected a SECOND #blast-radius-pane: the full-page response was '
+    + 'swapped in wholesale instead of the selected element').toBe(1);
+  expect(after.bands, 'dismissing the chip left more than one caveat band. The stale one reports the OLD '
+    + `filter's attribution split over the NEW rows: ${JSON.stringify(after.bands)}`).toHaveLength(1);
+
+  // The surviving band must describe the UNFILTERED report. Compared against
+  // the filtered band rather than a hardcoded count, so this holds for any
+  // fixture size.
+  expect(after.bands[0], 'the surviving caveat band still reads the FILTERED counts. An operator now sees a '
+    + 'claim that less was destroyed than the table below it shows, which is the exact falsehood this pane '
+    + 'exists to prevent').not.toBe(filtered.bands[0]);
+
+  // And the rows really did widen, which is what makes the band comparison
+  // meaningful rather than incidental.
+  expect(after.rows, 'clearing the filter did not widen the row set, so the band comparison above proves nothing')
+    .toBeGreaterThan(filtered.rows);
+
+  // THE FLYOUT RESYNCS TOO. Chips are a second write path: DismissFilterChip
+  // does its own pushState + ajax and fires no sw:filter-applied, and the panel
+  // lives outside the swapped container so the swap does not refresh it either.
+  // Before the afterSwap handler, the panel kept the dismissed axis lit and its
+  // footer read "2 active" against a trigger reading "1" -- two badges on one
+  // screen disagreeing about how much of a damage report is hidden -- and the
+  // panel's own Apply then re-applied the filter the operator had just cleared.
+  const flyout = await page.evaluate(() => ({
+    selected: [...document.querySelectorAll(
+      '#blast-radius-filter-flyout [data-filter-mode="single"][data-filter-selected="true"]',
+    )].map(e => `${e.getAttribute('data-filter-key')}=${e.getAttribute('data-filter-value')}`),
+    footer: (document.querySelector('#blast-radius-filter-flyout .sw-filter-active-badge') || {})
+      .textContent?.trim() ?? '',
+  }));
+  expect(
+    flyout.selected.filter(v => v.startsWith(`${dismissedKey}=`)),
+    `the filter flyout still shows ${dismissedKey} as selected after its chip was dismissed; the panel's `
+    + 'Apply would silently re-apply the filter the operator just cleared',
+  ).toEqual([]);
+  // The two badges must agree. The trigger is null when nothing is active, and
+  // the footer is empty in that state.
+  const triggerCount = after.badge ?? '';
+  const footerCount = (flyout.footer.match(/\d+/) || [''])[0];
+  expect(footerCount, `the flyout footer reads ${JSON.stringify(flyout.footer)} while the trigger badge reads `
+    + `${JSON.stringify(after.badge)}; two counts of "how much is hidden" on one screen must not disagree`)
+    .toBe(triggerCount);
+
+  // No stale affordance survives: no chip for a cleared filter, no badge
+  // claiming a filter is active, no duplicated ids.
+  expect(after.chips, 'a chip for the cleared filter is still rendered').toBe(0);
+  expect(after.badge, 'the filter badge still claims a filter is active after the only filter was cleared')
+    .toBeNull();
+  expect(after.dupIDs, `dismissing the chip duplicated ${after.dupIDs.length} DOM ids, so getElementById now `
+    + `returns the stale copy: ${after.dupIDs.slice(0, 8).join(', ')}`).toEqual([]);
+});

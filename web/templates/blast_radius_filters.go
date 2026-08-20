@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/web/components"
 )
 
 // blast_radius_filters.go holds the narrowing-axis model behind the
@@ -154,4 +155,63 @@ func blastRadiusFilterBadgeLabel(ctx context.Context, n int) string {
 	return strings.ReplaceAll(
 		t(ctx, "reports.blast_radius.js.filter_badge_many"),
 		"{count}", strconv.Itoa(n))
+}
+
+// blastRadiusChips builds the dismissable chips for the axes currently
+// narrowing the report.
+//
+// Every axis gets a chip, INCLUDING artist_id, which no control on this pane
+// can set. It is reachable from a deep link (the artist detail page's history
+// section links into this report for one artist) and from a hand-edited URL,
+// and an axis that hides rows with no visible way to clear it is the same
+// false-reassurance defect the empty state guards against, one step removed:
+// the operator sees a short table and no reason for it.
+func blastRadiusChips(ctx context.Context, data BlastRadiusData) []components.FilterChipSpec {
+	var chips []components.FilterChipSpec
+	for _, axis := range blastRadiusAxes(data) {
+		if !axis.active() {
+			continue
+		}
+		chips = append(chips, components.FilterChipSpec{
+			Label: blastRadiusChipLabel(ctx, axis),
+			Key:   axis.Param,
+			// The PANE container, not the bare results table, and with a
+			// matching SelectSel. Both halves are load-bearing.
+			//
+			// The caveat band above the table reports the attribution split and
+			// the coverage lists for the CURRENT filter, so clearing a filter
+			// has to replace the band along with the rows. A reload scoped to
+			// the table alone leaves a band describing the OLD filter standing
+			// over the new rows, which on a data-recovery surface is a wrong
+			// statement about how much data was destroyed.
+			//
+			// TargetSel alone would swap a whole page into the pane wrapper,
+			// because /reports/blast-radius has no fragment handler and htmx's
+			// makeFragment turns a full-page response into a fragment of the
+			// entire body. Measured before SelectSel was set: dismissing one
+			// chip produced two #blast-radius-pane elements, 71 duplicated DOM
+			// ids, and a stale band reading "4 of unknown origin" directly above
+			// a table of 21 unfiltered rows. SelectSel makes the full-page
+			// response usable by extracting just this element.
+			TargetSel: "#blast-radius-pane",
+			SelectSel: "#blast-radius-pane",
+		})
+	}
+	return chips
+}
+
+// blastRadiusChipLabel renders one chip's visible text: the axis name, then the
+// value in the same words the table's own badges use, so a chip and the rows it
+// produced never describe the same state differently.
+func blastRadiusChipLabel(ctx context.Context, axis blastRadiusAxis) string {
+	switch axis.Param {
+	case "class":
+		return tf(ctx, "reports.blast_radius.chip_class", blastRadiusRowClassLabel(ctx, axis.Value))
+	case "attribution":
+		return tf(ctx, "reports.blast_radius.chip_attribution", blastRadiusRowAttributionLabel(ctx, axis.Value))
+	case "field":
+		return tf(ctx, "reports.blast_radius.chip_field", fieldLabel(ctx, axis.Value))
+	default:
+		return tf(ctx, "reports.blast_radius.chip_artist", axis.Value)
+	}
 }

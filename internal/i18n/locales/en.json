@@ -1758,6 +1758,7 @@
   "report.violations_none": "No violations found",
   "report.x_of_y_compliant": "%d of %d compliant",
   "report.zero_selected": "0 selected",
+  "reports.blast_radius.active_filters": "Active Filters",
   "reports.blast_radius.attribution_automated": "Automated",
   "reports.blast_radius.attribution_summary": "%d change(s) attributed to an automated writer, %d of unknown origin (recorded before %s, may be an operator edit or earlier scan damage).",
   "reports.blast_radius.attribution_unknown": "Unknown",
