@@ -953,3 +953,251 @@ test('every refusal token renders operator-actionable prose, and an unknown one 
   expect(cleared.text, 'a stale refusal survived a plan that no longer refuses the row').toBe('');
   expect(cleared.hidden, 'the emptied reason element stayed visible').toBe(true);
 });
+
+// ---------------------------------------------------------------------------
+// 6. The filter controls (#3093).
+//
+// The pane's filters are the newest interactive surface on it, and the
+// chip-based flyout is the control type a11y regressions land on hardest: one
+// that traps focus, loses it, or announces no state.
+//
+// Covered here, in BOTH themes where the assertion is a rendered-appearance
+// one:
+//   1. Every control has an accessible NAME (axe's own rules cover the
+//      generic case; this asserts it per control, so a failure names the
+//      control rather than a rule id).
+//   2. Every control is Tab-REACHABLE with a visible focus indicator.
+//   3. The flyout opens from the keyboard, moves focus INTO the panel, and
+//      returns focus to its trigger on Escape.
+//   4. A full axe scan with the flyout OPEN, in both themes -- the panel is
+//      inert while closed, so the scans at the top of this file never see it.
+//
+// Nothing here is scoped away when the fixture is thin: the filter controls
+// render regardless of how many rows the report holds (they are generated from
+// artist.TrackableFields() and a fixed vocabulary, not from the rows), so an
+// absent control is a defect and is reported as one.
+// ---------------------------------------------------------------------------
+
+// The controls this pane must expose, keyed by what a failure should say.
+// The narrowing controls this pane exposes, keyed by what a failure should say.
+// The ordering selects live beside these in the same toolbar and carry their own
+// coverage in the slice that adds them: a spec here naming a control this branch
+// does not render would fail as a missing control rather than as a real defect.
+const FILTER_CONTROLS = {
+  'filters trigger': '#blast-radius-filter-trigger',
+};
+
+// accessibleNameOf reads the name a screen reader would announce, in the same
+// precedence order the accname spec uses for these control types. Deliberately
+// NOT reading textContent alone: a <select> announces its label, not its
+// options, so a textContent check would pass a select with no label at all.
+async function accessibleNameOf(page, selector) {
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const labelledBy = el.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const parts = labelledBy.split(/\s+/)
+        .map(id => document.getElementById(id))
+        .filter(Boolean)
+        .map(n => n.textContent.trim());
+      if (parts.join(' ').trim()) return parts.join(' ').trim();
+    }
+    const ariaLabel = (el.getAttribute('aria-label') || '').trim();
+    if (ariaLabel) return ariaLabel;
+    if (el.id) {
+      const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (label && label.textContent.trim()) return label.textContent.trim();
+    }
+    const closest = el.closest('label');
+    if (closest && closest.textContent.trim()) return closest.textContent.trim();
+    return (el.textContent || '').trim();
+  }, selector);
+}
+
+test('every filter control has an accessible name', async ({ page }) => {
+  await gotoPane(page);
+
+  // Precondition: the controls are on the page at all. Without this an absent
+  // control would report as an empty name, reading as a labelling defect when
+  // the real fault is that the toolbar never rendered.
+  const missing = [];
+  for (const [label, sel] of Object.entries(FILTER_CONTROLS)) {
+    if (await page.locator(sel).count() === 0) missing.push(`${label} (${sel})`);
+  }
+  expect(missing, `filter controls absent from the pane:\n${missing.join('\n')}`).toEqual([]);
+
+  for (const [label, sel] of Object.entries(FILTER_CONTROLS)) {
+    const name = await accessibleNameOf(page, sel);
+    expect(name, `${label} (${sel}) has no accessible name; a screen-reader user is offered an unlabelled control`)
+      .toBeTruthy();
+  }
+});
+
+test('the filters trigger is Tab-reachable with a visible focus indicator', async ({ page }) => {
+  await gotoPane(page);
+
+  const sel = FILTER_CONTROLS['filters trigger'];
+  // Precondition: the control exists. Absent, the walk below would report it as
+  // unreachable, which reads as a keyboard defect rather than a missing
+  // control.
+  expect(await page.locator(sel).count(), `the filters trigger (${sel}) is absent from the pane`).toBe(1);
+
+  const baseline = await page.evaluate(([s, props]) => {
+    const cs = getComputedStyle(document.querySelector(s));
+    return Object.fromEntries(props.map(p => [p, cs[p]]));
+  }, [sel, FOCUS_PROPS]);
+
+  const focused = await page.evaluate(([s, props]) => {
+    const el = document.querySelector(s);
+    el.focus();
+    const cs = getComputedStyle(el);
+    return Object.fromEntries(props.map(p => [p, cs[p]]));
+  }, [sel, FOCUS_PROPS]);
+
+  // A control that renders identically focused and unfocused leaves a keyboard
+  // user with no way to tell where they are. Both mechanisms the codebase uses
+  // count: a drawn ring, or a deliberate style swap. See focusIndicatorFor.
+  expect(
+    focusIndicatorFor(baseline, focused).visible,
+    `the filters trigger renders identically focused and unfocused, so a keyboard user cannot tell where they are`,
+  ).toBe(true);
+
+  // Reachability is measured separately from the indicator: a control can be
+  // focusable by script and still be skipped by Tab.
+  //
+  // The walk starts at the first focusable element and is bounded by the
+  // document's own focusable count. Measured on a live page: pressing Tab a
+  // fixed number of times from <body> runs focus off the end of the document
+  // and into BROWSER chrome, where presses no longer reach the page at all, so
+  // a generous fixed bound wastes every press after the first wrap rather than
+  // "keeping looking".
+  const focusableCount = await page.evaluate(() => document.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+    + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  ).length);
+  expect(focusableCount, 'the page reports no focusable elements at all').toBeGreaterThan(0);
+
+  await page.evaluate((s) => {
+    window.__swFilterHit = false;
+    document.addEventListener('focusin', (e) => {
+      if (e.target && e.target.matches(s)) window.__swFilterHit = true;
+    });
+    const first = document.querySelector('a[href], button:not([disabled])');
+    if (first) first.focus();
+  }, sel);
+
+  for (let i = 0; i < focusableCount; i++) {
+    await page.keyboard.press('Tab');
+    if (await page.evaluate(() => window.__swFilterHit)) break;
+  }
+
+  expect(
+    await page.evaluate(() => window.__swFilterHit),
+    `the filters trigger was never reached by Tab within ${focusableCount} presses (one per focusable element `
+    + 'on the page), so a keyboard-only operator cannot filter the damage report at all',
+  ).toBe(true);
+});
+
+test('the filter flyout opens from the keyboard and returns focus on Escape', async ({ page }) => {
+  await gotoPane(page);
+
+  const trigger = page.locator('#blast-radius-filter-trigger');
+  expect(await trigger.count(), 'the filters trigger is absent').toBe(1);
+
+  await trigger.focus();
+  expect(await page.evaluate(() => document.activeElement.id), 'focusing the trigger did not take')
+    .toBe('blast-radius-filter-trigger');
+
+  await page.keyboard.press('Enter');
+  // The default 'visible' state is correct here: an OPEN panel is painted.
+  await page.waitForSelector('#blast-radius-filter-flyout:not([inert])', { timeout: 5000 });
+
+  // Focus must land INSIDE the panel. A panel that opens without moving focus
+  // strands a keyboard user behind it: the controls are ahead in the tab order
+  // only by accident of DOM position, and the scrim swallows the pointer.
+  const focusInside = await page.evaluate(() => {
+    const panel = document.getElementById('blast-radius-filter-flyout');
+    return !!(panel && document.activeElement && panel.contains(document.activeElement)
+      && document.activeElement !== document.body);
+  });
+  expect(focusInside, 'opening the filter flyout left focus outside the panel').toBe(true);
+
+  expect(
+    await trigger.getAttribute('aria-expanded'),
+    'the trigger still reports aria-expanded=false while the panel is open',
+  ).toBe('true');
+
+  await page.keyboard.press('Escape');
+  // state:'attached', NOT the default 'visible'. A CLOSED flyout is
+  // visibility:hidden by design (the panel is removed from paint, find-in-page
+  // and the tab order once the slide-out finishes), so the default wait can
+  // never resolve on a correctly closed panel and times out on success. Measured
+  // against a live page: after Escape the panel really does carry inert and
+  // focus really does return to the trigger; only this wait was wrong.
+  await page.waitForSelector('#blast-radius-filter-flyout[inert]', { state: 'attached', timeout: 5000 });
+
+  // Focus returns to the trigger. Dropping it to <body> is the classic
+  // dialog-dismiss defect: the next Tab restarts from the top of the document.
+  const returned = await page.evaluate(() => document.activeElement && document.activeElement.id);
+  expect(returned, 'closing the filter flyout did not return focus to its trigger; the next Tab restarts '
+    + 'from the top of the document').toBe('blast-radius-filter-trigger');
+
+  expect(
+    await trigger.getAttribute('aria-expanded'),
+    'the trigger still reports aria-expanded=true after the panel closed',
+  ).toBe('false');
+});
+
+for (const theme of ['dark', 'light']) {
+  test(`the open filter flyout passes a full-page a11y scan (${theme} theme)`, async ({ page }) => {
+    // The panel is inert while closed, so the scans at the top of this file
+    // never measure it. Its contrast and labelling are only observable open.
+    if (theme === 'dark') {
+      await page.emulateMedia({ colorScheme: 'dark' });
+    }
+    await gotoPane(page);
+    await applyTheme(expect, page, theme);
+
+    await page.locator('#blast-radius-filter-trigger').click();
+    await page.waitForSelector('#blast-radius-filter-flyout:not([inert])', { timeout: 5000 });
+
+    // Precondition: the panel is genuinely rendered and visible, or the scan
+    // below measures a hidden subtree and reports a meaningless green.
+    //
+    // The vacuity guard counts FOCUSABLE CONTROLS, not filter chips. This slice
+    // ships the flyout deliberately empty of axes, so a chip count is zero here
+    // and a `chips > 0` precondition fails on this branch -- which it did:
+    // 4 failed / 76 passed on both engines, while the scan itself reported zero
+    // violations in all four combinations. The precondition was wrong, not the
+    // page, and the pre-push gate missed it because the a11y tier defaults to
+    // SKIP.
+    //
+    // Focusables is the honest property: the panel always ships its close,
+    // Clear All and Apply controls (3 on this branch), and the number only grows
+    // as axes land, so this keeps its teeth through the later slices without
+    // needing a re-edit. Deleting the guard instead would leave a scan that
+    // passes over a hidden or empty subtree, which is a green light wired to
+    // nothing.
+    const visible = await page.evaluate(() => {
+      const panel = document.getElementById('blast-radius-filter-flyout');
+      if (!panel) return { open: false, focusables: 0 };
+      const cs = getComputedStyle(panel);
+      return {
+        open: cs.display !== 'none' && cs.visibility !== 'hidden',
+        focusables: panel.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), '
+          + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ).length,
+      };
+    });
+    expect(visible.open, 'the filter flyout is not visibly open; the scan would measure a hidden subtree').toBe(true);
+    expect(visible.focusables, 'the open flyout exposes no controls; there is nothing to scan').toBeGreaterThan(0);
+
+    const results = await buildAxeBuilder(page).analyze();
+    expect(
+      results.violations,
+      `Blast-radius filter flyout ${theme}-theme a11y violations:\n${formatViolations(results.violations)}`,
+    ).toHaveLength(0);
+  });
+}

@@ -554,15 +554,24 @@ type BlastRadiusData struct {
 	// so they are held apart from the four above and never reach
 	// blastRadiusNarrowed.
 	//
-	// NOTHING IN THIS SLICE READS THEM YET, and that is deliberate rather than
-	// an oversight. They are populated here so a later slice's sort controls
-	// can render the ordering actually in force rather than always showing the
-	// default, and so that slice's blastRadiusPageURL can carry the ordering
-	// onto the pager links. blastRadiusPageURL below emits six parameters and
-	// does NOT include sort or order: a reader who greps this function for
-	// "sort" and finds nothing is looking at the correct state of this commit,
-	// not a regression. The carry, and the test that defends it, ship with the
-	// ordering controls.
+	// NO CONTROL SETS THEM ON THIS SLICE; the sort and order selects arrive with
+	// the ordering slice. They are populated from the request here for two
+	// reasons that are already live:
+	//
+	//   - blastRadiusPageURL below DOES carry them onto the pager links (it
+	//     emits eight parameters: the four narrowing axes, sort, order,
+	//     page_size and page). ?sort= and ?order= are hand-reachable today and
+	//     the loader honours them, so without the carry an operator who reaches
+	//     an ordered view walks to page 2 and the server falls back to its
+	//     default, silently handing them the descending continuation of an
+	//     ascending list.
+	//   - the ordering slice's selects render the order actually in force
+	//     rather than always showing the default.
+	//
+	// An earlier revision of this comment said the function emitted six
+	// parameters and excluded sort/order. That was true of the parent slice and
+	// this commit made it false; it is corrected here rather than left for a
+	// reader to trip over.
 	Sort     string
 	Order    string
 	BasePath string
@@ -591,11 +600,11 @@ func blastRadiusClassBadgeClass(class string) string {
 }
 
 // blastRadiusNarrowed and the axis table it walks live in
-// blast_radius_filters.go, together with the active-filter count derived from
-// the same table. They moved out of this file when the pane's narrowing model
-// was made table-driven (#3093): both readings must agree about whether rows
-// are being hidden, and keeping them beside the markup that renders them hid
-// that requirement.
+// blast_radius_filters.go, together with the active-filter count the trigger
+// badge renders from the same table. They moved out of this file when the
+// pane's narrowing model was made table-driven (#3093): the empty-state wording
+// and the badge must agree about whether rows are being hidden, and keeping the
+// model beside the markup that renders it hid that requirement.
 //
 // A THIRD reader of that table, the dismissable filter chips, arrives with the
 // slice that renders them; it is not in this file or that one yet. See that
@@ -677,6 +686,24 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 	     pane that renders a ContextHelp, so the script belongs here rather
 	     than on ReportsPage. The component self-guards re-injection. -->
 	@components.ContextHelpScript()
+	<!-- Everything a filter can change lives inside #blast-radius-pane, and the
+	     filter reload replaces the whole container (#3093).
+	     /reports/blast-radius has NO fragment handler. It returns the full page
+	     whether or not HX-Request is set (verified: identical response length
+	     and content both ways), so the reload pulls this container out of the
+	     full-page response with hx-select rather than expecting a fragment.
+	     The container is drawn around the CAVEAT BAND as well as the rows,
+	     because the band reports the attribution split and the coverage lists
+	     for the CURRENT filter. Swapping only the table would leave a caveat
+	     band describing the previous request standing over fresh rows, which on
+	     this surface is a wrong statement about how much was destroyed. The
+	     active-filter chips and the trigger badge are inside for the same
+	     reason: they are the operator's only signal that the table is short on
+	     purpose.
+	     The filter flyout itself is deliberately OUTSIDE, rendered after this
+	     container, so a swap cannot yank the panel out from under an operator
+	     who is still using it. -->
+	<div id="blast-radius-pane">
 	<!-- Attribution + coverage caveat band. Both counts are always shown side
 	     by side (never just the automated headline), and the field lists are
 	     rendered from data.CoveredFields/UncoveredFields, which the loader
@@ -695,6 +722,35 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 			</p>
 		}
 		<p class="sw-rep-blast-caveat-line">{ t(ctx, "reports.blast_radius.retention_note") }</p>
+	</div>
+	<!-- Filter toolbar (#3093). Pane-local, exactly like the compliance pane's:
+	     the two panes narrow on different axes, so a shared toolbar would have
+	     to render controls that do nothing on whichever pane is active.
+	     Before this, class/attribution/field/sort/order were reachable only by
+	     hand-editing the URL, which on a 3,000-row damage report means the
+	     operator gets an undifferentiated pile and no way to cut it down. -->
+	<div class="sw-rep-toolbar">
+		<div class="sw-rep-toolbar-actions">
+			<button
+				id="blast-radius-filter-trigger"
+				type="button"
+				class={ "sw-rep-filter-btn", templ.KV("is-active", blastRadiusFilterCount(data) > 0) }
+				data-active-classes="is-active"
+				data-badge-classes="sw-filter-trigger-badge"
+				aria-label={ t(ctx, "common.open_filter_panel") }
+				aria-expanded="false"
+				aria-controls="blast-radius-filter-flyout"
+				onclick={ components.OpenFilterFlyout("blast-radius-filter-flyout") }
+			>
+				<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
+				</svg>
+				<span>{ t(ctx, "common.filters") }</span>
+				if blastRadiusFilterCount(data) > 0 {
+					<span class="sw-filter-trigger-badge">{ fmt.Sprintf("%d", blastRadiusFilterCount(data)) }</span>
+				}
+			</button>
+		</div>
 	</div>
 	<div class="overflow-x-auto" id="blast-radius-results">
 		<table id="blast-radius-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -754,6 +810,7 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		</table>
 	</div>
 	@blastRadiusPagination(data)
+	</div>
 	<!-- Bulk action bar. Rendered hidden and revealed by blastUpdateBulkBar
 	     once at least one row is selected.
 
@@ -833,7 +890,131 @@ templ repPaneBlastRadius(data BlastRadiusData) {
 		data-refuse-name-collision={ t(ctx, "reports.blast_radius.js.refuse_name_collision") }
 		data-refuse-unknown={ t(ctx, "reports.blast_radius.js.refuse_unknown") }
 	></div>
+	@blastRadiusFilterFlyout(data)
+	@blastRadiusFilterScript()
 	@blastRadiusScript()
+}
+
+// blastRadiusFilterFlyout renders the pane's filter panel (#3093).
+//
+// Only the axes the query layer already honours are offered: class,
+// attribution and field. Nothing here invents a filter the server would ignore
+// -- a control that appears to narrow and does not is worse on this surface
+// than no control, because the operator reads the resulting row set as the
+// answer to a question that was never asked.
+//
+// THE FIELD SECTION IS GENERATED, NEVER WRITTEN OUT. data.CoveredFields IS
+// artist.TrackableFields() as the loader computed it for this request
+// (blastRadiusCoverage), the same slice the coverage caveat above the table
+// quotes. A hand-written list would drift the moment a field is added to
+// history tracking, and it would drift SILENTLY: the missing option simply
+// never appears, so damage to that field stays unfilterable while the caveat
+// band claims the report covers it.
+//
+// artist_id has no control. It is a UUID; a select over every artist in the
+// library is not a usable control and a free-text box for a UUID is not either.
+// It stays reachable by deep link and IS rendered as a dismissable chip when
+// set, so an operator who arrives through one can see it and clear it.
+templ blastRadiusFilterFlyout(data BlastRadiusData) {
+	@components.FilterFlyout("blast-radius-filter-flyout", t(ctx, "reports.blast_radius.filters_title"), "blast-radius-filter-trigger", blastRadiusFilterCount(data), "#blast-radius-results", nil) {
+		<!-- The narrowing sections arrive per axis in the slices that add them.
+		     The shell lands first so each axis is a small, reviewable addition
+		     to a panel whose keyboard behavior and contrast are already proven. -->
+	}
+}
+
+// blastRadiusFilterScript wires the pane's filter controls to a reload.
+//
+// TWO ENTRY POINTS, ONE RELOAD. The flyout's Apply writes the chosen params to
+// the URL and fires sw:filter-applied at #blast-radius-results (filter-flyout.js);
+// the sort/order selects change the URL themselves. Both then call the same
+// reload, so a filter and a re-sort cannot diverge in how they rebuild the
+// request.
+//
+// The reload targets /reports/blast-radius, which serves the WHOLE pane rather
+// than a fragment: unlike /reports/compliance there is no fragment handler for
+// this report, and the pane's caveat band (the attribution split and the
+// coverage lists) sits ABOVE the results table and moves with the filter. A
+// swap scoped to the table alone would leave a stale caveat band standing over
+// fresh rows, which on this surface is a wrong statement about how much was
+// destroyed. hx-select pulls the pane's whole container out of the full-page
+// response, so the swap replaces everything that can change together.
+//
+// NO SILENT-FAILURE GUARDS. Both htmx and swFilterFlyout are loaded globally by
+// the layout, so their absence is a broken page, not a supported configuration.
+// Each check reports loudly and then does nothing rather than falling back to a
+// half-working path: on a recovery surface, a filter that silently does not
+// apply leaves the operator reading an unfiltered table as though it were the
+// filtered one.
+templ blastRadiusFilterScript() {
+	<script>
+		// blastRadiusReload re-requests the pane with the current URL's query
+		// string. window.location.search is the single source of truth: the
+		// flyout has already written its params there, and the selects write
+		// theirs below, so neither has to know what the other set.
+		function blastRadiusReload() {
+			if (!window.htmx) {
+				console.error('blast-radius: htmx is not loaded; the filter controls cannot reload the report');
+				return;
+			}
+			htmx.ajax('GET', '/reports/blast-radius' + window.location.search, {
+				target: '#blast-radius-pane',
+				swap: 'outerHTML',
+				select: '#blast-radius-pane'
+			});
+		}
+
+		// The flyout's Apply fires sw:filter-applied at its data-target-sel.
+		// Bound on document.body rather than on the results container because
+		// the container is REPLACED by every swap, which would take a listener
+		// bound to it with it and leave the second filter application dead.
+		document.body.addEventListener('sw:filter-applied', function(evt) {
+			if (!evt.target || evt.target.id !== 'blast-radius-results') return;
+			blastRadiusReload();
+		});
+
+		// Hydrate the flyout chips from the URL on first paint, so a deep link
+		// or a reload shows the filters that are actually in force rather than
+		// an empty panel over a narrowed table.
+		//
+		// SKIPPED WHILE THE PANEL HAS NO CONTROLS, which is this slice's state.
+		// initFromURL's last act is refreshActiveCount, which counts controls
+		// INSIDE the panel and then writes that count to the trigger badge. Over
+		// an empty panel it counts zero and sets display:none, HIDING the badge
+		// the server already rendered correctly. Measured on
+		// ?class=blanked&field=biography: the server emits `is-active` and a
+		// badge reading "2", and 1.5s after load the badge is
+		// {"text":"2","style":"display: none;","visible":false}. The compliance
+		// pane, same component and a non-empty panel, keeps its badge.
+		//
+		// The harm is operator-facing and specific: a deep link narrows the
+		// 3,234-row damage report, the table shows a subset, and the trigger
+		// reads a bare "Filters" with no count -- so nothing on the pane says
+		// rows are being hidden and the operator reads the short table as the
+		// whole report. That is the exact failure blastRadiusFilterCount was
+		// made table-driven to prevent. It is also intermittent: after any Apply
+		// the badge returns, because refreshActiveCount runs before the swap
+		// replaces the trigger, so the same URL answers "how much is hidden" two
+		// different ways.
+		//
+		// Hydration is a no-op here regardless -- there are zero controls to
+		// hydrate -- so skipping loses nothing and keeps the server's answer. The
+		// call returns as soon as the first axis lands and the panel has state
+		// worth restoring. The missing-dependency guard below stays LOUD; this
+		// is a deliberate skip on a known-empty panel, not a silent bail.
+		document.addEventListener('DOMContentLoaded', function() {
+			if (!window.swFilterFlyout) {
+				console.error('blast-radius: swFilterFlyout is not loaded; the filter panel cannot show which filters are active');
+				return;
+			}
+			var panel = document.getElementById('blast-radius-filter-flyout');
+			var controls = panel ? panel.querySelectorAll('[data-filter-key]').length : 0;
+			if (controls === 0) {
+				return;
+			}
+			swFilterFlyout.initFromURL('blast-radius-filter-flyout');
+		});
+	</script>
 }
 
 // blastRadiusRow renders one destroyed field: artist, field, old -> new
@@ -970,6 +1151,16 @@ func blastRadiusPageURL(data BlastRadiusData, page int) string {
 	}
 	if data.ArtistID != "" {
 		q.Set("artist_id", data.ArtistID)
+	}
+	// Ordering travels with the page link too (#3093). Without it, walking to
+	// page 2 from an artist-name-sorted view silently reverts to the default
+	// newest-first order, so the operator gets rows that are not the
+	// continuation of the ones they were reading.
+	if data.Sort != "" {
+		q.Set("sort", data.Sort)
+	}
+	if data.Order != "" {
+		q.Set("order", data.Order)
 	}
 	// Always explicit: an omitted page_size falls back to the stored preference,
 	// which is exactly how rows go missing between pages of different sizes.
