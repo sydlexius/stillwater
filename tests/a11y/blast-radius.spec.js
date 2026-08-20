@@ -976,10 +976,20 @@ test('every refusal token renders operator-actionable prose, and an unknown one 
 // absent control is a defect and is reported as one.
 // ---------------------------------------------------------------------------
 
-// The narrowing controls this pane exposes, keyed by what a failure should say.
-// The ordering selects live beside these in the same toolbar and carry their own
-// coverage in the slice that adds them: a spec here naming a control this branch
-// does not render would fail as a missing control rather than as a real defect.
+// Every control in the pane's toolbar, keyed by what a failure should say.
+//
+// This holds BOTH the narrowing trigger and the two ordering selects. They are
+// different things to the report -- the trigger opens the filters that hide
+// rows, the selects only reorder the rows already chosen, which is why only the
+// trigger carries an active-filter badge -- but they are the same thing to a
+// screen reader: adjacent toolbar controls that each need an accessible name
+// and a Tab-reachable focus indicator. This map drives those two assertions, so
+// it is keyed on that shared requirement rather than on the narrowing/ordering
+// split.
+//
+// A control named here that this branch does not render fails as a missing
+// control, which is the intended behavior: the entry is the claim that the
+// surface exists.
 const FILTER_CONTROLS = {
   'filters trigger': '#blast-radius-filter-trigger',
   'sort select': '#blast-radius-sort',
