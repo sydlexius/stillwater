@@ -11740,6 +11740,16 @@ paths:
                       total:
                         type: integer
                         description: The count for the currently selected attribution scope. This is the pagination denominator, not a headline damage figure.
+                      total_unfiltered:
+                        type: integer
+                        description: >
+                          Every damaged row in the library, with EVERY narrowing parameter
+                          dropped, including attribution. This is the only library-wide figure
+                          in this object. automated and unknown ignore the attribution
+                          parameter but still follow class, field and artist_id, so their sum
+                          is not library-wide under any of those; total is narrower still.
+                          Use this, and only this, to say how much the report holds behind an
+                          active filter.
                   page:
                     type: integer
                   page_size:

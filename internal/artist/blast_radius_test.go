@@ -877,12 +877,28 @@ func TestCountBlastRadius_BucketsFollowEveryAxisExceptAttribution(t *testing.T) 
 	}{
 		{"class", BlastRadiusFilter{Class: BlastClassBlanked}},
 		{"field", BlastRadiusFilter{Field: "biography"}},
-		{"artist_id", BlastRadiusFilter{ArtistID: "art-1"}},
+		// a-1, a SEEDED artist. An unseeded id (this read "art-1", which
+		// seedBlastFixture never creates -- it seeds a-1..a-6) matches ZERO
+		// rows, and zero rows satisfies "the buckets moved" for the wrong
+		// reason: the case then proves only that an empty result is empty, and
+		// would keep passing if artist_id narrowing broke entirely. The
+		// dedicated no-match case below covers the empty path deliberately.
+		{"artist_id", BlastRadiusFilter{ArtistID: "a-1"}},
 	} {
 		t.Run(tc.name+" narrows the buckets", func(t *testing.T) {
 			got, err := svc.CountBlastRadius(ctx, tc.f)
 			if err != nil {
 				t.Fatalf("CountBlastRadius: %v", err)
+			}
+			// PRECONDITION: the narrowing MATCHED SOMETHING. Without this, an
+			// axis that matches nothing passes the "buckets moved" assertion
+			// below by collapsing both to zero -- which is what an unseeded id
+			// did here. A narrowing axis has to be shown to narrow, not to
+			// annihilate.
+			if got.Automated == 0 && got.Unknown == 0 {
+				t.Fatalf("%s narrowing matched NO rows (automated=0 unknown=0), so the assertion below would "+
+					"pass whether or not this axis narrows correctly; the filter value is not in the fixture",
+					tc.name)
 			}
 			if got.Automated == base.Automated && got.Unknown == base.Unknown {
 				t.Errorf("%s narrowing left the buckets at automated=%d unknown=%d, unchanged from the "+
@@ -948,12 +964,21 @@ func TestCountBlastRadius_TotalUnfilteredIsLibraryWide(t *testing.T) {
 	}{
 		{"class", BlastRadiusFilter{Class: BlastClassBlanked}},
 		{"field", BlastRadiusFilter{Field: "biography"}},
-		{"artist_id", BlastRadiusFilter{ArtistID: "art-1"}},
+		// a-1 is SEEDED. This read "art-1", which seedBlastFixture never
+		// creates, so the case narrowed to nothing -- and TotalUnfiltered is
+		// library-wide precisely BECAUSE it ignores the filter, which makes
+		// "unchanged" true for a no-match filter whether or not the field is
+		// computed correctly. A seeded id means the surrounding counts really
+		// do move while TotalUnfiltered stays put, which is the property.
+		{"artist_id", BlastRadiusFilter{ArtistID: "a-1"}},
 		{"attribution", BlastRadiusFilter{Attribution: BlastAttributionAutomated}},
+		// KEPT DELIBERATELY: a filter that matches nothing is the case the
+		// empty-state sentence actually renders on, so it is worth covering on
+		// purpose -- just not by accident, which is what the unseeded id did.
 		{"a filter matching nothing", BlastRadiusFilter{Field: "no_such_field_xyz"}},
 		{"every axis at once", BlastRadiusFilter{
 			Class: BlastClassBlanked, Attribution: BlastAttributionUnknown,
-			Field: "biography", ArtistID: "art-1",
+			Field: "biography", ArtistID: "a-1",
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

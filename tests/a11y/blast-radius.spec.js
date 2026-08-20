@@ -1673,3 +1673,105 @@ test('a filter swap that removes the focused row does not drop focus to the docu
     `focus survived the swap but landed on <${after.tag}> rather than the filters trigger`,
   ).toBe('blast-radius-filter-trigger');
 });
+
+// ---------------------------------------------------------------------------
+// The badge survives hydration for an axis the flyout has NO control for.
+//
+// THE DEFECT THIS PINS -- D-F2's third form. initFromURL ends in
+// refreshActiveCount, which counts controls INSIDE the panel, while the
+// server's blastRadiusFilterCount counts AXES: class, attribution, field and
+// artist_id. The flyout does not render a control for every one of them --
+// artist_id has none by design (a UUID; a select over every artist is not a
+// usable control) and arrives by deep link from artist detail. So the panel's
+// control count is a LOWER BOUND on the narrowing, and letting it overwrite the
+// badge understates how much of the report is hidden.
+//
+// WHY THIS IS NOT COVERED BY THE FIRST-PAINT BADGE TEST ABOVE. That one uses
+// ?class=blanked, an axis the flyout DOES render a control for, so hydration
+// recounts it to the same number and the badge happens to survive. The defect
+// is only reachable through an axis with no control, which is why this test
+// uses ?field= and asserts the count rather than mere presence.
+//
+// WHY A BROWSER TEST. The server-rendered markup is correct either way -- a Go
+// assertion over the response body passes before and after the defect. The
+// undercount happens in the DOM after DOMContentLoaded, so only a real browser
+// running the page's own scripts can see it.
+test('a deep link on a control-less axis keeps its full badge count through hydration', async ({ page }) => {
+  // field=biography narrows on an axis the flyout renders NO control for on this
+  // slice. The badge counts a non-empty field value whether or not rows match,
+  // so this does not depend on the harness fixture holding biography damage.
+  await gotoPane(page, `${PANE_URL}?field=biography`);
+
+  // PRECONDITION: the server rendered a badge of exactly 1 for this URL. If it
+  // did not, this URL is not narrowing and the assertion below would be
+  // vacuous -- which is exactly how the first-paint test could have been
+  // written wrong.
+  const served = await page.evaluate(() => {
+    const trigger = document.getElementById('blast-radius-filter-trigger');
+    if (!trigger) return null;
+    const badge = trigger.querySelector('.sw-filter-trigger-badge');
+    return {
+      active: trigger.classList.contains('is-active'),
+      badgeText: badge ? badge.textContent.trim() : null,
+    };
+  });
+  expect(served, 'the filters trigger is absent').not.toBeNull();
+  expect(
+    served.active,
+    'the server did not mark the trigger active for ?field=biography, so this URL is not narrowing and the '
+    + 'assertion below would be vacuous',
+  ).toBe(true);
+  expect(served.badgeText, 'the server rendered no count for ?field=biography').toBe('1');
+
+  // PRECONDITION: the flyout genuinely has NO control for this axis. That
+  // absence is the whole reason the defect is reachable, so if a later slice
+  // adds a field control this test must be re-pointed at a still-control-less
+  // axis rather than silently becoming a duplicate of the first-paint test.
+  const fieldControls = await page.evaluate(
+    () => document.querySelectorAll('#blast-radius-filter-flyout [data-filter-key="field"]').length,
+  );
+  expect(
+    fieldControls,
+    'the flyout now renders a control for the field axis, so hydration would recount it correctly and this '
+    + 'test no longer covers the control-less case it exists for -- re-point it at artist_id',
+  ).toBe(0);
+
+  // Let the DOMContentLoaded hydration handler run. This is the window in which
+  // refreshActiveCount would overwrite the server's number.
+  await page.waitForFunction(() => document.readyState === 'complete');
+  await page.waitForTimeout(1000);
+
+  const afterHydration = await page.evaluate(() => {
+    const trigger = document.getElementById('blast-radius-filter-trigger');
+    const badge = trigger && trigger.querySelector('.sw-filter-trigger-badge');
+    if (!badge) return { present: false };
+    const cs = getComputedStyle(badge);
+    return {
+      present: true,
+      text: badge.textContent.trim(),
+      painted: badge.getClientRects().length > 0,
+      display: cs.display,
+      triggerActive: trigger.classList.contains('is-active'),
+    };
+  });
+
+  expect(
+    afterHydration.present,
+    'the trigger badge was removed after hydration; a report narrowed on a control-less axis shows no sign '
+    + 'that rows are hidden',
+  ).toBe(true);
+  expect(
+    afterHydration.painted,
+    `the trigger badge is not painted after hydration (display=${afterHydration.display}); the operator sees a `
+    + 'bare "Filters" over a narrowed table and reads the short row set as the whole report',
+  ).toBe(true);
+  expect(
+    afterHydration.text,
+    'hydration overwrote the badge with the count of controls IN THE PANEL rather than the number of active '
+    + 'axes, understating how much of the damage report is hidden',
+  ).toBe('1');
+  expect(
+    afterHydration.triggerActive,
+    'the trigger lost its is-active styling after hydration',
+  ).toBe(true);
+});

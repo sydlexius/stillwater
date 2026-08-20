@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -598,6 +599,7 @@ func TestBlastRadiusPane_FilteredEmptyStateQuotesALibraryWideCount(t *testing.T)
 	// still reports a non-zero automated bucket, so the pane is asserting "the
 	// report records N overall" a few pixels beneath "N of automated origin" --
 	// the two statements have to agree, and before this fix the sentence said 0.
+	tr := blastTestTranslator(t)
 	for _, query := range []string{
 		"?class=" + artist.BlastClassBlanked + "&attribution=" + artist.BlastAttributionUnknown,
 		"?class=" + artist.BlastClassReplaced + "&attribution=" + artist.BlastAttributionAutomated,
@@ -614,19 +616,29 @@ func TestBlastRadiusPane_FilteredEmptyStateQuotesALibraryWideCount(t *testing.T)
 			}
 
 			body := renderBlastPane(t, r, query)
-			if !strings.Contains(body, "No rows match the current filter") {
-				t.Fatalf("narrowing %q did not render the filtered empty state", query)
-			}
-			// The sentence must quote the library-wide count, never zero.
-			wantPhrase := fmt.Sprintf("records %d change(s) overall", want)
-			if !strings.Contains(body, wantPhrase) {
-				t.Errorf("the filtered empty state does not quote the library-wide count. Want %q. A "+
+
+			// The whole sentence, RESOLVED FROM THE KEY the template renders it
+			// from and formatted with the count it must quote. This read as
+			// English literals ("No rows match the current filter", "records %d
+			// change(s) overall"), which pinned the en.json COPY rather than the
+			// behavior: rewording the sentence turned this red on correct code,
+			// and the assertion could not run under another locale at all. What
+			// is actually under test is WHICH NUMBER the sentence carries, and
+			// resolving the key checks that without freezing the wording.
+			wantSentence := fmt.Sprintf(tr.T("reports.blast_radius.empty_filtered"), want)
+			if !strings.Contains(body, wantSentence) {
+				t.Errorf("the filtered empty state does not read %q. It must quote the LIBRARY-WIDE count; a "+
 					"filter-scoped count renders as 0 here and contradicts the caveat band directly above, "+
-					"which reports the real damage.", wantPhrase)
+					"which reports the real damage.", wantSentence)
 			}
-			if strings.Contains(body, "records 0 change(s) overall") && want != 0 {
-				t.Errorf("the filtered empty state claims the report records 0 change(s) overall, over a "+
-					"library holding %d recorded changes", want)
+			// And specifically not the zero-valued form, which is what a
+			// filter-scoped count produces on exactly this view.
+			if want != 0 {
+				zeroSentence := fmt.Sprintf(tr.T("reports.blast_radius.empty_filtered"), 0)
+				if strings.Contains(body, zeroSentence) {
+					t.Errorf("the filtered empty state quotes a count of 0, over a library holding %d "+
+						"recorded changes", want)
+				}
 			}
 		})
 	}
@@ -666,13 +678,33 @@ func TestBlastRadiusPane_FilterSectionsAreLabelledForTheirAxis(t *testing.T) {
 		t.Fatalf("no filter sections rendered; this test would verify nothing")
 	}
 
-	// axis -> the heading it must carry, keyed by the same i18n strings the
-	// table's own column headers use, so a chip section and the column it
-	// filters can never describe the same axis differently.
+	// axis -> the heading it must carry, RESOLVED FROM THE SAME i18n KEY the
+	// template renders it from.
+	//
+	// These were English literals ("Class", "Attribution", "Field"), which made
+	// the assertion test the en.json COPY rather than the key wiring: editing a
+	// heading's wording turned this red on correct code, and running the suite
+	// under any other locale would fail every case. Neither is the property
+	// under test. What matters is that a chip section and the table column it
+	// filters resolve the SAME key, so the panel and the table can never
+	// describe one axis two different ways -- which is exactly what resolving
+	// through the translator checks.
+	tr := blastTestTranslator(t)
 	want := map[string]string{
-		"class":       "Class",
-		"attribution": "Attribution",
-		"field":       "Field",
+		"class":       tr.T("reports.blast_radius.column_class"),
+		"attribution": tr.T("reports.blast_radius.column_attribution"),
+		"field":       tr.T("reports.blast_radius.column_field"),
+	}
+	// Precondition: every key RESOLVED. i18n.Translator.T returns the key
+	// itself when it is missing, so an undefined key would otherwise be
+	// compared against a legend as the literal string
+	// "reports.blast_radius.column_class" and fail with a confusing message
+	// instead of naming the real problem.
+	for axis, heading := range want {
+		if heading == "" || strings.HasPrefix(heading, "reports.blast_radius.") {
+			t.Fatalf("the %s heading key did not resolve (got %q); the assertions below would compare legends "+
+				"against a raw key name", axis, heading)
+		}
 	}
 
 	seen := map[string]bool{}
@@ -708,4 +740,26 @@ func TestBlastRadiusPane_FilterSectionsAreLabelledForTheirAxis(t *testing.T) {
 			t.Errorf("no filter section carrying %s chips was found, so its heading went unchecked", axis)
 		}
 	}
+}
+
+// blastTestTranslator returns the English translator the render helpers install
+// on the request context, so a test can resolve the SAME i18n key the template
+// renders from instead of hardcoding its current English wording.
+//
+// Hardcoded literals in these assertions test the copy in en.json rather than
+// the behavior: rewording a heading or a sentence turns the test red on correct
+// code, and the assertion cannot run under any other locale. Resolving the key
+// keeps what is actually under test -- that the panel and the table name an axis
+// with the SAME key, and that the empty-state sentence carries the LIBRARY-WIDE
+// count -- while letting the wording change freely.
+//
+// It deliberately mirrors withI18nCtx's construction rather than reaching into a
+// request, so a caller that never built a request can still use it.
+func blastTestTranslator(t *testing.T) *i18n.Translator {
+	t.Helper()
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading i18n bundle: %v", err)
+	}
+	return bundle.Translator("en")
 }
