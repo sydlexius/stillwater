@@ -74,6 +74,16 @@ test('a retry on a fresh port reuses one row instead of stacking a second', asyn
       + 'each extra one is permanent debris that fails unrelated specs later in the run',
     ).toHaveLength(1);
   } finally {
+    // Reap the row HERE, not only in afterAll. The row outlives the listener:
+    // once these fakes close, a surviving connection points at a dead port,
+    // answers "nfo check unavailable", and the fail-closed write guard turns
+    // that into a 409 nfo_write_blocked -- the exact debris this file exists to
+    // forbid, described in its own header. With workers: 1 the exposed window
+    // is the REST OF THIS FILE (the next test runs against that live row), not
+    // a parallel worker, but it is a real window either way and closing it
+    // costs one call. afterAll stays as the backstop for a failure that lands
+    // before this point.
+    await deleteFixtureConnections(request, NAME);
     await first.close();
     await second.close();
   }
