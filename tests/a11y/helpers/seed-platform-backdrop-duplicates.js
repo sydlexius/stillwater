@@ -127,18 +127,40 @@ async function ensureConnection(request, port) {
 async function waitForNotice(request) {
   const deadline = Date.now() + 90_000;
   let last = '';
+  let sawOK = false;
+  let lastStatus = 0;
   while (Date.now() < deadline) {
     const resp = await request.fetch(`${BASE_URL}/reports/platform-backdrop-duplicates`);
+    lastStatus = resp.status();
     if (resp.ok()) {
+      sawOK = true;
       last = await resp.text();
       if (last.includes('id="platform-backdrop-duplicates-partial-notice"')) return;
     }
     await new Promise(r => setTimeout(r, 2_000));
   }
-  const pending = last.includes('platform-backdrop-duplicates-unavailable-notice');
+
+  // Name the ACTUAL failure. These three states need different fixes, and
+  // reporting the wrong one sends a maintainer to the wrong place:
+  //   - never a 200: the page is unreachable (auth, routing, a dead server),
+  //     nothing to do with ScanErrors at all;
+  //   - pending: the page rendered, but the background sweep had not landed;
+  //   - unrecognised: the page rendered a report that simply lacks the notice,
+  //     which is the genuine "ScanErrors stayed 0" case.
+  // The original wording reported "unrecognised" for all three, because a body
+  // was only ever captured on a 200 -- so a run where every poll failed blamed
+  // the fixture's scan-error setup for what was really a transport failure.
+  let diagnosis;
+  if (!sawOK) {
+    diagnosis = `the report page never returned 200 (last status ${lastStatus}), so no body was ever inspected`;
+  } else if (last.includes('platform-backdrop-duplicates-unavailable-notice')) {
+    diagnosis = 'the page is still PENDING -- the background sweep had not landed';
+  } else {
+    diagnosis = 'the page rendered a report WITHOUT the partial-scan notice, so ScanErrors likely never went above 0';
+  }
   throw new Error(
-    `seed: the platform backdrop duplicates partial-scan notice never rendered within 90s (still ${pending ? 'pending -- the background sweep had not landed' : 'unrecognised'}); `
-    + 'ScanErrors likely never went above 0. The spec cannot verify a surface that never rendered.',
+    `seed: the platform backdrop duplicates partial-scan notice never rendered within 90s: ${diagnosis}. `
+    + 'The spec cannot verify a surface that never rendered.',
   );
 }
 

@@ -127,6 +127,29 @@ const platformDupReportMaxAge = 12 * time.Hour
 func (r *Router) storePlatformDupReport(report publish.PlatformBackdropDupReport) {
 	r.platformDupReportMu.Lock()
 	defer r.platformDupReportMu.Unlock()
+
+	// A TOTAL OUTAGE must not blank an established report. When a platform is
+	// unreachable every per-artist query fails, so the sweep returns an EMPTY
+	// PerArtist with err == nil and a high ScanErrors. Storing that over real
+	// rows replaces them with "no redundant backdrops detected", and nothing
+	// re-triggers until the snapshot ages out 12h later -- so the operator loses
+	// the report for half a day during a transient outage. This is the
+	// report-side twin of the guard platformDupCountsFrom applies to the counts
+	// (ErrPartialScan, AC-5 of #3092).
+	//
+	// Narrow on purpose: only a sweep that saw NOTHING while reporting errors is
+	// refused, and only when there is something established to protect. A
+	// partial sweep that still returned rows is stored, because the page renders
+	// its own partial-scan notice and can say the result is incomplete -- and a
+	// first-ever sweep is stored even when total, since "an admittedly partial
+	// report" beats "pending forever" while a platform is down.
+	if report.ScanErrors > 0 && len(report.PerArtist) == 0 && len(r.platformDupReport.PerArtist) > 0 {
+		r.logger.Warn("platform backdrop sweep saw no rows while reporting errors; keeping the established report",
+			slog.Int("scan_errors", report.ScanErrors),
+			slog.Int("established_rows", len(r.platformDupReport.PerArtist)))
+		return
+	}
+
 	r.platformDupReport = report
 	r.platformDupReportAt = time.Now()
 }

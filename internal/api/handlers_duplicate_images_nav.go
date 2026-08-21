@@ -159,7 +159,9 @@ func (r *Router) platformDupCountsFrom(ctx context.Context, scanner platformBack
 	// Partial sweeps are stored (the page renders its own ScanErrors notice, so
 	// an incomplete result arrives labeled as one); the single aggregate count
 	// below is what must NOT absorb one, since it has nowhere to carry the
-	// caveat.
+	// caveat. The one exception -- a TOTAL outage that would blank an
+	// established report -- is refused inside storePlatformDupReport, which is
+	// where the currently-cached rows are visible under the lock.
 	r.storePlatformDupReport(report)
 	if report.ScanErrors > 0 {
 		// PARTIAL sweep -- see libraryDupCount for the shape. This half's

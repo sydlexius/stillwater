@@ -557,13 +557,24 @@ func TestPlatformBackdropDuplicatesPage_ConcurrentColdLoadsSweepOnce(t *testing.
 
 	r := testRouterWithPlatformLister(t, lister)
 
+	// Build the i18n-enabled context ON THE TEST GOROUTINE. withI18nCtx calls
+	// t.Fatalf on a bundle-load failure, and Fatalf/FailNow are only valid from
+	// the goroutine running the test: from a worker they neither abort the test
+	// correctly nor stop that worker, so a fixture failure would surface as a
+	// confusing downstream assertion instead of a clean fatal.
+	//
+	// Each worker still builds its OWN request from this context: an
+	// *http.Request carries per-request state and must not be shared across
+	// concurrent handler invocations.
+	reqCtx := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/platform-backdrop-duplicates", nil)).Context()
+
 	const loads = 8
 	var wg sync.WaitGroup
 	wg.Add(loads)
 	for range loads {
 		go func() {
 			defer wg.Done()
-			req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/platform-backdrop-duplicates", nil))
+			req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/reports/platform-backdrop-duplicates", nil)
 			w := httptest.NewRecorder()
 			r.handlePlatformBackdropDuplicatesPage(w, req)
 			if w.Code != http.StatusOK {
@@ -669,6 +680,10 @@ func TestPlatformBackdropDuplicatesPage_FreshSnapshotDoesNotTriggerASweep(t *tes
 
 	r.storePlatformDupReport(publish.PlatformBackdropDupReport{RedundantBackdrops: 3})
 
+	// Built on the TEST goroutine: withI18nCtx calls t.Fatalf, which is only
+	// valid from the goroutine running the test. See the sibling burst test.
+	reqCtx := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/platform-backdrop-duplicates", nil)).Context()
+
 	// BOUNDED, like every sibling here. Against a handler that sweeps inline
 	// these renders never return -- the lister parks -- so an unbounded loop
 	// wedges the whole package until the go test timeout and reports a panic
@@ -677,7 +692,7 @@ func TestPlatformBackdropDuplicatesPage_FreshSnapshotDoesNotTriggerASweep(t *tes
 	go func() {
 		defer close(loads)
 		for range 3 {
-			req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/platform-backdrop-duplicates", nil))
+			req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/reports/platform-backdrop-duplicates", nil)
 			w := httptest.NewRecorder()
 			r.handlePlatformBackdropDuplicatesPage(w, req)
 			if w.Code != http.StatusOK {
@@ -697,4 +712,81 @@ func TestPlatformBackdropDuplicatesPage_FreshSnapshotDoesNotTriggerASweep(t *tes
 		t.Fatal("a fresh snapshot must NOT trigger a sweep; repeated loads would put the process's most expensive task on a ~33% duty cycle")
 	case <-time.After(300 * time.Millisecond):
 	}
+}
+
+// SHOULD-FIX-2 (hostile review). A TOTAL platform outage must not blank an
+// established report.
+//
+// When a platform is unreachable EVERY per-artist query fails, so the sweep
+// returns an empty PerArtist with err == nil and a high ScanErrors -- a result
+// that reads, to unguarded code, exactly like "every platform is clean".
+// Storing it replaces real rows with an empty table, and nothing re-triggers for
+// 12h (StartDuplicateImageCountRefresh has no production caller), so the
+// operator loses the report for half a day during a transient blip.
+//
+// This is the report-side twin of the guard AC-5 required for the counts.
+func TestStorePlatformDupReport_TotalOutageDoesNotBlankAnEstablishedReport(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithPlatformPublisher(t)
+
+	r.storePlatformDupReport(publish.PlatformBackdropDupReport{
+		ArtistsAffected:    2,
+		RedundantBackdrops: 7,
+		PerArtist: []publish.ArtistPlatformBackdropDup{
+			{ArtistID: "a1", Connection: "emby", Redundant: 4},
+			{ArtistID: "a2", Connection: "emby", Redundant: 3},
+		},
+	})
+
+	// Total outage: nothing seen, every query failed, err == nil.
+	r.storePlatformDupReport(publish.PlatformBackdropDupReport{ScanErrors: 3800})
+
+	report, _, ok := r.platformDupReportSnapshot()
+	if !ok {
+		t.Fatal("the established report must survive a total outage")
+	}
+	if report.RedundantBackdrops != 7 || len(report.PerArtist) != 2 {
+		t.Errorf("cached report = %+v, want the established one (7 redundant, 2 rows) carried forward; "+
+			"a sweep that saw NOTHING must not blank real rows for the 12h until anything re-triggers", report)
+	}
+}
+
+// Two controls for the outage guard, both necessary: it must not become "refuse
+// every partial sweep" (the page renders its own ScanErrors notice, so a partial
+// sweep that still returned rows is more informative than a stale one), and it
+// must not leave a never-swept cache pending forever while a platform is down.
+func TestStorePlatformDupReport_OutageGuardIsNarrow(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a partial sweep WITH rows still replaces the established report", func(t *testing.T) {
+		t.Parallel()
+		r := testRouterWithPlatformPublisher(t)
+		r.storePlatformDupReport(publish.PlatformBackdropDupReport{
+			RedundantBackdrops: 7,
+			PerArtist:          []publish.ArtistPlatformBackdropDup{{ArtistID: "a1", Redundant: 7}},
+		})
+
+		r.storePlatformDupReport(publish.PlatformBackdropDupReport{
+			ScanErrors:         3,
+			RedundantBackdrops: 2,
+			PerArtist:          []publish.ArtistPlatformBackdropDup{{ArtistID: "a2", Redundant: 2}},
+		})
+
+		report, _, _ := r.platformDupReportSnapshot()
+		if report.RedundantBackdrops != 2 {
+			t.Errorf("RedundantBackdrops = %d, want 2: a partial sweep that still saw rows is authoritative for what it saw, and the page flags it", report.RedundantBackdrops)
+		}
+	})
+
+	t.Run("a total outage still seeds a never-swept cache", func(t *testing.T) {
+		t.Parallel()
+		r := testRouterWithPlatformPublisher(t)
+
+		r.storePlatformDupReport(publish.PlatformBackdropDupReport{ScanErrors: 3800})
+
+		if _, _, ok := r.platformDupReportSnapshot(); !ok {
+			t.Error("with nothing established there is nothing to protect, so the sweep must land; " +
+				"refusing it leaves the page pending for as long as the platform is down, which tells the operator nothing")
+		}
+	})
 }
