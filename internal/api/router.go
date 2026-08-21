@@ -238,6 +238,35 @@ type Router struct {
 	// four remediation handlers that DO read local images now do.
 	platformPruneMu      sync.Mutex
 	platformPruneRunning bool
+	// platformDupReportMu guards the cached platform backdrop-duplicate report
+	// backing GET /reports/platform-backdrop-duplicates (#3092). The page used
+	// to run ScanPlatformBackdropDuplicates synchronously on every render -- a
+	// per-artist, per-connection round trip against every connected
+	// Emby/Jellyfin, measured at 62s against a 1221-artist library with two
+	// connections. It now reads this cache instead, exactly as the sibling
+	// local report does (#2684, handlers_backdrop_repair.go): the cache is
+	// populated by platformDupCountsFrom, the SAME background sweep that
+	// already feeds dupimages.Cache's platform counts. A zero
+	// platformDupReportAt means "never computed", which the page renders as a
+	// pending notice rather than a table of zeros -- zeros would read as "every
+	// connected platform is clean", a claim nothing has established.
+	//
+	// The full report lives HERE rather than in dupimages.Cache for the reason
+	// that package's doc gives for taking function sources instead of concrete
+	// types: it must not depend on internal/publish. The single-flight,
+	// cooldown and drain machinery is still that cache's -- this one rides the
+	// sweep it schedules and never starts one of its own.
+	//
+	// NO out-of-order guard, deliberately, unlike the local report's
+	// backdropDupReportStartedAt compare-and-swap. That guard exists because the
+	// local report has a SECOND writer (the post-remediation rescan) that can
+	// overlap a periodic scan and land stale. This report has exactly one
+	// writer, and every sweep runs under dupimages.Cache's single-flight latch,
+	// so two cannot be in flight at once. A writer that does not hold that latch
+	// would reintroduce the hazard and owes the guard back.
+	platformDupReportMu sync.RWMutex
+	platformDupReport   publish.PlatformBackdropDupReport
+	platformDupReportAt time.Time
 	// registryRepairRunning guards the singleton image-registry repair run
 	// (#2669): only one rebuild+restore may be in flight, so a concurrent
 	// POST /api/v1/reports/registry-repair/remediate gets 409 instead of two

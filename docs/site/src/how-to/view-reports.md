@@ -209,7 +209,11 @@ If remediation has never run, or no report has ever measured perceptual redundan
 
 Platform sync is additive: pushing fanart to a connected media server never deletes a surplus copy on that server, so a redundant slot that the local Backdrop Duplicates report already cleaned up on disk can still linger on Emby or Jellyfin. The **Platform Backdrop Duplicates** report finds those leftover copies directly on your connected platforms. It is an admin-only page at `/reports/platform-backdrop-duplicates`.
 
-The report re-reads every artist's backdrops from each connected platform and finds **exact duplicates**: byte-for-byte identical files, matched by a content hash, the same standard the local report uses. It is a dry-run: opening the page only scans and summarizes, nothing is deleted until you choose to prune.
+The report re-reads every artist's backdrops from each connected platform and finds **exact duplicates**: byte-for-byte identical files, matched by a content hash, the same standard the local report uses. It is a dry-run: nothing is deleted until you choose to prune.
+
+That sweep asks every connected platform about every artist, so it runs in the background on a schedule rather than each time you open the page. The report shows the result of the most recent sweep, with the time it was taken, so the numbers are a recent snapshot rather than a live count. The alternative would be querying every platform for every artist on every page load, which on a large library takes a minute or more before the page can draw anything at all.
+
+If no sweep has completed yet -- on a first run, or before the first scheduled refresh -- the page says the report is still being prepared and starts a sweep in the background. Reopen the page once it finishes. The page deliberately does not show zeros in that state, because "nothing has been measured yet" and "your platforms are clean" are different answers.
 
 The page summarizes how many connections and artists are affected and how many redundant backdrops exist, with a per-artist, per-platform breakdown. If some artist/connection scans could not complete, a **Partial Scan** notice reports how many were skipped, so a partial result is never mistaken for a clean sweep.
 

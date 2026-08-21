@@ -44,11 +44,16 @@
 //   4. Maps the artist's platform ID via PUT
 //      /api/v1/artists/{id}/platform-ids/{connectionId} to an ID the fake
 //      always 404s.
-//   5. GETs /reports/platform-backdrop-duplicates, which runs the scan
-//      synchronously (handlePlatformBackdropDuplicatesPage calls
-//      ScanPlatformBackdropDuplicates inline, no background job), and
-//      verifies the notice element actually landed before returning -- the
-//      precondition the spec depends on.
+//   5. POLLS /reports/platform-backdrop-duplicates until the notice element
+//      actually lands -- the precondition the spec depends on.
+//
+//      The page is served from a CACHE populated by a background sweep, not
+//      computed on render (#3092). The first GET finds a cold cache, renders
+//      the pending notice and TRIGGERS the sweep; the report appears on a
+//      later poll. Returning after one GET would hand the spec the pending
+//      state, whose partial-scan notice does not exist, and every assertion
+//      would fail for a reason unrelated to the code under test. Same shape as
+//      seed-backdrop-duplicates.js's waitForReport, for the same reason.
 //
 // apiFetch/ensureLibrary/runScan/artistIdsByName are shared with the other
 // a11y seeders via ./api.js (#3058/#3059); startFakeEmby stays local since it
@@ -112,11 +117,15 @@ async function ensureConnection(request, port) {
 }
 
 // waitForNotice polls the live report page for the partial-scan notice
-// marker. The scan runs synchronously inside the GET handler, but polling
-// (rather than trusting one response) keeps this fixture honest about what
-// it actually observed, matching the other seeders' waitForReport pattern.
+// marker. Polling is REQUIRED, not defensive: the page renders from a cached
+// sweep (#3092), so the first GET returns the pending notice and merely kicks
+// the sweep that produces what this fixture is waiting for.
+//
+// 90s to match seed-backdrop-duplicates.js: the sweep is a per-artist,
+// per-connection round trip, and the lazy trigger only fires on a GET that
+// finds the cache cold -- so the budget has to cover a sweep, not a render.
 async function waitForNotice(request) {
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 90_000;
   let last = '';
   while (Date.now() < deadline) {
     const resp = await request.fetch(`${BASE_URL}/reports/platform-backdrop-duplicates`);
@@ -124,10 +133,11 @@ async function waitForNotice(request) {
       last = await resp.text();
       if (last.includes('id="platform-backdrop-duplicates-partial-notice"')) return;
     }
-    await new Promise(r => setTimeout(r, 1_000));
+    await new Promise(r => setTimeout(r, 2_000));
   }
+  const pending = last.includes('platform-backdrop-duplicates-unavailable-notice');
   throw new Error(
-    'seed: the platform backdrop duplicates partial-scan notice never rendered within 30s; '
+    `seed: the platform backdrop duplicates partial-scan notice never rendered within 90s (still ${pending ? 'pending -- the background sweep had not landed' : 'unrecognised'}); `
     + 'ScanErrors likely never went above 0. The spec cannot verify a surface that never rendered.',
   );
 }
