@@ -74,7 +74,11 @@ const FIXTURE_PLATFORM_ARTIST_ID = 'nonexistent-platform-artist-id';
 // startFakeEmby answers just enough of the Emby REST surface for a
 // connection test + platform-user-id resolution to succeed, then 404s any
 // artist-detail lookup so the sweep's systemic-absence path fires.
-function startFakeEmby() {
+//
+// Exported so a spec can stand up a SECOND fake on a DIFFERENT port and
+// exercise what a Playwright retry does. Port 0 is the whole point: the
+// changing url is what defeated handleCreateConnection's type+url dedup.
+export function startFakeEmby() {
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://127.0.0.1');
     if (u.pathname === '/System/Info') {
@@ -100,9 +104,81 @@ function startFakeEmby() {
   });
 }
 
-async function ensureConnection(request, port) {
+/**
+ * FIXTURE_CONNECTION_NAME is exported so a spec can assert on this fixture's
+ * debris by the same identifier the fixture cleans up by.
+ */
+export { FIXTURE_CONNECTION_NAME };
+
+/**
+ * fixtureConnectionIDs returns the id of every connection carrying this
+ * fixture's NAME. The name is the only stable identifier this fixture has
+ * across attempts -- see deleteFixtureConnections for why the url is not.
+ */
+export async function fixtureConnectionIDs(request, name = FIXTURE_CONNECTION_NAME) {
+  const resp = await request.fetch(`${BASE_URL}/api/v1/connections`);
+  if (!resp.ok()) {
+    throw new Error(`seed: listing connections failed: ${resp.status()} ${await resp.text()}`);
+  }
+  const body = await resp.json();
+  const list = Array.isArray(body) ? body : (body.connections || []);
+  return list.filter(c => c.name === name).map(c => c.id);
+}
+
+/**
+ * deleteFixtureConnections removes every connection this fixture created,
+ * identified by name, and returns how many it deleted.
+ *
+ * WHY BY NAME, AND WHY THIS EXISTS AT ALL
+ *
+ * startFakeEmby binds port 0, so EVERY call gets a different OS-assigned
+ * port and therefore a different connection url. handleCreateConnection
+ * dedupes on type+url (GetByTypeAndURL), so that dedup can never match a
+ * previous attempt's row -- each attempt creates a BRAND NEW connection
+ * instead of updating the last one.
+ *
+ * Playwright retries a failed beforeAll hook (retries: 2 in
+ * playwright.config.js), and the whole a11y tier runs against ONE shared
+ * ephemeral database. So a fixture that only closed its loopback listener
+ * left one live Connection row per attempt behind, each pointing at a now-dead
+ * server. Those rows answer "nfo check unavailable", and the app's NFO write
+ * guard is fail-closed on an indeterminate check -- which is how three dead
+ * fixture connections made the unrelated nfo-mbid spec fail with a 409
+ * nfo_write_blocked in the same CI run. Fixture debris, not a flake.
+ *
+ * Deleting by NAME rather than by the id this run happens to hold is the
+ * point: it also reaps rows a PREVIOUS attempt (in a killed worker) left
+ * behind, which an id-scoped delete cannot see.
+ */
+export async function deleteFixtureConnections(request, name = FIXTURE_CONNECTION_NAME) {
+  const ids = await fixtureConnectionIDs(request, name);
+  for (const id of ids) {
+    const resp = await apiFetch(request, 'DELETE', `/api/v1/connections/${id}`);
+    // 404 means something else already removed it -- the desired end state,
+    // so it is not a failure. Anything else is, and must be loud: a silently
+    // swallowed delete failure reproduces the exact leak this exists to stop.
+    if (!resp.ok() && resp.status() !== 404) {
+      throw new Error(
+        `seed: deleting fixture connection ${id} failed: ${resp.status()} ${await resp.text()}`,
+      );
+    }
+  }
+  return ids.length;
+}
+
+export async function ensureConnection(request, port, name = FIXTURE_CONNECTION_NAME) {
+  // Reap any row from a previous attempt FIRST. handleCreateConnection's
+  // type+url dedup cannot do it for us (the port, and so the url, differs on
+  // every call), so without this a retry stacks a second connection on top of
+  // the first. See deleteFixtureConnections.
+  //
+  // The `name` parameter exists so the hygiene spec can exercise this exact
+  // reuse path under its OWN name, and so can never delete a row the real
+  // fixture is depending on.
+  await deleteFixtureConnections(request, name);
+
   const resp = await apiFetch(request, 'POST', '/api/v1/connections', {
-    name: FIXTURE_CONNECTION_NAME,
+    name,
     type: 'emby',
     url: `http://127.0.0.1:${port}`,
     api_key: 'a11y-fixture-key',
@@ -110,9 +186,6 @@ async function ensureConnection(request, port) {
     skip_test: false,
   });
   if (resp.ok()) return (await resp.json()).id;
-  // Re-run reuse: same type+url is treated as an update, not a 409, by
-  // handleCreateConnection -- so this branch only guards a genuinely
-  // unexpected failure, not idempotent re-seeding.
   throw new Error(`seed: creating fixture connection failed: ${resp.status()} ${await resp.text()}`);
 }
 
@@ -169,9 +242,12 @@ async function waitForNotice(request) {
  * /reports/platform-backdrop-duplicates by mapping a real artist to a real
  * connection backed by a fake Emby server that 404s every artist lookup.
  *
- * Returns a teardown function that stops the fake server. Callers MUST call
- * it (in afterAll or similar) so the loopback listener does not leak across
- * the test run.
+ * Returns a teardown function that stops the fake server AND deletes the
+ * Connection row it created. Callers MUST call it (in afterAll or similar):
+ * closing the listener alone leaves a live connection pointing at a dead
+ * server, which every other spec in the run then has to survive. The teardown
+ * takes an optional APIRequestContext so a caller can hand it the one its own
+ * afterAll hook was given rather than relying on the seeding hook's.
  */
 export async function seedPlatformBackdropScanError(request) {
   const port = process.env.SW_PORT || new URL(BASE_URL).port || 'default';
@@ -210,9 +286,34 @@ export async function seedPlatformBackdropScanError(request) {
 
     await waitForNotice(request);
   } catch (err) {
-    await fake.close();
+    // Order matters and both must happen. The Connection row is the piece
+    // that outlives this worker and poisons other specs, so it gets cleaned
+    // up even if closing the listener were to hang; the listener close is in
+    // `finally` so a cleanup failure cannot leak it either.
+    try {
+      await deleteFixtureConnections(request);
+    } catch (cleanupErr) {
+      // Never mask the original failure -- that is the one a maintainer needs
+      // to read -- but never swallow the cleanup failure silently either.
+      // Guarded because `err` is only an Error by convention: a non-Error
+      // throw would make this line itself throw, replacing the real failure
+      // with a TypeError from the cleanup handler.
+      if (err instanceof Error) {
+        err.message += ` (fixture connection cleanup ALSO failed: ${cleanupErr.message})`;
+      } else {
+        console.error('seed: fixture connection cleanup failed:', cleanupErr);
+      }
+    } finally {
+      await fake.close();
+    }
     throw err;
   }
 
-  return fake.close;
+  return async (teardownRequest = request) => {
+    try {
+      await deleteFixtureConnections(teardownRequest);
+    } finally {
+      await fake.close();
+    }
+  };
 }

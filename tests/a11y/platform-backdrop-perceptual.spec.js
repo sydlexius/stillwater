@@ -28,12 +28,53 @@ let closeFake;
 // (rendered only when view.ScanErrors > 0) does not exist until a real scan
 // failure is forced. Seeded once for the file: the fixture creates a real
 // connection and runs a real scan, which the tests only read the result of.
+//
+// HOOK TIMEOUT. The fixture's own waitForNotice polls for up to 90s, on
+// purpose: the report is served from a cache populated by a BACKGROUND sweep
+// (#3092), so the first GET only finds a cold cache and kicks the sweep, and
+// the budget has to cover the sweep rather than a render. A Playwright
+// beforeAll hook gets the framework's DEFAULT 60s timeout -- `timeout` in
+// playwright.config.js is the per-TEST budget and does not raise a hook's --
+// so on any runner slower than a laptop the hook was killed at 60s, BEFORE
+// the fixture could either succeed or emit its own diagnosis. That is exactly
+// what CI showed on 6e6a7ae7: three "beforeAll hook timeout of 60000ms
+// exceeded" failures (the attempt plus playwright.config.js's two retries)
+// and not one word about which of waitForNotice's three failure states
+// actually applied.
+//
+// 150s = the 90s poll budget plus the scan/connection setup that runs ahead
+// of it (runScan alone allows 60s) plus margin. The hook must outlast the
+// fixture's own budget so a slow sweep produces the fixture's message, never
+// a framework timeout that names nothing. Raise the fixture's deadline and
+// this number has to move with it.
+//
+// WHAT THIS DOES NOT FIX, DELIBERATELY. Raising the hook timeout lets the
+// fixture report its own verdict; it does not make every verdict a pass.
+// There is a SECOND, independent defect underneath: both duplicate reports
+// render from ONE process-wide dupimages.Cache, a single refresh computes
+// both halves, and the lazy trigger is then locked out by a 15-minute
+// retryCooldown. So an earlier spec that loads either report warms that cache
+// BEFORE this fixture's fake Emby exists, and the sweep this fixture needs is
+// never allowed to run -- waitForNotice then correctly reports "ScanErrors
+// likely never went above 0" after its full 90s. That is an ORDERING defect
+// owned by #3092 PR 3/3, which moves both fixtures into global-setup so one
+// sweep observes all the data. It is out of scope here on purpose: this file
+// is PR 1/3. Run alone (or first) this spec passes; run after contrast.spec.js
+// it fails on that ordering, with or without this timeout change.
 test.beforeAll(async ({ request }) => {
+  test.setTimeout(150_000);
   closeFake = await seedPlatformBackdropScanError(request);
 });
 
-test.afterAll(async () => {
-  if (closeFake) await closeFake();
+// Teardown deletes the fixture CONNECTION as well as closing the loopback
+// listener. A connection left behind points at a dead server, reports its NFO
+// check as unavailable, and the app's write guard is fail-closed on an
+// indeterminate check -- so the debris fails unrelated specs later in the same
+// run against the same shared database (nfo-mbid's 409 nfo_write_blocked).
+// It takes this hook's own `request` rather than reusing the seeding hook's,
+// whose APIRequestContext belongs to a scope that has already been torn down.
+test.afterAll(async ({ request }) => {
+  if (closeFake) await closeFake(request);
 });
 
 test.beforeEach(async ({ page }) => {
