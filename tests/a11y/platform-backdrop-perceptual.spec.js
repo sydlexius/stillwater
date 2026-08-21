@@ -17,24 +17,28 @@
 import { test, expect } from 'playwright/test';
 import { disableTransitions } from './helpers/settle.js';
 import { restorePersistedTheme, applyTheme } from './helpers/axe.js';
-import { seedPlatformBackdropScanError } from './helpers/seed-platform-backdrop-duplicates.js';
 
 const PAGE = '/reports/platform-backdrop-duplicates';
 const NOTICE = '#platform-backdrop-duplicates-partial-notice';
 
-let closeFake;
-
 // The harness boots against an EMPTY database and library, so the notice
 // (rendered only when view.ScanErrors > 0) does not exist until a real scan
-// failure is forced. Seeded once for the file: the fixture creates a real
-// connection and runs a real scan, which the tests only read the result of.
-test.beforeAll(async ({ request }) => {
-  closeFake = await seedPlatformBackdropScanError(request);
-});
-
-test.afterAll(async () => {
-  if (closeFake) await closeFake();
-});
+// failure is forced. That fixture is seeded in global-setup.js, NOT in a
+// beforeAll here (#3092).
+//
+// WHY IT CANNOT LIVE IN THIS FILE. The report renders from a process-wide
+// dupimages.Cache: one refresh computes both this report's half and the sibling
+// local report's, and the lazy trigger is then locked out for 15 minutes by
+// retryCooldown, stamped when the sweep STARTS and never cleared on success
+// (internal/dupimages/cache.go). So the run gets ONE sweep. Any earlier spec
+// that loads either report warms the cache before this fixture's fake Emby
+// exists, and the sweep this fixture needs is never allowed to run -- the
+// seeder then correctly reports "ScanErrors likely never went above 0" after
+// its full 90s. Seeding second loses in EITHER ordering, which is why this is a
+// constraint rather than a preference; global-setup.js carries the derivation.
+//
+// This file only READS that fixture. globalSetup throws if it never landed, so
+// a failure here is a real defect in the page, never a missing fixture.
 
 test.beforeEach(async ({ page }) => {
   await disableTransitions(page);

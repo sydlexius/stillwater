@@ -1,6 +1,9 @@
 package templates
 
-import "strconv"
+import (
+	"strconv"
+	"time"
+)
 
 // PlatformBackdropDupRow is one artist/connection pair's redundant backdrops
 // on a connected platform, rendered as a table row on
@@ -17,12 +20,24 @@ type PlatformBackdropDupRow struct {
 // /reports/platform-backdrop-duplicates (#2540 remote prune). ScanErrors is
 // surfaced separately from the totals so a partial scan is never rendered as
 // if it were a clean, complete report.
+//
+// The handler no longer sweeps on render (#3092): it reads a cached report
+// produced by the background sweep shared with the sidebar's duplicate-image
+// counts. Unavailable/UnavailableReason cover the one case where no sweep has
+// ever landed yet ("pending") -- a dedicated notice with no totals, no table
+// and no prune button, since rendering zeros here would read as "every
+// connected platform is clean", which nothing has established. AsOf is when
+// the rendered report was swept, shown so an operator can tell the numbers are
+// a cached snapshot rather than live. Mirrors BackdropDuplicatesPageView.
 type PlatformBackdropDuplicatesPageView struct {
 	ConnectionsAffected int
 	ArtistsAffected     int
 	RedundantBackdrops  int
 	ScanErrors          int
 	Rows                []PlatformBackdropDupRow
+	AsOf                time.Time
+	Unavailable         bool
+	UnavailableReason   string // "pending"; meaningful only when Unavailable
 }
 
 // PlatformBackdropDuplicatesPage renders the admin-gated platform-side
@@ -44,84 +59,100 @@ templ PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDup
 					</p>
 				</div>
 			</div>
-			if view.ScanErrors > 0 {
-				<div id="platform-backdrop-duplicates-partial-notice" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
+			if view.Unavailable {
+				<div id="platform-backdrop-duplicates-unavailable-notice" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
 					<p class="text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400">
-						{ t(ctx, "platform_backdrop_duplicates.partial_scan_title") }
+						{ t(ctx, "platform_backdrop_duplicates.pending_title") }
 					</p>
 					<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug">
-						{ tn(ctx, "platform_backdrop_duplicates.partial_scan_body", view.ScanErrors) }
+						{ t(ctx, "platform_backdrop_duplicates.pending_body") }
 					</p>
 				</div>
-			}
-			<div class="sw-card rounded-lg px-3 py-2">
-				<dl class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-					<div>
-						<dt class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "platform_backdrop_duplicates.connections_affected") }</dt>
-						<dd class="text-lg font-semibold" id="platform-backdrop-duplicates-connections-affected">{ strconv.Itoa(view.ConnectionsAffected) }</dd>
-					</div>
-					<div>
-						<dt class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "platform_backdrop_duplicates.artists_affected") }</dt>
-						<dd class="text-lg font-semibold" id="platform-backdrop-duplicates-artists-affected">{ strconv.Itoa(view.ArtistsAffected) }</dd>
-					</div>
-					<div>
-						<dt class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "platform_backdrop_duplicates.redundant_backdrops") }</dt>
-						<dd class="text-lg font-semibold" id="platform-backdrop-duplicates-redundant">{ strconv.Itoa(view.RedundantBackdrops) }</dd>
-					</div>
-				</dl>
-			</div>
-			<div class="sw-card rounded-lg px-3 py-2">
-				<div class="flex items-start justify-between gap-3 flex-wrap">
-					<p class="text-xs text-gray-500 dark:text-gray-400 leading-snug max-w-prose">
-						{ t(ctx, "platform_backdrop_duplicates.prune_warning") }
+			} else {
+				if !view.AsOf.IsZero() {
+					<p id="platform-backdrop-duplicates-as-of" class="text-xs text-gray-500 dark:text-gray-400 leading-snug">
+						{ tf(ctx, "platform_backdrop_duplicates.as_of", activityRelTime(ctx, view.AsOf)) }
 					</p>
-					if view.RedundantBackdrops > 0 {
-						<button
-							type="button"
-							id="platform-backdrop-duplicates-prune-button"
-							class="sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none shrink-0"
-							hx-post="/api/v1/reports/platform-backdrop-duplicates/prune"
-							hx-swap="none"
-							hx-confirm={ t(ctx, "platform_backdrop_duplicates.prune_confirm") }
-							data-sw-error={ t(ctx, "platform_backdrop_duplicates.prune_response_error") }
-							data-sw-net-error={ t(ctx, "platform_backdrop_duplicates.prune_send_error") }
-							hx-on::after-request="if(event.detail.successful) location.reload()"
-							hx-on::response-error="alert(this.dataset.swError)"
-							hx-on::send-error="alert(this.dataset.swNetError)"
-						>{ t(ctx, "platform_backdrop_duplicates.prune_button") }</button>
+				}
+				if view.ScanErrors > 0 {
+					<div id="platform-backdrop-duplicates-partial-notice" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
+						<p class="text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400">
+							{ t(ctx, "platform_backdrop_duplicates.partial_scan_title") }
+						</p>
+						<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug">
+							{ tn(ctx, "platform_backdrop_duplicates.partial_scan_body", view.ScanErrors) }
+						</p>
+					</div>
+				}
+				<div class="sw-card rounded-lg px-3 py-2">
+					<dl class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+						<div>
+							<dt class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "platform_backdrop_duplicates.connections_affected") }</dt>
+							<dd class="text-lg font-semibold" id="platform-backdrop-duplicates-connections-affected">{ strconv.Itoa(view.ConnectionsAffected) }</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "platform_backdrop_duplicates.artists_affected") }</dt>
+							<dd class="text-lg font-semibold" id="platform-backdrop-duplicates-artists-affected">{ strconv.Itoa(view.ArtistsAffected) }</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "platform_backdrop_duplicates.redundant_backdrops") }</dt>
+							<dd class="text-lg font-semibold" id="platform-backdrop-duplicates-redundant">{ strconv.Itoa(view.RedundantBackdrops) }</dd>
+						</div>
+					</dl>
+				</div>
+				<div class="sw-card rounded-lg px-3 py-2">
+					<div class="flex items-start justify-between gap-3 flex-wrap">
+						<p class="text-xs text-gray-500 dark:text-gray-400 leading-snug max-w-prose">
+							{ t(ctx, "platform_backdrop_duplicates.prune_warning") }
+						</p>
+						if view.RedundantBackdrops > 0 {
+							<button
+								type="button"
+								id="platform-backdrop-duplicates-prune-button"
+								class="sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none shrink-0"
+								hx-post="/api/v1/reports/platform-backdrop-duplicates/prune"
+								hx-swap="none"
+								hx-confirm={ t(ctx, "platform_backdrop_duplicates.prune_confirm") }
+								data-sw-error={ t(ctx, "platform_backdrop_duplicates.prune_response_error") }
+								data-sw-net-error={ t(ctx, "platform_backdrop_duplicates.prune_send_error") }
+								hx-on::after-request="if(event.detail.successful) location.reload()"
+								hx-on::response-error="alert(this.dataset.swError)"
+								hx-on::send-error="alert(this.dataset.swNetError)"
+							>{ t(ctx, "platform_backdrop_duplicates.prune_button") }</button>
+						}
+					</div>
+				</div>
+				<div id="platform-backdrop-duplicates-table" class="sw-card rounded-lg overflow-x-auto">
+					if len(view.Rows) == 0 {
+						<p id="platform-backdrop-duplicates-empty" class="px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
+							{ t(ctx, "platform_backdrop_duplicates.empty") }
+						</p>
+					} else {
+						<table class="min-w-full text-xs">
+							<thead>
+								<tr class="text-left text-gray-500 dark:text-gray-400">
+									<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_artist") }</th>
+									<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_platform") }</th>
+									<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_backdrops") }</th>
+									<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_redundant") }</th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, row := range view.Rows {
+									<tr class="border-t border-gray-100 dark:border-gray-800">
+										<td class="px-3 py-2">
+											<a class="underline" href={ templ.SafeURL(assets.BasePath + "/artists/" + row.ArtistID) }>{ row.Name }</a>
+										</td>
+										<td class="px-3 py-2">{ row.Connection }</td>
+										<td class="px-3 py-2">{ strconv.Itoa(row.Backdrops) }</td>
+										<td class="px-3 py-2">{ strconv.Itoa(row.Redundant) }</td>
+									</tr>
+								}
+							</tbody>
+						</table>
 					}
 				</div>
-			</div>
-			<div id="platform-backdrop-duplicates-table" class="sw-card rounded-lg overflow-x-auto">
-				if len(view.Rows) == 0 {
-					<p id="platform-backdrop-duplicates-empty" class="px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
-						{ t(ctx, "platform_backdrop_duplicates.empty") }
-					</p>
-				} else {
-					<table class="min-w-full text-xs">
-						<thead>
-							<tr class="text-left text-gray-500 dark:text-gray-400">
-								<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_artist") }</th>
-								<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_platform") }</th>
-								<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_backdrops") }</th>
-								<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_redundant") }</th>
-							</tr>
-						</thead>
-						<tbody>
-							for _, row := range view.Rows {
-								<tr class="border-t border-gray-100 dark:border-gray-800">
-									<td class="px-3 py-2">
-										<a class="underline" href={ templ.SafeURL(assets.BasePath + "/artists/" + row.ArtistID) }>{ row.Name }</a>
-									</td>
-									<td class="px-3 py-2">{ row.Connection }</td>
-									<td class="px-3 py-2">{ strconv.Itoa(row.Backdrops) }</td>
-									<td class="px-3 py-2">{ strconv.Itoa(row.Redundant) }</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				}
-			</div>
+			}
 		</div>
 	}
 }

@@ -152,6 +152,17 @@ func (r *Router) platformDupCountsFrom(ctx context.Context, scanner platformBack
 	if err != nil {
 		return nil, err
 	}
+	// Cache the full report for GET /reports/platform-backdrop-duplicates
+	// (#3092): this is now that page's ONLY source of data, so this background
+	// sweep is what keeps it current.
+	//
+	// Partial sweeps are stored (the page renders its own ScanErrors notice, so
+	// an incomplete result arrives labeled as one); the single aggregate count
+	// below is what must NOT absorb one, since it has nowhere to carry the
+	// caveat. The one exception -- a TOTAL outage that would blank an
+	// established report -- is refused inside storePlatformDupReport, which is
+	// where the currently-cached rows are visible under the lock.
+	r.storePlatformDupReport(report)
 	if report.ScanErrors > 0 {
 		// PARTIAL sweep -- see libraryDupCount for the shape. This half's
 		// failure mode is WORSE than an undercount: when a platform is
@@ -384,14 +395,11 @@ func interpolate(tmpl, key string, args ...any) string {
 	return fmt.Sprintf(tmpl, args...)
 }
 
-// storePlatformDupCounts records per-platform counts the caller already
-// computed, leaving the library count untouched. Called by the platform
-// backdrop-duplicates report page.
-// Stamps the platform half's provenance so a Refresh that started BEFORE
-// this store declines to overwrite it on the way out.
-func (r *Router) storePlatformDupCounts(platforms []dupimages.PlatformCount) {
-	r.dupImageCache().StorePlatforms(platforms)
-}
+// NOTE (#3092): storePlatformDupCounts lived here -- the opportunistic store
+// the platform report page made after paying for its own inline sweep. It went
+// with that sweep. The page no longer scans, so it has no counts of its own to
+// contribute, and the sole remaining producer is the background refresh, which
+// writes the platform half through dupimages.Cache.Refresh.
 
 // Sentinel errors for unwired dependencies. Distinct values so a wiring bug is
 // never mistaken for a scan failure.
