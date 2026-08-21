@@ -17,24 +17,16 @@
 import { test, expect } from 'playwright/test';
 import { disableTransitions } from './helpers/settle.js';
 import { restorePersistedTheme, applyTheme } from './helpers/axe.js';
-import { seedPlatformBackdropScanError } from './helpers/seed-platform-backdrop-duplicates.js';
 
 const PAGE = '/reports/platform-backdrop-duplicates';
 const NOTICE = '#platform-backdrop-duplicates-partial-notice';
 
-let closeFake;
-
-// The harness boots against an EMPTY database and library, so the notice
-// (rendered only when view.ScanErrors > 0) does not exist until a real scan
-// failure is forced. Seeded once for the file: the fixture creates a real
-// connection and runs a real scan, which the tests only read the result of.
-test.beforeAll(async ({ request }) => {
-  closeFake = await seedPlatformBackdropScanError(request);
-});
-
-test.afterAll(async () => {
-  if (closeFake) await closeFake();
-});
+// The fixture that forces ScanErrors > 0 is seeded in global-setup.js, not in a
+// beforeAll here (#3092): this report renders from a shared cache that only
+// sweeps once per cooldown window, so a fixture built after any page render is
+// invisible to it. See global-setup.js for the ordering and why it is mandatory.
+//
+// This file only READS that fixture; globalSetup throws if it never landed.
 
 test.beforeEach(async ({ page }) => {
   await disableTransitions(page);

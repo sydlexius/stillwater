@@ -14,19 +14,15 @@
 import { test, expect } from 'playwright/test';
 import { buildAxeBuilder, formatViolations, applyTheme } from './helpers/axe.js';
 import { disableTransitions } from './helpers/settle.js';
-import { seedBackdropDuplicates } from './helpers/seed-backdrop-duplicates.js';
 
 const PAGE = '/reports/backdrop-duplicates';
 
-// The harness boots against an EMPTY library, so none of the surfaces below
-// exist until the fixture is seeded. Seeding once per file rather than per
-// test: it runs a full library scan plus a duplicate scan, and the tests only
-// read the result. seedBackdropDuplicates throws rather than returning quietly
-// when the report never populates, so a failure here reads as "the fixture did
-// not land", not as a defect in the page.
-test.beforeAll(async ({ request }) => {
-  await seedBackdropDuplicates(request);
-});
+// The fixture is seeded in global-setup.js, not in a beforeAll here (#3092):
+// this report renders from a shared cache that only sweeps once per cooldown
+// window, so a fixture built after any page render is invisible to it. See
+// global-setup.js for the ordering and why it is mandatory.
+//
+// This file only READS that fixture; globalSetup throws if it never landed.
 
 // disableTransitions registers an addInitScript, which applies to the NEXT
 // navigation only. Calling it after page.goto attaches nothing to the

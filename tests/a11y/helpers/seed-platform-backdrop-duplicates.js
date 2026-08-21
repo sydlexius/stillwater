@@ -47,17 +47,14 @@
 //   5. POLLS /reports/platform-backdrop-duplicates until the notice element
 //      actually lands -- the precondition the spec depends on.
 //
-//      The page is served from a CACHE populated by a background sweep, not
-//      computed on render (#3092). The first GET finds a cold cache, renders
-//      the pending notice and TRIGGERS the sweep; the report appears on a
-//      later poll. Returning after one GET would hand the spec the pending
-//      state, whose partial-scan notice does not exist, and every assertion
-//      would fail for a reason unrelated to the code under test. Same shape as
-//      seed-backdrop-duplicates.js's waitForReport, for the same reason.
+// SEEDED FROM global-setup.js, NOT FROM THE SPEC'S beforeAll.
 //
-// apiFetch/ensureLibrary/runScan/artistIdsByName are shared with the other
-// a11y seeders via ./api.js (#3058/#3059); startFakeEmby stays local since it
-// is single-use, exactly like startMockMusicBrainz in seed-nfo-mbid.js.
+// The report renders from the process-wide dupimages.Cache, whose lazy refresh
+// is locked out for 15 minutes once any page load warms it, so a fixture built
+// after another spec has rendered a page can never reach the cached sweep.
+// global-setup.js holds the full explanation and the measurement; the ordering
+// it describes is a CONSTRAINT, not a preference. The fake Emby must also stay
+// listening for the whole run, because a later sweep re-queries it.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -95,6 +92,12 @@ function startFakeEmby() {
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const { port } = server.address();
+      // unref so this listener never keeps the Playwright coordinator process
+      // alive on its own. The fixture is seeded in globalSetup and must stay
+      // reachable for the WHOLE run (a later sweep re-queries it), so nothing
+      // closes it explicitly -- it dies with the process. Without unref a
+      // crashed run would hang instead of exiting.
+      server.unref();
       resolve({ server, port, close: () => new Promise(r => server.close(r)) });
     });
   });
@@ -124,7 +127,7 @@ async function ensureConnection(request, port) {
 // 90s to match seed-backdrop-duplicates.js: the sweep is a per-artist,
 // per-connection round trip, and the lazy trigger only fires on a GET that
 // finds the cache cold -- so the budget has to cover a sweep, not a render.
-async function waitForNotice(request) {
+export async function waitForPlatformBackdropNotice(request) {
   const deadline = Date.now() + 90_000;
   let last = '';
   let sawOK = false;
@@ -173,7 +176,10 @@ async function waitForNotice(request) {
  * it (in afterAll or similar) so the loopback listener does not leak across
  * the test run.
  */
-export async function seedPlatformBackdropScanError(request) {
+// `wait`: see seedBackdropDuplicates. False lets a caller create this dataset
+// before anything polls a cache-backed report, so the single sweep the run gets
+// observes both fixtures rather than only whichever was seeded first.
+export async function seedPlatformBackdropScanError(request, { wait = true } = {}) {
   const port = process.env.SW_PORT || new URL(BASE_URL).port || 'default';
   const dir = path.join(os.tmpdir(), `sw-a11y-platform-backdrop-${port}`);
   const artistDir = path.join(dir, FIXTURE_ARTIST);
@@ -208,7 +214,7 @@ export async function seedPlatformBackdropScanError(request) {
       throw new Error(`seed: mapping platform id failed: ${mapResp.status()} ${await mapResp.text()}`);
     }
 
-    await waitForNotice(request);
+    if (wait) await waitForPlatformBackdropNotice(request);
   } catch (err) {
     await fake.close();
     throw err;
