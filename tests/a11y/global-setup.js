@@ -21,6 +21,8 @@ import fs from 'node:fs';
 
 import { setupAndLogin } from './helpers/bootstrap.js';
 import { seedBlastRadius } from './helpers/seed-blast-radius.js';
+import { seedPlatformBackdropScanError, waitForPlatformBackdropNotice } from './helpers/seed-platform-backdrop-duplicates.js';
+import { seedBackdropDuplicates, waitForBackdropDuplicatesReport } from './helpers/seed-backdrop-duplicates.js';
 import { newRunId } from './helpers/known-violations.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -200,12 +202,47 @@ export default async function globalSetup() {
       + `(${seeded.automated} automated, ${seeded.unknown} unknown)`,
     );
 
+    // Seed BOTH duplicate-image fixtures here, before any worker is forked
+    // (#3092), and CREATE both datasets before POLLING either.
+    //
+    // Both reports render from ONE process-wide dupimages.Cache. A single
+    // refresh computes both halves, polling a report is what TRIGGERS that
+    // refresh, and the lazy path is then locked out by a 15-minute
+    // retryCooldown -- stamped when the sweep STARTS, never cleared on success
+    // (internal/dupimages/cache.go). The run therefore gets ONE sweep, and
+    // whatever does not exist when it starts is cached as empty behind that
+    // cooldown.
+    //
+    // Two consequences, both measured rather than assumed:
+    //   - a per-spec beforeAll is unwinnable, not merely fragile: whichever
+    //     fixture is seeded second loses, in either order;
+    //   - seeding both but polling between them fails the same way, because the
+    //     first poll consumes the only sweep.
+    //
+    // Hence: build all the data, then let one sweep observe all of it.
+    //
+    // Fatal on failure, like the blast-radius fixture: each waiter polls until
+    // its own surface renders and throws if it never does, so a throw here means
+    // the surface genuinely never appeared -- which no spec should paper over.
+    //
+    // The platform seeder's teardown is deliberately NOT called: its fake Emby
+    // must stay reachable because a later sweep re-queries it, and its listener
+    // is unref'd so it cannot keep this process alive.
+    await seedBackdropDuplicates(ctx, { wait: false });
+    await seedPlatformBackdropScanError(ctx, { wait: false });
+
+    // Now let ONE sweep observe both.
+    await waitForBackdropDuplicatesReport(ctx);
+    console.log('[a11y] backdrop-duplicates fixture: report populated');
+    await waitForPlatformBackdropNotice(ctx);
+    console.log('[a11y] platform-backdrop fixture: partial-scan notice rendered');
+
     // The nfo-has-mbid fixture (#2809) is seeded by nfo-mbid.spec.js's own
     // beforeAll, not here -- the repo rule is that an a11y spec owns its own
-    // fixture against the freshly started harness (see
-    // tests/a11y/backdrop-perceptual.spec.js for the same pattern). Seeding
-    // it globally would seed it on behalf of a spec file that never asked for
-    // it here and duplicate ownership of the same fixture in two places.
+    // fixture against the freshly started harness. That rule holds wherever the
+    // surface is computed on render; it is the CACHED surfaces above that have
+    // to be seeded run-wide, because a cache-backed surface cannot be re-swept
+    // on demand once the cooldown is stamped.
   } finally {
     await ctx.dispose();
   }

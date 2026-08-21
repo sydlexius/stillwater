@@ -53,7 +53,19 @@
 //      later poll. Returning after one GET would hand the spec the pending
 //      state, whose partial-scan notice does not exist, and every assertion
 //      would fail for a reason unrelated to the code under test. Same shape as
-//      seed-backdrop-duplicates.js's waitForReport, for the same reason.
+//      seed-backdrop-duplicates.js's wait, for the same reason.
+//
+// SEEDED FROM global-setup.js, NOT FROM A SPEC'S beforeAll.
+//
+// That cache is process-wide and ONE refresh computes both this report's half
+// and the sibling local report's, after which the lazy path is locked out for
+// 15 minutes (retryCooldown, internal/dupimages/cache.go) -- stamped when the
+// sweep STARTS and never cleared on success. So the run gets ONE sweep, and
+// whichever fixture does not exist when it starts is cached as empty behind
+// that cooldown. A per-spec beforeAll is therefore unwinnable rather than
+// merely fragile: whichever of the two fixtures is seeded second loses, in
+// EITHER ordering. global-setup.js holds the full derivation; the ordering it
+// describes is a CONSTRAINT, not a preference.
 //
 // apiFetch/ensureLibrary/runScan/artistIdsByName are shared with the other
 // a11y seeders via ./api.js (#3058/#3059); startFakeEmby stays local since it
@@ -99,6 +111,13 @@ export function startFakeEmby() {
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const { port } = server.address();
+      // unref so this listener can never keep the Playwright coordinator alive
+      // on its own. When seeded from globalSetup (#3092) it must stay reachable
+      // for the WHOLE run, because a later sweep re-queries it, so nothing
+      // closes it until teardown -- without unref a crashed run would hang
+      // instead of exiting. A spec that DOES own its listener still closes it
+      // explicitly; unref only removes the process-lifetime hold.
+      server.unref();
       resolve({ server, port, close: () => new Promise(r => server.close(r)) });
     });
   });
@@ -189,7 +208,7 @@ export async function ensureConnection(request, port, name = FIXTURE_CONNECTION_
   throw new Error(`seed: creating fixture connection failed: ${resp.status()} ${await resp.text()}`);
 }
 
-// waitForNotice polls the live report page for the partial-scan notice
+// waitForPlatformBackdropNotice polls the live report page for the partial-scan notice
 // marker. Polling is REQUIRED, not defensive: the page renders from a cached
 // sweep (#3092), so the first GET returns the pending notice and merely kicks
 // the sweep that produces what this fixture is waiting for.
@@ -197,7 +216,10 @@ export async function ensureConnection(request, port, name = FIXTURE_CONNECTION_
 // 90s to match seed-backdrop-duplicates.js: the sweep is a per-artist,
 // per-connection round trip, and the lazy trigger only fires on a GET that
 // finds the cache cold -- so the budget has to cover a sweep, not a render.
-async function waitForNotice(request) {
+// Exported (#3092) so global-setup.js can seed this dataset and the sibling
+// local-report dataset BEFORE polling either. See seedPlatformBackdropScanError's
+// `wait` option and global-setup.js for why that ordering is a constraint.
+export async function waitForPlatformBackdropNotice(request) {
   const deadline = Date.now() + 90_000;
   let last = '';
   let sawOK = false;
@@ -243,13 +265,23 @@ async function waitForNotice(request) {
  * connection backed by a fake Emby server that 404s every artist lookup.
  *
  * Returns a teardown function that stops the fake server AND deletes the
- * Connection row it created. Callers MUST call it (in afterAll or similar):
- * closing the listener alone leaves a live connection pointing at a dead
- * server, which every other spec in the run then has to survive. The teardown
- * takes an optional APIRequestContext so a caller can hand it the one its own
- * afterAll hook was given rather than relying on the seeding hook's.
+ * Connection row it created. A caller that OWNS the fixture for a bounded
+ * scope MUST call it (in afterAll or similar): closing the listener alone
+ * leaves a live connection pointing at a dead server, which every other spec in
+ * the run then has to survive. The teardown takes an optional
+ * APIRequestContext so a caller can hand it the one its own afterAll hook was
+ * given rather than relying on the seeding hook's.
+ *
+ * THE ONE CALLER THAT DOES NOT: global-setup.js seeds this fixture for the
+ * WHOLE run and deliberately never invokes the teardown, because a later sweep
+ * re-queries the fake Emby and the connection row must stay mapped for the
+ * report to keep rendering the notice. Nothing leaks past the run: the listener
+ * is unref'd (see startFakeEmby) and the database is ephemeral per invocation.
  */
-export async function seedPlatformBackdropScanError(request) {
+// `wait`: see seedBackdropDuplicates. False lets a caller create this dataset
+// before anything polls a cache-backed report, so the single sweep the run gets
+// observes BOTH fixtures rather than only whichever was seeded first.
+export async function seedPlatformBackdropScanError(request, { wait = true } = {}) {
   const port = process.env.SW_PORT || new URL(BASE_URL).port || 'default';
   const dir = path.join(os.tmpdir(), `sw-a11y-platform-backdrop-${port}`);
   const artistDir = path.join(dir, FIXTURE_ARTIST);
@@ -284,7 +316,7 @@ export async function seedPlatformBackdropScanError(request) {
       throw new Error(`seed: mapping platform id failed: ${mapResp.status()} ${await mapResp.text()}`);
     }
 
-    await waitForNotice(request);
+    if (wait) await waitForPlatformBackdropNotice(request);
   } catch (err) {
     // Order matters and both must happen. The Connection row is the piece
     // that outlives this worker and poisons other specs, so it gets cleaned

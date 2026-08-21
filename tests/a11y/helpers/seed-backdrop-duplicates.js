@@ -154,7 +154,13 @@ func main() {
 // the real report lands. Returning early here would hand the spec the pending
 // state and fail every assertion for a reason that has nothing to do with the
 // code under test.
-async function waitForReport(request) {
+//
+// Exported (#3092) because the WAIT and the SEEDING have to be separable. Both
+// duplicate-image reports are served by ONE process-wide dupimages.Cache whose
+// single refresh computes both halves, so whoever polls FIRST consumes the only
+// sweep the run gets. global-setup.js therefore creates every dataset before
+// polling any of them; see seedBackdropDuplicates's `wait` option.
+export async function waitForBackdropDuplicatesReport(request) {
   const deadline = Date.now() + 90_000;
   let last = '';
   // Wait for the PERCEPTUAL fixture markers specifically, not just the table:
@@ -197,8 +203,17 @@ async function waitForReport(request) {
  *
  * Safe to re-run: the library row is reused when it already points at this
  * run's directory.
+ *
+ * `wait` is false when the caller seeds SEVERAL cache-backed fixtures before
+ * polling any of them. Both duplicate reports are served by one dupimages.Cache
+ * refresh that computes both halves and is then locked out by a 15-minute
+ * retryCooldown (internal/dupimages/cache.go), so the FIRST poll consumes the
+ * only sweep the run gets: whichever dataset does not exist at that moment is
+ * cached as empty behind that cooldown. Creating every dataset first and
+ * polling afterwards is what lets one sweep observe them all. See
+ * global-setup.js.
  */
-export async function seedBackdropDuplicates(request) {
+export async function seedBackdropDuplicates(request, { wait = true } = {}) {
   // Scoped to the port so two servers on one machine cannot share a fixture
   // directory and scan each other's artists. Deterministic rather than a
   // random temp dir, so the 409-reuse branch above is actually reachable.
@@ -234,5 +249,5 @@ export async function seedBackdropDuplicates(request) {
 
   await ensureLibrary(request, FIXTURE_LIBRARY_NAME, dir);
   await runScan(request);
-  await waitForReport(request);
+  if (wait) await waitForBackdropDuplicatesReport(request);
 }

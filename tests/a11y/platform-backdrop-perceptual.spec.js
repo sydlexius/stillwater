@@ -17,65 +17,28 @@
 import { test, expect } from 'playwright/test';
 import { disableTransitions } from './helpers/settle.js';
 import { restorePersistedTheme, applyTheme } from './helpers/axe.js';
-import { seedPlatformBackdropScanError } from './helpers/seed-platform-backdrop-duplicates.js';
 
 const PAGE = '/reports/platform-backdrop-duplicates';
 const NOTICE = '#platform-backdrop-duplicates-partial-notice';
 
-let closeFake;
-
 // The harness boots against an EMPTY database and library, so the notice
 // (rendered only when view.ScanErrors > 0) does not exist until a real scan
-// failure is forced. Seeded once for the file: the fixture creates a real
-// connection and runs a real scan, which the tests only read the result of.
+// failure is forced. That fixture is seeded in global-setup.js, NOT in a
+// beforeAll here (#3092).
 //
-// HOOK TIMEOUT. The fixture's own waitForNotice polls for up to 90s, on
-// purpose: the report is served from a cache populated by a BACKGROUND sweep
-// (#3092), so the first GET only finds a cold cache and kicks the sweep, and
-// the budget has to cover the sweep rather than a render. A Playwright
-// beforeAll hook gets the framework's DEFAULT 60s timeout -- `timeout` in
-// playwright.config.js is the per-TEST budget and does not raise a hook's --
-// so on any runner slower than a laptop the hook was killed at 60s, BEFORE
-// the fixture could either succeed or emit its own diagnosis. That is exactly
-// what CI showed on 6e6a7ae7: three "beforeAll hook timeout of 60000ms
-// exceeded" failures (the attempt plus playwright.config.js's two retries)
-// and not one word about which of waitForNotice's three failure states
-// actually applied.
+// WHY IT CANNOT LIVE IN THIS FILE. The report renders from a process-wide
+// dupimages.Cache: one refresh computes both this report's half and the sibling
+// local report's, and the lazy trigger is then locked out for 15 minutes by
+// retryCooldown, stamped when the sweep STARTS and never cleared on success
+// (internal/dupimages/cache.go). So the run gets ONE sweep. Any earlier spec
+// that loads either report warms the cache before this fixture's fake Emby
+// exists, and the sweep this fixture needs is never allowed to run -- the
+// seeder then correctly reports "ScanErrors likely never went above 0" after
+// its full 90s. Seeding second loses in EITHER ordering, which is why this is a
+// constraint rather than a preference; global-setup.js carries the derivation.
 //
-// 150s = the 90s poll budget plus the scan/connection setup that runs ahead
-// of it (runScan alone allows 60s) plus margin. The hook must outlast the
-// fixture's own budget so a slow sweep produces the fixture's message, never
-// a framework timeout that names nothing. Raise the fixture's deadline and
-// this number has to move with it.
-//
-// WHAT THIS DOES NOT FIX, DELIBERATELY. Raising the hook timeout lets the
-// fixture report its own verdict; it does not make every verdict a pass.
-// There is a SECOND, independent defect underneath: both duplicate reports
-// render from ONE process-wide dupimages.Cache, a single refresh computes
-// both halves, and the lazy trigger is then locked out by a 15-minute
-// retryCooldown. So an earlier spec that loads either report warms that cache
-// BEFORE this fixture's fake Emby exists, and the sweep this fixture needs is
-// never allowed to run -- waitForNotice then correctly reports "ScanErrors
-// likely never went above 0" after its full 90s. That is an ORDERING defect
-// owned by #3092 PR 3/3, which moves both fixtures into global-setup so one
-// sweep observes all the data. It is out of scope here on purpose: this file
-// is PR 1/3. Run alone (or first) this spec passes; run after contrast.spec.js
-// it fails on that ordering, with or without this timeout change.
-test.beforeAll(async ({ request }) => {
-  test.setTimeout(150_000);
-  closeFake = await seedPlatformBackdropScanError(request);
-});
-
-// Teardown deletes the fixture CONNECTION as well as closing the loopback
-// listener. A connection left behind points at a dead server, reports its NFO
-// check as unavailable, and the app's write guard is fail-closed on an
-// indeterminate check -- so the debris fails unrelated specs later in the same
-// run against the same shared database (nfo-mbid's 409 nfo_write_blocked).
-// It takes this hook's own `request` rather than reusing the seeding hook's,
-// whose APIRequestContext belongs to a scope that has already been torn down.
-test.afterAll(async ({ request }) => {
-  if (closeFake) await closeFake(request);
-});
+// This file only READS that fixture. globalSetup throws if it never landed, so
+// a failure here is a real defect in the page, never a missing fixture.
 
 test.beforeEach(async ({ page }) => {
   await disableTransitions(page);
