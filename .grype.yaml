@@ -17,3 +17,37 @@ ignore:
       type: go-module
     review-by: "2026-10-20"
     reason: "openpgp sub-package unused (only acme/autocert/bcrypt/pbkdf2 imported); no fixed version exists"
+
+  # CVE-2026-14456 (High, CVSS 7.5) libcrypto3/libssl3 3.5.7-r0 -- OpenSSL QUIC
+  # SERVER memory exhaustion: an OpenSSL Listener SSL object queues unbounded
+  # incoming channels for unknown destination connection IDs.
+  #
+  # UNREACHABLE HERE, and the mechanism matters because stillwater DOES serve
+  # QUIC. Its HTTP/3 listener is quic-go (github.com/quic-go/quic-go v0.61.0,
+  # internal/server/listeners.go:275 constructs http3.Server), which is a pure-Go
+  # QUIC/TLS stack that never calls into OpenSSL. The binary is built
+  # CGO_ENABLED=0 (build/docker/Dockerfile:43, .goreleaser.yml:17), so it links no
+  # C libraries at all: libcrypto3/libssl3 are present in the Alpine layer only as
+  # dependencies of busybox and apk, neither of which runs a QUIC listener.
+  #
+  # NO UPSTREAM FIX EXISTS TO BUMP TO, verified 2026-08-22 rather than assumed:
+  # alpine:3.24 is already pinned to the newest published digest, and the openssl
+  # package is 3.5.7-r0 in BOTH v3.24/main and edge/main. There is no patched apk
+  # to move to, so this is not a deferred upgrade -- it is a wait on upstream.
+  #
+  # Re-check by comparing the apk index against 3.5.7-r0:
+  #   curl -sL https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/APKINDEX.tar.gz \
+  #     | tar -xzO APKINDEX | grep -A2 '^P:openssl$' | grep '^V:'
+  # A version above 3.5.7-r0 means the fix landed: drop this entry and rebuild.
+  - vulnerability: CVE-2026-14456
+    package:
+      name: libcrypto3
+      type: apk
+    review-by: "2026-10-20"
+    reason: "OpenSSL QUIC server path unreachable (HTTP/3 is pure-Go quic-go, CGO_ENABLED=0); no fixed apk in v3.24 or edge as of 2026-08-22"
+  - vulnerability: CVE-2026-14456
+    package:
+      name: libssl3
+      type: apk
+    review-by: "2026-10-20"
+    reason: "OpenSSL QUIC server path unreachable (HTTP/3 is pure-Go quic-go, CGO_ENABLED=0); no fixed apk in v3.24 or edge as of 2026-08-22"
