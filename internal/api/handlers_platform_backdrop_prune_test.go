@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1108,6 +1110,251 @@ func TestPlatformBackdropDuplicatesPrune_AlsoRefreshesTheSidebarCounts(t *testin
 		if time.Now().After(deadline) {
 			t.Fatal("a successful prune must kick a sidebar count refresh; the stale Emby count of 9 was still showing 3s later, " +
 				"so the pill would keep advertising backdrops the operator just deleted")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// pagingFailureArtistLister returns one FULL page of artists and then fails,
+// which is the only shape that reproduces a PARTIAL prune through the public
+// handler. PrunePlatformBackdropDuplicates deletes as it walks, and its single
+// hard return is a paging failure, so the interesting state -- "artwork is
+// already gone AND the call returns an error" -- only exists when page 1
+// succeeded and a later page did not.
+//
+// page1 is settable after construction because the router (and therefore the
+// artist whose real ID the page must carry) does not exist yet when the lister
+// is handed to the publisher.
+//
+// Page 1 is padded to exactly params.PageSize entries rather than a hardcoded
+// count: the publisher stops paging when a page comes back SHORT, so a page of
+// any other size ends the walk before page 2 is ever requested and the test
+// would silently exercise the success path. Reading PageSize off the request
+// keeps that true if publish's scanBackdropPageSize is ever retuned.
+type pagingFailureArtistLister struct {
+	mu    sync.Mutex
+	page1 []artist.Artist
+	pages atomic.Int32
+}
+
+func (l *pagingFailureArtistLister) setPage1(as []artist.Artist) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.page1 = as
+}
+
+func (l *pagingFailureArtistLister) List(_ context.Context, params artist.ListParams) ([]artist.Artist, int, error) {
+	l.pages.Add(1)
+	if params.Page > 1 {
+		return nil, 0, errors.New("test: artist listing failed at page 2")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]artist.Artist, 0, params.PageSize)
+	out = append(out, l.page1...)
+	// Filler artists carry IDs that exist in no table, so GetPlatformIDs
+	// returns nothing for them and they prune nothing -- they exist only to
+	// make the page full so the walk continues to the failing page 2.
+	for i := len(out); i < params.PageSize; i++ {
+		out = append(out, artist.Artist{ID: fmt.Sprintf("filler-%d", i), Name: "filler"})
+	}
+	return out, params.PageSize + 1, nil
+}
+
+// duplicateBackdropPlatform is a minimal Emby stand-in holding one artist whose
+// backdrops are byte-identical, so a prune has something real to delete. It
+// serves the three endpoints the prune path touches (artist detail, indexed
+// backdrop read, indexed image delete) and records the delete count, which is
+// how the test proves the prune actually removed artwork rather than passing
+// vacuously against a platform that had nothing to remove.
+type duplicateBackdropPlatform struct {
+	mu        sync.Mutex
+	backdrops [][]byte
+	deletes   atomic.Int32
+	details   atomic.Int32
+}
+
+func (p *duplicateBackdropPlatform) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.backdrops)
+}
+
+func (p *duplicateBackdropPlatform) handler(platformArtistID, platformUserID string) http.HandlerFunc {
+	detailPath := "/Users/" + platformUserID + "/Items/" + platformArtistID
+	imagePrefix := "/Items/" + platformArtistID + "/Images/Backdrop/"
+	return func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case req.Method == http.MethodGet && req.URL.Path == detailPath:
+			p.details.Add(1)
+			tags := make([]string, 0, p.count())
+			for i := 0; i < p.count(); i++ {
+				tags = append(tags, fmt.Sprintf(`"tag%d"`, i))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"Name":"Dup","Id":%q,"SortName":"Dup","ImageTags":{},"BackdropImageTags":[%s],`+
+				`"ProviderIds":{},"Overview":"","Genres":[],"Tags":[],"PremiereDate":"","EndDate":"","LockedFields":[],"LockData":false}`,
+				platformArtistID, strings.Join(tags, ","))
+		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, imagePrefix):
+			idx, err := strconv.Atoi(strings.TrimPrefix(req.URL.Path, imagePrefix))
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			if err != nil || idx < 0 || idx >= len(p.backdrops) {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(p.backdrops[idx])
+		case req.Method == http.MethodDelete && strings.HasPrefix(req.URL.Path, imagePrefix):
+			idx, err := strconv.Atoi(strings.TrimPrefix(req.URL.Path, imagePrefix))
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			if err != nil || idx < 0 || idx >= len(p.backdrops) {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			// Emby re-indexes after a delete, which is why the prune deletes
+			// high-index-first; modeled here so the re-verify reads that follow
+			// see the same shifted state a real platform would show.
+			p.backdrops = append(p.backdrops[:idx], p.backdrops[idx+1:]...)
+			p.deletes.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}
+}
+
+// A prune that FAILS after it has already deleted must still invalidate the
+// caches. This is #3092 on the error path: the publisher walks the library page
+// by page and deletes as it goes, so a paging failure on page 2 returns an
+// error with page 1's artwork already removed. Before the fix the handler
+// returned 500 straight out, leaving the cached report -- the page's ONLY data
+// source -- listing backdrops that are no longer on the platform, with the
+// Prune button re-armed against them.
+//
+// This is the one failure shape that distinguishes the two behaviors, which is
+// why the lister must return a FULL page before failing rather than failing
+// outright the way TestPlatformBackdropDuplicatesPrune_Error's does.
+//
+// NOT t.Parallel(): the invalidation kicks dupimages.Shared(), process-wide
+// state.
+func TestPlatformBackdropDuplicatesPrune_PartialFailureStillInvalidatesTheCache(t *testing.T) {
+	dupimages.Shared().Reset()
+	t.Cleanup(func() { dupimages.Shared().Reset() })
+
+	const (
+		platformArtistID = "emby-dup-artist"
+		platformUserID   = "test-user-1"
+		connID           = "conn-emby-partial"
+	)
+
+	// Three byte-identical backdrops: indices 1 and 2 are redundant copies of
+	// the survivor at 0, so a prune has exactly two deletes to perform.
+	plat := &duplicateBackdropPlatform{backdrops: [][]byte{
+		[]byte("identical-backdrop-bytes"),
+		[]byte("identical-backdrop-bytes"),
+		[]byte("identical-backdrop-bytes"),
+	}}
+	srv := httptest.NewServer(plat.handler(platformArtistID, platformUserID))
+	defer srv.Close()
+
+	lister := &pagingFailureArtistLister{}
+	r := testRouterWithPlatformLister(t, lister)
+
+	a := addTestArtist(t, r.artistService, "DupArtist")
+	if err := r.connectionService.Create(context.Background(), &connection.Connection{
+		ID:      connID,
+		Name:    "My Emby",
+		Type:    "emby",
+		URL:     srv.URL,
+		APIKey:  "test-key",
+		Enabled: true,
+		Status:  "ok",
+		// FeatureImageWrite is what admits this connection to the PRUNE path
+		// (pruneOneArtist skips a connection without it), so without it the
+		// test would delete nothing and pass against the old code too.
+		Emby: &connection.EmbyConfig{PlatformUserID: platformUserID, FeatureImageWrite: true},
+	}); err != nil {
+		t.Fatalf("creating test connection: %v", err)
+	}
+	if err := r.artistService.SetPlatformID(context.Background(), a.ID, connID, platformArtistID); err != nil {
+		t.Fatalf("setting platform ID: %v", err)
+	}
+	lister.setPage1([]artist.Artist{*a})
+
+	// PRECONDITION: an ESTABLISHED cached report. Without this, "the cache is
+	// empty afterwards" would be indistinguishable from "the cache was never
+	// populated" and the assertion below would hold no matter what the handler
+	// did.
+	r.storePlatformDupReport(publish.PlatformBackdropDupReport{
+		ConnectionsAffected: 1,
+		ArtistsAffected:     1,
+		RedundantBackdrops:  2,
+		PerArtist: []publish.ArtistPlatformBackdropDup{
+			{ArtistID: a.ID, ConnectionID: connID, Connection: "My Emby", Backdrops: 3, Redundant: 2},
+		},
+	}, time.Now())
+	if _, _, ok := r.platformDupReportSnapshot(); !ok {
+		t.Fatal("precondition: the cached report must be established before the prune, or 'invalidated' is indistinguishable from 'never set'")
+	}
+
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	w := httptest.NewRecorder()
+	r.handlePlatformBackdropDuplicatesPrune(w, req)
+
+	// PRECONDITION: page 1 really deleted. Asserted against the platform's own
+	// delete count rather than the response body, which on a 500 carries no
+	// result at all. A run that removed nothing would leave the cache
+	// legitimately valid, so the test would prove nothing about the fix.
+	if got := plat.deletes.Load(); got != 2 {
+		t.Fatalf("precondition: page 1 must actually delete before the paging failure; platform recorded %d deletes, want 2. "+
+			"With no deletions there is no stale cache to invalidate and this test is vacuous", got)
+	}
+	if got := plat.count(); got != 1 {
+		t.Fatalf("precondition: the platform must be left holding 1 backdrop after the prune, got %d", got)
+	}
+	if got := lister.pages.Load(); got < 2 {
+		t.Fatalf("precondition: the prune must reach the failing page 2; the lister saw %d page requests", got)
+	}
+
+	// (a) The operator still gets an honest failure -- a partial prune is not a
+	// success and must not be reported as one.
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 when the prune fails partway; body: %s", w.Code, w.Body.String())
+	}
+
+	// (b) ...and the cached report is gone, so the reload cannot list the two
+	// backdrops that were just deleted.
+	if report, _, ok := r.platformDupReportSnapshot(); ok {
+		t.Errorf("a prune that deleted and THEN failed must still invalidate the cached report; it still holds %+v. "+
+			"The operator's reload would list backdrops that are no longer on the platform, with the Prune button armed against them", report)
+	}
+
+	// The singleton must also be released, exactly as on the outright-failure
+	// path, or one partial prune blocks every later one for the process's life.
+	r.platformPruneMu.Lock()
+	running := r.platformPruneRunning
+	r.platformPruneMu.Unlock()
+	if running {
+		t.Error("platformPruneRunning must be released after a partially failed prune")
+	}
+
+	// And the SIDEBAR cache is kicked too. It is a separate store whose lazy
+	// trigger only fires on !Computed, so nothing else would ever re-count it
+	// and the pill would keep advertising the deleted backdrops while the
+	// report reads "not yet measured".
+	//
+	// Observed through the platform's own detail-request count: the kicked
+	// sweep walks the same library and re-reads this artist. Polled because
+	// TriggerRefresh is fire-and-forget by design. The prune itself made
+	// exactly one detail read (its detection pass), so anything beyond that is
+	// the refresh.
+	deadline := time.Now().Add(3 * time.Second)
+	for plat.details.Load() <= 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("a partially failed prune must also kick the sidebar count refresh; the platform saw only %d detail reads in 3s, "+
+				"so the pill would keep advertising backdrops that were just deleted", plat.details.Load())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

@@ -225,6 +225,52 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 	result, err := r.publisher.PrunePlatformBackdropDuplicates(req.Context())
 	if err != nil {
 		r.logger.Error("pruning platform backdrop duplicates", slog.String("error", err.Error()))
+		// A FAILED prune is not an UNSTARTED prune, and this is the path that
+		// makes the difference visible to an operator. The publisher walks the
+		// library page by page and deletes as it goes, so its only hard return
+		// -- a paging failure -- can fire on page 2 with page 1 already pruned;
+		// it returns the partial result alongside the error rather than a zero
+		// value precisely so this handler can see that. Falling through to the
+		// 500 without invalidating leaves the cached report listing backdrops
+		// that are no longer on the platform, which is #3092 surviving on the
+		// error path: the operator retries, the page still shows the same rows,
+		// and the Prune button stays armed against images that are already
+		// gone.
+		//
+		// CONDITIONAL, not unconditional. The question the caches actually care
+		// about is "did this run possibly change the platform", and a run that
+		// failed before touching anything has not invalidated anything -- so it
+		// should not cost an established report and a fresh 62s sweep. Both
+		// terms are load-bearing:
+		//   - BackdropsRemoved > 0 is the confirmed case: deletes landed.
+		//   - Failures is the AMBIGUOUS case, and it must be included. A delete
+		//     whose request errors (a timeout after the platform already
+		//     processed it) is recorded as a failure and NOT counted in
+		//     BackdropsRemoved, so a run whose single delete timed out would
+		//     otherwise skip the invalidation with the platform possibly
+		//     already changed. Failures also carries entries that provably
+		//     deleted nothing (a platform-ID or connection lookup that failed),
+		//     and invalidating for those is deliberately accepted: the cost is
+		//     one unnecessary re-sweep, while the cost of the other direction
+		//     is showing the operator artwork that no longer exists.
+		// The success path below stays unconditional -- there the caller was
+		// told the run completed, so a re-sweep is what makes the page agree
+		// with the receipt it just got.
+		if result.BackdropsRemoved > 0 || len(result.Failures) > 0 {
+			r.logger.Warn("platform backdrop prune failed after it may have deleted; invalidating the cached report",
+				slog.Int("backdrops_removed", result.BackdropsRemoved),
+				slog.Int("failures", len(result.Failures)))
+			// Same two caches, for the same reasons the success path spells out
+			// below: the report cache is what the page renders from, and the
+			// sidebar's dupimages.Cache is a SEPARATE store that the report
+			// invalidation does not touch. Skipping the sidebar here would leave
+			// the two surfaces permanently disagreeing after a partial prune --
+			// the report pending, the pill still claiming a count that includes
+			// deleted images -- because that cache's lazy trigger only fires on
+			// !Computed, which stays false once any sweep has landed.
+			r.invalidatePlatformDupReport()
+			r.dupImageCache().TriggerRefresh()
+		}
 		http.Error(w, "prune failed", http.StatusInternalServerError)
 		return
 	}
