@@ -82,6 +82,17 @@ jobs:
               # that exists to catch that class of regression never runs (#3093).
               - 'web/components/**/*.templ'
               - 'web/components/**/*_templ.go'
+              # Same reasoning, web/templates/** side (#3101). A plain
+              # `function name() {...}` inline in a web/templates/*.templ
+              # <script> block (blastRadiusApplyOrdering, reports_page.templ)
+              # is exercised the same way tests/unit/blast-radius-apply-ordering
+              # .test.js does it: extracted from the generated *_templ.go and
+              # run in a vm sandbox. Without these two globs, editing ONLY the
+              # .templ (no test file touched) left js-test SKIPPED for that
+              # class of change -- caught only by the a11y filter below, which
+              # is a slower, different tier and does not run this spec at all.
+              - 'web/templates/**/*.templ'
+              - 'web/templates/**/*_templ.go'
               - 'package.json'
               - 'package-lock.json'
             css:
