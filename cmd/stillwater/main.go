@@ -133,7 +133,20 @@ func dispatchFlagCommand(cliFlags cli.Flags, stderr io.Writer) (handled bool, er
 	}
 
 	if cliFlags.LockDamageDryRun {
-		return true, runLockDamageDryRun()
+		return true, runLockDamageDryRun(false)
+	}
+
+	if cliFlags.LockDamagePreGuardDryRun {
+		return true, runLockDamageDryRun(true)
+	}
+
+	if cliFlags.LockDamagePreGuardRepair {
+		// The one flag command here that WRITES. It logs to stderr like the
+		// dry runs print to stdout: this path never reaches setupLogging, so
+		// without an explicit logger the pass would restore rows and say
+		// nothing at all.
+		return true, runLockDamagePreGuardRepair(
+			slog.New(slog.NewTextHandler(stderr, nil)))
 	}
 
 	return false, nil

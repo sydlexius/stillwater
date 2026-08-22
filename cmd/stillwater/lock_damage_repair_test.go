@@ -118,7 +118,7 @@ func TestLockDamageDryRun_ReportsWithoutWriting(t *testing.T) {
 	changesBefore := tableSnapshot(t, ctx, db, "metadata_changes")
 
 	var out bytes.Buffer
-	if err := lockDamageDryRunDB(ctx, db, &out); err != nil {
+	if err := lockDamageDryRunDB(ctx, db, &out, maintenance.LockDamageOpts{DryRun: true}); err != nil {
 		t.Fatalf("lockDamageDryRunDB: %v", err)
 	}
 
@@ -197,7 +197,8 @@ func TestRunLockDamageRepairPass_CompletionGate(t *testing.T) {
 		maint := maintenance.NewService(db, "", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 		maint.SetLockDamageDeps(hist.Repo(), artistSvc)
 
-		runLockDamageRepairPass(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), maint)
+		runLockDamageRepairPass(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), maint,
+			maintenance.LockDamageOpts{}, lockDamageRepairKey)
 
 		var bio string
 		if err := db.QueryRowContext(ctx,
@@ -235,7 +236,8 @@ func TestRunLockDamageRepairPass_CompletionGate(t *testing.T) {
 		maint := maintenance.NewService(db, "", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 		maint.SetLockDamageDeps(hist.Repo(), artistSvc)
 
-		runLockDamageRepairPass(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), maint)
+		runLockDamageRepairPass(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), maint,
+			maintenance.LockDamageOpts{}, lockDamageRepairKey)
 
 		// PRECONDITION: the refusal really fired -- the name is unchanged.
 		var name string
@@ -264,7 +266,8 @@ func TestRunLockDamageRepairPass_CompletionGate(t *testing.T) {
 		maint := maintenance.NewService(db, "", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 		maint.SetLockDamageDeps(hist.Repo(), artistSvc)
 
-		runLockDamageRepairPass(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), maint)
+		runLockDamageRepairPass(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), maint,
+			maintenance.LockDamageOpts{}, lockDamageRepairKey)
 
 		if readKey(db) != 0 {
 			t.Errorf("completion key stamped despite a row-level failure; the retry is lost")
@@ -372,7 +375,7 @@ func TestLockDamageDryRun_ReportsUnrecoverableAndFailedRows(t *testing.T) {
 
 	t.Run("unrecoverable section, via the real entry point", func(t *testing.T) {
 		var out bytes.Buffer
-		if err := lockDamageDryRunDB(ctx, db, &out); err != nil {
+		if err := lockDamageDryRunDB(ctx, db, &out, maintenance.LockDamageOpts{DryRun: true}); err != nil {
 			t.Fatalf("lockDamageDryRunDB: %v", err)
 		}
 		report := out.String()
@@ -454,7 +457,7 @@ func TestRunLockDamageDryRun_EndToEnd(t *testing.T) {
 	}
 	_ = mig.Close()
 
-	if err := runLockDamageDryRun(); err != nil {
+	if err := runLockDamageDryRun(false); err != nil {
 		t.Fatalf("runLockDamageDryRun: %v", err)
 	}
 
@@ -467,7 +470,7 @@ func TestRunLockDamageDryRun_EndToEnd(t *testing.T) {
 	ctx := context.Background()
 	seedLockDamageFixture(t, ctx, db)
 
-	if err := runLockDamageDryRun(); err != nil {
+	if err := runLockDamageDryRun(false); err != nil {
 		t.Fatalf("runLockDamageDryRun (seeded): %v", err)
 	}
 	var bio string
@@ -508,7 +511,7 @@ func TestLockDamageDryRun_NameFieldCandidateLeaksNoName(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := lockDamageDryRunDB(ctx, db, &out); err != nil {
+	if err := lockDamageDryRunDB(ctx, db, &out, maintenance.LockDamageOpts{DryRun: true}); err != nil {
 		t.Fatalf("lockDamageDryRunDB: %v", err)
 	}
 	report := out.String()
@@ -595,7 +598,7 @@ func TestRunLockDamageDryRun_RefusesToMigrateABehindDatabase(t *testing.T) {
 	trackerBefore := tableSnapshot(t, context.Background(), mig, "goose_db_version")
 	_ = mig.Close()
 
-	err = runLockDamageDryRun()
+	err = runLockDamageDryRun(false)
 	if err == nil {
 		t.Fatal("runLockDamageDryRun succeeded against a behind-on-migrations database; want a refusal")
 	}
@@ -662,7 +665,8 @@ func TestRunLockDamageRepairPass_ErrorLeavesKeyUnstamped(t *testing.T) {
 	db := openTestDB(t)
 	maint := maintenance.NewService(db, "", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	runLockDamageRepairPass(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), maint)
+	runLockDamageRepairPass(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), maint,
+		maintenance.LockDamageOpts{}, lockDamageRepairKey)
 
 	var n int
 	if err := db.QueryRowContext(ctx,
@@ -793,7 +797,7 @@ func TestLockDamageDryRunDB_SurfacesQueryError(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	var out bytes.Buffer
-	if err := lockDamageDryRunDB(context.Background(), db, &out); err == nil {
+	if err := lockDamageDryRunDB(context.Background(), db, &out, maintenance.LockDamageOpts{DryRun: true}); err == nil {
 		t.Fatal("lockDamageDryRunDB returned nil error against an unmigrated database")
 	}
 }

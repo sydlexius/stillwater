@@ -55,6 +55,23 @@ type Flags struct {
 	// Built for validating the repair predicate against a database copy before
 	// letting a real pass write (issue #3038 / #3075).
 	LockDamageDryRun bool `flag:"lock-damage-dry-run" default:"false" desc:"Report which locked fields the damage repair would restore, then exit without writing. For validating against a database copy."`
+
+	// LockDamagePreGuardDryRun previews the PRE-GUARD population (issue
+	// #3079): locked fields overwritten before the persist chokepoint
+	// shipped, whose history rows name no rule and so can never be
+	// attributed. Report-only; writes nothing and records no completion.
+	LockDamagePreGuardDryRun bool `flag:"lock-damage-pre-guard-dry-run" default:"false" desc:"Report which locked fields the pre-guard (unattributable) damage repair would restore, then exit without writing. Preview this before --lock-damage-pre-guard-repair."`
+
+	// LockDamagePreGuardRepair runs the pre-guard repair for real, once per
+	// database, then exits.
+	//
+	// A SEPARATE EXPLICIT FLAG AND NOT A STARTUP ONE-SHOT, deliberately.
+	// #3074 rejected an automatic restore of unattributable damage because a
+	// standing mechanism cannot tell rule damage from an operator's own edit;
+	// what answers that is a closed population plus a HUMAN RULING ON THE CUT
+	// before anything writes, and a boot-time pass has nowhere to put that
+	// ruling. The pass cannot write unless somebody typed this.
+	LockDamagePreGuardRepair bool `flag:"lock-damage-pre-guard-repair" default:"false" desc:"Restore the pre-guard (unattributable) locked-field damage previewed by --lock-damage-pre-guard-dry-run, then exit. Runs once per database. Preview and back up first."`
 }
 
 // SubcommandInfo describes a CLI subcommand (os.Args[1] dispatch) that

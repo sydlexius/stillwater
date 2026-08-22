@@ -958,7 +958,8 @@ func (r *sqliteHistoryRepo) LockDamageCandidates(ctx context.Context) ([]LockDam
 // does not weaken the positive allow-list, because nothing returned by it is
 // ever written back.
 const lockDamageUnattributedQuery = blastRadiusRankedCTE + `
-	SELECT r.artist_id, r.field, r.source
+	SELECT r.id, r.artist_id, r.field, r.old_value, r.new_value, r.source,
+	       r.created_at
 	FROM ranked r
 	%s
 	  AND r.source NOT LIKE 'rule:%%'
@@ -979,9 +980,12 @@ func (r *sqliteHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]LockD
 	out := make([]LockDamageUnattributedRow, 0)
 	for rows.Next() {
 		var u LockDamageUnattributedRow
-		if err := rows.Scan(&u.ArtistID, &u.Field, &u.Source); err != nil {
+		var damagedAt string
+		if err := rows.Scan(&u.ChangeID, &u.ArtistID, &u.Field,
+			&u.OldValue, &u.NewValue, &u.Source, &damagedAt); err != nil {
 			return nil, fmt.Errorf("scanning unattributed locked-field damage row: %w", err)
 		}
+		u.DamagedAt = parseHistoryTimestamp(u.ChangeID, damagedAt)
 		out = append(out, u)
 	}
 	if err := rows.Err(); err != nil {

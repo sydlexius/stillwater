@@ -379,7 +379,7 @@ func TestRepairLockDamage_OperatorEditAfterDamageBlocksRestore(t *testing.T) {
 		"manual", "2026-05-01T11:00:00Z")
 	// Keep the live row consistent with the newest history row, as it would be
 	// after a real operator edit.
-	env.setBiography("a1", "operator value")
+	env.setBiography("operator value")
 
 	env.requireLockedBio()
 
@@ -770,7 +770,7 @@ func TestRepairLockDamage_LiveValueDivergedBlocksRestore(t *testing.T) {
 	env.seedBioDamage("a1", "metadata_quality")
 	// The live value changed WITHOUT a history row, so the damage row is still
 	// rank 1 and the pair is still a candidate -- only the recheck can catch it.
-	env.setBiography("a1", "operator hotfix")
+	env.setBiography("operator hotfix")
 
 	env.requireLockedBio()
 	if got := env.biography("a1"); got != "operator hotfix" {
@@ -927,11 +927,15 @@ func TestRepairLockDamage_UnlockBetweenReadAndWriteBlocksRestore(t *testing.T) {
 	}
 }
 
-func (e *lockDamageEnv) setBiography(artistID, bio string) {
+// setBiography moves a1's live biography without writing a history row: the
+// shape of a value that diverged from the damage a candidate was selected
+// for. Fixed to a1 -- every fixture in these files builds its locked artist
+// there, and a parameter no caller varies is a false suggestion that it does.
+func (e *lockDamageEnv) setBiography(bio string) {
 	e.t.Helper()
 	if _, err := e.db.Exec(
-		`UPDATE artists SET biography = ? WHERE id = ?`, bio, artistID); err != nil {
-		e.t.Fatalf("setting biography for %s: %v", artistID, err)
+		`UPDATE artists SET biography = ? WHERE id = 'a1'`, bio); err != nil {
+		e.t.Fatalf("setting biography for a1: %v", err)
 	}
 }
 

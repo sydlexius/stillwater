@@ -21,6 +21,14 @@ import (
 // or partial pass retries next boot rather than being permanently skipped.
 const lockDamageRepairKey = "lock_damage_repair.completed_at"
 
+// lockDamagePreGuardKey guards the PRE-GUARD one-shot (#3079). Same
+// mechanism and same write-only-after-success rule as lockDamageRepairKey --
+// a DIFFERENT KEY because the two passes cover disjoint populations. Sharing
+// one would silently retire the pre-guard pass on every database that already
+// ran the attributed one, i.e. every deployment of v1.6.2 or later: the exact
+// population this repair exists for.
+const lockDamagePreGuardKey = "lock_damage_repair.pre_guard_completed_at"
+
 // runLockDamageDryRun is the -lock-damage-dry-run entry point: select and
 // report, write nothing, exit. It never falls through into the normal startup
 // path, never starts a listener, and never stamps lockDamageRepairKey.
@@ -29,7 +37,7 @@ const lockDamageRepairKey = "lock_damage_repair.completed_at"
 // docs/architecture/lock-damage-repair.md: point SW_DB_PATH (or the config
 // file) at a COPY of the database and inspect what the predicate selects
 // before any write pass runs.
-func runLockDamageDryRun() error {
+func runLockDamageDryRun(preGuard bool) error {
 	configPath := os.Getenv("SW_CONFIG_PATH")
 	if configPath == "" {
 		configPath = "/config/config.toml"
@@ -85,7 +93,8 @@ func runLockDamageDryRun() error {
 			cfg.Database.Path, applied, latest)
 	}
 
-	return lockDamageDryRunDB(context.Background(), db, os.Stdout)
+	return lockDamageDryRunDB(context.Background(), db, os.Stdout,
+		maintenance.LockDamageOpts{DryRun: true, PreGuard: preGuard})
 }
 
 // lockDamageDryRunDB performs the dry-run pass against an already-open
@@ -100,7 +109,7 @@ func runLockDamageDryRun() error {
 // damaged value. stdout is a local surface, but this report exists to be
 // copy-pasted into issues and reviews, which is exactly the leak the
 // constraint prevents.
-func lockDamageDryRunDB(ctx context.Context, db *sql.DB, out io.Writer) error {
+func lockDamageDryRunDB(ctx context.Context, db *sql.DB, out io.Writer, opts maintenance.LockDamageOpts) error {
 	artistSvc := artist.NewService(db)
 	hist := artist.NewHistoryService(db)
 	artistSvc.SetHistoryService(hist)
@@ -108,12 +117,80 @@ func lockDamageDryRunDB(ctx context.Context, db *sql.DB, out io.Writer) error {
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	maint.SetLockDamageDeps(hist.Repo(), artistSvc)
 
-	res, err := maint.RepairLockDamage(ctx, maintenance.LockDamageOpts{DryRun: true})
+	res, err := maint.RepairLockDamage(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("locked-field damage dry run: %w", err)
 	}
 
 	printLockDamageReport(out, res)
+	return nil
+}
+
+// runLockDamagePreGuardRepair is the -lock-damage-pre-guard-repair entry
+// point: the WRITE pass over the pre-guard population (#3079), once per
+// database, then exit.
+//
+// WHY A FLAG AND NOT A STARTUP ONE-SHOT. The attributed pass (#3075) runs
+// itself at boot because its predicate proves, per row, that a rule wrote the
+// value. This population has no such proof by construction, so what makes it
+// safe is a human ruling on the cut BEFORE anything writes -- and a boot-time
+// pass has nowhere to put that ruling. Requiring the operator to preview and
+// then type this flag makes the approval structural. See #3074.
+func runLockDamagePreGuardRepair(logger *slog.Logger) error {
+	configPath := os.Getenv("SW_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "/config/config.toml"
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	// READ-WRITE and MIGRATED, unlike the dry run: this pass writes, so the
+	// schema it writes against must be the one this build expects.
+	db, err := openMigratedRuntimeDB(cfg.Database.Path)
+	if err != nil {
+		return err
+	}
+	defer db.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	ctx := context.Background()
+	if getDBStringSetting(ctx, db, lockDamagePreGuardKey, "") != "" {
+		logger.Info("pre-guard locked-field damage repair already completed on this database; nothing to do")
+		return nil
+	}
+
+	artistSvc := artist.NewService(db)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	maint := maintenance.NewService(db, cfg.Database.Path, "", logger)
+	maint.SetLockDamageDeps(hist.Repo(), artistSvc)
+
+	return guardPreGuardPanic(logger, func() {
+		runLockDamageRepairPass(ctx, db, logger, maint,
+			maintenance.LockDamageOpts{PreGuard: true}, lockDamagePreGuardKey)
+	})
+}
+
+// guardPreGuardPanic runs pass and converts a panic into an error, logging
+// the panic TYPE and never the recovered value.
+//
+// SAME PRIVACY CONTRACT AS THE STARTUP PANIC HANDLER: a panic from the
+// restore path can carry a field value in its message, and an old biography
+// is library content. Converted rather than re-panicked so the RUNTIME does
+// not print it either -- unlike the startup goroutine this path can return,
+// so the value has no reason to reach any surface. A separate function
+// because a deferred closure inside the entry point is unreachable from a
+// test, and an untested privacy guard is an assumption, not a guarantee.
+func guardPreGuardPanic(logger *slog.Logger, pass func()) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("pre-guard locked-field damage repair panicked",
+				"panic_type", fmt.Sprintf("%T", r))
+			err = fmt.Errorf("pre-guard locked-field damage repair panicked (%T); "+
+				"completion was not recorded, so it can be re-run", r)
+		}
+	}()
+	pass()
 	return nil
 }
 
@@ -125,10 +202,18 @@ func printLockDamageReport(out io.Writer, res *maintenance.LockDamageResult) {
 	_, _ = fmt.Fprintf(out, "locked-field damage repair DRY RUN (no writes performed)\n")
 	_, _ = fmt.Fprintf(out, "would restore: %d\n", len(res.Restored))
 	for _, r := range res.Restored {
-		_, _ = fmt.Fprintf(out, "  artist=%s field=%s rule=%s damaged_at=%s\n",
-			r.ArtistID, r.Field, r.RuleID,
+		// direction is a fixed descriptor, never a value: it lets the
+		// operator sort unambiguous overwrites from possible curation
+		// without being shown the biographies to do it.
+		_, _ = fmt.Fprintf(out, "  artist=%s field=%s rule=%s direction=%s damaged_at=%s\n",
+			r.ArtistID, r.Field, r.RuleID, r.Direction,
 			r.DamagedAt.UTC().Format(time.RFC3339))
 	}
+	// The bound's effect is PRINTED, not inferred from an absence: a preview
+	// that silently withheld rows would read the same as a clean library.
+	_, _ = fmt.Fprintf(out, "excluded, newer than the cutoff (%s): %d\n",
+		maintenance.PreGuardCutoff().Format(time.RFC3339), res.PreGuardTooNew)
+	_, _ = fmt.Fprintf(out, "excluded, field not locked now: %d\n", res.PreGuardUnlocked)
 	_, _ = fmt.Fprintf(out, "unrecoverable: %d (unattributable_all=%d)\n",
 		len(res.Unrecoverable), res.UnattributableAll)
 	for _, u := range res.Unrecoverable {
@@ -178,7 +263,8 @@ func (a *Application) startLockDamageRepair(ctx context.Context, db *sql.DB, log
 					"panic_type", fmt.Sprintf("%T", r))
 			}
 		}()
-		runLockDamageRepairPass(ctx, db, logger, a.maintenanceService)
+		runLockDamageRepairPass(ctx, db, logger, a.maintenanceService,
+			maintenance.LockDamageOpts{}, lockDamageRepairKey)
 	}()
 }
 
@@ -225,8 +311,8 @@ func (a *Application) drainLockDamageRepair(ctx context.Context) error {
 // runLockDamageRepairPass runs one repair pass and decides whether to record
 // completion. Synchronous so the completion gate is testable; the goroutine
 // wrapper above owns the panic handler.
-func runLockDamageRepairPass(ctx context.Context, db *sql.DB, logger *slog.Logger, maint *maintenance.Service) {
-	res, err := maint.RepairLockDamage(ctx, maintenance.LockDamageOpts{})
+func runLockDamageRepairPass(ctx context.Context, db *sql.DB, logger *slog.Logger, maint *maintenance.Service, opts maintenance.LockDamageOpts, key string) {
+	res, err := maint.RepairLockDamage(ctx, opts)
 	if err != nil {
 		logger.Error("locked-field damage repair failed; will retry next start",
 			"error", err)
@@ -267,7 +353,7 @@ func runLockDamageRepairPass(ctx context.Context, db *sql.DB, logger *slog.Logge
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO settings (key, value) VALUES (?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-		lockDamageRepairKey, time.Now().UTC().Format(time.RFC3339)); err != nil {
+		key, time.Now().UTC().Format(time.RFC3339)); err != nil {
 		logger.Error("recording locked-field damage repair completion", "error", err)
 	}
 }

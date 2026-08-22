@@ -66,10 +66,33 @@ type LockDamageCandidate struct {
 // says "nothing to repair" because it cannot see the damage is the "unknown
 // rendered as clean" defect the blast-radius work exists to prevent.
 type LockDamageUnattributedRow struct {
+	// ChangeID is the damage row's primary key.
+	ChangeID string
 	ArtistID string
 	Field    string
+	// OldValue is the operator's value; NewValue is what replaced it.
+	//
+	// THESE ARRIVED WITH #3079 AND CHANGED THIS TYPE'S ROLE. Before it, this
+	// row was a pure REPORT ("we saw damage we cannot attribute") and carried
+	// no values at all, deliberately. The pre-guard repair pass restores from
+	// exactly this set, so it needs the value to write back and the value to
+	// compare against -- the same two the attributed pass takes from
+	// LockDamageCandidate. Nothing else changed: the query is unchanged in
+	// which ROWS it returns.
+	//
+	// PRIVATE LIBRARY CONTENT. Neither ever reaches a log line or a report;
+	// see the reporting rules in docs/architecture/lock-damage-repair.md.
+	OldValue string
+	NewValue string
 	// Source is the damage row's recorded source ("manual", "scan",
 	// "provider:<name>", ...). Carried so the report can say WHY the row is
 	// unattributable. Never a value.
 	Source string
+	// DamagedAt is the damage row's created_at, and the pre-guard pass's
+	// UPPER TIME BOUND is applied against it (#3079). An unparsable timestamp
+	// resolves to time.Now (parseHistoryTimestamp), which is always AFTER the
+	// cutoff, so a row whose timestamp cannot be read is EXCLUDED rather than
+	// admitted -- the allow-list direction holding on the one field the bound
+	// rests on.
+	DamagedAt time.Time
 }
