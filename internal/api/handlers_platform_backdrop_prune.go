@@ -271,7 +271,23 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 			r.invalidatePlatformDupReport()
 			r.dupImageCache().TriggerRefresh()
 		}
-		http.Error(w, "prune failed", http.StatusInternalServerError)
+		// #3119: return the partial accounting the publisher handed back
+		// alongside the error, rather than a bare "prune failed" string. The
+		// success path below returns this same shape; without it, a prune
+		// that deleted 40 backdrops and then hit a paging error is
+		// indistinguishable, from the response, from one that deleted
+		// nothing. "partial" is explicit rather than left to be inferred from
+		// backdrops_removed > 0, since a run whose only failures were
+		// pre-delete lookups (BackdropsRemoved == 0, Failures > 0) still
+		// changed nothing but is not equivalent to never having run.
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error":             "prune failed",
+			"artists_processed": result.ArtistsProcessed,
+			"backdrops_removed": result.BackdropsRemoved,
+			"skipped_changed":   result.SkippedChanged,
+			"failures":          len(result.Failures),
+			"partial":           result.BackdropsRemoved > 0 || len(result.Failures) > 0,
+		})
 		return
 	}
 

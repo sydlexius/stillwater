@@ -915,6 +915,81 @@ func TestDrain_WaitsForInFlightTriggerRefresh(t *testing.T) {
 	}
 }
 
+// TestDrain_WaitsForInFlightDirectRefresh is the #3118 fix-round regression
+// test. It is the DIRECT-Refresh twin of TestDrain_WaitsForInFlightTriggerRefresh
+// above, and it fails against the pre-fix code for exactly the reason a
+// hostile review found: beginRefresh (the direct path's latch-taker) used to
+// skip registerDrainable entirely, on the premise that a direct Refresh's
+// caller is "already blocked on it, so there is nothing for Drain to await" --
+// true for every caller that existed at the time, false for the maintenance
+// scheduler's periodic tick added in #3118, which calls Refresh from a
+// goroutine NOBODY blocks on.
+//
+// WIRING THE MISBEHAVIOR: this test calls Refresh the same way the scheduler
+// does -- `go func() { _ = c.Refresh(ctx) }()`, caller detached, nobody
+// waiting on the return -- then calls Drain and demands it actually blocks
+// until the scan finishes. Asserting only "Drain returned nil" would pass
+// whether Drain genuinely waited or never saw the refresh at all (the exact
+// shape of the reviewer's 583ns-Drain-return probe); this test instead proves
+// Drain was BLOCKED while the scan was demonstrably still running, the same
+// structure as the TriggerRefresh sibling above.
+func TestDrain_WaitsForInFlightDirectRefresh(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var finished atomic.Bool
+	c.SetSources(
+		func(context.Context) (int, error) {
+			close(entered)
+			// Ignore ctx cancellation on purpose, same reasoning as
+			// TestDrain_WaitsForInFlightTriggerRefresh: this test is about
+			// Drain WAITING, not about Drain canceling.
+			heldUntil(release)
+			finished.Store(true)
+			return 9, nil
+		},
+		nil,
+	)
+
+	// Detached, exactly like maintenance.Service.StartDuplicateImageCountRefresh
+	// calling cache.Refresh(runCtx): nobody blocks on this goroutine's return.
+	go func() { _ = c.Refresh(context.Background()) }()
+	<-entered // PRECONDITION: the scan really is in flight before Drain is called
+
+	ctx := drainCtx(t) // built on the test goroutine; t.Cleanup is not goroutine-safe
+	drained := make(chan error, 1)
+	go func() { drained <- c.Drain(ctx) }()
+
+	// PRECONDITION continued: Drain must still be blocked while the scan is
+	// parked. Without this, "Drain eventually returned nil" is indistinguishable
+	// from "Drain returned immediately and the scan happened to finish anyway" --
+	// exactly the 583ns-return failure mode under test.
+	select {
+	case err := <-drained:
+		t.Fatalf("Drain returned (%v) while the DIRECT refresh goroutine was still running -- "+
+			"a scheduler-style Refresh is not registered as drainable, so shutdown would proceed "+
+			"to close the database while this scan could still be reading it", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if finished.Load() {
+		t.Fatal("precondition: the scan finished on its own before Drain's blocking window was checked; " +
+			"this test proves nothing about Drain waiting")
+	}
+
+	close(release)
+	if err := <-drained; err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+	if !finished.Load() {
+		t.Fatal("Drain returned before the direct refresh goroutine finished its work")
+	}
+	if c.refreshRunning() {
+		t.Fatal("single-flight latch still held after Drain; the next refresh would be dropped")
+	}
+}
+
 // Drain must CANCEL the in-flight scan, not merely wait it out. This is the
 // half that fails against the old context.Background() goroutine: a scan that
 // honors its context never learns a shutdown began, so Drain blocks until the
