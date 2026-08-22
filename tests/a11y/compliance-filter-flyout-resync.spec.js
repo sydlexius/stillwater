@@ -103,6 +103,39 @@ test('dismissing the compliance status chip clears the flyout, and Apply does no
     { timeout: 15_000 },
   );
 
+  // --- #3099 GUARD: the swap replaced #compliance-results with exactly one
+  // copy of it, not a whole second page. Without SelectSel on the chip spec
+  // (complianceActiveChips, web/templates/compliance.templ), the reports
+  // WORKSPACE route (which has no fragment handler) returns a full page, and
+  // htmx's makeFragment turns that into a fragment of the ENTIRE BODY --
+  // injecting a second copy of the whole page, sidebar/toolbar/flyout and
+  // all, into the results slot. #compliance-filter-trigger and
+  // #compliance-filter-flyout are both rendered OUTSIDE #compliance-results
+  // (repPaneCompliance, web/templates/reports_page.templ), so a wholesale
+  // injection duplicates them alongside it -- these three counts are what
+  // actually distinguish "a scoped fragment landed" from "the whole page
+  // landed", which the pre-swap tag above cannot: that tag only proves SOME
+  // response replaced the tagged node, not what shape the response was.
+  await expect(page.locator('#compliance-results')).toHaveCount(1);
+  await expect(page.locator('#compliance-filter-trigger')).toHaveCount(1);
+  await expect(page.locator('#compliance-filter-flyout')).toHaveCount(1);
+
+  // Broader net for the same class: ANY duplicated id anywhere in the
+  // document is the symptom the issue measured directly ("~80 duplicated DOM
+  // ids"). The three id-specific checks above are the ones most likely to
+  // catch a regression here and name the exact element that duplicated when
+  // they fail; this one is the general backstop in case some other element
+  // duplicates instead.
+  const dupIDs = await page.evaluate(() => {
+    const seen = {};
+    document.querySelectorAll('[id]').forEach((el) => {
+      seen[el.id] = (seen[el.id] || 0) + 1;
+    });
+    return Object.entries(seen).filter(([, n]) => n > 1).map(([id]) => id);
+  });
+  expect(dupIDs, `dismissing the chip duplicated ${dupIDs.length} DOM id(s), so getElementById now returns `
+    + `the stale copy for at least one of them: ${dupIDs.slice(0, 8).join(', ')}`).toEqual([]);
+
   // --- POST-DISMISS: the flyout resynced.
   const after = await page.evaluate(() => ({
     url: window.location.search,
