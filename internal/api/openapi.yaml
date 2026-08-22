@@ -4083,13 +4083,38 @@ paths:
                     type: string
         "500":
           description: >-
-            The publisher is not wired, or the prune itself failed. The
-            wrapped error is logged server-side; the response is plain text
-            via http.Error.
+            The publisher is not wired (plain text via http.Error), or the
+            prune itself failed (#3119: JSON carrying the same partial
+            accounting as the 200 response, since the publisher deletes
+            page by page and may have removed a great many backdrops before
+            the failure that aborted the run). The wrapped error is logged
+            server-side either way.
           content:
             text/plain:
               schema:
                 type: string
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  artists_processed:
+                    type: integer
+                  backdrops_removed:
+                    type: integer
+                  skipped_changed:
+                    type: integer
+                  failures:
+                    type: integer
+                  partial:
+                    type: boolean
+                    description: >-
+                      True when the failed run may have changed the
+                      platform (backdrops_removed > 0 or at least one
+                      failure recorded), distinguishing a run that deleted
+                      nothing from one an operator should not blindly
+                      retry without checking state first.
 
   /reports/duplicates/count:
     get:

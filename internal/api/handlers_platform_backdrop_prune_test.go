@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -403,6 +404,39 @@ func TestPlatformBackdropDuplicatesPrune_Error(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500 when the prune errors; body: %s", w.Code, w.Body.String())
+	}
+
+	// #3119: even a prune that never touched a platform (publisher not fully
+	// wired, so the result is the zero value) must report the JSON shape --
+	// the point of the fix is that the shape is uniform, not that this
+	// particular failure carries real counts. Asserted on Content-Type too,
+	// since http.Error's bare string would still satisfy a body substring
+	// check while being unparsable JSON.
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json; a client parsing this as JSON must not silently get text/plain", ct)
+	}
+	var errBody map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("error response body is not valid JSON: %v (body: %s)", err, w.Body.String())
+	}
+	if errBody["error"] != "prune failed" {
+		t.Errorf(`error body["error"] = %v, want "prune failed"`, errBody["error"])
+	}
+	if errBody["partial"] != false {
+		t.Errorf(`error body["partial"] = %v, want false (result is the zero value: nothing was deleted, nothing failed)`, errBody["partial"])
+	}
+	// Every count field must be the actual ZERO VALUE, not merely present: an
+	// unwired publisher never touched a platform, so a nonzero count here would
+	// be a wrong-but-present value that a bare existence check cannot catch.
+	for _, field := range []string{"artists_processed", "backdrops_removed", "skipped_changed", "failures"} {
+		got, ok := errBody[field]
+		if !ok {
+			t.Errorf("error body missing %q field: %v", field, errBody)
+			continue
+		}
+		if got != float64(0) {
+			t.Errorf(`error body[%q] = %v, want 0 (the publisher never touched a platform)`, field, got)
+		}
 	}
 
 	r.platformPruneMu.Lock()
@@ -1357,5 +1391,109 @@ func TestPlatformBackdropDuplicatesPrune_PartialFailureStillInvalidatesTheCache(
 				"so the pill would keep advertising backdrops that were just deleted", plat.details.Load())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestPlatformBackdropDuplicatesPrune_ErrorBodyCarriesPartialAccounting is the
+// #3119 regression test. It reuses the #3116 partial-failure fixture
+// (pagingFailureArtistLister + duplicateBackdropPlatform: page 1 deletes real
+// backdrops, page 2 fails paging) but asserts the RESPONSE BODY rather than
+// the cache side effects that test already covers: the operator must be able
+// to see, from the 500 itself, that the run deleted 2 backdrops before it
+// failed. Pre-fix this asserts against a bare "prune failed" string and fails.
+func TestPlatformBackdropDuplicatesPrune_ErrorBodyCarriesPartialAccounting(t *testing.T) {
+	dupimages.Shared().Reset()
+	t.Cleanup(func() { dupimages.Shared().Reset() })
+
+	const (
+		platformArtistID = "emby-dup-artist-3119"
+		platformUserID   = "test-user-3119"
+		connID           = "conn-emby-partial-3119"
+	)
+
+	// Three byte-identical backdrops: indices 1 and 2 are redundant copies of
+	// the survivor at 0, so a prune has exactly two deletes to perform before
+	// the paging failure aborts the run.
+	plat := &duplicateBackdropPlatform{backdrops: [][]byte{
+		[]byte("identical-backdrop-bytes"),
+		[]byte("identical-backdrop-bytes"),
+		[]byte("identical-backdrop-bytes"),
+	}}
+	srv := httptest.NewServer(plat.handler(platformArtistID, platformUserID))
+	defer srv.Close()
+
+	lister := &pagingFailureArtistLister{}
+	r := testRouterWithPlatformLister(t, lister)
+
+	a := addTestArtist(t, r.artistService, "DupArtist3119")
+	if err := r.connectionService.Create(context.Background(), &connection.Connection{
+		ID:      connID,
+		Name:    "My Emby",
+		Type:    "emby",
+		URL:     srv.URL,
+		APIKey:  "test-key",
+		Enabled: true,
+		Status:  "ok",
+		Emby:    &connection.EmbyConfig{PlatformUserID: platformUserID, FeatureImageWrite: true},
+	}); err != nil {
+		t.Fatalf("creating test connection: %v", err)
+	}
+	if err := r.artistService.SetPlatformID(context.Background(), a.ID, connID, platformArtistID); err != nil {
+		t.Fatalf("setting platform ID: %v", err)
+	}
+	lister.setPage1([]artist.Artist{*a})
+
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	w := httptest.NewRecorder()
+	r.handlePlatformBackdropDuplicatesPrune(w, req)
+
+	// PRECONDITION: page 1 really deleted, and the run genuinely failed
+	// partway. Without this, "the body reports 2 removed" could be a fixture
+	// bug rather than the fix under test -- see the sibling cache-invalidation
+	// test's identical precondition block for the rationale.
+	if got := plat.deletes.Load(); got != 2 {
+		t.Fatalf("precondition: page 1 must actually delete before the paging failure; platform recorded %d deletes, want 2", got)
+	}
+	if got := lister.pages.Load(); got < 2 {
+		t.Fatalf("precondition: the prune must reach the failing page 2; the lister saw %d page requests", got)
+	}
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("precondition: status = %d, want 500 (the run must have actually failed for this test to mean anything); body: %s", w.Code, w.Body.String())
+	}
+
+	// THE FIX: the 500 body must carry the partial accounting, not a bare
+	// "prune failed" string, so the operator can tell 2 backdrops were
+	// already deleted rather than retrying blind.
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("Content-Type = %q, want application/json", ct)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("error response body is not valid JSON: %v (body: %s)", err, w.Body.String())
+	}
+	// Every field asserted against its ACTUAL VALUE for this fixture, not just
+	// its presence. Derived from pruneOneArtist's accounting: one real artist
+	// (DupArtist3119) with two redundant backdrops, both re-verified clean and
+	// both deleted before the page-2 listing error aborts the walk -- the
+	// filler artists padding page 1 have no platform IDs, so they contribute
+	// no failures and are never counted as processed. The paging failure
+	// itself is the function's hard-return error, not a per-artist Failures
+	// entry, so failures stays 0.
+	wantFields := map[string]float64{
+		"artists_processed": 1,
+		"backdrops_removed": 2,
+		"skipped_changed":   0,
+		"failures":          0,
+	}
+	for field, want := range wantFields {
+		if got := body[field]; got != want {
+			t.Errorf("body[%q] = %v, want %v", field, got, want)
+		}
+	}
+	if body["partial"] != true {
+		t.Errorf(`body["partial"] = %v, want true (backdrops_removed > 0)`, body["partial"])
+	}
+	if body["error"] != "prune failed" {
+		t.Errorf(`body["error"] = %v, want "prune failed"`, body["error"])
 	}
 }
