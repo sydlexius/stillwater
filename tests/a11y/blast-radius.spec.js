@@ -2197,3 +2197,187 @@ test('two rapid ordering changes leave the pane consistent with the final URL', 
     `the pane renders order=${rendered.order} while the URL says order=desc`,
   ).toBe('desc');
 });
+
+// ---------------------------------------------------------------------------
+// #3112 gap 1: a chip dismiss racing an ordering change.
+//
+// The serialization guard above is keyed on the TARGET element
+// (blastPaneIsPaneRequest checks evt.detail.target.id === 'blast-radius-pane'),
+// not on which function issued the request. That is deliberate: chip dismissal
+// runs its own htmx.ajax in DismissFilterChip (web/components/filter_flyout.templ)
+// and never calls blastRadiusReload, so a guard keyed on the function would miss
+// it entirely. The two-ordering-change race above only proves the guard closes
+// races BETWEEN two blastRadiusReload calls; it says nothing about a chip.
+//
+// This fires a chip dismiss, then an ordering change while the chip's own
+// request is still in flight, and asserts the pane ends up agreeing with
+// whichever URL the operator's LAST action produced -- both the class filter
+// gone (from the chip) and the new ordering applied (from the select), with
+// no dropped or out-of-order swap.
+test('a chip dismiss racing an ordering change leaves the pane consistent with the final URL', async ({ page }) => {
+  await gotoPane(page, '/reports/blast-radius?class=blanked&sort=created_at&order=desc');
+
+  const chip = page.locator('[aria-label^="Remove "]').first();
+  expect(await chip.count(), 'no dismissable chip rendered for ?class=blanked, so there is nothing to race')
+    .toBeGreaterThan(0);
+
+  // Delay only the FIRST pane request (the chip's own ajax call), so the
+  // ordering change that follows is guaranteed to still find it in flight.
+  let seen = 0;
+  await page.route((url) => url.pathname.endsWith('/reports/blast-radius'), async (route) => {
+    seen += 1;
+    if (seen === 1) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await route.continue();
+  });
+
+  // Same tagging idiom as the race test above: an attribute on the live node
+  // cannot survive an outerHTML swap, so requiring it GONE means the poll
+  // below cannot pass before a real swap has landed.
+  await page.evaluate(() => {
+    const pane = document.getElementById('blast-radius-pane');
+    if (pane) pane.setAttribute('data-sw-preswap', '1');
+  });
+
+  await chip.click();
+  // Issued immediately after, while the chip's request is still delayed --
+  // this is the race. blastRadiusApplyOrdering's own guard must see the
+  // chip's in-flight request and defer rather than fire a second request
+  // against a target the chip's swap is about to detach.
+  await page.evaluate(() => {
+    const sort = document.getElementById('blast-radius-sort');
+    const order = document.getElementById('blast-radius-order');
+    sort.value = 'artist_name';
+    order.value = 'asc';
+    blastRadiusApplyOrdering();
+  });
+
+  try {
+    await page.waitForFunction(() => {
+      if (document.querySelector('#blast-radius-pane[data-sw-preswap]')) return false;
+      const sort = document.getElementById('blast-radius-sort');
+      const order = document.getElementById('blast-radius-order');
+      if (!sort || !order) return false;
+      const params = new URLSearchParams(window.location.search);
+      return sort.value === params.get('sort') && order.value === params.get('order')
+        && !params.has('class');
+    }, null, { timeout: 10_000 });
+  } catch (err) {
+    const state = await page.evaluate(() => {
+      const sort = document.getElementById('blast-radius-sort');
+      const order = document.getElementById('blast-radius-order');
+      return {
+        url: window.location.search,
+        sort: sort ? sort.value : null,
+        order: order ? order.value : null,
+        swapped: !document.querySelector('#blast-radius-pane[data-sw-preswap]'),
+      };
+    });
+    throw new Error(
+      `the pane never caught up after a chip dismiss raced an ordering change. It renders sort=${state.sort} `
+      + `order=${state.order} while the URL says ${state.url} (a swap did${state.swapped ? '' : ' NOT'} land). `
+      + 'Either the chip dismiss or the ordering change was dropped, or an older response swapped in last.',
+    );
+  }
+
+  expect(
+    seen,
+    `only ${seen} pane request(s) were issued; the race this test exists to force did not occur`,
+  ).toBeGreaterThanOrEqual(2);
+
+  const finalURL = await page.evaluate(() => window.location.search);
+  expect(finalURL, 'the class filter survived the chip dismiss').not.toContain('class=');
+  expect(finalURL, 'the URL does not carry the final sort').toContain('sort=artist_name');
+  expect(finalURL, 'the URL does not carry the final order').toContain('order=asc');
+
+  const rendered = await page.evaluate(() => {
+    const sort = document.getElementById('blast-radius-sort');
+    const order = document.getElementById('blast-radius-order');
+    return { sort: sort && sort.value, order: order && order.value };
+  });
+  expect(rendered.sort, `the pane renders sort=${rendered.sort}, not the ordering change that followed the chip`)
+    .toBe('artist_name');
+  expect(rendered.order, `the pane renders order=${rendered.order}, not the ordering change that followed the chip`)
+    .toBe('asc');
+});
+
+// ---------------------------------------------------------------------------
+// #3112 gap 2: the wedge guard (the htmx:afterRequest abort/error fallback).
+//
+// blastPaneInFlight is cleared on htmx:afterSettle (a successful swap) OR, as
+// a fallback, on htmx:afterRequest when the request did NOT successfully swap.
+// Without that fallback, a request that errors or is aborted never settles,
+// so the flag would stay stuck true and every later pane change would defer
+// forever behind a request that already finished -- the pane silently stops
+// responding to filter/sort/dismiss changes with no visible error.
+//
+// This forces the FIRST pane request to fail at the network layer (never
+// reaching afterSettle), then fires a second change and asserts it actually
+// reaches the server and lands -- proving the fallback cleared the flag
+// rather than merely that some request eventually happened to go out.
+test('a failed pane request does not wedge later changes behind it', async ({ page }) => {
+  await gotoPane(page);
+
+  let seen = 0;
+  await page.route((url) => url.pathname.endsWith('/reports/blast-radius'), async (route) => {
+    seen += 1;
+    if (seen === 1) {
+      await route.abort('failed');
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.evaluate(() => {
+    const sort = document.getElementById('blast-radius-sort');
+    const order = document.getElementById('blast-radius-order');
+    sort.value = 'artist_name';
+    order.value = 'asc';
+    blastRadiusApplyOrdering();
+  });
+
+  // The flag must clear via the afterRequest fallback: this request never
+  // settles, so afterSettle alone would leave it stuck.
+  await page.waitForFunction(() => window.blastPaneInFlight === false, null, { timeout: 10_000 })
+    .catch(() => {
+      throw new Error(
+        'blastPaneInFlight never cleared after the failed request. The afterRequest fallback did not fire (or '
+        + 'did not clear the flag), so every later change is wedged behind a request that already failed.',
+      );
+    });
+
+  // A second change, issued only after the flag cleared. If the guard is
+  // broken this never reaches the server: it defers forever behind the
+  // failed first request.
+  await page.evaluate(() => {
+    const sort = document.getElementById('blast-radius-sort');
+    const order = document.getElementById('blast-radius-order');
+    sort.value = 'field';
+    order.value = 'desc';
+    blastRadiusApplyOrdering();
+  });
+
+  await page.waitForFunction(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('sort') === 'field' && params.get('order') === 'desc';
+  }, null, { timeout: 10_000 }).catch(() => {
+    throw new Error(
+      `the URL never reflects the second change (still ${page.url()}); the wedge guard left the pane deferring `
+      + 'forever behind the first request\'s failure.',
+    );
+  });
+
+  expect(seen, `only ${seen} pane request(s) were attempted; the second change never reached the server`)
+    .toBeGreaterThanOrEqual(2);
+
+  const rendered = await page.evaluate(() => {
+    const sort = document.getElementById('blast-radius-sort');
+    const order = document.getElementById('blast-radius-order');
+    return { sort: sort && sort.value, order: order && order.value };
+  });
+  expect(rendered.sort, `the pane renders sort=${rendered.sort} after the wedge; the second change never landed`)
+    .toBe('field');
+  expect(rendered.order, `the pane renders order=${rendered.order} after the wedge; the second change never landed`)
+    .toBe('desc');
+});
