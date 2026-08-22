@@ -425,9 +425,17 @@ func TestPlatformBackdropDuplicatesPrune_Error(t *testing.T) {
 	if errBody["partial"] != false {
 		t.Errorf(`error body["partial"] = %v, want false (result is the zero value: nothing was deleted, nothing failed)`, errBody["partial"])
 	}
+	// Every count field must be the actual ZERO VALUE, not merely present: an
+	// unwired publisher never touched a platform, so a nonzero count here would
+	// be a wrong-but-present value that a bare existence check cannot catch.
 	for _, field := range []string{"artists_processed", "backdrops_removed", "skipped_changed", "failures"} {
-		if _, ok := errBody[field]; !ok {
+		got, ok := errBody[field]
+		if !ok {
 			t.Errorf("error body missing %q field: %v", field, errBody)
+			continue
+		}
+		if got != float64(0) {
+			t.Errorf(`error body[%q] = %v, want 0 (the publisher never touched a platform)`, field, got)
 		}
 	}
 
@@ -1463,8 +1471,24 @@ func TestPlatformBackdropDuplicatesPrune_ErrorBodyCarriesPartialAccounting(t *te
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("error response body is not valid JSON: %v (body: %s)", err, w.Body.String())
 	}
-	if got, want := body["backdrops_removed"], float64(2); got != want {
-		t.Errorf(`body["backdrops_removed"] = %v, want %v -- the operator cannot tell a prune that deleted 2 backdrops from one that deleted none`, got, want)
+	// Every field asserted against its ACTUAL VALUE for this fixture, not just
+	// its presence. Derived from pruneOneArtist's accounting: one real artist
+	// (DupArtist3119) with two redundant backdrops, both re-verified clean and
+	// both deleted before the page-2 listing error aborts the walk -- the
+	// filler artists padding page 1 have no platform IDs, so they contribute
+	// no failures and are never counted as processed. The paging failure
+	// itself is the function's hard-return error, not a per-artist Failures
+	// entry, so failures stays 0.
+	wantFields := map[string]float64{
+		"artists_processed": 1,
+		"backdrops_removed": 2,
+		"skipped_changed":   0,
+		"failures":          0,
+	}
+	for field, want := range wantFields {
+		if got := body[field]; got != want {
+			t.Errorf("body[%q] = %v, want %v", field, got, want)
+		}
 	}
 	if body["partial"] != true {
 		t.Errorf(`body["partial"] = %v, want true (backdrops_removed > 0)`, body["partial"])

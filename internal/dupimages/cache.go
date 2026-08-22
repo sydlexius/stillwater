@@ -24,9 +24,12 @@
 // it -- the maintenance scheduler's periodic tick, since #3118 -- so it is
 // registered the same way and drained the same way; see beginRefresh.
 //
-//	Drain(ctx)       Cancels every in-flight refresh (lazy or direct) and
-//	                 BLOCKS until each has returned. Returns ctx.Err() if ctx
-//	                 expires first. Called at process shutdown, and by Reset.
+//	Drain(ctx)       Cancels every in-flight LAZY refresh (a direct Refresh
+//	                 keeps its caller's own context, so Drain cannot cancel
+//	                 it -- only wait for it) and BLOCKS until every
+//	                 REGISTERED refresh, lazy or direct, has returned.
+//	                 Returns ctx.Err() if ctx expires first. Called at
+//	                 process shutdown, and by Reset.
 //	Reset()          Test-only. DRAINS FIRST -- so it BLOCKS while a refresh is
 //	                 in flight -- then clears the snapshot, the sources and the
 //	                 single-flight latch, and installs a fresh shutdown context
