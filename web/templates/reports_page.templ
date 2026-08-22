@@ -2463,6 +2463,23 @@ templ repComplianceScript() {
 			htmx.ajax('GET', '/reports/compliance' + window.location.search, { target: '#compliance-results', swap: 'outerHTML' });
 		});
 
+		// Re-sync the flyout from the URL after ANY swap of the results shell
+		// (#3100). Chips are a SECOND write path the flyout never hears about:
+		// DismissFilterChip does its own history.pushState + htmx.ajax and fires
+		// no sw:filter-applied, so without this the panel keeps showing a
+		// dismissed filter as still selected and its own Apply button silently
+		// re-applies it. Same fix, same reason, as the artists grid
+		// (artists.templ) and the blast-radius pane, whose comments name this
+		// exact cause.
+		document.body.addEventListener('htmx:afterSwap', function(evt) {
+			if (!evt.detail || !evt.detail.target || evt.detail.target.id !== 'compliance-results') return;
+			if (!window.swFilterFlyout) {
+				console.error('compliance: swFilterFlyout is not loaded; the filter panel cannot resync after a swap');
+				return;
+			}
+			swFilterFlyout.initFromURL('compliance-filter-flyout');
+		});
+
 		// Hydrate filter flyout from URL on first paint.
 		document.addEventListener('DOMContentLoaded', function() {
 			if (window.swFilterFlyout) swFilterFlyout.initFromURL('compliance-filter-flyout');

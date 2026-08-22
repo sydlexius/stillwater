@@ -817,22 +817,39 @@ func complianceActiveFilterCount(data ComplianceData) int {
 // complianceActiveChips returns the slice of FilterChipSpec entries that
 // reflect the currently active compliance filters. Each chip's Key matches
 // the URL query param the shared DismissFilterChip script removes on click.
+//
+// SelectSel is set on every chip (#3099). The pane rendering these chips is
+// reachable at two URLs that resolve to different handlers: the standalone
+// /reports/compliance route has a fragment handler (handleCompliancePage),
+// but the promoted reports WORKSPACE route (/reports, tab=compliance by
+// default) does not -- serveReportsWorkspace always renders the full
+// ReportsPage. DismissFilterChip reloads whatever window.location.pathname
+// currently is, so a chip dismissed while the browser is still on the bare
+// workspace path (before any HX-Push-Url has repointed it) gets back a full
+// page. Without SelectSel, htmx's makeFragment turns that into a fragment of
+// the ENTIRE BODY and swaps a second copy of the whole page into
+// #compliance-results: measured as ~80 duplicated DOM ids. SelectSel narrows
+// the response to just the one element regardless of which handler answered,
+// so this is safe against both routes -- see DismissFilterChip's comment for
+// why a present-but-matching select is a no-op against an already-scoped
+// fragment response.
 func complianceActiveChips(ctx context.Context, data ComplianceData) []components.FilterChipSpec {
+	const complianceSelectSel = "#compliance-results"
 	chips := make([]components.FilterChipSpec, 0, 5)
 	if data.Status != "" && data.Status != "all" {
-		chips = append(chips, components.FilterChipSpec{Key: "status", Label: complianceStatusLabel(ctx, data.Status)})
+		chips = append(chips, components.FilterChipSpec{Key: "status", Label: complianceStatusLabel(ctx, data.Status), SelectSel: complianceSelectSel})
 	}
 	if data.Filter != "" {
-		chips = append(chips, components.FilterChipSpec{Key: "filter", Label: complianceFilterLabel(ctx, data.Filter, data.ProfileName)})
+		chips = append(chips, components.FilterChipSpec{Key: "filter", Label: complianceFilterLabel(ctx, data.Filter, data.ProfileName), SelectSel: complianceSelectSel})
 	}
 	if data.LibraryID != "" {
-		chips = append(chips, components.FilterChipSpec{Key: "library_id", Label: complianceLibraryName(data.Libraries, data.LibraryID)})
+		chips = append(chips, components.FilterChipSpec{Key: "library_id", Label: complianceLibraryName(data.Libraries, data.LibraryID), SelectSel: complianceSelectSel})
 	}
 	if data.HealthScoreMin > 0 {
-		chips = append(chips, components.FilterChipSpec{Key: "health_min", Label: tf(ctx, "report.health_min_chip", data.HealthScoreMin)})
+		chips = append(chips, components.FilterChipSpec{Key: "health_min", Label: tf(ctx, "report.health_min_chip", data.HealthScoreMin), SelectSel: complianceSelectSel})
 	}
 	if data.HealthScoreMax > 0 {
-		chips = append(chips, components.FilterChipSpec{Key: "health_max", Label: tf(ctx, "report.health_max_chip", data.HealthScoreMax)})
+		chips = append(chips, components.FilterChipSpec{Key: "health_max", Label: tf(ctx, "report.health_max_chip", data.HealthScoreMax), SelectSel: complianceSelectSel})
 	}
 	return chips
 }
