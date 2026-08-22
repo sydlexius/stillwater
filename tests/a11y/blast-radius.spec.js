@@ -2347,6 +2347,26 @@ test('a failed pane request does not wedge later changes behind it', async ({ pa
       );
     });
 
+  // TAG THE PRE-SWAP PANE NODE, same idiom as the chip-dismiss race test
+  // above. blast-radius-sort and blast-radius-order live INSIDE
+  // #blast-radius-pane (reports_page.templ:697 opens the container; the
+  // selects are at :781 and :792), so blastRadiusApplyOrdering's own
+  // `sort.value = 'field'; order.value = 'desc';` write lands on the SAME
+  // live element the assertion below reads back -- if the second response
+  // never actually swaps the pane, those elements still hold exactly the
+  // values the test itself just assigned, and a read-back assertion would
+  // pass whether or not a real swap ever happened. Requiring the tag to be
+  // GONE means the assertion cannot be satisfied until server-rendered
+  // markup has actually replaced the node the test wrote to.
+  await page.evaluate(() => {
+    const pane = document.getElementById('blast-radius-pane');
+    if (pane) pane.setAttribute('data-sw-preswap', '1');
+  });
+  expect(
+    await page.evaluate(() => document.querySelectorAll('#blast-radius-pane[data-sw-preswap]').length),
+    'the pre-swap pane could not be tagged, so the swap check below could pass before any swap landed',
+  ).toBe(1);
+
   // A second change, issued only after the flag cleared. If the guard is
   // broken this never reaches the server: it defers forever behind the
   // failed first request.
@@ -2370,6 +2390,26 @@ test('a failed pane request does not wedge later changes behind it', async ({ pa
 
   expect(seen, `only ${seen} pane request(s) were attempted; the second change never reached the server`)
     .toBeGreaterThanOrEqual(2);
+
+  // THE SWAP MUST GENUINELY LAND, not merely be issued. The URL and seen
+  // checks above only prove the second request was ISSUED (pushState is
+  // synchronous, and route interception counts the request regardless of
+  // whether its response ever swaps). Waiting for the pre-swap tag to
+  // disappear proves the pane NODE was actually replaced by the response --
+  // the property the read-back assertions below depend on to mean anything.
+  await page.waitForFunction(
+    () => !document.querySelector('#blast-radius-pane[data-sw-preswap]'),
+    null,
+    { timeout: 10_000 },
+  ).catch(() => {
+    throw new Error(
+      'the pane was never actually swapped after the second change: #blast-radius-pane still carries the '
+      + 'pre-second-change tag. The request was issued (seen >= 2) and the URL updated, but the response never '
+      + 'replaced the DOM -- so reading the rendered controls next would only read back the values this test '
+      + 'itself wrote onto the stale node, proving nothing about whether the wedge guard actually let the '
+      + 'second change land.',
+    );
+  });
 
   const rendered = await page.evaluate(() => {
     const sort = document.getElementById('blast-radius-sort');
