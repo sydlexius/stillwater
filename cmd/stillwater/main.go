@@ -1362,6 +1362,18 @@ func (a *Application) startListeners() error {
 		go a.maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
 	}
 
+	// Duplicate-image sidebar/report count refresh (#2608 cadence). #3118: this
+	// call was missing entirely -- dupimages.Cache.TriggerRefresh is
+	// best-effort (a failed refresh deliberately writes nothing, per #2608, so
+	// as not to latch a never-successfully-scanned cache as authoritative-
+	// clean), so without a standing periodic caller a refresh that fails once
+	// (platform unreachable, disk unavailable) left the sidebar pill and the
+	// platform-backdrop-duplicates report stale forever, with nothing left to
+	// retry it. dupimages.Shared() is the same cache instance NewRouter already
+	// installed this process's scan sources into (see router.go), so this
+	// adds cadence only -- it does not touch source wiring.
+	go a.maintenanceService.StartDuplicateImageCountRefresh(ctx, dupimages.Shared(), 0, 0)
+
 	// One-shot repair of locked fields a past rule run overwrote (#3038).
 	a.startLockDamageRepair(ctx, db, logger)
 
