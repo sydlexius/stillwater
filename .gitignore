@@ -31,8 +31,11 @@ coverage.html
 # IDE / tools
 .idea/
 .vscode/
-.claude/
+.claude/*
 !.claude/release.toml
+# Shared agent skills: lazy-loaded reference the checked-in CLAUDE.md points at,
+# so it must exist in every clone and worktree. Settings/memory stay ignored above.
+!.claude/skills/
 .superpowers/
 .playwright-mcp/
 *.swp
