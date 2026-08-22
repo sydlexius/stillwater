@@ -148,6 +148,7 @@ type platformBackdropDupScanner interface {
 
 // platformDupCountsFrom is platformDupCounts against an explicit scanner.
 func (r *Router) platformDupCountsFrom(ctx context.Context, scanner platformBackdropDupScanner) ([]dupimages.PlatformCount, error) {
+	sweepStartedAt := time.Now()
 	report, err := scanner.ScanPlatformBackdropDuplicates(ctx)
 	if err != nil {
 		return nil, err
@@ -156,13 +157,17 @@ func (r *Router) platformDupCountsFrom(ctx context.Context, scanner platformBack
 	// (#3092): this is now that page's ONLY source of data, so this background
 	// sweep is what keeps it current.
 	//
+	// sweepStartedAt is stamped BEFORE the sweep runs, because the rows describe
+	// the platforms as they were when it began. storePlatformDupReport uses it
+	// to drop a sweep that started before a prune -- otherwise a sweep in flight
+	// when an operator prunes lands afterwards and resurrects the deleted rows.
+	//
 	// Partial sweeps are stored (the page renders its own ScanErrors notice, so
 	// an incomplete result arrives labeled as one); the single aggregate count
 	// below is what must NOT absorb one, since it has nowhere to carry the
 	// caveat. The one exception -- a TOTAL outage that would blank an
-	// established report -- is refused inside storePlatformDupReport, which is
-	// where the currently-cached rows are visible under the lock.
-	r.storePlatformDupReport(report)
+	// established report -- is refused inside storePlatformDupReport.
+	r.storePlatformDupReport(report, sweepStartedAt)
 	if report.ScanErrors > 0 {
 		// PARTIAL sweep -- see libraryDupCount for the shape. This half's
 		// failure mode is WORSE than an undercount: when a platform is

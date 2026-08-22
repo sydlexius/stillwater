@@ -118,15 +118,27 @@ const platformDupReportMaxAge = 12 * time.Hour
 // platformDupCountsFrom -- the background sweep shared with the sidebar's
 // dupimages.Cache -- and by nothing on the request path.
 //
-// Last writer wins, safely: this report has exactly ONE writer, and every sweep
-// runs under dupimages.Cache's single-flight latch (held from beginRefresh until
-// the source function returns), so two sweeps cannot be in flight at once and
-// there is no out-of-order landing to defend against. See platformDupReportMu.
-// A writer that does not hold that latch would reintroduce the hazard and owes
-// a compare-and-swap back.
-func (r *Router) storePlatformDupReport(report publish.PlatformBackdropDupReport) {
+// sweepStartedAt is when the sweep that produced report BEGAN. Two guards drop
+// a write; both exist because a sweep's rows describe the platforms as they
+// were when it STARTED, not when it finished.
+func (r *Router) storePlatformDupReport(report publish.PlatformBackdropDupReport, sweepStartedAt time.Time) {
 	r.platformDupReportMu.Lock()
 	defer r.platformDupReportMu.Unlock()
+
+	// A sweep that began before a prune must not resurrect what the
+	// prune deleted. Without this, an admin who prunes mid-sweep sees the
+	// deleted rows reappear with a FRESH "as of" stamp and a live Prune button
+	// offering to delete images that are already gone. `!After` rather than
+	// `Before` so a sweep starting in the same instant as the invalidation is
+	// also dropped: at equal timestamps the ordering is unknowable, and
+	// discarding a good sweep costs one refresh cycle while keeping a bad one
+	// costs correctness.
+	if !r.platformDupReportInvalidatedAt.IsZero() && !sweepStartedAt.After(r.platformDupReportInvalidatedAt) {
+		r.logger.Debug("discarding platform backdrop duplicate report from a sweep that began before the last prune",
+			slog.Time("sweep_started_at", sweepStartedAt),
+			slog.Time("invalidated_at", r.platformDupReportInvalidatedAt))
+		return
+	}
 
 	// A TOTAL OUTAGE must not blank an established report. When a platform is
 	// unreachable every per-artist query fails, so the sweep returns an EMPTY
@@ -152,6 +164,21 @@ func (r *Router) storePlatformDupReport(report publish.PlatformBackdropDupReport
 
 	r.platformDupReport = report
 	r.platformDupReportAt = time.Now()
+}
+
+// invalidatePlatformDupReport drops the cached snapshot, returning the page to
+// its never-computed state so the next render shows the pending notice and
+// kicks a fresh sweep. Called after a prune, whose deletions make every cached
+// row a claim about images that are no longer there.
+func (r *Router) invalidatePlatformDupReport() {
+	r.platformDupReportMu.Lock()
+	defer r.platformDupReportMu.Unlock()
+	r.platformDupReport = publish.PlatformBackdropDupReport{}
+	r.platformDupReportAt = time.Time{}
+	// Stamped so a sweep already in flight -- which read the platforms BEFORE
+	// the deletes -- cannot land afterwards and resurrect the pruned rows. See
+	// storePlatformDupReport's first guard.
+	r.platformDupReportInvalidatedAt = time.Now()
 }
 
 // platformDupReportSnapshot returns the cached report and when it was taken.
@@ -198,9 +225,91 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 	result, err := r.publisher.PrunePlatformBackdropDuplicates(req.Context())
 	if err != nil {
 		r.logger.Error("pruning platform backdrop duplicates", slog.String("error", err.Error()))
+		// A FAILED prune is not an UNSTARTED prune, and this is the path that
+		// makes the difference visible to an operator. The publisher walks the
+		// library page by page and deletes as it goes, so its only hard return
+		// -- a paging failure -- can fire on page 2 with page 1 already pruned;
+		// it returns the partial result alongside the error rather than a zero
+		// value precisely so this handler can see that. Falling through to the
+		// 500 without invalidating leaves the cached report listing backdrops
+		// that are no longer on the platform, which is #3092 surviving on the
+		// error path: the operator retries, the page still shows the same rows,
+		// and the Prune button stays armed against images that are already
+		// gone.
+		//
+		// CONDITIONAL, not unconditional. The question the caches actually care
+		// about is "did this run possibly change the platform", and a run that
+		// failed before touching anything has not invalidated anything -- so it
+		// should not cost an established report and a fresh 62s sweep. Both
+		// terms are load-bearing:
+		//   - BackdropsRemoved > 0 is the confirmed case: deletes landed.
+		//   - Failures is the AMBIGUOUS case, and it must be included. A delete
+		//     whose request errors (a timeout after the platform already
+		//     processed it) is recorded as a failure and NOT counted in
+		//     BackdropsRemoved, so a run whose single delete timed out would
+		//     otherwise skip the invalidation with the platform possibly
+		//     already changed. Failures also carries entries that provably
+		//     deleted nothing (a platform-ID or connection lookup that failed),
+		//     and invalidating for those is deliberately accepted: the cost is
+		//     one unnecessary re-sweep, while the cost of the other direction
+		//     is showing the operator artwork that no longer exists.
+		// The success path below stays unconditional -- there the caller was
+		// told the run completed, so a re-sweep is what makes the page agree
+		// with the receipt it just got.
+		if result.BackdropsRemoved > 0 || len(result.Failures) > 0 {
+			r.logger.Warn("platform backdrop prune failed after it may have deleted; invalidating the cached report",
+				slog.Int("backdrops_removed", result.BackdropsRemoved),
+				slog.Int("failures", len(result.Failures)))
+			// Same two caches, for the same reasons the success path spells out
+			// below: the report cache is what the page renders from, and the
+			// sidebar's dupimages.Cache is a SEPARATE store that the report
+			// invalidation does not touch. Skipping the sidebar here would leave
+			// the two surfaces permanently disagreeing after a partial prune --
+			// the report pending, the pill still claiming a count that includes
+			// deleted images -- because that cache's lazy trigger only fires on
+			// !Computed, which stays false once any sweep has landed.
+			r.invalidatePlatformDupReport()
+			r.dupImageCache().TriggerRefresh()
+		}
 		http.Error(w, "prune failed", http.StatusInternalServerError)
 		return
 	}
+
+	// INVALIDATE the cached report (#3092). The page renders from cache, so
+	// without this the reload the prune button fires would show the STALE
+	// pre-prune rows -- indistinguishable, on screen, from a prune that
+	// silently did nothing.
+	//
+	// Invalidate rather than RE-SWEEP, unlike the sibling report's
+	// post-remediation rescan (#2684). That rescan is affordable because its
+	// handler first extends the write deadline to 30 minutes. This one has no
+	// work deadline at all (deliberate; see platformPruneMu in router.go), and
+	// a 62s sweep on top of a prune of comparable cost would push the response
+	// past the server's 180s WriteTimeout -- the work completes, the write then
+	// fails, and the operator gets an empty body after their artwork is already
+	// deleted. That is the worst possible receipt.
+	//
+	// So the page falls back to pending and the operator's reload kicks a fresh
+	// sweep through the cold-cache path. KNOWN CONSEQUENCE: TriggerRefresh
+	// honors the cache's 15-minute lazy cooldown, so a sweep shortly before the
+	// prune can leave the page pending until it lapses. That is the cooldown
+	// doing its job, and "not yet measured" still beats confidently listing
+	// deleted images.
+	r.invalidatePlatformDupReport()
+
+	// The sidebar's platform counts are a SEPARATE cache (dupimages.Cache) and
+	// the invalidation above does not touch them, so without this they keep
+	// showing the pre-prune number indefinitely: that cache's lazy trigger only
+	// fires on !Computed, which stays false once any sweep has landed, and the
+	// periodic refresh meant to catch it has no production caller. The two
+	// surfaces would then permanently disagree -- the report says "not yet
+	// measured", the sidebar pill still claims N duplicates that were deleted.
+	//
+	// TriggerRefresh, not Refresh: fire-and-forget, so the prune's response is
+	// not held for a sweep. It is single-flight and cooldown-guarded, so at
+	// worst this is a no-op -- which is why it is safe to call unconditionally
+	// here even though the cooldown may defer the actual re-count.
+	r.dupImageCache().TriggerRefresh()
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"artists_processed": result.ArtistsProcessed,

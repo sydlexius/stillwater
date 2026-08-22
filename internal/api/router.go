@@ -257,16 +257,30 @@ type Router struct {
 	// cooldown and drain machinery is still that cache's -- this one rides the
 	// sweep it schedules and never starts one of its own.
 	//
-	// NO out-of-order guard, deliberately, unlike the local report's
-	// backdropDupReportStartedAt compare-and-swap. That guard exists because the
-	// local report has a SECOND writer (the post-remediation rescan) that can
-	// overlap a periodic scan and land stale. This report has exactly one
-	// writer, and every sweep runs under dupimages.Cache's single-flight latch,
-	// so two cannot be in flight at once. A writer that does not hold that latch
-	// would reintroduce the hazard and owes the guard back.
+	// AN OUT-OF-ORDER GUARD IS REQUIRED HERE, and platformDupReportInvalidatedAt
+	// below is it. An earlier revision of this comment argued the opposite --
+	// that one writer plus dupimages.Cache's single-flight latch made a
+	// compare-and-swap unnecessary -- and explicitly noted that "a writer that
+	// does not hold that latch would reintroduce the hazard and owes the guard
+	// back". The post-prune invalidation IS that writer, so the debt came due.
+	//
+	// The race it closes: an admin opens the page, the age gate fires a sweep,
+	// and mid-sweep the admin prunes. Invalidation clears the cache, but the
+	// in-flight sweep -- which read the platforms BEFORE the deletes -- then
+	// completes and stores its pre-prune rows with a FRESH timestamp,
+	// resurrecting images that no longer exist and re-arming a Prune button
+	// that would act on them. The single-flight latch cannot help: it serializes
+	// sweeps against each other, never a sweep against an invalidation.
 	platformDupReportMu sync.RWMutex
 	platformDupReport   publish.PlatformBackdropDupReport
 	platformDupReportAt time.Time
+	// platformDupReportInvalidatedAt is when the cache was last deliberately
+	// cleared (a prune). storePlatformDupReport DROPS any sweep that STARTED at
+	// or before this instant, because such a sweep read the platforms before
+	// the deletions and its rows are known-stale no matter when it finishes.
+	// Keyed on the sweep's START rather than its completion because that is what
+	// determines whose data is older. Mirrors backdropDupReportStartedAt.
+	platformDupReportInvalidatedAt time.Time
 	// registryRepairRunning guards the singleton image-registry repair run
 	// (#2669): only one rebuild+restore may be in flight, so a concurrent
 	// POST /api/v1/reports/registry-repair/remediate gets 409 instead of two
