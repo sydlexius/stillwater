@@ -19,11 +19,14 @@
 //	                 caller's render.
 //
 // The background refresh TriggerRefresh spawns has an owned lifecycle, so
-// nothing it does can outlive whoever started it (#2977):
+// nothing it does can outlive whoever started it (#2977). The same is true of
+// a direct Refresh called from a caller's OWN goroutine with nobody blocked on
+// it -- the maintenance scheduler's periodic tick, since #3118 -- so it is
+// registered the same way and drained the same way; see beginRefresh.
 //
-//	Drain(ctx)       Cancels every in-flight background refresh and BLOCKS
-//	                 until each has returned. Returns ctx.Err() if ctx expires
-//	                 first. Called at process shutdown, and by Reset.
+//	Drain(ctx)       Cancels every in-flight refresh (lazy or direct) and
+//	                 BLOCKS until each has returned. Returns ctx.Err() if ctx
+//	                 expires first. Called at process shutdown, and by Reset.
 //	Reset()          Test-only. DRAINS FIRST -- so it BLOCKS while a refresh is
 //	                 in flight -- then clears the snapshot, the sources and the
 //	                 single-flight latch, and installs a fresh shutdown context
@@ -555,12 +558,6 @@ func (c *Cache) Refresh(ctx context.Context) error {
 // reporting whether the caller owns it. The caller MUST call endRefresh when it
 // owns the latch.
 //
-// The lazy path takes the same latch through beginBackgroundRefresh, which
-// additionally registers the refresh as drainable (c.backgroundCount and the
-// c.idle channel) and pairs with endBackgroundRefresh rather than endRefresh.
-// A direct Refresh needs no such registration: its caller is already blocked on
-// it, so there is nothing for Drain to await.
-//
 // c.running is the shared latch, which is the point: it used
 // to be set only by TriggerRefresh, so the maintenance scheduler's direct
 // Refresh never participated. During a cold scheduled scan -- minutes of disk
@@ -568,24 +565,27 @@ func (c *Cache) Refresh(ctx context.Context) error {
 // launched a SECOND concurrent full sweep, doubling the I/O and CPU cost of the
 // most expensive task in the process on a design that advertises single-flight.
 //
-// WHY A DIRECT Refresh DROPS RATHER THAN WAITS. Both callers want the same
-// thing: a reasonably fresh snapshot, cheaply. Neither consumes the return
-// value as an answer to a question -- the sidebar reads Get(), never a Refresh
-// result. So a refresh that is ALREADY RUNNING will satisfy the dropped
-// caller's need within the same window, and waiting for it would buy nothing
-// while pinning a scheduler goroutine (and, for the 12h tick, delaying the
-// loop's return to its select for the whole remaining duration of the in-flight
-// scan). Dropping is also the safer failure mode: a wait could stack callers
-// behind a stalled sweep, which is exactly the pathology the per-run deadline
-// in maintenance exists to prevent. The dropped tick is not data loss -- the
-// next tick is 12h out and the in-flight scan writes the same numbers this one
-// would have.
+// WHY A DIRECT Refresh DROPS RATHER THAN WAITS ON A COLLISION. Both callers
+// want the same thing: a reasonably fresh snapshot, cheaply. Neither consumes
+// the return value as an answer to a question -- the sidebar reads Get(),
+// never a Refresh result. So a refresh that is ALREADY RUNNING will satisfy the
+// dropped caller's need within the same window, and waiting for it would buy
+// nothing while pinning a scheduler goroutine (and, for the 12h tick, delaying
+// the loop's return to its select for the whole remaining duration of the
+// in-flight scan). Dropping is also the safer failure mode: a wait could stack
+// callers behind a stalled sweep, which is exactly the pathology the per-run
+// deadline in maintenance exists to prevent. The dropped tick is not data loss
+// -- the next tick is 12h out and the in-flight scan writes the same numbers
+// this one would have.
 //
 // Lazy callers additionally honor retryCooldown; a direct Refresh does not,
 // because its cadence is already governed by the scheduler's interval.
 // A direct Refresh likewise does not stamp lastAttempt: that field means "when
 // the LAZY path last started", and letting a scheduled run arm the lazy
 // cooldown would suppress a cold-cache warm-up the operator is waiting on.
+//
+// REGISTERED AS DRAINABLE, same as the lazy path (#3118 -- see
+// registerDrainable for why this changed).
 func (c *Cache) beginRefresh() bool {
 	c.inFlight.Lock()
 	defer c.inFlight.Unlock()
@@ -593,6 +593,7 @@ func (c *Cache) beginRefresh() bool {
 		return false
 	}
 	c.running = true
+	c.registerDrainable()
 	return true
 }
 
@@ -655,17 +656,50 @@ func (c *Cache) beginBackgroundRefresh() (context.Context, bool) {
 
 	// Visible to Drain BEFORE the latch is released, so there is no instant at
 	// which this refresh exists but a drain cannot see it.
+	c.registerDrainable()
+
+	c.lifeMu.Lock()
+	parent := c.shutdownCtx
+	c.lifeMu.Unlock()
+	return parent, true
+}
+
+// registerDrainable makes the caller's already-latched refresh visible to
+// Drain: increments backgroundCount and, when this is the first refresh
+// registered, installs a fresh idle channel for Drain to block on. The caller
+// must already hold c.inFlight (so this composes into the same atomic
+// latch-plus-register step beginRefresh and beginBackgroundRefresh each need)
+// and must call deregisterDrainable when the refresh finishes.
+//
+// Shared by BOTH entry points since #3118. It used to belong only to the lazy
+// path, on the premise that a direct Refresh's caller is "already blocked on
+// it, so there is nothing for Drain to await" -- true for every caller that
+// existed at the time (tests, and the request-goroutine-blocked opportunistic
+// rescan in handlers_backdrop_repair.go), false for a direct Refresh invoked
+// from a goroutine nobody blocks on. The maintenance scheduler's periodic tick
+// does exactly that (internal/maintenance/dupimage_counts.go), so without this
+// a scheduled scan could still be running -- and still reading the database --
+// after Drain reported the cache quiescent and shutdown closed it.
+func (c *Cache) registerDrainable() {
 	if c.backgroundCount == 0 {
 		// Rising from zero: whoever drains from here on must wait for THIS
 		// refresh, so install a fresh open channel for them to block on.
 		c.idle = make(chan struct{})
 	}
 	c.backgroundCount++
+}
 
-	c.lifeMu.Lock()
-	parent := c.shutdownCtx
-	c.lifeMu.Unlock()
-	return parent, true
+// deregisterDrainable is registerDrainable's inverse: decrements
+// backgroundCount and, when it reaches zero, closes idle so every Drain
+// blocked on it wakes. The caller must already hold c.inFlight.
+func (c *Cache) deregisterDrainable() {
+	c.backgroundCount--
+	if c.backgroundCount == 0 && c.idle != nil {
+		// Quiescent: release every waiting Drain. Closing rather than sending
+		// is what lets any number of concurrent drains observe it.
+		close(c.idle)
+		c.idle = nil
+	}
 }
 
 // endBackgroundRefresh releases the single-flight latch AND deregisters the
@@ -676,21 +710,19 @@ func (c *Cache) endBackgroundRefresh() {
 	c.inFlight.Lock()
 	defer c.inFlight.Unlock()
 	c.running = false
-	c.backgroundCount--
-	if c.backgroundCount == 0 && c.idle != nil {
-		// Quiescent: release every waiting Drain. Closing rather than sending
-		// is what lets any number of concurrent drains observe it.
-		close(c.idle)
-		c.idle = nil
-	}
+	c.deregisterDrainable()
 }
 
-// endRefresh releases the single-flight latch for a DIRECT Refresh, which was
-// never registered as drainable and so has nothing to deregister.
+// endRefresh releases the single-flight latch for a DIRECT Refresh AND
+// deregisters it from Drain (#3118), pairing with beginRefresh's
+// registerDrainable call. Same one-critical-section reasoning as
+// endBackgroundRefresh: a Drain that observed the count hit zero must never
+// then find the latch still held.
 func (c *Cache) endRefresh() {
 	c.inFlight.Lock()
+	defer c.inFlight.Unlock()
 	c.running = false
-	c.inFlight.Unlock()
+	c.deregisterDrainable()
 }
 
 // refresh is the unguarded scan-and-store body shared by both entry points. The
@@ -849,10 +881,18 @@ func (c *Cache) TriggerRefresh() {
 	}()
 }
 
-// Drain cancels any in-flight background refresh and waits for it to finish,
-// mirroring api.Router.DrainWebhooks. It returns nil once every goroutine
-// TriggerRefresh spawned has returned, or ctx.Err() if the supplied context
-// expires first.
+// Drain cancels any in-flight background refresh and waits for every
+// REGISTERED refresh to finish, mirroring api.Router.DrainWebhooks. It returns
+// nil once every registered refresh -- every TriggerRefresh goroutine, and
+// (#3118) every direct Refresh call, whichever caller made it -- has returned,
+// or ctx.Err() if the supplied context expires first.
+//
+// A direct Refresh's own context is not the shutdownCtx canceled below (that
+// only parents a TriggerRefresh scan) -- so what Drain provides a direct
+// caller is the WAIT, not the cancel. The scheduler's tick derives its
+// context from the same process-lifetime ctx that stop() already canceled
+// before Drain runs (cmd/stillwater/main.go's shutdown sequence), so a
+// lingering scheduled scan's own context is already dead by then anyway.
 //
 // WHY THIS EXISTS. TriggerRefresh is fire-and-forget, so without Drain nothing
 // could observe or stop the resulting scan. In production that means a refresh
