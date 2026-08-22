@@ -483,6 +483,16 @@ func damageDirection(oldValue, newValue string) string {
 // the same rows, so the two modes partition one row set by construction and
 // a change to the shared damage predicate cannot make them disagree.
 //
+// THE POPULATION IS "SOURCE NAMES NO RULE", NOT "SOURCE = manual". #3079
+// measured its deployment as entirely manual-sourced, but the complement also
+// admits scan, import and provider: rows -- and a clone measured while
+// building this carried 10 scan-sourced rows alongside 11 manual ones.
+// Widening to the whole complement is the CONSERVATIVE direction, not a
+// loosening: a scan or provider write that replaced a locked field is
+// unambiguously an automated writer, whereas manual is the one source that
+// might be the operator's own hand. Narrowing to manual would have excluded
+// the LEAST ambiguous rows in the set. Every row is previewed either way.
+//
 // THE TIME BOUND IS APPLIED FIRST, before any per-artist read, so a row
 // outside the closed population cannot reach the lock check or the write
 // path. It is the safety property; it does not sit behind another test that
