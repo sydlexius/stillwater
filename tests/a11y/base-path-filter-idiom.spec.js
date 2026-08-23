@@ -98,17 +98,27 @@ test.describe('filter reload / chip dismiss under a non-empty SW_BASE_PATH (#309
     expect(metaBasePath, 'htmx-base-path meta tag does not carry the configured SW_BASE_PATH').toBe(BASE_PATH);
 
     paneRequests.length = 0;
-    // Observable completion instead of a fixed sleep: wait for the actual
-    // reload response to land (created BEFORE the action that triggers it,
-    // the standard Playwright race-free pattern), then for the swapped pane
-    // to settle back into the document (outerHTML swap detaches and
-    // re-attaches the node, so a bare visibility check on the SAME selector
-    // only passes once the replacement has landed).
+    // Observable completion, in TWO layers, because a network response and a
+    // DOM swap are different events htmx fires at different times: htmx
+    // resolves the request FIRST and applies the outerHTML swap AFTER, so
+    // waiting only for the response (as an earlier revision of this test
+    // did) can observe the OLD #blast-radius-pane node, which is still
+    // attached and still visible until the swap actually runs -- a race
+    // that is TIGHTER than the fixed 500ms sleep this replaced, because
+    // the response resolves earlier than any fixed sleep did.
+    //
+    // Mark the CURRENT node before triggering the reload, then wait for
+    // that marked node specifically to detach. outerHTML replaces the whole
+    // element with markup the server rendered (which never carries this
+    // marker), so the marked node detaching is the actual swap completing,
+    // not just the request settling.
+    await page.evaluate(() => document.getElementById('blast-radius-pane').setAttribute('data-swap-marker', 'pre-reload'));
     const reloadResponse = page.waitForResponse(
       (resp) => resp.url().includes('/reports/blast-radius') && resp.request().resourceType() !== 'document',
     );
     await page.selectOption('#blast-radius-sort', { index: 1 });
     await reloadResponse;
+    await page.locator('#blast-radius-pane[data-swap-marker="pre-reload"]').waitFor({ state: 'detached' });
     await expect(page.locator('#blast-radius-pane')).toBeVisible();
 
     expect(paneRequests.length, `expected exactly one blast-radius reload request, got: ${JSON.stringify(paneRequests)}`)
@@ -151,17 +161,21 @@ test.describe('filter reload / chip dismiss under a non-empty SW_BASE_PATH (#309
     expect(chipCount, 'no dismissable chip rendered for ?status=non_compliant').toBe(1);
 
     dismissRequests.length = 0;
-    // Observable completion instead of a fixed sleep: wait for the reload
-    // response itself, set up BEFORE the click that triggers it. The
-    // toHaveCount(1) assertion further below is what waits for
-    // #compliance-results to settle back into the DOM after its outerHTML
-    // swap; the response wait here just covers the network-level assertions
-    // that immediately follow.
+    // Observable completion, in TWO layers, same reasoning as
+    // blastRadiusReload's test above: the response resolving is not the
+    // same event as htmx's outerHTML swap landing, and the swap runs AFTER
+    // the response resolves. Mark the CURRENT #compliance-results node
+    // before the click, then wait for that marked node specifically to
+    // detach -- the replacement markup the server renders never carries
+    // this marker, so its detachment is the actual swap completing, not
+    // just the network settling.
+    await page.evaluate(() => document.getElementById('compliance-results').setAttribute('data-swap-marker', 'pre-dismiss'));
     const dismissResponse = page.waitForResponse(
       (resp) => resp.url().includes('/reports') && resp.request().resourceType() !== 'document',
     );
     await page.locator('[aria-label^="Remove "]').first().click();
     await dismissResponse;
+    await page.locator('#compliance-results[data-swap-marker="pre-dismiss"]').waitFor({ state: 'detached' });
 
     expect(dismissRequests.length, `expected exactly one dismiss reload request, got: ${JSON.stringify(dismissRequests)}`)
       .toBe(1);
