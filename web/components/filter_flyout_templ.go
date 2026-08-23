@@ -719,8 +719,8 @@ func clearAllFilterFlyout(id string) templ.ComponentScript {
 // selectSel extracts just that element from the full-page response.
 func DismissFilterChip(key string, targetSel string, selectSel string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_DismissFilterChip_0e91`,
-		Function: `function __templ_DismissFilterChip_0e91(key, targetSel, selectSel){// Fail loudly, and BEFORE any side effect.
+		Name: `__templ_DismissFilterChip_8b93`,
+		Function: `function __templ_DismissFilterChip_8b93(key, targetSel, selectSel){// Fail loudly, and BEFORE any side effect.
 	//
 	// This script is wired to an inline onclick, so a bare reference to an
 	// absent global throws a ReferenceError that surfaces only in the console
@@ -766,7 +766,7 @@ func DismissFilterChip(key string, targetSel string, selectSel string) templ.Com
 	var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
 	var bp = bpMeta ? bpMeta.content : '';
 	var path = url.pathname;
-	if (bp && path.startsWith(bp)) {
+	if (bp && (path === bp || path.startsWith(bp + '/'))) {
 		path = path.slice(bp.length) || '/';
 	} else if (bp) {
 		// FAIL LOUDLY on the missing branch (#3094 FIX 4), rather than
@@ -800,8 +800,8 @@ func DismissFilterChip(key string, targetSel string, selectSel string) templ.Com
 	}
 	htmx.ajax('GET', path + url.search, opts);
 }`,
-		Call:       templ.SafeScript(`__templ_DismissFilterChip_0e91`, key, targetSel, selectSel),
-		CallInline: templ.SafeScriptInline(`__templ_DismissFilterChip_0e91`, key, targetSel, selectSel),
+		Call:       templ.SafeScript(`__templ_DismissFilterChip_8b93`, key, targetSel, selectSel),
+		CallInline: templ.SafeScriptInline(`__templ_DismissFilterChip_8b93`, key, targetSel, selectSel),
 	}
 }
 
@@ -819,8 +819,8 @@ func DismissFilterChip(key string, targetSel string, selectSel string) templ.Com
 // swap, the field accepted, ignored, and dropped with no error.
 func DismissFilterValueChip(key string, prefixedValue string, targetSel string, selectSel string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_DismissFilterValueChip_4c8c`,
-		Function: `function __templ_DismissFilterValueChip_4c8c(key, prefixedValue, targetSel, selectSel){// Same guard, same position, same reasoning as DismissFilterChip above: it
+		Name: `__templ_DismissFilterValueChip_cdfc`,
+		Function: `function __templ_DismissFilterValueChip_cdfc(key, prefixedValue, targetSel, selectSel){// Same guard, same position, same reasoning as DismissFilterChip above: it
 	// must run before the URL surgery below, so a missing htmx leaves the
 	// address bar untouched instead of stripping a filter nothing reloads.
 	if (!window.htmx) {
@@ -846,7 +846,7 @@ func DismissFilterValueChip(key string, prefixedValue string, targetSel string, 
 	var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
 	var bp = bpMeta ? bpMeta.content : '';
 	var path = url.pathname;
-	if (bp && path.startsWith(bp)) {
+	if (bp && (path === bp || path.startsWith(bp + '/'))) {
 		path = path.slice(bp.length) || '/';
 	} else if (bp) {
 		// Same guard, same reasoning, as DismissFilterChip's else branch
@@ -867,8 +867,8 @@ func DismissFilterValueChip(key string, prefixedValue string, targetSel string, 
 	}
 	htmx.ajax('GET', path + url.search, opts);
 }`,
-		Call:       templ.SafeScript(`__templ_DismissFilterValueChip_4c8c`, key, prefixedValue, targetSel, selectSel),
-		CallInline: templ.SafeScriptInline(`__templ_DismissFilterValueChip_4c8c`, key, prefixedValue, targetSel, selectSel),
+		Call:       templ.SafeScript(`__templ_DismissFilterValueChip_cdfc`, key, prefixedValue, targetSel, selectSel),
+		CallInline: templ.SafeScriptInline(`__templ_DismissFilterValueChip_cdfc`, key, prefixedValue, targetSel, selectSel),
 	}
 }
 

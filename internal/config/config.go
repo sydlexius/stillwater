@@ -913,11 +913,13 @@ func (c *Config) validate() error {
 		return err
 	}
 
-	// Normalize BasePath: strip trailing slash so route registration is
-	// unambiguous (e.g. /app/ becomes /app).
-	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
-
-	// Validate BasePath charset (#3094 FIX 3). The Settings-UI write path
+	// Validate BasePath charset (#3094 FIX 3) BEFORE trimming. Trimming a
+	// trailing "/" first would launder a value like "////" down to "" --
+	// which passes trivially -- while never subjecting the RAW value (the
+	// one carrying the prohibited "//" prefix) to the charset check below.
+	// The check must see exactly what the operator set.
+	//
+	// The Settings-UI write path
 	// (internal/settingsvalidate.validateBasePath) and the DB-persisted-value
 	// loader (cmd/stillwater/main.go isValidPersistedBasePath) both already
 	// restrict server.base_path to the same allow-list; SW_BASE_PATH was the
@@ -948,6 +950,11 @@ func (c *Config) validate() error {
 	if err := validateBasePathCharset(c.Server.BasePath); err != nil {
 		return err
 	}
+
+	// Normalize BasePath: strip trailing slash so route registration is
+	// unambiguous (e.g. /app/ becomes /app). Runs AFTER the charset check
+	// above so the check always sees the value exactly as configured.
+	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
 
 	// Normalize a non-positive artist_workers to the documented default. The
 	// env path (setIntPositive) already ignores non-positive values, but

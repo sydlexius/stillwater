@@ -288,7 +288,7 @@ script DismissFilterChip(key string, targetSel string, selectSel string) {
 	var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
 	var bp = bpMeta ? bpMeta.content : '';
 	var path = url.pathname;
-	if (bp && path.startsWith(bp)) {
+	if (bp && (path === bp || path.startsWith(bp + '/'))) {
 		path = path.slice(bp.length) || '/';
 	} else if (bp) {
 		// FAIL LOUDLY on the missing branch (#3094 FIX 4), rather than
@@ -363,7 +363,7 @@ script DismissFilterValueChip(key string, prefixedValue string, targetSel string
 	var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
 	var bp = bpMeta ? bpMeta.content : '';
 	var path = url.pathname;
-	if (bp && path.startsWith(bp)) {
+	if (bp && (path === bp || path.startsWith(bp + '/'))) {
 		path = path.slice(bp.length) || '/';
 	} else if (bp) {
 		// Same guard, same reasoning, as DismissFilterChip's else branch

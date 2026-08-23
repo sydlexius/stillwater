@@ -98,8 +98,18 @@ test.describe('filter reload / chip dismiss under a non-empty SW_BASE_PATH (#309
     expect(metaBasePath, 'htmx-base-path meta tag does not carry the configured SW_BASE_PATH').toBe(BASE_PATH);
 
     paneRequests.length = 0;
+    // Observable completion instead of a fixed sleep: wait for the actual
+    // reload response to land (created BEFORE the action that triggers it,
+    // the standard Playwright race-free pattern), then for the swapped pane
+    // to settle back into the document (outerHTML swap detaches and
+    // re-attaches the node, so a bare visibility check on the SAME selector
+    // only passes once the replacement has landed).
+    const reloadResponse = page.waitForResponse(
+      (resp) => resp.url().includes('/reports/blast-radius') && resp.request().resourceType() !== 'document',
+    );
     await page.selectOption('#blast-radius-sort', { index: 1 });
-    await page.waitForTimeout(500);
+    await reloadResponse;
+    await expect(page.locator('#blast-radius-pane')).toBeVisible();
 
     expect(paneRequests.length, `expected exactly one blast-radius reload request, got: ${JSON.stringify(paneRequests)}`)
       .toBe(1);
@@ -141,8 +151,17 @@ test.describe('filter reload / chip dismiss under a non-empty SW_BASE_PATH (#309
     expect(chipCount, 'no dismissable chip rendered for ?status=non_compliant').toBe(1);
 
     dismissRequests.length = 0;
+    // Observable completion instead of a fixed sleep: wait for the reload
+    // response itself, set up BEFORE the click that triggers it. The
+    // toHaveCount(1) assertion further below is what waits for
+    // #compliance-results to settle back into the DOM after its outerHTML
+    // swap; the response wait here just covers the network-level assertions
+    // that immediately follow.
+    const dismissResponse = page.waitForResponse(
+      (resp) => resp.url().includes('/reports') && resp.request().resourceType() !== 'document',
+    );
     await page.locator('[aria-label^="Remove "]').first().click();
-    await page.waitForTimeout(500);
+    await dismissResponse;
 
     expect(dismissRequests.length, `expected exactly one dismiss reload request, got: ${JSON.stringify(dismissRequests)}`)
       .toBe(1);
@@ -206,8 +225,17 @@ test.describe('filter reload / chip dismiss under a non-empty SW_BASE_PATH (#309
       route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
     });
 
+    // Observable completion instead of a fixed sleep: wait for the routed
+    // 404 response itself (set up BEFORE the action that triggers it), then
+    // for the error toast htmx:responseError renders in reaction to it --
+    // that toast IS the observable side effect of "the 404 was handled",
+    // which a fixed delay only approximates.
+    const notFoundResponse = page.waitForResponse(
+      (resp) => resp.url().includes('/reports/blast-radius') && resp.status() === 404,
+    );
     await page.selectOption('#blast-radius-sort', { index: 1 });
-    await page.waitForTimeout(500);
+    await notFoundResponse;
+    await expect(page.locator('#error-toast-container > *').first()).toBeVisible();
 
     // NOT a silent failure: the global htmx:responseError handler
     // (layout.templ) must have toasted, and the pane's previous content must
@@ -300,8 +328,19 @@ test.describe('filter reload / chip dismiss under a non-empty SW_BASE_PATH (#309
     const consoleMessages = [];
     page.on('console', (msg) => consoleMessages.push({ type: msg.type(), text: msg.text() }));
 
+    // Observable completion instead of a fixed sleep: wait for the
+    // mismatched request's response (it lands nowhere this server
+    // recognizes, so it 404s -- set up BEFORE the click), then for the
+    // resulting error toast to render. FIX 4's console.error runs
+    // SYNCHRONOUSLY before htmx.ajax is even called, so by the time the
+    // response (and therefore the toast) arrives, the guard message is
+    // already in consoleMessages -- no separate wait is needed for it.
+    const mismatchedResponse = page.waitForResponse(
+      (resp) => resp.request().resourceType() !== 'document' && resp.status() === 404,
+    );
     await page.locator('[aria-label^="Remove "]').first().click();
-    await page.waitForTimeout(600);
+    await mismatchedResponse;
+    await expect(page.locator('#error-toast-container > *').first()).toBeVisible();
 
     // Link 1: FIX 4's guard fired, naming both the mismatched location and
     // the wrong configured value.

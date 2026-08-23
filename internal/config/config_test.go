@@ -413,6 +413,30 @@ func TestValidate_BasePathEnvRejectsSpace(t *testing.T) {
 	}
 }
 
+// TestValidate_BasePathEnvRejectsSlashLaundering guards the ordering bug in
+// this same fix: validate() previously ran strings.TrimRight(BasePath, "/")
+// BEFORE validateBasePathCharset, so an all-slashes value like "////" trimmed
+// down to "" and passed the charset check trivially -- even though the RAW
+// value carried the prohibited "//" prefix validateBasePathCharset exists to
+// reject (see TestValidate_BasePathCharsetMatchesUpstream's
+// "double_leading_slash" case, which is exactly this shape pre-trim). The
+// charset check must see the value exactly as the operator set it, before any
+// normalization launders it.
+func TestValidate_BasePathEnvRejectsSlashLaundering(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_BASE_PATH", "////")
+	t.Setenv("SW_PORT", "1973")
+	t.Setenv("SW_DB_PATH", filepath.Join(t.TempDir(), "test.db"))
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("Load accepted SW_BASE_PATH=\"////\"; trimming laundered it to \"\" before the charset check saw the prohibited \"//\" prefix")
+	}
+	if !strings.Contains(err.Error(), "SW_BASE_PATH") {
+		t.Errorf("error does not name SW_BASE_PATH: %v", err)
+	}
+}
+
 // TestValidate_BasePathEnvAcceptsValidCharset is the green complement to the
 // two rejection tests above: a normal, ASCII, allow-listed base path must
 // still load without error. Without this, a charset check that ACCIDENTALLY
@@ -456,7 +480,7 @@ func TestValidate_BasePathCharsetMatchesUpstream(t *testing.T) {
 		{"backslash_after_slash", "/\\app", true},
 		{"space", "/a b", true},
 		{"non_ascii", "/rép", true},
-		{"trailing_slash_pre_trimmed", "/app", false}, // validate() trims before this runs
+		{"already_trimmed", "/app", false}, // direct call, independent of validate()'s trim step
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
