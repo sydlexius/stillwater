@@ -1426,18 +1426,31 @@ func seedAPIBlastTieFixture(t *testing.T, r *Router) {
 //
 // blastRowsAreOrdered now compares the FULL ordering (see blastRowCompare),
 // so once the tie precondition holds, a passing case here is real evidence
-// the tie-breakers fired. Mutation proving teeth is recorded in the PR/issue
-// rather than executed in CI: dropping "field ASC" or "id DESC" from the
+// the tie-breakers fired. Dropping "field ASC" or "id DESC" from the
 // artist_name branch of blastRadiusOrderBy, "artist_name ASC" or "id DESC"
 // from the field branch, or "id DESC" from the created_at branch each turn
 // the corresponding subtest red (see seedAPIBlastTieFixture's doc comment for
 // exactly which pair inverts under which drop, and why).
+//
+// EACH SUBTEST ALSO LOADS THE OPPOSITE PRIMARY DIRECTION, and that second
+// load is not redundant with the first. blastRadiusOrderBy's tie-breakers
+// are hardcoded ("field ASC", not "field <dir>"), and a mutation that
+// REORIENTS one -- interpolating <dir> into it instead of dropping it --
+// only shows up when the query direction actually differs from the
+// tie-breaker's fixed direction. Querying only order=asc for the
+// artist_name/field cases (whose tie-breakers are themselves ASC) and only
+// order=desc for created_at (whose tie-breaker id DESC matches) made that
+// class of mutation a silent no-op: <dir> substitutes in as the same
+// direction the tie-breaker already had, so nothing changes and the suite
+// stays green over a broken invariant. Loading the opposite direction too
+// forces <dir> to actually diverge from the hardcoded direction, so a
+// reoriented tie-breaker is now visible.
 func TestBlastRadiusPane_OrderingTieBreakers(t *testing.T) {
 	t.Parallel()
 	r, _, _ := testRouterWithHistory(t)
 	seedAPIBlastTieFixture(t, r)
 
-	rowByID := func(rows []artist.BlastRadiusRow, id string) artist.BlastRadiusRow {
+	rowByID := func(t *testing.T, rows []artist.BlastRadiusRow, id string) artist.BlastRadiusRow {
 		t.Helper()
 		for _, row := range rows {
 			if row.ID == id {
@@ -1449,67 +1462,85 @@ func TestBlastRadiusPane_OrderingTieBreakers(t *testing.T) {
 	}
 
 	t.Run(artist.BlastSortArtistName, func(t *testing.T) {
-		data := loadBlastPane(t, r, "?sort="+artist.BlastSortArtistName+"&order=asc&page_size=500")
-		t1, t2, t3 := rowByID(data.Rows, "id-1-bio"), rowByID(data.Rows, "id-2-gen"), rowByID(data.Rows, "id-9-bio")
+		for _, order := range []string{"asc", "desc"} {
+			t.Run(order, func(t *testing.T) {
+				data := loadBlastPane(t, r, "?sort="+artist.BlastSortArtistName+"&order="+order+"&page_size=500")
+				t1 := rowByID(t, data.Rows, "id-1-bio")
+				t2 := rowByID(t, data.Rows, "id-2-gen")
+				t3 := rowByID(t, data.Rows, "id-9-bio")
 
-		// PRECONDITION: the rows genuinely tie on artist_name. Without this,
-		// "field ASC" and "id DESC" below would just be plain artist_name
-		// ordering wearing a different label.
-		if t1.ArtistName != t2.ArtistName || t2.ArtistName != t3.ArtistName {
-			t.Fatalf("precondition: T1/T2/T3 do not tie on artist_name (%q/%q/%q); the fixture no longer "+
-				"exercises the field-ASC/id-DESC tie-breakers", t1.ArtistName, t2.ArtistName, t3.ArtistName)
-		}
-		// And T1/T3 additionally tie on field, isolating "id DESC" as the ONLY
-		// thing that can order that pair.
-		if t1.Field != t3.Field {
-			t.Fatalf("precondition: T1/T3 do not tie on field (%q/%q); the id-DESC-under-artist_name case "+
-				"is not actually isolated", t1.Field, t3.Field)
-		}
-		// While T1/T2 differ on field, or the field-ASC case is vacuous too.
-		if t1.Field == t2.Field {
-			t.Fatalf("precondition: T1/T2 tie on field (%q); the field-ASC case needs them to differ", t1.Field)
-		}
+				// PRECONDITION: the rows genuinely tie on artist_name.
+				// Without this, "field ASC" and "id DESC" below would just be
+				// plain artist_name ordering wearing a different label.
+				if t1.ArtistName != t2.ArtistName || t2.ArtistName != t3.ArtistName {
+					t.Fatalf("precondition: T1/T2/T3 do not tie on artist_name (%q/%q/%q); the fixture no "+
+						"longer exercises the field-ASC/id-DESC tie-breakers", t1.ArtistName, t2.ArtistName, t3.ArtistName)
+				}
+				// And T1/T3 additionally tie on field, isolating "id DESC" as
+				// the ONLY thing that can order that pair.
+				if t1.Field != t3.Field {
+					t.Fatalf("precondition: T1/T3 do not tie on field (%q/%q); the id-DESC-under-artist_name "+
+						"case is not actually isolated", t1.Field, t3.Field)
+				}
+				// While T1/T2 differ on field, or the field-ASC case is
+				// vacuous too.
+				if t1.Field == t2.Field {
+					t.Fatalf("precondition: T1/T2 tie on field (%q); the field-ASC case needs them to differ", t1.Field)
+				}
 
-		if !blastRowsAreOrdered(data.Rows, artist.BlastSortArtistName, "asc") {
-			t.Error("rows tied on artist_name are not further ordered by field ASC, id DESC")
+				if !blastRowsAreOrdered(data.Rows, artist.BlastSortArtistName, order) {
+					t.Errorf("rows tied on artist_name (order=%s) are not further ordered by field ASC, id DESC", order)
+				}
+			})
 		}
 	})
 
 	t.Run(artist.BlastSortField, func(t *testing.T) {
-		data := loadBlastPane(t, r, "?sort="+artist.BlastSortField+"&order=asc&page_size=500")
-		t2, t4 := rowByID(data.Rows, "id-2-gen"), rowByID(data.Rows, "id-3-gen")
+		for _, order := range []string{"asc", "desc"} {
+			t.Run(order, func(t *testing.T) {
+				data := loadBlastPane(t, r, "?sort="+artist.BlastSortField+"&order="+order+"&page_size=500")
+				t2 := rowByID(t, data.Rows, "id-2-gen")
+				t4 := rowByID(t, data.Rows, "id-3-gen")
 
-		// PRECONDITION: T2/T4 genuinely tie on field but differ on
-		// artist_name, isolating "artist_name ASC" as the tie-breaker under
-		// test.
-		if t2.Field != t4.Field {
-			t.Fatalf("precondition: T2/T4 do not tie on field (%q/%q); the artist_name-ASC case is vacuous",
-				t2.Field, t4.Field)
-		}
-		if t2.ArtistName == t4.ArtistName {
-			t.Fatalf("precondition: T2/T4 tie on artist_name (%q) too; the case cannot isolate "+
-				"artist_name ASC", t2.ArtistName)
-		}
+				// PRECONDITION: T2/T4 genuinely tie on field but differ on
+				// artist_name, isolating "artist_name ASC" as the
+				// tie-breaker under test.
+				if t2.Field != t4.Field {
+					t.Fatalf("precondition: T2/T4 do not tie on field (%q/%q); the artist_name-ASC case is vacuous",
+						t2.Field, t4.Field)
+				}
+				if t2.ArtistName == t4.ArtistName {
+					t.Fatalf("precondition: T2/T4 tie on artist_name (%q) too; the case cannot isolate "+
+						"artist_name ASC", t2.ArtistName)
+				}
 
-		if !blastRowsAreOrdered(data.Rows, artist.BlastSortField, "asc") {
-			t.Error("rows tied on field are not further ordered by artist_name ASC, id DESC")
+				if !blastRowsAreOrdered(data.Rows, artist.BlastSortField, order) {
+					t.Errorf("rows tied on field (order=%s) are not further ordered by artist_name ASC, id DESC", order)
+				}
+			})
 		}
 	})
 
 	t.Run(artist.BlastSortCreatedAt, func(t *testing.T) {
-		data := loadBlastPane(t, r, "?sort="+artist.BlastSortCreatedAt+"&order=desc&page_size=500")
-		t5, t6 := rowByID(data.Rows, "id-5-lo"), rowByID(data.Rows, "id-6-hi")
+		for _, order := range []string{"asc", "desc"} {
+			t.Run(order, func(t *testing.T) {
+				data := loadBlastPane(t, r, "?sort="+artist.BlastSortCreatedAt+"&order="+order+"&page_size=500")
+				t5 := rowByID(t, data.Rows, "id-5-lo")
+				t6 := rowByID(t, data.Rows, "id-6-hi")
 
-		// PRECONDITION: T5/T6 genuinely tie on created_at TO THE SECOND
-		// (created_at is stored at second resolution), or "id DESC" below is
-		// re-checking ordinary created_at ordering.
-		if !t5.CreatedAt.Equal(t6.CreatedAt) {
-			t.Fatalf("precondition: T5/T6 do not tie on created_at (%v/%v); the id-DESC case is vacuous",
-				t5.CreatedAt, t6.CreatedAt)
-		}
+				// PRECONDITION: T5/T6 genuinely tie on created_at TO THE
+				// SECOND (created_at is stored at second resolution), or
+				// "id DESC" below is re-checking ordinary created_at
+				// ordering.
+				if !t5.CreatedAt.Equal(t6.CreatedAt) {
+					t.Fatalf("precondition: T5/T6 do not tie on created_at (%v/%v); the id-DESC case is vacuous",
+						t5.CreatedAt, t6.CreatedAt)
+				}
 
-		if !blastRowsAreOrdered(data.Rows, artist.BlastSortCreatedAt, "desc") {
-			t.Error("rows tied on created_at are not further ordered by id DESC")
+				if !blastRowsAreOrdered(data.Rows, artist.BlastSortCreatedAt, order) {
+					t.Errorf("rows tied on created_at (order=%s) are not further ordered by id DESC", order)
+				}
+			})
 		}
 	})
 }
