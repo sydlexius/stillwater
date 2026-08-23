@@ -718,6 +718,50 @@ func validateTrustedProxies(entries []string) error {
 	return nil
 }
 
+// validateBasePathCharset holds server.base_path to the SAME allow-list as
+// internal/settingsvalidate.validateBasePath (the Settings-UI write path) and
+// cmd/stillwater/main.go's isValidPersistedBasePath (the DB-persisted-value
+// loader): empty or "/" are the canonical "no prefix" forms and always pass;
+// otherwise the value must start with a single "/" (not "//" or "/\\", the
+// CodeQL "bad redirect check" shape) and every character must be a letter,
+// digit, hyphen, underscore, or slash.
+//
+// Kept as a small POSITIVE allow-list check here rather than importing
+// internal/settingsvalidate, which is deliberately a leaf package serving the
+// two settings-table write paths (PUT /api/v1/settings and envelope import)
+// and says so in its own doc comment; config.Load runs before either of those
+// exists; and the two upstream copies (settingsvalidate, main.go) are already
+// the same six-line rule duplicated for the same reason -- three independent
+// entry points (UI write, DB load, env var) into one mux composition, none of
+// which import a shared "path validation" package. This adds a third copy of
+// the SAME rule rather than a fourth shape of the check, and callers of this
+// package are asserted (TestValidate_BasePathCharsetMatchesUpstream) to reject
+// exactly what the other two do.
+func validateBasePathCharset(bp string) error {
+	if bp == "" || bp == "/" {
+		return nil
+	}
+	if !strings.HasPrefix(bp, "/") {
+		return fmt.Errorf("invalid SW_BASE_PATH %q: must start with \"/\"", bp)
+	}
+	if len(bp) >= 2 && (bp[1] == '/' || bp[1] == '\\') {
+		return fmt.Errorf("invalid SW_BASE_PATH %q: must not start with \"//\" or \"/\\\\\"", bp)
+	}
+	for _, c := range bp {
+		ok := (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '/'
+		if !ok {
+			return fmt.Errorf(
+				"invalid SW_BASE_PATH %q: may only contain letters, digits, hyphens, underscores, and slashes",
+				bp,
+			)
+		}
+	}
+	return nil
+}
+
 // crossFieldRules contains the ordered set of cross-field validation
 // functions. Each rule is independently testable. Rules run after per-field
 // validators and after BasePath normalization.
@@ -869,8 +913,47 @@ func (c *Config) validate() error {
 		return err
 	}
 
+	// Validate BasePath charset (#3094 FIX 3) BEFORE trimming. Trimming a
+	// trailing "/" first would launder a value like "////" down to "" --
+	// which passes trivially -- while never subjecting the RAW value (the
+	// one carrying the prohibited "//" prefix) to the charset check below.
+	// The check must see exactly what the operator set.
+	//
+	// The Settings-UI write path
+	// (internal/settingsvalidate.validateBasePath) and the DB-persisted-value
+	// loader (cmd/stillwater/main.go isValidPersistedBasePath) both already
+	// restrict server.base_path to the same allow-list; SW_BASE_PATH was the
+	// one door with no charset check at all, because loadFromEnv assigns the
+	// raw env value directly and this validate() pass only trimmed the
+	// trailing slash.
+	//
+	// The gap is not cosmetic. mux.HandleFunc composes routes as
+	// bp+"/api/v1/..." (internal/api/router.go), so an unfiltered bp can
+	// reach net/http's pattern parser with characters it rejects --
+	// SW_BASE_PATH="/a b" panics at boot ("invalid method \"/a\"") rather
+	// than failing with a readable message. And a bp that IS a syntactically
+	// valid route segment but non-ASCII does not panic and does not 404
+	// either: router.go registers a catch-all "GET "+bp+"/" (handleIndex),
+	// so a double-prefixed request (window.location.pathname is
+	// percent-encoded UTF-8, the raw meta value is not, so the JS-side
+	// strip's byte-for-byte startsWith comparison silently fails to match)
+	// still resolves to a 200 -- just the wrong page, with the intended
+	// fragment target absent from it and no error anywhere. Refusing an
+	// unsupported base path at boot, loudly and with the offending value
+	// named, is cheaper than either failure mode.
+	//
+	// POSITIVE ALLOW-LIST, not a negated deny-list of "bad" characters: an
+	// allow-list is closed against every character nobody has thought of yet
+	// (Unicode combining marks, RTL overrides, anything with special meaning
+	// to a URL parser or a future router library), where a deny-list is only
+	// ever as complete as its last edit.
+	if err := validateBasePathCharset(c.Server.BasePath); err != nil {
+		return err
+	}
+
 	// Normalize BasePath: strip trailing slash so route registration is
-	// unambiguous (e.g. /app/ becomes /app).
+	// unambiguous (e.g. /app/ becomes /app). Runs AFTER the charset check
+	// above so the check always sees the value exactly as configured.
 	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
 
 	// Normalize a non-positive artist_workers to the documented default. The
