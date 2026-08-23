@@ -84,106 +84,122 @@ export async function startBasePathServer(basePath) {
 
   const port = await freePort();
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-basepath-'));
-  const dbPath = path.join(tmpDir, 'sw-basepath.db');
-  const musicDir = path.join(tmpDir, 'empty-library');
-  fs.mkdirSync(musicDir, { recursive: true });
-  const logPath = path.join(tmpDir, 'server.log');
-  const logFd = fs.openSync(logPath, 'w');
 
-  const child = spawn(BINARY, [], {
-    cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      SW_DB_PATH: dbPath,
-      SW_PORT: String(port),
-      SW_BASE_PATH: basePath,
-      SW_LOG_FORMAT: 'text',
-      SW_LOG_LEVEL: 'warn',
-      SW_BACKUP_ENABLED: 'false',
-      SW_MUSIC_PATH: musicDir,
-    },
-    stdio: ['ignore', logFd, logFd],
-  });
-
+  // stop/cleanup is defined BEFORE anything that can fail, and every
+  // subsequent throw path below runs through the single try/catch that
+  // calls it. Six separate `child.kill()` call sites (one per bootstrap
+  // step) each forgot the matching `fs.rmSync(tmpDir, ...)`, so a bootstrap
+  // failure (e.g. the admin-setup POST 500s) leaked a `sw-basepath-*` temp
+  // dir with a SQLite file in os.tmpdir() once per failed run. Centralizing
+  // the cleanup here means a future SEVENTH bootstrap step that throws
+  // cannot reintroduce the leak by omission -- there is only one place left
+  // to call, and the catch below calls it unconditionally.
+  let child = null;
   let exited = false;
-  child.on('exit', () => { exited = true; });
-
-  const rootURL = `http://127.0.0.1:${port}`;
-  const baseURL = `${rootURL}${basePath}`;
-
-  try {
-    await waitForHealth(baseURL, 20_000);
-  } catch (err) {
-    const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '(no log)';
-    child.kill();
-    throw new Error(`${err.message}\nexited=${exited}\nserver log:\n${log}`);
-  }
-
-  // Bootstrap: CSRF cookie from health, admin account, session cookie, mark
-  // onboarding complete -- the same four steps as bootstrap.js, but scoped
-  // under basePath since every route on this server lives there.
-  const healthResp = await fetch(`${baseURL}/api/v1/health`);
-  const setCookie = healthResp.headers.get('set-cookie') || '';
-  const csrfMatch = setCookie.match(/csrf_token=([^;]+)/);
-  const csrfToken = csrfMatch ? csrfMatch[1] : '';
-  if (!csrfToken) {
-    child.kill();
-    throw new Error('base-path-server: health response carried no csrf_token cookie');
-  }
-
-  const setupResp = await fetch(`${baseURL}/api/v1/auth/setup`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-Token': csrfToken,
-      Cookie: `csrf_token=${csrfToken}`,
-    },
-    body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS }),
-  });
-  if (!setupResp.ok && setupResp.status !== 409) {
-    child.kill();
-    throw new Error(`base-path-server: admin setup failed: ${setupResp.status}`);
-  }
-
-  const loginResp = await fetch(`${baseURL}/api/v1/auth/login`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-Token': csrfToken,
-      Cookie: `csrf_token=${csrfToken}`,
-    },
-    body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS }),
-  });
-  if (!loginResp.ok) {
-    child.kill();
-    throw new Error(`base-path-server: login failed: ${loginResp.status}`);
-  }
-  const loginSetCookie = loginResp.headers.get('set-cookie') || '';
-  const sessionMatch = loginSetCookie.match(/session=([^;]+)/);
-  if (!sessionMatch) {
-    child.kill();
-    throw new Error('base-path-server: login response carried no session cookie');
-  }
-  const sessionCookie = sessionMatch[1];
-
-  const onboardResp = await fetch(`${baseURL}/api/v1/settings`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-Token': csrfToken,
-      Cookie: `session=${sessionCookie}`,
-    },
-    body: JSON.stringify({ 'onboarding.completed': 'true' }),
-  });
-  if (!onboardResp.ok) {
-    child.kill();
-    throw new Error(`base-path-server: marking onboarding complete failed: ${onboardResp.status}`);
-  }
-
-  const stop = () => {
-    if (!exited) child.kill();
+  const cleanup = () => {
+    if (child && !exited) child.kill();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   };
 
-  return { baseURL, rootURL, csrfToken, sessionCookie, stop };
+  try {
+    const dbPath = path.join(tmpDir, 'sw-basepath.db');
+    const musicDir = path.join(tmpDir, 'empty-library');
+    fs.mkdirSync(musicDir, { recursive: true });
+    const logPath = path.join(tmpDir, 'server.log');
+    const logFd = fs.openSync(logPath, 'w');
+
+    child = spawn(BINARY, [], {
+      cwd: REPO_ROOT,
+      env: {
+        ...process.env,
+        SW_DB_PATH: dbPath,
+        SW_PORT: String(port),
+        SW_BASE_PATH: basePath,
+        SW_LOG_FORMAT: 'text',
+        SW_LOG_LEVEL: 'warn',
+        SW_BACKUP_ENABLED: 'false',
+        SW_MUSIC_PATH: musicDir,
+      },
+      stdio: ['ignore', logFd, logFd],
+    });
+    child.on('exit', () => { exited = true; });
+
+    const rootURL = `http://127.0.0.1:${port}`;
+    const baseURL = `${rootURL}${basePath}`;
+
+    try {
+      await waitForHealth(baseURL, 20_000);
+    } catch (err) {
+      const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '(no log)';
+      throw new Error(`${err.message}\nexited=${exited}\nserver log:\n${log}`);
+    }
+
+    // Bootstrap: CSRF cookie from health, admin account, session cookie,
+    // mark onboarding complete -- the same four steps as bootstrap.js, but
+    // scoped under basePath since every route on this server lives there.
+    const healthResp = await fetch(`${baseURL}/api/v1/health`);
+    const setCookie = healthResp.headers.get('set-cookie') || '';
+    const csrfMatch = setCookie.match(/csrf_token=([^;]+)/);
+    const csrfToken = csrfMatch ? csrfMatch[1] : '';
+    if (!csrfToken) {
+      throw new Error('base-path-server: health response carried no csrf_token cookie');
+    }
+
+    const setupResp = await fetch(`${baseURL}/api/v1/auth/setup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken,
+        Cookie: `csrf_token=${csrfToken}`,
+      },
+      body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS }),
+    });
+    if (!setupResp.ok && setupResp.status !== 409) {
+      throw new Error(`base-path-server: admin setup failed: ${setupResp.status}`);
+    }
+
+    const loginResp = await fetch(`${baseURL}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken,
+        Cookie: `csrf_token=${csrfToken}`,
+      },
+      body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS }),
+    });
+    if (!loginResp.ok) {
+      throw new Error(`base-path-server: login failed: ${loginResp.status}`);
+    }
+    const loginSetCookie = loginResp.headers.get('set-cookie') || '';
+    const sessionMatch = loginSetCookie.match(/session=([^;]+)/);
+    if (!sessionMatch) {
+      throw new Error('base-path-server: login response carried no session cookie');
+    }
+    const sessionCookie = sessionMatch[1];
+
+    const onboardResp = await fetch(`${baseURL}/api/v1/settings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken,
+        Cookie: `session=${sessionCookie}`,
+      },
+      body: JSON.stringify({ 'onboarding.completed': 'true' }),
+    });
+    if (!onboardResp.ok) {
+      throw new Error(`base-path-server: marking onboarding complete failed: ${onboardResp.status}`);
+    }
+
+    const stop = () => {
+      if (!exited) child.kill();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    };
+
+    return {
+      baseURL, rootURL, csrfToken, sessionCookie, stop,
+    };
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
 }

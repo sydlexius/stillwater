@@ -290,6 +290,20 @@ script DismissFilterChip(key string, targetSel string, selectSel string) {
 	var path = url.pathname;
 	if (bp && path.startsWith(bp)) {
 		path = path.slice(bp.length) || '/';
+	} else if (bp) {
+		// FAIL LOUDLY on the missing branch (#3094 FIX 4), rather than
+		// silently falling through to a double-prefixed request. A
+		// non-empty base path that does not prefix location.pathname is
+		// not a supported state -- config validation (internal/config
+		// validateBasePathCharset) now refuses an unsupported SW_BASE_PATH
+		// at boot, so this branch reaching production would mean the
+		// server's configured prefix and the browser's actual address
+		// disagree, which the repo's capability-check convention forbids
+		// leaving silent.
+		console.error(
+			'DismissFilterChip: window.location.pathname ("' + path + '") does not start with the '
+			+ 'configured base path ("' + bp + '"); the reload path will be double-prefixed',
+		);
 	}
 	var sel = targetSel || '#artist-content';
 	var opts = {target: sel, swap: 'outerHTML'};
@@ -351,6 +365,14 @@ script DismissFilterValueChip(key string, prefixedValue string, targetSel string
 	var path = url.pathname;
 	if (bp && path.startsWith(bp)) {
 		path = path.slice(bp.length) || '/';
+	} else if (bp) {
+		// Same guard, same reasoning, as DismissFilterChip's else branch
+		// above (#3094 FIX 4): fail loudly rather than silently issue a
+		// double-prefixed request.
+		console.error(
+			'DismissFilterValueChip: window.location.pathname ("' + path + '") does not start with the '
+			+ 'configured base path ("' + bp + '"); the reload path will be double-prefixed',
+		);
 	}
 	var sel = targetSel || '#action-queue';
 	var opts = {target: sel, swap: 'innerHTML'};

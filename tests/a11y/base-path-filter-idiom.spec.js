@@ -153,10 +153,17 @@ test.describe('filter reload / chip dismiss under a non-empty SW_BASE_PATH (#309
     ).toBe(`${BASE_PATH}/reports`);
     expect(dismissURL.pathname.match(new RegExp(BASE_PATH, 'g')) || []).toHaveLength(1);
 
-    // The swap must have actually landed (not a discarded/errored request):
-    // no duplicated DOM ids, which is what a double-prefixed 404 rendering an
-    // error page fragment, or a de-prefixed request hitting the wrong route,
-    // would produce.
+    // The swap must have actually landed as ONE COPY of the shell, not zero
+    // and not two. These are separate failure shapes and neither assertion
+    // covers the other: a swap that extracts NOTHING (e.g. a wrong-route
+    // response with no #compliance-results in it, or a select that matched
+    // nothing) makes the element VANISH -- dupIds alone would read [] and
+    // this test would pass while the pane is gone. The toHaveCount(1) below
+    // is what rules that shape out; dupIds afterward rules out the CONVERSE
+    // shape (a full-page response with no fragment handler duplicating every
+    // id on the page, the #3099/#3100 class of defect). Neither replaces the
+    // other.
+    await expect(page.locator('#compliance-results')).toHaveCount(1);
     const dupIds = await page.evaluate(() => {
       const ids = Array.from(document.querySelectorAll('[id]')).map((e) => e.id);
       const counts = {};
@@ -211,6 +218,109 @@ test.describe('filter reload / chip dismiss under a non-empty SW_BASE_PATH (#309
 
     const after = await page.evaluate(() => document.getElementById('blast-radius-pane')?.innerHTML.length ?? 0);
     expect(after, 'the pane rendered as empty after a 404 -- a failed request must not present as "no data"').toBeGreaterThan(0);
+
+    await context.close();
+  });
+
+  // #3094 FIX 5: extends AC4 to the actually-reachable silent-failure shape,
+  // rather than only the 404 shape proved above.
+  //
+  // The chain that makes this genuinely covered end to end, MEASURED at each
+  // link rather than assumed:
+  //
+  //   1. FIX 3 (internal/config validateBasePathCharset) refuses an
+  //      unsupported SW_BASE_PATH at BOOT, so a server cannot be configured
+  //      with a base path that would silently mismatch a percent-encoded
+  //      window.location.pathname in the first place. This is what makes
+  //      the byte-vs-percent-encoding root cause NON-reachable through
+  //      config; this spec's BASE_PATH is plain ASCII precisely because
+  //      that IS the only charset FIX 3 allows through.
+  //
+  //   2. FIX 4 (the else-branch in DismissFilterChip / DismissFilterValueChip)
+  //      converts any REMAINING runtime mismatch between the base-path meta
+  //      tag and location.pathname into a LOUD console.error naming both
+  //      values, fired BEFORE the (still-issued) request goes out.
+  //
+  //   3. Because the mismatched request still goes out (FIX 4 does not
+  //      abort it), it lands on a path this server's mux does not
+  //      recognize, which 404s -- confirmed by measurement below -- and the
+  //      EXISTING global htmx:responseError handler (layout.templ) already
+  //      toasts on that, which the ORIGINAL AC4 test above already covers.
+  //
+  // So the reachable failure is not silent: something in the chain reports
+  // it every time, and the true "silent 200 through the catch-all" shape the
+  // coordinator described requires TWO independent config values to
+  // disagree on the SAME server (SW_BASE_PATH set one way, the served
+  // meta/location pair reflecting another) -- which FIX 3 forecloses by
+  // making that server unbootable, and FIX 4 additionally logs even without
+  // relying on FIX 3.
+  //
+  // This test drives the runtime-mismatch path directly (mutating only the
+  // served meta tag's content, not location.pathname, on an otherwise
+  // correctly-booted server) and asserts the FULL chain: FIX 4's
+  // console.error fires BEFORE the request, the request 404s, the existing
+  // responseError toast fires, and #compliance-results survives -- proving
+  // the "reachable 200" story does not in fact apply once FIX 3 and FIX 4
+  // are both in place, and that whatever DOES happen is reported, not
+  // silent.
+  test('AC4 extended: a runtime base-path mismatch is reported loudly at every link in the chain, not silently 200d', async ({ browser }) => {
+    const context = await browser.newContext();
+    await context.addCookies([
+      { name: 'csrf_token', value: server.csrfToken, url: server.rootURL },
+      { name: 'session', value: server.sessionCookie, url: server.rootURL },
+    ]);
+    const page = await context.newPage();
+
+    // Mutate ONLY the served meta tag's content, leaving location.pathname
+    // (BASE_PATH-prefixed, as normal) untouched -- this is the runtime shape
+    // FIX 4's guard exists for: the two values the strip compares disagree,
+    // for whatever reason, at the moment the dismiss script reads them.
+    await page.route(`**${BASE_PATH}/reports*`, async (route) => {
+      if (route.request().resourceType() !== 'document') {
+        route.continue();
+        return;
+      }
+      const resp = await route.fetch();
+      const body = (await resp.text()).replace(`content="${BASE_PATH}"`, `content="${BASE_PATH}-WRONG"`);
+      route.fulfill({ response: resp, body, contentType: 'text/html' });
+    });
+
+    await page.goto(`${server.baseURL}/reports?status=non_compliant`);
+    await page.waitForSelector('[aria-label^="Remove "]', { timeout: 10_000 });
+
+    // Preconditions: the mutation actually landed (meta now disagrees with
+    // location), and the pane starts with real content.
+    const meta = await page.evaluate(() => document.querySelector('meta[name="htmx-base-path"]')?.content);
+    const loc = await page.evaluate(() => window.location.pathname);
+    expect(meta, 'the meta-tag mutation did not land; the mismatch this test drives is not actually present').toBe(`${BASE_PATH}-WRONG`);
+    expect(loc.startsWith(BASE_PATH), 'location.pathname is not base-path-prefixed; the fixture setup is wrong').toBe(true);
+    const before = await page.evaluate(() => document.getElementById('compliance-results')?.innerHTML.length ?? 0);
+    expect(before, 'the compliance pane has no content to begin with; a wipe would be undetectable').toBeGreaterThan(0);
+
+    const consoleMessages = [];
+    page.on('console', (msg) => consoleMessages.push({ type: msg.type(), text: msg.text() }));
+
+    await page.locator('[aria-label^="Remove "]').first().click();
+    await page.waitForTimeout(600);
+
+    // Link 1: FIX 4's guard fired, naming both the mismatched location and
+    // the wrong configured value.
+    const guardMessages = consoleMessages.filter((m) => /does not start with the configured base path/.test(m.text));
+    expect(guardMessages.length, `FIX 4's guard did not fire for the mismatch; console messages: ${JSON.stringify(consoleMessages)}`)
+      .toBeGreaterThan(0);
+    expect(guardMessages[0].text).toContain(loc);
+    expect(guardMessages[0].text).toContain(`${BASE_PATH}-WRONG`);
+
+    // Link 2/3: the mismatched request still went out, landed nowhere this
+    // server recognizes, 404d, and the EXISTING global responseError
+    // handler toasted -- so nothing about this chain is silent end to end.
+    const toastCount = await page.locator('#error-toast-container > *').count();
+    expect(toastCount, 'no toast was shown for the mismatched request; the chain went silent somewhere').toBeGreaterThan(0);
+
+    // The pane's prior content survives -- this is NOT the "silently
+    // emptied" shape, because FIX 4 caused a 404 (which htmx does not swap
+    // on), not a same-origin 200.
+    await expect(page.locator('#compliance-results')).toHaveCount(1);
 
     await context.close();
   });

@@ -363,6 +363,114 @@ database:
 	}
 }
 
+// TestValidate_BasePathEnvRejectsNonASCII guards #3094 FIX 3: SW_BASE_PATH is
+// the one door into server.base_path with no charset check at all
+// (internal/settingsvalidate.validateBasePath and cmd/stillwater/main.go's
+// isValidPersistedBasePath both already restrict the OTHER two paths). Before
+// this validator existed, a non-ASCII value like "/rép" loaded successfully
+// (no error, BasePath == the raw value) and reached mux route composition,
+// where it double-prefixes silently in the browser: window.location.pathname
+// is percent-encoded UTF-8, the raw meta value is not, so the JS-side
+// startsWith strip never matches and every htmx request under that base path
+// resolves through router.go's catch-all "GET "+bp+"/" to the wrong page,
+// with no error surfaced anywhere. This test asserts the boot REFUSES it
+// instead -- there is no server for a browser-level spec to reach, so a
+// config-level assertion is the only layer that can observe "did boot refuse
+// this," which a browser spec cannot exercise at all.
+func TestValidate_BasePathEnvRejectsNonASCII(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_BASE_PATH", "/rép") // "/rép"
+	t.Setenv("SW_PORT", "1973")
+	t.Setenv("SW_DB_PATH", filepath.Join(t.TempDir(), "test.db"))
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("Load accepted a non-ASCII SW_BASE_PATH; want a boot-time refusal naming the offending value")
+	}
+	if !strings.Contains(err.Error(), "SW_BASE_PATH") {
+		t.Errorf("error does not name SW_BASE_PATH: %v", err)
+	}
+}
+
+// TestValidate_BasePathEnvRejectsSpace guards the related panic this same
+// fix closes: SW_BASE_PATH="/a b" previously loaded without error and reached
+// mux.HandleFunc(bp+"/api/v1/...") in internal/api/router.go, where net/http's
+// pattern parser PANICKED at boot ("invalid method \"/a\"") rather than
+// failing with a readable message. A clear config-time refusal must replace
+// that panic.
+func TestValidate_BasePathEnvRejectsSpace(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_BASE_PATH", "/a b")
+	t.Setenv("SW_PORT", "1973")
+	t.Setenv("SW_DB_PATH", filepath.Join(t.TempDir(), "test.db"))
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("Load accepted a SW_BASE_PATH containing a space; want a boot-time refusal, not a downstream mux panic")
+	}
+	if !strings.Contains(err.Error(), "SW_BASE_PATH") {
+		t.Errorf("error does not name SW_BASE_PATH: %v", err)
+	}
+}
+
+// TestValidate_BasePathEnvAcceptsValidCharset is the green complement to the
+// two rejection tests above: a normal, ASCII, allow-listed base path must
+// still load without error. Without this, a charset check that ACCIDENTALLY
+// rejected everything (e.g. an inverted condition) would pass both red tests
+// above for the wrong reason.
+func TestValidate_BasePathEnvAcceptsValidCharset(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_BASE_PATH", "/stillwater-app_2")
+	t.Setenv("SW_PORT", "1973")
+	t.Setenv("SW_DB_PATH", filepath.Join(t.TempDir(), "test.db"))
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load rejected a valid allow-listed SW_BASE_PATH: %v", err)
+	}
+	if cfg.Server.BasePath != "/stillwater-app_2" {
+		t.Errorf("Server.BasePath = %q, want /stillwater-app_2", cfg.Server.BasePath)
+	}
+}
+
+// TestValidate_BasePathCharsetMatchesUpstream pins validateBasePathCharset to
+// the SAME allow-list as the two upstream copies of this rule
+// (internal/settingsvalidate.validateBasePath and cmd/stillwater/main.go's
+// isValidPersistedBasePath), so a future edit to one cannot silently drift
+// from the others -- the three entry points (env, Settings-UI PUT,
+// DB-persisted value) must agree on what "valid" means, or an operator could
+// set a value one path accepts and another silently rejects or mishandles.
+func TestValidate_BasePathCharsetMatchesUpstream(t *testing.T) {
+	cases := []struct {
+		name    string
+		bp      string
+		wantErr bool
+	}{
+		{"empty", "", false},
+		{"root", "/", false},
+		{"simple", "/stillwater", false},
+		{"nested", "/a/b/c", false},
+		{"hyphen_underscore", "/my-app_2", false},
+		{"missing_leading_slash", "app", true},
+		{"double_leading_slash", "//app", true},
+		{"backslash_after_slash", "/\\app", true},
+		{"space", "/a b", true},
+		{"non_ascii", "/rép", true},
+		{"trailing_slash_pre_trimmed", "/app", false}, // validate() trims before this runs
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateBasePathCharset(tc.bp)
+			if tc.wantErr && err == nil {
+				t.Errorf("validateBasePathCharset(%q): want error, got nil", tc.bp)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("validateBasePathCharset(%q): want no error, got %v", tc.bp, err)
+			}
+		})
+	}
+}
+
 // TestValidate_ArtistWorkersNonPositive verifies that a non-positive
 // artist_workers from file-backed config (TOML/YAML, which bypass the env
 // path's setIntPositive) is normalized to the documented default rather than

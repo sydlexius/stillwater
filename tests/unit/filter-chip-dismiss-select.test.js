@@ -98,8 +98,16 @@ const DEFAULT_HREF = 'http://localhost/reports/example?class=blanked&page=2';
  *   did not reach htmx.ajax" is an assertion about a recorder that EXISTS. With
  *   no stub anywhere, `calls.length === 0` holds for any code at all, which is
  *   what made the original version of this assertion vacuous.
+ *
+ * `metaBasePath`, when set, makes `document.querySelector('meta[name="htmx-base-path"]')`
+ * return an object carrying that `content` -- the real DOM shape the scripts
+ * read `bp` from. Omitted (the default) keeps `querySelector` returning null,
+ * i.e. bp === '' throughout, matching every existing case in this file. This
+ * is what lets #3094 FIX 4's tests put a NON-EMPTY bp into the sandbox at all;
+ * without it every case here has bp === '' and the strip's `if (bp && ...)`
+ * guard, let alone its `else if (bp)` branch, can never engage.
  */
-function makeSandbox({ href = DEFAULT_HREF, htmx = 'present' } = {}) {
+function makeSandbox({ href = DEFAULT_HREF, htmx = 'present', metaBasePath = null } = {}) {
   const calls = [];
   const errors = [];
   const pushes = [];
@@ -107,7 +115,13 @@ function makeSandbox({ href = DEFAULT_HREF, htmx = 'present' } = {}) {
   const sandbox = {
     console: { error: (...a) => errors.push(a.join(' ')) },
     history: { pushState: (...a) => { pushes.push(a); } },
-    document: { querySelector: () => null },
+    document: {
+      querySelector: (sel) => (
+        metaBasePath !== null && sel === 'meta[name="htmx-base-path"]'
+          ? { content: metaBasePath }
+          : null
+      ),
+    },
     URL,
     URLSearchParams,
     htmx: stub,
@@ -282,6 +296,54 @@ describe('DismissFilterChip select option', () => {
     assert.equal(pushes.length, 1, 'with htmx present the script must rewrite the address bar');
     assert.deepEqual(errors, [], `the guard reported an error while htmx was present: ${JSON.stringify(errors)}`);
   });
+
+  // #3094 FIX 4: the strip's `if (bp && path.startsWith(bp))` had no `else`,
+  // so a non-empty bp that does NOT prefix location.pathname silently fell
+  // through and issued a double-prefixed request with no error anywhere.
+  it('fails loudly when a non-empty base path does not prefix the current location (#3094 FIX 4)', () => {
+    const { calls, errors } = runDismiss(chipFn, chipName, ['class', '#compliance-results', ''], {
+      href: 'http://localhost/reports/example?class=blanked&page=2',
+      metaBasePath: '/sw',
+    });
+    // Precondition: the fixture href genuinely does NOT start with the
+    // configured base path, or the mismatch this test exists to catch would
+    // not be present in the first place.
+    assert.ok(
+      !new URL('http://localhost/reports/example').pathname.startsWith('/sw'),
+      'fixture href already starts with the base path; the mismatch case is not actually exercised',
+    );
+    assert.equal(errors.length, 1, 'no console.error was emitted for the base-path mismatch');
+    assert.ok(/base path/i.test(errors[0]), `the error does not mention the base path: ${errors[0]}`);
+    assert.ok(/\/sw/.test(errors[0]), `the error does not name the configured base path: ${errors[0]}`);
+    // The mismatch is reported, not silently worked around: the request still
+    // goes out (this script has no recovery path, only a louder failure), so
+    // the assertion is on the ERROR being present, not on the request being
+    // suppressed.
+    assert.equal(calls.length, 1, 'the script did not reach htmx.ajax despite reporting the mismatch');
+  });
+
+  it('does not report a mismatch when the base path is empty (root deployment)', () => {
+    // Complement of the above: proves the new else-branch is conditioned on
+    // bp being non-empty, not on the mismatch alone -- an empty bp (no
+    // sub-path deployment) must stay silent, matching every pre-#3094 case.
+    const { errors } = runDismiss(chipFn, chipName, ['class', '#compliance-results', ''], {
+      href: 'http://localhost/reports/example?class=blanked&page=2',
+      metaBasePath: '',
+    });
+    assert.deepEqual(errors, [], `an empty base path must not report a mismatch: ${JSON.stringify(errors)}`);
+  });
+
+  it('does not report a mismatch when the base path DOES prefix the location', () => {
+    // Complement of the mismatch case: the ordinary sub-path-deployment path
+    // (bp non-empty AND matching) must stay silent -- this is the SAME
+    // scenario proved correct end-to-end in
+    // tests/a11y/base-path-filter-idiom.spec.js, at the unit-test layer.
+    const { errors } = runDismiss(chipFn, chipName, ['class', '#compliance-results', ''], {
+      href: 'http://localhost/sw/reports/example?class=blanked&page=2',
+      metaBasePath: '/sw',
+    });
+    assert.deepEqual(errors, [], `a matching base path must not report a mismatch: ${JSON.stringify(errors)}`);
+  });
 });
 
 describe('DismissFilterValueChip select option', () => {
@@ -367,5 +429,38 @@ describe('DismissFilterValueChip select option', () => {
       `the dismissed value survived: ${calls[0].url}`);
     assert.deepEqual(remaining, ['-info'],
       `sibling values under the same key were not preserved: ${JSON.stringify(remaining)}`);
+  });
+
+  // #3094 FIX 4: same missing-else defect as DismissFilterChip, same fix,
+  // same tests.
+  it('fails loudly when a non-empty base path does not prefix the current location (#3094 FIX 4)', () => {
+    const { calls, errors } = runDismiss(
+      valueChipFn, valueChipName, ['severity', '+error', '#action-queue', ''],
+      { href: 'http://localhost/dash?severity=%2Berror', metaBasePath: '/sw' },
+    );
+    assert.ok(
+      !new URL('http://localhost/dash').pathname.startsWith('/sw'),
+      'fixture href already starts with the base path; the mismatch case is not actually exercised',
+    );
+    assert.equal(errors.length, 1, 'no console.error was emitted for the base-path mismatch');
+    assert.ok(/base path/i.test(errors[0]), `the error does not mention the base path: ${errors[0]}`);
+    assert.ok(/\/sw/.test(errors[0]), `the error does not name the configured base path: ${errors[0]}`);
+    assert.equal(calls.length, 1, 'the script did not reach htmx.ajax despite reporting the mismatch');
+  });
+
+  it('does not report a mismatch when the base path is empty (root deployment)', () => {
+    const { errors } = runDismiss(
+      valueChipFn, valueChipName, ['severity', '+error', '#action-queue', ''],
+      { href: 'http://localhost/dash?severity=%2Berror', metaBasePath: '' },
+    );
+    assert.deepEqual(errors, [], `an empty base path must not report a mismatch: ${JSON.stringify(errors)}`);
+  });
+
+  it('does not report a mismatch when the base path DOES prefix the location', () => {
+    const { errors } = runDismiss(
+      valueChipFn, valueChipName, ['severity', '+error', '#action-queue', ''],
+      { href: 'http://localhost/sw/dash?severity=%2Berror', metaBasePath: '/sw' },
+    );
+    assert.deepEqual(errors, [], `a matching base path must not report a mismatch: ${JSON.stringify(errors)}`);
   });
 });
