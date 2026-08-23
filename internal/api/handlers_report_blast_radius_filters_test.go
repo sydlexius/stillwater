@@ -1253,8 +1253,21 @@ func blastSelectHasSelected(t *testing.T, body, selectID, optionValue string) bo
 // whether one particular option is.
 var blastOptionRE = regexp.MustCompile(`<option value="([^"]*)"([^>]*)>`)
 
-// blastRowsAreOrdered reports whether rows are non-decreasing (asc) or
-// non-increasing (desc) on the named sort key.
+// blastRowsAreOrdered reports whether rows are ordered exactly the way the
+// SQL clause blastRadiusOrderBy builds for (sort, order) orders them: the
+// primary key in the requested direction, THEN, in order, every tie-breaker
+// the query appends after it (see blastRowCompare). The tie-breakers are
+// fixed regardless of direction -- blastRadiusOrderBy never interpolates
+// <dir> into them -- so they are checked with a fixed direction even when
+// order is "desc".
+//
+// Comparing only the primary key -- the previous shape of this helper --
+// cannot see a dropped or reordered tie-breaker: two rows tied on the primary
+// key still come back in SOME order, and a primary-only check accepts
+// whichever order that happens to be. blastRowCompare encodes the full
+// clause per sort key, so two rows tied on the primary are only "ordered"
+// here if they also agree with the ORDER BY's own secondary and tertiary
+// keys (issue #3111).
 //
 // THE DATE KEY IS COMPARED AS A TIME, THE TEXT KEYS AS STRINGS. That split is
 // deliberate and load-bearing.
@@ -1269,45 +1282,301 @@ var blastOptionRE = regexp.MustCompile(`<option value="([^"]*)"([^>]*)>`)
 // correct ordering as broken, or miss a real inversion. Comparing time.Time
 // directly removes the format from the comparison entirely.
 //
-// The two TEXT keys keep the string path, and that path carries a known,
-// accepted limitation: it uses Go's byte-wise operators while the rows were
-// ordered by SQLite. Those agree today because the columns use the default
-// BINARY collation, which is also byte-wise. They would diverge under COLLATE
-// NOCASE or for non-ASCII artist names, where SQLite and Go disagree and this
-// helper would call a correct ordering broken. Left as is deliberately: unlike
-// the timestamp defect above, it has no reachable failure with the schema and
-// fixture in force, and expressing SQLite's collation in Go would be a
-// re-implementation that could disagree in its own way.
+// artist_name and field stay byte-wise, matching the BINARY collation the
+// rows came back in. That path carries a known, accepted limitation: it uses
+// Go's byte-wise operators while the rows were ordered by SQLite. Those agree
+// today because the columns use the default BINARY collation, which is also
+// byte-wise. They would diverge under COLLATE NOCASE or for non-ASCII artist
+// names, where SQLite and Go disagree and this helper would call a correct
+// ordering broken. Left as is deliberately: unlike the timestamp defect
+// above, it has no reachable failure with the schema and fixture in force,
+// and expressing SQLite's collation in Go would be a re-implementation that
+// could disagree in its own way.
+//
+// id is the FINAL tie-breaker on every key and is always DESC, matching
+// blastRadiusOrderBy; it is a TEXT primary key, so it too is compared
+// byte-wise.
 func blastRowsAreOrdered(rows []artist.BlastRadiusRow, sort, order string) bool {
-	// Date key: compare the instants, never their rendering.
-	if sort != artist.BlastSortArtistName && sort != artist.BlastSortField {
-		for i := 1; i < len(rows); i++ {
-			prev, cur := rows[i-1].CreatedAt, rows[i].CreatedAt
-			if order == "asc" && prev.After(cur) {
-				return false
-			}
-			if order != "asc" && prev.Before(cur) {
-				return false
-			}
-		}
-		return true
-	}
-
-	// Text keys: byte-wise, matching the BINARY collation the rows came back in.
-	keyOf := func(row artist.BlastRadiusRow) string {
-		if sort == artist.BlastSortArtistName {
-			return row.ArtistName
-		}
-		return row.Field
-	}
 	for i := 1; i < len(rows); i++ {
-		prev, cur := keyOf(rows[i-1]), keyOf(rows[i])
-		if order == "asc" && prev > cur {
-			return false
-		}
-		if order != "asc" && prev < cur {
+		if blastRowCompare(rows[i-1], rows[i], sort, order) > 0 {
 			return false
 		}
 	}
 	return true
+}
+
+// blastRowCompare compares two adjacent rows the way the ORDER BY clause
+// blastRadiusOrderBy builds for (sort, order) would: negative if a belongs
+// before b, positive if a belongs after b, zero if they tie on every key the
+// clause carries. Because id is unique, the zero case should be unreachable
+// in practice, but it is expressed correctly here rather than assumed away.
+func blastRowCompare(a, b artist.BlastRadiusRow, sort, order string) int {
+	switch sort {
+	case artist.BlastSortArtistName:
+		// ORDER BY artist_name <dir>, field ASC, id DESC
+		if c := compareBlastText(a.ArtistName, b.ArtistName, order); c != 0 {
+			return c
+		}
+		if c := compareBlastText(a.Field, b.Field, "asc"); c != 0 {
+			return c
+		}
+		return compareBlastText(a.ID, b.ID, "desc")
+	case artist.BlastSortField:
+		// ORDER BY field <dir>, artist_name ASC, id DESC
+		if c := compareBlastText(a.Field, b.Field, order); c != 0 {
+			return c
+		}
+		if c := compareBlastText(a.ArtistName, b.ArtistName, "asc"); c != 0 {
+			return c
+		}
+		return compareBlastText(a.ID, b.ID, "desc")
+	default:
+		// ORDER BY created_at <dir>, id DESC
+		if c := compareBlastTime(a.CreatedAt, b.CreatedAt, order); c != 0 {
+			return c
+		}
+		return compareBlastText(a.ID, b.ID, "desc")
+	}
+}
+
+// compareBlastText compares two strings byte-wise, applying the requested
+// direction. Negative means a belongs first.
+func compareBlastText(a, b, order string) int {
+	c := strings.Compare(a, b)
+	if order != "asc" {
+		c = -c
+	}
+	return c
+}
+
+// compareBlastTime compares two instants directly (never their rendering --
+// see the package comment above), applying the requested direction.
+func compareBlastTime(a, b time.Time, order string) int {
+	var c int
+	switch {
+	case a.Before(b):
+		c = -1
+	case a.After(b):
+		c = 1
+	}
+	if order != "asc" {
+		c = -c
+	}
+	return c
+}
+
+// blastRowsDump renders the sort-relevant fields of each row, in the order
+// they were returned, for a failure message that names the offending rows
+// rather than only asserting a bool.
+//
+// The fields shown are the ones that ORDER BY <sort> actually compares
+// (blastRowCompare), not just the id: a tie-breaker violation is a defect in
+// the SECONDARY/tertiary key, and a dump that showed only ids would still
+// leave a maintainer re-running the test to see which key broke. Per sort
+// key:
+//
+//   - artist_name: id, artist_name, field (the tie-breaker under test), so a
+//     violation of "field ASC" is visible directly in the dump.
+//   - field: id, field, artist_name (the tie-breaker under test).
+//   - created_at: id, created_at -- the only tie-breaker here is id DESC, and
+//     created_at is what the rows tie on, so both are shown.
+func blastRowsDump(rows []artist.BlastRadiusRow, sort string) string {
+	var b strings.Builder
+	for i, row := range rows {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		switch sort {
+		case artist.BlastSortArtistName:
+			fmt.Fprintf(&b, "{id=%s artist_name=%q field=%q}", row.ID, row.ArtistName, row.Field)
+		case artist.BlastSortField:
+			fmt.Fprintf(&b, "{id=%s field=%q artist_name=%q}", row.ID, row.Field, row.ArtistName)
+		default:
+			fmt.Fprintf(&b, "{id=%s created_at=%s}", row.ID, row.CreatedAt.Format(time.RFC3339))
+		}
+	}
+	return b.String()
+}
+
+// seedAPIBlastTieFixture seeds rows that DELIBERATELY tie on each primary
+// sort key blastRadiusOrderBy carries a tie-breaker for (issue #3111). The
+// mixed fixture above cannot do this: it gives every row a distinct field and
+// spaces timestamps a minute apart, so the primary key is unique on every row
+// and no tie-breaker is ever reached. A tie-breaker assertion written against
+// that fixture would pass vacuously.
+//
+// Six rows, three genuine ties:
+//
+//   - T1/T2 tie on artist_name ("Alpha Tie") but differ on field
+//     (biography/genres), exercising the "field ASC" secondary key under
+//     BlastSortArtistName. Their ids are chosen so that id DESC ALONE would
+//     invert the pair: id(T1) < id(T2), so dropping "field ASC" and falling
+//     back to "artist_name <dir>, id DESC" puts T2 before T1 -- the opposite
+//     of the correct "field ASC" order (biography before genres).
+//   - T1/T3 tie on BOTH artist_name ("Alpha Tie") and field ("biography"),
+//     exercising "id DESC" as the tie-breaker of last resort under BOTH
+//     BlastSortArtistName and BlastSortField (they tie on field there too,
+//     with equal artist_name as well). T1 is inserted first (lower rowid)
+//     and given the SMALLER id, so a query with no id clause at all falls
+//     back to insertion order (T1 first) -- the opposite of the correct
+//     "id DESC" order (T3 first, since id(T3) > id(T1)).
+//   - T2/T4 tie on field ("genres") but differ on artist_name
+//     ("Alpha Tie"/"Zulu Tie"), exercising "artist_name ASC" under
+//     BlastSortField. id(T4) > id(T2), so dropping "artist_name ASC" and
+//     falling back to "field <dir>, id DESC" puts T4 before T2 -- the
+//     opposite of the correct "artist_name ASC" order (Alpha before Zulu).
+//   - T5/T6 tie on created_at TO THE SECOND, exercising "id DESC" under
+//     BlastSortCreatedAt. T5 is inserted first and given the smaller id, so
+//     dropping "id DESC" falls back to insertion order (T5 first) -- the
+//     opposite of the correct order (T6 first, since id(T6) > id(T5)).
+func seedAPIBlastTieFixture(t *testing.T, r *Router) {
+	t.Helper()
+
+	tieBase := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	at := func(m int) time.Time { return tieBase.Add(time.Duration(m) * time.Minute) }
+
+	seed := func(id, artistID, artistName, field string, ts time.Time) {
+		seedAPIBlastChange(t, r, id, artistID, artistName, field, "the operator's value", "", "scan", ts)
+	}
+
+	seed("id-1-bio", "tie-a1", "Alpha Tie", "biography", at(0)) // T1
+	seed("id-2-gen", "tie-a2", "Alpha Tie", "genres", at(1))    // T2
+	seed("id-9-bio", "tie-a3", "Alpha Tie", "biography", at(2)) // T3
+	seed("id-3-gen", "tie-a4", "Zulu Tie", "genres", at(3))     // T4
+	seed("id-5-lo", "tie-a5", "Created Tie A", "formed", at(10))
+	seed("id-6-hi", "tie-a6", "Created Tie B", "died", at(10)) // same minute as T5: a genuine tie to the second
+}
+
+// TestBlastRadiusPane_OrderingTieBreakers proves the tie-breakers
+// blastRadiusOrderBy carries after each primary sort key (issue #3111):
+// "field ASC, id DESC" after artist_name, "artist_name ASC, id DESC" after
+// field, and "id DESC" after created_at.
+//
+// Each subtest first asserts its rows GENUINELY TIE on the primary key --
+// without that, the tie-breaker assertion below it would just be re-checking
+// ordinary primary-key ordering and would prove nothing about the
+// tie-breaker at all.
+//
+// blastRowsAreOrdered now compares the FULL ordering (see blastRowCompare),
+// so once the tie precondition holds, a passing case here is real evidence
+// the tie-breakers fired. Dropping "field ASC" or "id DESC" from the
+// artist_name branch of blastRadiusOrderBy, "artist_name ASC" or "id DESC"
+// from the field branch, or "id DESC" from the created_at branch each turn
+// the corresponding subtest red (see seedAPIBlastTieFixture's doc comment for
+// exactly which pair inverts under which drop, and why).
+//
+// EACH SUBTEST ALSO LOADS THE OPPOSITE PRIMARY DIRECTION, and that second
+// load is not redundant with the first. blastRadiusOrderBy's tie-breakers
+// are hardcoded ("field ASC", not "field <dir>"), and a mutation that
+// REORIENTS one -- interpolating <dir> into it instead of dropping it --
+// only shows up when the query direction actually differs from the
+// tie-breaker's fixed direction. Querying only order=asc for the
+// artist_name/field cases (whose tie-breakers are themselves ASC) and only
+// order=desc for created_at (whose tie-breaker id DESC matches) made that
+// class of mutation a silent no-op: <dir> substitutes in as the same
+// direction the tie-breaker already had, so nothing changes and the suite
+// stays green over a broken invariant. Loading the opposite direction too
+// forces <dir> to actually diverge from the hardcoded direction, so a
+// reoriented tie-breaker is now visible.
+func TestBlastRadiusPane_OrderingTieBreakers(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	seedAPIBlastTieFixture(t, r)
+
+	rowByID := func(t *testing.T, rows []artist.BlastRadiusRow, id string) artist.BlastRadiusRow {
+		t.Helper()
+		for _, row := range rows {
+			if row.ID == id {
+				return row
+			}
+		}
+		t.Fatalf("row %q is not in the loaded set", id)
+		return artist.BlastRadiusRow{}
+	}
+
+	t.Run(artist.BlastSortArtistName, func(t *testing.T) {
+		for _, order := range []string{"asc", "desc"} {
+			t.Run(order, func(t *testing.T) {
+				data := loadBlastPane(t, r, "?sort="+artist.BlastSortArtistName+"&order="+order+"&page_size=500")
+				t1 := rowByID(t, data.Rows, "id-1-bio")
+				t2 := rowByID(t, data.Rows, "id-2-gen")
+				t3 := rowByID(t, data.Rows, "id-9-bio")
+
+				// PRECONDITION: the rows genuinely tie on artist_name.
+				// Without this, "field ASC" and "id DESC" below would just be
+				// plain artist_name ordering wearing a different label.
+				if t1.ArtistName != t2.ArtistName || t2.ArtistName != t3.ArtistName {
+					t.Fatalf("precondition: T1/T2/T3 do not tie on artist_name (%q/%q/%q); the fixture no "+
+						"longer exercises the field-ASC/id-DESC tie-breakers", t1.ArtistName, t2.ArtistName, t3.ArtistName)
+				}
+				// And T1/T3 additionally tie on field, isolating "id DESC" as
+				// the ONLY thing that can order that pair.
+				if t1.Field != t3.Field {
+					t.Fatalf("precondition: T1/T3 do not tie on field (%q/%q); the id-DESC-under-artist_name "+
+						"case is not actually isolated", t1.Field, t3.Field)
+				}
+				// While T1/T2 differ on field, or the field-ASC case is
+				// vacuous too.
+				if t1.Field == t2.Field {
+					t.Fatalf("precondition: T1/T2 tie on field (%q); the field-ASC case needs them to differ", t1.Field)
+				}
+
+				if !blastRowsAreOrdered(data.Rows, artist.BlastSortArtistName, order) {
+					t.Errorf("rows tied on artist_name (order=%s) are not further ordered by field ASC, id DESC: %s",
+						order, blastRowsDump(data.Rows, artist.BlastSortArtistName))
+				}
+			})
+		}
+	})
+
+	t.Run(artist.BlastSortField, func(t *testing.T) {
+		for _, order := range []string{"asc", "desc"} {
+			t.Run(order, func(t *testing.T) {
+				data := loadBlastPane(t, r, "?sort="+artist.BlastSortField+"&order="+order+"&page_size=500")
+				t2 := rowByID(t, data.Rows, "id-2-gen")
+				t4 := rowByID(t, data.Rows, "id-3-gen")
+
+				// PRECONDITION: T2/T4 genuinely tie on field but differ on
+				// artist_name, isolating "artist_name ASC" as the
+				// tie-breaker under test.
+				if t2.Field != t4.Field {
+					t.Fatalf("precondition: T2/T4 do not tie on field (%q/%q); the artist_name-ASC case is vacuous",
+						t2.Field, t4.Field)
+				}
+				if t2.ArtistName == t4.ArtistName {
+					t.Fatalf("precondition: T2/T4 tie on artist_name (%q) too; the case cannot isolate "+
+						"artist_name ASC", t2.ArtistName)
+				}
+
+				if !blastRowsAreOrdered(data.Rows, artist.BlastSortField, order) {
+					t.Errorf("rows tied on field (order=%s) are not further ordered by artist_name ASC, id DESC: %s",
+						order, blastRowsDump(data.Rows, artist.BlastSortField))
+				}
+			})
+		}
+	})
+
+	t.Run(artist.BlastSortCreatedAt, func(t *testing.T) {
+		for _, order := range []string{"asc", "desc"} {
+			t.Run(order, func(t *testing.T) {
+				data := loadBlastPane(t, r, "?sort="+artist.BlastSortCreatedAt+"&order="+order+"&page_size=500")
+				t5 := rowByID(t, data.Rows, "id-5-lo")
+				t6 := rowByID(t, data.Rows, "id-6-hi")
+
+				// PRECONDITION: T5/T6 genuinely tie on created_at TO THE
+				// SECOND (created_at is stored at second resolution), or
+				// "id DESC" below is re-checking ordinary created_at
+				// ordering.
+				if !t5.CreatedAt.Equal(t6.CreatedAt) {
+					t.Fatalf("precondition: T5/T6 do not tie on created_at (%v/%v); the id-DESC case is vacuous",
+						t5.CreatedAt, t6.CreatedAt)
+				}
+
+				if !blastRowsAreOrdered(data.Rows, artist.BlastSortCreatedAt, order) {
+					t.Errorf("rows tied on created_at (order=%s) are not further ordered by id DESC: %s",
+						order, blastRowsDump(data.Rows, artist.BlastSortCreatedAt))
+				}
+			})
+		}
+	})
 }
