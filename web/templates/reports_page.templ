@@ -1179,6 +1179,27 @@ templ blastRadiusFilterScript() {
 			// /base/base/reports/blast-radius under SW_BASE_PATH. The
 			// compliance pane uses the same idiom.
 			//
+			// #3094 verified this is the CORRECT single-prefix idiom for a
+			// call site whose path is a hardcoded root-relative LITERAL: htmx
+			// 2.0.8 reads evt.detail.path back from the configRequest event
+			// AFTER the hook mutates it (confirmed against the vendored
+			// web/static/js/htmx.min.js -- `he()`'s `n=C.path` assignment
+			// happens after the htmx:configRequest dispatch), so the global
+			// hook fires exactly once per htmx.ajax call regardless of
+			// caller. DismissFilterChip (web/components/filter_flyout.templ)
+			// looks like a DIFFERENT idiom -- it strips the base path before
+			// calling htmx.ajax -- but it is not in conflict with this one:
+			// its SOURCE VALUE is window.location.pathname, which under a
+			// sub-path deployment is ALREADY base-path-prefixed (the address
+			// bar reads /bp/artists), so it must strip before the hook
+			// re-adds it. This site's source value is a bare literal that
+			// was never prefixed to begin with, so it must NOT strip
+			// anything. Same postcondition (exactly one prefix reaches the
+			// server), different starting point. See
+			// tests/a11y/base-path-filter-idiom.spec.js for the end-to-end
+			// proof against a real server with SW_BASE_PATH set, and
+			// DismissFilterChip's own comment for the other half.
+			//
 			// THE REJECTION IS HANDLED, because nothing else handles it.
 			// layout.templ covers htmx:responseError and htmx:timeout, and
 			// htmx.ajax RESOLVES on any HTTP response including a 5xx, so those

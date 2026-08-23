@@ -264,7 +264,27 @@ script DismissFilterChip(key string, targetSel string, selectSel string) {
 	url.searchParams.delete('page');
 	history.pushState(null, '', url.toString());
 	// Strip the base path from url.pathname before passing to htmx.ajax
-	// to avoid a double-prefix from the htmx:configRequest hook.
+	// to avoid a double-prefix from the htmx:configRequest hook (it
+	// auto-prepends basePath for "/"-rooted paths -- layout.templ).
+	//
+	// THIS IS THE SAME SINGLE-PREFIX CONTRACT blastRadiusReload's comment
+	// (web/templates/reports_page.templ) describes, applied to a DIFFERENT
+	// starting value, not a competing idiom (#3094 verified this on a live
+	// server with SW_BASE_PATH set; see
+	// tests/a11y/base-path-filter-idiom.spec.js). This script's source of
+	// truth is window.location.pathname, which under a sub-path deployment
+	// IS the base-path-prefixed address the browser is actually showing
+	// (e.g. /bp/artists) -- unlike blastRadiusReload, which builds its path
+	// from a hardcoded root-relative literal that was never prefixed. Since
+	// the global htmx:configRequest hook re-adds the prefix to every
+	// root-relative htmx.ajax call regardless of caller (confirmed against
+	// the vendored htmx: it reads evt.detail.path back from the mutated
+	// event AFTER the hook runs), a path already carrying the prefix would
+	// come out double-prefixed without this strip. Removing this strip is
+	// NOT a simplification -- it reopens the double-prefix 404 this comment
+	// exists to prevent. Do not re-derive "the hook already handles it" and
+	// delete this block; it was tried and it breaks (see the RED-proof
+	// commit history / spec above).
 	var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
 	var bp = bpMeta ? bpMeta.content : '';
 	var path = url.pathname;
@@ -322,7 +342,10 @@ script DismissFilterValueChip(key string, prefixedValue string, targetSel string
 	url.searchParams.delete('page');
 	history.pushState(null, '', url.toString());
 	// Strip the base path before htmx.ajax to avoid a double-prefix from the
-	// htmx:configRequest hook (it auto-prepends basePath for "/"-rooted paths).
+	// htmx:configRequest hook (it auto-prepends basePath for "/"-rooted
+	// paths). Same reasoning as DismissFilterChip's strip above (#3094):
+	// this source path is window.location.pathname, already prefixed under
+	// a sub-path deployment, unlike blastRadiusReload's hardcoded literal.
 	var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
 	var bp = bpMeta ? bpMeta.content : '';
 	var path = url.pathname;
@@ -470,6 +493,24 @@ type FilterChipSpec struct {
 // clearAllHref is an href used by the "Clear all" anchor when set; an empty
 // string omits the link. targetSel routes the HTMX reload triggered by each
 // chip's dismiss button.
+//
+// CALLER INVENTORY (#3094, verified by grep against this branch, not by
+// memory -- an issue naming "5 callers: artists, dashboard, activity, logs,
+// compliance" predates a design change and is stale): as of this comment
+// there are exactly TWO real call sites, both already covered by the
+// base-path regression spec below.
+//   - compliance.templ  (complianceActiveChips -> DismissFilterChip, whole-key)
+//   - reports_page.templ (blastRadiusChips -> DismissFilterChip, whole-key)
+// artists.templ, dashboard.templ/index.templ, activity.templ, and
+// logs.templ each removed their chip row in earlier UX passes (M55 #1335,
+// #1334) in favor of the flyout's own trigger badge, or never adopted this
+// component (logs renders its own client-side chip strip against the SSE
+// viewer, not this one). None of the four calls DismissFilterChip or
+// DismissFilterValueChip today, so there is nothing on those four surfaces
+// for a base-path regression here to reach. FilterChip2's Value-set branch
+// (DismissFilterValueChip) has NO caller at all yet -- see #3108, which is
+// blocked on one existing rather than covered here.
+// See tests/a11y/base-path-filter-idiom.spec.js for the end-to-end proof.
 templ ActiveFilters(targetSel, clearAllHref, clearAllLabel, headerLabel string, chips []FilterChipSpec) {
 	if len(chips) > 0 {
 		<div class="flex flex-wrap items-center gap-1.5 mt-2 px-1" aria-label={ headerLabel }>
