@@ -1365,6 +1365,39 @@ func compareBlastTime(a, b time.Time, order string) int {
 	return c
 }
 
+// blastRowsDump renders the sort-relevant fields of each row, in the order
+// they were returned, for a failure message that names the offending rows
+// rather than only asserting a bool.
+//
+// The fields shown are the ones that ORDER BY <sort> actually compares
+// (blastRowCompare), not just the id: a tie-breaker violation is a defect in
+// the SECONDARY/tertiary key, and a dump that showed only ids would still
+// leave a maintainer re-running the test to see which key broke. Per sort
+// key:
+//
+//   - artist_name: id, artist_name, field (the tie-breaker under test), so a
+//     violation of "field ASC" is visible directly in the dump.
+//   - field: id, field, artist_name (the tie-breaker under test).
+//   - created_at: id, created_at -- the only tie-breaker here is id DESC, and
+//     created_at is what the rows tie on, so both are shown.
+func blastRowsDump(rows []artist.BlastRadiusRow, sort string) string {
+	var b strings.Builder
+	for i, row := range rows {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		switch sort {
+		case artist.BlastSortArtistName:
+			fmt.Fprintf(&b, "{id=%s artist_name=%q field=%q}", row.ID, row.ArtistName, row.Field)
+		case artist.BlastSortField:
+			fmt.Fprintf(&b, "{id=%s field=%q artist_name=%q}", row.ID, row.Field, row.ArtistName)
+		default:
+			fmt.Fprintf(&b, "{id=%s created_at=%s}", row.ID, row.CreatedAt.Format(time.RFC3339))
+		}
+	}
+	return b.String()
+}
+
 // seedAPIBlastTieFixture seeds rows that DELIBERATELY tie on each primary
 // sort key blastRadiusOrderBy carries a tie-breaker for (issue #3111). The
 // mixed fixture above cannot do this: it gives every row a distinct field and
@@ -1489,7 +1522,8 @@ func TestBlastRadiusPane_OrderingTieBreakers(t *testing.T) {
 				}
 
 				if !blastRowsAreOrdered(data.Rows, artist.BlastSortArtistName, order) {
-					t.Errorf("rows tied on artist_name (order=%s) are not further ordered by field ASC, id DESC", order)
+					t.Errorf("rows tied on artist_name (order=%s) are not further ordered by field ASC, id DESC: %s",
+						order, blastRowsDump(data.Rows, artist.BlastSortArtistName))
 				}
 			})
 		}
@@ -1515,7 +1549,8 @@ func TestBlastRadiusPane_OrderingTieBreakers(t *testing.T) {
 				}
 
 				if !blastRowsAreOrdered(data.Rows, artist.BlastSortField, order) {
-					t.Errorf("rows tied on field (order=%s) are not further ordered by artist_name ASC, id DESC", order)
+					t.Errorf("rows tied on field (order=%s) are not further ordered by artist_name ASC, id DESC: %s",
+						order, blastRowsDump(data.Rows, artist.BlastSortField))
 				}
 			})
 		}
@@ -1538,7 +1573,8 @@ func TestBlastRadiusPane_OrderingTieBreakers(t *testing.T) {
 				}
 
 				if !blastRowsAreOrdered(data.Rows, artist.BlastSortCreatedAt, order) {
-					t.Errorf("rows tied on created_at (order=%s) are not further ordered by id DESC", order)
+					t.Errorf("rows tied on created_at (order=%s) are not further ordered by id DESC: %s",
+						order, blastRowsDump(data.Rows, artist.BlastSortCreatedAt))
 				}
 			})
 		}
