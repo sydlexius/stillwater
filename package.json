@@ -7,7 +7,7 @@
     "lint:css": "stylelint 'web/static/css/*.css'"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.12.1",
+    "@axe-core/playwright": "4.13.0",
     "axe-core": "4.13.0",
     "jsdom": "^30.0.1",
     "playwright": "1.62.1",
