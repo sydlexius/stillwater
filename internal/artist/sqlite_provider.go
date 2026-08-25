@@ -111,7 +111,7 @@ func (r *sqliteProviderIDRepo) UpsertAll(ctx context.Context, artistID string, i
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	// Scope the delete-and-replace to the struct-modeled providers only
 	// (modeledProviders). Rows for orphan providers such as allmusic or
@@ -182,7 +182,7 @@ func (r *sqliteProviderIDRepo) UpdateProviderFetchedAt(ctx context.Context, arti
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = tx.ExecContext(ctx,

@@ -565,7 +565,7 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 	if err != nil {
 		return fmt.Errorf("begin collapse tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	var totalRepointed, totalRemoved int64
 	for _, g := range allGroups {
@@ -961,7 +961,7 @@ func rebuildArtistLibrariesIfStaleCheck(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("begin rebuild tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	if _, err := tx.ExecContext(ctx, `
 		CREATE TABLE artist_libraries_new (
