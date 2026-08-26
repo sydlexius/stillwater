@@ -327,6 +327,6 @@ func TestLiveJellyfin_IndexedUploadAlsoAppends_KnownGap(t *testing.T) {
 		t.Logf("BackdropCount after re-upload to an occupied index = %d (expected 1 only once Jellyfin honors in-place replace; currently known to append -- see the KNOWN GAP comment above)", after.BackdropCount)
 	}
 	if after.BackdropCount != 2 {
-		t.Errorf("KNOWN GAP no longer reproduces (BackdropCount = %d, want the documented-append value of 2) -- if Jellyfin now replaces in place, update the #3125 fix to stop treating Jellyfin as unfixed and close the follow-up issue", after.BackdropCount)
+		t.Errorf("KNOWN GAP no longer reproduces (BackdropCount = %d, want the documented-append value of 2) -- if Jellyfin now replaces in place, update the #3125 fix to stop treating Jellyfin as unfixed and close #3135", after.BackdropCount)
 	}
 }

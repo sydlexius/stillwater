@@ -1107,8 +1107,8 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 // is to delete every existing backdrop and re-upload the full desired set in
 // order -- which is uploadFanartSet's job (the full indexed sync), not this
 // single-image sync path, and reaches well past the "smallest fix" scope of
-// this branch. So: this fix stops the duplication that was previously
-// guaranteed on EVERY fanart sync to EVERY platform (both Emby and Jellyfin
+// this branch. Tracked as #3135. So: this fix stops the duplication that
+// was previously guaranteed on EVERY fanart sync to EVERY platform (both Emby and Jellyfin
 // were appending before this change); it does not yet make a Jellyfin
 // single-image replace correct. It also does not make Jellyfin any WORSE --
 // before this change Jellyfin appended via the non-indexed call, and it
