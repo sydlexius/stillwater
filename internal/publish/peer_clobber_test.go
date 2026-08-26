@@ -227,6 +227,43 @@ func TestSyncImage_PeerFailsAfterDeleting_StillRestored(t *testing.T) {
 	}
 }
 
+// TestSyncImage_FanartPeerFailsAfterDeleting_StillRestored is the fanart-branch
+// twin of TestSyncImage_PeerFailsAfterDeleting_StillRestored (#3125 review,
+// round 1, item 4). The #3125 fix split the per-connection upload into a
+// fanart path (indexed) and a non-fanart path (plain); the #2698/#2712
+// invariant that a connection is recorded in uploadedTo BEFORE the upload
+// result is known -- so a failed upload still triggers the post-push repair
+// -- was carried into the fanart branch by construction, but nothing in the
+// suite proved it: a mutation from `return true` to `return false` on the
+// fanart error path (uploadOneImageForSync's `return true,
+// truncateWarning(...)` inside the UploadImageAtIndex error branch) leaves
+// the rest of ./internal/publish/ fully green, because every other fanart
+// test either does not exercise a failing upload or does not check
+// restoration. This test WIRES THE MISBEHAVIOR the same way the banner test
+// does: the fake peer deletes the local file and THEN fails the request
+// (clobberHarness's "delete-then-fail" mode, driven through
+// UploadImageAtIndex since fanart now goes through the indexed uploader),
+// and demands the operator's exact bytes come back.
+func TestSyncImage_FanartPeerFailsAfterDeleting_StillRestored(t *testing.T) {
+	calls := 0
+	p, a, dir := clobberHarness(t, "fanart.jpg", "delete-then-fail", &calls)
+
+	want := []byte("OPERATOR-FANART-BYTES")
+	writeFile(t, filepath.Join(dir, "fanart.jpg"), want)
+
+	warnings := p.SyncImageToPlatforms(context.Background(), a, "fanart")
+
+	if calls == 0 {
+		t.Fatal("precondition failed: the uploader never ran")
+	}
+	if len(warnings) == 0 {
+		t.Fatal("precondition failed: the upload was expected to report a failure")
+	}
+	if got := mustRead(t, filepath.Join(dir, "fanart.jpg")); string(got) != string(want) {
+		t.Errorf("restored bytes = %q, want %q (a failed fanart upload must not skip the repair)", got, want)
+	}
+}
+
 // TestSyncImage_PeerOverwritesLocalFile_Restored covers the #2533 crop-clobber
 // shape: the peer REWRITES the file with its own bytes rather than deleting it.
 // An existence check would call this clean, which is why the guard compares

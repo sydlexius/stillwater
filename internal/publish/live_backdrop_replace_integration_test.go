@@ -46,6 +46,55 @@ func hashOf(data []byte) string {
 	return fmt.Sprintf("%x", sum)
 }
 
+// backdropClearer is the minimal surface clearAllBackdrops needs: read the
+// current count and delete a specific index. Both emby.Client and
+// jellyfin.Client satisfy this via connection.IndexedImageDeleter +
+// connection.ArtistStateGetter.
+type backdropClearer interface {
+	GetArtistDetail(ctx context.Context, platformArtistID string) (*connection.ArtistPlatformState, error)
+	DeleteImageAtIndex(ctx context.Context, platformArtistID string, imageType string, index int) error
+}
+
+// clearAllBackdrops deletes every existing backdrop on the given item,
+// HIGH-INDEX-FIRST, and asserts the item ends at zero. Round-1 fix (#3125
+// review): the live tests previously seeded by POSTing straight to indices
+// 0/1 and asserted the resulting count as a precondition, but that only
+// holds when the item started with ZERO backdrops -- a real UAT server is
+// not guaranteed to be in that state (a prior run, or another test, can
+// leave backdrops behind). POSTing to an occupied index REPLACES on Emby
+// but APPENDS on Jellyfin (the #3125 finding this whole file exists to
+// measure), so a dirty item makes the "seed two, expect count==2"
+// precondition silently wrong on Jellyfin and merely lucky on Emby.
+//
+// High-index-first matters because DeleteImageAtIndexRaw's own doc comment
+// records that the peer RE-INDEXES remaining backdrops after each delete:
+// deleting index 0 first would shift what was index 1 down to index 0,
+// so a naive ascending loop skips every other slot on a peer with an odd
+// habit of re-indexing mid-loop. Descending avoids that entirely -- deleting
+// the highest index first never disturbs any index this loop has not
+// visited yet.
+func clearAllBackdrops(t *testing.T, ctx context.Context, itemID string, client backdropClearer) {
+	t.Helper()
+	state, err := client.GetArtistDetail(ctx, itemID)
+	if err != nil {
+		t.Fatalf("clearAllBackdrops: reading current state: %v", err)
+	}
+	for i := state.BackdropCount - 1; i >= 0; i-- {
+		if err := client.DeleteImageAtIndex(ctx, itemID, "fanart", i); err != nil {
+			t.Fatalf("clearAllBackdrops: deleting backdrop %d: %v", i, err)
+		}
+	}
+	// Re-verify rather than trust the loop: the count read above could
+	// itself be stale, or a delete could silently no-op on some peer.
+	after, err := client.GetArtistDetail(ctx, itemID)
+	if err != nil {
+		t.Fatalf("clearAllBackdrops: reading state after clear: %v", err)
+	}
+	if after.BackdropCount != 0 {
+		t.Fatalf("clearAllBackdrops: BackdropCount = %d after clearing, want 0 (item was not fully cleared)", after.BackdropCount)
+	}
+}
+
 // liveEmbyEnv reads the UAT Emby coordinates the test needs and skips when
 // any are unset, per the repo's integration-test convention (see
 // internal/provider/integration_test.go). SW_LIVE_EMBY_ITEM_ID is deliberately
@@ -102,6 +151,20 @@ func TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend(t *testing.T) {
 
 	logger := silentLogger()
 	client := emby.New(env.url, env.apiKey, env.userID, logger)
+
+	// FIRST ACT: clear whatever the item already holds. The harness's UAT
+	// server is not guaranteed to start this test at zero backdrops (a
+	// prior run, another test, or manual poking can leave some behind), and
+	// this test's precondition assertion below only means what it claims
+	// when the item started clean. Registered as a t.Cleanup too, so the
+	// test leaves the item exactly as it found it (empty) regardless of
+	// pass/fail.
+	clearAllBackdrops(t, ctx, env.itemID, client)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+		defer cleanupCancel()
+		clearAllBackdrops(t, cleanupCtx, env.itemID, client)
+	})
 
 	// Seed two distinct backdrops directly via the indexed uploader (the
 	// same call uploadFanartSet already uses, proven correct by the issue's
@@ -237,6 +300,18 @@ func TestLiveJellyfin_NonIndexedUploadAppends(t *testing.T) {
 
 	client := jellyfin.New(env.url, env.apiKey, env.userID, silentLogger())
 
+	// FIRST ACT: clear whatever the item already holds; see the identical
+	// comment on the Emby test above for why this is required rather than
+	// assuming the item starts at zero. Doubly necessary here: Jellyfin
+	// APPENDS on this test's own upload calls, so a second run against an
+	// uncleared item compounds instead of merely being lucky.
+	clearAllBackdrops(t, ctx, env.itemID, client)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+		defer cleanupCancel()
+		clearAllBackdrops(t, cleanupCtx, env.itemID, client)
+	})
+
 	seed := solidJPEG(0xD4)
 	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 0, seed, "image/jpeg"); err != nil {
 		t.Fatalf("seeding backdrop 0: %v", err)
@@ -299,6 +374,18 @@ func TestLiveJellyfin_IndexedUploadAlsoAppends_KnownGap(t *testing.T) {
 
 	client := jellyfin.New(env.url, env.apiKey, env.userID, silentLogger())
 
+	// FIRST ACT: clear whatever the item already holds; see the identical
+	// comment on TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend above.
+	// This test in particular used to fail permanently after its own first
+	// run: it never removed what it seeded, and this platform appends, so
+	// every subsequent run started from an already-dirty count.
+	clearAllBackdrops(t, ctx, env.itemID, client)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+		defer cleanupCancel()
+		clearAllBackdrops(t, cleanupCtx, env.itemID, client)
+	})
+
 	seed := solidJPEG(0xA1)
 	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 0, seed, "image/jpeg"); err != nil {
 		t.Fatalf("seeding backdrop 0: %v", err)
@@ -322,9 +409,6 @@ func TestLiveJellyfin_IndexedUploadAlsoAppends_KnownGap(t *testing.T) {
 	after, err := client.GetArtistDetail(ctx, env.itemID)
 	if err != nil {
 		t.Fatalf("reading state after indexed re-upload: %v", err)
-	}
-	if after.BackdropCount != 1 {
-		t.Logf("BackdropCount after re-upload to an occupied index = %d (expected 1 only once Jellyfin honors in-place replace; currently known to append -- see the KNOWN GAP comment above)", after.BackdropCount)
 	}
 	if after.BackdropCount != 2 {
 		t.Errorf("KNOWN GAP no longer reproduces (BackdropCount = %d, want the documented-append value of 2) -- if Jellyfin now replaces in place, update the #3125 fix to stop treating Jellyfin as unfixed and close #3135", after.BackdropCount)

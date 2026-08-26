@@ -98,10 +98,14 @@ var validContentTypes = map[string]bool{
 type imageSyncBehavior int
 
 const (
-	// syncNone skips platform sync entirely (upload's fanart-append branch:
-	// platforms only support a single backdrop, and the primary was already
-	// synced when first saved; re-syncing here would re-push the primary
-	// rather than the new numbered variant).
+	// syncNone skips platform sync entirely (upload's fanart-append branch).
+	// NOT because platforms only support a single backdrop -- they don't:
+	// Emby and Jellyfin both keep a numbered backdrop list and
+	// uploadFanartSet (#3125) pushes every slot by index without
+	// duplicating. The real reason is narrower: SyncImageToPlatforms only
+	// ever discovers ONE local file (the primary), so calling it here would
+	// re-push the primary the peer already has, not the new numbered
+	// variant this append just saved.
 	syncNone imageSyncBehavior = iota
 	// syncSingle syncs the single saved imageType via SyncImageToPlatforms.
 	syncSingle
