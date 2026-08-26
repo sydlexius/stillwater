@@ -79,6 +79,24 @@ func (c *clobberUploader) UploadImageAtIndex(_ context.Context, _, imageType str
 	return c.clobber()
 }
 
+// GetArtistDetail and GetArtistBackdrop make clobberUploader satisfy
+// fanartReplaceClient (#3125 F3: uploadOneImageForSync's fanart branch now
+// reads platform state via resolveFanartReplaceTarget before writing). Every
+// test in this file predates F3 and is about the clobber-and-repair
+// mechanism, not about WHICH index gets written, so this reports an EMPTY
+// platform unconditionally -- resolveFanartReplaceTarget's degenerate "zero
+// backdrops" case, which always resolves to index 0 with no platform read
+// beyond this GetArtistDetail call. That preserves every existing
+// assertion in this file (idx0, idx1, ... exactly as recorded before) while
+// still exercising the real F3 code path rather than bypassing it.
+func (c *clobberUploader) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	return &connection.ArtistPlatformState{BackdropCount: 0}, nil
+}
+
+func (c *clobberUploader) GetArtistBackdrop(_ context.Context, _ string, _ int) ([]byte, string, error) {
+	return nil, "", errors.New("clobberUploader reports zero backdrops; GetArtistBackdrop should never be called")
+}
+
 func (c *clobberUploader) clobber() error {
 	switch c.mode {
 	case "overwrite":
@@ -145,15 +163,20 @@ func clobberHarness(t *testing.T, victimName, mode string, calls *int) (*Publish
 
 	origSingle := newImageUploader
 	origIndexed := newIndexedImageUploader
+	origFanartReplace := newFanartReplaceClient
 	newImageUploader = func(_ *connection.Connection, _ *slog.Logger) connection.ImageUploader {
 		return up
 	}
 	newIndexedImageUploader = func(_ *connection.Connection, _ *slog.Logger) connection.IndexedImageUploader {
 		return up
 	}
+	newFanartReplaceClient = func(_ *connection.Connection, _ *slog.Logger) fanartReplaceClient {
+		return up
+	}
 	t.Cleanup(func() {
 		newImageUploader = origSingle
 		newIndexedImageUploader = origIndexed
+		newFanartReplaceClient = origFanartReplace
 	})
 
 	p := New(Deps{
@@ -248,7 +271,12 @@ func TestSyncImage_FanartPeerFailsAfterDeleting_StillRestored(t *testing.T) {
 	calls := 0
 	p, a, dir := clobberHarness(t, "fanart.jpg", "delete-then-fail", &calls)
 
-	want := []byte("OPERATOR-FANART-BYTES")
+	// A DECODABLE image, not an arbitrary byte string: #3125 F3 added a
+	// perceptual-hash step (resolveFanartReplaceTarget) to the fanart branch,
+	// which must decode the bytes before it can even attempt a platform
+	// write. bandJPEG (phash_platform_test.go, same package) is the
+	// established fixture for exactly this.
+	want := bandJPEG(t, 1)
 	writeFile(t, filepath.Join(dir, "fanart.jpg"), want)
 
 	warnings := p.SyncImageToPlatforms(context.Background(), a, "fanart")

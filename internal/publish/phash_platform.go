@@ -114,7 +114,15 @@ func (p *Publisher) lockPhashTarget(connectionID, platformArtistID string) func(
 // could not read. A fetch error, by contrast, aborts -- a blind spot in the
 // backdrop set could hide the very copy we are trying to remove, and continuing
 // past it would let a delete "succeed" while the pollution survives unseen.
-func matchingBackdropIndices(ctx context.Context, client phashPlatformClient, platformArtistID string, want uint64, tolerance float64) ([]int, error) {
+//
+// Takes connection.BackdropReader rather than the wider phashPlatformClient:
+// the body below only ever calls GetArtistDetail/GetArtistBackdrop, and the
+// narrower parameter lets a second caller (resolveFanartReplaceTarget, #3125
+// F3) reuse this comparator through a client that does NOT implement
+// IndexedImageDeleter, without a needless capability requirement. Every
+// existing phashPlatformClient argument still satisfies this: the interface
+// embeds BackdropReader.
+func matchingBackdropIndices(ctx context.Context, client connection.BackdropReader, platformArtistID string, want uint64, tolerance float64) ([]int, error) {
 	if err := validPHashTolerance(tolerance); err != nil {
 		return nil, err
 	}
@@ -233,6 +241,152 @@ func restoreBackdrop(ctx context.Context, client phashPlatformClient, platformAr
 		return false, fmt.Errorf("platform accepted the upload but no matching backdrop is present; the platform ignored the write")
 	}
 	return true, nil
+}
+
+// fanartReplaceClient is what uploadOneImageForSync's fanart branch needs to
+// perform a NON-CLOBBERING replace (#3125 F3): read the current backdrop set
+// to identify a target, write at a specific index, and fall back to an
+// append when no target can be identified.
+type fanartReplaceClient interface {
+	connection.BackdropReader       // GetArtistDetail, GetArtistBackdrop
+	connection.IndexedImageUploader // UploadImageAtIndex (in-place replace)
+	connection.ImageUploader        // UploadImage (append fallback)
+}
+
+// resolveFanartTarget is the ALLOW-LIST decision resolveFanartReplaceTarget's
+// name comes from: never "no reason to refuse", always "a positive reason to
+// believe this index is safe to overwrite".
+type resolveFanartTarget int
+
+const (
+	// fanartTargetAppend means no index could be positively identified as
+	// safe to overwrite; the caller must use the non-indexed, ADD-ONLY
+	// UploadImage call. One duplicate is the accepted cost of not being able
+	// to prove a safe index -- destroying a bystander backdrop is not.
+	fanartTargetAppend resolveFanartTarget = iota
+	// fanartTargetNoop means a backdrop already matching the new bytes is
+	// present; nothing should be uploaded at all.
+	fanartTargetNoop
+	// fanartTargetIndex means Index is a positively-identified safe
+	// overwrite target: either the platform is empty (index 0 creates
+	// the first slot, cannot clobber anything) or a backdrop matching the
+	// artist's PREVIOUS primary phash was found at Index.
+	fanartTargetIndex
+)
+
+// fanartReplaceDecision is resolveFanartReplaceTarget's result.
+type fanartReplaceDecision struct {
+	Kind  resolveFanartTarget
+	Index int    // valid only when Kind == fanartTargetIndex
+	Why   string // human-readable reason, used in the Warn log on the append fallback
+}
+
+// resolveFanartReplaceTarget decides how to write a fanart REPLACE onto a
+// platform without clobbering a bystander backdrop (#3125 F3).
+//
+// THE DEFECT THIS GUARDS. uploadOneImageForSync's fanart branch always wrote
+// platform index 0, on the assumption that the local primary fanart file is
+// always platform slot 0. That assumption holds only IMMEDIATELY after a
+// fresh full sync. Three paths can shift a backdrop's platform index without
+// Stillwater's involvement: the phash back-out prune (deletePollutedBackdrops),
+// the remote-dedup prune (PrunePlatformBackdropDuplicates), and an operator
+// deleting a backdrop directly in the Emby/Jellyfin UI. Any of those can
+// delete platform index 0, and the peer re-indexes the survivors down by one
+// (Emby measured live, #3125 review) -- so what WAS a bystander at index 1 is
+// now sitting at index 0. A subsequent unconditional "write index 0" then
+// overwrites that bystander with the new primary, DESTROYING a distinct
+// image rather than merely duplicating one.
+//
+// THE RULE: a destructive index write is authorized ONLY by a POSITIVE
+// identification that the target index currently holds either nothing or
+// Stillwater's own previous primary -- never by the absence of a reason to
+// doubt it. Three outcomes, checked in this order:
+//
+//  1. NOOP: the platform already holds a backdrop matching the NEW bytes
+//     (perceptually, at tolerance). Nothing to do -- this also neutralizes
+//     the retry path in the sibling Emby-500 defect (#3126), the same
+//     idempotency restoreBackdrop already relies on.
+//  2. INDEX: either the platform has ZERO backdrops (index 0 creates the
+//     first slot; there is nothing there to clobber), or a backdrop
+//     matching previousPHash (the artist's LAST-SYNCED primary hash, read
+//     from Stillwater's own artist_images provenance -- the #3125 issue's
+//     "available and unused identity information") is found. previousPHash
+//     of 0 means "no prior hash on record" (a first sync, or a never-hashed
+//     legacy row) and is treated the same as "cannot identify": zero is
+//     also PerceptualHash's own zero value, so trusting it would risk a
+//     false-positive match against a genuinely unhashed slot.
+//  3. APPEND: neither of the above. The caller must fall back to the
+//     non-indexed, add-only UploadImage -- one accepted duplicate rather
+//     than a destroyed bystander. Why explains which condition failed, for
+//     the Warn log the caller writes.
+//
+// Costs one extra platform READ (GetArtistDetail + up to BackdropCount
+// GetArtistBackdrop calls) per fanart sync before any write. See the report
+// for why this is not expected to matter: fanart replace is an
+// operator-paced, low-frequency action (a UI crop/replace, or one rule fix),
+// never a hot per-request path, and it is already paying for a peer POST
+// round trip of comparable cost on the very same call.
+func resolveFanartReplaceTarget(ctx context.Context, client fanartReplaceClient, platformArtistID string, newData []byte, previousPHashHex string, tolerance float64) (fanartReplaceDecision, error) {
+	if err := validPHashTolerance(tolerance); err != nil {
+		return fanartReplaceDecision{}, err
+	}
+	want, err := image.PerceptualHash(bytes.NewReader(newData))
+	if err != nil {
+		return fanartReplaceDecision{}, fmt.Errorf("hashing new fanart bytes: %w", err)
+	}
+
+	detail, err := client.GetArtistDetail(ctx, platformArtistID)
+	if err != nil {
+		return fanartReplaceDecision{}, fmt.Errorf("fetching artist detail: %w", err)
+	}
+
+	// Outcome 2a: nothing on the platform yet. Index 0 creates the first
+	// slot; there is no bystander at any index to clobber.
+	if detail.BackdropCount == 0 {
+		return fanartReplaceDecision{Kind: fanartTargetIndex, Index: 0}, nil
+	}
+
+	// Outcome 1: already present -- checked before consulting previousPHash,
+	// so a retry (the platform already reflects the new primary from a prior
+	// call whose response was lost) is idempotent regardless of whether
+	// previousPHash is usable.
+	present, err := matchingBackdropIndices(ctx, client, platformArtistID, want, tolerance)
+	if err != nil {
+		return fanartReplaceDecision{}, err
+	}
+	if len(present) > 0 {
+		return fanartReplaceDecision{Kind: fanartTargetNoop}, nil
+	}
+
+	// Outcome 2b: identify the slot holding the PREVIOUS primary. A zero
+	// previousPHashHex (or one that fails to parse) is "cannot identify",
+	// not "matches everything" -- see the zero-hash trap in the doc comment.
+	if previousPHashHex != "" {
+		prevWant, parseErr := image.ParseHashHex(previousPHashHex)
+		if parseErr == nil && prevWant != 0 {
+			prevMatches, matchErr := matchingBackdropIndices(ctx, client, platformArtistID, prevWant, tolerance)
+			if matchErr != nil {
+				return fanartReplaceDecision{}, matchErr
+			}
+			if len(prevMatches) > 0 {
+				// matchingBackdropIndices sorts descending; the caller
+				// overwrites exactly one slot, so if more than one backdrop
+				// happens to match the previous primary's hash (a byte- or
+				// near-identical duplicate already present), the lowest
+				// matching index is preferred -- it is the one most likely
+				// to BE the original primary slot, since duplicates of a
+				// primary accumulate at higher indices (append-only
+				// platform semantics), never lower ones.
+				return fanartReplaceDecision{Kind: fanartTargetIndex, Index: prevMatches[len(prevMatches)-1]}, nil
+			}
+		}
+	}
+
+	// Outcome 3: cannot positively identify a safe index. Append.
+	return fanartReplaceDecision{
+		Kind: fanartTargetAppend,
+		Why:  "no stored previous-primary hash matched any current platform backdrop, and the platform already holds at least one backdrop, so no index could be positively identified as safe to overwrite",
+	}, nil
 }
 
 // PlatformBackdropOpFailure records one connection whose platform delete or

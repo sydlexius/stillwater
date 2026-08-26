@@ -15,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/image"
 )
 
 // liveBackdropTestTimeout bounds each live-server call so a stalled UAT
@@ -170,8 +171,13 @@ func TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend(t *testing.T) {
 	// same call uploadFanartSet already uses, proven correct by the issue's
 	// "SyncAllFanartToPlatforms produces zero duplicates" measurement) so
 	// the test does not depend on the very code path it is about to test
-	// for its setup.
-	seedA, seedB := solidJPEG(0xA1), solidJPEG(0xB2)
+	// for its setup. DECODABLE images (bandJPEG, phash_platform_test.go,
+	// same package): #3125 F3 added a perceptual-hash resolution step to the
+	// fanart sync, which now reads back and decodes every EXISTING backdrop
+	// too (via matchingBackdropIndices), not just the new one being
+	// uploaded. solidJPEG's minimal SOI+EOI marker is fine for upload
+	// acceptance but is not decodable.
+	seedA, seedB := bandJPEG(t, 0xA1), bandJPEG(t, 0xB2)
 	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 0, seedA, "image/jpeg"); err != nil {
 		t.Fatalf("seeding backdrop 0: %v", err)
 	}
@@ -203,16 +209,29 @@ func TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend(t *testing.T) {
 	// the upload/fetch/crop handlers do for a fanart "replace". This is the
 	// function under test for #3125.
 	dir := t.TempDir()
-	replacement := solidJPEG(0xC3)
+	replacement := bandJPEG(t, 0xC3)
 	if err := os.WriteFile(dir+"/fanart.jpg", replacement, 0o600); err != nil {
 		t.Fatalf("writing local replacement fanart: %v", err)
 	}
 
 	p := New(Deps{
 		Logger: logger,
-		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
-			{ArtistID: "live-a1", ConnectionID: "c-emby", PlatformArtistID: env.itemID},
-		}},
+		ArtistService: &fakePlatformLister{
+			ids: []artist.PlatformID{
+				{ArtistID: "live-a1", ConnectionID: "c-emby", PlatformArtistID: env.itemID},
+			},
+			// #3125 F3: resolveFanartReplaceTarget now needs the PREVIOUS
+			// primary's stored phash to identify which platform index to
+			// overwrite; without it (an artist whose provenance was never
+			// recorded) it correctly refuses to guess and falls back to
+			// append. This test is specifically about the REPLACE-IN-PLACE
+			// behavior, so it must supply seedA's hash the same way
+			// finalizeImageSave/recordImageProvenance would have stamped it
+			// when seedA was originally saved as the primary.
+			images: []artist.ArtistImage{
+				{ImageType: "fanart", SlotIndex: 0, Exists: true, PHash: image.HashHex(phashOf(t, seedA))},
+			},
+		},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
 			"c-emby": {ID: "c-emby", Name: "live-emby-uat", Type: connection.TypeEmby, URL: env.url, APIKey: env.apiKey, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: env.userID, FeatureImageWrite: true}},
 		}},
@@ -412,5 +431,156 @@ func TestLiveJellyfin_IndexedUploadAlsoAppends_KnownGap(t *testing.T) {
 	}
 	if after.BackdropCount != 2 {
 		t.Errorf("KNOWN GAP no longer reproduces (BackdropCount = %d, want the documented-append value of 2) -- if Jellyfin now replaces in place, update the #3125 fix to stop treating Jellyfin as unfixed and close #3135", after.BackdropCount)
+	}
+}
+
+// TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete reproduces the
+// EXACT sequence the #3125 review round 1 F3 finding describes, against a
+// real Emby 4.9.5.0: seed three distinct backdrops, delete index 0 (as
+// deletePollutedBackdrops / PrunePlatformBackdropDuplicates / an operator
+// deleting in the Emby UI all can), let the peer re-index the survivors,
+// then run a REAL fanart sync (SyncImageToPlatforms, the exact code path
+// #3125 patches) and assert the SECOND image's backdrop survives untouched
+// -- rather than a naive unconditional "write index 0" destroying it.
+//
+// This drives the full production stack, not just the resolver: the
+// Publisher is wired with a fakePlatformLister whose GetImagesForArtist
+// returns the previous primary's stored phash, exactly as
+// previousFanartPrimaryPHash reads it from real artist_images provenance.
+func TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete(t *testing.T) {
+	env := loadLiveEmbyEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+	defer cancel()
+
+	logger := silentLogger()
+	client := emby.New(env.url, env.apiKey, env.userID, logger)
+
+	// FIRST ACT: clear whatever the item already holds; see the identical
+	// comment on the other live tests in this file.
+	clearAllBackdrops(t, ctx, env.itemID, client)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+		defer cleanupCancel()
+		clearAllBackdrops(t, cleanupCtx, env.itemID, client)
+	})
+
+	// Seed idx0=oldPrimary, idx1=bystander, idx2=third -- three DISTINCT,
+	// fully DECODABLE images (bandJPEG from phash_platform_test.go, same
+	// package): this test needs an actual perceptual hash for the
+	// provenance stamp below, which solidJPEG's minimal SOI+EOI marker
+	// (fine for upload, not decodable) cannot provide.
+	oldPrimary := bandJPEG(t, 0xC1)
+	bystander := bandJPEG(t, 0xC2)
+	third := bandJPEG(t, 0xC3)
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 0, oldPrimary, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 0: %v", err)
+	}
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 1, bystander, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 1: %v", err)
+	}
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 2, third, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 2: %v", err)
+	}
+
+	// PRECONDITION: exactly 3 backdrops before the delete.
+	seeded, err := client.GetArtistDetail(ctx, env.itemID)
+	if err != nil {
+		t.Fatalf("reading state after seed: %v", err)
+	}
+	if seeded.BackdropCount != 3 {
+		t.Fatalf("precondition failed: BackdropCount after seed = %d, want 3", seeded.BackdropCount)
+	}
+
+	// Something deletes index 0 (phash back-out, remote prune, or an
+	// operator) -- the peer re-indexes survivors DOWN BY ONE, so the
+	// bystander that was at index 1 is now at index 0.
+	if err := client.DeleteImageAtIndex(ctx, env.itemID, "fanart", 0); err != nil {
+		t.Fatalf("deleting backdrop 0: %v", err)
+	}
+
+	// PRECONDITION: the peer re-indexed as expected. Assert this BEFORE
+	// trusting the rest of the test, or a peer that behaved differently
+	// would make the final assertion pass for the wrong reason.
+	afterDelete, err := client.GetArtistDetail(ctx, env.itemID)
+	if err != nil {
+		t.Fatalf("reading state after delete: %v", err)
+	}
+	if afterDelete.BackdropCount != 2 {
+		t.Fatalf("precondition failed: BackdropCount after delete = %d, want 2", afterDelete.BackdropCount)
+	}
+	bystanderNowAt0, _, err := client.GetArtistBackdrop(ctx, env.itemID, 0)
+	if err != nil {
+		t.Fatalf("reading backdrop 0 after delete: %v", err)
+	}
+	if hashOf(bystanderNowAt0) != hashOf(bystander) {
+		t.Fatalf("precondition failed: index 0 does not hold the bystander after the delete+reindex -- the setup does not model the #3125 F3 scenario")
+	}
+
+	// Now run the REAL fanart sync: a new local primary, with the artist's
+	// PREVIOUS primary phash recorded in provenance exactly as
+	// finalizeImageSave/recordImageProvenance would have stamped it at the
+	// time oldPrimary was saved.
+	dir := t.TempDir()
+	newPrimary := bandJPEG(t, 0xC4)
+	if err := os.WriteFile(dir+"/fanart.jpg", newPrimary, 0o600); err != nil {
+		t.Fatalf("writing local replacement fanart: %v", err)
+	}
+	previousHash := image.HashHex(phashOf(t, oldPrimary))
+
+	p := New(Deps{
+		Logger: logger,
+		ArtistService: &fakePlatformLister{
+			ids: []artist.PlatformID{
+				{ArtistID: "live-f3", ConnectionID: "c-emby", PlatformArtistID: env.itemID},
+			},
+			images: []artist.ArtistImage{
+				{ImageType: "fanart", SlotIndex: 0, Exists: true, PHash: previousHash},
+			},
+		},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "live-emby-uat", Type: connection.TypeEmby, URL: env.url, APIKey: env.apiKey, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: env.userID, FeatureImageWrite: true}},
+		}},
+	})
+
+	art := &artist.Artist{ID: "live-f3", Name: "Live UAT Artist", Path: dir}
+	warnings := p.SyncImageToPlatforms(ctx, art, "fanart")
+	if len(warnings) != 0 {
+		t.Fatalf("SyncImageToPlatforms returned warnings: %v", warnings)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// THE F3 ASSERTION: the bystander (now at index 0 before the sync) must
+	// SURVIVE. A blind "write index 0" would have destroyed it here.
+	afterSync0, _, err := client.GetArtistBackdrop(ctx, env.itemID, 0)
+	if err != nil {
+		t.Fatalf("reading backdrop 0 after sync: %v", err)
+	}
+	if hashOf(afterSync0) == hashOf(newPrimary) {
+		t.Fatal("the bystander at index 0 was DESTROYED by the fanart sync -- F3 guard did not fire")
+	}
+	if hashOf(afterSync0) != hashOf(bystander) {
+		t.Errorf("index 0 content changed to something other than the bystander or the new primary; got an unexpected byte pattern")
+	}
+
+	// The new primary must have landed SOMEWHERE (index 1, where the old
+	// primary was resolved to after the reindex).
+	final, err := client.GetArtistDetail(ctx, env.itemID)
+	if err != nil {
+		t.Fatalf("reading final state: %v", err)
+	}
+	foundNewPrimary := false
+	for i := 0; i < final.BackdropCount; i++ {
+		data, _, gErr := client.GetArtistBackdrop(ctx, env.itemID, i)
+		if gErr != nil {
+			continue
+		}
+		if hashOf(data) == hashOf(newPrimary) {
+			foundNewPrimary = true
+			break
+		}
+	}
+	if !foundNewPrimary {
+		t.Error("the new primary was not found at any backdrop index after the sync")
 	}
 }

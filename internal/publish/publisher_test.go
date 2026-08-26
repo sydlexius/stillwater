@@ -55,6 +55,13 @@ type fakePlatformLister struct {
 	// idsErr, when non-nil, makes GetPlatformIDs fail (exercises the
 	// platform-id-load error branch in the phash orchestration wrappers).
 	idsErr error
+
+	// images backs GetImagesForArtist (#3125 F3: identifying the previous
+	// fanart primary's platform slot from stored provenance). imagesErr, when
+	// non-nil, makes the call fail so a test can exercise the
+	// cannot-identify fallback.
+	images    []artist.ArtistImage
+	imagesErr error
 }
 
 // List returns the fake's artists on page 1 and an empty page thereafter,
@@ -108,6 +115,13 @@ func (f *fakePlatformLister) ListMembersByArtistID(_ context.Context, _ string) 
 		return nil, f.membersErr
 	}
 	return f.members, nil
+}
+
+func (f *fakePlatformLister) GetImagesForArtist(_ context.Context, _ string) ([]artist.ArtistImage, error) {
+	if f.imagesErr != nil {
+		return nil, f.imagesErr
+	}
+	return f.images, nil
 }
 
 func (f *fakePlatformLister) ListArtistsWithPlatformMappings(_ context.Context) ([]string, error) {
@@ -1005,6 +1019,21 @@ func newPathRecordingServer(s *pathRecordingServer) *httptest.Server {
 		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/Images/") {
 			s.record(r.URL.Path)
 		}
+		// #3125 F3: the fanart branch now GETs artist detail (BackdropCount)
+		// via resolveFanartReplaceTarget before deciding where to write. A
+		// GET must answer 200 with a decodable body -- the previous
+		// blanket 204 made GetArtistDetail fail on every path, which is not
+		// what any of these tests are about. An empty JSON object decodes to
+		// a zero-value ArtistDetailItem (BackdropCount 0), which resolves to
+		// the "platform is empty, write index 0" degenerate case -- the same
+		// index 0 shape these tests already assert on, so the fix reads
+		// state and still lands on an unsurprising target.
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 }
@@ -1020,7 +1049,13 @@ func TestSyncImageToPlatforms_FanartUsesIndexedReplacePath(t *testing.T) {
 	dir := t.TempDir()
 	// fanart.jpg is the primary fanart file (slot 0); FindExistingImage always
 	// discovers the primary here, which is exactly why the fix targets index 0.
-	seedJPG(t, dir, "fanart.jpg")
+	// A DECODABLE image, not seedJPG's minimal SOI+EOI marker: #3125 F3 added
+	// a perceptual-hash step to the fanart branch (resolveFanartReplaceTarget),
+	// which must decode the bytes before writing anywhere. bandJPEG
+	// (phash_platform_test.go, same package) is the established fixture.
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 1), 0o644); err != nil {
+		t.Fatalf("seeding fanart.jpg: %v", err)
+	}
 
 	srv := &pathRecordingServer{}
 	httpSrv := newPathRecordingServer(srv)

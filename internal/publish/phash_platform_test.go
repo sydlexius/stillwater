@@ -10,8 +10,14 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -110,6 +116,9 @@ type fakePhashClient struct {
 	// multi-delete where earlier slots are really gone before a later delete
 	// errors.
 	deleteErrAtCall int
+
+	// indexUploads records every UploadImageAtIndex call (#3125 F3).
+	indexUploads []indexUpload
 }
 
 func (f *fakePhashClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
@@ -147,6 +156,40 @@ func (f *fakePhashClient) UploadImage(_ context.Context, _ string, _ string, dat
 		return nil // accepted, but nothing stored -- silent ignore
 	}
 	f.backdrops = append(f.backdrops, data)
+	return nil
+}
+
+// indexUploads records every UploadImageAtIndex call (#3125 F3 tests): the
+// index it was asked to write, so a test can assert WHICH slot was
+// targeted, not merely that some upload happened -- the whole point of F3
+// is that the wrong index destroys a bystander.
+type indexUpload struct {
+	index int
+	data  []byte
+}
+
+// UploadImageAtIndex gives fakePhashClient Emby's measured in-place-replace
+// semantics (#3125): writing an in-range index REPLACES that slot's content;
+// writing exactly len(backdrops) (one past the end) APPENDS a new slot. Any
+// other out-of-range index is refused, matching the real client's own
+// negative-index guard (mediabrowser.UploadImageAtIndexRaw) extended to the
+// upper bound a real peer would also reject.
+func (f *fakePhashClient) UploadImageAtIndex(_ context.Context, _ string, _ string, index int, data []byte, _ string) error {
+	if f.uploadErr != nil {
+		return f.uploadErr
+	}
+	f.indexUploads = append(f.indexUploads, indexUpload{index: index, data: data})
+	if f.ignoreUploads {
+		return nil
+	}
+	switch {
+	case index >= 0 && index < len(f.backdrops):
+		f.backdrops[index] = data // in-place replace
+	case index == len(f.backdrops):
+		f.backdrops = append(f.backdrops, data) // append at the natural next slot
+	default:
+		return fmt.Errorf("index %d out of range for %d backdrops", index, len(f.backdrops))
+	}
 	return nil
 }
 
@@ -952,5 +995,242 @@ func TestRestoreBackdropToPlatforms_UnhealthyTargetIsFailureNotSkip(t *testing.T
 	}
 	if f.uploads != 0 {
 		t.Errorf("no upload may happen to a disabled connection, got %d", f.uploads)
+	}
+}
+
+// --- resolveFanartReplaceTarget (#3125 F3) ----------------------------------
+
+// TestResolveFanartReplaceTarget_EmptyPlatformWritesIndexZero is the
+// degenerate case: nothing to clobber, so index 0 is always safe.
+func TestResolveFanartReplaceTarget_EmptyPlatformWritesIndexZero(t *testing.T) {
+	f := &fakePhashClient{}
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", bandJPEG(t, 1), "", testTolerance)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetIndex || decision.Index != 0 {
+		t.Errorf("decision = %+v, want {Kind: fanartTargetIndex, Index: 0}", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_AlreadyPresentIsNoop proves the platform
+// already holding the new bytes (a retry whose prior response was lost)
+// resolves to a no-op, never a write -- assert on the DECISION, not merely
+// on a later "no upload happened", so a caller that ignored the decision and
+// uploaded anyway would still be caught by whoever asserts the upload count.
+func TestResolveFanartReplaceTarget_AlreadyPresentIsNoop(t *testing.T) {
+	newBytes := bandJPEG(t, 7)
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 3), newBytes}}
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newBytes, "", testTolerance)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetNoop {
+		t.Errorf("decision = %+v, want Kind fanartTargetNoop", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_IdentifiesPreviousPrimaryAmongBystanders is
+// the CORE F3 proof: the previous primary has been shifted to a NON-ZERO
+// index by an earlier platform-side delete (exactly the #3125 review's
+// measured shape -- deleting index 0 shifts survivors down), and the
+// resolver must find it there rather than defaulting to 0.
+func TestResolveFanartReplaceTarget_IdentifiesPreviousPrimaryAmongBystanders(t *testing.T) {
+	bystanderA := bandJPEG(t, 11)
+	previousPrimary := bandJPEG(t, 22)
+	bystanderB := bandJPEG(t, 33)
+	assertDistinct(t, bystanderA, previousPrimary, bystanderB)
+
+	// The previous primary sits at index 1 -- NOT 0 -- simulating the
+	// post-delete-and-reindex state.
+	f := &fakePhashClient{backdrops: [][]byte{bystanderA, previousPrimary, bystanderB}}
+	previousHash := image.HashHex(phashOf(t, previousPrimary))
+
+	newPrimary := bandJPEG(t, 44)
+	assertDistinct(t, bystanderA, previousPrimary, bystanderB, newPrimary)
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, previousHash, testTolerance)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetIndex || decision.Index != 1 {
+		t.Errorf("decision = %+v, want {Kind: fanartTargetIndex, Index: 1} (the slot holding the previous primary)", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_CannotIdentify_FallsBackToAppend covers the
+// case the #3125 review demanded be handled honestly: no stored previous
+// hash (a first sync, or a never-hashed legacy row) and a non-empty
+// platform. The resolver must refuse to guess an index and fall back to
+// append, never picking index 0 blind.
+func TestResolveFanartReplaceTarget_CannotIdentify_FallsBackToAppend(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 5), bandJPEG(t, 6)}}
+	newPrimary := bandJPEG(t, 99)
+	assertDistinct(t, f.backdrops[0], f.backdrops[1], newPrimary)
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, "", testTolerance)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetAppend {
+		t.Errorf("decision = %+v, want Kind fanartTargetAppend", decision)
+	}
+	if decision.Why == "" {
+		t.Error("append decision must carry a Why, for the caller's Warn log")
+	}
+}
+
+// TestResolveFanartReplaceTarget_ZeroHashHexTreatedAsUnknown guards the
+// zero-hash trap: previousPHashHex parsing to the all-zero hash (an
+// unhashed/legacy row, PerceptualHash's own zero value) must NOT be trusted
+// as a real identity -- it would otherwise manufacture a match against any
+// other genuinely-unhashed slot. Confirmed by using a platform whose only
+// backdrop the all-zero hash would spuriously match if treated as usable.
+func TestResolveFanartReplaceTarget_ZeroHashHexTreatedAsUnknown(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 1)}}
+	newPrimary := bandJPEG(t, 2)
+	assertDistinct(t, f.backdrops[0], newPrimary)
+
+	zeroHashHex := image.HashHex(0)
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, zeroHashHex, testTolerance)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetAppend {
+		t.Errorf("decision = %+v, want Kind fanartTargetAppend (a zero previous-hash must never authorize an index write)", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_BystanderSurvivesIndexWrite is the
+// MUTATION-PROOF WIRING TEST: it drives resolveFanartReplaceTarget's INDEX
+// decision all the way through an actual UploadImageAtIndex call (via
+// fakePhashClient's Emby-like in-place-replace semantics) and asserts the
+// BYSTANDER at every OTHER index survives untouched. This is the test that
+// must fail if the guard is removed and the code goes back to writing index
+// 0 unconditionally: the previous primary here sits at index 1, so a
+// blind-index-0 write would destroy bystanderAtZero instead.
+func TestResolveFanartReplaceTarget_BystanderSurvivesIndexWrite(t *testing.T) {
+	bystanderAtZero := bandJPEG(t, 111)
+	previousPrimary := bandJPEG(t, 222)
+	newPrimary := bandJPEG(t, 333)
+	assertDistinct(t, bystanderAtZero, previousPrimary, newPrimary)
+
+	f := &fakePhashClient{backdrops: [][]byte{bystanderAtZero, previousPrimary}}
+	previousHash := image.HashHex(phashOf(t, previousPrimary))
+
+	// PRECONDITION: the bystander occupies index 0 before anything runs.
+	if !bytesEqual(f.backdrops[0], bystanderAtZero) {
+		t.Fatal("precondition failed: bystander is not at index 0")
+	}
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, previousHash, testTolerance)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetIndex {
+		t.Fatalf("decision = %+v, want Kind fanartTargetIndex", decision)
+	}
+	if decision.Index == 0 {
+		t.Fatalf("resolved index = 0, which is the BYSTANDER's slot -- writing here would destroy it")
+	}
+
+	if err := f.UploadImageAtIndex(context.Background(), "p1", "fanart", decision.Index, newPrimary, "image/jpeg"); err != nil {
+		t.Fatalf("upload at resolved index: %v", err)
+	}
+
+	if !bytesEqual(f.backdrops[0], bystanderAtZero) {
+		t.Errorf("bystander at index 0 was overwritten; got %d bytes, want the original bystander content", len(f.backdrops[0]))
+	}
+	if !bytesEqual(f.backdrops[decision.Index], newPrimary) {
+		t.Errorf("resolved index %d does not hold the new primary after upload", decision.Index)
+	}
+}
+
+func bytesEqual(a, b []byte) bool {
+	return bytes.Equal(a, b)
+}
+
+// --- resolveFanartReplaceTarget wired through SyncImageToPlatforms ---------
+
+// noopFanartServer serves a single-backdrop artist whose stored backdrop is
+// BYTE-IDENTICAL to the fixture the test will later "sync", so the resolver
+// must decide fanartTargetNoop. It records every POST it receives -- the
+// wire-level proof that a no-op decision issues ZERO upload requests, not
+// merely that the local warnings/counters looked right.
+type noopFanartServer struct {
+	mu    sync.Mutex
+	posts []string
+	data  []byte
+}
+
+func (s *noopFanartServer) postCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.posts)
+}
+
+func newNoopFanartServer(data []byte) (*httptest.Server, *noopFanartServer) {
+	s := &noopFanartServer{data: data}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			s.mu.Lock()
+			s.posts = append(s.posts, r.URL.Path)
+			s.mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/Images/Backdrop/0"):
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(s.data)
+		case strings.HasPrefix(r.URL.Path, "/Users/"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"BackdropImageTags":["tag0"]}`)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	return srv, s
+}
+
+// TestSyncImageToPlatforms_FanartNoop_IssuesZeroUploadRequests is the
+// wire-level twin of TestResolveFanartReplaceTarget_AlreadyPresentIsNoop: it
+// drives the REAL SyncImageToPlatforms path against an httptest server whose
+// stored backdrop is byte-identical to the local fanart file, and asserts
+// NO POST request of any shape reaches the server -- the strongest possible
+// proof that a no-op decision issues no write, stronger than counting a
+// local uploaded-bool.
+func TestSyncImageToPlatforms_FanartNoop_IssuesZeroUploadRequests(t *testing.T) {
+	fanartBytes := bandJPEG(t, 55)
+
+	srv, recorder := newNoopFanartServer(fanartBytes)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), fanartBytes, 0o644); err != nil {
+		t.Fatalf("seeding fanart.jpg: %v", err)
+	}
+
+	p := New(Deps{
+		Logger: silentLogger(),
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
+		}},
+	})
+
+	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, "fanart")
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings; got %v", warnings)
+	}
+
+	// A noop decision must not add this connection to uploadedTo, so the
+	// post-push repair pass never runs at all for it either -- give any
+	// stray goroutine a moment, then assert ZERO POSTs reached the server.
+	time.Sleep(50 * time.Millisecond)
+	if got := recorder.postCount(); got != 0 {
+		t.Errorf("POST requests to the platform = %d, want 0 (a noop decision must never write)", got)
 	}
 }
