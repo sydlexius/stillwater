@@ -973,3 +973,146 @@ func TestSyncImageToPlatforms_NotifierFiresOnUploadFailure(t *testing.T) {
 		t.Error("err = nil, want a non-nil error so logs can correlate")
 	}
 }
+
+// pathRecordingServer records the URL path and method of every request it
+// receives, then answers 204. Used below to assert the REQUEST SHAPE
+// syncImageToPlatforms issues, not merely that some upload happened -- the
+// #3125 defect is entirely a difference between two URL shapes
+// (/Images/Backdrop vs /Images/Backdrop/0) that a fake asserting only
+// "UploadImage was called" cannot distinguish, since both the broken and
+// the fixed code call some uploader method exactly once.
+type pathRecordingServer struct {
+	mu    sync.Mutex
+	paths []string
+}
+
+func (s *pathRecordingServer) record(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.paths = append(s.paths, path)
+}
+
+func (s *pathRecordingServer) snapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, len(s.paths))
+	copy(out, s.paths)
+	return out
+}
+
+func newPathRecordingServer(s *pathRecordingServer) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/Images/") {
+			s.record(r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+}
+
+// TestSyncImageToPlatforms_FanartUsesIndexedReplacePath is the #3125
+// regression test. It asserts the REQUEST PATH the fanart sync issues:
+// POST /Items/{id}/Images/Backdrop/0 (in-place replace, measured correct on
+// real Emby 4.9.5.0), never the bare POST /Items/{id}/Images/Backdrop (the
+// shape measured to APPEND a duplicate on every call). This must be proven
+// by reverting the fix and confirming the assertion below goes red -- see
+// the PR report for the paste of that run.
+func TestSyncImageToPlatforms_FanartUsesIndexedReplacePath(t *testing.T) {
+	dir := t.TempDir()
+	// fanart.jpg is the primary fanart file (slot 0); FindExistingImage always
+	// discovers the primary here, which is exactly why the fix targets index 0.
+	seedJPG(t, dir, "fanart.jpg")
+
+	srv := &pathRecordingServer{}
+	httpSrv := newPathRecordingServer(srv)
+	defer httpSrv.Close()
+
+	p := New(Deps{
+		Logger: silentLogger(),
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: httpSrv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
+		}},
+	})
+
+	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, "fanart")
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings; got %v", warnings)
+	}
+
+	// Precondition: exactly one request must have reached the server before
+	// asserting anything about its shape, or a server that never got hit
+	// would pass this test vacuously.
+	got := srv.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("upload requests = %d, want 1; paths=%v", len(got), got)
+	}
+	if want := "/Items/p1/Images/Backdrop/0"; got[0] != want {
+		t.Errorf("fanart sync path = %q, want %q (the in-place-replace shape; the bare non-indexed path is the #3125 append bug)", got[0], want)
+	}
+}
+
+// TestSyncImageToPlatforms_NonFanartStillUsesPlainPath locks in that the
+// #3125 fix is fanart-scoped: thumb (and by the same code path, logo and
+// banner) must keep issuing the plain, non-indexed POST. Those types are
+// genuinely single-slot on the platform, so routing them through the
+// indexed uploader would be an unrequested behavior change.
+func TestSyncImageToPlatforms_NonFanartStillUsesPlainPath(t *testing.T) {
+	dir := t.TempDir()
+	seedJPG(t, dir, "folder.jpg")
+
+	srv := &pathRecordingServer{}
+	httpSrv := newPathRecordingServer(srv)
+	defer httpSrv.Close()
+
+	p := New(Deps{
+		Logger: silentLogger(),
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: httpSrv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
+		}},
+	})
+
+	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, "thumb")
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings; got %v", warnings)
+	}
+
+	got := srv.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("upload requests = %d, want 1; paths=%v", len(got), got)
+	}
+	if want := "/Items/p1/Images/Primary"; got[0] != want {
+		t.Errorf("thumb sync path = %q, want %q (must stay non-indexed)", got[0], want)
+	}
+}
+
+// TestSyncImageToPlatforms_FanartUnsupportedConnectionWarnsLoudly covers the
+// nil-indexed-uploader branch (Lidarr, or any future non-image-capable
+// connection type) for the fanart path specifically: it must warn and skip
+// exactly like the existing non-indexed branch does, never fail silently.
+func TestSyncImageToPlatforms_FanartUnsupportedConnectionWarnsLoudly(t *testing.T) {
+	dir := t.TempDir()
+	seedJPG(t, dir, "fanart.jpg")
+
+	p := New(Deps{
+		Logger: silentLogger(),
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-lid", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-lid": {ID: "c-lid", Name: "my-lidarr", Type: connection.TypeLidarr, Enabled: true, Status: "ok"},
+		}},
+	})
+
+	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, "fanart")
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning; got %d: %v", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "unsupported connection type") {
+		t.Errorf("warning = %q, want it to mention unsupported connection type", warnings[0])
+	}
+}

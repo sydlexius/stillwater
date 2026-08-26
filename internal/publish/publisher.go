@@ -1024,18 +1024,15 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		// nothing and cost a round trip per push. The post-upload re-assertion
 		// below covers both outcomes the peer can produce -- a missing file and
 		// altered bytes -- which is why the disable is no longer needed.
-		uploader := newImageUploader(conn, p.logger)
-		if uploader == nil {
-			p.logger.Warn("unsupported connection type for image sync", "type", conn.Type)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type)))
-			continue
+		//
+		// #3125: fanart routes through a different call than the other three
+		// image types; see uploadOneImageForSync's doc comment for why.
+		uploaded, warn := p.uploadOneImageForSync(ctx, a, pid, conn, imageType, data, ct)
+		if uploaded {
+			uploadedTo = append(uploadedTo, conn.Name)
 		}
-
-		uploadedTo = append(uploadedTo, conn.Name)
-		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
-			p.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type)))
-			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+		if warn != "" {
+			warnings = append(warnings, warn)
 		}
 	}
 
@@ -1071,6 +1068,80 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		})
 	}
 	return warnings
+}
+
+// uploadOneImageForSync uploads a single image to a single already-validated
+// connection (enabled, status ok, write-gate satisfied -- the caller checks
+// all of that before calling this) and reports whether an upload was
+// attempted plus any warning string to surface to the operator. Split out of
+// syncImageToPlatforms (#3125) purely to keep that function's branching
+// under the repo's cognitive-complexity budget; it has no independent
+// purpose and is not meant to be called from anywhere else.
+//
+// #3125: fanart is NOT single-slot on the platform the way thumb/logo/
+// banner are. Emby and Jellyfin both keep backdrops as a numbered list
+// (Backdrop/0, Backdrop/1, ...), and the two upload shapes have different
+// semantics: POST .../Images/Backdrop REPLACES-BY-APPENDING (it always adds
+// a new tail entry), while POST .../Images/Backdrop/{index} REPLACES IN
+// PLACE at that index (measured on real Emby 4.9.5.0; see the issue for the
+// wire capture). syncImageToPlatforms discovers exactly one local file --
+// the PRIMARY fanart image, which is always slot 0 (see FindExistingImage /
+// the primary-name convention) -- so a fanart sync here is always a replace
+// of that one slot, never an add of a new one. Using the non-indexed call
+// for fanart was therefore always wrong: it told the peer "append a
+// backdrop" when the caller meant "replace the primary backdrop", and every
+// such sync left one more permanent duplicate on the platform. Non-fanart
+// types (thumb, logo, banner) have no index concept on the platform at all,
+// so they keep the plain UploadImage call unchanged.
+//
+// EMBY-VERIFIED, JELLYFIN NOT YET FIXED BY THIS BRANCH. Measured separately
+// against a real Jellyfin 10.11.10 (#3125 follow-up): its indexed endpoint
+// does NOT honor the URL index for placement the way Emby's does -- POST
+// .../Images/Backdrop/0 against an artist that already has a backdrop at
+// index 0 still APPENDS a new entry at the tail, leaving the original
+// index-0 content untouched. A delete-then-upload sequence does not recover
+// single-slot replace either: deleting index 0 re-indexes every later slot
+// down by one (see DeleteImageAtIndexRaw's doc comment), so the subsequent
+// append lands the new content at the WRONG slot rather than the one that
+// was just vacated. The only way to guarantee correct placement on Jellyfin
+// is to delete every existing backdrop and re-upload the full desired set in
+// order -- which is uploadFanartSet's job (the full indexed sync), not this
+// single-image sync path, and reaches well past the "smallest fix" scope of
+// this branch. So: this fix stops the duplication that was previously
+// guaranteed on EVERY fanart sync to EVERY platform (both Emby and Jellyfin
+// were appending before this change); it does not yet make a Jellyfin
+// single-image replace correct. It also does not make Jellyfin any WORSE --
+// before this change Jellyfin appended via the non-indexed call, and it
+// still appends now via the indexed call, so nothing regresses.
+func (p *Publisher) uploadOneImageForSync(ctx context.Context, a *artist.Artist, pid artist.PlatformID, conn *connection.Connection, imageType string, data []byte, ct string) (uploaded bool, warning string) {
+	if imageType == "fanart" {
+		indexedUploader := newIndexedImageUploader(conn, p.logger)
+		if indexedUploader == nil {
+			// Mirror the non-indexed nil-uploader handling below: warn loudly
+			// and skip this connection rather than silently falling through
+			// to a call that would misbehave.
+			p.logger.Warn("unsupported connection type for indexed fanart sync", "type", conn.Type)
+			return false, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
+		}
+		if uploadErr := indexedUploader.UploadImageAtIndex(ctx, pid.PlatformArtistID, imageType, 0, data, ct); uploadErr != nil {
+			p.logger.Error("syncing fanart to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
+			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+			return true, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type))
+		}
+		return true, ""
+	}
+
+	uploader := newImageUploader(conn, p.logger)
+	if uploader == nil {
+		p.logger.Warn("unsupported connection type for image sync", "type", conn.Type)
+		return false, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
+	}
+	if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
+		p.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
+		p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+		return true, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type))
+	}
+	return true, ""
 }
 
 // repairAfterPush runs one repair pass, waits for the peer to settle, and runs
