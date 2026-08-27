@@ -358,8 +358,10 @@ func BackupSlot(ctx context.Context, dir, imageType, fileName string) error {
 }
 
 // RestoreSlot puts ONE named slot back from its own backup, used to roll back a
-// failed destructive write. Returns os.ErrNotExist when this slot has no backup (a
-// first-ever write, which lost nothing).
+// failed destructive write. It CONSUMES the backup: on success the backup file is
+// pruned (see the ReadSlotBackup doc comment for why that distinction matters and
+// which of the two a caller should reach for). Returns os.ErrNotExist when this
+// slot has no backup (a first-ever write, which lost nothing).
 //
 // Routes the bytes through Save so CleanupConflictingFormats drops the half-written
 // post-edit format -- a png-original overwritten with jpeg data restores the png AND
@@ -374,36 +376,22 @@ func BackupSlot(ctx context.Context, dir, imageType, fileName string) error {
 // Restoring ONE slot writes ONE real file: this Save is handed a single name, so it
 // takes Save's i == 0 path and the flag changes nothing today. It is threaded through
 // so the parameter tells the truth and stays correct if that ever changes.
-func RestoreSlot(dir, imageType, fileName string, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) error {
-	typeDir, err := backupTypeDir(dir, imageType)
+//
+// ctx bounds the backup lookup (both the directory listing and the backup file
+// read go through internal/image's cancellable-read primitives, #2689) but NOT
+// the Save that follows -- a rollback write is not abandoned mid-flight once the
+// backup bytes are in hand, for the same reason writes generally are not bounded
+// in this package (see readio.go's file comment). A ctx error here is NOT treated
+// as os.ErrNotExist: it propagates to the caller as a genuine rollback failure
+// (SaveSlotProtected collects it into restoreErrs), never silently read as
+// "nothing to restore" -- unlike ReadSlotBackup's caller, which treats any
+// non-ErrNotExist error, cancellation included, as "cannot identify, fall back to
+// append" (a safe degrade), a lost ROLLBACK has no such safe fallback: the
+// original bytes may already be gone from disk, so the caller must be told.
+func RestoreSlot(ctx context.Context, dir, imageType, fileName string, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) error {
+	backupName, data, err := readSlotBackupBytes(ctx, dir, imageType, fileName)
 	if err != nil {
 		return err
-	}
-	entries, err := os.ReadDir(typeDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return os.ErrNotExist
-		}
-		return fmt.Errorf("reading slot backup dir: %w", err)
-	}
-	base := slotBase(fileName)
-	var backupName string
-	for _, e := range entries {
-		if !e.IsDir() && slotBase(e.Name()) == base {
-			backupName = e.Name()
-			break
-		}
-	}
-	if backupName == "" {
-		return os.ErrNotExist
-	}
-
-	data, err := os.ReadFile(filepath.Join(typeDir, backupName)) //nolint:gosec // path derived from trusted naming
-	if err != nil {
-		if os.IsNotExist(err) {
-			return os.ErrNotExist
-		}
-		return fmt.Errorf("reading slot backup: %w", err)
 	}
 	if _, saveErr := Save(dir, imageType, data, []string{backupName}, useSymlinks, meta, logger); saveErr != nil {
 		return fmt.Errorf("restoring slot via save: %w", saveErr)
@@ -414,6 +402,104 @@ func RestoreSlot(dir, imageType, fileName string, useSymlinks bool, meta *ExifMe
 			slog.String("dir", dir), slog.String("slot", fileName), slog.String("error", rmErr.Error()))
 	}
 	return nil
+}
+
+// readSlotBackupBytes locates the one-deep backup for a slot (matched by
+// slotBase, so the backup's format need not match fileName's) and reads it.
+// Returns os.ErrNotExist (bare, so callers can use errors.Is / os.IsNotExist)
+// when the backup directory or the backup file itself is absent. Factored out
+// of RestoreSlot so ReadSlotBackup (below) can share the exact same lookup --
+// two independent implementations of "find the one file in this dir" is two
+// places for the slotBase-matching rule to drift.
+func readSlotBackupBytes(ctx context.Context, dir, imageType, fileName string) (backupName string, data []byte, err error) {
+	typeDir, err := backupTypeDir(dir, imageType)
+	if err != nil {
+		return "", nil, err
+	}
+	// ctx-aware (#2689/#2934 idiom): a network-mounted library that stops
+	// responding leaves a bare os.ReadDir blocked in the kernel with no
+	// timeout, exactly the hang class readDirCtx exists to bound (CR review
+	// round: this call and the read below were still using the direct
+	// os.ReadDir/os.ReadFile this package otherwise avoids for exactly this
+	// reason).
+	entries, err := readDirCtx(ctx, typeDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil, os.ErrNotExist
+		}
+		return "", nil, fmt.Errorf("reading slot backup dir: %w", err)
+	}
+	base := slotBase(fileName)
+	for _, e := range entries {
+		if !e.IsDir() && slotBase(e.Name()) == base {
+			backupName = e.Name()
+			break
+		}
+	}
+	if backupName == "" {
+		return "", nil, os.ErrNotExist
+	}
+
+	// readFileBounded, not os.ReadFile: same ctx-cancellability as the
+	// directory listing above, plus the MaxDecodeBytes bound every other
+	// image read in this package already enforces.
+	data, err = readFileBounded(ctx, filepath.Join(typeDir, backupName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil, os.ErrNotExist
+		}
+		return "", nil, fmt.Errorf("reading slot backup: %w", err)
+	}
+	return backupName, data, nil
+}
+
+// ReadSlotBackup returns the raw bytes of a slot's one-deep backup WITHOUT
+// consuming it -- read-only, never writes anything, never prunes the backup
+// file. This is the load-bearing difference from RestoreSlot, which DOES
+// consume the backup on success (see its doc comment): RestoreSlot is for the
+// rollback path, where the backup's job is finished and the file it names is
+// once again the recoverable original; ReadSlotBackup is for a caller that
+// only wants to KNOW what the backup holds while the crash-safe rollback path
+// stays fully intact. Picking RestoreSlot where ReadSlotBackup was meant, or
+// vice versa, either silently deletes the ability to roll back a slot that
+// has not actually failed yet, or leaves a caller wrongly believing a restore
+// happened when nothing was written. Returns os.ErrNotExist when no backup
+// exists for this slot -- a first-ever save, or a save whose slot has never
+// had a backup taken.
+//
+// #3125 C1: this is what previousFanartPrimaryData reads to identify the
+// PREVIOUS primary's actual content for the platform-replace resolver. The
+// backup is written by BackupSlot INSIDE SaveSlotProtected, strictly before
+// the destructive Save that overwrites the canonical file -- and therefore
+// strictly before ANY caller's post-save provenance stamp or platform sync,
+// which both run only after SaveSlotProtected returns. That ordering
+// guarantee is structural, not a comment: every fanart-primary write in this
+// codebase (API upload/crop/fetch, apply-candidate, the rule engine's
+// downloadAndPersist and BulkExecutor.saveBestImage) reaches disk through
+// SaveSlotProtected (img.go's single chokepoint for a fanart write; see
+// TestFanartSaveHasASingleChokepoint), so the backup this reads is ALWAYS
+// what was on disk (and therefore, assuming the previous sync succeeded,
+// what the platform holds) at the moment just before the CURRENT save -- the
+// exact identity artist_images.PHash could not provide, because that column
+// is stamped from the NEW file by the same request, before sync ever runs.
+//
+// The read-only-ness above is exactly what makes this SAFE to call from the
+// C1 resolve path: it can be consulted on every sync, repeatedly, without
+// ever touching the one-deep backup a subsequent failed save might still
+// need to roll back through RestoreSlot. A version of this call that
+// consumed the backup would make the FIRST successful sync silently disarm
+// rollback for every save after it.
+//
+// ctx bounds the read (both the directory listing and the backup file read
+// go through internal/image's cancellable-read primitives, #2689) so a
+// stalled network-mounted library cannot block this call indefinitely.
+// Callers must treat a ctx-cancellation error exactly like any other read
+// failure here -- previousFanartPrimaryData does not distinguish it from
+// "no backup" or "read error", and degrades to append (the safe direction:
+// see resolveFanartReplaceTarget) rather than guessing a platform index.
+func ReadSlotBackup(ctx context.Context, dir, imageType, fileName string) ([]byte, error) {
+	_, data, err := readSlotBackupBytes(ctx, dir, imageType, fileName)
+	return data, err
 }
 
 // slotMu holds one mutex per image SLOT, serializing SaveSlotProtected's
@@ -669,7 +755,7 @@ func SaveSlotProtected(ctx context.Context, dir, imageType string, naming []stri
 	// bytes rather than stamping them with the failed edit's metadata.
 	var restoreErrs []error
 	for _, name := range protected {
-		if restoreErr := RestoreSlot(dir, imageType, name, useSymlinks, nil, logger); restoreErr != nil &&
+		if restoreErr := RestoreSlot(ctx, dir, imageType, name, useSymlinks, nil, logger); restoreErr != nil &&
 			!errors.Is(restoreErr, os.ErrNotExist) {
 			restoreErrs = append(restoreErrs, fmt.Errorf("%s: %w", name, restoreErr))
 		}

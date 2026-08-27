@@ -1005,6 +1005,42 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	// data, and gating the repair on upload success skipped exactly that case.
 	var uploadedTo []string
 
+	// #3125 F3/C1: the bytes of the PREVIOUS primary, read ONCE before the
+	// per-connection loop (it does not vary per platform) and passed to
+	// uploadOneImageForSync so the fanart branch can identify which
+	// platform index still holds it, rather than assuming index 0.
+	//
+	// SOURCED FROM THE ON-DISK BACKUP, NEVER FROM artist_images.PHash. A
+	// round-1 review found the DB-hash design INERT IN PRODUCTION: the DB
+	// row is stamped from the NEW file, by THIS SAME REQUEST, before this
+	// function ever runs (finalizeImageSave calls recordImageProvenance at
+	// handlers_image.go:225 -- itself downstream of setArtistImageFlag,
+	// which reads the just-written file straight off disk -- roughly 30
+	// lines before it reaches SyncImageToPlatforms at :257; the rule engine
+	// does the same thing, recording provenance from the saved path before
+	// syncing). So "the artist's previous primary hash" read from the DB at
+	// sync time is never the previous primary -- it is the CURRENT one,
+	// which can never fail to "match" the very upload being sent, and the
+	// resolver's previous-primary branch was consequently unreachable.
+	//
+	// The one-deep on-disk backup (.sw-backup/fanart/, written by BackupSlot
+	// inside SaveSlotProtected, STRICTLY BEFORE the destructive Save that
+	// overwrites the canonical file -- see saveFanartSlotProtected in
+	// internal/api and saveImageToDisk in internal/rule, the two chokepoints
+	// every fanart-primary write funnels through) has no such race: by
+	// construction it is written before this request's Save, so at the time
+	// THIS FUNCTION runs it still holds the bytes the platform was last
+	// given, never the new ones. See previousFanartPrimaryData's doc comment
+	// for the full ordering argument and image.ReadSlotBackup for the read.
+	//
+	// Gated on imageType == "fanart": every other type has no index concept
+	// to resolve, so the lookup would be a pure-waste disk read on the far
+	// more common thumb/logo/banner sync.
+	var previousFanartData []byte
+	if imageType == "fanart" {
+		previousFanartData = p.previousFanartPrimaryData(ctx, dir, filepath.Base(filePath))
+	}
+
 	for _, pid := range platformIDs {
 		conn, connErr := p.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
@@ -1024,18 +1060,15 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		// nothing and cost a round trip per push. The post-upload re-assertion
 		// below covers both outcomes the peer can produce -- a missing file and
 		// altered bytes -- which is why the disable is no longer needed.
-		uploader := newImageUploader(conn, p.logger)
-		if uploader == nil {
-			p.logger.Warn("unsupported connection type for image sync", "type", conn.Type)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type)))
-			continue
+		//
+		// #3125: fanart routes through a different call than the other three
+		// image types; see uploadOneImageForSync's doc comment for why.
+		uploaded, warn := p.uploadOneImageForSync(ctx, a, pid, conn, imageType, data, ct, previousFanartData)
+		if uploaded {
+			uploadedTo = append(uploadedTo, conn.Name)
 		}
-
-		uploadedTo = append(uploadedTo, conn.Name)
-		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
-			p.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type)))
-			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+		if warn != "" {
+			warnings = append(warnings, warn)
 		}
 	}
 
@@ -1071,6 +1104,230 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		})
 	}
 	return warnings
+}
+
+// uploadOneImageForSync uploads a single image to a single already-validated
+// connection (enabled, status ok, write-gate satisfied -- the caller checks
+// all of that before calling this) and reports whether an upload was
+// attempted plus any warning string to surface to the operator. Split out of
+// syncImageToPlatforms (#3125) purely to keep that function's branching
+// under the repo's cognitive-complexity budget; it has no independent
+// purpose and is not meant to be called from anywhere else.
+//
+// #3125: fanart is NOT single-slot on the platform the way thumb/logo/
+// banner are. Emby and Jellyfin both keep backdrops as a numbered list
+// (Backdrop/0, Backdrop/1, ...), and the two upload shapes have different
+// semantics: POST .../Images/Backdrop REPLACES-BY-APPENDING (it always adds
+// a new tail entry), while POST .../Images/Backdrop/{index} REPLACES IN
+// PLACE at that index (measured on real Emby 4.9.5.0; see the issue for the
+// wire capture). syncImageToPlatforms discovers exactly one local file --
+// the PRIMARY fanart image, which is always slot 0 (see FindExistingImage /
+// the primary-name convention) -- so a fanart sync here is always a replace
+// of that one slot, never an add of a new one. Using the non-indexed call
+// for fanart was therefore always wrong: it told the peer "append a
+// backdrop" when the caller meant "replace the primary backdrop", and every
+// such sync left one more permanent duplicate on the platform. Non-fanart
+// types (thumb, logo, banner) have no index concept on the platform at all,
+// so they keep the plain UploadImage call unchanged.
+//
+// EMBY-VERIFIED, JELLYFIN NOT YET FIXED BY THIS BRANCH. Measured separately
+// against a real Jellyfin 10.11.10 (#3125 follow-up): its indexed endpoint
+// does NOT honor the URL index for placement the way Emby's does -- POST
+// .../Images/Backdrop/0 against an artist that already has a backdrop at
+// index 0 still APPENDS a new entry at the tail, leaving the original
+// index-0 content untouched. A delete-then-upload sequence does not recover
+// single-slot replace either: deleting index 0 re-indexes every later slot
+// down by one (see DeleteImageAtIndexRaw's doc comment), so the subsequent
+// append lands the new content at the WRONG slot rather than the one that
+// was just vacated. The only way to guarantee correct placement on Jellyfin
+// is to delete every existing backdrop and re-upload the full desired set in
+// order -- which is uploadFanartSet's job (the full indexed sync), not this
+// single-image sync path, and reaches well past the "smallest fix" scope of
+// this branch. Tracked as #3135. So: this fix stops the duplication that
+// was previously guaranteed on EVERY fanart sync to EVERY platform (both Emby and Jellyfin
+// were appending before this change); it does not yet make a Jellyfin
+// single-image replace correct. It also does not make Jellyfin any WORSE --
+// before this change Jellyfin appended via the non-indexed call, and it
+// still appends now via the indexed call, so nothing regresses.
+//
+// F3 (#3125 review round 1): writing index 0 unconditionally assumed the
+// local primary is ALWAYS platform slot 0. That is only true immediately
+// after a fresh full sync -- a phash back-out prune, a remote-dedup prune,
+// or an operator deleting a backdrop in the Emby/Jellyfin UI can all delete
+// platform index 0 and let the peer re-index survivors down by one, so a
+// bystander backdrop ends up sitting at index 0. An unconditional index-0
+// write then DESTROYS that bystander rather than merely duplicating one.
+// previousFanartData (the previous primary's actual on-disk bytes, from the
+// pre-save backup -- see previousFanartPrimaryData) lets
+// resolveFanartReplaceTarget positively identify the slot that still holds
+// the OLD primary before authorizing an overwrite; see its doc comment for
+// the full three-outcome (noop/index/append) decision and why "cannot
+// identify" falls back to append rather than guessing.
+func (p *Publisher) uploadOneImageForSync(ctx context.Context, a *artist.Artist, pid artist.PlatformID, conn *connection.Connection, imageType string, data []byte, ct string, previousFanartData []byte) (uploaded bool, warning string) {
+	if imageType == "fanart" {
+		return p.uploadFanartForSync(ctx, a, pid, conn, data, ct, previousFanartData)
+	}
+
+	uploader := newImageUploader(conn, p.logger)
+	if uploader == nil {
+		p.logger.Warn("unsupported connection type for image sync", "type", conn.Type)
+		return false, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
+	}
+	if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
+		p.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
+		p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+		return true, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type))
+	}
+	return true, ""
+}
+
+// uploadFanartForSync performs the fanart-specific replace decided by
+// resolveFanartReplaceTarget (#3125 F3): a no-op when the platform already
+// holds the new bytes, an in-place index write when the previous primary's
+// slot can be positively identified (or the platform is empty), and an
+// append -- accepting one duplicate rather than risking a destroyed
+// bystander -- when neither holds. See uploadOneImageForSync's doc comment
+// for the full defect this guards against.
+func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, pid artist.PlatformID, conn *connection.Connection, data []byte, ct string, previousFanartData []byte) (uploaded bool, warning string) {
+	client := newFanartReplaceClient(conn, p.logger)
+	if client == nil {
+		// Mirror the non-indexed nil-uploader handling: warn loudly and skip
+		// this connection rather than silently falling through to a call
+		// that would misbehave.
+		p.logger.Warn("unsupported connection type for indexed fanart sync", "type", conn.Type)
+		return false, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
+	}
+
+	// #3125 F3 review: resolveFanartReplaceTarget reads the platform's
+	// current backdrop set and then this function writes based on what it
+	// saw -- a resolve-then-mutate sequence with exactly the TOCTOU shape
+	// (time-of-check to time-of-use: the state can change between the read
+	// and the write) deletePollutedBackdrops/restoreBackdrop already guard
+	// with lockPhashTarget. Two concurrent syncs for the SAME artist on the
+	// SAME connection (e.g. a UI replace racing a rule-engine auto-fix) could
+	// otherwise both resolve against the pre-write state and then both
+	// write, one of them now stale. Held across the ENTIRE resolve+write,
+	// matching lockPhashTarget's own documented contract, and released via
+	// defer so every return path below (including the error and noop
+	// returns) releases it.
+	//
+	// NO DEADLOCK: this is the same key space DeletePollutedBackdropOnPlatforms
+	// and RestoreBackdropToPlatforms already lock, and neither of those calls
+	// into SyncImageToPlatforms (or anything that reaches this function)
+	// while holding it -- deleteRemovedSlotsOnPlatforms/RestoreBackdropToPlatforms
+	// are invoked from the rule-engine phash-repair path, which calls this
+	// sync function only AFTER its own lock/unlock pair has already
+	// completed (reconcileAfterFix / publishAfterFix run later, once the
+	// phash back-out's per-target unlock() has already returned). So this
+	// lock and phash_platform.go's uses of it are never nested on the same
+	// goroutine's call stack for the same target.
+	unlock := p.lockPhashTarget(pid.ConnectionID, pid.PlatformArtistID)
+	defer unlock()
+
+	decision, resolveErr := resolveFanartReplaceTarget(ctx, client, pid.PlatformArtistID, data, previousFanartData)
+	if resolveErr != nil {
+		// Cannot even READ the platform's current backdrop state -- fail
+		// closed the same way the nil-client branch does, rather than
+		// guessing an index blind. This is a NEW failure mode the old
+		// unconditional-index-0 code never had (it never read first), so it
+		// gets its own warning text rather than reusing "image upload failed".
+		p.logger.Error("resolving fanart replace target", "artist", a.Name, "connection", conn.Name, "error", resolveErr)
+		p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(resolveErr), a.ID, artistDisplayName(a), pushOpImageUpload, resolveErr)
+		return false, truncateWarning(fmt.Sprintf("%s (%s): could not resolve fanart replace target, upload skipped", conn.Name, conn.Type))
+	}
+
+	switch decision.Kind {
+	case fanartTargetNoop:
+		// The platform already reflects this content (a retry that landed
+		// after a lost response, or a no-op sync). Nothing to upload, and
+		// this connection did not receive a fresh write, so it must NOT be
+		// added to uploadedTo -- there is nothing new for the post-push
+		// re-assertion to protect.
+		return false, ""
+	case fanartTargetIndex:
+		if uploadErr := client.UploadImageAtIndex(ctx, pid.PlatformArtistID, "fanart", decision.Index, data, ct); uploadErr != nil {
+			p.logger.Error("syncing fanart to platform", "artist", a.Name, "connection", conn.Name, "type", "fanart", "index", decision.Index, "error", uploadErr)
+			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+			return true, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type))
+		}
+		return true, ""
+	default: // fanartTargetAppend
+		// LOUD, not silent: this is the one case where the fix cannot do
+		// better than the pre-#3125 behavior (an accepted duplicate), and an
+		// operator or future maintainer needs to be able to find WHY in the
+		// logs rather than simply seeing a duplicate reappear.
+		p.logger.Warn("fanart replace could not identify a safe platform index; appending instead of overwriting",
+			"artist", a.Name, "connection", conn.Name, "reason", decision.Why)
+		if uploadErr := client.UploadImage(ctx, pid.PlatformArtistID, "fanart", data, ct); uploadErr != nil {
+			p.logger.Error("syncing fanart to platform", "artist", a.Name, "connection", conn.Name, "type", "fanart", "error", uploadErr)
+			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+			return true, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type))
+		}
+		return true, ""
+	}
+}
+
+// previousFanartPrimaryData returns the bytes of the artist's PREVIOUS
+// primary fanart image (#3125 C1), or nil when unavailable -- no backup on
+// record (a first-ever fanart save, or a save whose backup was already
+// consumed), or a read failure. Both are treated identically by the caller
+// (resolveFanartReplaceTarget: "cannot identify, fall back to append").
+//
+// SOURCED FROM THE ONE-DEEP ON-DISK BACKUP (image.ReadSlotBackup), NEVER
+// FROM artist_images.PHash. A round-1 review found the database-hash design
+// INERT IN PRODUCTION: SyncImageToPlatforms (this function's caller, via
+// syncImageToPlatforms) always runs AFTER the DB row for the JUST-SAVED file
+// has already been stamped. Every write path takes this shape --
+//
+//	internal/api/handlers_image.go:171   updateArtistImageFlag -> setArtistImageFlag
+//	                                      -> recordImageProvenanceSlot0(ctx, a.ID, imageType, NEW file)
+//	internal/api/handlers_image.go:257   (~85 lines later) SyncImageToPlatforms
+//
+// -- and the rule engine's two callers match it (bulk_executor.go:536 records
+// provenance from the just-saved path, :538 syncs; fixer.go calls
+// recordSavedImageProvenance before publishAfterFix). So a DB read at sync
+// time always returns the NEW file's own hash, which trivially "matches" the
+// upload being sent every single time: the previous-primary branch was
+// unreachable, and every replace silently took the append fallback --
+// reproduced end to end in round 1 (backdropCount 1 -> 2, appends=1, on
+// what should have been an in-place replace).
+//
+// The on-disk backup has no such race. BackupSlot writes it INSIDE
+// SaveSlotProtected, STRICTLY BEFORE the destructive Save that overwrites
+// the canonical file -- and every fanart-primary write in this codebase
+// (API upload/crop/fetch, apply-candidate, the rule engine's
+// downloadAndPersist and BulkExecutor.saveBestImage) reaches disk through
+// SaveSlotProtected, the single chokepoint TestFanartSaveHasASingleChokepoint
+// enforces. So by construction the backup this reads is what was on disk --
+// and, assuming the previous sync succeeded, what the platform holds --
+// at the instant just BEFORE the CURRENT save, never the new bytes.
+//
+// dir and primaryFileName are the SAME values syncImageToPlatforms already
+// resolved for its own upload (p.ImageDir(a) and the discovered primary
+// basename), so this makes no extra filesystem probe beyond the one
+// directory read the backup lookup itself needs.
+//
+// ctx-aware (CR review round): ReadSlotBackup's directory listing and file
+// read now both go through internal/image's cancellable-read primitives
+// (#2689), the same idiom already used for every other on-disk image read
+// in this codebase -- a stalled network-mounted library previously could
+// block this call indefinitely with no way for a caller's ctx to interrupt
+// it, ahead of the platform calls this same sync still needs to make.
+//
+// Best-effort and NEVER fatal to the sync: a read failure here (including a
+// ctx-cancellation error) must not block the upload, it only narrows
+// resolveFanartReplaceTarget's options down to append -- the safe
+// direction.
+func (p *Publisher) previousFanartPrimaryData(ctx context.Context, dir, primaryFileName string) []byte {
+	data, err := img.ReadSlotBackup(ctx, dir, "fanart", primaryFileName)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			p.logger.Warn("reading previous-primary backup for replace-target resolution; falling back to append",
+				"dir", dir, "error", err)
+		}
+		return nil
+	}
+	return data
 }
 
 // repairAfterPush runs one repair pass, waits for the peer to settle, and runs
@@ -2294,6 +2551,24 @@ var newImageUploader = func(conn *connection.Connection, logger *slog.Logger) co
 // connection type. Returns nil for unsupported types. Injectable for the same
 // reason as newImageUploader above.
 var newIndexedImageUploader = func(conn *connection.Connection, logger *slog.Logger) connection.IndexedImageUploader {
+	switch conn.Type {
+	case connection.TypeEmby:
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
+	case connection.TypeJellyfin:
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
+	default:
+		return nil
+	}
+}
+
+// newFanartReplaceClient constructs a fanartReplaceClient (#3125 F3) for the
+// given connection type. Returns nil for unsupported types. emby.Client and
+// jellyfin.Client already implement every method the interface needs (they
+// back newImageUploader, newIndexedImageUploader, and phashPlatformClient
+// alike), so this is a distinct constructor only for the injectable-seam
+// pattern used throughout this file -- tests substitute a fake that can
+// simulate a specific backdrop layout without standing up a peer.
+var newFanartReplaceClient = func(conn *connection.Connection, logger *slog.Logger) fanartReplaceClient {
 	switch conn.Type {
 	case connection.TypeEmby:
 		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)

@@ -98,10 +98,14 @@ var validContentTypes = map[string]bool{
 type imageSyncBehavior int
 
 const (
-	// syncNone skips platform sync entirely (upload's fanart-append branch:
-	// platforms only support a single backdrop, and the primary was already
-	// synced when first saved; re-syncing here would re-push the primary
-	// rather than the new numbered variant).
+	// syncNone skips platform sync entirely (upload's fanart-append branch).
+	// NOT because platforms only support a single backdrop -- they don't:
+	// Emby and Jellyfin both keep a numbered backdrop list and
+	// uploadFanartSet (#3125) pushes every slot by index without
+	// duplicating. The real reason is narrower: SyncImageToPlatforms only
+	// ever discovers ONE local file (the primary), so calling it here would
+	// re-push the primary the peer already has, not the new numbered
+	// variant this append just saved.
 	syncNone imageSyncBehavior = iota
 	// syncSingle syncs the single saved imageType via SyncImageToPlatforms.
 	syncSingle
@@ -381,11 +385,16 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 			return
 		}
-		// Skip platform sync for fanart appends: platforms only support a single
-		// backdrop image, and the primary (fanart.jpg) was already synced when
-		// first saved. Re-syncing here would re-push the primary, not the new
-		// variant (fanart2.jpg etc.), because syncImageToPlatforms discovers
-		// files via findExistingImage which always returns the primary.
+		// Skip platform sync for fanart appends. This is NOT because platforms
+		// only support a single backdrop image -- they don't: Emby and Jellyfin
+		// both keep a numbered backdrop list and uploadFanartSet (#3125) pushes
+		// every slot by index without duplicating. The real reason is narrower:
+		// SyncImageToPlatforms only ever discovers ONE local file (the primary,
+		// via findExistingImage), so calling it here would re-push the primary
+		// fanart.jpg the peer already has, not the new variant (fanart2.jpg
+		// etc.) this append just saved. Syncing the newly appended slot requires
+		// SyncAllFanartToPlatforms (the indexed full-set sync), which this
+		// handler does not invoke.
 		r.finalizeImageSave(req.Context(), w, a, imageType, saved, imageSaveFinalization{
 			isHTMX:         false,
 			syncBehavior:   syncNone,

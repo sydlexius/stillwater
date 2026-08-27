@@ -10,8 +10,14 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -41,6 +47,46 @@ func bandJPEG(t *testing.T, seed int) []byte {
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			v := next()
+			img.Set(x, y, color.RGBA{R: v, G: v, B: v, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatalf("encoding fixture jpeg: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// panBandJPEG builds the SAME deterministic pixel field as bandJPEG (for a
+// given seed) but shifts it shiftX pixels horizontally (with wraparound)
+// before encoding, simulating a minor re-crop/pan -- the round-1 review's
+// measured C2/C3 fixture shape. A shift of 1 measures similarity ~0.92
+// against the unshifted image (Hamming distance 5 on a 64-bit dHash),
+// comfortably above collision.DefaultTolerance's 0.90 cutoff and in the
+// range the reviewer measured for a real operator re-crop -- unlike a
+// single-byte flip in the encoded JPEG stream (tried first; measured
+// similarity ~0.78, well BELOW tolerance, so it would not have exercised
+// the near-duplicate branch these tests are for).
+func panBandJPEG(t *testing.T, seed int, shiftX int) []byte {
+	t.Helper()
+	const w, h = 64, 64
+	state := uint32(seed)*2654435761 + 1
+	next := func() uint8 {
+		state = state*1664525 + 1013904223
+		return uint8(state >> 24)
+	}
+	field := make([][]uint8, h)
+	for y := 0; y < h; y++ {
+		field[y] = make([]uint8, w)
+		for x := 0; x < w; x++ {
+			field[y][x] = next()
+		}
+	}
+	img := stdimage.NewRGBA(stdimage.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			srcX := (x + shiftX + w) % w
+			v := field[y][srcX]
 			img.Set(x, y, color.RGBA{R: v, G: v, B: v, A: 255})
 		}
 	}
@@ -110,13 +156,24 @@ type fakePhashClient struct {
 	// multi-delete where earlier slots are really gone before a later delete
 	// errors.
 	deleteErrAtCall int
+
+	// indexUploads records every UploadImageAtIndex call (#3125 F3).
+	indexUploads []indexUpload
+
+	// detailCalls / backdropFetchCalls count every GetArtistDetail /
+	// GetArtistBackdrop invocation (#3125 C4: measuring the request count
+	// resolveFanartReplaceTarget issues per resolve).
+	detailCalls        int
+	backdropFetchCalls int
 }
 
 func (f *fakePhashClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	f.detailCalls++
 	return &connection.ArtistPlatformState{BackdropCount: len(f.backdrops)}, nil
 }
 
 func (f *fakePhashClient) GetArtistBackdrop(_ context.Context, _ string, i int) ([]byte, string, error) {
+	f.backdropFetchCalls++
 	if i < 0 || i >= len(f.backdrops) {
 		return nil, "", context.Canceled // out of range: shape mismatch, surface as an error
 	}
@@ -147,6 +204,40 @@ func (f *fakePhashClient) UploadImage(_ context.Context, _ string, _ string, dat
 		return nil // accepted, but nothing stored -- silent ignore
 	}
 	f.backdrops = append(f.backdrops, data)
+	return nil
+}
+
+// indexUploads records every UploadImageAtIndex call (#3125 F3 tests): the
+// index it was asked to write, so a test can assert WHICH slot was
+// targeted, not merely that some upload happened -- the whole point of F3
+// is that the wrong index destroys a bystander.
+type indexUpload struct {
+	index int
+	data  []byte
+}
+
+// UploadImageAtIndex gives fakePhashClient Emby's measured in-place-replace
+// semantics (#3125): writing an in-range index REPLACES that slot's content;
+// writing exactly len(backdrops) (one past the end) APPENDS a new slot. Any
+// other out-of-range index is refused, matching the real client's own
+// negative-index guard (mediabrowser.UploadImageAtIndexRaw) extended to the
+// upper bound a real peer would also reject.
+func (f *fakePhashClient) UploadImageAtIndex(_ context.Context, _ string, _ string, index int, data []byte, _ string) error {
+	if f.uploadErr != nil {
+		return f.uploadErr
+	}
+	f.indexUploads = append(f.indexUploads, indexUpload{index: index, data: data})
+	if f.ignoreUploads {
+		return nil
+	}
+	switch {
+	case index >= 0 && index < len(f.backdrops):
+		f.backdrops[index] = data // in-place replace
+	case index == len(f.backdrops):
+		f.backdrops = append(f.backdrops, data) // append at the natural next slot
+	default:
+		return fmt.Errorf("index %d out of range for %d backdrops", index, len(f.backdrops))
+	}
 	return nil
 }
 
@@ -952,5 +1043,526 @@ func TestRestoreBackdropToPlatforms_UnhealthyTargetIsFailureNotSkip(t *testing.T
 	}
 	if f.uploads != 0 {
 		t.Errorf("no upload may happen to a disabled connection, got %d", f.uploads)
+	}
+}
+
+// --- resolveFanartReplaceTarget (#3125 F3, exact-byte rewrite round 2) -----
+//
+// Round 1 decided both the NOOP and INDEX outcomes at collision.DefaultTolerance
+// (a perceptual similarity threshold meant for a read-only collision
+// DETECTOR). Round 2's hostile review found two real defects that follow
+// directly from reusing a detector threshold as a destructive-write
+// authorization: C2 (a legitimate re-crop measures within tolerance of the
+// original and gets silently swallowed as a no-op) and C3 (two backdrops
+// from the same shoot can measure within tolerance of each other, so the
+// resolver could authorize overwriting a DISTINCT bystander that merely
+// resembles the previous primary). These tests exercise the exact-byte
+// (image.ContentHash) rewrite that closes both: every comparison here is
+// SHA-256 equality, so a near-duplicate can never satisfy either check.
+
+// TestResolveFanartReplaceTarget_EmptyPlatformWritesIndexZero is the
+// degenerate case: nothing to clobber, so index 0 is always safe.
+func TestResolveFanartReplaceTarget_EmptyPlatformWritesIndexZero(t *testing.T) {
+	f := &fakePhashClient{}
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", bandJPEG(t, 1), nil)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetIndex || decision.Index != 0 {
+		t.Errorf("decision = %+v, want {Kind: fanartTargetIndex, Index: 0}", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_AlreadyPresentIsNoop proves the platform
+// already holding the new bytes (a retry whose prior response was lost)
+// resolves to a no-op, never a write -- assert on the DECISION, not merely
+// on a later "no upload happened", so a caller that ignored the decision and
+// uploaded anyway would still be caught by whoever asserts the upload count.
+func TestResolveFanartReplaceTarget_AlreadyPresentIsNoop(t *testing.T) {
+	newBytes := bandJPEG(t, 7)
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 3), newBytes}}
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newBytes, nil)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetNoop {
+		t.Errorf("decision = %+v, want Kind fanartTargetNoop", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_NearDuplicateIsNotNoop is the C2
+// regression: a NEAR-identical backdrop (the same fixture with ONE byte
+// flipped -- a stand-in for a minor re-crop or brightness nudge, which is
+// exactly what the round-1 reviewer measured landing inside
+// collision.DefaultTolerance) is present on the platform, but it is NOT
+// byte-identical to the new data. The resolver must NOT call this a no-op:
+// a real edit must actually reach the platform, never be silently
+// swallowed because it happens to resemble what is already there.
+func TestResolveFanartReplaceTarget_NearDuplicateIsNotNoop(t *testing.T) {
+	original := panBandJPEG(t, 40, 0)
+	// A 1px pan: measured similarity ~0.92 against the original (Hamming 5),
+	// squarely inside collision.DefaultTolerance's 0.90 cutoff and the range
+	// the round-1 reviewer measured for a real operator re-crop.
+	nearDuplicate := panBandJPEG(t, 40, 1)
+
+	f := &fakePhashClient{backdrops: [][]byte{nearDuplicate}}
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", original, nil)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind == fanartTargetNoop {
+		t.Fatal("decision = fanartTargetNoop for a near-duplicate, not an exact match -- a real edit would be silently swallowed (C2)")
+	}
+	// With no previousData supplied, the only other outcome besides noop is
+	// append (nothing to positively identify as a safe index).
+	if decision.Kind != fanartTargetAppend {
+		t.Errorf("decision = %+v, want Kind fanartTargetAppend", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_IdentifiesPreviousPrimaryAmongBystanders is
+// the CORE F3 proof: the previous primary has been shifted to a NON-ZERO
+// index by an earlier platform-side delete (exactly the #3125 review's
+// measured shape -- deleting index 0 shifts survivors down), and the
+// resolver must find it there rather than defaulting to 0.
+func TestResolveFanartReplaceTarget_IdentifiesPreviousPrimaryAmongBystanders(t *testing.T) {
+	bystanderA := bandJPEG(t, 11)
+	previousPrimary := bandJPEG(t, 22)
+	bystanderB := bandJPEG(t, 33)
+	assertDistinct(t, bystanderA, previousPrimary, bystanderB)
+
+	// The previous primary sits at index 1 -- NOT 0 -- simulating the
+	// post-delete-and-reindex state.
+	f := &fakePhashClient{backdrops: [][]byte{bystanderA, previousPrimary, bystanderB}}
+
+	newPrimary := bandJPEG(t, 44)
+	assertDistinct(t, bystanderA, previousPrimary, bystanderB, newPrimary)
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, previousPrimary)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetIndex || decision.Index != 1 {
+		t.Errorf("decision = %+v, want {Kind: fanartTargetIndex, Index: 1} (the slot holding the previous primary)", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_NearDuplicateSiblingIsNeverAuthorized is
+// the C3 regression, the MORE SERIOUS direction: a bystander backdrop that
+// merely RESEMBLES the previous primary (same shoot, adjacent frame -- a
+// perceptual near-match, NOT byte-identical) sits at index 0. The resolver
+// must NOT authorize overwriting it: a near-match is the absence of a few
+// bits of difference, not a positive identification, and authorizing the
+// write here would destroy a distinct, real image -- the exact clobber F3
+// exists to prevent, re-entered through the matcher instead of around it.
+func TestResolveFanartReplaceTarget_NearDuplicateSiblingIsNeverAuthorized(t *testing.T) {
+	previousPrimary := panBandJPEG(t, 50, 0)
+	// A 1px pan of the SAME seed: near-identical (sim ~0.92, Hamming 5),
+	// not byte-identical -- the "adjacent frame from the same shoot"
+	// scenario the C3 finding describes.
+	nearDuplicateSibling := panBandJPEG(t, 50, 1)
+	// PRECONDITION: near-identical but NOT byte-identical -- assertDistinct
+	// (perceptual, testTolerance=0.85) does not apply here since these are
+	// deliberately CLOSE; assert byte-inequality directly instead.
+	if bytesEqual(previousPrimary, nearDuplicateSibling) {
+		t.Fatal("precondition failed: fixture bytes are identical, this test needs a near-duplicate, not an exact copy")
+	}
+
+	f := &fakePhashClient{backdrops: [][]byte{nearDuplicateSibling}}
+	newPrimary := bandJPEG(t, 51)
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, previousPrimary)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind == fanartTargetIndex {
+		t.Fatalf("decision = %+v -- authorized overwriting a near-duplicate SIBLING that is not byte-identical to the previous primary (C3)", decision)
+	}
+	if decision.Kind != fanartTargetAppend {
+		t.Errorf("decision = %+v, want Kind fanartTargetAppend (cannot positively identify an exact match)", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_PollutedLibraryWritesLowestMatch is the H1
+// regression (#3125 round 3): the previous primary sits at index 0 -- the
+// slot a peer actually RENDERS (a bare, no-index GET returns byte-identical
+// to index 0, measured live on Emby 4.9.5.0) -- but a STRAY DUPLICATE of
+// it, left by the very append bug #3125 exists to fix, also sits at a
+// higher index. This is exactly the population #3125 documents: repeated
+// replaces before the fix left many artists with the real primary at 0 and
+// one or more identical stragglers behind it.
+//
+// The resolver must pick index 0 (the rendered slot), not the higher
+// duplicate: writing the new primary into the duplicate leaves the
+// RENDERED slot holding the OLD image, so the operator sees no change at
+// all after a "successful" replace.
+//
+// This test does more than assert the returned decision struct -- it
+// APPLIES the decision through the fake client's UploadImageAtIndex (the
+// same call uploadFanartForSync makes) and then asserts the EFFECT: index 0,
+// the slot a bare backdrop GET would return, actually holds the new bytes
+// afterward. A test that only checked decision.Index would not catch a
+// resolver that returns the right struct field but the wrong slot's worth
+// of consequence.
+func TestResolveFanartReplaceTarget_PollutedLibraryWritesLowestMatch(t *testing.T) {
+	previousPrimary := bandJPEG(t, 100)
+	bystander := bandJPEG(t, 101)
+	newPrimary := bandJPEG(t, 102)
+	assertDistinct(t, previousPrimary, bystander, newPrimary)
+
+	// idx0 = previous primary (what Emby renders)
+	// idx1 = bystander
+	// idx2 = a byte-identical stray duplicate of the previous primary
+	f := &fakePhashClient{backdrops: [][]byte{previousPrimary, bystander, previousPrimary}}
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, previousPrimary)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetIndex || decision.Index != 0 {
+		t.Fatalf("decision = %+v, want {Kind: fanartTargetIndex, Index: 0} (the rendered slot, not the stray duplicate at index 2)", decision)
+	}
+
+	// Apply the decision exactly as uploadFanartForSync would, then check
+	// the RENDERED slot -- index 0 -- actually changed.
+	if uploadErr := f.UploadImageAtIndex(context.Background(), "p1", "fanart", decision.Index, newPrimary, "image/jpeg"); uploadErr != nil {
+		t.Fatalf("applying decision: %v", uploadErr)
+	}
+	if !bytesEqual(f.backdrops[0], newPrimary) {
+		t.Fatal("index 0 (the rendered slot) does not hold the new primary after the write -- the operator would see no change")
+	}
+}
+
+// TestResolveFanartReplaceTarget_H2AnyIndexMatchDoesNotSuppressFix is the H2
+// regression (#3125 round 3): the new bytes already sit on the platform,
+// but at a NON-primary slot (index 1), not at the slot that would be
+// written (index 0, which still holds the stale previous primary). A
+// resolver that asks "are these bytes anywhere in the list" -- round 2's
+// behavior -- wrongly calls this a no-op: zero uploads, the UI reports
+// success, and index 0 (the rendered slot) is left holding the OLD image
+// forever.
+//
+// This also proves the APPEND-fallback convergence claim in this file's
+// doc comment: fanartTargetAppend having previously landed image X at
+// index 1 must NOT make a later, DIFFERENT sync (whose target is index 0)
+// silently stop repairing index 0.
+func TestResolveFanartReplaceTarget_H2AnyIndexMatchDoesNotSuppressFix(t *testing.T) {
+	previousPrimary := bandJPEG(t, 200)
+	imageX := bandJPEG(t, 201) // the new fanart, already appended once at idx1
+	assertDistinct(t, previousPrimary, imageX)
+
+	// idx0 = the stale previous primary (still rendered)
+	// idx1 = imageX, appended earlier (e.g. by a prior #3125-style append,
+	// or an unrelated upload) -- NOT at the slot that would be written
+	f := &fakePhashClient{backdrops: [][]byte{previousPrimary, imageX}}
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", imageX, previousPrimary)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	// The correct decision: previousPrimary is found at index 0, so INDEX
+	// 0 is authorized -- imageX being present elsewhere must not suppress
+	// this write.
+	if decision.Kind != fanartTargetIndex || decision.Index != 0 {
+		t.Fatalf("decision = %+v, want {Kind: fanartTargetIndex, Index: 0} -- a match for the new bytes at a NON-target slot (idx1) must not suppress the fix at idx0 (H2)", decision)
+	}
+
+	// Apply the decision and confirm the rendered slot actually changes.
+	if uploadErr := f.UploadImageAtIndex(context.Background(), "p1", "fanart", decision.Index, imageX, "image/jpeg"); uploadErr != nil {
+		t.Fatalf("applying decision: %v", uploadErr)
+	}
+	if !bytesEqual(f.backdrops[0], imageX) {
+		t.Fatal("index 0 (the rendered slot) was not corrected -- the any-index noop bug would have issued zero uploads here")
+	}
+}
+
+// TestResolveFanartReplaceTarget_CannotIdentify_FallsBackToAppend covers the
+// case the #3125 review demanded be handled honestly: no previous-primary
+// bytes available (a first sync, or a save whose backup was already
+// consumed) and a non-empty platform. The resolver must refuse to guess an
+// index and fall back to append, never picking index 0 blind.
+func TestResolveFanartReplaceTarget_CannotIdentify_FallsBackToAppend(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 5), bandJPEG(t, 6)}}
+	newPrimary := bandJPEG(t, 99)
+	assertDistinct(t, f.backdrops[0], f.backdrops[1], newPrimary)
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, nil)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetAppend {
+		t.Errorf("decision = %+v, want Kind fanartTargetAppend", decision)
+	}
+	if decision.Why == "" {
+		t.Error("append decision must carry a Why, for the caller's Warn log")
+	}
+}
+
+// TestResolveFanartReplaceTarget_EmptyPreviousDataTreatedAsUnknown guards
+// the equivalent of the old zero-hash trap for the byte-based design: an
+// explicitly empty (non-nil but zero-length) previousData must never be
+// treated as "matches everything". There is nothing to hash, so there is
+// nothing to compare -- this must fall back to append exactly like a nil
+// previousData does.
+func TestResolveFanartReplaceTarget_EmptyPreviousDataTreatedAsUnknown(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 1)}}
+	newPrimary := bandJPEG(t, 2)
+	assertDistinct(t, f.backdrops[0], newPrimary)
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, []byte{})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetAppend {
+		t.Errorf("decision = %+v, want Kind fanartTargetAppend (empty previous data must never authorize an index write)", decision)
+	}
+}
+
+// TestResolveFanartReplaceTarget_RejectsEmptyNewData mirrors the empty-data
+// refusal restoreBackdrop already applies on the append side: an empty
+// upload would install nothing, so refuse up front rather than let a
+// downstream verify step fail confusingly.
+func TestResolveFanartReplaceTarget_RejectsEmptyNewData(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 1)}}
+	if _, err := resolveFanartReplaceTarget(context.Background(), f, "p1", nil, nil); err == nil {
+		t.Error("want error for empty new fanart bytes, got nil")
+	}
+}
+
+// TestResolveFanartReplaceTarget_GetArtistDetailErrorPropagates covers the
+// artist-detail read failure: the resolver must surface it rather than
+// treating a failed read as "empty platform" (which would wrongly license
+// an index-0 write against a platform whose real state is unknown).
+func TestResolveFanartReplaceTarget_GetArtistDetailErrorPropagates(t *testing.T) {
+	f := &erroringDetailClient{err: fmt.Errorf("network unreachable")}
+	if _, err := resolveFanartReplaceTarget(context.Background(), f, "p1", bandJPEG(t, 1), nil); err == nil {
+		t.Error("want error when GetArtistDetail fails, got nil")
+	}
+}
+
+// TestResolveFanartReplaceTarget_BackdropFetchErrorPropagates covers
+// backdropContentHashes's fetch-error abort path: a backdrop read failure
+// must abort with an error, not silently proceed with an incomplete picture
+// of the platform's current state.
+func TestResolveFanartReplaceTarget_BackdropFetchErrorPropagates(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 1)}}
+	// GetArtistBackdrop errors for any out-of-range index; force that by
+	// reporting a BackdropCount that exceeds what backdrops actually holds.
+	broken := &detailOverrideClient{fakePhashClient: f, count: 5}
+	if _, err := resolveFanartReplaceTarget(context.Background(), broken, "p1", bandJPEG(t, 2), nil); err == nil {
+		t.Error("want error when a backdrop fetch fails, got nil")
+	}
+}
+
+// erroringDetailClient always fails GetArtistDetail; the other methods are
+// never reached when that happens.
+type erroringDetailClient struct{ err error }
+
+func (e *erroringDetailClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	return nil, e.err
+}
+func (e *erroringDetailClient) GetArtistBackdrop(_ context.Context, _ string, _ int) ([]byte, string, error) {
+	return nil, "", fmt.Errorf("unreachable")
+}
+func (e *erroringDetailClient) UploadImage(_ context.Context, _, _ string, _ []byte, _ string) error {
+	return fmt.Errorf("unreachable")
+}
+func (e *erroringDetailClient) UploadImageAtIndex(_ context.Context, _, _ string, _ int, _ []byte, _ string) error {
+	return fmt.Errorf("unreachable")
+}
+
+// detailOverrideClient reports a BackdropCount larger than the wrapped
+// fakePhashClient actually holds, so GetArtistBackdrop calls for the extra
+// indices fail -- forcing backdropContentHashes's fetch-error abort path.
+type detailOverrideClient struct {
+	*fakePhashClient
+	count int
+}
+
+func (d *detailOverrideClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	return &connection.ArtistPlatformState{BackdropCount: d.count}, nil
+}
+
+// TestResolveFanartReplaceTarget_BystanderSurvivesIndexWrite is the
+// MUTATION-PROOF WIRING TEST: it drives resolveFanartReplaceTarget's INDEX
+// decision all the way through an actual UploadImageAtIndex call (via
+// fakePhashClient's Emby-like in-place-replace semantics) and asserts the
+// BYSTANDER at every OTHER index survives untouched. This is the test that
+// must fail if the guard is removed and the code goes back to writing index
+// 0 unconditionally: the previous primary here sits at index 1, so a
+// blind-index-0 write would destroy bystanderAtZero instead.
+func TestResolveFanartReplaceTarget_BystanderSurvivesIndexWrite(t *testing.T) {
+	bystanderAtZero := bandJPEG(t, 111)
+	previousPrimary := bandJPEG(t, 222)
+	newPrimary := bandJPEG(t, 333)
+	assertDistinct(t, bystanderAtZero, previousPrimary, newPrimary)
+
+	f := &fakePhashClient{backdrops: [][]byte{bystanderAtZero, previousPrimary}}
+
+	// PRECONDITION: the bystander occupies index 0 before anything runs.
+	if !bytesEqual(f.backdrops[0], bystanderAtZero) {
+		t.Fatal("precondition failed: bystander is not at index 0")
+	}
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, previousPrimary)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetIndex {
+		t.Fatalf("decision = %+v, want Kind fanartTargetIndex", decision)
+	}
+	if decision.Index == 0 {
+		t.Fatalf("resolved index = 0, which is the BYSTANDER's slot -- writing here would destroy it")
+	}
+
+	if err := f.UploadImageAtIndex(context.Background(), "p1", "fanart", decision.Index, newPrimary, "image/jpeg"); err != nil {
+		t.Fatalf("upload at resolved index: %v", err)
+	}
+
+	if !bytesEqual(f.backdrops[0], bystanderAtZero) {
+		t.Errorf("bystander at index 0 was overwritten; got %d bytes, want the original bystander content", len(f.backdrops[0]))
+	}
+	if !bytesEqual(f.backdrops[decision.Index], newPrimary) {
+		t.Errorf("resolved index %d does not hold the new primary after upload", decision.Index)
+	}
+}
+
+func bytesEqual(a, b []byte) bool {
+	return bytes.Equal(a, b)
+}
+
+// TestResolveFanartReplaceTarget_C4_SingleReadPerBackdrop measures the
+// platform request count resolveFanartReplaceTarget issues on an
+// 8-backdrop item, in the worst case that reaches BOTH the noop check and
+// the previous-primary check (previousData supplied, no exact match found
+// anywhere -- so the resolver must exhaust both comparisons before falling
+// back to append). Round 1 called matchingBackdropIndices (a full
+// re-read-and-rehash of every backdrop) up to TWICE, so this shape measured
+// GetArtistDetail=3 (matchingBackdropIndices calls GetArtistDetail itself,
+// once per invocation, PLUS the resolver's own initial call) and
+// GetArtistBackdrop=16 (8 backdrops x 2 passes) on a real platform. The C4
+// fix (backdropContentHashes, called once) must read each backdrop exactly
+// ONCE regardless of how many of the resolver's internal checks consult it.
+func TestResolveFanartReplaceTarget_C4_SingleReadPerBackdrop(t *testing.T) {
+	backdrops := make([][]byte, 8)
+	for i := range backdrops {
+		backdrops[i] = bandJPEG(t, 1000+i)
+	}
+	f := &fakePhashClient{backdrops: backdrops}
+
+	newPrimary := bandJPEG(t, 2000)      // matches nothing already present
+	previousPrimary := bandJPEG(t, 3000) // also matches nothing already present
+	all := append([][]byte{newPrimary, previousPrimary}, backdrops...)
+	assertDistinct(t, all...)
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, previousPrimary)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetAppend {
+		t.Fatalf("decision = %+v, want Kind fanartTargetAppend (precondition for exercising both checks)", decision)
+	}
+
+	if f.detailCalls != 1 {
+		t.Errorf("GetArtistDetail calls = %d, want 1 (C4: the resolver's own initial call is the only one; round 1 measured 3 via matchingBackdropIndices's internal re-fetch)", f.detailCalls)
+	}
+	if f.backdropFetchCalls != len(backdrops) {
+		t.Errorf("GetArtistBackdrop calls = %d, want %d (C4: each backdrop read exactly once; round 1 measured 2x on an 8-backdrop item -- 16 calls -- because both the noop and previous-primary checks re-read the full set)", f.backdropFetchCalls, len(backdrops))
+	}
+}
+
+// --- resolveFanartReplaceTarget wired through SyncImageToPlatforms ---------
+
+// noopFanartServer serves a single-backdrop artist whose stored backdrop is
+// BYTE-IDENTICAL to the fixture the test will later "sync", so the resolver
+// must decide fanartTargetNoop. It records every POST it receives -- the
+// wire-level proof that a no-op decision issues ZERO upload requests, not
+// merely that the local warnings/counters looked right.
+type noopFanartServer struct {
+	mu    sync.Mutex
+	posts []string
+	data  []byte
+}
+
+func (s *noopFanartServer) postCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.posts)
+}
+
+func newNoopFanartServer(data []byte) (*httptest.Server, *noopFanartServer) {
+	s := &noopFanartServer{data: data}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			s.mu.Lock()
+			s.posts = append(s.posts, r.URL.Path)
+			s.mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/Images/Backdrop/0"):
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(s.data)
+		case strings.HasPrefix(r.URL.Path, "/Users/"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"BackdropImageTags":["tag0"]}`)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	return srv, s
+}
+
+// TestSyncImageToPlatforms_FanartNoop_IssuesZeroUploadRequests is the
+// wire-level twin of TestResolveFanartReplaceTarget_AlreadyPresentIsNoop: it
+// drives the REAL SyncImageToPlatforms path against an httptest server whose
+// stored backdrop is byte-identical to the local fanart file, and asserts
+// NO POST request of any shape reaches the server -- the strongest possible
+// proof that a no-op decision issues no write, stronger than counting a
+// local uploaded-bool.
+func TestSyncImageToPlatforms_FanartNoop_IssuesZeroUploadRequests(t *testing.T) {
+	fanartBytes := bandJPEG(t, 55)
+
+	srv, recorder := newNoopFanartServer(fanartBytes)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), fanartBytes, 0o644); err != nil {
+		t.Fatalf("seeding fanart.jpg: %v", err)
+	}
+
+	p := New(Deps{
+		Logger: silentLogger(),
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
+		}},
+	})
+
+	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, "fanart")
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings; got %v", warnings)
+	}
+
+	// A noop decision must not add this connection to uploadedTo, so the
+	// post-push repair pass never runs at all for it either. A fixed
+	// sleep-then-sample-once cannot distinguish "nothing happened" from "it
+	// happened after I looked" -- a POST arriving after a single 50ms
+	// sample would pass unnoticed on a loaded runner. Poll to a deadline
+	// instead and require the count to stay at zero for the WHOLE window:
+	// the common (already-zero) case costs one fast iteration, and a late
+	// write is still caught because any nonzero sample fails immediately.
+	deadline := time.Now().Add(50 * time.Millisecond)
+	for {
+		if got := recorder.postCount(); got != 0 {
+			t.Fatalf("POST requests to the platform = %d, want 0 (a noop decision must never write)", got)
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
