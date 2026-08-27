@@ -219,3 +219,49 @@ func sameDecodedSize(t *testing.T, a, b []byte) bool {
 	}
 	return ca.Width == cb.Width && ca.Height == cb.Height
 }
+
+// TestReadSlotBackup_ReturnsBackupBytesWithoutConsuming is a direct
+// unit test for ReadSlotBackup (#3125 C1): it must return the exact bytes
+// BackupSlot wrote, and -- unlike RestoreSlot -- it must NOT consume the
+// backup, since the fanart-replace resolver reads it purely to identify a
+// platform slot and has no business deleting Stillwater's own recovery copy.
+func TestReadSlotBackup_ReturnsBackupBytesWithoutConsuming(t *testing.T) {
+	dir := t.TempDir()
+	original := makeImageBytes(t, "jpeg")
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), original, 0o644); err != nil {
+		t.Fatalf("seeding original: %v", err)
+	}
+	if err := BackupSlot(context.Background(), dir, "fanart", "fanart.jpg"); err != nil {
+		t.Fatalf("BackupSlot: %v", err)
+	}
+
+	got, err := ReadSlotBackup(dir, "fanart", "fanart.jpg")
+	if err != nil {
+		t.Fatalf("ReadSlotBackup: %v", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Errorf("ReadSlotBackup returned %d bytes, want the original %d bytes unchanged", len(got), len(original))
+	}
+
+	// PRECONDITION-STYLE CHECK, but after the fact: the backup must still be
+	// there for RestoreSlot to use -- ReadSlotBackup is read-only.
+	again, err := ReadSlotBackup(dir, "fanart", "fanart.jpg")
+	if err != nil {
+		t.Fatalf("ReadSlotBackup did not leave the backup in place for a second read: %v", err)
+	}
+	if !bytes.Equal(again, original) {
+		t.Error("second ReadSlotBackup call returned different bytes -- the first call must have mutated or consumed the backup")
+	}
+}
+
+// TestReadSlotBackup_NoBackupReturnsErrNotExist covers the "no previous
+// primary yet" case: a first-ever fanart save has no backup, and the
+// resolver's caller (previousFanartPrimaryData) treats this identically to
+// any other lookup failure -- "cannot identify", fall back to append.
+func TestReadSlotBackup_NoBackupReturnsErrNotExist(t *testing.T) {
+	dir := t.TempDir()
+	_, err := ReadSlotBackup(dir, "fanart", "fanart.jpg")
+	if !os.IsNotExist(err) {
+		t.Errorf("err = %v, want os.ErrNotExist (or a wrapped equivalent os.IsNotExist recognizes)", err)
+	}
+}
