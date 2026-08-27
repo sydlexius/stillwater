@@ -731,15 +731,23 @@ func TestRunLockDamageRepairPass_FailurePropagatesAnError(t *testing.T) {
 // lines being absent everywhere (which would break the pre-guard preview's
 // own "the bound's effect is PRINTED" property) or present everywhere.
 func TestPrintLockDamageReport_AttributedModeOmitsPreGuardExclusions(t *testing.T) {
-	// Non-zero counts, so an omission cannot be mistaken for "there was
-	// nothing to print". In attributed mode these are zero by construction;
-	// setting them here proves the gate is on the MODE, not on the values.
+	// THREE DISTINCT NON-ZERO COUNTS, and the distinctness is load-bearing:
+	// equal values would make a counter SWAP (reading PreGuardUnlocked into
+	// the cutoff line, say) invisible to any assertion below. In attributed
+	// mode all three are zero by construction, so setting them here proves the
+	// gate is on the MODE, not on the values.
 	res := &maintenance.LockDamageResult{
 		PreGuardTooNew:   3,
 		PreGuardUnlocked: 4,
 		PreGuardDiverged: 5,
 	}
-	preGuardOnly := []string{
+
+	// LABELS ONLY, and ONLY for the ABSENCE half. Absence is exactly what a
+	// label expresses: asserting that a fully-rendered line is missing would
+	// pass if the label were present carrying a different number, which is
+	// WEAKER than what this half needs. The presence half below uses rendered
+	// lines instead, for the mirror-image reason.
+	preGuardOnlyLabels := []string{
 		"excluded, newer than the cutoff",
 		"excluded, field not locked now",
 		"excluded, the field changed since the damage",
@@ -747,11 +755,11 @@ func TestPrintLockDamageReport_AttributedModeOmitsPreGuardExclusions(t *testing.
 
 	var attributed bytes.Buffer
 	printLockDamageReport(&attributed, res, false)
-	for _, line := range preGuardOnly {
-		if strings.Contains(attributed.String(), line) {
+	for _, label := range preGuardOnlyLabels {
+		if strings.Contains(attributed.String(), label) {
 			t.Errorf("the ATTRIBUTED report carries %q; that filter does not run on this "+
 				"path, so the line asserts a bound the pass never applied:\n%s",
-				line, attributed.String())
+				label, attributed.String())
 		}
 	}
 	// The attributed report must still carry its own sections, or "omits the
@@ -760,12 +768,37 @@ func TestPrintLockDamageReport_AttributedModeOmitsPreGuardExclusions(t *testing.
 		t.Errorf("the attributed report lost its own sections:\n%s", attributed.String())
 	}
 
+	// FULLY-RENDERED LINES FOR THE PRESENCE HALF (CodeRabbit, PR #3136 round
+	// 2). This half used to reuse the label slice above, so it checked that
+	// the three labels appeared and never checked the NUMBERS -- a printer
+	// emitting 0 for all three, or reading the wrong counter into the wrong
+	// line, passed it. That is the SAME VACUITY CLASS as the ": 1" assertion
+	// fixed one commit earlier, reintroduced in the test written to fix a
+	// different finding.
+	//
+	// The point of this half is that the bound's EFFECT is printed, not that a
+	// label exists, and an effect is a number. Each expected line pins one
+	// count to its own label, so a swap between any two of them fails here.
+	// The cutoff line is built from the printer's own format string, so the
+	// timestamp cannot drift out of sync with the constant.
+	//
+	// MUTATION PROOF: swap PreGuardTooNew and PreGuardUnlocked in the printer.
+	// The old label-only assertion PASSED; this one fails on both lines.
+	// Verified both ways.
+	wantPreGuardLines := []string{
+		fmt.Sprintf("excluded, newer than the cutoff (%s): 3",
+			maintenance.PreGuardCutoff().Format(time.RFC3339)),
+		"excluded, field not locked now: 4",
+		"excluded, the field changed since the damage: 5",
+	}
+
 	var preGuard bytes.Buffer
 	printLockDamageReport(&preGuard, res, true)
-	for _, line := range preGuardOnly {
+	for _, line := range wantPreGuardLines {
 		if !strings.Contains(preGuard.String(), line) {
-			t.Errorf("the PRE-GUARD report omits %q; the bound's effect must be printed, "+
-				"never inferred from an absence:\n%s", line, preGuard.String())
+			t.Errorf("the PRE-GUARD report does not carry %q; the bound's effect must be "+
+				"PRINTED -- a label with the wrong number states that a filter ran and "+
+				"found something it did not:\n%s", line, preGuard.String())
 		}
 	}
 }
