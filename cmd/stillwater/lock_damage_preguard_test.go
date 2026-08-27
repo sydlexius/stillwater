@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -136,12 +137,29 @@ func TestLockDamagePreGuardDryRun_ReportsWithoutWriting(t *testing.T) {
 	}
 	// The bound's effect is PRINTED. A preview that silently withheld a row
 	// reads exactly like a library with nothing to withhold.
-	if !strings.Contains(report, "excluded, newer than the cutoff") ||
-		!strings.Contains(report, ": 1") {
-		t.Errorf("report does not state what the time bound withheld:\n%s", report)
-	}
-	if !strings.Contains(report, maintenance.PreGuardCutoff().Format(time.RFC3339)) {
-		t.Errorf("report does not name the cutoff it applied:\n%s", report)
+	//
+	// THE WHOLE LINE, NOT TWO INDEPENDENT SUBSTRINGS (CodeRabbit, PR #3136).
+	// This used to test `Contains("excluded, newer than the cutoff")` and
+	// `Contains(": 1")` separately, and BOTH matched for the wrong reason: the
+	// label prints unconditionally whatever the count is, and `": 1"` matched
+	// the `would restore: 1` line elsewhere in the report. So the assertion
+	// held even when the count was 0 -- it enforced nothing about the property
+	// it names, in the test guarding the one bound the issue's AC singles out.
+	//
+	// Built from the SAME format string the printer uses, so the count is
+	// anchored to its own line and the cutoff it names is checked in the same
+	// comparison (which is why the separate timestamp assertion that used to
+	// follow is gone -- this subsumes it).
+	//
+	// MUTATION PROOF: drop the `res.PreGuardTooNew++` in
+	// selectPreGuardCandidates, leaving the row excluded but the count silently
+	// 0. The old assertion PASSED; this one fails with `: 0`. Verified both
+	// ways.
+	wantExcluded := fmt.Sprintf("excluded, newer than the cutoff (%s): 1",
+		maintenance.PreGuardCutoff().Format(time.RFC3339))
+	if !strings.Contains(report, wantExcluded) {
+		t.Errorf("report does not state what the time bound withheld; want %q in:\n%s",
+			wantExcluded, report)
 	}
 	// direction lets the maintainer group the cut without being shown values.
 	if !strings.Contains(report, "direction=") {
@@ -187,8 +205,25 @@ func TestPreGuardCompletionKey_IsDistinctFromTheAttributedOne(t *testing.T) {
 	}
 
 	maint := newPreGuardMaint(t, db)
-	runLockDamageRepairPass(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), maint,
-		maintenance.LockDamageOpts{PreGuard: true}, lockDamagePreGuardKey)
+	// The write pass carries the digest from its own preview, because a
+	// digestless pre-guard write is refused inside internal/maintenance now.
+	// Taken from a real preview rather than hardcoded: a literal would keep
+	// passing even if the two sides computed the digest differently.
+	preview, err := maint.RepairLockDamage(ctx,
+		maintenance.LockDamageOpts{PreGuard: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if len(preview.Restored) != 1 {
+		t.Fatalf("fixture: the preview offers %d row(s), want 1", len(preview.Restored))
+	}
+	if err := runLockDamageRepairPass(ctx, db,
+		slog.New(slog.NewTextHandler(io.Discard, nil)), maint,
+		maintenance.LockDamageOpts{PreGuard: true,
+			ApprovedDigest: maintenance.LockDamageDigest(preview.Restored)},
+		lockDamagePreGuardKey); err != nil {
+		t.Fatalf("runLockDamageRepairPass: %v", err)
+	}
 
 	var bio string
 	if err := db.QueryRowContext(ctx,
@@ -679,5 +714,58 @@ func TestRunLockDamageRepairPass_FailurePropagatesAnError(t *testing.T) {
 	}
 	if stamped != 0 {
 		t.Errorf("completion key rows = %d, want 0", stamped)
+	}
+}
+
+// TestPrintLockDamageReport_AttributedModeOmitsPreGuardExclusions pins the
+// asymmetry CodeRabbit flagged on PR #3136.
+//
+// The three exclusion counts describe filters only the PRE-GUARD pass
+// applies. Printed unconditionally, the attributed report stated
+// `excluded, newer than the cutoff (<instant>): 0` -- naming a bound that
+// pass never applies. A zero there is a positive claim that a filter ran, on
+// the report an operator reads before authorizing a data restore, and it is
+// false.
+//
+// The test asserts BOTH directions from ONE result, so it cannot pass by the
+// lines being absent everywhere (which would break the pre-guard preview's
+// own "the bound's effect is PRINTED" property) or present everywhere.
+func TestPrintLockDamageReport_AttributedModeOmitsPreGuardExclusions(t *testing.T) {
+	// Non-zero counts, so an omission cannot be mistaken for "there was
+	// nothing to print". In attributed mode these are zero by construction;
+	// setting them here proves the gate is on the MODE, not on the values.
+	res := &maintenance.LockDamageResult{
+		PreGuardTooNew:   3,
+		PreGuardUnlocked: 4,
+		PreGuardDiverged: 5,
+	}
+	preGuardOnly := []string{
+		"excluded, newer than the cutoff",
+		"excluded, field not locked now",
+		"excluded, the field changed since the damage",
+	}
+
+	var attributed bytes.Buffer
+	printLockDamageReport(&attributed, res, false)
+	for _, line := range preGuardOnly {
+		if strings.Contains(attributed.String(), line) {
+			t.Errorf("the ATTRIBUTED report carries %q; that filter does not run on this "+
+				"path, so the line asserts a bound the pass never applied:\n%s",
+				line, attributed.String())
+		}
+	}
+	// The attributed report must still carry its own sections, or "omits the
+	// pre-guard lines" would also be true of a printer that emitted nothing.
+	if !strings.Contains(attributed.String(), "unrecoverable:") {
+		t.Errorf("the attributed report lost its own sections:\n%s", attributed.String())
+	}
+
+	var preGuard bytes.Buffer
+	printLockDamageReport(&preGuard, res, true)
+	for _, line := range preGuardOnly {
+		if !strings.Contains(preGuard.String(), line) {
+			t.Errorf("the PRE-GUARD report omits %q; the bound's effect must be printed, "+
+				"never inferred from an absence:\n%s", line, preGuard.String())
+		}
 	}
 }

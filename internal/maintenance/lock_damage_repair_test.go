@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1273,14 +1274,45 @@ func TestRepairLockDamage_TransactionalWriteFailureIsCountedNotFatal(t *testing.
 // the preview and the write is the exact drift the gate must refuse -- and
 // where doing it any other way (re-seeding the artist) would also reset the
 // damage the test depends on.
+// ADDITIVE, matching what the UI toggle does and what this helper's name
+// says (CodeRabbit, PR #3136). It previously REPLACED the whole column with
+// `["<field>"]`, silently unlocking every other field. Harmless with the one
+// caller that existed, but lock state is the exact precondition these tests
+// assert, so a future two-lock caller would have lost a lock and the test
+// would still have looked right.
+//
+// Sorted before marshaling so the stored JSON is deterministic: a fixture
+// whose column contents depend on insertion order makes any later assertion
+// on that column flaky for a reason unrelated to what it tests.
 func (e *lockDamageEnv) lockField(artistID, field string) {
 	e.t.Helper()
+
+	var raw string
+	if err := e.db.QueryRow(
+		`SELECT COALESCE(locked_fields, '') FROM artists WHERE id = ?`,
+		artistID).Scan(&raw); err != nil {
+		e.t.Fatalf("reading locked_fields for %s: %v", artistID, err)
+	}
+	locked := artist.UnmarshalStringSlice(raw)
+	if slices.Contains(locked, field) {
+		return
+	}
+	locked = append(locked, field)
+	slices.Sort(locked)
+
 	if _, err := e.db.Exec(
 		`UPDATE artists SET locked_fields = ? WHERE id = ?`,
-		`["`+field+`"]`, artistID); err != nil {
+		artist.MarshalStringSlice(locked), artistID); err != nil {
 		e.t.Fatalf("locking %s on %s: %v", field, artistID, err)
 	}
-	if !e.lockedFields(artistID)[field] {
-		e.t.Fatalf("fixture: %s is not locked on %s after the toggle", field, artistID)
+	// EVERY previously-locked field is still locked, not merely the new one.
+	// Asserting only the new field would pass against the replacing version
+	// this fix replaced.
+	after := e.lockedFields(artistID)
+	for _, f := range locked {
+		if !after[f] {
+			e.t.Fatalf("fixture: %s is not locked on %s after locking %s; the helper "+
+				"dropped an existing lock", f, artistID, field)
+		}
 	}
 }

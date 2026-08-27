@@ -306,16 +306,28 @@ func printLockDamageReport(out io.Writer, res *maintenance.LockDamageResult, pre
 			formatLengthDelta(r.OldLen, r.NewLen),
 			r.DamagedAt.UTC().Format(time.RFC3339))
 	}
-	// The bound's effect is PRINTED, not inferred from an absence: a preview
-	// that silently withheld rows would read the same as a clean library.
-	_, _ = fmt.Fprintf(out, "excluded, newer than the cutoff (%s): %d\n",
-		maintenance.PreGuardCutoff().Format(time.RFC3339), res.PreGuardTooNew)
-	_, _ = fmt.Fprintf(out, "excluded, field not locked now: %d\n", res.PreGuardUnlocked)
-	// Reported for the same reason the other exclusions are: a row dropped
-	// because the field moved on since the damage is a DECISION, and a preview
-	// that made it silently would be the overstatement this count exists to
-	// retire.
-	_, _ = fmt.Fprintf(out, "excluded, the field changed since the damage: %d\n", res.PreGuardDiverged)
+	// THE THREE EXCLUSION COUNTS ARE PRE-GUARD-ONLY (CodeRabbit, PR #3136).
+	// They were printed unconditionally, so the ATTRIBUTED report carried
+	// `excluded, newer than the cutoff (2026-08-19T01:56:23Z): 0` -- a line
+	// naming a bound that pass never applies, on a report an operator reads
+	// before authorizing a data restore. A zero there is not merely noise: it
+	// asserts a filter ran and found nothing, when in fact no such filter
+	// exists on that path. All three counts are zero by construction in
+	// attributed mode, so nothing is hidden by omitting them.
+	//
+	// Within pre-guard mode the bound's effect is PRINTED, not inferred from
+	// an absence: a preview that silently withheld rows would read the same as
+	// a clean library. Same reasoning for the other two -- a row dropped for
+	// being unlocked, or for having moved on since the damage, is a DECISION,
+	// and a preview that made it silently would be the overstatement these
+	// counts exist to retire.
+	if preGuard {
+		_, _ = fmt.Fprintf(out, "excluded, newer than the cutoff (%s): %d\n",
+			maintenance.PreGuardCutoff().Format(time.RFC3339), res.PreGuardTooNew)
+		_, _ = fmt.Fprintf(out, "excluded, field not locked now: %d\n", res.PreGuardUnlocked)
+		_, _ = fmt.Fprintf(out, "excluded, the field changed since the damage: %d\n",
+			res.PreGuardDiverged)
+	}
 	_, _ = fmt.Fprintf(out, "unrecoverable: %d (unattributable_all=%d)\n",
 		len(res.Unrecoverable), res.UnattributableAll)
 	for _, u := range res.Unrecoverable {

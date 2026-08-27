@@ -457,10 +457,27 @@ func TestLockDamageChainDepths(t *testing.T) {
 		}
 	})
 
-	t.Run("depths are per (artist, field), not per artist", func(t *testing.T) {
+	// BOTH HALVES OF THE PARTITION, IN ONE FIXTURE (CodeRabbit, PR #3136).
+	// This subtest previously seeded only one artist, so it proved the FIELD
+	// half and nothing else: dropping `artist_id` from the query's PARTITION
+	// BY left it -- and the whole chain-depth suite -- green. That is worth
+	// noting for its own sake, since these six cases were added to lift this
+	// query's patch coverage: a coverage-driven test can still be vacuous on
+	// the property its name claims.
+	//
+	// The second artist carries a chain on the SAME field at a DIFFERENT
+	// depth, which is what makes the two halves separable. Same field and
+	// same depth would be indistinguishable from a merged partition.
+	//
+	// MUTATION PROOF: change the query's `PARTITION BY mc.artist_id, mc.field`
+	// to `PARTITION BY mc.field`. The old subtest PASSED; this one fails on
+	// both artists at once. Verified both ways.
+	t.Run("depths are per (artist, field), not per artist or per field", func(t *testing.T) {
 		db := newTestDB(t)
 		repo := newSQLiteHistoryRepo(db)
 		seedLockDamageArtist(t, db)
+
+		// Artist 1: biography at depth 2, origin at depth 1.
 		seedLockDamageChange(t, db, "b1", "biography", "v1", "v2",
 			"manual", "2026-05-01T10:00:01Z")
 		seedLockDamageChange(t, db, "b2", "biography", "v2", "v3",
@@ -468,12 +485,54 @@ func TestLockDamageChainDepths(t *testing.T) {
 		seedLockDamageChange(t, db, "o1", "origin", "x1", "x2",
 			"manual", "2026-05-01T10:00:03Z")
 
+		// Artist 2: biography at depth 3, INTERLEAVED in time with artist 1's
+		// rows. seedLockDamageArtist and seedLockDamageChange both hardcode
+		// lockDamageArtistID, so this one is inserted explicitly.
+		const otherArtistID = "a2"
+		if _, err := db.Exec(
+			`INSERT INTO artists (id, name, sort_name, path) VALUES (?, ?, ?, '')`,
+			otherArtistID, "Second Artist", "Second Artist"); err != nil {
+			t.Fatalf("seeding artist %s: %v", otherArtistID, err)
+		}
+		for _, c := range []struct{ id, oldV, newV, at string }{
+			{"c1", "w1", "w2", "2026-05-01T10:00:01Z"},
+			{"c2", "w2", "w3", "2026-05-01T10:00:02Z"},
+			{"c3", "w3", "w4", "2026-05-01T10:00:04Z"},
+		} {
+			if _, err := db.Exec(
+				`INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+				 VALUES (?, ?, 'biography', ?, ?, 'manual', ?)`,
+				c.id, otherArtistID, c.oldV, c.newV, c.at); err != nil {
+				t.Fatalf("seeding change %s: %v", c.id, err)
+			}
+		}
+
+		// PRECONDITION: the two artists' biography chains really are different
+		// depths, or "each got its own depth" could hold for a merged
+		// partition that happened to produce one shared number.
+		var rows int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM metadata_changes WHERE artist_id = ? AND field = 'biography'`,
+			otherArtistID).Scan(&rows); err != nil {
+			t.Fatalf("fixture: counting the second artist's rows: %v", err)
+		}
+		if rows != 3 {
+			t.Fatalf("fixture: the second artist has %d biography rows, want 3", rows)
+		}
+
 		got, err := repo.LockDamageChainDepths(context.Background())
 		if err != nil {
 			t.Fatalf("LockDamageChainDepths: %v", err)
 		}
+
 		if got[key] != 2 {
-			t.Errorf("biography depth = %d, want 2", got[key])
+			t.Errorf("artist 1 biography depth = %d, want 2: a deeper chain on the SAME "+
+				"field belonging to ANOTHER artist must not bleed across the partition",
+				got[key])
+		}
+		otherKey := LockDamagePairKey{ArtistID: otherArtistID, Field: "biography"}
+		if got[otherKey] != 3 {
+			t.Errorf("artist 2 biography depth = %d, want 3", got[otherKey])
 		}
 		originKey := LockDamagePairKey{ArtistID: lockDamageArtistID, Field: "origin"}
 		if got[originKey] != 1 {

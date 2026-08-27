@@ -3,6 +3,7 @@ package maintenance
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -165,16 +166,56 @@ func chainKey(c artist.LockDamageCandidate) artist.LockDamagePairKey {
 	return artist.LockDamagePairKey{ArtistID: c.ArtistID, Field: c.Field}
 }
 
-// verifyApprovedDigest refuses a pass whose candidate set is not the set the
-// operator approved. It returns nil when no digest was supplied (a dry run,
-// or the attributed pass, neither of which needs one) and when the digest
-// matches.
+// ErrPreGuardDigestRequired reports a pre-guard WRITE pass that carried no
+// approval digest. A sentinel so a caller can tell "you forgot to approve a
+// cut" from "the cut you approved no longer matches", which need different
+// things from the operator.
+var ErrPreGuardDigestRequired = errors.New(
+	"a pre-guard locked-field repair may not write without an approval digest: " +
+		"run the dry run, review the candidate list, and pass the digest it printed " +
+		"(LockDamageOpts.ApprovedDigest)")
+
+// verifyApprovedDigest decides whether a pass may proceed to its writes.
+//
+// Three outcomes, and the FIRST is the one that makes this a safety boundary
+// rather than a comparison:
+//
+//  1. A PRE-GUARD WRITE WITH NO DIGEST IS REFUSED. Not skipped, not defaulted
+//     to "whatever the predicate found".
+//  2. A dry run, or the attributed pass, needs no digest and proceeds. A dry
+//     run writes nothing, and the attributed pass proves per-row causation
+//     from the row's own source rather than from a human ruling.
+//  3. Otherwise the supplied digest must match the set just selected.
+//
+// # WHY CASE 1 LIVES HERE AND NOT IN THE CLI (CodeRabbit, PR #3136)
+//
+// runLockDamagePreGuardRepair also refuses an empty digest, before it opens
+// the database. That check is worth keeping -- it fails earlier, with a
+// message naming the actual command-line flag, and without migrating a
+// database for a command that was going to be rejected. But it was the ONLY
+// enforcement, which put the entire approval argument for this population in
+// a different package from the code that selects and writes the rows.
+//
+// An in-process caller of RepairLockDamage{PreGuard: true} with no digest
+// would have written the full, unpreviewed set, and this function would have
+// waved it through. Nothing in the repo does that today; the point is that
+// nothing in THIS package stopped it, and a safety invariant enforced one
+// layer up from the code it protects is one refactor from being gone. On this
+// population the human ruling IS the safety mechanism (the time bound is a
+// scope limiter, reversibility is after the fact), so the refusal belongs
+// where the write happens.
 //
 // CALLED AFTER SELECTION AND BEFORE THE FIRST WRITE. That placement is the
 // whole point: the set is fully decided, so the comparison is exact, and
 // nothing has been written yet, so refusing costs nothing to undo.
 func verifyApprovedDigest(opts LockDamageOpts, candidates []artist.LockDamageCandidate) error {
 	if opts.ApprovedDigest == "" {
+		// A WRITING pre-guard pass, with nothing approving what it is about to
+		// write. Both digestless-but-legitimate cases are distinguishable from
+		// the struct itself, so this needs no cooperation from the caller.
+		if opts.PreGuard && !opts.DryRun {
+			return ErrPreGuardDigestRequired
+		}
 		return nil
 	}
 	// The digest is computed over the same projection the preview printed, so

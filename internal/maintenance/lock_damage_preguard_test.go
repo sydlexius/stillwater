@@ -103,7 +103,7 @@ func TestRepairLockDamagePreGuard_TimeBoundIsEnforced(t *testing.T) {
 	env.requirePreGuardRow("a1-dmg-biography", true)
 	env.requirePreGuardRow("a2-dmg-biography", false)
 
-	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{PreGuard: true})
+	res, err := env.svc.RepairLockDamage(context.Background(), env.approvedPreGuardWrite())
 	if err != nil {
 		t.Fatalf("RepairLockDamage(PreGuard): %v", err)
 	}
@@ -152,7 +152,7 @@ func TestRepairLockDamagePreGuard_UnlockedFieldIsNotRestored(t *testing.T) {
 	env.requireNotLocked("a2", "biography")
 	env.requirePreGuardRow("a2-dmg-biography", true)
 
-	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{PreGuard: true})
+	res, err := env.svc.RepairLockDamage(context.Background(), env.approvedPreGuardWrite())
 	if err != nil {
 		t.Fatalf("RepairLockDamage(PreGuard): %v", err)
 	}
@@ -179,7 +179,7 @@ func TestRepairLockDamagePreGuard_RestoreIsReversibleInFact(t *testing.T) {
 	env.requireLockedBio()
 	env.requirePreGuardRow("a1-dmg-biography", true)
 
-	res, err := env.svc.RepairLockDamage(ctx, LockDamageOpts{PreGuard: true})
+	res, err := env.svc.RepairLockDamage(ctx, env.approvedPreGuardWrite())
 	if err != nil {
 		t.Fatalf("RepairLockDamage(PreGuard): %v", err)
 	}
@@ -226,7 +226,7 @@ func TestRepairLockDamagePreGuard_SecondPassRestoresNothing(t *testing.T) {
 	env.seedPreGuardBioDamage("a1", beforeCutoff())
 	env.requireLockedBio()
 
-	first, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{PreGuard: true})
+	first, err := env.svc.RepairLockDamage(context.Background(), env.approvedPreGuardWrite())
 	if err != nil {
 		t.Fatalf("first pass: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestRepairLockDamagePreGuard_SecondPassRestoresNothing(t *testing.T) {
 		t.Fatalf("first pass restored %d, want 1", len(first.Restored))
 	}
 
-	second, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{PreGuard: true})
+	second, err := env.svc.RepairLockDamage(context.Background(), env.approvedPreGuardWrite())
 	if err != nil {
 		t.Fatalf("second pass: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestRepairLockDamagePreGuard_DoesNotTakeRuleSourcedRows(t *testing.T) {
 		t.Fatalf("fixture: created_at %q is not before the cutoff (err=%v)", at, err)
 	}
 
-	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{PreGuard: true})
+	res, err := env.svc.RepairLockDamage(context.Background(), env.approvedPreGuardWrite())
 	if err != nil {
 		t.Fatalf("RepairLockDamage(PreGuard): %v", err)
 	}
@@ -327,7 +327,7 @@ func TestRepairLockDamagePreGuard_DivergedValueIsNotCountedAsRepaired(t *testing
 	env.requireLockedBio()
 	env.requirePreGuardRow("a1-dmg-biography", true)
 
-	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{PreGuard: true})
+	res, err := env.svc.RepairLockDamage(context.Background(), env.approvedPreGuardWrite())
 	if err != nil {
 		t.Fatalf("RepairLockDamage(PreGuard): %v", err)
 	}
@@ -485,7 +485,7 @@ func TestRepairLockDamagePreGuard_BoundaryInstantIsExcluded(t *testing.T) {
 			at.Format(time.RFC3339), preGuardCutoff.Format(time.RFC3339))
 	}
 
-	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{PreGuard: true})
+	res, err := env.svc.RepairLockDamage(context.Background(), env.approvedPreGuardWrite())
 	if err != nil {
 		t.Fatalf("RepairLockDamage(PreGuard): %v", err)
 	}
@@ -679,4 +679,139 @@ func TestLockDamageDigest_DetectsASwap(t *testing.T) {
 		LockDamageRestore{ChangeID: "c9"})) {
 		t.Error("adding a row did not move the digest")
 	}
+}
+
+// TestRepairLockDamagePreGuard_WriteWithoutADigestIsRefused wires THE HOLE
+// CodeRabbit found on PR #3136: the digest invariant was enforced only in
+// cmd/stillwater, one layer up from the package that selects and writes.
+//
+// SO THIS TEST DELIBERATELY DOES NOT GO THROUGH THE CLI. It calls
+// RepairLockDamage directly with {PreGuard: true, DryRun: false} and no
+// digest -- exactly what an in-process caller (a future API handler, a
+// scheduled job, a refactor that inlines the entry point) would do. Routing
+// it through runLockDamagePreGuardRepair would exercise the CLI's own guard
+// and prove nothing about this package, which is the whole finding.
+//
+// A guard test must ATTEMPT the misbehavior and demand refusal. "Nothing was
+// written" passes whether the package refused or was never asked, so the
+// assertions below are: a typed error, the damage still in place, and no
+// revert row -- not merely an unchanged count.
+func TestRepairLockDamagePreGuard_WriteWithoutADigestIsRefused(t *testing.T) {
+	env := newLockDamageEnv(t)
+	env.seedArtistWithLocks("a1", "Unapproved", []string{"biography"})
+	env.seedPreGuardBioDamage("a1", beforeCutoff())
+
+	// PRECONDITION: this pair IS selectable. Without it the refusal below is
+	// indistinguishable from a predicate that simply found nothing, and the
+	// test would pass against a broken selector.
+	env.requireLockedBio()
+	env.requirePreGuardRow("a1-dmg-biography", true)
+	preview, err := env.svc.RepairLockDamage(context.Background(),
+		LockDamageOpts{PreGuard: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if len(preview.Restored) != 1 {
+		t.Fatalf("fixture: the preview offers %d row(s), want 1; the refusal below would "+
+			"be vacuous against an empty candidate set", len(preview.Restored))
+	}
+
+	// THE MISBEHAVIOR: a writing pre-guard pass with nothing approving it.
+	res, err := env.svc.RepairLockDamage(context.Background(),
+		LockDamageOpts{PreGuard: true})
+	if !errors.Is(err, ErrPreGuardDigestRequired) {
+		t.Fatalf("err = %v, want ErrPreGuardDigestRequired; an in-process caller must not be "+
+			"able to write an unapproved set just by omitting the digest", err)
+	}
+	if res != nil {
+		t.Errorf("a refused pass returned a result (%+v); it must return nothing to count", res)
+	}
+
+	// NOTHING WRITTEN, asserted from the DATABASE rather than from the result.
+	if got := env.biography("a1"); got != "junk bio" {
+		t.Errorf("biography = %q, want the damaged value untouched", got)
+	}
+	var reverts int
+	if err := env.db.QueryRow(
+		`SELECT COUNT(*) FROM metadata_changes WHERE source = 'revert'`).Scan(&reverts); err != nil {
+		t.Fatalf("counting revert rows: %v", err)
+	}
+	if reverts != 0 {
+		t.Errorf("revert rows = %d, want 0", reverts)
+	}
+
+	// THE TWO LEGITIMATELY DIGESTLESS CASES STILL PROCEED, or the refusal
+	// above would be a blanket block rather than a targeted one.
+	if _, err := env.svc.RepairLockDamage(context.Background(),
+		LockDamageOpts{PreGuard: true, DryRun: true}); err != nil {
+		t.Errorf("a pre-guard DRY RUN was refused for want of a digest: %v", err)
+	}
+	if _, err := env.svc.RepairLockDamage(context.Background(),
+		LockDamageOpts{}); err != nil {
+		t.Errorf("the ATTRIBUTED pass was refused for want of a digest: %v", err)
+	}
+}
+
+// TestLockFieldHelper_IsAdditive guards the FIXTURE HELPER, which is unusual
+// and deliberate.
+//
+// lockField previously replaced the whole locked_fields column, silently
+// unlocking every other field, while its name and comment both said it adds
+// one (CodeRabbit, PR #3136). Lock state is the precondition the pre-guard
+// tests assert on, so a helper that quietly drops a lock produces a test that
+// passes for the wrong reason -- and no existing test would have caught it,
+// because the single caller locked exactly one field.
+//
+// This wires the case that was broken: lock a SECOND field and demand the
+// first survives.
+func TestLockFieldHelper_IsAdditive(t *testing.T) {
+	env := newLockDamageEnv(t)
+	env.seedArtistWithLocks("a1", "Two Locks", []string{"biography"})
+
+	// PRECONDITION: exactly the seeded lock, or "biography survived" could be
+	// true of an artist that never had it.
+	if before := env.lockedFields("a1"); !before["biography"] || before["origin"] {
+		t.Fatalf("fixture: locked_fields = %v, want biography locked and origin not", before)
+	}
+
+	env.lockField("a1", "origin")
+
+	after := env.lockedFields("a1")
+	if !after["origin"] {
+		t.Errorf("origin is not locked after lockField")
+	}
+	if !after["biography"] {
+		t.Errorf("biography was UNLOCKED by locking origin; the helper replaces the set " +
+			"instead of adding to it, so any test relying on a second lock is silently vacuous")
+	}
+
+	// IDEMPOTENT: re-locking an already-locked field neither duplicates it nor
+	// disturbs the rest.
+	env.lockField("a1", "origin")
+	if again := env.lockedFields("a1"); !again["origin"] || !again["biography"] {
+		t.Errorf("locked_fields = %v after re-locking origin, want both still locked", again)
+	}
+}
+
+// approvedPreGuardWrite runs the PREVIEW, takes the digest it produces, and
+// returns the write-pass options carrying it -- the operator's real
+// two-command workflow, in one call.
+//
+// EVERY PRE-GUARD WRITE IN THESE TESTS GOES THROUGH THIS, because a write
+// with no digest is now refused inside the package (see
+// TestRepairLockDamagePreGuard_WriteWithoutADigestIsRefused). Taking the
+// digest from an actual preview rather than hardcoding one is the point: a
+// literal would keep passing even if the two sides computed it differently,
+// which is the one thing the gate has to get right.
+//
+// It deliberately does NOT assert how many rows the preview offered. Callers
+// assert that themselves, and several of them expect zero.
+func (e *lockDamageEnv) approvedPreGuardWrite() LockDamageOpts {
+	e.t.Helper()
+	preview, err := e.svc.RepairLockDamage(context.Background(),
+		LockDamageOpts{PreGuard: true, DryRun: true})
+	if err != nil {
+		e.t.Fatalf("preview before the write pass: %v", err)
+	}
+	return LockDamageOpts{PreGuard: true, ApprovedDigest: LockDamageDigest(preview.Restored)}
 }
