@@ -1035,13 +1035,20 @@ func TestSyncImageToPlatforms_FanartUsesIndexedReplacePath(t *testing.T) {
 	dir := t.TempDir()
 	// fanart.jpg is the primary fanart file (slot 0); FindExistingImage always
 	// discovers the primary here, which is exactly why the fix targets index 0.
-	// bandJPEG (phash_platform_test.go, same package), not seedJPG's minimal
-	// SOI+EOI marker: this fixture only needs to be BYTE-DISTINCT from
-	// whatever else a test compares it against, since resolveFanartReplaceTarget
-	// decides purely by exact content hash (image.ContentHash / writeTarget),
-	// never by decoding or perceptually hashing the bytes (CR review round --
-	// an earlier version of this comment described a decode requirement that
-	// does not exist here).
+	// bandJPEG (phash_platform_test.go, same package): checked directly
+	// against this test's actual code path -- newPathRecordingServer's GET
+	// stub (below) always reports BackdropCount 0, so
+	// resolveFanartReplaceTarget takes its degenerate "platform is empty"
+	// return before it ever compares content hashes against anything, and
+	// the ONLY requirement resolveFanartReplaceTarget itself imposes on
+	// these bytes is non-empty (it errors on len(newData) == 0). seedJPG's
+	// minimal SOI+EOI marker would satisfy that equally well; bandJPEG is
+	// used for consistency with the sibling live/unit fanart tests that DO
+	// exercise the exact-byte comparison branch, not because this
+	// particular test needs it. (CR review round: an earlier version of
+	// this comment invented a decode/byte-distinctness requirement specific
+	// to this test that the code does not actually have here -- corrected
+	// rather than replaced with another unverified claim.)
 	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 1), 0o644); err != nil {
 		t.Fatalf("seeding fanart.jpg: %v", err)
 	}

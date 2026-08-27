@@ -200,13 +200,22 @@ func TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend(t *testing.T) {
 	// same call uploadFanartSet already uses, proven correct by the issue's
 	// "SyncAllFanartToPlatforms produces zero duplicates" measurement) so
 	// the test does not depend on the very code path it is about to test
-	// for its setup. bandJPEG (phash_platform_test.go, same package), not
-	// solidJPEG's minimal SOI+EOI marker: the resolver's exact-byte
-	// comparison (image.ContentHash / writeTarget / indexOfContentHash)
-	// needs each seeded backdrop to be BYTE-DISTINCT so hashOf below can
-	// prove which slot actually changed -- CR review round corrected this
-	// comment, which previously described a perceptual-hash decode step
-	// (matchingBackdropIndices) the resolver no longer uses.
+	// for its setup. bandJPEG (phash_platform_test.go, same package), for
+	// consistency with the other Emby tests below that also route through
+	// SyncImageToPlatforms and image.BackupSlot -- NOT because solidJPEG
+	// (defined above in this file) could not serve: solidJPEG(fill) is
+	// ALSO byte-distinct per its fill argument, and would satisfy hashOf's
+	// need to tell slots apart just as well. bandJPEG's actual difference
+	// from solidJPEG is that it is a genuine, decodable raster (verified:
+	// image/jpeg's own Decode succeeds on bandJPEG's output and fails with
+	// "missing SOS marker" on solidJPEG's; Emby's own resize endpoint
+	// actually reprocesses a bandJPEG image but returns solidJPEG's bytes
+	// unchanged) -- a more faithful stand-in for real on-disk operator
+	// artwork on the tests that simulate the actual save-then-sync
+	// sequence. (CR review round: an earlier version of this comment
+	// wrongly claimed solidJPEG was not byte-distinguishable -- checked
+	// directly against solidJPEG's source below and that claim does not
+	// hold; this restates only what is actually true of each fixture.)
 	seedA, seedB := bandJPEG(t, 0xA1), bandJPEG(t, 0xB2)
 	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 0, seedA, "image/jpeg"); err != nil {
 		t.Fatalf("seeding backdrop 0: %v", err)
@@ -500,15 +509,23 @@ func TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete(t *testing.T) {
 	})
 
 	// Seed idx0=oldPrimary, idx1=bystander, idx2=third -- three BYTE-DISTINCT
-	// images (bandJPEG from phash_platform_test.go, same package): the
-	// resolver's exact-byte content-hash comparisons and this test's own
-	// hashOf assertions both need to tell these three apart by their raw
-	// bytes, which solidJPEG's minimal SOI+EOI marker (fine for upload
-	// acceptance, but not byte-distinguishable in the way this test needs)
-	// cannot provide (CR review round: an earlier comment here described a
-	// perceptual-hash/decode requirement that resolveFanartReplaceTarget no
-	// longer has -- the only decode-shaped requirement left anywhere in the
-	// resolver is that it rejects empty bytes).
+	// images (bandJPEG from phash_platform_test.go, same package). Both
+	// bandJPEG and solidJPEG (this file) produce byte-distinct output per
+	// their seed/fill argument, so either would satisfy hashOf's need to
+	// tell these three apart. bandJPEG is used here because this test
+	// exercises image.BackupSlot on a local file exactly as
+	// SaveSlotProtected would (see the comment further down): BackupSlot's
+	// only requirement on the bytes it backs up is that FindExistingImage
+	// finds the file, which neither fixture's byte content affects, but
+	// bandJPEG produces a genuinely decodable raster where solidJPEG's
+	// minimal SOI+EOI marker does not (verified: image/jpeg.Decode
+	// succeeds on bandJPEG's output, and fails with "missing SOS marker" on
+	// solidJPEG's) -- a closer stand-in for real on-disk operator artwork
+	// on a test that models the real save path. (CR review round: an
+	// earlier version of this comment invented a decode requirement on the
+	// resolveFanartReplaceTarget side, which compares raw bytes via
+	// image.ContentHash and never decodes; that claim was wrong and is
+	// removed rather than replaced with another guess.)
 	oldPrimary := bandJPEG(t, 0xC1)
 	bystander := bandJPEG(t, 0xC2)
 	third := bandJPEG(t, 0xC3)

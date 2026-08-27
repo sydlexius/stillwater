@@ -271,14 +271,18 @@ func TestSyncImage_FanartPeerFailsAfterDeleting_StillRestored(t *testing.T) {
 	calls := 0
 	p, a, dir := clobberHarness(t, "fanart.jpg", "delete-then-fail", &calls)
 
-	// bandJPEG (phash_platform_test.go, same package), not an arbitrary byte
-	// string: resolveFanartReplaceTarget's exact-byte comparisons need this
-	// fixture to be byte-distinct from whatever else a test compares it
-	// against; it is a valid, established fixture, not a decode requirement
-	// (CR review round -- the resolver compares raw bytes via
-	// image.ContentHash and never decodes or perceptually hashes them; the
-	// one decode-shaped check left anywhere is that the resolver rejects
-	// empty bytes).
+	// bandJPEG (phash_platform_test.go, same package): checked directly
+	// against this test's actual code path -- clobberUploader's
+	// GetArtistDetail (above in this file) always reports BackdropCount 0,
+	// so resolveFanartReplaceTarget takes its degenerate "platform is
+	// empty" return before comparing any content hashes, and the only
+	// requirement it imposes on these bytes here is non-empty (it errors on
+	// len(newData) == 0). An arbitrary non-empty byte string would satisfy
+	// that equally well; bandJPEG is used for consistency with the other
+	// fanart tests in this package, not because this test's own code path
+	// requires it. (CR review round: an earlier version of this comment
+	// invented a byte-distinctness/decode requirement specific to this test
+	// that the code does not actually have here.)
 	want := bandJPEG(t, 1)
 	writeFile(t, filepath.Join(dir, "fanart.jpg"), want)
 
