@@ -435,7 +435,7 @@ func readSlotBackupBytes(dir, imageType, fileName string) (backupName string, da
 // anything). Returns os.ErrNotExist when no backup exists for this slot --
 // a first-ever save, or a save whose slot has never had a backup taken.
 //
-// #3125 C1: this is what previousFanartPrimaryPHash reads to identify the
+// #3125 C1: this is what previousFanartPrimaryData reads to identify the
 // PREVIOUS primary's actual content for the platform-replace resolver. The
 // backup is written by BackupSlot INSIDE SaveSlotProtected, strictly before
 // the destructive Save that overwrites the canonical file -- and therefore

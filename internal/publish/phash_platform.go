@@ -204,6 +204,14 @@ func deletePollutedBackdrops(ctx context.Context, client phashPlatformClient, pl
 // contract the on-disk restore uses too: "byte-equal OR perceptual match ->
 // no-op". It suppresses a redundant append; it authorizes nothing destructive.)
 //
+// DELIBERATELY A DIFFERENT THRESHOLD THAN resolveFanartReplaceTarget (#3125
+// F3/round 3), which decides at EXACT bytes only -- not an inconsistency, a
+// different consequence for the same kind of mistake. Here, a loose match
+// costs one skipped duplicate append at worst. There, a loose match
+// authorizes an in-place OVERWRITE of a platform slot -- getting it wrong
+// destroys operator artwork, irreversibly. Same signal, different threshold
+// because the two decisions gate different amounts of damage.
+//
 // VERIFY-BY-REFETCH, same reason as the delete: a 2xx is not proof. After the
 // upload the item is re-read and a still-absent picture is an error, so a peer
 // that accepted and dropped the write cannot be reported as a successful
@@ -303,8 +311,8 @@ type fanartReplaceDecision struct {
 // doubt it. Three outcomes, checked in this order:
 //
 //  1. NOOP: the platform already holds a backdrop BYTE-IDENTICAL to the NEW
-//     data (image.ContentHash, exact SHA-256). Nothing to do -- this also
-//     neutralizes the retry path in the sibling Emby-500 defect (#3126).
+//     data AT THE SLOT THIS REPLACE WOULD WRITE (image.ContentHash, exact
+//     SHA-256). Nothing to do.
 //  2. INDEX: either the platform has ZERO backdrops (index 0 creates the
 //     first slot; there is nothing there to clobber), or a backdrop
 //     BYTE-IDENTICAL to previousData (the artist's actual previous-primary
@@ -314,7 +322,51 @@ type fanartReplaceDecision struct {
 //  3. APPEND: neither of the above. The caller must fall back to the
 //     non-indexed, add-only UploadImage -- one accepted duplicate rather
 //     than a destroyed bystander. Why explains which condition failed, for
-//     the Warn log the caller writes.
+//     the Warn log the caller writes. Because an append has no fixed target
+//     slot (see writeTarget's doc comment for what "the slot we would
+//     write" means when nothing can be positively identified), a RETRY of
+//     an append decision -- the sibling Emby-500 defect, #3126, where the
+//     upload actually lands but is reported as a failure -- is caught here
+//     too: if the exact bytes already exist ANYWHERE, appending again would
+//     just be a second copy of an upload that already happened.
+//
+// ONE NOTION OF "THE SLOT WE WOULD WRITE" (#3125 round 3, H1+H2). Round 2
+// computed the NOOP and INDEX decisions independently, and both asked a
+// list-membership question ("do these bytes appear somewhere?") where the
+// contract needs a slot-identity question ("do these bytes sit at the slot
+// this write would target?"). That one conflation surfaced as two separate
+// defects:
+//
+//   - H1 (inverted tie-break): when previousData matched more than one slot
+//     (a stray duplicate left by the very append-bug #3125 exists to fix),
+//     the code picked the HIGHEST matching index on the theory that
+//     duplicates accumulate at the tail. That is backwards: index 0 is the
+//     slot a peer actually RENDERS (measured live on Emby 4.9.5.0: the
+//     bare, no-index GET returns byte-identical to index 0), so writing the
+//     new primary into a higher stray-duplicate slot leaves the rendered
+//     slot holding the OLD image -- the operator sees no change at all.
+//     The lowest matching index is always the one closest to (or at) the
+//     rendered slot on an append-only platform, so it is the correct pick.
+//   - H2 (any-index noop): asking "are these bytes ANYWHERE in the list"
+//     for the noop decision meant a bystander backdrop that happened to
+//     already hold the new bytes (appended earlier, including by the
+//     append-bug itself) silently suppressed the write the actual primary
+//     slot still needed -- zero POSTs, UI reports success, platform
+//     unchanged.
+//
+// writeTarget below is now the SINGLE function both decisions consult for
+// "the slot we would write", so a future third decision cannot reintroduce
+// this conflation by computing its own independent list-membership check.
+//
+// This also restores the APPEND-fallback convergence the doc comment above
+// promises ("one accepted duplicate"): under H2's bug, a sync that took the
+// append fallback would have its bytes sit at the tail, and the VERY NEXT
+// sync of those same bytes would find them there via the any-index check
+// and declare NOOP -- index 0 (the rendered slot) never getting repaired,
+// permanently. Restricting the any-index match to the append-retry case
+// only (outcome 3's own idempotency, never a stand-in for outcome 1) means
+// the next sync instead finds previousData at index 0 via writeTarget and
+// correctly issues the repair write.
 //
 // EXACT BYTES, NOT PERCEPTUAL SIMILARITY (round 1 review C2/C3). This
 // function used to decide both outcomes at collision.DefaultTolerance (0.90
@@ -350,9 +402,11 @@ type fanartReplaceDecision struct {
 // also the ACTUAL retry case both NOOP and INDEX exist to serve -- a retried
 // upload after a lost response re-sends the identical bytes, which byte
 // equality catches with zero false positives. Measured live (see the round-2
-// report): Emby round-trips these fanart uploads byte-identical (SHA-256
-// matches after upload+readback) for ordinary JPEG fixtures, so exact
-// equality converges on retry in practice, not merely in theory; a peer
+// and round-3 reports): both peers round-trip these fanart uploads
+// byte-identical (SHA-256 matches after upload+readback) -- Emby 4.9.5.0 for
+// JPEG and PNG, Jellyfin 10.11.10 for JPEG (PNG keeps its magic bytes on
+// readback too), so exact equality converges on retry in practice across
+// both platforms and both formats measured, not merely in theory; a peer
 // caught genuinely re-encoding on write would fall through to the safe
 // direction (APPEND) rather than falsely matching, which is the correct
 // failure mode for a comparison this function does not control.
@@ -374,7 +428,8 @@ func resolveFanartReplaceTarget(ctx context.Context, client fanartReplaceClient,
 	}
 
 	// Outcome 2a: nothing on the platform yet. Index 0 creates the first
-	// slot; there is no bystander at any index to clobber.
+	// slot; there is no bystander at any index to clobber, and there is
+	// nothing to hash a noop candidate against either.
 	if detail.BackdropCount == 0 {
 		return fanartReplaceDecision{Kind: fanartTargetIndex, Index: 0}, nil
 	}
@@ -391,31 +446,36 @@ func resolveFanartReplaceTarget(ctx context.Context, client fanartReplaceClient,
 		return fanartReplaceDecision{}, err
 	}
 
-	// Outcome 1: already present -- checked before consulting previousData,
-	// so a retry (the platform already reflects the new primary from a prior
-	// call whose response was lost) is idempotent regardless of whether
-	// previousData is available.
-	if indexOfContentHash(hashes, wantHash) >= 0 {
-		return fanartReplaceDecision{Kind: fanartTargetNoop}, nil
+	// writeTarget is the ONE lookup both remaining outcomes consult (H1+H2):
+	// "the slot this replace would write", identified only when the
+	// previous primary's exact bytes are found on the platform.
+	if target, ok := writeTarget(hashes, previousData); ok {
+		// Outcome 1 (targeted): the write target itself already holds the
+		// new bytes -- this is a retry of an INDEX write whose response was
+		// lost, not a fresh replace. Comparing against THIS slot specifically
+		// (never "anywhere in the list") is what H2 requires: a bystander
+		// slot that happens to already hold the new bytes must never
+		// suppress the write the actual target slot still needs.
+		if hashes[target] == wantHash {
+			return fanartReplaceDecision{Kind: fanartTargetNoop}, nil
+		}
+		// Outcome 2b: the previous primary's bytes were positively
+		// identified at target -- safe to overwrite.
+		return fanartReplaceDecision{Kind: fanartTargetIndex, Index: target}, nil
 	}
 
-	// Outcome 2b: identify the slot holding the PREVIOUS primary, by EXACT
-	// content hash. Empty previousData is "cannot identify", not "matches
-	// everything" -- there is no bytes to hash, so there is nothing to
-	// compare against.
-	if len(previousData) > 0 {
-		prevHash := image.ContentHash(previousData)
-		if idx := lastIndexOfContentHash(hashes, prevHash); idx >= 0 {
-			// The LAST (highest-index) exact match is preferred when more
-			// than one slot happens to be byte-identical to the previous
-			// primary (an already-present duplicate): duplicates of a
-			// primary accumulate at higher indices on an append-only
-			// platform, never lower ones, so the highest match is the one
-			// most likely to be a stray duplicate rather than the original
-			// primary slot itself -- overwriting it leaves the original
-			// primary's slot untouched if the two ever diverge again.
-			return fanartReplaceDecision{Kind: fanartTargetIndex, Index: idx}, nil
-		}
+	// No target could be identified (no previousData, or none of its bytes
+	// are found on this item). We cannot pick an index to overwrite, but an
+	// APPEND still needs to be idempotent against its own retry: if the new
+	// bytes already exist ANYWHERE, a prior append already delivered them
+	// (including the #3126 shape, where an indexed upload lands but is
+	// reported as a failure), and appending again would only add a second
+	// copy of an upload that already happened. This is the ONLY place an
+	// any-index match is allowed to decide NOOP, precisely because no
+	// specific slot is being protected here -- there is no target for a
+	// bystander match to wrongly stand in for.
+	if indexOfContentHash(hashes, wantHash) >= 0 {
+		return fanartReplaceDecision{Kind: fanartTargetNoop}, nil
 	}
 
 	// Outcome 3: cannot positively identify a safe index. Append.
@@ -423,6 +483,36 @@ func resolveFanartReplaceTarget(ctx context.Context, client fanartReplaceClient,
 		Kind: fanartTargetAppend,
 		Why:  "no previous-primary bytes matched any current platform backdrop exactly, and the platform already holds at least one backdrop, so no index could be positively identified as safe to overwrite",
 	}, nil
+}
+
+// writeTarget identifies "the slot this fanart replace would write" -- the
+// single notion of target both the NOOP and INDEX outcomes must agree on
+// (#3125 round 3, H1+H2). Returns ok=false when no slot can be positively
+// identified: no previousData was supplied, or none of its bytes are found
+// on this item (the previous primary is gone from the platform, or was
+// never captured). Callers must never guess an index in that case -- the
+// caller here falls back to append.
+//
+// Matches on the LOWEST index holding previousData's exact bytes (H1): on
+// an append-only platform, duplicates of a slot accumulate at HIGHER
+// indices than the original, never lower, and index 0 is the slot a peer
+// actually renders (measured live: Emby's bare, no-index GET returns
+// byte-identical to index 0). The highest match -- what round 2 used --
+// picks the stray duplicate over the rendered slot, so the write lands
+// somewhere the operator never sees and the rendered slot never changes.
+func writeTarget(hashes []string, previousData []byte) (index int, ok bool) {
+	if len(previousData) == 0 {
+		// Empty previousData is "cannot identify", never "matches
+		// everything" -- there are no bytes to hash, so there is nothing to
+		// compare against.
+		return -1, false
+	}
+	prevHash := image.ContentHash(previousData)
+	idx := indexOfContentHash(hashes, prevHash)
+	if idx < 0 {
+		return -1, false
+	}
+	return idx, true
 }
 
 // backdropContentHashes reads every backdrop for the item ONCE and returns
@@ -446,22 +536,14 @@ func backdropContentHashes(ctx context.Context, client connection.BackdropReader
 	return hashes, nil
 }
 
-// indexOfContentHash returns the first index whose hash equals want, or -1.
+// indexOfContentHash returns the FIRST (lowest) index whose hash equals
+// want, or -1. Used both by writeTarget (the lowest match is the slot
+// closest to what a peer renders -- see writeTarget's doc comment, H1) and
+// by the append-retry noop check in resolveFanartReplaceTarget (any match
+// suffices there, since no specific slot is being protected).
 func indexOfContentHash(hashes []string, want string) int {
 	for i, h := range hashes {
 		if h == want {
-			return i
-		}
-	}
-	return -1
-}
-
-// lastIndexOfContentHash returns the LAST (highest) index whose hash equals
-// want, or -1. See resolveFanartReplaceTarget's outcome 2b for why the
-// highest match is preferred among several.
-func lastIndexOfContentHash(hashes []string, want string) int {
-	for i := len(hashes) - 1; i >= 0; i-- {
-		if hashes[i] == want {
 			return i
 		}
 	}

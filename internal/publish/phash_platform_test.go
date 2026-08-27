@@ -1183,6 +1183,99 @@ func TestResolveFanartReplaceTarget_NearDuplicateSiblingIsNeverAuthorized(t *tes
 	}
 }
 
+// TestResolveFanartReplaceTarget_PollutedLibraryWritesLowestMatch is the H1
+// regression (#3125 round 3): the previous primary sits at index 0 -- the
+// slot a peer actually RENDERS (a bare, no-index GET returns byte-identical
+// to index 0, measured live on Emby 4.9.5.0) -- but a STRAY DUPLICATE of
+// it, left by the very append bug #3125 exists to fix, also sits at a
+// higher index. This is exactly the population #3125 documents: repeated
+// replaces before the fix left many artists with the real primary at 0 and
+// one or more identical stragglers behind it.
+//
+// The resolver must pick index 0 (the rendered slot), not the higher
+// duplicate: writing the new primary into the duplicate leaves the
+// RENDERED slot holding the OLD image, so the operator sees no change at
+// all after a "successful" replace.
+//
+// This test does more than assert the returned decision struct -- it
+// APPLIES the decision through the fake client's UploadImageAtIndex (the
+// same call uploadFanartForSync makes) and then asserts the EFFECT: index 0,
+// the slot a bare backdrop GET would return, actually holds the new bytes
+// afterward. A test that only checked decision.Index would not catch a
+// resolver that returns the right struct field but the wrong slot's worth
+// of consequence.
+func TestResolveFanartReplaceTarget_PollutedLibraryWritesLowestMatch(t *testing.T) {
+	previousPrimary := bandJPEG(t, 100)
+	bystander := bandJPEG(t, 101)
+	newPrimary := bandJPEG(t, 102)
+	assertDistinct(t, previousPrimary, bystander, newPrimary)
+
+	// idx0 = previous primary (what Emby renders)
+	// idx1 = bystander
+	// idx2 = a byte-identical stray duplicate of the previous primary
+	f := &fakePhashClient{backdrops: [][]byte{previousPrimary, bystander, previousPrimary}}
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", newPrimary, previousPrimary)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if decision.Kind != fanartTargetIndex || decision.Index != 0 {
+		t.Fatalf("decision = %+v, want {Kind: fanartTargetIndex, Index: 0} (the rendered slot, not the stray duplicate at index 2)", decision)
+	}
+
+	// Apply the decision exactly as uploadFanartForSync would, then check
+	// the RENDERED slot -- index 0 -- actually changed.
+	if uploadErr := f.UploadImageAtIndex(context.Background(), "p1", "fanart", decision.Index, newPrimary, "image/jpeg"); uploadErr != nil {
+		t.Fatalf("applying decision: %v", uploadErr)
+	}
+	if !bytesEqual(f.backdrops[0], newPrimary) {
+		t.Fatal("index 0 (the rendered slot) does not hold the new primary after the write -- the operator would see no change")
+	}
+}
+
+// TestResolveFanartReplaceTarget_H2AnyIndexMatchDoesNotSuppressFix is the H2
+// regression (#3125 round 3): the new bytes already sit on the platform,
+// but at a NON-primary slot (index 1), not at the slot that would be
+// written (index 0, which still holds the stale previous primary). A
+// resolver that asks "are these bytes anywhere in the list" -- round 2's
+// behavior -- wrongly calls this a no-op: zero uploads, the UI reports
+// success, and index 0 (the rendered slot) is left holding the OLD image
+// forever.
+//
+// This also proves the APPEND-fallback convergence claim in this file's
+// doc comment: fanartTargetAppend having previously landed image X at
+// index 1 must NOT make a later, DIFFERENT sync (whose target is index 0)
+// silently stop repairing index 0.
+func TestResolveFanartReplaceTarget_H2AnyIndexMatchDoesNotSuppressFix(t *testing.T) {
+	previousPrimary := bandJPEG(t, 200)
+	imageX := bandJPEG(t, 201) // the new fanart, already appended once at idx1
+	assertDistinct(t, previousPrimary, imageX)
+
+	// idx0 = the stale previous primary (still rendered)
+	// idx1 = imageX, appended earlier (e.g. by a prior #3125-style append,
+	// or an unrelated upload) -- NOT at the slot that would be written
+	f := &fakePhashClient{backdrops: [][]byte{previousPrimary, imageX}}
+
+	decision, err := resolveFanartReplaceTarget(context.Background(), f, "p1", imageX, previousPrimary)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	// The correct decision: previousPrimary is found at index 0, so INDEX
+	// 0 is authorized -- imageX being present elsewhere must not suppress
+	// this write.
+	if decision.Kind != fanartTargetIndex || decision.Index != 0 {
+		t.Fatalf("decision = %+v, want {Kind: fanartTargetIndex, Index: 0} -- a match for the new bytes at a NON-target slot (idx1) must not suppress the fix at idx0 (H2)", decision)
+	}
+
+	// Apply the decision and confirm the rendered slot actually changes.
+	if uploadErr := f.UploadImageAtIndex(context.Background(), "p1", "fanart", decision.Index, imageX, "image/jpeg"); uploadErr != nil {
+		t.Fatalf("applying decision: %v", uploadErr)
+	}
+	if !bytesEqual(f.backdrops[0], imageX) {
+		t.Fatal("index 0 (the rendered slot) was not corrected -- the any-index noop bug would have issued zero uploads here")
+	}
+}
+
 // TestResolveFanartReplaceTarget_CannotIdentify_FallsBackToAppend covers the
 // case the #3125 review demanded be handled honestly: no previous-primary
 // bytes available (a first sync, or a save whose backup was already
