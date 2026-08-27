@@ -337,3 +337,148 @@ func TestLockDamageQueries_SurfaceScanErrors(t *testing.T) {
 		t.Error("LockDamageUnattributed returned nil error for an unscannable row")
 	}
 }
+
+// TestLockDamageChainDepths covers the multi-step-loss reporting query
+// (#3079 review, MEDIUM-2).
+//
+// The repair restores the NEWEST damage row's old_value and asks nothing
+// about whether THAT value was itself an earlier overwrite. Measured on a
+// production clone, 71 of 215 approved pairs sat at depth >= 2. One-step
+// restore stays the design; the depth exists so the operator ruling on a
+// "shorter" row can tell a clean single overwrite from step 4 of 5.
+//
+// The chain is VALUE-LINKED, not merely adjacent, and each sub-test pins one
+// way a chain can END. A query that walked the partition by position alone
+// would inflate every depth here.
+func TestLockDamageChainDepths(t *testing.T) {
+	key := LockDamagePairKey{ArtistID: lockDamageArtistID, Field: "biography"}
+
+	t.Run("a single overwrite is depth 1, not 0", func(t *testing.T) {
+		db := newTestDB(t)
+		repo := newSQLiteHistoryRepo(db)
+		seedLockDamageArtist(t, db)
+		seedLockDamageChange(t, db, "d1", "biography", "v1", "v2",
+			"manual", "2026-05-01T10:00:01Z")
+
+		got, err := repo.LockDamageChainDepths(context.Background())
+		if err != nil {
+			t.Fatalf("LockDamageChainDepths: %v", err)
+		}
+		if got[key] != 1 {
+			t.Errorf("depth = %d, want 1: the newest damage row is itself the first link",
+				got[key])
+		}
+	})
+
+	t.Run("three linked overwrites are depth 3", func(t *testing.T) {
+		db := newTestDB(t)
+		repo := newSQLiteHistoryRepo(db)
+		seedLockDamageArtist(t, db)
+		// v1 -> v2 -> v3 -> v4, each row's new_value feeding the next row's
+		// old_value. Seeded oldest-first; the query ranks newest-first.
+		seedLockDamageChange(t, db, "d1", "biography", "v1", "v2",
+			"manual", "2026-05-01T10:00:01Z")
+		seedLockDamageChange(t, db, "d2", "biography", "v2", "v3",
+			"manual", "2026-05-01T10:00:02Z")
+		seedLockDamageChange(t, db, "d3", "biography", "v3", "v4",
+			"manual", "2026-05-01T10:00:03Z")
+
+		got, err := repo.LockDamageChainDepths(context.Background())
+		if err != nil {
+			t.Fatalf("LockDamageChainDepths: %v", err)
+		}
+		if got[key] != 3 {
+			t.Errorf("depth = %d, want 3 (v1->v2->v3->v4)", got[key])
+		}
+	})
+
+	t.Run("an unlinked older row does NOT extend the chain", func(t *testing.T) {
+		db := newTestDB(t)
+		repo := newSQLiteHistoryRepo(db)
+		seedLockDamageArtist(t, db)
+		// The older row's new_value is "other", which is NOT the newer row's
+		// old_value. It sits adjacent in the partition but is not part of the
+		// same loss, so the chain must stop.
+		seedLockDamageChange(t, db, "d1", "biography", "unrelated", "other",
+			"manual", "2026-05-01T10:00:01Z")
+		seedLockDamageChange(t, db, "d2", "biography", "v3", "v4",
+			"manual", "2026-05-01T10:00:02Z")
+
+		got, err := repo.LockDamageChainDepths(context.Background())
+		if err != nil {
+			t.Fatalf("LockDamageChainDepths: %v", err)
+		}
+		if got[key] != 1 {
+			t.Errorf("depth = %d, want 1: the older row is not value-linked, so it is a "+
+				"different loss and must not inflate this one", got[key])
+		}
+	})
+
+	t.Run("a revert ENDS the chain", func(t *testing.T) {
+		db := newTestDB(t)
+		repo := newSQLiteHistoryRepo(db)
+		seedLockDamageArtist(t, db)
+		// A recovery happened, then fresh damage. The chain must not walk
+		// PAST the revert into losses the operator already undid.
+		seedLockDamageChange(t, db, "d1", "biography", "v1", "v2",
+			"manual", "2026-05-01T10:00:01Z")
+		seedLockDamageChange(t, db, "d2", "biography", "v2", "v3",
+			"revert", "2026-05-01T10:00:02Z")
+		seedLockDamageChange(t, db, "d3", "biography", "v3", "v4",
+			"manual", "2026-05-01T10:00:03Z")
+
+		got, err := repo.LockDamageChainDepths(context.Background())
+		if err != nil {
+			t.Fatalf("LockDamageChainDepths: %v", err)
+		}
+		if got[key] != 1 {
+			t.Errorf("depth = %d, want 1: a revert is not damage, so it terminates the chain",
+				got[key])
+		}
+	})
+
+	t.Run("a first-ever population ENDS the chain", func(t *testing.T) {
+		db := newTestDB(t)
+		repo := newSQLiteHistoryRepo(db)
+		seedLockDamageArtist(t, db)
+		// Filling an empty field is not damage (old_value = ''), so the chain
+		// stops there rather than counting the original creation as a loss.
+		seedLockDamageChange(t, db, "d1", "biography", "", "v1",
+			"manual", "2026-05-01T10:00:01Z")
+		seedLockDamageChange(t, db, "d2", "biography", "v1", "v2",
+			"manual", "2026-05-01T10:00:02Z")
+
+		got, err := repo.LockDamageChainDepths(context.Background())
+		if err != nil {
+			t.Fatalf("LockDamageChainDepths: %v", err)
+		}
+		if got[key] != 1 {
+			t.Errorf("depth = %d, want 1: populating an empty field is not a loss", got[key])
+		}
+	})
+
+	t.Run("depths are per (artist, field), not per artist", func(t *testing.T) {
+		db := newTestDB(t)
+		repo := newSQLiteHistoryRepo(db)
+		seedLockDamageArtist(t, db)
+		seedLockDamageChange(t, db, "b1", "biography", "v1", "v2",
+			"manual", "2026-05-01T10:00:01Z")
+		seedLockDamageChange(t, db, "b2", "biography", "v2", "v3",
+			"manual", "2026-05-01T10:00:02Z")
+		seedLockDamageChange(t, db, "o1", "origin", "x1", "x2",
+			"manual", "2026-05-01T10:00:03Z")
+
+		got, err := repo.LockDamageChainDepths(context.Background())
+		if err != nil {
+			t.Fatalf("LockDamageChainDepths: %v", err)
+		}
+		if got[key] != 2 {
+			t.Errorf("biography depth = %d, want 2", got[key])
+		}
+		originKey := LockDamagePairKey{ArtistID: lockDamageArtistID, Field: "origin"}
+		if got[originKey] != 1 {
+			t.Errorf("origin depth = %d, want 1: a deeper chain on a SIBLING field must not "+
+				"bleed across the partition", got[originKey])
+		}
+	})
+}
