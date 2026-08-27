@@ -1548,10 +1548,21 @@ func TestSyncImageToPlatforms_FanartNoop_IssuesZeroUploadRequests(t *testing.T) 
 	}
 
 	// A noop decision must not add this connection to uploadedTo, so the
-	// post-push repair pass never runs at all for it either -- give any
-	// stray goroutine a moment, then assert ZERO POSTs reached the server.
-	time.Sleep(50 * time.Millisecond)
-	if got := recorder.postCount(); got != 0 {
-		t.Errorf("POST requests to the platform = %d, want 0 (a noop decision must never write)", got)
+	// post-push repair pass never runs at all for it either. A fixed
+	// sleep-then-sample-once cannot distinguish "nothing happened" from "it
+	// happened after I looked" -- a POST arriving after a single 50ms
+	// sample would pass unnoticed on a loaded runner. Poll to a deadline
+	// instead and require the count to stay at zero for the WHOLE window:
+	// the common (already-zero) case costs one fast iteration, and a late
+	// write is still caught because any nonzero sample fails immediately.
+	deadline := time.Now().Add(50 * time.Millisecond)
+	for {
+		if got := recorder.postCount(); got != 0 {
+			t.Fatalf("POST requests to the platform = %d, want 0 (a noop decision must never write)", got)
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

@@ -18,9 +18,28 @@ import (
 	"github.com/sydlexius/stillwater/internal/image"
 )
 
-// liveBackdropTestTimeout bounds each live-server call so a stalled UAT
-// container fails the test quickly instead of hanging the run.
-const liveBackdropTestTimeout = 30 * time.Second
+// liveBackdropTestTimeout bounds an ENTIRE test's main context -- every
+// test in this file builds ONE ctx with this timeout via
+// context.WithTimeout and reuses it across its whole body, so this is a
+// whole-test budget, not a per-call one, despite an earlier version of
+// this comment claiming otherwise (CR review round). The busiest test here
+// (TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete) spends this
+// single budget on roughly twenty sequential round trips plus a 500ms
+// settle sleep; 60s leaves real headroom for that on a loaded UAT
+// container without making a genuine hang take unreasonably long to
+// surface. A stalled/unreachable server still fails fast: the FIRST call in
+// each test (clearAllBackdrops or the initial upload) hits the platform
+// immediately, so a truly dead peer is caught well before the budget
+// expires -- this timeout exists to bound total elapsed time across many
+// calls, not to detect an immediately-refused connection.
+const liveBackdropTestTimeout = 60 * time.Second
+
+// liveBackdropCleanupTimeout bounds each test's t.Cleanup teardown
+// (clearAllBackdrops again, against a fresh context since the main ctx may
+// already be near its own deadline by cleanup time). Cleanup issues only a
+// handful of calls -- far fewer than a test body -- so it gets its own
+// short budget rather than sharing liveBackdropTestTimeout's larger one.
+const liveBackdropCleanupTimeout = 15 * time.Second
 
 // solidJPEG returns a tiny, valid, distinguishable JPEG. Three different
 // "colors" (arbitrary byte fillers, not real pixel colors) give three
@@ -172,7 +191,7 @@ func TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend(t *testing.T) {
 	// pass/fail.
 	clearAllBackdrops(ctx, t, env.itemID, client)
 	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropCleanupTimeout)
 		defer cleanupCancel()
 		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
 	})
@@ -181,12 +200,13 @@ func TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend(t *testing.T) {
 	// same call uploadFanartSet already uses, proven correct by the issue's
 	// "SyncAllFanartToPlatforms produces zero duplicates" measurement) so
 	// the test does not depend on the very code path it is about to test
-	// for its setup. DECODABLE images (bandJPEG, phash_platform_test.go,
-	// same package): #3125 F3 added a perceptual-hash resolution step to the
-	// fanart sync, which now reads back and decodes every EXISTING backdrop
-	// too (via matchingBackdropIndices), not just the new one being
-	// uploaded. solidJPEG's minimal SOI+EOI marker is fine for upload
-	// acceptance but is not decodable.
+	// for its setup. bandJPEG (phash_platform_test.go, same package), not
+	// solidJPEG's minimal SOI+EOI marker: the resolver's exact-byte
+	// comparison (image.ContentHash / writeTarget / indexOfContentHash)
+	// needs each seeded backdrop to be BYTE-DISTINCT so hashOf below can
+	// prove which slot actually changed -- CR review round corrected this
+	// comment, which previously described a perceptual-hash decode step
+	// (matchingBackdropIndices) the resolver no longer uses.
 	seedA, seedB := bandJPEG(t, 0xA1), bandJPEG(t, 0xB2)
 	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 0, seedA, "image/jpeg"); err != nil {
 		t.Fatalf("seeding backdrop 0: %v", err)
@@ -340,7 +360,7 @@ func TestLiveJellyfin_NonIndexedUploadAppends(t *testing.T) {
 	// uncleared item compounds instead of merely being lucky.
 	clearAllBackdrops(ctx, t, env.itemID, client)
 	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropCleanupTimeout)
 		defer cleanupCancel()
 		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
 	})
@@ -414,7 +434,7 @@ func TestLiveJellyfin_IndexedUploadAlsoAppends_KnownGap(t *testing.T) {
 	// every subsequent run started from an already-dirty count.
 	clearAllBackdrops(ctx, t, env.itemID, client)
 	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropCleanupTimeout)
 		defer cleanupCancel()
 		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
 	})
@@ -474,16 +494,21 @@ func TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete(t *testing.T) {
 	// comment on the other live tests in this file.
 	clearAllBackdrops(ctx, t, env.itemID, client)
 	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropCleanupTimeout)
 		defer cleanupCancel()
 		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
 	})
 
-	// Seed idx0=oldPrimary, idx1=bystander, idx2=third -- three DISTINCT,
-	// fully DECODABLE images (bandJPEG from phash_platform_test.go, same
-	// package): this test needs an actual perceptual hash for the
-	// provenance stamp below, which solidJPEG's minimal SOI+EOI marker
-	// (fine for upload, not decodable) cannot provide.
+	// Seed idx0=oldPrimary, idx1=bystander, idx2=third -- three BYTE-DISTINCT
+	// images (bandJPEG from phash_platform_test.go, same package): the
+	// resolver's exact-byte content-hash comparisons and this test's own
+	// hashOf assertions both need to tell these three apart by their raw
+	// bytes, which solidJPEG's minimal SOI+EOI marker (fine for upload
+	// acceptance, but not byte-distinguishable in the way this test needs)
+	// cannot provide (CR review round: an earlier comment here described a
+	// perceptual-hash/decode requirement that resolveFanartReplaceTarget no
+	// longer has -- the only decode-shaped requirement left anywhere in the
+	// resolver is that it rejects empty bytes).
 	oldPrimary := bandJPEG(t, 0xC1)
 	bystander := bandJPEG(t, 0xC2)
 	third := bandJPEG(t, 0xC3)
@@ -579,8 +604,24 @@ func TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete(t *testing.T) {
 		t.Errorf("index 0 content changed to something other than the bystander or the new primary; got an unexpected byte pattern")
 	}
 
-	// The new primary must have landed SOMEWHERE (index 1, where the old
-	// primary was resolved to after the reindex).
+	// The new primary must have landed SOMEWHERE -- via APPEND, not an
+	// indexed replace. CR review round: an earlier version of this comment
+	// claimed the new primary lands "at index 1, where the old primary was
+	// resolved to after the reindex" -- that is wrong. Tracing the actual
+	// state: DeleteImageAtIndex(0) removes oldPrimary OUTRIGHT (this test
+	// deletes the PRIMARY itself, not a lower bystander), so after the
+	// reindex oldPrimary is not present at ANY index -- only the bystander
+	// (now at 0) and third (now at 1) remain. previousFanartPrimaryData
+	// still returns oldPrimary's bytes from the backup, but writeTarget
+	// finds no match for them anywhere on the platform, so
+	// resolveFanartReplaceTarget falls through to fanartTargetAppend and
+	// newPrimary lands at index 2 by append -- no indexed replace occurs
+	// in this scenario. The bystander-survival assertion above is still
+	// exactly right (an unconditional index-0 write would have destroyed
+	// it); this comment only corrects WHICH outcome produced that survival.
+	// See TestLiveEmby_IndexedReplace_FindsPrimaryShiftedByLowerBystanderDelete
+	// below for live coverage of the positive-identification (outcome 2b)
+	// case this test does not exercise.
 	final, err := client.GetArtistDetail(ctx, env.itemID)
 	if err != nil {
 		t.Fatalf("reading final state: %v", err)
@@ -598,5 +639,179 @@ func TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete(t *testing.T) {
 	}
 	if !foundNewPrimary {
 		t.Error("the new primary was not found at any backdrop index after the sync")
+	}
+}
+
+// TestLiveEmby_IndexedReplace_FindsPrimaryShiftedByLowerBystanderDelete is
+// the CR review round's finding 4 addition: real live coverage of
+// resolveFanartReplaceTarget's outcome 2b (POSITIVE identification of the
+// previous primary at a platform-shifted index), which
+// TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete does NOT
+// exercise -- that test deletes the primary itself, so its previous-primary
+// bytes are gone from the platform entirely and the resolver falls through
+// to APPEND. This is the branch's central claim (an INDEXED, in-place
+// replace happens when the previous primary can be positively located,
+// even after its index has shifted) and until this test it had no live
+// evidence.
+//
+// Seeds FOUR distinct backdrops: idx0=bystanderKept (survives untouched),
+// idx1=lowerVictim (deleted, to shift everything after it down by one),
+// idx2=oldPrimary, idx3=third. Deleting idx1 -- a LOWER index than
+// oldPrimary's original slot -- shifts oldPrimary from index 2 down to
+// index 1 and third from 3 down to 2, while bystanderKept at index 0 is
+// completely unaffected (nothing lower than it was touched). This is
+// exactly the "index shifted but the previous primary is still present"
+// shape outcome 2b exists to handle, distinct from F3's "index shifted
+// because the previous primary itself is gone" shape.
+func TestLiveEmby_IndexedReplace_FindsPrimaryShiftedByLowerBystanderDelete(t *testing.T) {
+	env := loadLiveEmbyEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+	defer cancel()
+
+	logger := silentLogger()
+	client := emby.New(env.url, env.apiKey, env.userID, logger)
+
+	clearAllBackdrops(ctx, t, env.itemID, client)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropCleanupTimeout)
+		defer cleanupCancel()
+		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
+	})
+
+	bystanderKept := bandJPEG(t, 0xD1)
+	lowerVictim := bandJPEG(t, 0xD2)
+	oldPrimary := bandJPEG(t, 0xD3)
+	third := bandJPEG(t, 0xD4)
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 0, bystanderKept, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 0: %v", err)
+	}
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 1, lowerVictim, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 1: %v", err)
+	}
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 2, oldPrimary, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 2: %v", err)
+	}
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 3, third, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 3: %v", err)
+	}
+
+	seeded, err := client.GetArtistDetail(ctx, env.itemID)
+	if err != nil {
+		t.Fatalf("reading state after seed: %v", err)
+	}
+	if seeded.BackdropCount != 4 {
+		t.Fatalf("precondition failed: BackdropCount after seed = %d, want 4", seeded.BackdropCount)
+	}
+
+	// Delete index 1 (lowerVictim) -- BELOW oldPrimary's original index 2 --
+	// so the peer reindexes oldPrimary down to 1 and third down to 2, while
+	// bystanderKept at index 0 is untouched.
+	if err := client.DeleteImageAtIndex(ctx, env.itemID, "fanart", 1); err != nil {
+		t.Fatalf("deleting backdrop 1: %v", err)
+	}
+
+	// PRECONDITION: the peer reindexed exactly as expected before trusting
+	// the rest of the test.
+	afterDelete, err := client.GetArtistDetail(ctx, env.itemID)
+	if err != nil {
+		t.Fatalf("reading state after delete: %v", err)
+	}
+	if afterDelete.BackdropCount != 3 {
+		t.Fatalf("precondition failed: BackdropCount after delete = %d, want 3", afterDelete.BackdropCount)
+	}
+	at0, _, err := client.GetArtistBackdrop(ctx, env.itemID, 0)
+	if err != nil {
+		t.Fatalf("reading backdrop 0 after delete: %v", err)
+	}
+	if hashOf(at0) != hashOf(bystanderKept) {
+		t.Fatalf("precondition failed: index 0 does not hold bystanderKept after the delete+reindex")
+	}
+	oldPrimaryShiftedTo1, _, err := client.GetArtistBackdrop(ctx, env.itemID, 1)
+	if err != nil {
+		t.Fatalf("reading backdrop 1 after delete: %v", err)
+	}
+	if hashOf(oldPrimaryShiftedTo1) != hashOf(oldPrimary) {
+		t.Fatalf("precondition failed: index 1 does not hold oldPrimary after the delete+reindex -- the setup does not model a shifted-but-present previous primary")
+	}
+	at2, _, err := client.GetArtistBackdrop(ctx, env.itemID, 2)
+	if err != nil {
+		t.Fatalf("reading backdrop 2 after delete: %v", err)
+	}
+	if hashOf(at2) != hashOf(third) {
+		t.Fatalf("precondition failed: index 2 does not hold third after the delete+reindex")
+	}
+
+	// Run the REAL fanart sync: new local primary, previous primary's
+	// on-disk backup present exactly as SaveSlotProtected would leave it.
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/fanart.jpg", oldPrimary, 0o600); err != nil {
+		t.Fatalf("writing current primary before backup: %v", err)
+	}
+	if err := image.BackupSlot(ctx, dir, "fanart", "fanart.jpg"); err != nil {
+		t.Fatalf("backing up current primary: %v", err)
+	}
+	newPrimary := bandJPEG(t, 0xD5)
+	if err := os.WriteFile(dir+"/fanart.jpg", newPrimary, 0o600); err != nil {
+		t.Fatalf("writing local replacement fanart: %v", err)
+	}
+
+	p := New(Deps{
+		Logger: logger,
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "live-2b", ConnectionID: "c-emby", PlatformArtistID: env.itemID},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "live-emby-uat", Type: connection.TypeEmby, URL: env.url, APIKey: env.apiKey, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: env.userID, FeatureImageWrite: true}},
+		}},
+	})
+
+	art := &artist.Artist{ID: "live-2b", Name: "Live UAT Artist", Path: dir}
+	warnings := p.SyncImageToPlatforms(ctx, art, "fanart")
+	if len(warnings) != 0 {
+		t.Fatalf("SyncImageToPlatforms returned warnings: %v", warnings)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// THE OUTCOME-2B ASSERTION: this must be an INDEXED, in-place replace,
+	// not an append -- the count must stay at 3, never grow to 4. This is
+	// the strongest possible proof that writeTarget positively identified
+	// oldPrimary at its SHIFTED index (1) rather than falling back to
+	// append: an append would show up as a fourth backdrop.
+	final, err := client.GetArtistDetail(ctx, env.itemID)
+	if err != nil {
+		t.Fatalf("reading final state: %v", err)
+	}
+	if final.BackdropCount != 3 {
+		t.Fatalf("BackdropCount after sync = %d, want 3 (an indexed replace, not an append) -- outcome 2b did not fire", final.BackdropCount)
+	}
+
+	// bystanderKept at index 0 must be completely untouched.
+	finalAt0, _, err := client.GetArtistBackdrop(ctx, env.itemID, 0)
+	if err != nil {
+		t.Fatalf("reading backdrop 0 after sync: %v", err)
+	}
+	if hashOf(finalAt0) != hashOf(bystanderKept) {
+		t.Error("index 0 (bystanderKept) was altered by the sync -- it must never be touched")
+	}
+
+	// Index 1 -- where oldPrimary was shifted to -- must now hold the NEW
+	// primary: the whole point of outcome 2b is that this write landed
+	// exactly there, positively identified, not guessed.
+	finalAt1, _, err := client.GetArtistBackdrop(ctx, env.itemID, 1)
+	if err != nil {
+		t.Fatalf("reading backdrop 1 after sync: %v", err)
+	}
+	if hashOf(finalAt1) != hashOf(newPrimary) {
+		t.Error("index 1 (where oldPrimary was shifted to) does not hold the new primary -- outcome 2b did not correctly resolve the shifted slot")
+	}
+
+	// third at index 2 must be completely untouched.
+	finalAt2, _, err := client.GetArtistBackdrop(ctx, env.itemID, 2)
+	if err != nil {
+		t.Fatalf("reading backdrop 2 after sync: %v", err)
+	}
+	if hashOf(finalAt2) != hashOf(third) {
+		t.Error("index 2 (third) was altered by the sync -- it must never be touched")
 	}
 }

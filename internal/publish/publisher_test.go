@@ -1035,10 +1035,13 @@ func TestSyncImageToPlatforms_FanartUsesIndexedReplacePath(t *testing.T) {
 	dir := t.TempDir()
 	// fanart.jpg is the primary fanart file (slot 0); FindExistingImage always
 	// discovers the primary here, which is exactly why the fix targets index 0.
-	// A DECODABLE image, not seedJPG's minimal SOI+EOI marker: #3125 F3 added
-	// a perceptual-hash step to the fanart branch (resolveFanartReplaceTarget),
-	// which must decode the bytes before writing anywhere. bandJPEG
-	// (phash_platform_test.go, same package) is the established fixture.
+	// bandJPEG (phash_platform_test.go, same package), not seedJPG's minimal
+	// SOI+EOI marker: this fixture only needs to be BYTE-DISTINCT from
+	// whatever else a test compares it against, since resolveFanartReplaceTarget
+	// decides purely by exact content hash (image.ContentHash / writeTarget),
+	// never by decoding or perceptually hashing the bytes (CR review round --
+	// an earlier version of this comment described a decode requirement that
+	// does not exist here).
 	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 1), 0o644); err != nil {
 		t.Fatalf("seeding fanart.jpg: %v", err)
 	}
@@ -1144,20 +1147,33 @@ func TestSyncImageToPlatforms_FanartUnsupportedConnectionWarnsLoudly(t *testing.
 // backdrop state (here, the server answers every GET with 500), the
 // connection must be skipped with a distinct warning, never silently
 // treated as "empty platform, write index 0".
+//
+// CR review round: the warning-only assertion below cannot fail on the
+// property this test's own name and doc comment promise -- "warns AND
+// skips". A regression that emitted the warning and then fell through to a
+// blind POST /Images/Backdrop/0 anyway (exactly "silently treated as an
+// empty platform, write index 0", the outcome this comment forbids) would
+// still leave this test green. pathRecordingServer (used by the sibling
+// tests below) records every POST path; asserting zero of them alongside
+// the warning is what actually proves the skip.
 func TestSyncImageToPlatforms_FanartResolveErrorWarnsAndSkips(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 1), 0o644); err != nil {
 		t.Fatalf("seeding fanart.jpg: %v", err)
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := &pathRecordingServer{}
+	httpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			srv.record(r.URL.Path)
+		}
 		if r.Method == http.MethodGet {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer srv.Close()
+	defer httpSrv.Close()
 
 	p := New(Deps{
 		Logger: silentLogger(),
@@ -1165,7 +1181,7 @@ func TestSyncImageToPlatforms_FanartResolveErrorWarnsAndSkips(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: httpSrv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 		}},
 	})
 
@@ -1175,6 +1191,9 @@ func TestSyncImageToPlatforms_FanartResolveErrorWarnsAndSkips(t *testing.T) {
 	}
 	if !strings.Contains(warnings[0], "could not resolve fanart replace target") {
 		t.Errorf("warning = %q, want it to mention the resolve failure", warnings[0])
+	}
+	if got := srv.snapshot(); len(got) != 0 {
+		t.Errorf("platform POSTs = %v, want NONE -- a resolve failure must skip the upload entirely, never fall through to a blind write", got)
 	}
 }
 

@@ -1038,7 +1038,7 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	// more common thumb/logo/banner sync.
 	var previousFanartData []byte
 	if imageType == "fanart" {
-		previousFanartData = p.previousFanartPrimaryData(dir, filepath.Base(filePath))
+		previousFanartData = p.previousFanartPrimaryData(ctx, dir, filepath.Base(filePath))
 	}
 
 	for _, pid := range platformIDs {
@@ -1305,13 +1305,21 @@ func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, p
 // dir and primaryFileName are the SAME values syncImageToPlatforms already
 // resolved for its own upload (p.ImageDir(a) and the discovered primary
 // basename), so this makes no extra filesystem probe beyond the one
-// os.ReadDir the backup lookup itself needs.
+// directory read the backup lookup itself needs.
 //
-// Best-effort and NEVER fatal to the sync: a read failure here must not
-// block the upload, it only narrows resolveFanartReplaceTarget's options
-// down to append -- the safe direction.
-func (p *Publisher) previousFanartPrimaryData(dir, primaryFileName string) []byte {
-	data, err := img.ReadSlotBackup(dir, "fanart", primaryFileName)
+// ctx-aware (CR review round): ReadSlotBackup's directory listing and file
+// read now both go through internal/image's cancellable-read primitives
+// (#2689), the same idiom already used for every other on-disk image read
+// in this codebase -- a stalled network-mounted library previously could
+// block this call indefinitely with no way for a caller's ctx to interrupt
+// it, ahead of the platform calls this same sync still needs to make.
+//
+// Best-effort and NEVER fatal to the sync: a read failure here (including a
+// ctx-cancellation error) must not block the upload, it only narrows
+// resolveFanartReplaceTarget's options down to append -- the safe
+// direction.
+func (p *Publisher) previousFanartPrimaryData(ctx context.Context, dir, primaryFileName string) []byte {
+	data, err := img.ReadSlotBackup(ctx, dir, "fanart", primaryFileName)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			p.logger.Warn("reading previous-primary backup for replace-target resolution; falling back to append",

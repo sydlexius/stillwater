@@ -374,8 +374,8 @@ func BackupSlot(ctx context.Context, dir, imageType, fileName string) error {
 // Restoring ONE slot writes ONE real file: this Save is handed a single name, so it
 // takes Save's i == 0 path and the flag changes nothing today. It is threaded through
 // so the parameter tells the truth and stays correct if that ever changes.
-func RestoreSlot(dir, imageType, fileName string, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) error {
-	backupName, data, err := readSlotBackupBytes(dir, imageType, fileName)
+func RestoreSlot(ctx context.Context, dir, imageType, fileName string, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) error {
+	backupName, data, err := readSlotBackupBytes(ctx, dir, imageType, fileName)
 	if err != nil {
 		return err
 	}
@@ -397,12 +397,18 @@ func RestoreSlot(dir, imageType, fileName string, useSymlinks bool, meta *ExifMe
 // of RestoreSlot so ReadSlotBackup (below) can share the exact same lookup --
 // two independent implementations of "find the one file in this dir" is two
 // places for the slotBase-matching rule to drift.
-func readSlotBackupBytes(dir, imageType, fileName string) (backupName string, data []byte, err error) {
+func readSlotBackupBytes(ctx context.Context, dir, imageType, fileName string) (backupName string, data []byte, err error) {
 	typeDir, err := backupTypeDir(dir, imageType)
 	if err != nil {
 		return "", nil, err
 	}
-	entries, err := os.ReadDir(typeDir)
+	// ctx-aware (#2689/#2934 idiom): a network-mounted library that stops
+	// responding leaves a bare os.ReadDir blocked in the kernel with no
+	// timeout, exactly the hang class readDirCtx exists to bound (CR review
+	// round: this call and the read below were still using the direct
+	// os.ReadDir/os.ReadFile this package otherwise avoids for exactly this
+	// reason).
+	entries, err := readDirCtx(ctx, typeDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil, os.ErrNotExist
@@ -420,7 +426,10 @@ func readSlotBackupBytes(dir, imageType, fileName string) (backupName string, da
 		return "", nil, os.ErrNotExist
 	}
 
-	data, err = os.ReadFile(filepath.Join(typeDir, backupName)) //nolint:gosec // path derived from trusted naming
+	// readFileBounded, not os.ReadFile: same ctx-cancellability as the
+	// directory listing above, plus the MaxDecodeBytes bound every other
+	// image read in this package already enforces.
+	data, err = readFileBounded(ctx, filepath.Join(typeDir, backupName))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil, os.ErrNotExist
@@ -450,8 +459,8 @@ func readSlotBackupBytes(dir, imageType, fileName string) (backupName string, da
 // what the platform holds) at the moment just before the CURRENT save -- the
 // exact identity artist_images.PHash could not provide, because that column
 // is stamped from the NEW file by the same request, before sync ever runs.
-func ReadSlotBackup(dir, imageType, fileName string) ([]byte, error) {
-	_, data, err := readSlotBackupBytes(dir, imageType, fileName)
+func ReadSlotBackup(ctx context.Context, dir, imageType, fileName string) ([]byte, error) {
+	_, data, err := readSlotBackupBytes(ctx, dir, imageType, fileName)
 	return data, err
 }
 
@@ -708,7 +717,7 @@ func SaveSlotProtected(ctx context.Context, dir, imageType string, naming []stri
 	// bytes rather than stamping them with the failed edit's metadata.
 	var restoreErrs []error
 	for _, name := range protected {
-		if restoreErr := RestoreSlot(dir, imageType, name, useSymlinks, nil, logger); restoreErr != nil &&
+		if restoreErr := RestoreSlot(ctx, dir, imageType, name, useSymlinks, nil, logger); restoreErr != nil &&
 			!errors.Is(restoreErr, os.ErrNotExist) {
 			restoreErrs = append(restoreErrs, fmt.Errorf("%s: %w", name, restoreErr))
 		}

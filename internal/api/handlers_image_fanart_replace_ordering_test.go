@@ -184,12 +184,29 @@ func TestHandleImageCrop_FanartReplace_DoesNotAppendOnPlatform(t *testing.T) {
 	mu.Lock()
 	postCount := len(backdrops)
 	postPrimary := backdrops[0]
+	postsCopy := append([]string(nil), posts...) // copy under the mutex; posts is shared with the server goroutine
 	mu.Unlock()
 	if postCount != 1 {
 		t.Errorf("platform backdrop count after replace = %d, want 1 (in-place replace) -- an append means the C1 fix did not resolve the previous primary's true bytes", postCount)
 	}
 	if sha256Hex(postPrimary) == sha256Hex(original) {
 		t.Error("backdrop 0 still holds the ORIGINAL bytes after a replace -- the write never reached the primary slot")
+	}
+
+	// THE URL-SHAPE ASSERTION (CR review round, finding 1): the count check
+	// above only proves the SIDE EFFECT of an in-place replace. The actual
+	// behavior this PR changes is which ENDPOINT SHAPE the sync uses --
+	// indexed (PLATFORM in-place write) vs non-indexed (APPEND) -- and a
+	// regression that hit a different endpoint but happened to still leave
+	// the count at 1 would pass the count-only check. Assert directly on
+	// the recorded request path: exactly one POST, and it must be the
+	// INDEXED endpoint at index 0.
+	if len(postsCopy) != 1 {
+		t.Fatalf("platform POSTs = %v, want exactly one", postsCopy)
+	}
+	wantPath := "/Items/emby-artist-1/Images/Backdrop/0"
+	if postsCopy[0] != wantPath {
+		t.Errorf("platform POST path = %q, want %q (indexed replace at slot 0, not a non-indexed append)", postsCopy[0], wantPath)
 	}
 }
 

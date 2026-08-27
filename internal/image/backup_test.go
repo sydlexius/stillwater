@@ -235,7 +235,7 @@ func TestReadSlotBackup_ReturnsBackupBytesWithoutConsuming(t *testing.T) {
 		t.Fatalf("BackupSlot: %v", err)
 	}
 
-	got, err := ReadSlotBackup(dir, "fanart", "fanart.jpg")
+	got, err := ReadSlotBackup(context.Background(), dir, "fanart", "fanart.jpg")
 	if err != nil {
 		t.Fatalf("ReadSlotBackup: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestReadSlotBackup_ReturnsBackupBytesWithoutConsuming(t *testing.T) {
 
 	// PRECONDITION-STYLE CHECK, but after the fact: the backup must still be
 	// there for RestoreSlot to use -- ReadSlotBackup is read-only.
-	again, err := ReadSlotBackup(dir, "fanart", "fanart.jpg")
+	again, err := ReadSlotBackup(context.Background(), dir, "fanart", "fanart.jpg")
 	if err != nil {
 		t.Fatalf("ReadSlotBackup did not leave the backup in place for a second read: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestReadSlotBackup_ReturnsBackupBytesWithoutConsuming(t *testing.T) {
 // any other lookup failure -- "cannot identify", fall back to append.
 func TestReadSlotBackup_NoBackupReturnsErrNotExist(t *testing.T) {
 	dir := t.TempDir()
-	_, err := ReadSlotBackup(dir, "fanart", "fanart.jpg")
+	_, err := ReadSlotBackup(context.Background(), dir, "fanart", "fanart.jpg")
 	if !os.IsNotExist(err) {
 		t.Errorf("err = %v, want os.ErrNotExist (or a wrapped equivalent os.IsNotExist recognizes)", err)
 	}

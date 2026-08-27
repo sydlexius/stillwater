@@ -271,11 +271,14 @@ func TestSyncImage_FanartPeerFailsAfterDeleting_StillRestored(t *testing.T) {
 	calls := 0
 	p, a, dir := clobberHarness(t, "fanart.jpg", "delete-then-fail", &calls)
 
-	// A DECODABLE image, not an arbitrary byte string: #3125 F3 added a
-	// perceptual-hash step (resolveFanartReplaceTarget) to the fanart branch,
-	// which must decode the bytes before it can even attempt a platform
-	// write. bandJPEG (phash_platform_test.go, same package) is the
-	// established fixture for exactly this.
+	// bandJPEG (phash_platform_test.go, same package), not an arbitrary byte
+	// string: resolveFanartReplaceTarget's exact-byte comparisons need this
+	// fixture to be byte-distinct from whatever else a test compares it
+	// against; it is a valid, established fixture, not a decode requirement
+	// (CR review round -- the resolver compares raw bytes via
+	// image.ContentHash and never decodes or perceptually hashes them; the
+	// one decode-shaped check left anywhere is that the resolver rejects
+	// empty bytes).
 	want := bandJPEG(t, 1)
 	writeFile(t, filepath.Join(dir, "fanart.jpg"), want)
 
