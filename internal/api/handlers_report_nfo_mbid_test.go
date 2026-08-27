@@ -478,6 +478,13 @@ func (l *listErrCallTrackingHistoryRepo) LockDamageUnattributed(ctx context.Cont
 	return l.delegate.LockDamageUnattributed(ctx)
 }
 
+// LockDamageChainDepths satisfies HistoryRepository. The chain depth is a
+// PREVIEW-ONLY field, so a nil map (every candidate reporting depth 0) is a
+// valid answer and keeps this fake focused on what it exists to exercise.
+func (l *listErrCallTrackingHistoryRepo) LockDamageChainDepths(ctx context.Context) (map[artist.LockDamagePairKey]int, error) {
+	return nil, nil
+}
+
 // countErrCallTrackingHistoryRepo delegates everything to a real repo except
 // CountNFOMBIDWrites, which always fails; ListNFOMBIDWrites is left to
 // succeed so the count-error branch is isolated from the list-error one.
@@ -525,4 +532,11 @@ func (c *countErrCallTrackingHistoryRepo) LockDamageCandidates(ctx context.Conte
 
 func (c *countErrCallTrackingHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]artist.LockDamageUnattributedRow, error) {
 	return c.delegate.LockDamageUnattributed(ctx)
+}
+
+// LockDamageChainDepths satisfies HistoryRepository. The chain depth is a
+// PREVIEW-ONLY field, so a nil map (every candidate reporting depth 0) is a
+// valid answer and keeps this fake focused on what it exists to exercise.
+func (c *countErrCallTrackingHistoryRepo) LockDamageChainDepths(ctx context.Context) (map[artist.LockDamagePairKey]int, error) {
+	return nil, nil
 }

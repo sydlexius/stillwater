@@ -123,11 +123,19 @@ report.
 **THE HONEST COST, stated plainly.** This returns coverage to the post-#3048
 window the `rule_fix` trail was reached for in order to escape. Damage written
 before `fdeb1b6f` carries `source = "manual"` and is byte-identical to an
-operator edit, so it is NOT recoverable by any safe predicate. The repair is
-therefore FORWARD-LOOKING: it protects against a future write path that escapes
-the chokepoint, and it does not repair the historical loss that motivated #3038.
-That is a real reduction in scope and it is the correct one -- a mechanism that
-silently reverts operator edits is worse than one that repairs nothing.
+operator edit, so it is NOT recoverable by any safe predicate. The repair
+described in THIS section is therefore FORWARD-LOOKING: it protects against a
+future write path that escapes the chokepoint, and it does not repair the
+historical loss that motivated #3038. That is a real reduction in scope and it
+is the correct one -- a mechanism that silently reverts operator edits is worse
+than one that repairs nothing.
+
+> **SUPERSEDED IN PART BY #3079.** The paragraph above describes the
+> ATTRIBUTED pass and remains accurate for it. A SECOND pass, added by #3079,
+> does repair the historical loss -- see
+> [The pre-guard pass](#the-pre-guard-pass-3079) below. The objection here is
+> not waved away there; it is answered by changing the SHAPE of the mechanism
+> rather than by finding a better predicate. Read both.
 
 Damage the mechanism cannot attribute is REPORTED as unrecoverable, so the
 operator can act on it through the blast-radius pane, which already surfaces it.
@@ -440,7 +448,81 @@ finding, not a tuning problem.
 - Guarding the single-column write verbs / operator grants ("unit 3"), which is
   what closes `handlers_platform_state.go:142-175`, an automated writer wearing
   an operator's click.
-- Any widening of the predicate to unattributed damage.
+- ~~Any widening of the predicate to unattributed damage.~~ **NO LONGER OUT OF
+  SCOPE as of #3079**, which adds exactly that as a SEPARATE, operator-invoked,
+  one-shot pass. It is not a widening of the predicate documented above: the two
+  passes partition the damage set and neither can select the other's rows. See
+  [The pre-guard pass](#the-pre-guard-pass-3079).
+
+## The pre-guard pass (#3079)
+
+Everything above describes the ATTRIBUTED repair: it restores only rows whose
+own `source` names the rule that wrote them, which no released build ever
+recorded, so on an existing database it correctly repairs nothing.
+
+#3079 adds a second pass over the COMPLEMENT of that set: newest-per-pair
+damage whose source names no rule. That is the historical population -- the
+one this document argued, above, could not be safely repaired. The objection
+was correct about the mechanism it described, and it is answered by building a
+different mechanism rather than a cleverer predicate.
+
+**Three properties carry it, and they are not interchangeable.**
+
+1. **The population is CLOSED.** A fixed upper time bound
+   (`preGuardCutoff`, the v1.6.2 release instant) means no future write can
+   enter the set. The comparison is STRICT: a row stamped exactly at the bound
+   is excluded, the allow-list direction holding on an ambiguous instant.
+2. **Every restore is REVERSIBLE.** `RestoreLockedFieldGuarded` commits its
+   history row inside the restore transaction (#3088/#3090), so a restore that
+   commits is guaranteed to leave an audit row carrying the replaced value.
+3. **The cut is PREVIEWED and APPROVED before anything writes.**
+
+**PROPERTY 3 IS DOING THE REAL SAFETY WORK ON THIS POPULATION, AND PROPERTY 1
+IS NOT.** The time bound is a SCOPE LIMITER, not a discriminator: it bounds
+the set, it does not tell a thin provider record from an operator's own
+curation. Nothing does. Measured on a production clone, damage that grew and
+damage that shrank interleave on every single day of the range, so there is no
+date to cut on.
+
+Because the whole argument rests on the human ruling, the preview must be
+BINDING on the write, and making it so is mechanical rather than procedural:
+
+- The dry run prints an **approval digest** over the sorted change-ids of the
+  set it selected.
+- `-lock-damage-pre-guard-repair` REQUIRES that digest via
+  `-lock-damage-pre-guard-approve` and refuses to write anything if the set it
+  selects no longer matches.
+
+A digest and not a count, because a count cannot catch a SWAP -- one row
+leaving and another joining leaves the count identical. Change-ids and not
+`(artist, field)`, because a new damaging write on an already-approved pair
+changes the row the restore reads from while leaving the pair unchanged.
+
+This matters because selection condition 1 is "the field is locked NOW". On
+the clone, 3014 pre-cutoff unattributable damage rows sat on UNLOCKED fields:
+one ordinary lock toggle away from becoming write targets. Without the digest,
+a lock added between the preview and the repair silently enlarges the write.
+
+**The preview reports magnitude, never content.** Each candidate line carries a
+direction (`emptied` / `shorter` / `longer` / `same-length`), the rune LENGTHS
+and percent delta, and a CHAIN DEPTH. Lengths are not library content and cost
+nothing against the privacy rules above, and direction alone is too coarse to
+rule on: a field that lost 95% and one that lost 3 characters both print
+`shorter`. Chain depth exposes multi-step loss -- the pass restores the newest
+damage row's `old_value` and does not ask whether that value was itself an
+earlier overwrite, so an operator ruling on a depth-4 row should know it is
+repairing one step of a longer chain. **None of these is a predicate.** Direction
+in particular is never filtered on: a provider can return a longer WRONG value,
+and filtering on direction would silently decide the exact question the preview
+exists to put in front of a human.
+
+**Operational notes.** The repair opens the database READ-WRITE and RUNS
+MIGRATIONS, unlike the dry run (which uses a `mode=ro` handle and refuses a
+behind-on-migrations database rather than migrating it). Stop the server and
+back up before running it. It is guarded by its own settings key, distinct
+from the attributed pass's, and stamps that key only on a pass with no
+row-level failures. A failed pass now exits NON-ZERO, so
+`stillwater -lock-damage-pre-guard-repair && ...` is safe to script.
 
 ## Sequencing
 
