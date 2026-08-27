@@ -362,3 +362,72 @@ func TestGuardPreGuardPanic_LogsTypeOnly(t *testing.T) {
 		t.Error("guardPreGuardPanic did not run the pass")
 	}
 }
+
+// TestPrintLockDamageReport_UnambiguousLossesFirst pins the preview's
+// ORDERING, which is the half of #3079's safety argument the predicate does
+// not carry: the pass restores an unattributed population, so what makes it
+// safe is a human ruling on the cut, and a preview is only an approval
+// mechanism if the rows needing no thought are separable from the rows
+// needing the most. On this deployment the list runs to 215 rows; ordered by
+// timestamp, the 4 emptied fields sit scattered among 48 that grew.
+//
+// MUTATION PROOF. Deleting the orderedForPreview call in
+// printLockDamageReport (printing res.Restored directly, the pre-fix
+// behavior) fails this test: the input below is deliberately seeded in the
+// WORST order, exactly inverted, so a report that preserves input order
+// prints "longer" first and the emptied row last.
+//
+// It asserts the ORDER of the direction groups, never that a row is absent:
+// every candidate must still be printed. The count assertion below is what
+// stops a future "sort" that also filters -- hard-filtering on direction is
+// precisely what the predicate refuses to do (a provider can return a longer
+// WRONG value), and the preview must not reintroduce it in the renderer.
+func TestPrintLockDamageReport_UnambiguousLossesFirst(t *testing.T) {
+	res := &maintenance.LockDamageResult{
+		Restored: []maintenance.LockDamageRestore{
+			{ArtistID: "a-longer", Field: "biography", Direction: "longer"},
+			{ArtistID: "a-same", Field: "biography", Direction: "same-length"},
+			{ArtistID: "a-shorter", Field: "biography", Direction: "shorter"},
+			{ArtistID: "a-emptied", Field: "biography", Direction: "emptied"},
+		},
+	}
+
+	var out bytes.Buffer
+	printLockDamageReport(&out, res)
+	report := out.String()
+
+	// Every row still printed: ordering must not become filtering.
+	for _, id := range []string{"a-longer", "a-same", "a-shorter", "a-emptied"} {
+		if !strings.Contains(report, "artist="+id+" ") {
+			t.Fatalf("candidate %s is missing from the report; ordering must not drop rows:\n%s", id, report)
+		}
+	}
+
+	// The direction groups appear least-ambiguous first.
+	want := []string{"a-emptied", "a-shorter", "a-same", "a-longer"}
+	at := make([]int, len(want))
+	for i, id := range want {
+		at[i] = strings.Index(report, "artist="+id+" ")
+	}
+	for i := 1; i < len(at); i++ {
+		if at[i-1] >= at[i] {
+			t.Fatalf("%s printed at %d, %s at %d; want the unambiguous losses first:\n%s",
+				want[i-1], at[i-1], want[i], at[i], report)
+		}
+	}
+}
+
+// TestOrderedForPreview_DoesNotMutateItsInput guards the copy. The result the
+// preview renders is the SAME slice the write pass consumes, so an in-place
+// sort here would silently reorder the restore loop -- a reporting concern
+// reaching into the write path.
+func TestOrderedForPreview_DoesNotMutateItsInput(t *testing.T) {
+	in := []maintenance.LockDamageRestore{
+		{ArtistID: "a1", Direction: "longer"},
+		{ArtistID: "a2", Direction: "emptied"},
+	}
+	_ = orderedForPreview(in)
+	if in[0].ArtistID != "a1" || in[1].ArtistID != "a2" {
+		t.Errorf("orderedForPreview reordered its input: %v", in)
+	}
+}

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -194,6 +196,59 @@ func guardPreGuardPanic(logger *slog.Logger, pass func()) (err error) {
 	return nil
 }
 
+// previewDirectionRank orders the preview's restore list by how AMBIGUOUS the
+// row is, least first: an emptied field is an unarguable loss, a shortened one
+// nearly so, and a longer or same-length value is the shape genuine operator
+// curation takes.
+//
+// ORDERING ONLY. It decides nothing: every candidate is printed whatever its
+// rank, and no predicate reads Direction (see the header of
+// internal/maintenance/lock_damage_repair.go for why "it grew, so it was
+// curation" is false -- a provider can return a longer WRONG value). Sorting
+// the unambiguous rows to the top is what makes the preview usable as the
+// approval mechanism it is: on a real library the list runs to hundreds of
+// rows, and a chronological dump buries the ones that need no thought among
+// the ones that need the most.
+//
+// An unrecognized direction sorts LAST rather than first, so a future
+// vocabulary addition lands among the rows that get scrutiny rather than
+// among the ones a reader may wave through.
+func previewDirectionRank(direction string) int {
+	switch direction {
+	case "emptied":
+		return 0
+	case "shorter":
+		return 1
+	case "same-length":
+		return 2
+	case "longer":
+		return 3
+	default:
+		return 4
+	}
+}
+
+// orderedForPreview returns a COPY of the restore list sorted for the preview.
+// A copy, not an in-place sort: the caller's result is shared with the write
+// pass and with the tests, and a reporting concern must not reorder it.
+//
+// The sort is STABLE and fully tie-broken (direction, then field, then artist
+// id), so two runs over the same database print byte-identical lists and a
+// diff between two previews shows only real changes.
+func orderedForPreview(restored []maintenance.LockDamageRestore) []maintenance.LockDamageRestore {
+	out := slices.Clone(restored)
+	slices.SortStableFunc(out, func(a, b maintenance.LockDamageRestore) int {
+		if c := cmp.Compare(previewDirectionRank(a.Direction), previewDirectionRank(b.Direction)); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Field, b.Field); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ArtistID, b.ArtistID)
+	})
+	return out
+}
+
 // printLockDamageReport renders the dry-run report. Split from the database
 // plumbing so a test can drive every section -- the Failed loop needs a
 // result only an injected repository failure produces, which the dry-run
@@ -201,7 +256,7 @@ func guardPreGuardPanic(logger *slog.Logger, pass func()) (err error) {
 func printLockDamageReport(out io.Writer, res *maintenance.LockDamageResult) {
 	_, _ = fmt.Fprintf(out, "locked-field damage repair DRY RUN (no writes performed)\n")
 	_, _ = fmt.Fprintf(out, "would restore: %d\n", len(res.Restored))
-	for _, r := range res.Restored {
+	for _, r := range orderedForPreview(res.Restored) {
 		// direction is a fixed descriptor, never a value: it lets the
 		// operator sort unambiguous overwrites from possible curation
 		// without being shown the biographies to do it.
