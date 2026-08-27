@@ -1,6 +1,7 @@
 package artist
 
 import (
+	"strings"
 	"time"
 )
 
@@ -66,10 +67,67 @@ type LockDamageCandidate struct {
 // says "nothing to repair" because it cannot see the damage is the "unknown
 // rendered as clean" defect the blast-radius work exists to prevent.
 type LockDamageUnattributedRow struct {
+	// ChangeID is the damage row's primary key.
+	ChangeID string
 	ArtistID string
 	Field    string
+	// OldValue is the operator's value; NewValue is what replaced it.
+	//
+	// THESE ARRIVED WITH #3079 AND CHANGED THIS TYPE'S ROLE. Before it, this
+	// row was a pure REPORT ("we saw damage we cannot attribute") and carried
+	// no values at all, deliberately. The pre-guard repair pass restores from
+	// exactly this set, so it needs the value to write back and the value to
+	// compare against -- the same two the attributed pass takes from
+	// LockDamageCandidate. Nothing else changed: the query is unchanged in
+	// which ROWS it returns.
+	//
+	// PRIVATE LIBRARY CONTENT. Neither ever reaches a log line or a report;
+	// see the reporting rules in docs/architecture/lock-damage-repair.md.
+	OldValue string
+	NewValue string
 	// Source is the damage row's recorded source ("manual", "scan",
 	// "provider:<name>", ...). Carried so the report can say WHY the row is
 	// unattributable. Never a value.
 	Source string
+	// DamagedAt is the damage row's created_at, and the pre-guard pass's
+	// UPPER TIME BOUND is applied against it (#3079). An unparsable timestamp
+	// resolves to time.Now (parseHistoryTimestamp), which is always AFTER the
+	// cutoff, so a row whose timestamp cannot be read is EXCLUDED rather than
+	// admitted -- the allow-list direction holding on the one field the bound
+	// rests on.
+	DamagedAt time.Time
+}
+
+// StoredFieldValue converts a raw artists-column value into the VALUE FORM
+// history rows carry. Slice fields store a JSON array in the column but
+// metadata_changes records the joined "a, b, c" representation, so a raw
+// comparison of the two is a type error wearing a string's clothes.
+//
+// Exported because #3079's preview must ask the same question the write path
+// asks. Before this, the dry run short-circuited before reaching the guarded
+// verb, so a candidate whose stored value had already diverged was previewed
+// as "would restore" and then silently declined at write time -- the preview
+// overstating in the direction nothing was checking.
+func StoredFieldValue(field, storedRaw string) string {
+	if sliceFields[field] {
+		return strings.Join(UnmarshalStringSlice(storedRaw), ", ")
+	}
+	return storedRaw
+}
+
+// FieldValueStillDamaged reports whether stored still equals the damaged
+// value a candidate was selected for, under the same normalization the
+// repository uses for no-op detection.
+//
+// THIS IS THE DIVERGENCE PREDICATE, AND IT HAS EXACTLY TWO CALLERS BY DESIGN:
+// RestoreLockedFieldGuarded (which decides the write) and the #3079 preview
+// (which decides what the operator is shown). They MUST NOT drift: a preview
+// answering a different question than the write is a preview that cannot bind
+// it, and the whole safety argument for the pre-guard pass is that the human
+// ruled on the set that actually gets written.
+//
+// False means the field moved on after the damage -- an operator edit, or a
+// later writer -- so restoring would overwrite data newer than the damage.
+func FieldValueStillDamaged(field, stored, damagedValue string) bool {
+	return normalizeFieldValue(field, stored) == normalizeFieldValue(field, damagedValue)
 }

@@ -68,6 +68,13 @@ func (s *spyHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]artist.L
 	return s.delegate.LockDamageUnattributed(ctx)
 }
 
+// LockDamageChainDepths satisfies HistoryRepository. The chain depth is a
+// PREVIEW-ONLY field, so a nil map (every candidate reporting depth 0) is a
+// valid answer and keeps this fake focused on what it exists to exercise.
+func (s *spyHistoryRepo) LockDamageChainDepths(ctx context.Context) (map[artist.LockDamagePairKey]int, error) {
+	return nil, nil
+}
+
 func (s *spyHistoryRepo) ListGlobal(ctx context.Context, filter artist.GlobalHistoryFilter) ([]artist.MetadataChangeWithArtist, int, error) {
 	s.listGlobalCalls.Add(1)
 	return s.delegate.ListGlobal(ctx, filter)

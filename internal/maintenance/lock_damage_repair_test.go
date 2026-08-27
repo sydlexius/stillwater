@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 
@@ -379,7 +380,7 @@ func TestRepairLockDamage_OperatorEditAfterDamageBlocksRestore(t *testing.T) {
 		"manual", "2026-05-01T11:00:00Z")
 	// Keep the live row consistent with the newest history row, as it would be
 	// after a real operator edit.
-	env.setBiography("a1", "operator value")
+	env.setBiography("operator value")
 
 	env.requireLockedBio()
 
@@ -714,6 +715,13 @@ func (r *cancelAfterListHistoryRepo) LockDamageUnattributed(ctx context.Context)
 	return rows, err
 }
 
+// LockDamageChainDepths satisfies HistoryRepository. The chain depth is a
+// PREVIEW-ONLY field, so a nil map (every candidate reporting depth 0) is a
+// valid answer and keeps this fake focused on what it exists to exercise.
+func (r *cancelAfterListHistoryRepo) LockDamageChainDepths(ctx context.Context) (map[artist.LockDamagePairKey]int, error) {
+	return nil, nil
+}
+
 // Guard 3 of 3, the worst failure direction of the three: cancellation
 // landing on the unattributed REPORT's artist read must abort the pass, never
 // file the row as Unrecoverable -- that category is DECIDED and non-retriable,
@@ -770,7 +778,7 @@ func TestRepairLockDamage_LiveValueDivergedBlocksRestore(t *testing.T) {
 	env.seedBioDamage("a1", "metadata_quality")
 	// The live value changed WITHOUT a history row, so the damage row is still
 	// rank 1 and the pair is still a candidate -- only the recheck can catch it.
-	env.setBiography("a1", "operator hotfix")
+	env.setBiography("operator hotfix")
 
 	env.requireLockedBio()
 	if got := env.biography("a1"); got != "operator hotfix" {
@@ -927,11 +935,15 @@ func TestRepairLockDamage_UnlockBetweenReadAndWriteBlocksRestore(t *testing.T) {
 	}
 }
 
-func (e *lockDamageEnv) setBiography(artistID, bio string) {
+// setBiography moves a1's live biography without writing a history row: the
+// shape of a value that diverged from the damage a candidate was selected
+// for. Fixed to a1 -- every fixture in these files builds its locked artist
+// there, and a parameter no caller varies is a false suggestion that it does.
+func (e *lockDamageEnv) setBiography(bio string) {
 	e.t.Helper()
 	if _, err := e.db.Exec(
-		`UPDATE artists SET biography = ? WHERE id = ?`, bio, artistID); err != nil {
-		e.t.Fatalf("setting biography for %s: %v", artistID, err)
+		`UPDATE artists SET biography = ? WHERE id = 'a1'`, bio); err != nil {
+		e.t.Fatalf("setting biography for a1: %v", err)
 	}
 }
 
@@ -1254,5 +1266,53 @@ func TestRepairLockDamage_TransactionalWriteFailureIsCountedNotFatal(t *testing.
 	}
 	if got := env.biography("a1"); got != "junk bio" {
 		t.Errorf("biography = %q, want the damaged value still stored", got)
+	}
+}
+
+// lockField adds one field to an artist's locked_fields, as the operator's UI
+// toggle does. It exists for the digest-gate test, where a lock added BETWEEN
+// the preview and the write is the exact drift the gate must refuse -- and
+// where doing it any other way (re-seeding the artist) would also reset the
+// damage the test depends on.
+// ADDITIVE, matching what the UI toggle does and what this helper's name
+// says (CodeRabbit, PR #3136). It previously REPLACED the whole column with
+// `["<field>"]`, silently unlocking every other field. Harmless with the one
+// caller that existed, but lock state is the exact precondition these tests
+// assert, so a future two-lock caller would have lost a lock and the test
+// would still have looked right.
+//
+// Sorted before marshaling so the stored JSON is deterministic: a fixture
+// whose column contents depend on insertion order makes any later assertion
+// on that column flaky for a reason unrelated to what it tests.
+func (e *lockDamageEnv) lockField(artistID, field string) {
+	e.t.Helper()
+
+	var raw string
+	if err := e.db.QueryRow(
+		`SELECT COALESCE(locked_fields, '') FROM artists WHERE id = ?`,
+		artistID).Scan(&raw); err != nil {
+		e.t.Fatalf("reading locked_fields for %s: %v", artistID, err)
+	}
+	locked := artist.UnmarshalStringSlice(raw)
+	if slices.Contains(locked, field) {
+		return
+	}
+	locked = append(locked, field)
+	slices.Sort(locked)
+
+	if _, err := e.db.Exec(
+		`UPDATE artists SET locked_fields = ? WHERE id = ?`,
+		artist.MarshalStringSlice(locked), artistID); err != nil {
+		e.t.Fatalf("locking %s on %s: %v", field, artistID, err)
+	}
+	// EVERY previously-locked field is still locked, not merely the new one.
+	// Asserting only the new field would pass against the replacing version
+	// this fix replaced.
+	after := e.lockedFields(artistID)
+	for _, f := range locked {
+		if !after[f] {
+			e.t.Fatalf("fixture: %s is not locked on %s after locking %s; the helper "+
+				"dropped an existing lock", f, artistID, field)
+		}
 	}
 }

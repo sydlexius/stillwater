@@ -55,6 +55,41 @@ type Flags struct {
 	// Built for validating the repair predicate against a database copy before
 	// letting a real pass write (issue #3038 / #3075).
 	LockDamageDryRun bool `flag:"lock-damage-dry-run" default:"false" desc:"Report which locked fields the damage repair would restore, then exit without writing. For validating against a database copy."`
+
+	// LockDamagePreGuardDryRun previews the PRE-GUARD population (issue
+	// #3079): locked fields overwritten before the persist chokepoint
+	// shipped, whose history rows name no rule and so can never be
+	// attributed. Report-only; writes nothing and records no completion.
+	LockDamagePreGuardDryRun bool `flag:"lock-damage-pre-guard-dry-run" default:"false" desc:"Report which locked fields the pre-guard (unattributable) damage repair would restore, then exit without writing. Preview this before --lock-damage-pre-guard-repair."`
+
+	// LockDamagePreGuardRepair runs the pre-guard repair for real, once per
+	// database, then exits.
+	//
+	// A SEPARATE EXPLICIT FLAG AND NOT A STARTUP ONE-SHOT, deliberately.
+	// #3074 rejected an automatic restore of unattributable damage because a
+	// standing mechanism cannot tell rule damage from an operator's own edit;
+	// what answers that is a closed population plus a HUMAN RULING ON THE CUT
+	// before anything writes, and a boot-time pass has nowhere to put that
+	// ruling. The pass cannot write unless somebody typed this.
+	//
+	// UNLIKE THE DRY RUN, THIS OPENS THE DATABASE READ-WRITE AND MIGRATES IT.
+	// It must not be pointed at the database of a running server.
+	LockDamagePreGuardRepair bool `flag:"lock-damage-pre-guard-repair" default:"false" desc:"Restore the pre-guard (unattributable) locked-field damage previewed by --lock-damage-pre-guard-dry-run, then exit. Requires --lock-damage-pre-guard-approve with the digest that preview printed. Runs once per database, opens the database READ-WRITE and RUNS MIGRATIONS, so stop the server first and back up. Preview first."`
+
+	// LockDamagePreGuardApprove carries the approval digest the pre-guard dry
+	// run printed for the candidate set the operator reviewed.
+	//
+	// THIS IS WHAT MAKES THE PREVIEW BINDING (#3079 review). The dry run and
+	// the repair are separate invocations, each re-selecting from scratch, so
+	// without a token carried between them the write restores whatever the
+	// predicate matches at write time -- and selection condition 1 is "locked
+	// NOW", so a single lock toggled between the two pulls unpreviewed damage
+	// into the write. The repair refuses to write unless the set it selected
+	// digests to this value.
+	//
+	// NOT a boolean "I approve": a boolean would confirm the operator's
+	// intent while saying nothing about WHICH rows they intended.
+	LockDamagePreGuardApprove string `flag:"lock-damage-pre-guard-approve" default:"" desc:"The approval digest printed by --lock-damage-pre-guard-dry-run. Required by --lock-damage-pre-guard-repair, which refuses to write if the candidate set no longer matches it."`
 }
 
 // SubcommandInfo describes a CLI subcommand (os.Args[1] dispatch) that

@@ -696,6 +696,13 @@ func (l listOKCountErrHistoryRepo) LockDamageUnattributed(ctx context.Context) (
 	return l.delegate.LockDamageUnattributed(ctx)
 }
 
+// LockDamageChainDepths satisfies HistoryRepository. The chain depth is a
+// PREVIEW-ONLY field, so a nil map (every candidate reporting depth 0) is a
+// valid answer and keeps this fake focused on what it exists to exercise.
+func (l listOKCountErrHistoryRepo) LockDamageChainDepths(ctx context.Context) (map[artist.LockDamagePairKey]int, error) {
+	return nil, nil
+}
+
 // TestHandleReportBlastRadiusExport_RepositoryErrorAbortsCleanly exercises the
 // export handler's error path when the FIRST page load fails, before any
 // bytes have been written. Unlike the JSON handler, the export path collects
