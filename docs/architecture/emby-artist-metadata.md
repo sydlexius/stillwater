@@ -53,6 +53,12 @@ Sources: [dev.emby.media](https://dev.emby.media/), Emby community forums,
 | DELETE | `/Items/{Id}/Images/{Type}` | Delete image |
 | DELETE | `/Items/{Id}/Images/{Type}/{Index}` | Delete image at index |
 
+> **The indexed upload replaces in place for `Backdrop`, measured against Emby 4.9.5.0.** `POST
+> /Items/{Id}/Images/Backdrop/{Index}` against an item that already holds a backdrop at
+> `{Index}` overwrites the content at that slot; `BackdropCount` is unchanged. Contrast with
+> Jellyfin, where the same call appends instead -- see the equivalent note in
+> `jellyfin-artist-metadata.md` and #3135.
+
 ### Library Management
 
 | Method | Path | Purpose |
