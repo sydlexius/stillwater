@@ -1101,6 +1101,123 @@ func TestResolveFanartReplaceTarget_ZeroHashHexTreatedAsUnknown(t *testing.T) {
 	}
 }
 
+// TestResolveFanartReplaceTarget_RejectsBadTolerance mirrors
+// TestDeletePollutedBackdrops_RejectsBadTolerance for the new resolver: the
+// same validPHashTolerance choke point must reject an unusable cutoff
+// before any platform IO, NaN included (every IEEE-754 compare against NaN
+// is false, so a naive `t <= 0 || t > 1` admits it).
+func TestResolveFanartReplaceTarget_RejectsBadTolerance(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 1)}}
+	for _, tol := range []float64{0, -0.1, 1.5, math.NaN()} {
+		if _, err := resolveFanartReplaceTarget(context.Background(), f, "p1", bandJPEG(t, 2), "", tol); err == nil {
+			t.Errorf("tolerance %v: want error, got nil", tol)
+		}
+	}
+}
+
+// TestResolveFanartReplaceTarget_UndecodableNewBytesErrors covers the
+// hashing failure on the NEW data being replaced-in: an undecodable input
+// must error rather than silently proceed as though no hash were available.
+func TestResolveFanartReplaceTarget_UndecodableNewBytesErrors(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 1)}}
+	if _, err := resolveFanartReplaceTarget(context.Background(), f, "p1", []byte("not an image"), "", testTolerance); err == nil {
+		t.Error("want error for undecodable new fanart bytes, got nil")
+	}
+}
+
+// TestResolveFanartReplaceTarget_GetArtistDetailErrorPropagates covers the
+// artist-detail read failure: the resolver must surface it rather than
+// treating a failed read as "empty platform" (which would wrongly license
+// an index-0 write against a platform whose real state is unknown).
+func TestResolveFanartReplaceTarget_GetArtistDetailErrorPropagates(t *testing.T) {
+	f := &erroringDetailClient{err: fmt.Errorf("network unreachable")}
+	if _, err := resolveFanartReplaceTarget(context.Background(), f, "p1", bandJPEG(t, 1), "", testTolerance); err == nil {
+		t.Error("want error when GetArtistDetail fails, got nil")
+	}
+}
+
+// TestResolveFanartReplaceTarget_MatchingIndicesErrorPropagates_AlreadyPresentCheck
+// covers the first matchingBackdropIndices call's error path (the
+// already-present check): a backdrop fetch failure there must abort with an
+// error, not silently fall through to "not present" and risk an index write
+// against a platform state that could not actually be verified.
+func TestResolveFanartReplaceTarget_MatchingIndicesErrorPropagates_AlreadyPresentCheck(t *testing.T) {
+	f := &fakePhashClient{backdrops: [][]byte{bandJPEG(t, 1)}}
+	// GetArtistBackdrop errors for any out-of-range index; force that by
+	// reporting a BackdropCount that exceeds what backdrops actually holds.
+	broken := &detailOverrideClient{fakePhashClient: f, count: 5}
+	if _, err := resolveFanartReplaceTarget(context.Background(), broken, "p1", bandJPEG(t, 2), "", testTolerance); err == nil {
+		t.Error("want error when the already-present matchingBackdropIndices call fails, got nil")
+	}
+}
+
+// TestResolveFanartReplaceTarget_MatchingIndicesErrorPropagates_PreviousPrimaryCheck
+// is the same as above but for the SECOND matchingBackdropIndices call (the
+// previous-primary lookup), reached only when a valid previousPHashHex is
+// supplied and the already-present check found nothing.
+func TestResolveFanartReplaceTarget_MatchingIndicesErrorPropagates_PreviousPrimaryCheck(t *testing.T) {
+	real := bandJPEG(t, 1)
+	f := &fakePhashClient{backdrops: [][]byte{real}}
+	newPrimary := bandJPEG(t, 2)
+	assertDistinct(t, real, newPrimary)
+	// countAfterFirstCall simulates the backdrop count growing (or a race)
+	// between the two matchingBackdropIndices calls, so the second call's
+	// GetArtistBackdrop(1) is out of range and errors.
+	broken := &secondCallBreaksClient{fakePhashClient: f}
+	previousHash := image.HashHex(phashOf(t, bandJPEG(t, 99)))
+	if _, err := resolveFanartReplaceTarget(context.Background(), broken, "p1", newPrimary, previousHash, testTolerance); err == nil {
+		t.Error("want error when the previous-primary matchingBackdropIndices call fails, got nil")
+	}
+}
+
+// erroringDetailClient always fails GetArtistDetail; the other methods are
+// never reached when that happens.
+type erroringDetailClient struct{ err error }
+
+func (e *erroringDetailClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	return nil, e.err
+}
+func (e *erroringDetailClient) GetArtistBackdrop(_ context.Context, _ string, _ int) ([]byte, string, error) {
+	return nil, "", fmt.Errorf("unreachable")
+}
+func (e *erroringDetailClient) UploadImage(_ context.Context, _, _ string, _ []byte, _ string) error {
+	return fmt.Errorf("unreachable")
+}
+func (e *erroringDetailClient) UploadImageAtIndex(_ context.Context, _, _ string, _ int, _ []byte, _ string) error {
+	return fmt.Errorf("unreachable")
+}
+
+// detailOverrideClient reports a BackdropCount larger than the wrapped
+// fakePhashClient actually holds, so GetArtistBackdrop calls for the extra
+// indices fail -- forcing matchingBackdropIndices's fetch-error abort path.
+type detailOverrideClient struct {
+	*fakePhashClient
+	count int
+}
+
+func (d *detailOverrideClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	return &connection.ArtistPlatformState{BackdropCount: d.count}, nil
+}
+
+// secondCallBreaksClient answers the TRUE backdrop count on GetArtistDetail
+// (so the already-present check runs cleanly with one real backdrop) but
+// fails GetArtistBackdrop for index 1 onward, simulating a platform whose
+// backdrop set changed between the resolver's two reads.
+type secondCallBreaksClient struct {
+	*fakePhashClient
+	calls int
+}
+
+func (s *secondCallBreaksClient) GetArtistDetail(ctx context.Context, id string) (*connection.ArtistPlatformState, error) {
+	s.calls++
+	if s.calls == 1 {
+		return s.fakePhashClient.GetArtistDetail(ctx, id)
+	}
+	// Second call (the previous-primary lookup): report one MORE backdrop
+	// than actually exists, so GetArtistBackdrop(1) errors.
+	return &connection.ArtistPlatformState{BackdropCount: len(s.backdrops) + 1}, nil
+}
+
 // TestResolveFanartReplaceTarget_BystanderSurvivesIndexWrite is the
 // MUTATION-PROOF WIRING TEST: it drives resolveFanartReplaceTarget's INDEX
 // decision all the way through an actual UploadImageAtIndex call (via

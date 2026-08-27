@@ -1151,3 +1151,89 @@ func TestSyncImageToPlatforms_FanartUnsupportedConnectionWarnsLoudly(t *testing.
 		t.Errorf("warning = %q, want it to mention unsupported connection type", warnings[0])
 	}
 }
+
+// TestSyncImageToPlatforms_FanartResolveErrorWarnsAndSkips covers
+// uploadFanartForSync's resolveErr branch (#3125 F3): when
+// resolveFanartReplaceTarget cannot even read the platform's current
+// backdrop state (here, the server answers every GET with 500), the
+// connection must be skipped with a distinct warning, never silently
+// treated as "empty platform, write index 0".
+func TestSyncImageToPlatforms_FanartResolveErrorWarnsAndSkips(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 1), 0o644); err != nil {
+		t.Fatalf("seeding fanart.jpg: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	p := New(Deps{
+		Logger: silentLogger(),
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
+		}},
+	})
+
+	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, "fanart")
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning; got %d: %v", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "could not resolve fanart replace target") {
+		t.Errorf("warning = %q, want it to mention the resolve failure", warnings[0])
+	}
+}
+
+// TestSyncImageToPlatforms_FanartProvenanceLookupErrorFallsBackToAppend
+// covers previousFanartPrimaryPHash's error branch (#3125 F3): when
+// GetImagesForArtist fails, the lookup must degrade to "" (cannot
+// identify) rather than blocking the sync -- the fanart upload still
+// proceeds, via the append fallback, against an empty platform.
+func TestSyncImageToPlatforms_FanartProvenanceLookupErrorFallsBackToAppend(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 1), 0o644); err != nil {
+		t.Fatalf("seeding fanart.jpg: %v", err)
+	}
+
+	srv := &pathRecordingServer{}
+	httpSrv := newPathRecordingServer(srv)
+	defer httpSrv.Close()
+
+	p := New(Deps{
+		Logger: silentLogger(),
+		ArtistService: &fakePlatformLister{
+			ids: []artist.PlatformID{
+				{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+			},
+			imagesErr: fmt.Errorf("db unavailable"),
+		},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: httpSrv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
+		}},
+	})
+
+	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, "fanart")
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings (provenance lookup failure must not block the upload); got %v", warnings)
+	}
+
+	got := srv.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("upload requests = %d, want 1; paths=%v", len(got), got)
+	}
+	// Empty platform (newPathRecordingServer's GET stub reports zero
+	// backdrops), so this resolves to fanartTargetIndex at 0 regardless of
+	// the provenance failure -- the failure only removes the OTHER
+	// identification path, it does not block the sync.
+	if want := "/Items/p1/Images/Backdrop/0"; got[0] != want {
+		t.Errorf("fanart sync path = %q, want %q", got[0], want)
+	}
+}
