@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -124,7 +125,7 @@ func lockDamageDryRunDB(ctx context.Context, db *sql.DB, out io.Writer, opts mai
 		return fmt.Errorf("locked-field damage dry run: %w", err)
 	}
 
-	printLockDamageReport(out, res)
+	printLockDamageReport(out, res, opts.PreGuard)
 	return nil
 }
 
@@ -138,7 +139,27 @@ func lockDamageDryRunDB(ctx context.Context, db *sql.DB, out io.Writer, opts mai
 // safe is a human ruling on the cut BEFORE anything writes -- and a boot-time
 // pass has nowhere to put that ruling. Requiring the operator to preview and
 // then type this flag makes the approval structural. See #3074.
-func runLockDamagePreGuardRepair(logger *slog.Logger) error {
+//
+// THE DIGEST IS REQUIRED, NOT OPTIONAL (#3079 review, HIGH-1). Typing the
+// flag proves the operator INTENDED a write; it says nothing about WHICH rows
+// they intended, and the two invocations re-select independently. An empty
+// approvedDigest is refused here rather than defaulted to "whatever the
+// predicate finds", because a gate that can be skipped by omitting an
+// argument is not a gate.
+//
+// IT OPENS THE DATABASE READ-WRITE AND MIGRATES IT, unlike the dry run. Two
+// consequences worth stating where an operator will read them: it must not be
+// pointed at a database a server is currently using (SQLite will refuse or
+// contend, and migrations must not run under a live reader), and it will
+// upgrade a behind-on-migrations database in place. Back up first.
+func runLockDamagePreGuardRepair(logger *slog.Logger, approvedDigest string) error {
+	if strings.TrimSpace(approvedDigest) == "" {
+		return fmt.Errorf("-lock-damage-pre-guard-repair requires -lock-damage-pre-guard-approve=<digest>. " +
+			"Run -lock-damage-pre-guard-dry-run first, review the candidate list it prints, " +
+			"and pass the approval digest from the end of that report. " +
+			"The digest is what makes the preview binding: without it the repair would " +
+			"restore whatever the predicate matches now, not the set you approved")
+	}
 	configPath := os.Getenv("SW_CONFIG_PATH")
 	if configPath == "" {
 		configPath = "/config/config.toml"
@@ -167,9 +188,10 @@ func runLockDamagePreGuardRepair(logger *slog.Logger) error {
 	maint := maintenance.NewService(db, cfg.Database.Path, "", logger)
 	maint.SetLockDamageDeps(hist.Repo(), artistSvc)
 
-	return guardPreGuardPanic(logger, func() {
-		runLockDamageRepairPass(ctx, db, logger, maint,
-			maintenance.LockDamageOpts{PreGuard: true}, lockDamagePreGuardKey)
+	return guardPreGuardPanic(logger, func() error {
+		return runLockDamageRepairPass(ctx, db, logger, maint,
+			maintenance.LockDamageOpts{PreGuard: true, ApprovedDigest: approvedDigest},
+			lockDamagePreGuardKey)
 	})
 }
 
@@ -183,7 +205,7 @@ func runLockDamagePreGuardRepair(logger *slog.Logger) error {
 // so the value has no reason to reach any surface. A separate function
 // because a deferred closure inside the entry point is unreachable from a
 // test, and an untested privacy guard is an assumption, not a guarantee.
-func guardPreGuardPanic(logger *slog.Logger, pass func()) (err error) {
+func guardPreGuardPanic(logger *slog.Logger, pass func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error("pre-guard locked-field damage repair panicked",
@@ -192,8 +214,12 @@ func guardPreGuardPanic(logger *slog.Logger, pass func()) (err error) {
 				"completion was not recorded, so it can be re-run", r)
 		}
 	}()
-	pass()
-	return nil
+	// The pass's own error is RETURNED, not swallowed (#3079 review,
+	// MEDIUM-1). Before this the whole entry point returned nil regardless,
+	// so a pass that failed outright still exited 0 and an operator scripting
+	// `stillwater -lock-damage-pre-guard-repair && echo done` was told the
+	// repair succeeded.
+	return pass()
 }
 
 // previewDirectionRank orders the preview's restore list by how AMBIGUOUS the
@@ -253,15 +279,31 @@ func orderedForPreview(restored []maintenance.LockDamageRestore) []maintenance.L
 // plumbing so a test can drive every section -- the Failed loop needs a
 // result only an injected repository failure produces, which the dry-run
 // entry point's self-built services cannot be given.
-func printLockDamageReport(out io.Writer, res *maintenance.LockDamageResult) {
+func printLockDamageReport(out io.Writer, res *maintenance.LockDamageResult, preGuard bool) {
 	_, _ = fmt.Fprintf(out, "locked-field damage repair DRY RUN (no writes performed)\n")
 	_, _ = fmt.Fprintf(out, "would restore: %d\n", len(res.Restored))
-	for _, r := range orderedForPreview(res.Restored) {
-		// direction is a fixed descriptor, never a value: it lets the
-		// operator sort unambiguous overwrites from possible curation
-		// without being shown the biographies to do it.
-		_, _ = fmt.Fprintf(out, "  artist=%s field=%s rule=%s direction=%s damaged_at=%s\n",
+	ordered := orderedForPreview(res.Restored)
+	for i := range ordered {
+		r := &ordered[i]
+		// direction is a fixed descriptor and the lengths are rune counts:
+		// magnitude, never content. Together they let the operator separate a
+		// near-total wipe from a one-character touch-up, which direction alone
+		// cannot do -- both print "shorter".
+		//
+		// rule= is OMITTED in pre-guard mode (#3079 review, NIT-1). RuleID is
+		// deliberately empty there (no rule is named on these rows, which is
+		// the whole reason the population exists), and a bare "rule= " on 215
+		// consecutive lines reads like a field that failed to populate rather
+		// than one that has nothing to say.
+		if preGuard {
+			_, _ = fmt.Fprintf(out, "  artist=%s field=%s direction=%s %s chain_depth=%d damaged_at=%s\n",
+				r.ArtistID, r.Field, r.Direction, formatLengthDelta(r.OldLen, r.NewLen),
+				r.ChainDepth, r.DamagedAt.UTC().Format(time.RFC3339))
+			continue
+		}
+		_, _ = fmt.Fprintf(out, "  artist=%s field=%s rule=%s direction=%s %s damaged_at=%s\n",
 			r.ArtistID, r.Field, r.RuleID, r.Direction,
+			formatLengthDelta(r.OldLen, r.NewLen),
 			r.DamagedAt.UTC().Format(time.RFC3339))
 	}
 	// The bound's effect is PRINTED, not inferred from an absence: a preview
@@ -269,6 +311,11 @@ func printLockDamageReport(out io.Writer, res *maintenance.LockDamageResult) {
 	_, _ = fmt.Fprintf(out, "excluded, newer than the cutoff (%s): %d\n",
 		maintenance.PreGuardCutoff().Format(time.RFC3339), res.PreGuardTooNew)
 	_, _ = fmt.Fprintf(out, "excluded, field not locked now: %d\n", res.PreGuardUnlocked)
+	// Reported for the same reason the other exclusions are: a row dropped
+	// because the field moved on since the damage is a DECISION, and a preview
+	// that made it silently would be the overstatement this count exists to
+	// retire.
+	_, _ = fmt.Fprintf(out, "excluded, the field changed since the damage: %d\n", res.PreGuardDiverged)
 	_, _ = fmt.Fprintf(out, "unrecoverable: %d (unattributable_all=%d)\n",
 		len(res.Unrecoverable), res.UnattributableAll)
 	for _, u := range res.Unrecoverable {
@@ -285,6 +332,36 @@ func printLockDamageReport(out io.Writer, res *maintenance.LockDamageResult) {
 		_, _ = fmt.Fprintf(out, "  artist=%s field=%s rule=%q reason=%s\n",
 			f.ArtistID, f.Field, f.RuleID, f.Reason)
 	}
+
+	if !preGuard {
+		return
+	}
+	// THE APPROVAL DIGEST, LAST AND UNMISSABLE. It is the token that makes
+	// this preview binding on the write: the repair recomputes it over the set
+	// it selects and refuses unless the two agree, so a lock toggled between
+	// the two invocations cannot quietly enlarge the write.
+	_, _ = fmt.Fprintf(out, "\napproval digest: %s\n", maintenance.LockDamageDigest(res.Restored))
+	_, _ = fmt.Fprintf(out, "To restore exactly the %d row(s) listed above, re-run with:\n", len(res.Restored))
+	_, _ = fmt.Fprintf(out, "  -lock-damage-pre-guard-repair -lock-damage-pre-guard-approve=%s\n",
+		maintenance.LockDamageDigest(res.Restored))
+	_, _ = fmt.Fprintf(out, "The repair opens the database READ-WRITE and RUNS MIGRATIONS: "+
+		"stop the server and back up first.\n")
+}
+
+// formatLengthDelta renders the magnitude of one damage row as "OLD -> NEW
+// runes (PCT)". Lengths and a ratio, never content.
+//
+// The percentage is relative to the ORIGINAL length, so -100% is an emptied
+// field and +150% is a value that grew to two and a half times its size. It
+// is omitted when the original was empty, since a percentage of zero is not
+// a number the operator can act on -- and such a row cannot be a candidate
+// anyway (the damage predicate requires old_value != ”).
+func formatLengthDelta(oldLen, newLen int) string {
+	if oldLen <= 0 {
+		return fmt.Sprintf("len=%d->%d", oldLen, newLen)
+	}
+	pct := float64(newLen-oldLen) * 100 / float64(oldLen)
+	return fmt.Sprintf("len=%d->%d (%+.1f%%)", oldLen, newLen, pct)
 }
 
 // startLockDamageRepair launches the one-shot locked-field damage repair
@@ -318,7 +395,11 @@ func (a *Application) startLockDamageRepair(ctx context.Context, db *sql.DB, log
 					"panic_type", fmt.Sprintf("%T", r))
 			}
 		}()
-		runLockDamageRepairPass(ctx, db, logger, a.maintenanceService,
+		// The error is DELIBERATELY DISCARDED on the startup path: a boot-time
+		// one-shot has no exit code to carry it, the failure is already
+		// logged, and the unstamped completion key is what retries it. The
+		// CLI path is where the error becomes an exit code.
+		_ = runLockDamageRepairPass(ctx, db, logger, a.maintenanceService,
 			maintenance.LockDamageOpts{}, lockDamageRepairKey)
 	}()
 }
@@ -366,12 +447,25 @@ func (a *Application) drainLockDamageRepair(ctx context.Context) error {
 // runLockDamageRepairPass runs one repair pass and decides whether to record
 // completion. Synchronous so the completion gate is testable; the goroutine
 // wrapper above owns the panic handler.
-func runLockDamageRepairPass(ctx context.Context, db *sql.DB, logger *slog.Logger, maint *maintenance.Service, opts maintenance.LockDamageOpts, key string) {
+func runLockDamageRepairPass(ctx context.Context, db *sql.DB, logger *slog.Logger, maint *maintenance.Service, opts maintenance.LockDamageOpts, key string) error {
 	res, err := maint.RepairLockDamage(ctx, opts)
 	if err != nil {
+		// THE ERROR IS RETURNED AS WELL AS LOGGED (#3079 review, MEDIUM-1).
+		// The startup caller ignores it -- a boot-time one-shot has nobody to
+		// report an exit code to, and the unstamped key is its retry -- but
+		// the CLI caller turns it into a non-zero exit. Before this the error
+		// died in a log line, so `stillwater -lock-damage-pre-guard-repair &&
+		// echo done` printed "done" for a pass that wrote nothing. The
+		// migration-failure path already exited 1, so this was inconsistent
+		// as well as wrong.
+		//
+		// A DIGEST MISMATCH ARRIVES HERE TOO, and takes the same path: the
+		// pass returned before writing anything, the key is not stamped, and
+		// the operator gets a non-zero exit plus the drift message naming
+		// what to do about it.
 		logger.Error("locked-field damage repair failed; will retry next start",
 			"error", err)
-		return
+		return err
 	}
 	// COMPLETION IS RECORDED ONLY ON A PASS WITH NO TRANSIENT ROW-LEVEL
 	// FAILURES. A transiently failed row was neither restored nor proven
@@ -397,7 +491,11 @@ func runLockDamageRepairPass(ctx context.Context, db *sql.DB, logger *slog.Logge
 			"unattributable_all", res.UnattributableAll,
 			"failed_permanent", len(res.FailedPermanent),
 			"failed", len(res.Failed))
-		return
+		// A pass with transient row-level failures did not complete. It is
+		// not a hard error (the rows retry, and what DID restore is kept), but
+		// it must not report success to a script either.
+		return fmt.Errorf("locked-field damage repair finished with %d row-level failure(s); "+
+			"completion was not recorded and the next run retries them", len(res.Failed))
 	}
 	logger.Info("locked-field damage repair complete",
 		"restored", len(res.Restored),
@@ -410,5 +508,11 @@ func runLockDamageRepairPass(ctx context.Context, db *sql.DB, logger *slog.Logge
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
 		key, time.Now().UTC().Format(time.RFC3339)); err != nil {
 		logger.Error("recording locked-field damage repair completion", "error", err)
+		// The repair itself SUCCEEDED; only the stamp failed. Surfaced as an
+		// error anyway, because the operator's next run will redo the whole
+		// pass (finding nothing, since the query has converged) and they
+		// should know why rather than discovering it as a surprise.
+		return fmt.Errorf("the repair completed but recording its completion failed: %w", err)
 	}
+	return nil
 }

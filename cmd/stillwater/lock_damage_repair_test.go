@@ -420,7 +420,7 @@ func TestLockDamageDryRun_ReportsUnrecoverableAndFailedRows(t *testing.T) {
 		}
 
 		var out bytes.Buffer
-		printLockDamageReport(&out, res)
+		printLockDamageReport(&out, res, false)
 		report := out.String()
 		if !strings.Contains(report, "failed: 1") || !strings.Contains(report, "could not read") {
 			t.Errorf("report does not carry the failed row with its reason:\n%s", report)

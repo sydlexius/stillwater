@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -272,7 +274,12 @@ func TestRunLockDamagePreGuardRepair_EndToEnd(t *testing.T) {
 	_ = mig.Close()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := runLockDamagePreGuardRepair(logger); err != nil {
+	// THE OPERATOR'S REAL WORKFLOW: preview, read the digest off the report,
+	// pass it to the repair. Taking the digest from the preview rather than
+	// hardcoding one is the point -- a hardcoded token would pass even if the
+	// two sides computed it differently.
+	digest := previewDigest(t, dbPath)
+	if err := runLockDamagePreGuardRepair(logger, digest); err != nil {
 		t.Fatalf("runLockDamagePreGuardRepair: %v", err)
 	}
 
@@ -316,7 +323,7 @@ func TestRunLockDamagePreGuardRepair_EndToEnd(t *testing.T) {
 		preGuardBefore()); err != nil {
 		t.Fatalf("seeding second damage: %v", err)
 	}
-	if err := runLockDamagePreGuardRepair(logger); err != nil {
+	if err := runLockDamagePreGuardRepair(logger, digest); err != nil {
 		t.Fatalf("second runLockDamagePreGuardRepair: %v", err)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT biography FROM artists WHERE id = 'a1'`).Scan(&bio1); err != nil {
@@ -335,7 +342,7 @@ func TestGuardPreGuardPanic_LogsTypeOnly(t *testing.T) {
 	var logged bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logged, nil))
 
-	err := guardPreGuardPanic(logger, func() {
+	err := guardPreGuardPanic(logger, func() error {
 		panic(&panicValueError{msg: "PRIVATE_FIELD_VALUE_IN_PANIC"})
 	})
 	if err == nil {
@@ -355,11 +362,19 @@ func TestGuardPreGuardPanic_LogsTypeOnly(t *testing.T) {
 	// NON-VACUITY: the guard must be transparent when nothing panics, or the
 	// assertions above could hold for a function that never runs its pass.
 	ran := false
-	if err := guardPreGuardPanic(logger, func() { ran = true }); err != nil {
+	if err := guardPreGuardPanic(logger, func() error { ran = true; return nil }); err != nil {
 		t.Errorf("a non-panicking pass returned %v, want nil", err)
 	}
 	if !ran {
 		t.Error("guardPreGuardPanic did not run the pass")
+	}
+
+	// THE PASS'S OWN ERROR IS RETURNED, NOT SWALLOWED (#3079 review,
+	// MEDIUM-1). Without this the guard would convert every non-panicking
+	// failure into a nil, which is exactly the exit-0-on-failure defect.
+	sentinel := errors.New("the pass failed")
+	if err := guardPreGuardPanic(logger, func() error { return sentinel }); !errors.Is(err, sentinel) {
+		t.Errorf("guardPreGuardPanic returned %v, want the pass's own error", err)
 	}
 }
 
@@ -393,7 +408,7 @@ func TestPrintLockDamageReport_UnambiguousLossesFirst(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	printLockDamageReport(&out, res)
+	printLockDamageReport(&out, res, true)
 	report := out.String()
 
 	// Every row still printed: ordering must not become filtering.
@@ -429,5 +444,240 @@ func TestOrderedForPreview_DoesNotMutateItsInput(t *testing.T) {
 	_ = orderedForPreview(in)
 	if in[0].ArtistID != "a1" || in[1].ArtistID != "a2" {
 		t.Errorf("orderedForPreview reordered its input: %v", in)
+	}
+}
+
+// previewDigest runs the pre-guard PREVIEW against dbPath and returns the
+// approval digest it computed, the way an operator reads it off the report.
+//
+// It goes through the real dry-run path (read-only handle, real selection) so
+// the token it returns is the one the printed report carries -- a test that
+// hardcoded a digest would pass even if the two sides disagreed about how to
+// compute it, which is the one thing the gate must get right.
+func previewDigest(t *testing.T, dbPath string) string {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	if err != nil {
+		t.Fatalf("opening the preview handle: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	var out bytes.Buffer
+	if err := lockDamageDryRunDB(context.Background(), db, &out,
+		maintenance.LockDamageOpts{DryRun: true, PreGuard: true}); err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	// Parse it out of the REPORT, not from a second call to the digest
+	// function: this asserts the operator can actually obtain the token from
+	// what they are shown.
+	const marker = "approval digest: "
+	i := strings.Index(out.String(), marker)
+	if i < 0 {
+		t.Fatalf("the preview report carries no %q line:\n%s", marker, out.String())
+	}
+	rest := out.String()[i+len(marker):]
+	digest, _, _ := strings.Cut(rest, "\n")
+	digest = strings.TrimSpace(digest)
+	if digest == "" {
+		t.Fatalf("the preview printed an empty digest:\n%s", out.String())
+	}
+	return digest
+}
+
+// TestRunLockDamagePreGuardRepair_RequiresTheApprovalDigest pins that the
+// gate CANNOT BE SKIPPED BY OMITTING THE ARGUMENT (#3079 review, HIGH-1).
+//
+// An empty digest must be refused outright rather than treated as "restore
+// whatever the predicate finds". The refusal happens before the database is
+// even opened, so a missing token cannot migrate a database as a side effect
+// of a command that was going to be rejected anyway.
+func TestRunLockDamagePreGuardRepair_RequiresTheApprovalDigest(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/preguard-nodigest.db"
+	t.Setenv("SW_DB_PATH", dbPath)
+	t.Setenv("SW_CONFIG_PATH", dir+"/no-such-config.toml")
+	t.Setenv("SW_MUSIC_PATH", dir)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, empty := range []string{"", "   ", "\t\n"} {
+		err := runLockDamagePreGuardRepair(logger, empty)
+		if err == nil {
+			t.Fatalf("runLockDamagePreGuardRepair(%q) returned nil; a write pass with no "+
+				"approval digest must be refused", empty)
+		}
+		if !strings.Contains(err.Error(), "lock-damage-pre-guard-approve") {
+			t.Errorf("the refusal does not name the flag the operator must pass: %v", err)
+		}
+	}
+
+	// NOTHING WAS OPENED OR CREATED. The refusal precedes openMigratedRuntimeDB,
+	// so a rejected command leaves no migrated database behind.
+	if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
+		t.Errorf("the refused command created %s (stat err = %v); it must refuse before "+
+			"opening or migrating anything", dbPath, err)
+	}
+}
+
+// TestRunLockDamagePreGuardRepair_StaleDigestRefusesAndWritesNothing is the
+// end-to-end form of the drift refusal: a lock toggled after the preview
+// enlarges the candidate set, and the repair must decline the whole pass.
+//
+// It asserts all four properties of a correct refusal: a non-nil error, the
+// damaged values UNTOUCHED (not partially restored), no history rows written,
+// and the completion key NOT stamped -- a stamped key would retire the
+// one-shot on a pass that did nothing.
+func TestRunLockDamagePreGuardRepair_StaleDigestRefusesAndWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/preguard-stale.db"
+	t.Setenv("SW_DB_PATH", dbPath)
+	t.Setenv("SW_CONFIG_PATH", dir+"/no-such-config.toml")
+	t.Setenv("SW_MUSIC_PATH", dir)
+
+	ctx := context.Background()
+	mig, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening db for migration: %v", err)
+	}
+	if err := database.Migrate(mig); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+	seedPreGuardFixture(t, ctx, mig)
+	requirePreGuardFixture(t, ctx, mig)
+	// a2's damage is newer than the cutoff, so it can never join the set. Add
+	// a THIRD artist whose damage is eligible but whose field is not locked
+	// yet: that is the row the toggle will pull in.
+	if _, err := mig.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path, biography, locked_fields, created_at, updated_at)
+		 VALUES ('a3', 'Locked Later', 'Locked Later', '/a3', 'junk bio', '[]', ?, ?)`,
+		preGuardBefore(), preGuardBefore()); err != nil {
+		t.Fatalf("seeding a3: %v", err)
+	}
+	if _, err := mig.ExecContext(ctx,
+		`INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+		 VALUES ('d3', 'a3', 'biography', 'curated bio', 'junk bio', 'manual', ?)`,
+		preGuardBefore()); err != nil {
+		t.Fatalf("seeding a3 damage: %v", err)
+	}
+	_ = mig.Close()
+
+	// PREVIEW, then the operator's lock toggle, then the repair with the now
+	// STALE digest.
+	digest := previewDigest(t, dbPath)
+
+	toggle, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("opening for the toggle: %v", err)
+	}
+	if _, err := toggle.ExecContext(ctx,
+		`UPDATE artists SET locked_fields = '["biography"]' WHERE id = 'a3'`); err != nil {
+		t.Fatalf("toggling the lock: %v", err)
+	}
+	_ = toggle.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	err = runLockDamagePreGuardRepair(logger, digest)
+	if err == nil {
+		t.Fatal("the repair accepted a digest that no longer describes the candidate set; " +
+			"a lock added after the preview must refuse the pass")
+	}
+	var drift *maintenance.LockDamageDriftError
+	if !errors.As(err, &drift) {
+		t.Fatalf("err = %v, want a *maintenance.LockDamageDriftError", err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	for _, id := range []string{"a1", "a3"} {
+		var bio string
+		if err := db.QueryRowContext(ctx,
+			`SELECT biography FROM artists WHERE id = ?`, id).Scan(&bio); err != nil {
+			t.Fatalf("reading %s: %v", id, err)
+		}
+		if bio != "junk bio" {
+			t.Errorf("%s biography = %q, want it UNTOUCHED; a refused pass writes nothing, "+
+				"not even the rows that WERE approved", id, bio)
+		}
+	}
+	var reverts int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM metadata_changes WHERE source = 'revert'`).Scan(&reverts); err != nil {
+		t.Fatalf("counting revert rows: %v", err)
+	}
+	if reverts != 0 {
+		t.Errorf("revert rows = %d, want 0", reverts)
+	}
+	var stamped int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM settings WHERE key = ?`, lockDamagePreGuardKey).Scan(&stamped); err != nil {
+		t.Fatalf("reading the completion key: %v", err)
+	}
+	if stamped != 0 {
+		t.Errorf("completion key rows = %d, want 0; a refused pass must not retire the one-shot", stamped)
+	}
+}
+
+// TestRunLockDamageRepairPass_FailurePropagatesAnError pins MEDIUM-1: a pass
+// that fails outright must surface an error the caller can turn into a
+// non-zero exit code.
+//
+// Before this the error died in a log line and the entry point returned nil,
+// so an operator scripting `stillwater -lock-damage-pre-guard-repair && echo
+// done` was told the repair succeeded when it had done nothing. The
+// migration-failure path already exited 1, so the old behavior was
+// inconsistent as well as wrong.
+//
+// The failure is induced the way the reviewer induced it: rename the table
+// the pass reads, so selection fails for a reason no retry can change within
+// the run.
+func TestRunLockDamageRepairPass_FailurePropagatesAnError(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/preguard-fail.db"
+
+	ctx := context.Background()
+	db, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`ALTER TABLE metadata_changes RENAME TO metadata_changes_gone`); err != nil {
+		t.Fatalf("renaming the table away: %v", err)
+	}
+
+	var logged bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logged, nil))
+	artistSvc := artist.NewService(db)
+	hist := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(hist)
+	maint := maintenance.NewService(db, dbPath, "", logger)
+	maint.SetLockDamageDeps(hist.Repo(), artistSvc)
+
+	err = runLockDamageRepairPass(ctx, db, logger, maint,
+		maintenance.LockDamageOpts{PreGuard: true, ApprovedDigest: "irrelevant"},
+		lockDamagePreGuardKey)
+	if err == nil {
+		t.Fatal("runLockDamageRepairPass returned nil for a pass that could not read its " +
+			"own input; the CLI would exit 0 and a script would read that as success")
+	}
+	// STILL LOGGED. The error is returned IN ADDITION to the log line, not
+	// instead of it: the startup path discards the error and relies on the log.
+	if !strings.Contains(logged.String(), "locked-field damage repair failed") {
+		t.Errorf("the failure was returned but not logged:\n%s", logged.String())
+	}
+	// NOT STAMPED. A failed pass must remain retriable.
+	var stamped int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM settings WHERE key = ?`, lockDamagePreGuardKey).Scan(&stamped); err != nil {
+		t.Fatalf("reading the completion key: %v", err)
+	}
+	if stamped != 0 {
+		t.Errorf("completion key rows = %d, want 0", stamped)
 	}
 }

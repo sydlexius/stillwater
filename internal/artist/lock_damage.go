@@ -1,6 +1,7 @@
 package artist
 
 import (
+	"strings"
 	"time"
 )
 
@@ -95,4 +96,38 @@ type LockDamageUnattributedRow struct {
 	// admitted -- the allow-list direction holding on the one field the bound
 	// rests on.
 	DamagedAt time.Time
+}
+
+// StoredFieldValue converts a raw artists-column value into the VALUE FORM
+// history rows carry. Slice fields store a JSON array in the column but
+// metadata_changes records the joined "a, b, c" representation, so a raw
+// comparison of the two is a type error wearing a string's clothes.
+//
+// Exported because #3079's preview must ask the same question the write path
+// asks. Before this, the dry run short-circuited before reaching the guarded
+// verb, so a candidate whose stored value had already diverged was previewed
+// as "would restore" and then silently declined at write time -- the preview
+// overstating in the direction nothing was checking.
+func StoredFieldValue(field, storedRaw string) string {
+	if sliceFields[field] {
+		return strings.Join(UnmarshalStringSlice(storedRaw), ", ")
+	}
+	return storedRaw
+}
+
+// FieldValueStillDamaged reports whether stored still equals the damaged
+// value a candidate was selected for, under the same normalization the
+// repository uses for no-op detection.
+//
+// THIS IS THE DIVERGENCE PREDICATE, AND IT HAS EXACTLY TWO CALLERS BY DESIGN:
+// RestoreLockedFieldGuarded (which decides the write) and the #3079 preview
+// (which decides what the operator is shown). They MUST NOT drift: a preview
+// answering a different question than the write is a preview that cannot bind
+// it, and the whole safety argument for the pre-guard pass is that the human
+// ruled on the set that actually gets written.
+//
+// False means the field moved on after the damage -- an operator edit, or a
+// later writer -- so restoring would overwrite data newer than the damage.
+func FieldValueStillDamaged(field, stored, damagedValue string) bool {
+	return normalizeFieldValue(field, stored) == normalizeFieldValue(field, damagedValue)
 }

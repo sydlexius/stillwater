@@ -714,6 +714,13 @@ func (r *cancelAfterListHistoryRepo) LockDamageUnattributed(ctx context.Context)
 	return rows, err
 }
 
+// LockDamageChainDepths satisfies HistoryRepository. The chain depth is a
+// PREVIEW-ONLY field, so a nil map (every candidate reporting depth 0) is a
+// valid answer and keeps this fake focused on what it exists to exercise.
+func (r *cancelAfterListHistoryRepo) LockDamageChainDepths(ctx context.Context) (map[artist.LockDamagePairKey]int, error) {
+	return nil, nil
+}
+
 // Guard 3 of 3, the worst failure direction of the three: cancellation
 // landing on the unattributed REPORT's artist read must abort the pass, never
 // file the row as Unrecoverable -- that category is DECIDED and non-retriable,
@@ -1258,5 +1265,22 @@ func TestRepairLockDamage_TransactionalWriteFailureIsCountedNotFatal(t *testing.
 	}
 	if got := env.biography("a1"); got != "junk bio" {
 		t.Errorf("biography = %q, want the damaged value still stored", got)
+	}
+}
+
+// lockField adds one field to an artist's locked_fields, as the operator's UI
+// toggle does. It exists for the digest-gate test, where a lock added BETWEEN
+// the preview and the write is the exact drift the gate must refuse -- and
+// where doing it any other way (re-seeding the artist) would also reset the
+// damage the test depends on.
+func (e *lockDamageEnv) lockField(artistID, field string) {
+	e.t.Helper()
+	if _, err := e.db.Exec(
+		`UPDATE artists SET locked_fields = ? WHERE id = ?`,
+		`["`+field+`"]`, artistID); err != nil {
+		e.t.Fatalf("locking %s on %s: %v", field, artistID, err)
+	}
+	if !e.lockedFields(artistID)[field] {
+		e.t.Fatalf("fixture: %s is not locked on %s after the toggle", field, artistID)
 	}
 }

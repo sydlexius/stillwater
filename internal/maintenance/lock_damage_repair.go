@@ -62,6 +62,9 @@ import (
 
 // LockDamageRestore records one repaired (artist, field) pair.
 type LockDamageRestore struct {
+	// ChangeID is the damage row's primary key, and the unit the approval
+	// DIGEST is computed over (see LockDamageDigest).
+	ChangeID   string
 	ArtistID   string
 	ArtistName string
 	Field      string
@@ -73,6 +76,29 @@ type LockDamageRestore struct {
 	// biography is unambiguous, a longer one may be curation -- without any
 	// value leaving this package. Reporting only; no predicate reads it.
 	Direction string
+	// OldLen and NewLen are the RUNE LENGTHS of the operator's value and what
+	// replaced it. Lengths, never content -- they carry no library metadata,
+	// so they cost nothing against the privacy contract.
+	//
+	// WHY THE PREVIEW NEEDS THEM (#3079 review, MEDIUM-3). Direction alone is
+	// too coarse to carry the ruling it exists for. Measured on a production
+	// cut: of the pairs that shrank, 3 lost more than 90% while 74 lost under
+	// 5%, and a few differ by only 1-3 characters. A near-certain operator
+	// touch-up and a near-total wipe both print "shorter", so the operator
+	// cannot separate them without being shown values -- which the contract
+	// forbids. The magnitude does that job with no content at all.
+	OldLen int
+	NewLen int
+	// ChainDepth is how many CONSECUTIVE damaging writes form an unbroken
+	// value-linked chain ending at this one. 1 is a single clean overwrite.
+	//
+	// The repair restores THIS row's old_value and asks nothing about whether
+	// that value was itself an earlier overwrite. One-step restore is the
+	// design (it is what the history model supports, and it is reversible),
+	// so this is a preview-fidelity field, not a predicate: an operator
+	// ruling on "shorter" deserves to know whether it is step 1 of 1 or step
+	// 4 of 5. Zero when the depth could not be read.
+	ChainDepth int
 }
 
 // LockDamageSkip records a pair that was NOT repaired, and why. Reason is a
@@ -109,6 +135,14 @@ type LockDamageResult struct {
 	// a population -- and so the bound's effect is VISIBLE in a dry run
 	// instead of inferred from an absence. Zero in attributed mode.
 	PreGuardTooNew int
+	// PreGuardDiverged counts pre-guard-mode rows dropped because the field's
+	// stored value no longer equals the damage the row recorded -- an
+	// operator edit or a later writer moved it on. Restoring would overwrite
+	// data newer than the damage, so these are excluded from the preview as
+	// well as from the write (#3079 review, HIGH-2): before, they were shown
+	// as "would restore" and then silently declined by the guarded write.
+	// Zero in attributed mode.
+	PreGuardDiverged int
 	// PreGuardUnlocked counts pre-guard-mode rows dropped because the field
 	// is not locked today. These are ordinary metadata churn on fields the
 	// operator never pinned -- on a real library they outnumber the eligible
@@ -139,6 +173,21 @@ type LockDamageOpts struct {
 	// The two modes PARTITION the damage set, so no pair can be selected by
 	// both and none falls between them.
 	PreGuard bool
+
+	// ApprovedDigest is the token the dry run printed for the candidate set
+	// the operator reviewed. When set, the pass recomputes the digest over
+	// the set it just selected and REFUSES TO WRITE ANYTHING unless the two
+	// match, returning *LockDamageDriftError.
+	//
+	// REQUIRED FOR A PRE-GUARD WRITE PASS (enforced by the caller, so the
+	// requirement lives where the operator-facing error message can name the
+	// flag). Optional for a dry run, which writes nothing either way, and
+	// unused by the attributed pass, whose per-row causation proof does not
+	// depend on a human ruling.
+	//
+	// See lock_damage_digest.go for why the preview must bind the write on
+	// this population and why a count would not be enough.
+	ApprovedDigest string
 }
 
 // preGuardCutoff is the UPPER TIME BOUND on the pre-guard population, and the
@@ -231,8 +280,30 @@ func (s *Service) RepairLockDamage(ctx context.Context, opts LockDamageOpts) (*L
 		return nil, err
 	}
 
+	// THE DIGEST GATE, BEFORE ANY WRITE (#3079 review, HIGH-1). The candidate
+	// set is fully decided by this point, so comparing it against the token
+	// the operator approved happens while the pass has still written nothing
+	// and can abort cleanly. Placed here rather than inside the per-row loop
+	// deliberately: a mid-loop refusal would leave a partially-restored
+	// database, which is the outcome the gate exists to prevent.
+	if err := verifyApprovedDigest(opts, candidates); err != nil {
+		return nil, err
+	}
+
+	// Chain depths are read ONCE for the whole pass, not per candidate: it is
+	// one recursive query over the history table, and a per-row form would
+	// re-walk it 215 times. Reporting only -- a failure to read it must never
+	// block a repair, so the error is dropped to a nil map and every candidate
+	// reports depth 0 rather than the pass aborting over a preview field.
+	depths, depthErr := s.lockDamageHistory.LockDamageChainDepths(ctx)
+	if depthErr != nil {
+		s.logger.Warn("could not read locked-field damage chain depths; "+
+			"the preview will report depth 0", "error", depthErr)
+		depths = nil
+	}
+
 	for i := range candidates {
-		if err := s.processLockDamageCandidate(ctx, candidates[i], opts, res); err != nil {
+		if err := s.processLockDamageCandidate(ctx, candidates[i], opts, depths, res); err != nil {
 			return nil, err
 		}
 	}
@@ -277,7 +348,7 @@ func (s *Service) RepairLockDamage(ctx context.Context, opts LockDamageOpts) (*L
 // or the guarded write. It returns an error ONLY for a condition that ends
 // the whole pass -- a canceled context. Every per-row outcome is filed into
 // res and reported as nil.
-func (s *Service) processLockDamageCandidate(ctx context.Context, c artist.LockDamageCandidate, opts LockDamageOpts, res *LockDamageResult) error {
+func (s *Service) processLockDamageCandidate(ctx context.Context, c artist.LockDamageCandidate, opts LockDamageOpts, depths map[artist.LockDamagePairKey]int, res *LockDamageResult) error {
 	if !opts.PreGuard && !s.attributionHolds(c, res) {
 		return nil
 	}
@@ -318,10 +389,10 @@ func (s *Service) processLockDamageCandidate(ctx context.Context, c artist.LockD
 	}
 
 	if opts.DryRun {
-		res.Restored = append(res.Restored, lockDamageRestoreOf(c))
+		res.Restored = append(res.Restored, lockDamageRestoreOf(c, depths[chainKey(c)]))
 		return nil
 	}
-	return s.attemptLockDamageRestore(ctx, c, res)
+	return s.attemptLockDamageRestore(ctx, c, depths, res)
 }
 
 // attributionHolds answers conditions 3 and 4 for the ATTRIBUTED mode: the
@@ -371,7 +442,7 @@ func (s *Service) attributionHolds(c artist.LockDamageCandidate, res *LockDamage
 // NOT Service.UpdateField: that verb is deliberately unconditional (the
 // operator's history revert and blast-radius restore write on the operator's
 // say-so), and its callers rely on that contract.
-func (s *Service) attemptLockDamageRestore(ctx context.Context, c artist.LockDamageCandidate, res *LockDamageResult) error {
+func (s *Service) attemptLockDamageRestore(ctx context.Context, c artist.LockDamageCandidate, depths map[artist.LockDamagePairKey]int, res *LockDamageResult) error {
 	writeCtx := artist.ContextWithSource(ctx, "revert")
 	outcome, err := s.artistService.RestoreLockedFieldGuarded(
 		writeCtx, c.ArtistID, c.Field, c.NewValue, c.OldValue)
@@ -437,18 +508,21 @@ func (s *Service) attemptLockDamageRestore(ctx context.Context, c artist.LockDam
 		slog.String("rule_id", c.RuleID),
 		slog.Time("damaged_at", c.DamagedAt))
 
-	res.Restored = append(res.Restored, lockDamageRestoreOf(c))
+	res.Restored = append(res.Restored, lockDamageRestoreOf(c, depths[chainKey(c)]))
 	return nil
 }
 
 // lockDamageRestoreOf projects a candidate into the reported form. The
-// candidate's values are read here and NEVER carried out: only their relative
-// LENGTH escapes, as damageDirection's fixed vocabulary.
-func lockDamageRestoreOf(c artist.LockDamageCandidate) LockDamageRestore {
+// candidate's values are read here and NEVER carried out: only their LENGTHS
+// escape, as damageDirection's fixed vocabulary and as rune counts.
+func lockDamageRestoreOf(c artist.LockDamageCandidate, chainDepth int) LockDamageRestore {
 	return LockDamageRestore{
-		ArtistID: c.ArtistID, ArtistName: c.ArtistName,
+		ChangeID: c.ChangeID, ArtistID: c.ArtistID, ArtistName: c.ArtistName,
 		Field: c.Field, RuleID: c.RuleID, DamagedAt: c.DamagedAt,
-		Direction: damageDirection(c.OldValue, c.NewValue),
+		Direction:  damageDirection(c.OldValue, c.NewValue),
+		OldLen:     len([]rune(c.OldValue)),
+		NewLen:     len([]rune(c.NewValue)),
+		ChainDepth: chainDepth,
 	}
 }
 
@@ -537,6 +611,29 @@ func (s *Service) selectPreGuardCandidates(ctx context.Context, res *LockDamageR
 		}
 		if !s.artistService.IsFieldLocked(a, artist.FieldName(u.Field)) {
 			res.PreGuardUnlocked++
+			continue
+		}
+		// THE DIVERGENCE CHECK, RUN DURING SELECTION SO THE PREVIEW MEANS IT
+		// (#3079 review, HIGH-2). Before this, the dry run short-circuited
+		// ahead of RestoreLockedFieldGuarded, so a pair whose stored value had
+		// already moved on was previewed as "would restore" and then silently
+		// declined at write time -- preview 215, repair 214, and nothing
+		// compared the two.
+		//
+		// It asks the SAME question the write asks, through the same exported
+		// predicate (artist.FieldValueStillDamaged), so the two cannot drift.
+		// This does NOT replace the guarded compare-and-set: that one runs
+		// inside the write transaction and is what closes the race between
+		// this read and the write. This one makes the PREVIEW honest; that one
+		// makes the WRITE safe.
+		// FieldValueFromArtist already yields the JOINED value form for slice
+		// fields (it reads the hydrated []string, not the raw JSON column), so
+		// it is NOT wrapped in artist.StoredFieldValue here. Wrapping it would
+		// feed "a, b" to a JSON decoder, which fails and yields "", making
+		// every locked slice-field candidate read as diverged.
+		stored := artist.FieldValueFromArtist(a, u.Field)
+		if !artist.FieldValueStillDamaged(u.Field, stored, u.NewValue) {
+			res.PreGuardDiverged++
 			continue
 		}
 		out = append(out, artist.LockDamageCandidate{

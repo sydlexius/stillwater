@@ -993,3 +993,77 @@ func (r *sqliteHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]LockD
 	}
 	return out, nil
 }
+
+// lockDamageChainDepthQuery counts, per (artist, field), how many CONSECUTIVE
+// damaging writes form an unbroken chain ending at the newest one.
+//
+// # WHY THIS EXISTS (#3079 review, MEDIUM-2)
+//
+// The repair restores the NEWEST damage row's old_value. It never asks
+// whether that value was itself an earlier overwrite. Measured on a
+// production clone, 71 of 215 approved pairs sat at depth >= 2, and for some
+// the earliest value on the chain was LONGER than the one the restore puts
+// back -- the pass repairs one step of a multi-step loss.
+//
+// ONE-STEP RESTORE IS THE DESIGN AND IS NOT CHANGED BY THIS. It is what the
+// history model supports, and it is reversible. The defect this fixes is
+// PREVIEW FIDELITY: an operator shown "shorter" cannot tell a clean single
+// overwrite from step 4 of 5, and those warrant different rulings.
+//
+// THE CHAIN IS VALUE-LINKED, NOT MERELY ADJACENT. A row joins the chain only
+// when its new_value equals the next row's old_value, so an unrelated write
+// that happens to sit next in the partition does not inflate the depth. It
+// walks strictly backwards through the rank order (rn, rn+1, rn+2, ...), and
+// stops at the first row that is not itself damage-shaped -- a revert, a
+// first-ever population (old_value = ”), or a no-op.
+//
+// DEPTH 1 MEANS A SINGLE OVERWRITE, not zero: the newest damage row is itself
+// the first link. Reporting only; no predicate reads it.
+const lockDamageChainDepthQuery = `
+	WITH ranked AS (
+		SELECT mc.artist_id, mc.field, mc.old_value, mc.new_value, mc.source,
+			ROW_NUMBER() OVER (
+				PARTITION BY mc.artist_id, mc.field
+				ORDER BY mc.created_at DESC, mc.id DESC
+			) AS rn
+		FROM metadata_changes mc
+	),
+	damage AS (
+		SELECT * FROM ranked
+		WHERE old_value != '' AND old_value != new_value AND source != 'revert'
+	),
+	chain AS (
+		SELECT d.artist_id, d.field, d.rn AS head_rn, 1 AS depth, d.old_value AS frontier
+		FROM damage d
+		WHERE d.rn = 1
+		UNION ALL
+		SELECT c.artist_id, c.field, c.head_rn, c.depth + 1, d.old_value
+		FROM chain c
+		JOIN damage d
+		  ON d.artist_id = c.artist_id AND d.field = c.field
+		 AND d.rn = c.head_rn + c.depth
+		 AND d.new_value = c.frontier
+	)
+	SELECT artist_id, field, MAX(depth) FROM chain GROUP BY artist_id, field`
+
+func (r *sqliteHistoryRepo) LockDamageChainDepths(ctx context.Context) (map[LockDamagePairKey]int, error) {
+	rows, err := r.db.QueryContext(ctx, lockDamageChainDepthQuery)
+	if err != nil {
+		return nil, fmt.Errorf("querying locked-field damage chain depths: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make(map[LockDamagePairKey]int)
+	for rows.Next() {
+		var k LockDamagePairKey
+		var depth int
+		if err := rows.Scan(&k.ArtistID, &k.Field, &depth); err != nil {
+			return nil, fmt.Errorf("scanning locked-field damage chain depth: %w", err)
+		}
+		out[k] = depth
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating locked-field damage chain depths: %w", err)
+	}
+	return out, nil
+}

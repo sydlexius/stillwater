@@ -2,6 +2,8 @@ package maintenance
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -293,15 +295,33 @@ func TestRepairLockDamagePreGuard_DoesNotTakeRuleSourcedRows(t *testing.T) {
 }
 
 // A RESTORE THAT WRITES NOTHING IS NOT A REPAIR. When the stored value has
-// moved on from the damage the candidate was selected for, the guarded write
-// declines, and the pair must be reported as decided -- never counted in
-// Restored, which is the number the operator reads as "work done".
+// moved on from the damage the candidate was selected for, nothing is
+// written, and the pair must never be counted in Restored -- the number the
+// operator reads as "work done".
+//
+// WHERE THE DIVERGENCE IS CAUGHT MOVED IN THE #3079 REVIEW FIX (HIGH-2), AND
+// THIS TEST MOVED WITH IT. It used to reach the guarded write and be filed
+// into Unrecoverable; now selectPreGuardCandidates asks the same question
+// first, so the pair never becomes a candidate and is counted in
+// PreGuardDiverged. That is the POINT of the change: the dry run short-
+// circuits before the guarded write, so a divergence only the write could see
+// was previewed as "would restore" and then silently declined -- measured on
+// a clone as preview 215, repair 214.
+//
+// THE GUARDED WRITE'S CHECK IS NOT REDUNDANT AND WAS NOT REMOVED. This one
+// runs during selection and closes the PREVIEW's honesty. That one runs
+// inside the write transaction and closes the RACE between this read and the
+// write, which is the window an operator editing during the pass opens. Their
+// coverage overlaps here only because this fixture diverges BEFORE the pass
+// starts; TestRepairLockDamage_ConcurrentEditBetweenReadAndWriteIsNotOverwritten
+// drives the window only the transactional check can see.
 func TestRepairLockDamagePreGuard_DivergedValueIsNotCountedAsRepaired(t *testing.T) {
 	env := newLockDamageEnv(t)
 	env.seedArtistWithLocks("a1", "Locked Artist", []string{"biography"})
 	env.seedPreGuardBioDamage("a1", beforeCutoff())
 	// The live value moved on after the damage row was written, without a
-	// history row: the guarded write's compare-and-set must decline.
+	// history row, so the damage row is still rank 1 and the SQL still selects
+	// it: only a value comparison can catch this.
 	env.setBiography("something else entirely")
 
 	env.requireLockedBio()
@@ -314,9 +334,9 @@ func TestRepairLockDamagePreGuard_DivergedValueIsNotCountedAsRepaired(t *testing
 	if len(res.Restored) != 0 {
 		t.Fatalf("restored %d, want 0: nothing was written", len(res.Restored))
 	}
-	if len(res.Unrecoverable) != 1 ||
-		!strings.Contains(res.Unrecoverable[0].Reason, "changed after the candidate was selected") {
-		t.Fatalf("unrecoverable = %+v, want the diverged pair with its reason", res.Unrecoverable)
+	if res.PreGuardDiverged != 1 {
+		t.Fatalf("PreGuardDiverged = %d, want 1: the pair must be COUNTED as excluded, "+
+			"not silently dropped", res.PreGuardDiverged)
 	}
 	if got := env.biography("a1"); got != "something else entirely" {
 		t.Errorf("biography = %q, want the newer value untouched", got)
@@ -399,5 +419,264 @@ func TestRepairLockDamagePreGuard_ReportsCarryNoFieldValues(t *testing.T) {
 	case "emptied", "shorter", "longer", "same-length":
 	default:
 		t.Errorf("Direction = %q, want one of the four descriptors", r.Direction)
+	}
+}
+
+// TestRepairLockDamagePreGuard_BoundaryInstantIsExcluded pins the STRICTNESS
+// of the upper time bound, which the existing straddle test does not.
+//
+// # WHY THIS EXISTS (#3079 review, LOW-1)
+//
+// The header of selectPreGuardCandidates claims "the comparison is STRICT --
+// a row exactly at the boundary is excluded, the allow-list direction holding
+// on an ambiguous instant." That claim had no test with teeth. Every fixture
+// straddled the bound by +/-24h, so mutating
+//
+//	!u.DamagedAt.Before(preGuardCutoff)   // exclusive, correct
+//
+// to
+//
+//	u.DamagedAt.After(preGuardCutoff)     // INCLUSIVE, admits the boundary
+//
+// left the ENTIRE internal/maintenance suite green: at +/-24h the two
+// predicates agree, and nothing sat on the one instant where they differ.
+//
+// MUTATION PROOF: apply that exact mutation and this test FAILS -- a1 is
+// restored (1 candidate, PreGuardTooNew 0) where it must be excluded (0
+// candidates, PreGuardTooNew 1). Verified both ways.
+//
+// WHY EXCLUSIVE IS THE CORRECT DIRECTION. The bound means "damage written
+// before the release that ended this damage". A row stamped at the release
+// instant itself cannot be shown to predate the fix, and the allow-list rule
+// this feature is built on resolves an ambiguous row to NOT RESTORED. The
+// cost of excluding it is that one genuinely-damaged row stays damaged and
+// visible in the blast-radius pane; the cost of admitting it is a write over
+// a value that may postdate the guard. Those are not symmetric.
+func TestRepairLockDamagePreGuard_BoundaryInstantIsExcluded(t *testing.T) {
+	env := newLockDamageEnv(t)
+
+	// EXACTLY the cutoff instant, to the second, formatted the way the
+	// repository stores timestamps. Derived from the constant, never a
+	// literal: a moved cutoff must move this fixture with it, or the test
+	// silently stops sitting on the boundary and goes vacuous.
+	atBoundary := preGuardCutoff.UTC().Format(time.RFC3339)
+
+	env.seedArtistWithLocks("a1", "Boundary Damage", []string{"biography"})
+	env.seedPreGuardBioDamage("a1", atBoundary)
+
+	// PRECONDITIONS. The row must be eligible on every other axis, and it must
+	// really sit ON the instant -- not one second either side, which is what
+	// makes this different from the straddle test.
+	env.requireLockedBio()
+	env.requirePreGuardRow("a1-dmg-biography", false)
+	var raw string
+	if err := env.db.QueryRow(
+		`SELECT created_at FROM metadata_changes WHERE id = ?`,
+		"a1-dmg-biography").Scan(&raw); err != nil {
+		t.Fatalf("fixture: reading the boundary row: %v", err)
+	}
+	at, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		t.Fatalf("fixture: unparsable created_at %q: %v", raw, err)
+	}
+	if !at.Equal(preGuardCutoff) {
+		t.Fatalf("fixture: created_at %s is not EXACTLY the cutoff %s; "+
+			"this test is vacuous unless the row sits on the boundary instant",
+			at.Format(time.RFC3339), preGuardCutoff.Format(time.RFC3339))
+	}
+
+	res, err := env.svc.RepairLockDamage(context.Background(), LockDamageOpts{PreGuard: true})
+	if err != nil {
+		t.Fatalf("RepairLockDamage(PreGuard): %v", err)
+	}
+
+	if len(res.Restored) != 0 {
+		t.Errorf("restored %d pairs, want 0; a row AT the cutoff instant must be excluded "+
+			"(the comparison is strict, so the bound admits only rows strictly before it)",
+			len(res.Restored))
+	}
+	if res.PreGuardTooNew != 1 {
+		t.Errorf("PreGuardTooNew = %d, want 1; the boundary row must be COUNTED as excluded, "+
+			"not silently dropped", res.PreGuardTooNew)
+	}
+	// The field must be untouched: an excluded row is not a written row.
+	if got := env.biography("a1"); got != "junk bio" {
+		t.Errorf("a1 biography = %q, want the damaged value left in place", got)
+	}
+}
+
+// TestRepairLockDamagePreGuard_DryRunExcludesDivergedRows closes the
+// preview's OVERSTATEMENT (#3079 review, HIGH-2).
+//
+// The dry run used to short-circuit at `if opts.DryRun { append }` BEFORE
+// RestoreLockedFieldGuarded ran, so it never consulted the guarded
+// compare-and-set. A pair whose stored value had already moved on was
+// previewed as "would restore" and then silently declined at write time:
+// measured on a clone as dry-run 215 / repair 214, with nothing comparing the
+// two.
+//
+// The preview must answer the SAME question the write answers. It does now,
+// through the same exported predicate (artist.FieldValueStillDamaged), and
+// the excluded row is COUNTED rather than dropped.
+//
+// MUTATION PROOF: delete the PreGuardDiverged check in
+// selectPreGuardCandidates and this fails -- the diverged pair is previewed
+// as restorable (1, not 0) and PreGuardDiverged reads 0.
+func TestRepairLockDamagePreGuard_DryRunExcludesDivergedRows(t *testing.T) {
+	env := newLockDamageEnv(t)
+	env.seedArtistWithLocks("a1", "Diverged", []string{"biography"})
+	env.seedPreGuardBioDamage("a1", beforeCutoff())
+	// The live value moved on WITHOUT a history row, so the damage row is
+	// still rank 1 and the pair is still selected by the SQL -- only the
+	// divergence check can catch it.
+	env.setBiography("operator hotfix")
+
+	env.requireLockedBio()
+	env.requirePreGuardRow("a1-dmg-biography", true)
+	if got := env.biography("a1"); got != "operator hotfix" {
+		t.Fatalf("fixture: biography = %q, want the diverged value", got)
+	}
+
+	res, err := env.svc.RepairLockDamage(context.Background(),
+		LockDamageOpts{PreGuard: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("RepairLockDamage(PreGuard,DryRun): %v", err)
+	}
+
+	if len(res.Restored) != 0 {
+		t.Errorf("the preview offered %d row(s), want 0: the stored value diverged, "+
+			"so the write would decline it and the preview must say so", len(res.Restored))
+	}
+	if res.PreGuardDiverged != 1 {
+		t.Errorf("PreGuardDiverged = %d, want 1; a row excluded for divergence must be "+
+			"counted, not silently dropped", res.PreGuardDiverged)
+	}
+}
+
+// TestRepairLockDamagePreGuard_DigestGate covers the token that makes the
+// preview BINDING on the write (#3079 review, HIGH-1).
+//
+// Three cases, and the SECOND is the one that matters: the reviewer's
+// reproduction was a lock toggled between preview and repair, which pulls a
+// previously-invisible row into the population. Before the gate the write
+// simply took it.
+func TestRepairLockDamagePreGuard_DigestGate(t *testing.T) {
+	t.Run("the approved digest lets the write proceed", func(t *testing.T) {
+		env := newLockDamageEnv(t)
+		env.seedArtistWithLocks("a1", "Approved", []string{"biography"})
+		env.seedPreGuardBioDamage("a1", beforeCutoff())
+		env.requireLockedBio()
+
+		preview, err := env.svc.RepairLockDamage(context.Background(),
+			LockDamageOpts{PreGuard: true, DryRun: true})
+		if err != nil {
+			t.Fatalf("preview: %v", err)
+		}
+		digest := LockDamageDigest(preview.Restored)
+		if digest == "" {
+			t.Fatal("the preview produced an empty digest")
+		}
+
+		res, err := env.svc.RepairLockDamage(context.Background(),
+			LockDamageOpts{PreGuard: true, ApprovedDigest: digest})
+		if err != nil {
+			t.Fatalf("the write refused a digest taken from its own preview: %v", err)
+		}
+		if len(res.Restored) != 1 {
+			t.Fatalf("restored %d, want 1", len(res.Restored))
+		}
+		if got := env.biography("a1"); got != "curated bio" {
+			t.Errorf("biography = %q, want the restored value", got)
+		}
+	})
+
+	t.Run("a lock added after the preview REFUSES the write", func(t *testing.T) {
+		env := newLockDamageEnv(t)
+		// a1 is previewed. a2 carries identical damage on a field that is NOT
+		// locked yet, so it is invisible to the preview.
+		env.seedArtistWithLocks("a1", "Previewed", []string{"biography"})
+		env.seedArtistWithLocks("a2", "Locked Later", nil)
+		env.seedPreGuardBioDamage("a1", beforeCutoff())
+		env.seedPreGuardBioDamage("a2", beforeCutoff())
+
+		preview, err := env.svc.RepairLockDamage(context.Background(),
+			LockDamageOpts{PreGuard: true, DryRun: true})
+		if err != nil {
+			t.Fatalf("preview: %v", err)
+		}
+		if len(preview.Restored) != 1 {
+			t.Fatalf("preview offered %d, want 1 (a2's field is not locked yet)", len(preview.Restored))
+		}
+		digest := LockDamageDigest(preview.Restored)
+
+		// THE TOGGLE. An ordinary operator action between the two commands.
+		env.lockField("a2", "biography")
+
+		_, err = env.svc.RepairLockDamage(context.Background(),
+			LockDamageOpts{PreGuard: true, ApprovedDigest: digest})
+		var drift *LockDamageDriftError
+		if !errors.As(err, &drift) {
+			t.Fatalf("err = %v, want a *LockDamageDriftError: the set grew from 1 to 2 "+
+				"after approval, and the write must refuse it", err)
+		}
+		if drift.ActualCount != 2 {
+			t.Errorf("drift.ActualCount = %d, want 2", drift.ActualCount)
+		}
+		// NOTHING WRITTEN. The refusal must be total, not partial: a gate that
+		// restores the approved row and then refuses the rest has already done
+		// half the damage it exists to prevent.
+		if got := env.biography("a1"); got != "junk bio" {
+			t.Errorf("a1 biography = %q, want it UNTOUCHED; a refused pass writes nothing at all", got)
+		}
+		if got := env.biography("a2"); got != "junk bio" {
+			t.Errorf("a2 biography = %q, want it untouched", got)
+		}
+	})
+
+	t.Run("a digest is not required for a dry run", func(t *testing.T) {
+		env := newLockDamageEnv(t)
+		env.seedArtistWithLocks("a1", "Preview Only", []string{"biography"})
+		env.seedPreGuardBioDamage("a1", beforeCutoff())
+
+		res, err := env.svc.RepairLockDamage(context.Background(),
+			LockDamageOpts{PreGuard: true, DryRun: true})
+		if err != nil {
+			t.Fatalf("a dry run must not require a digest: %v", err)
+		}
+		if len(res.Restored) != 1 {
+			t.Fatalf("restored %d, want 1", len(res.Restored))
+		}
+	})
+}
+
+// TestLockDamageDigest_DetectsASwap pins the property a COUNT cannot carry.
+// One row leaving the set and another joining it keeps the count identical
+// while changing what gets written, which is exactly the case an operator
+// produces by locking one field and unlocking another in the same sitting.
+func TestLockDamageDigest_DetectsASwap(t *testing.T) {
+	approved := []LockDamageRestore{{ChangeID: "c1"}, {ChangeID: "c2"}}
+	swapped := []LockDamageRestore{{ChangeID: "c1"}, {ChangeID: "c3"}}
+
+	if len(approved) != len(swapped) {
+		t.Fatal("fixture: the two sets must be the same SIZE, or this proves nothing about counts")
+	}
+	if LockDamageDigest(approved) == LockDamageDigest(swapped) {
+		t.Error("a swap of equal size produced the same digest; the gate would wave it through")
+	}
+
+	// ORDER-INDEPENDENT: the digest describes membership, not the query's
+	// ORDER BY or the preview's display order.
+	reordered := []LockDamageRestore{{ChangeID: "c2"}, {ChangeID: "c1"}}
+	if LockDamageDigest(approved) != LockDamageDigest(reordered) {
+		t.Error("the digest changed when only the ORDER changed; two runs selecting the " +
+			"same rows must agree")
+	}
+	// A DROP and an ADD both move it.
+	if LockDamageDigest(approved) == LockDamageDigest(approved[:1]) {
+		t.Error("dropping a row did not move the digest")
+	}
+	if LockDamageDigest(approved) == LockDamageDigest(append(slices.Clone(approved),
+		LockDamageRestore{ChangeID: "c9"})) {
+		t.Error("adding a row did not move the digest")
 	}
 }

@@ -146,7 +146,8 @@ func dispatchFlagCommand(cliFlags cli.Flags, stderr io.Writer) (handled bool, er
 		// without an explicit logger the pass would restore rows and say
 		// nothing at all.
 		return true, runLockDamagePreGuardRepair(
-			slog.New(slog.NewTextHandler(stderr, nil)))
+			slog.New(slog.NewTextHandler(stderr, nil)),
+			cliFlags.LockDamagePreGuardApprove)
 	}
 
 	return false, nil
