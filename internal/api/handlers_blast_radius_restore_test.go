@@ -1308,6 +1308,13 @@ func (l listBlastErrHistoryRepo) LockDamageUnattributed(ctx context.Context) ([]
 	return l.delegate.LockDamageUnattributed(ctx)
 }
 
+// LockDamageChainDepths satisfies HistoryRepository. The chain depth is a
+// PREVIEW-ONLY field, so a nil map (every candidate reporting depth 0) is a
+// valid answer and keeps this fake focused on what it exists to exercise.
+func (l listBlastErrHistoryRepo) LockDamageChainDepths(ctx context.Context) (map[artist.LockDamagePairKey]int, error) {
+	return nil, nil
+}
+
 // TestBlastRestore_EligibilityQueryErrorRefuses pins the documented safety
 // property of isCurrentBlastRow: when the eligibility query cannot be answered,
 // the row is REFUSED, never written.

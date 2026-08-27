@@ -36,6 +36,9 @@ The table below is generated from `internal/cli.Flags` and the `Subcommands` sli
 | `--username` | string | (none) | Username for --reset-password. When omitted, defaults to the sole admin user in the database. |
 | `--new-password` | string | (none) | New password for --reset-password (INSECURE: visible in process listings; prefer the interactive prompt instead). |
 | `--lock-damage-dry-run` | boolean | `false` | Report which locked fields the damage repair would restore, then exit without writing. For validating against a database copy. |
+| `--lock-damage-pre-guard-dry-run` | boolean | `false` | Report which locked fields the pre-guard (unattributable) damage repair would restore, then exit without writing. Preview this before --lock-damage-pre-guard-repair. |
+| `--lock-damage-pre-guard-repair` | boolean | `false` | Restore the pre-guard (unattributable) locked-field damage previewed by --lock-damage-pre-guard-dry-run, then exit. Requires --lock-damage-pre-guard-approve with the digest that preview printed. Runs once per database, opens the database READ-WRITE and RUNS MIGRATIONS, so stop the server first and back up. Preview first. |
+| `--lock-damage-pre-guard-approve` | string | (none) | The approval digest printed by --lock-damage-pre-guard-dry-run. Required by --lock-damage-pre-guard-repair, which refuses to write if the candidate set no longer matches it. |
 
 ## Subcommands
 

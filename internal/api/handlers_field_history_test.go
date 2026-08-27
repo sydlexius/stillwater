@@ -73,6 +73,13 @@ func (alwaysErrHistoryRepo) LockDamageUnattributed(_ context.Context) ([]artist.
 	return nil, errors.New("simulated history store failure")
 }
 
+// LockDamageChainDepths satisfies HistoryRepository. It fails like every
+// other verb on this stub: chain depth is preview-only, and a repair must
+// survive its failure by reporting depth 0 rather than aborting.
+func (alwaysErrHistoryRepo) LockDamageChainDepths(_ context.Context) (map[artist.LockDamagePairKey]int, error) {
+	return nil, errors.New("simulated history store failure")
+}
+
 // testRouterWithErrHistoryService creates a Router wired with a HistoryService
 // whose ListGlobal always errors. This is used to verify that handleFieldEdit
 // degrades gracefully when the history pre-load step fails.

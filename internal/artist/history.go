@@ -102,6 +102,20 @@ type HistoryRepository interface {
 	// change reads as damage but whose source names no rule, so the repair
 	// cannot attribute it. Read-only; feeds the unrecoverable tally.
 	LockDamageUnattributed(ctx context.Context) ([]LockDamageUnattributedRow, error)
+
+	// LockDamageChainDepths returns, per (artist, field), how many CONSECUTIVE
+	// damaging writes precede the newest one in an unbroken value-linked
+	// chain. Read-only, reporting only: no predicate consults it. See
+	// LockDamageChainDepth.
+	LockDamageChainDepths(ctx context.Context) (map[LockDamagePairKey]int, error)
+}
+
+// LockDamagePairKey identifies one (artist, field) pair. A comparable struct
+// so chain depths can be returned as a map the caller indexes directly,
+// rather than a slice every candidate has to scan.
+type LockDamagePairKey struct {
+	ArtistID string
+	Field    string
 }
 
 // HistoryService provides metadata change tracking for artists.

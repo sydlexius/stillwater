@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -123,11 +122,8 @@ func (s *Service) RestoreLockedFieldGuarded(ctx context.Context, id, field, dama
 
 	// Compare in value form: slice fields store JSON but history rows carry the
 	// joined representation, which is what damagedValue is.
-	stored := storedRaw
-	if sliceFields[field] {
-		stored = strings.Join(UnmarshalStringSlice(storedRaw), ", ")
-	}
-	if normalizeFieldValue(field, stored) != normalizeFieldValue(field, damagedValue) {
+	stored := StoredFieldValue(field, storedRaw)
+	if !FieldValueStillDamaged(field, stored, damagedValue) {
 		return LockedFieldRestoreValueDiverged, nil
 	}
 
