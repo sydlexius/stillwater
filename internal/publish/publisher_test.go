@@ -55,13 +55,6 @@ type fakePlatformLister struct {
 	// idsErr, when non-nil, makes GetPlatformIDs fail (exercises the
 	// platform-id-load error branch in the phash orchestration wrappers).
 	idsErr error
-
-	// images backs GetImagesForArtist (#3125 F3: identifying the previous
-	// fanart primary's platform slot from stored provenance). imagesErr, when
-	// non-nil, makes the call fail so a test can exercise the
-	// cannot-identify fallback.
-	images    []artist.ArtistImage
-	imagesErr error
 }
 
 // List returns the fake's artists on page 1 and an empty page thereafter,
@@ -115,13 +108,6 @@ func (f *fakePlatformLister) ListMembersByArtistID(_ context.Context, _ string) 
 		return nil, f.membersErr
 	}
 	return f.members, nil
-}
-
-func (f *fakePlatformLister) GetImagesForArtist(_ context.Context, _ string) ([]artist.ArtistImage, error) {
-	if f.imagesErr != nil {
-		return nil, f.imagesErr
-	}
-	return f.images, nil
 }
 
 func (f *fakePlatformLister) ListArtistsWithPlatformMappings(_ context.Context) ([]string, error) {
@@ -1192,15 +1178,28 @@ func TestSyncImageToPlatforms_FanartResolveErrorWarnsAndSkips(t *testing.T) {
 	}
 }
 
-// TestSyncImageToPlatforms_FanartProvenanceLookupErrorFallsBackToAppend
-// covers previousFanartPrimaryPHash's error branch (#3125 F3): when
-// GetImagesForArtist fails, the lookup must degrade to "" (cannot
-// identify) rather than blocking the sync -- the fanart upload still
-// proceeds, via the append fallback, against an empty platform.
-func TestSyncImageToPlatforms_FanartProvenanceLookupErrorFallsBackToAppend(t *testing.T) {
+// TestSyncImageToPlatforms_FanartBackupReadErrorFallsBackToAppend covers
+// previousFanartPrimaryData's error branch (#3125 C1: the previous-primary
+// source moved from artist_images to the on-disk backup). A genuine backup
+// read failure -- distinct from the ordinary "no backup yet" case
+// (os.ErrNotExist, ALSO handled but silently, since a first-ever save has
+// no previous primary and that is not an error) -- must degrade to "cannot
+// identify" rather than blocking the sync. Forced by making
+// .sw-backup/fanart a plain FILE, so os.ReadDir on it fails with something
+// other than not-exist.
+func TestSyncImageToPlatforms_FanartBackupReadErrorFallsBackToAppend(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 1), 0o644); err != nil {
 		t.Fatalf("seeding fanart.jpg: %v", err)
+	}
+	backupParent := filepath.Join(dir, ".sw-backup")
+	if err := os.MkdirAll(backupParent, 0o750); err != nil {
+		t.Fatalf("creating backup parent: %v", err)
+	}
+	// A regular file where a directory is expected: os.ReadDir on this path
+	// fails with ENOTDIR, not ErrNotExist.
+	if err := os.WriteFile(filepath.Join(backupParent, "fanart"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("seeding backup-dir-as-file: %v", err)
 	}
 
 	srv := &pathRecordingServer{}
@@ -1209,12 +1208,9 @@ func TestSyncImageToPlatforms_FanartProvenanceLookupErrorFallsBackToAppend(t *te
 
 	p := New(Deps{
 		Logger: silentLogger(),
-		ArtistService: &fakePlatformLister{
-			ids: []artist.PlatformID{
-				{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
-			},
-			imagesErr: fmt.Errorf("db unavailable"),
-		},
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
 			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: httpSrv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 		}},
@@ -1222,7 +1218,7 @@ func TestSyncImageToPlatforms_FanartProvenanceLookupErrorFallsBackToAppend(t *te
 
 	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, "fanart")
 	if len(warnings) != 0 {
-		t.Fatalf("expected no warnings (provenance lookup failure must not block the upload); got %v", warnings)
+		t.Fatalf("expected no warnings (a backup read failure must not block the upload); got %v", warnings)
 	}
 
 	got := srv.snapshot()
@@ -1231,7 +1227,7 @@ func TestSyncImageToPlatforms_FanartProvenanceLookupErrorFallsBackToAppend(t *te
 	}
 	// Empty platform (newPathRecordingServer's GET stub reports zero
 	// backdrops), so this resolves to fanartTargetIndex at 0 regardless of
-	// the provenance failure -- the failure only removes the OTHER
+	// the backup-read failure -- the failure only removes the OTHER
 	// identification path, it does not block the sync.
 	if want := "/Items/p1/Images/Backdrop/0"; got[0] != want {
 		t.Errorf("fanart sync path = %q, want %q", got[0], want)

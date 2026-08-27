@@ -262,15 +262,6 @@ type artistPlatformLister interface {
 	GetPlatformIDs(ctx context.Context, artistID string) ([]artist.PlatformID, error)
 	ListMembersByArtistID(ctx context.Context, artistID string) ([]artist.BandMember, error)
 	ListArtistsWithPlatformMappings(ctx context.Context) ([]string, error)
-	// GetImagesForArtist returns the artist_images rows, including each slot's
-	// stored perceptual hash. Used by uploadOneImageForSync's fanart branch
-	// (#3125 F3) to identify which platform backdrop slot holds Stillwater's
-	// PREVIOUS primary, so a replace can target that slot instead of always
-	// writing index 0 -- index 0 is only reliably the primary immediately
-	// after a fresh sync; a prior platform-side delete (phash back-out prune,
-	// remote dedup, or an operator deleting in the Emby/Jellyfin UI) can shift
-	// it to any index via the peer's re-indexing.
-	GetImagesForArtist(ctx context.Context, artistID string) ([]artist.ArtistImage, error)
 	// SetPlatformIDStable upserts an artist<->connection platform-ID mapping via
 	// the divergence-aware, deterministic stable set. Used by the Lidarr
 	// merge/rename self-heal to stamp a resolved-by-MBID link without silently
@@ -1014,16 +1005,40 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 	// data, and gating the repair on upload success skipped exactly that case.
 	var uploadedTo []string
 
-	// #3125 F3: the previous primary's stored perceptual hash, read ONCE
-	// before the per-connection loop (it does not vary per platform) and
-	// passed to uploadOneImageForSync so the fanart branch can identify
-	// which platform index still holds it, rather than assuming index 0.
+	// #3125 F3/C1: the bytes of the PREVIOUS primary, read ONCE before the
+	// per-connection loop (it does not vary per platform) and passed to
+	// uploadOneImageForSync so the fanart branch can identify which
+	// platform index still holds it, rather than assuming index 0.
+	//
+	// SOURCED FROM THE ON-DISK BACKUP, NEVER FROM artist_images.PHash. A
+	// round-1 review found the DB-hash design INERT IN PRODUCTION: the DB
+	// row is stamped from the NEW file, by THIS SAME REQUEST, before this
+	// function ever runs (finalizeImageSave calls recordImageProvenance at
+	// handlers_image.go:225 -- itself downstream of setArtistImageFlag,
+	// which reads the just-written file straight off disk -- roughly 30
+	// lines before it reaches SyncImageToPlatforms at :257; the rule engine
+	// does the same thing, recording provenance from the saved path before
+	// syncing). So "the artist's previous primary hash" read from the DB at
+	// sync time is never the previous primary -- it is the CURRENT one,
+	// which can never fail to "match" the very upload being sent, and the
+	// resolver's previous-primary branch was consequently unreachable.
+	//
+	// The one-deep on-disk backup (.sw-backup/fanart/, written by BackupSlot
+	// inside SaveSlotProtected, STRICTLY BEFORE the destructive Save that
+	// overwrites the canonical file -- see saveFanartSlotProtected in
+	// internal/api and saveImageToDisk in internal/rule, the two chokepoints
+	// every fanart-primary write funnels through) has no such race: by
+	// construction it is written before this request's Save, so at the time
+	// THIS FUNCTION runs it still holds the bytes the platform was last
+	// given, never the new ones. See previousFanartPrimaryData's doc comment
+	// for the full ordering argument and image.ReadSlotBackup for the read.
+	//
 	// Gated on imageType == "fanart": every other type has no index concept
-	// to resolve, so the lookup would be a pure-waste DB read on the far
+	// to resolve, so the lookup would be a pure-waste disk read on the far
 	// more common thumb/logo/banner sync.
-	var previousFanartPHash string
+	var previousFanartData []byte
 	if imageType == "fanart" {
-		previousFanartPHash = p.previousFanartPrimaryPHash(ctx, a.ID)
+		previousFanartData = p.previousFanartPrimaryData(dir, filepath.Base(filePath))
 	}
 
 	for _, pid := range platformIDs {
@@ -1048,7 +1063,7 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		//
 		// #3125: fanart routes through a different call than the other three
 		// image types; see uploadOneImageForSync's doc comment for why.
-		uploaded, warn := p.uploadOneImageForSync(ctx, a, pid, conn, imageType, data, ct, previousFanartPHash)
+		uploaded, warn := p.uploadOneImageForSync(ctx, a, pid, conn, imageType, data, ct, previousFanartData)
 		if uploaded {
 			uploadedTo = append(uploadedTo, conn.Name)
 		}
@@ -1142,14 +1157,15 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 // platform index 0 and let the peer re-index survivors down by one, so a
 // bystander backdrop ends up sitting at index 0. An unconditional index-0
 // write then DESTROYS that bystander rather than merely duplicating one.
-// previousFanartPHash (the artist's last-recorded primary hash) lets
+// previousFanartData (the previous primary's actual on-disk bytes, from the
+// pre-save backup -- see previousFanartPrimaryData) lets
 // resolveFanartReplaceTarget positively identify the slot that still holds
 // the OLD primary before authorizing an overwrite; see its doc comment for
 // the full three-outcome (noop/index/append) decision and why "cannot
 // identify" falls back to append rather than guessing.
-func (p *Publisher) uploadOneImageForSync(ctx context.Context, a *artist.Artist, pid artist.PlatformID, conn *connection.Connection, imageType string, data []byte, ct string, previousFanartPHash string) (uploaded bool, warning string) {
+func (p *Publisher) uploadOneImageForSync(ctx context.Context, a *artist.Artist, pid artist.PlatformID, conn *connection.Connection, imageType string, data []byte, ct string, previousFanartData []byte) (uploaded bool, warning string) {
 	if imageType == "fanart" {
-		return p.uploadFanartForSync(ctx, a, pid, conn, data, ct, previousFanartPHash)
+		return p.uploadFanartForSync(ctx, a, pid, conn, data, ct, previousFanartData)
 	}
 
 	uploader := newImageUploader(conn, p.logger)
@@ -1172,7 +1188,7 @@ func (p *Publisher) uploadOneImageForSync(ctx context.Context, a *artist.Artist,
 // append -- accepting one duplicate rather than risking a destroyed
 // bystander -- when neither holds. See uploadOneImageForSync's doc comment
 // for the full defect this guards against.
-func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, pid artist.PlatformID, conn *connection.Connection, data []byte, ct string, previousFanartPHash string) (uploaded bool, warning string) {
+func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, pid artist.PlatformID, conn *connection.Connection, data []byte, ct string, previousFanartData []byte) (uploaded bool, warning string) {
 	client := newFanartReplaceClient(conn, p.logger)
 	if client == nil {
 		// Mirror the non-indexed nil-uploader handling: warn loudly and skip
@@ -1208,7 +1224,7 @@ func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, p
 	unlock := p.lockPhashTarget(pid.ConnectionID, pid.PlatformArtistID)
 	defer unlock()
 
-	decision, resolveErr := resolveFanartReplaceTarget(ctx, client, pid.PlatformArtistID, data, previousFanartPHash, collision.DefaultTolerance)
+	decision, resolveErr := resolveFanartReplaceTarget(ctx, client, pid.PlatformArtistID, data, previousFanartData)
 	if resolveErr != nil {
 		// Cannot even READ the platform's current backdrop state -- fail
 		// closed the same way the nil-client branch does, rather than
@@ -1251,33 +1267,59 @@ func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, p
 	}
 }
 
-// previousFanartPrimaryPHash returns the stored perceptual hash of the
-// artist's fanart slot 0 row (#3125 F3), or "" when unavailable -- no
-// artistService, a lookup error, no fanart row yet, or an empty/unhashed
-// PHash column. Every one of those is treated identically by the caller
-// (resolveFanartReplaceTarget: "cannot identify, fall back to append"), so
-// this collapses them rather than returning an error the caller would just
-// discard.
+// previousFanartPrimaryData returns the bytes of the artist's PREVIOUS
+// primary fanart image (#3125 C1), or nil when unavailable -- no backup on
+// record (a first-ever fanart save, or a save whose backup was already
+// consumed), or a read failure. Both are treated identically by the caller
+// (resolveFanartReplaceTarget: "cannot identify, fall back to append").
 //
-// Best-effort and NEVER fatal to the sync: a lookup failure here must not
+// SOURCED FROM THE ONE-DEEP ON-DISK BACKUP (image.ReadSlotBackup), NEVER
+// FROM artist_images.PHash. A round-1 review found the database-hash design
+// INERT IN PRODUCTION: SyncImageToPlatforms (this function's caller, via
+// syncImageToPlatforms) always runs AFTER the DB row for the JUST-SAVED file
+// has already been stamped. Every write path takes this shape --
+//
+//	internal/api/handlers_image.go:171   updateArtistImageFlag -> setArtistImageFlag
+//	                                      -> recordImageProvenanceSlot0(ctx, a.ID, imageType, NEW file)
+//	internal/api/handlers_image.go:257   (~85 lines later) SyncImageToPlatforms
+//
+// -- and the rule engine's two callers match it (bulk_executor.go:536 records
+// provenance from the just-saved path, :538 syncs; fixer.go calls
+// recordSavedImageProvenance before publishAfterFix). So a DB read at sync
+// time always returns the NEW file's own hash, which trivially "matches" the
+// upload being sent every single time: the previous-primary branch was
+// unreachable, and every replace silently took the append fallback --
+// reproduced end to end in round 1 (backdropCount 1 -> 2, appends=1, on
+// what should have been an in-place replace).
+//
+// The on-disk backup has no such race. BackupSlot writes it INSIDE
+// SaveSlotProtected, STRICTLY BEFORE the destructive Save that overwrites
+// the canonical file -- and every fanart-primary write in this codebase
+// (API upload/crop/fetch, apply-candidate, the rule engine's
+// downloadAndPersist and BulkExecutor.saveBestImage) reaches disk through
+// SaveSlotProtected, the single chokepoint TestFanartSaveHasASingleChokepoint
+// enforces. So by construction the backup this reads is what was on disk --
+// and, assuming the previous sync succeeded, what the platform holds --
+// at the instant just BEFORE the CURRENT save, never the new bytes.
+//
+// dir and primaryFileName are the SAME values syncImageToPlatforms already
+// resolved for its own upload (p.ImageDir(a) and the discovered primary
+// basename), so this makes no extra filesystem probe beyond the one
+// os.ReadDir the backup lookup itself needs.
+//
+// Best-effort and NEVER fatal to the sync: a read failure here must not
 // block the upload, it only narrows resolveFanartReplaceTarget's options
 // down to append -- the safe direction.
-func (p *Publisher) previousFanartPrimaryPHash(ctx context.Context, artistID string) string {
-	if p.artistService == nil {
-		return ""
-	}
-	imgs, err := p.artistService.GetImagesForArtist(ctx, artistID)
+func (p *Publisher) previousFanartPrimaryData(dir, primaryFileName string) []byte {
+	data, err := img.ReadSlotBackup(dir, "fanart", primaryFileName)
 	if err != nil {
-		p.logger.Warn("reading stored fanart provenance for replace-target resolution; falling back to append",
-			"artist_id", artistID, "error", err)
-		return ""
-	}
-	for i := range imgs {
-		if imgs[i].ImageType == "fanart" && imgs[i].SlotIndex == 0 {
-			return imgs[i].PHash
+		if !errors.Is(err, os.ErrNotExist) {
+			p.logger.Warn("reading previous-primary backup for replace-target resolution; falling back to append",
+				"dir", dir, "error", err)
 		}
+		return nil
 	}
-	return ""
+	return data
 }
 
 // repairAfterPush runs one repair pass, waits for the peer to settle, and runs

@@ -264,13 +264,13 @@ const (
 	// UploadImage call. One duplicate is the accepted cost of not being able
 	// to prove a safe index -- destroying a bystander backdrop is not.
 	fanartTargetAppend resolveFanartTarget = iota
-	// fanartTargetNoop means a backdrop already matching the new bytes is
-	// present; nothing should be uploaded at all.
+	// fanartTargetNoop means a backdrop already BYTE-IDENTICAL to the new
+	// bytes is present; nothing should be uploaded at all.
 	fanartTargetNoop
 	// fanartTargetIndex means Index is a positively-identified safe
 	// overwrite target: either the platform is empty (index 0 creates
-	// the first slot, cannot clobber anything) or a backdrop matching the
-	// artist's PREVIOUS primary phash was found at Index.
+	// the first slot, cannot clobber anything) or a backdrop BYTE-IDENTICAL
+	// to the artist's PREVIOUS primary was found at Index.
 	fanartTargetIndex
 )
 
@@ -302,38 +302,71 @@ type fanartReplaceDecision struct {
 // Stillwater's own previous primary -- never by the absence of a reason to
 // doubt it. Three outcomes, checked in this order:
 //
-//  1. NOOP: the platform already holds a backdrop matching the NEW bytes
-//     (perceptually, at tolerance). Nothing to do -- this also neutralizes
-//     the retry path in the sibling Emby-500 defect (#3126), the same
-//     idempotency restoreBackdrop already relies on.
+//  1. NOOP: the platform already holds a backdrop BYTE-IDENTICAL to the NEW
+//     data (image.ContentHash, exact SHA-256). Nothing to do -- this also
+//     neutralizes the retry path in the sibling Emby-500 defect (#3126).
 //  2. INDEX: either the platform has ZERO backdrops (index 0 creates the
 //     first slot; there is nothing there to clobber), or a backdrop
-//     matching previousPHash (the artist's LAST-SYNCED primary hash, read
-//     from Stillwater's own artist_images provenance -- the #3125 issue's
-//     "available and unused identity information") is found. previousPHash
-//     of 0 means "no prior hash on record" (a first sync, or a never-hashed
-//     legacy row) and is treated the same as "cannot identify": zero is
-//     also PerceptualHash's own zero value, so trusting it would risk a
-//     false-positive match against a genuinely unhashed slot.
+//     BYTE-IDENTICAL to previousData (the artist's actual previous-primary
+//     bytes, from the pre-save on-disk backup -- see
+//     previousFanartPrimaryData's doc comment for why this is sourced from
+//     the backup and never from a database column) is found.
 //  3. APPEND: neither of the above. The caller must fall back to the
 //     non-indexed, add-only UploadImage -- one accepted duplicate rather
 //     than a destroyed bystander. Why explains which condition failed, for
 //     the Warn log the caller writes.
 //
+// EXACT BYTES, NOT PERCEPTUAL SIMILARITY (round 1 review C2/C3). This
+// function used to decide both outcomes at collision.DefaultTolerance (0.90
+// similarity, Hamming <= 6 on a 64-bit dHash) -- a threshold designed for a
+// COLLISION DETECTOR (internal/collision/notifier.go: "these MIGHT be the
+// same picture, tell a human"), not for authorizing a write. Two measured
+// failures followed directly from reusing a detector's threshold as a
+// decision gate:
+//
+//   - NOOP too loose (C2): a operator's minor re-crop or brightness nudge --
+//     the single most common fanart edit, and Stillwater ships a cropper --
+//     measures within 0.90 of the original (Hamming 4-6 in the round-1
+//     reproduction). Deciding NOOP at that tolerance silently swallows a
+//     real edit: the file changes on disk, the UI reports success, and the
+//     platform is never touched. There is no warning, because NOOP is not a
+//     failure path -- it looks exactly like the correct "nothing to do"
+//     idempotency case that legitimately needs no diagnostic.
+//   - INDEX too loose (C3, the more serious direction): two backdrops from
+//     the same shoot -- adjacent frames, or the same shot at two crops, an
+//     entirely ordinary library -- can measure within 0.90 of each other.
+//     If a prune or an operator delete puts the near-duplicate SIBLING at
+//     index 0 (having removed the real previous primary), the resolver
+//     would authorize overwriting it: a perceptual near-match at a
+//     detector's threshold is the ABSENCE of 6 bits of difference, not the
+//     positive identification this function's own contract demands. That
+//     re-opens the exact clobber class F3 exists to prevent, through the
+//     matcher instead of around it -- and unlike NOOP's cost (a missing
+//     upload), this direction destroys operator artwork, irreversibly.
+//
+// Exact-byte equality has neither failure mode: a re-crop or a brightness
+// tweak produces different bytes by definition, so it can never be
+// mistaken for "no change" or "the same picture as some other slot". It is
+// also the ACTUAL retry case both NOOP and INDEX exist to serve -- a retried
+// upload after a lost response re-sends the identical bytes, which byte
+// equality catches with zero false positives. Measured live (see the round-2
+// report): Emby round-trips these fanart uploads byte-identical (SHA-256
+// matches after upload+readback) for ordinary JPEG fixtures, so exact
+// equality converges on retry in practice, not merely in theory; a peer
+// caught genuinely re-encoding on write would fall through to the safe
+// direction (APPEND) rather than falsely matching, which is the correct
+// failure mode for a comparison this function does not control.
+//
 // Costs one extra platform READ (GetArtistDetail + up to BackdropCount
 // GetArtistBackdrop calls) per fanart sync before any write. See the report
-// for why this is not expected to matter: fanart replace is an
-// operator-paced, low-frequency action (a UI crop/replace, or one rule fix),
-// never a hot per-request path, and it is already paying for a peer POST
-// round trip of comparable cost on the very same call.
-func resolveFanartReplaceTarget(ctx context.Context, client fanartReplaceClient, platformArtistID string, newData []byte, previousPHashHex string, tolerance float64) (fanartReplaceDecision, error) {
-	if err := validPHashTolerance(tolerance); err != nil {
-		return fanartReplaceDecision{}, err
+// for why this is not expected to matter on the operator-paced UI path, and
+// C4 for the bulk-path cost this was measured to add and the fix that keeps
+// each backdrop's bytes to a single read.
+func resolveFanartReplaceTarget(ctx context.Context, client fanartReplaceClient, platformArtistID string, newData []byte, previousData []byte) (fanartReplaceDecision, error) {
+	if len(newData) == 0 {
+		return fanartReplaceDecision{}, fmt.Errorf("refusing to resolve a replace target for empty fanart bytes")
 	}
-	want, err := image.PerceptualHash(bytes.NewReader(newData))
-	if err != nil {
-		return fanartReplaceDecision{}, fmt.Errorf("hashing new fanart bytes: %w", err)
-	}
+	wantHash := image.ContentHash(newData)
 
 	detail, err := client.GetArtistDetail(ctx, platformArtistID)
 	if err != nil {
@@ -346,47 +379,93 @@ func resolveFanartReplaceTarget(ctx context.Context, client fanartReplaceClient,
 		return fanartReplaceDecision{Kind: fanartTargetIndex, Index: 0}, nil
 	}
 
-	// Outcome 1: already present -- checked before consulting previousPHash,
-	// so a retry (the platform already reflects the new primary from a prior
-	// call whose response was lost) is idempotent regardless of whether
-	// previousPHash is usable.
-	present, err := matchingBackdropIndices(ctx, client, platformArtistID, want, tolerance)
+	// C4: hash every backdrop's bytes exactly ONCE, whichever branch below
+	// consults them. The old code called matchingBackdropIndices (a full
+	// re-read-and-rehash of every backdrop) up to twice; on an 8-backdrop
+	// item that measured GetArtistDetail=3, GetArtistBackdrop=16 across one
+	// resolve. Both queries below are simple content-hash comparisons over
+	// this one cached slice, so the platform is read at most once per
+	// backdrop regardless of how many of the two checks below run.
+	hashes, err := backdropContentHashes(ctx, client, platformArtistID, detail.BackdropCount)
 	if err != nil {
 		return fanartReplaceDecision{}, err
 	}
-	if len(present) > 0 {
+
+	// Outcome 1: already present -- checked before consulting previousData,
+	// so a retry (the platform already reflects the new primary from a prior
+	// call whose response was lost) is idempotent regardless of whether
+	// previousData is available.
+	if indexOfContentHash(hashes, wantHash) >= 0 {
 		return fanartReplaceDecision{Kind: fanartTargetNoop}, nil
 	}
 
-	// Outcome 2b: identify the slot holding the PREVIOUS primary. A zero
-	// previousPHashHex (or one that fails to parse) is "cannot identify",
-	// not "matches everything" -- see the zero-hash trap in the doc comment.
-	if previousPHashHex != "" {
-		prevWant, parseErr := image.ParseHashHex(previousPHashHex)
-		if parseErr == nil && prevWant != 0 {
-			prevMatches, matchErr := matchingBackdropIndices(ctx, client, platformArtistID, prevWant, tolerance)
-			if matchErr != nil {
-				return fanartReplaceDecision{}, matchErr
-			}
-			if len(prevMatches) > 0 {
-				// matchingBackdropIndices sorts descending; the caller
-				// overwrites exactly one slot, so if more than one backdrop
-				// happens to match the previous primary's hash (a byte- or
-				// near-identical duplicate already present), the lowest
-				// matching index is preferred -- it is the one most likely
-				// to BE the original primary slot, since duplicates of a
-				// primary accumulate at higher indices (append-only
-				// platform semantics), never lower ones.
-				return fanartReplaceDecision{Kind: fanartTargetIndex, Index: prevMatches[len(prevMatches)-1]}, nil
-			}
+	// Outcome 2b: identify the slot holding the PREVIOUS primary, by EXACT
+	// content hash. Empty previousData is "cannot identify", not "matches
+	// everything" -- there is no bytes to hash, so there is nothing to
+	// compare against.
+	if len(previousData) > 0 {
+		prevHash := image.ContentHash(previousData)
+		if idx := lastIndexOfContentHash(hashes, prevHash); idx >= 0 {
+			// The LAST (highest-index) exact match is preferred when more
+			// than one slot happens to be byte-identical to the previous
+			// primary (an already-present duplicate): duplicates of a
+			// primary accumulate at higher indices on an append-only
+			// platform, never lower ones, so the highest match is the one
+			// most likely to be a stray duplicate rather than the original
+			// primary slot itself -- overwriting it leaves the original
+			// primary's slot untouched if the two ever diverge again.
+			return fanartReplaceDecision{Kind: fanartTargetIndex, Index: idx}, nil
 		}
 	}
 
 	// Outcome 3: cannot positively identify a safe index. Append.
 	return fanartReplaceDecision{
 		Kind: fanartTargetAppend,
-		Why:  "no stored previous-primary hash matched any current platform backdrop, and the platform already holds at least one backdrop, so no index could be positively identified as safe to overwrite",
+		Why:  "no previous-primary bytes matched any current platform backdrop exactly, and the platform already holds at least one backdrop, so no index could be positively identified as safe to overwrite",
 	}, nil
+}
+
+// backdropContentHashes reads every backdrop for the item ONCE and returns
+// each slot's exact content hash, indexed by platform position (index i of
+// the result is index i's hash; an undecodable-by-hash-standards slot still
+// gets a real SHA-256 of its raw bytes, since ContentHash never needs to
+// decode the image the way PerceptualHash does -- there is no "cannot hash"
+// case for exact bytes). A backdrop fetch error aborts the whole read: a
+// blind spot could hide the very slot a caller is trying to identify, and
+// silently skipping it would let this resolver authorize a write against an
+// incomplete picture of the platform's actual state.
+func backdropContentHashes(ctx context.Context, client connection.BackdropReader, platformArtistID string, count int) ([]string, error) {
+	hashes := make([]string, count)
+	for i := 0; i < count; i++ {
+		data, _, fErr := client.GetArtistBackdrop(ctx, platformArtistID, i)
+		if fErr != nil {
+			return nil, fmt.Errorf("fetching backdrop %d: %w", i, fErr)
+		}
+		hashes[i] = image.ContentHash(data)
+	}
+	return hashes, nil
+}
+
+// indexOfContentHash returns the first index whose hash equals want, or -1.
+func indexOfContentHash(hashes []string, want string) int {
+	for i, h := range hashes {
+		if h == want {
+			return i
+		}
+	}
+	return -1
+}
+
+// lastIndexOfContentHash returns the LAST (highest) index whose hash equals
+// want, or -1. See resolveFanartReplaceTarget's outcome 2b for why the
+// highest match is preferred among several.
+func lastIndexOfContentHash(hashes []string, want string) int {
+	for i := len(hashes) - 1; i >= 0; i-- {
+		if hashes[i] == want {
+			return i
+		}
+	}
+	return -1
 }
 
 // PlatformBackdropOpFailure records one connection whose platform delete or

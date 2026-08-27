@@ -74,25 +74,35 @@ type backdropClearer interface {
 // habit of re-indexing mid-loop. Descending avoids that entirely -- deleting
 // the highest index first never disturbs any index this loop has not
 // visited yet.
-func clearAllBackdrops(t *testing.T, ctx context.Context, itemID string, client backdropClearer) {
+//
+// t.Errorf, NEVER t.Fatalf (round-2 S1 fix): this is called from inside a
+// t.Cleanup closure at four call sites, and Fatalf calls runtime.Goexit,
+// which stops the CLEANUP itself mid-run -- exactly the failure this
+// function exists to prevent, since it would leave the item dirty for the
+// next test/run. Errorf records the failure and lets execution continue, so
+// a partial clear still attempts every remaining delete rather than
+// abandoning the item after the first one that fails.
+func clearAllBackdrops(ctx context.Context, t *testing.T, itemID string, client backdropClearer) {
 	t.Helper()
 	state, err := client.GetArtistDetail(ctx, itemID)
 	if err != nil {
-		t.Fatalf("clearAllBackdrops: reading current state: %v", err)
+		t.Errorf("clearAllBackdrops: reading current state: %v", err)
+		return
 	}
 	for i := state.BackdropCount - 1; i >= 0; i-- {
 		if err := client.DeleteImageAtIndex(ctx, itemID, "fanart", i); err != nil {
-			t.Fatalf("clearAllBackdrops: deleting backdrop %d: %v", i, err)
+			t.Errorf("clearAllBackdrops: deleting backdrop %d: %v", i, err)
 		}
 	}
 	// Re-verify rather than trust the loop: the count read above could
 	// itself be stale, or a delete could silently no-op on some peer.
 	after, err := client.GetArtistDetail(ctx, itemID)
 	if err != nil {
-		t.Fatalf("clearAllBackdrops: reading state after clear: %v", err)
+		t.Errorf("clearAllBackdrops: reading state after clear: %v", err)
+		return
 	}
 	if after.BackdropCount != 0 {
-		t.Fatalf("clearAllBackdrops: BackdropCount = %d after clearing, want 0 (item was not fully cleared)", after.BackdropCount)
+		t.Errorf("clearAllBackdrops: BackdropCount = %d after clearing, want 0 (item was not fully cleared)", after.BackdropCount)
 	}
 }
 
@@ -160,11 +170,11 @@ func TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend(t *testing.T) {
 	// when the item started clean. Registered as a t.Cleanup too, so the
 	// test leaves the item exactly as it found it (empty) regardless of
 	// pass/fail.
-	clearAllBackdrops(t, ctx, env.itemID, client)
+	clearAllBackdrops(ctx, t, env.itemID, client)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
 		defer cleanupCancel()
-		clearAllBackdrops(t, cleanupCtx, env.itemID, client)
+		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
 	})
 
 	// Seed two distinct backdrops directly via the indexed uploader (the
@@ -209,6 +219,23 @@ func TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend(t *testing.T) {
 	// the upload/fetch/crop handlers do for a fanart "replace". This is the
 	// function under test for #3125.
 	dir := t.TempDir()
+
+	// #3125 C1: the resolver's previous-primary identity now comes from the
+	// ON-DISK BACKUP (image.ReadSlotBackup), never from the database -- a
+	// round-1 review found the DB-hash design inert in production, because
+	// the DB row is stamped from the NEW file before sync ever runs. So
+	// this test simulates the REAL save-then-sync ordering: write seedA as
+	// the current primary, take its backup (BackupSlot, exactly what
+	// SaveSlotProtected does before a destructive fanart overwrite), THEN
+	// overwrite fanart.jpg with the replacement -- the same sequence
+	// finalizeImageSave's caller performs before ever reaching
+	// SyncImageToPlatforms.
+	if err := os.WriteFile(dir+"/fanart.jpg", seedA, 0o600); err != nil {
+		t.Fatalf("writing current primary before backup: %v", err)
+	}
+	if err := image.BackupSlot(ctx, dir, "fanart", "fanart.jpg"); err != nil {
+		t.Fatalf("backing up current primary: %v", err)
+	}
 	replacement := bandJPEG(t, 0xC3)
 	if err := os.WriteFile(dir+"/fanart.jpg", replacement, 0o600); err != nil {
 		t.Fatalf("writing local replacement fanart: %v", err)
@@ -216,22 +243,9 @@ func TestLiveEmby_FanartSyncReplacesInPlace_DoesNotAppend(t *testing.T) {
 
 	p := New(Deps{
 		Logger: logger,
-		ArtistService: &fakePlatformLister{
-			ids: []artist.PlatformID{
-				{ArtistID: "live-a1", ConnectionID: "c-emby", PlatformArtistID: env.itemID},
-			},
-			// #3125 F3: resolveFanartReplaceTarget now needs the PREVIOUS
-			// primary's stored phash to identify which platform index to
-			// overwrite; without it (an artist whose provenance was never
-			// recorded) it correctly refuses to guess and falls back to
-			// append. This test is specifically about the REPLACE-IN-PLACE
-			// behavior, so it must supply seedA's hash the same way
-			// finalizeImageSave/recordImageProvenance would have stamped it
-			// when seedA was originally saved as the primary.
-			images: []artist.ArtistImage{
-				{ImageType: "fanart", SlotIndex: 0, Exists: true, PHash: image.HashHex(phashOf(t, seedA))},
-			},
-		},
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "live-a1", ConnectionID: "c-emby", PlatformArtistID: env.itemID},
+		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
 			"c-emby": {ID: "c-emby", Name: "live-emby-uat", Type: connection.TypeEmby, URL: env.url, APIKey: env.apiKey, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: env.userID, FeatureImageWrite: true}},
 		}},
@@ -324,11 +338,11 @@ func TestLiveJellyfin_NonIndexedUploadAppends(t *testing.T) {
 	// assuming the item starts at zero. Doubly necessary here: Jellyfin
 	// APPENDS on this test's own upload calls, so a second run against an
 	// uncleared item compounds instead of merely being lucky.
-	clearAllBackdrops(t, ctx, env.itemID, client)
+	clearAllBackdrops(ctx, t, env.itemID, client)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
 		defer cleanupCancel()
-		clearAllBackdrops(t, cleanupCtx, env.itemID, client)
+		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
 	})
 
 	seed := solidJPEG(0xD4)
@@ -398,11 +412,11 @@ func TestLiveJellyfin_IndexedUploadAlsoAppends_KnownGap(t *testing.T) {
 	// This test in particular used to fail permanently after its own first
 	// run: it never removed what it seeded, and this platform appends, so
 	// every subsequent run started from an already-dirty count.
-	clearAllBackdrops(t, ctx, env.itemID, client)
+	clearAllBackdrops(ctx, t, env.itemID, client)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
 		defer cleanupCancel()
-		clearAllBackdrops(t, cleanupCtx, env.itemID, client)
+		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
 	})
 
 	seed := solidJPEG(0xA1)
@@ -444,9 +458,10 @@ func TestLiveJellyfin_IndexedUploadAlsoAppends_KnownGap(t *testing.T) {
 // -- rather than a naive unconditional "write index 0" destroying it.
 //
 // This drives the full production stack, not just the resolver: the
-// Publisher is wired with a fakePlatformLister whose GetImagesForArtist
-// returns the previous primary's stored phash, exactly as
-// previousFanartPrimaryPHash reads it from real artist_images provenance.
+// previous primary's ON-DISK BACKUP is populated exactly as
+// SaveSlotProtected/BackupSlot would leave it, and previousFanartPrimaryData
+// reads it from there (#3125 C1) -- never from artist_images, which round 1
+// found stamped with the NEW file's hash before sync ever runs.
 func TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete(t *testing.T) {
 	env := loadLiveEmbyEnv(t)
 	ctx, cancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
@@ -457,11 +472,11 @@ func TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete(t *testing.T) {
 
 	// FIRST ACT: clear whatever the item already holds; see the identical
 	// comment on the other live tests in this file.
-	clearAllBackdrops(t, ctx, env.itemID, client)
+	clearAllBackdrops(ctx, t, env.itemID, client)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
 		defer cleanupCancel()
-		clearAllBackdrops(t, cleanupCtx, env.itemID, client)
+		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
 	})
 
 	// Seed idx0=oldPrimary, idx1=bystander, idx2=third -- three DISTINCT,
@@ -516,27 +531,28 @@ func TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete(t *testing.T) {
 		t.Fatalf("precondition failed: index 0 does not hold the bystander after the delete+reindex -- the setup does not model the #3125 F3 scenario")
 	}
 
-	// Now run the REAL fanart sync: a new local primary, with the artist's
-	// PREVIOUS primary phash recorded in provenance exactly as
-	// finalizeImageSave/recordImageProvenance would have stamped it at the
-	// time oldPrimary was saved.
+	// Now run the REAL fanart sync: a new local primary, with the previous
+	// primary's ON-DISK BACKUP present exactly as SaveSlotProtected would
+	// have left it (#3125 C1: the resolver reads image.ReadSlotBackup, never
+	// the database, since the DB row is stamped from the NEW file by the
+	// same request before sync ever runs).
 	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/fanart.jpg", oldPrimary, 0o600); err != nil {
+		t.Fatalf("writing current primary before backup: %v", err)
+	}
+	if err := image.BackupSlot(ctx, dir, "fanart", "fanart.jpg"); err != nil {
+		t.Fatalf("backing up current primary: %v", err)
+	}
 	newPrimary := bandJPEG(t, 0xC4)
 	if err := os.WriteFile(dir+"/fanart.jpg", newPrimary, 0o600); err != nil {
 		t.Fatalf("writing local replacement fanart: %v", err)
 	}
-	previousHash := image.HashHex(phashOf(t, oldPrimary))
 
 	p := New(Deps{
 		Logger: logger,
-		ArtistService: &fakePlatformLister{
-			ids: []artist.PlatformID{
-				{ArtistID: "live-f3", ConnectionID: "c-emby", PlatformArtistID: env.itemID},
-			},
-			images: []artist.ArtistImage{
-				{ImageType: "fanart", SlotIndex: 0, Exists: true, PHash: previousHash},
-			},
-		},
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "live-f3", ConnectionID: "c-emby", PlatformArtistID: env.itemID},
+		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
 			"c-emby": {ID: "c-emby", Name: "live-emby-uat", Type: connection.TypeEmby, URL: env.url, APIKey: env.apiKey, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: env.userID, FeatureImageWrite: true}},
 		}},

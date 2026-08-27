@@ -109,10 +109,6 @@ func (errPlatformLister) ListArtistsWithPlatformMappings(_ context.Context) ([]s
 	return nil, errors.New("listing platform ids failed")
 }
 
-func (errPlatformLister) GetImagesForArtist(_ context.Context, _ string) ([]artist.ArtistImage, error) {
-	return nil, nil
-}
-
 func (errPlatformLister) SetPlatformIDStable(_ context.Context, _, _, _ string) (artist.PlatformIDStableOutcome, error) {
 	return artist.PlatformIDStableOutcome{}, nil
 }

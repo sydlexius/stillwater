@@ -37,10 +37,6 @@ func (r *reconcilePlatformLister) ListArtistsWithPlatformMappings(_ context.Cont
 	return r.artistIDs, r.listErr
 }
 
-func (r *reconcilePlatformLister) GetImagesForArtist(_ context.Context, _ string) ([]artist.ArtistImage, error) {
-	return nil, nil
-}
-
 func (r *reconcilePlatformLister) SetPlatformIDStable(_ context.Context, _, _, _ string) (artist.PlatformIDStableOutcome, error) {
 	return artist.PlatformIDStableOutcome{}, nil
 }
@@ -394,10 +390,6 @@ func (panicPlatformLister) ListArtistsWithPlatformMappings(_ context.Context) ([
 	panic("deliberate test panic in ListArtistsWithPlatformMappings")
 }
 
-func (panicPlatformLister) GetImagesForArtist(_ context.Context, _ string) ([]artist.ArtistImage, error) {
-	return nil, nil
-}
-
 func (panicPlatformLister) SetPlatformIDStable(_ context.Context, _, _, _ string) (artist.PlatformIDStableOutcome, error) {
 	return artist.PlatformIDStableOutcome{}, nil
 }
@@ -424,10 +416,6 @@ func (e *errPlatformListerIDs) ListMembersByArtistID(_ context.Context, _ string
 
 func (e *errPlatformListerIDs) ListArtistsWithPlatformMappings(_ context.Context) ([]string, error) {
 	return e.artistIDs, nil
-}
-
-func (e *errPlatformListerIDs) GetImagesForArtist(_ context.Context, _ string) ([]artist.ArtistImage, error) {
-	return nil, nil
 }
 
 func (e *errPlatformListerIDs) SetPlatformIDStable(_ context.Context, _, _, _ string) (artist.PlatformIDStableOutcome, error) {

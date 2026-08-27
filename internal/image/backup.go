@@ -375,35 +375,9 @@ func BackupSlot(ctx context.Context, dir, imageType, fileName string) error {
 // takes Save's i == 0 path and the flag changes nothing today. It is threaded through
 // so the parameter tells the truth and stays correct if that ever changes.
 func RestoreSlot(dir, imageType, fileName string, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) error {
-	typeDir, err := backupTypeDir(dir, imageType)
+	backupName, data, err := readSlotBackupBytes(dir, imageType, fileName)
 	if err != nil {
 		return err
-	}
-	entries, err := os.ReadDir(typeDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return os.ErrNotExist
-		}
-		return fmt.Errorf("reading slot backup dir: %w", err)
-	}
-	base := slotBase(fileName)
-	var backupName string
-	for _, e := range entries {
-		if !e.IsDir() && slotBase(e.Name()) == base {
-			backupName = e.Name()
-			break
-		}
-	}
-	if backupName == "" {
-		return os.ErrNotExist
-	}
-
-	data, err := os.ReadFile(filepath.Join(typeDir, backupName)) //nolint:gosec // path derived from trusted naming
-	if err != nil {
-		if os.IsNotExist(err) {
-			return os.ErrNotExist
-		}
-		return fmt.Errorf("reading slot backup: %w", err)
 	}
 	if _, saveErr := Save(dir, imageType, data, []string{backupName}, useSymlinks, meta, logger); saveErr != nil {
 		return fmt.Errorf("restoring slot via save: %w", saveErr)
@@ -414,6 +388,71 @@ func RestoreSlot(dir, imageType, fileName string, useSymlinks bool, meta *ExifMe
 			slog.String("dir", dir), slog.String("slot", fileName), slog.String("error", rmErr.Error()))
 	}
 	return nil
+}
+
+// readSlotBackupBytes locates the one-deep backup for a slot (matched by
+// slotBase, so the backup's format need not match fileName's) and reads it.
+// Returns os.ErrNotExist (bare, so callers can use errors.Is / os.IsNotExist)
+// when the backup directory or the backup file itself is absent. Factored out
+// of RestoreSlot so ReadSlotBackup (below) can share the exact same lookup --
+// two independent implementations of "find the one file in this dir" is two
+// places for the slotBase-matching rule to drift.
+func readSlotBackupBytes(dir, imageType, fileName string) (backupName string, data []byte, err error) {
+	typeDir, err := backupTypeDir(dir, imageType)
+	if err != nil {
+		return "", nil, err
+	}
+	entries, err := os.ReadDir(typeDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil, os.ErrNotExist
+		}
+		return "", nil, fmt.Errorf("reading slot backup dir: %w", err)
+	}
+	base := slotBase(fileName)
+	for _, e := range entries {
+		if !e.IsDir() && slotBase(e.Name()) == base {
+			backupName = e.Name()
+			break
+		}
+	}
+	if backupName == "" {
+		return "", nil, os.ErrNotExist
+	}
+
+	data, err = os.ReadFile(filepath.Join(typeDir, backupName)) //nolint:gosec // path derived from trusted naming
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil, os.ErrNotExist
+		}
+		return "", nil, fmt.Errorf("reading slot backup: %w", err)
+	}
+	return backupName, data, nil
+}
+
+// ReadSlotBackup returns the raw bytes of a slot's one-deep backup without
+// consuming it (unlike RestoreSlot, this is read-only and never writes
+// anything). Returns os.ErrNotExist when no backup exists for this slot --
+// a first-ever save, or a save whose slot has never had a backup taken.
+//
+// #3125 C1: this is what previousFanartPrimaryPHash reads to identify the
+// PREVIOUS primary's actual content for the platform-replace resolver. The
+// backup is written by BackupSlot INSIDE SaveSlotProtected, strictly before
+// the destructive Save that overwrites the canonical file -- and therefore
+// strictly before ANY caller's post-save provenance stamp or platform sync,
+// which both run only after SaveSlotProtected returns. That ordering
+// guarantee is structural, not a comment: every fanart-primary write in this
+// codebase (API upload/crop/fetch, apply-candidate, the rule engine's
+// downloadAndPersist and BulkExecutor.saveBestImage) reaches disk through
+// SaveSlotProtected (img.go's single chokepoint for a fanart write; see
+// TestFanartSaveHasASingleChokepoint), so the backup this reads is ALWAYS
+// what was on disk (and therefore, assuming the previous sync succeeded,
+// what the platform holds) at the moment just before the CURRENT save -- the
+// exact identity artist_images.PHash could not provide, because that column
+// is stamped from the NEW file by the same request, before sync ever runs.
+func ReadSlotBackup(dir, imageType, fileName string) ([]byte, error) {
+	_, data, err := readSlotBackupBytes(dir, imageType, fileName)
+	return data, err
 }
 
 // slotMu holds one mutex per image SLOT, serializing SaveSlotProtected's
