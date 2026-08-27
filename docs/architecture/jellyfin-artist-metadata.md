@@ -62,7 +62,7 @@ convention as the Emby client):
 > place; the existing slot is left untouched and `BackdropCount` increases by one. An
 > out-of-range index against zero existing backdrops still lands at index 0, so the index is
 > ignored for placement generally rather than merely mishandled on collision. The same client
-> code produces correct in-place replacement against Emby (`internal/publish/publisher.go`,
+> code produces correct in-place replacement against Emby (`internal/publish/phash_platform.go`,
 > `resolveFanartReplaceTarget`), so this is Jellyfin server-side behavior, not a client defect.
 > Deleting index 0 first does not work around it either: `DeleteImageAtIndexRaw` re-indexes every
 > later slot down by one, so a subsequent upload to the vacated index lands on the wrong slot
