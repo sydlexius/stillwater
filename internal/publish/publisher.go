@@ -1236,14 +1236,37 @@ func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, p
 		return false, truncateWarning(fmt.Sprintf("%s (%s): could not resolve fanart replace target, upload skipped", conn.Name, conn.Type))
 	}
 
-	switch decision.Kind {
-	case fanartTargetNoop:
+	if decision.Kind == fanartTargetNoop {
 		// The platform already reflects this content (a retry that landed
 		// after a lost response, or a no-op sync). Nothing to upload, and
 		// this connection did not receive a fresh write, so it must NOT be
 		// added to uploadedTo -- there is nothing new for the post-push
-		// re-assertion to protect.
+		// re-assertion to protect. Checked BEFORE the platform-capability
+		// branch below on purpose: fanartTargetNoop is "nothing changed" on
+		// EVERY platform, Jellyfin included, and the destructive full resync
+		// must never run when there is nothing to fix (see
+		// fanartTargetNoop's own doc comment).
 		return false, ""
+	}
+
+	// #3135: everything past this point authorizes a write, because decision
+	// is NOT a no-op. Emby's indexed endpoint replaces in place (verified
+	// live, #3125), so the switch below is correct for it. Jellyfin's
+	// identical-looking endpoint does not -- see
+	// connection.SupportsIndexedBackdropReplace's doc comment for the
+	// measured wire behavior -- so an Index or Append decision there is
+	// rerouted to the only sequence Jellyfin actually honors: delete every
+	// existing backdrop and re-upload the full ordered local set.
+	// decision.Index/Why are Emby-shaped guidance and are deliberately
+	// unused past this branch; the resync below re-derives everything it
+	// needs (the full local fanart set and the platform's current count)
+	// itself, because it is replacing the platform's entire backdrop list,
+	// not writing one slot.
+	if !connection.SupportsIndexedBackdropReplace(conn.Type) {
+		return p.uploadFanartFullResyncForSync(ctx, a, pid, conn)
+	}
+
+	switch decision.Kind {
 	case fanartTargetIndex:
 		if uploadErr := client.UploadImageAtIndex(ctx, pid.PlatformArtistID, "fanart", decision.Index, data, ct); uploadErr != nil {
 			p.logger.Error("syncing fanart to platform", "artist", a.Name, "connection", conn.Name, "type", "fanart", "index", decision.Index, "error", uploadErr)
@@ -1265,6 +1288,187 @@ func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, p
 		}
 		return true, ""
 	}
+}
+
+// uploadFanartFullResyncForSync performs the ONLY sequence Jellyfin actually
+// honors for a fanart replace (#3135): delete every existing backdrop on
+// THIS ONE connection, then re-upload the FULL local fanart set in index
+// order. Called from uploadFanartForSync only when
+// connection.SupportsIndexedBackdropReplace(conn.Type) is false and the
+// resolver already ruled out fanartTargetNoop, so this always attempts at
+// least one write UNLESS the restorability guard below refuses first.
+//
+// RE-DISCOVERS THE LOCAL SET rather than reusing the `data` bytes
+// uploadFanartForSync was called with, which are only the PRIMARY fanart
+// file (slot 0 -- syncImageToPlatforms discovers exactly one local file, see
+// uploadOneImageForSync). A Jellyfin resync must replace the platform's
+// ENTIRE backdrop list, or the clear step below would delete every
+// non-primary backdrop and never restore it, so this walks the fanart
+// directory the same way syncAllFanartToPlatforms does.
+//
+// ESTABLISH RESTORABILITY BEFORE ANY DELETE, NEVER AFTER (#3145 hostile
+// review). snapshotFanart can DEGRADE a slot to nil data -- a read failure,
+// or the per-file/total size caps (fanartSnapshotBudget; a 4K backdrop can
+// exceed maxFanartSnapshotFileBytes on its own) -- and the upload loop below
+// already correctly skips a nil-data entry. The delete loop, though, clears
+// the platform's ENTIRE existing backdrop set based on the PLATFORM's own
+// count, with no awareness of which local slots actually captured. Before
+// this guard, that meant a single oversize or unreadable local file turned
+// a size-cap DEGRADE (previously just "this platform copy stays stale") into
+// a size-cap DESTRUCTION (every backdrop on the connection, deleted, with no
+// byte to replace the degraded slot) -- reproduced live in review: 2 local
+// files with one 1 byte over cap, platform starting with 2 backdrops, ended
+// at deletes=2/uploads=1/BackdropCount=0. That is strictly worse than the
+// pre-#3135 state, where a Jellyfin sync never deleted anything at all.
+//
+// So: refuse the WHOLE resync -- issue NEITHER a delete NOR an upload --
+// the moment ANY snapshot slot failed to capture, rather than attempting a
+// partial clear-and-rebuild that only deletes/restores the slots that DID
+// capture. A partial resync is not simply a smaller version of the full
+// one: Jellyfin's indexed endpoint ignores the index parameter entirely and
+// assigns platform position purely by APPEND ORDER (see
+// connection.SupportsIndexedBackdropReplace's doc comment and the #3135
+// issue's live measurement), so this function's correctness depends on
+// deleting the COMPLETE prior set and re-uploading the COMPLETE captured
+// set in strict ascending order -- a gap left by a skipped degraded slot
+// would silently shift every LATER captured slot's actual platform position
+// away from its local index, a second and subtler data-integrity bug
+// layered on top of the one this guard closes. Refusing outright is the
+// only shape that is both correct and simple to verify; the platform's
+// existing backdrops (any local counterpart's degradation notwithstanding)
+// are left completely untouched, including ones that outnumber the local
+// set entirely (platform holds more backdrops than there are local files at
+// all) -- nothing is deleted, so nothing the operator did not touch locally
+// can be stranded or destroyed by this refusal.
+//
+// THE DESTRUCTIVE WINDOW, when the guard above does NOT fire, is
+// ACKNOWLEDGED, NOT HIDDEN: between the deletes finishing and the reuploads
+// landing, this connection genuinely has ZERO backdrops -- Jellyfin's API
+// has no atomic multi-image replace primitive (see the #3135 issue's "why
+// delete-then-upload does not work around it"). Deletes run high-index-first
+// (DeleteImageAtIndexRaw's re-indexing contract) and the reupload loop
+// starts immediately after, on the assumption that a brief empty window
+// during an operator-initiated replace beats the duplication #3135 exists
+// to fix.
+//
+// A CRASH DURING THAT WINDOW IS NOT SELF-HEALED, and a future reader should
+// not assume otherwise (#3145 review). If the process dies between the
+// delete loop and the upload loop completing, this connection is left with
+// FEWER backdrops than the local set. The background reconciler
+// (reconcile.go) detects exactly that mismatch and repairs it by calling
+// uploadFanartSet -- SyncAllFanartToPlatforms's per-file upload, which
+// issues UploadImageAtIndex with NO preceding delete step. On Jellyfin that
+// APPENDS (the same append-only behavior this whole function exists to work
+// around), so the reconciler's "repair" produces DUPLICATES on top of
+// whatever survived the crash, not a clean restoration. Fixing the
+// reconciler's Jellyfin path is out of scope here; this comment exists so
+// the gap is not silently rediscovered.
+//
+// A FAILURE MID-RESYNC (after the restorability guard has passed) IS
+// REPORTED, NEVER SWALLOWED, AND BOTH LOOPS RUN TO COMPLETION REGARDLESS:
+// stopping partway would leave the artist with SOME backdrops deleted and
+// NONE restored, strictly worse than continuing (deletePollutedBackdrops
+// makes the same "continue and report" choice for the same reason). Every
+// failure is folded into the returned warning.
+//
+// NO ADDITIONAL LOCK: this runs inside uploadFanartForSync's own
+// lockPhashTarget critical section (held across resolve+this call, released
+// by its defer), so taking a second lock on the same key would deadlock.
+// That nesting is what makes the destructive window above safe against a
+// CONCURRENT sync of the same artist/connection.
+func (p *Publisher) uploadFanartFullResyncForSync(ctx context.Context, a *artist.Artist, pid artist.PlatformID, conn *connection.Connection) (uploaded bool, warning string) {
+	client := newFanartResyncClient(conn, p.logger)
+	if client == nil {
+		p.logger.Warn("unsupported connection type for fanart resync", "type", conn.Type)
+		return false, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
+	}
+
+	dir := p.ImageDir(a)
+	if dir == "" {
+		return false, truncateWarning(fmt.Sprintf("%s: artist has no image directory configured, fanart resync skipped", conn.Name))
+	}
+	primary := p.getActiveFanartPrimary(ctx)
+	fanartPaths, discoverErr := img.DiscoverFanart(ctx, dir, primary)
+	if discoverErr != nil {
+		p.logger.Error("discovering fanart for platform resync", "artist", a.Name, "connection", conn.Name, "error", discoverErr)
+		return false, truncateWarning(fmt.Sprintf("%s: failed to read fanart directory for resync", conn.Name))
+	}
+	if len(fanartPaths) == 0 {
+		// resolveFanartReplaceTarget already ruled out noop against `data`
+		// (the primary), so an empty local set here means the primary was
+		// removed between that read and this one -- an operator racing this
+		// sync with a delete, not the expected path. Report it rather than
+		// silently doing nothing.
+		return false, truncateWarning(fmt.Sprintf("%s: no local fanart found for resync", conn.Name))
+	}
+
+	snapshot, snapWarnings, snapErr := p.snapshotFanart(ctx, fanartPaths)
+	if snapErr != nil {
+		p.logger.Warn("fanart resync snapshot aborted", "artist", a.Name, "connection", conn.Name, "error", snapErr)
+		return false, truncateWarning(fmt.Sprintf("%s: fanart resync canceled before it could read the local set", conn.Name))
+	}
+	if !hasReadableFanart(snapshot) {
+		return false, truncateWarning(fmt.Sprintf("%s: fanart resync found no readable local fanart", conn.Name))
+	}
+
+	var warnings []string
+	warnings = append(warnings, snapWarnings...)
+
+	// #3145: RESTORABILITY GATE, before any platform read or write. A
+	// snapshot slot with nil data means snapshotFanart could not capture it
+	// (read failure, or a size-cap degrade -- see the doc comment above for
+	// why this is refused rather than partially resynced).
+	for _, sf := range snapshot {
+		if sf.data == nil {
+			p.logger.Warn("fanart resync refused: a local fanart slot could not be captured, and completing the resync would delete platform backdrops with nothing to restore them",
+				"artist", a.Name, "connection", conn.Name, "index", sf.index)
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart resync skipped -- fanart %d could not be captured, so deleting and rebuilding the platform's backdrop set would destroy data", conn.Name, conn.Type, sf.index)))
+			return false, truncateWarning(strings.Join(warnings, "; "))
+		}
+	}
+
+	detail, detailErr := client.GetArtistDetail(ctx, pid.PlatformArtistID)
+	if detailErr != nil {
+		p.logger.Error("reading platform backdrop state for fanart resync", "artist", a.Name, "connection", conn.Name, "error", detailErr)
+		p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(detailErr), a.ID, artistDisplayName(a), pushOpImageUpload, detailErr)
+		return false, truncateWarning(fmt.Sprintf("%s (%s): could not read platform backdrop state, fanart resync skipped", conn.Name, conn.Type))
+	}
+
+	// High-index-first (DeleteImageAtIndexRaw's own doc comment): the peer
+	// re-indexes remaining backdrops after every delete, so an ascending
+	// loop would skip every other slot.
+	for i := detail.BackdropCount - 1; i >= 0; i-- {
+		if delErr := client.DeleteImageAtIndex(ctx, pid.PlatformArtistID, "fanart", i); delErr != nil {
+			p.logger.Error("deleting backdrop during fanart resync", "artist", a.Name, "connection", conn.Name, "index", i, "error", delErr)
+			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(delErr), a.ID, artistDisplayName(a), pushOpImageUpload, delErr)
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart resync could not clear backdrop %d, continuing", conn.Name, conn.Type, i)))
+		}
+	}
+
+	anyUploaded := false
+	for _, sf := range snapshot {
+		// The restorability gate above already proved every entry here has
+		// non-nil data; no nil-skip is needed (or possible) at this point.
+		ct := "image/jpeg"
+		if strings.EqualFold(filepath.Ext(sf.path), ".png") {
+			ct = "image/png"
+		}
+		if uploadErr := client.UploadImageAtIndex(ctx, pid.PlatformArtistID, "fanart", sf.index, sf.data, ct); uploadErr != nil {
+			p.logger.Error("uploading backdrop during fanart resync", "artist", a.Name, "connection", conn.Name, "index", sf.index, "error", uploadErr)
+			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart resync failed to upload backdrop %d", conn.Name, conn.Type, sf.index)))
+			continue
+		}
+		anyUploaded = true
+	}
+
+	// #2698/#2712: `uploaded` follows the same contract as every other
+	// branch in uploadFanartForSync -- true whenever this connection
+	// actually received a write, so the caller's post-push re-assertion
+	// protects the local files a peer might have clobbered while accepting
+	// these uploads. The deletes above touch only the PLATFORM, never local
+	// disk, so they need no such protection themselves.
+	return anyUploaded, truncateWarning(strings.Join(warnings, "; "))
 }
 
 // previousFanartPrimaryData returns the bytes of the artist's PREVIOUS
@@ -2569,6 +2773,23 @@ var newIndexedImageUploader = func(conn *connection.Connection, logger *slog.Log
 // pattern used throughout this file -- tests substitute a fake that can
 // simulate a specific backdrop layout without standing up a peer.
 var newFanartReplaceClient = func(conn *connection.Connection, logger *slog.Logger) fanartReplaceClient {
+	switch conn.Type {
+	case connection.TypeEmby:
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
+	case connection.TypeJellyfin:
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
+	default:
+		return nil
+	}
+}
+
+// newFanartResyncClient constructs a fanartResyncClient (#3135) for the given
+// connection type. Returns nil for unsupported types. Same injectable-seam
+// pattern and same underlying emby.Client/jellyfin.Client as
+// newFanartReplaceClient; kept as its own var (rather than reusing that one's
+// return value) so a test can substitute a resync-specific fake without also
+// having to satisfy fanartReplaceClient's exact method set.
+var newFanartResyncClient = func(conn *connection.Connection, logger *slog.Logger) fanartResyncClient {
 	switch conn.Type {
 	case connection.TypeEmby:
 		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)

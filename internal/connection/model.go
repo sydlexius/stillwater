@@ -306,6 +306,33 @@ func SupportsFeatureToggles(connType string) bool {
 	}
 }
 
+// SupportsIndexedBackdropReplace reports whether connType's indexed backdrop
+// upload endpoint (POST .../Images/Backdrop/{index}) actually replaces the
+// backdrop AT that index, the way Emby's does.
+//
+// Jellyfin's identical-looking endpoint does NOT (#3135). Measured on a real
+// Jellyfin 10.11.10: POST .../Images/Backdrop/{index} against an artist that
+// already holds a backdrop at that index APPENDS a new entry at the tail and
+// leaves the original untouched, and an out-of-range index posted against
+// zero existing backdrops still lands the upload at index 0 -- the index
+// parameter is ignored outright, not merely mishandled on collision. A
+// caller needing a single-slot fanart replace on a type this reports false
+// for cannot use the indexed endpoint for that purpose at all; the only
+// sequence Jellyfin honors is deleting every existing backdrop and
+// re-uploading the full ordered set (see uploadFanartForSync's Jellyfin
+// branch in internal/publish/publisher.go).
+//
+// A POSITIVE allow-list, matching SupportsFeatureToggles' style: Emby is the
+// only type this is currently true for, and an unrecognized type -- any
+// future connection type included -- defaults to false. That is the safe
+// direction. Assuming index-honoring semantics that do not exist would
+// silently duplicate backdrops exactly like the pre-#3125 bug; assuming the
+// safer full-resync path on a type that actually DOES honor the index costs
+// an extra delete+reupload round trip, never platform corruption.
+func SupportsIndexedBackdropReplace(connType string) bool {
+	return connType == TypeEmby
+}
+
 // GetFeatureImageWrite reports the image-write toggle. Nil-safe.
 func (c *Connection) GetFeatureImageWrite() bool {
 	switch {
