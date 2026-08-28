@@ -2,8 +2,11 @@ package publish
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +19,16 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 )
+
+// uploadCall records one POST /Images/Backdrop/{index} the fake Jellyfin
+// server received: the path, the DECODED body (the client base64-encodes
+// per UploadImageAtIndexRaw, so this is the raw image bytes it actually
+// sent, not the wire form), and the Authorization header it carried.
+type uploadCall struct {
+	path    string
+	body    []byte
+	authHdr string
+}
 
 // TestUploadFanartForSync_JellyfinRoutesThroughFullResync is the #3135
 // regression: it asserts the REQUEST SEQUENCE a Jellyfin-typed connection
@@ -32,15 +45,33 @@ import (
 // 0, ...) the same way Emby does) would issue exactly one POST to
 // /Images/Backdrop/0 and zero DELETE calls -- this test is shown to fail against
 // that shape in the PR report.
+//
+// #3146 CR review: a PATH-ONLY assertion is vacuous on the property this
+// test exists to prove. Jellyfin ignores the index in the URL -- that is
+// the entire #3135 premise -- so the set of paths POSTed says nothing about
+// which BYTES actually landed at which slot. A regression that uploaded
+// the primary twice, or sent the two local slots in descending order,
+// would still produce the path set {.../Backdrop/0, .../Backdrop/1} and
+// pass a path-only check. This version captures each POST's DECODED body
+// (UploadImageAtIndexRaw base64-encodes the wire payload, so the raw bytes
+// this server sees are NOT what the client handed it -- decode before
+// comparing) and asserts slot 0 receives bandJPEG(10) (fanart.jpg's exact
+// content) and slot 1 receives bandJPEG(11) (fanart2.jpg's), IN ASCENDING
+// UPLOAD ORDER, plus that the connection's API key rode along on the
+// Authorization header every peer request carries it on
+// (mediabrowser.JellyfinProfile.ApplyAuth: `MediaBrowser Token="..."`).
 func TestUploadFanartForSync_JellyfinRoutesThroughFullResync(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 10))
-	writeFile(t, filepath.Join(dir, "fanart2.jpg"), bandJPEG(t, 11))
+	seedA, seedB := bandJPEG(t, 10), bandJPEG(t, 11)
+	writeFile(t, filepath.Join(dir, "fanart.jpg"), seedA)
+	writeFile(t, filepath.Join(dir, "fanart2.jpg"), seedB)
+
+	const apiKey = "test-jellyfin-api-key-3146"
 
 	var mu sync.Mutex
 	var deletes []string // DELETE paths, in call order
-	var uploads []string // POST paths, in call order
-	backdropCount := 2   // platform starts with 2 existing backdrops
+	var uploads []uploadCall
+	backdropCount := 2 // platform starts with 2 existing backdrops
 
 	httpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
@@ -64,7 +95,13 @@ func TestUploadFanartForSync_JellyfinRoutesThroughFullResync(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost:
-			uploads = append(uploads, r.URL.Path)
+			raw, _ := io.ReadAll(r.Body)
+			decoded, decErr := base64.StdEncoding.DecodeString(string(raw))
+			if decErr != nil {
+				t.Errorf("POST %s body did not decode as base64: %v", r.URL.Path, decErr)
+				decoded = raw // still record something so the call count stays accurate
+			}
+			uploads = append(uploads, uploadCall{path: r.URL.Path, body: decoded, authHdr: r.Header.Get("Authorization")})
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			w.WriteHeader(http.StatusNoContent)
@@ -78,7 +115,7 @@ func TestUploadFanartForSync_JellyfinRoutesThroughFullResync(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-jf", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-jf": {ID: "c-jf", Name: "my-jellyfin", Type: connection.TypeJellyfin, URL: httpSrv.URL, Enabled: true, Status: "ok", Jellyfin: &connection.JellyfinConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
+			"c-jf": {ID: "c-jf", Name: "my-jellyfin", Type: connection.TypeJellyfin, URL: httpSrv.URL, APIKey: apiKey, Enabled: true, Status: "ok", Jellyfin: &connection.JellyfinConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 		}},
 	})
 
@@ -89,7 +126,7 @@ func TestUploadFanartForSync_JellyfinRoutesThroughFullResync(t *testing.T) {
 
 	mu.Lock()
 	gotDeletes := append([]string(nil), deletes...)
-	gotUploads := append([]string(nil), uploads...)
+	gotUploads := append([]uploadCall(nil), uploads...)
 	mu.Unlock()
 
 	// PRECONDITION-STYLE COUNT ASSERTIONS (not a label): the whole point of
@@ -106,20 +143,47 @@ func TestUploadFanartForSync_JellyfinRoutesThroughFullResync(t *testing.T) {
 		t.Errorf("delete order = %v, want [.../Backdrop/1, .../Backdrop/0] (high-index-first)", gotDeletes)
 	}
 	if len(gotUploads) != 2 {
-		t.Fatalf("POST (indexed upload) calls = %d, want 2 (reupload the full local set); got paths %v", len(gotUploads), gotUploads)
+		t.Fatalf("POST (indexed upload) calls = %d, want 2 (reupload the full local set); got paths %v", len(gotUploads), pathsOf(gotUploads))
 	}
-	// Order-independent set check: both local slots must be re-sent to
-	// their own index.
-	wantUploads := map[string]bool{"/Items/p1/Images/Backdrop/0": true, "/Items/p1/Images/Backdrop/1": true}
-	for _, p := range gotUploads {
-		if !wantUploads[p] {
-			t.Errorf("unexpected upload path %q", p)
+
+	// THE BODY+ORDER ASSERTION (#3146 CR fix): the resync must upload slot 0
+	// FIRST with fanart.jpg's exact bytes, then slot 1 with fanart2.jpg's --
+	// ascending order, correct content per slot. A path-only check cannot
+	// tell "primary uploaded twice" or "slots reversed" apart from success,
+	// because Jellyfin ignores the index either way; only the decoded body
+	// at each ordinal position can.
+	if gotUploads[0].path != "/Items/p1/Images/Backdrop/0" {
+		t.Errorf("upload 1 path = %q, want /Items/p1/Images/Backdrop/0 (ascending order)", gotUploads[0].path)
+	}
+	if !bytesEqual(gotUploads[0].body, seedA) {
+		t.Errorf("upload 1 (slot 0) body = %d bytes, want fanart.jpg's exact %d bytes -- wrong content landed in the first upload", len(gotUploads[0].body), len(seedA))
+	}
+	if gotUploads[1].path != "/Items/p1/Images/Backdrop/1" {
+		t.Errorf("upload 2 path = %q, want /Items/p1/Images/Backdrop/1 (ascending order)", gotUploads[1].path)
+	}
+	if !bytesEqual(gotUploads[1].body, seedB) {
+		t.Errorf("upload 2 (slot 1) body = %d bytes, want fanart2.jpg's exact %d bytes -- wrong content landed in the second upload", len(gotUploads[1].body), len(seedB))
+	}
+
+	// The API key must ride along on every peer request; Jellyfin carries it
+	// on Authorization: MediaBrowser Token="...", not X-Emby-Token (Emby's
+	// scheme -- see mediabrowser.JellyfinProfile vs EmbyProfile).
+	wantAuth := fmt.Sprintf(`MediaBrowser Token="%s"`, apiKey)
+	for i, u := range gotUploads {
+		if u.authHdr != wantAuth {
+			t.Errorf("upload %d Authorization header = %q, want %q", i+1, u.authHdr, wantAuth)
 		}
-		delete(wantUploads, p)
 	}
-	if len(wantUploads) != 0 {
-		t.Errorf("missing expected upload path(s): %v", wantUploads)
+}
+
+// pathsOf projects a slice of uploadCall down to its paths, for a
+// count-mismatch failure message that still shows what was actually seen.
+func pathsOf(calls []uploadCall) []string {
+	out := make([]string, len(calls))
+	for i, c := range calls {
+		out[i] = c.path
 	}
+	return out
 }
 
 // TestUploadFanartForSync_JellyfinNoopSkipsResyncEntirely is the fanartTargetNoop
@@ -363,9 +427,9 @@ func (f *fakeResyncClient) GetArtistDetail(_ context.Context, _ string) (*connec
 	return &connection.ArtistPlatformState{BackdropCount: f.backdropCount}, nil
 }
 
-func (f *fakeResyncClient) GetArtistBackdrop(_ context.Context, _ string, _ int) ([]byte, string, error) {
-	return nil, "", errors.New("fakeResyncClient: GetArtistBackdrop should never be called by the resync path")
-}
+// No GetArtistBackdrop: fanartResyncClient (#3146 CR fix) narrowed to
+// connection.ArtistStateGetter + IndexedImageDeleter + IndexedImageUploader,
+// so this fake need not implement a method the resync path never calls.
 
 func (f *fakeResyncClient) DeleteImageAtIndex(_ context.Context, _ string, _ string, _ int) error {
 	return f.deleteErr
@@ -719,5 +783,74 @@ func TestUploadFanartForSync_JellyfinDegradedSlot_PlatformOutnumbersLocal(t *tes
 		if !bytesEqual(gotBackdrops[i], want) {
 			t.Errorf("platform backdrop %d content changed -- every one of the 5 must survive a refused resync untouched", i)
 		}
+	}
+}
+
+// TestUploadFanartFullResyncForSync_RefusalReasonSurvivesTruncation is the
+// #3146 CR fix: uploadFanartFullResyncForSync joins the restorability
+// gate's refusal reason with snapshotFanart's own per-file warnings via
+// strings.Join(warnings, "; "), and the RESULT of that join is truncated a
+// SECOND time by the outer truncateWarning (each element was already
+// truncated individually before the join). If the refusal reason -- the
+// only actionable line, naming the slot that blocked the resync and why
+// nothing was deleted -- is appended AFTER the snapshot noise rather than
+// placed first, a long connection name or several snapshot warnings can
+// push the join past maxWarningRunes and truncate the refusal reason away
+// entirely, leaving the operator with snapshot noise and no explanation.
+//
+// This builds TWO genuinely oversize local files (each over
+// maxFanartSnapshotFileBytes), so snapshotFanart's real budget check fires
+// twice and produces two real per-file warnings -- not a mocked warning
+// list -- totaling well past maxWarningRunes (200) once joined with the
+// refusal reason. It asserts the refusal reason's own distinguishing text
+// ("could not be captured") and the specific slot index it names both
+// survive INTACT in the final (possibly truncated) warning string, proving
+// the ordering fix rather than merely asserting the function returns
+// non-empty text.
+func TestUploadFanartFullResyncForSync_RefusalReasonSurvivesTruncation(t *testing.T) {
+	dir := t.TempDir()
+	// fanart.jpg (index 0) is small and captures normally; fanart2/3/4.jpg
+	// (indices 1-3) are each genuinely over maxFanartSnapshotFileBytes, so
+	// snapshotFanart's real budget check fires THREE times and produces
+	// three independent per-file warnings -- not a mocked list. Multiple
+	// distinct fill bytes keep the files byte-distinct (irrelevant to the
+	// cap, just avoids a suspiciously uniform fixture).
+	writeFile(t, filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 90))
+	for slot, fill := range map[int]byte{1: 1, 2: 3, 3: 5} {
+		oversize := make([]byte, (12<<20)+1)
+		for i := range oversize {
+			oversize[i] = byte(int(fill) * i)
+		}
+		writeFile(t, filepath.Join(dir, fmt.Sprintf("fanart%d.jpg", slot+1)), oversize)
+	}
+
+	p := New(Deps{Logger: silentLogger()})
+	// A deliberately long connection name: contributes to the truncation
+	// pressure the same way a real operator's connection name would, on
+	// top of the three snapshot warnings.
+	conn := &connection.Connection{ID: "c-jf", Name: "my-jellyfin-connection-with-a-fairly-long-descriptive-name", Type: connection.TypeJellyfin}
+
+	uploaded, warning := p.uploadFanartFullResyncForSync(context.Background(), &artist.Artist{ID: "a1", Path: dir}, artist.PlatformID{ConnectionID: "c-jf", PlatformArtistID: "p1"}, conn)
+	if uploaded {
+		t.Fatal("uploaded = true, want false -- three of the four local slots are oversize, so the restorability gate must refuse before any write")
+	}
+
+	// PRECONDITION: prove this scenario actually produces enough raw text to
+	// reach (or exceed) maxWarningRunes, or the test would pass vacuously
+	// regardless of ordering (nothing left for truncation to eat).
+	if runeLen := len([]rune(warning)); runeLen < 190 {
+		t.Fatalf("precondition failed: returned warning is only %d runes (want it near/at the %d-rune cap) -- this scenario does not generate enough text to prove the ordering fix; strengthen the fixture", runeLen, 200)
+	}
+
+	// THE #3146 ASSERTION: the refusal reason's distinguishing text and the
+	// slot index it names must both survive, proving it was NOT the part
+	// truncation ate. The gate returns on the FIRST nil-data slot it walks
+	// (index 1, the lowest of the three oversize slots), so that is the
+	// index the refusal names.
+	if !strings.Contains(warning, "could not be captured") {
+		t.Errorf("warning = %q, want the refusal reason's distinguishing text (\"could not be captured\") to survive truncation -- it did not, meaning the actionable explanation was lost", warning)
+	}
+	if !strings.Contains(warning, "fanart 1") {
+		t.Errorf("warning = %q, want it to still name slot 1 (the first oversize file the gate walks) -- the slot identity was lost to truncation", warning)
 	}
 }

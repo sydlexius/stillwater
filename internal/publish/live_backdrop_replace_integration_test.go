@@ -1005,11 +1005,11 @@ func TestLiveEmby_IndexedReplace_FindsPrimaryShiftedByLowerBystanderDelete(t *te
 // uploadFanartFullResyncForSync already implements for the single-image
 // path, but applying it to the full-set sync is a materially different
 // change (a different call site, a different warning contract, and its own
-// review) than this branch's stated scope. Tracked as a follow-up; this
+// review) than this branch's stated scope. Tracked as #3145; this
 // test PINS the gap with a hard assertion so a future fix (or accidental
 // regression) is caught by a red/green flip rather than silently
 // rediscovered. A RED failure here is GOOD NEWS: it means the count no
-// longer grows and the follow-up fix landed (or Jellyfin itself changed).
+// longer grows and #3145 landed (or Jellyfin itself changed).
 //
 // Seeds THREE distinct local fanart files, then calls
 // SyncAllFanartToPlatforms three times in a row against the SAME clean
@@ -1076,14 +1076,14 @@ func TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsInflate_KnownGap(t *t
 		t.Logf("KNOWN GAP: BackdropCount after run %d = %d", run, after.BackdropCount)
 		wantMin := prevCount + 3 // each run uploads 3 local files
 		if after.BackdropCount < wantMin {
-			t.Errorf("run %d: BackdropCount = %d, want >= %d -- the known-gap growth did not reproduce; if this is because the count is now STABLE instead, the follow-up fix may have landed (or removed) -- update this test accordingly and close the follow-up issue", run, after.BackdropCount, wantMin)
+			t.Errorf("run %d: BackdropCount = %d, want >= %d -- the known-gap growth did not reproduce; if this is because the count is now STABLE instead, #3145 may have landed (or Jellyfin itself changed) -- update this test accordingly and close #3145", run, after.BackdropCount, wantMin)
 		}
 		prevCount = after.BackdropCount
 	}
 }
 
 // TestLiveEmby_SyncAllFanartToPlatforms_RepeatedRunsDoNotInflate is the Emby CONTRAST
-// case for TestLiveJellyfin_SyncAllFanartRepeatedRuns_InflationCheck: proves
+// case for TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsInflate_KnownGap: proves
 // the same repeated-SyncAllFanartToPlatforms sequence does NOT inflate
 // Emby's backdrop count, because Emby's indexed endpoint genuinely replaces
 // in place (unlike Jellyfin's, which appends regardless of index -- see the

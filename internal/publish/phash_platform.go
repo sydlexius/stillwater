@@ -269,8 +269,17 @@ type fanartReplaceClient interface {
 // interface rather than widening that one, so fanartReplaceClient's existing
 // test doubles (which never exercise this path -- they are all Emby-typed)
 // do not need an unused DeleteImageAtIndex method added to keep compiling.
+//
+// #3146 CR review: embeds connection.ArtistStateGetter (GetArtistDetail
+// alone), not the wider connection.BackdropReader (GetArtistDetail +
+// GetArtistBackdrop) -- uploadFanartFullResyncForSync never calls
+// GetArtistBackdrop, it only needs the platform's current backdrop COUNT to
+// drive the delete loop, never any backdrop's actual bytes. Declaring
+// exactly the three methods this function calls keeps a future fake
+// implementing this interface from being told it satisfies a read
+// capability that is never exercised.
 type fanartResyncClient interface {
-	connection.BackdropReader       // GetArtistDetail, GetArtistBackdrop
+	connection.ArtistStateGetter    // GetArtistDetail
 	connection.IndexedImageDeleter  // DeleteImageAtIndex
 	connection.IndexedImageUploader // UploadImageAtIndex
 }

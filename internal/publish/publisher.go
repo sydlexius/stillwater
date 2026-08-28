@@ -1411,21 +1411,33 @@ func (p *Publisher) uploadFanartFullResyncForSync(ctx context.Context, a *artist
 		return false, truncateWarning(fmt.Sprintf("%s: fanart resync found no readable local fanart", conn.Name))
 	}
 
-	var warnings []string
-	warnings = append(warnings, snapWarnings...)
-
 	// #3145: RESTORABILITY GATE, before any platform read or write. A
 	// snapshot slot with nil data means snapshotFanart could not capture it
 	// (read failure, or a size-cap degrade -- see the doc comment above for
 	// why this is refused rather than partially resynced).
+	//
+	// #3146 CR review: the refusal reason is built and returned FIRST in the
+	// joined warning list, snapshot noise appended AFTER, never the other
+	// way around. truncateWarning caps each element individually, but the
+	// FINAL strings.Join(warnings, "; ") is truncated a second time -- with
+	// a long connection name or several snapWarnings entries ahead of it,
+	// the refusal reason (the only actionable line: it names the slot that
+	// blocked the resync and why nothing was deleted) could be the part
+	// truncated away, leaving the operator with snapshot noise and no
+	// explanation. Ordering it first means truncation eats the LESS
+	// important text when it has to eat something.
 	for _, sf := range snapshot {
 		if sf.data == nil {
 			p.logger.Warn("fanart resync refused: a local fanart slot could not be captured, and completing the resync would delete platform backdrops with nothing to restore them",
 				"artist", a.Name, "connection", conn.Name, "index", sf.index)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart resync skipped -- fanart %d could not be captured, so deleting and rebuilding the platform's backdrop set would destroy data", conn.Name, conn.Type, sf.index)))
+			refusal := truncateWarning(fmt.Sprintf("%s (%s): fanart resync skipped -- fanart %d could not be captured, so deleting and rebuilding the platform's backdrop set would destroy data", conn.Name, conn.Type, sf.index))
+			warnings := append([]string{refusal}, snapWarnings...)
 			return false, truncateWarning(strings.Join(warnings, "; "))
 		}
 	}
+
+	var warnings []string
+	warnings = append(warnings, snapWarnings...)
 
 	detail, detailErr := client.GetArtistDetail(ctx, pid.PlatformArtistID)
 	if detailErr != nil {
