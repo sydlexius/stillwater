@@ -261,6 +261,29 @@ type fanartReplaceClient interface {
 	connection.ImageUploader        // UploadImage (append fallback)
 }
 
+// fanartResyncClient is what uploadFanartFullResyncForSync needs to perform
+// the delete-all-then-reupload sequence a platform reports false for
+// connection.SupportsIndexedBackdropReplace actually honors (#3135): read the
+// current backdrop count, delete every existing slot, and re-upload the full
+// local set in index order. A separate, narrower-than-fanartReplaceClient
+// interface rather than widening that one, so fanartReplaceClient's existing
+// test doubles (which never exercise this path -- they are all Emby-typed)
+// do not need an unused DeleteImageAtIndex method added to keep compiling.
+//
+// #3146 CR review: embeds connection.ArtistStateGetter (GetArtistDetail
+// alone), not the wider connection.BackdropReader (GetArtistDetail +
+// GetArtistBackdrop) -- uploadFanartFullResyncForSync never calls
+// GetArtistBackdrop, it only needs the platform's current backdrop COUNT to
+// drive the delete loop, never any backdrop's actual bytes. Declaring
+// exactly the three methods this function calls keeps a future fake
+// implementing this interface from being told it satisfies a read
+// capability that is never exercised.
+type fanartResyncClient interface {
+	connection.ArtistStateGetter    // GetArtistDetail
+	connection.IndexedImageDeleter  // DeleteImageAtIndex
+	connection.IndexedImageUploader // UploadImageAtIndex
+}
+
 // resolveFanartTarget is the ALLOW-LIST decision resolveFanartReplaceTarget's
 // name comes from: never "no reason to refuse", always "a positive reason to
 // believe this index is safe to overwrite".

@@ -68,7 +68,14 @@ convention as the Emby client):
 > later slot down by one, so a subsequent upload to the vacated index lands on the wrong slot
 > whenever any backdrop exists after it. The only sequence that reliably places content at a
 > specific slot is deleting every existing backdrop and re-uploading the full desired set in
-> order. Tracked in #3135.
+> order. Fixed in #3135 for the single-image primary-fanart replace path
+> (`uploadFanartFullResyncForSync` in `internal/publish/publisher.go`, gated by
+> `connection.SupportsIndexedBackdropReplace` reporting false for Jellyfin): that path no longer
+> relies on the indexed endpoint honoring its index at all, instead performing the
+> delete-then-reupload sequence above itself. The full-set sync
+> (`uploadFanartSet`/`SyncAllFanartToPlatforms`, used by reorder, per-slot delete, batch delete,
+> and platform-backdrop-assign) still calls this same indexed endpoint with no delete step first,
+> so it still appends on Jellyfin; that gap is tracked separately (#3145 follow-up).
 
 ### Library Management
 
