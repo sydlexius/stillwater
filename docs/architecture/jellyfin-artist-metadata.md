@@ -56,6 +56,20 @@ convention as the Emby client):
 | DELETE | `/Items/{Id}/Images/{Type}/{Index}` | Delete image at index |
 | POST | `/Items/{Id}/Images/{Type}/{Index}/Index?newIndex={N}` | Reorder images |
 
+> **The indexed upload does not honor its index for `Backdrop`, measured against Jellyfin
+> 10.11.10.** `POST /Items/{Id}/Images/Backdrop/{Index}` against an item that already holds a
+> backdrop at `{Index}` appends a new entry at the tail instead of replacing the existing one in
+> place; the existing slot is left untouched and `BackdropCount` increases by one. An
+> out-of-range index against zero existing backdrops still lands at index 0, so the index is
+> ignored for placement generally rather than merely mishandled on collision. The same client
+> code produces correct in-place replacement against Emby (`internal/publish/phash_platform.go`,
+> `resolveFanartReplaceTarget`), so this is Jellyfin server-side behavior, not a client defect.
+> Deleting index 0 first does not work around it either: `DeleteImageAtIndexRaw` re-indexes every
+> later slot down by one, so a subsequent upload to the vacated index lands on the wrong slot
+> whenever any backdrop exists after it. The only sequence that reliably places content at a
+> specific slot is deleting every existing backdrop and re-uploading the full desired set in
+> order. Tracked in #3135.
+
 ### Library Management
 
 | Method | Path | Purpose |

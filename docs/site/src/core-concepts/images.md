@@ -37,7 +37,7 @@ Adjust any of them under **Settings > Rules**. If your collection ships from sou
 - **Logo excessive padding** -- flags logos with too much whitespace around the artwork. Defaults to 15% of the image area; auto-fix can trim them.
 - **Backdrop minimum count** -- flags artists with fewer fanart variants than you'd like.
 
-The full [rules catalogue](../reference/rules-catalogue.md) lists every image rule with its configurable knobs.
+The full [rules catalog](../reference/rules-catalogue.md) lists every image rule with its configurable knobs.
 
 ## Multi-fanart
 
@@ -47,6 +47,15 @@ Fanart is the only slot that supports more than one image per artist. Stillwater
 - **Kodi:** `fanart.jpg`, `fanart1.jpg`, `fanart2.jpg`, ...
 
 The artist record reflects how many fanart files exist on disk. Other slots are single-image: writing a new thumb replaces the previous one.
+
+### Replacing the primary fanart on a connected platform
+
+When you replace the primary fanart -- crop, re-fetch, or upload over the existing backdrop rather than adding a new one -- Stillwater pushes that change to Emby and Jellyfin differently, because the two platforms don't behave the same way once the update reaches them. This push only happens for a connection that's enabled and healthy; a disabled or unhealthy connection sees no push at all. (The **Image download/write** toggle governs Stillwater's separate background reconciliation pass, not a replace you trigger yourself -- turning it off does not stop this push.)
+
+- **Emby** replaces the backdrop in place. The platform's backdrop count stays the same and the addressed slot's image content changes.
+- **Jellyfin** appends a new backdrop instead of replacing, even though Stillwater sends the update to the same slot. The platform's backdrop count grows by one every time you replace the primary fanart, and the old image is left behind at its original position. This is a known Jellyfin limitation, not something Stillwater can currently work around for a single-image replace: Jellyfin's upload endpoint doesn't honor the slot it's given. It isn't new behavior introduced by a recent Stillwater change either.
+
+If you're on Jellyfin and notice your backdrop count creeping up after repeated replaces, that's this behavior, not a bug in your library. Stillwater's own artwork tools only ever act on the fanart files it has locally, so deleting or reordering backdrops in the **Backdrops** tab (see [Manage multi-fanart](../how-to/fetch-and-crop-images.md#manage-multi-fanart)) won't remove a duplicate that exists only on the Jellyfin side. Clearing accumulated duplicates today means removing them directly in Jellyfin's own artwork manager.
 
 **Where to manage artwork:** open an artist from the **Artists** list, then open **Manage artwork** from the artist's Artwork section. The modal has a tab for each slot -- **Primary**, **Logo**, **Banner**, and **Backdrops** -- and you switch between them without leaving the modal; changes reconcile to the source-of-truth folder. Each tab shows the current image with an **Actions** menu (fetch from providers, web search, browse, or fetch from a URL) and a drag-and-drop target to replace it.
 

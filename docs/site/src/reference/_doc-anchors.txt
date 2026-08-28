@@ -92,6 +92,7 @@ core-concepts/field-locks#what-you-dont-need-to-think-about
 core-concepts/images#images
 core-concepts/images#multi-fanart
 core-concepts/images#platform-terminology
+core-concepts/images#replacing-the-primary-fanart-on-a-connected-platform
 core-concepts/images#resolution-and-aspect-rule-driven-configurable
 core-concepts/images#see-also
 core-concepts/images#the-four-slots
