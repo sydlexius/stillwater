@@ -71,11 +71,17 @@ func TestUploadFanartForSync_JellyfinRoutesThroughFullResync(t *testing.T) {
 	var mu sync.Mutex
 	var deletes []string // DELETE paths, in call order
 	var uploads []uploadCall
-	backdropCount := 2 // platform starts with 2 existing backdrops
+	var authByMethod []authCall // EVERY request's auth header, in call order
+	backdropCount := 2          // platform starts with 2 existing backdrops
 
 	httpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
+		// #3146 CR review: record the Authorization header on EVERY request,
+		// not only the uploads. A missing token on GetArtistDetail or
+		// DeleteImageAtIndex fails a LIVE resync just as hard as one on the
+		// POST, and asserting it only for uploads let that pass unnoticed.
+		authByMethod = append(authByMethod, authCall{method: r.Method, path: r.URL.Path, authHdr: r.Header.Get("Authorization")})
 		switch {
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/Items/"):
 			// GetArtistDetail: report the CURRENT backdrop count so the
@@ -169,11 +175,47 @@ func TestUploadFanartForSync_JellyfinRoutesThroughFullResync(t *testing.T) {
 	// on Authorization: MediaBrowser Token="...", not X-Emby-Token (Emby's
 	// scheme -- see mediabrowser.JellyfinProfile vs EmbyProfile).
 	wantAuth := fmt.Sprintf(`MediaBrowser Token="%s"`, apiKey)
-	for i, u := range gotUploads {
-		if u.authHdr != wantAuth {
-			t.Errorf("upload %d Authorization header = %q, want %q", i+1, u.authHdr, wantAuth)
+
+	mu.Lock()
+	gotAuth := append([]authCall(nil), authByMethod...)
+	mu.Unlock()
+
+	// Every request in the resync sequence, not just the uploads: the detail
+	// GET that establishes how many slots to clear, each DELETE, and each
+	// POST. An unauthenticated GET or DELETE breaks a live resync exactly as
+	// completely as an unauthenticated upload.
+	if len(gotAuth) == 0 {
+		t.Fatal("no requests recorded; the resync issued nothing at all")
+	}
+	sawGet, sawDelete, sawPost := false, false, false
+	for _, c := range gotAuth {
+		if c.authHdr != wantAuth {
+			t.Errorf("%s %s Authorization header = %q, want %q", c.method, c.path, c.authHdr, wantAuth)
+		}
+		switch c.method {
+		case http.MethodGet:
+			sawGet = true
+		case http.MethodDelete:
+			sawDelete = true
+		case http.MethodPost:
+			sawPost = true
 		}
 	}
+	// Assert the PRECONDITION of the loop above: if the resync stopped issuing
+	// one of these methods, the per-request check would pass vacuously over
+	// whatever remained.
+	if !sawGet || !sawDelete || !sawPost {
+		t.Errorf("auth was not exercised across all three request kinds (GET=%v DELETE=%v POST=%v)", sawGet, sawDelete, sawPost)
+	}
+}
+
+// authCall is one recorded request's method, path, and Authorization header,
+// so the resync's auth can be asserted across every peer call rather than
+// only the uploads (#3146 CR review).
+type authCall struct {
+	method  string
+	path    string
+	authHdr string
 }
 
 // pathsOf projects a slice of uploadCall down to its paths, for a
