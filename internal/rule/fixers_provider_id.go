@@ -115,9 +115,13 @@ func (f *ProviderIDBackfillFixer) fetchMetadata(ctx context.Context, mbid, name 
 // already set is never overwritten; a provider with no derivable relation is
 // left untouched, and a field a LOCK refuses is skipped rather than failing the
 // pass. The operation is a no-op (non-fatal FixResult) when the artist has no
-// MBID, the fetcher is unwired, or nothing new can be derived. It reports
-// Dismissed only when a lock refused every field the violation still covers --
-// the one genuinely terminal outcome; see that branch for why the bar is high.
+// MBID, the fetcher is unwired, or nothing new can be derived.
+//
+// #3066: a lock refusal never reports Dismissed here, even when it refused
+// every field the violation still covers. A lock is operator-revocable, so
+// the row stays open -- see the len(filled) == 0 branch below, which
+// converges this fixer's outcome with lock_reverted_fix.go's for every other
+// locked-field write.
 func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
 	if a.MusicBrainzID == "" {
 		return &FixResult{
@@ -269,57 +273,48 @@ func (f *ProviderIDBackfillFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		filled = append(filled, string(name))
 	}
 
-	// EVERY EMPTY FIELD THIS VIOLATION COVERS WAS REFUSED: report it as
-	// DISMISSED rather than open (#3037, F-4). The distinction from the
-	// nothing-derivable branch below is the honesty of the operator's row.
+	// EVERY EMPTY FIELD THIS VIOLATION COVERS IS EITHER LOCK-REFUSED OR NOT YET
+	// DERIVABLE: the row stays OPEN either way (#3066).
 	//
-	// Terminal, which is what earns Dismissed: re-running this fixer against the
-	// same locked field can only produce the same refusal, so leaving the row
-	// open gives the operator a live Fix button that does nothing every time
-	// they click it. Both dispatch paths honor it: Pipeline.FixViolation turns a
-	// Dismissed-and-not-Fixed result into DismissViolation on the row it loaded,
-	// and processAutoFixViolation persists the row at ViolationStatusDismissed
-	// rather than re-opening it every unattended pass.
+	// #3066 CONVERGENCE. This used to branch on skippedNoRelation == 0: an
+	// all-refused pass reported Dismissed (terminal, unrecoverable), while a
+	// mixed refused-plus-no-relation pass reported an ordinary open result.
+	// Both are the SAME underlying event from the operator's chair -- a rule
+	// tried to write a field they pinned -- and the split made one look like a
+	// permanent decision and the other like a live finding, with nothing on
+	// screen explaining why. internal/rule/lock_reverted_fix.go already
+	// answers this question for every OTHER locked-field write (the whole-row
+	// fixer path) by staying open, because a lock is operator-revocable state,
+	// not a terminal one: unlocking the field is exactly what makes this same
+	// fixer succeed on the next pass. This fixer now agrees.
 	//
-	// A DISMISS HERE IS UNRECOVERABLE, which is why the gate is this strict.
+	// A DISMISS WOULD BE UNRECOVERABLE, which is why the gate used to be this
+	// strict and why converging on open removes the need for a gate at all.
 	// UpsertViolation's ON CONFLICT preserves status='dismissed' (#1107) so no
-	// later evaluation reopens the row; ReopenViolation is a positive allow-list
-	// on 'resolved'; ReopenCollisionViolations is scoped to the backdrop-collision
-	// rule. There is no un-dismiss route for this row, so anything short of
-	// certain terminality must stay open.
+	// later evaluation reopens a dismissed row; ReopenViolation is a positive
+	// allow-list on 'resolved'. A permanently missing un-dismiss route means
+	// the finding would never come back once the operator undid the very lock
+	// that closed it -- true whether every missing ID was locked or only some
+	// of them, so there was never a safe place to draw that line.
 	//
-	// THREE CONDITIONS, ALL REQUIRED. len(filled) == 0 (a pass that wrote
-	// something is a real repair and takes the success path), len(refused) > 0
-	// (something was actually refused), and skippedNoRelation == 0 -- no field
-	// was left empty for a NON-terminal reason. That last one is the fix for the
-	// original defect: a field MusicBrainz has no relation for is still missing,
-	// still fixable upstream, and covered by this SAME violation, so dismissing
-	// on its behalf permanently hides a legitimate finding.
-	//
-	// It errs one way on purpose. The checker can narrow the required set
-	// (provider availability, RequiredProviderIDs) while this fixer iterates all
-	// three in-scope providers, so an unconfigured provider with no relation also
-	// blocks the dismiss. That leaves the row open when it could have closed,
-	// costing a Fix click; the inverse error costs the operator the finding.
-	if len(filled) == 0 && len(refused) > 0 && skippedNoRelation == 0 {
-		return &FixResult{
-			RuleID:    RuleProviderIDMissing,
-			Fixed:     false,
-			Dismissed: true,
-			Message: fmt.Sprintf("provider ID backfill refused for %s: %s locked by the operator",
-				a.Name, strings.Join(refused, ", ")),
-		}, nil
-	}
-
+	// The Fix button on an all-refused row does nothing until the operator
+	// unlocks a field, exactly like every other lock-reverted row in the
+	// system; the message below names the locked field so the operator is not
+	// left guessing why a click had no effect.
 	if len(filled) == 0 {
-		// NOT terminal, so NOT dismissed: the row stays open. When a lock also
-		// refused something, say both -- an operator reading "nothing could be
-		// derived" alone would go looking upstream for a relation that a lock,
-		// not MusicBrainz, is what stopped.
 		msg := fmt.Sprintf("no provider IDs could be derived from MusicBrainz relations for %s", a.Name)
 		if len(refused) > 0 {
-			msg = fmt.Sprintf("%s (%s locked by the operator; the rest have no MusicBrainz relation yet)",
-				msg, strings.Join(refused, ", "))
+			if skippedNoRelation == 0 {
+				msg = fmt.Sprintf("provider ID backfill refused for %s: %s locked by the operator",
+					a.Name, strings.Join(refused, ", "))
+			} else {
+				// A lock also refused something, alongside a field MusicBrainz
+				// simply has no relation for yet. Say both -- an operator reading
+				// "nothing could be derived" alone would go looking upstream for a
+				// relation that a lock, not MusicBrainz, is what stopped.
+				msg = fmt.Sprintf("%s (%s locked by the operator; the rest have no MusicBrainz relation yet)",
+					msg, strings.Join(refused, ", "))
+			}
 		}
 		return &FixResult{
 			RuleID:  RuleProviderIDMissing,
