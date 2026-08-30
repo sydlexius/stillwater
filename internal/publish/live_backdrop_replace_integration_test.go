@@ -1145,24 +1145,48 @@ func TestLiveEmby_SyncAllFanartToPlatforms_RepeatedRunsDoNotInflate(t *testing.T
 	}
 }
 
-// pollBackdropDetail polls GetArtistDetail until BackdropCount reaches want
-// or a short deadline elapses, tolerating Emby's brief eventual consistency
-// on BackdropImageTags after a write (noted in #3126's own measurement: the
-// tag list can lag the authoritative image list for a short window,
-// converging within seconds). Returns the last observed state either way --
-// callers assert on the returned count themselves, this only avoids a fixed
-// sleep racing that window on a loaded UAT container.
+// pollBackdropDetail polls GetArtistDetail until the reading STABILIZES (two
+// consecutive reads report the same BackdropCount) at the caller's wanted
+// count, or a short deadline elapses, tolerating Emby's brief eventual
+// consistency on BackdropImageTags after a write (noted in #3126's own
+// measurement: the tag list can lag the authoritative image list for a short
+// window, converging within seconds). Returns the last observed state either
+// way -- callers assert on the returned count themselves.
+//
+// CR review round (PR #3150): the earlier version returned on the FIRST read
+// that matched want, which is circular in exactly the direction this test
+// exists to measure -- a transient read of 5 that is actually still climbing
+// toward 6 (one extra write landing shortly after SyncAllFanartToPlatforms
+// returns) would satisfy that check and hide the very overshoot the test is
+// supposed to catch. Requiring the count to hold STILL across two reads
+// before accepting a want-match closes that hole: a value in the middle of
+// converging upward changes between the two reads and resets the stability
+// counter, so the poll keeps going instead of returning early on a number
+// that was never going to be the final one.
+//
+// A persistent mismatch (the platform never reaches want at all) is NOT
+// specially handled here and does not need to be: this function still
+// returns at the deadline in that case, with `last` holding whatever the
+// platform actually settled at, and the caller's own exact-count assertion
+// is what turns that into a test failure. This function's only job is to not
+// return EARLY on a number that was still in flight.
 func pollBackdropDetail(ctx context.Context, t *testing.T, client backdropClearer, itemID string, want int) *connection.ArtistPlatformState {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	var last *connection.ArtistPlatformState
+	stable := 0
 	for {
 		state, err := client.GetArtistDetail(ctx, itemID)
 		if err != nil {
 			t.Fatalf("polling backdrop state: %v", err)
 		}
+		if last != nil && state.BackdropCount == last.BackdropCount {
+			stable++
+		} else {
+			stable = 0
+		}
 		last = state
-		if state.BackdropCount == want || time.Now().After(deadline) {
+		if (stable >= 1 && state.BackdropCount == want) || time.Now().After(deadline) {
 			return last
 		}
 		time.Sleep(250 * time.Millisecond)
