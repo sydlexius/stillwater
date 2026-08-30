@@ -365,13 +365,14 @@ func TestProviderIDBackfill_LockRefusalIsATerminalSkip(t *testing.T) {
 	}
 }
 
-// TestProviderIDBackfill_AllRefusedDismisses is F-4: when a lock refused the
-// fixer's ONLY writes, the result must be Dismissed rather than Fixed.
-// Pipeline.FixViolation turns Fixed=true into ResolveViolation, so reporting a
-// fix here would close a violation nothing repaired and hide the row; leaving it
-// merely open would give the operator a Fix button that can only be refused
-// again. Dismissed is the terminal, honest answer.
-func TestProviderIDBackfill_AllRefusedDismisses(t *testing.T) {
+// TestProviderIDBackfill_AllRefusedStaysOpen is #3066: when a lock refused the
+// fixer's ONLY writes, the result must stay OPEN, not Dismissed. This used to
+// assert the opposite (F-4 in #3037) on the theory that an all-refused pass is
+// terminal; #3066 converged this fixer's outcome with lock_reverted_fix.go's,
+// because a lock is operator-revocable state, not terminal, and a dismissed
+// row here has no un-dismiss route (UpsertViolation preserves 'dismissed' per
+// #1107) -- so the finding would never come back after the operator unlocks.
+func TestProviderIDBackfill_AllRefusedStaysOpen(t *testing.T) {
 	fetcher := &stubMetadataProvider{metadata: mbURLMetadata()}
 	updater := &lockingUpdater{locked: map[string]bool{
 		"discogs_id": true, "deezer_id": true, "spotify_id": true,
@@ -386,8 +387,11 @@ func TestProviderIDBackfill_AllRefusedDismisses(t *testing.T) {
 	if res.Fixed {
 		t.Errorf("Fixed=true with every write refused; the operator would see a repaired violation that was never repaired")
 	}
-	if !res.Dismissed {
-		t.Errorf("Dismissed=false, got %+v; an all-refused pass is terminal and must not leave the row open", res)
+	if res.Dismissed {
+		t.Errorf("Dismissed=true, got %+v; a lock is operator-revocable and a dismissed row can never come back once unlocked (#3066)", res)
+	}
+	if !strings.Contains(res.Message, "locked by the operator") {
+		t.Errorf("message %q does not tell the operator the fields are locked", res.Message)
 	}
 	// The nothing-derivable branch is a DIFFERENT outcome and must not be
 	// reported here: it is not terminal (adding the relation upstream fixes it).
