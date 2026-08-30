@@ -159,7 +159,26 @@ jobs:
   sbom:
     name: SBOM and Vulnerability Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    # #3124: this job used to run ONLY on a release tag, so a base-image CVE
+    # published between releases was invisible until the next tag was cut --
+    # measured directly on v1.6.3 (CVE-2026-14456, disclosed 6 days before
+    # v1.6.2 shipped, both preceding main-tip runs `skipped`). The workflow's
+    # own weekly `schedule` trigger (see `on:` above) already exists for this
+    # purpose; the job just excluded it. Adding it here catches a
+    # newly-published CVE against the pinned base image within 7 days of
+    # disclosure, at the cost of one scan a week (~50s measured), independent
+    # of whether a release is imminent.
+    #
+    # Deliberately NOT added to push/pull_request here (that would scan on
+    # every push to main, a materially larger recurring cost for a
+    # dependency graph that moves slowly between releases) and the
+    # release-blocking half of the issue (option 3: gate a release from
+    # being cut over an unscanned image) is left to the release tooling
+    # outside this workflow file, not addressed here.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
       packages: read
