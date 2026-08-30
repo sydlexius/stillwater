@@ -184,3 +184,89 @@ for (const pane of PANES) {
     });
   }
 }
+
+// -----------------------------------------------------------------------
+// Negative control (CodeRabbit finding on #3154; PR review, verified valid).
+//
+// Every test above proves these flyouts currently have NO violations.
+// Nothing above proves the scan CAN report one. That gap matters more here
+// than for a typical axe spec because the scan is `.include()`-scoped to
+// `#${pane.flyoutID}`: if that selector were wrong, or resolved to an empty
+// or non-matching subtree, axe would silently find nothing and every test
+// above would pass forever while verifying nothing -- the same class of
+// vacuity the hostile review already caught in the chip-rendered
+// precondition (see the block above), just one layer further out. A
+// negative control makes the SCOPING itself falsifiable, not just the
+// chips inside it.
+//
+// Targets the artists pane only (PANES[0]). One control is enough: it
+// verifies the axe-scan WIRING (the .include() selector actually reaches a
+// real element and axe actually flags what is inside it), not the panes --
+// a copy per pane or per theme would be four-plus tests proving the same
+// wiring fact repeatedly, which is dead maintenance weight for the reason
+// the file's RUNTIME COST note above exists.
+//
+// THE INJECTION IS RUNTIME-ONLY. It sets inline styles on a live DOM node
+// via page.evaluate() -- it does not touch any committed stylesheet, and it
+// is gone the moment this test's page context closes (each Playwright test
+// in this file gets its own fresh `page`, so nothing here can bleed into
+// the tests before or after it in the same run).
+//
+// ASSERTS SPECIFICALLY, not just "some violation happened": the flagged
+// rule id must be 'color-contrast' AND the violation's node HTML must
+// contain the marker attribute this test itself set, so a scan that found
+// a DIFFERENT, unrelated defect (there are three known pre-existing ones on
+// other panes, see the file header) cannot be mistaken for evidence the
+// injected one was caught.
+test('the flyout scan actually detects a violation when one is injected (negative control)', async ({ page }) => {
+  const pane = PANES[0];
+  const marker = 'sw-a11y-negative-control-3095';
+
+  await page.goto(pane.url);
+  await page.waitForLoadState('load');
+  await page.waitForSelector(`#${pane.triggerID}`, { timeout: 10_000 });
+
+  await page.locator(`#${pane.triggerID}`).click();
+  await page.waitForSelector(`#${pane.flyoutID}:not([inert])`, { timeout: 5000 });
+
+  // Poison one RENDERED chip label with a deliberately failing foreground/
+  // background pair (~1.6:1, well under the 4.5:1 AA floor), tagged with a
+  // marker attribute so the assertion below can name the exact node it
+  // poisoned rather than accepting any color-contrast finding. Reuses the
+  // same rendered-geometry + own-visibility test as the precondition above
+  // (#3095 fix round) so this negative control cannot pick a node that was
+  // never actually on screen.
+  const injected = await page.evaluate(({ flyoutID, marker: dataMarker }) => {
+    const isRendered = (node) => {
+      const style = getComputedStyle(node);
+      if (style.visibility === 'hidden') return false;
+      const r = node.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    const panel = document.getElementById(flyoutID);
+    if (!panel) return { found: false };
+    const label = Array.from(panel.querySelectorAll('.sw-filter-item-label')).find(isRendered);
+    if (!label) return { found: false };
+    label.setAttribute('data-sw-a11y-negative-control', dataMarker);
+    label.style.setProperty('color', '#eeeeee', 'important');
+    label.style.setProperty('background-color', '#ffffff', 'important');
+    return { found: true };
+  }, { flyoutID: pane.flyoutID, marker });
+
+  // Precondition: a real, rendered chip label existed to poison. Without
+  // this the test could pass vacuously against a panel that never had one.
+  expect(injected.found, `no rendered .sw-filter-item-label chip label was found in #${pane.flyoutID} to `
+    + 'poison; the negative control cannot prove the scan detects anything without a real element to '
+    + 'inject into').toBe(true);
+
+  const results = await buildAxeBuilder(page)
+    .include(`#${pane.flyoutID}`)
+    .analyze();
+
+  const matched = results.violations.filter((v) => v.id === 'color-contrast'
+    && v.nodes.some((n) => typeof n.html === 'string' && n.html.includes(marker)));
+
+  expect(matched.length, `expected a color-contrast violation naming the injected [data-sw-a11y-`
+    + `negative-control="${marker}"] node; the scan reported:\n${formatViolations(results.violations)}`)
+    .toBeGreaterThan(0);
+});
