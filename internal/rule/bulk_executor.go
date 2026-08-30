@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -626,7 +627,16 @@ func (e *BulkExecutor) selfHealMBID(ctx context.Context, a *artist.Artist, mode 
 	// is a property of that field list, not of this call site: the day
 	// musicbrainz_id becomes trackable, an untagged write here would start
 	// recording an unattributed row, which is the exact defect #3037 is about.
-	if err := e.artistService.Update(withRuleHistorySource(ctx, bulkMBIDSelfHealSource), a); err != nil {
+	//
+	// #3064: UpdateReportingLocks, not Update. A locked musicbrainz_id is
+	// RESTORED-AND-CONTINUED by the persist chokepoint (lockguard.go), so a
+	// bare Update returns nil even when this adoption never landed -- the same
+	// class internal/rule/lock_reverted_fix.go closed for the fixer pipeline.
+	// Without the report this call site has no way to tell "adopted" from
+	// "reverted", and recordBulkMBIDHistory below would write a history row
+	// claiming an identity change that the database refused.
+	restored, err := e.artistService.UpdateReportingLocks(withRuleHistorySource(ctx, bulkMBIDSelfHealSource), a)
+	if err != nil {
 		a.MusicBrainzID = prevMBID
 		if hadSource {
 			a.MetadataSources[artist.SourceKeyMusicBrainzID] = prevSource
@@ -634,6 +644,19 @@ func (e *BulkExecutor) selfHealMBID(ctx context.Context, a *artist.Artist, mode 
 			delete(a.MetadataSources, artist.SourceKeyMusicBrainzID)
 		}
 		return e.itemFailure(a, BulkTypeFetchImages, "saving MusicBrainz ID failed; retry later", err)
+	}
+	if slices.Contains(restored, string(artist.FieldMusicBrainzID)) {
+		// THE GUARD REVERTED THIS ADOPTION. `a` already carries the stored
+		// value, not the candidate's -- enforceFieldLocks mutates incoming in
+		// place (lockguard.go), which is exactly the point: the caller
+		// persists that same struct, so its in-memory copy must not go on
+		// claiming an identity the database refused. No separate rollback is
+		// needed here; recordBulkMBIDHistory below is skipped, which is the
+		// one thing this call site alone is responsible for not doing.
+		e.logger.Error("bulk image fetch: MusicBrainz ID self-heal was reverted by a field lock; no history was recorded",
+			slog.String("artist_id", a.ID),
+			slog.String("artist", a.Name))
+		return BulkItemSkipped, "no MBID: musicbrainz_id is locked by the operator"
 	}
 	e.recordBulkMBIDHistory(ctx, a.ID, mbid)
 
