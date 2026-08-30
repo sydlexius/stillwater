@@ -29,11 +29,12 @@ import (
 // in-scope provider ID empty and LOCKED, wires a fixer that can derive all
 // three from MusicBrainz relations, and enables provider_id_missing in auto
 // mode -- so a same-pass auto-fix genuinely attempts the backfill and every
-// attempt is genuinely refused.
-func providerIDLockConvergenceArtist(t *testing.T) (*artist.Service, *Service, *Pipeline, *artist.Artist) {
+// attempt is genuinely refused. Takes the caller's ctx (rather than minting
+// its own) so setup and the test action it precedes share one cancellation
+// scope.
+func providerIDLockConvergenceArtist(ctx context.Context, t *testing.T) (*artist.Service, *Service, *Pipeline, *artist.Artist) {
 	t.Helper()
 	db := setupTestDB(t)
-	ctx := context.Background()
 	artistSvc := artist.NewService(db)
 	ruleSvc := NewService(db)
 	if err := ruleSvc.SeedDefaults(ctx); err != nil {
@@ -88,8 +89,8 @@ func providerIDLockConvergenceArtist(t *testing.T) (*artist.Service, *Service, *
 // #3066 requires it to persist OPEN, matching lock_reverted_fix.go's outcome
 // for every other locked-field fixer.
 func TestProcessArtistForRunAll_ProviderIDBackfill_LockedStaysOpen(t *testing.T) {
-	_, ruleSvc, p, a := providerIDLockConvergenceArtist(t)
 	ctx := context.Background()
+	_, ruleSvc, p, a := providerIDLockConvergenceArtist(ctx, t)
 
 	contrib, ok := p.processArtistForRunAll(ctx, a)
 	if !ok {
@@ -173,8 +174,8 @@ func TestProcessArtistForRunAll_ProviderIDBackfill_LockedStaysOpen(t *testing.T)
 // zeroes fixability on the click path via the operator-facing UI's
 // already-dismissed short-circuit).
 func TestFixViolation_ProviderIDBackfill_LockedStaysOpen(t *testing.T) {
-	artistSvc, ruleSvc, p, a := providerIDLockConvergenceArtist(t)
 	ctx := context.Background()
+	artistSvc, ruleSvc, p, a := providerIDLockConvergenceArtist(ctx, t)
 
 	rv := &RuleViolation{
 		RuleID:     RuleProviderIDMissing,
@@ -215,6 +216,9 @@ func TestFixViolation_ProviderIDBackfill_LockedStaysOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second FixViolation: %v", err)
 	}
+	if fr2.Fixed {
+		t.Errorf("second click reported Fixed=true while every provider ID remains locked")
+	}
 	if fr2.Dismissed {
 		t.Errorf("second click reported Dismissed=true")
 	}
@@ -231,6 +235,9 @@ func TestFixViolation_ProviderIDBackfill_LockedStaysOpen(t *testing.T) {
 	}
 	if !fr3.Fixed {
 		t.Fatalf("positive control FAILED: unlocking did not let the fix land, got %+v", fr3)
+	}
+	if fr3.Dismissed {
+		t.Errorf("post-unlock click reported Dismissed=true alongside Fixed=true, an inconsistent result")
 	}
 	reloaded, err = ruleSvc.GetViolationByID(ctx, rv.ID)
 	if err != nil {

@@ -101,67 +101,74 @@ func mbidHistoryRows(t *testing.T, h *artist.HistoryService, artistID string) []
 func TestSelfHealMBID_LockedFieldNotAdopted(t *testing.T) {
 	// POSITIVE CONTROL FIRST: the identical fixture, unlocked, must actually
 	// adopt the MBID. If this fails, selfHealMBID is unreachable in this
-	// fixture shape and the locked case below proves nothing.
-	e, artistSvc, historySvc, a := mbidLockFixture(t, false)
-	status, msg := e.selfHealMBID(context.Background(), a, BulkModeYOLO)
-	if status != "" {
-		t.Fatalf("positive control FAILED: expected the self-heal to be ALLOWED when unlocked, got status %q (message %q)", status, msg)
-	}
-	if a.MusicBrainzID != mbidRadiohead {
-		t.Fatalf("positive control FAILED: a.MusicBrainzID = %q, want %q; the write under test is unreachable here", a.MusicBrainzID, mbidRadiohead)
-	}
-	reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
-	if err != nil {
-		t.Fatalf("control reload: %v", err)
-	}
-	if reloaded.MusicBrainzID != mbidRadiohead {
-		t.Fatalf("positive control FAILED: persisted MusicBrainzID = %q, want %q", reloaded.MusicBrainzID, mbidRadiohead)
-	}
-	if rows := mbidHistoryRows(t, historySvc, a.ID); len(rows) != 1 {
-		t.Fatalf("positive control FAILED: musicbrainz_id history rows = %d, want 1 (%+v)", len(rows), rows)
-	} else if rows[0].NewValue != mbidRadiohead {
-		t.Errorf("positive control: history new_value = %q, want %q", rows[0].NewValue, mbidRadiohead)
-	}
+	// fixture shape and the locked case below proves nothing. Split into a
+	// named subtest so a failure here (versus in the regression case below)
+	// names itself instead of leaving the reader to infer which half broke
+	// from the assertion message alone.
+	t.Run("unlocked_positive_control", func(t *testing.T) {
+		e, artistSvc, historySvc, a := mbidLockFixture(t, false)
+		status, msg := e.selfHealMBID(context.Background(), a, BulkModeYOLO)
+		if status != "" {
+			t.Fatalf("positive control FAILED: expected the self-heal to be ALLOWED when unlocked, got status %q (message %q)", status, msg)
+		}
+		if a.MusicBrainzID != mbidRadiohead {
+			t.Fatalf("positive control FAILED: a.MusicBrainzID = %q, want %q; the write under test is unreachable here", a.MusicBrainzID, mbidRadiohead)
+		}
+		reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
+		if err != nil {
+			t.Fatalf("control reload: %v", err)
+		}
+		if reloaded.MusicBrainzID != mbidRadiohead {
+			t.Fatalf("positive control FAILED: persisted MusicBrainzID = %q, want %q", reloaded.MusicBrainzID, mbidRadiohead)
+		}
+		if rows := mbidHistoryRows(t, historySvc, a.ID); len(rows) != 1 {
+			t.Fatalf("positive control FAILED: musicbrainz_id history rows = %d, want 1 (%+v)", len(rows), rows)
+		} else if rows[0].NewValue != mbidRadiohead {
+			t.Errorf("positive control: history new_value = %q, want %q", rows[0].NewValue, mbidRadiohead)
+		}
+	})
 
 	// THE REGRESSION: the same candidate, on an artist with musicbrainz_id
 	// PINNED. The persist chokepoint restores the stored (empty) value and
 	// CONTINUES -- Update itself would return nil -- so this must be caught by
 	// the restored-field report, not by an error return.
-	e, artistSvc, historySvc, a = mbidLockFixture(t, true)
-	status, msg = e.selfHealMBID(context.Background(), a, BulkModeYOLO)
+	t.Run("locked_regression", func(t *testing.T) {
+		e, artistSvc, historySvc, a := mbidLockFixture(t, true)
+		status, msg := e.selfHealMBID(context.Background(), a, BulkModeYOLO)
 
-	if status != BulkItemSkipped {
-		t.Fatalf("status = %q, want %q (message: %q); a locked MBID must not report anything but a skip", status, BulkItemSkipped, msg)
-	}
-	if !strings.Contains(msg, "locked") {
-		t.Errorf("message %q does not tell the operator the field is locked", msg)
-	}
-	// THE IN-MEMORY MIRROR MATTERS MOST. fetchImages (the caller) reads this
-	// same *Artist to decide whether to proceed to FetchImages with an
-	// identity; a stale claim here would let a reverted write drive a
-	// downstream provider fetch under an ID the database never accepted.
-	if a.MusicBrainzID != "" {
-		t.Errorf("a.MusicBrainzID = %q, want empty: a lock-reverted adoption must not be mirrored in memory", a.MusicBrainzID)
-	}
-	if got, ok := a.MetadataSources[artist.SourceKeyMusicBrainzID]; ok {
-		t.Errorf("MetadataSources[musicbrainz_id] = %q, want absent: a reverted write must not leave a machine-picked provenance stamp", got)
-	}
+		if status != BulkItemSkipped {
+			t.Fatalf("status = %q, want %q (message: %q); a locked MBID must not report anything but a skip", status, BulkItemSkipped, msg)
+		}
+		if !strings.Contains(msg, "locked") {
+			t.Errorf("message %q does not tell the operator the field is locked", msg)
+		}
+		// THE IN-MEMORY MIRROR MATTERS MOST. fetchImages (the caller) reads this
+		// same *Artist to decide whether to proceed to FetchImages with an
+		// identity; a stale claim here would let a reverted write drive a
+		// downstream provider fetch under an ID the database never accepted.
+		if a.MusicBrainzID != "" {
+			t.Errorf("a.MusicBrainzID = %q, want empty: a lock-reverted adoption must not be mirrored in memory", a.MusicBrainzID)
+		}
+		if got, ok := a.MetadataSources[artist.SourceKeyMusicBrainzID]; ok {
+			t.Errorf("MetadataSources[musicbrainz_id] = %q, want absent: a reverted write must not leave a machine-picked provenance stamp", got)
+		}
 
-	reloaded, err = artistSvc.GetByID(context.Background(), a.ID)
-	if err != nil {
-		t.Fatalf("re-reading artist: %v", err)
-	}
-	if reloaded.MusicBrainzID != "" {
-		t.Fatalf("persisted MusicBrainzID = %q, want empty: the lock guard must have kept the stored row untouched", reloaded.MusicBrainzID)
-	}
+		reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
+		if err != nil {
+			t.Fatalf("re-reading artist: %v", err)
+		}
+		if reloaded.MusicBrainzID != "" {
+			t.Fatalf("persisted MusicBrainzID = %q, want empty: the lock guard must have kept the stored row untouched", reloaded.MusicBrainzID)
+		}
 
-	// THE FALSE-HISTORY-ROW ASSERTION THIS ISSUE IS ABOUT. Before the fix, the
-	// bare Update() reported no error, so recordBulkMBIDHistory ran
-	// unconditionally and wrote a row claiming an adoption that the guard had
-	// just thrown away.
-	if rows := mbidHistoryRows(t, historySvc, a.ID); len(rows) != 0 {
-		t.Errorf("musicbrainz_id history rows = %d, want 0; a lock-reverted write must not be recorded as an adoption: %+v", len(rows), rows)
-	}
+		// THE FALSE-HISTORY-ROW ASSERTION THIS ISSUE IS ABOUT. Before the fix, the
+		// bare Update() reported no error, so recordBulkMBIDHistory ran
+		// unconditionally and wrote a row claiming an adoption that the guard had
+		// just thrown away.
+		if rows := mbidHistoryRows(t, historySvc, a.ID); len(rows) != 0 {
+			t.Errorf("musicbrainz_id history rows = %d, want 0; a lock-reverted write must not be recorded as an adoption: %+v", len(rows), rows)
+		}
+	})
 }
 
 // TestSelfHealMBID_LockedFieldLogsRevertedWrite pins the operator-visible
