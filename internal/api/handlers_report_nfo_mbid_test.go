@@ -3,11 +3,13 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"html"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -258,6 +260,65 @@ func TestNFOMBIDPane_OversizedPageClampsInsteadOfClaimingEmpty(t *testing.T) {
 		t.Fatalf("pane did not render seeded row m-old after clamping ?page=999 to the " +
 			"last valid page; the clamp must actually re-list rows, not just avoid the " +
 			"empty-state string")
+	}
+}
+
+// TestLoadReportsNFOMBIDData_PaginationHasNoTargetID guards against the dead
+// field #3096 removed: nfoMBIDPagination (web/templates/reports_page.templ)
+// renders its own plain prev/next <a href> pager and never reads
+// components.Pagination or its TargetID -- this pane has no fragment
+// endpoint to swap against. A TargetID set here would name a selector no
+// swap on this route honors, misleading a future reader into believing a
+// partial-swap pager exists (the exact trap #3093 found and fixed on the
+// sibling blast-radius pane).
+//
+// Mutation proving teeth: re-adding `TargetID: "nfo-mbid-results"` to the
+// Pagination literal in loadReportsNFOMBIDData (handlers_report.go) makes
+// this test fail.
+func TestLoadReportsNFOMBIDData_PaginationHasNoTargetID(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	seedAPIMBIDFixture(t, r)
+
+	// The standard fixture has only 2 reported rows, and page_size is
+	// clamped to PageSizeMin (10) regardless of the query value -- so more
+	// rows than that are needed to force TotalPages > 1. Seed enough extra
+	// reported rows to exceed one page at the minimum page size.
+	for i := 0; i < PageSizeMin; i++ {
+		id := fmt.Sprintf("m-extra-%d", i)
+		artistID := fmt.Sprintf("mb-extra-%d", i)
+		seedAPIMBIDChange(t, r, id, artistID, fmt.Sprintf("Extra Artist %d", i),
+			apiMBIDOldForm, artist.NFOMBIDReportSource, apiMBIDBase.Add(time.Duration(10+i)*time.Minute))
+	}
+
+	// page_size=1 requests the minimum page size (clamped up to
+	// PageSizeMin), which is now smaller than the seeded row count, so this
+	// exercises the same multi-page path the pager renders for, not a
+	// degenerate single-page case where TotalPages<=1 might mask a bug in
+	// how CurrentPage/TotalPages are computed.
+	req := httptest.NewRequest(http.MethodGet, "/reports/nfo-has-mbid?page_size=1", nil)
+	req = req.WithContext(middleware.WithTestUserID(req.Context(), "test-user"))
+	req = withI18nCtx(t, req)
+	w := httptest.NewRecorder()
+
+	data, ok := r.loadReportsNFOMBIDData(w, req)
+	if !ok {
+		t.Fatalf("loadReportsNFOMBIDData returned ok=false; body: %s", w.Body.String())
+	}
+
+	// Precondition: this actually exercises the multi-page pager, not a
+	// single-page fixture that would make the assertion below vacuous.
+	if data.Pagination.TotalPages <= 1 {
+		t.Fatalf("precondition: TotalPages = %d, want > 1; the fixture must "+
+			"produce a multi-page result for this guard to mean anything",
+			data.Pagination.TotalPages)
+	}
+
+	if data.Pagination.TargetID != "" {
+		t.Fatalf("Pagination.TargetID = %q, want empty; this pane does not render "+
+			"through components.Pagination (it has its own nfoMBIDPagination), so a "+
+			"non-empty TargetID names a swap selector nothing on this route honors",
+			data.Pagination.TargetID)
 	}
 }
 

@@ -1431,7 +1431,11 @@ func (r *Router) loadReportsNFOMBIDData(w http.ResponseWriter, req *http.Request
 			PageSize:    f.Limit,
 			TotalItems:  counts.Total,
 			BaseURL:     "/reports/nfo-has-mbid",
-			TargetID:    "nfo-mbid-results",
+			// No TargetID: this pane renders through its own nfoMBIDPagination
+			// (see web/templates/reports_page.templ), not components.Pagination,
+			// so TargetID would be inert -- and worse, it would misleadingly name
+			// a swap target nothing on this route honors (#3096, same shape as
+			// the blast-radius instance fixed in #3093).
 		},
 		ArtistID: f.ArtistID,
 		BasePath: r.basePath,
