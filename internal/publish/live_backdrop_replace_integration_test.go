@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -1141,5 +1142,191 @@ func TestLiveEmby_SyncAllFanartToPlatforms_RepeatedRunsDoNotInflate(t *testing.T
 		if after.BackdropCount != 3 {
 			t.Errorf("run %d: BackdropCount = %d, want 3 (unchanged -- Emby's indexed endpoint replaces in place)", run, after.BackdropCount)
 		}
+	}
+}
+
+// pollBackdropDetail polls GetArtistDetail until BackdropCount reaches want
+// or a short deadline elapses, tolerating Emby's brief eventual consistency
+// on BackdropImageTags after a write (noted in #3126's own measurement: the
+// tag list can lag the authoritative image list for a short window,
+// converging within seconds). Returns the last observed state either way --
+// callers assert on the returned count themselves, this only avoids a fixed
+// sleep racing that window on a loaded UAT container.
+func pollBackdropDetail(ctx context.Context, t *testing.T, client backdropClearer, itemID string, want int) *connection.ArtistPlatformState {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	var last *connection.ArtistPlatformState
+	for {
+		state, err := client.GetArtistDetail(ctx, itemID)
+		if err != nil {
+			t.Fatalf("polling backdrop state: %v", err)
+		}
+		last = state
+		if state.BackdropCount == want || time.Now().After(deadline) {
+			return last
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// TestLiveEmby_SyncAllFanartToPlatforms_LocalSetExceedsPlatformCount_Measures
+// closes a gap in #3145's Emby contrast test: every OTHER existing Emby live
+// test either starts from an EMPTY item (TestLiveEmby_F3_...,
+// TestLiveEmby_IndexedReplace_...) or seeds a platform count that already
+// equals the local file count before syncing
+// (TestLiveEmby_SyncAllFanartToPlatforms_RepeatedRunsDoNotInflate seeds
+// nothing and syncs exactly 3 local files, so every uploaded index lands
+// EXACTLY next-in-line as the platform's own count grows in lockstep, one
+// upload at a time). This test instead seeds the platform BELOW the local
+// file count, so within the SAME push some uploaded indices are ahead of
+// what the platform held when the push began.
+//
+// WHAT THIS TEST DOES NOT DRIVE, STATED EXPLICITLY: it does not force
+// uploadFanartSet to SKIP a slot (snapshotFanart degrading or refusing a
+// file, which is what spends an index without a write and is the condition
+// that could make a gap PERSIST across repeated syncs), and it never
+// observed a #3126-shaped false-failure warning in any measured run -- see
+// the PR report for the raw-probe evidence on that question. This test's
+// claim is narrower and is exactly what it asserts below: a local set
+// LARGER than an already-populated platform count converges to the local
+// count and STAYS there across repeated syncs, rather than growing further
+// on run 2 or run 3.
+//
+// Seeds the platform with N=3 backdrops directly (the same seeding pattern
+// TestLiveEmby_F3_BystanderSurvivesAfterPlatformSideDelete uses), points the
+// artist's local directory at N+2=5 distinct fanart files, and runs
+// SyncAllFanartToPlatforms -- the exact call every operator action on the
+// Backdrops tab issues (see uploadFanartSet's doc comment and #3145's
+// finding that this affects handleFanartSlotDelete, handleFanartReorder,
+// handleFanartBatchDelete, and handleFanartSlotAssign, not just a fanart
+// replace) -- THREE times against the SAME unchanged 5-file local set,
+// asserting the EXACT count after every run.
+//
+// Three runs, not two: a second run's count cannot distinguish "the platform
+// caught up once and is now stable" from "every run adds more" -- both would
+// show growth after run 1. A third run settles it. The exact-count assertion
+// on every run (not just a final floor) is what makes this distinction
+// mechanical rather than something a reader has to notice in a log: an
+// unbounded-append regression would fail on run 1 already (6, not 5), and a
+// bounded one-time-catch-up-then-drift regression would fail on run 2 or 3
+// even if run 1 happened to read 5.
+func TestLiveEmby_SyncAllFanartToPlatforms_LocalSetExceedsPlatformCount_Measures(t *testing.T) {
+	env := loadLiveEmbyEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+	defer cancel()
+
+	logger := silentLogger()
+	client := emby.New(env.url, env.apiKey, env.userID, logger)
+
+	clearAllBackdrops(ctx, t, env.itemID, client)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropCleanupTimeout)
+		defer cleanupCancel()
+		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
+	})
+
+	// Seed the platform with N=3 backdrops directly via the indexed uploader,
+	// NOT through the publisher -- this establishes a platform state smaller
+	// than the local set is about to be, the way a real artist ends up with
+	// fewer platform backdrops than local files (a prior partial sync, a
+	// platform-side prune, or simply a smaller earlier local set that grew).
+	seedA, seedB, seedC := bandJPEG(t, 0x51), bandJPEG(t, 0x52), bandJPEG(t, 0x53)
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 0, seedA, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 0: %v", err)
+	}
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 1, seedB, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 1: %v", err)
+	}
+	if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", 2, seedC, "image/jpeg"); err != nil {
+		t.Fatalf("seeding backdrop 2: %v", err)
+	}
+
+	// PRECONDITION: exactly 3 backdrops before the first sync. Asserted
+	// explicitly rather than trusted, per the repo's vacuous-precondition
+	// convention -- a seed step that silently failed to add all three would
+	// otherwise make every later assertion pass for the wrong reason.
+	seeded, err := client.GetArtistDetail(ctx, env.itemID)
+	if err != nil {
+		t.Fatalf("reading state after seed: %v", err)
+	}
+	if seeded.BackdropCount != 3 {
+		t.Fatalf("precondition failed: BackdropCount after seed = %d, want 3 (N=3 seed step did not establish the expected starting state)", seeded.BackdropCount)
+	}
+
+	// N+2 = 5 distinct local fanart files -- MORE than the 3 the platform
+	// currently holds, so uploadFanartSet's loop (internal/publish/publisher.go)
+	// walks past the platform's actual current count partway through this
+	// same push. Fixed content for the whole test: every run re-syncs the
+	// SAME bytes, which is what lets the final content-hash check below prove
+	// a run actually rewrote slot 0 to the local file's bytes rather than
+	// merely leaving the seeded bytes in place under a count that happens to
+	// read right.
+	dir := t.TempDir()
+	localFanart := []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg", "fanart4.jpg", "fanart5.jpg"}
+	localContent := make([][]byte, len(localFanart))
+	for i, name := range localFanart {
+		localContent[i] = bandJPEG(t, 0x60+i)
+		if err := os.WriteFile(filepath.Join(dir, name), localContent[i], 0o600); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+	}
+	wantCount := len(localFanart)
+
+	p := New(Deps{
+		Logger: logger,
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "live-emby-oor", ConnectionID: "c-emby", PlatformArtistID: env.itemID},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "live-emby-uat", Type: connection.TypeEmby, URL: env.url, APIKey: env.apiKey, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: env.userID, FeatureImageWrite: true}},
+		}},
+	})
+	art := &artist.Artist{ID: "live-emby-oor", Name: "Live UAT Artist", Path: dir}
+
+	for run := 1; run <= 3; run++ {
+		warnings := p.SyncAllFanartToPlatforms(ctx, art)
+		// PINNED, not merely logged: a #3126-shaped false failure (an upload
+		// that lands but is reported as an error) would show up here, and an
+		// operator-facing warning is itself evidence something needs
+		// investigating -- the sibling
+		// TestLiveEmby_SyncAllFanartToPlatforms_RepeatedRunsDoNotInflate
+		// applies the identical Fatalf-on-any-warning bar.
+		if len(warnings) != 0 {
+			t.Fatalf("run %d: SyncAllFanartToPlatforms returned warnings: %v", run, warnings)
+		}
+		after := pollBackdropDetail(ctx, t, client, env.itemID, wantCount)
+		// THE PINNED ASSERTION: exact count, both directions, every run --
+		// not merely "at least as many as local files". A regression to
+		// Jellyfin-shaped unbounded append would read 6 already on run 1; a
+		// one-time-catch-up-then-drift regression would read past 5 on run 2
+		// or run 3 even if run 1 happened to land on 5. Either shape fails
+		// here.
+		if after.BackdropCount != wantCount {
+			t.Errorf("run %d: BackdropCount = %d, want %d (converged to the local file count, not growing further)", run, after.BackdropCount, wantCount)
+		}
+		t.Logf("run %d: BackdropCount=%d", run, after.BackdropCount)
+	}
+
+	// CONTENT VERIFICATION, not just count: prove the final sync actually
+	// REWROTE slots to the local bytes rather than a slot silently holding
+	// stale (seeded) content while the count coincidentally reads right.
+	// Checks the two slots most likely to reveal a wrong-target write: index
+	// 0 (originally seeded with different bytes, seedA) and the last local
+	// index (originally not present on the platform at all, so its presence
+	// with the WRONG bytes would mean something else landed there instead).
+	slot0, _, err := client.GetArtistBackdrop(ctx, env.itemID, 0)
+	if err != nil {
+		t.Fatalf("reading slot 0 after final run: %v", err)
+	}
+	if hashOf(slot0) != hashOf(localContent[0]) {
+		t.Errorf("slot 0 does not hold fanart.jpg's bytes after the final sync -- count reads right but content is wrong")
+	}
+	lastIdx := len(localContent) - 1
+	slotLast, _, err := client.GetArtistBackdrop(ctx, env.itemID, lastIdx)
+	if err != nil {
+		t.Fatalf("reading slot %d after final run: %v", lastIdx, err)
+	}
+	if hashOf(slotLast) != hashOf(localContent[lastIdx]) {
+		t.Errorf("slot %d does not hold %s's bytes after the final sync -- count reads right but content is wrong", lastIdx, localFanart[lastIdx])
 	}
 }
