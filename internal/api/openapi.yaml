@@ -4924,6 +4924,26 @@ paths:
                     type: array
                     items:
                       type: object
+                      properties:
+                        rule_id:
+                          type: string
+                          description: ID of the rule that generated this violation.
+                        rule_name:
+                          type: string
+                          description: Display name of the rule that generated this violation.
+                        category:
+                          type: string
+                          description: Functional grouping of the rule (nfo, image, or metadata).
+                        severity:
+                          type: string
+                          enum: [error, warning, info]
+                          description: Violation severity level.
+                        message:
+                          type: string
+                          description: Human-readable description of the violation.
+                        fixable:
+                          type: boolean
+                          description: Whether this violation can be automatically fixed.
                     description: List of active violations for this artist.
                   rules_passed:
                     type: integer
