@@ -4154,6 +4154,39 @@ paths:
                   failures:
                     type: integer
                     description: Number of artist/connection pairs whose prune failed and were skipped.
+                  plan:
+                    type: array
+                    description: >-
+                      One entry per planned deletion: which index goes, which
+                      index survives it, and what actually became of it. The
+                      per-entry `outcome` is the authoritative record -- read
+                      it rather than inferring from backdrops_removed.
+                      Indices are the DETECTION-TIME slots.
+                    items:
+                      type: object
+                      properties:
+                        artist_id:
+                          type: string
+                        connection_id:
+                          type: string
+                        index:
+                          type: integer
+                          description: The backdrop index to be deleted.
+                        survivor:
+                          type: integer
+                          description: The index of the copy that is kept.
+                        outcome:
+                          type: string
+                          enum: [planned, deleted, skipped, failed]
+                          description: >-
+                            What became of this entry. `planned` means no
+                            delete was attempted. `deleted` means the platform
+                            confirmed it. `skipped` means a pre-delete
+                            re-verify refused it because the candidate or its
+                            survivor changed since detection. `failed` means
+                            the delete was attempted and the platform errored,
+                            leaving that connection's remaining entries
+                            unattempted.
         "400":
           description: >-
             The scope is missing (neither artist_id nor all_artists),
@@ -4221,6 +4254,25 @@ paths:
                     type: integer
                   failures:
                     type: integer
+                  plan:
+                    type: array
+                    description: >-
+                      The plan as it stood when the run failed, same shape as
+                      the 200 body's plan.
+                    items:
+                      type: object
+                      properties:
+                        artist_id:
+                          type: string
+                        connection_id:
+                          type: string
+                        index:
+                          type: integer
+                        survivor:
+                          type: integer
+                        outcome:
+                          type: string
+                          enum: [planned, deleted, skipped, failed]
                   partial:
                     type: boolean
                     description: >-
