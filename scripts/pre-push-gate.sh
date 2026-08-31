@@ -464,7 +464,7 @@ if [ "$run_vuln" -eq 1 ]; then
   # `go run`, no local install required). Default source-based reachability
   # mode (no -scan=module) so only actually-reachable vulnerabilities gate,
   # and whole-module ./... scope to match CI's authoritative behavior.
-  if ! go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...; then
+  if ! go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...; then
     echo ""
     echo "FAIL: govulncheck exited non-zero -- a reachable vulnerability, or a tool/download/run error; see the govulncheck output above" >&2
     exit 1

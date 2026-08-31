@@ -79,7 +79,7 @@ jobs:
 
       - name: Install govulncheck
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 
       - name: Run govulncheck
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

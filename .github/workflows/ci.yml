@@ -330,7 +330,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.12.2
+          version: v2.13.2
           # Invalidate the action's result cache daily (default is 7 days) so a
           # stale cache cannot resurrect a phantom finding across tool/action
           # bumps. PR #1821 hit exactly this: a cached analysis surfaced an
