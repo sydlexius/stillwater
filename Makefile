@@ -131,7 +131,7 @@ hadolint:
 
 ## vulncheck: Scan for known vulnerabilities (govulncheck, pinned to the CI version)
 vulncheck:
-	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
 ## fmt: Format all Go and Templ files
 fmt:
@@ -199,7 +199,7 @@ audit:
 	OVERALL=0; \
 	\
 	echo "[audit] === govulncheck (gating) ==="; \
-	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...; \
+	go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...; \
 	GOVULN_STATUS=$$?; \
 	if [ "$$GOVULN_STATUS" -eq 0 ]; then GOVULN_RESULT="PASS"; else GOVULN_RESULT="FAIL"; OVERALL=1; fi; \
 	\

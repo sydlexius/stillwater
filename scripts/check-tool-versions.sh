@@ -118,6 +118,38 @@ tw_docker=$(grep -oE 'TAILWIND_VERSION=v[0-9.]+' build/docker/Dockerfile \
 require "tailwind" "$tw_action" "$tw_docker" ".github/actions/setup-tailwind" "build/docker/Dockerfile" \
   fix_dockerfile_tailwind
 
+# Go-parsing tool pins: golangci-lint and govulncheck do not merely COMPILE this
+# module, they parse and type-check it, so each must be built with a Go at least
+# as new as the `go` directive. A tool built with an older Go fails hard on a
+# newer target -- golangci-lint refuses its config ("the Go language version
+# (go1.26) used to build golangci-lint is lower than the targeted Go version"),
+# and govulncheck panics inside its vendored x/tools SSA builder ("panic:
+# unexpected expr"). Neither is a version STRING that can be compared against
+# go.mod: the coupled quantity is the Go release each tool BINARY was built
+# with, which is knowable only by downloading it (govulncheck's is transitive,
+# buried in its own go.mod as an x/tools version).
+#
+# So this is a tripwire, not an equality check. TOOL_PINS_VALIDATED_FOR_GO
+# records the `go` directive these pins were last confirmed working against.
+# Bumping go.mod without revalidating trips it here, offline and in one second,
+# instead of in CI three jobs deep. Discovered the expensive way in #3158, where
+# a Dependabot base-image bump took out Lint, Build, and the vulnerability scan
+# in sequence, each behind a separate red CI round.
+#
+# To clear a trip: bump the tool pins if needed, confirm both run clean against
+# the new toolchain, then set this to the new go.mod value.
+TOOL_PINS_VALIDATED_FOR_GO="1.27.0"
+if [ -n "$go_mod" ] && [ "$go_mod" != "$TOOL_PINS_VALIDATED_FOR_GO" ]; then
+  echo "FAIL: go-parsing tool pins were validated for go $TOOL_PINS_VALIDATED_FOR_GO but go.mod now targets $go_mod" >&2
+  echo "      golangci-lint (.github/workflows/ci.yml, .github/copilot-setup-steps.yml) and" >&2
+  echo "      govulncheck (.github/workflows/security.yml, scripts/pre-push-gate.sh, Makefile)" >&2
+  echo "      must each be built with a Go >= the go directive, or they fail hard on this tree." >&2
+  echo "      Revalidate both against go $go_mod, then set TOOL_PINS_VALIDATED_FOR_GO in $0." >&2
+  errors=$((errors + 1))
+else
+  echo "OK: go-parsing tool pins validated for go $TOOL_PINS_VALIDATED_FOR_GO (golangci-lint, govulncheck)"
+fi
+
 
 if [ "$errors" -gt 0 ]; then
   echo "" >&2
