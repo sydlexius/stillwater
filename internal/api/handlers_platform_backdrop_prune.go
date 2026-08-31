@@ -217,6 +217,26 @@ type platformPruneRequest struct {
 // The form branch parses booleans STRICTLY. An unparsable "all_artists" is a
 // 400, never a false: a malformed value must not silently become a DIFFERENT
 // request than the operator authorized, on a path that deletes artwork.
+//
+// CONTENT-TYPE DISPATCH IS A NEGATED SAFE-LIST, and that is a deliberate
+// decision rather than an oversight (hostile review, Minor 5). Anything that
+// is not exactly application/x-www-form-urlencoded -- text/plain, an absent
+// or malformed type, multipart/form-data -- falls through to the JSON
+// decoder. On this repo's usual reading that inversion is the wrong shape for
+// a destructive endpoint, and a positive allow-list answering 415 would be
+// cleaner in isolation.
+//
+// It is kept because the fallthrough is already FAIL-CLOSED and the
+// alternative costs more than it buys. decodePHashBody rejects anything that
+// is not a valid JSON object with a 400, so a mislabeled body cannot reach
+// the prune: the failure mode is a 400 that names JSON rather than a 415 that
+// names the media type, which is a diagnosability nit, not a safety gap. And
+// handlers_phash_repair.go -- the sibling destructive endpoint this one
+// deliberately mirrors -- dispatches identically, so changing only this
+// handler would make the two scope-guarded destructive endpoints disagree
+// about their own request contract while fixing nothing reachable. If this
+// changes, it should change for both at once, which is its own piece of work
+// rather than a fix-round edit.
 func decodePlatformPruneRequest(w http.ResponseWriter, req *http.Request) (platformPruneRequest, bool) {
 	var body platformPruneRequest
 	ct := req.Header.Get("Content-Type")

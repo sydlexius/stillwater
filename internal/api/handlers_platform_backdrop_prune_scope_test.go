@@ -75,16 +75,29 @@ func TestPlatformBackdropDuplicatesPrune_AcceptsFormEncodedScope(t *testing.T) {
 	}
 }
 
-// TestPlatformBackdropDuplicatesPrune_RejectsAMalformedFormBoolean. A
-// malformed "dry_run" must not read as false: that would turn a rehearsal
-// into a real, irreversible delete, and it would look like a success.
-// Asserted alongside a malformed all_artists so the strictness is not
-// accidentally specific to one field.
+// TestPlatformBackdropDuplicatesPrune_RejectsAMalformedFormBoolean. An
+// unparsable all_artists must be a 400 NAMING THE BOOLEAN, never silently
+// read as false: on a path that deletes artwork, a malformed value must not
+// become a different, narrower request than the client actually sent.
+//
+// THE ASSERTION IS THE MESSAGE, NOT THE STATUS, and the artist_id case is
+// why (hostile review, Important 2). An earlier version tested only bodies
+// carrying no artist_id, so under a lenient `v, _ := strconv.ParseBool(raw)`
+// mutant AllArtists merely became false and the request 400'd anyway -- for
+// the MISSING-SCOPE reason. Status alone cannot tell those two 400s apart,
+// so the mutant survived. With artist_id PRESENT the scope is valid whatever
+// the boolean decodes to, so only the strict parse can produce a 400 at all:
+// under the mutant that request reaches the publisher and 500s.
 func TestPlatformBackdropDuplicatesPrune_RejectsAMalformedFormBoolean(t *testing.T) {
 	t.Parallel()
 	for _, body := range []string{
+		// No scope: 400 either way, but the MESSAGE must still name the
+		// boolean rather than the missing scope.
 		"all_artists=sure",
 		"all_artists=maybe",
+		// A VALID scope alongside the malformed boolean. Nothing but the
+		// strict parse can reject this one.
+		"artist_id=a1&all_artists=sure",
 	} {
 		t.Run(body, func(t *testing.T) {
 			t.Parallel()
@@ -96,7 +109,14 @@ func TestPlatformBackdropDuplicatesPrune_RejectsAMalformedFormBoolean(t *testing
 			r.handlePlatformBackdropDuplicatesPrune(w, req)
 
 			if w.Code != http.StatusBadRequest {
-				t.Errorf("status = %d, want 400 for %q", w.Code, body)
+				t.Fatalf("status = %d, want 400 for %q; body: %s", w.Code, body, w.Body.String())
+			}
+			var got map[string]string
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decoding body for %q: %v", body, err)
+			}
+			if want := "invalid boolean for all_artists"; got["error"] != want {
+				t.Errorf("error = %q, want %q -- a 400 for the wrong REASON is how a lenient parse hides", got["error"], want)
 			}
 		})
 	}
@@ -205,5 +225,45 @@ func TestPlatformBackdropDuplicatesPrune_ScopeErrorsAreFixedMessages(t *testing.
 	}
 	if len(seen) != len(cases) {
 		t.Errorf("the scope refusals collapsed to %d distinct messages; a caller cannot tell a missing scope from a contradictory one", len(seen))
+	}
+}
+
+// TestPlatformBackdropDuplicatesPrune_FormEncodingConformsToTheSpec closes the
+// gap between what the shipping UI POSTs and what openapi.yaml DECLARES.
+//
+// Every other form test in this file calls the handler directly, which
+// bypasses the spec entirely -- so a requestBody declaring only
+// application/json passed all of them while the report page's htmx buttons
+// (platform_backdrop_duplicates.templ) emit form-encoded, the one media type
+// the spec called non-conformant. Prose in a requestBody DESCRIPTION saying
+// "form-encoded is accepted" is not a media type; only an entry under
+// `content:` is.
+//
+// serveValidated is the point of this test: it validates the request against
+// the spec BEFORE the handler runs, so this fails loudly if the
+// x-www-form-urlencoded content entry is ever dropped again. The JSON case
+// rides along so a regression that broke JSON while fixing form would not
+// slip through.
+func TestPlatformBackdropDuplicatesPrune_FormEncodingConformsToTheSpec(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, contentType, body string
+	}{
+		{"form-encoded, as the report page posts", "application/x-www-form-urlencoded", "all_artists=true"},
+		{"json, as the API posts", "application/json", `{"all_artists": true}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := testRouterWithPlatformPublisher(t)
+			req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
+				"/api/v1/reports/platform-backdrop-duplicates/prune", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+
+			w := serveValidated(t, http.HandlerFunc(r.handlePlatformBackdropDuplicatesPrune), req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }

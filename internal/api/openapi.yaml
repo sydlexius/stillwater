@@ -30,6 +30,25 @@ components:
       description: "Deprecated: prefer bearerAuth (Authorization header). Query-string tokens risk leakage via logs and referrers."
       x-deprecated: true
   schemas:
+    PlatformBackdropPruneRequest:
+      type: object
+      description: >-
+        Scope for a platform backdrop prune (#3139). Referenced by BOTH the
+        application/json and application/x-www-form-urlencoded request bodies
+        so the two encodings cannot drift: the API posts JSON, the report
+        page's htmx buttons post form-encoded, and they describe the same
+        request.
+      properties:
+        artist_id:
+          type: string
+          description: >-
+            Scope the prune to one artist. Exactly one of this or all_artists
+            is required.
+        all_artists:
+          type: boolean
+          description: >-
+            Run library-wide. Must be set explicitly; there is no library-wide
+            default.
     PHashRegistryCoverage:
       type: object
       description: >-
@@ -4036,23 +4055,18 @@ paths:
       requestBody:
         required: true
         description: >-
-          Accepted as JSON or as application/x-www-form-urlencoded (the report
-          page's htmx buttons post the latter).
+          Accepted as JSON or as application/x-www-form-urlencoded. BOTH are
+          declared under content below, deliberately: the report page's htmx
+          buttons post form-encoded, and a media type mentioned only in this
+          description is not a declared media type -- a spec listing JSON
+          alone declares the shipping UI's own requests non-conformant.
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                artist_id:
-                  type: string
-                  description: >-
-                    Scope the prune to one artist. Exactly one of this or
-                    all_artists is required.
-                all_artists:
-                  type: boolean
-                  description: >-
-                    Run library-wide. Must be set explicitly; there is no
-                    library-wide default.
+              $ref: '#/components/schemas/PlatformBackdropPruneRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PlatformBackdropPruneRequest'
       responses:
         "200":
           description: Prune completed (individual per-artist/connection failures do not fail the request).

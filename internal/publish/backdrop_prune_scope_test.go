@@ -324,3 +324,62 @@ func TestPrune_SurvivingBytesAreTheKeptCopy(t *testing.T) {
 		}
 	}
 }
+
+// TestPruneScope_ArtistGetterReturningNilWithoutErrorIsRefused pins the
+// fail-closed direction of pruneOneArtist's `a == nil` guard, which mutation
+// testing found unreachable through the ordinary fakes (hostile review,
+// Minor 4): both artist.Service.GetByID and scopedArtistLister.GetByID report
+// a missing artist as an ERROR, so every other test lands on the error branch
+// and deleting the guard changed nothing.
+//
+// nilArtistGetter (relink_reconcile_test.go, same package) models the shape
+// that reaches it: a successful lookup that finds nothing. That is not
+// hypothetical -- the publisher depends on the narrow artistGetter interface,
+// which documents no not-found convention, and artist.Service's own GetByMBID
+// returns exactly (nil, nil) for a missing row in the same file as GetByID.
+// An implementor following THAT sibling hands this code a nil artist with no
+// error; without the guard the prune dereferences it.
+//
+// A scope naming an artist the getter cannot produce must ERROR -- never fall
+// through to the library-wide sweep below it, and never panic on the nil.
+
+func TestPruneScope_ArtistGetterReturningNilWithoutErrorIsRefused(t *testing.T) {
+	fake := &fakeBackdropClient{backdrops: dupPair(), failAt: -1, failDeleteAt: -1}
+	prev := backdropPruneClientFactory
+	t.Cleanup(func() { backdropPruneClientFactory = prev })
+	backdropPruneClientFactory = func(*connection.Connection, *slog.Logger) backdropPruneClient { return fake }
+
+	lister := &fakePlatformLister{
+		ids:     []artist.PlatformID{{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"}},
+		artists: []artist.Artist{{ID: "a1", Name: "Test Artist"}},
+	}
+	p := New(Deps{
+		ArtistService: lister,
+		ArtistLister:  lister,
+		ArtistGetter:  nilArtistGetter{},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {
+				ID: "c-emby", Name: "emby", Type: connection.TypeEmby, Enabled: true, Status: "ok",
+				Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true},
+			},
+		}},
+		Logger: silentLogger(),
+	})
+
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(),
+		PlatformBackdropPruneScope{ArtistID: "a1"})
+	if err == nil {
+		t.Fatal("want an error when the getter reports a miss as (nil, nil); a nil artist must not fall through to the library sweep")
+	}
+	// PRECONDITION: the fixture was deletable, so "nothing was deleted" is a
+	// statement about the guard rather than about an empty fixture.
+	if len(fake.backdrops) != 2 {
+		t.Fatalf("fixture no longer holds its two byte-identical backdrops: %d", len(fake.backdrops))
+	}
+	if len(fake.deleted) != 0 {
+		t.Errorf("refused the run but deleted %v first", fake.deleted)
+	}
+	if res.BackdropsRemoved != 0 {
+		t.Errorf("BackdropsRemoved = %d on a refused run, want 0", res.BackdropsRemoved)
+	}
+}

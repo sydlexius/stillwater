@@ -77,6 +77,34 @@ func TestLiveEmby_ScopedPruneLeavesTheBystanderUntouched(t *testing.T) {
 				t.Fatalf("item %s: seeding backdrop %d: %v", itemID, i, err)
 			}
 		}
+		// ASSERT THE FIXTURE'S DEFINING PROPERTY, READ BACK FROM THE PEER --
+		// not its cardinality (hostile review, Minor 3). Counting three
+		// backdrops says nothing about whether two of them are byte-identical,
+		// and an item seeded with three DISTINCT images has nothing prunable:
+		// it would then survive even a completely unscoped library-wide sweep,
+		// so the bystander assertion at the end of this test would pass with
+		// the scope entirely broken. Verified: the reviewer re-seeded the
+		// bystander with distinct images, left the broken-scope mutation in,
+		// and the test went green.
+		//
+		// Read back from Emby rather than hashing the local payloads, because
+		// the claim that matters is what the PEER stores. A server that
+		// re-encoded or deduplicated on upload would break the fixture in a
+		// way local bytes cannot see.
+		var slots [][]byte
+		for i := 0; i < 3; i++ {
+			data, _, err := client.GetArtistBackdrop(ctx, itemID, i)
+			if err != nil {
+				t.Fatalf("item %s: reading back backdrop %d: %v", itemID, i, err)
+			}
+			slots = append(slots, data)
+		}
+		if hashOf(slots[0]) != hashOf(slots[1]) {
+			t.Fatalf("item %s: slots 0 and 1 are NOT byte-identical on the peer, so this item has nothing prunable and every assertion below it is vacuous", itemID)
+		}
+		if hashOf(slots[0]) == hashOf(slots[2]) {
+			t.Fatalf("item %s: slot 2 is byte-identical to the duplicate pair, so a correct prune would remove TWO backdrops, not one", itemID)
+		}
 	}
 	countOf := func(itemID string) int {
 		t.Helper()
