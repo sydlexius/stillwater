@@ -4,6 +4,10 @@
 // additive (SyncAllFanartToPlatforms never deletes surplus indices), so the
 // copies already pushed to Emby/Jellyfin persist. This prunes them: content-
 // matched (sha256), exact-only, admin-triggered.
+//
+// SCOPED (#3139). Every run names exactly one of a single artist or an
+// explicit library-wide flag -- see PlatformBackdropPruneScope -- so a
+// forgotten scope cannot become a library-wide delete.
 package publish
 
 import (
@@ -358,18 +362,89 @@ type PlatformBackdropPruneResult struct {
 	Failures       []PlatformBackdropPruneFailure
 }
 
+// PlatformBackdropPruneScope narrows a prune run.
+//
+// EXACTLY ONE of ArtistID or AllArtists is required, and a run carrying
+// NEITHER is refused rather than defaulting to the whole library (#3139). The
+// precedent is PHashMismatchScope on the sibling destructive endpoint, and the
+// reason is the same: a forgotten scope must not become a library-wide delete.
+// Enforced in the publisher as well as the handler, so the guarantee does not
+// depend on which caller reached it.
+type PlatformBackdropPruneScope struct {
+	// ArtistID scopes the run to one artist.
+	ArtistID string
+	// AllArtists must be set explicitly to page the whole library.
+	AllArtists bool
+}
+
+// The scope-validation sentinels. Exported and distinguishable (via
+// errors.Is) so an HTTP layer can map each to its OWN fixed, client-safe
+// message rather than echoing the error's text -- raw error text on a response
+// is how internals leak.
+var (
+	// ErrPruneScopeMissing: neither ArtistID nor AllArtists was set.
+	ErrPruneScopeMissing = errors.New("an artist scope is required; set AllArtists to run library-wide")
+	// ErrPruneScopeAmbiguous: both were set.
+	ErrPruneScopeAmbiguous = errors.New("scope is mutually exclusive: set exactly one of ArtistID or AllArtists")
+)
+
+// Validate enforces the scope invariants. Every failure is an error, never a
+// silent normalization: on a path that deletes artwork, an unusable parameter
+// is a refusal, not a nudge back to a default nobody asked for.
+//
+// Exported so an HTTP layer can reject a bad scope with a 400 before claiming
+// the singleton, WITHOUT that being the only place the rule holds:
+// PrunePlatformBackdropDuplicates calls it again itself.
+func (s PlatformBackdropPruneScope) Validate() error {
+	if s.ArtistID == "" && !s.AllArtists {
+		return ErrPruneScopeMissing
+	}
+	if s.ArtistID != "" && s.AllArtists {
+		return ErrPruneScopeAmbiguous
+	}
+	return nil
+}
+
 // PrunePlatformBackdropDuplicates deletes byte-identical redundant backdrops
-// on every connected, image-write-enabled platform, high-index-first.
+// on connected, image-write-enabled platforms, high-index-first, WITHIN THE
+// GIVEN SCOPE.
+//
 // Re-detects from the platform on every call (does not trust a prior scan
 // result, which may be stale by the time an operator triggers the prune).
 // Exact-only: a deleted copy is byte-identical to a kept one, so nothing is
 // lost. Per artist/connection failures are collected and the batch
-// continues; only artist paging and nil-wiring guards are hard returns.
-func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context) (PlatformBackdropPruneResult, error) {
+// continues; scope validation, artist paging, and nil-wiring guards are hard
+// returns.
+//
+// scope.Validate is called HERE as well as at the handler, so the either/or
+// requirement holds for every caller rather than for one door (#3139).
+func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context, scope PlatformBackdropPruneScope) (PlatformBackdropPruneResult, error) {
 	if p == nil || p.artistService == nil || p.connectionService == nil || p.artistLister == nil {
 		return PlatformBackdropPruneResult{}, fmt.Errorf("prune platform backdrop duplicates: publisher not fully wired")
 	}
+	if err := scope.Validate(); err != nil {
+		return PlatformBackdropPruneResult{}, fmt.Errorf("prune platform backdrop duplicates: %w", err)
+	}
 	var result PlatformBackdropPruneResult
+
+	if scope.ArtistID != "" {
+		if p.artistGetter == nil {
+			return result, fmt.Errorf("prune platform backdrop duplicates: artist lookup not wired; cannot resolve a scoped artist")
+		}
+		a, err := p.artistGetter.GetByID(ctx, scope.ArtistID)
+		if err != nil {
+			return result, fmt.Errorf("prune platform backdrop duplicates: loading artist %s: %w", scope.ArtistID, err)
+		}
+		// A scoped run whose artist cannot be resolved FAILS rather than
+		// falling through to the library-wide loop below -- the same
+		// fail-closed direction as a missing scope.
+		if a == nil {
+			return result, fmt.Errorf("prune platform backdrop duplicates: artist %s not found", scope.ArtistID)
+		}
+		p.pruneOneArtist(ctx, a, &result)
+		return result, nil
+	}
+
 	page := 1
 	for {
 		artists, _, err := p.artistLister.List(ctx, artist.ListParams{Page: page, PageSize: scanBackdropPageSize})

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -302,7 +303,7 @@ func TestPlatformBackdropDuplicatesPrune_ConflictWhenRunning(t *testing.T) {
 	r.platformPruneRunning = true
 	r.platformPruneMu.Unlock()
 
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	w := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(w, req)
 
@@ -331,7 +332,7 @@ func TestPlatformBackdropDuplicatesPrune_NonAdminForbidden(t *testing.T) {
 
 	ctx := middleware.WithTestUserID(context.Background(), "u1")
 	ctx = middleware.WithTestRole(ctx, "operator")
-	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	w := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(w, req)
 
@@ -348,7 +349,7 @@ func TestPlatformBackdropDuplicatesPrune_PublisherNilFailsLoud(t *testing.T) {
 	r := testRouterWithPlatformPublisher(t)
 	r.publisher = nil
 
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	w := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(w, req)
 
@@ -398,7 +399,7 @@ func TestPlatformBackdropDuplicatesPrune_Error(t *testing.T) {
 		Publisher:         pub,
 	})
 
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	w := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(w, req)
 
@@ -455,7 +456,7 @@ func TestPlatformBackdropDuplicatesPrune_Success(t *testing.T) {
 	t.Parallel()
 	r := testRouterWithPlatformPublisher(t)
 
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	w := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(w, req)
 
@@ -944,7 +945,7 @@ func TestPlatformBackdropDuplicatesPrune_ScansFreshNeverTheCache(t *testing.T) {
 		},
 	}, time.Now())
 
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	w := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(w, req)
 
@@ -996,7 +997,7 @@ func TestPlatformBackdropDuplicatesPage_AfterPruneNeverShowsPrePruneRows(t *test
 		PerArtist:          []publish.ArtistPlatformBackdropDup{{ArtistID: prePruneArtist, Connection: "emby", Redundant: 4}},
 	}, time.Now())
 
-	pruneReq := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	pruneReq := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	pruneRec := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(pruneRec, pruneReq)
 	if pruneRec.Code != http.StatusOK {
@@ -1125,7 +1126,7 @@ func TestPlatformBackdropDuplicatesPrune_AlsoRefreshesTheSidebarCounts(t *testin
 		t.Fatalf("precondition: wanted an established platform count, got %+v", got)
 	}
 
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	w := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(w, req)
 	if w.Code != http.StatusOK {
@@ -1333,7 +1334,7 @@ func TestPlatformBackdropDuplicatesPrune_PartialFailureStillInvalidatesTheCache(
 		t.Fatal("precondition: the cached report must be established before the prune, or 'invalidated' is indistinguishable from 'never set'")
 	}
 
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	w := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(w, req)
 
@@ -1443,7 +1444,7 @@ func TestPlatformBackdropDuplicatesPrune_ErrorBodyCarriesPartialAccounting(t *te
 	}
 	lister.setPage1([]artist.Artist{*a})
 
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", nil)
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost, "/api/v1/reports/platform-backdrop-duplicates/prune", allArtistsPruneBody())
 	w := httptest.NewRecorder()
 	r.handlePlatformBackdropDuplicatesPrune(w, req)
 
@@ -1496,4 +1497,17 @@ func TestPlatformBackdropDuplicatesPrune_ErrorBodyCarriesPartialAccounting(t *te
 	if body["error"] != "prune failed" {
 		t.Errorf(`body["error"] = %v, want "prune failed"`, body["error"])
 	}
+}
+
+// allArtistsPruneBody returns the request body every library-wide prune test
+// must now send. The endpoint refuses a request carrying no scope rather than
+// defaulting to the whole library (#3139), so a nil body is a 400 and would
+// no longer reach the publisher at all.
+//
+// A fresh reader per call, deliberately: several tests issue two requests
+// (the concurrency test in particular), and a shared reader would be drained
+// by the first, silently turning the second into an empty-body request that
+// fails for a reason unrelated to what the test is asserting.
+func allArtistsPruneBody() io.Reader {
+	return strings.NewReader(`{"all_artists": true}`)
 }

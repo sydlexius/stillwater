@@ -18,8 +18,12 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"log/slog"
+	"mime"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/publish"
@@ -192,6 +196,144 @@ func (r *Router) platformDupReportSnapshot() (report publish.PlatformBackdropDup
 	return r.platformDupReport, r.platformDupReportAt, !r.platformDupReportAt.IsZero()
 }
 
+// platformPruneRequest is the POST body for the prune endpoint.
+//
+// An EMPTY body is no longer a library-wide prune (#3139). Exactly one of
+// ArtistID or AllArtists is required, and the publisher enforces the same
+// invariant independently, so a forgotten scope cannot become a library-wide
+// delete through either door.
+type platformPruneRequest struct {
+	// ArtistID scopes the prune to one artist.
+	ArtistID string `json:"artist_id"`
+	// AllArtists must be set explicitly to prune the whole library.
+	AllArtists bool `json:"all_artists"`
+}
+
+// decodePlatformPruneRequest reads the scope from either encoding the two
+// callers actually use: JSON from the API, and form-encoded from the report
+// page's htmx buttons (htmx posts hx-vals as a form body -- no json-enc
+// extension is vendored here, and adding one to serve a two-field payload
+// would be a dependency bought for nothing).
+//
+// The form branch parses booleans STRICTLY. An unparsable "all_artists" is a
+// 400, never a false: a malformed value must not silently become a DIFFERENT
+// request than the operator authorized, on a path that deletes artwork.
+//
+// CONTENT-TYPE DISPATCH IS A NEGATED SAFE-LIST, and that is a deliberate
+// decision rather than an oversight (hostile review, Minor 5). Anything that
+// is not exactly application/x-www-form-urlencoded -- text/plain, an absent
+// or malformed type, multipart/form-data -- falls through to the JSON
+// decoder. On this repo's usual reading that inversion is the wrong shape for
+// a destructive endpoint, and a positive allow-list answering 415 would be
+// cleaner in isolation.
+//
+// It is kept because the fallthrough is already FAIL-CLOSED and the
+// alternative costs more than it buys. decodePHashBody rejects anything that
+// is not a valid JSON object with a 400, so a mislabeled body cannot reach
+// the prune: the failure mode is a 400 that names JSON rather than a 415 that
+// names the media type, which is a diagnosability nit, not a safety gap. And
+// handlers_phash_repair.go -- the sibling destructive endpoint this one
+// deliberately mirrors -- dispatches identically, so changing only this
+// handler would make the two scope-guarded destructive endpoints disagree
+// about their own request contract while fixing nothing reachable. If this
+// changes, it should change for both at once, which is its own piece of work
+// rather than a fix-round edit.
+// LOGGING ON EVERY DECODE-FAILURE PATH (CodeRabbit, PR #3157). A 400 that
+// leaves no server-side trace gives an operator nothing to diagnose with,
+// and this repo's path instructions require an error path whose job is
+// surfacing failure to say so in the log.
+//
+// The split is deliberate and is the same one writePlatformPruneScopeError
+// makes: the LOG gets the detail (the field name, the offending value, the
+// parse error), the CLIENT keeps the fixed string it already had. An earlier
+// round on this branch found unsanitised error detail reaching a response
+// body, carrying the rejected value with it; the response strings below are
+// byte-identical to what shipped before this logging was added.
+func decodePlatformPruneRequest(w http.ResponseWriter, req *http.Request, logger *slog.Logger) (platformPruneRequest, bool) {
+	var body platformPruneRequest
+	ct := req.Header.Get("Content-Type")
+	if mt, _, err := mime.ParseMediaType(ct); err == nil && mt == "application/x-www-form-urlencoded" {
+		req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
+		if err := req.ParseForm(); err != nil {
+			logPruneDecodeFailure(logger, "form body could not be parsed", slog.String("error", err.Error()))
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid form body"})
+			return body, false
+		}
+		body.ArtistID = req.PostFormValue("artist_id")
+		for _, f := range []struct {
+			name string
+			dst  *bool
+		}{
+			{"all_artists", &body.AllArtists},
+		} {
+			raw := req.PostFormValue(f.name)
+			if raw == "" {
+				continue
+			}
+			v, err := strconv.ParseBool(raw)
+			if err != nil {
+				// The offending VALUE goes to the log, never to the response:
+				// it is client-supplied text, and echoing it back is the
+				// reflection shape this endpoint's 400s deliberately avoid.
+				logPruneDecodeFailure(logger, "form field is not a boolean",
+					slog.String("field", f.name), slog.String("value", raw), slog.String("error", err.Error()))
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid boolean for " + f.name})
+				return body, false
+			}
+			*f.dst = v
+		}
+		return body, true
+	}
+	// decodePHashBody writes its own 400 and reports only success/failure, so
+	// the log line is added here rather than inside it -- the shared helper
+	// serves several endpoints and its response shape is not this handler's
+	// to change. The specific reason (malformed JSON, unknown field, trailing
+	// data, oversized body) is already in the response it wrote; what this
+	// adds is the server-side record that a decode failed at all.
+	if !decodePHashBody(w, req, &body) {
+		logPruneDecodeFailure(logger, "request body could not be decoded as JSON",
+			slog.String("content_type", ct))
+		return body, false
+	}
+	return body, true
+}
+
+// logPruneDecodeFailure emits one warning per rejected prune body. Nil-safe
+// because several tests construct a Router without a logger; a missing logger
+// must not turn a 400 into a panic on the error path.
+func logPruneDecodeFailure(logger *slog.Logger, msg string, attrs ...slog.Attr) {
+	if logger == nil {
+		return
+	}
+	logger.LogAttrs(context.Background(), slog.LevelWarn, "platform backdrop prune: "+msg, attrs...)
+}
+
+// writePlatformPruneScopeError maps a scope-validation failure to a 400 with
+// a FIXED, client-safe message, and logs the wrapped error server-side.
+//
+// Deliberate rather than passing the validator's own text through: that text
+// is written for a maintainer reading a log and can carry internal detail,
+// while a response body is client-visible. Each sentinel keeps its own message
+// so a caller can still tell the 400s apart -- mirroring
+// handlers_phash_repair.go, which spells its scope 400s out for the same
+// reason.
+func writePlatformPruneScopeError(w http.ResponseWriter, logger *slog.Logger, err error) {
+	msg := "invalid prune scope"
+	switch {
+	case errors.Is(err, publish.ErrPruneScopeMissing):
+		msg = "artist_id is required unless all_artists is set"
+	case errors.Is(err, publish.ErrPruneScopeAmbiguous):
+		msg = "artist_id and all_artists are mutually exclusive"
+	}
+	// A scope this handler could not classify is a defect in the mapping, not
+	// in the request, and it must be visible: the caller still gets a generic
+	// 400, but the server log names the error so the missing case is findable.
+	if logger != nil {
+		logger.Warn("platform backdrop prune: scope rejected", slog.String("error", err.Error()))
+	}
+	writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+}
+
 // handlePlatformBackdropDuplicatesPrune deletes byte-identical duplicate
 // backdrops on connected platforms, high-index-first. POST
 // /api/v1/reports/platform-backdrop-duplicates/prune. Admin-gated; singleton
@@ -205,6 +347,24 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 		// rationale.
 		r.logger.Error("publisher not wired; platform backdrop prune unavailable")
 		http.Error(w, "prune unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	body, ok := decodePlatformPruneRequest(w, req, r.logger)
+	if !ok {
+		return
+	}
+	scope := publish.PlatformBackdropPruneScope{
+		ArtistID:   body.ArtistID,
+		AllArtists: body.AllArtists,
+	}
+	// Reject an unscoped or contradictory request HERE with a 400, before the
+	// singleton is claimed. The publisher validates the same scope again and
+	// that second check is the load-bearing one -- it holds for every caller,
+	// not just this handler -- but a bad request should read as a client error
+	// and must not hold the prune slot while it is rejected.
+	if err := scope.Validate(); err != nil {
+		writePlatformPruneScopeError(w, r.logger, err)
 		return
 	}
 
@@ -222,7 +382,7 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 		r.platformPruneMu.Unlock()
 	}()
 
-	result, err := r.publisher.PrunePlatformBackdropDuplicates(req.Context())
+	result, err := r.publisher.PrunePlatformBackdropDuplicates(req.Context(), scope)
 	if err != nil {
 		r.logger.Error("pruning platform backdrop duplicates", slog.String("error", err.Error()))
 		// A FAILED prune is not an UNSTARTED prune, and this is the path that
@@ -280,14 +440,10 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 		// backdrops_removed > 0, since a run whose only failures were
 		// pre-delete lookups (BackdropsRemoved == 0, Failures > 0) still
 		// changed nothing but is not equivalent to never having run.
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error":             "prune failed",
-			"artists_processed": result.ArtistsProcessed,
-			"backdrops_removed": result.BackdropsRemoved,
-			"skipped_changed":   result.SkippedChanged,
-			"failures":          len(result.Failures),
-			"partial":           result.BackdropsRemoved > 0 || len(result.Failures) > 0,
-		})
+		errBody := platformPruneResponse(result)
+		errBody["error"] = "prune failed"
+		errBody["partial"] = result.BackdropsRemoved > 0 || len(result.Failures) > 0
+		writeJSON(w, http.StatusInternalServerError, errBody)
 		return
 	}
 
@@ -327,12 +483,19 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 	// here even though the cooldown may defer the actual re-count.
 	r.dupImageCache().TriggerRefresh()
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, platformPruneResponse(result))
+}
+
+// platformPruneResponse renders a prune result as the endpoint's JSON body.
+// Shared by the 200 and the 500 so a partial run reports the same shape as a
+// complete one.
+func platformPruneResponse(result publish.PlatformBackdropPruneResult) map[string]any {
+	return map[string]any{
 		"artists_processed": result.ArtistsProcessed,
 		"backdrops_removed": result.BackdropsRemoved,
 		"skipped_changed":   result.SkippedChanged,
 		"failures":          len(result.Failures),
-	})
+	}
 }
 
 // buildPlatformBackdropDuplicatesView converts the publish-package scan

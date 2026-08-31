@@ -30,6 +30,86 @@ components:
       description: "Deprecated: prefer bearerAuth (Authorization header). Query-string tokens risk leakage via logs and referrers."
       x-deprecated: true
   schemas:
+    PlatformBackdropPruneRequest:
+      type: object
+      description: >-
+        Scope for a platform backdrop prune (#3139). Referenced by BOTH the
+        application/json and application/x-www-form-urlencoded request bodies
+        so the two encodings cannot drift: the API posts JSON, the report
+        page's htmx buttons post form-encoded, and they describe the same
+        request.
+
+        THE oneOf IS THE SCOPE INVARIANT, not decoration. A flat object with
+        two optional properties accepts {}, both fields together, and
+        {"all_artists": false} -- every one of which the handler rejects with
+        a 400. A published schema calling those valid tells a generated client
+        it may emit an unscoped request to a destructive endpoint, which is
+        exactly what declaring the scope in the spec exists to prevent.
+
+        THE TOP-LEVEL type/properties BLOCK IS LOAD-BEARING and must not be
+        collapsed into the branches. kin-openapi's urlencoded decoder needs a
+        flat object schema with typed properties to decode a form body at all;
+        given oneOf alone at the root it fails every form request outright
+        with "unsupported schema of request body" (measured -- the first draft
+        of this fix did exactly that and broke the encoding the shipping UI
+        posts). Declaring the properties here lets the decoder build and
+        type-coerce the object, and the oneOf below then constrains it. Both
+        encodings are exercised against this schema by
+        TestPlatformBackdropDuplicatesPrune_SpecRejectsAnUnscopedPayload.
+
+        EVERY BRANCH PROPERTY BELOW REPEATS ITS `type`, deliberately. That
+        decoder walks INTO each oneOf branch and decodes the same form field
+        once per branch; a branch property carrying only `const`/`minLength`
+        with no type decodes to a different Go value than the typed root
+        property does, and the decoder rejects the request outright with
+        "conflicting values for property" (also measured). Repeating the type
+        makes all three decodes agree. Do not strip these as redundant --
+        they are redundant only to a JSON reader.
+      properties:
+        artist_id:
+          type: string
+          description: >-
+            Scope the prune to one artist. Exactly one of this or all_artists
+            is required.
+        all_artists:
+          type: boolean
+          description: >-
+            Run library-wide. Must be set explicitly; there is no library-wide
+            default.
+      oneOf:
+        - title: One artist
+          required: [artist_id]
+          properties:
+            artist_id:
+              type: string
+              minLength: 1
+            all_artists:
+              type: boolean
+              const: false
+          description: >-
+            all_artists may be omitted entirely, or sent as false. `const:
+            false` rather than leaving it unconstrained, because a branch that
+            ignored all_artists would let {"artist_id": "a1", "all_artists":
+            true} satisfy it -- and since the library branch rejects that on
+            artist_id, oneOf would see exactly one match and call the
+            ambiguous request valid.
+        - title: The whole library
+          required: [all_artists]
+          properties:
+            all_artists:
+              type: boolean
+              const: true
+            artist_id:
+              type: string
+              maxLength: 0
+          description: >-
+            all_artists must be explicitly true: {"all_artists": false} names
+            no scope and the handler refuses it. artist_id must be absent, or
+            present and empty -- maxLength constrains only a PRESENT value, so
+            this permits the ordinary {"all_artists": true} while rejecting a
+            real artist id sent alongside it. Empty is allowed deliberately: a
+            form post carrying a blank artist_id submits `artist_id=`, which
+            the handler treats exactly as absent.
     PHashRegistryCoverage:
       type: object
       description: >-
@@ -4016,15 +4096,38 @@ paths:
       description: >-
         Prunes the byte-identical duplicate backdrops surfaced by the
         /reports/platform-backdrop-duplicates report (#2540 remote prune):
-        for every affected artist and connection, deletes redundant
+        for every in-scope artist and connection, deletes redundant
         exact-duplicate backdrops already pushed out to the platform,
         high-index-first. Re-detects from the platform on every call rather
         than trusting a prior scan result, since it may be stale by the time
-        an operator triggers the prune. Singleton: only one prune run may be
-        in flight at a time, so a concurrent request while one is running is
-        rejected with 409. Admin-only. Triggered by the "Prune Platform
-        Duplicates" button on the report page.
+        an operator triggers the prune.
+
+        SCOPE IS REQUIRED (#3139). Exactly one of artist_id or all_artists
+        must be supplied; a request carrying neither is rejected with 400
+        rather than defaulting to the whole library, and a request carrying
+        both is rejected as mutually exclusive. The publisher enforces the
+        same invariant independently of this handler.
+
+        Singleton: only one prune run may be in flight at a time, so a
+        concurrent request while one is running is rejected with 409.
+        Admin-only. Also triggered by the "Prune All Artists" button and the
+        per-row "Prune This Artist" button on the report page.
       operationId: prunePlatformBackdropDuplicates
+      requestBody:
+        required: true
+        description: >-
+          Accepted as JSON or as application/x-www-form-urlencoded. BOTH are
+          declared under content below, deliberately: the report page's htmx
+          buttons post form-encoded, and a media type mentioned only in this
+          description is not a declared media type -- a spec listing JSON
+          alone declares the shipping UI's own requests non-conformant.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformBackdropPruneRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PlatformBackdropPruneRequest'
       responses:
         "200":
           description: Prune completed (individual per-artist/connection failures do not fail the request).
@@ -4051,6 +4154,17 @@ paths:
                   failures:
                     type: integer
                     description: Number of artist/connection pairs whose prune failed and were skipped.
+        "400":
+          description: >-
+            The scope is missing (neither artist_id nor all_artists),
+            contradictory (both), or the body could not be parsed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
         "401":
           description: >-
             Authentication required. The auth middleware rejects the request
