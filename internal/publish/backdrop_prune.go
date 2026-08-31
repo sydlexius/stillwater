@@ -5,13 +5,10 @@
 // copies already pushed to Emby/Jellyfin persist. This prunes them: content-
 // matched (sha256), exact-only, admin-triggered.
 //
-// SCOPED (#3139). Every run names exactly one of a single artist or an
-// explicit library-wide flag -- see PlatformBackdropPruneScope -- so a
-// forgotten scope cannot become a library-wide delete. Every run also
-// records a per-entry PLAN: which index is deleted, which index survives it,
-// and what actually became of each entry (see PlatformBackdropPrunePlanEntry)
-// -- written by the same loop that does the work, so it cannot drift from
-// what happened.
+// SCOPED and PREVIEWABLE (#3139). Every run names exactly one of a single
+// artist or an explicit library-wide flag -- see PlatformBackdropPruneScope --
+// so a forgotten scope cannot become a library-wide delete; and a DryRun
+// returns the full per-group plan while deleting nothing.
 package publish
 
 import (
@@ -364,9 +361,13 @@ type PlatformBackdropPruneResult struct {
 	// deleted; a skip is not a failure, just a missed opportunity this run.
 	SkippedChanged int
 	Failures       []PlatformBackdropPruneFailure
+	// DryRun echoes the scope's DryRun so a caller cannot mistake a rehearsal
+	// for a run that actually deleted. On a dry run BackdropsRemoved stays 0
+	// and Plan carries what WOULD have been deleted.
+	DryRun bool
 	// Plan is the per-deletion detail: which index goes, which survives it,
-	// and what actually became of it. Populated by the same loop that does
-	// the work, so it cannot drift from what happened.
+	// and -- once the run is over -- what actually became of it. Populated on
+	// both dry and live runs: a plan is worth recording after the fact too.
 	Plan []PlatformBackdropPrunePlanEntry
 }
 
@@ -383,6 +384,11 @@ type PlatformBackdropPruneScope struct {
 	ArtistID string
 	// AllArtists must be set explicitly to page the whole library.
 	AllArtists bool
+	// DryRun computes and returns the full plan without deleting anything.
+	// It is the rehearsal that makes an irreversible sweep validatable: the
+	// operator sees which index survives each group BEFORE any artwork is
+	// removed, and no cache is invalidated because nothing changed.
+	DryRun bool
 }
 
 // The scope-validation sentinels. Exported and distinguishable (via
@@ -421,9 +427,9 @@ func (s PlatformBackdropPruneScope) Validate() error {
 // written by the same loop that performs the work, so they are evidence
 // rather than prediction.
 const (
-	// PrunePlanPlanned: the entry was computed but no delete was attempted --
-	// the fail-safe seed value, so a forgotten assignment reads as "not
-	// attempted", never as "deleted".
+	// PrunePlanPlanned: the entry was computed but no delete was attempted.
+	// The only outcome a DRY RUN can produce, and what a live entry keeps if
+	// an earlier failure stopped the connection before reaching it.
 	PrunePlanPlanned = "planned"
 	// PrunePlanDeleted: the platform confirmed the delete.
 	PrunePlanDeleted = "deleted"
@@ -438,10 +444,11 @@ const (
 // PlatformBackdropPrunePlanEntry is one planned deletion: which index goes,
 // which survives, and what became of it.
 //
-// Index and Survivor are the slots AT DETECTION TIME. On the exact tier they
-// need no post-delete correction: the survivor is always the LOWEST index of
-// its byte-identical group (see dedupBackdropIndices), so it sits below every
-// candidate and the high-index-first delete order never renumbers it.
+// Index and Survivor are the slots AT DETECTION TIME, which is what a dry run
+// showed the operator. On the exact tier they need no post-delete correction:
+// the survivor is always the LOWEST index of its byte-identical group (see
+// dedupBackdropIndices), so it sits below every candidate and the
+// high-index-first delete order never renumbers it.
 type PlatformBackdropPrunePlanEntry struct {
 	ArtistID     string
 	ConnectionID string
@@ -472,6 +479,7 @@ func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context, scope P
 		return PlatformBackdropPruneResult{}, fmt.Errorf("prune platform backdrop duplicates: %w", err)
 	}
 	var result PlatformBackdropPruneResult
+	result.DryRun = scope.DryRun
 
 	if scope.ArtistID != "" {
 		if p.artistGetter == nil {
@@ -487,7 +495,7 @@ func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context, scope P
 		if a == nil {
 			return result, fmt.Errorf("prune platform backdrop duplicates: artist %s not found", scope.ArtistID)
 		}
-		p.pruneOneArtist(ctx, a, &result)
+		p.pruneOneArtist(ctx, a, scope, &result)
 		return result, nil
 	}
 
@@ -501,7 +509,7 @@ func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context, scope P
 			break
 		}
 		for i := range artists {
-			p.pruneOneArtist(ctx, &artists[i], &result)
+			p.pruneOneArtist(ctx, &artists[i], scope, &result)
 		}
 		if len(artists) < scanBackdropPageSize {
 			break
@@ -530,7 +538,7 @@ func verifyBackdropUnchanged(ctx context.Context, client backdropPruneClient, pl
 
 // pruneOneArtist detects and deletes redundant backdrops for one artist
 // across its image-write-enabled platforms, updating result in place.
-func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, result *PlatformBackdropPruneResult) {
+func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope PlatformBackdropPruneScope, result *PlatformBackdropPruneResult) {
 	platformIDs, err := p.artistService.GetPlatformIDs(ctx, a.ID)
 	if err != nil {
 		result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, Err: err.Error()})
@@ -559,13 +567,12 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, result
 		if len(redundant) == 0 {
 			continue
 		}
-		// The plan is recorded from the DETECTION-TIME numbering, and each
-		// entry's Outcome is filled in below by the loop that actually does
-		// the work -- so the plan cannot drift from what happened. planBase
-		// is where THIS connection's entries start in result.Plan, so the
-		// loop below can address its own entries (via
-		// result.Plan[planBase+i]) even after a prior artist/connection has
-		// already appended entries ahead of it.
+		// The plan is recorded from the DETECTION-TIME numbering, which is
+		// what a dry run shows the operator, and each entry's Outcome is
+		// filled in below by the loop that actually does the work -- so the
+		// plan cannot drift from what happened. planBase is where this
+		// connection's entries start, so the loop can address its own entries
+		// without a second pass or a parallel slice.
 		planBase := len(result.Plan)
 		for _, rb := range redundant {
 			result.Plan = append(result.Plan, PlatformBackdropPrunePlanEntry{
@@ -573,6 +580,14 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, result
 				Index: rb.Index, Survivor: rb.Survivor,
 				Outcome: PrunePlanPlanned,
 			})
+		}
+		if scope.DryRun {
+			// Rehearsal: the plan above is the entire deliverable, and every
+			// entry keeps the "planned" outcome so a dry run can never be read
+			// as having deleted anything. Nothing is re-fetched and nothing is
+			// deleted, so ArtistsProcessed and BackdropsRemoved stay at zero
+			// and no cache needs invalidating.
+			continue
 		}
 		removed := 0
 		for i, rb := range redundant { // already descending by Index

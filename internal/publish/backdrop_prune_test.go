@@ -925,7 +925,7 @@ func TestPruneOneArtist_GetPlatformIDsError(t *testing.T) {
 		Logger:            silentLogger(),
 	})
 	var result PlatformBackdropPruneResult
-	p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, &result)
+	p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, PlatformBackdropPruneScope{AllArtists: true}, &result)
 	if len(result.Failures) != 1 {
 		t.Fatalf("Failures = %+v, want 1 entry", result.Failures)
 	}
@@ -955,7 +955,7 @@ func TestPruneOneArtist_ConnectionLoadFailed(t *testing.T) {
 		Logger:            silentLogger(),
 	})
 	var result PlatformBackdropPruneResult
-	p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, &result)
+	p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, PlatformBackdropPruneScope{AllArtists: true}, &result)
 	if len(result.Failures) != 1 {
 		t.Fatalf("Failures = %+v, want 1 entry", result.Failures)
 	}
@@ -986,7 +986,7 @@ func TestPruneOneArtist_DisabledOrUnhealthySkipped(t *testing.T) {
 				Logger:            silentLogger(),
 			})
 			var result PlatformBackdropPruneResult
-			p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, &result)
+			p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, PlatformBackdropPruneScope{AllArtists: true}, &result)
 			if len(result.Failures) != 0 || result.BackdropsRemoved != 0 {
 				t.Fatalf("result = %+v, want no failures and nothing removed", result)
 			}
@@ -1010,7 +1010,7 @@ func TestPruneOneArtist_NilClientSkipped(t *testing.T) {
 		Logger: silentLogger(),
 	})
 	var result PlatformBackdropPruneResult
-	p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, &result)
+	p.pruneOneArtist(context.Background(), &artist.Artist{ID: "a1"}, PlatformBackdropPruneScope{AllArtists: true}, &result)
 	if len(result.Failures) != 0 || result.BackdropsRemoved != 0 {
 		t.Fatalf("result = %+v, want no failures and nothing removed", result)
 	}

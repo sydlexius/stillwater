@@ -76,6 +76,14 @@ components:
           description: >-
             Run library-wide. Must be set explicitly; there is no library-wide
             default.
+        dry_run:
+          type: boolean
+          default: false
+          description: >-
+            Compute and return the plan without deleting anything. Independent
+            of scope, so it is declared at the root only -- it plays no part
+            in the oneOf's artist_id/all_artists invariant and does not need
+            repeating in either branch.
       oneOf:
         - title: One artist
           required: [artist_id]
@@ -4102,6 +4110,11 @@ paths:
         than trusting a prior scan result, since it may be stale by the time
         an operator triggers the prune.
 
+        Set dry_run to receive the full plan (which index survives each
+        group) with nothing deleted and no cached report invalidated.
+        Combined with artist_id, that lets an operator rehearse on one artist
+        before committing to the library.
+
         SCOPE IS REQUIRED (#3139). Exactly one of artist_id or all_artists
         must be supplied; a request carrying neither is rejected with 400
         rather than defaulting to the whole library, and a request carrying
@@ -4109,7 +4122,13 @@ paths:
         same invariant independently of this handler.
 
         Singleton: only one prune run may be in flight at a time, so a
-        concurrent request while one is running is rejected with 409.
+        concurrent request while one is running is rejected with 409. This
+        applies to a dry run exactly like a live one: a library-wide
+        (all_artists) dry run walks the whole library and holds the singleton
+        for the same duration as the real sweep it rehearses (measured at
+        ~62s against a 1221-artist library with two connections), so a real
+        prune started during that rehearsal also gets 409'd until it
+        completes.
         Admin-only. Also triggered by the "Prune All Artists" button and the
         per-row "Prune This Artist" button on the report page.
       operationId: prunePlatformBackdropDuplicates
@@ -4154,14 +4173,22 @@ paths:
                   failures:
                     type: integer
                     description: Number of artist/connection pairs whose prune failed and were skipped.
+                  dry_run:
+                    type: boolean
+                    description: >-
+                      Echoes the request's dry_run, so a rehearsal cannot be
+                      mistaken for a run that deleted. True implies
+                      backdrops_removed is 0 and plan carries what would have
+                      been removed.
                   plan:
                     type: array
                     description: >-
-                      One entry per planned deletion: which index goes, which
-                      index survives it, and what actually became of it. The
-                      per-entry `outcome` is the authoritative record -- read
-                      it rather than inferring from backdrops_removed.
-                      Indices are the DETECTION-TIME slots.
+                      One entry per planned deletion, on dry and live runs
+                      alike: which index goes, which index survives it, and
+                      what actually became of it. The per-entry `outcome` is
+                      the authoritative record -- read it rather than
+                      inferring from backdrops_removed. Indices are the
+                      DETECTION-TIME slots (what a dry run showed).
                     items:
                       type: object
                       properties:
@@ -4180,7 +4207,8 @@ paths:
                           enum: [planned, deleted, skipped, failed]
                           description: >-
                             What became of this entry. `planned` means no
-                            delete was attempted. `deleted` means the platform
+                            delete was attempted and is the only outcome a dry
+                            run produces. `deleted` means the platform
                             confirmed it. `skipped` means a pre-delete
                             re-verify refused it because the candidate or its
                             survivor changed since detection. `failed` means
@@ -4231,11 +4259,13 @@ paths:
         "500":
           description: >-
             The publisher is not wired (plain text via http.Error), or the
-            prune itself failed (#3119: JSON carrying the same partial
-            accounting as the 200 response, since the publisher deletes
-            page by page and may have removed a great many backdrops before
-            the failure that aborted the run). The wrapped error is logged
-            server-side either way.
+            prune itself failed (#3119: JSON carrying the same shape as the
+            200 response -- dry_run and plan included -- since the publisher
+            deletes page by page and may have removed a great many backdrops
+            before the failure that aborted the run, and a dry run can fail
+            too, e.g. a paging or per-artist detection error, without having
+            deleted anything). The wrapped error is logged server-side
+            either way.
           content:
             text/plain:
               schema:
@@ -4254,11 +4284,22 @@ paths:
                     type: integer
                   failures:
                     type: integer
+                  dry_run:
+                    type: boolean
+                    description: >-
+                      Echoes the request's dry_run, same as the 200 body. A
+                      failed dry run still reports true here: the run never
+                      reached a delete, so this is what tells the caller
+                      "this failure describes a rehearsal" even though
+                      partial (below) is false.
                   plan:
                     type: array
                     description: >-
                       The plan as it stood when the run failed, same shape as
-                      the 200 body's plan.
+                      the 200 body's plan. On a dry run this may be partially
+                      populated (earlier artists/connections planned before
+                      the failure) with every entry carrying outcome
+                      "planned", since a dry run never attempts a delete.
                     items:
                       type: object
                       properties:
@@ -4280,7 +4321,12 @@ paths:
                       platform (backdrops_removed > 0 or at least one
                       failure recorded), distinguishing a run that deleted
                       nothing from one an operator should not blindly
-                      retry without checking state first.
+                      retry without checking state first. ALWAYS false when
+                      dry_run is true: a rehearsal never reaches a delete
+                      (#3139), so it cannot have changed the platform no
+                      matter how many failures it recorded while planning --
+                      those failures mean "the plan is incomplete", not "the
+                      platform may differ from what it was".
 
   /reports/duplicates/count:
     get:
