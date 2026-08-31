@@ -33,26 +33,30 @@ func TestNewBackdropPruneClient_SupportedTypes(t *testing.T) {
 	}
 }
 
-// fakeBackdropClient is a fake backdropPruneClient: backdrops holds the
-// artist's backdrop bytes by index, deleted records DeleteImageAtIndex calls
-// in order, failAt (when >= 0) makes GetArtistBackdrop error at that index
-// (exercising the fetch-failure-skips-connection path), and failDeleteAt
-// (when >= 0) makes DeleteImageAtIndex error at that index without recording
-// it in deleted (exercising the delete-failure-stops-connection path).
-// mutateAtVerify, when non-nil, maps an index to bytes that GetArtistBackdrop
-// returns starting on that index's SECOND fetch onward -- i.e. detection
-// (the first fetch, during backdropRedundantIndices) still sees the
-// original backdrops bytes, but the prune loop's re-verify fetch
-// (immediately before delete) sees the mutated bytes instead, simulating a
-// concurrent platform write between detection and delete (the TOCTOU
-// window this guard closes).
-// failAtVerify, when non-nil, maps an index to true to make GetArtistBackdrop
-// error starting on that index's SECOND fetch onward -- i.e. detection (the
-// first fetch) still succeeds, but the prune loop's immediate-pre-delete
-// re-verify fetch errors instead, simulating a platform read failure (rather
-// than a content change) discovered only at re-verify time. This is distinct
-// from failAt, which fails EVERY fetch of an index including detection (so it
-// cannot reach the re-verify branch at all).
+// fakeBackdropClient is a fake backdropPruneClient.
+//
+// IT RE-INDEXES ON DELETE, because both real peers do. Emby 4.9.5.0 was
+// measured directly: after DELETE .../Backdrop/1, the sha256 that had been at
+// index 3 was served at index 2. An earlier version of this fake kept
+// `backdrops` immutable and only recorded the delete, which made every prune
+// test here a test against a platform that does not exist -- and no amount of
+// mutation testing can surface that, since mutating the code under a fixture
+// that does not model the system just moves the disagreement elsewhere.
+//
+// backdrops holds the CURRENT bytes by index and shrinks as deletes land.
+// deleted records the indices DeleteImageAtIndex was ASKED for, in order --
+// the wire-level record of what the platform was told. failAt (>= 0) errors
+// EVERY fetch of that index including detection; failDeleteAt (>= 0) errors
+// that delete without recording it or mutating the list. mutateAtVerify and
+// failAtVerify take effect from an index's SECOND fetch onward, so detection
+// sees the original and the pre-delete re-verify sees a concurrent write or a
+// read failure (the TOCTOU window the guard closes).
+//
+// The verify-keyed knobs are addressed by index, so they are meaningful only
+// for an index nothing has renumbered underneath them. On the exact tier the
+// survivor is the lowest index of its group and deletes run high-index-first,
+// so no index at or below the first delete is ever shifted; every test using
+// these knobs targets one.
 type fakeBackdropClient struct {
 	backdrops      [][]byte
 	deleted        []int
@@ -67,9 +71,17 @@ func (f *fakeBackdropClient) GetArtistDetail(_ context.Context, _ string) (*conn
 	return &connection.ArtistPlatformState{BackdropCount: len(f.backdrops)}, nil
 }
 
+// GetArtistBackdrop serves the CURRENT list. An out-of-range index is an
+// ERROR, not a panic: a real peer answers 404 for a slot that no longer
+// exists, and a prune that has renumbered its targets out from under itself
+// must experience that as a read failure it can fail closed on -- which is a
+// behavior under test, not a test-harness crash.
 func (f *fakeBackdropClient) GetArtistBackdrop(_ context.Context, _ string, i int) ([]byte, string, error) {
 	if f.failAt >= 0 && i == f.failAt {
 		return nil, "", fmt.Errorf("boom at %d", i)
+	}
+	if i < 0 || i >= len(f.backdrops) {
+		return nil, "", fmt.Errorf("index %d out of range (have %d)", i, len(f.backdrops))
 	}
 	if f.fetchCounts == nil {
 		f.fetchCounts = make(map[int]int)
@@ -86,11 +98,17 @@ func (f *fakeBackdropClient) GetArtistBackdrop(_ context.Context, _ string, i in
 	return f.backdrops[i], "image/jpeg", nil
 }
 
+// DeleteImageAtIndex removes the slot and SHIFTS every higher slot down by
+// one, which is what Emby and Jellyfin were measured to do.
 func (f *fakeBackdropClient) DeleteImageAtIndex(_ context.Context, _ string, _ string, i int) error {
 	if f.failDeleteAt >= 0 && i == f.failDeleteAt {
 		return fmt.Errorf("delete boom at %d", i)
 	}
+	if i < 0 || i >= len(f.backdrops) {
+		return fmt.Errorf("delete index %d out of range (have %d)", i, len(f.backdrops))
+	}
 	f.deleted = append(f.deleted, i)
+	f.backdrops = append(f.backdrops[:i], f.backdrops[i+1:]...)
 	return nil
 }
 
@@ -258,7 +276,7 @@ func TestPrunePlatformBackdropDuplicates_ContinuesAfterPerArtistFailure(t *testi
 		Logger:            silentLogger(),
 	})
 
-	res, err := p.PrunePlatformBackdropDuplicates(context.Background())
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true})
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}
@@ -358,7 +376,7 @@ func TestPrunePlatformBackdropDuplicates_DeletesHighIndexFirst(t *testing.T) {
 	dup, distinct := []byte("AAA"), []byte("BBB")
 	fake := &fakeBackdropClient{backdrops: [][]byte{dup, dup, dup, distinct}, failAt: -1, failDeleteAt: -1}
 	p := newTestPublisherWithOneArtistOnePlatform(t, fake) // connection has ImageWrite enabled
-	res, err := p.PrunePlatformBackdropDuplicates(context.Background())
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true})
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}
@@ -390,7 +408,7 @@ func TestPrunePlatformBackdropDuplicates_SkipsWhenContentChangedSinceDetection(t
 	}
 	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
 
-	res, err := p.PrunePlatformBackdropDuplicates(context.Background())
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true})
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}
@@ -428,7 +446,7 @@ func TestPrunePlatformBackdropDuplicates_SkipsWhenSurvivorContentChangedSinceDet
 	}
 	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
 
-	res, err := p.PrunePlatformBackdropDuplicates(context.Background())
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true})
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}
@@ -468,7 +486,7 @@ func TestPrunePlatformBackdropDuplicates_SkipsWhenReVerifyFetchFails(t *testing.
 	}
 	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
 
-	res, err := p.PrunePlatformBackdropDuplicates(context.Background())
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true})
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}
@@ -489,7 +507,7 @@ func TestPrunePlatformBackdropDuplicates_SkipsWhenNoImageWrite(t *testing.T) {
 	dup := []byte("AAA")
 	fake := &fakeBackdropClient{backdrops: [][]byte{dup, dup}, failAt: -1, failDeleteAt: -1}
 	p := newTestPublisherWithOneArtistOnePlatform_NoImageWrite(t, fake)
-	res, err := p.PrunePlatformBackdropDuplicates(context.Background())
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true})
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}
@@ -504,7 +522,7 @@ func TestPrunePlatformBackdropDuplicates_FetchFailureSkipsConnection(t *testing.
 	dup := []byte("AAA")
 	fake := &fakeBackdropClient{backdrops: [][]byte{dup, dup, dup}, failAt: 1, failDeleteAt: -1} // fetch of index 1 errors
 	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
-	res, err := p.PrunePlatformBackdropDuplicates(context.Background())
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true})
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}
@@ -558,12 +576,12 @@ func TestScanPlatformBackdropDuplicates_ListError(t *testing.T) {
 // wiring guard for the prune entry point.
 func TestPrunePlatformBackdropDuplicates_NilWiring(t *testing.T) {
 	var nilP *Publisher
-	if _, err := nilP.PrunePlatformBackdropDuplicates(context.Background()); err == nil {
+	if _, err := nilP.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true}); err == nil {
 		t.Fatal("nil publisher: want error, got nil")
 	}
 
 	p := New(Deps{Logger: silentLogger()})
-	if _, err := p.PrunePlatformBackdropDuplicates(context.Background()); err == nil {
+	if _, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true}); err == nil {
 		t.Fatal("unwired publisher: want error, got nil")
 	}
 }
@@ -577,7 +595,7 @@ func TestPrunePlatformBackdropDuplicates_ListError(t *testing.T) {
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
 		Logger:            silentLogger(),
 	})
-	if _, err := p.PrunePlatformBackdropDuplicates(context.Background()); err == nil {
+	if _, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true}); err == nil {
 		t.Fatal("want error from List failure, got nil")
 	}
 }
@@ -1013,7 +1031,7 @@ func TestPrunePlatformBackdropDuplicates_DeleteFailureStopsConnection(t *testing
 	dup, distinct := []byte("AAA"), []byte("BBB")
 	fake := &fakeBackdropClient{backdrops: [][]byte{dup, dup, dup, dup, distinct}, failAt: -1, failDeleteAt: 2} // second delete (index 2) fails; index 1 still pending
 	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
-	res, err := p.PrunePlatformBackdropDuplicates(context.Background())
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true})
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}

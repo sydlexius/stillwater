@@ -44,10 +44,16 @@ type PlatformBackdropDuplicatesPageView struct {
 // backdrop duplication report (#2540 remote prune). It is a dry-run preview:
 // ScanPlatformBackdropDuplicates re-hashes backdrops read back from the
 // connected platforms and reports redundancy without deleting anything. The
-// "Prune Platform Duplicates" button below posts to
-// /api/v1/reports/platform-backdrop-duplicates/prune (Task 7), which deletes
-// only byte-identical (exact) redundant copies, keeping one survivor per
-// artist/connection.
+// "Prune All Artists" button below posts to
+// /api/v1/reports/platform-backdrop-duplicates/prune with an explicit
+// all_artists scope; each table row additionally carries a per-artist prune
+// (#3139), so an operator can rehearse the destructive sweep on one subject
+// before running it against the whole library. Both delete only byte-identical
+// (exact) redundant copies, keeping one survivor per artist/connection.
+//
+// The hx-vals on every button is LOAD-BEARING, not decoration. The endpoint
+// refuses a request carrying no scope rather than defaulting to the whole
+// library, so a button that posted an empty body would be rejected with a 400.
 templ PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDuplicatesPageView) {
 	@Layout(t(ctx, "platform_backdrop_duplicates.page_title"), assets) {
 		<div class="sw-platform-backdrop-duplicates space-y-6">
@@ -111,6 +117,7 @@ templ PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDup
 								id="platform-backdrop-duplicates-prune-button"
 								class="sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none shrink-0"
 								hx-post="/api/v1/reports/platform-backdrop-duplicates/prune"
+								hx-vals='{"all_artists": true}'
 								hx-swap="none"
 								hx-confirm={ t(ctx, "platform_backdrop_duplicates.prune_confirm") }
 								data-sw-error={ t(ctx, "platform_backdrop_duplicates.prune_response_error") }
@@ -135,6 +142,7 @@ templ PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDup
 									<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_platform") }</th>
 									<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_backdrops") }</th>
 									<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_redundant") }</th>
+									<th class="px-3 py-2 font-medium">{ t(ctx, "platform_backdrop_duplicates.column_actions") }</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -146,6 +154,22 @@ templ PlatformBackdropDuplicatesPage(assets AssetPaths, view PlatformBackdropDup
 										<td class="px-3 py-2">{ row.Connection }</td>
 										<td class="px-3 py-2">{ strconv.Itoa(row.Backdrops) }</td>
 										<td class="px-3 py-2">{ strconv.Itoa(row.Redundant) }</td>
+										<td class="px-3 py-2">
+											<button
+												type="button"
+												class="sw-ff-action sw-platform-backdrop-prune-artist inline-flex items-center rounded-md px-2 py-1 text-xs font-medium focus:outline-none"
+												data-artist-id={ row.ArtistID }
+												hx-post="/api/v1/reports/platform-backdrop-duplicates/prune"
+												hx-vals={ hxValsJSON(map[string]string{"artist_id": row.ArtistID}) }
+												hx-swap="none"
+												hx-confirm={ t(ctx, "platform_backdrop_duplicates.prune_artist_confirm") }
+												data-sw-error={ t(ctx, "platform_backdrop_duplicates.prune_response_error") }
+												data-sw-net-error={ t(ctx, "platform_backdrop_duplicates.prune_send_error") }
+												hx-on::after-request="if(event.detail.successful) location.reload()"
+												hx-on::response-error="alert(this.dataset.swError)"
+												hx-on::send-error="alert(this.dataset.swNetError)"
+											>{ t(ctx, "platform_backdrop_duplicates.prune_artist_button") }</button>
+										</td>
 									</tr>
 								}
 							</tbody>

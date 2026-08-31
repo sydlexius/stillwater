@@ -219,7 +219,11 @@ The page summarizes how many connections and artists are affected and how many r
 
 ### Prune platform duplicates
 
-Click the prune button to delete the exact (byte-identical) redundant backdrops across every connected platform in one pass, keeping one surviving copy per artist per platform. The prune re-scans each platform immediately before deleting, rather than trusting the report you're looking at, so it never acts on a stale count. Only one prune runs at a time; starting a second while one is in progress is rejected rather than allowed to overlap.
+Each row on the report carries a **Prune This Artist** button, and the page as a whole carries **Prune All Artists**. Both delete the exact (byte-identical) redundant backdrops, keeping one surviving copy per artist per platform. The prune re-scans each platform immediately before deleting, rather than trusting the report you're looking at, so it never acts on a stale count. Only one prune runs at a time, whichever button started it; starting a second while one is in progress is rejected rather than allowed to overlap.
+
+The per-artist button exists so the first real use of an irreversible sweep does not have to be a library-wide one. Deleting a backdrop from a media server is not something Stillwater can undo. Being able to try it on one artist, look at the result in Emby or Jellyfin, and only then run it everywhere is the difference between trusting the feature and guessing about it.
+
+There is deliberately no way to run the prune without saying which of the two you mean. A request that names neither one artist nor the whole library is refused rather than quietly treated as "everything".
 
 Because the prune only ever removes copies that are byte-identical to a kept survivor, no distinct artwork is ever lost. If a platform's copy is later needed again, re-running fanart sync from the local library re-pushes it from the local survivor.
 

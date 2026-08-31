@@ -4016,15 +4016,43 @@ paths:
       description: >-
         Prunes the byte-identical duplicate backdrops surfaced by the
         /reports/platform-backdrop-duplicates report (#2540 remote prune):
-        for every affected artist and connection, deletes redundant
+        for every in-scope artist and connection, deletes redundant
         exact-duplicate backdrops already pushed out to the platform,
         high-index-first. Re-detects from the platform on every call rather
         than trusting a prior scan result, since it may be stale by the time
-        an operator triggers the prune. Singleton: only one prune run may be
-        in flight at a time, so a concurrent request while one is running is
-        rejected with 409. Admin-only. Triggered by the "Prune Platform
-        Duplicates" button on the report page.
+        an operator triggers the prune.
+
+        SCOPE IS REQUIRED (#3139). Exactly one of artist_id or all_artists
+        must be supplied; a request carrying neither is rejected with 400
+        rather than defaulting to the whole library, and a request carrying
+        both is rejected as mutually exclusive. The publisher enforces the
+        same invariant independently of this handler.
+
+        Singleton: only one prune run may be in flight at a time, so a
+        concurrent request while one is running is rejected with 409.
+        Admin-only. Also triggered by the "Prune All Artists" button and the
+        per-row "Prune This Artist" button on the report page.
       operationId: prunePlatformBackdropDuplicates
+      requestBody:
+        required: true
+        description: >-
+          Accepted as JSON or as application/x-www-form-urlencoded (the report
+          page's htmx buttons post the latter).
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                artist_id:
+                  type: string
+                  description: >-
+                    Scope the prune to one artist. Exactly one of this or
+                    all_artists is required.
+                all_artists:
+                  type: boolean
+                  description: >-
+                    Run library-wide. Must be set explicitly; there is no
+                    library-wide default.
       responses:
         "200":
           description: Prune completed (individual per-artist/connection failures do not fail the request).
@@ -4051,6 +4079,17 @@ paths:
                   failures:
                     type: integer
                     description: Number of artist/connection pairs whose prune failed and were skipped.
+        "400":
+          description: >-
+            The scope is missing (neither artist_id nor all_artists),
+            contradictory (both), or the body could not be parsed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
         "401":
           description: >-
             Authentication required. The auth middleware rejects the request
