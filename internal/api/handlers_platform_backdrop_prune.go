@@ -488,13 +488,30 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 
 // platformPruneResponse renders a prune result as the endpoint's JSON body.
 // Shared by the 200 and the 500 so a partial run reports the same shape as a
-// complete one.
+// complete one, and so the PLAN -- which index survives each group, and WHAT
+// ACTUALLY BECAME OF IT -- is present in both.
+//
+// Every entry carries an `outcome` (planned/deleted/skipped/failed). Without
+// it a caller seeing a three-entry plan next to backdrops_removed=1 has two
+// numbers and no way to tell which describes their library. The outcomes are
+// written by the loop that does the work, so they cannot drift from it.
 func platformPruneResponse(result publish.PlatformBackdropPruneResult) map[string]any {
+	plan := make([]map[string]any, 0, len(result.Plan))
+	for _, e := range result.Plan {
+		plan = append(plan, map[string]any{
+			"artist_id":     e.ArtistID,
+			"connection_id": e.ConnectionID,
+			"index":         e.Index,
+			"survivor":      e.Survivor,
+			"outcome":       e.Outcome,
+		})
+	}
 	return map[string]any{
 		"artists_processed": result.ArtistsProcessed,
 		"backdrops_removed": result.BackdropsRemoved,
 		"skipped_changed":   result.SkippedChanged,
 		"failures":          len(result.Failures),
+		"plan":              plan,
 	}
 }
 

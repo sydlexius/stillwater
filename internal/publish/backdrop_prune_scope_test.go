@@ -188,6 +188,13 @@ func TestPruneScope_SingleArtistLeavesTheBystanderUntouched(t *testing.T) {
 	if len(bystander.backdrops) != 2 {
 		t.Errorf("bystander has %d backdrops left, want its original 2", len(bystander.backdrops))
 	}
+	// The plan must be scoped too: an entry naming the bystander would mean
+	// the run considered it, whatever it ended up deleting.
+	for _, e := range res.Plan {
+		if e.ArtistID != "a1" {
+			t.Errorf("plan entry %+v names an artist outside the scope", e)
+		}
+	}
 }
 
 // TestPruneScope_AllArtistsStillSweepsEveryone is the counterweight: a scope

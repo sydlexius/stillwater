@@ -7,7 +7,11 @@
 //
 // SCOPED (#3139). Every run names exactly one of a single artist or an
 // explicit library-wide flag -- see PlatformBackdropPruneScope -- so a
-// forgotten scope cannot become a library-wide delete.
+// forgotten scope cannot become a library-wide delete. Every run also
+// records a per-entry PLAN: which index is deleted, which index survives it,
+// and what actually became of each entry (see PlatformBackdropPrunePlanEntry)
+// -- written by the same loop that does the work, so it cannot drift from
+// what happened.
 package publish
 
 import (
@@ -360,6 +364,10 @@ type PlatformBackdropPruneResult struct {
 	// deleted; a skip is not a failure, just a missed opportunity this run.
 	SkippedChanged int
 	Failures       []PlatformBackdropPruneFailure
+	// Plan is the per-deletion detail: which index goes, which survives it,
+	// and what actually became of it. Populated by the same loop that does
+	// the work, so it cannot drift from what happened.
+	Plan []PlatformBackdropPrunePlanEntry
 }
 
 // PlatformBackdropPruneScope narrows a prune run.
@@ -403,6 +411,44 @@ func (s PlatformBackdropPruneScope) Validate() error {
 		return ErrPruneScopeAmbiguous
 	}
 	return nil
+}
+
+// Plan-entry outcomes. Each entry records what ACTUALLY happened to it, so a
+// plan can never drift from the run that produced it.
+//
+// Reporting a plan of three next to a removed-count of one gives an operator
+// two numbers and no way to tell which describes their library. These are
+// written by the same loop that performs the work, so they are evidence
+// rather than prediction.
+const (
+	// PrunePlanPlanned: the entry was computed but no delete was attempted --
+	// the fail-safe seed value, so a forgotten assignment reads as "not
+	// attempted", never as "deleted".
+	PrunePlanPlanned = "planned"
+	// PrunePlanDeleted: the platform confirmed the delete.
+	PrunePlanDeleted = "deleted"
+	// PrunePlanSkipped: a pre-delete re-verify refused it (the candidate or
+	// its survivor changed since detection). Nothing was deleted.
+	PrunePlanSkipped = "skipped"
+	// PrunePlanFailed: the delete was attempted and the platform returned an
+	// error, leaving that connection's remaining entries unattempted.
+	PrunePlanFailed = "failed"
+)
+
+// PlatformBackdropPrunePlanEntry is one planned deletion: which index goes,
+// which survives, and what became of it.
+//
+// Index and Survivor are the slots AT DETECTION TIME. On the exact tier they
+// need no post-delete correction: the survivor is always the LOWEST index of
+// its byte-identical group (see dedupBackdropIndices), so it sits below every
+// candidate and the high-index-first delete order never renumbers it.
+type PlatformBackdropPrunePlanEntry struct {
+	ArtistID     string
+	ConnectionID string
+	Index        int
+	Survivor     int
+	// Outcome is one of the PrunePlan* constants above.
+	Outcome string
 }
 
 // PrunePlatformBackdropDuplicates deletes byte-identical redundant backdrops
@@ -513,8 +559,24 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, result
 		if len(redundant) == 0 {
 			continue
 		}
+		// The plan is recorded from the DETECTION-TIME numbering, and each
+		// entry's Outcome is filled in below by the loop that actually does
+		// the work -- so the plan cannot drift from what happened. planBase
+		// is where THIS connection's entries start in result.Plan, so the
+		// loop below can address its own entries (via
+		// result.Plan[planBase+i]) even after a prior artist/connection has
+		// already appended entries ahead of it.
+		planBase := len(result.Plan)
+		for _, rb := range redundant {
+			result.Plan = append(result.Plan, PlatformBackdropPrunePlanEntry{
+				ArtistID: a.ID, ConnectionID: pid.ConnectionID,
+				Index: rb.Index, Survivor: rb.Survivor,
+				Outcome: PrunePlanPlanned,
+			})
+		}
 		removed := 0
-		for _, rb := range redundant { // already descending by Index
+		for i, rb := range redundant { // already descending by Index
+			entry := &result.Plan[planBase+i]
 			// Re-verify immediately before deleting: a concurrent platform
 			// write between detection (hashing, above) and this delete could
 			// have replaced the index's content. Re-check BOTH the candidate
@@ -533,6 +595,7 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, result
 					slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
 					slog.Int("index", rb.Index), slog.String("error", verr.Error()))
 				result.SkippedChanged++
+				entry.Outcome = PrunePlanSkipped
 				continue
 			}
 			if verr := verifyBackdropUnchanged(ctx, client, pid.PlatformArtistID, rb.Survivor, rb.Hash); verr != nil {
@@ -540,6 +603,7 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, result
 					slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
 					slog.Int("index", rb.Index), slog.Int("survivor_index", rb.Survivor), slog.String("error", verr.Error()))
 				result.SkippedChanged++
+				entry.Outcome = PrunePlanSkipped
 				continue
 			}
 			if delErr := client.DeleteImageAtIndex(ctx, pid.PlatformArtistID, "fanart", rb.Index); delErr != nil {
@@ -547,8 +611,10 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, result
 					slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
 					slog.Int("index", rb.Index), slog.String("error", delErr.Error()))
 				result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, ConnectionID: pid.ConnectionID, Err: delErr.Error()})
+				entry.Outcome = PrunePlanFailed
 				break // stop: later indices may have shifted after the failed delete
 			}
+			entry.Outcome = PrunePlanDeleted
 			removed++
 		}
 		if removed > 0 {
