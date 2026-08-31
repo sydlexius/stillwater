@@ -18,6 +18,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"mime"
@@ -237,12 +238,24 @@ type platformPruneRequest struct {
 // about their own request contract while fixing nothing reachable. If this
 // changes, it should change for both at once, which is its own piece of work
 // rather than a fix-round edit.
-func decodePlatformPruneRequest(w http.ResponseWriter, req *http.Request) (platformPruneRequest, bool) {
+// LOGGING ON EVERY DECODE-FAILURE PATH (CodeRabbit, PR #3157). A 400 that
+// leaves no server-side trace gives an operator nothing to diagnose with,
+// and this repo's path instructions require an error path whose job is
+// surfacing failure to say so in the log.
+//
+// The split is deliberate and is the same one writePlatformPruneScopeError
+// makes: the LOG gets the detail (the field name, the offending value, the
+// parse error), the CLIENT keeps the fixed string it already had. An earlier
+// round on this branch found unsanitised error detail reaching a response
+// body, carrying the rejected value with it; the response strings below are
+// byte-identical to what shipped before this logging was added.
+func decodePlatformPruneRequest(w http.ResponseWriter, req *http.Request, logger *slog.Logger) (platformPruneRequest, bool) {
 	var body platformPruneRequest
 	ct := req.Header.Get("Content-Type")
 	if mt, _, err := mime.ParseMediaType(ct); err == nil && mt == "application/x-www-form-urlencoded" {
 		req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 		if err := req.ParseForm(); err != nil {
+			logPruneDecodeFailure(logger, "form body could not be parsed", slog.String("error", err.Error()))
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid form body"})
 			return body, false
 		}
@@ -259,6 +272,11 @@ func decodePlatformPruneRequest(w http.ResponseWriter, req *http.Request) (platf
 			}
 			v, err := strconv.ParseBool(raw)
 			if err != nil {
+				// The offending VALUE goes to the log, never to the response:
+				// it is client-supplied text, and echoing it back is the
+				// reflection shape this endpoint's 400s deliberately avoid.
+				logPruneDecodeFailure(logger, "form field is not a boolean",
+					slog.String("field", f.name), slog.String("value", raw), slog.String("error", err.Error()))
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid boolean for " + f.name})
 				return body, false
 			}
@@ -266,10 +284,28 @@ func decodePlatformPruneRequest(w http.ResponseWriter, req *http.Request) (platf
 		}
 		return body, true
 	}
+	// decodePHashBody writes its own 400 and reports only success/failure, so
+	// the log line is added here rather than inside it -- the shared helper
+	// serves several endpoints and its response shape is not this handler's
+	// to change. The specific reason (malformed JSON, unknown field, trailing
+	// data, oversized body) is already in the response it wrote; what this
+	// adds is the server-side record that a decode failed at all.
 	if !decodePHashBody(w, req, &body) {
+		logPruneDecodeFailure(logger, "request body could not be decoded as JSON",
+			slog.String("content_type", ct))
 		return body, false
 	}
 	return body, true
+}
+
+// logPruneDecodeFailure emits one warning per rejected prune body. Nil-safe
+// because several tests construct a Router without a logger; a missing logger
+// must not turn a 400 into a panic on the error path.
+func logPruneDecodeFailure(logger *slog.Logger, msg string, attrs ...slog.Attr) {
+	if logger == nil {
+		return
+	}
+	logger.LogAttrs(context.Background(), slog.LevelWarn, "platform backdrop prune: "+msg, attrs...)
 }
 
 // writePlatformPruneScopeError maps a scope-validation failure to a 400 with
@@ -314,7 +350,7 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 		return
 	}
 
-	body, ok := decodePlatformPruneRequest(w, req)
+	body, ok := decodePlatformPruneRequest(w, req, r.logger)
 	if !ok {
 		return
 	}

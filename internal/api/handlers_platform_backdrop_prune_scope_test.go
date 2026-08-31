@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,6 +58,11 @@ func TestPlatformBackdropDuplicatesPrune_RefusesAnUnscopedRequest(t *testing.T) 
 // buttons permanently broken while every JSON-based test kept passing.
 func TestPlatformBackdropDuplicatesPrune_AcceptsFormEncodedScope(t *testing.T) {
 	t.Parallel()
+	// Library scope only: this router's library is EMPTY, so a scoped
+	// artist_id would correctly 500 on an artist that does not exist -- a
+	// fact about the fixture, not about form decoding. The artist_id form
+	// path is asserted where it is actually observable, on the decoder
+	// itself: see TestDecodePlatformPruneRequest_FormCarriesTheArtistScope.
 	for _, body := range []string{
 		"all_artists=true",
 	} {
@@ -70,6 +77,60 @@ func TestPlatformBackdropDuplicatesPrune_AcceptsFormEncodedScope(t *testing.T) {
 
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200 for %q; body: %s", w.Code, body, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestDecodePlatformPruneRequest_FormCarriesTheArtistScope asserts the PARSED
+// VALUES of a form body, not the status code it produces (CodeRabbit, PR
+// #3157).
+//
+// The per-row "Prune This Artist" button posts artist_id as a form field, and
+// every other form test here asserts only a status. A decode path that
+// dropped artist_id would leave every row button rejected as unscoped -- and
+// nothing would fail, because a 200 for the library case and a 400 for a
+// dropped artist case are both "the status I expected" to a test that never
+// looks at what was decoded. That is the same vacuity shape this branch has
+// now been bitten by twice: the malformed-boolean test that passed for the
+// wrong reason, and the live bystander fixture that passed with the scope
+// broken.
+//
+// Asserted against decodePlatformPruneRequest directly, because the parsed
+// scope is the thing at risk and it is not observable from the handler's
+// response.
+func TestDecodePlatformPruneRequest_FormCarriesTheArtistScope(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, body     string
+		wantArtistID   string
+		wantAllArtists bool
+	}{
+		{"the per-row button", "artist_id=a1", "a1", false},
+		{"the library button", "all_artists=true", "", true},
+		// An id containing reserved characters must survive form decoding
+		// intact: a mangled id names a DIFFERENT artist, and the prune would
+		// then delete from the wrong one or refuse silently.
+		{"an id needing escaping", "artist_id=a%2Bb+c", "a+b c", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
+				"/api/v1/reports/platform-backdrop-duplicates/prune", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			w := httptest.NewRecorder()
+
+			// nil logger deliberately: it also exercises logPruneDecodeFailure's
+			// nil guard, so a missing logger cannot panic on the error path.
+			got, ok := decodePlatformPruneRequest(w, req, nil)
+			if !ok {
+				t.Fatalf("decode refused %q: %s", tc.body, w.Body.String())
+			}
+			if got.ArtistID != tc.wantArtistID {
+				t.Errorf("ArtistID = %q, want %q -- a dropped or mangled artist_id leaves the per-row button rejected as unscoped", got.ArtistID, tc.wantArtistID)
+			}
+			if got.AllArtists != tc.wantAllArtists {
+				t.Errorf("AllArtists = %v, want %v", got.AllArtists, tc.wantAllArtists)
 			}
 		})
 	}
@@ -263,6 +324,147 @@ func TestPlatformBackdropDuplicatesPrune_FormEncodingConformsToTheSpec(t *testin
 
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestPlatformBackdropDuplicatesPrune_SpecRejectsAnUnscopedPayload is the
+// SPEC-side half of the scope invariant (CodeRabbit, PR #3157).
+//
+// The handler has refused an unscoped, ambiguous, or all_artists=false
+// request since this branch began, but the published schema accepted all
+// three: a flat object with two optional properties calls them valid. A
+// generated client built from that schema would therefore emit payloads the
+// server rejects, on the one endpoint whose entire purpose is refusing an
+// unscoped destructive run.
+//
+// These assertions run against the SPEC, via validateExchange, and never
+// reach the handler -- validateExchange returns its error before invoking it.
+// That is the point: a test that only asserted the 400 would pass with the
+// schema left loose, because the handler was always right. Only spec
+// validation can fail here.
+func TestPlatformBackdropDuplicatesPrune_SpecRejectsAnUnscopedPayload(t *testing.T) {
+	t.Parallel()
+	// A handler that would 200 anything, so a failure can only come from spec
+	// validation rather than from the real handler's own refusal.
+	permissive := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"artists_processed": 0, "backdrops_removed": 0,
+			"skipped_changed": 0, "failures": 0,
+		})
+	})
+
+	for _, tc := range []struct {
+		name, contentType, body string
+		wantValid               bool
+	}{
+		{"no scope at all", "application/json", `{}`, false},
+		{"both scopes", "application/json", `{"artist_id":"a1","all_artists":true}`, false},
+		{"all_artists explicitly false", "application/json", `{"all_artists":false}`, false},
+		{"empty artist_id names nothing", "application/json", `{"artist_id":""}`, false},
+		{"one artist", "application/json", `{"artist_id":"a1"}`, true},
+		{"the whole library", "application/json", `{"all_artists":true}`, true},
+		// The two encodings the endpoint declares must agree. A form-encoded
+		// payload is what the report page's buttons actually post.
+		{"form: one artist", "application/x-www-form-urlencoded", "artist_id=a1", true},
+		{"form: the whole library", "application/x-www-form-urlencoded", "all_artists=true", true},
+		{"form: no scope", "application/x-www-form-urlencoded", "", false},
+		{"form: both scopes", "application/x-www-form-urlencoded", "artist_id=a1&all_artists=true", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
+				"/api/v1/reports/platform-backdrop-duplicates/prune", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+
+			_, err := validateExchange(loadSpec(t), permissive, req)
+			if tc.wantValid && err != nil {
+				t.Errorf("spec REJECTED a payload the handler accepts (%s): %v", tc.body, err)
+			}
+			if !tc.wantValid && err == nil {
+				t.Errorf("spec ACCEPTED %q, which the handler refuses with a 400; a generated client would emit it against a destructive endpoint", tc.body)
+			}
+		})
+	}
+}
+
+// TestPlatformBackdropDuplicatesPrune_DecodeFailuresLogWithoutLeaking pins
+// BOTH halves of the decode-failure logging (CodeRabbit, PR #3157): the
+// server records enough to diagnose the 400, and the client learns nothing
+// it did not already know.
+//
+// The second half is the one that needs a test. An earlier round on this
+// branch found raw err.Error() text leaking a rejected value into a response
+// body, and "add a log line" is exactly the edit that reintroduces it -- the
+// detail is right there in hand at the moment the response is written. So
+// this asserts the offending VALUE appears in the log and NOT in the body,
+// and that each response string is the fixed one that shipped before the
+// logging existed.
+func TestPlatformBackdropDuplicatesPrune_DecodeFailuresLogWithoutLeaking(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, contentType, body string
+		wantResponse            string
+		// secret is client-supplied text that must reach the LOG but never
+		// the response.
+		secret string
+	}{
+		{
+			name:         "malformed form boolean",
+			contentType:  "application/x-www-form-urlencoded",
+			body:         "all_artists=NOTABOOLEANXYZ",
+			wantResponse: "invalid boolean for all_artists",
+			secret:       "NOTABOOLEANXYZ",
+		},
+		{
+			name:         "malformed json",
+			contentType:  "application/json",
+			body:         `{"all_artists":`,
+			wantResponse: "invalid JSON body",
+		},
+		{
+			name:         "unknown json field",
+			contentType:  "application/json",
+			body:         `{"nonesuch": true}`,
+			wantResponse: "invalid JSON body",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var logs bytes.Buffer
+			r := testRouterWithPlatformPublisher(t)
+			r.logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+			req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
+				"/api/v1/reports/platform-backdrop-duplicates/prune", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+			w := httptest.NewRecorder()
+			r.handlePlatformBackdropDuplicatesPrune(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+			}
+			var got map[string]string
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decoding body: %v", err)
+			}
+			// UNCHANGED CLIENT CONTRACT: the exact string that shipped before
+			// this logging was added.
+			if got["error"] != tc.wantResponse {
+				t.Errorf("error = %q, want %q -- the response contract must not move when logging is added", got["error"], tc.wantResponse)
+			}
+			// The server must have SOMETHING to diagnose with.
+			if !strings.Contains(logs.String(), "platform backdrop prune:") {
+				t.Errorf("no warning logged for a rejected body; an operator seeing this 400 has nothing server-side to go on. logs: %s", logs.String())
+			}
+			if tc.secret != "" {
+				if !strings.Contains(logs.String(), tc.secret) {
+					t.Errorf("the rejected value %q is absent from the log, which is where the diagnostic detail belongs. logs: %s", tc.secret, logs.String())
+				}
+				if strings.Contains(w.Body.String(), tc.secret) {
+					t.Errorf("the rejected value %q was REFLECTED into the response body: %s", tc.secret, w.Body.String())
+				}
 			}
 		})
 	}

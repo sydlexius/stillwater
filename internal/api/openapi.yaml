@@ -38,6 +38,33 @@ components:
         so the two encodings cannot drift: the API posts JSON, the report
         page's htmx buttons post form-encoded, and they describe the same
         request.
+
+        THE oneOf IS THE SCOPE INVARIANT, not decoration. A flat object with
+        two optional properties accepts {}, both fields together, and
+        {"all_artists": false} -- every one of which the handler rejects with
+        a 400. A published schema calling those valid tells a generated client
+        it may emit an unscoped request to a destructive endpoint, which is
+        exactly what declaring the scope in the spec exists to prevent.
+
+        THE TOP-LEVEL type/properties BLOCK IS LOAD-BEARING and must not be
+        collapsed into the branches. kin-openapi's urlencoded decoder needs a
+        flat object schema with typed properties to decode a form body at all;
+        given oneOf alone at the root it fails every form request outright
+        with "unsupported schema of request body" (measured -- the first draft
+        of this fix did exactly that and broke the encoding the shipping UI
+        posts). Declaring the properties here lets the decoder build and
+        type-coerce the object, and the oneOf below then constrains it. Both
+        encodings are exercised against this schema by
+        TestPlatformBackdropDuplicatesPrune_SpecRejectsAnUnscopedPayload.
+
+        EVERY BRANCH PROPERTY BELOW REPEATS ITS `type`, deliberately. That
+        decoder walks INTO each oneOf branch and decodes the same form field
+        once per branch; a branch property carrying only `const`/`minLength`
+        with no type decodes to a different Go value than the typed root
+        property does, and the decoder rejects the request outright with
+        "conflicting values for property" (also measured). Repeating the type
+        makes all three decodes agree. Do not strip these as redundant --
+        they are redundant only to a JSON reader.
       properties:
         artist_id:
           type: string
@@ -49,6 +76,40 @@ components:
           description: >-
             Run library-wide. Must be set explicitly; there is no library-wide
             default.
+      oneOf:
+        - title: One artist
+          required: [artist_id]
+          properties:
+            artist_id:
+              type: string
+              minLength: 1
+            all_artists:
+              type: boolean
+              const: false
+          description: >-
+            all_artists may be omitted entirely, or sent as false. `const:
+            false` rather than leaving it unconstrained, because a branch that
+            ignored all_artists would let {"artist_id": "a1", "all_artists":
+            true} satisfy it -- and since the library branch rejects that on
+            artist_id, oneOf would see exactly one match and call the
+            ambiguous request valid.
+        - title: The whole library
+          required: [all_artists]
+          properties:
+            all_artists:
+              type: boolean
+              const: true
+            artist_id:
+              type: string
+              maxLength: 0
+          description: >-
+            all_artists must be explicitly true: {"all_artists": false} names
+            no scope and the handler refuses it. artist_id must be absent, or
+            present and empty -- maxLength constrains only a PRESENT value, so
+            this permits the ordinary {"all_artists": true} while rejecting a
+            real artist id sent alongside it. Empty is allowed deliberately: a
+            form post carrying a blank artist_id submits `artist_id=`, which
+            the handler treats exactly as absent.
     PHashRegistryCoverage:
       type: object
       description: >-
