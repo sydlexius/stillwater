@@ -1,6 +1,7 @@
 package publish
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"os"
@@ -173,8 +174,13 @@ func TestSyncAllFanart_OnlyBackdropOverCap_StillPushed(t *testing.T) {
 		t.Fatal("the artist's sole (over-cap) backdrop was never uploaded; hasReadableFanart must not " +
 			"treat a captured-but-over-cap slot as unreadable, or the sync returns before the upload loop runs at all")
 	}
-	if len(got) != len(onlyBackdrop) {
-		t.Errorf("peer received %d bytes, want the full %d", len(got), len(onlyBackdrop))
+	// bytes.Equal, not a length check (CodeRabbit review): a same-length
+	// CORRUPTED payload would pass a len() comparison, which does not
+	// establish "the peer received this file intact" -- the actual claim
+	// this test makes.
+	if !bytes.Equal(got, onlyBackdrop) {
+		t.Errorf("peer received %d bytes that do not match the %d-byte fixture; the payload was corrupted "+
+			"in transit, not merely the wrong length", len(got), len(onlyBackdrop))
 	}
 }
 
@@ -248,8 +254,13 @@ func TestSyncAllFanart_OverPerFileCap_ClobberedByPeer_StillRestored(t *testing.T
 	for _, up := range uploadedPayloads {
 		if up.index == 1 {
 			sawOverCapUpload = true
-			if len(up.data) != len(overCap) {
-				t.Errorf("peer received %d bytes for the over-cap slot, want %d", len(up.data), len(overCap))
+			// bytes.Equal, not a length check (sibling of the CodeRabbit
+			// finding on the neighboring test in this file): a same-length
+			// corrupted payload would pass len(), which does not establish
+			// that the peer received this file intact.
+			if !bytes.Equal(up.data, overCap) {
+				t.Errorf("peer received %d bytes for the over-cap slot that do not match the %d-byte fixture",
+					len(up.data), len(overCap))
 			}
 		}
 	}

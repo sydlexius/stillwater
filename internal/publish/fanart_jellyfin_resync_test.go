@@ -853,7 +853,7 @@ func TestUploadFanartForSync_JellyfinDegradedSlot_PlatformOutnumbersLocal(t *tes
 // function returns non-empty text.
 func TestUploadFanartFullResyncForSync_RefusalReasonSurvivesTruncation(t *testing.T) {
 	dir := t.TempDir()
-	// fanart.jpg (index 0) is small and captures normally; fanart2/3/4.jpg
+	// fanart.jpg (index 0) is small and captures normally; fanart1/2/3.jpg
 	// (indices 1-3) are each genuinely over img.MaxDecodeBytes, so
 	// snapshotFanart's real read bound fires THREE times and produces three
 	// independent per-file warnings -- not a mocked list. Sparse, so this
