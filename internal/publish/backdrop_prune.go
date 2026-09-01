@@ -472,14 +472,21 @@ type PlatformBackdropPrunePlanEntry struct {
 // scope.Validate is called HERE as well as at the handler, so the either/or
 // requirement holds for every caller rather than for one door (#3139).
 func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context, scope PlatformBackdropPruneScope) (PlatformBackdropPruneResult, error) {
-	if p == nil || p.artistService == nil || p.connectionService == nil || p.artistLister == nil {
-		return PlatformBackdropPruneResult{}, fmt.Errorf("prune platform backdrop duplicates: publisher not fully wired")
-	}
-	if err := scope.Validate(); err != nil {
-		return PlatformBackdropPruneResult{}, fmt.Errorf("prune platform backdrop duplicates: %w", err)
-	}
+	// Stamped BEFORE the wiring and scope guards below, not after. DryRun is
+	// documented as an echo of the request, and the handler serializes it onto
+	// the 500 body via platformPruneResponse -- so a zero-valued early return
+	// would answer a dry_run=true request with "dry_run": false, telling an
+	// operator their rehearsal was a live run at the one moment they are
+	// already being told something went wrong.
 	var result PlatformBackdropPruneResult
 	result.DryRun = scope.DryRun
+
+	if p == nil || p.artistService == nil || p.connectionService == nil || p.artistLister == nil {
+		return result, fmt.Errorf("prune platform backdrop duplicates: publisher not fully wired")
+	}
+	if err := scope.Validate(); err != nil {
+		return result, fmt.Errorf("prune platform backdrop duplicates: %w", err)
+	}
 
 	if scope.ArtistID != "" {
 		if p.artistGetter == nil {

@@ -51,3 +51,46 @@ func TestPruneDryRun_DeletesNothingButReportsThePlan(t *testing.T) {
 		t.Errorf("plan indices = %d,%d; want 2,1 (descending, the delete order)", res.Plan[0].Index, res.Plan[1].Index)
 	}
 }
+
+// A dry run that fails BEFORE the prune starts must still say it was a dry
+// run. The handler serializes DryRun onto the 500 body, so a zero-valued
+// early return would answer a dry_run=true request with "dry_run": false --
+// telling an operator their rehearsal was a live run at the one moment they
+// are already being told something went wrong.
+//
+// Both hard returns that precede the plan are covered: the wiring guard and
+// scope.Validate. Neither can reach pruneOneArtist, so DryRun is the only
+// field either one can carry, and it is the one the caller reads.
+func TestPruneDryRun_EarlyFailureStillEchoesTheDryRunFlag(t *testing.T) {
+	t.Parallel()
+
+	t.Run("publisher not fully wired", func(t *testing.T) {
+		t.Parallel()
+		// An empty Publisher trips the wiring guard, the first hard return.
+		var p Publisher
+		res, err := p.PrunePlatformBackdropDuplicates(context.Background(),
+			PlatformBackdropPruneScope{AllArtists: true, DryRun: true})
+		if err == nil {
+			t.Fatal("an unwired publisher must fail; got a nil error, so this test proves nothing")
+		}
+		if !res.DryRun {
+			t.Error("DryRun = false on a failed dry run; the response would tell the operator their rehearsal was a live run")
+		}
+	})
+
+	t.Run("invalid scope", func(t *testing.T) {
+		t.Parallel()
+		fake := &fakeBackdropClient{backdrops: [][]byte{[]byte("AAA")}, failAt: -1, failDeleteAt: -1}
+		p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+		// Neither ArtistID nor AllArtists: Validate rejects it, the second
+		// hard return. A wired publisher isolates this from the case above.
+		res, err := p.PrunePlatformBackdropDuplicates(context.Background(),
+			PlatformBackdropPruneScope{DryRun: true})
+		if err == nil {
+			t.Fatal("an unscoped prune must fail; got a nil error, so this test proves nothing")
+		}
+		if !res.DryRun {
+			t.Error("DryRun = false on a failed dry run; the response would tell the operator their rehearsal was a live run")
+		}
+	})
+}
