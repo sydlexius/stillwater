@@ -106,7 +106,7 @@ Copilot reviews a PR **once**, automatically, when it is opened. That single rou
 
 The "Copilot auto-review" ruleset sets `review_on_push: false`, so pushing a fix round does not trigger another review. To get one, re-request Copilot by hand from the PR page's Reviewers panel.
 
-A `copilot-re-review.yml` workflow used to defeat this: it fired on every `synchronize` event and re-requested a review whenever Copilot had already left one, so a PR taking three fix rounds collected three extra reviews nobody asked for. It was removed. Note that the API call it made does work -- re-requesting `copilot-pull-request-reviewer[bot]` via `POST /pulls/{n}/requested_reviewers` succeeds, contrary to an earlier note here claiming a 422. Being possible is not the same as being wanted: one automatic round is the policy, and further rounds are a deliberate manual choice.
+A `copilot-re-review.yml` workflow used to defeat this: it fired on every `synchronize` event and re-requested a review whenever Copilot had already left one, so a PR taking three fix rounds collected three extra reviews nobody asked for. It was removed. Note that the API call it made does work -- re-requesting `copilot-pull-request-reviewer[bot]` via `POST repos/{owner}/{repo}/pulls/{number}/requested_reviewers` succeeds, contrary to an earlier note here claiming a 422. Being possible is not the same as being wanted: one automatic round is the policy, and further rounds are a deliberate manual choice.
 
 ## Required-check x paths-filter invariant (#2199, #2200)
 
