@@ -1,6 +1,6 @@
 package provider_test
 
-// The live dead-slot guard for #2897, scoped to the ten provider/field pairs
+// The live dead-slot guard for #2897, scoped to the nine provider/field pairs
 // migration 030 strips.
 //
 // Why this test runs against GetPriorities and not DefaultPriorities: the
@@ -20,10 +20,16 @@ package provider_test
 // the second. This test is the one that sees both, because it asserts over
 // what GetPriorities actually returns after the real migrations have run.
 //
-// Scope note: this checks the ten pairs migration 030 owns. The general
-// invariant -- that NO priority entry anywhere names a provider whose adapter
-// cannot supply the field -- needs the capability-table reconciliation to
-// assert against, and lands with it.
+// Scope note: this checks the nine pairs migration 030 owns. years_active/
+// audiodb is deliberately excluded: audiodb.mapArtist never assigns
+// YearsActive literally, so it is dead on both full-refresh paths, but the
+// per-field comparison path (extractFieldForComparison in orchestrator.go)
+// synthesizes a candidate from AudioDB's Born/Died, so it is a live,
+// user-facing answer there. See migration 030's header for the mechanism.
+//
+// The general invariant -- that NO priority entry anywhere names a provider
+// whose adapter cannot supply the field on ANY path -- needs the
+// capability-table reconciliation to assert against, and lands with it.
 
 import (
 	"context"
@@ -36,8 +42,10 @@ import (
 )
 
 // strippedPairs is the set migration 030 removes: each provider was listed for
-// a field its adapter never populates, so the entry could only ever spend a
-// rate-limited request on a guaranteed-empty response.
+// a field its adapter never populates on either full-refresh path, so the
+// entry could only ever appear as a structurally-empty routing option in the
+// settings UI and the per-field comparison panel. It does not save a
+// request -- see migration 030's header for why.
 var strippedPairs = []struct {
 	field    string
 	provider provider.ProviderName
@@ -51,7 +59,6 @@ var strippedPairs = []struct {
 	{"type", provider.NameWikidata, "wikidata.mapArtist assigns only Formed, Disbanded, Origin and Genres"},
 	{"type", provider.NameDiscogs, "the Discogs adapter never assigns Type"},
 	{"disbanded", provider.NameWikipedia, "the Wikipedia infobox parser assigns Born and Died, never Disbanded"},
-	{"years_active", provider.NameAudioDB, "the AudioDB adapter never assigns YearsActive"},
 	{"biography", provider.NameMusicBrainz, "MusicBrainz returns no biography text; migration 001 seeded it first and migration 007 removed only wikidata"},
 }
 
@@ -73,9 +80,8 @@ func TestGetPrioritiesOnMigratedDBHasNoStrippedPairs(t *testing.T) {
 
 	// Precondition: the rows must have come from the seeded settings table. On
 	// an empty table GetPriorities returns DefaultPriorities() wholesale, and
-	// this test would silently become a duplicate of
-	// TestDefaultPrioritiesHaveNoDeadSlots -- blind to the stored rows, which
-	// is the exact failure it exists to catch.
+	// this test would silently become blind to the stored rows, which is the
+	// exact failure it exists to catch.
 	var seeded int
 	if err := db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM settings WHERE key LIKE 'provider.priority.%'").Scan(&seeded); err != nil {
@@ -118,7 +124,7 @@ func TestGetPrioritiesOnMigratedDBHasNoStrippedPairs(t *testing.T) {
 		checked++
 		for _, name := range chain {
 			if name == pair.provider {
-				t.Errorf("LIVE DEAD SLOT: %q still routes to %q (chain: %v). %s. Every refresh spends a rate-limited request on a guaranteed-empty response. Both halves are needed: migration 030 scrubs the stored row, and the DefaultPriorities() correction stops GetPriorities re-appending it.",
+				t.Errorf("LIVE DEAD SLOT: %q still routes to %q (chain: %v). %s. It offers a structurally-empty option in the settings UI and per-field comparison panel. Both halves are needed: migration 030 scrubs the stored row, and the DefaultPriorities() correction stops GetPriorities re-appending it.",
 					pair.field, name, chain, pair.why)
 			}
 		}

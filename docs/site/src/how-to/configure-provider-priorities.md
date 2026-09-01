@@ -43,11 +43,11 @@ A few opinionated starting points:
 - **Biography:** Last.fm (rich) > Wikipedia (factual) > AudioDB (curated). Skip MusicBrainz -- it doesn't return biography text.
 - **Sort name:** MusicBrainz > AudioDB. MusicBrainz's sort names are the closest to Kodi's expectations.
 - **Disambiguation:** MusicBrainz only -- the others don't have a comparable concept.
-- **Genres:** MusicBrainz first (curated tags) followed by Last.fm (popular tags) and Discogs (style-as-genre). Aggregated, so all three contribute.
+- **Genres:** MusicBrainz first (curated tags) followed by Last.fm (popular tags), AudioDB, and Wikipedia. Aggregated, so all four contribute. Discogs is not a genres source -- it supplies styles instead, so put it at the top of the Styles list rather than Genres.
 
 ### For images
 
-- **Thumb:** Fanart.tv > AudioDB > Discogs. Fanart.tv has the strongest curated catalogue.
+- **Thumb:** Fanart.tv > AudioDB > Discogs. Fanart.tv has the strongest curated catalog.
 - **Fanart:** Fanart.tv first by a wide margin.
 - **Logo:** Fanart.tv. Logos are nearly all theirs.
 - **Banner:** Fanart.tv. Same.

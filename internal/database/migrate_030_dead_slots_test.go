@@ -1,7 +1,11 @@
 package database
 
 // Migration 030 strips provider/field pairs whose adapter cannot populate the
-// field from the STORED provider priority rows (issue #2897).
+// field on either full-refresh path, from the STORED provider priority rows
+// (issue #2897). It deliberately excludes years_active/audiodb: AudioDB never
+// assigns YearsActive literally, but the per-field comparison path
+// synthesizes a candidate from its Born/Died, so that pair is live on that
+// path and stays in the chain.
 //
 // It gets a populated-database test because the defect it fixes is invisible
 // to any test that reads DefaultPriorities(): migration 001 seeds the priority
@@ -40,7 +44,6 @@ var deadSlots = []struct {
 	{"type", "wikidata"},
 	{"type", "discogs"},
 	{"disbanded", "wikipedia"},
-	{"years_active", "audiodb"},
 	// Not from the default chains: migration 001 seeds MusicBrainz first for
 	// biography and migration 007 removed only wikidata. #1029 covered this
 	// pair with a fieldProviderExclusions entry, which the live scraper path
@@ -173,9 +176,13 @@ func TestMigration030_StripsDeadSlotsFromStoredPriorities(t *testing.T) {
 }
 
 // TestMigration030_IsIdempotent proves re-running the migration is a no-op.
-// The EXISTS guard is what makes each statement skip an already-clean row; if
-// it were dropped the UPDATE would still produce the same JSON, so the only
-// way to see the difference is to compare full state across two runs.
+// It asserts RowsAffected == 0 for every statement on the re-run, the same
+// standard migration 007's idempotency test holds itself to
+// (TestMigration007RemovesWikidataFromBiography in migrate_test.go): a
+// value-identical UPDATE (e.g. after the EXISTS guard is dropped) still
+// reports RowsAffected > 0 even though the JSON it writes is unchanged, so
+// comparing only the resulting state cannot see a missing guard. The
+// full-state snapshot comparison is kept as a second, independent check.
 func TestMigration030_IsIdempotent(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "idempotent.db")
 	ctx := context.Background()
@@ -227,12 +234,20 @@ func TestMigration030_IsIdempotent(t *testing.T) {
 		t.Fatalf("reading migration 030: %v", err)
 	}
 	stmts := upStatements(t, string(body))
-	if len(stmts) != 9 {
-		t.Fatalf("parsed %d UPDATE statements from migration 030, want 9 -- the re-run would not exercise the real migration", len(stmts))
+	if len(stmts) != 8 {
+		t.Fatalf("parsed %d UPDATE statements from migration 030, want 8 -- the re-run would not exercise the real migration", len(stmts))
 	}
-	for _, stmt := range stmts {
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			t.Fatalf("re-running migration 030 statement: %v\n%s", err, stmt)
+	for i, stmt := range stmts {
+		res, err := db.ExecContext(ctx, stmt)
+		if err != nil {
+			t.Fatalf("re-running migration 030 statement %d: %v\n%s", i, err, stmt)
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			t.Fatalf("RowsAffected for statement %d: %v", i, err)
+		}
+		if affected != 0 {
+			t.Errorf("re-running migration 030 statement %d affected %d rows, want 0 (EXISTS guard must skip an already-clean row):\n%s", i, affected, stmt)
 		}
 	}
 	if err := db.Close(); err != nil {

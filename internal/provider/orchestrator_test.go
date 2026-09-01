@@ -3574,3 +3574,100 @@ func TestApplyTagSliceField_VocabFilter(t *testing.T) {
 		}
 	})
 }
+
+// TestFetchFieldFromProviders_AudioDBSynthesizesYearsActive guards the #2897
+// finding that years_active/audiodb is NOT a dead slot: audiodb.mapArtist
+// never sets ArtistMetadata.YearsActive literally, but
+// extractFieldForComparison synthesizes a years_active candidate from
+// Born/Died for a non-group artist, and AudioDB's adapter does set Born/Died
+// for a deceased solo artist. If AudioDB were ever stripped from the
+// years_active chain again (in the migration or DefaultPriorities), this
+// candidate would silently disappear from the per-field "compare providers"
+// panel and from internal/rule/fixers.go's coalesced field fetch.
+//
+// This deliberately does NOT call SetPriority: setupOrchestratorTest's
+// settings table is empty, so GetPriorities falls back to DefaultPriorities()
+// verbatim, the same way a fresh install (or any field GetPriorities has not
+// stored) resolves the chain. That ties this test directly to
+// DefaultPriorities() -- removing AudioDB from years_active there (as the
+// original migration 030 draft did) reddens this test with AudioDB's
+// candidate missing from the result set entirely, without needing to touch
+// the migration's stored-row behavior at all.
+//
+// This drives the real orchestrator end to end (FetchFieldFromProviders ->
+// extractFieldForComparison -> SynthesizeYearsActive), not a hand-rolled
+// expectation, so it fails the same way a real regression would: by AudioDB's
+// candidate silently vanishing from the result set.
+func TestFetchFieldFromProviders_AudioDBSynthesizesYearsActive(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Shaped like audiodb.mapArtist's real output for a deceased solo artist:
+	// FormedYear empty (so isGroup is false), BornYear/DiedYear set, Type never
+	// assigned, and no literal YearsActive -- audiodb.mapArtist has no such
+	// field to set. This is the exact shape that makes SynthesizeYearsActive's
+	// non-group branch fire.
+	audioDBMeta := &ArtistMetadata{
+		Name: "Test Artist",
+		Born: "1940",
+		Died: "1980",
+	}
+	// Precondition: the fixture must actually exercise the synthesis path --
+	// no literal YearsActive, a non-group Type, and both Born and Died present.
+	// Without this check a broken fixture (e.g. YearsActive accidentally set)
+	// would make the assertions below pass vacuously.
+	if audioDBMeta.YearsActive != "" {
+		t.Fatalf("precondition failed: fixture has a literal YearsActive %q, so it would not exercise synthesis", audioDBMeta.YearsActive)
+	}
+	if isGroupTypeValue(audioDBMeta.Type) {
+		t.Fatalf("precondition failed: fixture Type %q is a group type, so it would exercise the wrong SynthesizeYearsActive branch", audioDBMeta.Type)
+	}
+	if audioDBMeta.Born == "" || audioDBMeta.Died == "" {
+		t.Fatal("precondition failed: fixture must have both Born and Died set for the non-group synthesis branch to succeed")
+	}
+
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return audioDBMeta, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameWikipedia,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			// No years_active infobox field, and no Born/Died either, so
+			// Wikipedia produces no candidate at all -- the only candidate in
+			// this test must come from AudioDB's synthesis.
+			return &ArtistMetadata{Name: "Test Artist"}, nil
+		},
+	})
+
+	// No SetPriority call: the years_active chain comes from
+	// DefaultPriorities() via GetPriorities' empty-row fallback, so this test
+	// exercises the real default chain rather than one pinned by the test.
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger, nil)
+
+	results, err := orch.FetchFieldFromProviders(context.Background(), "mbid-1234", "Test Artist", "years_active", nil)
+	if err != nil {
+		t.Fatalf("FetchFieldFromProviders: %v", err)
+	}
+
+	var audioDBResult *FieldProviderResult
+	for i := range results {
+		if results[i].Provider == NameAudioDB {
+			audioDBResult = &results[i]
+		}
+	}
+	if audioDBResult == nil {
+		t.Fatalf("AudioDB produced no candidate at all for years_active (results: %+v) -- if this is because AudioDB was removed from the years_active priority chain, that regresses #2897: AudioDB answers years_active on this path via synthesis from Born/Died even though it never sets YearsActive literally", results)
+	}
+	if !audioDBResult.HasData {
+		t.Fatal("AudioDB candidate has HasData=false, want true (synthesis from Born=1940/Died=1980 should have produced a value)")
+	}
+	if audioDBResult.Value != "1940-1980" {
+		t.Errorf("AudioDB candidate Value = %q, want %q", audioDBResult.Value, "1940-1980")
+	}
+	if !audioDBResult.Synthesized {
+		t.Error("AudioDB candidate Synthesized = false, want true (the value came from Born/Died, not a literal YearsActive)")
+	}
+}

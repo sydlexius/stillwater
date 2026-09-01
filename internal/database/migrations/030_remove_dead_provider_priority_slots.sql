@@ -6,11 +6,21 @@
 -- SettingsService.GetPriorities reads the stored row and only APPENDS defaults
 -- that are missing -- it never removes a provider the stored row names. So
 -- correcting DefaultPriorities() alone reaches new installs only; every
--- install that has run 001 keeps querying providers that structurally cannot
--- answer, spending a rate-limited request per refresh on a guaranteed-empty
--- response. This is the same gap migration 007 closed for the single
--- biography/wikidata pair (#1029/#1577); the pairs below are the nine found by
--- checking every default chain against what each adapter actually assigns.
+-- install that has run 001 keeps routing to providers that structurally
+-- cannot answer for the field.
+--
+-- This does NOT save a request: both full-refresh paths cache one GetArtist
+-- call per provider for the whole refresh, and every stripped provider below
+-- still appears in at least one surviving chain (wikidata in
+-- formed/disbanded/origin, discogs in styles/biography/thumb, and so on), so
+-- it is fetched regardless of whether this migration runs. The actual benefit
+-- is a settings UI and per-field comparison panel that only ever lists
+-- providers that can genuinely answer, instead of structurally-empty slots
+-- that look like real options. This is the same gap migration 007 closed for
+-- the single biography/wikidata pair (#1029/#1577); the pairs below are the
+-- eight found by checking every default chain against what each adapter
+-- actually assigns, plus the biography/musicbrainz pair carried over from
+-- #1029/#1577.
 --
 --   genres       -> discogs    (assigns Styles from master releases, never Genres)
 --   members      -> wikidata   (mapArtist assigns only Formed/Disbanded/Origin/Genres)
@@ -20,15 +30,26 @@
 --   type         -> discogs    (never assigns Type)
 --   gender       -> wikidata   (as above)
 --   disbanded    -> wikipedia  (infobox parser assigns Born/Died, never Disbanded)
---   years_active -> audiodb    (never assigns YearsActive)
 --   biography    -> musicbrainz (never assigns Biography)
 --
--- The biography/musicbrainz pair is the tenth, and it is NOT one of the nine
--- found in the default chains: DefaultPriorities() has never listed MusicBrainz
--- for biography, but migration 001 seeds it FIRST in the stored row and
--- migration 007 removed only wikidata from that row. #1029/#1577 covered it
--- with a fieldProviderExclusions entry instead of a migration, and that entry
--- is consulted by the LEGACY orchestrator and the settings template but NOT by
+-- years_active/audiodb is deliberately NOT in this list. audiodb.mapArtist
+-- never assigns YearsActive literally, so it is dead on both full-refresh
+-- paths (FetchMetadata's scalarFieldAccessors and the executor's
+-- FieldYearsActive applier both read meta.YearsActive with no fallback). But
+-- the per-field comparison path (FetchFieldFromProviders ->
+-- extractFieldForComparison, internal/provider/orchestrator.go) synthesizes a
+-- years_active candidate from Born/Died via SynthesizeYearsActive when the
+-- literal is empty, and audiodb.mapArtist does set Born/Died for solo
+-- artists -- so on that path AudioDB is a live, user-facing answer. Removing
+-- it would silently drop a real candidate from the artist-detail
+-- compare-providers panel.
+--
+-- The biography/musicbrainz pair is NOT one of the default-chain findings
+-- above: DefaultPriorities() has never listed MusicBrainz for biography, but
+-- migration 001 seeds it FIRST in the stored row and migration 007 removed
+-- only wikidata from that row. #1029/#1577 covered it with a
+-- fieldProviderExclusions entry instead of a migration, and that entry is
+-- consulted by the LEGACY orchestrator and the settings template but NOT by
 -- the live scraper executor -- so on the path that actually runs, the request
 -- is still spent. Stripping the row is what makes it true on every path.
 --
@@ -79,11 +100,6 @@ UPDATE settings
 SET value = (SELECT json_group_array(j.value) FROM json_each(settings.value) j WHERE j.value != 'wikipedia')
 WHERE key = 'provider.priority.disbanded'
   AND EXISTS (SELECT 1 FROM json_each(settings.value) WHERE value = 'wikipedia');
-
-UPDATE settings
-SET value = (SELECT json_group_array(j.value) FROM json_each(settings.value) j WHERE j.value != 'audiodb')
-WHERE key = 'provider.priority.years_active'
-  AND EXISTS (SELECT 1 FROM json_each(settings.value) WHERE value = 'audiodb');
 
 UPDATE settings
 SET value = (SELECT json_group_array(j.value) FROM json_each(settings.value) j WHERE j.value != 'musicbrainz')
