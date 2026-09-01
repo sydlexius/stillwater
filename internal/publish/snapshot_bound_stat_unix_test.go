@@ -4,6 +4,7 @@ package publish
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	img "github.com/sydlexius/stillwater/internal/image"
 )
 
 // #2712 review, N1: the caps must bound what is RESIDENT, not what a stat
@@ -141,9 +144,13 @@ func fifoDeliveringBytes(t *testing.T, path string, n int64) {
 // over-budget bytes away, rather than merely owning a correct predicate nobody
 // calls.
 //
-// Without the post-read check the stat says 0, the pre-read refusal passes, and
-// the snapshot retains a 13 MiB entry that is over the 12 MiB per-file cap --
-// the cap bounding a number while the process holds the bytes.
+// #3017: this used to drive the PER-FILE cap's post-read half. That cap no
+// longer refuses a read result at all (only the retention decision after
+// upload consults it -- see fanartSnapshot.overRetentionCap), so this now
+// drives the TOTAL cap's post-read half instead: without the post-read
+// check, the stat says 0, the pre-read refusal passes, and the snapshot
+// retains an entry over maxFanartSnapshotTotalBytes -- the cap bounding a
+// number while the process holds the bytes.
 func TestSnapshotFanart_ReadOvershootsTheStat_Discarded(t *testing.T) {
 	// No t.Parallel; see the note at the top of snapshot_bound_test.go.
 	dir := t.TempDir()
@@ -152,28 +159,62 @@ func TestSnapshotFanart_ReadOvershootsTheStat_Discarded(t *testing.T) {
 	if err := os.WriteFile(small, []byte("an ordinary backdrop"), 0o600); err != nil {
 		t.Fatalf("writing fixture: %v", err)
 	}
-	liar := filepath.Join(dir, "fanart1.jpg")
-	const delivered = maxFanartSnapshotFileBytes + (1 << 20) // 13 MiB
+
+	// #3017: the FIFO's delivered payload must clear the TOTAL cap ONLY once
+	// added to bytes already captured -- it cannot exceed img.MaxDecodeBytes
+	// (25 MB) on its own, or the READ's own ErrImageTooLarge arm answers
+	// first and this test would say nothing about the TOCTOU backstop it
+	// exists for (unlike the old per-file cap, which sat well under
+	// MaxDecodeBytes and so could be tripped by the FIFO alone). So this
+	// fixture pre-loads the budget with real, ordinary chunk files -- each
+	// safely under MaxDecodeBytes and captured normally -- leaving just
+	// under one chunk's worth of the total budget remaining, and the final
+	// FIFO delivery (itself still under MaxDecodeBytes) fills that
+	// remainder and then some.
+	const chunkSize = 24 << 20 // under MaxDecodeBytes (25 MiB) with margin
+	const chunkCount = 7       // 7 * 24 MiB = 168 MiB, leaving ~24 MiB of the 192 MiB total
+	chunkPaths := make([]string, 0, chunkCount)
+	for i := 0; i < chunkCount; i++ {
+		p := filepath.Join(dir, fmt.Sprintf("fanart%d.jpg", i+1))
+		sparseFile(t, p, chunkSize)
+		chunkPaths = append(chunkPaths, p)
+	}
+	// Budget already spent by "small" plus the chunks, computed from the
+	// fixtures themselves rather than assumed, so a change to `small`'s
+	// content does not silently break the arithmetic below.
+	smallInfo, smallStatErr := os.Stat(small)
+	if smallStatErr != nil {
+		t.Fatalf("stat'ing the small fixture: %v", smallStatErr)
+	}
+	spent := smallInfo.Size() + chunkCount*int64(chunkSize)
+	remaining := int64(maxFanartSnapshotTotalBytes) - spent
+
+	liar := filepath.Join(dir, fmt.Sprintf("fanart%d.jpg", chunkCount+1))
+	delivered := remaining + (1 << 20) // remaining budget + 1 MiB, still under MaxDecodeBytes
 	fifoDeliveringBytes(t, liar, delivered)
 
-	// PRECONDITIONS. Both are what make the assertion below meaningful: the stat
-	// must genuinely under-report (otherwise the pre-read cap catches it and
-	// this test says nothing about the post-read one), and the payload must
-	// genuinely exceed the cap.
+	// PRECONDITIONS. All are what make the assertion below meaningful.
+	if delivered > img.MaxDecodeBytes {
+		t.Fatalf("precondition failed: the FIFO would deliver %d bytes, over img.MaxDecodeBytes (%d); the "+
+			"READ's own arm would refuse it first and this test would measure the wrong bound",
+			delivered, img.MaxDecodeBytes)
+	}
 	info, statErr := os.Stat(liar)
 	if statErr != nil {
 		t.Fatalf("precondition failed: cannot stat the FIFO: %v", statErr)
 	}
-	if info.Size() > maxFanartSnapshotFileBytes {
-		t.Fatalf("precondition failed: the stat reports %d bytes, which the PRE-read cap already refuses; "+
-			"this test needs a stat that under-reports", info.Size())
+	if info.Size() != 0 {
+		t.Fatalf("precondition failed: the stat reports %d bytes, not 0; this test needs a stat that "+
+			"under-reports (a FIFO stats at zero), or the PRE-read cap catches it and this test says "+
+			"nothing about the post-read one", info.Size())
 	}
-	if delivered <= maxFanartSnapshotFileBytes {
-		t.Fatalf("precondition failed: the payload of %d bytes is inside the %d-byte per-file cap, so no "+
-			"refusal is owed", int64(delivered), int64(maxFanartSnapshotFileBytes))
+	if spent+delivered <= maxFanartSnapshotTotalBytes {
+		t.Fatalf("precondition failed: %d (already spent) + %d (delivered) = %d, inside the %d-byte total "+
+			"cap, so no refusal is owed", spent, delivered, spent+delivered, int64(maxFanartSnapshotTotalBytes))
 	}
 
-	paths := []string{small, liar}
+	paths := append([]string{small}, chunkPaths...)
+	paths = append(paths, liar)
 	p := boundTestPublisher()
 	snapshot, warnings, err := p.snapshotFanart(context.Background(), paths)
 	if err != nil {
@@ -186,31 +227,39 @@ func TestSnapshotFanart_ReadOvershootsTheStat_Discarded(t *testing.T) {
 		t.Error("the ordinary backdrop was not captured; one over-budget neighbor must not cost it its " +
 			"restore bytes")
 	}
-	if snapshot[1].data != nil {
-		t.Fatalf("the over-budget read was RETAINED (%d bytes, cap %d). The stat said %d, so the pre-read "+
+	for i := range chunkPaths {
+		if snapshot[i+1].data == nil {
+			t.Fatalf("precondition failed: chunk slot %d was not captured; the budget pre-load did not "+
+				"work as intended, so the total accumulated below the fixture's assumption is wrong", i+1)
+		}
+	}
+	liarSlot := len(paths) - 1
+	if snapshot[liarSlot].data != nil {
+		t.Fatalf("the over-budget read was RETAINED (%d bytes, cap %d). The stat said 0, so the pre-read "+
 			"check waved it past -- only a check on the bytes actually read bounds what this push holds",
-			len(snapshot[1].data), int64(maxFanartSnapshotFileBytes), info.Size())
+			len(snapshot[liarSlot].data), int64(maxFanartSnapshotTotalBytes))
 	}
 	// The degrade must be loud, exactly as it is for a pre-read refusal: the
 	// slot holds no bytes, so a peer delete of it during this push cannot be
 	// repaired, and silence would make that invisible.
-	if joined := strings.Join(warnings, " | "); !strings.Contains(joined, "fanart 1") {
-		t.Errorf("warnings %q do not name the refused slot", joined)
+	wantSlot := fmt.Sprintf("fanart %d", liarSlot)
+	if joined := strings.Join(warnings, " | "); !strings.Contains(joined, wantSlot) {
+		t.Errorf("warnings %q do not name the refused slot %q", joined, wantSlot)
 	}
-	// WHICH check refused it (#2712 review, N8). Asserting only that slot 1 was
-	// refused let an unrelated mutation pass: rejecting the FIFO as a
-	// non-regular file BEFORE the read produces a nil-data entry naming slot 1
-	// too, so the test went green while never exercising the post-read cap it
-	// exists for. The read wording is the only thing that says the bytes were
-	// actually delivered and then thrown away.
+	// WHICH check refused it (#2712 review, N8). Asserting only that the slot
+	// was refused let an unrelated mutation pass: rejecting the FIFO as a
+	// non-regular file BEFORE the read produces a nil-data entry naming the
+	// same slot too, so the test went green while never exercising the
+	// post-read cap it exists for. The read wording is the only thing that
+	// says the bytes were actually delivered and then thrown away.
 	if joined := strings.Join(warnings, " | "); !strings.Contains(joined, readRefusalPhrase) {
-		t.Errorf("warnings %q do not carry the POST-read refusal wording %q, so slot 1 was refused for "+
+		t.Errorf("warnings %q do not carry the POST-read refusal wording %q, so the slot was refused for "+
 			"some other reason; this test says nothing about the TOCTOU backstop unless the refusal came "+
 			"from the length actually read", joined, readRefusalPhrase)
 	}
 	if joined := strings.Join(warnings, " | "); strings.Contains(joined, statRefusalPhrase) {
-		t.Errorf("warnings %q carry the PRE-read wording %q, but the stat reported %d bytes and cannot "+
-			"have refused this slot", joined, statRefusalPhrase, info.Size())
+		t.Errorf("warnings %q carry the PRE-read wording %q, but the stat reported 0 bytes and cannot "+
+			"have refused this slot", joined, statRefusalPhrase)
 	}
 }
 
@@ -259,7 +308,7 @@ func unreadableOversizeFile(t *testing.T, path string, size int64) bool {
 }
 
 // TestSnapshotFanart_HonestlyHugeButUnreadable_RefusedBeforeTheRead is the
-// guard for the pre-read half of the cap (#2712 review, B2).
+// guard for the pre-read half of the TOTAL cap (#2712 review, B2).
 //
 // WHAT WAS UNGUARDED. The two-stage design rests on a claim about ORDER: the
 // stat refuses an honestly-huge file so its bytes are never allocated at all,
@@ -270,6 +319,9 @@ func unreadableOversizeFile(t *testing.T, path string, size int64) bool {
 // green, because refuseResult caught the very same files a moment later and
 // every assertion was about the OUTCOME (nil data, a warning, the preserved
 // index), which is identical either way.
+//
+// #3017: this drove the PER-FILE cap's pre-read half; it now drives the TOTAL
+// cap's, since the per-file bound no longer refuses anything before the read.
 //
 // HOW THIS SEES THE DIFFERENCE. Ordering is not directly observable, so the
 // test observes something that follows from it: a file the stat refuses is one
@@ -290,7 +342,7 @@ func TestSnapshotFanart_HonestlyHugeButUnreadable_RefusedBeforeTheRead(t *testin
 		t.Fatalf("writing fixture: %v", err)
 	}
 	huge := filepath.Join(dir, "fanart1.jpg")
-	const size = int64(maxFanartSnapshotFileBytes) + (1 << 20) // 13 MiB
+	const size = int64(maxFanartSnapshotTotalBytes) + (1 << 20) // total cap + 1 MiB
 	if !unreadableOversizeFile(t, huge, size) {
 		t.Skip("environment can read a 0o000 file (ACL or capabilities); the read cannot be made to fail")
 	}
@@ -306,9 +358,9 @@ func TestSnapshotFanart_HonestlyHugeButUnreadable_RefusedBeforeTheRead(t *testin
 	if statErr != nil {
 		t.Fatalf("precondition failed: cannot stat the fixture: %v", statErr)
 	}
-	if info.Size() <= maxFanartSnapshotFileBytes {
-		t.Fatalf("precondition failed: the fixture stats at %d bytes, inside the %d-byte per-file cap, so "+
-			"the pre-read check owes no refusal", info.Size(), int64(maxFanartSnapshotFileBytes))
+	if info.Size() <= maxFanartSnapshotTotalBytes {
+		t.Fatalf("precondition failed: the fixture stats at %d bytes, inside the %d-byte total cap, so "+
+			"the pre-read check owes no refusal", info.Size(), int64(maxFanartSnapshotTotalBytes))
 	}
 	// Two: the read must genuinely fail. If it could succeed, the pre-read and
 	// post-read orders would produce the same outcome again and the test would

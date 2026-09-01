@@ -426,31 +426,16 @@ func TestSyncImageToPlatforms_OversizeImage_WarnsDistinctly(t *testing.T) {
 }
 
 // TestSyncAllFanartToPlatforms_OversizeFile_WarnsDistinctly is the same guard
-// for the over-size arm on the fanart path, and #2712 MOVED which arm answers.
+// for the over-size arm on the fanart path.
 //
-// The fixture is over img.MaxDecodeBytes (25 MB) and used to be refused by the
-// read, which returns ErrImageTooLarge. The snapshot's per-file cap is 12 MiB,
-// stricter and checked from a stat BEFORE the read, so this file is now refused
-// without ever being opened. Both outcomes are a distinct over-size warning
-// rather than the generic read failure, which is what this test has always been
-// about; only the sentence changed, so the assertion is retargeted rather than
-// relaxed.
-//
-// WHAT THIS TEST NO LONGER COVERS, AND WHO DOES. Because the fixture is now
-// refused before the read, this test no longer reaches the read's own
-// ErrImageTooLarge arm -- it was the fixture that used to. Stated checkably:
-// collapse the two arms in snapshotFanart's read-failure branch so the generic
-// "failed to read fanart %d" is emitted in BOTH cases, exactly the defect this
-// test's _WarnsDistinctly name exists to catch, and the negative assertion
-// below cannot see it, because neither arm ran.
-//
-// That arm is covered by TestSyncAllFanartToPlatforms_ReadOversizeArm_
-// StillReachable, immediately below, which kills that same mutation. It reaches
-// the arm the only way that remains once the stricter snapshot cap sits in
-// front of it: a stat that under-reports what the read delivers, which needs a
-// platform primitive (a FIFO, which stats at zero bytes) rather than an
-// ordinary file. Between the two tests both arms of the branch stay pinned to
-// their own wording; neither test does it alone.
+// The fixture is over img.MaxDecodeBytes (25 MB), so the READ itself refuses
+// it with ErrImageTooLarge. #3017: the snapshot's per-file retention cap (12
+// MiB) no longer refuses anything before the read -- it now governs only
+// whether captured bytes are RETAINED after a successful upload -- so an
+// ordinary oversize file reaches the READ's own arm directly, with no FIFO
+// trick needed to route around a pre-read refusal. Distinct over-size warning
+// rather than the generic read failure is what this test has always been
+// about; only WHICH arm produces it changed.
 func TestSyncAllFanartToPlatforms_OversizeFile_WarnsDistinctly(t *testing.T) {
 	dir := t.TempDir()
 	writeOversizeFile(t, filepath.Join(dir, fanartPrimaryFixtureName))
@@ -461,46 +446,51 @@ func TestSyncAllFanartToPlatforms_OversizeFile_WarnsDistinctly(t *testing.T) {
 		&artist.Artist{ID: "a1", Name: "Oversize Fanart", Path: dir})
 
 	joined := strings.Join(warnings, "|")
-	if !strings.Contains(joined, statRefusalPhrase) {
-		t.Fatalf("warnings = %v, want the distinct over-size wording", warnings)
+	if !strings.Contains(joined, "exceeds the size limit for upload") {
+		t.Fatalf("warnings = %v, want the READ bound's distinct over-size wording", warnings)
 	}
 	if strings.Contains(joined, "failed to read fanart") {
 		t.Errorf("warnings = %v, want ONLY the over-size wording; the generic "+
 			"read-failure string means the two arms are no longer distinct", warnings)
 	}
+	// Neither TOTAL-cap wording should appear either: a single 25MB-ish file
+	// is nowhere near the 192 MiB total, so if either shows up here the read
+	// bound is no longer the arm that answered.
+	if strings.Contains(joined, statRefusalPhrase) || strings.Contains(joined, readRefusalPhrase) {
+		t.Errorf("warnings = %v carry a snapshot-cap wording; the READ bound should have refused this file "+
+			"on its own terms", warnings)
+	}
 }
 
-// TestSyncAllFanartToPlatforms_ReadOversizeArm_StillReachable keeps the read's
-// ErrImageTooLarge arm covered after #2712 took its old fixture away.
-//
-// snapshotFanart's comment claims that arm is now the NARROWER case rather than
-// dead code -- reachable when the pre-read stat did not see the true size. A
-// claim of reachability with no test that reaches it is how an arm quietly
-// becomes unreachable and nobody notices, so this drives it: the FIFO stats at
-// zero bytes, the pre-read cap therefore waves it past, and the read then meets
-// more than img.MaxDecodeBytes and refuses on its own terms.
+// TestSyncAllFanartToPlatforms_ReadOversizeArm_StillReachable_ViaLyingStat is
+// the TOTAL-cap analog of the direct case above: it proves the read's
+// ErrImageTooLarge arm still answers even when the pre-read TOTAL-cap stat
+// under-reports (a FIFO, which stats at zero bytes), so a future change that
+// routes the total cap's pre-read check ahead of the read cannot silently
+// swallow this arm for every input shape, not just the ordinary one the test
+// above drives.
 //
 // The wording must be the READ's, not either budget message, because that is
 // the whole point: a different arm answered.
-func TestSyncAllFanartToPlatforms_ReadOversizeArm_StillReachable(t *testing.T) {
+func TestSyncAllFanartToPlatforms_ReadOversizeArm_StillReachable_ViaLyingStat(t *testing.T) {
 	dir := t.TempDir()
 	liar := filepath.Join(dir, fanartPrimaryFixtureName)
 	fifoDeliveringBytes(t, liar, img.MaxDecodeBytes+1)
 
-	// PRECONDITIONS. The stat must under-report (otherwise the pre-read cap
-	// answers and this test measures the wrong arm), and the payload must
-	// exceed the READ bound, not merely the snapshot cap.
+	// PRECONDITIONS. The stat must under-report (otherwise the pre-read TOTAL
+	// cap answers and this test measures the wrong arm), and the payload must
+	// exceed the READ bound.
 	info, statErr := os.Stat(liar)
 	if statErr != nil {
 		t.Fatalf("precondition failed: cannot stat the FIFO: %v", statErr)
 	}
-	if info.Size() > maxFanartSnapshotFileBytes {
-		t.Fatalf("precondition failed: the stat reports %d bytes, which the pre-read cap already refuses",
+	if info.Size() > maxFanartSnapshotTotalBytes {
+		t.Fatalf("precondition failed: the stat reports %d bytes, which the pre-read total cap already refuses",
 			info.Size())
 	}
 	if img.MaxDecodeBytes+1 <= maxFanartSnapshotFileBytes {
-		t.Fatalf("precondition failed: the payload is inside the %d-byte snapshot cap, so the snapshot "+
-			"cap could answer instead of the read bound", int64(maxFanartSnapshotFileBytes))
+		t.Fatalf("precondition failed: the payload is inside the %d-byte retention cap, so this scenario "+
+			"is not distinct from an ordinary oversize file", int64(maxFanartSnapshotFileBytes))
 	}
 
 	p := syncTestPublisher()

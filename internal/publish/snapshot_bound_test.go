@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	img "github.com/sydlexius/stillwater/internal/image"
 )
 
 // #2712: snapshotFanart holds the WHOLE fanart set in memory for the duration of
@@ -114,10 +116,16 @@ func assertSnapshotShape(t *testing.T, got []fanartSnapshot, paths []string) {
 	}
 }
 
-// The two halves of the per-file cap produce warnings that differ in one
+// The two halves of the TOTAL-bytes cap produce warnings that differ in one
 // phrase, and nothing in the suite used to assert the difference (#2712 review,
 // N1/B2). These constants name the phrases once so a wording change breaks in a
 // single place rather than in four assertions with four opinions about it.
+//
+// #3017: this pair used to belong to the PER-FILE cap. The per-file cap no
+// longer refuses before the read (it governs retention only, checked after
+// the upload loop via fanartSnapshot.overRetentionCap), so refuse's "bytes on
+// disk" / refuseResult's "bytes read" split now discriminates the TOTAL cap's
+// two halves instead. The phrases are unchanged; only what fires them moved.
 const (
 	// statRefusalPhrase appears only in fanartSnapshotBudget.refuse, the check
 	// that runs BEFORE the read and takes the size from os.Stat. It is the
@@ -280,7 +288,21 @@ func TestSnapshotFanart_FileCountCap_DegradesLoudly(t *testing.T) {
 // implementation that aborted the set on the first over-size file would leave
 // every later backdrop uncaptured and therefore unrepairable, which is a strictly
 // worse outcome than the memory the cap was protecting.
-func TestSnapshotFanart_PerFileCap_DegradesLoudly(t *testing.T) {
+//
+// #3017 RETARGETED THIS TEST. The per-file cap no longer refuses before the
+// read -- see snapshotFanart's doc comment -- so a file over
+// maxFanartSnapshotFileBytes (and under img.MaxDecodeBytes) is now READ and
+// CAPTURED here; snapshotFanart's contract stops at the read, and the
+// retention drop only happens later, in syncAllFanartToPlatforms, which this
+// unit-level test does not call. What this test now proves is the
+// PRECONDITION for that later behavior: snapshotFanart hands back the
+// over-cap slot WITH its bytes and WITH fanartSnapshot.overRetentionCap()
+// true, which is exactly what syncAllFanartToPlatforms needs to see in
+// order to push it and then drop it. The end-to-end pushOnly behavior
+// (upload happens, retention does not) is covered by
+// TestSyncAllFanart_OverPerFileCap_PushedButNotRetained in peer_clobber_test.go,
+// which drives the real sync path with a fake peer.
+func TestSnapshotFanart_PerFileCap_ReadAndCapturedNotRefused(t *testing.T) {
 	// No t.Parallel; see the note at the top of this file.
 	dir := t.TempDir()
 
@@ -298,51 +320,54 @@ func TestSnapshotFanart_PerFileCap_DegradesLoudly(t *testing.T) {
 
 	// PRECONDITION, measured off the filesystem rather than assumed from the
 	// truncate call: a fixture that did not actually exceed the cap would make
-	// every assertion below pass for the wrong reason.
+	// every assertion below pass for the wrong reason. Also under
+	// img.MaxDecodeBytes, or the READ itself would refuse it and this test
+	// would be measuring the wrong bound entirely (see snapshot_bound_stat's
+	// ReadOvershootsTheStat cases for that arm).
 	info, statErr := os.Stat(huge)
 	if statErr != nil {
 		t.Fatalf("stat'ing the oversize fixture: %v", statErr)
 	}
 	if info.Size() <= maxFanartSnapshotFileBytes {
 		t.Fatalf("precondition failed: the oversize fixture is %d bytes, not over the %d-byte per-file "+
-			"cap, so no refusal is owed", info.Size(), int64(maxFanartSnapshotFileBytes))
+			"cap, so this test proves nothing about it", info.Size(), int64(maxFanartSnapshotFileBytes))
+	}
+	if info.Size() > img.MaxDecodeBytes {
+		t.Fatalf("precondition failed: the fixture is %d bytes, over img.MaxDecodeBytes (%d); the READ "+
+			"would refuse it and this test would measure the wrong bound", info.Size(), img.MaxDecodeBytes)
 	}
 
 	p := boundTestPublisher()
 	snapshot, warnings, err := p.snapshotFanart(context.Background(), paths)
 
 	if err != nil {
-		t.Fatalf("snapshotFanart returned %v; one over-size file says nothing about the rest of the set", err)
+		t.Fatalf("snapshotFanart returned %v; an over-retention-cap file is legal to read", err)
 	}
 	assertSnapshotShape(t, snapshot, paths)
 
-	if snapshot[1].data != nil {
-		t.Errorf("the over-size backdrop was captured anyway (%d bytes held); the cap is not enforced",
-			len(snapshot[1].data))
+	// THE #3017 ASSERTION: captured, not refused.
+	if snapshot[1].data == nil {
+		t.Fatal("the over-retention-cap backdrop was refused before the read; #3017 requires it be read and " +
+			"pushed, with retention decided only after every peer has had its upload")
 	}
-	// Both NEIGHBORS survived. This is what proves the refusal did not abort
-	// the loop, and it is the assertion that fails if a future change turns the
-	// per-file cap into a set-wide one.
-	if snapshot[0].data == nil || snapshot[2].data == nil {
-		t.Errorf("a healthy backdrop beside the over-size one was not captured (slot 0 captured=%t, "+
-			"slot 2 captured=%t); a per-file refusal must not stop the set, or the surviving backdrops "+
-			"become unrepairable too", snapshot[0].data != nil, snapshot[2].data != nil)
+	if len(snapshot[1].data) != int(maxFanartSnapshotFileBytes+1) {
+		t.Errorf("captured %d bytes, want exactly the fixture's %d", len(snapshot[1].data), maxFanartSnapshotFileBytes+1)
 	}
-	if len(warnings) != 1 {
-		t.Fatalf("got %d warnings, want exactly 1 for the single refused file: %v", len(warnings), warnings)
+	if !snapshot[1].overRetentionCap() {
+		t.Error("overRetentionCap() = false for a slot one byte over the cap; retention cannot be dropped " +
+			"later if this bit is wrong")
 	}
-	// WHICH check refused it, not merely that something did (#2712 review, N1).
-	// The pre-read stat and the post-read length both refuse an over-size file
-	// and their messages differ in exactly one phrase, so this is the only
-	// assertion that can tell them apart. Asserting the shared half alone let
-	// three mutations that deleted the pre-read half entirely go unnoticed, all
-	// of them still green because refuseResult caught the same files afterwards.
-	assertStatRefusal(t, warnings[0])
-	// The operator is told the slot is missing from the PUSH too, not only from
-	// the restore snapshot (#3017). A message naming just the snapshot sends
-	// them looking for a repair problem when a backdrop has actually stopped
-	// reaching their peers.
-	assertNamesBothLosses(t, warnings[0])
+	// Neighbors are ordinary and must not be flagged.
+	if snapshot[0].overRetentionCap() || snapshot[2].overRetentionCap() {
+		t.Errorf("a neighbor under the cap reports overRetentionCap()=true (slot0=%t, slot2=%t)",
+			snapshot[0].overRetentionCap(), snapshot[2].overRetentionCap())
+	}
+	// No warning and no cap-refusal accounting: this file was fully captured,
+	// so nothing was lost at the snapshot layer for the caller to be told
+	// about here.
+	if len(warnings) != 0 {
+		t.Errorf("got warnings %v for a file that was captured, not refused", warnings)
+	}
 }
 
 // TestSnapshotFanart_TotalBytesCap_DegradesLoudly is the cap that actually
@@ -506,8 +531,11 @@ func TestSnapshotFanart_Refusal_IsLoggedAtError(t *testing.T) {
 	if err := os.WriteFile(small, []byte("an ordinary backdrop"), 0o600); err != nil {
 		t.Fatalf("writing fixture: %v", err)
 	}
+	// #3017: the per-file cap no longer refuses anything by itself, so this
+	// fixture is sized past the TOTAL-bytes cap instead -- still a pre-read
+	// refuse() refusal, which is what degradeFanartSlot's Error log is about.
 	huge := filepath.Join(dir, "fanart1.jpg")
-	sparseFile(t, huge, maxFanartSnapshotFileBytes+1)
+	sparseFile(t, huge, maxFanartSnapshotTotalBytes+1)
 
 	// PRECONDITION, measured off the filesystem: a fixture inside the cap owes
 	// no refusal, so there would be no log line to look for and the assertions
@@ -516,9 +544,9 @@ func TestSnapshotFanart_Refusal_IsLoggedAtError(t *testing.T) {
 	if statErr != nil {
 		t.Fatalf("stat'ing the oversize fixture: %v", statErr)
 	}
-	if info.Size() <= maxFanartSnapshotFileBytes {
-		t.Fatalf("precondition failed: the fixture is %d bytes, inside the %d-byte per-file cap",
-			info.Size(), int64(maxFanartSnapshotFileBytes))
+	if info.Size() <= maxFanartSnapshotTotalBytes {
+		t.Fatalf("precondition failed: the fixture is %d bytes, inside the %d-byte total cap",
+			info.Size(), int64(maxFanartSnapshotTotalBytes))
 	}
 
 	var logs bytes.Buffer
@@ -568,7 +596,7 @@ func TestSnapshotFanart_Refusal_IsLoggedAtError(t *testing.T) {
 }
 
 // TestFanartSnapshotBudget_RefuseResult_BoundsWhatWasACTUALLYRead covers the
-// TOCTOU half of the cap (#2712 review).
+// TOCTOU half of the TOTAL-bytes cap (#2712 review).
 //
 // WHY A SECOND CHECK EXISTS AT ALL. The pre-read refusal is a stat, and a stat
 // is a PREDICTION: the file can grow between the stat and the read, so on its
@@ -577,8 +605,16 @@ func TestSnapshotFanart_Refusal_IsLoggedAtError(t *testing.T) {
 // stat, and it bites harder here because snapshotFanart holds up to
 // maxFanartSnapshotFiles results at once -- believing every stat would allow
 // 100 reads of img.MaxDecodeBytes (25 MB) to sit resident against a documented
-// 192 MiB bound, roughly 2.5 GB. refuseResult re-applies both size caps to the
+// 192 MiB bound, roughly 2.5 GB. refuseResult re-applies the TOTAL cap to the
 // length actually read, and the caller DISCARDS what it refuses.
+//
+// #3017: the per-file cap is no longer one of the two caps refuseResult
+// re-applies -- it used to be, alongside the total, but the per-file bound is
+// now RETENTION-only (fanartSnapshot.overRetentionCap, consulted after the
+// upload loop) rather than a reason to refuse the read result. A file whose
+// read overshoots the per-file cap but stays under the total is therefore
+// captured here, not refused; the case below that used to prove the opposite
+// now proves that directly.
 //
 // This drives the predicate directly, at both boundaries in both directions.
 // It covers the DECISION only. The WIRING -- that snapshotFanart actually calls
@@ -601,13 +637,11 @@ func TestFanartSnapshotBudget_RefuseResult_BoundsWhatWasACTUALLYRead(t *testing.
 			read: 4 << 20,
 		},
 		{
-			name: "exactly at the per-file cap is still captured",
-			read: maxFanartSnapshotFileBytes,
-		},
-		{
-			name:        "one byte over the per-file cap is refused",
-			read:        maxFanartSnapshotFileBytes + 1,
-			wantRefused: true,
+			// #3017: over the per-file RETENTION cap but under the total is
+			// captured, not refused -- refuseResult no longer consults the
+			// per-file bound at all.
+			name: "over the per-file cap but under the total is still captured",
+			read: maxFanartSnapshotFileBytes + 1,
 		},
 		{
 			name:        "a read that lands exactly on the total is captured",
@@ -685,9 +719,12 @@ func TestSnapshotFanart_RefusedSlots_DoNotConsumeTheCountBudget(t *testing.T) {
 	// be invisible.
 	for i := 0; i < junkCount; i++ {
 		p := filepath.Join(dir, fmt.Sprintf("junk%02d.jpg", i))
-		// One byte over the per-file cap, so each is refused by the PRE-READ
-		// stat and never allocated. Sparse, so 60 of them cost no disk.
-		sparseFile(t, p, maxFanartSnapshotFileBytes+1)
+		// #3017: the per-file cap no longer refuses anything on its own, so
+		// each junk file here is sized past the TOTAL-bytes cap BY ITSELF --
+		// one byte over maxFanartSnapshotTotalBytes -- which the pre-read
+		// stat still refuses on the very first file (b.bytes starts at 0).
+		// Sparse, so 60 of them cost no disk.
+		sparseFile(t, p, maxFanartSnapshotTotalBytes+1)
 		paths = append(paths, p)
 	}
 	realPaths := make([]string, 0, realCount)
@@ -1000,17 +1037,24 @@ func TestFanartWarningLog_Empty_ReturnsNil(t *testing.T) {
 //     also declines to refuse.
 //
 // The one behavior a raw stat CANNOT produce: on a file that is genuinely over
-// the per-file cap, a bound stat fails with the cancellation and refuse()
+// the total-bytes cap, a bound stat fails with the cancellation and refuse()
 // falls through to "not refused" (a canceled request is not an over-size
 // backdrop), whereas a raw stat succeeds, sees the real size, and REFUSES.
 // Those outcomes are opposite, so the assertion discriminates.
+//
+// #3017: this fixture used to be sized past the PER-FILE cap. That cap no
+// longer refuses before the read (see refuse's doc comment), so the fixture
+// is now sized past the TOTAL cap instead -- the one pre-read check
+// remaining in refuse -- which still exercises exactly the ctx-bound stat
+// this test is about.
 func TestSnapshotFanart_PreReadStat_IsCancellable(t *testing.T) {
 	// No t.Parallel; see the note at the top of this file.
 	dir := t.TempDir()
 	oversize := filepath.Join(dir, "fanart.jpg")
-	// One byte past the per-file cap, so an UNBOUND stat would refuse it.
+	// One byte past the total-bytes cap, so an UNBOUND stat would refuse it
+	// (budget starts empty, so b.bytes+size > total on this single file).
 	// Sparse, so it costs no disk.
-	sparseFile(t, oversize, maxFanartSnapshotFileBytes+1)
+	sparseFile(t, oversize, maxFanartSnapshotTotalBytes+1)
 
 	// PRECONDITION, measured rather than assumed: the fixture really is over
 	// the cap, so a refusal below is attributable to the stat having succeeded.
@@ -1018,10 +1062,10 @@ func TestSnapshotFanart_PreReadStat_IsCancellable(t *testing.T) {
 	if statErr != nil {
 		t.Fatalf("stating fixture: %v", statErr)
 	}
-	if info.Size() <= maxFanartSnapshotFileBytes {
-		t.Fatalf("precondition failed: fixture is %d bytes, not over the %d-byte per-file cap, so an "+
+	if info.Size() <= maxFanartSnapshotTotalBytes {
+		t.Fatalf("precondition failed: fixture is %d bytes, not over the %d-byte total cap, so an "+
 			"unbound stat would not refuse it and this test could not tell the two apart",
-			info.Size(), int64(maxFanartSnapshotFileBytes))
+			info.Size(), int64(maxFanartSnapshotTotalBytes))
 	}
 
 	// PRECONDITION: uncanceled, this fixture IS refused. Without it, a mutation
