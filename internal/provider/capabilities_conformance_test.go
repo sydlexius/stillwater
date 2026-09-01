@@ -29,9 +29,11 @@ import (
 // The derivation is deliberately an over-approximation -- it counts an
 // assignment anywhere in the package, not only inside GetArtist. That direction
 // is the safe one: it can only fail a declaration that omits a field the
-// adapter does touch, never bless one that the adapter never touches.
-// TestAdapterFieldsAreNotSearchOnly pins the assumption that no capability
-// rests solely on a search path.
+// adapter does touch, never bless one that the adapter never touches. Hostile
+// review confirmed that by construction: an assignment in dead, uncalled
+// non-test code makes the guard DEMAND a declaration rather than bless one, and
+// assignments in _test.go files are not seen at all (packages.Load runs without
+// NeedForTest).
 
 // adapterDirs lists the package directory under internal/provider/ for every
 // provider in AllProviderNames(). TestAdapterDirsCoverAllProviders keeps it
@@ -447,12 +449,20 @@ func TestDefaultPrioritiesHaveNoDeadSlots(t *testing.T) {
 	}
 }
 
-// TestAdapterFieldsAreNotSearchOnly pins the assumption the derivation rests
-// on: no declared capability comes solely from a search code path. The
-// derivation counts assignments anywhere in an adapter package, so a field set
-// only while mapping a SEARCH result would look like a GetArtist capability.
-// If this ever fails, the fix is to scope the derivation, not to widen the
+// TestAdapterFieldsAreNotSearchOnly is a FORWARD-LOOKING pin, and today it is a
+// tautology: no adapter assigns ArtistMetadata inside a search function at all,
+// so skipping those functions changes no derivation and this currently
+// duplicates the main conformance assertion. It is deliberately NOT the
+// evidence that the over-approximation is safe -- the dead-code behavior noted
+// at the top of this file is. Its value is future tense: if an adapter later
+// populates a field only while mapping a SEARCH result, that field would look
+// like a GetArtist capability to the main guard, and this is what would catch
+// it. If it ever fails, the fix is to scope the derivation, not to widen the
 // declaration.
+//
+// Known limit: the skip list matches top-level function NAMES, so a field set
+// in a helper reachable only from a search path slips past both this test and
+// the main guard.
 func TestAdapterFieldsAreNotSearchOnly(t *testing.T) {
 	searchFuncs := map[string]bool{
 		"SearchArtist": true, "searchArtist": true, "mapSearchResults": true,
