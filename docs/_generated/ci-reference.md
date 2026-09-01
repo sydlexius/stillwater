@@ -9,7 +9,7 @@ This page documents the structure of the Stillwater CI pipeline. It is generated
 ```mermaid
 flowchart TD
     a11y_summary["A11y Smoke Tests (Playwright + axe-core)"]
-    a11y_test["A11y Smoke Tests Check"]
+    a11y_test["A11y Smoke Tests Check (${{ matrix.project }})"]
     build["Build"]
     build_matrix["Build Matrix (${{ matrix.goos }}, ${{ matrix.goarch }})"]
     cache_usage["Cache Usage Check"]
