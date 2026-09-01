@@ -207,17 +207,23 @@ type platformPruneRequest struct {
 	ArtistID string `json:"artist_id"`
 	// AllArtists must be set explicitly to prune the whole library.
 	AllArtists bool `json:"all_artists"`
+	// DryRun returns the plan (which index survives each group) without
+	// deleting anything.
+	DryRun bool `json:"dry_run"`
 }
 
 // decodePlatformPruneRequest reads the scope from either encoding the two
 // callers actually use: JSON from the API, and form-encoded from the report
 // page's htmx buttons (htmx posts hx-vals as a form body -- no json-enc
-// extension is vendored here, and adding one to serve a two-field payload
+// extension is vendored here, and adding one to serve a three-field payload
 // would be a dependency bought for nothing).
 //
-// The form branch parses booleans STRICTLY. An unparsable "all_artists" is a
-// 400, never a false: a malformed value must not silently become a DIFFERENT
-// request than the operator authorized, on a path that deletes artwork.
+// The form branch parses booleans STRICTLY. An unparsable "all_artists" or
+// "dry_run" is a 400, never a false: a malformed all_artists would turn a
+// library-wide request into an unscoped one, a malformed dry_run would turn
+// a rehearsal into a real, irreversible delete, and either way a malformed
+// value must not silently become a DIFFERENT request than the operator
+// authorized, on a path that deletes artwork.
 //
 // CONTENT-TYPE DISPATCH IS A NEGATED SAFE-LIST, and that is a deliberate
 // decision rather than an oversight (hostile review, Minor 5). Anything that
@@ -265,6 +271,7 @@ func decodePlatformPruneRequest(w http.ResponseWriter, req *http.Request, logger
 			dst  *bool
 		}{
 			{"all_artists", &body.AllArtists},
+			{"dry_run", &body.DryRun},
 		} {
 			raw := req.PostFormValue(f.name)
 			if raw == "" {
@@ -357,6 +364,7 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 	scope := publish.PlatformBackdropPruneScope{
 		ArtistID:   body.ArtistID,
 		AllArtists: body.AllArtists,
+		DryRun:     body.DryRun,
 	}
 	// Reject an unscoped or contradictory request HERE with a 400, before the
 	// singleton is claimed. The publisher validates the same scope again and
@@ -400,8 +408,19 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 		// CONDITIONAL, not unconditional. The question the caches actually care
 		// about is "did this run possibly change the platform", and a run that
 		// failed before touching anything has not invalidated anything -- so it
-		// should not cost an established report and a fresh 62s sweep. Both
+		// should not cost an established report and a fresh 62s sweep. Three
 		// terms are load-bearing:
+		//   - !result.DryRun rules OUT a rehearsal entirely. A dry run never
+		//     reaches a delete (pruneOneArtist's `if scope.DryRun { continue }`
+		//     sits above the delete loop), so BackdropsRemoved is always 0 for
+		//     one -- but pruneOneArtist can still fail BEFORE that continue (a
+		//     GetPlatformIDs error, a connection load error, a detection
+		//     error), which appends to Failures and can bubble up as this very
+		//     error path. Without this guard, a dry run that failed early would
+		//     satisfy `len(Failures) > 0` and invalidate a report and kick a
+		//     sidebar refresh over a run that provably changed nothing on any
+		//     platform -- the exact defect this hostile-review finding caught
+		//     (#3157 F1).
 		//   - BackdropsRemoved > 0 is the confirmed case: deletes landed.
 		//   - Failures is the AMBIGUOUS case, and it must be included. A delete
 		//     whose request errors (a timeout after the platform already
@@ -416,7 +435,7 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 		// The success path below stays unconditional -- there the caller was
 		// told the run completed, so a re-sweep is what makes the page agree
 		// with the receipt it just got.
-		if result.BackdropsRemoved > 0 || len(result.Failures) > 0 {
+		if !result.DryRun && (result.BackdropsRemoved > 0 || len(result.Failures) > 0) {
 			r.logger.Warn("platform backdrop prune failed after it may have deleted; invalidating the cached report",
 				slog.Int("backdrops_removed", result.BackdropsRemoved),
 				slog.Int("failures", len(result.Failures)))
@@ -440,10 +459,35 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 		// backdrops_removed > 0, since a run whose only failures were
 		// pre-delete lookups (BackdropsRemoved == 0, Failures > 0) still
 		// changed nothing but is not equivalent to never having run.
+		//
+		// !result.DryRun gates this the same way it gates the invalidation
+		// above, and for the same reason: `partial` is documented (here and in
+		// openapi.yaml) as "the failed run may have changed the platform", and
+		// a dry run cannot have changed anything regardless of how many
+		// failures it recorded -- it never reaches a delete. Leaving DryRun out
+		// of this expression would produce a body that is self-contradictory
+		// on the wire: `"dry_run":true` next to `"partial":true`, telling an
+		// operator their rehearsal "may have changed the platform" when by
+		// construction it cannot have.
 		errBody := platformPruneResponse(result)
 		errBody["error"] = "prune failed"
-		errBody["partial"] = result.BackdropsRemoved > 0 || len(result.Failures) > 0
+		errBody["partial"] = !result.DryRun && (result.BackdropsRemoved > 0 || len(result.Failures) > 0)
 		writeJSON(w, http.StatusInternalServerError, errBody)
+		return
+	}
+
+	// A DRY RUN changed nothing on any platform, so it must not cost the
+	// operator their cached report and a fresh 62-second sweep. Returning here
+	// is what makes the rehearsal cheap enough to be used before the real run:
+	// an invalidating dry run would push the page to "still being prepared"
+	// and hide the very rows the operator is rehearsing against.
+	//
+	// Reached only on the SUCCESS path now (hostile review #3157 F1): a dry
+	// run that returned an error above already took its own DryRun-gated
+	// branch and returned before here, so this check is no longer the only
+	// place a rehearsal's cache guarantee is honored.
+	if result.DryRun {
+		writeJSON(w, http.StatusOK, platformPruneResponse(result))
 		return
 	}
 
@@ -489,7 +533,8 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 // platformPruneResponse renders a prune result as the endpoint's JSON body.
 // Shared by the 200 and the 500 so a partial run reports the same shape as a
 // complete one, and so the PLAN -- which index survives each group, and WHAT
-// ACTUALLY BECAME OF IT -- is present in both.
+// ACTUALLY BECAME OF IT -- is present in both. That plan is the dry-run
+// preview an operator reads BEFORE authorizing an irreversible delete.
 //
 // Every entry carries an `outcome` (planned/deleted/skipped/failed). Without
 // it a caller seeing a three-entry plan next to backdrops_removed=1 has two
@@ -511,6 +556,7 @@ func platformPruneResponse(result publish.PlatformBackdropPruneResult) map[strin
 		"backdrops_removed": result.BackdropsRemoved,
 		"skipped_changed":   result.SkippedChanged,
 		"failures":          len(result.Failures),
+		"dry_run":           result.DryRun,
 		"plan":              plan,
 	}
 }

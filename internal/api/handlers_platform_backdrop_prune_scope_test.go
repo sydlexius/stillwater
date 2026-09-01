@@ -28,6 +28,7 @@ func TestPlatformBackdropDuplicatesPrune_RefusesAnUnscopedRequest(t *testing.T) 
 	}{
 		{"empty body", ``},
 		{"empty object", `{}`},
+		{"dry run is not a scope", `{"dry_run": true}`},
 		{"both scopes", `{"artist_id": "a1", "all_artists": true}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,6 +66,7 @@ func TestPlatformBackdropDuplicatesPrune_AcceptsFormEncodedScope(t *testing.T) {
 	// itself: see TestDecodePlatformPruneRequest_FormCarriesTheArtistScope.
 	for _, body := range []string{
 		"all_artists=true",
+		"all_artists=true&dry_run=true",
 	} {
 		t.Run(body, func(t *testing.T) {
 			t.Parallel()
@@ -151,33 +153,41 @@ func TestDecodePlatformPruneRequest_FormCarriesTheArtistScope(t *testing.T) {
 // under the mutant that request reaches the publisher and 500s.
 func TestPlatformBackdropDuplicatesPrune_RejectsAMalformedFormBoolean(t *testing.T) {
 	t.Parallel()
-	for _, body := range []string{
+	for _, tc := range []struct {
+		body    string
+		wantErr string
+	}{
 		// No scope: 400 either way, but the MESSAGE must still name the
 		// boolean rather than the missing scope.
-		"all_artists=sure",
-		"all_artists=maybe",
+		{"all_artists=sure", "invalid boolean for all_artists"},
+		{"all_artists=maybe", "invalid boolean for all_artists"},
 		// A VALID scope alongside the malformed boolean. Nothing but the
 		// strict parse can reject this one.
-		"artist_id=a1&all_artists=sure",
+		{"artist_id=a1&all_artists=sure", "invalid boolean for all_artists"},
+		// A malformed dry_run must 400 NAMING dry_run, never silently read as
+		// false: a false dry_run turns a rehearsal into a real, irreversible
+		// delete. A valid all_artists alongside it means only the strict
+		// dry_run parse can produce this 400.
+		{"all_artists=true&dry_run=maybe", "invalid boolean for dry_run"},
 	} {
-		t.Run(body, func(t *testing.T) {
+		t.Run(tc.body, func(t *testing.T) {
 			t.Parallel()
 			r := testRouterWithPlatformPublisher(t)
 			req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
-				"/api/v1/reports/platform-backdrop-duplicates/prune", strings.NewReader(body))
+				"/api/v1/reports/platform-backdrop-duplicates/prune", strings.NewReader(tc.body))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			w := httptest.NewRecorder()
 			r.handlePlatformBackdropDuplicatesPrune(w, req)
 
 			if w.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want 400 for %q; body: %s", w.Code, body, w.Body.String())
+				t.Fatalf("status = %d, want 400 for %q; body: %s", w.Code, tc.body, w.Body.String())
 			}
 			var got map[string]string
 			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-				t.Fatalf("decoding body for %q: %v", body, err)
+				t.Fatalf("decoding body for %q: %v", tc.body, err)
 			}
-			if want := "invalid boolean for all_artists"; got["error"] != want {
-				t.Errorf("error = %q, want %q -- a 400 for the wrong REASON is how a lenient parse hides", got["error"], want)
+			if got["error"] != tc.wantErr {
+				t.Errorf("error = %q, want %q -- a 400 for the wrong REASON is how a lenient parse hides", got["error"], tc.wantErr)
 			}
 		})
 	}
