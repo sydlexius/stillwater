@@ -510,13 +510,19 @@ func TestDelete_NotFound(t *testing.T) {
 // for an event-driven rule (cross_artist_backdrop_collision) whose finding
 // cannot be re-derived. This package must not import internal/rule (see
 // internal/artist/lock_damage.go), so the rule id is a literal string rather
-// than the rule package's exported constant.
+// than the rule package's exported constant. A rename of that constant will
+// NOT fail this test (no FK/compiler link) -- keep this literal in sync with
+// RuleCrossArtistBackdropCollision in internal/rule/service.go. The same
+// literal is also duplicated at
+// web/templates/settings_image_subtypes_test.go.
 func TestArtistDelete_CascadesEventDrivenViolation(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
 
+	// Kept in sync with internal/rule/service.go's
+	// RuleCrossArtistBackdropCollision -- see the package doc comment above.
 	const eventDrivenRuleID = "cross_artist_backdrop_collision"
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)

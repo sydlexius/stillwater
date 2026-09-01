@@ -612,24 +612,47 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 // eventDrivenRules above). The guard below is a POSITIVE ALLOW-LIST for this
 // destructive predicate, matching clearableRuleIDs' rationale: it proceeds
 // only when the rule is affirmatively known non-event-driven (or has zero
-// surviving active violations), never "proceed unless flagged event-driven".
-// Today only logo_trimmable is deprecated and it is not event-driven, so this
-// is a no-op change in practice; it becomes load-bearing the moment the
+// surviving violations of ANY status), never "proceed unless flagged
+// event-driven".
+//
+// The survivor count spans EVERY status, not just open/pending_choice.
+// #2967 exists precisely because a soft-resolve (cleanupDisabledRuleState)
+// left a large population of collision violations at status='resolved',
+// and that resolved row is the ONLY surviving record of each finding --
+// exactly the population ClearResolvedViolations' clearableRuleIDs allow-list
+// (below) protects for the same reason. A guard that counted only active
+// statuses would protect a strictly narrower set than the guard it is
+// modeled on. dismissed rows are counted too: for an event-driven rule there
+// is no status whose destruction is recoverable, so the safe default for a
+// destructive predicate is to include it rather than carve out an exception.
+//
+// This is called only from SeedDefaults at server startup (called on the
+// SAME logo_trimmable-only literal as always). When the guard trips it does
+// NOT return an error: an earlier version did, which propagated through
+// SeedDefaults to a hard os.Exit(1) at boot with no self-clearing path --
+// an install with one surviving finding would never start again. Skipping
+// the delete and logging instead protects the data without holding the
+// application hostage; SeedDefaults simply leaves the rule (and its
+// violations, whatever their status) in place and continues. The condition
+// is pure DB state, so a second boot reaches the identical logged skip, not
+// an escalation.
+//
+// Today only logo_trimmable is deprecated and it is not event-driven, so
+// this is a no-op change in practice; it becomes load-bearing the moment the
 // deprecation list grows to include a rule in eventDrivenRules.
 func (s *Service) migrateDeprecatedRule(ctx context.Context, ruleID string) error {
 	if IsEventDriven(ruleID) {
 		var survivors int
 		if err := s.db.QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM rule_violations
-			WHERE rule_id = ? AND status IN (?, ?)
-		`, ruleID, ViolationStatusOpen, ViolationStatusPendingChoice).Scan(&survivors); err != nil {
+			SELECT COUNT(*) FROM rule_violations WHERE rule_id = ?
+		`, ruleID).Scan(&survivors); err != nil {
 			return fmt.Errorf("counting surviving violations for event-driven rule %s: %w", ruleID, err)
 		}
 		if survivors > 0 {
-			s.logger.Warn("refusing to deprecate an event-driven rule with surviving violations",
+			s.logger.Warn("skipping deprecation of an event-driven rule with surviving violations; the rule and its violations are left in place",
 				slog.String("rule_id", ruleID),
 				slog.Int("surviving_violations", survivors))
-			return fmt.Errorf("refusing to deprecate event-driven rule %s: %d surviving violation(s) would be destroyed by the cascade", ruleID, survivors)
+			return nil
 		}
 	}
 

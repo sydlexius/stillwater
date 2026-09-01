@@ -378,8 +378,9 @@ CREATE TABLE IF NOT EXISTS rules (
 --
 -- rule_id's ON DELETE CASCADE is NOT the same decision: it is guarded in
 -- Go at the one path that deletes a rule row (migrateDeprecatedRule,
--- internal/rule/service.go), which refuses to run the DELETE for an
--- event-driven rule with surviving violations. The schema itself cannot
+-- internal/rule/service.go), which SKIPS the DELETE (logging a warning,
+-- leaving the rule and its violations of every status in place) for an
+-- event-driven rule with any surviving violation. The schema itself cannot
 -- distinguish "the rule was intentionally deprecated with nothing left to
 -- lose" from "deleting this rule would destroy unrecoverable findings" --
 -- that check happens above this DDL, not in it.
