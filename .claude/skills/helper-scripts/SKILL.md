@@ -115,8 +115,8 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
 - `scripts/test-check-commit-signing.sh` -- hermetic tests for the above.
 - `scripts/check-hooks.sh` -- verify `core.hooksPath` points at `.githooks` and
   the hook files are executable.
-- `scripts/check-generated.sh` -- verify `*_templ.go` was regenerated after
-  `.templ` changes.
+- `scripts/check-generated.sh` -- regenerate every `*_templ.go` from source
+  and fail if the committed output differs.
 
 ## CSS and front-end
 
