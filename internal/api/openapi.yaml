@@ -4263,8 +4263,10 @@ paths:
             200 response -- dry_run and plan included -- since the publisher
             deletes page by page and may have removed a great many backdrops
             before the failure that aborted the run, and a dry run can fail
-            too, e.g. a paging or per-artist detection error, without having
-            deleted anything). The wrapped error is logged server-side
+            too, e.g. a paging error, without having deleted anything;
+            a per-artist detection failure is NOT one of these, since it is
+            collected into failures and the run continues to a 200). The
+            wrapped error is logged server-side
             either way.
           content:
             text/plain:

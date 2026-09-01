@@ -225,7 +225,7 @@ The per-artist button exists so the first real use of an irreversible sweep does
 
 There is deliberately no way to run the prune without saying which of the two you mean. A request that names neither one artist nor the whole library is refused rather than quietly treated as "everything".
 
-You can also rehearse a run before committing to it. Through the [API](../api/index.md), a dry run returns the complete plan -- for every copy it would delete, which copy would survive it -- and deletes nothing at all. Every entry in that plan says what became of it: deleted, skipped, failed, or (in a dry run) merely planned. Read those rather than working it out from the total, because they are written as the work happens and cannot disagree with it.
+You can also rehearse a run before committing to it. Through the [API](../api/index.md), a dry run that succeeds returns the complete plan -- for every copy it would delete, which copy would survive it -- and deletes nothing at all. A dry run that fails partway through your library returns the plan it had built up to that point rather than the whole one, so treat a failed rehearsal's plan as a partial picture. Every entry in that plan says what became of it: deleted, skipped, failed, or (in a dry run) merely planned. Read those rather than working it out from the total, because they are written as the work happens and cannot disagree with it.
 
 Because the prune only ever removes copies that are byte-identical to a kept survivor, no distinct artwork is ever lost. If a platform's copy is later needed again, re-running fanart sync from the local library re-pushes it from the local survivor.
 
