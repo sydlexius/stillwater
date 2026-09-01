@@ -2,37 +2,13 @@
 # check-generated.sh -- verify *_templ.go files were regenerated after .templ changes
 set -euo pipefail
 
-base=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
-# --no-renames: the structural check below maps each foo.templ to a literal
-# foo_templ.go path. Git's default rename detection collapses a renamed or
-# relocated generated file (e.g. next/activity_templ.go -> activity_page_templ.go
-# when a surface is promoted out of next/) to its NEW path only, so the old
-# expected path goes missing and the check false-positives even though the
-# generated output is correct. Disabling rename detection keeps a move visible
-# as delete-old + add-new, which is exactly what the path mapping expects.
-templ_changed=$(git diff --no-renames --name-only "$base"..HEAD -- '*.templ')
-gen_changed=$(git diff --no-renames --name-only "$base"..HEAD -- '*_templ.go')
-
-missing=""
-while IFS= read -r templ_file; do
-  [ -z "$templ_file" ] && continue
-  expected="${templ_file%.templ}_templ.go"
-  if ! echo "$gen_changed" | grep -qxF "$expected"; then
-    missing="${missing}  $templ_file\n"
-  fi
-done <<< "$templ_changed"
-
-if [ -n "$missing" ]; then
-  echo "ERROR: .templ files changed but corresponding *_templ.go not regenerated. Run: go tool templ generate"
-  echo "Missing regeneration for:"
-  printf "%b" "$missing"
-  exit 1
-fi
-
 # Content freshness check: regenerate all *_templ.go in a clean state and fail
-# if anything differs. This catches stale content from a wrong-version templ
-# binary -- not just a missing file -- and ensures the committed output matches
-# the pinned version in go.mod.
+# if anything differs. This catches a missing regeneration, stale content from
+# a wrong-version templ binary, and a hand-edited generated file alike -- it
+# compares CONTENT rather than inferring staleness from which paths appear in
+# a diff, which is what the check needs (#3156: a .templ edit that produces
+# byte-identical generated output, e.g. a blank-line removal, has no changed
+# *_templ.go in the diff and is not a failure).
 if ! go tool templ generate 2>/tmp/check-generated-templ.log; then
   echo "ERROR: 'go tool templ generate' failed:"
   cat /tmp/check-generated-templ.log
