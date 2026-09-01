@@ -367,7 +367,7 @@ func (r *sqliteImageRepo) writeAll(ctx context.Context, artistID string, images 
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	// Build a set of (image_type, slot_index) keys present in the incoming data
 	// so we can mark absent slots as not-existing afterward.
