@@ -370,6 +370,17 @@ func (r *sqliteArtistRepo) ClearField(ctx context.Context, id, field string) err
 	return nil
 }
 
+// Delete removes the artists row for id. It is ONE OF SEVERAL production
+// sites that issue DELETE FROM artists and so trigger the schema's
+// ON DELETE CASCADE into rule_violations and rule_results (and every other
+// artist-scoped table with that FK) -- not the sole path. The others are
+// internal/library/service.go (two orphan-prune sites and a connection-orphan
+// sweep), internal/artist/merge_artists.go (merge loser deletion), and
+// internal/database/migrate.go (duplicate-collapse migration). The cascade
+// firing is an intentional, documented decision (see the schema comment
+// above rule_violations in 001_initial_schema.sql and Service.Delete's doc
+// comment), and it applies identically at every one of these sites -- a
+// guard or audit line added only here would not fire for the others.
 func (r *sqliteArtistRepo) Delete(ctx context.Context, id string) error {
 	result, err := r.db.ExecContext(ctx, `DELETE FROM artists WHERE id = ?`, id)
 	if err != nil {

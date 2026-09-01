@@ -602,10 +602,87 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 	return nil
 }
 
+// deprecatedRulesKnownSafe is a POSITIVE ALLOW-LIST of deprecated rule ids
+// affirmatively vetted as NOT event-driven at the time they were deprecated,
+// so migrateDeprecatedRule may dismiss-and-delete them unconditionally.
+//
+// This is deliberately NOT keyed off IsEventDriven/eventDrivenRules. A Go map
+// lookup on a missing key returns the zero value, so IsEventDriven(ruleID)
+// returns false -- "not protected" -- for ANY rule id that was never
+// registered there, including one nobody has reasoned about yet. Gating the
+// unconditional-delete path on "not IsEventDriven" is therefore a NEGATED
+// SAFE-LIST: a future deprecation added to the deprecation list without ALSO
+// being added to eventDrivenRules would delete unconditionally and silently
+// reintroduce #3025, and the omission is exactly the kind of one-line mistake
+// a positive allow-list exists to make survivable. A Copilot review on #3025
+// caught this: the doc comment on migrateDeprecatedRule claimed a positive
+// allow-list while the code implemented the negated form it disclaimed.
+//
+// Every rule id ever passed to migrateDeprecatedRule must be a member of
+// this map to skip the survivor check below. An id that is NOT a member gets
+// the full survivor check regardless of whether it happens to appear in
+// eventDrivenRules -- the omission from THIS list is what makes an id
+// unvetted, not its event-driven status specifically.
+var deprecatedRulesKnownSafe = map[string]bool{
+	// logo_trimmable: replaced by logo_padding (RuleLogoPadding above). Never
+	// event-driven -- its violations were raised by ordinary engine
+	// evaluation and are freely re-derivable, so there is nothing to protect.
+	ruleLogoTrimmableDeprecated: true,
+}
+
 // migrateDeprecatedRule dismisses open violations for a removed rule and
 // deletes its rule definition. This is idempotent: if the rule does not
 // exist, no error is returned.
+//
+// #3025: deleting the rule row cascades (ON DELETE CASCADE, 001_initial_
+// schema.sql) to every rule_violations row for it -- including event-driven
+// ones, whose findings cannot be re-derived by any checker (see
+// eventDrivenRules above). The guard below is a POSITIVE ALLOW-LIST for this
+// destructive predicate, matching clearableRuleIDs' rationale: it proceeds
+// unconditionally only for a rule id affirmatively vetted safe
+// (deprecatedRulesKnownSafe above); every other id -- including one that
+// simply was never registered anywhere -- gets a full survivor check and is
+// refused whenever ANY violation for it survives, of any status.
+//
+// The survivor count spans EVERY status, not just open/pending_choice.
+// #2967 exists precisely because a soft-resolve (cleanupDisabledRuleState)
+// left a large population of collision violations at status='resolved',
+// and that resolved row is the ONLY surviving record of each finding --
+// exactly the population ClearResolvedViolations' clearableRuleIDs allow-list
+// (below) protects for the same reason. A guard that counted only active
+// statuses would protect a strictly narrower set than the guard it is
+// modeled on. dismissed rows are counted too: for a rule not affirmatively
+// known safe there is no status whose destruction can be assumed
+// recoverable, so the safe default for a destructive predicate is to include
+// it rather than carve out an exception.
+//
+// This is called only from SeedDefaults at server startup (called on the
+// SAME logo_trimmable-only literal as always, which is why proceeding on it
+// changes nothing in practice today). When the guard trips it does NOT
+// return an error: an earlier version did, which propagated through
+// SeedDefaults to a hard os.Exit(1) at boot with no self-clearing path --
+// an install with one surviving finding would never start again. Skipping
+// the delete and logging instead protects the data without holding the
+// application hostage; SeedDefaults simply leaves the rule (and its
+// violations, whatever their status) in place and continues. The condition
+// is pure DB state, so a second boot reaches the identical logged skip, not
+// an escalation.
 func (s *Service) migrateDeprecatedRule(ctx context.Context, ruleID string) error {
+	if !deprecatedRulesKnownSafe[ruleID] {
+		var survivors int
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM rule_violations WHERE rule_id = ?
+		`, ruleID).Scan(&survivors); err != nil {
+			return fmt.Errorf("counting surviving violations for unvetted deprecated rule %s: %w", ruleID, err)
+		}
+		if survivors > 0 {
+			s.logger.Warn("skipping deprecation of a rule not affirmatively vetted safe (deprecatedRulesKnownSafe) with surviving violations; the rule and its violations are left in place",
+				slog.String("rule_id", ruleID),
+				slog.Int("surviving_violations", survivors))
+			return nil
+		}
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE rule_violations SET status = 'dismissed'
 		WHERE rule_id = ? AND status = 'open'

@@ -142,6 +142,327 @@ func TestMigrateDeprecatedRule(t *testing.T) {
 	}
 }
 
+// TestMigrateDeprecatedRule_SkipsEventDrivenRuleWithSurvivors wires the real
+// misbehavior directly: it calls migrateDeprecatedRule (not just
+// SeedDefaults) against an event-driven rule id that has a surviving
+// violation, and demands the DELETE be skipped. Asserting "nothing changed"
+// alone would pass whether the guard fired or the delete was simply never
+// attempted, so this also asserts the precondition (the violation exists at
+// the table's status before the call) and that the rule row still exists
+// afterward, which is only possible if the DELETE never ran.
+//
+// Table-driven over the full status vocabulary (model.go's
+// ViolationStatus*), not just one status the author happened to think of:
+// #2967 exists because a status='resolved' event-driven violation is the
+// only surviving record of its finding, so a guard that missed that status
+// would defeat the entire point of this issue. dismissed is included too --
+// for an event-driven rule no status's destruction is recoverable.
+func TestMigrateDeprecatedRule_SkipsEventDrivenRuleWithSurvivors(t *testing.T) {
+	statuses := []string{
+		ViolationStatusOpen,
+		ViolationStatusPendingChoice,
+		ViolationStatusResolved,
+		ViolationStatusDismissed,
+	}
+
+	for _, status := range statuses {
+		t.Run(status, func(t *testing.T) {
+			db := setupTestDB(t)
+			if err := database.EnableForeignKeys(db); err != nil {
+				t.Fatalf("enabling foreign keys: %v", err)
+			}
+			svc := NewService(db)
+			ctx := context.Background()
+			now := time.Now().UTC()
+
+			const ruleID = RuleCrossArtistBackdropCollision
+			if !IsEventDriven(ruleID) {
+				t.Fatalf("test assumption broken: %s is no longer event-driven", ruleID)
+			}
+
+			_, err := db.ExecContext(ctx, `
+				INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				ruleID, "Cross-artist backdrop collision", "test", "image", 0, "manual", "{}", now, now)
+			if err != nil {
+				t.Fatalf("inserting event-driven rule: %v", err)
+			}
+			_, err = db.ExecContext(ctx, `INSERT INTO artists (id, name, path) VALUES (?, ?, '')`, "a-survivor", "Survivor")
+			if err != nil {
+				t.Fatalf("inserting artist: %v", err)
+			}
+			_, err = db.ExecContext(ctx, `
+				INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				"v-survivor", ruleID, "a-survivor", "Survivor", "warning", "collision", false, status, now, now)
+			if err != nil {
+				t.Fatalf("inserting violation: %v", err)
+			}
+
+			// Precondition: the violation genuinely exists AT THIS STATUS
+			// before the call under test.
+			var precount int
+			if err := db.QueryRowContext(ctx, `
+				SELECT COUNT(*) FROM rule_violations WHERE rule_id = ? AND status = ?`,
+				ruleID, status).Scan(&precount); err != nil {
+				t.Fatalf("counting precondition violations: %v", err)
+			}
+			if precount != 1 {
+				t.Fatalf("precondition: expected 1 %s violation, got %d", status, precount)
+			}
+
+			// Issue the real DELETE path. It must be skipped, not errored --
+			// an error here would propagate to SeedDefaults and fail server
+			// startup (the boot-failure MAJOR).
+			if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
+				t.Fatalf("expected migrateDeprecatedRule to skip (nil error) for an event-driven rule with a %s survivor, got error: %v", status, err)
+			}
+
+			// The rule row must still exist -- only possible if the DELETE
+			// never ran.
+			var ruleCount int
+			if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rules WHERE id = ?`, ruleID).Scan(&ruleCount); err != nil {
+				t.Fatalf("counting rule rows: %v", err)
+			}
+			if ruleCount != 1 {
+				t.Errorf("expected the event-driven rule row to survive the skip, got %d rows", ruleCount)
+			}
+
+			// The violation must be completely unchanged.
+			var gotStatus string
+			if err := db.QueryRowContext(ctx, `SELECT status FROM rule_violations WHERE id = ?`, "v-survivor").Scan(&gotStatus); err != nil {
+				t.Fatalf("reading violation status: %v", err)
+			}
+			if gotStatus != status {
+				t.Errorf("violation status = %q, want %q (unchanged)", gotStatus, status)
+			}
+		})
+	}
+}
+
+// TestMigrateDeprecatedRule_RefusesUnvettedRuleWithSurvivors is the direct
+// regression test for the Copilot finding on #3025: the guard's doc comment
+// claimed a POSITIVE allow-list ("proceeds only when the rule is
+// affirmatively known non-event-driven"), but the implementation gated on
+// `IsEventDriven(ruleID)`, and a Go map lookup on a missing key returns the
+// zero value -- so ANY rule id never registered in eventDrivenRules read as
+// "not event-driven" and was deleted unconditionally, survivors or not. That
+// is a negated safe-list wearing an allow-list's comment.
+//
+// This uses RuleNFOExists: an ordinary, non-deprecated, non-event-driven
+// rule id that was never added to eventDrivenRules AND is not in
+// deprecatedRulesKnownSafe. Under the pre-fix code this rule id would have
+// sailed through IsEventDriven's false return and been deleted
+// unconditionally, exactly like the "resolved" and "dismissed" statuses did
+// before the round-1 CRITICAL fix -- same shape, different axis (rule
+// identity vetting rather than violation status). Under the fix, an id
+// absent from deprecatedRulesKnownSafe gets the full survivor check
+// regardless of its eventDrivenRules membership.
+func TestMigrateDeprecatedRule_RefusesUnvettedRuleWithSurvivors(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	const ruleID = RuleNFOExists
+	if IsEventDriven(ruleID) {
+		t.Fatalf("test assumption broken: %s is event-driven, need a non-event-driven case", ruleID)
+	}
+	if deprecatedRulesKnownSafe[ruleID] {
+		t.Fatalf("test assumption broken: %s is in deprecatedRulesKnownSafe, need an unvetted rule id", ruleID)
+	}
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ruleID, "NFO exists", "test", "nfo", 1, "auto", "{}", now, now)
+	if err != nil {
+		t.Fatalf("inserting rule: %v", err)
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO artists (id, name, path) VALUES (?, ?, '')`, "a-unvetted", "Unvetted")
+	if err != nil {
+		t.Fatalf("inserting artist: %v", err)
+	}
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"v-unvetted", ruleID, "a-unvetted", "Unvetted", "warning", "missing nfo", false, ViolationStatusOpen, now, now)
+	if err != nil {
+		t.Fatalf("inserting violation: %v", err)
+	}
+
+	// Precondition: the id is genuinely absent from the allow-list (checked
+	// above) and the violation genuinely exists before the call.
+	var precount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rule_violations WHERE id = ?`, "v-unvetted").Scan(&precount); err != nil {
+		t.Fatalf("counting precondition violations: %v", err)
+	}
+	if precount != 1 {
+		t.Fatalf("precondition: expected 1 seeded violation, got %d", precount)
+	}
+
+	// Issue the real DELETE path. An unvetted rule id with a surviving
+	// violation must be refused (skip + nil error), not deleted.
+	if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
+		t.Fatalf("expected migrateDeprecatedRule to skip (nil error) for an unvetted rule with a survivor, got error: %v", err)
+	}
+
+	var ruleCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rules WHERE id = ?`, ruleID).Scan(&ruleCount); err != nil {
+		t.Fatalf("counting rule rows: %v", err)
+	}
+	if ruleCount != 1 {
+		t.Errorf("expected the unvetted rule row to survive the skip, got %d rows", ruleCount)
+	}
+	var status string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM rule_violations WHERE id = ?`, "v-unvetted").Scan(&status); err != nil {
+		t.Fatalf("reading violation status: %v", err)
+	}
+	if status != ViolationStatusOpen {
+		t.Errorf("violation status = %q, want %q (unchanged)", status, ViolationStatusOpen)
+	}
+}
+
+// TestMigrateDeprecatedRule_SkipDoesNotFailBoot proves the fix for the
+// boot-failure MAJOR: when the guard skips an event-driven rule with a
+// surviving violation, the call COMPLETES without error (an earlier version
+// of the guard returned an error here, which propagated through
+// SeedDefaults to wireRuleEngine/buildServices/run in cmd/stillwater/main.go
+// and exited the process -- identically on every subsequent boot, with no
+// self-clearing path).
+//
+// Hostile review round 2 (MINOR-1) found the first version of this test
+// vacuous: it kept passing with the guard replaced outright by `if false`.
+// Two things made the survival assertions meaningless: this package's
+// setupTestDB opens FK-off, so the DELETE this guard exists to prevent could
+// never cascade regardless of the guard; and RuleCrossArtistBackdropCollision
+// is itself in defaultRules, so a SeedDefaults call after the delete would
+// re-INSERT the rule row whether or not the guard fired, masking a real
+// deletion as "survival". Fixed by turning FK ON for this test's handle
+// (EnableForeignKeys, mirroring internal/database's openMigratedDB and
+// internal/artist's newTestDB) so a guard failure would let the DELETE
+// genuinely cascade, and by asserting survival directly after each
+// migrateDeprecatedRule call -- BEFORE any SeedDefaults call that could
+// reseed the row for an unrelated reason.
+func TestMigrateDeprecatedRule_SkipDoesNotFailBoot(t *testing.T) {
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	const ruleID = RuleCrossArtistBackdropCollision
+	if !IsEventDriven(ruleID) {
+		t.Fatalf("test assumption broken: %s is no longer event-driven", ruleID)
+	}
+
+	if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
+		t.Fatalf("migrateDeprecatedRule on an event-driven rule with no seeded row should be a no-op, got: %v", err)
+	}
+
+	now := time.Now().UTC()
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ruleID, "Cross-artist backdrop collision", "test", "image", 0, "manual", "{}", now, now); err != nil {
+		t.Fatalf("inserting event-driven rule: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, path) VALUES (?, ?, '')`, "a-boot", "Boot"); err != nil {
+		t.Fatalf("inserting artist: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"v-boot", ruleID, "a-boot", "Boot", "warning", "collision", false, ViolationStatusResolved, now, now); err != nil {
+		t.Fatalf("inserting violation: %v", err)
+	}
+
+	// Precondition: the violation genuinely exists before either run.
+	var precount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rule_violations WHERE id = ?`, "v-boot").Scan(&precount); err != nil {
+		t.Fatalf("counting precondition violations: %v", err)
+	}
+	if precount != 1 {
+		t.Fatalf("precondition: expected 1 seeded violation, got %d", precount)
+	}
+
+	assertSurvived := func(label string) {
+		t.Helper()
+		var ruleCount int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rules WHERE id = ?`, ruleID).Scan(&ruleCount); err != nil {
+			t.Fatalf("%s: counting rule rows: %v", label, err)
+		}
+		if ruleCount != 1 {
+			t.Fatalf("%s: expected the event-driven rule row to survive, got %d rows", label, ruleCount)
+		}
+		var status string
+		if err := db.QueryRowContext(ctx, `SELECT status FROM rule_violations WHERE id = ?`, "v-boot").Scan(&status); err != nil {
+			t.Fatalf("%s: reading violation status: %v", label, err)
+		}
+		if status != ViolationStatusResolved {
+			t.Errorf("%s: violation status = %q, want %q (unchanged)", label, status, ViolationStatusResolved)
+		}
+	}
+
+	// Run 1, standing in for a future deprecation-list entry (SeedDefaults
+	// today only ever calls migrateDeprecatedRule with the logo_trimmable
+	// literal). With FK genuinely on, a guard that failed to skip would let
+	// the DELETE cascade for real here.
+	if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
+		t.Fatalf("run 1: expected the event-driven skip to complete without error, got: %v", err)
+	}
+	assertSurvived("run 1")
+
+	// Run 2: identical state must reach the identical, non-escalating skip.
+	if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
+		t.Fatalf("run 2: expected the identical skip, got error: %v", err)
+	}
+	assertSurvived("run 2")
+
+	// The actual boot path must also complete while this unrelated
+	// event-driven violation exists elsewhere in the DB. This intentionally
+	// does not re-check survival afterward: SeedDefaults' defaultRules loop
+	// legitimately touches this rule row (INSERT OR IGNORE / cosmetic
+	// refresh), which is expected and is not what this test is pinning --
+	// only that SeedDefaults itself returns nil.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults must complete even though an unrelated event-driven rule has a surviving violation, got: %v", err)
+	}
+}
+
+// TestMigrateDeprecatedRule_EventDrivenRuleWithNoSurvivorsProceeds proves the
+// guard is not a blanket refusal: an event-driven rule id with zero
+// surviving active violations still gets dismissed-and-deleted, exactly like
+// a non-event-driven rule.
+func TestMigrateDeprecatedRule_EventDrivenRuleWithNoSurvivorsProceeds(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	const ruleID = RuleCrossArtistBackdropCollision
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ruleID, "Cross-artist backdrop collision", "test", "image", 0, "manual", "{}", now, now)
+	if err != nil {
+		t.Fatalf("inserting event-driven rule: %v", err)
+	}
+
+	if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
+		t.Fatalf("migrateDeprecatedRule with zero surviving violations should proceed, got error: %v", err)
+	}
+
+	var ruleCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rules WHERE id = ?`, ruleID).Scan(&ruleCount); err != nil {
+		t.Fatalf("counting rule rows: %v", err)
+	}
+	if ruleCount != 0 {
+		t.Errorf("expected the rule row to be deleted when there is nothing to lose, got %d rows", ruleCount)
+	}
+}
+
 func TestSeedDefaults_Idempotent(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

@@ -505,6 +505,89 @@ func TestDelete_NotFound(t *testing.T) {
 	}
 }
 
+// TestArtistDelete_CascadesEventDrivenViolation pins #3025's documented
+// decision: deleting an artist cascades away its rule_violations, including
+// for an event-driven rule (cross_artist_backdrop_collision) whose finding
+// cannot be re-derived. This package must not import internal/rule (see
+// internal/artist/lock_damage.go), so the rule id is a literal string rather
+// than the rule package's exported constant. A rename of that constant will
+// NOT fail this test (no FK/compiler link) -- keep this literal in sync with
+// RuleCrossArtistBackdropCollision in internal/rule/service.go. The same
+// literal is also duplicated at
+// web/templates/settings_image_subtypes_test.go.
+func TestArtistDelete_CascadesEventDrivenViolation(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Kept in sync with internal/rule/service.go's
+	// RuleCrossArtistBackdropCollision -- see the package doc comment above.
+	const eventDrivenRuleID = "cross_artist_backdrop_collision"
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES (?, 'Cross-artist backdrop collision', 'test', 'image', 0, 'manual', '{}', datetime('now'), datetime('now'))`,
+		eventDrivenRuleID); err != nil {
+		t.Fatalf("seeding event-driven rule: %v", err)
+	}
+
+	victim := testArtist("Victim", "/music/Victim")
+	if err := svc.Create(ctx, victim); err != nil {
+		t.Fatalf("Create victim: %v", err)
+	}
+	survivor := testArtist("Survivor", "/music/Survivor")
+	if err := svc.Create(ctx, survivor); err != nil {
+		t.Fatalf("Create survivor: %v", err)
+	}
+
+	for _, a := range []*Artist{victim, survivor} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, 'warning', 'perceptual collision', 0, 'open', datetime('now'), datetime('now'))`,
+			"violation-"+a.ID, eventDrivenRuleID, a.ID, a.Name); err != nil {
+			t.Fatalf("seeding violation for %s: %v", a.ID, err)
+		}
+	}
+
+	// Precondition: both event-driven violations exist before either delete,
+	// so a passing assertion below cannot be "the row was never there".
+	var precount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM rule_violations WHERE rule_id = ?`, eventDrivenRuleID,
+	).Scan(&precount); err != nil {
+		t.Fatalf("counting precondition violations: %v", err)
+	}
+	if precount != 2 {
+		t.Fatalf("precondition: expected 2 event-driven violations, got %d", precount)
+	}
+
+	if err := svc.Delete(ctx, victim.ID); err != nil {
+		t.Fatalf("Delete victim: %v", err)
+	}
+
+	var victimCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM rule_violations WHERE artist_id = ?`, victim.ID,
+	).Scan(&victimCount); err != nil {
+		t.Fatalf("counting victim violations: %v", err)
+	}
+	if victimCount != 0 {
+		t.Errorf("expected the deleted artist's event-driven violation to cascade away, got %d surviving", victimCount)
+	}
+
+	// The surviving artist's violation must be untouched -- a cascade that
+	// took the whole table with it would also pass the assertion above.
+	var survivorCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM rule_violations WHERE artist_id = ?`, survivor.ID,
+	).Scan(&survivorCount); err != nil {
+		t.Fatalf("counting survivor violations: %v", err)
+	}
+	if survivorCount != 1 {
+		t.Errorf("expected the surviving artist's violation to remain, got %d", survivorCount)
+	}
+}
+
 func TestSearch(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
