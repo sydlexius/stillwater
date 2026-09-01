@@ -86,8 +86,34 @@ func TestScraperConfig_PrimaryFor(t *testing.T) {
 func TestProviderCapabilities(t *testing.T) {
 	caps := ProviderCapabilities()
 
-	if len(caps) != 9 {
-		t.Errorf("ProviderCapabilities count = %d, want 9", len(caps))
+	// A bare count assertion is what let Deezer stay missing from this table
+	// (#2897): the magic 9 matched the omission and so protected it. Assert
+	// per-provider presence against AllProviderNames() instead, which fails
+	// with the name of whatever went missing.
+	all := provider.AllProviderNames()
+	if len(all) == 0 {
+		t.Fatal("AllProviderNames() is empty -- every assertion below would pass vacuously")
+	}
+	byProvider := make(map[provider.ProviderName]int, len(caps))
+	for _, c := range caps {
+		byProvider[c.Provider]++
+	}
+	for _, name := range all {
+		switch byProvider[name] {
+		case 1:
+		case 0:
+			t.Errorf("ProviderCapabilities() has no entry for %q; the settings UI cannot offer a provider it does not list", name)
+		default:
+			t.Errorf("ProviderCapabilities() has %d entries for %q, want exactly 1", byProvider[name], name)
+		}
+	}
+	for _, c := range caps {
+		if c.DisplayName == "" {
+			t.Errorf("ProviderCapabilities() entry for %q has an empty DisplayName", c.Provider)
+		}
+	}
+	if len(caps) != len(all) {
+		t.Errorf("ProviderCapabilities count = %d, want %d (one per AllProviderNames entry)", len(caps), len(all))
 	}
 
 	// Verify MusicBrainz has no image fields

@@ -1428,8 +1428,14 @@ func TestDefaultPriorities_BiographyExcludesWikidata(t *testing.T) {
 		t.Errorf("biography default = %v, want %v", bio.Providers, wantBio)
 	}
 
-	// Sanity: Wikidata must still appear in at least one fact-shaped field so
-	// this test fails loudly if a later refactor strips it everywhere.
+	// Sanity: Wikidata must still appear in every fact-shaped field it can
+	// actually answer, so this test fails loudly if a later refactor strips it
+	// everywhere. The list is exactly what wikidata.mapArtist assigns; #2897
+	// removed Wikidata from members, born, died, type and gender, where it was
+	// listed second but supplies nothing. Genres is omitted here because
+	// Wikidata is not in that default chain (it is a routing choice, not a
+	// capability question); TestProviderCapabilitiesMatchAdapterSource is what
+	// keeps this list honest against the adapter.
 	factFields := map[string]bool{
 		"formed": false, "disbanded": false, "origin": false,
 	}

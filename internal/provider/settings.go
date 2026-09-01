@@ -391,33 +391,32 @@ func (fp *FieldPriority) RemoveProvider(name ProviderName) bool {
 
 // DefaultPriorities returns the default provider priority order per field.
 func DefaultPriorities() []FieldPriority {
-	// GOAL (enforced by the capability-table reconciliation landing after
-	// #2897, not by this function today): every provider listed here should
-	// advertise the field in ProviderCapabilities(), which in turn should
-	// match what the adapter actually assigns. A provider that cannot answer
-	// on either full-refresh path is not merely a cosmetic entry: it still
-	// shows up as a routing option in the settings UI and the per-field
-	// comparison panel even though it can never produce a value there. It
-	// does NOT waste a request -- both full-refresh paths cache one
-	// GetArtist call per provider, and every one of these providers survives
-	// in some other field's chain regardless. Eight such dead slots were
-	// removed in #2897.
+	// Every provider listed here must advertise the field in
+	// ProviderCapabilities(), which in turn must match what the adapter
+	// actually assigns; TestProviderCapabilitiesMatchAdapterSource checks the
+	// second half against the adapter source, and
+	// TestDefaultPrioritiesHaveNoDeadSlots checks this list against the
+	// declared capabilities. A provider that cannot answer on either
+	// full-refresh path is not merely a cosmetic entry: it still shows up as
+	// a routing option in the settings UI and the per-field comparison panel
+	// even though it can never produce a value there. It does NOT
+	// waste a request -- both full-refresh paths cache one GetArtist call
+	// per provider, and every one of these providers survives in some other
+	// field's chain regardless. Eight such dead slots were removed in #2897.
 	//
-	// KNOWN EXCEPTIONS to the goal above, both deliberate -- do NOT "fix" a
-	// drift between this list and ProviderCapabilities() by deleting either:
-	//   - styles/discogs: Discogs supplies Styles via aggregateStyles, but its
-	//     ProviderCapabilities() entry does not yet list "styles".
-	//   - years_active/audiodb: AudioDB's adapter never assigns YearsActive
-	//     literally (dead on both full-refresh paths), but the per-field
-	//     comparison path synthesizes a candidate from its Born/Died via
-	//     SynthesizeYearsActive, so it is a live, user-facing answer there.
-	//     This is the #2897 finding that reopened this PR -- removing it
-	//     again reintroduces that regression. See that field's comment below.
+	// ONE KNOWN EXCEPTION to the invariant above, deliberate -- do NOT "fix"
+	// it by deleting AudioDB from years_active: AudioDB's adapter never
+	// assigns YearsActive literally (dead on both full-refresh paths), but
+	// the per-field comparison path synthesizes a candidate from its
+	// Born/Died via SynthesizeYearsActive, so it is a live, user-facing
+	// answer there. TestDefaultPrioritiesHaveNoDeadSlots carries a matching
+	// carve-out for exactly this pair. See that field's comment below.
+	// (styles/discogs was the other known exception; this same reconciliation
+	// resolves it by adding "styles" to Discogs' declared capabilities
+	// instead of carving out an exception.)
 	// TestGetPrioritiesOnMigratedDBHasNoStrippedPairs
 	// (internal/provider/priorities_live_test.go) guards the stored-row half
-	// of the dead-slot removal; a Go-level default guard lands with the
-	// capability-table reconciliation, which should resolve the two
-	// exceptions above by correcting ProviderCapabilities(), not this list.
+	// of the dead-slot removal.
 	return []FieldPriority{
 		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameGenius}},
 		// Discogs removed (#2897): its adapter aggregates Styles from master
