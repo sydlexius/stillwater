@@ -391,7 +391,7 @@ func (s *Service) RetractRuleVerdict(ctx context.Context, artistID, ruleID strin
 	if err != nil {
 		return false, fmt.Errorf("beginning retract-verdict transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	var hasResult, hasOpenViolation int
 	if err := tx.QueryRowContext(ctx, `

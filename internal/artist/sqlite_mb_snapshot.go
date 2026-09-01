@@ -28,7 +28,7 @@ func (r *sqliteMBSnapshotRepo) UpsertAll(ctx context.Context, artistID string, s
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	const q = `
 		INSERT INTO mb_snapshots (id, artist_id, field, mb_value, fetched_at)
