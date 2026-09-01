@@ -229,7 +229,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	// Step 1: snapshot candidates before the CASCADE removes the rows.
 	candidateIDs, err := collectUnlinkCandidates(ctx, tx, id)
@@ -373,7 +373,7 @@ func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	var connectionID sql.NullString
 	if err := tx.QueryRowContext(ctx,

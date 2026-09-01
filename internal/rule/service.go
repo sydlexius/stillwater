@@ -1156,7 +1156,7 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	if err != nil {
 		return fmt.Errorf("beginning upsert-violation transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	// Issue #2972: decide, BEFORE writing anything, whether this evaluation is
 	// stale -- and if it is, write nothing at all.

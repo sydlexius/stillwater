@@ -101,7 +101,7 @@ func (s *Service) SetActive(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	if _, err := tx.ExecContext(ctx, `UPDATE platform_profiles SET is_active = 0`); err != nil {
 		return fmt.Errorf("deactivating profiles: %w", err)
