@@ -1317,16 +1317,19 @@ func TestMigration007_RemovesWikidataFromBiographyPriority(t *testing.T) {
 		t.Errorf("idempotent re-run affected %d rows, want 0 (EXISTS guard must skip clean rows)", affected)
 	}
 
-	// Other fields whose default still includes Wikidata must be untouched
-	// by the migration. Use members (the canonical Wikidata-bearing field)
-	// to prove the WHERE key= filter is doing its job.
-	var members string
+	// Other fields whose priority still includes Wikidata must be untouched
+	// by the migration, proving the WHERE key= filter is doing its job. Use
+	// `formed`: wikidata.mapArtist assigns Formed, so Wikidata survives there
+	// permanently. (This control was `members` until #2897, whose migration 030
+	// legitimately strips Wikidata from members -- Wikidata cannot supply it.
+	// A control field has to be one no migration has a reason to touch.)
+	var formed string
 	if err := db.QueryRowContext(ctx,
-		`SELECT value FROM settings WHERE key = 'provider.priority.members'`).Scan(&members); err != nil {
-		t.Fatalf("reading members priority: %v", err)
+		`SELECT value FROM settings WHERE key = 'provider.priority.formed'`).Scan(&formed); err != nil {
+		t.Fatalf("reading formed priority: %v", err)
 	}
-	if !strings.Contains(members, "wikidata") {
-		t.Errorf("members priority lost wikidata: %s (migration must only touch biography)", members)
+	if !strings.Contains(formed, "wikidata") {
+		t.Errorf("formed priority lost wikidata: %s (migration must only touch biography)", formed)
 	}
 }
 

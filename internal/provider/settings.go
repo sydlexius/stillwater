@@ -391,19 +391,36 @@ func (fp *FieldPriority) RemoveProvider(name ProviderName) bool {
 
 // DefaultPriorities returns the default provider priority order per field.
 func DefaultPriorities() []FieldPriority {
+	// Every provider listed here must advertise the field in
+	// ProviderCapabilities(), which in turn must match what the adapter
+	// actually assigns. A provider that cannot answer is not merely a
+	// cosmetic entry: the chain still queries it, spending a rate-limited
+	// request on a guaranteed-empty response on every refresh. Nine such
+	// dead slots were removed in #2897 and
+	// TestDefaultPrioritiesHaveNoDeadSlots now blocks their return.
 	return []FieldPriority{
 		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameGenius}},
-		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameWikipedia}},
+		// Discogs removed (#2897): its adapter aggregates Styles from master
+		// releases and never assigns Genres.
+		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameWikipedia}},
 		{Field: "styles", Providers: []ProviderName{NameDiscogs, NameAudioDB, NameLastFM, NameMusicBrainz}},
 		{Field: "moods", Providers: []ProviderName{NameAudioDB, NameLastFM}},
-		{Field: "members", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameWikipedia}},
+		// Wikidata removed from members/born/died/type/gender (#2897): its
+		// mapArtist assigns only Formed, Disbanded, Origin and Genres.
+		{Field: "members", Providers: []ProviderName{NameMusicBrainz, NameWikipedia}},
 		{Field: "formed", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameAudioDB}},
-		{Field: "born", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameWikipedia}},
-		{Field: "died", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameWikipedia}},
-		{Field: "disbanded", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameWikipedia}},
-		{Field: "years_active", Providers: []ProviderName{NameWikipedia, NameAudioDB, NameMusicBrainz}},
-		{Field: "type", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameDiscogs}},
-		{Field: "gender", Providers: []ProviderName{NameMusicBrainz, NameWikidata}},
+		{Field: "born", Providers: []ProviderName{NameMusicBrainz, NameWikipedia}},
+		{Field: "died", Providers: []ProviderName{NameMusicBrainz, NameWikipedia}},
+		// Wikipedia removed (#2897): its infobox parser assigns Born and Died
+		// but never Formed or Disbanded.
+		{Field: "disbanded", Providers: []ProviderName{NameMusicBrainz, NameWikidata}},
+		// AudioDB removed (#2897): its adapter never assigns YearsActive.
+		{Field: "years_active", Providers: []ProviderName{NameWikipedia, NameMusicBrainz}},
+		// Wikidata and Discogs removed (#2897): neither assigns Type.
+		// Not backfilled with Wikipedia, which does assign it: adding a
+		// provider to a chain is a routing change, not a dead-slot repair.
+		{Field: "type", Providers: []ProviderName{NameMusicBrainz}},
+		{Field: "gender", Providers: []ProviderName{NameMusicBrainz}},
 		{Field: "origin", Providers: []ProviderName{NameWikipedia, NameAudioDB, NameWikidata, NameMusicBrainz}},
 		{Field: "thumb", Providers: []ProviderName{NameFanartTV, NameAudioDB, NameDeezer, NameSpotify}},
 		{Field: "fanart", Providers: []ProviderName{NameFanartTV, NameAudioDB}},

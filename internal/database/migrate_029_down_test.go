@@ -82,8 +82,14 @@ func TestMigration029_DownRoundTrips(t *testing.T) {
 	if err := goose.SetDialect("sqlite3"); err != nil {
 		t.Fatalf("setting goose dialect: %v", err)
 	}
-	if err := goose.Down(db, "migrations"); err != nil {
-		t.Fatalf("goose.Down: %v", err)
+	// DownTo 28, not a bare Down: a bare Down rolls back whatever migration is
+	// newest, so this test asserted 029's rollback only while 029 happened to
+	// be the last file in the set. #2897 added 030 and the bare call started
+	// rolling that back instead, leaving 029's column in place and failing
+	// here. Naming the target version makes the assertion independent of how
+	// many migrations land later.
+	if err := goose.DownTo(db, "migrations", 28); err != nil {
+		t.Fatalf("goose.DownTo(28): %v", err)
 	}
 
 	if has, err := columnExists(db, "metadata_changes", "producer"); err != nil {
