@@ -605,7 +605,34 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 // migrateDeprecatedRule dismisses open violations for a removed rule and
 // deletes its rule definition. This is idempotent: if the rule does not
 // exist, no error is returned.
+//
+// #3025: deleting the rule row cascades (ON DELETE CASCADE, 001_initial_
+// schema.sql) to every rule_violations row for it -- including event-driven
+// ones, whose findings cannot be re-derived by any checker (see
+// eventDrivenRules above). The guard below is a POSITIVE ALLOW-LIST for this
+// destructive predicate, matching clearableRuleIDs' rationale: it proceeds
+// only when the rule is affirmatively known non-event-driven (or has zero
+// surviving active violations), never "proceed unless flagged event-driven".
+// Today only logo_trimmable is deprecated and it is not event-driven, so this
+// is a no-op change in practice; it becomes load-bearing the moment the
+// deprecation list grows to include a rule in eventDrivenRules.
 func (s *Service) migrateDeprecatedRule(ctx context.Context, ruleID string) error {
+	if IsEventDriven(ruleID) {
+		var survivors int
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM rule_violations
+			WHERE rule_id = ? AND status IN (?, ?)
+		`, ruleID, ViolationStatusOpen, ViolationStatusPendingChoice).Scan(&survivors); err != nil {
+			return fmt.Errorf("counting surviving violations for event-driven rule %s: %w", ruleID, err)
+		}
+		if survivors > 0 {
+			s.logger.Warn("refusing to deprecate an event-driven rule with surviving violations",
+				slog.String("rule_id", ruleID),
+				slog.Int("surviving_violations", survivors))
+			return fmt.Errorf("refusing to deprecate event-driven rule %s: %d surviving violation(s) would be destroyed by the cascade", ruleID, survivors)
+		}
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE rule_violations SET status = 'dismissed'
 		WHERE rule_id = ? AND status = 'open'

@@ -1913,6 +1913,15 @@ func (s *Service) UpdateProviderFetchedAt(ctx context.Context, artistID, prov st
 }
 
 // Delete removes an artist by ID. Cascade deletes related rows.
+//
+// #3025: this includes rule_violations and rule_results for the artist, via
+// the schema FKs in 001_initial_schema.sql (ON DELETE CASCADE) -- not
+// application code. This destroys the artist's violations even for an
+// event-driven rule (internal/rule/service.go eventDrivenRules) whose
+// finding cannot be re-derived. That is intentional: a finding about an
+// artist that no longer exists has nothing left to preserve. See the schema
+// comment above rule_violations and the pinning test
+// TestArtistDelete_CascadesEventDrivenViolation.
 func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.artists.Delete(ctx, id)
 }

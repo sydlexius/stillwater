@@ -370,6 +370,13 @@ func (r *sqliteArtistRepo) ClearField(ctx context.Context, id, field string) err
 	return nil
 }
 
+// Delete removes the artists row for id. This is the single sanctioned
+// artist-delete primitive: it triggers the schema's ON DELETE CASCADE into
+// rule_violations and rule_results (and every other artist-scoped table with
+// that FK), which is an intentional, documented decision (see the schema
+// comment above rule_violations in 001_initial_schema.sql and
+// Service.Delete's doc comment) -- not something this method enforces or can
+// bypass.
 func (r *sqliteArtistRepo) Delete(ctx context.Context, id string) error {
 	result, err := r.db.ExecContext(ctx, `DELETE FROM artists WHERE id = ?`, id)
 	if err != nil {
