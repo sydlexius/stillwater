@@ -86,7 +86,7 @@ func (r *sqliteMemberRepo) Upsert(ctx context.Context, artistID string, members 
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM band_members WHERE artist_id = ?`, artistID); err != nil {
 		return fmt.Errorf("clearing existing members: %w", err)
