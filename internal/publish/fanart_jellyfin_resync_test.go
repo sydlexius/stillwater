@@ -18,6 +18,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	img "github.com/sydlexius/stillwater/internal/image"
 )
 
 // uploadCall records one POST /Images/Backdrop/{index} the fake Jellyfin
@@ -619,15 +620,17 @@ func TestUploadFanartForSync_JellyfinDegradedSlotRefusesResync_NoDataLoss(t *tes
 	// signature, the file resolveFanartReplaceTarget resolves against.
 	primary := bandJPEG(t, 60)
 	writeFile(t, filepath.Join(dir, "fanart.jpg"), primary)
-	// fanart2.jpg: genuinely OVER maxFanartSnapshotFileBytes (12 MiB), so
-	// snapshotFanart's pre-read stat refuses it and degrades this slot to
-	// nil data -- not a fake/mocked degrade, the real budget check firing
-	// on a real oversize file.
-	oversize := make([]byte, (12<<20)+1)
-	for i := range oversize {
-		oversize[i] = byte(i) // non-zero content; irrelevant to the cap, just avoids a suspiciously-uniform fixture
-	}
-	writeFile(t, filepath.Join(dir, "fanart2.jpg"), oversize)
+	// fanart2.jpg: genuinely OVER img.MaxDecodeBytes (25 MB), so the READ
+	// itself refuses it (img.ErrImageTooLarge) and snapshotFanart degrades
+	// this slot to nil data -- not a fake/mocked degrade, the real read
+	// bound firing on a real oversize file. #3017 moved WHICH check produces
+	// a nil-data slot here: the per-file retention cap (12 MiB) no longer
+	// refuses before the read, so a fixture merely over THAT cap is now read
+	// and pushed successfully; only the read's own 25 MB bound still
+	// degrades a slot the way this test's restorability-gate assertions need.
+	// Sparse (a truncate, no bytes written): the cap check reads a stat, not
+	// content, so sparseness is invisible to it.
+	sparseFile(t, filepath.Join(dir, "fanart2.jpg"), img.MaxDecodeBytes+1)
 
 	// Platform starts with TWO existing, byte-distinct backdrops -- the
 	// state the delete loop would have cleared pre-fix.
@@ -740,11 +743,9 @@ func TestUploadFanartForSync_JellyfinDegradedSlot_PlatformOutnumbersLocal(t *tes
 	dir := t.TempDir()
 	primary := bandJPEG(t, 70)
 	writeFile(t, filepath.Join(dir, "fanart.jpg"), primary)
-	oversize := make([]byte, (12<<20)+1)
-	for i := range oversize {
-		oversize[i] = byte(i * 7)
-	}
-	writeFile(t, filepath.Join(dir, "fanart2.jpg"), oversize)
+	// Over img.MaxDecodeBytes (25 MB), not merely the retention cap; see the
+	// #3017 note on the sibling test above for why.
+	sparseFile(t, filepath.Join(dir, "fanart2.jpg"), img.MaxDecodeBytes+1)
 
 	// FIVE existing, byte-distinct platform backdrops -- outnumbering the
 	// local set (2 files) entirely.
@@ -840,30 +841,27 @@ func TestUploadFanartForSync_JellyfinDegradedSlot_PlatformOutnumbersLocal(t *tes
 // push the join past maxWarningRunes and truncate the refusal reason away
 // entirely, leaving the operator with snapshot noise and no explanation.
 //
-// This builds TWO genuinely oversize local files (each over
-// maxFanartSnapshotFileBytes), so snapshotFanart's real budget check fires
-// twice and produces two real per-file warnings -- not a mocked warning
-// list -- totaling well past maxWarningRunes (200) once joined with the
-// refusal reason. It asserts the refusal reason's own distinguishing text
-// ("could not be captured") and the specific slot index it names both
-// survive INTACT in the final (possibly truncated) warning string, proving
-// the ordering fix rather than merely asserting the function returns
-// non-empty text.
+// This builds THREE genuinely oversize local files (each over
+// img.MaxDecodeBytes, #3017: the retention cap alone no longer degrades a
+// slot -- see the sibling tests above), so snapshotFanart's real read bound
+// fires three times and produces three independent per-file warnings -- not
+// a mocked warning list -- totaling well past maxWarningRunes (200) once
+// joined with the refusal reason. It asserts the refusal reason's own
+// distinguishing text ("could not be captured") and the specific slot index
+// it names both survive INTACT in the final (possibly truncated) warning
+// string, proving the ordering fix rather than merely asserting the
+// function returns non-empty text.
 func TestUploadFanartFullResyncForSync_RefusalReasonSurvivesTruncation(t *testing.T) {
 	dir := t.TempDir()
-	// fanart.jpg (index 0) is small and captures normally; fanart2/3/4.jpg
-	// (indices 1-3) are each genuinely over maxFanartSnapshotFileBytes, so
-	// snapshotFanart's real budget check fires THREE times and produces
-	// three independent per-file warnings -- not a mocked list. Multiple
-	// distinct fill bytes keep the files byte-distinct (irrelevant to the
-	// cap, just avoids a suspiciously uniform fixture).
+	// fanart.jpg (index 0) is small and captures normally; fanart1/2/3.jpg
+	// (indices 1-3) are each genuinely over img.MaxDecodeBytes, so
+	// snapshotFanart's real read bound fires THREE times and produces three
+	// independent per-file warnings -- not a mocked list. Sparse, so this
+	// costs no real disk; the bound checks bytes actually read, which a
+	// truncate delivers just as honestly as written content would.
 	writeFile(t, filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 90))
-	for slot, fill := range map[int]byte{1: 1, 2: 3, 3: 5} {
-		oversize := make([]byte, (12<<20)+1)
-		for i := range oversize {
-			oversize[i] = byte(int(fill) * i)
-		}
-		writeFile(t, filepath.Join(dir, fmt.Sprintf("fanart%d.jpg", slot+1)), oversize)
+	for _, slot := range []int{1, 2, 3} {
+		sparseFile(t, filepath.Join(dir, fmt.Sprintf("fanart%d.jpg", slot)), img.MaxDecodeBytes+1)
 	}
 
 	p := New(Deps{Logger: silentLogger()})
