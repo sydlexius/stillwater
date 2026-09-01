@@ -239,23 +239,43 @@ func TestMigrateDeprecatedRule_SkipsEventDrivenRuleWithSurvivors(t *testing.T) {
 
 // TestMigrateDeprecatedRule_SkipDoesNotFailBoot proves the fix for the
 // boot-failure MAJOR: when the guard skips an event-driven rule with a
-// surviving violation, SeedDefaults still COMPLETES without error (an
-// earlier version of the guard returned an error here, which propagated
-// through SeedDefaults to wireRuleEngine/buildServices/run in
-// cmd/stillwater/main.go and exited the process -- identically on every
-// subsequent boot, with no self-clearing path). Run twice to prove the skip
-// is idempotent rather than accumulating state.
+// surviving violation, the call COMPLETES without error (an earlier version
+// of the guard returned an error here, which propagated through
+// SeedDefaults to wireRuleEngine/buildServices/run in cmd/stillwater/main.go
+// and exited the process -- identically on every subsequent boot, with no
+// self-clearing path).
+//
+// Hostile review round 2 (MINOR-1) found the first version of this test
+// vacuous: it kept passing with the guard replaced outright by `if false`.
+// Two things made the survival assertions meaningless: this package's
+// setupTestDB opens FK-off, so the DELETE this guard exists to prevent could
+// never cascade regardless of the guard; and RuleCrossArtistBackdropCollision
+// is itself in defaultRules, so a SeedDefaults call after the delete would
+// re-INSERT the rule row whether or not the guard fired, masking a real
+// deletion as "survival". Fixed by turning FK ON for this test's handle
+// (EnableForeignKeys, mirroring internal/database's openMigratedDB and
+// internal/artist's newTestDB) so a guard failure would let the DELETE
+// genuinely cascade, and by asserting survival directly after each
+// migrateDeprecatedRule call -- BEFORE any SeedDefaults call that could
+// reseed the row for an unrelated reason.
 func TestMigrateDeprecatedRule_SkipDoesNotFailBoot(t *testing.T) {
 	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
 	svc := NewService(db)
 	ctx := context.Background()
 
-	if err := svc.migrateDeprecatedRule(ctx, RuleCrossArtistBackdropCollision); err != nil {
+	const ruleID = RuleCrossArtistBackdropCollision
+	if !IsEventDriven(ruleID) {
+		t.Fatalf("test assumption broken: %s is no longer event-driven", ruleID)
+	}
+
+	if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
 		t.Fatalf("migrateDeprecatedRule on an event-driven rule with no seeded row should be a no-op, got: %v", err)
 	}
 
 	now := time.Now().UTC()
-	const ruleID = RuleCrossArtistBackdropCollision
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -272,40 +292,56 @@ func TestMigrateDeprecatedRule_SkipDoesNotFailBoot(t *testing.T) {
 		t.Fatalf("inserting violation: %v", err)
 	}
 
-	// First boot. SeedDefaults today only ever calls migrateDeprecatedRule
-	// with the logo_trimmable literal, so call the event-driven rule id
-	// directly first (standing in for a future deprecation-list entry), then
-	// prove SeedDefaults itself still completes -- an unrelated event-driven
-	// rule's surviving violation must not block startup.
+	// Precondition: the violation genuinely exists before either run.
+	var precount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rule_violations WHERE id = ?`, "v-boot").Scan(&precount); err != nil {
+		t.Fatalf("counting precondition violations: %v", err)
+	}
+	if precount != 1 {
+		t.Fatalf("precondition: expected 1 seeded violation, got %d", precount)
+	}
+
+	assertSurvived := func(label string) {
+		t.Helper()
+		var ruleCount int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rules WHERE id = ?`, ruleID).Scan(&ruleCount); err != nil {
+			t.Fatalf("%s: counting rule rows: %v", label, err)
+		}
+		if ruleCount != 1 {
+			t.Fatalf("%s: expected the event-driven rule row to survive, got %d rows", label, ruleCount)
+		}
+		var status string
+		if err := db.QueryRowContext(ctx, `SELECT status FROM rule_violations WHERE id = ?`, "v-boot").Scan(&status); err != nil {
+			t.Fatalf("%s: reading violation status: %v", label, err)
+		}
+		if status != ViolationStatusResolved {
+			t.Errorf("%s: violation status = %q, want %q (unchanged)", label, status, ViolationStatusResolved)
+		}
+	}
+
+	// Run 1, standing in for a future deprecation-list entry (SeedDefaults
+	// today only ever calls migrateDeprecatedRule with the logo_trimmable
+	// literal). With FK genuinely on, a guard that failed to skip would let
+	// the DELETE cascade for real here.
 	if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
 		t.Fatalf("run 1: expected the event-driven skip to complete without error, got: %v", err)
 	}
-	if err := svc.SeedDefaults(ctx); err != nil {
-		t.Fatalf("run 1: SeedDefaults must complete even though an unrelated event-driven rule has a surviving violation, got: %v", err)
-	}
+	assertSurvived("run 1")
 
-	// Second boot: identical state, identical (non-escalating) outcome.
+	// Run 2: identical state must reach the identical, non-escalating skip.
 	if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
 		t.Fatalf("run 2: expected the identical skip, got error: %v", err)
 	}
-	if err := svc.SeedDefaults(ctx); err != nil {
-		t.Fatalf("run 2: SeedDefaults must complete identically on a second boot, got: %v", err)
-	}
+	assertSurvived("run 2")
 
-	// The rule and its violation must have survived both runs unchanged.
-	var ruleCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rules WHERE id = ?`, ruleID).Scan(&ruleCount); err != nil {
-		t.Fatalf("counting rule rows: %v", err)
-	}
-	if ruleCount != 1 {
-		t.Errorf("expected the event-driven rule row to survive two boots, got %d rows", ruleCount)
-	}
-	var status string
-	if err := db.QueryRowContext(ctx, `SELECT status FROM rule_violations WHERE id = ?`, "v-boot").Scan(&status); err != nil {
-		t.Fatalf("reading violation status: %v", err)
-	}
-	if status != ViolationStatusResolved {
-		t.Errorf("violation status = %q, want %q (unchanged across two boots)", status, ViolationStatusResolved)
+	// The actual boot path must also complete while this unrelated
+	// event-driven violation exists elsewhere in the DB. This intentionally
+	// does not re-check survival afterward: SeedDefaults' defaultRules loop
+	// legitimately touches this rule row (INSERT OR IGNORE / cosmetic
+	// refresh), which is expected and is not what this test is pinning --
+	// only that SeedDefaults itself returns nil.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults must complete even though an unrelated event-driven rule has a surviving violation, got: %v", err)
 	}
 }
 

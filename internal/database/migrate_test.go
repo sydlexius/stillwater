@@ -83,6 +83,55 @@ func TestArtistPlatformIDsCascadeOnArtistDelete(t *testing.T) {
 	}
 }
 
+// TestRuleViolationsCascadeOnRuleDelete pins the destructive premise #3025's
+// migrateDeprecatedRule guard exists to prevent: deleting a rules row cascades
+// (ON DELETE CASCADE, 001_initial_schema.sql) to every rule_violations row for
+// it. internal/rule's tests all run FK-off (see that package's setupTestDB),
+// so nothing there ever exercises this cascade; this package already turns FK
+// on (openMigratedDB), so it is the right place to pin it, mirroring
+// TestArtistPlatformIDsCascadeOnArtistDelete just above for the artist_id FK.
+func TestRuleViolationsCascadeOnRuleDelete(t *testing.T) {
+	db := openMigratedDB(t)
+	ctx := context.Background()
+
+	seedArtist(t, db, "a-rule-cascade", "RuleCascadeArtist")
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES ('rule-cascade-test', 'Rule Cascade Test', 'test', 'image', 1, 'manual', '{}', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding rule: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, created_at, updated_at)
+		VALUES ('v-rule-cascade', 'rule-cascade-test', 'a-rule-cascade', 'RuleCascadeArtist', 'warning', 'test violation', 0, 'resolved', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding violation: %v", err)
+	}
+
+	// Precondition: the violation genuinely exists before the delete.
+	var precount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM rule_violations WHERE id = 'v-rule-cascade'`).Scan(&precount); err != nil {
+		t.Fatalf("counting precondition violations: %v", err)
+	}
+	if precount != 1 {
+		t.Fatalf("precondition: expected 1 seeded violation, got %d", precount)
+	}
+
+	if _, err := db.ExecContext(ctx, `DELETE FROM rules WHERE id = 'rule-cascade-test'`); err != nil {
+		t.Fatalf("deleting rule: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM rule_violations WHERE id = 'v-rule-cascade'`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("rule_violations count = %d, want 0 (CASCADE should have removed it -- this is the destructive premise #3025's migrateDeprecatedRule guard exists to prevent)", n)
+	}
+}
+
 // TestArtistPlatformIDsUniqueConstraint covers inserting two
 // rows with the same (connection_id, platform_artist_id) must be rejected
 // by the UNIQUE index, regardless of artist_id.
