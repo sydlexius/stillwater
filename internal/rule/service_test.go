@@ -237,6 +237,89 @@ func TestMigrateDeprecatedRule_SkipsEventDrivenRuleWithSurvivors(t *testing.T) {
 	}
 }
 
+// TestMigrateDeprecatedRule_RefusesUnvettedRuleWithSurvivors is the direct
+// regression test for the Copilot finding on #3025: the guard's doc comment
+// claimed a POSITIVE allow-list ("proceeds only when the rule is
+// affirmatively known non-event-driven"), but the implementation gated on
+// `IsEventDriven(ruleID)`, and a Go map lookup on a missing key returns the
+// zero value -- so ANY rule id never registered in eventDrivenRules read as
+// "not event-driven" and was deleted unconditionally, survivors or not. That
+// is a negated safe-list wearing an allow-list's comment.
+//
+// This uses RuleNFOExists: an ordinary, non-deprecated, non-event-driven
+// rule id that was never added to eventDrivenRules AND is not in
+// deprecatedRulesKnownSafe. Under the pre-fix code this rule id would have
+// sailed through IsEventDriven's false return and been deleted
+// unconditionally, exactly like the "resolved" and "dismissed" statuses did
+// before the round-1 CRITICAL fix -- same shape, different axis (rule
+// identity vetting rather than violation status). Under the fix, an id
+// absent from deprecatedRulesKnownSafe gets the full survivor check
+// regardless of its eventDrivenRules membership.
+func TestMigrateDeprecatedRule_RefusesUnvettedRuleWithSurvivors(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	const ruleID = RuleNFOExists
+	if IsEventDriven(ruleID) {
+		t.Fatalf("test assumption broken: %s is event-driven, need a non-event-driven case", ruleID)
+	}
+	if deprecatedRulesKnownSafe[ruleID] {
+		t.Fatalf("test assumption broken: %s is in deprecatedRulesKnownSafe, need an unvetted rule id", ruleID)
+	}
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ruleID, "NFO exists", "test", "nfo", 1, "auto", "{}", now, now)
+	if err != nil {
+		t.Fatalf("inserting rule: %v", err)
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO artists (id, name, path) VALUES (?, ?, '')`, "a-unvetted", "Unvetted")
+	if err != nil {
+		t.Fatalf("inserting artist: %v", err)
+	}
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"v-unvetted", ruleID, "a-unvetted", "Unvetted", "warning", "missing nfo", false, ViolationStatusOpen, now, now)
+	if err != nil {
+		t.Fatalf("inserting violation: %v", err)
+	}
+
+	// Precondition: the id is genuinely absent from the allow-list (checked
+	// above) and the violation genuinely exists before the call.
+	var precount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rule_violations WHERE id = ?`, "v-unvetted").Scan(&precount); err != nil {
+		t.Fatalf("counting precondition violations: %v", err)
+	}
+	if precount != 1 {
+		t.Fatalf("precondition: expected 1 seeded violation, got %d", precount)
+	}
+
+	// Issue the real DELETE path. An unvetted rule id with a surviving
+	// violation must be refused (skip + nil error), not deleted.
+	if err := svc.migrateDeprecatedRule(ctx, ruleID); err != nil {
+		t.Fatalf("expected migrateDeprecatedRule to skip (nil error) for an unvetted rule with a survivor, got error: %v", err)
+	}
+
+	var ruleCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rules WHERE id = ?`, ruleID).Scan(&ruleCount); err != nil {
+		t.Fatalf("counting rule rows: %v", err)
+	}
+	if ruleCount != 1 {
+		t.Errorf("expected the unvetted rule row to survive the skip, got %d rows", ruleCount)
+	}
+	var status string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM rule_violations WHERE id = ?`, "v-unvetted").Scan(&status); err != nil {
+		t.Fatalf("reading violation status: %v", err)
+	}
+	if status != ViolationStatusOpen {
+		t.Errorf("violation status = %q, want %q (unchanged)", status, ViolationStatusOpen)
+	}
+}
+
 // TestMigrateDeprecatedRule_SkipDoesNotFailBoot proves the fix for the
 // boot-failure MAJOR: when the guard skips an event-driven rule with a
 // surviving violation, the call COMPLETES without error (an earlier version

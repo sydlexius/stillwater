@@ -379,11 +379,14 @@ CREATE TABLE IF NOT EXISTS rules (
 -- rule_id's ON DELETE CASCADE is NOT the same decision: it is guarded in
 -- Go at the one path that deletes a rule row (migrateDeprecatedRule,
 -- internal/rule/service.go), which SKIPS the DELETE (logging a warning,
--- leaving the rule and its violations of every status in place) for an
--- event-driven rule with any surviving violation. The schema itself cannot
--- distinguish "the rule was intentionally deprecated with nothing left to
--- lose" from "deleting this rule would destroy unrecoverable findings" --
--- that check happens above this DDL, not in it.
+-- leaving the rule and its violations of every status in place) for any
+-- rule id that is not affirmatively vetted safe (deprecatedRulesKnownSafe
+-- in that file -- a positive allow-list, not an "unless flagged
+-- event-driven" check: an unregistered id is refused too, not just a
+-- registered event-driven one) with any surviving violation. The schema
+-- itself cannot distinguish "the rule was intentionally deprecated with
+-- nothing left to lose" from "deleting this rule would destroy unrecoverable
+-- findings" -- that check happens above this DDL, not in it.
 CREATE TABLE IF NOT EXISTS rule_violations (
     id TEXT PRIMARY KEY,
     rule_id TEXT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
