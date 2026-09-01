@@ -122,10 +122,11 @@ func assertSnapshotShape(t *testing.T, got []fanartSnapshot, paths []string) {
 // single place rather than in four assertions with four opinions about it.
 //
 // #3017: this pair used to belong to the PER-FILE cap. The per-file cap no
-// longer refuses before the read (it governs retention only, checked after
-// the upload loop via fanartSnapshot.overRetentionCap), so refuse's "bytes on
-// disk" / refuseResult's "bytes read" split now discriminates the TOTAL cap's
-// two halves instead. The phrases are unchanged; only what fires them moved.
+// longer refuses before the read at all -- it is a read-time size
+// classification only, consulted nowhere in this package's control flow --
+// so refuse's "bytes on disk" / refuseResult's "bytes read" split now
+// discriminates the TOTAL cap's two halves instead. The phrases are
+// unchanged; only what fires them moved.
 const (
 	// statRefusalPhrase appears only in fanartSnapshotBudget.refuse, the check
 	// that runs BEFORE the read and takes the size from os.Stat. It is the
@@ -292,27 +293,25 @@ func TestSnapshotFanart_FileCountCap_DegradesLoudly(t *testing.T) {
 // #3017 RETARGETED THIS TEST. The per-file cap no longer refuses before the
 // read -- see snapshotFanart's doc comment -- so a file over
 // maxFanartSnapshotFileBytes (and under img.MaxDecodeBytes) is now READ and
-// CAPTURED here; snapshotFanart's contract stops at the read, and the
-// retention drop only happens later, in syncAllFanartToPlatforms, which this
-// unit-level test does not call. What this test now proves is the
-// PRECONDITION for that later behavior: snapshotFanart hands back the
-// over-cap slot WITH its bytes and WITH fanartSnapshot.overRetentionCap()
-// true, which is exactly what syncAllFanartToPlatforms needs to see in
-// order to push it and then drop it. The end-to-end push-then-drop behavior
-// is covered by TestSyncAllFanart_OverPerFileCap_StillUploaded and
-// TestSyncAllFanart_OverPerFileCap_NotRetainedForRestore in
+// CAPTURED here, with maxFanartSnapshotFileBytes now purely a read-time size
+// classification (see snapshotFanart's doc comment for why the earlier
+// per-push retention mechanism was removed as in-effect dead code, hostile
+// review round 2, F1). What this test proves is simply that the cap does
+// not stop the read: an over-cap file is captured with its full, correct
+// byte count, exactly like any other file.
+//
+// The end-to-end push behavior is covered by
+// TestSyncAllFanart_OverPerFileCap_StillUploaded and
+// TestSyncAllFanart_OverPerFileCap_ClobberedByPeer_StillRestored in
 // fanart_push_over_cap_test.go, which drive the real sync path with fake
 // peers.
 //
 // THE NEIGHBOR-SURVIVAL CHECK BELOW IS STILL THE ORIGINAL POINT of this
-// test's name and predates the #3017 retarget (hostile review m1): a
-// per-file refusal -- or, now, a per-file over-cap READ -- must be per-FILE.
-// Asserting only overRetentionCap() on the neighbors proves they are not
-// FLAGGED as over-cap; it says nothing about whether they were actually
-// CAPTURED. An implementation that aborted the whole read loop on the first
-// over-cap file would leave both neighbors with nil data and
-// overRetentionCap() correctly false (nil data can never exceed the cap),
-// passing that check while failing the one this test exists for.
+// test's name and predates the #3017 retarget (hostile review round 1,
+// m1): a per-file refusal -- or, now, a per-file over-cap READ -- must be
+// per-FILE. An implementation that aborted the whole read loop on the
+// first over-cap file would leave both neighbors with nil data, which is
+// exactly what the explicit `data == nil` check below catches.
 func TestSnapshotFanart_PerFileCap_ReadAndCapturedNotRefused(t *testing.T) {
 	// No t.Parallel; see the note at the top of this file.
 	dir := t.TempDir()
@@ -364,22 +363,11 @@ func TestSnapshotFanart_PerFileCap_ReadAndCapturedNotRefused(t *testing.T) {
 	if len(snapshot[1].data) != int(maxFanartSnapshotFileBytes+1) {
 		t.Errorf("captured %d bytes, want exactly the fixture's %d", len(snapshot[1].data), maxFanartSnapshotFileBytes+1)
 	}
-	if !snapshot[1].overRetentionCap() {
-		t.Error("overRetentionCap() = false for a slot one byte over the cap; retention cannot be dropped " +
-			"later if this bit is wrong")
-	}
-	// Neighbors are ordinary and must not be flagged.
-	if snapshot[0].overRetentionCap() || snapshot[2].overRetentionCap() {
-		t.Errorf("a neighbor under the cap reports overRetentionCap()=true (slot0=%t, slot2=%t)",
-			snapshot[0].overRetentionCap(), snapshot[2].overRetentionCap())
-	}
-	// THE ASSERTION THIS TEST'S NAME IS ABOUT (hostile review m1): the
-	// neighbors must have actually CAPTURED bytes, not merely gone unflagged
-	// as over-cap. overRetentionCap() is false for a nil-data entry too (see
-	// its doc comment), so the check above alone cannot tell "captured and
-	// under the cap" from "never captured, so nothing to be over the cap
-	// with" -- and it is exactly the second shape a future change that turns
-	// one over-cap file into a set-wide abort would produce.
+	// THE ASSERTION THIS TEST'S NAME IS ABOUT (hostile review round 1, m1):
+	// the neighbors must have actually CAPTURED bytes, not merely gone
+	// unrefused. An implementation that aborted the whole read loop on the
+	// first over-cap file would leave both neighbors with nil data, which
+	// is exactly what this catches.
 	if snapshot[0].data == nil || snapshot[2].data == nil {
 		t.Errorf("a healthy backdrop beside the over-cap one was not captured (slot 0 captured=%t, "+
 			"slot 2 captured=%t); one over-cap slot must not cost its neighbors their bytes",
@@ -633,11 +621,11 @@ func TestSnapshotFanart_Refusal_IsLoggedAtError(t *testing.T) {
 //
 // #3017: the per-file cap is no longer one of the two caps refuseResult
 // re-applies -- it used to be, alongside the total, but the per-file bound is
-// now RETENTION-only (fanartSnapshot.overRetentionCap, consulted after the
-// upload loop) rather than a reason to refuse the read result. A file whose
-// read overshoots the per-file cap but stays under the total is therefore
-// captured here, not refused; the case below that used to prove the opposite
-// now proves that directly.
+// now a read-time size classification only, consulted nowhere in this
+// package's control flow, rather than a reason to refuse the read result. A
+// file whose read overshoots the per-file cap but stays under the total is
+// therefore captured here, not refused; the case below that used to prove
+// the opposite now proves that directly.
 //
 // This drives the predicate directly, at both boundaries in both directions.
 // It covers the DECISION only. The WIRING -- that snapshotFanart actually calls

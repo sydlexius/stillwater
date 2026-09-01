@@ -145,12 +145,12 @@ func fifoDeliveringBytes(t *testing.T, path string, n int64) {
 // calls.
 //
 // #3017: this used to drive the PER-FILE cap's post-read half. That cap no
-// longer refuses a read result at all (only the retention decision after
-// upload consults it -- see fanartSnapshot.overRetentionCap), so this now
-// drives the TOTAL cap's post-read half instead: without the post-read
-// check, the stat says 0, the pre-read refusal passes, and the snapshot
-// retains an entry over maxFanartSnapshotTotalBytes -- the cap bounding a
-// number while the process holds the bytes.
+// longer refuses a read result at all -- it is a read-time size
+// classification only -- so this now drives the TOTAL cap's post-read half
+// instead: without the post-read check, the stat says 0, the pre-read
+// refusal passes, and the snapshot retains an entry over
+// maxFanartSnapshotTotalBytes -- the cap bounding a number while the
+// process holds the bytes.
 func TestSnapshotFanart_ReadOvershootsTheStat_Discarded(t *testing.T) {
 	// No t.Parallel; see the note at the top of snapshot_bound_test.go.
 	dir := t.TempDir()

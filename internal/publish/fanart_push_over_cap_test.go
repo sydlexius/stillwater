@@ -171,7 +171,7 @@ func TestSyncAllFanart_OnlyBackdropOverCap_StillPushed(t *testing.T) {
 	got, ok := up.received(0)
 	if !ok {
 		t.Fatal("the artist's sole (over-cap) backdrop was never uploaded; hasReadableFanart must not " +
-			"treat a pushOnly slot as unreadable, or the sync returns before the upload loop runs at all")
+			"treat a captured-but-over-cap slot as unreadable, or the sync returns before the upload loop runs at all")
 	}
 	if len(got) != len(onlyBackdrop) {
 		t.Errorf("peer received %d bytes, want the full %d", len(got), len(onlyBackdrop))
@@ -182,26 +182,30 @@ func TestSyncAllFanart_OnlyBackdropOverCap_StillPushed(t *testing.T) {
 // #3017 C2 regression guard (hostile DO-NOT-SHIP review round).
 //
 // A prior shape of this test asserted the OPPOSITE of what is correct here,
-// and that was itself the C2 defect: dropOverCapRetention ran at function
-// RETURN, before the deferred repairAfterPush closure got a chance to run
-// (a defer fires LAST, at return, not first), so an over-cap slot's bytes
-// were nil'd before the repair could use them. Net effect: a peer clobbering
-// the operator's local over-cap file during the push destroyed it with
-// NOTHING to restore from -- a 12MB+ backdrop that was completely safe
-// before this branch (never pushed, so never touched by a peer) became
-// unrecoverable after it. See #2698/#2712 for why repairAfterPush exists at
-// all: an Emby 4.10 peer was measured deleting the operator's local file
-// during a push it was never asked to delete.
+// and that was itself the C2 defect: an earlier fix-round shape nil'd an
+// over-cap slot's bytes at function RETURN, before the deferred
+// repairAfterPush closure got a chance to run (a defer fires LAST, at
+// return, not first), so the repair had nothing to restore from. Net
+// effect: a peer clobbering the operator's local over-cap file during the
+// push destroyed it with NOTHING to put back -- a 12MB+ backdrop that was
+// completely safe before this branch (never pushed, so never touched by a
+// peer) became unrecoverable after it. See #2698/#2712 for why
+// repairAfterPush exists at all: an Emby 4.10 peer was measured deleting
+// the operator's local file during a push it was never asked to delete.
 //
-// The fix moved dropOverCapRetention INSIDE the deferred closure, after
-// repairAfterPush's two passes, so the bytes are still resident when the
-// repair needs them. This test proves that ordering: the over-cap file is
+// A second hostile round found the "fix" for that -- nilling the bytes
+// AFTER repairAfterPush instead -- was itself in-effect dead code: the
+// snapshot slice is local to syncAllFanartToPlatforms, so nilling an entry
+// microseconds before the function returns frees nothing the garbage
+// collector was not already about to reclaim (see snapshotFanart's doc
+// comment). That mechanism has been removed entirely; there is nothing left
+// to null the bytes at any point. What THIS test still proves, and the
+// reason it survives that removal unchanged, is that the over-cap file is
 // clobbered mid-push exactly as an ordinary backdrop would be, and it comes
 // back byte-identical, exactly as TestSyncAllFanart_PeerDeletesDifferentSlot_Restored
-// proves for an ordinary (under-cap) backdrop. The retention cap still
-// governs what is held ACROSS pushes (nothing outlives this function call
-// either way, since snapshot is function-scoped) -- what it must never do is
-// cost the CURRENT push's own repair its only copy.
+// proves for an ordinary (under-cap) backdrop -- the repair does not
+// distinguish an over-cap slot from any other, because nothing about this
+// branch gives it a reason to.
 //
 // Reuses clobberHarness (peer_clobber_test.go) rather than the stub
 // uploader above, because this needs an uploader that actually deletes a
@@ -266,52 +270,5 @@ func TestSyncAllFanart_OverPerFileCap_ClobberedByPeer_StillRestored(t *testing.T
 	// destroyed in this fixture (only fanart1.jpg is), so it is untouched.
 	if got := mustRead(t, filepath.Join(dir, "fanart.jpg")); string(got) != string(primary) {
 		t.Errorf("the untouched primary backdrop changed unexpectedly: got %q, want %q", got, primary)
-	}
-}
-
-// TestDropOverCapRetention_NilsOverCapEntriesOnly is the direct, unit-level
-// half of the #3017 AC "the over-cap bytes are not kept in the snapshot
-// after the upload" -- the black-box clobber test above cannot observe this
-// on its own, because `snapshot` is local to syncAllFanartToPlatforms and
-// goes out of scope (eligible for GC) the instant that function returns
-// regardless of whether any entry was nil'd. What actually matters, and
-// what this drives directly, is the CONTRACT dropOverCapRetention itself
-// promises: given a snapshot with a captured over-cap entry, it nils that
-// entry's bytes and leaves every other entry (nil-data, under-cap,
-// already-nil) untouched.
-func TestDropOverCapRetention_NilsOverCapEntriesOnly(t *testing.T) {
-	p := New(Deps{Logger: silentLogger()})
-
-	underCap := []byte("an ordinary backdrop")
-	overCapBytes := make([]byte, maxFanartSnapshotFileBytes+1)
-	for i := range overCapBytes {
-		overCapBytes[i] = byte(i * 11)
-	}
-	// PRECONDITION: the fixture is genuinely over the cap, or the entry
-	// below is not exercising the branch this test is about.
-	if int64(len(overCapBytes)) <= maxFanartSnapshotFileBytes {
-		t.Fatalf("precondition failed: fixture is %d bytes, not over the %d-byte cap",
-			len(overCapBytes), int64(maxFanartSnapshotFileBytes))
-	}
-
-	snapshot := []fanartSnapshot{
-		{path: "under.jpg", index: 0, data: underCap},
-		{path: "over.jpg", index: 1, data: overCapBytes},
-		{path: "refused.jpg", index: 2, data: nil}, // never captured; must stay nil, not panic
-	}
-
-	p.dropOverCapRetention("a1", snapshot)
-
-	if snapshot[0].data == nil {
-		t.Error("the under-cap entry lost its bytes; dropOverCapRetention must only touch over-cap entries")
-	}
-	if string(snapshot[0].data) != string(underCap) {
-		t.Error("the under-cap entry's bytes changed")
-	}
-	if snapshot[1].data != nil {
-		t.Errorf("the over-cap entry retained %d bytes; dropOverCapRetention did not drop it", len(snapshot[1].data))
-	}
-	if snapshot[2].data != nil {
-		t.Error("a nil-data entry gained bytes; dropOverCapRetention must be a pure drop, never a write")
 	}
 }

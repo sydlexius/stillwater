@@ -1664,14 +1664,6 @@ type fanartSnapshot struct {
 	mod time.Time
 }
 
-// overRetentionCap reports whether sf's captured bytes exceed the per-file
-// retention bound (#3017). A nil-data entry (never captured at all) is never
-// over it -- len(nil) is 0 -- so this is safe to call on every entry
-// unconditionally.
-func (sf fanartSnapshot) overRetentionCap() bool {
-	return int64(len(sf.data)) > maxFanartSnapshotFileBytes
-}
-
 // snapshotFanart reads EVERY fanart file BEFORE the first upload, returning the
 // captured set plus a warning per file that could not be read.
 //
@@ -1724,26 +1716,36 @@ func (sf fanartSnapshot) overRetentionCap() bool {
 // THE PER-FILE CAP IS DECOUPLED FROM THE PUSH (#3017). It used to borrow the
 // unreadable-file shape -- refuse before the read, keep a nil-data
 // placeholder -- and that is right for an unreadable file (which could not
-// have been uploaded either way) but wrong for one merely over the RETENTION
-// cap: a 13 MiB backdrop is under img.MaxDecodeBytes (25 MB), so it is
-// perfectly legal to read and upload, and refusing it before the read also
-// dropped it from uploadFanartSet, which skips every nil-data entry. If that
-// file was the artist's ONLY backdrop, hasReadableFanart was false and the
-// sync returned before the upload loop ran at all -- a push that worked
-// before the cap existed did nothing after.
+// have been uploaded either way) but wrong for one merely over
+// maxFanartSnapshotFileBytes: a 13 MiB backdrop is under img.MaxDecodeBytes
+// (25 MB), so it is perfectly legal to read and upload, and refusing it
+// before the read also dropped it from uploadFanartSet, which skips every
+// nil-data entry. If that file was the artist's ONLY backdrop,
+// hasReadableFanart was false and the sync returned before the upload loop
+// ran at all -- a push that worked before the cap existed did nothing after.
 //
-// So the per-file size cap no longer refuses before the read. Every file
-// under img.MaxDecodeBytes is read and, downstream in uploadFanartSet,
-// pushed to every peer regardless of its size. What the cap now governs is
-// RETENTION only: a file whose length overshoots maxFanartSnapshotFileBytes
-// is marked pushOnly below, and syncAllFanartToPlatforms drops its bytes to
-// nil once every peer has been uploaded to, so this push never holds more
-// than the per-file cap's worth of any one backdrop for restore. The warning
-// for a pushOnly slot says exactly that: pushed, but not retained for
-// repair -- a strictly smaller claim than the both-losses wording still used
-// by the count and total-bytes caps below, which DO refuse before the read
-// (a directory's total resident footprint is what those two protect, and
-// that protection would be defeated by reading first).
+// So the per-file size cap no longer refuses before the read, or does
+// anything else at read time: every file under img.MaxDecodeBytes is read
+// and, downstream in uploadFanartSet, pushed to every peer regardless of its
+// size. maxFanartSnapshotFileBytes is, as of this branch, a READ-TIME
+// classification only -- a threshold that no longer gates anything in this
+// function or the ones it calls. It does NOT bound how long a captured
+// over-threshold file's bytes stay resident: the whole point of capturing
+// them is that syncAllFanartToPlatforms's deferred repair (repairAfterPush)
+// may need to restore this exact file if a peer clobbers it mid-push, and
+// that need does not end until the repair's passes complete. An earlier
+// version of this branch tried to null the bytes once every peer had been
+// uploaded to, which (a) ran too late to matter -- the enclosing function's
+// own snapshot local goes out of scope at return regardless -- and (b)
+// documented a per-push memory bound that was never actually enforced at
+// any instant when holding the bytes could matter (the read, every peer
+// upload, and both repairAfterPush passes with its 250ms settle window all
+// still need every captured byte resident). That mechanism has been
+// removed; see maxFanartSnapshotTotalBytes below for what actually bounds
+// this push's resident footprint. What the count and total-bytes caps below
+// still do is refuse BEFORE the read, because a directory's total resident
+// footprint is what those two protect, and that protection would be
+// defeated by reading first.
 //
 // A second, smaller consequence stays OPEN and UNFIXED here: the fanart sync
 // is additive -- it writes backdrop indices and never deletes surplus ones on
@@ -1804,8 +1806,8 @@ func (p *Publisher) snapshotFanart(ctx context.Context, fanartPaths []string) ([
 		// #3017: this pre-read refuse no longer answers for the PER-FILE size
 		// alone -- only for the count and total-bytes caps, which still bound
 		// what this push holds AT ONCE and so still refuse before allocating.
-		// A file over the per-file cap is read anyway; see the pushOnly branch
-		// below for why and refuse's doc comment for what changed.
+		// A file over the per-file cap is read anyway; see this function's
+		// doc comment for why and refuse's doc comment for what changed.
 		if reason, refused := budget.refuse(ctx, fp, i); refused {
 			entry, warning := p.degradeFanartSlot(fp, i, reason)
 			snapshot = append(snapshot, entry)
@@ -2038,9 +2040,8 @@ func (b *fanartSnapshotBudget) refuse(ctx context.Context, path string, index in
 //
 // #3017: the per-file cap is NO LONGER one of the two caps re-applied here.
 // It used to refuse (and discard) any read over maxFanartSnapshotFileBytes;
-// that bytes-actually-read length is now consulted only by
-// fanartSnapshot.overRetentionCap, after the upload loop, to decide whether
-// to RETAIN the bytes rather than whether to UPLOAD them.
+// that cap is now a read-time size classification only (see snapshotFanart's
+// doc comment) and no longer gates anything in this function.
 func (b *fanartSnapshotBudget) refuseResult(n int64, index int) (string, bool) {
 	if b.bytes+n > maxFanartSnapshotTotalBytes {
 		return fmt.Sprintf("fanart %d was neither captured for restore nor synced to platforms: %d bytes read would exceed the %d-byte total snapshot limit",
@@ -2536,26 +2537,20 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	// first pass touched: the late delete can land on any slot, including one
 	// the first pass had just confirmed healthy.
 	//
-	// #3017 C2 (hostile review, DO-NOT-SHIP round): dropOverCapRetention runs
-	// INSIDE this same deferred closure, AFTER repairAfterPush's two passes
-	// complete, not as a separate step after this function returns. That
-	// ordering is load-bearing, not stylistic. An over-cap slot is now pushed
-	// (see snapshotFanart's doc comment), so a peer can destroy its LOCAL copy
-	// exactly as #2698 documents for every other backdrop -- and the retention
-	// cap's whole reason to exist is to bound what THIS push holds, not to
-	// forfeit the one copy that can undo that destruction while the repair
-	// this push depends on has not run yet. Dropping the bytes before the
-	// defer fired (the pre-fix-round shape) niled an over-cap slot's data
-	// before repairAfterPush ever looked at it, so the repair's own nil-data
-	// skip (a few lines below) treated a slot this push HAD the bytes for as
-	// unrecoverable. Running the drop after both repair passes costs nothing
-	// the cap does not already pay for: the bytes were resident for the
-	// upload regardless, and repairAfterPush's second pass is already
-	// bounded by reassertSettleDelay, so this adds no new residency window --
-	// it only delays discarding a window that already existed.
+	// #3017 C2 (hostile review, round 1): an earlier version of this branch
+	// tried to drop an over-cap slot's bytes to nil after this repair had run,
+	// on the theory that the retention cap should bound how long this push
+	// holds them. Two rounds of hostile review found that mechanism BOTH
+	// data-lossy in one ordering (nilling before this closure ran meant a
+	// peer clobber of an over-cap file had nothing to restore from) AND
+	// in-effect dead code in the corrected ordering (nilling a local slice
+	// microseconds before this function returns frees nothing that was not
+	// already about to be garbage collected -- see snapshotFanart's doc
+	// comment for the full account). It has been removed. The over-cap
+	// bytes simply live as long as this function's other locals do, which is
+	// exactly as long as repairAfterPush needs them.
 	defer func() {
 		if len(uploadedTo) == 0 {
-			p.dropOverCapRetention(a.ID, snapshot)
 			return
 		}
 		p.repairAfterPush(func(scope repairScope) {
@@ -2566,7 +2561,6 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 				p.reassertLocalImage(ctx, a, "fanart", sf.path, sf.data, sf.mod, push, uploadedTo, scope)
 			}
 		})
-		p.dropOverCapRetention(a.ID, snapshot)
 	}()
 
 	for _, pid := range platformIDs {
@@ -2619,35 +2613,6 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		})...)
 	}
 	return warnings
-}
-
-// dropOverCapRetention drops the bytes of every over-retention-cap entry in
-// snapshot IN PLACE, once every peer has had its chance to be uploaded to --
-// see fanartSnapshot.overRetentionCap and snapshotFanart's doc comment for
-// why the upload loop no longer skips these entries beforehand (#3017).
-// Dropping the bytes here, rather than never capturing them (the old
-// behavior), is what keeps this push's resident footprint bounded by the
-// per-file cap without also costing the slot its push.
-//
-// Mutating snapshot in place matters: syncAllFanartToPlatforms's deferred
-// repair closure reads from the same slice, so a slot dropped here is one
-// the repair will not attempt to restore. That is deliberate -- this push
-// never promised to hold those bytes for restore, only to push them, so
-// there is nothing to put back regardless of what a peer does to it
-// afterward.
-func (p *Publisher) dropOverCapRetention(artistID string, snapshot []fanartSnapshot) {
-	for i := range snapshot {
-		if snapshot[i].data == nil || !snapshot[i].overRetentionCap() {
-			continue
-		}
-		n := len(snapshot[i].data)
-		snapshot[i].data = nil
-		p.logger.Info("fanart slot pushed but not retained for restore: over the per-file retention cap",
-			slog.String("artist_id", artistID),
-			slog.Int("index", snapshot[i].index),
-			slog.Int("bytes", n),
-			slog.Int64("retention_cap", int64(maxFanartSnapshotFileBytes)))
-	}
 }
 
 // fanartUpload carries one peer's worth of fanart-push state. It exists to keep
