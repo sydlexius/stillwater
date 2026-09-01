@@ -168,6 +168,9 @@ func TestMigrateDeprecatedRule_SkipsEventDrivenRuleWithSurvivors(t *testing.T) {
 	for _, status := range statuses {
 		t.Run(status, func(t *testing.T) {
 			db := setupTestDB(t)
+			if err := database.EnableForeignKeys(db); err != nil {
+				t.Fatalf("enabling foreign keys: %v", err)
+			}
 			svc := NewService(db)
 			ctx := context.Background()
 			now := time.Now().UTC()
