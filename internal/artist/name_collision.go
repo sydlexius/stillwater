@@ -331,7 +331,7 @@ func (s *Service) UpdateNameGuarded(ctx context.Context, artistID, newName strin
 	if err != nil {
 		return nil, false, fmt.Errorf("guarded rename: beginning transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on the error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	var currentName string
 	if err := tx.QueryRowContext(ctx,

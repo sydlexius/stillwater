@@ -279,7 +279,7 @@ func (s *Service) ReopenCollisionViolations(ctx context.Context, ids []string) (
 	if err != nil {
 		return nil, fmt.Errorf("beginning reopen-collision transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+	defer tx.Rollback() //nolint:errcheck // Rollback returns sql.ErrTxDone after a successful Commit; on the error path the original error is what callers act on
 
 	placeholders := make([]string, len(ids))
 	selectArgs := make([]any, len(ids))
