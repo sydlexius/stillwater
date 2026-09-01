@@ -1081,11 +1081,19 @@ func TestStorePlatformDupReport_SweepStartedAfterAPruneIsStored(t *testing.T) {
 	r.invalidatePlatformDupReport()
 
 	// A fresh sweep, begun after the prune committed, finds one survivor.
+	// The stamp uses a deliberate forward offset rather than a bare
+	// time.Now() (#3166): under parallel load, a goroutine can be
+	// descheduled between invalidatePlatformDupReport's internal time.Now()
+	// stamp and this one, and on a coarse clock read the two can land on
+	// the same instant -- the store's `!After` guard then (correctly) drops
+	// a sweep it cannot prove started later, and the test's own assertion
+	// that it landed fires. The relation under test is "started after", so
+	// state it explicitly instead of racing for it.
 	r.storePlatformDupReport(publish.PlatformBackdropDupReport{
 		ArtistsAffected:    1,
 		RedundantBackdrops: 1,
 		PerArtist:          []publish.ArtistPlatformBackdropDup{{ArtistID: "a1", Connection: "emby", Redundant: 1}},
-	}, time.Now())
+	}, time.Now().Add(time.Second))
 
 	report, _, ok := r.platformDupReportSnapshot()
 	if !ok {
