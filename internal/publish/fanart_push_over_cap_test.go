@@ -2,7 +2,6 @@ package publish
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -58,35 +57,9 @@ func (s *stubIndexedUploader) callCount() int {
 	return len(s.callargs)
 }
 
-// stubBackdropPruneClient is a backdropPruneClient that answers a fixed
-// BackdropCount and refuses no delete, used to keep reconcileStaleFanartTail
-// from erroring out (or from finding surplus) when a test is not exercising
-// it. Distinct from fakeBackdropClient (backdrop_prune_test.go), which
-// models re-indexing on delete for the prune-specific tests -- these tests
-// do not delete through this fake at all in the "nothing stale" case.
-type stubBackdropPruneClient struct {
-	backdropCount int
-}
-
-func (s *stubBackdropPruneClient) GetArtistDetail(_ context.Context, _ string) (*connection.ArtistPlatformState, error) {
-	return &connection.ArtistPlatformState{BackdropCount: s.backdropCount}, nil
-}
-
-func (s *stubBackdropPruneClient) GetArtistBackdrop(_ context.Context, _ string, _ int) ([]byte, string, error) {
-	return nil, "", nil
-}
-
-func (s *stubBackdropPruneClient) DeleteImageAtIndex(_ context.Context, _, _ string, _ int) error {
-	return nil
-}
-
-// overCapSyncHarness wires a Publisher with a stubIndexedUploader (records
-// uploads, touches nothing on disk) and a stubBackdropPruneClient reporting
-// BackdropCount equal to localCount (so reconcileStaleFanartTail finds
-// nothing stale and does not interfere with these tests, which are about
-// the push/retention split, not the tail-reconcile behavior covered
-// separately below).
-func overCapSyncHarness(t *testing.T, localCount int) (*Publisher, *artist.Artist, string, *stubIndexedUploader) {
+// overCapSyncHarness wires a Publisher with a stubIndexedUploader that
+// records uploads and touches nothing on disk.
+func overCapSyncHarness(t *testing.T) (*Publisher, *artist.Artist, string, *stubIndexedUploader) {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -96,12 +69,6 @@ func overCapSyncHarness(t *testing.T, localCount int) (*Publisher, *artist.Artis
 		return up
 	}
 	t.Cleanup(func() { newIndexedImageUploader = origIndexed })
-
-	origFactory := backdropPruneClientFactory
-	backdropPruneClientFactory = func(_ *connection.Connection, _ *slog.Logger) backdropPruneClient {
-		return &stubBackdropPruneClient{backdropCount: localCount}
-	}
-	t.Cleanup(func() { backdropPruneClientFactory = origFactory })
 
 	conn := &connection.Connection{
 		ID: "c1", Name: "Peer", Type: connection.TypeEmby, Enabled: true, Status: "ok",
@@ -123,7 +90,7 @@ func overCapSyncHarness(t *testing.T, localCount int) (*Publisher, *artist.Artis
 // every configured peer." Also the AC's required over-cap-precondition test:
 // the fixture's size is asserted against the cap before trusting the result.
 func TestSyncAllFanart_OverPerFileCap_StillUploaded(t *testing.T) {
-	p, a, dir, up := overCapSyncHarness(t, 2)
+	p, a, dir, up := overCapSyncHarness(t)
 
 	primary := []byte("PRIMARY-BACKDROP-BYTES")
 	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), primary, 0o600); err != nil {
@@ -183,7 +150,7 @@ func TestSyncAllFanart_OverPerFileCap_StillUploaded(t *testing.T) {
 // the upload loop ran at all -- a push that worked before the cap existed
 // did nothing after.
 func TestSyncAllFanart_OnlyBackdropOverCap_StillPushed(t *testing.T) {
-	p, a, dir, up := overCapSyncHarness(t, 1)
+	p, a, dir, up := overCapSyncHarness(t)
 
 	onlyBackdrop := make([]byte, maxFanartSnapshotFileBytes+1)
 	for i := range onlyBackdrop {
@@ -211,19 +178,35 @@ func TestSyncAllFanart_OnlyBackdropOverCap_StillPushed(t *testing.T) {
 	}
 }
 
-// TestSyncAllFanart_OverPerFileCap_NotRetainedForRestore is the #3017 AC:
-// "The retention bound still holds: the over-cap bytes are not kept in the
-// snapshot after the upload." It proves this from the OUTSIDE, the only way
-// a black-box test can: a peer that destroys the over-cap file's local copy
-// during the push is NOT repaired, because this push never promised to hold
-// those bytes for restore -- while an ordinary neighbor destroyed the same
-// way IS repaired, proving the deferred-repair mechanism itself is intact
-// and it is retention specifically, not repair generally, that is gated.
+// TestSyncAllFanart_OverPerFileCap_ClobberedByPeer_StillRestored is the
+// #3017 C2 regression guard (hostile DO-NOT-SHIP review round).
+//
+// A prior shape of this test asserted the OPPOSITE of what is correct here,
+// and that was itself the C2 defect: dropOverCapRetention ran at function
+// RETURN, before the deferred repairAfterPush closure got a chance to run
+// (a defer fires LAST, at return, not first), so an over-cap slot's bytes
+// were nil'd before the repair could use them. Net effect: a peer clobbering
+// the operator's local over-cap file during the push destroyed it with
+// NOTHING to restore from -- a 12MB+ backdrop that was completely safe
+// before this branch (never pushed, so never touched by a peer) became
+// unrecoverable after it. See #2698/#2712 for why repairAfterPush exists at
+// all: an Emby 4.10 peer was measured deleting the operator's local file
+// during a push it was never asked to delete.
+//
+// The fix moved dropOverCapRetention INSIDE the deferred closure, after
+// repairAfterPush's two passes, so the bytes are still resident when the
+// repair needs them. This test proves that ordering: the over-cap file is
+// clobbered mid-push exactly as an ordinary backdrop would be, and it comes
+// back byte-identical, exactly as TestSyncAllFanart_PeerDeletesDifferentSlot_Restored
+// proves for an ordinary (under-cap) backdrop. The retention cap still
+// governs what is held ACROSS pushes (nothing outlives this function call
+// either way, since snapshot is function-scoped) -- what it must never do is
+// cost the CURRENT push's own repair its only copy.
 //
 // Reuses clobberHarness (peer_clobber_test.go) rather than the stub
 // uploader above, because this needs an uploader that actually deletes a
 // local file mid-push -- exactly clobberUploader's contract.
-func TestSyncAllFanart_OverPerFileCap_NotRetainedForRestore(t *testing.T) {
+func TestSyncAllFanart_OverPerFileCap_ClobberedByPeer_StillRestored(t *testing.T) {
 	calls := 0
 	// victim = fanart1.jpg, the over-cap slot. clobberUploader's
 	// UploadImageAtIndex only clobbers on idx==0 (see its doc comment): the
@@ -270,173 +253,65 @@ func TestSyncAllFanart_OverPerFileCap_NotRetainedForRestore(t *testing.T) {
 		t.Fatal("no upload was recorded for the over-cap slot (index 1); the push half of #3017 did not happen")
 	}
 
-	// THE RETENTION HALF: the over-cap file was destroyed mid-push (by the
-	// clobber triggered on the primary's upload) and must NOT come back,
-	// because this push dropped its retention once every peer had its
-	// upload.
-	if _, err := os.Stat(filepath.Join(dir, "fanart1.jpg")); !os.IsNotExist(err) {
-		t.Errorf("the over-cap backdrop was restored after a peer clobber (stat err = %v); #3017 requires "+
-			"the retention cap to still bound what is held, so an over-cap slot must degrade to "+
-			"'pushed but not repairable', not silently gain unbounded retention", err)
+	// THE C2 ASSERTION: the over-cap file was destroyed mid-push (by the
+	// clobber triggered on the primary's upload) and MUST come back
+	// byte-identical, because repairAfterPush ran while the bytes were still
+	// resident -- the drop only happens after both its passes complete.
+	got := mustRead(t, filepath.Join(dir, "fanart1.jpg"))
+	if string(got) != string(overCap) {
+		t.Errorf("restored over-cap backdrop does not match what was pushed (got %d bytes, want %d); the "+
+			"repair must put back exactly the bytes this push captured", len(got), len(overCap))
 	}
-	// The primary itself was never the clobber's victim in this fixture (only
-	// fanart1.jpg is), so it is untouched on disk; that an ORDINARY slot's
-	// repair still fires when it IS the victim is what
-	// TestSyncAllFanart_PeerDeletesDifferentSlot_Restored (above, same file)
-	// already proves, isolating retention-drop as specific to the over-cap
-	// slot rather than a blanket disable of the repair mechanism.
+	// The primary was also the trigger for the clobber but was never itself
+	// destroyed in this fixture (only fanart1.jpg is), so it is untouched.
 	if got := mustRead(t, filepath.Join(dir, "fanart.jpg")); string(got) != string(primary) {
 		t.Errorf("the untouched primary backdrop changed unexpectedly: got %q, want %q", got, primary)
 	}
 }
 
-// ---------------------------------------------------------------------------
-// #3017 variant 2: the stale-tail-index case. An artist's local backdrop
-// count can drop below a previously-synced platform index (a file removed
-// locally, or a run that used to fall under the now-larger count cap and no
-// longer does), and because uploadFanartSet is additive -- it only ever
-// writes indices, never deletes surplus ones -- nothing later reconciled the
-// difference before this change. reconcileStaleFanartTail closes that by
-// deleting platform indices at or beyond the local count once each
-// connection's own push has completed.
-// ---------------------------------------------------------------------------
+// TestDropOverCapRetention_NilsOverCapEntriesOnly is the direct, unit-level
+// half of the #3017 AC "the over-cap bytes are not kept in the snapshot
+// after the upload" -- the black-box clobber test above cannot observe this
+// on its own, because `snapshot` is local to syncAllFanartToPlatforms and
+// goes out of scope (eligible for GC) the instant that function returns
+// regardless of whether any entry was nil'd. What actually matters, and
+// what this drives directly, is the CONTRACT dropOverCapRetention itself
+// promises: given a snapshot with a captured over-cap entry, it nils that
+// entry's bytes and leaves every other entry (nil-data, under-cap,
+// already-nil) untouched.
+func TestDropOverCapRetention_NilsOverCapEntriesOnly(t *testing.T) {
+	p := New(Deps{Logger: silentLogger()})
 
-// tailReconcileHarness wires a Publisher whose uploads go through a
-// stubIndexedUploader (records calls, touches nothing) and whose
-// reconcileStaleFanartTail reads/deletes through a real fakeBackdropClient
-// (backdrop_prune_test.go), which re-indexes on delete exactly as a real
-// Emby/Jellyfin does -- the property #3138's post-mortem named as the one a
-// fake MUST model, not just record calls. featureImageWrite is threaded
-// through so the not-gated-on-respectWriteGate test below can reuse this
-// harness with the toggle off instead of duplicating the wiring.
-func tailReconcileHarness(t *testing.T, platformBackdrops [][]byte, featureImageWrite bool) (*Publisher, *artist.Artist, string, *stubIndexedUploader, *fakeBackdropClient) {
-	t.Helper()
-	dir := t.TempDir()
-
-	up := &stubIndexedUploader{}
-	origIndexed := newIndexedImageUploader
-	newIndexedImageUploader = func(_ *connection.Connection, _ *slog.Logger) connection.IndexedImageUploader {
-		return up
+	underCap := []byte("an ordinary backdrop")
+	overCapBytes := make([]byte, maxFanartSnapshotFileBytes+1)
+	for i := range overCapBytes {
+		overCapBytes[i] = byte(i * 11)
 	}
-	t.Cleanup(func() { newIndexedImageUploader = origIndexed })
-
-	fake := &fakeBackdropClient{backdrops: platformBackdrops, failAt: -1, failDeleteAt: -1}
-	origFactory := backdropPruneClientFactory
-	backdropPruneClientFactory = func(_ *connection.Connection, _ *slog.Logger) backdropPruneClient {
-		return fake
-	}
-	t.Cleanup(func() { backdropPruneClientFactory = origFactory })
-
-	conn := &connection.Connection{
-		ID: "c1", Name: "Peer", Type: connection.TypeEmby, Enabled: true, Status: "ok",
-		URL:  "http://peer.invalid",
-		Emby: &connection.EmbyConfig{FeatureImageWrite: featureImageWrite},
-	}
-	p := New(Deps{
-		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
-			{ArtistID: "a1", ConnectionID: conn.ID, PlatformArtistID: "p1"},
-		}},
-		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{conn.ID: conn}},
-		Logger:            silentLogger(),
-	})
-	return p, &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, dir, up, fake
-}
-
-// TestSyncAllFanart_StaleTailIndex_Reconciled is the #3017 AC's stale-tail-
-// index case: "an artist whose backdrop count DROPS below a previously-
-// synced tail index." The platform starts with 5 backdrops; the local set
-// has only 3. After the sync, the platform's surplus tail indices (3 and 4)
-// must be gone, deleted in descending order (both platforms re-index
-// remaining backdrops after each delete, so ascending order would target
-// the wrong image partway through).
-func TestSyncAllFanart_StaleTailIndex_Reconciled(t *testing.T) {
-	platform := [][]byte{
-		bandJPEG(t, 1), bandJPEG(t, 2), bandJPEG(t, 3), bandJPEG(t, 4), bandJPEG(t, 5),
-	}
-	p, a, dir, _, fake := tailReconcileHarness(t, platform, true)
-
-	for i, name := range []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(fmt.Sprintf("local-backdrop-%d", i)), 0o600); err != nil {
-			t.Fatalf("writing fixture %s: %v", name, err)
-		}
+	// PRECONDITION: the fixture is genuinely over the cap, or the entry
+	// below is not exercising the branch this test is about.
+	if int64(len(overCapBytes)) <= maxFanartSnapshotFileBytes {
+		t.Fatalf("precondition failed: fixture is %d bytes, not over the %d-byte cap",
+			len(overCapBytes), int64(maxFanartSnapshotFileBytes))
 	}
 
-	// PRECONDITION: the platform genuinely outnumbers the local set, or the
-	// reconcile has nothing to do and this test asserts nothing.
-	if len(platform) <= 3 {
-		t.Fatalf("precondition failed: platform holds %d backdrops, not more than the 3 local files", len(platform))
+	snapshot := []fanartSnapshot{
+		{path: "under.jpg", index: 0, data: underCap},
+		{path: "over.jpg", index: 1, data: overCapBytes},
+		{path: "refused.jpg", index: 2, data: nil}, // never captured; must stay nil, not panic
 	}
 
-	p.SyncAllFanartToPlatforms(context.Background(), a)
+	p.dropOverCapRetention("a1", snapshot)
 
-	gotDeleted := append([]int(nil), fake.deleted...)
-	gotRemaining := len(fake.backdrops)
-
-	if len(gotDeleted) != 2 {
-		t.Fatalf("deleted %d indices, want exactly 2 (the surplus tail): %v", len(gotDeleted), gotDeleted)
+	if snapshot[0].data == nil {
+		t.Error("the under-cap entry lost its bytes; dropOverCapRetention must only touch over-cap entries")
 	}
-	if gotDeleted[0] != 4 || gotDeleted[1] != 3 {
-		t.Errorf("deleted indices = %v, want [4, 3] (descending, both platforms re-index after each delete)", gotDeleted)
+	if string(snapshot[0].data) != string(underCap) {
+		t.Error("the under-cap entry's bytes changed")
 	}
-	if gotRemaining != 3 {
-		t.Errorf("platform has %d backdrops remaining, want exactly 3 (the local count)", gotRemaining)
+	if snapshot[1].data != nil {
+		t.Errorf("the over-cap entry retained %d bytes; dropOverCapRetention did not drop it", len(snapshot[1].data))
 	}
-	// The surviving backdrops must be the ORIGINAL indices 0-2, not indices
-	// that drifted from a wrong delete order.
-	for i := 0; i < 3; i++ {
-		if string(fake.backdrops[i]) != string(platform[i]) {
-			t.Errorf("surviving backdrop %d changed content; the delete order corrupted indices it should "+
-				"not have touched", i)
-		}
-	}
-}
-
-// TestSyncAllFanart_NoStaleTail_NothingDeleted is the over-suppression guard:
-// when the platform count already matches the local count, nothing is stale
-// and reconcileStaleFanartTail must not delete anything.
-func TestSyncAllFanart_NoStaleTail_NothingDeleted(t *testing.T) {
-	platform := [][]byte{bandJPEG(t, 1), bandJPEG(t, 2)}
-	p, a, dir, _, fake := tailReconcileHarness(t, platform, true)
-
-	for i, name := range []string{"fanart.jpg", "fanart1.jpg"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(fmt.Sprintf("local-backdrop-%d", i)), 0o600); err != nil {
-			t.Fatalf("writing fixture %s: %v", name, err)
-		}
-	}
-
-	p.SyncAllFanartToPlatforms(context.Background(), a)
-
-	if gotDeleted := len(fake.deleted); gotDeleted != 0 {
-		t.Errorf("deleted %d indices for a platform count that already matched local; want 0", gotDeleted)
-	}
-}
-
-// TestSyncAllFanart_StaleTail_NotGatedOnRespectWriteGate proves
-// reconcileStaleFanartTail's own FeatureImageWrite gate is checked
-// UNCONDITIONALLY, not merely when respectWriteGate is true (unlike the
-// upload loop's conn.GetFeatureImageWrite() check). SyncAllFanartToPlatforms
-// (the public, user-initiated entry point) always calls with
-// respectWriteGate=false, so a connection with the toggle off still gets
-// pushed to -- but must NOT also have platform images deleted from it, since
-// deletion is destructive and the operator never opted the connection into
-// server-file management.
-func TestSyncAllFanart_StaleTail_NotGatedOnRespectWriteGate(t *testing.T) {
-	platform := [][]byte{bandJPEG(t, 1), bandJPEG(t, 2), bandJPEG(t, 3)}
-	// FeatureImageWrite is OFF here, unlike every other test in this file.
-	p, a, dir, up, fake := tailReconcileHarness(t, platform, false)
-
-	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), []byte("local-backdrop"), 0o600); err != nil {
-		t.Fatalf("writing fixture: %v", err)
-	}
-
-	p.SyncAllFanartToPlatforms(context.Background(), a)
-
-	if up.callCount() == 0 {
-		t.Fatal("precondition failed: the upload never ran, so this test cannot distinguish push-without-delete " +
-			"from nothing happening at all")
-	}
-	if gotDeleted := len(fake.deleted); gotDeleted != 0 {
-		t.Errorf("deleted %d indices on a connection with FeatureImageWrite off; the reconcile must never "+
-			"delete platform images on a connection the operator did not opt into server-file management", gotDeleted)
+	if snapshot[2].data != nil {
+		t.Error("a nil-data entry gained bytes; dropOverCapRetention must be a pure drop, never a write")
 	}
 }

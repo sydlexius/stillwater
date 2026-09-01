@@ -1745,14 +1745,18 @@ func (sf fanartSnapshot) overRetentionCap() bool {
 // (a directory's total resident footprint is what those two protect, and
 // that protection would be defeated by reading first).
 //
-// A second, smaller consequence stays open and is covered by
-// reconcileStaleFanartTail rather than here: the fanart sync is additive --
-// it writes backdrop indices and never deletes surplus ones on its own -- so
-// a platform index a refused (count/total-cap) slot used to occupy keeps
-// whatever image it already held, indefinitely. Preserving the TRUE index
-// below is what keeps that stale image confined to the refused slots instead
-// of shifting every later backdrop onto the wrong index, which is the worse
-// failure and the one this code does prevent.
+// A second, smaller consequence stays OPEN and UNFIXED here: the fanart sync
+// is additive -- it writes backdrop indices and never deletes surplus ones on
+// its own -- so a platform index a refused (count/total-cap) slot used to
+// occupy keeps whatever image it already held, indefinitely. A stale-tail
+// reconciler was drafted and pulled from this branch after a hostile review
+// found it introduced its own destructive-delete defects (deleting fresh
+// Jellyfin appends, deleting operator-owned platform images past a
+// negatively-inferred local count); it is scoped as separate follow-up work,
+// not fixed by this comment. Preserving the TRUE index below is what keeps
+// the stale image CONFINED to the refused slots instead of shifting every
+// later backdrop onto the wrong index, which is the worse failure and the
+// one this code does prevent.
 //
 // The reads are ctx-bound and size-bounded (#2934). DiscoverFanart above is
 // already cancellable, so a bare os.ReadFile here left the same defect the
@@ -2531,8 +2535,27 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	// repairAfterPush. The whole set is walked on each pass, not just files the
 	// first pass touched: the late delete can land on any slot, including one
 	// the first pass had just confirmed healthy.
+	//
+	// #3017 C2 (hostile review, DO-NOT-SHIP round): dropOverCapRetention runs
+	// INSIDE this same deferred closure, AFTER repairAfterPush's two passes
+	// complete, not as a separate step after this function returns. That
+	// ordering is load-bearing, not stylistic. An over-cap slot is now pushed
+	// (see snapshotFanart's doc comment), so a peer can destroy its LOCAL copy
+	// exactly as #2698 documents for every other backdrop -- and the retention
+	// cap's whole reason to exist is to bound what THIS push holds, not to
+	// forfeit the one copy that can undo that destruction while the repair
+	// this push depends on has not run yet. Dropping the bytes before the
+	// defer fired (the pre-fix-round shape) niled an over-cap slot's data
+	// before repairAfterPush ever looked at it, so the repair's own nil-data
+	// skip (a few lines below) treated a slot this push HAD the bytes for as
+	// unrecoverable. Running the drop after both repair passes costs nothing
+	// the cap does not already pay for: the bytes were resident for the
+	// upload regardless, and repairAfterPush's second pass is already
+	// bounded by reassertSettleDelay, so this adds no new residency window --
+	// it only delays discarding a window that already existed.
 	defer func() {
 		if len(uploadedTo) == 0 {
+			p.dropOverCapRetention(a.ID, snapshot)
 			return
 		}
 		p.repairAfterPush(func(scope repairScope) {
@@ -2543,6 +2566,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 				p.reassertLocalImage(ctx, a, "fanart", sf.path, sf.data, sf.mod, push, uploadedTo, scope)
 			}
 		})
+		p.dropOverCapRetention(a.ID, snapshot)
 	}()
 
 	for _, pid := range platformIDs {
@@ -2593,13 +2617,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			identityIdx: fanartIdentityIdx,
 			notified:    collisionNotified,
 		})...)
-
-		// #3017 variant 2: reconcile this connection's stale tail indices now
-		// that its own push has completed. See reconcileStaleFanartTail.
-		p.reconcileStaleFanartTail(ctx, conn, pid, a.Name, len(snapshot))
 	}
-
-	p.dropOverCapRetention(a.ID, snapshot)
 	return warnings
 }
 
@@ -2629,68 +2647,6 @@ func (p *Publisher) dropOverCapRetention(artistID string, snapshot []fanartSnaps
 			slog.Int("index", snapshot[i].index),
 			slog.Int("bytes", n),
 			slog.Int64("retention_cap", int64(maxFanartSnapshotFileBytes)))
-	}
-}
-
-// reconcileStaleFanartTail deletes platform backdrop indices at or beyond
-// localCount, so a backdrop set that shrank since a previous push (or was
-// truncated by the #2712 file-count cap) does not leave a stale image at a
-// tail index forever -- the fanart sync otherwise only ever ADDS indices
-// (#3017 variant 2; see uploadFanartSet and dedupBackdropIndices, which
-// documents the same additive-sync property backdrop_prune.go exists to
-// clean up on an admin-triggered scan rather than automatically here).
-//
-// Runs once per connection, after THAT connection's own upload has
-// completed, and is best-effort: a failure here does not fail the sync or
-// add a warning, because leaving a stale tail image in place is the SAME
-// outcome this function exists to reduce, not a new one, and the sync
-// already reported whatever went wrong with the actual push.
-//
-// Gated on GetFeatureImageWrite REGARDLESS of respectWriteGate, unlike the
-// upload loop above: deleting a platform image is destructive, and
-// backdrop_prune.go's own admin-triggered delete requires the same opt-in
-// unconditionally. A user-initiated sync (respectWriteGate=false) still
-// pushes to a connection with the toggle off; it must not also start
-// deleting images on one.
-func (p *Publisher) reconcileStaleFanartTail(ctx context.Context, conn *connection.Connection, pid artist.PlatformID, artistName string, localCount int) {
-	if !conn.GetFeatureImageWrite() {
-		return
-	}
-	client := backdropPruneClientFactory(conn, p.logger)
-	if client == nil {
-		return
-	}
-	state, err := client.GetArtistDetail(ctx, pid.PlatformArtistID)
-	if err != nil {
-		p.logger.Warn("fanart tail reconcile: reading platform backdrop count failed; leaving any surplus index in place",
-			slog.String("connection", conn.Name), slog.String("error", err.Error()))
-		return
-	}
-	if state == nil || state.BackdropCount <= localCount {
-		return
-	}
-	// Descending, because Emby/Jellyfin re-index remaining backdrops after
-	// each delete -- the same convention dedupBackdropIndices documents and
-	// pruneOneArtist's delete loop follows.
-	removed := 0
-	for idx := state.BackdropCount - 1; idx >= localCount; idx-- {
-		if delErr := client.DeleteImageAtIndex(ctx, pid.PlatformArtistID, "fanart", idx); delErr != nil {
-			// STOP rather than continue to the next (lower) index: a delete
-			// error leaves platform state AMBIGUOUS -- it may have taken
-			// effect despite the error, which would shift every remaining
-			// index down by one and make the next planned delete target the
-			// wrong backdrop. pruneOneArtist's delete loop makes the same
-			// call for the same reason.
-			p.logger.Warn("fanart tail reconcile: delete failed; stopping this connection's reconcile",
-				slog.String("connection", conn.Name), slog.Int("index", idx), slog.String("error", delErr.Error()))
-			break
-		}
-		removed++
-	}
-	if removed > 0 {
-		p.logger.Info("fanart tail reconcile: removed stale platform backdrop indices",
-			slog.String("artist", artistName), slog.String("connection", conn.Name),
-			slog.Int("removed", removed), slog.Int("local_count", localCount), slog.Int("previous_platform_count", state.BackdropCount))
 	}
 }
 

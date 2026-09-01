@@ -298,10 +298,21 @@ func TestSnapshotFanart_FileCountCap_DegradesLoudly(t *testing.T) {
 // PRECONDITION for that later behavior: snapshotFanart hands back the
 // over-cap slot WITH its bytes and WITH fanartSnapshot.overRetentionCap()
 // true, which is exactly what syncAllFanartToPlatforms needs to see in
-// order to push it and then drop it. The end-to-end pushOnly behavior
-// (upload happens, retention does not) is covered by
-// TestSyncAllFanart_OverPerFileCap_PushedButNotRetained in peer_clobber_test.go,
-// which drives the real sync path with a fake peer.
+// order to push it and then drop it. The end-to-end push-then-drop behavior
+// is covered by TestSyncAllFanart_OverPerFileCap_StillUploaded and
+// TestSyncAllFanart_OverPerFileCap_NotRetainedForRestore in
+// fanart_push_over_cap_test.go, which drive the real sync path with fake
+// peers.
+//
+// THE NEIGHBOR-SURVIVAL CHECK BELOW IS STILL THE ORIGINAL POINT of this
+// test's name and predates the #3017 retarget (hostile review m1): a
+// per-file refusal -- or, now, a per-file over-cap READ -- must be per-FILE.
+// Asserting only overRetentionCap() on the neighbors proves they are not
+// FLAGGED as over-cap; it says nothing about whether they were actually
+// CAPTURED. An implementation that aborted the whole read loop on the first
+// over-cap file would leave both neighbors with nil data and
+// overRetentionCap() correctly false (nil data can never exceed the cap),
+// passing that check while failing the one this test exists for.
 func TestSnapshotFanart_PerFileCap_ReadAndCapturedNotRefused(t *testing.T) {
 	// No t.Parallel; see the note at the top of this file.
 	dir := t.TempDir()
@@ -361,6 +372,18 @@ func TestSnapshotFanart_PerFileCap_ReadAndCapturedNotRefused(t *testing.T) {
 	if snapshot[0].overRetentionCap() || snapshot[2].overRetentionCap() {
 		t.Errorf("a neighbor under the cap reports overRetentionCap()=true (slot0=%t, slot2=%t)",
 			snapshot[0].overRetentionCap(), snapshot[2].overRetentionCap())
+	}
+	// THE ASSERTION THIS TEST'S NAME IS ABOUT (hostile review m1): the
+	// neighbors must have actually CAPTURED bytes, not merely gone unflagged
+	// as over-cap. overRetentionCap() is false for a nil-data entry too (see
+	// its doc comment), so the check above alone cannot tell "captured and
+	// under the cap" from "never captured, so nothing to be over the cap
+	// with" -- and it is exactly the second shape a future change that turns
+	// one over-cap file into a set-wide abort would produce.
+	if snapshot[0].data == nil || snapshot[2].data == nil {
+		t.Errorf("a healthy backdrop beside the over-cap one was not captured (slot 0 captured=%t, "+
+			"slot 2 captured=%t); one over-cap slot must not cost its neighbors their bytes",
+			snapshot[0].data != nil, snapshot[2].data != nil)
 	}
 	// No warning and no cap-refusal accounting: this file was fully captured,
 	// so nothing was lost at the snapshot layer for the caller to be told
