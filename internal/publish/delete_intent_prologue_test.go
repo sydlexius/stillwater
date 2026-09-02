@@ -180,3 +180,68 @@ func TestSyncAllFanart_OperatorDeletesDuringPrologue_NotRestored(t *testing.T) {
 			"only hides it because the snapshot bytes happened to equal what was on disk")
 	}
 }
+
+// TestSyncImage_MarkerOlderThanThePush_StillRepairsAPeerClobber is the
+// publisher-side half of #3015's non-self-suppression criterion.
+//
+// The two prologue tests above prove the gate FIRES for a delete concurrent
+// with the push. This proves the complementary property, which is the one a
+// rule fixer's own push depends on: a marker written STRICTLY BEFORE the push
+// began does NOT suppress that push's repair. A fixer marks, unlinks, and only
+// then pushes; if its own marker covered that push, the fixer would silently
+// give up the #2698 peer-clobber repair for the artist it just fixed -- for the
+// whole five-minute retention window, on every fix.
+//
+// THE FIXTURE, and why it is not simply "mark, then push". The victim file must
+// exist when the push reads it and be destroyed by the PEER during the upload,
+// so the repair reaches its ENOENT branch for a genuinely peer-caused absence.
+// The marker is written before the push starts, exactly as a fixer's is.
+// installPrologueMarker's precondition check is reused so a marker leaked from
+// another test cannot make this pass for the wrong reason.
+//
+// The assertion is the OPPOSITE of the prologue tests': the file must be BACK.
+// That direction matters -- a gate broken toward "always suppress" passes every
+// prologue test in this file and fails only here.
+func TestSyncImage_MarkerOlderThanThePush_StillRepairsAPeerClobber(t *testing.T) {
+	calls := 0
+	p, a, dir := clobberHarness(t, "banner.jpg", "delete", &calls)
+
+	victim := filepath.Join(dir, "banner.jpg")
+	want := []byte("OPERATOR-BANNER-BYTES")
+	writeFile(t, victim, want)
+
+	if img.DeleteIntentAfter(dir, "banner", time.Time{}) {
+		t.Fatal("precondition failed: the directory already carries a banner delete marker, so this test " +
+			"cannot control the mark-versus-push ordering it exists to measure")
+	}
+
+	// The fixer's mark: written before its push, never during it.
+	img.MarkDeleteIntent(dir, "banner")
+	if !img.DeleteIntentAfter(dir, "banner", time.Time{}) {
+		t.Fatal("precondition failed: no marker is on record after MarkDeleteIntent, so a repair here " +
+			"would prove nothing about a marker's effect on a later push")
+	}
+	// Finite clock resolution again: without this the marker and the push's
+	// snapAt can land in the same tick, which DeleteIntentAfter deliberately
+	// treats as concurrent -- and this test would then be measuring the
+	// concurrent case the prologue tests already cover.
+	time.Sleep(2 * time.Millisecond)
+
+	p.SyncImageToPlatforms(context.Background(), a, "banner")
+
+	if calls == 0 {
+		t.Fatal("precondition failed: the uploader never ran, so the peer never destroyed the file and " +
+			"no repair was owed -- the assertion below would pass on an untouched fixture")
+	}
+
+	got, readErr := os.ReadFile(victim)
+	if readErr != nil {
+		t.Fatalf("the peer deleted the operator's banner during the push and the repair did NOT put it "+
+			"back (%v). The only marker on record was written BEFORE the push began, so it must not "+
+			"suppress this repair: a rule fixer marks and then pushes, and a fixer that suppresses its "+
+			"own repair loses the #2698 protection entirely (#3015)", readErr)
+	}
+	if string(got) != string(want) {
+		t.Errorf("the banner was restored with %q, want the operator's %q", got, want)
+	}
+}

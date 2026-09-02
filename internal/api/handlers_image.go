@@ -2535,6 +2535,28 @@ func (r *Router) handleImageRevert(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		newest := paths[len(paths)-1]
+
+		// #2712: mark the operator's delete intent BEFORE the unlink, so a push
+		// that was already in flight when this request arrived declines to
+		// restore the slot being dropped. Revert is the operator asking for this
+		// file to be gone, exactly as the four delete handlers are, and it was
+		// the one operator-triggered unlink in this package that recorded
+		// nothing (#3015).
+		//
+		// The marker is keyed by (dir, "fanart") with NO slot component. It has
+		// to be: dropping the newest slot leaves the survivors contiguous here,
+		// but updateArtistFanartCount and the next renumber make a slot index an
+		// unstable identity for whatever file an in-flight push is verifying
+		// (see MarkDeleteIntent for the worked case).
+		//
+		// It does NOT self-suppress this handler's own push. revertSideEffects
+		// -> SyncAllFanartToPlatforms runs strictly after this line and stamps
+		// its snapAt at ITS function entry, so that snapAt is later than this
+		// marker and DeleteIntentAfter's "recorded at or after snapAt" test is
+		// false for it. TestHandleImageRevert_OwnPushIsNotSelfSuppressed pins
+		// that ordering rather than leaving it to this comment.
+		img.MarkDeleteIntent(dir, imageType)
+
 		if rmErr := r.fileRemover.Remove(newest); rmErr != nil {
 			r.logger.Error("dropping derived fanart slot", slog.String("artist_id", artistID), slog.String("path", newest), slog.String("error", rmErr.Error()))
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to revert fanart"})

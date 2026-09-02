@@ -88,6 +88,72 @@ const DeleteIntentRetention = 5 * time.Minute
 // between a loss the operator can see and fix and a silent undo of what they
 // deliberately did, take the former.
 //
+// THE CALLERS, AND THE ONE PLACEMENT RULE THAT IS NOT "BEFORE THE UNLINK"
+// (#3015). TODAY, on this branch, five API handlers write this marker
+// immediately before their first unlink -- the image delete (both branches),
+// the fanart batch delete, the fanart slot delete, and the fanart revert. That
+// is the whole writer set that exists right now.
+//
+// TWO RULE FIXERS ARE PLANNED TO WRITE IT TOO, AS #3015's REMAINING HALF --
+// NOT YET LANDED. They are a different actor class from the API handlers:
+// operator-TRIGGERED but system-INITIATED, which changes where the call goes.
+// The placement reasoning is recorded here now, ahead of the code, so the
+// design is reviewable when that half lands. WHEN IT DOES, this block must
+// flip back to present tense -- search for "#3015 fixers" as the marker to
+// find it again.
+//
+//   - rule.ExtraneousImagesFixer.Fix (#3015 fixers) will mark the whole
+//     canonical type set (AllSlots), lazily, immediately before the first
+//     file it ATTEMPTS to remove. It deletes files that are by construction
+//     outside the canonical name set, so no honest filename-to-type mapping
+//     exists; the marker's key already carries no filename, so marking the
+//     set is what its granularity implies. Marking lazily is meant to keep a
+//     CLEAN directory -- which, for a library-wide auto-mode sweep, is most
+//     artists on most evaluations -- from being suppressed at all.
+//
+//     WHAT LAZINESS WILL NOT BUY, because the sanction two paragraphs below
+//     is narrower than it looks. "Attempts to remove" is not "removes": the
+//     mark must precede the unlink, so a directory holding extraneous files
+//     whose removal then FAILS (read-only or EROFS mount, EACCES, a stale
+//     SMB/NFS share) would get four live markers with nothing deleted. That
+//     would suppress image repair for that artist on every type for the full
+//     retention, and an auto-mode sweep re-marking on the next evaluation
+//     means it would not lapse while the condition persists. The design calls
+//     for the fixer to log that state at ERROR rather than leave it silent,
+//     and no placement change can avoid it -- marking later is the one thing
+//     this mechanism forbids.
+//
+//   - rule.ImageDuplicateFixer.deleteDuplicateFanartWithRollback (#3015
+//     fixers) will mark at its COMMIT POINT -- after RenumberFanart succeeds
+//     and before the tomb-unlink loop -- NOT before the staging renames. THE
+//     RULE FOR ANY STAGED, ROLLBACK-CAPABLE DELETE IS: mark at the point of
+//     no return, never at the start. A marker written before staging would
+//     stay live for the whole retention window after a rollback that PUT THE
+//     FILES BACK, so it would then suppress a repair for a file the code
+//     deliberately restored. That would be strictly worse than not marking at
+//     all, because the mechanism is write-once by design (see below) and
+//     nothing can withdraw it. The price is the stage-to-commit window, in
+//     which a delete is still resurrectable; it is short, and a resurrected
+//     duplicate is simply a duplicate again on the next rule evaluation.
+//
+// The marker is WRITE-ONCE ON PURPOSE. There is no ClearDeleteIntent and none
+// should be added: a withdrawable marker invites exactly the rollback-lie shape
+// above to be "fixed" by a withdrawal that can itself fail or race, when
+// choosing a placement the rollback never reaches removes the problem instead
+// of managing it.
+//
+// SELF-SUPPRESSION, the other half of #3015. Every writer must ensure its OWN
+// later push is not blocked by its own marker. The five API handlers get this
+// from ordering: their push stamps snapAt at ITS function entry, strictly
+// after the mark, and DeleteIntentAfter's "at or after since" test is then
+// false -- pinned by tests today. The two planned rule fixers (#3015 fixers)
+// are designed to get it from ROUTING as well: both would leave
+// FixResult.ImageType empty, so rule.publishAfterFix / publishAccumulated
+// would send them to PublishMetadata, which never calls reassertLocalImage
+// and so never reads this marker. That routing property has no test yet --
+// there is no internal/rule code on this branch -- and must be pinned when
+// the fixers land.
+//
 // Entries are pruned opportunistically on write (see MarkDeleteIntent); nothing
 // runs a goroutine to expire them. The same unbounded-sync.Map lifetime caveat
 // that slotMu and repairOpMu carry applies here with the retention sweep as its
@@ -122,8 +188,14 @@ func deleteIntentKey(dir, imageType string) string {
 // is already in flight can perform its post-upload verify at any instant, and a
 // marker written after the unlink leaves a window in which the file is gone and
 // the intent is not yet visible -- which is the original bug, merely narrowed.
-// Marking first is safe in the failure case too: if the delete then fails, the
-// only consequence is that one push declines to repair a file nothing damaged.
+// Marking first has a cost in the failure case, and it is bounded differently
+// for different callers. For a single API handler marking a single type once,
+// a failed delete costs one push declining to repair a file nothing damaged --
+// negligible. It is NOT negligible for a caller that marks SEVERAL types at
+// once inside an unattended library-wide sweep that re-runs: there a
+// persistently failing delete keeps every one of those types suppressed
+// indefinitely. Such a caller owes the operator a loud log of that state; see
+// rule.ExtraneousImagesFixer.Fix, which is the only one today.
 //
 // It also prunes markers older than DeleteIntentRetention. Doing the sweep here
 // rather than in a background goroutine keeps the whole mechanism to one package
