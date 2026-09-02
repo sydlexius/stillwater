@@ -128,15 +128,23 @@ func TestListArtworkSubdirFiles_DeterministicOrder(t *testing.T) {
 	}
 }
 
-// TestListArtworkSubdirFiles_EmptySubdirName_ReturnsNilNil covers the
-// degenerate parameter case defensively -- an empty name can never resolve to
-// a real directory, so this matches DiscoverFanart's own empty-primaryName
-// short circuit.
-func TestListArtworkSubdirFiles_EmptySubdirName_ReturnsNilNil(t *testing.T) {
+// TestListArtworkSubdirFiles_EmptySubdirName_ReturnsError covers the
+// degenerate parameter case: an empty name does not meet the exported
+// single-path-element contract, so it is refused with ErrInvalidSubdirName
+// rather than folded into the "absent subdirectory" empty-result case --
+// an empty name is a caller configuration error, not a directory that
+// happens not to exist (#3191 review). This is the SAME defect as the bare
+// "/" case below: filepath.Join(artistDir, "") == artistDir, exactly like
+// filepath.Join(artistDir, "/") == artistDir, so both must be rejected by
+// the one containment guard rather than special-cased individually.
+func TestListArtworkSubdirFiles_EmptySubdirName_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	paths, err := ListArtworkSubdirFiles(context.Background(), dir, "")
-	if err != nil || paths != nil {
-		t.Fatalf("empty subdirName: got (%v, %v), want (nil, nil)", paths, err)
+	if !errors.Is(err, ErrInvalidSubdirName) {
+		t.Fatalf("empty subdirName: got (%v, %v), want ErrInvalidSubdirName", paths, err)
+	}
+	if paths != nil {
+		t.Fatalf("empty subdirName: got paths %v, want nil", paths)
 	}
 }
 
@@ -261,6 +269,8 @@ func TestListArtworkSubdirFiles_RejectsEscapingSubdirName(t *testing.T) {
 		"sub/nested",
 		"/absolute",
 		"..\\sibling",
+		"",
+		"/",
 	} {
 		t.Run(name, func(t *testing.T) {
 			paths, err := ListArtworkSubdirFiles(context.Background(), artistDir, name)

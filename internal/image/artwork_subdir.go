@@ -11,7 +11,8 @@ import (
 )
 
 // ErrInvalidSubdirName reports that a subdirectory name handed to
-// ListArtworkSubdirFiles was not a single path element -- it contained a path
+// ListArtworkSubdirFiles was not a single, non-empty path element -- it was
+// empty, consisted of nothing but separators (e.g. "/"), contained a path
 // separator, or was "." / "..". It is an error rather than an empty result
 // for the same reason every other read failure here is: empty says "looked,
 // nothing is there" and licenses the caller to proceed, and a name that could
@@ -58,13 +59,16 @@ var ErrInvalidSubdirName = errors.New("artwork subdirectory name must be a singl
 // Results are returned sorted by filename, a deterministic order rather than
 // filesystem enumeration order.
 //
-// subdirName must be a SINGLE path element -- no separator, no "." or "..".
-// Anything else is rejected with ErrInvalidSubdirName rather than joined,
-// because filepath.Join CLEANS its result: a subdirName of "../sibling" would
-// resolve OUTSIDE artistDir and be enumerated as though it were inside it.
-// Only a package constant is passed today, but this function is exported and
-// advertised above as the extrathumbs/ extension point, so the containment is
-// enforced here rather than left as an unwritten obligation on that caller.
+// subdirName must be a SINGLE, NON-EMPTY path element -- no separator, no "."
+// or "..", and not a name that is nothing but separators (e.g. "/", which
+// filepath.Join would collapse onto artistDir itself, enumerating the artist
+// directory as though it were the subdirectory). Anything else is rejected
+// with ErrInvalidSubdirName rather than joined, because filepath.Join CLEANS
+// its result: a subdirName of "../sibling" would resolve OUTSIDE artistDir
+// and be enumerated as though it were inside it. Only a package constant is
+// passed today, but this function is exported and advertised above as the
+// extrathumbs/ extension point, so the containment is enforced here rather
+// than left as an unwritten obligation on that caller.
 //
 // CASE SENSITIVITY IS THE FILESYSTEM'S, AND IT DIVERGES FROM internal/artist's
 // isAdditiveMergeDir. subdirName reaches the OS verbatim, so querying
@@ -79,20 +83,22 @@ var ErrInvalidSubdirName = errors.New("artwork subdirectory name must be a singl
 // TestListArtworkSubdirFiles_CaseFoldingIsTheFilesystems pins that so it stays
 // a decision rather than an accident of the developer's filesystem.
 func ListArtworkSubdirFiles(ctx context.Context, artistDir, subdirName string) ([]string, error) {
-	if subdirName == "" {
-		return nil, nil
-	}
-	// Containment: a single path element only. filepath.Base collapses
+	// Containment: a single, non-empty path element. filepath.Base collapses
 	// "a/b" -> "b", "../x" -> "x", "." -> "." and ".." -> "..", so requiring
 	// Base(subdirName) == subdirName rejects every separator-bearing and
-	// traversal form in one comparison. Checked BEFORE the Join, so an
-	// escaping name is never turned into a path at all. A backslash is
+	// traversal form in one comparison -- except a name that is nothing but
+	// separators, which is a FIXED POINT of Base ("/" -> "/", "///" -> "/")
+	// and so survives that comparison unchanged. strings.Trim(subdirName,
+	// "/") == "" closes that gap for "" and "/" and any run of slashes in the
+	// same condition, rather than stacking "" and "/" on as two more special
+	// cases in front of the others. Checked BEFORE the Join, so an escaping
+	// or degenerate name is never turned into a path at all. A backslash is
 	// rejected explicitly because it is an ordinary filename character on
 	// Unix (filepath.Base would keep "..\\sibling" intact) while being a
 	// separator on Windows -- accepting it would make the guard's strength
 	// depend on GOOS.
 	if filepath.Base(subdirName) != subdirName || subdirName == "." || subdirName == ".." ||
-		strings.ContainsRune(subdirName, '\\') {
+		strings.ContainsRune(subdirName, '\\') || strings.Trim(subdirName, "/") == "" {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidSubdirName, subdirName)
 	}
 
