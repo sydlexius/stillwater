@@ -44,11 +44,23 @@ package deleteintenttest
 import (
 	"path/filepath"
 	"sync"
-	"testing"
 	"time"
 
 	img "github.com/sydlexius/stillwater/internal/image"
 )
+
+// tHelper is the narrow surface UnlinkProbe depends on: exactly the three
+// *testing.T methods its Fatalf/Errorf-guarded branches call. testing.T (via
+// testing.TB) satisfies this structurally, so every existing caller keeps
+// passing a plain *testing.T unchanged -- this interface exists so a test can
+// ALSO hand the probe a recording fake, to drive those branches without
+// aborting the outer test's own goroutine. See probe_test.go's fakeT for the
+// fake and why its Fatalf panics rather than returning.
+type tHelper interface {
+	Helper()
+	Errorf(format string, args ...any)
+	Fatalf(format string, args ...any)
+}
 
 // UnlinkProbe samples the delete-intent marker store at each unlink performed
 // under a directory, so a test can assert the marker was already live then.
@@ -57,7 +69,7 @@ import (
 // one goroutine, and a probe that raced would report a nondeterministic answer
 // to a deterministic question.
 type UnlinkProbe struct {
-	t     *testing.T
+	t     tHelper
 	dir   string
 	types []string
 	// since is stamped at construction, so "live" below means "recorded at or
@@ -91,7 +103,7 @@ type observation struct {
 // sync.Map keyed by cleaned directory, so a marker leaked from another test for
 // the same path would make every assertion below pass regardless of what the
 // code under test did. Callers therefore pass a t.TempDir.
-func NewUnlinkProbe(t *testing.T, dir string, types ...string) *UnlinkProbe {
+func NewUnlinkProbe(t tHelper, dir string, types ...string) *UnlinkProbe {
 	t.Helper()
 	if len(types) == 0 {
 		t.Fatalf("NewUnlinkProbe(%s) was given no image types to watch, so it would assert nothing", dir)
