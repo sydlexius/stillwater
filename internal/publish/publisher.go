@@ -2544,6 +2544,11 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		return warnings
 	}
 
+	// Peers this push handed a backdrop to, named in the restore log below and
+	// read by BOTH deferred closures registered underneath. Declared here, above
+	// the first of them, so each one can close over it.
+	var uploadedTo []string
+
 	// #3177: warn ONCE per push per artist -- not once per file and not once
 	// per connected platform -- that extrafanart/ is non-empty. A NOTICE only:
 	// nothing in extrafanart/ is part of fanartPaths/snapshot and nothing here
@@ -2574,19 +2579,39 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	//
 	// DEFERS RUN LIFO, so a defer registered BEFORE that one runs AFTER it.
 	// This is the only position where the advisory can cost neither the uploads
-	// nor the repair. Registering it here -- below all nine early returns -- also
-	// makes the once-per-push silence contract structural rather than a flag:
-	// an artist with no mapped platform, no top-level fanart, or no READABLE
-	// fanart returns above this line, so no advisory is registered and none is
-	// raised. See extrafanartExposureWarning for why that silence is correct.
+	// nor the repair.
+	//
+	// GATED ON uploadedTo, THE SAME PREDICATE repairAfterPush USES ONE DEFER
+	// BELOW, and for the same reason (#3177 review, round 3). Position alone
+	// does NOT establish the silence contract. Registering below the nine early
+	// returns rules out only the artists that return early; "no push happened"
+	// is a strictly LARGER set than "an early return fired", and three ways of
+	// reaching it sit BELOW this line, inside or ahead of the upload loop:
+	//
+	//   - every mapped connection disabled, unhealthy, or (on the reconciler
+	//     path) write-gated off -- the loop `continue`s over all of them;
+	//   - every mapped connection an unsupported type, so
+	//     newIndexedImageUploader returns nil -- likewise a `continue`;
+	//   - the reconciler pass running with Image download/write OFF, which is
+	//     the first case for every connection at once.
+	//
+	// In each of those no peer was handed a fanart set, so no peer clears and
+	// rewrites this artist's artwork, so the exposure this advisory describes
+	// does not arise -- exactly the argument that justifies the silence for an
+	// artist with no readable top-level fanart. Warning there tells an operator
+	// their files are at risk from a push that did not happen; the write-gate
+	// case tells them so on a timer, about a push their own toggle prevented.
+	// uploadedTo is appended to before each upload and captured by this
+	// closure, so it is correct by the time the defer runs. See
+	// extrafanartExposureWarning for why the silence is correct.
 	//
 	// The return is named for this reason and this reason only.
 	defer func() {
+		if len(uploadedTo) == 0 {
+			return
+		}
 		warnings = append(warnings, p.extrafanartExposureWarning(ctx, a, dir)...)
 	}()
-
-	// Peers this push handed a backdrop to, named in the restore log below.
-	var uploadedTo []string
 
 	// Restore any snapshot file a peer removed or rewrote during the push. Runs
 	// once after ALL uploads to ALL peers, so it covers cross-file deletion and an
@@ -2694,19 +2719,35 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 // syncAllFanartToPlatforms, so the warning is raised once per push per
 // artist -- never once per file and never once per connected platform.
 //
-// WHEN IT IS SILENT, AND WHY THAT IS DELIBERATE. The defer is registered below
-// syncAllFanartToPlatforms' early returns -- no mapped platforms, no
-// top-level fanart discovered, and no READABLE top-level fanart -- so an
-// artist with a populated extrafanart/ and no usable top-level fanart is
-// warned about nothing. That is structural, not an accident of placement: an
-// artist that returns early never registers the defer at all. No top-level
-// fanart means no fanart set is pushed, which means
-// no peer clears and rewrites this artist's artwork, which means the exposure
-// the warning describes does not arise on that push. Warning there would be
+// WHEN IT IS SILENT, AND WHY THAT IS DELIBERATE. The single condition is
+// that NO PEER WAS PUSHED TO. No peer handed a fanart set means no peer
+// clears and rewrites this artist's artwork, which means the exposure the
+// warning describes does not arise on that push -- and warning there would be
 // telling an operator their files are at risk from something that did not
-// happen. TestSyncAllFanart_ExtrafanartOnly_NoTopLevelFanart_IsSilent pins it
-// so the silence stays a decision, and the operator-facing docs page states
-// the same condition in operator language.
+// happen.
+//
+// That one condition is reached two structurally different ways, and the
+// caller enforces BOTH (see the registration site in
+// syncAllFanartToPlatforms):
+//
+//   - By an EARLY RETURN above the defer's registration: no mapped platform,
+//     no top-level fanart discovered, no READABLE top-level fanart, a
+//     snapshot cancellation. The defer is never registered, so no advisory
+//     exists to raise.
+//   - By the upload loop reaching NO PEER even though the defer is
+//     registered: every connection disabled, unhealthy, write-gated off, or
+//     an unsupported type. The registration position cannot see these, so the
+//     defer body is GATED on uploadedTo, the same predicate repairAfterPush
+//     applies one defer below.
+//
+// The count of early returns is NOT the contract, and treating it as one is
+// how this warning fired on three no-push paths through two fix rounds
+// (#3177 review, rounds 1-3): "an early return did not fire" is not
+// "a push happened". TestSyncAllFanart_ExtrafanartOnly_NoTopLevelFanart_IsSilent
+// pins the first form and
+// TestSyncAllFanart_AllConnectionsDisabled_IsSilent pins the second, so the
+// silence stays a decision; the operator-facing docs page states the same
+// single condition in operator language.
 //
 // This makes the population of extrafanart/ VISIBLE; it does not make it
 // SAFE. Nothing here reads, uploads, moves, renames, or deletes a file: the
@@ -2731,9 +2772,15 @@ func (p *Publisher) extrafanartExposureWarning(ctx context.Context, a *artist.Ar
 		p.logger.Warn("skipping the extrafanart/ check: the library mount has unresponsive reads outstanding",
 			slog.String("artist_id", a.ID),
 			slog.Int64("stalled_reads", n))
+		// LEADS WITH THE DISTINGUISHING CLAUSE (#3177 review, round 3). This
+		// message and the enumeration-failure one below used to share their
+		// first 62 characters and diverge only in the tail, and
+		// setSyncWarningTrigger truncates per message (collapsing the whole
+		// array to a count past 1000 bytes total), so on a many-peer push the
+		// surviving prefix did not say which condition occurred.
 		return []string{truncateWarning(
-			"could not check extrafanart/ for unprotected files before this push; " +
-				"unresponsive reads are outstanding on the library mount, so the check was skipped")}
+			"the extrafanart/ check was skipped: unresponsive reads are outstanding on the " +
+				"library mount, so this push could not check extrafanart/ for unprotected files")}
 	}
 
 	// OWN SHORT BUDGET, DETACHED FROM THE CALLER'S. Two independent reasons,
@@ -2763,9 +2810,11 @@ func (p *Publisher) extrafanartExposureWarning(ctx context.Context, a *artist.Ar
 		p.logger.Error("checking extrafanart/ before platform fanart sync",
 			slog.String("artist_id", a.ID),
 			slog.String("error", err.Error()))
+		// Distinguishing clause first, for the same truncation reason as the
+		// skip message above.
 		return []string{truncateWarning(
-			"could not check extrafanart/ for unprotected files before this push; " +
-				"the push proceeded, but the check itself did not run")}
+			"the extrafanart/ check failed to read the folder: this push could not check " +
+				"extrafanart/ for unprotected files; the push itself proceeded")}
 	}
 	if len(files) == 0 {
 		return nil
