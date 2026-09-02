@@ -36,13 +36,13 @@ func FanartFilename(primaryName string, index int, kodiNumbering bool) string {
 	return fmt.Sprintf("%s%d%s", base, n, ext)
 }
 
-// indexedFile pairs a discovery index with an absolute file path.
+// indexedFile pairs a discovery index with a file path (absolute if dir is absolute).
 type indexedFile struct {
 	index int
 	path  string
 }
 
-// DiscoverFanart scans an artist directory and returns sorted absolute paths
+// DiscoverFanart scans an artist directory and returns sorted paths (joined to dir)
 // for all fanart files that match the primary name or its numbered variants.
 // The primary name comes from the active platform profile (e.g., "backdrop.jpg"
 // for Emby, "fanart.jpg" for Kodi). Files are returned in index order: primary
@@ -62,7 +62,33 @@ func DiscoverFanart(ctx context.Context, dir string, primaryName string) ([]stri
 		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
 
-	return fanartPaths(fanartMatches(dir, entries, primaryName)), nil
+	return DiscoverFanartFrom(dir, entries, primaryName), nil
+}
+
+// DiscoverFanartFrom is the entries-accepting core of fanart discovery: given
+// a directory path (used to join with filenames via filepath.Join) and
+// pre-read directory entries, it returns sorted paths for the files
+// matching primaryName or its numbered variants. The paths inherit the absolute/relative
+// nature of dir. It performs no I/O, so it
+// never returns an error, and it is the ONE place this matching algorithm is
+// implemented for DiscoverFanart and the scanner -- DiscoverFanart above is a
+// thin os.ReadDir wrapper around it, and internal/scanner's
+// discoverFanartFiles calls it directly with the entries the scanner already
+// holds, rather than keeping its own copy. (MaxFanartIndex below still keeps
+// its own copy of this algorithm; that duplication predates this refactor.)
+//
+// Four rules here are load-bearing, and each is an independent under-count
+// risk if it drifts: the extension allowlist includes .jpeg (fanartPatterns
+// in internal/scanner does not, so a directory holding only fanart.jpeg has
+// no pattern-list primary and must fall through to a second-pass, ordinal-0
+// match here); the numbered-variant parse requires strconv.Atoi to succeed
+// AND n > 0; the dedupe below keeps the FIRST entry per ordinal; and the
+// sort's extension preference is what stops two extensions both claiming
+// ordinal 0. The output bounds a DELETE (deleteStaleSlots in
+// internal/artist/sqlite_image.go keeps a row only while slotIndex < found),
+// so an under-count here deletes rows whose files are still on disk.
+func DiscoverFanartFrom(dir string, entries []os.DirEntry, primaryName string) []string {
+	return fanartPaths(fanartMatches(dir, entries, primaryName))
 }
 
 // fanartMatches returns the fanart files among pre-read directory entries that
@@ -139,7 +165,7 @@ func fanartMatches(dir string, entries []os.DirEntry, primaryName string) []inde
 	return out
 }
 
-// fanartPaths projects a resolved match set down to its absolute paths.
+// fanartPaths projects a resolved match set down to its paths (joined to dir during match).
 func fanartPaths(files []indexedFile) []string {
 	if len(files) == 0 {
 		return nil

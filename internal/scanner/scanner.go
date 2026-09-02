@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1515,122 +1513,17 @@ func discoverFanartFiles(dirPath string, entries []os.DirEntry) []string {
 	for _, p := range fanartPatterns {
 		for _, e := range entries {
 			if !e.IsDir() && strings.EqualFold(e.Name(), p) {
-				return fanartVariants(dirPath, entries, p)
+				return img.DiscoverFanartFrom(dirPath, entries, p)
 			}
 		}
 	}
 	// Pass 2: no primary anywhere, so numbered variants may still be present.
 	for _, p := range fanartPatterns {
-		if paths := fanartVariants(dirPath, entries, p); len(paths) > 0 {
+		if paths := img.DiscoverFanartFrom(dirPath, entries, p); len(paths) > 0 {
 			return paths
 		}
 	}
 	return nil
-}
-
-// fanartExtensions is the extension allowlist fanart discovery accepts. It
-// mirrors image.DiscoverFanart's, and TestDiscoverFanartFiles_MatchesDiscoverFanart
-// fails if the two ever drift.
-var fanartExtensions = map[string]bool{".jpg": true, ".jpeg": true, ".png": true}
-
-// fanartVariants resolves the fanart files matching primaryName and its
-// numbered variants from an ALREADY-READ directory listing, returning absolute
-// paths in DiscoverFanart ordinal order.
-//
-// This is image.DiscoverFanart's algorithm answered from memory, and answering
-// it from memory is the entire point. DiscoverFanart re-reads the directory the
-// caller has already read successfully, which made discovery a second,
-// independent chance to fail -- and its failure had nowhere to go. The old code
-// logged the error and returned nil, which is indistinguishable from "this
-// artist has no fanart", so the caller set FanartCount=0 and imageEnumeration
-// published {fanart, FoundSlots: 0}: a positive claim that zero fanart files
-// exist. deleteStaleSlots keeps a row only when slotIndex < found, so a
-// fabricated zero licensed deleting EVERY fanart row for the artist while the
-// files sat untouched on disk. An SMB blip, fd exhaustion, or a permission
-// change between the two reads was enough to trigger it (#2635).
-//
-// Sourcing the answer from the listing detectFiles already holds removes the
-// failure rather than routing it: there is no second read, so there is no error
-// to swallow and no path that can report a count it did not measure. If the one
-// remaining read fails, its caller returns an error and the artist is skipped
-// with its registry untouched. It also drops up to 4 redundant os.ReadDir calls
-// per artist from the mtime fast path.
-//
-// Every rule below is load-bearing and each is a potential under-count if
-// dropped, so each is pinned by a case in
-// TestDiscoverFanartFiles_MatchesDiscoverFanart: the extension allowlist
-// (.jpeg is accepted by DiscoverFanart but absent from fanartPatterns, so
-// driving the allowlist off the patterns would silently drop fanart.jpeg), the
-// Atoi-must-succeed-and-be-positive variant parse, the keep-first-per-ordinal
-// dedupe, and the extension preference that stops backdrop.jpg and
-// backdrop.png both claiming ordinal 0.
-func fanartVariants(dirPath string, entries []os.DirEntry, primaryName string) []string {
-	if primaryName == "" {
-		return nil
-	}
-	primaryExt := strings.ToLower(filepath.Ext(primaryName))
-	baseLower := strings.ToLower(strings.TrimSuffix(primaryName, filepath.Ext(primaryName)))
-
-	type indexedFile struct {
-		index int
-		path  string
-	}
-	var found []indexedFile
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		ext := strings.ToLower(filepath.Ext(name))
-		if !fanartExtensions[ext] {
-			continue
-		}
-		nameBase := strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name)))
-		switch {
-		case nameBase == baseLower:
-			// Primary: exact base match, ordinal 0.
-			found = append(found, indexedFile{0, filepath.Join(dirPath, name)})
-		case strings.HasPrefix(nameBase, baseLower):
-			// Numbered variant: {base}{N} for a positive integer N.
-			n, err := strconv.Atoi(nameBase[len(baseLower):])
-			if err != nil || n <= 0 {
-				continue
-			}
-			found = append(found, indexedFile{n, filepath.Join(dirPath, name)})
-		}
-	}
-
-	// Sort by ordinal, then prefer the extension matching primaryName so that
-	// when both backdrop.jpg and backdrop.png sit at ordinal 0, only one is
-	// returned. The final path comparison breaks the remaining ties the same way
-	// DiscoverFanart does, so two files differing only in case resolve
-	// identically here and there.
-	sort.Slice(found, func(i, j int) bool {
-		if found[i].index != found[j].index {
-			return found[i].index < found[j].index
-		}
-		ei := strings.ToLower(filepath.Ext(found[i].path))
-		ej := strings.ToLower(filepath.Ext(found[j].path))
-		if (ei == primaryExt) != (ej == primaryExt) {
-			return ei == primaryExt
-		}
-		return found[i].path < found[j].path
-	})
-
-	// Deduplicate: keep only the first entry per ordinal.
-	paths := make([]string, 0, len(found))
-	lastIdx := -1
-	for _, f := range found {
-		if f.index == lastIdx {
-			continue
-		}
-		lastIdx = f.index
-		paths = append(paths, f.path)
-	}
-	if len(paths) == 0 {
-		return nil
-	}
-	return paths
 }
 
 // probeImageFileFn is the package-level seam through which detectFiles calls

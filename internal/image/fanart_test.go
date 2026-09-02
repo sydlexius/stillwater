@@ -3,8 +3,10 @@ package image
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -303,6 +305,35 @@ func TestDiscoverFanart_DuplicateNumbered(t *testing.T) {
 	}
 }
 
+// TestDiscoverFanart_ExtensionPreferenceOverridesLexicalOrder pins the sort's
+// extension-preference tiebreak specifically, as distinct from
+// TestDiscoverFanart_DuplicateExtension above. That test uses primaryName
+// "backdrop.jpg", and ".jpg" sorts lexically before ".png" anyway, so a sort
+// that dropped the extension-preference clause entirely and fell back to
+// pure lexical path comparison would still pass it for the wrong reason.
+// Here primaryName is "backdrop.png", the extension that sorts lexically
+// AFTER ".jpg", so only the extension-preference clause can produce the
+// right winner.
+func TestDiscoverFanart_ExtensionPreferenceOverridesLexicalOrder(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"backdrop.jpg", "backdrop.png"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paths, err := DiscoverFanart(context.Background(), dir, "backdrop.png")
+	if err != nil {
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 fanart file (dedup), got %d: %v", len(paths), paths)
+	}
+	if filepath.Base(paths[0]) != "backdrop.png" {
+		t.Errorf("expected backdrop.png (preferred ext, lexically later), got %q", filepath.Base(paths[0]))
+	}
+}
+
 func TestDiscoverFanart_AlternateExtension(t *testing.T) {
 	dir := t.TempDir()
 
@@ -320,6 +351,186 @@ func TestDiscoverFanart_AlternateExtension(t *testing.T) {
 	}
 	if filepath.Base(paths[0]) != "backdrop.png" {
 		t.Errorf("expected backdrop.png, got %q", filepath.Base(paths[0]))
+	}
+}
+
+// TestDiscoverFanart_JpegExtensionAccepted pins the .jpeg allowlist entry.
+// .jpeg is absent from internal/scanner's fanartPatterns list (which drives
+// the scanner's PRIMARY NAME candidates, not this package's extension
+// allowlist), so a directory holding only fanart.jpeg has no pattern-list
+// primary on disk and depends on this package matching by base name
+// regardless of which allowlisted extension the file actually has. Dropping
+// .jpeg from the allowlist here silently drops every fanart.jpeg file from
+// discovery.
+func TestDiscoverFanart_JpegExtensionAccepted(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpeg"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := DiscoverFanart(context.Background(), dir, "fanart.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 fanart file (.jpeg allowlisted), got %d: %v", len(paths), paths)
+	}
+	if filepath.Base(paths[0]) != "fanart.jpeg" {
+		t.Errorf("expected fanart.jpeg, got %q", filepath.Base(paths[0]))
+	}
+}
+
+// TestDiscoverFanart_NumberedVariantRequiresPositiveInteger pins the
+// strconv.Atoi-succeeds-AND-n>0 rule for numbered variants. fanart-2.jpg
+// parses to a negative index if the n>0 check is dropped entirely
+// (deliberately not "-1": the dedupe below starts its "last seen index"
+// sentinel at -1, so a suffix of exactly -1 would be silently swallowed by
+// that sentinel and the test would pass for the wrong reason).
+//
+// The fanart0.jpg-alone case below pins the other half of the same rule: a
+// realistic off-by-one (n >= 0 instead of n > 0) admits "0" as a suffix, and
+// because "fanart.jpg" < "fanart0.jpg" in the path tiebreak, mixing
+// fanart0.jpg into a directory that also holds fanart.jpg does not surface
+// the bug -- fanart.jpg still wins ordinal 0 by the extension/path tiebreak
+// and the count stays 1 either way. Only a directory holding fanart0.jpg
+// ALONE, with no fanart.jpg to out-tiebreak it, exposes the off-by-one.
+func TestDiscoverFanart_NumberedVariantRequiresPositiveInteger(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"fanart.jpg", "fanart0.jpg", "fanart-2.jpg", "fanartx.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paths, err := DiscoverFanart(context.Background(), dir, "fanart.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 fanart file (only the primary is a valid match), got %d: %v", len(paths), paths)
+	}
+	if filepath.Base(paths[0]) != "fanart.jpg" {
+		t.Errorf("expected fanart.jpg, got %q", filepath.Base(paths[0]))
+	}
+}
+
+// TestDiscoverFanart_NumberedVariantZeroSuffixAlone pins n > 0 in isolation,
+// with no fanart.jpg present to mask an off-by-one via the path tiebreak (see
+// the comment above). Index 0 is reserved for the exact base match, not a "0"
+// suffix, so a directory holding only fanart0.jpg has zero fanart files.
+func TestDiscoverFanart_NumberedVariantZeroSuffixAlone(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart0.jpg"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := DiscoverFanart(context.Background(), dir, "fanart.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
+	}
+	if len(paths) != 0 {
+		t.Errorf("fanart0.jpg alone should not match, got %v", paths)
+	}
+}
+
+// fakeDirEntry is a minimal os.DirEntry stand-in for testing
+// DiscoverFanartFrom's matching directly, without touching the filesystem.
+// The matcher only calls Name() and IsDir(), so this is a faithful substitute
+// for what os.ReadDir hands it -- and it is what makes the case-collision
+// test below reach on every platform: a case-INSENSITIVE filesystem (APFS)
+// cannot hold "Fanart1.jpg" and "fanart1.jpg" as two entries, so exercising
+// that collision at all requires bypassing the filesystem.
+type fakeDirEntry struct{ name string }
+
+func (f fakeDirEntry) Name() string               { return f.name }
+func (f fakeDirEntry) IsDir() bool                { return false }
+func (f fakeDirEntry) Type() fs.FileMode          { return 0 }
+func (f fakeDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
+
+func fakeDirEntries(names ...string) []os.DirEntry {
+	out := make([]os.DirEntry, 0, len(names))
+	for _, n := range names {
+		out = append(out, fakeDirEntry{n})
+	}
+	return out
+}
+
+// TestDiscoverFanartFrom_CaseCollisionResolvesDeterministically pins the case
+// this refactor was undertaken for: two names differing only in case
+// (Fanart1.jpg / fanart1.jpg) collide at the same ordinal, and which one WINS
+// is load-bearing -- slot_index is a DiscoverFanart ordinal, and the path at
+// an ordinal is what gets probed for dimensions and what a placeholder is
+// generated from. The retired scanner/image parity test carried this exact
+// fixture; nothing in the surviving suite does (the agreement test's
+// "Fanart.JPG"/"FANART1.jpg" case is uppercase names that do not collide with
+// anything, so it exercises case-insensitive matching, not collision
+// resolution). Synthetic entries let this run on every platform, including a
+// case-insensitive one that cannot hold the fixture on disk.
+func TestDiscoverFanartFrom_CaseCollisionResolvesDeterministically(t *testing.T) {
+	names := []string{"fanart.jpg", "Fanart1.jpg", "fanart1.jpg"}
+
+	// Assert the fixture's own precondition: the two numbered names must
+	// collide under case-folding while differing as raw bytes, or this test
+	// exercises nothing.
+	if names[1] == names[2] {
+		t.Fatalf("fixture does not differ as raw bytes: %q == %q", names[1], names[2])
+	}
+	if !strings.EqualFold(names[1], names[2]) {
+		t.Fatalf("fixture does not collide under case-folding: %q vs %q", names[1], names[2])
+	}
+
+	got := DiscoverFanartFrom("/d", fakeDirEntries(names...), "fanart.jpg")
+	if len(got) != 2 {
+		t.Fatalf("expected ordinals 0 and 1, got %d: %v", len(got), got)
+	}
+	if filepath.Base(got[1]) != "Fanart1.jpg" {
+		t.Errorf("ordinal 1 = %q, want Fanart1.jpg (path tiebreak: 'F' sorts before 'f')",
+			filepath.Base(got[1]))
+	}
+
+	// The winner must not depend on the order entries happen to arrive in.
+	reversed := []string{names[2], names[1], names[0]}
+	rev := DiscoverFanartFrom("/d", fakeDirEntries(reversed...), "fanart.jpg")
+	if len(rev) != len(got) {
+		t.Fatalf("reversed entry order changed the count: %d vs %d", len(rev), len(got))
+	}
+	for i := range got {
+		if got[i] != rev[i] {
+			t.Errorf("entry order changed ordinal %d: %s vs %s", i, got[i], rev[i])
+		}
+	}
+}
+
+// TestDiscoverFanartFrom_MatchesDiscoverFanart is a direct self-consistency
+// check between the wrapper and the entries-accepting core it delegates to:
+// given the SAME already-read listing, they must agree exactly. This is
+// deliberately weaker than the retired scanner/image parity test -- it does
+// not compare two independent implementations, only that the wrapper adds no
+// behavior beyond the os.ReadDir it performs.
+func TestDiscoverFanartFrom_MatchesDiscoverFanart(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"backdrop.jpg", "backdrop2.jpg", "backdrop2.png", "fanart.jpeg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want, err := DiscoverFanart(context.Background(), dir, "backdrop.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := DiscoverFanartFrom(dir, entries, "backdrop.jpg")
+	if len(got) != len(want) {
+		t.Fatalf("DiscoverFanartFrom = %v (%d), DiscoverFanart = %v (%d)", got, len(got), want, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("index %d: DiscoverFanartFrom = %s, DiscoverFanart = %s", i, got[i], want[i])
+		}
 	}
 }
 
@@ -841,4 +1052,169 @@ func TestRenumberFanart_GeometryInvalidationFailureStopsBeforeRenaming(t *testin
 	if _, err := os.Stat(filepath.Join(dir, "backdrop2.jpg")); err == nil {
 		t.Error("a rename happened despite the invalidation failure")
 	}
+}
+
+// FuzzDiscoverFanart replaces the retired scanner/image parity test with a
+// generative guard on DiscoverFanart's postconditions. It must never panic on
+// any filename set, and its output must obey the invariants that make the
+// result usable as deleteStaleSlots' delete bound: no ordinal returned twice,
+// ordinals non-decreasing, every path allowlisted, and the wrapper
+// (DiscoverFanart) must agree exactly with the entries-accepting core
+// (DiscoverFanartFrom) it delegates to -- the two are never allowed to see
+// different input and produce different output, since the scanner depends on
+// exactly that agreement.
+func FuzzDiscoverFanart(f *testing.F) {
+	// primary-only
+	f.Add("fanart.jpg", "fanart.jpg")
+	// numbered variants
+	f.Add("fanart.jpg\nfanart1.jpg\nfanart2.jpg", "fanart.jpg")
+	// mixed extensions at one ordinal
+	f.Add("backdrop.jpg\nbackdrop.png", "backdrop.jpg")
+	// .jpeg-only primary (absent from scanner's pattern list)
+	f.Add("fanart.jpeg", "fanart.jpg")
+	// zero, negative, and non-numeric suffixes
+	f.Add("fanart.jpg\nfanart0.jpg\nfanart-1.jpg\nfanartx.jpg", "fanart.jpg")
+	// case-colliding names
+	f.Add("fanart.jpg\nFanart1.jpg\nfanart1.jpg", "fanart.jpg")
+	// no fanart at all
+	f.Add("folder.jpg\nlogo.png\nartist.nfo", "fanart.jpg")
+	// empty primary
+	f.Add("fanart.jpg", "")
+
+	f.Fuzz(func(t *testing.T, namesBlob string, primaryName string) {
+		dir := t.TempDir()
+		for _, name := range fuzzFanartFilenames(namesBlob) {
+			// Some generated names are not writable on every filesystem (an
+			// invalid-UTF-8 byte sequence fails with "illegal byte sequence"
+			// on macOS, for instance). Errors here are a fixture-construction
+			// detail, not a finding: the oracle below derives its answer from
+			// os.ReadDir, i.e. from what actually landed on disk, so a name
+			// that failed to write simply is not a candidate.
+			_ = os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("reading fixture dir: %v", err)
+		}
+
+		got := DiscoverFanartFrom(dir, entries, primaryName)
+
+		wrapped, err := DiscoverFanart(context.Background(), dir, primaryName)
+		if err != nil {
+			t.Fatalf("DiscoverFanart: %v", err)
+		}
+		if len(got) != len(wrapped) {
+			t.Fatalf("DiscoverFanartFrom and DiscoverFanart disagree on count: %d vs %d (%v vs %v)",
+				len(got), len(wrapped), got, wrapped)
+		}
+		for i := range got {
+			if got[i] != wrapped[i] {
+				t.Fatalf("DiscoverFanartFrom and DiscoverFanart disagree at %d: %q vs %q", i, got[i], wrapped[i])
+			}
+		}
+
+		candidateOrdinals := make(map[int]bool)
+		for _, entry := range entries {
+			if n, ok := fuzzFanartCandidateOrdinal(entry.Name(), primaryName); ok {
+				candidateOrdinals[n] = true
+			}
+		}
+
+		lastOrdinal := -1
+		seen := make(map[int]bool, len(got))
+		for _, path := range got {
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+				t.Fatalf("returned path %q has a non-allowlisted extension", path)
+			}
+			n, ok := fuzzFanartCandidateOrdinal(filepath.Base(path), primaryName)
+			if !ok {
+				t.Fatalf("returned path %q does not qualify as a candidate for primaryName %q", path, primaryName)
+			}
+			if seen[n] {
+				t.Fatalf("ordinal %d returned more than once: %v", n, got)
+			}
+			seen[n] = true
+			if n < lastOrdinal {
+				t.Fatalf("ordinals are not non-decreasing: %v", got)
+			}
+			lastOrdinal = n
+		}
+
+		// The returned ordinal SET must equal the candidate ordinal set
+		// exactly, not merely be no larger than it: len(got) > len is an
+		// over-count check alone, and pairs with the loop above (which
+		// already proves every returned ordinal IS a candidate, so len(seen)
+		// <= len(candidateOrdinals) always) to together prove set equality.
+		// This direction -- every CANDIDATE ordinal must actually be
+		// RETURNED -- is what an under-count drops: a missing allowlist
+		// entry (e.g. .jpeg) silently removes candidates from `got` without
+		// creating a duplicate, breaking sort order, or using a
+		// non-allowlisted extension, so none of the checks above would catch
+		// it.
+		if len(seen) != len(candidateOrdinals) {
+			t.Fatalf("returned %d ordinals but %d distinct ordinals are present in the fixture "+
+				"(candidates=%v, returned=%v): an under-count here silently drops rows deleteStaleSlots "+
+				"would then delete", len(seen), len(candidateOrdinals), candidateOrdinals, got)
+		}
+	})
+}
+
+// fuzzFanartFilenames turns one fuzz-generated string into a bounded set of
+// distinct, filesystem-safe single-path-component names. It rejects path
+// separators (/ and \) and NUL (which cannot name a single file on any platform)
+// rather than trying to make every generated byte sequence writable, and caps
+// both the name length and the fixture size so a pathological seed cannot blow
+// past filesystem limits or make one fuzz iteration slow.
+func fuzzFanartFilenames(blob string) []string {
+	seen := make(map[string]bool)
+	var names []string
+	for _, raw := range strings.Split(blob, "\n") {
+		if len(names) >= 12 {
+			break
+		}
+		if len(raw) > 80 {
+			raw = raw[:80]
+		}
+		if raw == "" || raw == "." || raw == ".." || strings.ContainsAny(raw, "/\\\x00") {
+			continue
+		}
+		if seen[raw] {
+			continue
+		}
+		seen[raw] = true
+		names = append(names, raw)
+	}
+	return names
+}
+
+// fuzzFanartCandidateOrdinal reports the ordinal a filename would claim under
+// primaryName, using only the specification of what an ordinal IS: an
+// allowlisted-extension file whose base either exactly matches primaryName's
+// base (ordinal 0) or extends it with a positive integer suffix. It
+// deliberately does not reimplement dedupe, sort, or extension-preference --
+// those are exercised by the invariants above, not by this oracle -- so it
+// bounds the fuzz test's assertions without becoming a second copy of the
+// full algorithm.
+func fuzzFanartCandidateOrdinal(name, primaryName string) (int, bool) {
+	if primaryName == "" {
+		return 0, false
+	}
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+		return 0, false
+	}
+	base := strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name)))
+	primaryBase := strings.ToLower(strings.TrimSuffix(primaryName, filepath.Ext(primaryName)))
+	if base == primaryBase {
+		return 0, true
+	}
+	if !strings.HasPrefix(base, primaryBase) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(base[len(primaryBase):])
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }

@@ -37,8 +37,11 @@ func TestResolveFanartFiles_MatchesScanner(t *testing.T) {
 		{"fanart.jpg", "backdrop.jpg", "backdrop2.jpg"},
 		{"fanart.jpg", "fanart3.jpg"},
 		{"fanart.png", "fanart1.png"},
-		// Extension allowlist. ".jpeg" is NOT in fanartPatterns, so a
-		// pattern-driven matcher silently drops it; DiscoverFanart accepts it.
+		// ".jpeg" is NOT in fanartPatterns, so pass 1's pattern scan finds no
+		// primary here and must fall through to pass 2 on both sides (both now
+		// delegate to image.DiscoverFanartFrom, so this is a two-pass
+		// fall-through check, not an allowlist cross-check -- the allowlist
+		// itself is pinned absolutely by TestDiscoverFanart_JpegExtensionAccepted).
 		{"fanart.jpeg"},
 		{"fanart.jpeg", "fanart2.jpeg"},
 		// Two extensions both claiming ordinal 0 -- the extension-preference
