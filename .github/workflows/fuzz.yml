@@ -142,9 +142,11 @@ jobs:
           # internal/encryption (1 target)
           - package: internal/encryption
             fuzz_func: FuzzEncryptionDecrypt
-          # internal/image (5 targets)
+          # internal/image (6 targets)
           - package: internal/image
             fuzz_func: FuzzDetectFormat
+          - package: internal/image
+            fuzz_func: FuzzDiscoverFanart
           - package: internal/image
             fuzz_func: FuzzExifMetaParse
           - package: internal/image

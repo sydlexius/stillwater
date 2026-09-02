@@ -19,7 +19,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/event"
-	swimage "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -2672,111 +2671,5 @@ func TestReconcile_UnreadableDirectoryDoesNotDestroyFanartRows(t *testing.T) {
 		t.Errorf("stored fanart slots = %v, want all 3 to survive; the directory could "+
 			"not be re-read, so the reconcile had no measured count and must destroy "+
 			"nothing -- the three files are still on disk", got)
-	}
-}
-
-// TestDiscoverFanartFiles_MatchesDiscoverFanart is the drift alarm for
-// answering discovery from memory.
-//
-// fanartVariants reimplements image.DiscoverFanart's matching rules -- the
-// extension allowlist, the base/numbered-suffix split, the ordinal ordering and
-// the same-ordinal dedupe -- against a listing already in hand. Two copies of
-// one algorithm drift, and a drift here is not cosmetic: the count feeds
-// deleteStaleSlots' delete bound. This pins them against a shared fixture set
-// so a change to either side fails loudly rather than silently widening or
-// narrowing what the scanner believes is on disk.
-func TestDiscoverFanartFiles_MatchesDiscoverFanart(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name  string
-		files []string
-	}{
-		{"primary only", []string{"fanart.jpg"}},
-		{"primary and numbered", []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"}},
-		{"orphan numbered, no primary", []string{"fanart1.jpg", "fanart2.jpg"}},
-		{"gap in numbering", []string{"fanart.jpg", "fanart3.jpg"}},
-		{"png primary", []string{"fanart.png", "fanart1.png"}},
-		{"jpeg extension", []string{"fanart.jpeg"}},
-		{"mixed extensions at one ordinal", []string{"fanart.jpg", "fanart.png"}},
-		{"backdrop convention", []string{"backdrop.jpg", "backdrop1.jpg"}},
-		{"excluded extension", []string{"fanart.gif", "fanart.webp", "fanart.bmp"}},
-		{"non-numeric suffix", []string{"fanart.jpg", "fanartx.jpg", "fanart-alt.jpg"}},
-		{"zero suffix is not a variant", []string{"fanart.jpg", "fanart0.jpg"}},
-		{"unrelated images", []string{"fanart.jpg", "folder.jpg", "logo.png", "banner.jpg"}},
-		{"no fanart at all", []string{"folder.jpg", "artist.nfo"}},
-		{"uppercase on disk", []string{"Fanart.JPG", "FANART1.jpg"}},
-		// Two files differing ONLY in case. This is the case that motivated
-		// taking raw entries instead of the lowercased filename map, which
-		// collapses the pair into one. It cannot be constructed on a
-		// case-insensitive filesystem (macOS APFS), so the fixture writer skips
-		// it there -- but Stillwater ships in a Linux container where it is real.
-		{"case collision at one ordinal", []string{"fanart.jpg", "Fanart1.jpg", "fanart1.jpg"}},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			dir := t.TempDir()
-			for _, name := range tc.files {
-				path := filepath.Join(dir, name)
-				// A fixture list holding two names that differ only in case
-				// needs a case-sensitive filesystem; on APFS the second write
-				// silently overwrites the first and the case would test nothing.
-				if _, err := os.Stat(path); err == nil {
-					t.Skipf("filesystem is case-insensitive: %q collides with an "+
-						"earlier fixture, so this case cannot be constructed here", name)
-				}
-				if err := os.WriteFile(path, []byte("test"), 0o644); err != nil {
-					t.Fatalf("writing %s fixture: %v", name, err)
-				}
-			}
-			listing := readDirListing(t, dir)
-
-			// The reference answer: whichever pattern the two-pass resolution
-			// selects, resolved by the package this one mirrors.
-			var want []string
-			for _, p := range fanartPatterns {
-				primaryPresent := false
-				for _, e := range listing {
-					if !e.IsDir() && strings.EqualFold(e.Name(), p) {
-						primaryPresent = true
-						break
-					}
-				}
-				if primaryPresent {
-					var err error
-					if want, err = swimage.DiscoverFanart(context.Background(), dir, p); err != nil {
-						t.Fatalf("DiscoverFanart(context.Background(), %s): %v", p, err)
-					}
-					break
-				}
-			}
-			if len(want) == 0 {
-				for _, p := range fanartPatterns {
-					paths, err := swimage.DiscoverFanart(context.Background(), dir, p)
-					if err != nil {
-						t.Fatalf("DiscoverFanart(context.Background(), %s): %v", p, err)
-					}
-					if len(paths) > 0 {
-						want = paths
-						break
-					}
-				}
-			}
-
-			got := discoverFanartFiles(dir, listing)
-			if len(got) != len(want) {
-				t.Fatalf("discoverFanartFiles = %v (%d), DiscoverFanart = %v (%d): the two "+
-					"matching implementations disagree, and this count is the bound "+
-					"deleteStaleSlots deletes by", got, len(got), want, len(want))
-			}
-			for i := range want {
-				if got[i] != want[i] {
-					t.Errorf("ordinal %d: discoverFanartFiles = %s, DiscoverFanart = %s; "+
-						"slot_index is a DiscoverFanart ordinal, so a different file at "+
-						"an ordinal mismaps every stored row", i, got[i], want[i])
-				}
-			}
-		})
 	}
 }
