@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -52,6 +54,33 @@ func extrafanartWarningHarness(t *testing.T, connCount int) (*Publisher, *artist
 	return p, &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, dir, up
 }
 
+// ctxHonoringUploader is a connection.IndexedImageUploader that fails an
+// upload attempted on an already-dead context, exactly as a real HTTP client
+// does. stubIndexedUploader deliberately does not -- it succeeds regardless --
+// so it cannot observe deadline starvation and is the wrong instrument here.
+type ctxHonoringUploader struct {
+	mu     sync.Mutex
+	ok     int
+	failed int
+}
+
+func (u *ctxHonoringUploader) UploadImageAtIndex(ctx context.Context, _, _ string, _ int, _ []byte, _ string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		u.failed++
+		return err
+	}
+	u.ok++
+	return nil
+}
+
+func (u *ctxHonoringUploader) counts() (ok, failed int) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.ok, u.failed
+}
+
 // singlePeerHarness wires a Publisher with ONE enabled, write-capable Emby
 // peer served by the caller's uploader, logging to logger, and returns the
 // artist plus its (empty) directory so the caller can seed a fixture. Every
@@ -82,6 +111,48 @@ func singlePeerHarness(t *testing.T, up connection.IndexedImageUploader, logger 
 		Logger:            logger,
 	})
 	return p, &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}, dir
+}
+
+// budgetHarness is singlePeerHarness with the ctx-honoring uploader the
+// deadline-starvation tests need.
+func budgetHarness(t *testing.T) (*Publisher, *artist.Artist, string, *ctxHonoringUploader) {
+	t.Helper()
+	up := &ctxHonoringUploader{}
+	p, a, dir := singlePeerHarness(t, up, silentLogger())
+	return p, a, dir, up
+}
+
+// stallEnumeration replaces the enumeration seam with one that blocks until
+// its own context is done, then reports that context's error -- the observable
+// behavior of runCancellable walking away from a readdir wedged in the kernel.
+// It returns a func reporting how many times the enumeration was entered.
+func stallEnumeration(t *testing.T) func() int {
+	t.Helper()
+	var mu sync.Mutex
+	calls := 0
+	orig := listArtworkSubdirFiles
+	listArtworkSubdirFiles = func(ctx context.Context, _, _ string) ([]string, error) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		// Bounded rather than a bare <-ctx.Done(): a caller with NO deadline
+		// (the gauge test below passes context.Background()) would otherwise
+		// block forever, turning a real regression into a test-binary hang
+		// instead of a legible failure. The cap is far above any budget under
+		// test, so it never fires on the passing path.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(15 * time.Second):
+			return nil, context.DeadlineExceeded
+		}
+	}
+	t.Cleanup(func() { listArtworkSubdirFiles = orig })
+	return func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return calls
+	}
 }
 
 // seedExtrafanart writes n distinct image files under dir/extrafanart/ and
@@ -415,5 +486,73 @@ func TestReconciler_ExtrafanartWarning_ReachesTheLogOnly(t *testing.T) {
 	}
 	if !strings.Contains(logged, "3 file(s)") {
 		t.Fatalf("the logged reconciler notice does not name the 3-file count the fixture holds. Log was:\n%s", logged)
+	}
+}
+
+// TestSyncAllFanart_ExtrafanartCheck_YieldsTheSharedStalledReadBudget is the
+// second half of CRITICAL-1: the enumeration must not be able to walk the
+// PROCESS-GLOBAL abandoned-read gauge up to internal/image's maxStalledReads
+// (16), past which every read anywhere in the process is refused --
+// including healthy files on other filesystems. An advisory notice consuming
+// a budget the paths that move bytes depend on is the aggravating factor the
+// review measured (0 -> 3 across three pushes against a wedged mount).
+func TestSyncAllFanart_ExtrafanartCheck_YieldsTheSharedStalledReadBudget(t *testing.T) {
+	p, a, dir, up := budgetHarness(t)
+	seedPrimaryFanart(t, dir)
+	seedExtrafanart(t, dir, 2)
+
+	// The gauge already sits at the advisory ceiling: other, non-advisory
+	// reads have abandoned this many. Below internal/image's own cap of 16,
+	// so nothing else in the process is refusing reads yet -- which is
+	// exactly the state the advisory check must not push further.
+	origGauge := stalledReadCount
+	stalledReadCount = func() int64 { return maxAdvisoryStalledReads }
+	t.Cleanup(func() { stalledReadCount = origGauge })
+
+	calls := stallEnumeration(t)
+
+	warnings := p.SyncAllFanartToPlatforms(context.Background(), a)
+
+	if got := calls(); got != 0 {
+		t.Fatalf("the advisory enumeration issued %d read(s) with the shared abandoned-read gauge at %d; "+
+			"it must refuse to start one, so it can never be the thing that saturates the process-wide cap",
+			got, maxAdvisoryStalledReads)
+	}
+	if ok, failed := up.counts(); ok != 1 || failed != 0 {
+		t.Fatalf("skipping the advisory check must not affect the push: ok=%d failed=%d, want ok=1 failed=0: %v",
+			ok, failed, warnings)
+	}
+	msg := findExtrafanartWarning(warnings)
+	if msg == "" || !strings.Contains(msg, "could not check") {
+		t.Fatalf("skipping the check must be reported to the operator, not swallowed; got %v", warnings)
+	}
+}
+
+// TestSyncAllFanart_ExtrafanartOnly_NoTopLevelFanart_IsSilent pins MAJOR-1's
+// resolution: an artist with a populated extrafanart/ and NO readable
+// top-level fanart is DELIBERATELY not warned, because no fanart push runs
+// for that artist and so nothing can clear and rewrite its artwork. The docs
+// page states the same condition. Without this test the silence is
+// undiscovered rather than decided.
+func TestSyncAllFanart_ExtrafanartOnly_NoTopLevelFanart_IsSilent(t *testing.T) {
+	p, a, dir, up := budgetHarness(t)
+	// Deliberately NO top-level fanart.
+	seedExtrafanart(t, dir, 3)
+
+	warnings := p.SyncAllFanartToPlatforms(context.Background(), a)
+
+	if ok, failed := up.counts(); ok != 0 || failed != 0 {
+		t.Fatalf("precondition failed: a peer was reached (ok=%d failed=%d) for an artist with no top-level "+
+			"fanart, so this test is not exercising the no-push path it claims to", ok, failed)
+	}
+	// Precondition: the fixture really does hold the extrafanart/ files whose
+	// silence is being asserted, so this cannot pass by seeding nothing.
+	entries, err := os.ReadDir(filepath.Join(dir, "extrafanart"))
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("precondition failed: extrafanart/ holds %d entries (err=%v), want 3", len(entries), err)
+	}
+	if msg := findExtrafanartWarning(warnings); msg != "" {
+		t.Fatalf("got extrafanart warning %q for an artist with no fanart push; the warning describes exposure "+
+			"during a push, and no push ran. If this silence is being changed, change the docs page with it.", msg)
 	}
 }
