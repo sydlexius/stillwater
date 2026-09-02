@@ -183,29 +183,46 @@ func mapKeys(m map[FieldName]bool) []FieldName {
 	return out
 }
 
-// TestEveryAdvertisedFieldIsRoutable asserts that every field any provider
-// advertises in the scraper table is a field the scraper can actually route:
-// it is a known FieldName and it has a row in DefaultConfig. Advertising a
-// field with no config row is the #2895 shape -- the provider is offered for
-// something no refresh ever fetches.
+// TestEveryAdvertisedFieldIsRoutable asserts the join between
+// ProviderCapabilities() and DefaultConfig() in both directions.
+//
+// Direction one: every field any provider advertises in the scraper table is
+// a field the scraper can actually route -- it is a known FieldName and it
+// has a row in DefaultConfig. Advertising a field with no config row is the
+// #2895 shape -- the provider is offered for something no refresh ever
+// fetches.
+//
+// Direction two: every DefaultConfig field is actually offered by at least
+// one provider. This closes the gap TestProviderCapabilitiesCoverOrigin used
+// to guard before its removal: that test pinned a single field (origin) to
+// an absolute set of providers, but the replacement,
+// TestScraperCapabilitiesReconcileWithProviderTable, only proves the scraper
+// and provider tables AGREE with each other -- a change that drops a field
+// from both tables' vocabulary keeps that agreement while leaving the field
+// unroutable by anyone. This direction is the one that would have caught
+// that, and it covers all 17 DefaultConfig fields, not just origin.
 func TestEveryAdvertisedFieldIsRoutable(t *testing.T) {
 	caps := ProviderCapabilities()
 	if len(caps) == 0 {
 		t.Fatal("ProviderCapabilities() is empty -- every assertion below would pass vacuously")
 	}
 
-	configured := make(map[FieldName]bool)
-	for _, f := range DefaultConfig().Fields {
-		configured[f.Field] = true
-	}
-	if len(configured) == 0 {
+	fields := DefaultConfig().Fields
+	if len(fields) == 0 {
 		t.Fatal("DefaultConfig() has no fields -- every assertion below would pass vacuously")
 	}
 
+	configured := make(map[FieldName]bool, len(fields))
+	for _, f := range fields {
+		configured[f.Field] = true
+	}
+
+	offered := make(map[FieldName]bool)
 	var checked int
 	for _, c := range caps {
 		for _, f := range append(append([]FieldName{}, c.MetadataFields...), c.ImageFields...) {
 			checked++
+			offered[f] = true
 			if !IsValidFieldName(f) {
 				t.Errorf("%s advertises %q, which is not a known FieldName", c.Provider, f)
 				continue
@@ -217,6 +234,17 @@ func TestEveryAdvertisedFieldIsRoutable(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no advertised fields were checked -- the assertion passed vacuously")
+	}
+
+	var confirmed int
+	for _, f := range fields {
+		confirmed++
+		if !offered[f.Field] {
+			t.Errorf("DefaultConfig has a row for %q, but no provider in ProviderCapabilities() advertises it -- this field can never be fetched by anyone", f.Field)
+		}
+	}
+	if confirmed == 0 {
+		t.Fatal("no DefaultConfig fields were checked against the offered set -- the assertion passed vacuously")
 	}
 }
 

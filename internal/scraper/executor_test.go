@@ -1908,8 +1908,16 @@ func TestDefaultConfigCoversEveryField(t *testing.T) {
 }
 
 // TestProviderCapabilitiesCoverOrigin was the #2895 point guard for a single
-// field (origin), hardcoded to four provider names. #2897's
+// field (origin), hardcoded to four provider names, asserting an ABSOLUTE
+// fact: the scraper table lists origin for exactly those four providers.
 // TestScraperCapabilitiesReconcileWithProviderTable
-// (internal/scraper/capabilities_reconcile_test.go) now asserts the same
-// bidirectional invariant for origin along with every other field, so this
-// is removed rather than kept as a redundant, easier-to-drift duplicate.
+// (internal/scraper/capabilities_reconcile_test.go) asserts a RELATIVE fact
+// instead -- that the scraper and provider tables agree with each other --
+// which is not a superset of the deleted test: a change that drops a field
+// from both tables' vocabulary translation keeps the relative invariant true
+// while leaving the field unroutable by anyone. What actually subsumes the
+// deleted test's guarantee, for origin and for all 17 DefaultConfig fields,
+// is the second direction added to TestEveryAdvertisedFieldIsRoutable in
+// capabilities_reconcile_test.go: every DefaultConfig field must be offered
+// by at least one provider. This test is removed as a redundant,
+// easier-to-drift duplicate of that.
