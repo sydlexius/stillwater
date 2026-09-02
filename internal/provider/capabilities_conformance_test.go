@@ -245,8 +245,10 @@ func deriveCapabilities(t *testing.T, pkg *packages.Package, skipFuncs map[strin
 }
 
 // declarableFields converts derived struct-field names into capability names,
-// dropping plumbing fields and the documented exceptions.
-func declarableFields(t *testing.T, name provider.ProviderName, caps adapterCapabilities) map[string]bool {
+// dropping plumbing fields and the documented exceptions. hits records which
+// declarationExceptions entries actually suppressed something, so the caller
+// can detect a stale entry (one that never fires) after the full sweep.
+func declarableFields(t *testing.T, name provider.ProviderName, caps adapterCapabilities, hits map[provider.ProviderName]map[string]bool) map[string]bool {
 	t.Helper()
 	out := make(map[string]bool, len(caps.fields))
 	for structField := range caps.fields {
@@ -258,6 +260,10 @@ func declarableFields(t *testing.T, name provider.ProviderName, caps adapterCapa
 			t.Fatalf("adapter %s assigns ArtistMetadata.%s, which is in neither fieldVocabulary nor nonCapabilityFields -- classify it before this guard can measure %s", name, structField, name)
 		}
 		if _, excepted := declarationExceptions[name][vocab]; excepted {
+			if hits[name] == nil {
+				hits[name] = make(map[string]bool)
+			}
+			hits[name][vocab] = true
 			continue
 		}
 		out[vocab] = true
@@ -352,6 +358,13 @@ func TestProviderCapabilitiesMatchAdapterSource(t *testing.T) {
 		t.Fatal("AllProviderNames() is empty -- every assertion below would pass vacuously")
 	}
 
+	// hits records which declarationExceptions entries actually suppressed a
+	// field this run. Checked for staleness after the sweep below: an entry
+	// that never fires no longer suppresses anything and should be deleted
+	// (see TestFieldVocabularyIsTotal's sibling staleness check for
+	// deadSlotExceptions, same concern, same shape).
+	hits := make(map[provider.ProviderName]map[string]bool)
+
 	for _, name := range all {
 		t.Run(string(name), func(t *testing.T) {
 			cap, ok := declared[name]
@@ -363,7 +376,7 @@ func TestProviderCapabilitiesMatchAdapterSource(t *testing.T) {
 				t.Fatalf("no derived capabilities for %q", name)
 			}
 
-			wantFields := declarableFields(t, name, adapter)
+			wantFields := declarableFields(t, name, adapter, hits)
 			gotFields := make(map[string]bool, len(cap.SupportedFields))
 			for _, f := range cap.SupportedFields {
 				gotFields[f] = true
@@ -399,6 +412,14 @@ func TestProviderCapabilitiesMatchAdapterSource(t *testing.T) {
 			}
 		})
 	}
+
+	for provName, fields := range declarationExceptions {
+		for field := range fields {
+			if !hits[provName][field] {
+				t.Errorf("exception for %s/%s in declarationExceptions is stale: the adapter no longer assigns this field, so nothing needs excepting -- delete it", provName, field)
+			}
+		}
+	}
 }
 
 // TestDefaultPrioritiesHaveNoDeadSlots asserts that every provider in every
@@ -431,8 +452,23 @@ func TestDefaultPrioritiesHaveNoDeadSlots(t *testing.T) {
 		// SynthesizeYearsActive, so it is a live, user-facing answer on that
 		// path. TestFetchFieldFromProviders_AudioDBSynthesizesYearsActive
 		// (orchestrator_test.go) guards the synthesis directly.
+		//
+		// This is earned only for a solo artist. For a group, mapArtist's
+		// isGroup branch withholds Born/Died once FormedYear is set, but the
+		// adapter never assigns meta.Type, so SynthesizeYearsActive's
+		// isGroupTypeValue check sees an empty Type and routes to the
+		// individual branch -- which needs the Born/Died that were withheld.
+		// So for every group artist this pair is a genuine dead slot; the
+		// real repair is teaching the adapter to set Type, or teaching the
+		// group branch to accept Formed/Disbanded without a Type.
 		"years_active": {provider.NameAudioDB: true},
 	}
+
+	// hits records which deadSlotExceptions entries actually matched a row in
+	// DefaultPriorities(), so a stale entry -- one whose field/provider pair
+	// no longer appears in any priority chain -- can be detected after the
+	// sweep below rather than silently doing nothing forever.
+	hits := make(map[string]map[provider.ProviderName]bool)
 
 	for _, fp := range priorities {
 		if len(fp.Providers) == 0 {
@@ -441,6 +477,10 @@ func TestDefaultPrioritiesHaveNoDeadSlots(t *testing.T) {
 		}
 		for _, name := range fp.Providers {
 			if deadSlotExceptions[fp.Field][name] {
+				if hits[fp.Field] == nil {
+					hits[fp.Field] = make(map[provider.ProviderName]bool)
+				}
+				hits[fp.Field][name] = true
 				continue
 			}
 			cap, ok := declared[name]
@@ -464,6 +504,14 @@ func TestDefaultPrioritiesHaveNoDeadSlots(t *testing.T) {
 			}
 			if !supported {
 				t.Errorf("DefaultPriorities() row %q lists %q, which does not support %q -- a dead slot that spends a request on a guaranteed-empty response", fp.Field, name, fp.Field)
+			}
+		}
+	}
+
+	for field, providers := range deadSlotExceptions {
+		for name := range providers {
+			if !hits[field][name] {
+				t.Errorf("exception for %s/%s in deadSlotExceptions is stale: the pair no longer appears in any DefaultPriorities() chain -- delete it", field, name)
 			}
 		}
 	}
@@ -513,7 +561,11 @@ func TestAdapterFieldsAreNotSearchOnly(t *testing.T) {
 			t.Fatalf("type-checking %s: %v", pkg.PkgPath, pkg.Errors)
 		}
 		name := pathToProvider[pkg.PkgPath]
-		withoutSearch := declarableFields(t, name, deriveCapabilities(t, pkg, searchFuncs))
+		// A throwaway hits map: this derivation intentionally skips search
+		// functions, so it is not the sweep that proves declarationExceptions
+		// entries are live -- TestProviderCapabilitiesMatchAdapterSource
+		// (the full derivation) owns that check.
+		withoutSearch := declarableFields(t, name, deriveCapabilities(t, pkg, searchFuncs), make(map[provider.ProviderName]map[string]bool))
 		for _, f := range declared[name].SupportedFields {
 			if !withoutSearch[f] {
 				t.Errorf("%s advertises %q, but the adapter assigns it only inside a search path -- GetArtist would never populate it", name, f)
