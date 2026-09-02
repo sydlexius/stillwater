@@ -458,7 +458,15 @@ jobs:
     name: A11y Smoke Tests Check (${{ matrix.project }})
     runs-on: ubuntu-latest
     needs: [changes]
-    if: needs.changes.outputs.a11y == 'true'
+    # harness_touched covers a change to ci.yml itself, which DEFINES this job.
+    # Without it a change to how the a11y tier runs -- this matrix, a timeout, a
+    # browser-install step -- skips the very job it modifies, so the change ships
+    # unexercised. The Go legs already gate this way (see the `test` and `build`
+    # jobs); the a11y tier was the outlier. Reusing the derived signal rather than
+    # adding 'ci.yml' to the a11y path filter is deliberate: the filter is a
+    # hand-maintained list, and the "Detect harness-touching diff" step below
+    # explains why such a list fails toward SKIPPING when it goes stale.
+    if: needs.changes.outputs.a11y == 'true' || needs.changes.outputs.harness_touched == 'true'
     # The full pipeline (build + server boot + Playwright + teardown) comfortably
     # finishes inside 10 min; 20 leaves headroom for slow runners and npm/browser
     # install on cache miss.
@@ -687,14 +695,19 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           A11Y_CHANGED: ${{ needs.changes.outputs.a11y }}
+          HARNESS_TOUCHED: ${{ needs.changes.outputs.harness_touched }}
           A11Y_RESULT: ${{ needs.a11y-test.result }}
         run: |
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "Detect Changes did not succeed: $CHANGES_RESULT"
             exit 1
           fi
-          if [ "$A11Y_CHANGED" != "true" ]; then
-            echo "No a11y-relevant changes; A11y Smoke Tests Check was skipped."
+          # Must mirror the a11y-test job's `if` exactly. If this condition were
+          # narrower than that one, a harness-only change would run the matrix and
+          # then have its result discarded here as "skipped" -- reporting success
+          # for a leg that may have failed.
+          if [ "$A11Y_CHANGED" != "true" ] && [ "$HARNESS_TOUCHED" != "true" ]; then
+            echo "No a11y-relevant or harness changes; A11y Smoke Tests Check was skipped."
             exit 0
           fi
           if [ "$A11Y_RESULT" != "success" ]; then
