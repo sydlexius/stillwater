@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -956,4 +957,169 @@ func TestRenumberFanart_GeometryInvalidationFailureStopsBeforeRenaming(t *testin
 	if _, err := os.Stat(filepath.Join(dir, "backdrop2.jpg")); err == nil {
 		t.Error("a rename happened despite the invalidation failure")
 	}
+}
+
+// FuzzDiscoverFanart replaces the retired scanner/image parity test with a
+// generative guard on DiscoverFanart's postconditions. It must never panic on
+// any filename set, and its output must obey the invariants that make the
+// result usable as deleteStaleSlots' delete bound: no ordinal returned twice,
+// ordinals non-decreasing, every path allowlisted, and the wrapper
+// (DiscoverFanart) must agree exactly with the entries-accepting core
+// (DiscoverFanartFrom) it delegates to -- the two are never allowed to see
+// different input and produce different output, since the scanner depends on
+// exactly that agreement.
+func FuzzDiscoverFanart(f *testing.F) {
+	// primary-only
+	f.Add("fanart.jpg", "fanart.jpg")
+	// numbered variants
+	f.Add("fanart.jpg\nfanart1.jpg\nfanart2.jpg", "fanart.jpg")
+	// mixed extensions at one ordinal
+	f.Add("backdrop.jpg\nbackdrop.png", "backdrop.jpg")
+	// .jpeg-only primary (absent from scanner's pattern list)
+	f.Add("fanart.jpeg", "fanart.jpg")
+	// zero, negative, and non-numeric suffixes
+	f.Add("fanart.jpg\nfanart0.jpg\nfanart-1.jpg\nfanartx.jpg", "fanart.jpg")
+	// case-colliding names
+	f.Add("fanart.jpg\nFanart1.jpg\nfanart1.jpg", "fanart.jpg")
+	// no fanart at all
+	f.Add("folder.jpg\nlogo.png\nartist.nfo", "fanart.jpg")
+	// empty primary
+	f.Add("fanart.jpg", "")
+
+	f.Fuzz(func(t *testing.T, namesBlob string, primaryName string) {
+		dir := t.TempDir()
+		for _, name := range fuzzFanartFilenames(namesBlob) {
+			// Some generated names are not writable on every filesystem (an
+			// invalid-UTF-8 byte sequence fails with "illegal byte sequence"
+			// on macOS, for instance). Errors here are a fixture-construction
+			// detail, not a finding: the oracle below derives its answer from
+			// os.ReadDir, i.e. from what actually landed on disk, so a name
+			// that failed to write simply is not a candidate.
+			_ = os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("reading fixture dir: %v", err)
+		}
+
+		got := DiscoverFanartFrom(dir, entries, primaryName)
+
+		wrapped, err := DiscoverFanart(context.Background(), dir, primaryName)
+		if err != nil {
+			t.Fatalf("DiscoverFanart: %v", err)
+		}
+		if len(got) != len(wrapped) {
+			t.Fatalf("DiscoverFanartFrom and DiscoverFanart disagree on count: %d vs %d (%v vs %v)",
+				len(got), len(wrapped), got, wrapped)
+		}
+		for i := range got {
+			if got[i] != wrapped[i] {
+				t.Fatalf("DiscoverFanartFrom and DiscoverFanart disagree at %d: %q vs %q", i, got[i], wrapped[i])
+			}
+		}
+
+		candidateOrdinals := make(map[int]bool)
+		for _, entry := range entries {
+			if n, ok := fuzzFanartCandidateOrdinal(entry.Name(), primaryName); ok {
+				candidateOrdinals[n] = true
+			}
+		}
+
+		lastOrdinal := -1
+		seen := make(map[int]bool, len(got))
+		for _, path := range got {
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+				t.Fatalf("returned path %q has a non-allowlisted extension", path)
+			}
+			n, ok := fuzzFanartCandidateOrdinal(filepath.Base(path), primaryName)
+			if !ok {
+				t.Fatalf("returned path %q does not qualify as a candidate for primaryName %q", path, primaryName)
+			}
+			if seen[n] {
+				t.Fatalf("ordinal %d returned more than once: %v", n, got)
+			}
+			seen[n] = true
+			if n < lastOrdinal {
+				t.Fatalf("ordinals are not non-decreasing: %v", got)
+			}
+			lastOrdinal = n
+		}
+
+		// The returned ordinal SET must equal the candidate ordinal set
+		// exactly, not merely be no larger than it: len(got) > len is an
+		// over-count check alone, and pairs with the loop above (which
+		// already proves every returned ordinal IS a candidate, so len(seen)
+		// <= len(candidateOrdinals) always) to together prove set equality.
+		// This direction -- every CANDIDATE ordinal must actually be
+		// RETURNED -- is what an under-count drops: a missing allowlist
+		// entry (e.g. .jpeg) silently removes candidates from `got` without
+		// creating a duplicate, breaking sort order, or using a
+		// non-allowlisted extension, so none of the checks above would catch
+		// it.
+		if len(seen) != len(candidateOrdinals) {
+			t.Fatalf("returned %d ordinals but %d distinct ordinals are present in the fixture "+
+				"(candidates=%v, returned=%v): an under-count here silently drops rows deleteStaleSlots "+
+				"would then delete", len(seen), len(candidateOrdinals), candidateOrdinals, got)
+		}
+	})
+}
+
+// fuzzFanartFilenames turns one fuzz-generated string into a bounded set of
+// distinct, filesystem-safe single-path-component names. It rejects path
+// separators and NUL (which cannot name a single file) rather than trying to
+// make every generated byte sequence writable, and caps both the name length
+// and the fixture size so a pathological seed cannot blow past filesystem
+// limits or make one fuzz iteration slow.
+func fuzzFanartFilenames(blob string) []string {
+	seen := make(map[string]bool)
+	var names []string
+	for _, raw := range strings.Split(blob, "\n") {
+		if len(names) >= 12 {
+			break
+		}
+		if len(raw) > 80 {
+			raw = raw[:80]
+		}
+		if raw == "" || raw == "." || raw == ".." || strings.ContainsAny(raw, "/\x00") {
+			continue
+		}
+		if seen[raw] {
+			continue
+		}
+		seen[raw] = true
+		names = append(names, raw)
+	}
+	return names
+}
+
+// fuzzFanartCandidateOrdinal reports the ordinal a filename would claim under
+// primaryName, using only the specification of what an ordinal IS: an
+// allowlisted-extension file whose base either exactly matches primaryName's
+// base (ordinal 0) or extends it with a positive integer suffix. It
+// deliberately does not reimplement dedupe, sort, or extension-preference --
+// those are exercised by the invariants above, not by this oracle -- so it
+// bounds the fuzz test's assertions without becoming a second copy of the
+// full algorithm.
+func fuzzFanartCandidateOrdinal(name, primaryName string) (int, bool) {
+	if primaryName == "" {
+		return 0, false
+	}
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+		return 0, false
+	}
+	base := strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name)))
+	primaryBase := strings.ToLower(strings.TrimSuffix(primaryName, filepath.Ext(primaryName)))
+	if base == primaryBase {
+		return 0, true
+	}
+	if !strings.HasPrefix(base, primaryBase) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(base[len(primaryBase):])
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }
