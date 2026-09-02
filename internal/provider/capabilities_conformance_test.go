@@ -417,12 +417,32 @@ func TestDefaultPrioritiesHaveNoDeadSlots(t *testing.T) {
 		"logo": provider.ImageLogo, "banner": provider.ImageBanner,
 	}
 
+	// deadSlotExceptions carries pairs that legitimately appear in
+	// DefaultPriorities() without a matching ProviderCapabilities() entry,
+	// because the field-support declaration is scoped to the full-refresh
+	// paths while a priority chain can also serve the per-field comparison
+	// path. Each entry needs evidence beyond this test -- see the named test.
+	deadSlotExceptions := map[string]map[provider.ProviderName]bool{
+		// AudioDB's adapter never assigns YearsActive literally, so
+		// ProviderCapabilities() correctly omits it -- both full-refresh
+		// paths would find it empty. But FetchFieldFromProviders' per-field
+		// comparison path (extractFieldForComparison in orchestrator.go)
+		// synthesizes a years_active candidate from AudioDB's Born/Died via
+		// SynthesizeYearsActive, so it is a live, user-facing answer on that
+		// path. TestFetchFieldFromProviders_AudioDBSynthesizesYearsActive
+		// (orchestrator_test.go) guards the synthesis directly.
+		"years_active": {provider.NameAudioDB: true},
+	}
+
 	for _, fp := range priorities {
 		if len(fp.Providers) == 0 {
 			t.Errorf("DefaultPriorities() row %q has no providers", fp.Field)
 			continue
 		}
 		for _, name := range fp.Providers {
+			if deadSlotExceptions[fp.Field][name] {
+				continue
+			}
 			cap, ok := declared[name]
 			if !ok {
 				t.Errorf("DefaultPriorities() row %q lists %q, which has no ProviderCapabilities() entry", fp.Field, name)

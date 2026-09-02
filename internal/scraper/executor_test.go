@@ -1907,36 +1907,9 @@ func TestDefaultConfigCoversEveryField(t *testing.T) {
 	}
 }
 
-// TestProviderCapabilitiesCoverOrigin asserts the providers that actually
-// return an origin advertise it, so the settings UI offers them for the field.
-// The four named here are exactly the adapters that assign ArtistMetadata.Origin.
-func TestProviderCapabilitiesCoverOrigin(t *testing.T) {
-	t.Parallel()
-
-	want := map[provider.ProviderName]bool{
-		provider.NameWikipedia:   true,
-		provider.NameAudioDB:     true,
-		provider.NameWikidata:    true,
-		provider.NameMusicBrainz: true,
-	}
-
-	got := make(map[provider.ProviderName]bool)
-	for _, cap := range ProviderCapabilities() {
-		for _, f := range cap.MetadataFields {
-			if f == FieldOrigin {
-				got[cap.Provider] = true
-			}
-		}
-	}
-
-	for p := range want {
-		if !got[p] {
-			t.Errorf("provider %q supplies Origin but does not advertise FieldOrigin: the settings UI will not offer it", p)
-		}
-	}
-	for p := range got {
-		if !want[p] {
-			t.Errorf("provider %q advertises FieldOrigin but does not set ArtistMetadata.Origin", p)
-		}
-	}
-}
+// TestProviderCapabilitiesCoverOrigin was the #2895 point guard for a single
+// field (origin), hardcoded to four provider names. #2897's
+// TestScraperCapabilitiesReconcileWithProviderTable
+// (internal/scraper/capabilities_reconcile_test.go) now asserts the same
+// bidirectional invariant for origin along with every other field, so this
+// is removed rather than kept as a redundant, easier-to-drift duplicate.
