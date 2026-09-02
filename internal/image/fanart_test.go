@@ -3,6 +3,7 @@ package image
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -381,11 +382,18 @@ func TestDiscoverFanart_JpegExtensionAccepted(t *testing.T) {
 
 // TestDiscoverFanart_NumberedVariantRequiresPositiveInteger pins the
 // strconv.Atoi-succeeds-AND-n>0 rule for numbered variants. fanart-2.jpg
-// parses to a negative index if the n>0 check is dropped (deliberately not
-// "-1": the dedupe below starts its "last seen index" sentinel at -1, so a
-// suffix of exactly -1 would be silently swallowed by that sentinel and the
-// test would pass for the wrong reason); fanart0.jpg is excluded because
-// index 0 is reserved for the exact base match, not a "0" suffix.
+// parses to a negative index if the n>0 check is dropped entirely
+// (deliberately not "-1": the dedupe below starts its "last seen index"
+// sentinel at -1, so a suffix of exactly -1 would be silently swallowed by
+// that sentinel and the test would pass for the wrong reason).
+//
+// The fanart0.jpg-alone case below pins the other half of the same rule: a
+// realistic off-by-one (n >= 0 instead of n > 0) admits "0" as a suffix, and
+// because "fanart.jpg" < "fanart0.jpg" in the path tiebreak, mixing
+// fanart0.jpg into a directory that also holds fanart.jpg does not surface
+// the bug -- fanart.jpg still wins ordinal 0 by the extension/path tiebreak
+// and the count stays 1 either way. Only a directory holding fanart0.jpg
+// ALONE, with no fanart.jpg to out-tiebreak it, exposes the off-by-one.
 func TestDiscoverFanart_NumberedVariantRequiresPositiveInteger(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"fanart.jpg", "fanart0.jpg", "fanart-2.jpg", "fanartx.jpg"} {
@@ -403,6 +411,93 @@ func TestDiscoverFanart_NumberedVariantRequiresPositiveInteger(t *testing.T) {
 	}
 	if filepath.Base(paths[0]) != "fanart.jpg" {
 		t.Errorf("expected fanart.jpg, got %q", filepath.Base(paths[0]))
+	}
+}
+
+// TestDiscoverFanart_NumberedVariantZeroSuffixAlone pins n > 0 in isolation,
+// with no fanart.jpg present to mask an off-by-one via the path tiebreak (see
+// the comment above). Index 0 is reserved for the exact base match, not a "0"
+// suffix, so a directory holding only fanart0.jpg has zero fanart files.
+func TestDiscoverFanart_NumberedVariantZeroSuffixAlone(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart0.jpg"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := DiscoverFanart(context.Background(), dir, "fanart.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
+	}
+	if len(paths) != 0 {
+		t.Errorf("fanart0.jpg alone should not match, got %v", paths)
+	}
+}
+
+// fakeDirEntry is a minimal os.DirEntry stand-in for testing
+// DiscoverFanartFrom's matching directly, without touching the filesystem.
+// The matcher only calls Name() and IsDir(), so this is a faithful substitute
+// for what os.ReadDir hands it -- and it is what makes the case-collision
+// test below reach on every platform: a case-INSENSITIVE filesystem (APFS)
+// cannot hold "Fanart1.jpg" and "fanart1.jpg" as two entries, so exercising
+// that collision at all requires bypassing the filesystem.
+type fakeDirEntry struct{ name string }
+
+func (f fakeDirEntry) Name() string               { return f.name }
+func (f fakeDirEntry) IsDir() bool                { return false }
+func (f fakeDirEntry) Type() fs.FileMode          { return 0 }
+func (f fakeDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
+
+func fakeDirEntries(names ...string) []os.DirEntry {
+	out := make([]os.DirEntry, 0, len(names))
+	for _, n := range names {
+		out = append(out, fakeDirEntry{n})
+	}
+	return out
+}
+
+// TestDiscoverFanartFrom_CaseCollisionResolvesDeterministically pins the case
+// this refactor was undertaken for: two names differing only in case
+// (Fanart1.jpg / fanart1.jpg) collide at the same ordinal, and which one WINS
+// is load-bearing -- slot_index is a DiscoverFanart ordinal, and the path at
+// an ordinal is what gets probed for dimensions and what a placeholder is
+// generated from. The retired scanner/image parity test carried this exact
+// fixture; nothing in the surviving suite does (the agreement test's
+// "Fanart.JPG"/"FANART1.jpg" case is uppercase names that do not collide with
+// anything, so it exercises case-insensitive matching, not collision
+// resolution). Synthetic entries let this run on every platform, including a
+// case-insensitive one that cannot hold the fixture on disk.
+func TestDiscoverFanartFrom_CaseCollisionResolvesDeterministically(t *testing.T) {
+	names := []string{"fanart.jpg", "Fanart1.jpg", "fanart1.jpg"}
+
+	// Assert the fixture's own precondition: the two numbered names must
+	// collide under case-folding while differing as raw bytes, or this test
+	// exercises nothing.
+	if names[1] == names[2] {
+		t.Fatalf("fixture does not differ as raw bytes: %q == %q", names[1], names[2])
+	}
+	if !strings.EqualFold(names[1], names[2]) {
+		t.Fatalf("fixture does not collide under case-folding: %q vs %q", names[1], names[2])
+	}
+
+	got := DiscoverFanartFrom("/d", fakeDirEntries(names...), "fanart.jpg")
+	if len(got) != 2 {
+		t.Fatalf("expected ordinals 0 and 1, got %d: %v", len(got), got)
+	}
+	if filepath.Base(got[1]) != "Fanart1.jpg" {
+		t.Errorf("ordinal 1 = %q, want Fanart1.jpg (path tiebreak: 'F' sorts before 'f')",
+			filepath.Base(got[1]))
+	}
+
+	// The winner must not depend on the order entries happen to arrive in.
+	reversed := []string{names[2], names[1], names[0]}
+	rev := DiscoverFanartFrom("/d", fakeDirEntries(reversed...), "fanart.jpg")
+	if len(rev) != len(got) {
+		t.Fatalf("reversed entry order changed the count: %d vs %d", len(rev), len(got))
+	}
+	for i := range got {
+		if got[i] != rev[i] {
+			t.Errorf("entry order changed ordinal %d: %s vs %s", i, got[i], rev[i])
+		}
 	}
 }
 

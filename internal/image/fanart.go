@@ -70,9 +70,11 @@ func DiscoverFanart(ctx context.Context, dir string, primaryName string) ([]stri
 // pre-read directory entries, it returns sorted absolute paths for the files
 // matching primaryName or its numbered variants. It performs no I/O, so it
 // never returns an error, and it is the ONE place this matching algorithm is
-// implemented -- DiscoverFanart above is a thin os.ReadDir wrapper around it,
-// and internal/scanner's discoverFanartFiles calls it directly with the
-// entries the scanner already holds, rather than keeping its own copy.
+// implemented for DiscoverFanart and the scanner -- DiscoverFanart above is a
+// thin os.ReadDir wrapper around it, and internal/scanner's
+// discoverFanartFiles calls it directly with the entries the scanner already
+// holds, rather than keeping its own copy. (MaxFanartIndex below still keeps
+// its own copy of this algorithm; that duplication predates this refactor.)
 //
 // Four rules here are load-bearing, and each is an independent under-count
 // risk if it drifts: the extension allowlist includes .jpeg (fanartPatterns
