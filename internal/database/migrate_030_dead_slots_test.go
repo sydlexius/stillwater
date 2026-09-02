@@ -51,10 +51,10 @@ var deadSlots = []struct {
 	{"biography", "musicbrainz"},
 }
 
-func readPriority(t *testing.T, db *sql.DB, field string) []string {
+func readPriority(ctx context.Context, t *testing.T, db *sql.DB, field string) []string {
 	t.Helper()
 	var raw string
-	err := db.QueryRowContext(context.Background(),
+	err := db.QueryRowContext(ctx,
 		"SELECT value FROM settings WHERE key = ?", "provider.priority."+field).Scan(&raw)
 	if err != nil {
 		t.Fatalf("reading provider.priority.%s: %v", field, err)
@@ -110,7 +110,7 @@ func TestMigration030_StripsDeadSlotsFromStoredPriorities(t *testing.T) {
 	//    rows before the migration runs. Without this the post-migration
 	//    assertions would pass against a database that never had the defect.
 	for _, slot := range deadSlots {
-		got := readPriority(t, db, slot.field)
+		got := readPriority(ctx, t, db, slot.field)
 		if !contains(got, slot.provider) {
 			t.Fatalf("precondition failed: provider.priority.%s = %v does not contain %q, so this test cannot prove migration 030 removes it",
 				slot.field, got, slot.provider)
@@ -150,7 +150,7 @@ func TestMigration030_StripsDeadSlotsFromStoredPriorities(t *testing.T) {
 
 	// 5. Every dead slot is gone.
 	for _, slot := range deadSlots {
-		got := readPriority(t, db, slot.field)
+		got := readPriority(ctx, t, db, slot.field)
 		if contains(got, slot.provider) {
 			t.Errorf("provider.priority.%s = %v still contains %q; migration 030 did not strip it",
 				slot.field, got, slot.provider)
@@ -162,7 +162,7 @@ func TestMigration030_StripsDeadSlotsFromStoredPriorities(t *testing.T) {
 
 	// 6. The operator's ordering of the surviving providers is preserved, and
 	//    a row with no dead slot is left byte-identical.
-	if got, want := readPriority(t, db, "genres"), []string{"wikipedia", "lastfm", "musicbrainz"}; !reflect.DeepEqual(got, want) {
+	if got, want := readPriority(ctx, t, db, "genres"), []string{"wikipedia", "lastfm", "musicbrainz"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("provider.priority.genres = %v, want %v (operator ordering around the stripped entry must survive)", got, want)
 	}
 	var styles string
