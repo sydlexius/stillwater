@@ -195,9 +195,15 @@ func TestAssertNeverMarked_PassesWhenNoTypeCarriesAMarker(t *testing.T) {
 		}
 	}
 
-	// Watching two types, not one: AssertNeverMarked loops over p.types, and a
-	// probe that returned after checking only the first would pass this test
-	// for the wrong reason.
+	// Watching two types, not one, so the loop runs more than one iteration on
+	// the non-failing path.
+	//
+	// THIS TEST DOES NOT PROVE THE LOOP VISITS BOTH TYPES, and an earlier
+	// version of this comment claimed that it did. BOTH watched types are
+	// unmarked here, so a probe that checked only the first returns the
+	// identical verdict and passes this test unchanged. The multi-type property
+	// is pinned by TestAssertNeverMarked_ChecksEveryWatchedType below, which
+	// marks ONLY the second.
 	probe := NewUnlinkProbe(t, dir, "fanart", "thumb")
 	probe.AssertNeverMarked("no delete occurred for either watched type")
 }
@@ -303,5 +309,206 @@ func TestAssertNeverMarked_FailsWhenAMarkerExists(t *testing.T) {
 	}
 	if !strings.Contains(f.errors[0], "recorded a fanart delete marker") {
 		t.Fatalf("Errorf message = %q, want it to name the marker-found failure", f.errors[0])
+	}
+}
+
+// TestAround_SamplesEveryWatchedType is the positive control for the two
+// multi-type failure tests below, and it pins a DIFFERENT loop from theirs:
+// Around's own sampling loop, which fills one live[i] per watched type before
+// the removal runs. A probe that sampled only the first watched type would
+// report the rest as not-live and redden this test, even though both markers
+// were written before the unlink.
+func TestAround_SamplesEveryWatchedType(t *testing.T) {
+	dir := t.TempDir()
+	probe := NewUnlinkProbe(t, dir, "fanart", "thumb")
+	img.MarkDeleteIntent(dir, "fanart")
+	img.MarkDeleteIntent(dir, "thumb")
+
+	p := filepath.Join(dir, "fanart.jpg")
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", p, err)
+	}
+	if err := probe.Around(p, func() error { return os.Remove(p) }); err != nil {
+		t.Fatalf("Around(%s): %v", p, err)
+	}
+	probe.AssertMarkedBeforeUnlink("both watched types marked before the unlink")
+}
+
+// TestAssertMarkedBeforeUnlink_ChecksEveryWatchedType pins that the verdict
+// covers ALL watched types, not just the first one.
+//
+// WHY THIS IS NOT REDUNDANT WITH THE TESTS ABOVE. Every other
+// AssertMarkedBeforeUnlink test watches exactly one type, so a probe whose
+// verdict loop stopped after types[0] would be indistinguishable from the real
+// one. The concrete caller this protects marks the whole canonical set
+// (fanart, thumb, logo, banner) in one operation: mark fanart before the unlink
+// and the other three after, and a first-type-only probe reports PASS while
+// three types get exactly the ENOENT window this package exists to close.
+//
+// The fixture therefore differs along the only axis that matters -- the FIRST
+// watched type is marked in time and the SECOND is not marked at all -- and the
+// assertion is on the TYPE NAMED in the message, not merely on the fact that
+// the probe failed.
+func TestAssertMarkedBeforeUnlink_ChecksEveryWatchedType(t *testing.T) {
+	f := &fakeT{}
+	dir := t.TempDir()
+	probe := NewUnlinkProbe(f, dir, "fanart", "thumb")
+
+	// Only the FIRST watched type is marked before the unlink. thumb is never
+	// marked, so a probe that checks every type must fail naming thumb.
+	img.MarkDeleteIntent(dir, "fanart")
+
+	p := filepath.Join(dir, "fanart.jpg")
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", p, err)
+	}
+	if err := probe.Around(p, func() error { return os.Remove(p) }); err != nil {
+		t.Fatalf("Around(%s): %v", p, err)
+	}
+
+	msg := runFatal(t, func() {
+		probe.AssertMarkedBeforeUnlink("marked only the first watched type")
+	})
+	if !strings.Contains(msg, "the thumb delete marker was NOT live") {
+		t.Fatalf("Fatalf message = %q, want it to name THUMB -- the watched type that had no live marker. "+
+			"A message naming fanart (which WAS marked in time) would mean the probe reported the wrong "+
+			"type; no message at all means it stopped after the first watched type", msg)
+	}
+}
+
+// TestAssertNeverMarked_ChecksEveryWatchedType is the negative-half sibling of
+// the test above: AssertNeverMarked loops over the same p.types, and every
+// other test of it watches one type, so the loop's coverage of the REST is
+// unpinned by them.
+//
+// Only the SECOND watched type is marked here. A probe that checked only the
+// first would find nothing and record no failure at all.
+func TestAssertNeverMarked_ChecksEveryWatchedType(t *testing.T) {
+	f := &fakeT{}
+	dir := t.TempDir()
+	probe := NewUnlinkProbe(f, dir, "fanart", "thumb")
+
+	img.MarkDeleteIntent(dir, "thumb")
+
+	// PRECONDITION: the FIRST watched type must stay unmarked, or the single
+	// recorded failure below could be about fanart and the test would pass
+	// without ever exercising the second iteration.
+	if img.DeleteIntentAfter(dir, "fanart", time.Time{}) {
+		t.Fatalf("precondition failed: %s carries a fanart delete marker, so a failure recorded below would "+
+			"not prove the probe looked past the first watched type", dir)
+	}
+
+	probe.AssertNeverMarked("a rollback that marked only the second watched type")
+	if len(f.errors) != 1 {
+		t.Fatalf("Errorf calls = %d, want 1; got %v. Zero calls means AssertNeverMarked stopped after the "+
+			"first watched type and never looked at thumb", len(f.errors), f.errors)
+	}
+	if !strings.Contains(f.errors[0], "recorded a thumb delete marker") {
+		t.Fatalf("Errorf message = %q, want it to name THUMB, the type that actually carries the marker", f.errors[0])
+	}
+}
+
+// TestAssertMarkedBeforeUnlink_ReportsTheFirstUnlinkNotTheLast pins the
+// "first unlink, never overwritten" rule (probe.go's `if p.first == nil`).
+//
+// WHY THIS IS THE MOST LOAD-BEARING TEST IN THE FILE. Without that guard the
+// probe reports on the LAST unlink instead of the first, which is very nearly
+// the EXISTENCE assertion this whole package was built to replace -- and it
+// would keep presenting itself as a placement probe while doing so. Every one
+// of the production call sites would stay green.
+//
+// The fixture is the real defect shape: the marker is written BETWEEN two
+// unlinks, so it is too late for the first file and in time for the second.
+// Asserting merely that the probe failed is NOT enough -- a last-unlink probe
+// fails here too, just naming the wrong file -- so the discriminator is the
+// FILENAME in the recorded message.
+func TestAssertMarkedBeforeUnlink_ReportsTheFirstUnlinkNotTheLast(t *testing.T) {
+	f := &fakeT{}
+	dir := t.TempDir()
+	probe := NewUnlinkProbe(f, dir, "fanart")
+
+	unlink := func(name string) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+		if err := probe.Around(p, func() error { return os.Remove(p) }); err != nil {
+			t.Fatalf("Around(%s): %v", name, err)
+		}
+	}
+
+	unlink("fanart.jpg")                // too early for the mark: the window is open here
+	img.MarkDeleteIntent(dir, "fanart") // written BETWEEN the two unlinks
+	unlink("fanart1.jpg")               // in time for this one only
+
+	if got := probe.UnlinkCount(); got != 2 {
+		t.Fatalf("UnlinkCount = %d, want 2; the mark-between-unlinks fixture needs both removals to be "+
+			"observed or there is no first-versus-last distinction to make", got)
+	}
+
+	msg := runFatal(t, func() {
+		probe.AssertMarkedBeforeUnlink("marked between the two unlinks")
+	})
+	if !strings.Contains(msg, "instant fanart.jpg was unlinked") {
+		t.Fatalf("Fatalf message = %q, want it to name fanart.jpg -- the FIRST unlink, the one the marker "+
+			"was too late for", msg)
+	}
+	if strings.Contains(msg, "instant fanart1.jpg was unlinked") {
+		t.Fatalf("Fatalf message = %q names fanart1.jpg, the LAST unlink. The probe is reporting on the "+
+			"last observation instead of the first, which downgrades it to approximately an existence "+
+			"assertion while still presenting as a placement probe", msg)
+	}
+}
+
+// TestAround_TreatsAMarkerOlderThanTheProbeAsNotLive pins Around's `since`
+// baseline -- that "live" means "recorded at or after this run began", not
+// "recorded at any time".
+//
+// WHY THE PROBE IS BUILT BY HAND HERE, which is the only place in this file
+// that does so. The state under test is a marker that predates the run, and
+// NewUnlinkProbe REJECTS exactly that state as a precondition failure, so the
+// public constructor cannot reach it. The two guards are redundant by design,
+// and that redundancy is precisely why neither one's removal is observable
+// through the other. The struct below is built with the same fields
+// NewUnlinkProbe sets, with `since` stamped after the stale mark.
+func TestAround_TreatsAMarkerOlderThanTheProbeAsNotLive(t *testing.T) {
+	dir := t.TempDir()
+
+	// A marker left behind by an earlier test for the same directory, still
+	// well inside DeleteIntentRetention.
+	img.MarkDeleteIntent(dir, "fanart")
+	time.Sleep(time.Millisecond)
+	since := time.Now()
+
+	// PRECONDITIONS, both required or the test is vacuous. The stale marker
+	// must be VISIBLE to a zero baseline (otherwise the two baselines agree and
+	// nothing is being discriminated) and INVISIBLE to the probe's own baseline
+	// (otherwise it is not stale at all).
+	if !img.DeleteIntentAfter(dir, "fanart", time.Time{}) {
+		t.Fatalf("precondition failed: %s carries no fanart marker at all, so a zero baseline would see "+
+			"nothing either and this test could not tell the two baselines apart", dir)
+	}
+	if img.DeleteIntentAfter(dir, "fanart", since) {
+		t.Fatalf("precondition failed: the marker in %s is not older than the probe's baseline", dir)
+	}
+
+	probe := &UnlinkProbe{t: &fakeT{}, dir: filepath.Clean(dir), types: []string{"fanart"}, since: since}
+
+	p := filepath.Join(dir, "fanart.jpg")
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", p, err)
+	}
+	if err := probe.Around(p, func() error { return os.Remove(p) }); err != nil {
+		t.Fatalf("Around(%s): %v", p, err)
+	}
+
+	msg := runFatal(t, func() {
+		probe.AssertMarkedBeforeUnlink("only a marker older than the run")
+	})
+	if !strings.Contains(msg, "was NOT live at the instant") {
+		t.Fatalf("Fatalf message = %q, want the not-live-at-unlink failure. A probe sampling with a ZERO "+
+			"baseline would count the earlier test's leftover marker as live and pass here, which is the "+
+			"cross-test contamination `since` exists to exclude", msg)
 	}
 }
