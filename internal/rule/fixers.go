@@ -2544,7 +2544,20 @@ func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Cont
 	// calls reassertLocalImage and so never consults this marker at all.
 	// TestDeleteIntentFixers_OwnPushRoutesToMetadata pins that routing,
 	// and the timing test pins the ordering property it would rely on anyway.
-	img.MarkDeleteIntent(a.Path, "fanart")
+	//
+	// RenumberFanart succeeding here does NOT by itself mean a file was
+	// deleted: the stage loop above only tombs indices present in BOTH
+	// toDelete and this call's own DiscoverFanart result, and those two
+	// enumerations can disagree with the caller's (Fix's) more recent one --
+	// an operator delete, a peer, or a prior fixer in the same run can shrink
+	// the directory between them. When they disagree, staged is empty and
+	// RenumberFanart still succeeds trivially (nothing to remove). Guard on
+	// staged, the same slice the tomb-unlink loop below iterates, so the
+	// marker is only written when something is actually about to be
+	// permanently unlinked.
+	if len(staged) > 0 {
+		img.MarkDeleteIntent(a.Path, "fanart")
+	}
 
 	// Committed: permanently unlink the tombs.
 	for _, s := range staged {

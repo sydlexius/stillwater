@@ -208,6 +208,93 @@ func TestDeleteDuplicateFanart_RollbackWritesNoMarker(t *testing.T) {
 	}
 }
 
+// TestDeleteDuplicateFanart_ZeroStagedMarksNothing is the duplicate path's
+// counterpart to TestExtraneousImagesFixer_CleanDirectoryMarksNothing.
+//
+// toDelete and this call's own DiscoverFanart enumeration can disagree: the
+// caller (Fix) re-detects duplicates against a fresh hash pass, while
+// deleteDuplicateFanartWithRollback re-discovers the directory independently,
+// and the directory can shrink between the two (an operator delete, a peer, a
+// prior fixer in the same run). Naming an index the discovery does not yield
+// reproduces that disagreement directly: the stage loop tombs nothing,
+// RenumberFanart still succeeds (there is nothing to renumber away), and
+// without the len(staged) guard the function would mark a delete that never
+// happened.
+func TestDeleteDuplicateFanart_ZeroStagedMarksNothing(t *testing.T) {
+	a, dir := dupArtistDir(t)
+	assertNoFixerIntentYet(t, dir, "fanart")
+
+	// Content identity, captured before the run. RenumberFanart renumbers
+	// every SURVIVOR positionally regardless of whether anything was staged
+	// for deletion, so a zero-staged run can still rename files on disk (e.g.
+	// fanart1.jpg -> fanart2.jpg to close a gap that never opened) -- the
+	// precondition below must check that no BYTES were lost, not that the
+	// original filenames are unchanged.
+	want := map[string][]byte{}
+	for _, name := range []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"} {
+		want[name] = readBytes(t, filepath.Join(dir, name))
+	}
+
+	f := newDupFixerFor(t, &fakeHashRecorder{})
+
+	// dupArtistDir writes exactly 3 files (indices 0-2), so index 7 is not a
+	// key DiscoverFanart's result can produce -- toDelete[7] is never
+	// consulted by the stage loop, which ranges over the discovered paths.
+	removed, err := f.deleteDuplicateFanartWithRollback(t.Context(), a, "fanart.jpg", false, map[int]bool{7: true})
+	if err != nil {
+		t.Fatalf("deleteDuplicateFanartWithRollback: %v", err)
+	}
+
+	// PRECONDITION: the fixture must actually reproduce the zero-staged shape,
+	// not merely fail to see it. Without this, a fixer that staged and removed
+	// something would still make the "no marker" assertion below trivially
+	// pass for the wrong reason.
+	if len(removed) != 0 {
+		t.Fatalf("precondition failed: the fixer removed %d file(s), want 0; toDelete named an index the "+
+			"discovery evidently does yield, so this run does not exercise the zero-staged shape", len(removed))
+	}
+
+	// Every byte sequence that existed before the run must still exist
+	// somewhere in the directory afterward, and no staged tomb may remain --
+	// together these prove nothing was actually unlinked, independent of
+	// which filename each survivor landed on.
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatalf("precondition failed: reading %s: %v", dir, readErr)
+	}
+	if len(entries) != len(want) {
+		t.Fatalf("precondition failed: directory holds %d entries after the run, want %d -- a file was lost "+
+			"even though the fixer reported removing nothing", len(entries), len(want))
+	}
+	got := make(map[string][]byte, len(entries))
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".tmp" {
+			t.Errorf("a staged tomb (%s) survived a run that reported removing nothing", e.Name())
+			continue
+		}
+		got[e.Name()] = readBytes(t, filepath.Join(dir, e.Name()))
+	}
+	for wantName, wantBytes := range want {
+		found := false
+		for _, gotBytes := range got {
+			if string(gotBytes) == string(wantBytes) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("precondition failed: the bytes originally at %s are gone from %s -- something was "+
+				"unlinked despite the fixer reporting zero removals", wantName, dir)
+		}
+	}
+
+	if img.DeleteIntentAfter(dir, "fanart", time.Time{}) {
+		t.Error("a fanart delete marker was recorded for a run that staged and removed nothing: every push " +
+			"for this artist in the next " + img.DeleteIntentRetention.String() + " will decline to repair a " +
+			"genuine peer clobber of fanart it never actually caused (#3015 hostile round 1, MAJOR-1)")
+	}
+}
+
 // TestExtraneousImagesFixer_MarksDeleteIntentForEveryCanonicalType covers the
 // second fixer path. The marker key carries an image TYPE and no filename, and
 // the files this fixer removes are by construction outside the canonical name

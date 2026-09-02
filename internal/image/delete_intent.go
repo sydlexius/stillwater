@@ -92,8 +92,9 @@ const DeleteIntentRetention = 5 * time.Minute
 // (#3015). SEVEN callers write this marker: five API handlers -- the image
 // delete (both branches), the fanart batch delete, the fanart slot delete, and
 // the fanart revert -- each immediately before its first unlink, and two rule
-// fixers. The fixers are a different actor class from the handlers:
-// operator-TRIGGERED but system-INITIATED, which changes where the call goes.
+// fixers whose placement is described below. The fixers are a different actor
+// class from the handlers: operator-TRIGGERED but system-INITIATED, which
+// changes where the call goes.
 //
 //   - rule.ExtraneousImagesFixer.Fix marks the whole canonical type set
 //     (AllSlots), lazily, immediately before the first file it ATTEMPTS to
