@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	img "github.com/sydlexius/stillwater/internal/image"
 )
@@ -86,4 +87,38 @@ func TestAround_CountsEverySuccessfulWatchedRemoval(t *testing.T) {
 		t.Errorf("UnlinkCount = %d, want 2", got)
 	}
 	probe.AssertMarkedBeforeUnlink("a marker written before both removals")
+}
+
+// TestAssertNeverMarked_PassesWhenNoTypeCarriesAMarker pins AssertNeverMarked's
+// non-failing path -- the loop runs to completion and reports nothing when none
+// of the watched types carry a marker of any age. It is the negative sibling of
+// TestAround_CountsEverySuccessfulWatchedRemoval, watching for the opposite
+// outcome instead of a removal.
+//
+// This is the ONE branch of AssertNeverMarked drivable from a normal test: the
+// failing branch calls t.Errorf on the real *testing.T, and stays proven the
+// way this file's header says every failure branch is proven here -- by the
+// two-sided relocation proofs in internal/api and internal/rule, where the
+// duplicate fixer's rollback path was measured to leave a marker behind when it
+// should not have, and the corresponding assertion went red against real
+// production code.
+func TestAssertNeverMarked_PassesWhenNoTypeCarriesAMarker(t *testing.T) {
+	dir := t.TempDir()
+
+	// PRECONDITION, asserted directly against the marker store rather than
+	// inferred from NewUnlinkProbe's own construction-time check: without this,
+	// a probe silently reading the wrong directory or the wrong types would
+	// still pass below for having asserted nothing.
+	for _, ty := range []string{"fanart", "thumb"} {
+		if img.DeleteIntentAfter(dir, ty, time.Time{}) {
+			t.Fatalf("precondition failed: %s already carries a %s delete marker, so this test would not "+
+				"be observing AssertNeverMarked's non-failing path", dir, ty)
+		}
+	}
+
+	// Watching two types, not one: AssertNeverMarked loops over p.types, and a
+	// probe that returned after checking only the first would pass this test
+	// for the wrong reason.
+	probe := NewUnlinkProbe(t, dir, "fanart", "thumb")
+	probe.AssertNeverMarked("no delete occurred for either watched type")
 }
