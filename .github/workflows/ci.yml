@@ -480,11 +480,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Authoritative leg: Firefox is the target browser.
+          # Authoritative leg: Firefox is the target browser. Both legs are
+          # REQUIRED -- a11y-summary's verdict is GitHub's own aggregate
+          # across the whole matrix (see a11y-summary below), so a
+          # chromium-only failure fails the required check exactly like a
+          # firefox-only one. "Authoritative" governs how to INTERPRET a
+          # violation (see playwright.config.js), not whether it fails CI.
           - project: firefox-a11y
             engine: firefox
-          # Compatibility leg: a violation here is reported but does not
-          # define the required-check verdict (see a11y-summary below).
+          # Compatibility leg: a violation here still fails the required
+          # check (see a11y-summary below) -- "compatibility" describes how
+          # to read the finding, not a pass it gets on the CI verdict.
           - project: chromium-a11y
             engine: chromium
     steps:
@@ -505,34 +511,40 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
-      # Cache the Playwright browser binaries on a key derived from
-      # package-lock.json (which pins the exact @playwright/* version).
+      # Cache the Playwright browser binaries on a key derived from the
+      # matrix engine and package-lock.json (which pins the exact
+      # @playwright/* version).
       #
-      # The key is namespaced by the ENGINE SET, not just the lockfile hash.
-      # It was "playwright-chromium-<hash>" while chromium was the only engine
+      # Scoped per matrix leg by matrix.engine (#3183): each shard installs
+      # only its OWN engine now, so a shared key would let whichever leg
+      # saves first claim that key for this lockfile hash -- GitHub Actions
+      # cache entries are IMMUTABLE, so the other leg's save at the end of
+      # ITS run is a no-op (not an overwrite), and its engine's binary would
+      # never actually get cached; every run for that leg would reinstall
+      # from scratch. Scoping the restore-keys prefix by engine too, not just
+      # the key, matters for the same reason: an unscoped prefix would let a
+      # chromium leg restore a firefox-only cache on a miss (harmless --
+      # install repairs a partial restore below -- but pure waste).
+      #
+      # The prefix also carries engine-SET history: it was
+      # "playwright-chromium-<hash>" while chromium was the only engine
       # installed; keeping that prefix after adding firefox would let a cache
       # entry written by the chromium-only era restore on its `restore-keys`
       # prefix match and hand back a browsers directory with NO firefox in it.
       # The install step below would then be skipped and the firefox project
       # would fail at launch. Renaming the prefix to "playwright-browsers-"
-      # makes those stale entries unreachable: nothing can match a prefix that
-      # did not exist when they were written. Bump this prefix again on any
-      # future change to the installed engine set.
-      #
-      # Shared across both shards (#3183): the key is engine-set-derived, not
-      # per-matrix-leg, so both shards read and write the SAME cache entry.
-      # That is intended -- it is a GitHub Actions cache, not local disk, so
-      # two runners restoring it concurrently is a normal read; the save at
-      # the end of a cache-miss run is content-addressed by key, so a
-      # same-key double-save just overwrites with equal content.
+      # made those stale entries unreachable: nothing can match a prefix that
+      # did not exist when they were written. Bump this prefix again (still
+      # ahead of the per-engine suffix) on any future change to the installed
+      # engine set or to the matrix.engine values themselves.
       - name: Cache Playwright browser binaries
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ hashFiles('package-lock.json') }}
+          key: playwright-browsers-${{ matrix.engine }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            playwright-browsers-
+            playwright-browsers-${{ matrix.engine }}-
 
       # Only THIS shard's engine (#3183): each matrix leg runs a single
       # Playwright project, so installing the other browser would be pure
