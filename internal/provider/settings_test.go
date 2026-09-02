@@ -1431,8 +1431,7 @@ func TestDefaultPriorities_BiographyExcludesWikidata(t *testing.T) {
 	// Sanity: Wikidata must still appear in at least one fact-shaped field so
 	// this test fails loudly if a later refactor strips it everywhere.
 	factFields := map[string]bool{
-		"members": false, "formed": false, "born": false, "died": false,
-		"disbanded": false, "type": false, "gender": false, "origin": false,
+		"formed": false, "disbanded": false, "origin": false,
 	}
 	for _, p := range defaults {
 		if _, ok := factFields[p.Field]; !ok {

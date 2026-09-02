@@ -22,7 +22,7 @@ Provider priority is set **per field**. For each field (name, biography, genres,
 - For text fields like biography, name, or born date, the **first provider with a non-empty answer wins** -- the rest aren't asked.
 - For tag fields (genres, styles, moods) and image fields (thumb, fanart, logo, banner), **every provider contributes** and Stillwater merges, preserving the priority order so the highest-trusted source's contribution is listed first.
 
-This split lets you pick "definitive" sources for some fields while pooling the diversity of others -- e.g., MusicBrainz for sort name, but genres pooled from MusicBrainz + Last.fm + Discogs.
+This split lets you pick "definitive" sources for some fields while pooling the diversity of others -- e.g., MusicBrainz for sort name, but genres pooled from MusicBrainz + Last.fm + AudioDB + Wikipedia. Discogs is not a genres source -- it pools into styles instead.
 
 ## Per-library overrides
 

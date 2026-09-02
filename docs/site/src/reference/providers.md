@@ -45,7 +45,7 @@ Two kinds of fields behave differently in step 4 above:
 - **First-match wins** -- text fields like biography, name, sort name, born date, etc. The first non-empty answer wins; later providers in the list are not asked.
 - **Aggregated** -- tag fields (genres, styles, moods) and image fields (thumb, fanart, logo, banner). **Every** provider in the list is asked, and Stillwater merges the results -- preserving priority order so the most-trusted source's contribution sits first.
 
-The split lets you pick "definitive" sources for some fields (MusicBrainz for sort name) while pooling diversity for others (genres from MusicBrainz + Last.fm + Discogs combined).
+The split lets you pick "definitive" sources for some fields (MusicBrainz for sort name) while pooling diversity for others (genres from MusicBrainz + Last.fm + AudioDB + Wikipedia combined). Discogs pools into styles rather than genres.
 
 ## Image fetch protection
 
