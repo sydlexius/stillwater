@@ -36,13 +36,13 @@ func FanartFilename(primaryName string, index int, kodiNumbering bool) string {
 	return fmt.Sprintf("%s%d%s", base, n, ext)
 }
 
-// indexedFile pairs a discovery index with an absolute file path.
+// indexedFile pairs a discovery index with a file path (absolute if dir is absolute).
 type indexedFile struct {
 	index int
 	path  string
 }
 
-// DiscoverFanart scans an artist directory and returns sorted absolute paths
+// DiscoverFanart scans an artist directory and returns sorted paths (joined to dir)
 // for all fanart files that match the primary name or its numbered variants.
 // The primary name comes from the active platform profile (e.g., "backdrop.jpg"
 // for Emby, "fanart.jpg" for Kodi). Files are returned in index order: primary
@@ -66,9 +66,10 @@ func DiscoverFanart(ctx context.Context, dir string, primaryName string) ([]stri
 }
 
 // DiscoverFanartFrom is the entries-accepting core of fanart discovery: given
-// a directory path (used only to build the absolute paths returned) and
-// pre-read directory entries, it returns sorted absolute paths for the files
-// matching primaryName or its numbered variants. It performs no I/O, so it
+// a directory path (used to join with filenames via filepath.Join) and
+// pre-read directory entries, it returns sorted paths for the files
+// matching primaryName or its numbered variants. The paths inherit the absolute/relative
+// nature of dir. It performs no I/O, so it
 // never returns an error, and it is the ONE place this matching algorithm is
 // implemented for DiscoverFanart and the scanner -- DiscoverFanart above is a
 // thin os.ReadDir wrapper around it, and internal/scanner's
@@ -164,7 +165,7 @@ func fanartMatches(dir string, entries []os.DirEntry, primaryName string) []inde
 	return out
 }
 
-// fanartPaths projects a resolved match set down to its absolute paths.
+// fanartPaths projects a resolved match set down to its paths (joined to dir during match).
 func fanartPaths(files []indexedFile) []string {
 	if len(files) == 0 {
 		return nil
