@@ -44,6 +44,34 @@ const pushOpMetadataPush = "metadata_push"
 // from a metadata-write or lock-toggle failure.
 const pushOpImageUpload = "image_upload"
 
+// extrafanartSubdirName is the Kodi/Emby-convention subdirectory holding
+// extra fanart files that DiscoverFanart never lists (#3177). It is a
+// standalone constant, not derived from the active platform's naming config:
+// unlike the primary/numbered fanart filenames, extrafanart/ is a fixed
+// directory name across every profile this repo supports.
+const extrafanartSubdirName = "extrafanart"
+
+// extrafanartCheckBudget bounds the advisory extrafanart/ enumeration (#3177).
+// It is a CEILING on how long a wedged subdirectory may stretch the response,
+// not a performance target: the check is a single local directory listing and
+// completes in microseconds on a healthy filesystem.
+const extrafanartCheckBudget = 2 * time.Second
+
+// maxAdvisoryStalledReads is the abandoned-read gauge above which the advisory
+// extrafanart/ enumeration refuses to issue a read at all. Deliberately far
+// below internal/image's maxStalledReads (16, process-wide, past which EVERY
+// read is refused): an advisory notice must not be able to consume the budget
+// the paths that actually move bytes depend on.
+const maxAdvisoryStalledReads = 4
+
+// Seams for the #3177 advisory check, so a test can drive the timing and
+// budget properties deterministically without needing a genuinely wedged
+// mount. Production always runs the internal/image implementations.
+var (
+	listArtworkSubdirFiles = img.ListArtworkSubdirFiles
+	stalledReadCount       = img.StalledReadCount
+)
+
 const (
 	// pushTimeout is the per-connection timeout for async metadata pushes.
 	pushTimeout = 30 * time.Second
@@ -2389,7 +2417,10 @@ func (p *Publisher) SyncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 // syncAllFanartToPlatforms is the internal implementation of SyncAllFanartToPlatforms.
 // When respectWriteGate is true, connections without FeatureImageWrite are skipped;
 // this is used by the background reconciler only.
-func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Artist, respectWriteGate bool) []string {
+// The return is NAMED so the #3177 advisory notice can be appended from a
+// defer. See the defer below for why that is the only position that satisfies
+// every ordering constraint on this function.
+func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Artist, respectWriteGate bool) (warnings []string) {
 	if p == nil {
 		return nil
 	}
@@ -2422,7 +2453,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	// rather than re-derived inside the repair; see pushScope.
 	push := pushScope{at: time.Now()}
 
-	warnings := make([]string, 0)
+	warnings = make([]string, 0)
 
 	platformIDs, err := p.artistService.GetPlatformIDs(ctx, a.ID)
 	if err != nil {
@@ -2512,6 +2543,47 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	if !hasReadableFanart(snapshot) {
 		return warnings
 	}
+
+	// #3177: warn ONCE per push per artist -- not once per file and not once
+	// per connected platform -- that extrafanart/ is non-empty. A NOTICE only:
+	// nothing in extrafanart/ is part of fanartPaths/snapshot and nothing here
+	// reads, uploads, moves or deletes a file.
+	//
+	// REGISTERED AS A DEFER, HERE, AND THE POSITION IS THE WHOLE POINT. Three
+	// constraints bind this call and no statement position satisfies all three:
+	//
+	//   1. It must run AFTER the upload loop. Every production caller wraps
+	//      this push in a 30s budget and threads the same ctx to the peer HTTP
+	//      client, so a ctx-bounded directory read placed ahead of the uploads
+	//      BURNS that shared budget on an unresponsive mount and every upload
+	//      below then runs against a dead context. Measured: ok=0 failed=1 on a
+	//      push that previously succeeded, while the operator was told "the
+	//      push proceeded".
+	//   2. It must run AFTER the deferred repairAfterPush below. That repair's
+	//      pass 1 has a DELIBERATELY UNGATED overwrite branch, justified by
+	//      repairScope's "pass 1 runs the instant UploadImage returns, before
+	//      any settle window has been waited out" -- and #2712 judged 250ms
+	//      already long enough for the operator to have acted. A directory read
+	//      sitting between the last upload and that repair widens the ungated
+	//      window by up to extrafanartCheckBudget, eight times the interval this
+	//      repo already treats as dangerous, and pass 1 then writes the pre-push
+	//      bytes over a crop the operator saved in the gap -- logging a peer as
+	//      the culprit. Measured: the operator's crop reverted.
+	//   3. repairAfterPush runs at FUNCTION RETURN, which is after every
+	//      statement. So (2) has no statement solution.
+	//
+	// DEFERS RUN LIFO, so a defer registered BEFORE that one runs AFTER it.
+	// This is the only position where the advisory can cost neither the uploads
+	// nor the repair. Registering it here -- below all nine early returns -- also
+	// makes the once-per-push silence contract structural rather than a flag:
+	// an artist with no mapped platform, no top-level fanart, or no READABLE
+	// fanart returns above this line, so no advisory is registered and none is
+	// raised. See extrafanartExposureWarning for why that silence is correct.
+	//
+	// The return is named for this reason and this reason only.
+	defer func() {
+		warnings = append(warnings, p.extrafanartExposureWarning(ctx, a, dir)...)
+	}()
 
 	// Peers this push handed a backdrop to, named in the restore log below.
 	var uploadedTo []string
@@ -2612,7 +2684,95 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			notified:    collisionNotified,
 		})...)
 	}
+
 	return warnings
+}
+
+// extrafanartExposureWarning returns an operator-facing warning, per call, when
+// the artist's extrafanart/ subdirectory is non-empty (#3177). It is called
+// exactly ONCE per push, from a defer registered ONCE in
+// syncAllFanartToPlatforms, so the warning is raised once per push per
+// artist -- never once per file and never once per connected platform.
+//
+// WHEN IT IS SILENT, AND WHY THAT IS DELIBERATE. The defer is registered below
+// syncAllFanartToPlatforms' early returns -- no mapped platforms, no
+// top-level fanart discovered, and no READABLE top-level fanart -- so an
+// artist with a populated extrafanart/ and no usable top-level fanart is
+// warned about nothing. That is structural, not an accident of placement: an
+// artist that returns early never registers the defer at all. No top-level
+// fanart means no fanart set is pushed, which means
+// no peer clears and rewrites this artist's artwork, which means the exposure
+// the warning describes does not arise on that push. Warning there would be
+// telling an operator their files are at risk from something that did not
+// happen. TestSyncAllFanart_ExtrafanartOnly_NoTopLevelFanart_IsSilent pins it
+// so the silence stays a decision, and the operator-facing docs page states
+// the same condition in operator language.
+//
+// This makes the population of extrafanart/ VISIBLE; it does not make it
+// SAFE. Nothing here reads, uploads, moves, renames, or deletes a file: the
+// enumeration is purely for the warning text, and the fanart set Stillwater
+// pushes is exactly what it was before this issue.
+//
+// A failure to enumerate does NOT fail or skip the push -- the push proceeds
+// and the operator is told the check itself could not run. The error is
+// logged (never silently swallowed, per this repo's silent-failure-guard
+// rule) and surfaced in the same warnings channel as everything else here.
+func (p *Publisher) extrafanartExposureWarning(ctx context.Context, a *artist.Artist, dir string) []string {
+	// PRE-GATE ON THE SHARED ABANDONED-READ GAUGE (#3177 review). A read a
+	// deadline walks away from is counted process-wide by
+	// internal/image/readio.go, and past maxStalledReads (16) EVERY read
+	// anywhere in the process is refused -- healthy files on other
+	// filesystems included. A ctx-bounded read of a wedged extrafanart/
+	// abandons one per push, so without this gate an ADVISORY notice could
+	// walk the shared gauge to that cap and start failing real work. The
+	// ceiling here sits far below it so this feature can never be what
+	// saturates it. Skipping is reported, not swallowed.
+	if n := stalledReadCount(); n >= maxAdvisoryStalledReads {
+		p.logger.Warn("skipping the extrafanart/ check: the library mount has unresponsive reads outstanding",
+			slog.String("artist_id", a.ID),
+			slog.Int64("stalled_reads", n))
+		return []string{truncateWarning(
+			"could not check extrafanart/ for unprotected files before this push; " +
+				"unresponsive reads are outstanding on the library mount, so the check was skipped")}
+	}
+
+	// OWN SHORT BUDGET, DETACHED FROM THE CALLER'S. Two independent reasons,
+	// and the second is why this is WithoutCancel rather than a child of ctx:
+	//
+	//  - BOUNDED: a wedged extrafanart/ can stretch the RESPONSE by at most
+	//    extrafanartCheckBudget, never by the caller's whole 30s.
+	//  - DETACHED: this runs from a defer that fires after the uploads AND
+	//    after the deferred peer-clobber repair, so there is nothing left for
+	//    a stall here to delay. Deriving from ctx instead means a push that
+	//    spent its budget on a slow-but-successful peer short-circuits inside
+	//    runCancellable and the operator silently loses the notice -- on a
+	//    perfectly healthy local filesystem, and precisely on the slow pushes
+	//    most likely to be destructive. Measured: ok=1 uploads, 3 files in
+	//    extrafanart/, and the operator told only "the check itself did not
+	//    run". reassertLocalImage detaches for the same reason: the work that
+	//    still matters after a canceled push must not be canceled with it.
+	//
+	// ctx is still threaded for its VALUES. The abandoned-read gauge gate
+	// above is what keeps a detached read from being able to saturate the
+	// process-wide stalled-read cap.
+	checkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), extrafanartCheckBudget)
+	defer cancel()
+
+	files, err := listArtworkSubdirFiles(checkCtx, dir, extrafanartSubdirName)
+	if err != nil {
+		p.logger.Error("checking extrafanart/ before platform fanart sync",
+			slog.String("artist_id", a.ID),
+			slog.String("error", err.Error()))
+		return []string{truncateWarning(
+			"could not check extrafanart/ for unprotected files before this push; " +
+				"the push proceeded, but the check itself did not run")}
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	return []string{truncateWarning(fmt.Sprintf(
+		"extrafanart/ holds %d file(s) that are not protected during a push and may be lost",
+		len(files)))}
 }
 
 // fanartUpload carries one peer's worth of fanart-push state. It exists to keep
