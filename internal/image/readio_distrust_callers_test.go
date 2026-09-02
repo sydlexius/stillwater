@@ -66,6 +66,7 @@ var cappedReadHelpers = map[string]bool{
 	"ReadImageFileBounded":    true,
 	"DiscoverFanart":          true,
 	"ResolveFanart":           true,
+	"ListArtworkSubdirFiles":  true,
 	"HashFile":                true,
 	"RepairEntryBytes":        true,
 	"ReadRepairManifest":      true,
