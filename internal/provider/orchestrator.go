@@ -68,6 +68,28 @@ type FieldSource struct {
 // for specific fields. MusicBrainz and Wikidata, for example, do not return
 // biography text so the field is always empty when sourced from either, even
 // if a user explicitly includes them in the biography priority list.
+//
+// #2897 DELIBERATELY DID NOT EXTEND THIS MAP, though it found ten more
+// provider/field pairs of exactly this shape. Two reasons:
+//
+//  1. It would not fix them. This map is consulted by the LEGACY orchestrator
+//     loop below and by the settings template, but NOT by the live scraper
+//     executor (internal/scraper.Executor.ScrapeAll), which is the production
+//     fetch path. An entry here does not stop a single wasted request on the
+//     path that runs. Migration 030 strips the pairs from the stored priority
+//     rows instead, which every path reads.
+//  2. It would reintroduce the divergence class the issue exists to close.
+//     This is a hand-maintained restatement of "which provider can supply
+//     which field", and ProviderCapabilities() is now the single declaration
+//     for that, checked against the adapter source. A second copy is a second
+//     thing to drift.
+//
+// The remaining gap is the settings UI (availableProviders in
+// web/templates/settings.templ), which filters on this map and on key
+// availability but never on SupportedFields, so it can still render a
+// provider that cannot answer for a given field. This is a known, unfixed
+// gap: no tracking issue exists for it as of #2897. Filtering it on
+// capabilities is the right fix, left for a future change.
 var fieldProviderExclusions = map[string]map[ProviderName]bool{
 	"biography": {NameMusicBrainz: true, NameWikidata: true},
 }

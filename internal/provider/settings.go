@@ -222,7 +222,7 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 	caps := ProviderCapabilities()
 	var statuses []ProviderKeyStatus
 	for _, name := range AllProviderNames() {
-		requiresKey := providerRequiresKey(name)
+		requiresKey := ProviderRequiresKey(name)
 		optionalKey := providerHasOptionalKey(name)
 		hasKey, err := s.HasAPIKey(ctx, name)
 		if err != nil {
@@ -309,8 +309,14 @@ func (s *SettingsService) getVerbosityForStatus(ctx context.Context, name Provid
 	return verbOpts, values, nil
 }
 
-// providerRequiresKey returns whether a provider needs an API key.
-func providerRequiresKey(name ProviderName) bool {
+// ProviderRequiresKey returns whether a provider needs an API key. This is
+// the single declaration of the RequiresAuth fact: internal/scraper's
+// ProviderCapabilities() reads it directly (see providerRequiresAuth in
+// internal/scraper/config.go) instead of restating its own copy, and
+// TestAdapterRequiresAuthMatchesProviderRequiresKey
+// (internal/provider/requires_auth_conformance_test.go) pins it to every
+// adapter's real RequiresAuth() method.
+func ProviderRequiresKey(name ProviderName) bool {
 	switch name {
 	case NameMusicBrainz, NameWikidata, NameWikipedia, NameDeezer, NameAudioDB:
 		return false
@@ -391,33 +397,32 @@ func (fp *FieldPriority) RemoveProvider(name ProviderName) bool {
 
 // DefaultPriorities returns the default provider priority order per field.
 func DefaultPriorities() []FieldPriority {
-	// GOAL (enforced by the capability-table reconciliation landing after
-	// #2897, not by this function today): every provider listed here should
-	// advertise the field in ProviderCapabilities(), which in turn should
-	// match what the adapter actually assigns. A provider that cannot answer
-	// on either full-refresh path is not merely a cosmetic entry: it still
-	// shows up as a routing option in the settings UI and the per-field
-	// comparison panel even though it can never produce a value there. It
-	// does NOT waste a request -- both full-refresh paths cache one
-	// GetArtist call per provider, and every one of these providers survives
-	// in some other field's chain regardless. Eight such dead slots were
-	// removed in #2897.
+	// Every provider listed here must advertise the field in
+	// ProviderCapabilities(), which in turn must match what the adapter
+	// actually assigns; TestProviderCapabilitiesMatchAdapterSource checks the
+	// second half against the adapter source, and
+	// TestDefaultPrioritiesHaveNoDeadSlots checks this list against the
+	// declared capabilities. A provider that cannot answer on either
+	// full-refresh path is not merely a cosmetic entry: it still shows up as
+	// a routing option in the settings UI and the per-field comparison panel
+	// even though it can never produce a value there. It does NOT
+	// waste a request -- both full-refresh paths cache one GetArtist call
+	// per provider, and every one of these providers survives in some other
+	// field's chain regardless. Eight such dead slots were removed in #2897.
 	//
-	// KNOWN EXCEPTIONS to the goal above, both deliberate -- do NOT "fix" a
-	// drift between this list and ProviderCapabilities() by deleting either:
-	//   - styles/discogs: Discogs supplies Styles via aggregateStyles, but its
-	//     ProviderCapabilities() entry does not yet list "styles".
-	//   - years_active/audiodb: AudioDB's adapter never assigns YearsActive
-	//     literally (dead on both full-refresh paths), but the per-field
-	//     comparison path synthesizes a candidate from its Born/Died via
-	//     SynthesizeYearsActive, so it is a live, user-facing answer there.
-	//     This is the #2897 finding that reopened this PR -- removing it
-	//     again reintroduces that regression. See that field's comment below.
+	// ONE KNOWN EXCEPTION to the invariant above, deliberate -- do NOT "fix"
+	// it by deleting AudioDB from years_active: AudioDB's adapter never
+	// assigns YearsActive literally (dead on both full-refresh paths), but
+	// the per-field comparison path synthesizes a candidate from its
+	// Born/Died via SynthesizeYearsActive, so it is a live, user-facing
+	// answer there. TestDefaultPrioritiesHaveNoDeadSlots carries a matching
+	// carve-out for exactly this pair. See that field's comment below.
+	// (styles/discogs was the other known exception; this same reconciliation
+	// resolves it by adding "styles" to Discogs' declared capabilities
+	// instead of carving out an exception.)
 	// TestGetPrioritiesOnMigratedDBHasNoStrippedPairs
 	// (internal/provider/priorities_live_test.go) guards the stored-row half
-	// of the dead-slot removal; a Go-level default guard lands with the
-	// capability-table reconciliation, which should resolve the two
-	// exceptions above by correcting ProviderCapabilities(), not this list.
+	// of the dead-slot removal.
 	return []FieldPriority{
 		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameGenius}},
 		// Discogs removed (#2897): its adapter aggregates Styles from master
@@ -443,6 +448,15 @@ func DefaultPriorities() []FieldPriority {
 		// adapter does set Born/Died for a solo (non-group) artist. So on
 		// that path AudioDB is a live, user-facing answer even though the
 		// full-refresh paths never see it.
+		//
+		// This carve-out covers only the solo case. For a group artist it is
+		// still a dead slot: mapArtist's isGroup branch withholds Born/Died
+		// once FormedYear is set, but the adapter never assigns meta.Type at
+		// all, so SynthesizeYearsActive's isGroupTypeValue check sees an
+		// empty Type and routes down the individual branch -- which needs
+		// the Born/Died that were deliberately withheld. The real repair is
+		// teaching the adapter to set Type, or teaching the group branch to
+		// accept Formed/Disbanded without a Type.
 		{Field: "years_active", Providers: []ProviderName{NameWikipedia, NameAudioDB, NameMusicBrainz}},
 		// Wikidata and Discogs removed (#2897): neither assigns Type.
 		// Not backfilled with Wikipedia, which does assign it: adding a
@@ -629,7 +643,7 @@ func (s *SettingsService) ResetPriorities(ctx context.Context) error {
 func (s *SettingsService) AvailableProviderNames(ctx context.Context) (map[ProviderName]bool, error) {
 	available := make(map[ProviderName]bool)
 	for _, name := range AllProviderNames() {
-		if !providerRequiresKey(name) {
+		if !ProviderRequiresKey(name) {
 			available[name] = true
 			continue
 		}

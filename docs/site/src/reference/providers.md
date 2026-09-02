@@ -19,7 +19,7 @@ The table below is generated from the provider definitions in the codebase. Don'
 | Wikipedia | Free | Not required | 5/sec | No | Name, Type, Biography, Born, Died, Years active, Origin, Genres, Members | None |
 | Fanart.tv | Free key | [Sign up](https://fanart.tv/get-an-api-key/) | 3/sec | No | Image only | thumb, fanart, logo, hdlogo, banner |
 | TheAudioDB | Freemium | [Sign up](https://www.theaudiodb.com/pricing) | 30/min | No | Name, Gender, Origin, Biography, Genres, Styles, Moods, Born, Formed, Died, Disbanded, Aliases | thumb, logo, widethumb, banner, fanart |
-| Discogs | Free key | [Sign up](https://www.discogs.com/settings/developers) | 1/sec, 1000/day | No | Name, Biography, Aliases, Members | thumb |
+| Discogs | Free key | [Sign up](https://www.discogs.com/settings/developers) | 1/sec, 1000/day | No | Name, Biography, Aliases, Members, Styles | thumb |
 | Last.fm | Free key | [Sign up](https://www.last.fm/api/account/create) | 5/sec | No | Name, Biography, Genres, Styles, Moods, Similar artists | None |
 | Wikidata | Free | Not required | 5/sec | No | Name, Formed, Disbanded, Origin, Genres | thumb, logo |
 | Deezer | Free | Not required | 5/sec | No | Name | thumb |

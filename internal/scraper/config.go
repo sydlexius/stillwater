@@ -229,81 +229,98 @@ func DefaultConfig() *ScraperConfig {
 	}
 }
 
-// ProviderCapabilities returns the static capability map for all known providers.
+// ProviderCapabilities returns the static capability map for all known
+// providers, in the display order of provider.AllProviderNames().
+//
+// This table is a scraper-vocabulary VIEW of provider.ProviderCapabilities(),
+// which is the single source of truth for what each adapter can supply (and is
+// itself checked against the adapter source by
+// TestProviderCapabilitiesMatchAdapterSource). Deriving rather than restating
+// it is what #2897 fixed: the two tables were hand-maintained independently and
+// had drifted in both directions -- providers advertised for fields their
+// adapter never sets, and providers silently never offered for fields they do
+// set.
+//
+// Fields with no scraper counterpart (name, sort_name, disambiguation, aliases,
+// similar_artists) and image types the scraper does not model (hdlogo,
+// widethumb, background) are dropped by the vocabulary maps below.
 func ProviderCapabilities() []ProviderCapability {
-	return []ProviderCapability{
-		{
-			Provider:     provider.NameMusicBrainz,
-			DisplayName:  provider.NameMusicBrainz.DisplayName(),
-			RequiresAuth: false,
-			MetadataFields: []FieldName{
-				FieldGenres, FieldStyles, FieldMembers,
-				FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
-				FieldOrigin, FieldType, FieldGender,
-			},
-		},
-		{
-			Provider:     provider.NameFanartTV,
-			DisplayName:  provider.NameFanartTV.DisplayName(),
-			RequiresAuth: true,
-			ImageFields:  []FieldName{FieldThumb, FieldFanart, FieldLogo, FieldBanner},
-		},
-		{
-			Provider:     provider.NameAudioDB,
-			DisplayName:  provider.NameAudioDB.DisplayName(),
-			RequiresAuth: true,
-			MetadataFields: []FieldName{
-				FieldBiography, FieldGenres, FieldStyles, FieldMoods, FieldFormed, FieldYearsActive,
-				FieldOrigin,
-			},
-			ImageFields: []FieldName{FieldThumb, FieldFanart, FieldLogo, FieldBanner},
-		},
-		{
-			Provider:       provider.NameDiscogs,
-			DisplayName:    provider.NameDiscogs.DisplayName(),
-			RequiresAuth:   true,
-			MetadataFields: []FieldName{FieldBiography, FieldGenres, FieldStyles},
-		},
-		{
-			Provider:       provider.NameLastFM,
-			DisplayName:    provider.NameLastFM.DisplayName(),
-			RequiresAuth:   true,
-			MetadataFields: []FieldName{FieldBiography, FieldGenres, FieldStyles, FieldMoods},
-		},
-		{
-			Provider:     provider.NameSpotify,
-			DisplayName:  provider.NameSpotify.DisplayName(),
-			RequiresAuth: true,
-			ImageFields:  []FieldName{FieldThumb},
-		},
-		{
-			Provider:     provider.NameWikidata,
-			DisplayName:  provider.NameWikidata.DisplayName(),
-			RequiresAuth: false,
-			MetadataFields: []FieldName{
-				FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
-				FieldOrigin, FieldType, FieldGender,
-			},
-		},
-		{
-			Provider:     provider.NameWikipedia,
-			DisplayName:  provider.NameWikipedia.DisplayName(),
-			RequiresAuth: false,
-			// FieldFormed and FieldDisbanded are deliberately absent: GetArtist
-			// never assigns ArtistMetadata.Formed or .Disbanded, so advertising
-			// them would offer Wikipedia for fields it cannot answer -- a dead
-			// slot in the priority chain that still spends a request. Add them
-			// back only alongside the extraction. (#2897 tracks the same class
-			// across the other providers.)
-			MetadataFields: []FieldName{
-				FieldBiography, FieldYearsActive, FieldOrigin, FieldBorn, FieldDied,
-			},
-		},
-		{
-			Provider:       provider.NameGenius,
-			DisplayName:    provider.NameGenius.DisplayName(),
-			RequiresAuth:   true,
-			MetadataFields: []FieldName{FieldBiography},
-		},
+	declared := provider.ProviderCapabilities()
+	caps := make([]ProviderCapability, 0, len(declared))
+
+	for _, name := range provider.AllProviderNames() {
+		dec, ok := declared[name]
+		if !ok {
+			// AllProviderNames and ProviderCapabilities are both static and
+			// kept in agreement by TestProviderCapabilitiesMatchAdapterSource;
+			// skipping rather than panicking keeps a config-listing request
+			// serving the providers that ARE declared.
+			continue
+		}
+
+		capability := ProviderCapability{
+			Provider:     name,
+			DisplayName:  name.DisplayName(),
+			RequiresAuth: providerRequiresAuth(name),
+		}
+		for _, field := range dec.SupportedFields {
+			if scraperField, ok := scraperFieldFor(field); ok {
+				capability.MetadataFields = append(capability.MetadataFields, scraperField)
+			}
+		}
+		for _, img := range dec.SupportedImages {
+			if scraperField, ok := scraperImageFieldFor(img); ok {
+				capability.ImageFields = append(capability.ImageFields, scraperField)
+			}
+		}
+		caps = append(caps, capability)
 	}
+	return caps
+}
+
+// scraperFieldFor maps a provider capability field name (an ArtistMetadata
+// JSON tag) to its scraper FieldName. It reports false for provider-side
+// fields the scraper does not model as routable: name, sort_name,
+// disambiguation, aliases and similar_artists, none of which have a
+// FieldConfig row or a fieldAppliers entry.
+func scraperFieldFor(field string) (FieldName, bool) {
+	f := FieldName(field)
+	switch f {
+	case FieldBiography, FieldGenres, FieldStyles, FieldMoods, FieldMembers,
+		FieldFormed, FieldBorn, FieldDied, FieldDisbanded, FieldYearsActive,
+		FieldOrigin, FieldType, FieldGender:
+		return f, true
+	default:
+		return "", false
+	}
+}
+
+// scraperImageFieldFor maps a provider ImageType to its scraper FieldName. It
+// reports false for hdlogo, widethumb and background, which the scraper does
+// not model as routable image fields.
+func scraperImageFieldFor(img provider.ImageType) (FieldName, bool) {
+	switch img {
+	case provider.ImageThumb:
+		return FieldThumb, true
+	case provider.ImageFanart:
+		return FieldFanart, true
+	case provider.ImageLogo:
+		return FieldLogo, true
+	case provider.ImageBanner:
+		return FieldBanner, true
+	default:
+		return "", false
+	}
+}
+
+// providerRequiresAuth reports whether a provider needs an API key before it
+// can be used. It defers to provider.ProviderRequiresKey rather than
+// restating the adapter facts: the scraper cannot construct an adapter to
+// call RequiresAuth() directly without an import cycle, so
+// provider.ProviderRequiresKey is the single declaration both this table and
+// internal/provider/requires_auth_conformance_test.go read. That test pins
+// provider.ProviderRequiresKey to every adapter's real RequiresAuth() method,
+// so a change to an adapter has exactly one place to also change.
+func providerRequiresAuth(name provider.ProviderName) bool {
+	return provider.ProviderRequiresKey(name)
 }

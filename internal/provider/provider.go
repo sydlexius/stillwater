@@ -85,7 +85,7 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			Tier:            TierFreeKey,
 			HelpURL:         "https://www.discogs.com/settings/developers",
 			RateLimit:       &RateLimitInfo{RequestsPerSecond: 1, RequestsPerDay: 1000},
-			SupportedFields: []string{"name", "biography", "aliases", "members"},
+			SupportedFields: []string{"name", "biography", "aliases", "members", "styles"},
 			SupportedImages: []ImageType{ImageThumb},
 		},
 		NameLastFM: {
