@@ -86,7 +86,10 @@ func (u *ctxHonoringUploader) counts() (ok, failed int) {
 // artist plus its (empty) directory so the caller can seed a fixture. Every
 // #3177 push test differs only in the uploader it injects, so the wiring lives
 // here once.
-func singlePeerHarness(t *testing.T, up connection.IndexedImageUploader, logger *slog.Logger) (*Publisher, *artist.Artist, string) {
+// Optional mutators run on the connection before wiring, so a test can make the
+// peer unreachable without duplicating any of this.
+func singlePeerHarness(t *testing.T, up connection.IndexedImageUploader, logger *slog.Logger,
+	mutate ...func(*connection.Connection)) (*Publisher, *artist.Artist, string) {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -102,6 +105,9 @@ func singlePeerHarness(t *testing.T, up connection.IndexedImageUploader, logger 
 		// The reconciler path passes respectWriteGate=true, so this must be on
 		// for a push to reach the peer there as well as on the interactive path.
 		Emby: &connection.EmbyConfig{FeatureImageWrite: true},
+	}
+	for _, m := range mutate {
+		m(conn)
 	}
 	p := New(Deps{
 		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
@@ -375,12 +381,13 @@ func TestSyncAllFanart_ExtrafanartEnumerationFailure_DoesNotBlockPush(t *testing
 	}
 	found := false
 	for _, w := range warnings {
-		if strings.Contains(w, "extrafanart") && strings.Contains(w, "could not") {
+		if strings.HasPrefix(w, "the extrafanart/ check failed to read the folder:") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("no warning reported the enumeration failure; silently swallowing it is forbidden. got: %v", warnings)
+		t.Errorf("no warning reported the enumeration failure, leading with the distinguishing clause; "+
+			"silently swallowing it is forbidden. got: %v", warnings)
 	}
 }
 
@@ -523,8 +530,11 @@ func TestSyncAllFanart_ExtrafanartCheck_YieldsTheSharedStalledReadBudget(t *test
 			ok, failed, warnings)
 	}
 	msg := findExtrafanartWarning(warnings)
-	if msg == "" || !strings.Contains(msg, "could not check") {
-		t.Fatalf("skipping the check must be reported to the operator, not swallowed; got %v", warnings)
+	// Must LEAD with what distinguishes it from the enumeration-FAILURE
+	// message, which truncation would otherwise erase (#3177 r3).
+	if !strings.HasPrefix(msg, "the extrafanart/ check was skipped:") {
+		t.Fatalf("skipping the check must be reported to the operator, leading with the distinguishing "+
+			"clause so it survives truncation; got %v", warnings)
 	}
 }
 
@@ -554,5 +564,47 @@ func TestSyncAllFanart_ExtrafanartOnly_NoTopLevelFanart_IsSilent(t *testing.T) {
 	if msg := findExtrafanartWarning(warnings); msg != "" {
 		t.Fatalf("got extrafanart warning %q for an artist with no fanart push; the warning describes exposure "+
 			"during a push, and no push ran. If this silence is being changed, change the docs page with it.", msg)
+	}
+}
+
+// TestSyncAllFanart_AllConnectionsDisabled_IsSilent pins round 3's MAJOR-1:
+// the silence contract is "no peer was pushed to", NOT "an early return
+// fired", and those are different sets. This artist has readable top-level
+// fanart and a mapped platform, so every early return is passed and the
+// advisory defer IS registered -- the upload loop then `continue`s past its
+// only connection because it is disabled. Nothing reached a peer, so nothing
+// clears and rewrites this artist's artwork and the operator must not be told
+// their files are at risk; an unhealthy connection, an unsupported type, and a
+// reconciler pass with Image download/write off reach that same `continue`.
+// Both preconditions are asserted first, so it cannot pass vacuously, and
+// reverting the len(uploadedTo) gate reddens it. The early-return form of the
+// same silence is the sibling test ..._NoTopLevelFanart_IsSilent above.
+func TestSyncAllFanart_AllConnectionsDisabled_IsSilent(t *testing.T) {
+	up := &stubIndexedUploader{}
+	// DISABLED is the ONLY difference from the other push tests here --
+	// otherwise healthy, write-capable, mapped -- so it alone stops the loop.
+	p, a, dir := singlePeerHarness(t, up, silentLogger(), func(c *connection.Connection) {
+		c.Enabled = false
+	})
+
+	// The primary is what passes every early return, so the defer really is
+	// registered; without it this proves only what ..._IsSilent above does.
+	seedPrimaryFanart(t, dir)
+	seedExtrafanart(t, dir, 3)
+
+	warnings := p.SyncAllFanartToPlatforms(context.Background(), a)
+
+	if got := up.callCount(); got != 0 {
+		t.Fatalf("precondition failed: the uploader received %d call(s) with its only connection disabled, "+
+			"so this is not exercising the pushed-to-nobody path it claims to", got)
+	}
+	if entries, err := os.ReadDir(filepath.Join(dir, "extrafanart")); err != nil || len(entries) != 3 {
+		t.Fatalf("precondition failed: extrafanart/ holds %d entries (err=%v), want 3", len(entries), err)
+	}
+	if msg := findExtrafanartWarning(warnings); msg != "" {
+		t.Fatalf("got extrafanart warning %q on a push that reached no peer (its only connection is "+
+			"disabled); nothing clears and rewrites this artist's artwork, so nothing is exposed. If this "+
+			"silence is being changed, change docs/site/src/core-concepts/images.md with it. warnings=%v",
+			msg, warnings)
 	}
 }
