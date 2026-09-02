@@ -20,12 +20,18 @@ package provider_test
 // the second. This test is the one that sees both, because it asserts over
 // what GetPriorities actually returns after the real migrations have run.
 //
-// Scope note: this checks the nine pairs migration 030 owns. years_active/
-// audiodb is deliberately excluded: audiodb.mapArtist never assigns
-// YearsActive literally, so it is dead on both full-refresh paths, but the
-// per-field comparison path (extractFieldForComparison in orchestrator.go)
-// synthesizes a candidate from AudioDB's Born/Died, so it is a live,
-// user-facing answer there. See migration 030's header for the mechanism.
+// Scope note: this checks the nine pairs migration 030 owns, plus one
+// positive assertion (below) that years_active/audiodb survives on the
+// STORED-ROW path. years_active/audiodb is deliberately excluded from
+// strippedPairs: audiodb.mapArtist never assigns YearsActive literally, so it
+// is dead on both full-refresh paths, but the per-field comparison path
+// (extractFieldForComparison in orchestrator.go) synthesizes a candidate from
+// AudioDB's Born/Died, so it is a live, user-facing answer there. See
+// migration 030's header for the mechanism. The membership check above only
+// proves strippedPairs' entries are ABSENT; it cannot see AudioDB silently
+// surviving in the wrong position (demoted by GetPriorities re-appending it
+// after the stored row was scrubbed of some other assumption), so the exact
+// years_active chain is asserted separately.
 //
 // The general invariant -- that NO priority entry anywhere names a provider
 // whose adapter cannot supply the field on ANY path -- needs the
@@ -34,6 +40,7 @@ package provider_test
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/database"
@@ -131,5 +138,24 @@ func TestGetPrioritiesOnMigratedDBHasNoStrippedPairs(t *testing.T) {
 	}
 	if checked != len(strippedPairs) {
 		t.Fatalf("checked %d of %d stripped pairs -- the rest passed vacuously", checked, len(strippedPairs))
+	}
+
+	// Positive assertion for the stored-row half of the years_active/audiodb
+	// carve-out. The membership check above only proves strippedPairs'
+	// entries are absent; it says nothing about years_active, so a strip that
+	// reached into migration 030 for this pair (contradicting
+	// DefaultPriorities()) would pass every assertion above while silently
+	// demoting or dropping AudioDB in the resolved chain. Assert the exact
+	// chain, in order: GetPriorities preserves the stored order and only
+	// appends missing defaults, so a correct migrated database must resolve
+	// to exactly this.
+	wantYearsActive := []provider.ProviderName{provider.NameWikipedia, provider.NameAudioDB, provider.NameMusicBrainz}
+	gotYearsActive, ok := byField["years_active"]
+	if !ok {
+		t.Fatal("GetPriorities returned no row for \"years_active\"")
+	}
+	if !reflect.DeepEqual(gotYearsActive, wantYearsActive) {
+		t.Errorf("years_active chain = %v, want %v -- AudioDB must survive migration 030 in this exact position (it answers years_active via synthesis on the per-field comparison path; see DefaultPriorities()'s years_active comment)",
+			gotYearsActive, wantYearsActive)
 	}
 }

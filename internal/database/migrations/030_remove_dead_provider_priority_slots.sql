@@ -50,8 +50,12 @@
 -- only wikidata from that row. #1029/#1577 covered it with a
 -- fieldProviderExclusions entry instead of a migration, and that entry is
 -- consulted by the LEGACY orchestrator and the settings template but NOT by
--- the live scraper executor -- so on the path that actually runs, the request
--- is still spent. Stripping the row is what makes it true on every path.
+-- the live scraper executor -- so on the path that actually runs, MusicBrainz
+-- still shows up as a biography option that can never answer. This does not
+-- save a request either: MusicBrainz survives in the biography chain's own
+-- scraper-config fallback list regardless, so it is queried anyway. Stripping
+-- the row is what makes the settings UI and comparison panel honest about
+-- biography on every path, not merely the paths #1029/#1577 already covered.
 --
 -- Each statement rebuilds the JSON array from the elements that are NOT being
 -- stripped, so the operator's chosen ORDER of the surviving providers is
@@ -109,7 +113,8 @@ WHERE key = 'provider.priority.biography'
 -- +goose Down
 -- Restoration is intentionally a no-op, matching migration 007. None of the
 -- stripped providers can populate the field it was listed for, so adding them
--- back has no behavioral effect beyond restoring the wasted request; and
--- preserving "what the operator had" across a re-up would require a separate
--- ledger this migration does not carry.
+-- back would only reintroduce a structurally-empty routing option in the
+-- settings UI and per-field comparison panel; and preserving "what the
+-- operator had" across a re-up would require a separate ledger this
+-- migration does not carry.
 SELECT 1;

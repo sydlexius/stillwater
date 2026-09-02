@@ -391,22 +391,33 @@ func (fp *FieldPriority) RemoveProvider(name ProviderName) bool {
 
 // DefaultPriorities returns the default provider priority order per field.
 func DefaultPriorities() []FieldPriority {
-	// Every provider listed here must advertise the field in
-	// ProviderCapabilities(), which in turn must match what the adapter
-	// actually assigns. A provider that cannot answer on either full-refresh
-	// path is not merely a cosmetic entry: it still shows up as a routing
-	// option in the settings UI and the per-field comparison panel even
-	// though it can never produce a value there. It does NOT waste a
-	// request -- both full-refresh paths cache one GetArtist call per
-	// provider, and every one of these providers survives in some other
-	// field's chain regardless. Eight such dead slots were removed in #2897
-	// (a ninth candidate, years_active/audiodb, was found live on the
-	// per-field comparison path via synthesis and kept -- see that field's
-	// comment below).
+	// GOAL (enforced by the capability-table reconciliation landing after
+	// #2897, not by this function today): every provider listed here should
+	// advertise the field in ProviderCapabilities(), which in turn should
+	// match what the adapter actually assigns. A provider that cannot answer
+	// on either full-refresh path is not merely a cosmetic entry: it still
+	// shows up as a routing option in the settings UI and the per-field
+	// comparison panel even though it can never produce a value there. It
+	// does NOT waste a request -- both full-refresh paths cache one
+	// GetArtist call per provider, and every one of these providers survives
+	// in some other field's chain regardless. Eight such dead slots were
+	// removed in #2897.
+	//
+	// KNOWN EXCEPTIONS to the goal above, both deliberate -- do NOT "fix" a
+	// drift between this list and ProviderCapabilities() by deleting either:
+	//   - styles/discogs: Discogs supplies Styles via aggregateStyles, but its
+	//     ProviderCapabilities() entry does not yet list "styles".
+	//   - years_active/audiodb: AudioDB's adapter never assigns YearsActive
+	//     literally (dead on both full-refresh paths), but the per-field
+	//     comparison path synthesizes a candidate from its Born/Died via
+	//     SynthesizeYearsActive, so it is a live, user-facing answer there.
+	//     This is the #2897 finding that reopened this PR -- removing it
+	//     again reintroduces that regression. See that field's comment below.
 	// TestGetPrioritiesOnMigratedDBHasNoStrippedPairs
 	// (internal/provider/priorities_live_test.go) guards the stored-row half
-	// of this; a Go-level default guard for these fields lands with the
-	// capability-table reconciliation.
+	// of the dead-slot removal; a Go-level default guard lands with the
+	// capability-table reconciliation, which should resolve the two
+	// exceptions above by correcting ProviderCapabilities(), not this list.
 	return []FieldPriority{
 		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameGenius}},
 		// Discogs removed (#2897): its adapter aggregates Styles from master
@@ -423,11 +434,15 @@ func DefaultPriorities() []FieldPriority {
 		// Wikipedia removed (#2897): its infobox parser assigns Born and Died
 		// but never Formed or Disbanded.
 		{Field: "disbanded", Providers: []ProviderName{NameMusicBrainz, NameWikidata}},
-		// AudioDB is NOT dead here (#2897 audit): its adapter never assigns
-		// YearsActive literally, but the per-field comparison path synthesizes
-		// a candidate from its Born/Died via SynthesizeYearsActive, so it is a
-		// live answer on that path even though both full-refresh paths never
-		// see it. See migration 030's header for the mechanism.
+		// AudioDB is NOT dead here (#2897 audit): its adapter (audiodb.go,
+		// mapArtist) never assigns YearsActive literally, so it is dead on
+		// both full-refresh paths. But FetchFieldFromProviders' per-field
+		// comparison path calls extractFieldForComparison (orchestrator.go),
+		// which synthesizes a years_active candidate from Born/Died via
+		// SynthesizeYearsActive when the literal is empty -- and AudioDB's
+		// adapter does set Born/Died for a solo (non-group) artist. So on
+		// that path AudioDB is a live, user-facing answer even though the
+		// full-refresh paths never see it.
 		{Field: "years_active", Providers: []ProviderName{NameWikipedia, NameAudioDB, NameMusicBrainz}},
 		// Wikidata and Discogs removed (#2897): neither assigns Type.
 		// Not backfilled with Wikipedia, which does assign it: adding a
