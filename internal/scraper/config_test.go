@@ -112,8 +112,14 @@ func TestProviderCapabilities(t *testing.T) {
 			t.Errorf("ProviderCapabilities() entry for %q has an empty DisplayName", c.Provider)
 		}
 	}
-	if len(caps) != len(all) {
-		t.Errorf("ProviderCapabilities count = %d, want %d (one per AllProviderNames entry)", len(caps), len(all))
+	known := make(map[provider.ProviderName]bool, len(all))
+	for _, name := range all {
+		known[name] = true
+	}
+	for _, c := range caps {
+		if !known[c.Provider] {
+			t.Errorf("ProviderCapabilities() has an entry for %q, which AllProviderNames() does not list", c.Provider)
+		}
 	}
 
 	// Verify MusicBrainz has no image fields

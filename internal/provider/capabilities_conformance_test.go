@@ -560,7 +560,10 @@ func TestAdapterFieldsAreNotSearchOnly(t *testing.T) {
 		if len(pkg.Errors) > 0 {
 			t.Fatalf("type-checking %s: %v", pkg.PkgPath, pkg.Errors)
 		}
-		name := pathToProvider[pkg.PkgPath]
+		name, ok := pathToProvider[pkg.PkgPath]
+		if !ok {
+			t.Fatalf("packages.Load returned unrequested package %q", pkg.PkgPath)
+		}
 		// A throwaway hits map: this derivation intentionally skips search
 		// functions, so it is not the sweep that proves declarationExceptions
 		// entries are live -- TestProviderCapabilitiesMatchAdapterSource
