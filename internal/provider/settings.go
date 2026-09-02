@@ -448,6 +448,15 @@ func DefaultPriorities() []FieldPriority {
 		// adapter does set Born/Died for a solo (non-group) artist. So on
 		// that path AudioDB is a live, user-facing answer even though the
 		// full-refresh paths never see it.
+		//
+		// This carve-out covers only the solo case. For a group artist it is
+		// still a dead slot: mapArtist's isGroup branch withholds Born/Died
+		// once FormedYear is set, but the adapter never assigns meta.Type at
+		// all, so SynthesizeYearsActive's isGroupTypeValue check sees an
+		// empty Type and routes down the individual branch -- which needs
+		// the Born/Died that were deliberately withheld. The real repair is
+		// teaching the adapter to set Type, or teaching the group branch to
+		// accept Formed/Disbanded without a Type.
 		{Field: "years_active", Providers: []ProviderName{NameWikipedia, NameAudioDB, NameMusicBrainz}},
 		// Wikidata and Discogs removed (#2897): neither assigns Type.
 		// Not backfilled with Wikipedia, which does assign it: adding a
