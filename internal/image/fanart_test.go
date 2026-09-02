@@ -303,6 +303,35 @@ func TestDiscoverFanart_DuplicateNumbered(t *testing.T) {
 	}
 }
 
+// TestDiscoverFanart_ExtensionPreferenceOverridesLexicalOrder pins the sort's
+// extension-preference tiebreak specifically, as distinct from
+// TestDiscoverFanart_DuplicateExtension above. That test uses primaryName
+// "backdrop.jpg", and ".jpg" sorts lexically before ".png" anyway, so a sort
+// that dropped the extension-preference clause entirely and fell back to
+// pure lexical path comparison would still pass it for the wrong reason.
+// Here primaryName is "backdrop.png", the extension that sorts lexically
+// AFTER ".jpg", so only the extension-preference clause can produce the
+// right winner.
+func TestDiscoverFanart_ExtensionPreferenceOverridesLexicalOrder(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"backdrop.jpg", "backdrop.png"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paths, err := DiscoverFanart(context.Background(), dir, "backdrop.png")
+	if err != nil {
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 fanart file (dedup), got %d: %v", len(paths), paths)
+	}
+	if filepath.Base(paths[0]) != "backdrop.png" {
+		t.Errorf("expected backdrop.png (preferred ext, lexically later), got %q", filepath.Base(paths[0]))
+	}
+}
+
 func TestDiscoverFanart_AlternateExtension(t *testing.T) {
 	dir := t.TempDir()
 
@@ -320,6 +349,92 @@ func TestDiscoverFanart_AlternateExtension(t *testing.T) {
 	}
 	if filepath.Base(paths[0]) != "backdrop.png" {
 		t.Errorf("expected backdrop.png, got %q", filepath.Base(paths[0]))
+	}
+}
+
+// TestDiscoverFanart_JpegExtensionAccepted pins the .jpeg allowlist entry.
+// .jpeg is absent from internal/scanner's fanartPatterns list (which drives
+// the scanner's PRIMARY NAME candidates, not this package's extension
+// allowlist), so a directory holding only fanart.jpeg has no pattern-list
+// primary on disk and depends on this package matching by base name
+// regardless of which allowlisted extension the file actually has. Dropping
+// .jpeg from the allowlist here silently drops every fanart.jpeg file from
+// discovery.
+func TestDiscoverFanart_JpegExtensionAccepted(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpeg"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := DiscoverFanart(context.Background(), dir, "fanart.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 fanart file (.jpeg allowlisted), got %d: %v", len(paths), paths)
+	}
+	if filepath.Base(paths[0]) != "fanart.jpeg" {
+		t.Errorf("expected fanart.jpeg, got %q", filepath.Base(paths[0]))
+	}
+}
+
+// TestDiscoverFanart_NumberedVariantRequiresPositiveInteger pins the
+// strconv.Atoi-succeeds-AND-n>0 rule for numbered variants. fanart-2.jpg
+// parses to a negative index if the n>0 check is dropped (deliberately not
+// "-1": the dedupe below starts its "last seen index" sentinel at -1, so a
+// suffix of exactly -1 would be silently swallowed by that sentinel and the
+// test would pass for the wrong reason); fanart0.jpg is excluded because
+// index 0 is reserved for the exact base match, not a "0" suffix.
+func TestDiscoverFanart_NumberedVariantRequiresPositiveInteger(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"fanart.jpg", "fanart0.jpg", "fanart-2.jpg", "fanartx.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paths, err := DiscoverFanart(context.Background(), dir, "fanart.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart(context.Background(), ) error: %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 fanart file (only the primary is a valid match), got %d: %v", len(paths), paths)
+	}
+	if filepath.Base(paths[0]) != "fanart.jpg" {
+		t.Errorf("expected fanart.jpg, got %q", filepath.Base(paths[0]))
+	}
+}
+
+// TestDiscoverFanartFrom_MatchesDiscoverFanart is a direct self-consistency
+// check between the wrapper and the entries-accepting core it delegates to:
+// given the SAME already-read listing, they must agree exactly. This is
+// deliberately weaker than the retired scanner/image parity test -- it does
+// not compare two independent implementations, only that the wrapper adds no
+// behavior beyond the os.ReadDir it performs.
+func TestDiscoverFanartFrom_MatchesDiscoverFanart(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"backdrop.jpg", "backdrop2.jpg", "backdrop2.png", "fanart.jpeg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want, err := DiscoverFanart(context.Background(), dir, "backdrop.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := DiscoverFanartFrom(dir, entries, "backdrop.jpg")
+	if len(got) != len(want) {
+		t.Fatalf("DiscoverFanartFrom = %v (%d), DiscoverFanart = %v (%d)", got, len(got), want, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("index %d: DiscoverFanartFrom = %s, DiscoverFanart = %s", i, got[i], want[i])
+		}
 	}
 }
 

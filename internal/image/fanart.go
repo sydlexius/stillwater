@@ -62,7 +62,30 @@ func DiscoverFanart(ctx context.Context, dir string, primaryName string) ([]stri
 		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
 
-	return fanartPaths(fanartMatches(dir, entries, primaryName)), nil
+	return DiscoverFanartFrom(dir, entries, primaryName), nil
+}
+
+// DiscoverFanartFrom is the entries-accepting core of fanart discovery: given
+// a directory path (used only to build the absolute paths returned) and
+// pre-read directory entries, it returns sorted absolute paths for the files
+// matching primaryName or its numbered variants. It performs no I/O, so it
+// never returns an error, and it is the ONE place this matching algorithm is
+// implemented -- DiscoverFanart above is a thin os.ReadDir wrapper around it,
+// and internal/scanner's discoverFanartFiles calls it directly with the
+// entries the scanner already holds, rather than keeping its own copy.
+//
+// Four rules here are load-bearing, and each is an independent under-count
+// risk if it drifts: the extension allowlist includes .jpeg (fanartPatterns
+// in internal/scanner does not, so a directory holding only fanart.jpeg has
+// no pattern-list primary and must fall through to a second-pass, ordinal-0
+// match here); the numbered-variant parse requires strconv.Atoi to succeed
+// AND n > 0; the dedupe below keeps the FIRST entry per ordinal; and the
+// sort's extension preference is what stops two extensions both claiming
+// ordinal 0. The output bounds a DELETE (deleteStaleSlots in
+// internal/artist/sqlite_image.go keeps a row only while slotIndex < found),
+// so an under-count here deletes rows whose files are still on disk.
+func DiscoverFanartFrom(dir string, entries []os.DirEntry, primaryName string) []string {
+	return fanartPaths(fanartMatches(dir, entries, primaryName))
 }
 
 // fanartMatches returns the fanart files among pre-read directory entries that
