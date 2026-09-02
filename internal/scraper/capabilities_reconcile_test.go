@@ -243,47 +243,41 @@ func TestProviderCapabilitiesCategoriesAreConsistent(t *testing.T) {
 }
 
 // TestProviderCapabilitiesRequiresAuthMatchesAdapters pins the RequiresAuth
-// value this table reports, which nothing previously asserted.
+// value this table reports against provider.ProviderRequiresKey, the single
+// declaration providerRequiresAuth (config.go) defers to instead of
+// restating. This test does NOT independently prove ProviderRequiresKey
+// itself matches each adapter's real RequiresAuth() method -- it cannot,
+// without constructing every adapter, which would introduce an import cycle
+// from internal/scraper. That proof lives in
+// internal/provider/requires_auth_conformance_test.go
+// (TestAdapterRequiresAuthMatchesProviderRequiresKey), which constructs every
+// adapter and asserts it against the same provider.ProviderRequiresKey this
+// test reads. Together the two tests close the loop: flipping an adapter's
+// RequiresAuth() reddens the provider-side test by name; flipping
+// providerRequiresAuth's derivation (or ProviderCapabilities().RequiresAuth)
+// out of step with provider.ProviderRequiresKey reddens this one.
 //
 // #2897 changed AudioDB's reported value from true to false. That is a
 // deliberate correction, not a side effect: audiodb.Adapter.RequiresAuth()
 // returns false (its key is OPTIONAL -- it unlocks a higher rate tier but the
 // free endpoint works without one), so the old hard-coded true was telling
 // GET /api/v1/scraper/providers that AudioDB could not be used unconfigured.
-// The values below are transcribed from each adapter's RequiresAuth method; if
-// an adapter changes, this test is the thing that should fail.
 func TestProviderCapabilitiesRequiresAuthMatchesAdapters(t *testing.T) {
-	// Transcribed from each internal/provider/<name>.Adapter.RequiresAuth().
-	want := map[provider.ProviderName]bool{
-		provider.NameMusicBrainz: false,
-		provider.NameWikipedia:   false,
-		provider.NameWikidata:    false,
-		provider.NameDeezer:      false,
-		provider.NameAudioDB:     false,
-		provider.NameFanartTV:    true,
-		provider.NameDiscogs:     true,
-		provider.NameLastFM:      true,
-		provider.NameGenius:      true,
-		provider.NameSpotify:     true,
-	}
-
 	caps := ProviderCapabilities()
 	if len(caps) == 0 {
 		t.Fatal("ProviderCapabilities() is empty -- every assertion below would pass vacuously")
 	}
-	if len(want) != len(provider.AllProviderNames()) {
-		t.Fatalf("the expectation covers %d providers but AllProviderNames() has %d; a provider would go unpinned", len(want), len(provider.AllProviderNames()))
-	}
 
+	var checked int
 	for _, c := range caps {
-		expected, ok := want[c.Provider]
-		if !ok {
-			t.Errorf("ProviderCapabilities() reports %q, which this test does not pin", c.Provider)
-			continue
+		checked++
+		want := provider.ProviderRequiresKey(c.Provider)
+		if c.RequiresAuth != want {
+			t.Errorf("%s RequiresAuth = %v, want %v (must match provider.ProviderRequiresKey; GET /api/v1/scraper/providers reports this value)",
+				c.Provider, c.RequiresAuth, want)
 		}
-		if c.RequiresAuth != expected {
-			t.Errorf("%s RequiresAuth = %v, want %v (must match the adapter's RequiresAuth method; GET /api/v1/scraper/providers reports this value)",
-				c.Provider, c.RequiresAuth, expected)
-		}
+	}
+	if checked == 0 {
+		t.Fatal("no providers were checked -- the assertion passed vacuously")
 	}
 }

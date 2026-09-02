@@ -222,7 +222,7 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 	caps := ProviderCapabilities()
 	var statuses []ProviderKeyStatus
 	for _, name := range AllProviderNames() {
-		requiresKey := providerRequiresKey(name)
+		requiresKey := ProviderRequiresKey(name)
 		optionalKey := providerHasOptionalKey(name)
 		hasKey, err := s.HasAPIKey(ctx, name)
 		if err != nil {
@@ -309,8 +309,14 @@ func (s *SettingsService) getVerbosityForStatus(ctx context.Context, name Provid
 	return verbOpts, values, nil
 }
 
-// providerRequiresKey returns whether a provider needs an API key.
-func providerRequiresKey(name ProviderName) bool {
+// ProviderRequiresKey returns whether a provider needs an API key. This is
+// the single declaration of the RequiresAuth fact: internal/scraper's
+// ProviderCapabilities() reads it directly (see providerRequiresAuth in
+// internal/scraper/config.go) instead of restating its own copy, and
+// TestAdapterRequiresAuthMatchesProviderRequiresKey
+// (internal/provider/requires_auth_conformance_test.go) pins it to every
+// adapter's real RequiresAuth() method.
+func ProviderRequiresKey(name ProviderName) bool {
 	switch name {
 	case NameMusicBrainz, NameWikidata, NameWikipedia, NameDeezer, NameAudioDB:
 		return false
@@ -628,7 +634,7 @@ func (s *SettingsService) ResetPriorities(ctx context.Context) error {
 func (s *SettingsService) AvailableProviderNames(ctx context.Context) (map[ProviderName]bool, error) {
 	available := make(map[ProviderName]bool)
 	for _, name := range AllProviderNames() {
-		if !providerRequiresKey(name) {
+		if !ProviderRequiresKey(name) {
 			available[name] = true
 			continue
 		}

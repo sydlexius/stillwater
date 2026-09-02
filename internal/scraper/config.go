@@ -314,15 +314,13 @@ func scraperImageFieldFor(img provider.ImageType) (FieldName, bool) {
 }
 
 // providerRequiresAuth reports whether a provider needs an API key before it
-// can be used. It mirrors the RequiresAuth() reported by each adapter; the
-// scraper cannot call that without constructing every adapter, and this table
-// is a static declaration.
+// can be used. It defers to provider.ProviderRequiresKey rather than
+// restating the adapter facts: the scraper cannot construct an adapter to
+// call RequiresAuth() directly without an import cycle, so
+// provider.ProviderRequiresKey is the single declaration both this table and
+// internal/provider/requires_auth_conformance_test.go read. That test pins
+// provider.ProviderRequiresKey to every adapter's real RequiresAuth() method,
+// so a change to an adapter has exactly one place to also change.
 func providerRequiresAuth(name provider.ProviderName) bool {
-	switch name {
-	case provider.NameMusicBrainz, provider.NameWikipedia, provider.NameWikidata,
-		provider.NameDeezer, provider.NameAudioDB:
-		return false
-	default:
-		return true
-	}
+	return provider.ProviderRequiresKey(name)
 }
