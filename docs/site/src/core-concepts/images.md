@@ -2,7 +2,7 @@
 description: How Stillwater handles the four artist image types -- thumb, fanart, logo, and banner.
 ---
 
-<!-- code: internal/image/processor.go (IsLowResolution defaults), internal/image/save.go (logo PNG conversion), internal/image/fanart.go (FanartFilename Kodi vs Emby/Jellyfin), internal/image/naming.go (DefaultFileNames, ImageTermFor), internal/imagebridge/bridge.go, internal/api/handlers_image.go (maxUploadSize 25MB), internal/rule/service.go (thumb_min_res, fanart_min_res, logo_min_res, banner_min_res default thresholds + RuleConfig MinWidth/MinHeight) -->
+<!-- code: internal/image/processor.go (IsLowResolution defaults), internal/image/save.go (logo PNG conversion), internal/image/fanart.go (FanartFilename Kodi vs Emby/Jellyfin), internal/image/naming.go (DefaultFileNames, ImageTermFor), internal/imagebridge/bridge.go, internal/api/handlers_image.go (maxUploadSize 25MB), internal/rule/service.go (thumb_min_res, fanart_min_res, logo_min_res, banner_min_res default thresholds + RuleConfig MinWidth/MinHeight), internal/image/artwork_subdir.go (ListArtworkSubdirFiles), internal/publish/publisher.go (extrafanartExposureWarning) -->
 
 # Images
 
@@ -47,6 +47,18 @@ Fanart is the only slot that supports more than one image per artist. Stillwater
 - **Kodi:** `fanart.jpg`, `fanart1.jpg`, `fanart2.jpg`, ...
 
 The artist record reflects how many fanart files exist on disk. Other slots are single-image: writing a new thumb replaces the previous one.
+
+### `extrafanart/` is outside Stillwater's protection
+
+Kodi and Emby both support an `extrafanart/` subdirectory inside an artist's folder, for backdrops beyond what a platform's own numbered-file scheme covers. Stillwater does not look inside it: files placed there are invisible to Stillwater's fanart discovery, are never counted in the artist record, and are never part of the set Stillwater pushes to a connected platform.
+
+That has a consequence beyond simply "not managed." When Stillwater pushes fanart, a connected platform can respond by clearing and rewriting the artwork it manages for that artist. On at least one measured platform, a file sitting in `extrafanart/` has been progressively lost across repeated pushes as a result, with no way to recover it afterward. If you use `extrafanart/`, treat it as unprotected. When a fanart push you trigger yourself runs -- from the artist's artwork tools -- Stillwater warns you once for that push, after it has run, if the artist's `extrafanart/` folder holds files. The warning does not stop the push and does not make the files safe. Three things narrow it, and all three are deliberate:
+
+- **It only appears when a fanart push actually reaches a connected platform.** If nothing was pushed to any platform, nothing there can be cleared and rewritten, so no warning is raised. That covers an artist Stillwater finds no readable top-level fanart for, and it equally covers a push where every mapped connection was skipped -- because it is disabled, unhealthy, of a type Stillwater cannot upload to, or, on the background pass, because **Image download/write** is off.
+- **The background reconciliation pass does not warn you on screen.** That pass pushes fanart too, and the exposure is the same, but it runs on a timer with nobody watching -- so its warning is written to Stillwater's log rather than shown to you. If you rely on `extrafanart/`, the log is where that one appears.
+- **If the check itself cannot run, Stillwater says so** rather than staying quiet: an unresponsive library mount means it cannot count the files, and you are told the check was skipped, not that the folder is empty.
+
+Back them up outside your library if they matter to you.
 
 ### Replacing the primary fanart on a connected platform
 
