@@ -62,6 +62,12 @@ const extrafanartCheckBudget = 2 * time.Second
 // below internal/image's maxStalledReads (16, process-wide, past which EVERY
 // read is refused): an advisory notice must not be able to consume the budget
 // the paths that actually move bytes depend on.
+//
+// FOUR IS A COURTESY VALUE, not a limit anything depends on being exact. The
+// real ceiling is internal/image's own, re-checked at the point of use on
+// every call; this one only makes the advisory stand down well before it.
+// See extrafanartExposureWarning's pre-gate for why the non-atomic read of
+// the gauge is deliberate.
 const maxAdvisoryStalledReads = 4
 
 // Seams for the #3177 advisory check, so a test can drive the timing and
@@ -2734,6 +2740,37 @@ func (p *Publisher) extrafanartExposureWarning(ctx context.Context, a *artist.Ar
 	// walk the shared gauge to that cap and start failing real work. The
 	// ceiling here sits far below it so this feature can never be what
 	// saturates it. Skipping is reported, not swallowed.
+	//
+	// THE GATE IS A COURTESY MARGIN, NOT A SERIALIZATION POINT, AND IT IS
+	// DELIBERATELY NOT ATOMIC (#3193 review). This Load and the Add(1) that
+	// internal/image performs when a read is abandoned are separate
+	// operations, so concurrent pushes can all observe a value under the
+	// ceiling and all proceed. That is the SAME approximation runCancellable
+	// documents and accepts one layer down (internal/image/readio.go:156-165),
+	// for the same reason, and it is safe here for a stronger one: the
+	// advisory can never be the deciding contribution to the real cap.
+	//
+	//   - The 16-cap is enforced AT THE POINT OF USE, not here.
+	//     runCancellable re-checks stalledReads >= maxStalledReads on every
+	//     call and returns ErrTooManyStalledReads, so a stale value read
+	//     here costs the advisory nothing and protects nobody less.
+	//   - The advisory is DOMINATED on every path that reaches it. It runs
+	//     from a defer in syncAllFanartToPlatforms, gated on uploadedTo being
+	//     non-empty -- so a push that reaches this line has ALREADY issued
+	//     snapshotFanart's per-file reads and the deferred repair's
+	//     per-file verify reads through the same primitives. One concurrent
+	//     push therefore contributes at most one abandoned read HERE against
+	//     many there; a concurrency level able to drive this gate's 12-read
+	//     headroom over the cap has already driven the cap over on the
+	//     byte-moving reads, whose refusal is the condition this gate exists
+	//     to avoid CAUSING rather than to avoid observing.
+	//
+	// So 4 is a courtesy value: it says "an advisory notice stands down early
+	// when the mount is unhappy", not "exactly four". Serializing admission
+	// with a process-wide permit would buy exactness this number never
+	// claimed, add shared mutable state to this package, and make a second
+	// concurrent push on a HEALTHY filesystem report a skipped check instead
+	// of its notice.
 	if n := stalledReadCount(); n >= maxAdvisoryStalledReads {
 		p.logger.Warn("skipping the extrafanart/ check: the library mount has unresponsive reads outstanding",
 			slog.String("artist_id", a.ID),
