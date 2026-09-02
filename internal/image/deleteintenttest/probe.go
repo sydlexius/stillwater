@@ -137,6 +137,18 @@ func NewUnlinkProbe(t tHelper, dir string, types ...string) *UnlinkProbe {
 // is the image directory itself, so nothing about such a path bears on the
 // claim. The comparison is on filepath.Dir, so a file in a SUBdirectory does
 // not count either.
+//
+// THE MATCH IS A STRING COMPARISON, NOT A SYMLINK-RESOLVING ONE, and a caller
+// owes it the same spelling on both sides. On macOS a t.TempDir sits under
+// /var/..., which is a symlink to /private/var/...; a caller that hands the
+// probe one spelling and the code under test the other would see every removal
+// pass through unobserved. That fails LOUDLY rather than silently -- the
+// AssertMarkedBeforeUnlink precondition then reports "performed no unlink
+// inside <dir>" -- which is why this is left as a caller constraint instead of
+// an EvalSymlinks call here: resolving would hide a genuinely misdirected probe
+// (wrong directory entirely) behind an apparent match, and the loud failure is
+// the more useful signal. Pass the SAME dir string to NewUnlinkProbe that you
+// pass to the code under test.
 func (p *UnlinkProbe) Around(path string, remove func() error) error {
 	if filepath.Clean(filepath.Dir(path)) != p.dir {
 		return remove()

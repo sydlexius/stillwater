@@ -419,9 +419,13 @@ func TestAssertNeverMarked_ChecksEveryWatchedType(t *testing.T) {
 //
 // The fixture is the real defect shape: the marker is written BETWEEN two
 // unlinks, so it is too late for the first file and in time for the second.
-// Asserting merely that the probe failed is NOT enough -- a last-unlink probe
-// fails here too, just naming the wrong file -- so the discriminator is the
-// FILENAME in the recorded message.
+// MEASURED, two-sided: with the guard present the probe fails naming
+// fanart.jpg; with the guard deleted it reports on fanart1.jpg instead, finds
+// the marker live there, and PASSES OUTRIGHT -- the production defect sails
+// through green. Both assertions below are kept anyway: the positive one pins
+// WHICH file is reported (a probe reporting the wrong instant would still fail,
+// just about the wrong window), and the negative one names the last-unlink
+// regression explicitly so a future reader sees what is being excluded.
 func TestAssertMarkedBeforeUnlink_ReportsTheFirstUnlinkNotTheLast(t *testing.T) {
 	f := &fakeT{}
 	dir := t.TempDir()
