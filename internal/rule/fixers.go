@@ -1297,6 +1297,144 @@ func (f *ExtraneousImagesFixer) CanFix(v *Violation) bool {
 	return v.RuleID == RuleExtraneousImages
 }
 
+// reportPartialExtraneousRemoval builds the FixResult and ERROR log for a
+// MIXED outcome of the extraneous-image delete loop: some files removed, some
+// not (#3015 fix-round-2).
+//
+// PARTIAL SUCCESS, SILENTLY REPORTED AS COMPLETE is the bug this closes. Same
+// class as the len(deleted)==0 branch in Fix -- a marker vouches for a
+// deletion that did not fully happen -- one notch along: some files removed,
+// some not, and without this the fixer falls through to Fixed:true naming
+// only the deleted files. The operator reads that as "the extraneous files
+// are gone" when at least one is still there and every canonical type is
+// still marked to suppress its repair.
+//
+// ERROR, not Warn: the per-file Warn already logged says one file could not
+// be deleted, which is ordinary. This says a safety mechanism (image-repair
+// suppression) is now live for this artist because of files this run left
+// behind, which the operator cannot infer from "Fixed: true" and a partial
+// file list alone.
+func (f *ExtraneousImagesFixer) reportPartialExtraneousRemoval(a *artist.Artist, attempted int, deleted, failed []string) *FixResult {
+	f.logger.Error("extraneous-image fixer removed some files but not all; delete intent marks the artist anyway",
+		slog.String("artist_id", a.ID),
+		slog.String("path", a.Path),
+		slog.Int("attempted", attempted),
+		slog.Int("deleted", len(deleted)),
+		slog.Int("failed", len(failed)),
+		slog.Duration("suppressed_for", img.DeleteIntentRetention),
+		slog.String("consequence", "image repair is suppressed for every canonical type on this artist until the remaining removals succeed"))
+	return &FixResult{
+		RuleID: RuleExtraneousImages,
+		Fixed:  true,
+		Message: fmt.Sprintf("deleted %d extraneous file(s) but %d could not be removed: %s; "+
+			"image repair for this artist is suppressed for %s",
+			len(deleted), len(failed), strings.Join(failed, ", "), img.DeleteIntentRetention),
+	}
+}
+
+// removeExtraneousFiles walks entries and unlinks every image file not on the
+// expected set, marking delete intent for all four canonical types before the
+// FIRST attempted unlink (#2712/#3015: so a push already in flight declines
+// to restore what this fixer is about to remove).
+//
+// It returns the basenames it removed, the basenames it attempted to remove
+// and could not, and the total attempt count (deliberately not the same as
+// len(deleted) -- the gap is the amplification Fix reports: the mark has to
+// precede the unlink, so an attempt that then FAILS leaves a live marker
+// behind with nothing deleted to justify it).
+//
+// Mark ALL canonical types, not the one this filename looks like.
+//
+// The marker's key carries an image TYPE and no filename, and the files this
+// loop removes are by definition OUTSIDE the canonical name set -- so there
+// is no honest filename-to-type classification to make. The two alternatives
+// are both wrong: guessing a type from a non-canonical name is undefined for
+// exactly the inputs this loop sees, and marking nothing leaves the
+// numbered-fanart overlap uncovered (a file like "fanart7.jpg" can be absent
+// from the whitelist yet still be a file DiscoverFanart hands to a push).
+// Marking the whole canonical set is what the marker's coarse (dir, type)
+// granularity already implies.
+//
+// LAZILY, and only once. An unconditional mark at function entry would
+// suppress repairs for every artist whose directory turned out to be CLEAN --
+// which, for a fixer that runs library-wide in auto mode, is most of the
+// library on most evaluations. Marking on each iteration would merely
+// re-stamp the same four keys.
+//
+// BE EXACT ABOUT WHAT LAZINESS DOES AND DOES NOT BUY, because the earlier
+// wording here ("a fixer that removes nothing records nothing") claimed more
+// than the code delivers. It is true of the CLEAN directory, where the loop
+// never reaches this line. It is FALSE when the directory holds extraneous
+// files that cannot be removed -- a read-only or EROFS mount, EACCES, a stale
+// SMB/NFS share, all ordinary states for a self-hosted library. There the
+// loop reaches this line, marks all four types, and every os.Remove below
+// then fails and is skipped, so the fixer reports removing nothing (or, on a
+// mixed outcome, reports it truthfully via reportPartialExtraneousRemoval)
+// while four live markers suppress repairs for the full
+// DeleteIntentRetention. In auto mode the next evaluation re-marks, so the
+// suppression does not lapse on its own. Fix logs that state at ERROR
+// precisely because it is otherwise invisible: the operator sees "Fixed:
+// false".
+//
+// THIS CANNOT BE FIXED BY MARKING LATER -- that is the one placement the
+// mechanism forbids (MarkDeleteIntent's doc: a marker written after the
+// unlink leaves the original bug, merely narrowed). Nor by probing
+// writability first: os.Remove of a NONEXISTENT name returns ENOENT even
+// inside a read-only directory (measured), so no cheap non-writing probe
+// distinguishes "removals will fail" from "nothing was there", and the
+// alternative -- creating and deleting a temp file in the operator's artist
+// directory on every sweep -- adds a real write, and a watcher event, to a
+// path that currently only reads. Withdrawing the marker is also out: it is
+// write-once by design (see MarkDeleteIntent) and a withdrawal can itself
+// fail or race.
+//
+// Over-suppression is therefore the accepted cost, and it is the same trade
+// MarkDeleteIntent's doc comment argues for at length: a missed repair leaves
+// a visible, re-addable gap; a resurrected delete is silent and not
+// automatically recoverable.
+//
+// NO ROLLBACK EXISTS HERE, so the commit-point reasoning that governs
+// deleteDuplicateFanartWithRollback does not apply: os.Remove either succeeds
+// or is logged and skipped, and nothing puts a removed file back. And this
+// fixer's FixResult leaves ImageType empty, so its own later push goes
+// through PublishMetadata, which never reaches reassertLocalImage -- it
+// cannot self-suppress.
+func (f *ExtraneousImagesFixer) removeExtraneousFiles(a *artist.Artist, entries []os.DirEntry, expected map[string]bool) (deleted, failed []string, attempted int) {
+	marked := false
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if !imageExtensions[ext] {
+			continue
+		}
+		if expected[strings.ToLower(name)] {
+			continue
+		}
+		target := filepath.Join(a.Path, name)
+
+		if !marked {
+			for _, t := range img.AllSlots {
+				img.MarkDeleteIntent(a.Path, t)
+			}
+			marked = true
+		}
+
+		attempted++
+		if rmErr := fixerRemove(target); rmErr != nil {
+			f.logger.Warn("failed to delete extraneous image",
+				slog.String("path", target), slog.String("error", rmErr.Error()))
+			failed = append(failed, name)
+			continue
+		}
+		f.logger.Info("deleted extraneous image", slog.String("path", target))
+		deleted = append(deleted, name)
+	}
+	return deleted, failed, attempted
+}
+
 // Fix deletes all extraneous image files from the artist directory.
 //
 // When the artist's library has a shared-filesystem status, the expected set is
@@ -1351,30 +1489,44 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 		return nil, fmt.Errorf("reading directory: %w", readErr)
 	}
 
-	var deleted []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		ext := strings.ToLower(filepath.Ext(name))
-		if !imageExtensions[ext] {
-			continue
-		}
-		if expected[strings.ToLower(name)] {
-			continue
-		}
-		target := filepath.Join(a.Path, name)
-		if rmErr := os.Remove(target); rmErr != nil {
-			f.logger.Warn("failed to delete extraneous image",
-				slog.String("path", target), slog.String("error", rmErr.Error()))
-			continue
-		}
-		f.logger.Info("deleted extraneous image", slog.String("path", target))
-		deleted = append(deleted, name)
+	deleted, failed, attempted := f.removeExtraneousFiles(a, entries, expected)
+
+	if len(deleted) > 0 && len(failed) > 0 {
+		return f.reportPartialExtraneousRemoval(a, attempted, deleted, failed), nil
 	}
 
 	if len(deleted) == 0 {
+		// MARKED BUT DELETED NOTHING (#3015). Every removal this fixer attempted
+		// failed, so the four markers written above vouch for a deletion that
+		// did not happen. For the next DeleteIntentRetention every push for this
+		// artist declines to repair a genuine peer clobber on ANY canonical
+		// type, and in auto mode the next evaluation walks the same unremovable
+		// files and re-marks -- so the #2698 protection stays off for as long as
+		// the directory stays unwritable.
+		//
+		// ERROR, not Warn: the per-file Warn above says one file could not be
+		// deleted, which is an ordinary and recoverable thing to report. This
+		// says a SAFETY MECHANISM is now suppressed for this artist and will
+		// stay suppressed, which the operator cannot infer from "Fixed: false"
+		// and would otherwise never see.
+		//
+		// attempted > 0 stands in for "marked": removeExtraneousFiles marks
+		// lazily, immediately before its first attempted unlink, so the two are
+		// equivalent and attempted is the value available here.
+		if attempted > 0 {
+			f.logger.Error("extraneous-image fixer marked delete intent but removed nothing",
+				slog.String("artist_id", a.ID),
+				slog.String("path", a.Path),
+				slog.Int("attempted", attempted),
+				slog.Duration("suppressed_for", img.DeleteIntentRetention),
+				slog.String("consequence", "image repair is suppressed for every canonical type on this artist until removals succeed"))
+			return &FixResult{
+				RuleID: RuleExtraneousImages,
+				Fixed:  false,
+				Message: fmt.Sprintf("found %d extraneous file(s) but could not delete any of them; "+
+					"image repair for this artist is suppressed for %s", attempted, img.DeleteIntentRetention),
+			}, nil
+		}
 		return &FixResult{
 			RuleID:  RuleExtraneousImages,
 			Fixed:   false,
@@ -2334,14 +2486,153 @@ func (f *ImageDuplicateFixer) protectedFanartSlots(ctx context.Context, artistID
 // that commit point, every staged tomb is restored to its original path
 // (best-effort) so no distinct artwork is lost on a partial failure. A
 // post-commit tomb-unlink failure is logged, not rolled back -- the survivors
-// are already renumbered, and a leftover tomb is ignored by discovery.
+// are already renumbered, and a leftover tomb is ignored by discovery
+// (DiscoverFanart's extension allowlist excludes its suffix), so it never
+// leaks into a count, a push, or an operator-facing listing. It also does not
+// linger: the directory-wide stray-tomb sweep below, run before every
+// subsequent invocation of this function, clears it independently of whether
+// its pre-suffix name is still live.
+//
+// dupTombSuffix is package-level (not function-local) because the stray-tomb
+// sweep below needs it before deleteDuplicateFanartWithRollback's own stage
+// loop would otherwise define it.
+const dupTombSuffix = ".dup_pending_delete.tmp"
+
+// sweepOrphanedDupTombs removes every ".dup_pending_delete.tmp" file directly
+// in the artist directory, independent of whether its pre-suffix name is
+// still discoverable.
+//
+// STRAY-TOMB SWEEP (#3015 fix-round-2), keyed on the SUFFIX directly rather
+// than on any current filename.
+//
+// The stage loop's own "clear any leftover tomb" step (below, inside
+// deleteDuplicateFanartWithRollback) only ever reconstructs a tombPath by
+// appending dupTombSuffix to a path THIS run's DiscoverFanart just returned --
+// so it only clears a tomb whose pre-suffix name is still live on disk. A
+// tomb stranded by a fixerRemove failure AFTER RenumberFanart has already
+// compacted the survivors is not: its pre-suffix name no longer exists (the
+// survivors were renumbered down past it), so no future run's DiscoverFanart
+// ever yields that path again, and the per-index clear can never reconstruct
+// its tombPath to remove it. That tomb is invisible to fanart
+// discovery/counting/push (DiscoverFanart's extension allowlist excludes
+// ".tmp" outright), so it is harmless to correctness, but nothing in the
+// per-index clear's "same directory, same suffix, next run" reasoning
+// actually reaches it -- it is not self-healing, it orphans permanently.
+//
+// A directory-wide glob on the suffix, independent of what DiscoverFanart
+// currently enumerates, is what actually reaches it. Best-effort: a failed
+// removal is logged and does not block the fix, matching the post-commit
+// tomb-unlink's own best-effort handling.
+func (f *ImageDuplicateFixer) sweepOrphanedDupTombs(a *artist.Artist) {
+	strays, globErr := filepath.Glob(filepath.Join(a.Path, "*"+dupTombSuffix))
+	if globErr != nil {
+		f.logger.Warn("globbing for orphaned duplicate-fanart tombs",
+			"artist", a.Name, "dir", a.Path, "error", globErr)
+		return
+	}
+	for _, stray := range strays {
+		if rmErr := os.Remove(stray); rmErr != nil && !os.IsNotExist(rmErr) {
+			f.logger.Warn("sweeping orphaned duplicate-fanart tomb",
+				"artist", a.Name, "path", stray, "error", rmErr)
+		}
+	}
+}
+
+// dupFanartDirMu holds one mutex per artist DIRECTORY, serializing the entire
+// duplicate-fanart mutation -- orphan sweep, stale-tomb clear, staging,
+// RenumberFanart, restoreStaged, and the post-commit tomb unlink -- for that
+// directory.
+//
+// WHY THE WHOLE MUTATION AND NOT JUST THE SWEEP. The sweep
+// (sweepOrphanedDupTombs) is a directory-wide glob on dupTombSuffix, so it
+// cannot tell an ORPHANED tomb from one an in-flight invocation staged
+// moments ago and still needs. Two invocations against the same artist give:
+//
+//  1. A stages fanart2.jpg -> fanart2.jpg.dup_pending_delete.tmp.
+//  2. B enters and sweeps; its glob matches A's LIVE tomb and removes it.
+//  3. A's RenumberFanart fails and A calls restoreStaged.
+//  4. A cannot restore: the original bytes were inside the tomb B deleted.
+//
+// A pre-commit failure is RECOVERABLE by design -- that is the entire reason
+// the stage/commit split and restoreStaged exist -- and this turns it into
+// permanent loss of distinct artwork. Locking only the sweep does not close
+// it: B would merely wait for A's sweep, then delete A's tomb during A's
+// staging instead. The critical section has to span from before the sweep to
+// after the last tomb unlink, which is exactly the body of
+// deleteDuplicateFanartWithRollback.
+//
+// WHY THE LOCK LIVES IN THAT FUNCTION rather than in Pipeline. The hazard is
+// on-disk state in one directory, and every path that reaches it -- the
+// background rule run (Pipeline.RunForArtist, called from the inbound-webhook
+// handlers and the post-refresh rule run), the request-triggered fix
+// (Pipeline.FixViolation from the fix handler), the library-wide fanart
+// collapse (Pipeline.RemediateFanartDuplicates -> remediateOneArtistFanart),
+// and any direct fixer use -- funnels through ImageDuplicateFixer.Fix and then
+// through this one function. Guarding the function itself covers all of them by
+// construction, and keeps covering a caller added later; guarding at the
+// Pipeline layer would depend on every future entry point remembering to take
+// it.
+//
+// The phash back-out path is the one caller that holds a per-artist lock of its
+// own (Pipeline.phashArtistMu), and it never reaches this function -- it
+// mirrors this staging shape against its own phashTombSuffix -- so the two
+// locks never nest and there is no ordering to establish.
+//
+// WHY THE DIRECTORY AND NOT THE ARTIST ID. The contended resource is the
+// filesystem, so two artist rows that happen to share a Path (a badly scanned
+// library, a symlinked duplicate) must serialize too -- keying on the id
+// would let them race over the same tombs. Keying on the directory rather
+// than globally is what keeps unrelated artists parallel, which matters
+// because auto mode sweeps the whole library.
+//
+// RE-ENTRANCY. sync.Mutex is not reentrant, so a self-deadlock would need
+// this function to be reachable from inside itself on one goroutine. It is
+// not: it is a leaf mutation called exactly once per
+// ImageDuplicateFixer.Fix, and nothing it calls (DiscoverFanart,
+// RenumberFanart, MarkDeleteIntent, os.Rename/os.Remove) re-enters the rule
+// fixers. It is also disjoint from Pipeline.phashArtistMu and
+// Pipeline.reconcileArtistMu: neither is held across a call into this
+// function (reconcileAfterFix runs after Fix returns, at which point this
+// lock is already released), so there is no multi-lock acquisition here and
+// no lock-ordering hazard to sort out.
+//
+// -RACE CANNOT SEE THIS HAZARD, which is why the serialization is
+// load-bearing rather than defensive: A's tomb and B's glob meet on the
+// filesystem (os.Remove against a path A holds bytes in), not in shared Go
+// memory. Same reasoning as Pipeline.phashArtistMu and image.repairOpMu.
+//
+// Entries are never evicted -- one mutex per artist directory ever
+// duplicate-fixed, a few bytes each -- the same unbounded sync.Map shape
+// image.repairOpMu and Pipeline.phashArtistMu use, bounded in practice by the
+// library size. An eviction scheme would need its own lock to close the
+// evict-while-acquiring race, which costs more than it saves.
+var dupFanartDirMu sync.Map // map[string]*sync.Mutex
+
+// dupFanartDirMutex returns the one mutex serializing the duplicate-fanart
+// mutation for dir. LoadOrStore guarantees every caller for a given directory
+// gets the SAME mutex even when several arrive at once.
+func dupFanartDirMutex(dir string) *sync.Mutex {
+	mu, _ := dupFanartDirMu.LoadOrStore(filepath.Clean(dir), &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
 func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Context, a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
+	// Serialize the WHOLE mutation for this directory: the sweep below cannot
+	// distinguish a concurrent invocation's live staged tomb from an orphan, and
+	// deleting one turns that invocation's recoverable pre-commit failure into
+	// permanent loss. See dupFanartDirMu for the interleaving and why the
+	// critical section has to span the sweep through the final tomb unlink.
+	mu := dupFanartDirMutex(a.Path)
+	mu.Lock()
+	defer mu.Unlock()
+
+	f.sweepOrphanedDupTombs(a)
+
 	paths, discErr := img.DiscoverFanart(ctx, a.Path, primaryName)
 	if discErr != nil {
 		return nil, fmt.Errorf("discovering fanart for %s: %w", a.Name, discErr)
 	}
 
-	const dupTombSuffix = ".dup_pending_delete.tmp"
 	type stagedDup struct {
 		origPath string // original file path (restore target)
 		tombPath string // staged tomb path
@@ -2416,9 +2707,53 @@ func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Cont
 			fmt.Errorf("renumbering fanart after removing %d duplicate(s) (%s) for %s: %w", len(removedNames), strings.Join(removedNames, ", "), a.Name, renumberErr))
 	}
 
+	// #2712/#3015: record the operator's delete intent HERE, at the commit
+	// point, and nowhere earlier.
+	//
+	// WHY NOT BEFORE THE STAGE LOOP, which is where every other caller of this
+	// marker puts it. Every early return above this line runs restoreStaged(),
+	// which puts the tombed files back on disk. A marker written before staging
+	// would still be live for the next five minutes (DeleteIntentRetention)
+	// after such a rollback, saying "the operator wanted this gone" about a file
+	// this function deliberately restored -- so a concurrent push that then
+	// found that file missing for a genuine peer reason would decline to repair
+	// it. A marker that outlives a rollback is worse than no marker at all.
+	//
+	// RenumberFanart returning nil is the point of no return: nothing below can
+	// restore a tomb, so from here on the operator's files ARE gone and the
+	// marker tells the truth for its whole lifetime.
+	//
+	// The cost of the late mark is the stage-to-commit window: a push that hits
+	// ENOENT on a tombed file in that window still repairs it. That is bounded
+	// (a rename loop plus two DB invalidations), self-healing (a restored file
+	// is a duplicate again, and ImageDuplicateFixer re-runs on the next
+	// evaluation), and it errs toward keeping bytes rather than losing them.
+	//
+	// SELF-SUPPRESSION IS NOT A CONCERN ON THIS PATH, and it is checked rather
+	// than assumed. This fixer's FixResult leaves ImageType empty (it reports
+	// SlotsRemoved/RemovedFiles instead), so the pipeline's publishAfterFix and
+	// publishAccumulated both route its push to PublishMetadata, which never
+	// calls reassertLocalImage and so never consults this marker at all.
+	// TestDeleteIntentFixers_OwnPushRoutesToMetadata pins that routing,
+	// and the timing test pins the ordering property it would rely on anyway.
+	//
+	// RenumberFanart succeeding here does NOT by itself mean a file was
+	// deleted: the stage loop above only tombs indices present in BOTH
+	// toDelete and this call's own DiscoverFanart result, and those two
+	// enumerations can disagree with the caller's (Fix's) more recent one --
+	// an operator delete, a peer, or a prior fixer in the same run can shrink
+	// the directory between them. When they disagree, staged is empty and
+	// RenumberFanart still succeeds trivially (nothing to remove). Guard on
+	// staged, the same slice the tomb-unlink loop below iterates, so the
+	// marker is only written when something is actually about to be
+	// permanently unlinked.
+	if len(staged) > 0 {
+		img.MarkDeleteIntent(a.Path, "fanart")
+	}
+
 	// Committed: permanently unlink the tombs.
 	for _, s := range staged {
-		if rmErr := os.Remove(s.tombPath); rmErr != nil {
+		if rmErr := fixerRemove(s.tombPath); rmErr != nil {
 			f.logger.Warn("removing staged duplicate-fanart tomb after renumber",
 				"artist", a.Name, "tomb", filepath.Base(s.tombPath), "error", rmErr)
 		}
