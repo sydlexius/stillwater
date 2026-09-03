@@ -68,7 +68,9 @@ reserved. Attribution is captured below for CC-BY(-SA) images.
 EOF
 
 resolve_lead_image() { # <wiki-title> -> "commons_file<TAB>original_url"
-  curl -sSL -A "$UA" "https://en.wikipedia.org/api/rest_v1/page/summary/$1" | python3 -c '
+  local resp
+  resp="$(curl -sSL -A "$UA" "https://en.wikipedia.org/api/rest_v1/page/summary/$1")"
+  python3 -c '
 import sys, json, urllib.parse, os, re
 d = json.load(sys.stdin)
 src = d.get("originalimage", {}).get("source", "")
@@ -77,21 +79,23 @@ name = re.sub(r"^\d+px-", "", name)                 # strip a rendered-thumb pre
 if "/thumb/" in src:                                # and resolve thumb -> original
     src = re.sub(r"/thumb/(.+)/[^/]+$", r"/\1", src)
 print(f"{name}\t{src}")
-'
+' <<<"$resp"
 }
 
 license_of() { # <commons-file> -> "LicenseShortName<TAB>Artist"
-  curl -sSL -A "$UA" -G "https://commons.wikimedia.org/w/api.php" \
+  local resp
+  resp="$(curl -sSL -A "$UA" -G "https://commons.wikimedia.org/w/api.php" \
     --data-urlencode "action=query" --data-urlencode "format=json" \
     --data-urlencode "prop=imageinfo" --data-urlencode "iiprop=extmetadata" \
-    --data-urlencode "titles=File:$1" | python3 -c '
+    --data-urlencode "titles=File:$1")"
+  python3 -c '
 import sys, json, re
 d = json.load(sys.stdin)
 page = next(iter(d.get("query", {}).get("pages", {}).values()), {})
 ext = (page.get("imageinfo", [{}])[0] or {}).get("extmetadata", {}) if page.get("imageinfo") else {}
 clean = lambda s: re.sub(r"<[^>]+>", "", (ext.get(s, {}) or {}).get("value", "") or "").strip()
 print("\t".join([clean("LicenseShortName"), clean("Artist")[:80]]))
-'
+' <<<"$resp"
 }
 
 accepted=0; rejected=0
