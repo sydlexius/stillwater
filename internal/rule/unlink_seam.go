@@ -2,10 +2,13 @@ package rule
 
 import "os"
 
-// unlinkHook, when non-nil, wraps every PERMANENT unlink the two delete-intent
-// fixers perform: it is handed the path and a closure that does the real
-// removal, and its return value becomes the removal's result. nil in
-// production, so the production path is exactly os.Remove.
+// unlinkHook, when non-nil, wraps the two unlinks the delete-intent marker
+// vouches for -- the extraneous fixer's file removal and the duplicate
+// fixer's post-commit tomb unlink (see fixerRemove below for the exact
+// boundary, including what is deliberately excluded): it is handed the path
+// and a closure that does the real removal, and its return value becomes the
+// removal's result. nil in production, so the production path is exactly
+// os.Remove.
 //
 // TEST-ONLY, AND IT EXISTS FOR A STRUCTURAL REASON RATHER THAN CONVENIENCE.
 // This is the same shape and the same justification as quarantineRaceHook and
