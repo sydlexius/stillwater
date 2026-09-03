@@ -2565,11 +2565,18 @@ func (f *ImageDuplicateFixer) sweepOrphanedDupTombs(a *artist.Artist) {
 // on-disk state in one directory, and every path that reaches it -- the
 // background rule run (Pipeline.RunForArtist, called from the inbound-webhook
 // handlers and the post-refresh rule run), the request-triggered fix
-// (Pipeline.FixViolation from the fix handler), and any direct fixer use --
-// funnels through ImageDuplicateFixer.Fix and then through this one function.
-// Guarding the function itself covers all of them by construction, and keeps
-// covering a caller added later; guarding at the Pipeline layer would depend
-// on every future entry point remembering to take it.
+// (Pipeline.FixViolation from the fix handler), the library-wide fanart
+// collapse (Pipeline.RemediateFanartDuplicates -> remediateOneArtistFanart),
+// and any direct fixer use -- funnels through ImageDuplicateFixer.Fix and then
+// through this one function. Guarding the function itself covers all of them by
+// construction, and keeps covering a caller added later; guarding at the
+// Pipeline layer would depend on every future entry point remembering to take
+// it.
+//
+// The phash back-out path is the one caller that holds a per-artist lock of its
+// own (Pipeline.phashArtistMu), and it never reaches this function -- it
+// mirrors this staging shape against its own phashTombSuffix -- so the two
+// locks never nest and there is no ordering to establish.
 //
 // WHY THE DIRECTORY AND NOT THE ARTIST ID. The contended resource is the
 // filesystem, so two artist rows that happen to share a Path (a badly scanned

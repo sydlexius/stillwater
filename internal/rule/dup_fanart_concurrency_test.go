@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -19,10 +20,13 @@ import (
 // not yet reached its commit point, so a rollback still has to be able to put
 // them back.
 //
-// entered is closed once (via sync.Once semantics expressed as a nil check on
-// a buffered send) so the test can wait for A to actually reach the hold rather
-// than assuming it got there.
+// The hold is guarded by a sync.Once. img.RenumberFanart calls
+// InvalidateImageHashes exactly once today, but a second call would panic on
+// the double close and present itself as a mysterious test crash rather than as
+// the contract change it is; the Once makes the hold "the FIRST time A reaches
+// renumber", which is the property the test actually needs.
 type blockingHashRecorder struct {
+	once    sync.Once
 	entered chan struct{} // closed by the recorder when A is held, post-staging
 	release chan struct{} // closed by the test to let A proceed into failure
 	err     error
@@ -33,8 +37,10 @@ func (b *blockingHashRecorder) UpdateImageHashes(_ context.Context, _, _ string,
 }
 
 func (b *blockingHashRecorder) InvalidateImageHashes(_ context.Context, _, _ string) error {
-	close(b.entered)
-	<-b.release
+	b.once.Do(func() {
+		close(b.entered)
+		<-b.release
+	})
 	return b.err
 }
 
