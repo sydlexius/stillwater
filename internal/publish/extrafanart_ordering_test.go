@@ -511,10 +511,14 @@ func TestExtrafanartCheckBudget_IsPinned(t *testing.T) {
 // relationship the constant exists to express -- "far below the real cap" -- is
 // asserted nowhere.
 func TestMaxAdvisoryStalledReads_IsBelowTheProcessCap(t *testing.T) {
-	// internal/image's maxStalledReads is 16 and is not exported; the value is
-	// restated here rather than imported, and this test is the place that
-	// notices if the two drift apart, since the whole point of the advisory
-	// ceiling is to sit well under it.
+	// internal/image's maxStalledReads is 16 and is not exported, so its
+	// value is RESTATED here rather than imported. A restatement cannot
+	// notice drift on its own: if internal/image's constant moved, this copy
+	// would still compare against its own stale literal and stay green while
+	// the real margin the constant exists to express had vanished. The drift
+	// is instead caught in internal/image itself, by
+	// TestMaxStalledReads_IsPinned (max_stalled_reads_pin_test.go) -- keep
+	// this literal in lockstep with that one.
 	const imageMaxStalledReads = 16
 	if maxAdvisoryStalledReads >= imageMaxStalledReads/2 {
 		t.Fatalf("maxAdvisoryStalledReads = %d, want well below internal/image's process-wide cap of %d "+

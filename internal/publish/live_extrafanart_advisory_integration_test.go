@@ -238,24 +238,35 @@ func TestLiveEmby_ExtrafanartAdvisory_RealPushThreeRuns(t *testing.T) {
 			t.Fatalf("run %d: the advisory enumeration was entered %d time(s), want exactly 1", run, calls)
 		}
 
-		// (2) THE ORDERING, under real latency. The advisory is entered only
-		// after the deferred repairAfterPush has run its two passes with the
-		// settle window between them, so the enumeration cannot start earlier
-		// than reassertSettleDelay before the call returns. Asserted against
-		// the RETURN instant rather than the last upload's, because this test
-		// drives the real client and has no seam on its uploads -- and the
-		// return instant is the tighter bound anyway: everything after the
-		// advisory is a function return.
-		if remaining := pushEnd.Sub(enumAt); remaining > liveExtrafanartTimeout {
-			t.Fatalf("run %d: implausible timing, enumeration at %v with the push returning at %v",
-				run, enumAt, pushEnd)
+		// (2) THE ORDERING, under real latency. The advisory enumeration's
+		// defer is registered BEFORE repairAfterPush's defer, so LIFO runs it
+		// LAST -- only after repairAfterPush has run its two passes with the
+		// settle window between them -- see the "DEFERS RUN LIFO" comment at
+		// the enumeration's registration site. What that
+		// buys the enumeration is a bound on how close it lands to the
+		// function's RETURN, not to the push's START: real upload round-trip
+		// latency inflates the time since start by an amount unrelated to
+		// whether the repair ran, so a bound anchored there would still be
+		// satisfied by a defer-swap mutation whenever an upload alone took
+		// longer than reassertSettleDelay -- exactly the condition a real
+		// peer over a network produces. Anchored to the return instead, the
+		// enumeration must land within reassertSettleDelay of pushEnd
+		// regardless of how long the uploads took, which is what actually
+		// catches the mutation. elapsed (logged, not asserted) is the whole
+		// run's wall time, for diagnosing an implausible read.
+		elapsed := pushEnd.Sub(pushStart)
+		remaining := pushEnd.Sub(enumAt)
+		if remaining < 0 {
+			t.Fatalf("run %d: implausible timing -- the advisory enumeration was entered at %v, "+
+				"AFTER the push had already returned at %v (push took %v)", run, enumAt, pushEnd, elapsed)
 		}
-		if sinceStart := enumAt.Sub(pushStart); sinceStart < reassertSettleDelay {
-			t.Errorf("run %d: the advisory enumeration was entered %v into the push, which is less than "+
-				"repairAfterPush's own %v settle window -- so it cannot have run after the deferred "+
-				"repair. Against a real peer, with real round-trip latency, that ordering is what keeps "+
-				"repair pass 1's ungated overwrite branch from reverting an operator's crop (#3177 "+
-				"round 2 CRITICAL).", run, sinceStart, reassertSettleDelay)
+		if remaining >= reassertSettleDelay {
+			t.Errorf("run %d: the advisory enumeration was entered %v before the push returned "+
+				"(push took %v total), at or beyond repairAfterPush's own %v settle window -- so it "+
+				"may have run BEFORE the deferred repair completed rather than after it. Against a "+
+				"real peer, with real round-trip upload latency, that ordering is what keeps repair "+
+				"pass 1's ungated overwrite branch from reverting an operator's crop (#3177 round 2 "+
+				"CRITICAL).", run, remaining, elapsed, reassertSettleDelay)
 		}
 
 		// (3) STILLWATER DID NOT TOUCH extrafanart/. See the header: this
