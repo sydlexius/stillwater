@@ -2538,7 +2538,87 @@ func (f *ImageDuplicateFixer) sweepOrphanedDupTombs(a *artist.Artist) {
 	}
 }
 
+// dupFanartDirMu holds one mutex per artist DIRECTORY, serializing the entire
+// duplicate-fanart mutation -- orphan sweep, stale-tomb clear, staging,
+// RenumberFanart, restoreStaged, and the post-commit tomb unlink -- for that
+// directory.
+//
+// WHY THE WHOLE MUTATION AND NOT JUST THE SWEEP. The sweep
+// (sweepOrphanedDupTombs) is a directory-wide glob on dupTombSuffix, so it
+// cannot tell an ORPHANED tomb from one an in-flight invocation staged
+// moments ago and still needs. Two invocations against the same artist give:
+//
+//  1. A stages fanart2.jpg -> fanart2.jpg.dup_pending_delete.tmp.
+//  2. B enters and sweeps; its glob matches A's LIVE tomb and removes it.
+//  3. A's RenumberFanart fails and A calls restoreStaged.
+//  4. A cannot restore: the original bytes were inside the tomb B deleted.
+//
+// A pre-commit failure is RECOVERABLE by design -- that is the entire reason
+// the stage/commit split and restoreStaged exist -- and this turns it into
+// permanent loss of distinct artwork. Locking only the sweep does not close
+// it: B would merely wait for A's sweep, then delete A's tomb during A's
+// staging instead. The critical section has to span from before the sweep to
+// after the last tomb unlink, which is exactly the body of
+// deleteDuplicateFanartWithRollback.
+//
+// WHY THE LOCK LIVES IN THAT FUNCTION rather than in Pipeline. The hazard is
+// on-disk state in one directory, and every path that reaches it -- the
+// background rule run (Pipeline.RunForArtist, called from the inbound-webhook
+// handlers and the post-refresh rule run), the request-triggered fix
+// (Pipeline.FixViolation from the fix handler), and any direct fixer use --
+// funnels through ImageDuplicateFixer.Fix and then through this one function.
+// Guarding the function itself covers all of them by construction, and keeps
+// covering a caller added later; guarding at the Pipeline layer would depend
+// on every future entry point remembering to take it.
+//
+// WHY THE DIRECTORY AND NOT THE ARTIST ID. The contended resource is the
+// filesystem, so two artist rows that happen to share a Path (a badly scanned
+// library, a symlinked duplicate) must serialize too -- keying on the id
+// would let them race over the same tombs. Keying on the directory rather
+// than globally is what keeps unrelated artists parallel, which matters
+// because auto mode sweeps the whole library.
+//
+// RE-ENTRANCY. sync.Mutex is not reentrant, so a self-deadlock would need
+// this function to be reachable from inside itself on one goroutine. It is
+// not: it is a leaf mutation called exactly once per
+// ImageDuplicateFixer.Fix, and nothing it calls (DiscoverFanart,
+// RenumberFanart, MarkDeleteIntent, os.Rename/os.Remove) re-enters the rule
+// fixers. It is also disjoint from Pipeline.phashArtistMu and
+// Pipeline.reconcileArtistMu: neither is held across a call into this
+// function (reconcileAfterFix runs after Fix returns, at which point this
+// lock is already released), so there is no multi-lock acquisition here and
+// no lock-ordering hazard to sort out.
+//
+// -RACE CANNOT SEE THIS HAZARD, which is why the serialization is
+// load-bearing rather than defensive: A's tomb and B's glob meet on the
+// filesystem (os.Remove against a path A holds bytes in), not in shared Go
+// memory. Same reasoning as Pipeline.phashArtistMu and image.repairOpMu.
+//
+// Entries are never evicted -- one mutex per artist directory ever
+// duplicate-fixed, a few bytes each -- the same unbounded sync.Map shape
+// image.repairOpMu and Pipeline.phashArtistMu use, bounded in practice by the
+// library size. An eviction scheme would need its own lock to close the
+// evict-while-acquiring race, which costs more than it saves.
+var dupFanartDirMu sync.Map // map[string]*sync.Mutex
+
+// dupFanartDirMutex returns the one mutex serializing the duplicate-fanart
+// mutation for dir. LoadOrStore guarantees every caller for a given directory
+// gets the SAME mutex even when several arrive at once.
+func dupFanartDirMutex(dir string) *sync.Mutex {
+	mu, _ := dupFanartDirMu.LoadOrStore(filepath.Clean(dir), &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
 func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Context, a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
+	// Serialize the WHOLE mutation for this directory: the sweep below cannot
+	// distinguish a concurrent invocation's live staged tomb from an orphan, and
+	// deleting one turns that invocation's recoverable pre-commit failure into
+	// permanent loss. See dupFanartDirMu for the interleaving and why the
+	// critical section has to span the sweep through the final tomb unlink.
+	mu := dupFanartDirMutex(a.Path)
+	mu.Lock()
+	defer mu.Unlock()
+
 	f.sweepOrphanedDupTombs(a)
 
 	paths, discErr := img.DiscoverFanart(ctx, a.Path, primaryName)
