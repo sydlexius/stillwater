@@ -12,7 +12,7 @@
     "jsdom": "^30.0.1",
     "playwright": "1.62.1",
     "stylelint": "^17.14.1",
-    "stylelint-declaration-strict-value": "^1.11.1",
+    "stylelint-declaration-strict-value": "^1.12.1",
     "stylelint-value-no-unknown-custom-properties": "^6.1.1"
   }
 }
