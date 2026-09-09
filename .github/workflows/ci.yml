@@ -595,6 +595,77 @@ jobs:
           # Let apt absorb a flaky mirror itself: retried in-process, so no
           # child is ever killed and no dpkg lock is ever orphaned.
           echo 'APT::Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/99-ci-retries >/dev/null
+
+          # Disable the runner image's Google Chrome apt source (#3219). We do
+          # not consume it: `install-deps` pulls only Ubuntu archive packages
+          # (xvfb, libfontconfig1, libasound2t64, fonts...), and that repo
+          # publishes nothing but google-chrome-*. But `apt-get update`
+          # refreshes EVERY configured source and treats a bad index as fatal
+          # for the whole transaction, so a broken Google index fails this step
+          # on BOTH shards -- the firefox shard included, which is the tell
+          # that the coupling is incidental rather than needed.
+          #
+          # `chrome-stable` is a ROLLING channel republished on every Chrome
+          # release, so its mid-publish / stale-CDN windows recur. Retries
+          # cannot help: the fault is deterministic (every attempt refetches
+          # the same bytes and gets the same Hash Sum mismatch), unlike a 504.
+          #
+          # MATCHED BY URL, NEVER BY FILENAME. The image build script deletes
+          # google-chrome.list, yet the source is live at runtime -- it is
+          # re-added by Chrome's own postinst, and may use either the legacy
+          # .list or the deb822 .sources format. Grepping for the host is the
+          # only form that survives both.
+          #
+          # DISABLE THE ENTRY, NEVER THE FILE. A .list can hold several `deb`
+          # lines and a .sources several stanzas, so renaming the whole file
+          # would take any unrelated repository sharing it down too -- silently
+          # changing the installed package set, which is the exact outcome this
+          # change exists to avoid. Comment out only the matching deb line;
+          # mark only the matching stanza `Enabled: no`.
+          #
+          # LOUD ON SURPRISE, never a silent no-op: if no source matches, say
+          # so and continue (the repo may be gone, which is the desired end
+          # state anyway) -- but never claim to have disabled something.
+          disabled=0
+          for f in /etc/apt/sources.list.d/*.list; do
+            [ -e "$f" ] || continue
+            if grep -qs 'dl\.google\.com/linux/chrome' "$f"; then
+              echo "disabling Chrome deb entries in: $f"
+              # `sed -i` with no suffix is GNU-only; BSD/macOS sed reads the
+              # next word as the backup suffix. Write to a temp file and copy
+              # back instead, so the same text is runnable (and testable) on
+              # either sed.
+              tmp=$(mktemp)
+              sed -E 's|^([[:space:]]*deb[[:space:]].*dl\.google\.com/linux/chrome.*)$|# disabled-for-ci: \1|' "$f" > "$tmp"
+              sudo cp "$tmp" "$f"
+              rm -f "$tmp"
+              disabled=$((disabled + 1))
+            fi
+          done
+          for f in /etc/apt/sources.list.d/*.sources; do
+            [ -e "$f" ] || continue
+            if grep -qs 'dl\.google\.com/linux/chrome' "$f"; then
+              echo "disabling Chrome stanza in: $f"
+              tmp=$(mktemp)
+              # Stanzas are blank-line separated: RS="" makes each record one
+              # stanza. Drop any existing Enabled: key before appending
+              # `Enabled: no`, so a stanza that already declares `Enabled: yes`
+              # cannot end up carrying both.
+              awk 'BEGIN { RS=""; ORS="\n\n" }
+                   { if ($0 ~ /dl\.google\.com\/linux\/chrome/) {
+                       gsub(/[Ee]nabled:[[:space:]]*[^\n]*\n?/, "")
+                       sub(/\n+$/, "")
+                       print $0 "\nEnabled: no"
+                     } else print $0 }' "$f" > "$tmp"
+              sudo cp "$tmp" "$f"
+              rm -f "$tmp"
+              disabled=$((disabled + 1))
+            fi
+          done
+          if [ "$disabled" -eq 0 ]; then
+            echo "note: no Google Chrome apt source found to disable (already absent)"
+          fi
+
           npx playwright install-deps ${{ matrix.engine }}
 
       - name: Generate templ
