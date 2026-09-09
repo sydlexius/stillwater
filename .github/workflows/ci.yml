@@ -671,7 +671,7 @@ jobs:
       - name: Generate templ
         run: go tool templ generate
 
-      - uses: ./.github/actions/setup-tailwind
+      - uses: $/.github/actions/setup-tailwind
 
       - name: Build Tailwind CSS
         run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
