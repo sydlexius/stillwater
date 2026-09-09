@@ -138,7 +138,7 @@ require "tailwind" "$tw_action" "$tw_docker" ".github/actions/setup-tailwind" "b
 #
 # To clear a trip: bump the tool pins if needed, confirm both run clean against
 # the new toolchain, then set this to the new go.mod value.
-TOOL_PINS_VALIDATED_FOR_GO="1.27.0"
+TOOL_PINS_VALIDATED_FOR_GO="1.27.1"
 if [ -n "$go_mod" ] && [ "$go_mod" != "$TOOL_PINS_VALIDATED_FOR_GO" ]; then
   echo "FAIL: go-parsing tool pins were validated for go $TOOL_PINS_VALIDATED_FOR_GO but go.mod now targets $go_mod" >&2
   echo "      golangci-lint (.github/workflows/ci.yml, .github/copilot-setup-steps.yml) and" >&2
