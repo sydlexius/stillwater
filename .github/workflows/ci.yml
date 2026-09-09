@@ -595,6 +595,44 @@ jobs:
           # Let apt absorb a flaky mirror itself: retried in-process, so no
           # child is ever killed and no dpkg lock is ever orphaned.
           echo 'APT::Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/99-ci-retries >/dev/null
+
+          # Disable the runner image's Google Chrome apt source (#3219). We do
+          # not consume it: `install-deps` pulls only Ubuntu archive packages
+          # (xvfb, libfontconfig1, libasound2t64, fonts...), and that repo
+          # publishes nothing but google-chrome-*. But `apt-get update`
+          # refreshes EVERY configured source and treats a bad index as fatal
+          # for the whole transaction, so a broken Google index fails this step
+          # on BOTH shards -- the firefox shard included, which is the tell
+          # that the coupling is incidental rather than needed.
+          #
+          # `chrome-stable` is a ROLLING channel republished on every Chrome
+          # release, so its mid-publish / stale-CDN windows recur. Retries
+          # cannot help: the fault is deterministic (every attempt refetches
+          # the same bytes and gets the same Hash Sum mismatch), unlike a 504.
+          #
+          # MATCHED BY URL, NEVER BY FILENAME. The image build script deletes
+          # google-chrome.list, yet the source is live at runtime -- it is
+          # re-added by Chrome's own postinst, and may use either the legacy
+          # .list or the deb822 .sources format. Grepping for the host is the
+          # only form that survives both. Renaming to .disabled is what apt
+          # honours; the extension is what makes it inert, not the content.
+          #
+          # LOUD ON SURPRISE, never a silent no-op: if no source matches, say
+          # so and continue (the repo may be gone, which is the desired end
+          # state anyway) -- but never claim to have disabled something.
+          disabled=0
+          for f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -e "$f" ] || continue
+            if grep -qs 'dl\.google\.com/linux/chrome' "$f"; then
+              echo "disabling unused Google Chrome apt source: $f"
+              sudo mv "$f" "$f.disabled"
+              disabled=$((disabled + 1))
+            fi
+          done
+          if [ "$disabled" -eq 0 ]; then
+            echo "note: no Google Chrome apt source found to disable (already absent)"
+          fi
+
           npx playwright install-deps ${{ matrix.engine }}
 
       - name: Generate templ
