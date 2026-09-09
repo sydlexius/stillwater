@@ -86,7 +86,7 @@ jobs:
       # bundles tailwindcss is required rather than an npm install. See
       # .github/actions/setup-tailwind for the version/SHA and the note on why
       # this differs from the Dockerfile's musl binary.
-      - uses: ./.github/actions/setup-tailwind
+      - uses: $/.github/actions/setup-tailwind
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
 
       - name: Build Tailwind CSS
