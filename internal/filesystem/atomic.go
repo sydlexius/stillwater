@@ -1,3 +1,8 @@
+// Package filesystem provides atomic file writes: content is written to a
+// temporary file and then moved onto the target with a single rename, so a
+// reader never observes a partially written file. A failed staging or
+// promotion leaves the existing target untouched. The target is never written
+// in place.
 package filesystem
 
 import (

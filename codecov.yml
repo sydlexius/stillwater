@@ -49,7 +49,7 @@ coverage:
         target: auto
         threshold: 2%
       api:
-        target: 58%
+        target: 84%
         paths:
           - internal/api
       api_middleware:
@@ -57,15 +57,15 @@ coverage:
         paths:
           - internal/api/middleware
       artist:
-        target: 83%
+        target: 87%
         paths:
           - internal/artist
       auth:
-        target: 65%
+        target: 72%
         paths:
           - internal/auth
       backup:
-        target: 62%
+        target: 70%
         paths:
           - internal/backup
       cli:
@@ -85,23 +85,23 @@ coverage:
         paths:
           - internal/connection
       connection_emby:
-        target: 79%
+        target: 86%
         paths:
           - internal/connection/emby
       connection_httpclient:
-        target: 68%
+        target: 84%
         paths:
           - internal/connection/httpclient
       connection_jellyfin:
-        target: 79%
+        target: 87%
         paths:
           - internal/connection/jellyfin
       connection_lidarr:
-        target: 73%
+        target: 77%
         paths:
           - internal/connection/lidarr
       connection_mediabrowser:
-        target: 88%
+        target: 91%
         paths:
           - internal/connection/mediabrowser
       database:
@@ -121,19 +121,19 @@ coverage:
         paths:
           - internal/event
       filesystem:
-        target: 59%
+        target: 74%
         paths:
           - internal/filesystem
       foreign:
-        target: 84%
+        target: 88%
         paths:
           - internal/foreign
       httpsafe:
-        target: 65%
+        target: 79%
         paths:
           - internal/httpsafe
       i18n:
-        target: 70%
+        target: 82%
         paths:
           - internal/i18n
       image:
@@ -157,7 +157,7 @@ coverage:
         paths:
           - internal/logging
       maintenance:
-        target: 77%
+        target: 87%
         paths:
           - internal/maintenance
       nfo:
@@ -173,15 +173,15 @@ coverage:
         paths:
           - internal/provider
       provider_audiodb:
-        target: 80%
+        target: 83%
         paths:
           - internal/provider/audiodb
       provider_deezer:
-        target: 75%
+        target: 85%
         paths:
           - internal/provider/deezer
       provider_discogs:
-        target: 76%
+        target: 81%
         paths:
           - internal/provider/discogs
       provider_duckduckgo:
@@ -189,7 +189,7 @@ coverage:
         paths:
           - internal/provider/duckduckgo
       provider_fanarttv:
-        target: 60%
+        target: 63%
         paths:
           - internal/provider/fanarttv
       provider_genius:
@@ -197,7 +197,7 @@ coverage:
         paths:
           - internal/provider/genius
       provider_lastfm:
-        target: 67%
+        target: 70%
         paths:
           - internal/provider/lastfm
       provider_musicbrainz:
@@ -229,7 +229,7 @@ coverage:
         paths:
           - internal/publish
       rule:
-        target: 75%
+        target: 84%
         paths:
           - internal/rule
       scanner:
@@ -237,7 +237,7 @@ coverage:
         paths:
           - internal/scanner
       scraper:
-        target: 79%
+        target: 86%
         paths:
           - internal/scraper
       server:
