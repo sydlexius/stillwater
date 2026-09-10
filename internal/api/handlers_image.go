@@ -25,6 +25,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/version"
@@ -678,6 +679,46 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 
 	data, err := r.fetchImageFromURL(req.Context(), imageURL)
 	if err != nil {
+		// #3223 review round 3, C1: an SVG result is EXPECTED and user-
+		// actionable -- Google's ic:trans (transparent) filter, applied by
+		// the logo/banner deep links this issue added, returns SVG results
+		// alongside raster ones as a matter of course, so this branch fires
+		// in normal operation, not just on a real fault. Logging it at Warn
+		// (the level below, kept for every OTHER fetch failure) would put an
+		// expected outcome in the log at the same severity as a genuine
+		// upstream problem. Checked BEFORE the Warn call (not after, as the
+		// first cut of this fix had it) so the Warn never fires for this
+		// case at all. Debug, matching this same handler's existing
+		// convention for a client-caused, already-actionable error
+		// (extractImageFetchParams's "invalid image fetch request body"
+		// case a few lines above) -- there is no Info-level precedent in
+		// this file for a rejected fetch attempt, and Debug is the better
+		// fit anyway: an operator does not need this in normal logs, only
+		// when actively debugging the fetch path.
+		//
+		// #3223 review round 2, F1: an SVG result is a distinct, actionable
+		// case, not a generic upstream failure -- Stillwater's decode
+		// pipeline has no SVG decoder. 422 Unprocessable Entity (not 415
+		// Unsupported Media Type): the request reached the server fine and
+		// the URL was fetched successfully -- the fetched CONTENT is what
+		// this server cannot process, which is exactly what 422 means (RFC
+		// 9110 15.5.21) and matches this codebase's existing convention for
+		// "well-formed request, semantically unusable payload" (e.g. the
+		// logo-trim-produced-no-usable-image case a few hundred lines below,
+		// and handlers_artist_duplicates.go). 415 is reserved here for a
+		// request whose Content-Type/media envelope itself is rejected
+		// before any processing is attempted (see parseProviderKeyInput),
+		// which is not this case: the upstream response's Content-Type is
+		// not trusted at all (fetchImageFromURL's validContentTypes check
+		// only logs a mismatch), so the decision is made from the sniffed
+		// body, not a header.
+		if errors.Is(err, img.ErrSVGUnsupported) {
+			r.logger.Debug("fetching image from URL: SVG unsupported", "url", imageURL, "error", err)
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+				"error": i18n.TFromCtx(req.Context()).T("image.msg_fetch_svg_unsupported"),
+			})
+			return
+		}
 		r.logger.Warn("fetching image from URL", "url", imageURL, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to fetch image"})
 		return
@@ -1371,7 +1412,29 @@ func (r *Router) fetchImageFromURL(ctx context.Context, rawURL string) ([]byte, 
 	}
 
 	if _, _, err := img.DetectFormat(bytes.NewReader(data)); err != nil {
-		return nil, fmt.Errorf("downloaded file is not a valid image")
+		// #3223 review round 5, K1: DetectFormat only sniffs a bounded
+		// svgSniffWindow (512 bytes) prefix of data, so a genuinely-SVG
+		// document whose root element is pushed past that window by an
+		// unusually long comment or DOCTYPE (see
+		// TestDetectFormat_SVG_LongCommentExceedsWindow) is reported as the
+		// GENERIC unrecognized-format error here, not ErrSVGUnsupported --
+		// even though data itself is the complete fetched body, already
+		// size-bounded to maxUploadSize (25MB, handlers_image.go:36, checked
+		// just above). Re-running the SAME tokenizer (img.LooksLikeSVG, the
+		// exported entry point to DetectFormat's own looksLikeSVG -- no
+		// second implementation) over the WHOLE body recovers exactly that
+		// case. DetectFormat's bounded sniff is deliberately left as-is:
+		// this full-body pass only runs on the rare path where it has
+		// already given up, not on every fetch.
+		if !errors.Is(err, img.ErrSVGUnsupported) && img.LooksLikeSVG(data) {
+			return nil, fmt.Errorf("downloaded file is not a valid image: %w", img.ErrSVGUnsupported)
+		}
+		// %w preserves img.ErrSVGUnsupported through this wrap so the caller
+		// (handleImageFetch) can distinguish "it's an SVG" from a generic
+		// unrecognized format via errors.Is and return a specific,
+		// actionable message instead of the generic 502 (#3223 review round
+		// 2, F1).
+		return nil, fmt.Errorf("downloaded file is not a valid image: %w", err)
 	}
 
 	return data, nil

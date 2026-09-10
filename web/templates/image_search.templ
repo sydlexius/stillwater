@@ -616,7 +616,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 						</button>
 						<div
 							id={ "ctx-panel-img-actions-" + data.Artist.ID }
-							class="hidden absolute right-0 top-full z-40 mt-1 min-w-[12rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
+							class="hidden absolute right-0 top-full z-40 mt-1 w-max min-w-[12rem] max-w-[calc(100vw-2rem)] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
 							role="menu"
 						>
 							if fanartIdx >= 0 {
@@ -644,6 +644,53 @@ templ imageSearchContextualized(data ImageSearchData) {
 									@components.IconArrowDownTray("h-4 w-4")
 									{ t(ctx, "image.fetch_from_url") }
 								</button>
+								// Google Images deep link (#3223). "backdrops" is an
+								// indexed multi-slot kind: Google cannot target one
+								// numbered slot, so every backdrop tile offers the SAME
+								// artist-name search (fanart's "wide" aspect filter) --
+								// the operator picks a result and pastes it back into
+								// THIS slot via the fetch-from-URL button above, which is
+								// already index-aware. GoogleImagesSearchURL returns ""
+								// for an empty artist name; the link is omitted rather
+								// than pointing at a useless empty search.
+								if googleURL := img.GoogleImagesSearchURL(data.Artist.Name, data.SelectedType); googleURL != "" {
+									// #3223 maintainer UAT: clicking this ALSO pre-opens the
+									// fetch-from-URL dialog, already targeted at this slot, so
+									// the operator returns from the new Google tab with the
+									// paste target waiting. target="_blank" still performs the
+									// normal browser navigation; onclick fires in THIS tab
+									// alongside it. Guarded + console.error per the repo's
+									// no-silent-failure rule (matches swOpenFetchUrlModal's
+									// call site below).
+									//
+									// #3223 review round 2, F5: close the Actions menu first.
+									// Before this fix, clicking Google Images left the menu open
+									// behind the new tab, unlike every other menu item -- and the
+									// Fetch from URL button just above (line ~642,
+									// swOpenFetchUrlForSlot) had the SAME defect at the time,
+									// despite an earlier version of this comment claiming this
+									// entry "matches" it. Both are now fixed: swOpenFetchUrlForSlot
+									// closes the menu itself (see #3223 review round 3, C3, where
+									// swCloseAnyOpenContextMenu was added to it and to
+									// swOpenCropForSlot below), so the comparison this comment
+									// makes is genuinely true now, not aspirational. No
+									// preventDefault here: this is a real <a target="_blank">
+									// navigation and must still fire; the menu-closing DOM writes
+									// run synchronously in the same click handler, before the
+									// browser processes the link's default navigation, so they
+									// never race it.
+									<a
+										href={ templ.SafeURL(googleURL) }
+										target="_blank"
+										rel="noopener noreferrer"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										onclick={ templ.ComponentScript{Call: fmt.Sprintf("var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false'); if (typeof window.swOpenFetchUrlForSlot === 'function') { window.swOpenFetchUrlForSlot(%d); } else { console.error('swOpenFetchUrlForSlot unavailable; opened Google Images without pre-targeting the fetch-from-URL dialog for backdrop slot %d'); }", fanartIdx, fanartIdx)} }
+									>
+										@components.IconArrowTopRightOnSquare("h-4 w-4")
+										{ t(ctx, "image.search_google_images") }
+									</a>
+								}
 								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 								<button
 									type="button"
@@ -717,6 +764,35 @@ templ imageSearchContextualized(data ImageSearchData) {
 									@components.IconArrowDownTray("h-4 w-4")
 									{ t(ctx, "image.fetch_from_url") }
 								</button>
+								// Google Images deep link (#3223): thumb/logo/banner, plus
+								// fanart viewed unscoped (fanartIdx < 0 -- the "current
+								// backdrop" hero with no specific slot clicked). See the
+								// indexed-slot branch above for why backdrops share one
+								// search regardless of which slot the operator pastes into.
+								//
+								// Maintainer UAT: clicking this ALSO pre-opens the
+								// fetch-from-URL dialog (unscoped -- no slot index here), so
+								// the operator returns from the new tab with the paste
+								// target already waiting. Guarded + console.error per the
+								// repo's no-silent-failure rule, matching the Fetch-from-URL
+								// button immediately above.
+								//
+								// #3223 review round 2, F5: close the Actions menu first,
+								// matching the Fetch from URL button above and the indexed-
+								// slot branch's own copy of this fix.
+								if googleURL := img.GoogleImagesSearchURL(data.Artist.Name, data.SelectedType); googleURL != "" {
+									<a
+										href={ templ.SafeURL(googleURL) }
+										target="_blank"
+										rel="noopener noreferrer"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false'); if (typeof window.swOpenFetchUrlModal === 'function') { window.swOpenFetchUrlModal(); } else { console.error('swOpenFetchUrlModal unavailable; opened Google Images without pre-targeting the fetch-from-URL dialog'); }"
+									>
+										@components.IconArrowTopRightOnSquare("h-4 w-4")
+										{ t(ctx, "image.search_google_images") }
+									</a>
+								}
 								if imageExistsForType(data.Artist, data.SelectedType) {
 									<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 									<button
@@ -1055,6 +1131,67 @@ templ imageSearchContextualized(data ImageSearchData) {
 				// call them (falling back to a direct DOM toggle + console.error
 				// if this IIFE never ran, e.g. no matching container).
 				var _fetchUrlSlot = null;
+				// #3223 review round 3, C3: swOpenFetchUrlForSlot and
+				// swOpenCropForSlot are both called directly from the indexed
+				// backdrop branch's Actions menu (image_search.templ, fanartIdx
+				// >= 0) AND from the ungated fanart gallery tiles
+				// (backdrop_management.templ's per-tile crop/fetch-replace
+				// buttons, which render outside any [data-context-menu] at all).
+				// Before this fix, neither function closed the menu itself -- the
+				// comments beside the Google Images entry claimed its own
+				// menu-close "matches the Fetch from URL button above", but that
+				// button (line ~642, calling swOpenFetchUrlForSlot) never closed
+				// anything, so the comment was false and the class of defect F5
+				// fixed on the Google entry was still live on its siblings.
+				// swCloseAnyOpenContextMenu is the shared fix: it closes whatever
+				// [data-context-menu] panel happens to be open (mirroring
+				// openCropForType's own inline loop a few hundred lines below,
+				// which the generic-branch Crop button already uses), and is a
+				// harmless no-op when called from the gallery tiles, where there
+				// is no open menu to find.
+				//
+				// #3223 review round 4, H3: the selector below used to be
+				// '[data-context-menu] [role=menu]:not(.hidden)' with no
+				// exclusion for .ctx-bottom-sheet -- the mobile bottom sheet
+				// components.ContextMenu renders (web/components/context_menu.templ
+				// ~77-83) ALSO has role="menu" inside a [data-context-menu]
+				// wrapper, and it is never hidden via the .hidden class (it opens
+				// via .ctx-sheet-open / closes via aria-hidden + inert instead --
+				// see closeAllContextMenus in context_menu.templ ~304). Without the
+				// exclusion, this function matched a live bottom sheet belonging to
+				// an ENTIRELY UNRELATED ContextMenu elsewhere on the page (e.g. an
+				// artist-detail field's actions sheet, artist_field.templ ~510,
+				// rendered alongside this editor inside the Manage-artwork modal --
+				// handlers_artist_detail.go ~110) and added .hidden to it, which
+				// that sheet's own open/close logic never checks or clears. The
+				// sheet was then permanently display:none (its CSS keys off
+				// .ctx-bottom-sheet.ctx-sheet-open, not merely absence of .hidden)
+				// until a full page reload.
+				//
+				// This function's OWN Actions menu (rendered above/below in this
+				// same file) is a hand-rolled dropdown, not components.ContextMenu
+				// -- it never renders as a bottom sheet at any viewport width, so
+				// this function has no bottom sheet of its OWN to manage either.
+				// The correct fix is therefore narrower than "close bottom sheets
+				// too": simply never touch .ctx-bottom-sheet elements at all, the
+				// same way the shared ToggleContextMenu/closeAllContextMenus code
+				// (context_menu.templ) excludes them from its OWN generic
+				// "everything else" selector before handling sheets through their
+				// own separate mechanism. That shared closeAllContextMenus helper
+				// is private to an anonymous IIFE in ContextMenuGlobalJS and not
+				// reachable from this separate script block (confirmed: it is
+				// declared via `function closeAllContextMenus(exceptId) {` inside
+				// `(function() { ... })()`, never assigned to window) -- but since
+				// this function has no sheet of its own to close, delegating was
+				// never actually necessary; excluding is sufficient.
+				function swCloseAnyOpenContextMenu() {
+					var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden):not(.ctx-bottom-sheet)');
+					for (var i = 0; i < menus.length; i++) {
+						menus[i].classList.add('hidden');
+						var trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');
+						if (trigger) trigger.setAttribute('aria-expanded', 'false');
+					}
+				}
 				window.swOpenFetchUrlModal = function() {
 					_fetchUrlSlot = null;
 					var input = document.getElementById('fetch-url-input');
@@ -1066,6 +1203,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					document.getElementById('fetch-url-modal').classList.add('hidden');
 				};
 				window.swOpenFetchUrlForSlot = function(slot) {
+					swCloseAnyOpenContextMenu();
 					_fetchUrlSlot = slot;
 					var input = document.getElementById('fetch-url-input');
 					if (input) input.value = '';
@@ -1075,6 +1213,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 				// backdrop slot's same-origin file (no staging needed: it is
 				// already our own saved file, not a remote provider URL).
 				window.swOpenCropForSlot = function(slot) {
+					swCloseAnyOpenContextMenu();
 					if (typeof openCropModal !== 'function') {
 						// Capability check fails loudly rather than silently
 						// no-opping the Crop button (mirrors guardedCloseCropModal's
@@ -1105,9 +1244,34 @@ templ imageSearchContextualized(data ImageSearchData) {
 						body: JSON.stringify(reqBody),
 						credentials: 'same-origin'
 					}).then(function(r) {
-						return r.json().then(function(data) {
-							if (!r.ok) { setStatus(container.dataset.msgFetchUnable, 'text-red-500'); return; }
-							if (data.needs_crop) { openAutoCrop(data); return; }
+						// #3223 review round 3, C2: r.json() used to be called
+						// unconditionally. A non-JSON or empty error body (a proxy's
+						// HTML 502 page, or a plain empty body some upstreams send)
+						// makes the Promise json() returns REJECT, which fell through
+						// to the outer .catch below and showed msgFetchFailed --
+						// contradicting the comment two lines down, which promised a
+						// msgFetchUnable fallback. Parse defensively instead: read the
+						// body as text (which does not reject on non-JSON content),
+						// then JSON.parse it inside try/catch, treating a parse
+						// failure as data = null. The outer .catch is kept for GENUINE
+						// network failures (fetch() itself rejecting -- DNS, offline,
+						// CORS), which is a materially different condition from "the
+						// server responded, but its body wasn't JSON".
+						return r.text().then(function(text) {
+							var data = null;
+							try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+							// #3223 review round 2, F1: prefer the server's specific
+							// message (e.g. the SVG-unsupported text) over the generic
+							// "Unable to fetch image" fallback, so an operator who
+							// pastes an SVG result sees why it was rejected instead of
+							// a message that reads like a network failure. data.error
+							// is only present on a non-2xx JSON body (see writeJSON
+							// call sites in handleImageFetch); an empty, non-JSON, or
+							// otherwise unparsable body now correctly falls back to the
+							// generic msgFetchUnable text instead of rejecting into the
+							// unrelated msgFetchFailed message below.
+							if (!r.ok) { setStatus(data && data.error ? data.error : container.dataset.msgFetchUnable, 'text-red-500'); return; }
+							if (data && data.needs_crop) { openAutoCrop(data); return; }
 							window.location.reload();
 						});
 					}).catch(function() { setStatus(container.dataset.msgFetchFailed, 'text-red-500'); });
@@ -1461,7 +1625,19 @@ func imageTypeLabel(t, profileName string) string {
 script openCropForType(imgSrc string, imageType string) {
 	// Close the context menu before opening the crop modal so the dropdown
 	// does not stay visible behind the modal overlay.
-	var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden)');
+	//
+	// #3223 review round 4, H3: same pre-existing bug as
+	// swCloseAnyOpenContextMenu above -- this selector matched a live mobile
+	// bottom sheet belonging to an UNRELATED ContextMenu elsewhere on the
+	// page (it shares role="menu" and is never .hidden) and added .hidden to
+	// it, which its own open/close logic never checks or clears, leaving it
+	// permanently invisible until a full page reload. This editor's own
+	// Actions menu never renders as a bottom sheet at any viewport width (it
+	// is a hand-rolled dropdown, not components.ContextMenu), so the fix is
+	// simply to exclude .ctx-bottom-sheet from this selector -- there is no
+	// sheet of THIS menu's own that needs a separate close path, and closing
+	// an unrelated one is exactly the bug being fixed, not a gap to fill in.
+	var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden):not(.ctx-bottom-sheet)');
 	for (var i = 0; i < menus.length; i++) {
 		menus[i].classList.add('hidden');
 		var trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');
