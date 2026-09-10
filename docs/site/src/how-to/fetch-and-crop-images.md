@@ -56,7 +56,7 @@ Browse the results in that tab, right-click (or long-press) the image you want, 
 
 This is a manual, on-demand path with no provider integration behind it -- your own browser performs the search, so it keeps working regardless of what any given provider's API does. It's especially useful for logos and banners, which few providers carry at all, and for rare or hard-to-find artwork that a curated provider search won't surface.
 
-![The artist artwork editor's Actions menu open on the Logo slot, showing the "Search with Google Images" entry alongside Fetch from URL, Browse, and Crop](../assets/screenshots/google-images-search-link.jpg)
+![The artist artwork editor's Actions menu open on the Logo slot, showing the "Search with Google Images" entry alongside Browse and Fetch from URL](../assets/screenshots/google-images-search-link.jpg)
 
 ## Fetch many images at once (bulk)
 
