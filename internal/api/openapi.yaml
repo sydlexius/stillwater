@@ -5671,8 +5671,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictWriteBlock"
+        "422":
+          description: The URL was fetched successfully but its content is an SVG image, which Stillwater's decode pipeline (JPEG, PNG, WebP) does not support
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "502":
-          description: Upstream image fetch failed (network error, non-2xx response, or decode failure)
+          description: Upstream image fetch failed (network error, non-2xx response, or a decode failure other than SVG)
           content:
             application/json:
               schema:

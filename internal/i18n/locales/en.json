@@ -1314,6 +1314,7 @@
   "image.view_full_size_type": "View full-size %s",
   "image.msg_fetch_failed": "Fetch failed",
   "image.msg_fetch_unable": "Unable to fetch image",
+  "image.msg_fetch_svg_unsupported": "That link points to an SVG image, which Stillwater cannot use. Pick a PNG or JPG result instead.",
   "image.msg_fetching": "Fetching...",
   "image.msg_needs_crop": "Image needs cropping to match the required aspect ratio.",
   "image.msg_crop_unavailable": "This image needs cropping, but the crop editor could not be opened, so it was not saved.",

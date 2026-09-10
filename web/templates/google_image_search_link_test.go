@@ -40,8 +40,19 @@ func TestArtworkManageEditor_GoogleImagesLink(t *testing.T) {
 		t.Parallel()
 		a := artist.Artist{ID: "art-blank", ThumbExists: true}
 		out := renderEditor(t, ImageSearchData{Artist: a, SelectedType: "thumb", SelectedIndex: -1})
-		if strings.Contains(out, "Google Images search") {
-			t.Error("rendered the affordance for a blank artist name; GoogleImagesSearchURL should return \"\" and suppress it")
+		// #3223 review round 2, F4: asserting on the English label text
+		// ("Google Images search") survives neither a locale-only rename in
+		// en.json (the affordance would still render, just under different
+		// visible text, and this assertion would false-pass) nor a mutation
+		// that deletes the blank-name guard in GoogleImagesSearchURL while
+		// simultaneously breaking the label lookup -- both cases were
+		// reachable without turning this test red. Asserting on the
+		// google.com/search href itself is what actually distinguishes
+		// "the link element is absent" from "the link's caption changed",
+		// and is tied to the one thing that must never appear for a blank
+		// name: an href pointing at Google Images at all.
+		if strings.Contains(out, "google.com/search") {
+			t.Error("rendered a google.com/search href for a blank artist name; GoogleImagesSearchURL should return \"\" and suppress the link entirely")
 		}
 	})
 

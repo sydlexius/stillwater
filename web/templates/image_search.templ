@@ -662,13 +662,23 @@ templ imageSearchContextualized(data ImageSearchData) {
 									// alongside it. Guarded + console.error per the repo's
 									// no-silent-failure rule (matches swOpenFetchUrlModal's
 									// call site below).
+									//
+									// #3223 review round 2, F5: close the Actions menu first,
+									// exactly as the Fetch from URL button above does -- before
+									// this fix, clicking Google Images left the menu open behind
+									// the new tab, unlike every other menu item. No
+									// preventDefault: this is a real <a target="_blank">
+									// navigation and must still fire; the menu-closing DOM writes
+									// run synchronously in the same click handler, before the
+									// browser processes the link's default navigation, so they
+									// never race it.
 									<a
 										href={ templ.SafeURL(googleURL) }
 										target="_blank"
 										rel="noopener noreferrer"
 										role="menuitem"
 										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										onclick={ templ.ComponentScript{Call: fmt.Sprintf("if (typeof window.swOpenFetchUrlForSlot === 'function') { window.swOpenFetchUrlForSlot(%d); } else { console.error('swOpenFetchUrlForSlot unavailable; opened Google Images without pre-targeting the fetch-from-URL dialog for backdrop slot %d'); }", fanartIdx, fanartIdx)} }
+										onclick={ templ.ComponentScript{Call: fmt.Sprintf("var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false'); if (typeof window.swOpenFetchUrlForSlot === 'function') { window.swOpenFetchUrlForSlot(%d); } else { console.error('swOpenFetchUrlForSlot unavailable; opened Google Images without pre-targeting the fetch-from-URL dialog for backdrop slot %d'); }", fanartIdx, fanartIdx)} }
 									>
 										@components.IconArrowTopRightOnSquare("h-4 w-4")
 										{ t(ctx, "image.search_google_images") }
@@ -759,6 +769,10 @@ templ imageSearchContextualized(data ImageSearchData) {
 								// target already waiting. Guarded + console.error per the
 								// repo's no-silent-failure rule, matching the Fetch-from-URL
 								// button immediately above.
+								//
+								// #3223 review round 2, F5: close the Actions menu first,
+								// matching the Fetch from URL button above and the indexed-
+								// slot branch's own copy of this fix.
 								if googleURL := img.GoogleImagesSearchURL(data.Artist.Name, data.SelectedType); googleURL != "" {
 									<a
 										href={ templ.SafeURL(googleURL) }
@@ -766,7 +780,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 										rel="noopener noreferrer"
 										role="menuitem"
 										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										onclick="if (typeof window.swOpenFetchUrlModal === 'function') { window.swOpenFetchUrlModal(); } else { console.error('swOpenFetchUrlModal unavailable; opened Google Images without pre-targeting the fetch-from-URL dialog'); }"
+										onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false'); if (typeof window.swOpenFetchUrlModal === 'function') { window.swOpenFetchUrlModal(); } else { console.error('swOpenFetchUrlModal unavailable; opened Google Images without pre-targeting the fetch-from-URL dialog'); }"
 									>
 										@components.IconArrowTopRightOnSquare("h-4 w-4")
 										{ t(ctx, "image.search_google_images") }
@@ -1161,7 +1175,15 @@ templ imageSearchContextualized(data ImageSearchData) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						return r.json().then(function(data) {
-							if (!r.ok) { setStatus(container.dataset.msgFetchUnable, 'text-red-500'); return; }
+							// #3223 review round 2, F1: prefer the server's specific
+							// message (e.g. the SVG-unsupported text) over the generic
+							// "Unable to fetch image" fallback, so an operator who
+							// pastes an SVG result sees why it was rejected instead of
+							// a message that reads like a network failure. data.error
+							// is only present on a non-2xx JSON body (see writeJSON
+							// call sites in handleImageFetch); a response with no body
+							// or an unparsable one still falls back to the generic text.
+							if (!r.ok) { setStatus(data && data.error ? data.error : container.dataset.msgFetchUnable, 'text-red-500'); return; }
 							if (data.needs_crop) { openAutoCrop(data); return; }
 							window.location.reload();
 						});

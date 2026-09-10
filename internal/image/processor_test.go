@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -87,6 +88,59 @@ func TestDetectFormat_Unknown(t *testing.T) {
 	_, _, err := DetectFormat(bytes.NewReader([]byte("not an image")))
 	if err == nil {
 		t.Error("expected error for unknown format")
+	}
+	if errors.Is(err, ErrSVGUnsupported) {
+		t.Error("plain garbage bytes must not be misdetected as SVG")
+	}
+}
+
+// TestDetectFormat_SVG covers #3223's F1 finding: an SVG document must be
+// distinguished from the generic "unrecognized image format" case via the
+// ErrSVGUnsupported sentinel, since callers (handleImageFetch) need to
+// surface a specific "SVG is not supported" message rather than a generic
+// fetch failure. Table covers the root-element-first case, an XML-prolog
+// preamble, a DOCTYPE preamble, leading whitespace, and a UTF-8 BOM -- SVG
+// has no fixed-offset magic number the way JPEG/PNG/WebP do, so each of
+// these is a real shape a browser or image editor can emit.
+func TestDetectFormat_SVG(t *testing.T) {
+	cases := map[string]string{
+		"bare root element":  `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>`,
+		"XML prolog":         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+		"DOCTYPE preamble":   "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n<svg></svg>",
+		"leading whitespace": "   \n\t<svg></svg>",
+		"UTF-8 BOM":          "\xEF\xBB\xBF<svg></svg>",
+		"uppercase tag":      "<SVG xmlns=\"http://www.w3.org/2000/svg\"></SVG>",
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := DetectFormat(strings.NewReader(body))
+			if !errors.Is(err, ErrSVGUnsupported) {
+				t.Fatalf("DetectFormat(%q) error = %v, want errors.Is(err, ErrSVGUnsupported)", name, err)
+			}
+		})
+	}
+}
+
+// TestDetectFormat_SVG_ReplayStillReadable proves the replay reader returned
+// alongside ErrSVGUnsupported still yields the original bytes -- DetectFormat
+// contractually returns a replay reader on every path (including the
+// existing "unrecognized format" error case), and a caller that logs or
+// re-reads the body after a detection error must not get a truncated stream.
+func TestDetectFormat_SVG_ReplayStillReadable(t *testing.T) {
+	body := `<svg xmlns="http://www.w3.org/2000/svg"></svg>`
+	format, replay, err := DetectFormat(strings.NewReader(body))
+	if !errors.Is(err, ErrSVGUnsupported) {
+		t.Fatalf("error = %v, want ErrSVGUnsupported", err)
+	}
+	if format != "" {
+		t.Errorf("format = %q, want empty string on an SVG detection error", format)
+	}
+	got, readErr := io.ReadAll(replay)
+	if readErr != nil {
+		t.Fatalf("reading replay: %v", readErr)
+	}
+	if string(got) != body {
+		t.Errorf("replay = %q, want original body %q", got, body)
 	}
 }
 

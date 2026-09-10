@@ -45,16 +45,18 @@ Web image search runs only on demand -- never as part of an automatic refresh --
 
 ## Search Google Images for a slot
 
-Each slot's **Actions** menu also has a **Google Images search** entry. Unlike Fetch and Web Search, this does not return results inside Stillwater -- it opens Google Images in a new browser tab, pre-filtered for the slot you're on:
+Each slot's **Actions** menu also has a **Google Images search** entry. Unlike Fetch and Web Search, this does not return results inside Stillwater -- it opens Google Images in a new browser tab, pre-filtered for the slot you're on. Every slot searches on the artist's name; the two logo-shaped slots append " logo" to steer results toward marks and wordmarks rather than photos:
 
-- **Thumb**: your library search term for the artist, large images, square aspect ratio.
-- **Fanart**: the artist, large images, wide aspect ratio.
-- **Logo**: the artist plus "logo", large images, transparent background.
-- **Banner**: the artist plus "logo", large images, extra-wide aspect ratio, transparent background.
+- **Thumb**: the artist name, large images, square aspect ratio.
+- **Fanart**: the artist name, large images, wide aspect ratio.
+- **Logo**: the artist name plus "logo", transparent background only (no size filter -- stacking one on top of the transparency filter over-constrained results).
+- **Banner**: the artist name plus "logo", large images, extra-wide aspect ratio, transparent background.
 
-Browse the results in that tab, right-click (or long-press) the image you want, and copy its image address. Back in Stillwater, open the same slot's **Actions** menu and choose **Fetch from URL**, then paste the address in. From there it's the same fetch-and-crop flow as any other source: Stillwater downloads the image, checks whether it needs cropping for the slot's shape, and saves it once you confirm.
+Clicking the entry also opens Stillwater's own Fetch from URL dialog in this tab, already aimed at the same slot, so it's waiting for you when you switch back. Browse the Google Images tab, right-click (or long-press) the image you want, copy its image address, and paste it into the dialog that's already open. From there it's the same fetch-and-crop flow as any other source: Stillwater downloads the image, checks whether it needs cropping for the slot's shape, and saves it once you confirm.
 
 This is a manual, on-demand path with no provider integration behind it -- your own browser performs the search, so it keeps working regardless of what any given provider's API does. It's especially useful for logos and banners, which few providers carry at all, and for rare or hard-to-find artwork that a curated provider search won't surface.
+
+**SVG results are not supported.** Google's transparent-background filter (used by the logo and banner slots) can surface SVG images alongside PNG and JPG ones. Stillwater's image pipeline only decodes JPEG, PNG, and WebP, so pasting an SVG's address into Fetch from URL returns an error naming SVG specifically -- pick a PNG or JPG result instead.
 
 ![The artist artwork editor's Actions menu open on the Logo slot, showing the "Google Images search" entry alongside Browse and Fetch from URL](../assets/screenshots/google-images-search-link.jpg)
 

@@ -25,6 +25,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/version"
@@ -679,6 +680,30 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	data, err := r.fetchImageFromURL(req.Context(), imageURL)
 	if err != nil {
 		r.logger.Warn("fetching image from URL", "url", imageURL, "error", err)
+		// #3223 review round 2, F1: an SVG result is a distinct, actionable
+		// case, not a generic upstream failure -- Google's ic:trans
+		// (transparent) filter, applied by the logo/banner deep links this
+		// issue added, returns SVG results alongside raster ones, and
+		// Stillwater's decode pipeline has no SVG decoder. 422 Unprocessable
+		// Entity (not 415 Unsupported Media Type): the request reached the
+		// server fine and the URL was fetched successfully -- the fetched
+		// CONTENT is what this server cannot process, which is exactly what
+		// 422 means (RFC 9110 15.5.21) and matches this codebase's existing
+		// convention for "well-formed request, semantically unusable
+		// payload" (e.g. the logo-trim-produced-no-usable-image case a few
+		// hundred lines below, and handlers_artist_duplicates.go). 415 is
+		// reserved here for a request whose Content-Type/media envelope
+		// itself is rejected before any processing is attempted (see
+		// parseProviderKeyInput), which is not this case: the upstream
+		// response's Content-Type is not trusted at all (fetchImageFromURL's
+		// validContentTypes check only logs a mismatch), so the decision is
+		// made from the sniffed body, not a header.
+		if errors.Is(err, img.ErrSVGUnsupported) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+				"error": i18n.TFromCtx(req.Context()).T("image.msg_fetch_svg_unsupported"),
+			})
+			return
+		}
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to fetch image"})
 		return
 	}
@@ -1371,7 +1396,12 @@ func (r *Router) fetchImageFromURL(ctx context.Context, rawURL string) ([]byte, 
 	}
 
 	if _, _, err := img.DetectFormat(bytes.NewReader(data)); err != nil {
-		return nil, fmt.Errorf("downloaded file is not a valid image")
+		// %w preserves img.ErrSVGUnsupported through this wrap so the caller
+		// (handleImageFetch) can distinguish "it's an SVG" from a generic
+		// unrecognized format via errors.Is and return a specific,
+		// actionable message instead of the generic 502 (#3223 review round
+		// 2, F1).
+		return nil, fmt.Errorf("downloaded file is not a valid image: %w", err)
 	}
 
 	return data, nil

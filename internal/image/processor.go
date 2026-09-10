@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -91,11 +92,67 @@ const (
 	FormatWebP = "webp"
 )
 
+// ErrSVGUnsupported reports that the sniffed content is an SVG document.
+// SVG is a valid image format in general, but Stillwater's decode pipeline
+// (image/jpeg, image/png, golang.org/x/image/webp) has no SVG decoder, so a
+// caller that receives this sentinel should surface a specific "SVG is not
+// supported" message rather than falling through to the generic
+// "unrecognized image format" text. Callers that need to distinguish this
+// case use errors.Is(err, ErrSVGUnsupported) (#3223 review round 2, F1):
+// Google Images' ic:trans (transparent) filter, which the logo/banner deep
+// links apply, returns SVG results alongside raster ones.
+var ErrSVGUnsupported = errors.New("SVG images are not supported")
+
+// svgSniffWindow is how many leading bytes DetectFormat inspects for an SVG
+// signature. SVG has no fixed-offset magic number like the raster formats
+// below -- it is XML, so a document can legally begin with an XML prolog
+// ("<?xml version=...?>") of unbounded length before the "<svg" root element
+// appears, or with a DOCTYPE, or with the root element itself. 512 mirrors
+// the sniff window net/http.DetectContentType uses for the same problem and
+// is comfortably larger than any prolog/DOCTYPE combination seen in
+// practice, while staying small enough that reading it eagerly for every
+// fetch is free.
+const svgSniffWindow = 512
+
+// looksLikeSVG reports whether buf's leading bytes look like the start of an
+// SVG document: either the root <svg element appears directly (optionally
+// preceded by whitespace, a UTF-8 BOM, or an XML/DOCTYPE declaration), or an
+// XML prolog is present and "<svg" appears anywhere in the sniffed window
+// before a raster magic number would have matched. Case-insensitive on the
+// tag name since SVG is embedded in HTML-adjacent tooling that is sometimes
+// generated with inconsistent casing; the "<svg" token itself is
+// case-sensitive per the SVG/XML spec, but sniffing loosely here costs
+// nothing and a false negative (treating a real SVG as "unrecognized") is
+// the worse failure mode for this specific error path.
+func looksLikeSVG(buf []byte) bool {
+	// Strip a UTF-8 BOM and leading whitespace, matching how a browser or
+	// XML parser would skip them before looking for content.
+	trimmed := bytes.TrimLeft(bytes.TrimPrefix(buf, []byte{0xEF, 0xBB, 0xBF}), " \t\r\n")
+	lower := bytes.ToLower(trimmed)
+	if bytes.HasPrefix(lower, []byte("<svg")) {
+		return true
+	}
+	// An XML prolog ("<?xml ... ?>") or DOCTYPE may precede the root element
+	// by an arbitrary (but bounded, within the sniff window) number of
+	// bytes; "<svg" appearing anywhere in a document that also starts with
+	// "<?xml" or "<!doctype" is a reliable-enough signal without a full XML
+	// parse.
+	if bytes.HasPrefix(lower, []byte("<?xml")) || bytes.HasPrefix(lower, []byte("<!doctype")) {
+		return bytes.Contains(lower, []byte("<svg"))
+	}
+	return false
+}
+
 // DetectFormat reads the first bytes from r to identify the image format.
 // Returns "jpeg", "png", or "webp". The returned reader replays the consumed bytes.
+// An SVG document is detected separately and reported as ErrSVGUnsupported
+// (distinct from the generic unrecognized-format error) so callers can
+// surface a specific, actionable message.
 func DetectFormat(r io.Reader) (format string, replay io.Reader, err error) {
-	// Read enough bytes for magic number detection (12 bytes covers all formats)
-	buf := make([]byte, 12)
+	// Read a window large enough to both sniff SVG (which has no fixed-offset
+	// magic number, see svgSniffWindow) and cover the raster magic numbers
+	// checked below (12 bytes).
+	buf := make([]byte, svgSniffWindow)
 	n, err := io.ReadFull(r, buf)
 	if err != nil && err != io.ErrUnexpectedEOF {
 		return "", nil, fmt.Errorf("reading header: %w", err)
@@ -112,6 +169,9 @@ func DetectFormat(r io.Reader) (format string, replay io.Reader, err error) {
 	}
 	if n >= 12 && string(buf[:4]) == "RIFF" && string(buf[8:12]) == "WEBP" {
 		return FormatWebP, replay, nil
+	}
+	if looksLikeSVG(buf) {
+		return "", replay, ErrSVGUnsupported
 	}
 
 	return "", replay, fmt.Errorf("unrecognized image format")

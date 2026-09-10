@@ -234,6 +234,81 @@ func (errorRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, io.ErrUnexpectedEOF
 }
 
+// hostRewriteRoundTripper redirects every outgoing request to base while
+// preserving the original request line otherwise, so a handler-level test
+// can post a public-looking URL (passing isPrivateURL's DNS-based check)
+// while the bytes actually come from a local httptest.Server. Mirrors
+// handlers_updater_test.go's rewriteHostTransport.
+type hostRewriteRoundTripper struct {
+	base string
+}
+
+func (rt hostRewriteRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	req2 := req.Clone(req.Context())
+	base := strings.TrimPrefix(rt.base, "http://")
+	req2.URL.Scheme = "http"
+	req2.URL.Host = base
+	return http.DefaultTransport.RoundTrip(req2)
+}
+
+// TestHandleImageFetch_SVG_Unprocessable proves #3223's F1 acceptance
+// criterion end-to-end through the real handler and a REAL httptest.Server
+// (not a synthetic RoundTripper body, per the hostile-review finding this
+// closes): pasting an SVG image URL into Fetch from URL must return a
+// specific, actionable 422 naming SVG, not the generic 502
+// "failed to fetch image" the pre-fix code returned for every decode
+// failure indiscriminately.
+//
+// REGRESSION PROOF (mutation-checked manually): reverting the
+// errors.Is(err, img.ErrSVGUnsupported) branch in handleImageFetch (so the
+// handler falls through to the generic 502 for every fetchImageFromURL
+// error) makes this test fail with "status = 502, want 422" -- see the
+// round-2 report for the revert-and-restore transcript.
+func TestHandleImageFetch_SVG_Unprocessable(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "SVGFetch", SortName: "SVGFetch", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// A real HTTP server (httptest.NewServer, per the review finding) serving
+	// an SVG body with an image/svg+xml Content-Type -- validContentTypes
+	// does not include it, so this also proves the SVG branch is reached via
+	// body sniffing, not the (untrusted) response header.
+	svgBody := `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="80" fill="#4285F4"/>
+</svg>`
+	svgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(svgBody))
+	}))
+	defer svgSrv.Close()
+
+	// A public-IP-looking URL so isPrivateURL's DNS lookup passes; the
+	// transport below redirects the actual bytes to svgSrv.
+	r.ssrfClient = &http.Client{Transport: hostRewriteRoundTripper{base: svgSrv.URL}}
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/logo.svg","type":"logo"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v; body: %s", err, w.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(resp["error"]), "svg") {
+		t.Errorf("error message = %q, want it to name SVG specifically (not the generic fetch-failure text)", resp["error"])
+	}
+}
+
 func TestHandleImageFetch_NeedsCrop(t *testing.T) {
 	t.Parallel()
 	r, svc := newImageHandlerTestServer(t)

@@ -103,13 +103,15 @@ test('indexed backdrop slot: clicking Google Images opens the dialog targeted at
   await trigger.waitFor({ state: 'visible', timeout: 10_000 });
   await trigger.click();
   const link = page.getByRole('menuitem', { name: 'Google Images search' });
-  // The indexed branch only renders when the hero is scoped to a specific
-  // slot; skip gracefully if this server/fixture state doesn't reach it
-  // rather than failing on an environment property this spec doesn't own.
-  if (await link.count() === 0) {
-    test.skip(true, 'indexed backdrop-slot Actions menu not reached from this fixture state');
-    return;
-  }
+  // #3223 review round 2, F3: this used to be a conditional
+  // `if (count === 0) test.skip(...)`, which the repo's CLAUDE.md forbids --
+  // a skip that reports green forever while verifying nothing is worse than
+  // no test. seedGoogleImagesLinkArtist (seed-google-images-link.js) now
+  // guarantees and asserts FanartExists/FanartCount>=1 at seed time
+  // specifically so index=0 is always in range and this branch always
+  // renders; a real regression here (in the seeder OR in the indexed-slot
+  // rendering branch itself) must fail this test, not silently skip it.
+  await expect(link, 'the indexed backdrop-slot Actions menu must render one Google Images link -- the fixture guarantees fanart_count >= 1').toHaveCount(1);
 
   const modal = page.locator('#fetch-url-modal');
   const [popup] = await Promise.all([
