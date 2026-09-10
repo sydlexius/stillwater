@@ -1412,6 +1412,23 @@ func (r *Router) fetchImageFromURL(ctx context.Context, rawURL string) ([]byte, 
 	}
 
 	if _, _, err := img.DetectFormat(bytes.NewReader(data)); err != nil {
+		// #3223 review round 5, K1: DetectFormat only sniffs a bounded
+		// svgSniffWindow (512 bytes) prefix of data, so a genuinely-SVG
+		// document whose root element is pushed past that window by an
+		// unusually long comment or DOCTYPE (see
+		// TestDetectFormat_SVG_LongCommentExceedsWindow) is reported as the
+		// GENERIC unrecognized-format error here, not ErrSVGUnsupported --
+		// even though data itself is the complete fetched body, already
+		// size-bounded to maxUploadSize (25MB, handlers_image.go:36, checked
+		// just above). Re-running the SAME tokenizer (img.LooksLikeSVG, the
+		// exported entry point to DetectFormat's own looksLikeSVG -- no
+		// second implementation) over the WHOLE body recovers exactly that
+		// case. DetectFormat's bounded sniff is deliberately left as-is:
+		// this full-body pass only runs on the rare path where it has
+		// already given up, not on every fetch.
+		if !errors.Is(err, img.ErrSVGUnsupported) && img.LooksLikeSVG(data) {
+			return nil, fmt.Errorf("downloaded file is not a valid image: %w", img.ErrSVGUnsupported)
+		}
 		// %w preserves img.ErrSVGUnsupported through this wrap so the caller
 		// (handleImageFetch) can distinguish "it's an SVG" from a generic
 		// unrecognized format via errors.Is and return a specific,

@@ -370,6 +370,99 @@ func TestHandleImageFetch_SVG_Unprocessable(t *testing.T) {
 	}
 }
 
+// TestHandleImageFetch_SVG_LongCommentFallback proves #3223 review round 5,
+// K1's fix end-to-end: an SVG document whose "<svg" root element is pushed
+// past img.DetectFormat's bounded 512-byte sniff window by a long leading
+// comment must still return the specific 422 SVG message, not the generic
+// 502 TestHandleImageFetch_FetchFails_BadGateway covers. fetchImageFromURL
+// already holds the complete fetched body by this point, so it re-runs
+// img.LooksLikeSVG (the same tokenizer DetectFormat uses internally) over
+// the WHOLE body on DetectFormat's generic-error path -- see
+// internal/image/processor_test.go's TestDetectFormat_SVG_LongCommentExceedsWindow,
+// which documents that DetectFormat ALONE cannot see past its window.
+func TestHandleImageFetch_SVG_LongCommentFallback(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "SVGLongComment", SortName: "SVGLongComment", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	wantUA := version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater")
+	svgBody := "<!-- " + strings.Repeat("x", 600) + " -->\n" +
+		`<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><circle cx="100" cy="100" r="80" fill="#4285F4"/></svg>`
+	svgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet {
+			t.Errorf("SVG mock server: method = %q, want GET", req.Method)
+		}
+		if got := req.Header.Get("User-Agent"); got != wantUA {
+			t.Errorf("SVG mock server: User-Agent = %q, want %q", got, wantUA)
+		}
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(svgBody))
+	}))
+	defer svgSrv.Close()
+
+	r.ssrfClient = &http.Client{Transport: hostRewriteRoundTripper{base: svgSrv.URL}}
+
+	const wantErrorText = "That link points to an SVG image, which Stillwater cannot use. Pick a PNG or JPG result instead."
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/logo.svg","type":"logo"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req = reqWithEnTranslator(t, req)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v; body: %s", err, w.Body.String())
+	}
+	if resp["error"] != wantErrorText {
+		t.Errorf("error message = %q, want the exact en.json text %q", resp["error"], wantErrorText)
+	}
+}
+
+// TestHandleImageFetch_LongCommentNonSVG_BadGateway is the negative
+// counterpart to TestHandleImageFetch_SVG_LongCommentFallback: a large,
+// genuinely non-SVG XML document (an RSS feed) padded with the same long
+// leading comment must still fall through to the generic 502, proving the
+// K1 full-body fallback classifies on real tag content and does not just
+// treat "any XML DetectFormat couldn't identify" as SVG.
+func TestHandleImageFetch_LongCommentNonSVG_BadGateway(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "RSSLongComment", SortName: "RSSLongComment", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	rssBody := "<!-- " + strings.Repeat("x", 600) + " -->\n" +
+		`<rss version="2.0"><channel><title>not an image</title></channel></rss>`
+	rssSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(rssBody))
+	}))
+	defer rssSrv.Close()
+
+	r.ssrfClient = &http.Client{Transport: hostRewriteRoundTripper{base: rssSrv.URL}}
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/feed.xml","type":"logo"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502; body: %s", w.Code, w.Body.String())
+	}
+}
+
 // testPartiallyTransparentPNG encodes a PNG whose CENTER pixel carries a
 // specific mid-range alpha (0 < alpha < 255) surrounded by fully opaque
 // pixels. The AC this test proves ("a transparent PNG copied from a Google

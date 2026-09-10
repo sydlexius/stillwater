@@ -245,6 +245,30 @@ func looksLikeSVG(buf []byte) bool {
 	}
 }
 
+// LooksLikeSVG is the exported entry point to looksLikeSVG, for callers
+// outside this package that need to classify a COMPLETE, already-bounded
+// byte slice as SVG or not -- as opposed to DetectFormat's bounded
+// svgSniffWindow sniff, which only inspects a fixed-size prefix.
+//
+// #3223 review round 5, K1: fetchImageFromURL (internal/api/handlers_image.go)
+// already holds the complete fetched body, size-bounded to maxUploadSize
+// (25MB, handlers_image.go:36) by the time DetectFormat's 512-byte sniff
+// window has already returned the generic "unrecognized image format"
+// error. A comment or DOCTYPE longer than that window (see
+// TestDetectFormat_SVG_LongCommentExceedsWindow) pushes the real "<svg" root
+// element past what DetectFormat can see, so a genuinely-SVG document with
+// an unusually long preamble fell through to the generic 502 instead of the
+// specific SVG 422. Re-running the SAME tokenizer over the WHOLE body (this
+// function, not a second implementation) recovers exactly that case,
+// without touching DetectFormat's own deliberately-bounded sniff (kept as
+// the FIRST, fast check for the common case: any real fetch of an actual
+// image is either resolved or rejected within svgSniffWindow bytes almost
+// always, so the expensive whole-body pass is reserved for the rare
+// generic-error path where DetectFormat has already given up).
+func LooksLikeSVG(buf []byte) bool {
+	return looksLikeSVG(buf)
+}
+
 // startsWithSVGOpenTag reports whether rest begins with an SVG root
 // element's opening tag, as far as a bounded byte window can tell: "<",
 // optionally one namespace prefix (e.g. "x:"), then "svg" (case-insensitive,

@@ -216,16 +216,23 @@ func TestDetectFormat_SVG(t *testing.T) {
 // entirely -- #3223 review round 4, H1's explicit "otherwise document why
 // it's UNKNOWN" instruction. Nothing observed in the 512-byte window
 // contains the literal bytes "<svg" (the comment consumes the whole
-// window), so DetectFormat correctly cannot classify this as SVG: it falls
-// through to the generic "unrecognized image format" 502 rather than the
-// specific SVG 422. This is a genuine information-theoretic limit of any
-// BOUNDED sniff window, not a bug in looksLikeSVG -- widening the window
-// trades a small, fixed per-fetch memory/CPU cost against catching an
-// increasingly rare comment-padding shape, and 512 bytes (already 4x a
-// typical XML prolog) was judged the right tradeoff. If real-world SVGs
-// with lead comments this long are ever observed in practice, that is the
-// evidence needed to revisit svgSniffWindow, not a reason to change
-// looksLikeSVG's logic.
+// window), so DetectFormat ALONE correctly cannot classify this as SVG:
+// this is a genuine information-theoretic limit of any BOUNDED sniff
+// window, not a bug in looksLikeSVG -- widening the window trades a small,
+// fixed per-fetch memory/CPU cost against catching an increasingly rare
+// comment-padding shape, and 512 bytes (already 4x a typical XML prolog)
+// was judged the right tradeoff.
+//
+// #3223 review round 5, K1: DetectFormat's bounded sniff is no longer the
+// only classifier in the request path. fetchImageFromURL
+// (internal/api/handlers_image.go) already holds the complete fetched
+// body, so on DetectFormat's generic-error path it now re-runs the SAME
+// tokenizer (exported as LooksLikeSVG) over the WHOLE body, which DOES see
+// "<svg" past this window and correctly returns the specific 422 -- see
+// TestHandleImageFetch_SVG_LongCommentFallback in
+// internal/api/handlers_image_coverage_test.go. So a long lead comment is
+// only unclassifiable at THIS layer (DetectFormat in isolation); the
+// end-to-end fetch path closes the gap this test documents.
 func TestDetectFormat_SVG_LongCommentExceedsWindow(t *testing.T) {
 	longComment := "<!-- " + strings.Repeat("x", 600) + " --><svg></svg>"
 	if len(longComment) <= int(svgSniffWindow) {
