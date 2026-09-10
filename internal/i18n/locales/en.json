@@ -1259,7 +1259,7 @@
   "image.fetch": "Fetch",
   "image.fetch_from_url": "Fetch from URL",
   "image.fetch_replace_fanart": "Fetch a replacement for this backdrop",
-  "image.search_google_images": "Search with Google Images",
+  "image.search_google_images": "Google Images search",
   "image.format_square": "1:1 square format",
   "image.format_transparent_png": "Transparent PNG format",
   "image.format_wide": "~4:1 wide format",

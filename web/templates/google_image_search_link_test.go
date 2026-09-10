@@ -40,7 +40,7 @@ func TestArtworkManageEditor_GoogleImagesLink(t *testing.T) {
 		t.Parallel()
 		a := artist.Artist{ID: "art-blank", ThumbExists: true}
 		out := renderEditor(t, ImageSearchData{Artist: a, SelectedType: "thumb", SelectedIndex: -1})
-		if strings.Contains(out, "Search with Google Images") {
+		if strings.Contains(out, "Google Images search") {
 			t.Error("rendered the affordance for a blank artist name; GoogleImagesSearchURL should return \"\" and suppress it")
 		}
 	})

@@ -1,5 +1,5 @@
 // google-images-link.spec.js - a11y + URL-construction coverage for the
-// per-slot "Search with Google Images" deep link (#3223). Runs on both
+// per-slot "Google Images search" deep link (#3223). Runs on both
 // firefox-a11y (authoritative) and chromium-a11y (compat) per
 // playwright.config.js. Covers what Go-level tests cannot: the link survives
 // a real browser's HTML-attribute-escaping round trip, is keyboard-reachable,
@@ -29,7 +29,7 @@ async function openActionsMenu(page, slot) {
   const trigger = page.locator('[aria-haspopup="true"]').first();
   await trigger.waitFor({ state: 'visible', timeout: 10_000 });
   await trigger.click();
-  const link = page.getByRole('menuitem', { name: 'Search with Google Images' });
+  const link = page.getByRole('menuitem', { name: 'Google Images search' });
   await link.waitFor({ state: 'visible', timeout: 5_000 });
   return link;
 }
@@ -102,7 +102,7 @@ test('indexed backdrop slot: clicking Google Images opens the dialog targeted at
   const trigger = page.locator('[aria-haspopup="true"]').first();
   await trigger.waitFor({ state: 'visible', timeout: 10_000 });
   await trigger.click();
-  const link = page.getByRole('menuitem', { name: 'Search with Google Images' });
+  const link = page.getByRole('menuitem', { name: 'Google Images search' });
   // The indexed branch only renders when the hero is scoped to a specific
   // slot; skip gracefully if this server/fixture state doesn't reach it
   // rather than failing on an environment property this spec doesn't own.
