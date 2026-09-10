@@ -644,6 +644,27 @@ templ imageSearchContextualized(data ImageSearchData) {
 									@components.IconArrowDownTray("h-4 w-4")
 									{ t(ctx, "image.fetch_from_url") }
 								</button>
+								// Google Images deep link (#3223). "backdrops" is an
+								// indexed multi-slot kind: Google cannot target one
+								// numbered slot, so every backdrop tile offers the SAME
+								// artist-name search (fanart's "wide" aspect filter) --
+								// the operator picks a result and pastes it back into
+								// THIS slot via the fetch-from-URL button above, which is
+								// already index-aware. GoogleImagesSearchURL returns ""
+								// for an empty artist name; the link is omitted rather
+								// than pointing at a useless empty search.
+								if googleURL := img.GoogleImagesSearchURL(data.Artist.Name, data.SelectedType); googleURL != "" {
+									<a
+										href={ templ.SafeURL(googleURL) }
+										target="_blank"
+										rel="noopener noreferrer"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+									>
+										@components.IconArrowTopRightOnSquare("h-4 w-4")
+										{ t(ctx, "image.search_google_images") }
+									</a>
+								}
 								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 								<button
 									type="button"
@@ -717,6 +738,23 @@ templ imageSearchContextualized(data ImageSearchData) {
 									@components.IconArrowDownTray("h-4 w-4")
 									{ t(ctx, "image.fetch_from_url") }
 								</button>
+								// Google Images deep link (#3223): thumb/logo/banner, plus
+								// fanart viewed unscoped (fanartIdx < 0 -- the "current
+								// backdrop" hero with no specific slot clicked). See the
+								// indexed-slot branch above for why backdrops share one
+								// search regardless of which slot the operator pastes into.
+								if googleURL := img.GoogleImagesSearchURL(data.Artist.Name, data.SelectedType); googleURL != "" {
+									<a
+										href={ templ.SafeURL(googleURL) }
+										target="_blank"
+										rel="noopener noreferrer"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+									>
+										@components.IconArrowTopRightOnSquare("h-4 w-4")
+										{ t(ctx, "image.search_google_images") }
+									</a>
+								}
 								if imageExistsForType(data.Artist, data.SelectedType) {
 									<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 									<button

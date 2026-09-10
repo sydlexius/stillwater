@@ -43,6 +43,21 @@ For cases where curated providers don't have what you need.
 
 Web image search runs only on demand -- never as part of an automatic refresh -- so a forgotten search adapter doesn't drive automated fetches.
 
+## Search Google Images for a slot
+
+Each slot's **Actions** menu also has a **Search with Google Images** entry. Unlike Fetch and Web Search, this does not return results inside Stillwater -- it opens Google Images in a new browser tab, pre-filtered for the slot you're on:
+
+- **Thumb**: your library search term for the artist, large images, square aspect ratio.
+- **Fanart**: the artist, large images, wide aspect ratio.
+- **Logo**: the artist plus "logo", large images, transparent background.
+- **Banner**: the artist plus "logo", large images, extra-wide aspect ratio, transparent background.
+
+Browse the results in that tab, right-click (or long-press) the image you want, and copy its image address. Back in Stillwater, open the same slot's **Actions** menu and choose **Fetch from URL**, then paste the address in. From there it's the same fetch-and-crop flow as any other source: Stillwater downloads the image, checks whether it needs cropping for the slot's shape, and saves it once you confirm.
+
+This is a manual, on-demand path with no provider integration behind it -- your own browser performs the search, so it keeps working regardless of what any given provider's API does. It's especially useful for logos and banners, which few providers carry at all, and for rare or hard-to-find artwork that a curated provider search won't surface.
+
+![The artist artwork editor's Actions menu open on the Logo slot, showing the "Search with Google Images" entry alongside Fetch from URL, Browse, and Crop](../assets/screenshots/google-images-search-link.jpg)
+
 ## Fetch many images at once (bulk)
 
 When you want to populate images across many artists in one go:
