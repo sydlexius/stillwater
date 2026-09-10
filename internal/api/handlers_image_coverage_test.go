@@ -278,9 +278,21 @@ func TestHandleImageFetch_SVG_Unprocessable(t *testing.T) {
 	// requested the right thing" from "it requested nothing in particular
 	// and got lucky". Assert the real request shape from INSIDE the handler.
 	// t.Errorf (never t.Fatal) because this closure runs on the httptest
-	// server's own goroutine, not the test goroutine -- calling a Fatal-class
-	// method there would not fail the test the way it looks like it does
-	// (testing.T panics on FailNow from a non-test goroutine).
+	// server's own goroutine, not the test goroutine.
+	//
+	// #3223 review round 4, H5 (corrected): the ORIGINAL comment here claimed
+	// a Fatal-class call from this goroutine "makes testing.T panic". It does
+	// not. t.Fatal/FailNow calls runtime.Goexit() on the CALLING goroutine --
+	// verified with a standalone reproduction (goroutine's deferred cleanup
+	// still ran, the goroutine unwound via Goexit, and the outer test
+	// goroutine kept running normally afterward, still correctly marked
+	// failed at the end). The real, still-valid reason to use t.Errorf here
+	// is narrower: Goexit-ing this handler goroutine would abandon the
+	// in-flight HTTP response mid-request (the httptest.Server's handler
+	// never finishes writing), hanging or corrupting the client's read on
+	// the OTHER (test) goroutine -- not because Go panics, but because an
+	// abandoned server handler is a bad time to unwind a goroutine whose
+	// job is to keep serving.
 	wantUA := version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater")
 	svgBody := `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">

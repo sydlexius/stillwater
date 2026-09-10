@@ -137,40 +137,183 @@ const svgSniffWindow = 512
 //
 // A real XML tokenizer (encoding/xml.Decoder) sidesteps both: it correctly
 // skips ProcInst (the XML prolog), Directive (DOCTYPE), Comment and
-// CharData tokens (whitespace) on the way to the first element, and reports
-// that element's ACTUAL tag name rather than a prefix of the raw bytes --
-// so "<svg-not-image>" tokenizes to a StartElement named "svg-not-image",
-// not "svg". Go's xml package also strips a UTF-8 BOM automatically, so no
-// separate BOM-handling step is needed (verified: the BOM case in
-// TestLooksLikeSVG passes without one).
+// (whitespace-only) CharData tokens on the way to the first element, and
+// reports that element's ACTUAL tag name rather than a prefix of the raw
+// bytes -- so "<svg-not-image>" tokenizes to a StartElement named
+// "svg-not-image", not "svg". Go's xml package also strips a UTF-8 BOM
+// automatically, so no separate BOM-handling step is needed for that case.
 //
 // dec.Strict = false tolerates the common real-world laxity a fetched image
 // URL's body might contain (an unescaped "&", a missing xmlns) that would
 // make a strict parse fail before ever reaching the root element -- this
 // function only needs the ROOT ELEMENT NAME, not a well-formed document.
-// The window is intentionally NOT required to contain a complete, valid
-// document: DetectFormat only ever hands this a bounded svgSniffWindow
-// prefix of a much larger real file, so a truncation-induced token error
-// AFTER the first StartElement has already been read is expected and
-// correctly ignored (the loop below returns as soon as it has an answer).
+//
+// #3223 review round 4: the round-3 rewrite above introduced two of its own
+// regressions, both reproduced with runnable/table-driven cases before this
+// fix (see TestDetectFormat_SVG and TestDetectFormat_SVG_NegativeCases):
+//
+// H1 -- three real cases the OLD substring version caught but the round-3
+// xml.Decoder version missed, all now fixed:
+//  1. A non-UTF-8 encoding declaration (iso-8859-1, windows-1252, us-ascii --
+//     real legacy Illustrator/browser exports) made xml.Decoder refuse to
+//     tokenize at all, because no CharsetReader was configured. Fixed by
+//     setting dec.CharsetReader to a passthrough: this function only reads
+//     the ASCII tag name, so no actual charset transcoding is needed --
+//     accepting the declared encoding without decoding it is sufficient and
+//     avoids pulling in golang.org/x/text/encoding for a fact this function
+//     never uses.
+//  2. A root tag whose closing '>' lands past the svgSniffWindow boundary
+//     (realistic: an Inkscape/Illustrator export's xmlns block alone often
+//     exceeds 500 bytes) is never emitted as a StartElement token, because
+//     xml.Decoder only emits one once it has seen the closing '>' -- a
+//     truncated tag produces a token ERROR instead, and this function used
+//     to treat every token error as "definitely not SVG".
+//  3. A tag truncated mid-attribute (e.g. `<svg width="1`) hits the
+//     identical failure as (2) for the same reason.
+//     FIX for both (2) and (3): when the decoder errors out before any
+//     StartElement has been seen, look at the UNCONSUMED bytes starting at
+//     the offset immediately before the failing Token() call (tracked via
+//     prevOffset, NOT dec.InputOffset() taken AFTER the error -- the two can
+//     differ, since a failed token can itself consume some input before
+//     erroring). If those bytes start (case-insensitively, tolerating one
+//     namespace prefix like "x:svg", per SVG's practice of sometimes
+//     appearing inside a compound document) with "svg" followed by
+//     whitespace, '/', '>', or nothing at all (buffer ran out exactly at the
+//     tag name), classify as SVG. This recovers exactly the "we can SEE
+//     enough of the tag name within the bounded window" cases; a comment or
+//     other content that consumes the ENTIRE window before "<svg" ever
+//     appears remains correctly unclassifiable (see
+//     TestDetectFormat_SVG_LongCommentExceedsWindow) -- that is a genuine
+//     information-theoretic limit of any bounded sniff window, not a bug
+//     this function can fix without growing svgSniffWindow itself.
+//
+// H2 -- a NEW false positive round 3 introduced: every CharData token was
+// skipped unconditionally as "precedes the root element", so prose text
+// containing an embedded "<svg/>" mention ("Moved. See <svg/>") or a binary
+// header that happens to tokenize as non-strict CharData ("GIF89a<svg>...")
+// were both misclassified as SVG. Fixed by only treating CharData as
+// "keep reading" when it is ALL WHITESPACE (after stripping an optional
+// leading BOM) -- any non-whitespace content before a root element means
+// this was never a real XML/SVG document in the first place.
 func looksLikeSVG(buf []byte) bool {
 	dec := xml.NewDecoder(bytes.NewReader(buf))
 	dec.Strict = false
+	// CharsetReader is required for ANY non-UTF-8/US-ASCII encoding
+	// declaration (H1a) -- without one, xml.Decoder refuses to tokenize at
+	// all rather than assuming a passthrough. This function only inspects
+	// the ASCII root tag name, never document content, so accepting the
+	// bytes as-is (no real transcoding) is correct here regardless of what
+	// the declared encoding actually is.
+	dec.CharsetReader = func(_ string, r io.Reader) (io.Reader, error) { return r, nil }
+
+	var prevOffset int64 // offset immediately BEFORE the current Token() call
 	for {
 		tok, err := dec.Token()
 		if err != nil {
-			// Either a genuine parse failure (not XML at all -- a raster
-			// image's binary header reliably fails here) or the truncated
-			// sniff window ran out before any start element appeared.
-			// Either way, no <svg> root was found in what we have.
-			return false
+			// H1b/H1c: the decoder failed before reaching a StartElement --
+			// either truncation cut the root tag short (crossed the sniff
+			// window, or a mid-attribute cut), or this genuinely is not XML
+			// at all (a raster image's binary header). Distinguish by
+			// inspecting what's left, starting from BEFORE the failing call
+			// (prevOffset), not dec.InputOffset() taken after the error --
+			// the decoder can advance its offset partway through a token it
+			// then fails to complete, so an offset read after the error can
+			// point PAST the very bytes that would identify the tag.
+			if prevOffset < 0 || prevOffset > int64(len(buf)) {
+				return false
+			}
+			return startsWithSVGOpenTag(buf[prevOffset:])
 		}
 		if se, ok := tok.(xml.StartElement); ok {
 			return strings.EqualFold(se.Name.Local, "svg")
 		}
-		// Any other token (ProcInst, Directive, Comment, CharData/whitespace)
-		// precedes the root element in a well-formed document; keep reading.
+		if cd, ok := tok.(xml.CharData); ok {
+			// H2: only whitespace (optionally BOM-prefixed) may precede the
+			// root element and still count as "not yet at content". Real
+			// prose or binary bytes that happen to tokenize as CharData mean
+			// this was never XML/SVG to begin with.
+			trimmed := bytes.TrimLeft(bytes.TrimPrefix([]byte(cd), []byte{0xEF, 0xBB, 0xBF}), " \t\r\n")
+			if len(trimmed) > 0 {
+				return false
+			}
+		}
+		// Any other token (ProcInst, Directive, Comment, whitespace-only
+		// CharData) precedes the root element in a well-formed document;
+		// keep reading. prevOffset is updated only on this path, i.e. only
+		// once a token was FULLY and successfully read.
+		prevOffset = dec.InputOffset()
 	}
+}
+
+// startsWithSVGOpenTag reports whether rest begins with an SVG root
+// element's opening tag, as far as a bounded byte window can tell: "<",
+// optionally one namespace prefix (e.g. "x:"), then "svg" (case-insensitive,
+// matching this package's existing policy), followed by whitespace, '/',
+// '>', or the end of the available bytes (the window was truncated exactly
+// at the tag name, which still counts as "we can see enough").
+//
+// This exists specifically for H1b/H1c: a tag the decoder could not fully
+// tokenize because its closing '>' (or an attribute value) was cut off by
+// the sniff window boundary. It is deliberately narrow -- it only looks at
+// the OPENING tag shape, not attributes or document structure -- because
+// its caller already established that a real tokenizer could not make
+// sense of what follows; this is a best-effort recovery for the one shape
+// (root tag truncated by a bounded read) that a full document is never
+// going to resolve anyway.
+func startsWithSVGOpenTag(rest []byte) bool {
+	if len(rest) == 0 || rest[0] != '<' {
+		return false
+	}
+	rest = rest[1:]
+	// Optional namespace prefix (e.g. "x:svg"): only consume it if what
+	// precedes the ':' looks like a simple XML name token, and only within
+	// a short lookahead (a real prefix is short; a long run of ':'-free
+	// bytes before any ':' means this isn't a prefix at all).
+	const maxPrefixLookahead = 20
+	if idx := bytes.IndexByte(rest, ':'); idx >= 0 && idx < maxPrefixLookahead {
+		prefix := rest[:idx]
+		if len(prefix) > 0 && isSimpleXMLName(prefix) {
+			rest = rest[idx+1:]
+		}
+	}
+	lower := bytes.ToLower(rest)
+	if !bytes.HasPrefix(lower, []byte("svg")) {
+		return false
+	}
+	after := lower[len("svg"):]
+	if len(after) == 0 {
+		// The window ran out immediately after the tag name (e.g. `<svg`
+		// with nothing more captured) -- still a positive identification of
+		// what we can see, not a rejection.
+		return true
+	}
+	switch after[0] {
+	case ' ', '\t', '\n', '\r', '/', '>':
+		return true
+	default:
+		// Something else follows "svg" (e.g. "svgdata", "svg-not-image") --
+		// this is a different, unrelated tag name, not the SVG root.
+		return false
+	}
+}
+
+// isSimpleXMLName reports whether every byte in name is a plain ASCII
+// letter, digit, underscore, or hyphen -- a conservative (not fully
+// XML-spec-compliant) approximation of a valid XML Name token, sufficient
+// for recognizing an ordinary namespace prefix like "x" or "svg" in
+// startsWithSVGOpenTag's bounded lookahead.
+func isSimpleXMLName(name []byte) bool {
+	for _, c := range name {
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9':
+		case c == '_' || c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // DetectFormat reads the first bytes from r to identify the image format.

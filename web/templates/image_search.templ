@@ -1149,8 +1149,43 @@ templ imageSearchContextualized(data ImageSearchData) {
 				// which the generic-branch Crop button already uses), and is a
 				// harmless no-op when called from the gallery tiles, where there
 				// is no open menu to find.
+				//
+				// #3223 review round 4, H3: the selector below used to be
+				// '[data-context-menu] [role=menu]:not(.hidden)' with no
+				// exclusion for .ctx-bottom-sheet -- the mobile bottom sheet
+				// components.ContextMenu renders (web/components/context_menu.templ
+				// ~77-83) ALSO has role="menu" inside a [data-context-menu]
+				// wrapper, and it is never hidden via the .hidden class (it opens
+				// via .ctx-sheet-open / closes via aria-hidden + inert instead --
+				// see closeAllContextMenus in context_menu.templ ~304). Without the
+				// exclusion, this function matched a live bottom sheet belonging to
+				// an ENTIRELY UNRELATED ContextMenu elsewhere on the page (e.g. an
+				// artist-detail field's actions sheet, artist_field.templ ~510,
+				// rendered alongside this editor inside the Manage-artwork modal --
+				// handlers_artist_detail.go ~110) and added .hidden to it, which
+				// that sheet's own open/close logic never checks or clears. The
+				// sheet was then permanently display:none (its CSS keys off
+				// .ctx-bottom-sheet.ctx-sheet-open, not merely absence of .hidden)
+				// until a full page reload.
+				//
+				// This function's OWN Actions menu (rendered above/below in this
+				// same file) is a hand-rolled dropdown, not components.ContextMenu
+				// -- it never renders as a bottom sheet at any viewport width, so
+				// this function has no bottom sheet of its OWN to manage either.
+				// The correct fix is therefore narrower than "close bottom sheets
+				// too": simply never touch .ctx-bottom-sheet elements at all, the
+				// same way the shared ToggleContextMenu/closeAllContextMenus code
+				// (context_menu.templ) excludes them from its OWN generic
+				// "everything else" selector before handling sheets through their
+				// own separate mechanism. That shared closeAllContextMenus helper
+				// is private to an anonymous IIFE in ContextMenuGlobalJS and not
+				// reachable from this separate script block (confirmed: it is
+				// declared via `function closeAllContextMenus(exceptId) {` inside
+				// `(function() { ... })()`, never assigned to window) -- but since
+				// this function has no sheet of its own to close, delegating was
+				// never actually necessary; excluding is sufficient.
 				function swCloseAnyOpenContextMenu() {
-					var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden)');
+					var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden):not(.ctx-bottom-sheet)');
 					for (var i = 0; i < menus.length; i++) {
 						menus[i].classList.add('hidden');
 						var trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');
@@ -1590,7 +1625,19 @@ func imageTypeLabel(t, profileName string) string {
 script openCropForType(imgSrc string, imageType string) {
 	// Close the context menu before opening the crop modal so the dropdown
 	// does not stay visible behind the modal overlay.
-	var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden)');
+	//
+	// #3223 review round 4, H3: same pre-existing bug as
+	// swCloseAnyOpenContextMenu above -- this selector matched a live mobile
+	// bottom sheet belonging to an UNRELATED ContextMenu elsewhere on the
+	// page (it shares role="menu" and is never .hidden) and added .hidden to
+	// it, which its own open/close logic never checks or clears, leaving it
+	// permanently invisible until a full page reload. This editor's own
+	// Actions menu never renders as a bottom sheet at any viewport width (it
+	// is a hand-rolled dropdown, not components.ContextMenu), so the fix is
+	// simply to exclude .ctx-bottom-sheet from this selector -- there is no
+	// sheet of THIS menu's own that needs a separate close path, and closing
+	// an unrelated one is exactly the bug being fixed, not a gap to fill in.
+	var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden):not(.ctx-bottom-sheet)');
 	for (var i = 0; i < menus.length; i++) {
 		menus[i].classList.add('hidden');
 		var trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');

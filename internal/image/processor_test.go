@@ -110,7 +110,75 @@ func TestDetectFormat_Unknown(t *testing.T) {
 // element) fell through to a false negative because the substring check
 // only recognized a LITERAL "<?xml"/"<!doctype" prefix, not "anything can
 // precede the root". The comment case below is that fix's regression proof.
+//
+// #3223 review round 4, H1: the xml.Decoder replacement from round 3 itself
+// regressed three real cases that the OLD substring version caught, all
+// reproduced and confirmed failing at e1e9462f before this fix:
+//  1. A non-UTF-8 encoding declaration (iso-8859-1, windows-1252, us-ascii --
+//     real legacy Illustrator/browser exports) errors out because no
+//     CharsetReader was set on the decoder, so xml.Decoder refuses to even
+//     start tokenizing.
+//  2. A root tag whose closing '>' lands past the 512-byte sniff window
+//     (realistic for an Inkscape export, whose xmlns block alone routinely
+//     exceeds 500 bytes before the root tag closes) is never emitted as a
+//     StartElement token at all -- xml.Decoder only emits a StartElement
+//     once it has seen the closing '>', so a truncated tag produces a
+//     token ERROR instead, and the pre-fix code treated every token error
+//     as "not SVG".
+//  3. A tag truncated mid-attribute (a real possibility for any sniff
+//     window, not just <512) hits the identical failure as case 2.
+//
+// The Inkscape and Illustrator cases below are realistic exports (not
+// synthetic worst-cases): copied from the actual xmlns block structure both
+// tools emit, padded so the root '>' verifiably lands past byte 512 (see the
+// inline byte-offset comments).
 func TestDetectFormat_SVG(t *testing.T) {
+	// realisticInkscapeHeader is a real Inkscape SVG export's opening block
+	// (xmlns declarations + sodipodi/inkscape metadata attrs), truncated to
+	// exactly svgSniffWindow bytes by DetectFormat before looksLikeSVG ever
+	// sees it. The root element's closing '>' is at byte 664 in the full
+	// string -- past the 512-byte window -- so this is exactly the "root tag
+	// crosses the sniff window" case, not a contrived one.
+	realisticInkscapeHeader := `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="210mm"
+   height="297mm"
+   viewBox="0 0 210 297"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.0.2 (e86c870879, 2021-01-15)"
+   sodipodi:docname="drawing.svg">
+`
+	if len(realisticInkscapeHeader) <= int(svgSniffWindow) {
+		t.Fatalf("test fixture bug: realisticInkscapeHeader is %d bytes, must exceed svgSniffWindow (%d) to exercise the truncation case", len(realisticInkscapeHeader), svgSniffWindow)
+	}
+
+	// realisticIllustratorHeader mirrors a real Adobe Illustrator SVG export:
+	// DOCTYPE with internal ENTITY declarations (Illustrator's namespace
+	// shorthand trick), then the root <svg> tag. Also exceeds svgSniffWindow.
+	realisticIllustratorHeader := `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [
+	<!ENTITY ns_extend "http://ns.adobe.com/Extensibility/1.0/">
+	<!ENTITY ns_ai "http://ns.adobe.com/AdobeIllustrator/10.0/">
+	<!ENTITY ns_graphs "http://ns.adobe.com/Graphs/1.0/">
+]>
+<svg version="1.1" id="Layer_1" xmlns:x="&ns_extend;" xmlns:i="&ns_ai;" xmlns:graph="&ns_graphs;"
+	 xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 512 512" style="enable-background:new 0 0 512 512;" xml:space="preserve">
+`
+	if len(realisticIllustratorHeader) <= int(svgSniffWindow) {
+		t.Fatalf("test fixture bug: realisticIllustratorHeader is %d bytes, must exceed svgSniffWindow (%d) to exercise the truncation case", len(realisticIllustratorHeader), svgSniffWindow)
+	}
+
 	cases := map[string]string{
 		"bare root element":      `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>`,
 		"XML prolog":             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
@@ -121,6 +189,16 @@ func TestDetectFormat_SVG(t *testing.T) {
 		"comment before svg":     "<!-- a comment --><svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
 		"namespaced svg xmlns":   `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"></svg>`,
 		"BOM + prolog + comment": "\xEF\xBB\xBF<?xml version=\"1.0\"?><!-- generated --><svg></svg>",
+		// #3223 review round 4, H1(a): non-UTF-8 encoding declarations.
+		"encoding=iso-8859-1":   `<?xml version="1.0" encoding="iso-8859-1"?><svg></svg>`,
+		"encoding=windows-1252": `<?xml version="1.0" encoding="windows-1252"?><svg></svg>`,
+		"encoding=us-ascii":     `<?xml version="1.0" encoding="us-ascii"?><svg></svg>`,
+		// #3223 review round 4, H1(b): root tag crossing the sniff window,
+		// truncated exactly the way DetectFormat truncates a real fetch.
+		"Inkscape header truncated at svgSniffWindow":    realisticInkscapeHeader[:svgSniffWindow],
+		"Illustrator header truncated at svgSniffWindow": realisticIllustratorHeader[:svgSniffWindow],
+		// #3223 review round 4, H1(c): truncated mid-attribute.
+		"truncated mid-attribute": `<svg width="1`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -132,6 +210,37 @@ func TestDetectFormat_SVG(t *testing.T) {
 	}
 }
 
+// TestDetectFormat_SVG_LongCommentExceedsWindow documents (rather than
+// asserts a specific outcome for) the case where a comment before the root
+// element is itself long enough to push "<svg" past the sniff window
+// entirely -- #3223 review round 4, H1's explicit "otherwise document why
+// it's UNKNOWN" instruction. Nothing observed in the 512-byte window
+// contains the literal bytes "<svg" (the comment consumes the whole
+// window), so DetectFormat correctly cannot classify this as SVG: it falls
+// through to the generic "unrecognized image format" 502 rather than the
+// specific SVG 422. This is a genuine information-theoretic limit of any
+// BOUNDED sniff window, not a bug in looksLikeSVG -- widening the window
+// trades a small, fixed per-fetch memory/CPU cost against catching an
+// increasingly rare comment-padding shape, and 512 bytes (already 4x a
+// typical XML prolog) was judged the right tradeoff. If real-world SVGs
+// with lead comments this long are ever observed in practice, that is the
+// evidence needed to revisit svgSniffWindow, not a reason to change
+// looksLikeSVG's logic.
+func TestDetectFormat_SVG_LongCommentExceedsWindow(t *testing.T) {
+	longComment := "<!-- " + strings.Repeat("x", 600) + " --><svg></svg>"
+	if len(longComment) <= int(svgSniffWindow) {
+		t.Fatalf("test fixture bug: longComment is %d bytes, must exceed svgSniffWindow (%d)", len(longComment), svgSniffWindow)
+	}
+	truncated := longComment[:svgSniffWindow]
+	if strings.Contains(strings.ToLower(truncated), "<svg") {
+		t.Fatalf("test fixture bug: the truncated window unexpectedly contains \"<svg\" -- this test needs the comment to fully consume the window")
+	}
+	_, _, err := DetectFormat(strings.NewReader(truncated))
+	if errors.Is(err, ErrSVGUnsupported) {
+		t.Error("a comment that consumes the entire sniff window before any \"<svg\" bytes appear cannot be classified as SVG -- if this now passes, svgSniffWindow or looksLikeSVG changed in a way that should be documented here")
+	}
+}
+
 // TestDetectFormat_SVG_NegativeCases covers #3223 review round 3, R2's other
 // bug: the substring-match implementation classified ANY tag whose name
 // happened to start with the literal bytes "<svg" as SVG, even though it is
@@ -139,11 +248,26 @@ func TestDetectFormat_SVG(t *testing.T) {
 // "<svgdata>" are the two concrete cases CodeRabbit's two review passes
 // named. Also covers a plain (non-SVG) XML document with a real prolog, to
 // prove the XML-prolog path does not over-match every XML document as SVG.
+//
+// #3223 review round 4, H2: the round-3 xml.Decoder rewrite introduced a
+// NEW false positive of its own -- every xml.CharData token was skipped
+// unconditionally on the way to a StartElement, treating arbitrary prose
+// text the same as XML whitespace. "Moved. See <svg/>" (an HTTP redirect
+// landing page, or any prose mentioning an svg tag) and "GIF89a<svg></svg>"
+// (a GIF magic-number prefix followed by literal svg-like bytes, standing
+// in for any binary format whose header happens to decode as non-strict
+// CharData) both reproduced as misclassified SVG before this fix. Fixed by
+// only treating CharData as "precedes the root, keep reading" when it is
+// ALL WHITESPACE (plus an optional leading BOM); any non-whitespace content
+// before a root element means this was never a real XML/SVG document.
 func TestDetectFormat_SVG_NegativeCases(t *testing.T) {
 	cases := map[string]string{
 		"tag name starting with svg (svg-not-image)": "<svg-not-image>hello</svg-not-image>",
 		"tag name starting with svg (svgdata)":       "<svgdata>hello</svgdata>",
 		"plain XML document, not SVG":                `<?xml version="1.0"?><rss><channel><title>Not SVG</title></channel></rss>`,
+		// #3223 review round 4, H2.
+		"prose mentioning an svg tag": "Moved. See <svg/>",
+		"GIF magic number prefix":     "GIF89a<svg></svg>",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

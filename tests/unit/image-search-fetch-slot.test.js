@@ -63,6 +63,29 @@ function writeScriptToTempFile() {
 // fixture can exercise swOpenFetchUrlForSlot / swOpenCropForSlot's own
 // menu-closing behavior (added in C3), not just the request-body threading
 // the other tests in this file already cover.
+//
+// #3223 review round 4, H3: #unrelated-field-sheet stands in for a
+// completely UNRELATED ContextMenu's mobile bottom sheet elsewhere on the
+// page -- e.g. an artist-detail field's actions sheet
+// (artist_field.templ ~510), rendered alongside this editor inside the
+// Manage-artwork modal (handlers_artist_detail.go ~110). It shares
+// role="menu" and starts OPEN (.ctx-sheet-open, no .hidden class -- exactly
+// how components.ContextMenu's real bottom sheet markup behaves), which is
+// the shape that let swCloseAnyOpenContextMenu's old selector match it by
+// mistake and add .hidden to it (a class its own open/close logic never
+// checks or clears). It is nested inside its OWN, SEPARATE
+// [data-context-menu] wrapper -- matching the real markup exactly
+// (components.ContextMenu, context_menu.templ ~46-84, renders BOTH the
+// desktop panel AND the bottom sheet as siblings inside one
+// [data-context-menu] div) -- because the old selector's bug was never
+// about wrapper scoping (querySelectorAll('[data-context-menu] [role=menu]')
+// intentionally matches ANY [data-context-menu] on the page, not just this
+// editor's own), it was about failing to exclude .ctx-bottom-sheet from the
+// element type. Putting the fixture sheet outside any [data-context-menu]
+// wrapper would not have reproduced the bug (confirmed: an earlier version
+// of this fixture did exactly that, and the pre-fix code passed against it
+// for the wrong reason -- the selector's [data-context-menu] ancestor
+// requirement, not the .hidden exclusion, was what saved it).
 const FIXTURE_HTML = `<!doctype html><html><body>
 <div data-artist-id="artist123" data-image-type="fanart"
      data-msg-fetching="Fetching..." data-msg-fetch-unable="Unable to fetch"
@@ -90,6 +113,12 @@ const FIXTURE_HTML = `<!doctype html><html><body>
   <input id="crop-lock-ratio" type="checkbox"/>
   <div id="crop-error" class="hidden"></div>
   <button id="crop-save-btn">Save</button>
+</div>
+<div data-context-menu="field-name-actions">
+  <button aria-haspopup="true" aria-expanded="false">Edit</button>
+  <div id="unrelated-field-sheet" class="ctx-bottom-sheet ctx-sheet-open" role="menu" aria-hidden="false">
+    <button role="menuitem">Edit field</button>
+  </div>
 </div>
 </body></html>`;
 
@@ -181,17 +210,42 @@ describe('image_search.templ fetch-url-modal: _fetchUrlSlot staleness (#2281 fix
 // without a browser.
 describe('image_search.templ fetch-url-modal: non-OK response body parsing (#3223 review round 3, C2)', () => {
   // errorFetchMock returns a non-OK response whose text() is the given raw
-  // body -- json() is intentionally NOT implemented (a real fetch()'s json()
-  // reads the same underlying stream text() does, and the fixed handler
-  // under test now calls ONLY text(), never json(), so a mock that omits
-  // json() entirely doubles as a guard against a regression back to the
-  // pre-fix r.json() call: that would throw "fetchMock.json is not a
-  // function" instead of silently reading a stubbed value).
+  // body. json() is also implemented -- as a REAL browser's Response.json()
+  // would: parse the SAME body text() exposes, rejecting if it isn't valid
+  // JSON, exactly the way JSON.parse would.
+  //
+  // #3223 review round 4, H4: the earlier version of this mock omitted
+  // json() entirely, on the reasoning that "the fixed handler now calls
+  // ONLY text(), never json(), so a mock missing json() doubles as a
+  // regression guard". That reasoning was wrong in a way that was proven by
+  // reverting the C2 fix and re-running: with r.json() restored in the
+  // handler, the "422 JSON" case failed with 'Fetch failed', NOT the
+  // meaningful assertion about the wrong text -- because
+  // "fetchMock.json is not a function" threw, was caught by the handler's
+  // OWN outer .catch (a real code path, not a test artifact), and showed
+  // msgFetchFailed. The 422 case was passing before this fix, but for the
+  // WRONG reason: it was guarding "the mock has no json() method", not
+  // "data.error displays correctly". Giving the mock a real json() that
+  // mirrors text() means all three cases now guard the actual C2 behavior:
+  // (1) a genuinely-JSON 422 body's data.error must display, and (2)/(3) a
+  // non-JSON 502 body must fall back to msgFetchUnable -- not "the handler
+  // happens to call the one method this mock implements".
   function errorFetchMock(status, text) {
     const calls = [];
     function mock(url, options) {
       calls.push({ url, options });
-      return Promise.resolve({ ok: false, status, text: () => Promise.resolve(text) });
+      return Promise.resolve({
+        ok: false,
+        status,
+        text: () => Promise.resolve(text),
+        json: () => {
+          try {
+            return Promise.resolve(JSON.parse(text));
+          } catch (e) {
+            return Promise.reject(e);
+          }
+        },
+      });
     }
     mock.calls = calls;
     return mock;
@@ -208,6 +262,9 @@ describe('image_search.templ fetch-url-modal: non-OK response body parsing (#322
     await flush();
   }
 
+  // Guards: r.text() is parsed as JSON and data.error is displayed verbatim
+  // when the body genuinely parses -- the "happy path" of the C2 fix's
+  // try/catch (the try succeeds, data is non-null, data.error exists).
   it('a 422 with a JSON {error: "X"} body shows X', async () => {
     const dom = loadDom();
     const svgMessage = 'That link points to an SVG image, which Stillwater cannot use. Pick a PNG or JPG result instead.';
@@ -217,6 +274,10 @@ describe('image_search.templ fetch-url-modal: non-OK response body parsing (#322
       'a 422 with a JSON error body must show that exact server message');
   });
 
+  // Guards: an empty string fails JSON.parse (caught by the C2 fix's
+  // try/catch, data=null) and falls back to msgFetchUnable -- NOT into the
+  // outer .catch's msgFetchFailed, which is what happened before the C2 fix
+  // when r.json() itself rejected on an empty/non-JSON body.
   it('a 502 with an EMPTY body shows the msgFetchUnable text, not msgFetchFailed', async () => {
     const dom = loadDom();
     await submitWithMock(dom, errorFetchMock(502, ''));
@@ -225,6 +286,10 @@ describe('image_search.templ fetch-url-modal: non-OK response body parsing (#322
       'an empty error body must fall back to msgFetchUnable (the fixture\'s data-msg-fetch-unable), not reject into msgFetchFailed');
   });
 
+  // Guards: the same fallback as the empty-body case, but for a body that IS
+  // non-empty text yet still invalid JSON (an HTML error page) -- proves the
+  // try/catch's fallback isn't merely "empty string special-cased", it's a
+  // genuine JSON.parse failure catch.
   it('a 502 with an HTML body (a proxy error page) does the same as an empty body', async () => {
     const dom = loadDom();
     await submitWithMock(dom, errorFetchMock(502, '<html><body><h1>502 Bad Gateway</h1></body></html>'));
@@ -292,5 +357,40 @@ describe('image_search.templ Actions menu: swOpenFetchUrlForSlot / swOpenCropFor
 
     assert.doesNotThrow(() => dom.window.swOpenCropForSlot(1),
       'swCloseAnyOpenContextMenu must not throw when no menu is open');
+  });
+
+  // #3223 review round 4, H3.
+  function unrelatedSheetState(dom) {
+    const sheet = dom.window.document.getElementById('unrelated-field-sheet');
+    return {
+      hidden: sheet.classList.contains('hidden'),
+      sheetOpen: sheet.classList.contains('ctx-sheet-open'),
+      ariaHidden: sheet.getAttribute('aria-hidden'),
+    };
+  }
+
+  it('swOpenFetchUrlForSlot leaves an unrelated OPEN .ctx-bottom-sheet alone (does not add .hidden to it)', () => {
+    const dom = loadDom();
+    const before = unrelatedSheetState(dom);
+    assert.equal(before.hidden, false, 'precondition: the unrelated sheet starts without .hidden');
+    assert.equal(before.sheetOpen, true, 'precondition: the unrelated sheet starts open (.ctx-sheet-open)');
+
+    dom.window.swOpenFetchUrlForSlot(1);
+
+    const after = unrelatedSheetState(dom);
+    assert.equal(after.hidden, false,
+      'swOpenFetchUrlForSlot must NOT add .hidden to an unrelated bottom sheet -- that class is never checked by the sheet\'s own open/close logic, so adding it leaves the sheet permanently invisible (display:none via CSS keyed on .ctx-bottom-sheet.ctx-sheet-open) until a full page reload');
+    assert.equal(after.sheetOpen, true, 'the unrelated sheet must remain open -- this function has no business touching a sheet outside its own [data-context-menu] scope');
+  });
+
+  it('swOpenCropForSlot leaves an unrelated OPEN .ctx-bottom-sheet alone (does not add .hidden to it)', () => {
+    const dom = loadDom();
+    dom.window.openCropModal = () => {};
+
+    dom.window.swOpenCropForSlot(1);
+
+    const after = unrelatedSheetState(dom);
+    assert.equal(after.hidden, false, 'swOpenCropForSlot must NOT add .hidden to an unrelated bottom sheet');
+    assert.equal(after.sheetOpen, true, 'the unrelated sheet must remain open');
   });
 });
