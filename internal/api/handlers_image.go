@@ -679,31 +679,47 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 
 	data, err := r.fetchImageFromURL(req.Context(), imageURL)
 	if err != nil {
-		r.logger.Warn("fetching image from URL", "url", imageURL, "error", err)
+		// #3223 review round 3, C1: an SVG result is EXPECTED and user-
+		// actionable -- Google's ic:trans (transparent) filter, applied by
+		// the logo/banner deep links this issue added, returns SVG results
+		// alongside raster ones as a matter of course, so this branch fires
+		// in normal operation, not just on a real fault. Logging it at Warn
+		// (the level below, kept for every OTHER fetch failure) would put an
+		// expected outcome in the log at the same severity as a genuine
+		// upstream problem. Checked BEFORE the Warn call (not after, as the
+		// first cut of this fix had it) so the Warn never fires for this
+		// case at all. Debug, matching this same handler's existing
+		// convention for a client-caused, already-actionable error
+		// (extractImageFetchParams's "invalid image fetch request body"
+		// case a few lines above) -- there is no Info-level precedent in
+		// this file for a rejected fetch attempt, and Debug is the better
+		// fit anyway: an operator does not need this in normal logs, only
+		// when actively debugging the fetch path.
+		//
 		// #3223 review round 2, F1: an SVG result is a distinct, actionable
-		// case, not a generic upstream failure -- Google's ic:trans
-		// (transparent) filter, applied by the logo/banner deep links this
-		// issue added, returns SVG results alongside raster ones, and
-		// Stillwater's decode pipeline has no SVG decoder. 422 Unprocessable
-		// Entity (not 415 Unsupported Media Type): the request reached the
-		// server fine and the URL was fetched successfully -- the fetched
-		// CONTENT is what this server cannot process, which is exactly what
-		// 422 means (RFC 9110 15.5.21) and matches this codebase's existing
-		// convention for "well-formed request, semantically unusable
-		// payload" (e.g. the logo-trim-produced-no-usable-image case a few
-		// hundred lines below, and handlers_artist_duplicates.go). 415 is
-		// reserved here for a request whose Content-Type/media envelope
-		// itself is rejected before any processing is attempted (see
-		// parseProviderKeyInput), which is not this case: the upstream
-		// response's Content-Type is not trusted at all (fetchImageFromURL's
-		// validContentTypes check only logs a mismatch), so the decision is
-		// made from the sniffed body, not a header.
+		// case, not a generic upstream failure -- Stillwater's decode
+		// pipeline has no SVG decoder. 422 Unprocessable Entity (not 415
+		// Unsupported Media Type): the request reached the server fine and
+		// the URL was fetched successfully -- the fetched CONTENT is what
+		// this server cannot process, which is exactly what 422 means (RFC
+		// 9110 15.5.21) and matches this codebase's existing convention for
+		// "well-formed request, semantically unusable payload" (e.g. the
+		// logo-trim-produced-no-usable-image case a few hundred lines below,
+		// and handlers_artist_duplicates.go). 415 is reserved here for a
+		// request whose Content-Type/media envelope itself is rejected
+		// before any processing is attempted (see parseProviderKeyInput),
+		// which is not this case: the upstream response's Content-Type is
+		// not trusted at all (fetchImageFromURL's validContentTypes check
+		// only logs a mismatch), so the decision is made from the sniffed
+		// body, not a header.
 		if errors.Is(err, img.ErrSVGUnsupported) {
+			r.logger.Debug("fetching image from URL: SVG unsupported", "url", imageURL, "error", err)
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 				"error": i18n.TFromCtx(req.Context()).T("image.msg_fetch_svg_unsupported"),
 			})
 			return
 		}
+		r.logger.Warn("fetching image from URL", "url", imageURL, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to fetch image"})
 		return
 	}

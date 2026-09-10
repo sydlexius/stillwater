@@ -23,6 +23,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/internal/version"
 )
 
 // init registers a text/html body decoder for the kin-openapi validator. The
@@ -272,15 +273,29 @@ func TestHandleImageFetch_SVG_Unprocessable(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	// A real HTTP server (httptest.NewServer, per the review finding) serving
-	// an SVG body with an image/svg+xml Content-Type -- validContentTypes
-	// does not include it, so this also proves the SVG branch is reached via
-	// body sniffing, not the (untrusted) response header.
+	// #3223 review round 3, R3: the mock server previously accepted any
+	// method/path/User-Agent, so it could not distinguish "fetchImageFromURL
+	// requested the right thing" from "it requested nothing in particular
+	// and got lucky". Assert the real request shape from INSIDE the handler.
+	// t.Errorf (never t.Fatal) because this closure runs on the httptest
+	// server's own goroutine, not the test goroutine -- calling a Fatal-class
+	// method there would not fail the test the way it looks like it does
+	// (testing.T panics on FailNow from a non-test goroutine).
+	wantUA := version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater")
 	svgBody := `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
   <circle cx="100" cy="100" r="80" fill="#4285F4"/>
 </svg>`
-	svgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	svgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet {
+			t.Errorf("SVG mock server: method = %q, want GET", req.Method)
+		}
+		if req.URL.Path != "/logo.svg" {
+			t.Errorf("SVG mock server: path = %q, want /logo.svg", req.URL.Path)
+		}
+		if got := req.Header.Get("User-Agent"); got != wantUA {
+			t.Errorf("SVG mock server: User-Agent = %q, want %q", got, wantUA)
+		}
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(svgBody))
@@ -291,8 +306,34 @@ func TestHandleImageFetch_SVG_Unprocessable(t *testing.T) {
 	// transport below redirects the actual bytes to svgSrv.
 	r.ssrfClient = &http.Client{Transport: hostRewriteRoundTripper{base: svgSrv.URL}}
 
+	// #3223 review round 3, C1: an SVG result is EXPECTED (Google's
+	// ic:trans filter surfaces them routinely), so it must log at Debug,
+	// not Warn -- Warn is reserved for every OTHER fetch failure, which
+	// really is unexpected. Swap in a text-handler-over-buffer logger
+	// (the cheap pattern TestLocalAlbumSetLogsUnknown in
+	// album_evidence_test.go already uses) rather than building a new
+	// logging harness just for this assertion.
+	var logBuf bytes.Buffer
+	r.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	// #3223 review round 3, R4: handleImageFetch is called below with NO
+	// i18n translator in its request context. i18n.TFromCtx's documented
+	// fallback for that case returns the bare KEY itself
+	// ("image.msg_fetch_svg_unsupported"), which happens to contain the
+	// substring "svg" -- so the original strings.Contains(..., "svg") check
+	// passed VACUOUSLY: it never observed real translated text, only the
+	// key's own name. Confirmed by a throwaway t.Logf probe before this fix
+	// (see the #3223 round-3 report): resp["error"] was literally the raw
+	// key. reqWithEnTranslator (handlers_provider_test.go) wires the real
+	// embedded English translator into the request context; assert EQUALITY
+	// against the literal en.json string -- not a substring -- so a future
+	// en.json wording change or another vacuous-fallback regression both
+	// surface as a clear diff instead of silently continuing to pass.
+	const wantErrorText = "That link points to an SVG image, which Stillwater cannot use. Pick a PNG or JPG result instead."
+
 	body := strings.NewReader(`{"url":"https://8.8.8.8/logo.svg","type":"logo"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req = reqWithEnTranslator(t, req)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", a.ID)
 
@@ -304,8 +345,136 @@ func TestHandleImageFetch_SVG_Unprocessable(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v; body: %s", err, w.Body.String())
 	}
-	if !strings.Contains(strings.ToLower(resp["error"]), "svg") {
-		t.Errorf("error message = %q, want it to name SVG specifically (not the generic fetch-failure text)", resp["error"])
+	if resp["error"] != wantErrorText {
+		t.Errorf("error message = %q, want the exact en.json text %q", resp["error"], wantErrorText)
+	}
+
+	logged := logBuf.String()
+	if strings.Contains(logged, "level=WARN") {
+		t.Errorf("an expected, user-actionable SVG rejection logged at WARN; want DEBUG only. log:\n%s", logged)
+	}
+	if !strings.Contains(logged, "level=DEBUG") || !strings.Contains(logged, "SVG") {
+		t.Errorf("expected a DEBUG log mentioning SVG; got:\n%s", logged)
+	}
+}
+
+// testPartiallyTransparentPNG encodes a PNG whose CENTER pixel carries a
+// specific mid-range alpha (0 < alpha < 255) surrounded by fully opaque
+// pixels. The AC this test proves ("a transparent PNG copied from a Google
+// logo result and pasted into the logo slot is written to disk with its
+// alpha channel intact") needs a pixel that is neither 0 (which
+// img.TrimAlpha, imageType=="logo"'s automatic border-trim, would crop away
+// as background) nor 255 (which every lossy or flatten-to-opaque bug this
+// test needs to catch would also produce, making the assertion vacuous).
+// Centering the semi-transparent pixel keeps it inside TrimAlpha's detected
+// content bounds regardless of trim threshold, so it survives the real
+// production save path unchanged -- proving alpha PRESERVATION, not just
+// alpha PRESENCE.
+func testPartiallyTransparentPNG(t *testing.T, w, h int, centerAlpha uint8) []byte {
+	t.Helper()
+	im := image.NewNRGBA(image.Rect(0, 0, w, h))
+	opaqueWhite := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			im.SetNRGBA(x, y, opaqueWhite)
+		}
+	}
+	im.SetNRGBA(w/2, h/2, color.NRGBA{R: 10, G: 20, B: 30, A: centerAlpha})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, im); err != nil {
+		t.Fatalf("encoding partially transparent PNG: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// TestHandleImageFetch_Logo_PreservesPartialAlpha proves #3223's original
+// acceptance criterion end-to-end through the REAL production save path
+// (not a synthetic assertion on saved bytes in isolation): a partially
+// transparent PNG fetched into the logo slot must reach disk with its exact
+// non-opaque alpha value intact.
+//
+// Logo's CheckGeometry (internal/image/geometry.go) never needs_crop (logo
+// has SlotAspectRatio 0), so this exercises handleImageFetch's DIRECT save
+// branch (processAndSaveImage), not the crop/needs_crop detour -- confirmed
+// by asserting response.needs_crop is absent/false below, so a future
+// change that routes logo through needs_crop cannot silently make this test
+// pass for the wrong reason.
+//
+// P1 (#3223 review round 3): the hostile reviewer that originally graded
+// this AC only checked it by hand (a live browser paste-and-save), leaving
+// no automated regression guard. This is that guard.
+func TestHandleImageFetch_Logo_PreservesPartialAlpha(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "LogoAlpha", SortName: "LogoAlpha", Path: dir}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	const wantAlpha = 128
+	pngData := testPartiallyTransparentPNG(t, 64, 64, wantAlpha)
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: pngData}}
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/logo.png","type":"logo"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if needsCrop, _ := resp["needs_crop"].(bool); needsCrop {
+		t.Fatalf("needs_crop = true; logo must never require cropping (SlotAspectRatio(\"logo\")==0), so this test would be proving the wrong code path")
+	}
+
+	// Read the REAL saved file back from disk (not the response body): the
+	// AC is about what lands on disk, and img.Save can legitimately rewrite
+	// bytes (EXIF injection, re-encoding) between the fetched data and the
+	// canonical file.
+	savedPath := filepath.Join(dir, "logo.png")
+	saved, err := os.ReadFile(savedPath)
+	if err != nil {
+		t.Fatalf("reading saved logo.png: %v", err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(saved))
+	if err != nil {
+		t.Fatalf("decoding saved logo.png: %v", err)
+	}
+	bounds := decoded.Bounds()
+	// The center pixel's position may have shifted if TrimAlpha cropped a
+	// symmetric opaque border, so locate it by SCANNING for the distinctive
+	// non-opaque alpha rather than assuming an untouched coordinate space --
+	// asserting against a hardcoded (32,32) would either false-fail on a
+	// legitimate trim or (worse) silently check the wrong pixel if trim
+	// shifted coordinates without changing dimensions.
+	found := false
+	var gotAlpha uint32
+	for y := bounds.Min.Y; y < bounds.Max.Y && !found; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, a16 := decoded.At(x, y).RGBA()
+			// RGBA() returns alpha as a 16-bit value (0-65535); an 8-bit
+			// PNG's alpha channel is that value replicated into both bytes
+			// (a8<<8 | a8), so dividing by 257 recovers the original 8-bit
+			// alpha exactly for any a8 in 0-255.
+			a8 := a16 / 257
+			if a8 != 0 && a8 != 255 {
+				found = true
+				gotAlpha = a8
+				break
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("saved logo.png has no partially-transparent pixel at all (bounds=%v) -- alpha was flattened to fully opaque or fully transparent somewhere in the save path", bounds)
+	}
+	if gotAlpha != wantAlpha {
+		t.Errorf("saved logo.png's partially-transparent pixel has alpha=%d, want %d (the exact value pasted in) -- the save path re-quantized or altered the alpha channel", gotAlpha, wantAlpha)
 	}
 }
 

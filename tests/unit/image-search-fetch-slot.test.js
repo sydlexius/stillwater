@@ -57,6 +57,12 @@ function writeScriptToTempFile() {
 // addEventListener) so it runs to completion without throwing on a null
 // getElementById result. data-artist-id + data-image-type on the container
 // satisfy the IIFE's own early-return guard.
+// #3223 review round 3, C3: data-context-menu/[role=menu]/[aria-haspopup]
+// mirror the real Actions-menu markup image_search.templ renders around the
+// indexed backdrop branch's Fetch-from-URL and Crop menuitems, so this
+// fixture can exercise swOpenFetchUrlForSlot / swOpenCropForSlot's own
+// menu-closing behavior (added in C3), not just the request-body threading
+// the other tests in this file already cover.
 const FIXTURE_HTML = `<!doctype html><html><body>
 <div data-artist-id="artist123" data-image-type="fanart"
      data-msg-fetching="Fetching..." data-msg-fetch-unable="Unable to fetch"
@@ -66,6 +72,13 @@ const FIXTURE_HTML = `<!doctype html><html><body>
   <div id="drop-hint" class="hidden"></div>
   <input id="image-file-input" type="file"/>
   <div id="upload-status"></div>
+</div>
+<div data-context-menu="img-actions-artist123">
+  <button aria-haspopup="true" aria-expanded="true">Actions</button>
+  <div role="menu">
+    <button role="menuitem" id="menu-fetch-btn">Fetch from URL</button>
+    <button role="menuitem" id="menu-crop-btn">Crop</button>
+  </div>
 </div>
 <div id="fetch-url-modal" class="hidden">
   <input id="fetch-url-input" type="url"/>
@@ -150,5 +163,134 @@ describe('image_search.templ fetch-url-modal: _fetchUrlSlot staleness (#2281 fix
     assert.ok(!modal.classList.contains('hidden'), 'precondition: modal is visible after opening');
     dom.window.swCloseFetchUrlModal();
     assert.ok(modal.classList.contains('hidden'), 'swCloseFetchUrlModal must hide the fetch-url-modal');
+  });
+});
+
+// #3223 review round 3, C2/P2: the fetch-url-submit handler used to call
+// r.json() unconditionally. A non-OK response whose body is not valid JSON
+// (an empty body, or an HTML error page from a proxy) makes that Promise
+// REJECT, which fell through to the .catch() and showed msgFetchFailed --
+// contradicting the code's own comment, which promised a msgFetchUnable
+// fallback for exactly this case. Fixed by reading the body as text and
+// JSON.parse-ing it inside try/catch, treating a parse failure as data=null.
+//
+// These are the UNIT-level counterpart to the C2 Playwright cases in
+// tests/a11y/google-images-link.spec.js, which cover the same three shapes
+// against a REAL browser + a routed HTTP response; this file's dom-harness
+// mock lets each case assert the exact #upload-status text synchronously,
+// without a browser.
+describe('image_search.templ fetch-url-modal: non-OK response body parsing (#3223 review round 3, C2)', () => {
+  // errorFetchMock returns a non-OK response whose text() is the given raw
+  // body -- json() is intentionally NOT implemented (a real fetch()'s json()
+  // reads the same underlying stream text() does, and the fixed handler
+  // under test now calls ONLY text(), never json(), so a mock that omits
+  // json() entirely doubles as a guard against a regression back to the
+  // pre-fix r.json() call: that would throw "fetchMock.json is not a
+  // function" instead of silently reading a stubbed value).
+  function errorFetchMock(status, text) {
+    const calls = [];
+    function mock(url, options) {
+      calls.push({ url, options });
+      return Promise.resolve({ ok: false, status, text: () => Promise.resolve(text) });
+    }
+    mock.calls = calls;
+    return mock;
+  }
+
+  function statusText(dom) {
+    return dom.window.document.getElementById('upload-status').textContent;
+  }
+
+  async function submitWithMock(dom, fetchMock) {
+    dom.window.fetch = fetchMock;
+    dom.window.document.getElementById('fetch-url-input').value = 'https://example.com/img.jpg';
+    dom.window.document.getElementById('fetch-url-submit').click();
+    await flush();
+  }
+
+  it('a 422 with a JSON {error: "X"} body shows X', async () => {
+    const dom = loadDom();
+    const svgMessage = 'That link points to an SVG image, which Stillwater cannot use. Pick a PNG or JPG result instead.';
+    await submitWithMock(dom, errorFetchMock(422, JSON.stringify({ error: svgMessage })));
+
+    assert.equal(statusText(dom), svgMessage,
+      'a 422 with a JSON error body must show that exact server message');
+  });
+
+  it('a 502 with an EMPTY body shows the msgFetchUnable text, not msgFetchFailed', async () => {
+    const dom = loadDom();
+    await submitWithMock(dom, errorFetchMock(502, ''));
+
+    assert.equal(statusText(dom), 'Unable to fetch',
+      'an empty error body must fall back to msgFetchUnable (the fixture\'s data-msg-fetch-unable), not reject into msgFetchFailed');
+  });
+
+  it('a 502 with an HTML body (a proxy error page) does the same as an empty body', async () => {
+    const dom = loadDom();
+    await submitWithMock(dom, errorFetchMock(502, '<html><body><h1>502 Bad Gateway</h1></body></html>'));
+
+    assert.equal(statusText(dom), 'Unable to fetch',
+      'an HTML (non-JSON) error body must fall back to msgFetchUnable, not reject into msgFetchFailed');
+  });
+});
+
+// #3223 review round 3, C3: swOpenFetchUrlForSlot and swOpenCropForSlot did
+// not close the Actions menu themselves. The comment beside the Google
+// Images menu entry claimed its own menu-close "matches the Fetch from URL
+// button above", which was false for the indexed backdrop branch (the one
+// calling swOpenFetchUrlForSlot) at the time -- the same defect class F5
+// fixed on the Google entry was still live on its siblings. Fixed by adding
+// a shared swCloseAnyOpenContextMenu() call to both functions.
+describe('image_search.templ Actions menu: swOpenFetchUrlForSlot / swOpenCropForSlot close the menu (#3223 review round 3, C3)', () => {
+  function menuState(dom) {
+    const menu = dom.window.document.querySelector('[role="menu"]');
+    const trigger = dom.window.document.querySelector('[aria-haspopup="true"]');
+    return {
+      menuHidden: menu.classList.contains('hidden'),
+      triggerExpanded: trigger.getAttribute('aria-expanded'),
+    };
+  }
+
+  it('swOpenFetchUrlForSlot closes the open Actions menu before opening the fetch dialog', () => {
+    const dom = loadDom();
+    // Precondition: the fixture's menu starts open (matches the real DOM
+    // state at the moment a menuitem inside it is clicked).
+    const before = menuState(dom);
+    assert.equal(before.menuHidden, false, 'precondition: the menu starts open');
+    assert.equal(before.triggerExpanded, 'true', 'precondition: the trigger starts expanded');
+
+    dom.window.swOpenFetchUrlForSlot(1);
+
+    const after = menuState(dom);
+    assert.equal(after.menuHidden, true, 'swOpenFetchUrlForSlot must close the open Actions menu');
+    assert.equal(after.triggerExpanded, 'false', 'swOpenFetchUrlForSlot must mark the trigger collapsed (aria-expanded=false)');
+    assert.equal(dom.window.document.getElementById('fetch-url-modal').classList.contains('hidden'), false,
+      'the fetch-url-modal must still open as before');
+  });
+
+  it('swOpenCropForSlot closes the open Actions menu before opening the crop modal', () => {
+    const dom = loadDom();
+    const opened = [];
+    dom.window.openCropModal = (...args) => opened.push(args);
+
+    dom.window.swOpenCropForSlot(1);
+
+    const after = menuState(dom);
+    assert.equal(after.menuHidden, true, 'swOpenCropForSlot must close the open Actions menu');
+    assert.equal(after.triggerExpanded, 'false', 'swOpenCropForSlot must mark the trigger collapsed (aria-expanded=false)');
+    assert.equal(opened.length, 1, 'openCropModal must still be invoked as before');
+  });
+
+  it('swOpenCropForSlot is a harmless no-op on menu-closing when there is no open menu (the backdrop-gallery call site)', () => {
+    const dom = loadDom();
+    // Simulate the backdrop_management.templ gallery tile call site, which
+    // has no [data-context-menu] ancestor at all -- close the fixture's menu
+    // first so none is open, matching that call site's real DOM shape.
+    dom.window.document.querySelector('[role="menu"]').classList.add('hidden');
+    dom.window.document.querySelector('[aria-haspopup="true"]').setAttribute('aria-expanded', 'false');
+    dom.window.openCropModal = () => {};
+
+    assert.doesNotThrow(() => dom.window.swOpenCropForSlot(1),
+      'swCloseAnyOpenContextMenu must not throw when no menu is open');
   });
 });

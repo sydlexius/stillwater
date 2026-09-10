@@ -124,9 +124,20 @@ test('indexed backdrop slot: clicking Google Images opens the dialog targeted at
   // Submitting now must target the fanart slot (fetchType becomes 'fanart'
   // with a slot field) -- verified via the actual outgoing fetch request,
   // not the closure variable.
+  //
+  // #3223 review round 3, R1 (also raised independently by CodeRabbit):
+  // fill() and click() used to race inside the same Promise.all -- nothing
+  // guarantees fill() resolves before click() starts, so the submit could
+  // fire on an empty #fetch-url-input. The handler returns early on an
+  // empty url (`if (!url) return;`), so the click produces no fetch request
+  // at all, and waitForRequest below would then hang until its timeout
+  // instead of failing fast on the real defect. Await the fill to
+  // completion FIRST, then race only waitForRequest against click (which is
+  // the correct pattern: the request fires synchronously inside the click
+  // handler, before click() itself resolves, so THAT race is safe).
+  await page.locator('#fetch-url-input').fill('https://example.invalid/not-a-real-image.png');
   const [request] = await Promise.all([
     page.waitForRequest(req => req.url().includes('/images/fetch') && req.method() === 'POST'),
-    page.locator('#fetch-url-input').fill('https://example.invalid/not-a-real-image.png'),
     page.locator('#fetch-url-submit').click(),
   ]);
   const body = request.postDataJSON();
@@ -159,3 +170,59 @@ for (const theme of ['dark', 'light']) {
     expect(results.violations, formatViolations(results.violations)).toHaveLength(0);
   });
 }
+
+// #3223 review round 3, C2: the fetch-url-submit handler used to call
+// r.json() unconditionally, so a non-OK response with a non-JSON or empty
+// body made that Promise REJECT -- landing in the outer .catch and showing
+// msgFetchFailed ("Fetch failed") instead of the code's own promised
+// msgFetchUnable ("Unable to fetch image") fallback. These three cases route
+// the REAL /images/fetch endpoint through page.route to a canned response
+// (a real browser Response, not a mock object), which is the thing the
+// dom-harness unit tests in tests/unit/image-search-fetch-slot.test.js
+// cannot exercise -- those stub `window.fetch` directly; this proves the
+// actual fetch()/Response machinery in a real browser behaves the same way.
+test.describe('Google Images link: fetch-dialog error body parsing (#3223 review round 3, C2)', () => {
+  async function openDialogAndSubmit(page, routeFulfill) {
+    const link = await openActionsMenu(page, 'thumb');
+    await page.route('**/api/v1/artists/*/images/fetch', route => route.fulfill(routeFulfill));
+
+    const [popup] = await Promise.all([
+      page.context().waitForEvent('page'),
+      link.click(),
+    ]);
+    await popup.close();
+
+    const modal = page.locator('#fetch-url-modal');
+    await expect(modal).toBeVisible();
+    await page.locator('#fetch-url-input').fill('https://example.invalid/not-a-real-image.png');
+    await page.locator('#fetch-url-submit').click();
+    // No waitForRequest here (unlike the indexed-slot test above): the
+    // response is what's under test, and the route above intercepts before
+    // the request reaches a real server, so waiting on the status line is
+    // the meaningful synchronization point instead.
+    return page.locator('#upload-status');
+  }
+
+  test('a 422 with a JSON {error: "X"} body shows X', async ({ page }) => {
+    const status = await openDialogAndSubmit(page, {
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'That link points to an SVG image, which Stillwater cannot use. Pick a PNG or JPG result instead.' }),
+    });
+    await expect(status).toHaveText('That link points to an SVG image, which Stillwater cannot use. Pick a PNG or JPG result instead.');
+  });
+
+  test('a 502 with an EMPTY body shows the msgFetchUnable text, not msgFetchFailed', async ({ page }) => {
+    const status = await openDialogAndSubmit(page, { status: 502, contentType: 'text/plain', body: '' });
+    await expect(status).toHaveText('Unable to fetch image');
+  });
+
+  test('a 502 with an HTML body does the same as an empty body', async ({ page }) => {
+    const status = await openDialogAndSubmit(page, {
+      status: 502,
+      contentType: 'text/html',
+      body: '<html><body><h1>502 Bad Gateway</h1></body></html>',
+    });
+    await expect(status).toHaveText('Unable to fetch image');
+  });
+});

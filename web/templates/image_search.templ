@@ -663,11 +663,18 @@ templ imageSearchContextualized(data ImageSearchData) {
 									// no-silent-failure rule (matches swOpenFetchUrlModal's
 									// call site below).
 									//
-									// #3223 review round 2, F5: close the Actions menu first,
-									// exactly as the Fetch from URL button above does -- before
-									// this fix, clicking Google Images left the menu open behind
-									// the new tab, unlike every other menu item. No
-									// preventDefault: this is a real <a target="_blank">
+									// #3223 review round 2, F5: close the Actions menu first.
+									// Before this fix, clicking Google Images left the menu open
+									// behind the new tab, unlike every other menu item -- and the
+									// Fetch from URL button just above (line ~642,
+									// swOpenFetchUrlForSlot) had the SAME defect at the time,
+									// despite an earlier version of this comment claiming this
+									// entry "matches" it. Both are now fixed: swOpenFetchUrlForSlot
+									// closes the menu itself (see #3223 review round 3, C3, where
+									// swCloseAnyOpenContextMenu was added to it and to
+									// swOpenCropForSlot below), so the comparison this comment
+									// makes is genuinely true now, not aspirational. No
+									// preventDefault here: this is a real <a target="_blank">
 									// navigation and must still fire; the menu-closing DOM writes
 									// run synchronously in the same click handler, before the
 									// browser processes the link's default navigation, so they
@@ -1124,6 +1131,32 @@ templ imageSearchContextualized(data ImageSearchData) {
 				// call them (falling back to a direct DOM toggle + console.error
 				// if this IIFE never ran, e.g. no matching container).
 				var _fetchUrlSlot = null;
+				// #3223 review round 3, C3: swOpenFetchUrlForSlot and
+				// swOpenCropForSlot are both called directly from the indexed
+				// backdrop branch's Actions menu (image_search.templ, fanartIdx
+				// >= 0) AND from the ungated fanart gallery tiles
+				// (backdrop_management.templ's per-tile crop/fetch-replace
+				// buttons, which render outside any [data-context-menu] at all).
+				// Before this fix, neither function closed the menu itself -- the
+				// comments beside the Google Images entry claimed its own
+				// menu-close "matches the Fetch from URL button above", but that
+				// button (line ~642, calling swOpenFetchUrlForSlot) never closed
+				// anything, so the comment was false and the class of defect F5
+				// fixed on the Google entry was still live on its siblings.
+				// swCloseAnyOpenContextMenu is the shared fix: it closes whatever
+				// [data-context-menu] panel happens to be open (mirroring
+				// openCropForType's own inline loop a few hundred lines below,
+				// which the generic-branch Crop button already uses), and is a
+				// harmless no-op when called from the gallery tiles, where there
+				// is no open menu to find.
+				function swCloseAnyOpenContextMenu() {
+					var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden)');
+					for (var i = 0; i < menus.length; i++) {
+						menus[i].classList.add('hidden');
+						var trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');
+						if (trigger) trigger.setAttribute('aria-expanded', 'false');
+					}
+				}
 				window.swOpenFetchUrlModal = function() {
 					_fetchUrlSlot = null;
 					var input = document.getElementById('fetch-url-input');
@@ -1135,6 +1168,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					document.getElementById('fetch-url-modal').classList.add('hidden');
 				};
 				window.swOpenFetchUrlForSlot = function(slot) {
+					swCloseAnyOpenContextMenu();
 					_fetchUrlSlot = slot;
 					var input = document.getElementById('fetch-url-input');
 					if (input) input.value = '';
@@ -1144,6 +1178,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 				// backdrop slot's same-origin file (no staging needed: it is
 				// already our own saved file, not a remote provider URL).
 				window.swOpenCropForSlot = function(slot) {
+					swCloseAnyOpenContextMenu();
 					if (typeof openCropModal !== 'function') {
 						// Capability check fails loudly rather than silently
 						// no-opping the Crop button (mirrors guardedCloseCropModal's
@@ -1174,17 +1209,34 @@ templ imageSearchContextualized(data ImageSearchData) {
 						body: JSON.stringify(reqBody),
 						credentials: 'same-origin'
 					}).then(function(r) {
-						return r.json().then(function(data) {
+						// #3223 review round 3, C2: r.json() used to be called
+						// unconditionally. A non-JSON or empty error body (a proxy's
+						// HTML 502 page, or a plain empty body some upstreams send)
+						// makes the Promise json() returns REJECT, which fell through
+						// to the outer .catch below and showed msgFetchFailed --
+						// contradicting the comment two lines down, which promised a
+						// msgFetchUnable fallback. Parse defensively instead: read the
+						// body as text (which does not reject on non-JSON content),
+						// then JSON.parse it inside try/catch, treating a parse
+						// failure as data = null. The outer .catch is kept for GENUINE
+						// network failures (fetch() itself rejecting -- DNS, offline,
+						// CORS), which is a materially different condition from "the
+						// server responded, but its body wasn't JSON".
+						return r.text().then(function(text) {
+							var data = null;
+							try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
 							// #3223 review round 2, F1: prefer the server's specific
 							// message (e.g. the SVG-unsupported text) over the generic
 							// "Unable to fetch image" fallback, so an operator who
 							// pastes an SVG result sees why it was rejected instead of
 							// a message that reads like a network failure. data.error
 							// is only present on a non-2xx JSON body (see writeJSON
-							// call sites in handleImageFetch); a response with no body
-							// or an unparsable one still falls back to the generic text.
+							// call sites in handleImageFetch); an empty, non-JSON, or
+							// otherwise unparsable body now correctly falls back to the
+							// generic msgFetchUnable text instead of rejecting into the
+							// unrelated msgFetchFailed message below.
 							if (!r.ok) { setStatus(data && data.error ? data.error : container.dataset.msgFetchUnable, 'text-red-500'); return; }
-							if (data.needs_crop) { openAutoCrop(data); return; }
+							if (data && data.needs_crop) { openAutoCrop(data); return; }
 							window.location.reload();
 						});
 					}).catch(function() { setStatus(container.dataset.msgFetchFailed, 'text-red-500'); });
