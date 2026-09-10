@@ -22,26 +22,33 @@ func queryOf(t *testing.T, rawURL string) url.Values {
 	return q
 }
 
-// TestGoogleImagesSearchURL covers the four documented slot shapes (#3223's
-// table) plus the AC's named encoding cases (&, spaces, non-ASCII) folded
-// into the same table via the artist name. A wrong filter here silently
-// misdirects the operator's search, so udm/q/tbs are each asserted.
+// TestGoogleImagesSearchURL covers the four documented slot shapes plus the
+// AC's named encoding cases (&, spaces, non-ASCII) folded into the same
+// table via the artist name. A wrong filter here silently misdirects the
+// operator's search, so udm/q/imgar/tbs are each asserted.
+//
+// Aspect ratio (imgar) is a TOP-LEVEL param, not part of "tbs" -- corrected
+// via maintainer UAT after the first cut asserted our own constructed
+// string instead of Google's real behavior and shipped a dead filter. See
+// googlesearch.go's doc comment for how this was re-verified against
+// Google's own Advanced Search UI. "logo" carries no size filter at all
+// (also a maintainer correction).
 func TestGoogleImagesSearchURL(t *testing.T) {
 	tests := []struct {
-		name, slot, wantQuery, wantFilter string
+		name, slot, wantQuery, wantImgar, wantTbs string
 	}{
-		{"Radiohead", "thumb", "Radiohead", "imgo:1,isz:l,iar:s"},
-		{"Radiohead", "fanart", "Radiohead", "imgo:1,isz:l,iar:w"},
-		{"Radiohead", "logo", "Radiohead logo", "imgo:1,isz:l,ic:trans"},
-		{"Radiohead", "banner", "Radiohead logo", "imgo:1,isz:l,iar:xw,ic:trans"},
+		{"Radiohead", "thumb", "Radiohead", "s", "imgo:1,isz:l"},
+		{"Radiohead", "fanart", "Radiohead", "w", "imgo:1,isz:l"},
+		{"Radiohead", "logo", "Radiohead logo", "", "imgo:1,ic:trans"},
+		{"Radiohead", "banner", "Radiohead logo", "xw", "imgo:1,isz:l,ic:trans"},
 		// AC: "&" must survive encoding, not truncate the query at the next
 		// "&"-delimited pair. Fails without url.Values.Encode() escaping it
 		// (confirmed: naive "q="+name concatenation split this into two keys).
-		{"All Sons & Daughters", "thumb", "All Sons & Daughters", "imgo:1,isz:l,iar:s"},
-		{"for KING & COUNTRY", "logo", "for KING & COUNTRY logo", "imgo:1,isz:l,ic:trans"},
+		{"All Sons & Daughters", "thumb", "All Sons & Daughters", "s", "imgo:1,isz:l"},
+		{"for KING & COUNTRY", "logo", "for KING & COUNTRY logo", "", "imgo:1,ic:trans"},
 		// AC: spaces and non-ASCII must round-trip.
-		{"Mötley Crüe", "thumb", "Mötley Crüe", "imgo:1,isz:l,iar:s"},
-		{"坂本龍一", "banner", "坂本龍一 logo", "imgo:1,isz:l,iar:xw,ic:trans"},
+		{"Mötley Crüe", "thumb", "Mötley Crüe", "s", "imgo:1,isz:l"},
+		{"坂本龍一", "banner", "坂本龍一 logo", "xw", "imgo:1,isz:l,ic:trans"},
 	}
 
 	for _, tt := range tests {
@@ -54,10 +61,30 @@ func TestGoogleImagesSearchURL(t *testing.T) {
 			if q.Get("q") != tt.wantQuery {
 				t.Errorf("q = %q, want %q", q.Get("q"), tt.wantQuery)
 			}
-			if q.Get("tbs") != tt.wantFilter {
-				t.Errorf("tbs = %q, want %q", q.Get("tbs"), tt.wantFilter)
+			if got, want := q.Get("imgar"), tt.wantImgar; got != want {
+				t.Errorf("imgar = %q, want %q", got, want)
+			}
+			if q.Has("imgar") && tt.wantImgar == "" {
+				t.Errorf("imgar param present but slot %q wants no aspect filter", tt.slot)
+			}
+			if q.Get("tbs") != tt.wantTbs {
+				t.Errorf("tbs = %q, want %q", q.Get("tbs"), tt.wantTbs)
 			}
 		})
+	}
+}
+
+// TestGoogleImagesSearchURL_LogoOmitsImgarEntirely guards against a
+// regression that sets imgar="" rather than omitting the param outright --
+// url.Values.Get returns "" for both cases, so the table test above cannot
+// distinguish "param absent" from "param present but empty". Checked via
+// the raw query string instead.
+func TestGoogleImagesSearchURL_LogoOmitsImgarEntirely(t *testing.T) {
+	got := GoogleImagesSearchURL("Radiohead", "logo")
+	if u, err := url.Parse(got); err != nil {
+		t.Fatalf("unparsable URL %q: %v", got, err)
+	} else if u.Query().Has("imgar") {
+		t.Errorf("logo URL %q carries an imgar param; logo must omit it entirely", got)
 	}
 }
 

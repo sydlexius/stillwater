@@ -56,8 +56,35 @@ func TestArtworkManageEditor_GoogleImagesLink(t *testing.T) {
 		if q.Get("q") != "Parity" {
 			t.Errorf("q = %q, want %q", q.Get("q"), "Parity")
 		}
-		if q.Get("tbs") != "imgo:1,isz:l,iar:w" {
-			t.Errorf("tbs = %q, want the fanart wide filter", q.Get("tbs"))
+		// imgar is a top-level param, not part of tbs (maintainer UAT
+		// correction -- see internal/image/googlesearch.go).
+		if q.Get("imgar") != "w" {
+			t.Errorf("imgar = %q, want %q", q.Get("imgar"), "w")
+		}
+		if q.Get("tbs") != "imgo:1,isz:l" {
+			t.Errorf("tbs = %q, want the fanart size filter", q.Get("tbs"))
+		}
+
+		// New behavior (maintainer round 2): clicking the link ALSO
+		// pre-opens the fetch-from-URL dialog targeted at THIS slot index.
+		tag := tagContaining(t, out, `href="https://www.google.com/search?`)
+		if !strings.Contains(tag, "window.swOpenFetchUrlForSlot(1)") {
+			t.Errorf("Google Images link for indexed slot 1 does not pre-target swOpenFetchUrlForSlot(1):\n%s", tag)
+		}
+		if !strings.Contains(tag, "typeof window.swOpenFetchUrlForSlot === 'function'") || !strings.Contains(tag, "console.error") {
+			t.Errorf("Google Images link's auto-open guard must follow the no-silent-failure pattern (typeof check + console.error):\n%s", tag)
+		}
+	})
+
+	t.Run("unscoped slot pre-opens the fetch-from-URL modal on click", func(t *testing.T) {
+		t.Parallel()
+		out := renderEditor(t, editorData("logo"))
+		tag := tagContaining(t, out, `href="https://www.google.com/search?`)
+		if !strings.Contains(tag, "window.swOpenFetchUrlModal()") {
+			t.Errorf("unscoped Google Images link does not pre-open swOpenFetchUrlModal():\n%s", tag)
+		}
+		if !strings.Contains(tag, "typeof window.swOpenFetchUrlModal === 'function'") || !strings.Contains(tag, "console.error") {
+			t.Errorf("unscoped Google Images link's auto-open guard must follow the no-silent-failure pattern:\n%s", tag)
 		}
 	})
 }

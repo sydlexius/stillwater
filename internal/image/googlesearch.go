@@ -5,17 +5,29 @@ import (
 	"strings"
 )
 
-// googleImagesFilterBySlot maps each slot to its "tbs" filter suffix,
-// appended after the "imgo:1" base filter every slot shares (restricts
-// results to genuine image hits, lifted from Bliss -- see the doc comment
-// below). "logo" carries no aspect filter: logos are rarely square, and
-// stacking one on top of ic:trans would filter out most real results, so
-// transparency alone is the binding constraint there (#3223).
-var googleImagesFilterBySlot = map[string]string{
-	"thumb":  "isz:l,iar:s",
-	"fanart": "isz:l,iar:w",
-	"logo":   "isz:l,ic:trans",
-	"banner": "isz:l,iar:xw,ic:trans",
+// googleImagesSlotFilter holds one slot's Google Images filter shape.
+//
+// imgar (aspect ratio: "s" square, "w" wide, "xw" panoramic) is a TOP-LEVEL
+// query param, not a "tbs" token. This was gotten wrong in the first cut of
+// #3223 (which put isz/iar together under "tbs"), verified only by asserting
+// our own constructed string rather than Google's actual behavior -- so
+// the aspect filter silently did nothing while the tests stayed green.
+// Corrected via maintainer UAT + re-verification: loaded a bare udm=2
+// search, used Google's own Advanced Search UI to pick each aspect ratio,
+// and read back the param Google itself wrote into the address bar
+// (imgar=s|w|xw, tbs+isz untouched). "isz:l" (size) and "ic:trans"
+// (transparency) DO belong in "tbs" -- confirmed the same way.
+//
+// "logo" carries no size filter at all (maintainer correction): stacking
+// isz:l on top of ic:trans over-constrained results.
+var googleImagesSlotFilter = map[string]struct {
+	imgar string // top-level "imgar" param; "" omits it
+	tbs   string // "tbs" value, always includes "imgo:1"
+}{
+	"thumb":  {imgar: "s", tbs: "imgo:1,isz:l"},
+	"fanart": {imgar: "w", tbs: "imgo:1,isz:l"},
+	"logo":   {imgar: "", tbs: "imgo:1,ic:trans"},
+	"banner": {imgar: "xw", tbs: "imgo:1,isz:l,ic:trans"},
 }
 
 // googleImagesQuerySuffixBySlot appends a slot-specific term to the bare
@@ -36,16 +48,15 @@ var googleImagesQuerySuffixBySlot = map[string]string{
 // Ground truth: Bliss (blisshq.com), the product this apes, ships
 // https://www.google.com/search?tbm=isch&q=<artist>&tbs=imgo:1 (extracted
 // from a running instance's UI jar). tbm=isch is the older vertical
-// selector; udm=2 is Google's current one. Both were rendered live during
-// #3223 implementation and reached the same filtered Images grid -- udm=2
-// was chosen as current, with tbm=isch as the documented fallback.
+// selector; udm=2 is Google's current one -- both were rendered live and
+// reached the same page, so udm=2 was kept as current.
 //
 // Returns "" when artistName is blank or slot is unrecognized (no filter
 // mapping): a wrong filter is worse than no link, so callers should skip
 // rendering the affordance when this returns "".
 func GoogleImagesSearchURL(artistName, slot string) string {
 	name := strings.TrimSpace(artistName)
-	filter, ok := googleImagesFilterBySlot[slot]
+	f, ok := googleImagesSlotFilter[slot]
 	if name == "" || !ok {
 		return ""
 	}
@@ -55,7 +66,10 @@ func GoogleImagesSearchURL(artistName, slot string) string {
 	q := url.Values{}
 	q.Set("udm", "2")
 	q.Set("q", query)
-	q.Set("tbs", "imgo:1,"+filter)
+	if f.imgar != "" {
+		q.Set("imgar", f.imgar)
+	}
+	q.Set("tbs", f.tbs)
 
 	return "https://www.google.com/search?" + q.Encode()
 }

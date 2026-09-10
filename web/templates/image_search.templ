@@ -654,12 +654,21 @@ templ imageSearchContextualized(data ImageSearchData) {
 								// for an empty artist name; the link is omitted rather
 								// than pointing at a useless empty search.
 								if googleURL := img.GoogleImagesSearchURL(data.Artist.Name, data.SelectedType); googleURL != "" {
+									// #3223 maintainer UAT: clicking this ALSO pre-opens the
+									// fetch-from-URL dialog, already targeted at this slot, so
+									// the operator returns from the new Google tab with the
+									// paste target waiting. target="_blank" still performs the
+									// normal browser navigation; onclick fires in THIS tab
+									// alongside it. Guarded + console.error per the repo's
+									// no-silent-failure rule (matches swOpenFetchUrlModal's
+									// call site below).
 									<a
 										href={ templ.SafeURL(googleURL) }
 										target="_blank"
 										rel="noopener noreferrer"
 										role="menuitem"
 										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										onclick={ templ.ComponentScript{Call: fmt.Sprintf("if (typeof window.swOpenFetchUrlForSlot === 'function') { window.swOpenFetchUrlForSlot(%d); } else { console.error('swOpenFetchUrlForSlot unavailable; opened Google Images without pre-targeting the fetch-from-URL dialog for backdrop slot %d'); }", fanartIdx, fanartIdx)} }
 									>
 										@components.IconArrowTopRightOnSquare("h-4 w-4")
 										{ t(ctx, "image.search_google_images") }
@@ -743,6 +752,13 @@ templ imageSearchContextualized(data ImageSearchData) {
 								// backdrop" hero with no specific slot clicked). See the
 								// indexed-slot branch above for why backdrops share one
 								// search regardless of which slot the operator pastes into.
+								//
+								// Maintainer UAT: clicking this ALSO pre-opens the
+								// fetch-from-URL dialog (unscoped -- no slot index here), so
+								// the operator returns from the new tab with the paste
+								// target already waiting. Guarded + console.error per the
+								// repo's no-silent-failure rule, matching the Fetch-from-URL
+								// button immediately above.
 								if googleURL := img.GoogleImagesSearchURL(data.Artist.Name, data.SelectedType); googleURL != "" {
 									<a
 										href={ templ.SafeURL(googleURL) }
@@ -750,6 +766,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 										rel="noopener noreferrer"
 										role="menuitem"
 										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										onclick="if (typeof window.swOpenFetchUrlModal === 'function') { window.swOpenFetchUrlModal(); } else { console.error('swOpenFetchUrlModal unavailable; opened Google Images without pre-targeting the fetch-from-URL dialog'); }"
 									>
 										@components.IconArrowTopRightOnSquare("h-4 w-4")
 										{ t(ctx, "image.search_google_images") }
