@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"image"
@@ -14,6 +15,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -114,33 +116,61 @@ var ErrSVGUnsupported = errors.New("SVG images are not supported")
 // fetch is free.
 const svgSniffWindow = 512
 
-// looksLikeSVG reports whether buf's leading bytes look like the start of an
-// SVG document: either the root <svg element appears directly (optionally
-// preceded by whitespace, a UTF-8 BOM, or an XML/DOCTYPE declaration), or an
-// XML prolog is present and "<svg" appears anywhere in the sniffed window
-// before a raster magic number would have matched. Case-insensitive on the
-// tag name since SVG is embedded in HTML-adjacent tooling that is sometimes
-// generated with inconsistent casing; the "<svg" token itself is
-// case-sensitive per the SVG/XML spec, but sniffing loosely here costs
-// nothing and a false negative (treating a real SVG as "unrecognized") is
-// the worse failure mode for this specific error path.
+// looksLikeSVG reports whether buf's leading bytes are the start of an SVG
+// document, identified as: the FIRST XML start element's local name is
+// "svg" (case-insensitive, matching this function's existing policy --
+// SVG's own casing is technically case-sensitive, but a false negative here
+// is the worse failure mode for this specific error path).
+//
+// #3223 review round 3, R2 (CodeRabbit): the original implementation was a
+// substring match on "<svg" / "<?xml" / "<!doctype" prefixes, which had two
+// real bugs, both confirmed with runnable cases before this fix:
+//  1. A FALSE POSITIVE: "<svg-not-image>hello</svg-not-image>" starts with
+//     the literal bytes "<svg" but is not SVG at all -- any tag whose name
+//     happens to start with "svg" (svgdata, svg-icon, ...) was misdetected.
+//  2. A FALSE NEGATIVE: "<!-- a comment --><svg>...</svg>" is a completely
+//     valid document (comments may precede the root element per the XML
+//     spec) that the substring match never caught, because it checked only
+//     for a LITERAL PREFIX of "<?xml" or "<!doctype", not "a comment can
+//     also precede the root". That case fell through to the generic
+//     "unrecognized image format" 502 instead of the specific 422.
+//
+// A real XML tokenizer (encoding/xml.Decoder) sidesteps both: it correctly
+// skips ProcInst (the XML prolog), Directive (DOCTYPE), Comment and
+// CharData tokens (whitespace) on the way to the first element, and reports
+// that element's ACTUAL tag name rather than a prefix of the raw bytes --
+// so "<svg-not-image>" tokenizes to a StartElement named "svg-not-image",
+// not "svg". Go's xml package also strips a UTF-8 BOM automatically, so no
+// separate BOM-handling step is needed (verified: the BOM case in
+// TestLooksLikeSVG passes without one).
+//
+// dec.Strict = false tolerates the common real-world laxity a fetched image
+// URL's body might contain (an unescaped "&", a missing xmlns) that would
+// make a strict parse fail before ever reaching the root element -- this
+// function only needs the ROOT ELEMENT NAME, not a well-formed document.
+// The window is intentionally NOT required to contain a complete, valid
+// document: DetectFormat only ever hands this a bounded svgSniffWindow
+// prefix of a much larger real file, so a truncation-induced token error
+// AFTER the first StartElement has already been read is expected and
+// correctly ignored (the loop below returns as soon as it has an answer).
 func looksLikeSVG(buf []byte) bool {
-	// Strip a UTF-8 BOM and leading whitespace, matching how a browser or
-	// XML parser would skip them before looking for content.
-	trimmed := bytes.TrimLeft(bytes.TrimPrefix(buf, []byte{0xEF, 0xBB, 0xBF}), " \t\r\n")
-	lower := bytes.ToLower(trimmed)
-	if bytes.HasPrefix(lower, []byte("<svg")) {
-		return true
+	dec := xml.NewDecoder(bytes.NewReader(buf))
+	dec.Strict = false
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			// Either a genuine parse failure (not XML at all -- a raster
+			// image's binary header reliably fails here) or the truncated
+			// sniff window ran out before any start element appeared.
+			// Either way, no <svg> root was found in what we have.
+			return false
+		}
+		if se, ok := tok.(xml.StartElement); ok {
+			return strings.EqualFold(se.Name.Local, "svg")
+		}
+		// Any other token (ProcInst, Directive, Comment, CharData/whitespace)
+		// precedes the root element in a well-formed document; keep reading.
 	}
-	// An XML prolog ("<?xml ... ?>") or DOCTYPE may precede the root element
-	// by an arbitrary (but bounded, within the sniff window) number of
-	// bytes; "<svg" appearing anywhere in a document that also starts with
-	// "<?xml" or "<!doctype" is a reliable-enough signal without a full XML
-	// parse.
-	if bytes.HasPrefix(lower, []byte("<?xml")) || bytes.HasPrefix(lower, []byte("<!doctype")) {
-		return bytes.Contains(lower, []byte("<svg"))
-	}
-	return false
 }
 
 // DetectFormat reads the first bytes from r to identify the image format.

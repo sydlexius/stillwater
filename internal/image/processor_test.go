@@ -99,23 +99,60 @@ func TestDetectFormat_Unknown(t *testing.T) {
 // ErrSVGUnsupported sentinel, since callers (handleImageFetch) need to
 // surface a specific "SVG is not supported" message rather than a generic
 // fetch failure. Table covers the root-element-first case, an XML-prolog
-// preamble, a DOCTYPE preamble, leading whitespace, and a UTF-8 BOM -- SVG
-// has no fixed-offset magic number the way JPEG/PNG/WebP do, so each of
-// these is a real shape a browser or image editor can emit.
+// preamble, a DOCTYPE preamble, leading whitespace, a UTF-8 BOM, and a
+// comment preceding the root element -- SVG has no fixed-offset magic
+// number the way JPEG/PNG/WebP do, so each of these is a real shape a
+// browser or image editor can emit.
+//
+// #3223 review round 3, R2 (CodeRabbit, both passes): looksLikeSVG's
+// original implementation was a substring/prefix match, which had two real
+// bugs: "<!-- comment --><svg>" (a comment legitimately preceding the root
+// element) fell through to a false negative because the substring check
+// only recognized a LITERAL "<?xml"/"<!doctype" prefix, not "anything can
+// precede the root". The comment case below is that fix's regression proof.
 func TestDetectFormat_SVG(t *testing.T) {
 	cases := map[string]string{
-		"bare root element":  `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>`,
-		"XML prolog":         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
-		"DOCTYPE preamble":   "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n<svg></svg>",
-		"leading whitespace": "   \n\t<svg></svg>",
-		"UTF-8 BOM":          "\xEF\xBB\xBF<svg></svg>",
-		"uppercase tag":      "<SVG xmlns=\"http://www.w3.org/2000/svg\"></SVG>",
+		"bare root element":      `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>`,
+		"XML prolog":             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+		"DOCTYPE preamble":       "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n<svg></svg>",
+		"leading whitespace":     "   \n\t<svg></svg>",
+		"UTF-8 BOM":              "\xEF\xBB\xBF<svg></svg>",
+		"uppercase tag":          "<SVG xmlns=\"http://www.w3.org/2000/svg\"></SVG>",
+		"comment before svg":     "<!-- a comment --><svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+		"namespaced svg xmlns":   `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"></svg>`,
+		"BOM + prolog + comment": "\xEF\xBB\xBF<?xml version=\"1.0\"?><!-- generated --><svg></svg>",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, _, err := DetectFormat(strings.NewReader(body))
 			if !errors.Is(err, ErrSVGUnsupported) {
 				t.Fatalf("DetectFormat(%q) error = %v, want errors.Is(err, ErrSVGUnsupported)", name, err)
+			}
+		})
+	}
+}
+
+// TestDetectFormat_SVG_NegativeCases covers #3223 review round 3, R2's other
+// bug: the substring-match implementation classified ANY tag whose name
+// happened to start with the literal bytes "<svg" as SVG, even though it is
+// a completely different, unrelated element. "<svg-not-image>" and
+// "<svgdata>" are the two concrete cases CodeRabbit's two review passes
+// named. Also covers a plain (non-SVG) XML document with a real prolog, to
+// prove the XML-prolog path does not over-match every XML document as SVG.
+func TestDetectFormat_SVG_NegativeCases(t *testing.T) {
+	cases := map[string]string{
+		"tag name starting with svg (svg-not-image)": "<svg-not-image>hello</svg-not-image>",
+		"tag name starting with svg (svgdata)":       "<svgdata>hello</svgdata>",
+		"plain XML document, not SVG":                `<?xml version="1.0"?><rss><channel><title>Not SVG</title></channel></rss>`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := DetectFormat(strings.NewReader(body))
+			if errors.Is(err, ErrSVGUnsupported) {
+				t.Fatalf("DetectFormat(%q) incorrectly classified as SVG (err=%v)", name, err)
+			}
+			if err == nil {
+				t.Fatalf("DetectFormat(%q) = nil error, want the generic unrecognized-format error (none of these are real images)", name)
 			}
 		})
 	}
