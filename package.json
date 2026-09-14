@@ -10,7 +10,7 @@
     "@axe-core/playwright": "4.13.0",
     "axe-core": "4.13.0",
     "jsdom": "^30.0.1",
-    "playwright": "1.62.1",
+    "playwright": "1.63.0",
     "stylelint": "^17.15.0",
     "stylelint-declaration-strict-value": "^1.12.1",
     "stylelint-value-no-unknown-custom-properties": "^6.1.1"
