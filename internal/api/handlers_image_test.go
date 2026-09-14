@@ -3049,6 +3049,25 @@ func (s *stubWebImageProvider) SearchImages(_ context.Context, _ string, _ provi
 	return s.results, nil
 }
 
+// cancelingWebImageProvider simulates a client that went away mid-search: it
+// cancels the SUPPLIED context itself (standing in for the request's own
+// context being canceled/timed out upstream) and then returns
+// context.Canceled, exactly the error shape a real provider call aborted by
+// a canceled context would surface.
+type cancelingWebImageProvider struct {
+	name   provider.ProviderName
+	cancel context.CancelFunc
+	called bool
+}
+
+func (s *cancelingWebImageProvider) Name() provider.ProviderName { return s.name }
+func (s *cancelingWebImageProvider) RequiresAuth() bool          { return false }
+func (s *cancelingWebImageProvider) SearchImages(_ context.Context, _ string, _ provider.ImageType) ([]provider.ImageResult, error) {
+	s.called = true
+	s.cancel()
+	return nil, context.Canceled
+}
+
 // TestHandleWebImageSearch_NormalizesHTTPToHTTPS verifies that http:// thumbnail
 // URLs returned by a web-search provider are rewritten to https:// before the
 // response is sent, so they satisfy the "img-src 'self' data: https:" CSP header.
@@ -3176,6 +3195,55 @@ func TestHandleWebImageSearch_ProviderErrors_JSON(t *testing.T) {
 	}
 }
 
+// TestHandleWebImageSearch_CanceledContextNotCountedUnavailable proves M1
+// (#3229 review): a provider error caused by the CLIENT going away
+// (request context canceled/deadline exceeded) must not be counted toward
+// the "every attempted provider errored" unavailable verdict -- that is the
+// caller no longer waiting for an answer, not the provider being down. The
+// stub cancels the request's own context and returns context.Canceled,
+// exactly the error shape a real provider call aborted this way produces.
+func TestHandleWebImageSearch_CanceledContextNotCountedUnavailable(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stub := &cancelingWebImageProvider{name: provider.NameDuckDuckGo, cancel: cancel}
+	a := setUpWebSearchTest(t, r, svc, &stubWebImageProvider{name: provider.NameDuckDuckGo})
+	// setUpWebSearchTest registered a plain stubWebImageProvider under
+	// NameDuckDuckGo already (needed to create the fixture artist and enable
+	// the provider); replace the registry entry with the canceling stub so
+	// the actual search call is the one under test.
+	r.webSearchRegistry.Register(stub)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/websearch?type=thumb", nil)
+	req.SetPathValue("id", a.ID)
+	req = req.WithContext(ctx)
+	w := serveValidated(t, http.HandlerFunc(r.handleWebImageSearch), req)
+
+	if !stub.called {
+		t.Fatal("precondition failed: canceling stub provider was never called")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("precondition failed: request context was not actually canceled by the stub")
+	}
+
+	var resp struct {
+		Images               []provider.ImageResult `json:"images"`
+		Status               string                 `json:"status"`
+		UnavailableProviders []string               `json:"unavailable_providers"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(resp.UnavailableProviders) != 0 {
+		t.Errorf("unavailable_providers = %v, want empty -- a canceled-context error must not count the provider as unavailable", resp.UnavailableProviders)
+	}
+	if resp.Status != "ok" {
+		t.Errorf("status = %q, want %q -- a canceled-context error must not report the search as unavailable", resp.Status, "ok")
+	}
+}
+
 // TestHandleWebImageSearch_ZeroResultsNoError_JSON proves AC1's counterpart:
 // a provider that is queried successfully and simply returns no images
 // reports status=ok with an empty unavailable_providers list -- a genuine
@@ -3210,10 +3278,6 @@ func TestHandleWebImageSearch_ZeroResultsNoError_JSON(t *testing.T) {
 	}
 }
 
-// TestHandleWebImageSearch_PartialFailure_JSON proves AC1's partial-failure
-// design decision: when one enabled provider errors but another returns
-// images, status stays "ok" (the operator has real results) while
-// unavailable_providers still names the failed one.
 // TestWebSearchStatus_PartialFailure proves AC1's partial-failure design
 // decision at the unit level: webSearchStatus is the pure function the
 // handler uses to decide "ok" vs "unavailable" from (attempted, errored,
@@ -3232,6 +3296,14 @@ func TestWebSearchStatus_PartialFailure(t *testing.T) {
 	}{
 		{"all attempted providers errored, no images", 1, 1, 0, "unavailable"},
 		{"partial failure with results", 2, 1, 1, "ok"},
+		// Kills the mutation errored==attempted -> errored>0: with 2
+		// attempted and only 1 errored, errored>0 would (wrongly) also
+		// report unavailable even though zero images matches the all-errored
+		// case's imgCount. Distinguishes "some but not all providers failed,
+		// and happened to also return no images" from "every provider
+		// failed" -- both have imgCount==0, so only the errored==attempted
+		// comparison (not errored>0) tells them apart.
+		{"partial failure, zero images", 2, 1, 0, "ok"},
 		{"zero results, no error", 1, 0, 0, "ok"},
 		{"no providers attempted", 0, 0, 0, "ok"},
 	}
@@ -3246,18 +3318,75 @@ func TestWebSearchStatus_PartialFailure(t *testing.T) {
 	}
 }
 
+// TestUnavailableProviderStrings proves unavailableProviderStrings is
+// UNCONDITIONAL: it names every provider it is given regardless of the
+// caller's status verdict -- it has no notion of "attempted" or "images
+// found" at all, only the errored-providers slice. That is what makes a
+// real partial failure (status stays "ok" because SOME provider returned
+// images, while another is in this slice) still report the failed one in
+// unavailable_providers: the handler calls this function with the SAME
+// unavailableNames slice regardless of what webSearchStatus decided. A
+// multi-provider input here stands in for a partial failure's errored set,
+// since the production registry currently holds only one web search
+// provider (AllWebSearchProviderNames() -- see the comment on
+// TestWebSearchStatus_PartialFailure).
+func TestUnavailableProviderStrings(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		names []provider.ProviderName
+		want  []string
+	}{
+		{"none errored", nil, []string{}},
+		{"one errored", []provider.ProviderName{provider.NameDuckDuckGo}, []string{"duckduckgo"}},
+		{
+			"multiple errored (stands in for a partial failure's errored set)",
+			[]provider.ProviderName{provider.NameDuckDuckGo, provider.NameSpotify},
+			[]string{"duckduckgo", "spotify"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := unavailableProviderStrings(c.names)
+			if got == nil {
+				t.Fatal("unavailableProviderStrings returned nil, want a non-nil slice (JSON field must never be null)")
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("unavailableProviderStrings(%v) = %v, want %v", c.names, got, c.want)
+			}
+		})
+	}
+}
+
+// TestWebSearchStatusAndProviders_PartialFailureNamesTheFailedProvider is the
+// direct proof of the invariant webSearchStatusAndProviders exists to pin
+// (#3229 review, finding I1): in a real partial failure (2 attempted, 1
+// errored, 1 image returned), status comes back "ok" but
+// unavailableProviders still names the one that errored. A call site that
+// only filled the providers list when status=="unavailable" (mutation E)
+// would return an empty list here instead.
+func TestWebSearchStatusAndProviders_PartialFailureNamesTheFailedProvider(t *testing.T) {
+	t.Parallel()
+	status, providers := webSearchStatusAndProviders(2, []provider.ProviderName{provider.NameDuckDuckGo}, 1)
+	if status != "ok" {
+		t.Errorf("status = %q, want %q", status, "ok")
+	}
+	if want := []string{"duckduckgo"}; !reflect.DeepEqual(providers, want) {
+		t.Errorf("unavailableProviders = %v, want %v -- a partial failure must still name the failed provider even though status is ok", providers, want)
+	}
+}
+
 // TestHandleWebImageSearch_PartialFailure_UnavailableProvidersStillListed
-// proves the handler-level half of the partial-failure decision: even when
-// status stays "ok" because a provider returned results, the JSON envelope's
-// unavailable_providers is driven off the SAME unavailableNames slice that
-// feeds webSearchStatus -- a regression that only appended to
-// unavailableNames on the unavailable branch (rather than unconditionally,
-// as the handler does today) would leave partial failures silently
-// unreported. Only one provider is registered in production
-// (AllWebSearchProviderNames() -- see the comment on
-// TestWebSearchStatus_PartialFailure), so this asserts the single-provider
-// success path builds an empty (not nil) unavailable_providers list, which
-// is the other half of the same code path partial failure would exercise.
+// asserts the handler-level single-success-provider case: with the one
+// production-registered provider (DuckDuckGo) succeeding, the JSON
+// envelope's unavailable_providers is an empty, non-nil slice. This does
+// NOT by itself prove a partial-failure scenario (two providers, one
+// failing) reports the failed one -- that is covered at the unit level by
+// TestWebSearchStatusAndProviders_PartialFailureNamesTheFailedProvider,
+// since the production registry currently holds only one web search
+// provider (AllWebSearchProviderNames() -- see
+// the comment on TestWebSearchStatus_PartialFailure).
 func TestHandleWebImageSearch_PartialFailure_UnavailableProvidersStillListed(t *testing.T) {
 	t.Parallel()
 	r, svc := newImageHandlerTestServer(t)

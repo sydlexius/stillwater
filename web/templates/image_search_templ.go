@@ -2581,7 +2581,7 @@ func WebImageSearchResults(artistID string, images []provider.ImageResult, activ
 		}
 		ctx = templ.ClearChildren(ctx)
 		if status == "unavailable" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 209, "<p class=\"text-sm text-amber-700 dark:text-amber-400 py-4\" data-sw-websearch-unavailable>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 209, "<p class=\"text-sm text-amber-700 dark:text-amber-400 py-4\" data-sw-websearch-unavailable role=\"status\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
