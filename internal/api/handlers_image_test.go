@@ -3039,8 +3039,14 @@ type stubWebImageProvider struct {
 	called  bool
 }
 
+// Name returns the fixed provider name this stub was constructed with.
 func (s *stubWebImageProvider) Name() provider.ProviderName { return s.name }
-func (s *stubWebImageProvider) RequiresAuth() bool          { return false }
+
+// RequiresAuth always reports false; no test here depends on auth-gating.
+func (s *stubWebImageProvider) RequiresAuth() bool { return false }
+
+// SearchImages records the call and returns either the configured error or
+// the configured results.
 func (s *stubWebImageProvider) SearchImages(_ context.Context, _ string, _ provider.ImageType) ([]provider.ImageResult, error) {
 	s.called = true
 	if s.err != nil {
@@ -3060,8 +3066,14 @@ type cancelingWebImageProvider struct {
 	called bool
 }
 
+// Name returns the fixed provider name this stub was constructed with.
 func (s *cancelingWebImageProvider) Name() provider.ProviderName { return s.name }
-func (s *cancelingWebImageProvider) RequiresAuth() bool          { return false }
+
+// RequiresAuth always reports false; no test here depends on auth-gating.
+func (s *cancelingWebImageProvider) RequiresAuth() bool { return false }
+
+// SearchImages records the call, cancels the supplied context, and returns
+// context.Canceled -- simulating a client that went away mid-search.
 func (s *cancelingWebImageProvider) SearchImages(_ context.Context, _ string, _ provider.ImageType) ([]provider.ImageResult, error) {
 	s.called = true
 	s.cancel()

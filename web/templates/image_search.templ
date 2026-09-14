@@ -1574,11 +1574,12 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 // WebImageSearchResults renders the grid of web search image results.
 // This is used as an HTMX partial response for the "Extend Search" flow.
 //
-// status distinguishes a genuine zero-result search ("ok") from every
-// attempted provider having errored out ("unavailable") -- both render an
-// empty grid, but only the latter tells the operator the search itself
-// failed rather than simply finding nothing. unavailableProviders names
-// the providers that errored (issue #3229).
+// status distinguishes a genuine zero-result search ("ok", which renders the
+// plain "no images found" message) from every attempted provider having
+// errored out ("unavailable", which renders an explicit failure message
+// naming the provider instead) -- only the latter tells the operator the
+// search itself failed rather than simply finding nothing.
+// unavailableProviders names the providers that errored (issue #3229).
 templ WebImageSearchResults(artistID string, images []provider.ImageResult, activeSort string, fanartExists bool, status string, unavailableProviders []provider.ProviderName) {
 	if status == "unavailable" {
 		<p class="text-sm text-amber-700 dark:text-amber-400 py-4" data-sw-websearch-unavailable role="status">

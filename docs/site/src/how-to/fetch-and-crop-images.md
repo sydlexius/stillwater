@@ -43,7 +43,7 @@ For cases where curated providers don't have what you need.
 
 Web image search runs only on demand -- never as part of an automatic refresh -- so a forgotten search adapter doesn't drive automated fetches.
 
-If the web search adapter itself fails (for example, the underlying site is refusing requests), Stillwater shows a message that the search is unavailable right now, naming the affected provider, rather than an empty grid. Don't read an empty grid and an unavailable message the same way: an empty grid means the search ran and found nothing, while the unavailable message means the search itself could not be completed. When you see the unavailable message, try the **Google Images search** entry described below instead.
+If the web search adapter itself fails (for example, the underlying site is refusing requests), Stillwater shows a message that the search is unavailable right now, naming the affected provider, instead of an empty grid. Treat the unavailable message as the definitive signal that the search itself could not be completed; an empty grid on its own just means there are no results to show right now (which also happens when no web search provider is enabled). When you see the unavailable message, try the **Google Images search** entry described below instead.
 
 ## Search Google Images for a slot
 
