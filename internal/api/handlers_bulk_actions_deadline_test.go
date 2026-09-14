@@ -211,6 +211,19 @@ func TestBulkAction_WedgedPassTimesOutAndUnblocksEndpoints(t *testing.T) {
 	// The property the operator actually has: can I run this again. A status
 	// read alone would pass against a fix that recorded the state but left
 	// the gate claimed.
+	//
+	// Restore a generous deadline before starting it. withBulkActionWorkDeadline's
+	// 200ms override is still in force here: its t.Cleanup fires when THIS test
+	// function returns, not when the wedged pass above finished. Without this,
+	// the second pass -- real per-artist "lock" work, not a wedge -- inherits the
+	// same 200ms bound runBulkAction reads at start, and can itself time out on
+	// a loaded CI runner (e.g. a sharded -race run), failing the
+	// waitBulkActionCompleted call below for a reason unrelated to what this
+	// test is checking (#3248). Calling the helper again is safe under its LIFO
+	// t.Cleanup ordering: this registration restores 200ms first, then the
+	// original registration restores the pre-test value.
+	withBulkActionWorkDeadline(t, time.Hour)
+
 	second := httptest.NewRecorder()
 	secondPayload := `{"action":"lock","ids":["` + a.ID + `"]}`
 	secondReq := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
