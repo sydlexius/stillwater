@@ -3193,6 +3193,13 @@ func TestHandleWebImageSearch_ProviderErrors_JSON(t *testing.T) {
 	if strings.Contains(w.Body.String(), "403 Forbidden") {
 		t.Errorf("response body leaks the raw provider error string: %s", w.Body.String())
 	}
+	// A real (non-injected) provider error must never carry the injection
+	// marker header -- that header exists so a11y harnesses can tell an
+	// injected failure apart from a live outage, and a stub-driven "HTTP 403
+	// Forbidden" here is exactly the live-outage shape.
+	if h := w.Header().Get("X-Stillwater-Websearch-Injected-Failure"); h != "" {
+		t.Errorf("X-Stillwater-Websearch-Injected-Failure = %q, want absent for a non-injected error", h)
+	}
 }
 
 // TestHandleWebImageSearch_CanceledContextNotCountedUnavailable proves M1
@@ -3374,6 +3381,24 @@ func TestWebSearchStatusAndProviders_PartialFailureNamesTheFailedProvider(t *tes
 	}
 	if want := []string{"duckduckgo"}; !reflect.DeepEqual(providers, want) {
 		t.Errorf("unavailableProviders = %v, want %v -- a partial failure must still name the failed provider even though status is ok", providers, want)
+	}
+}
+
+// TestWebSearchStatusAndProviders_AttemptedNotErroredCount kills two
+// mutations the composed helper could hide: (I) passing len(erroredNames)
+// instead of the real attempted count into webSearchStatus -- here
+// attempted=3 with 2 errored, so len(erroredNames)==2 != attempted==3; a
+// mutation using the wrong value would wrongly compare 2==2 and report
+// "unavailable" instead of "ok". (H) truncating the returned providers list
+// -- two errored names must both survive.
+func TestWebSearchStatusAndProviders_AttemptedNotErroredCount(t *testing.T) {
+	t.Parallel()
+	status, providers := webSearchStatusAndProviders(3, []provider.ProviderName{provider.NameDuckDuckGo, provider.NameSpotify}, 0)
+	if status != "ok" {
+		t.Errorf("status = %q, want %q -- 2 of 3 attempted errored, not all", status, "ok")
+	}
+	if want := []string{"duckduckgo", "spotify"}; !reflect.DeepEqual(providers, want) {
+		t.Errorf("unavailableProviders = %v, want %v", providers, want)
 	}
 }
 

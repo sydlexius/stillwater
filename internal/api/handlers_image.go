@@ -946,15 +946,12 @@ var validWebSearchImageTypes = map[string]bool{
 	"thumb": true, "fanart": true, "logo": true, "banner": true,
 }
 
-// webSearchStatus computes the "status" field of a web image search response
-// (issue #3229). It is "unavailable" only when at least one enabled provider
-// was attempted, every attempted provider errored, and zero images came
-// back. A partial failure (some providers errored but others returned
-// images) still reports "ok" -- the operator has real results to look at,
-// just an incomplete set (unavailable_providers still names the failed
-// ones, separately from this function). No enabled providers at all also
-// reports "ok" with an empty grid, matching pre-existing behavior for that
-// case (out of scope for #3229).
+// webSearchStatus computes the "status" field (#3229): "unavailable" only
+// when at least one enabled provider was attempted, every one errored, and
+// zero images came back. A partial failure (some errored, others returned
+// images) stays "ok" -- unavailable_providers still names the failed ones,
+// separately. No enabled providers also stays "ok" with an empty grid
+// (pre-existing, out of scope).
 func webSearchStatus(attempted, errored, imageCount int) string {
 	if attempted > 0 && errored == attempted && imageCount == 0 {
 		return "unavailable"
@@ -962,11 +959,9 @@ func webSearchStatus(attempted, errored, imageCount int) string {
 	return "ok"
 }
 
-// unavailableProviderStrings converts the internal ProviderName slice
-// recorded for every provider that errored on this request into the
-// internal-id strings the JSON envelope's unavailable_providers field
-// carries. Always returns a non-nil slice so the JSON field is never
-// emitted as null.
+// unavailableProviderStrings converts the errored-provider names into the
+// internal-id strings unavailable_providers carries. Always non-nil so the
+// JSON field is never null.
 func unavailableProviderStrings(names []provider.ProviderName) []string {
 	out := make([]string, 0, len(names))
 	for _, n := range names {
@@ -975,18 +970,12 @@ func unavailableProviderStrings(names []provider.ProviderName) []string {
 	return out
 }
 
-// webSearchStatusAndProviders combines webSearchStatus and
-// unavailableProviderStrings into the single decision the handler needs,
-// and pins the invariant a call site could otherwise get wrong: the
-// returned providers list is UNCONDITIONAL on the status verdict. It names
-// every provider in erroredNames regardless of whether status comes back
-// "ok" or "unavailable" -- a partial failure (status "ok" because another
-// provider returned images) must still report the one that failed, not
-// silently drop it because the overall search "succeeded". Extracted as its
-// own function (rather than left inline at the call site) specifically so
-// that invariant is unit-testable independent of the handler and of
-// production's single-registered-web-search-provider limitation (issue
-// #3229 review, finding I1).
+// webSearchStatusAndProviders combines the two above and pins the invariant
+// a call site could get wrong: the providers list is UNCONDITIONAL on the
+// status verdict -- a partial failure (status "ok") must still report the
+// provider that failed, not drop it because the overall search "succeeded".
+// Extracted so that invariant is unit-testable without needing production's
+// single-registered-provider registry (#3229 review, I1).
 func webSearchStatusAndProviders(attempted int, erroredNames []provider.ProviderName, imageCount int) (status string, unavailableProviders []string) {
 	status = webSearchStatus(attempted, len(erroredNames), imageCount)
 	unavailableProviders = unavailableProviderStrings(erroredNames)
@@ -1041,13 +1030,11 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 		images, err := p.SearchImages(req.Context(), a.Name, imageType)
 		if err != nil {
 			if req.Context().Err() != nil {
-				// The client went away (request canceled/deadline exceeded)
-				// mid-search. That is not the PROVIDER being unavailable --
-				// it is the caller no longer waiting for an answer -- so it
-				// must not count toward the "every attempted provider
-				// errored" unavailable verdict. No response is sent below in
-				// this case in practice (the client is gone), but the count
-				// must still be correct for what does get computed.
+				// The client went away (canceled/deadline exceeded) mid-search.
+				// That is the caller giving up, not the provider being down, so
+				// it must not count toward the unavailable verdict -- even
+				// though the response computed below is written to a client
+				// that is no longer there to read it.
 				continue
 			}
 			r.logger.Warn("web image search failed",
@@ -1075,19 +1062,16 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 
 	status, unavailableProviders := webSearchStatusAndProviders(attempted, unavailableNames, len(allImages))
 
-	// X-Sw-Websearch-Injected-Failure lets a test harness distinguish this
-	// server's SW_FORCE_PROVIDER_ERROR fault injection (internal/provider/
-	// injection.go) from a genuine live provider outage, without reading a
-	// server-side log file the harness may have no path to (the browser-driven
-	// a11y tier has no filesystem access to the server process it did not
-	// itself launch, and CI's a11y job never exposes one). It is asserted by
-	// tests/a11y/helpers/seed-websearch-unavailable.js's fixture precondition
-	// check (#3229 review, M5/C1) and is otherwise inert: ShouldInjectFailure
-	// only ever returns true when SW_FORCE_PROVIDER_ERROR is set, which
-	// cmd/stillwater/main.go refuses outright on a release build, so this
-	// header can never appear from a production binary.
+	// X-Stillwater-Websearch-Injected-Failure lets a test harness distinguish
+	// SW_FORCE_PROVIDER_ERROR fault injection (internal/provider/injection.go)
+	// from a genuine live outage, without a server-side log path the harness
+	// may not have (tests/a11y/helpers/seed-websearch-unavailable.js asserts
+	// it; #3229 review M5/C1). Only set when ShouldInjectFailure fired, which
+	// requires SW_FORCE_PROVIDER_ERROR -- refused on a release build
+	// (cmd/stillwater/main.go), though NOT on a nightly/dev build, so this can
+	// still appear outside a real release.
 	if anyInjected {
-		w.Header().Set("X-Sw-Websearch-Injected-Failure", "true")
+		w.Header().Set("X-Stillwater-Websearch-Injected-Failure", "true")
 	}
 
 	if isHTMXRequest(req) {

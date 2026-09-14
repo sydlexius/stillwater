@@ -1,79 +1,31 @@
 // seed-websearch-unavailable.js - fixture for websearch-unavailable.spec.js
 // (#3229).
 //
-// WHY THIS EXISTS
+// `make test-a11y` boots an empty DB/library with no reliable outbound
+// network, so a real DuckDuckGo call would hang or 403 non-deterministically.
+// Instead this uses internal/provider/injection.go's sanctioned
+// SW_FORCE_PROVIDER_ERROR seam (already used by the Provider Failure Smoke
+// job), wired into duckduckgo.Adapter.SearchImages. The Makefile's
+// test-a11y target and ci.yml's "Start Stillwater (ephemeral)" step both set
+// SW_FORCE_PROVIDER_ERROR=duckduckgo (hand-mirrored; see each site's
+// comment); a release build refuses the var outright (main.go).
 //
-// `make test-a11y` boots a brand-new empty database, an empty library, and
-// has no reliable outbound network (CLAUDE.md: "MUST build its own fixture
-// inside the harness ... make the web search provider fail DETERMINISTICALLY
-// without touching the public internet"). A real DuckDuckGo request from
-// this harness would either hang or 403 non-deterministically depending on
-// the runner's network egress, which is exactly the kind of flake a fixture
-// must not depend on.
+// PROVING THE SEAM, NOT A REAL OUTAGE (#3229 review, C1/M5): the first
+// version of this fixture asserted only status==="unavailable", which also
+// passes if the injection wiring is entirely absent and DuckDuckGo happens
+// to be down live (it was, at review time) -- exactly the false pass that
+// let ci.yml ship without the env var at all. The fix asserts the response
+// header X-Stillwater-Websearch-Injected-Failure, set by
+// handleWebImageSearch only when errors.Is(err, provider.ErrInjectedFailure)
+// -- a live network error can never satisfy that. A header travels with the
+// request under test; a server log file does not (this harness has no path
+// to one it did not itself start).
 //
-// THE INJECTION SEAM
-//
-// internal/provider/injection.go's ShouldInjectFailure / SW_FORCE_PROVIDER_ERROR
-// is the repo's existing, sanctioned fault-injection seam (already used by
-// scripts/smoke-provider-failure.sh, the CI-required "Provider Failure
-// Smoke" job). It is wired into duckduckgo.Adapter.SearchImages
-// (internal/provider/duckduckgo/duckduckgo.go) exactly like every other
-// provider adapter: `if provider.ShouldInjectFailure(a.Name()) { return nil,
-// provider.ErrInjectedFailure }`.
-//
-// The Makefile's test-a11y target AND .github/workflows/ci.yml's "Start
-// Stillwater (ephemeral)" step both set SW_FORCE_PROVIDER_ERROR=duckduckgo
-// for the ephemeral server this harness boots (the two are hand-mirrored;
-// see the comment at each site), so every DuckDuckGo web search call fails
-// deterministically and offline, with zero code paths that could ever fire
-// in a production binary: cmd/stillwater/main.go refuses to start
-// (version.IsReleaseBuild() check) if the env var is set on a release
-// build, so this seam cannot survive an accidental config copy into a real
-// deployment.
-//
-// PROVING THE FAILURE CAME FROM THE SEAM, NOT A REAL OUTAGE (#3229 review,
-// finding C1/M5)
-//
-// The FIRST version of this fixture asserted only `status === "unavailable"`
-// on the API response. That assertion passes identically whether
-// SW_FORCE_PROVIDER_ERROR is wired up, OR whether it is entirely absent and
-// the harness's outbound call to the real duckduckgo.com happens to also
-// fail (which it did, at review time -- DuckDuckGo was returning a live 403
-// to every request). A CI job that forgot to set the env var (exactly what
-// happened: .github/workflows/ci.yml's "Start Stillwater (ephemeral)" step
-// had no SW_FORCE_PROVIDER_ERROR at all) would still show a green fixture
-// and a green spec, proving nothing about the code path this issue is
-// actually about.
-//
-// The fix distinguishes the two causes with a response header,
-// X-Sw-Websearch-Injected-Failure, set by handleWebImageSearch
-// (internal/api/handlers_image.go) only when the failure it recorded
-// satisfies errors.Is(err, provider.ErrInjectedFailure) -- the sentinel
-// ShouldInjectFailure returns, which a live network/HTTP error from the real
-// DuckDuckGo endpoint can never be. This is the seam a browser-driven a11y
-// harness CAN observe: it has no filesystem path to the server process's own
-// log file (it did not start that process itself in CI, and even locally
-// under `make test-a11y` reading a log path from a Playwright fixture is
-// exactly the kind of coupling the provider-failure smoke harness avoids by
-// grepping ITS OWN spawned process's log, which this harness is not). A
-// response header travels with the exact request under test and requires no
-// extra plumbing.
-//
-// WHAT GETS SEEDED
-//
-//   1. One artist via a real library scan (there is no artist-create
-//      endpoint -- see seed-blast-radius.js for the same constraint).
-//   2. The DuckDuckGo web search provider toggled on via
-//      PUT /api/v1/providers/websearch/duckduckgo/toggle, so
-//      ImageSearchData.WebSearchEnabled is true and the "Web Search" Actions
-//      menu entry renders at all.
-//   3. A direct GET of the endpoint under test
-//      (/api/v1/artists/{id}/images/websearch?type=thumb), asserting
-//      status === "unavailable", unavailable_providers === ["duckduckgo"],
-//      AND the X-Sw-Websearch-Injected-Failure response header is present --
-//      BEFORE handing the artist id back. All three together are the
-//      fixture's defining property, proven against the real server rather
-//      than assumed.
+// WHAT GETS SEEDED: one artist via a real library scan (no artist-create
+// endpoint -- see seed-blast-radius.js); the DuckDuckGo provider toggled on;
+// then a direct GET of the endpoint under test, asserting status,
+// unavailable_providers, AND the injection header BEFORE returning the id --
+// together the fixture's defining property, proven against the real server.
 
 import path from 'node:path';
 import os from 'node:os';
@@ -138,21 +90,15 @@ export async function seedWebSearchUnavailableArtist(request) {
   if (!Array.isArray(body.images) || body.images.length !== 0) {
     throw new Error(`seed: images=${JSON.stringify(body.images)}, want an empty array under injected failure`);
   }
-  // The load-bearing assertion (#3229 review, C1/M5): status=unavailable
-  // alone does not distinguish the injection seam from a real, live
-  // DuckDuckGo outage -- both produce that same JSON shape. Only the server
-  // setting this header proves the failure it recorded satisfies
-  // errors.Is(err, provider.ErrInjectedFailure), which a genuine network
-  // error from the real endpoint can never do.
-  if (searchResp.headers()['x-sw-websearch-injected-failure'] !== 'true') {
+  // Load-bearing (#3229 review, C1/M5): status=unavailable alone does not
+  // distinguish the injection seam from a real live outage -- only this
+  // header proves errors.Is(err, provider.ErrInjectedFailure) fired.
+  if (searchResp.headers()['x-stillwater-websearch-injected-failure'] !== 'true') {
     throw new Error(
       'seed: GET images/websearch reported status=unavailable but did NOT carry '
-      + 'X-Sw-Websearch-Injected-Failure: true. This means the failure this fixture observed did not '
-      + 'come from the SW_FORCE_PROVIDER_ERROR injection seam -- it may be a REAL live DuckDuckGo '
-      + 'outage (the exact false-pass this assertion exists to catch: a CI job that forgot to set '
-      + 'SW_FORCE_PROVIDER_ERROR would still see status=unavailable today if DuckDuckGo itself happens '
-      + 'to be down, and the spec would pass for the wrong reason). Check that '
-      + 'SW_FORCE_PROVIDER_ERROR=duckduckgo actually reached this server process.',
+      + 'X-Stillwater-Websearch-Injected-Failure: true -- the failure may be a REAL live DuckDuckGo '
+      + 'outage, not the SW_FORCE_PROVIDER_ERROR seam (the false-pass this assertion exists to catch). '
+      + 'Check that SW_FORCE_PROVIDER_ERROR=duckduckgo actually reached this server process.',
     );
   }
 
