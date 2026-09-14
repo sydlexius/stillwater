@@ -15691,12 +15691,26 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [images, status, unavailable_providers]
                 properties:
                   images:
-                    type: [array, "null"]
+                    type: array
                     items:
                       type: object
-                    description: Image results from web search providers. May be null when no providers returned results.
+                    description: Image results from web search providers. Always an array, never null; empty when nothing was found or the search was unavailable.
+                  status:
+                    type: string
+                    enum: [ok, unavailable]
+                    description: >-
+                      "unavailable" when at least one enabled provider was attempted, every
+                      attempted provider errored, and zero images were returned. "ok" otherwise,
+                      including a genuine zero-result search and the case where no provider is
+                      enabled.
+                  unavailable_providers:
+                    type: array
+                    items:
+                      type: string
+                    description: Internal names of providers that errored on this request (e.g. "duckduckgo"). Empty when none did.
             text/html:
               schema:
                 type: string

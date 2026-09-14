@@ -43,6 +43,8 @@ For cases where curated providers don't have what you need.
 
 Web image search runs only on demand -- never as part of an automatic refresh -- so a forgotten search adapter doesn't drive automated fetches.
 
+If the web search adapter itself fails (for example, the underlying site is refusing requests), Stillwater shows a message that the search is unavailable right now, naming the affected provider, rather than an empty grid. Don't read an empty grid and an unavailable message the same way: an empty grid means the search ran and found nothing, while the unavailable message means the search itself could not be completed. When you see the unavailable message, try the **Google Images search** entry described below instead.
+
 ## Search Google Images for a slot
 
 Each slot's **Actions** menu also has a **Google Images search** entry. Unlike Fetch and Web Search, this does not return results inside Stillwater -- it opens Google Images in a new browser tab, pre-filtered for the slot you're on. Every slot searches on the artist's name; the two logo-shaped slots append " logo" to steer results toward marks and wordmarks rather than photos:

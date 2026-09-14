@@ -946,6 +946,22 @@ var validWebSearchImageTypes = map[string]bool{
 	"thumb": true, "fanart": true, "logo": true, "banner": true,
 }
 
+// webSearchStatus computes the "status" field of a web image search response
+// (issue #3229). It is "unavailable" only when at least one enabled provider
+// was attempted, every attempted provider errored, and zero images came
+// back. A partial failure (some providers errored but others returned
+// images) still reports "ok" -- the operator has real results to look at,
+// just an incomplete set (unavailable_providers still names the failed
+// ones, separately from this function). No enabled providers at all also
+// reports "ok" with an empty grid, matching pre-existing behavior for that
+// case (out of scope for #3229).
+func webSearchStatus(attempted, errored, imageCount int) string {
+	if attempted > 0 && errored == attempted && imageCount == 0 {
+		return "unavailable"
+	}
+	return "ok"
+}
+
 // handleWebImageSearch queries enabled web search providers for artist images.
 // GET /api/v1/artists/{id}/images/websearch?type=thumb
 func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) {
@@ -973,18 +989,24 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 
 	imageType := provider.ImageType(typeFilter)
 
-	var allImages []provider.ImageResult
+	var (
+		allImages        []provider.ImageResult
+		attempted        int
+		unavailableNames []provider.ProviderName
+	)
 	for _, p := range r.webSearchRegistry.All() {
 		enabled, err := r.providerSettings.IsWebSearchEnabled(req.Context(), p.Name())
 		if err != nil || !enabled {
 			continue
 		}
+		attempted++
 		images, err := p.SearchImages(req.Context(), a.Name, imageType)
 		if err != nil {
 			r.logger.Warn("web image search failed",
 				slog.String("provider", string(p.Name())),
 				slog.String("artist", a.Name),
 				slog.String("error", err.Error()))
+			unavailableNames = append(unavailableNames, p.Name())
 			continue
 		}
 		allImages = append(allImages, images...)
@@ -1000,12 +1022,26 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 
 	sortImageResults(allImages, sortBy)
 
+	status := webSearchStatus(attempted, len(unavailableNames), len(allImages))
+	unavailableProviders := make([]string, 0, len(unavailableNames))
+	for _, n := range unavailableNames {
+		unavailableProviders = append(unavailableProviders, string(n))
+	}
+
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages, sortBy, a.FanartExists))
+		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages, sortBy, a.FanartExists, status, unavailableNames))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"images": allImages})
+	images := allImages
+	if images == nil {
+		images = []provider.ImageResult{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"images":                images,
+		"status":                status,
+		"unavailable_providers": unavailableProviders,
+	})
 }
 
 // handleImageCrop accepts base64-encoded image data, optionally applies a server-side crop
