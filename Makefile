@@ -68,6 +68,12 @@ test-js:
 #   SW_PORT                  Port the ephemeral server binds to (default: random free port)
 #   STILLWATER_ADMIN_USER    Admin username (default: ci-a11y-admin)
 #   STILLWATER_ADMIN_PASSWORD Admin password (default: ci-a11y-ephemeral-pw)
+# SW_FORCE_PROVIDER_ERROR=duckduckgo below is load-bearing for
+# websearch-unavailable.spec.js (#3229): it forces a deterministic, offline
+# DuckDuckGo web-search failure instead of depending on the live DuckDuckGo
+# endpoint returning an error. Keep it mirrored in the "Start Stillwater
+# (ephemeral)" step's env in .github/workflows/ci.yml -- if only one of the
+# two carries it, that harness silently tests against a real network call.
 test-a11y: build
 	@set -euo pipefail; \
 	SW_DB="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.db"; \
@@ -92,6 +98,7 @@ test-a11y: build
 	echo "[test-a11y] starting server on port $$SW_PORT (db=$$SW_DB)"; \
 	SW_DB_PATH="$$SW_DB" SW_PORT="$$SW_PORT" SW_LOG_FORMAT=text SW_LOG_LEVEL=warn \
 	  SW_BACKUP_ENABLED=false SW_UX=next SW_MUSIC_PATH="$$SW_EMPTY_LIB" \
+	  SW_FORCE_PROVIDER_ERROR=duckduckgo \
 	  ./$(BINARY) > "$$LOG_FILE" 2>&1 & \
 	echo $$! > "$$PID_FILE"; \
 	\

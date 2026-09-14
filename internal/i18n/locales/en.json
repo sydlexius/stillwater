@@ -1323,6 +1323,7 @@
   "image.msg_uploading": "Uploading...",
   "image.web_search": "Web Search",
   "image.web_search_results": "Web Search Results",
+  "image.web_search_unavailable": "Web search is unavailable right now (%s). Try the Google Images search entry in the Actions menu instead.",
   "image.web_search_warning": "Web search results are unverified. Dimensions may be inaccurate. Check logo images for transparency before saving.",
   "instrument.accordion": "Accordion",
   "instrument.acoustic guitar": "Acoustic Guitar",

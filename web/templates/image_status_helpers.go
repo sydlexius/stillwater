@@ -52,3 +52,17 @@ func allProvidersSkipped(statuses []provider.ProviderImageStatus) bool {
 	}
 	return true
 }
+
+// webSearchProviderDisplayNames returns a comma-separated list of
+// human-readable provider display names (e.g. "DuckDuckGo"), used to fill
+// the "unavailable" message's %s placeholder. Unlike the images/search
+// status banner above (which carries raw scrubbed error text), the web
+// search unavailable message names only the provider -- no error detail
+// ever reaches the client for this path.
+func webSearchProviderDisplayNames(names []provider.ProviderName) string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		out = append(out, n.DisplayName())
+	}
+	return strings.Join(out, ", ")
+}

@@ -705,6 +705,11 @@ jobs:
           SW_LOG_LEVEL: warn
           SW_BACKUP_ENABLED: "false"
           SW_UX: "next"
+          # Deterministic, offline DuckDuckGo web-search failure for
+          # websearch-unavailable.spec.js (#3229). Keep this in sync with the
+          # same var in the Makefile's test-a11y target -- see that target's
+          # comment for the mirror-back pointer.
+          SW_FORCE_PROVIDER_ERROR: duckduckgo
         run: |
           ./stillwater > "${{ runner.temp }}/stillwater-a11y.log" 2>&1 &
           echo "pid=$!" >> "$GITHUB_OUTPUT"

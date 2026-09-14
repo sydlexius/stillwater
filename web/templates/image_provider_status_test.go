@@ -177,3 +177,21 @@ func TestImageSearchResultsNilStatusesNoEmptyState(t *testing.T) {
 		t.Errorf("FanartSearchResults with nil statuses rendered the no-providers-searched empty state; html: %s", fanart)
 	}
 }
+
+// TestWebSearchProviderDisplayNames pins the display-name join used by the
+// web image search "unavailable" message (#3229): a ", "-joined list of
+// human-readable provider names, empty string for an empty input. Also the
+// one same-package assertion image_status_helpers.go needs to hold patch
+// coverage at the gate threshold (otherwise only reached cross-package).
+func TestWebSearchProviderDisplayNames(t *testing.T) {
+	if got := webSearchProviderDisplayNames(nil); got != "" {
+		t.Errorf("webSearchProviderDisplayNames(nil) = %q, want empty string", got)
+	}
+	if got, want := webSearchProviderDisplayNames([]provider.ProviderName{provider.NameDuckDuckGo}), "DuckDuckGo"; got != want {
+		t.Errorf("webSearchProviderDisplayNames([duckduckgo]) = %q, want %q", got, want)
+	}
+	multi := []provider.ProviderName{provider.NameDuckDuckGo, provider.NameSpotify}
+	if got, want := webSearchProviderDisplayNames(multi), "DuckDuckGo, Spotify"; got != want {
+		t.Errorf("webSearchProviderDisplayNames(multi) = %q, want %q", got, want)
+	}
+}
