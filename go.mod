@@ -21,7 +21,7 @@ require (
 	golang.org/x/net v0.58.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.23.0
-	golang.org/x/term v0.45.0
+	golang.org/x/term v0.46.0
 	golang.org/x/text v0.41.0
 	golang.org/x/time v0.16.0
 	golang.org/x/tools v0.49.0
@@ -56,7 +56,7 @@ require (
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/wadey/gocovmerge v0.0.0-20160331181800-b5bfa59ec0ad // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	modernc.org/libc v1.75.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
