@@ -51,3 +51,28 @@ ignore:
       type: apk
     review-by: "2026-10-20"
     reason: "OpenSSL QUIC server path unreachable (HTTP/3 is pure-Go quic-go, CGO_ENABLED=0); no fixed apk in v3.24 or edge as of 2026-08-22"
+
+  # CVE-2026-85091 (High) zlib 1.3.2-r0 apk -- heap buffer overflow in
+  # gz_vacate() (gzwrite.c); triggers only when a program calls
+  # gzprintf()/gzvprintf() after a non-blocking gzwrite() write stall.
+  #
+  # UNREACHABLE HERE: the stillwater binary is built CGO_ENABLED=0
+  # (build/docker/Dockerfile:43, .goreleaser.yml:17), so it links no C
+  # libraries. Go's compress/gzip is pure Go and never calls libz. zlib is
+  # present in the Alpine runtime layer only as a dependency of apk-tools,
+  # which is not invoked at container runtime (verified: build/docker/
+  # entrypoint.sh and healthcheck.sh do not call apk).
+  #
+  # NO UPSTREAM FIX EXISTS TO BUMP TO, verified 2026-09-28: zlib is 1.3.2-r0
+  # in both v3.24/main and edge/main.
+  #
+  # Re-check by comparing the apk index against 1.3.2-r0:
+  #   curl -sL https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/APKINDEX.tar.gz \
+  #     | tar -xzO APKINDEX | grep -A2 '^P:zlib$' | grep '^V:'
+  # A version above 1.3.2-r0 means the fix landed: drop this entry and rebuild.
+  - vulnerability: CVE-2026-85091
+    package:
+      name: zlib
+      type: apk
+    review-by: "2026-10-20"
+    reason: "gz* printf path unreachable (binary is CGO_ENABLED=0, zlib only pulled in by apk-tools); no fixed apk in v3.24 or edge as of 2026-09-28"
