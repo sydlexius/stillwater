@@ -42,7 +42,8 @@ var searchTerms = map[provider.ImageType]string{
 	provider.ImageBanner: "band banner header wide",
 }
 
-// vqdRegex matches quoted VQD tokens as DuckDuckGo actually emits them:
+// vqdRegex matches quoted VQD tokens as DuckDuckGo's MAIN search page
+// actually emits them (confirmed live 2026-09-28 during hostile review):
 //   - vqd='4-123456789' (single-quoted, in a script tag)
 //   - vqd="4-123456789" (double-quoted, in a script tag)
 //
@@ -50,11 +51,32 @@ var searchTerms = map[provider.ImageType]string{
 // the issue (`vqd=(['"])(\d[\d-]+)\1`) is expressed as two alternations, one
 // per quote style; extractVQDFromBytes picks whichever capture group is
 // non-empty. This intentionally no longer matches an unquoted
-// "vqd=4-123456789" query-parameter-style token: the real page only emits
-// the quoted form (confirmed 2026-09-28), and the looser previous regex
-// (accepting bare alphanumerics with no digit requirement) was more permissive
-// than anything DDG has been observed to send.
+// "vqd=4-123456789" query-parameter-style token: the real MAIN page only
+// emits the quoted form, and the looser previous regex (accepting bare
+// alphanumerics with no digit requirement) was more permissive than
+// anything DDG has been observed to send from that page.
+//
+// This regex is scoped to getVQDFromMainPage ONLY. The legacy /html/
+// fallback endpoint (getVQDFromHTMLPage) was never live-verified against
+// the quoted-only claim above -- its unquoted fixture predates #3273 and
+// was never re-measured against the real endpoint -- so it uses the
+// separate, looser vqdFallbackRegex below instead of this one. Widening
+// this shared regex to also accept the fallback's unquoted style would let
+// a main-page response silently match that style too, which the live
+// measurement never observed; keeping two regexes keeps each one no looser
+// than what was actually verified for its own call site.
 var vqdRegex = regexp.MustCompile(`vqd='(\d[\d-]+)'|vqd="(\d[\d-]+)"`)
+
+// vqdFallbackRegex matches VQD tokens on the legacy /html/ fallback
+// endpoint (getVQDFromHTMLPage). Unlike vqdRegex, this accepts BOTH the
+// quoted form (in case the fallback ever emits it) and the unquoted
+// digits-dash query-parameter style historically observed there (e.g.
+// "vqd=98765&"), because the fallback's exact current format was never
+// live-verified during #3273 -- only the main page was. The unquoted
+// alternative requires the digit run to be followed by a non-digit,
+// non-dash character (or end of input) so it does not partially match
+// inside a longer numeric token.
+var vqdFallbackRegex = regexp.MustCompile(`vqd='(\d[\d-]+)'|vqd="(\d[\d-]+)"|vqd=(\d[\d-]+)(?:[^\d-]|$)`)
 
 // Adapter implements provider.WebImageProvider for DuckDuckGo image search.
 type Adapter struct {
@@ -187,16 +209,27 @@ func vqdRequestURL(baseURL, query string) string {
 // gave against an oversized body -- applied after gzip so it still caps
 // memory use on a hostile/oversized upstream response.
 func readBody(resp *http.Response, limit int64) ([]byte, error) {
-	var reader io.Reader = resp.Body
-	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
-		gz, err := gzip.NewReader(reader)
-		if err != nil {
-			return nil, fmt.Errorf("gzip reader: %w", err)
-		}
-		defer gz.Close() //nolint:errcheck // Close error not actionable on read-only decompressor
-		reader = gz
+	if !strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+		return io.ReadAll(io.LimitReader(resp.Body, limit))
 	}
-	return io.ReadAll(io.LimitReader(reader, limit))
+
+	gz, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gz.Close() //nolint:errcheck // Close error not actionable on read-only decompressor
+
+	data, err := io.ReadAll(io.LimitReader(gz, limit))
+	if err != nil {
+		// A raw io.ReadAll error here (e.g. gzip.ErrChecksum, or an
+		// io.ErrUnexpectedEOF from truncated compressed data) has no
+		// indication it came from decompression rather than the network
+		// read itself, which would otherwise look identical to a plain
+		// body-read failure. %w preserves errors.Is/As on the underlying
+		// error (e.g. errors.Is(err, io.ErrUnexpectedEOF)).
+		return nil, fmt.Errorf("decompressing gzip body: %w", err)
+	}
+	return data, nil
 }
 
 // getVQDToken obtains the validation query digest token from DuckDuckGo.
@@ -289,12 +322,13 @@ func (a *Adapter) getVQDFromHTMLPage(ctx context.Context, client *http.Client, q
 	if err != nil {
 		return "", err
 	}
-	return extractVQDFromBytes(data)
+	return extractVQDFromHTMLFallback(data)
 }
 
-// extractVQDFromBytes extracts the VQD token from a response body using
-// vqdRegex. The regex has one non-empty capture group per quote style
-// (single vs. double); whichever one matched is the token.
+// extractVQDFromBytes extracts the VQD token from a main-page response body
+// using vqdRegex (quoted forms only). The regex has one non-empty capture
+// group per quote style (single vs. double); whichever one matched is the
+// token.
 func extractVQDFromBytes(data []byte) (string, error) {
 	matches := vqdRegex.FindSubmatch(data)
 	if matches == nil {
@@ -303,11 +337,35 @@ func extractVQDFromBytes(data []byte) (string, error) {
 			Cause:    fmt.Errorf("VQD token not found in response"),
 		}
 	}
-	if len(matches) > 1 && len(matches[1]) > 0 {
+	if len(matches[1]) > 0 {
 		return string(matches[1]), nil
 	}
-	if len(matches) > 2 && len(matches[2]) > 0 {
+	if len(matches[2]) > 0 {
 		return string(matches[2]), nil
+	}
+	return "", &provider.ErrProviderUnavailable{
+		Provider: provider.NameDuckDuckGo,
+		Cause:    fmt.Errorf("VQD token not found in response"),
+	}
+}
+
+// extractVQDFromHTMLFallback extracts the VQD token from a /html/-fallback
+// response body using vqdFallbackRegex, which accepts both the quoted forms
+// and the unquoted digits-dash style (see vqdFallbackRegex's doc comment for
+// why this call site is looser than extractVQDFromBytes). The regex has one
+// non-empty capture group per style; whichever one matched is the token.
+func extractVQDFromHTMLFallback(data []byte) (string, error) {
+	matches := vqdFallbackRegex.FindSubmatch(data)
+	if matches == nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameDuckDuckGo,
+			Cause:    fmt.Errorf("VQD token not found in response"),
+		}
+	}
+	for _, m := range matches[1:] {
+		if len(m) > 0 {
+			return string(m), nil
+		}
 	}
 	return "", &provider.ErrProviderUnavailable{
 		Provider: provider.NameDuckDuckGo,

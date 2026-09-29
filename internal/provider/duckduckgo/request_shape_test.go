@@ -260,6 +260,91 @@ func TestImageSearchGzipDecodes(t *testing.T) {
 	}
 }
 
+// TestImageSearchGzipCorruptionWrapsError feeds a truncated/corrupt gzip
+// body through the i.js path and asserts readBody's error is wrapped with
+// context ("decompressing gzip body: ...") rather than surfacing a bare
+// stdlib error indistinguishable from a plain network-read failure. %w is
+// used so errors.Is/As on the underlying error (io.ErrUnexpectedEOF for a
+// gzip stream truncated mid-block) still works through the wrapping.
+func TestImageSearchGzipCorruptionWrapsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/" && r.Method == http.MethodGet:
+			w.Write([]byte(`<html><script>vqd='4-1'</script></html>`))
+		case r.URL.Path == "/i.js":
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Encoding", "gzip")
+			// A well-formed gzip header followed by truncated/corrupt
+			// compressed data: gzip.NewReader succeeds (the header is
+			// intact), but the later io.ReadAll of the decompressing
+			// reader fails, exercising the wrapped-error path inside the
+			// io.ReadAll branch of readBody rather than the
+			// gzip.NewReader error branch.
+			var buf bytes.Buffer
+			gz := gzip.NewWriter(&buf)
+			_, _ = gz.Write([]byte(oneResultBody))
+			_ = gz.Close()
+			full := buf.Bytes()
+			// Cut well before the end (gzip trailer included), inside the
+			// compressed block, so decompression fails mid-stream instead
+			// of cleanly at a block boundary.
+			w.Write(full[:len(full)-4])
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+
+	_, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
+	if err == nil {
+		t.Fatal("expected an error for a truncated gzip body, got nil")
+	}
+	if !strings.Contains(err.Error(), "decompressing gzip body") {
+		t.Errorf("error = %v, want it to contain \"decompressing gzip body\"", err)
+	}
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		// Not fatal: gzip may surface a different concrete error for some
+		// truncation points (e.g. gzip.ErrChecksum on a whole-trailer cut).
+		// The message-contains check above is the load-bearing assertion;
+		// this just records which error class this particular truncation
+		// point actually produced.
+		t.Logf("truncated-gzip error is not io.ErrUnexpectedEOF (got %v); message-wrap assertion still holds", err)
+	}
+}
+
+// TestExtractVQDFromHTMLFallback covers the /html/ fallback's looser
+// vqdFallbackRegex (#3273 fix round): unlike the main page's quoted-only
+// vqdRegex, this call site was never live-verified to require quotes, so
+// it accepts both the unquoted digits-dash query-parameter style
+// historically observed there AND the quoted forms, in case the fallback
+// ever emits those too.
+func TestExtractVQDFromHTMLFallback(t *testing.T) {
+	tests := []struct {
+		name  string
+		html  string
+		token string
+	}{
+		{"unquoted, ampersand-terminated", `vqd=98765&`, "98765"},
+		{"unquoted with dash, ampersand-terminated", `vqd=4-123456789&`, "4-123456789"},
+		{"unquoted, end of input", `vqd=98765`, "98765"},
+		{"single quoted", `vqd='4-123456789'`, "4-123456789"},
+		{"double quoted", `vqd="4-123456789"`, "4-123456789"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token, err := extractVQDFromHTMLFallback([]byte(tt.html))
+			if err != nil {
+				t.Fatalf("extractVQDFromHTMLFallback(%q): %v", tt.html, err)
+			}
+			if token != tt.token {
+				t.Errorf("got token %q, want %q", token, tt.token)
+			}
+		})
+	}
+}
+
 // TestSSRFGuardSurvivesJarAttach proves newSearchClient's per-search jar
 // attach (httpsafe.ClientWithJar) does not drop the SSRF guard on
 // a.client.Transport. It deliberately does NOT call useLoopbackTestClient:

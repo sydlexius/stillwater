@@ -201,10 +201,13 @@ func TestVQDFallbackToHTML(t *testing.T) {
 			// Main page without VQD token
 			w.Write([]byte(`<html><body>no token here</body></html>`))
 		case r.URL.Path == "/html/" && r.Method == http.MethodPost:
-			// Legacy HTML endpoint with VQD, quoted (see the deliberate
-			// tightening in vqdRegex -- the unquoted "vqd=98765&" form this
-			// fixture used before #3273 no longer matches).
-			w.Write([]byte(`<html><script>vqd="98765"&</script></html>`))
+			// Legacy HTML endpoint with VQD, in the unquoted digits-dash
+			// query-parameter style historically observed there. This
+			// fallback path uses vqdFallbackRegex (looser than the
+			// main-page-only vqdRegex) specifically so this unquoted form
+			// still matches -- see TestExtractVQDFromHTMLFallback for the
+			// dedicated coverage and vqdFallbackRegex's doc comment for why.
+			w.Write([]byte(`<html><script>vqd=98765&</script></html>`))
 		case r.URL.Path == "/i.js":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(loadFixture(t, "search_radiohead_thumb.json"))
@@ -228,13 +231,12 @@ func TestVQDFallbackToHTML(t *testing.T) {
 	}
 }
 
-// TestVQDTokenFormats exercises the tightened vqdRegex (#3273): DuckDuckGo's
-// real page only emits the quoted forms below, and the deliberately narrower
-// regex no longer matches the previously-accepted unquoted
-// "vqd=4-123456789" query-parameter style or bare-alphanumeric tokens (e.g.
-// "vqd=abc123_DEF") -- neither has ever been observed from the real page,
-// and the old regex's [0-9a-zA-Z_-]+ character class was more permissive
-// than anything DDG sends.
+// TestVQDTokenFormats exercises the tightened vqdRegex (#3273), scoped to
+// the MAIN page (extractVQDFromBytes / getVQDFromMainPage): a live GET
+// during hostile review confirmed the real main page only emits the quoted
+// forms below. This does NOT apply to the /html/ fallback endpoint, which
+// was never live-verified the same way and uses the separate, looser
+// vqdFallbackRegex (see TestExtractVQDFromHTMLFallback).
 func TestVQDTokenFormats(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -260,11 +262,16 @@ func TestVQDTokenFormats(t *testing.T) {
 	}
 }
 
-// TestVQDTokenFormatsRejected proves the tightening actually narrowed
-// behavior: forms the old [0-9a-zA-Z_-]+ regex accepted must now fail.
-func TestVQDTokenFormatsRejected(t *testing.T) {
+// TestMainPageVQDRegexRejectsUnquoted proves the MAIN-PAGE tightening
+// (extractVQDFromBytes / vqdRegex) actually narrowed behavior: forms the
+// old shared [0-9a-zA-Z_-]+ regex accepted must now fail on that path. This
+// no longer claims anything about the /html/ fallback -- that path
+// deliberately accepts the unquoted form via vqdFallbackRegex instead (see
+// TestExtractVQDFromHTMLFallback), since only the main page's quoted-only
+// behavior was live-verified.
+func TestMainPageVQDRegexRejectsUnquoted(t *testing.T) {
 	rejected := []string{
-		`vqd=4-123456789`,  // unquoted query-parameter style
+		`vqd=4-123456789`,  // unquoted query-parameter style (fallback-only now)
 		`vqd=abc123_DEF`,   // bare alphanumeric, no quotes
 		`vqd='abc123_DEF'`, // quoted but non-digit body
 	}
