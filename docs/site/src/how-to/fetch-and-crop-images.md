@@ -37,7 +37,7 @@ The saved file goes into the artist's directory under the canonical filename for
 For cases where curated providers don't have what you need.
 
 1. Same as above, but choose **Web Search** from the **Actions** menu instead of Fetch.
-2. Stillwater queries the configured web search adapter (e.g., DuckDuckGo).
+2. Stillwater queries the configured web search adapter (e.g., DuckDuckGo), then quickly checks each result's image on the site that hosts it. Results that are unreachable, too slow to respond (more than about 4 seconds), not an image, or in a format Stillwater can't use (such as GIF or SVG) are dropped. The whole check is capped at about 8 seconds; results it did not get to are kept. If every result is dropped you get an empty grid, not the unavailable message below.
 3. The result list shows thumbnails with source URLs.
 4. Pick a candidate, preview, crop, save.
 

@@ -1058,6 +1058,13 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 		allImages[i].URL = ensureHTTPS(allImages[i].URL)
 	}
 
+	// Drop unreachable / non-image / undecodable results before they render as
+	// broken tiles (#1833). Runs before the status verdict on purpose: an
+	// all-culled set from a provider that answered is an empty "ok" result,
+	// and webSearchStatus only reports "unavailable" when every provider
+	// ERRORED, which cannot be caused by culling.
+	allImages = r.cullBrokenImageResults(req.Context(), allImages)
+
 	sortImageResults(allImages, sortBy)
 
 	status, unavailableProviders := webSearchStatusAndProviders(attempted, unavailableNames, len(allImages))
