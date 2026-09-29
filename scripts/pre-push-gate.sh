@@ -195,6 +195,13 @@ echo "=== Gate invariant (no advisory step in the default path) ==="
 bash "$SCRIPT_DIR/check-gate-invariant.sh"
 
 echo ""
+echo "=== Required workflows run on any PR base (#3002) ==="
+# A `pull_request: branches: [main]` filter makes a stacked PR run no required
+# checks, and the merge oracle reads the empty rollup as green. Static, hermetic.
+# Mirrored by CI's "Gate Invariant" job (gate.yml).
+bash "$SCRIPT_DIR/check-pr-trigger-scope.sh"
+
+echo ""
 echo "=== git-init guard presence (#3051) ==="
 # `git init <path>` re-initializes an inherited GIT_DIR and IGNORES <path>. The
 # pre-push hook exports GIT_DIR, this gate inherits it, and several checks below
@@ -428,7 +435,7 @@ echo ""
 echo "=== Vulnerability scan (govulncheck) ==="
 # RUN_VULN three-state gate, mirroring the RUN_RACE pattern above (and
 # RUN_A11Y further down): CI's "Go Vulnerability Check" job (security.yml)
-# runs unconditionally on every push/PR to main with no paths-filter and is
+# runs unconditionally on every PR (any base) and push to main, with no paths-filter and is
 # the authoritative, required gate -- it is network-dependent (downloads the
 # vuln DB) and takes ~30-60s, so running it again on every local push is a
 # slow, occasionally-flaky duplicate of a check CI already enforces.
@@ -442,8 +449,8 @@ echo "=== Vulnerability scan (govulncheck) ==="
 #     failure as ADVISORY, which is exactly the shape #2983 forbids: 30-60s of
 #     network-dependent work whose verdict the gate then declines to act on.
 #     The authoritative check is CI's required "Go Vulnerability Check" job
-#     (security.yml), which runs unconditionally on every push and PR to main
-#     with no paths-filter on the trigger.
+#     (security.yml), which runs unconditionally on every PR (any base) and push to
+#     main, with no paths-filter on the trigger.
 #   - RUN_VULN set to anything else (`RUN_VULN=truee`): the gate already aborted
 #     with exit 2 at the top of this file. See resolve_run_flag.
 run_vuln=0

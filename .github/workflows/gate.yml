@@ -42,7 +42,7 @@
 #      bash hook, the pre-commit config, and the CI workflows all agree.
 #
 # Trigger design:
-#   Runs unconditionally on every push to main and every PR targeting main
+#   Runs unconditionally on every push to main and every PR (any base branch)
 #   (no paths-filter gate on the workflow trigger).  GitHub treats a required
 #   status check as FAILED when the check is absent -- only when the check
 #   runs and exits 0 does it count as passing.  A paths-filter on the trigger
@@ -59,7 +59,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # No `branches:` filter: a stacked PR (base is another feature branch) must
+    # run the same required checks (#3002). Guarded by check-pr-trigger-scope.sh.
 
 permissions:
   contents: read
@@ -728,6 +729,15 @@ jobs:
       # by these tests, not by reading it.
       - name: Guard self-test
         run: bash scripts/test-check-gate-invariant.sh
+
+      # Required workflows must run on PRs to any base branch, or a stacked PR
+      # runs no required checks and reads as green (#3002). Lives in this
+      # always-running required job so the check itself can never be skipped.
+      - name: Check required workflows run on any PR base
+        run: bash scripts/check-pr-trigger-scope.sh
+
+      - name: PR trigger guard self-test
+        run: bash scripts/test-check-pr-trigger-scope.sh
 
       # Asserts the gate REFUSES an unrecognized RUN_* value instead of folding
       # it into "unset" and printing "skipped by default" over a tier the

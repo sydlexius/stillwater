@@ -34,6 +34,14 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   by CI's `Gate Invariant` job (`gate.yml`), so weakening the gate and pushing
   with `--no-verify` still gets caught.
 - `scripts/test-check-gate-invariant.sh` -- hermetic mutation tests for the above.
+- `scripts/check-pr-trigger-scope.sh` -- scan EVERY workflow (`*.yml` and
+  `*.yaml`) with a `pull_request` trigger and fail if it restricts base branches (`branches:` /
+  `branches-ignore:`, block or flow form) unless it is on the script's `EXEMPT`
+  list (`dependabot-auto-approve`, `pages`); also fail if a required-check
+  workflow (`MUST_TRIGGER`) loses its trigger. A stacked PR would otherwise run
+  no required checks and read as green (#3002). Run by the gate and by the
+  `Gate Invariant` job.
+- `scripts/test-check-pr-trigger-scope.sh` -- hermetic mutation tests for the above.
 - `scripts/lib/run-flags.sh` -- sourced by the gate; resolves each `RUN_*`
   variable to run / skip / default and REFUSES an unrecognized value (exit 2).
   Without it, a mistyped `RUN_VULN=truee` fell into the default branch, printed

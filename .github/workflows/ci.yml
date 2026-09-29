@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # No `branches:` filter: a stacked PR (base is another feature branch) must
+    # run the same required checks (#3002). Guarded by check-pr-trigger-scope.sh.
 
 permissions:
   contents: read
