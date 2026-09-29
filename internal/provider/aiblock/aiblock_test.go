@@ -106,82 +106,35 @@ func TestFilterCountsRemoved(t *testing.T) {
 	}
 }
 
-// The vendored list must parse and behave on the two real cases seen live on
-// 2026-09-29: a NightCafe image is dropped, a freepik premium-vector image is
-// not (the freepik rules are path-scoped).
-func TestVendoredList(t *testing.T) {
-	m := Default()
+// The fixture holds real upstream lines. It must parse cleanly and behave on
+// the cases seen live on 2026-09-29: a NightCafe image is dropped, a freepik
+// premium-vector image is not (the freepik rules are path-scoped).
+func TestUpstreamSample(t *testing.T) {
+	m := Parse(readSample(t))
 	if m.Skipped != 0 {
-		t.Errorf("the shipped list must parse with 0 skipped lines, got %d", m.Skipped)
+		t.Fatalf("the upstream sample must parse with 0 skipped lines, got %d", m.Skipped)
 	}
-	if !m.MatchURL("https://images.nightcafe.studio/jobs/aGVsbG8/aGVsbG8.jpg") {
-		t.Error("vendored list must block images.nightcafe.studio")
-	}
-	if m.MatchURL("https://img.freepik.com/premium-vector/dragon-illustration_1234.jpg") {
-		t.Error("freepik premium-vector must not be blocked: the rules are path-scoped")
-	}
-	if !m.MatchURL("https://img.freepik.com/premium-ai-image/dragon_1234.jpg") {
-		t.Error("freepik premium-ai-image must be blocked")
-	}
-	// The two rules that used to be silently skipped.
-	if !m.MatchURL("https://www.deviantart.com/foo/art/bar-ai-art-123") {
-		t.Error("the deviantart /re/i rule must be active")
-	}
-	if !m.MatchURL("https://www.adobe.com/de/products/firefly/x") {
-		t.Error("the adobe mid-path wildcard rule must be active")
-	}
-	if !m.MatchURL("https://artbreeder.com/x") {
-		t.Error("artbreeder.com must still be blocked after the local amendment")
-	}
-}
-
-// Canary: a refresh that pulls in a list-wide rule (a bare TLD, "/./") would
-// hide every result. Ordinary image hosts must never be blocked.
-func TestVendoredListDoesNotBlockCleanHosts(t *testing.T) {
-	m := Default()
-	for _, u := range []string{
-		"https://upload.wikimedia.org/wikipedia/commons/a/a1/x.jpg",
-		"https://i.scdn.co/image/abc",
-		"https://lastfm.freetls.fastly.net/i/u/300x300/x.jpg",
-		"https://images.squarespace-cdn.com/content/v1/x.jpg",
-		"https://i.pinimg.com/originals/aa/bb/x.jpg",
-		"https://img.freepik.com/premium-vector/x.jpg",
-		"https://commons.wikimedia.org/w/x.png",
-		"https://example.com/photo.jpg",
+	for _, c := range []struct {
+		url  string
+		want bool
+	}{
+		{"https://images.nightcafe.studio/jobs/aGVsbG8/aGVsbG8.jpg", true},
+		{"https://img.freepik.com/premium-vector/dragon-illustration_1234.jpg", false},
+		{"https://img.freepik.com/premium-ai-image/dragon_1234.jpg", true},
+		{"https://www.deviantart.com/foo/art/bar-ai-art-123", true}, // /re/i rule
+		{"https://www.adobe.com/de/products/firefly/x", true},       // mid-path wildcard
+		{"https://artbreeder.com/x", true},
+		// Exact-path rules (no trailing "*"). No freepik negative: the
+		// freepik regex also covers these URLs, so a suffix stays blocked.
+		{"https://img.freepik.com/premium-photo/moon-background-with-astronaut-image-ai-generated-art_39726721.htm", true},
+		{"https://tuna.voicemod.net/sound/1fdc3b37-441c-4a34-ae88-853bbbb947bb", true},
+		{"https://tuna.voicemod.net/sound/1fdc3b37-441c-4a34-ae88-853bbbb947bb-x", false},
+		// Query-bearing rule; upstream requires a "/" after the id.
+		{"https://play.google.com/store/apps/details?id=ai.art.anime/", true},
+		{"https://play.google.com/store/apps/details?id=org.example.clean/", false},
 	} {
-		if m.MatchURL(u) {
-			t.Errorf("clean host wrongly blocked: %s", u)
+		if got := m.MatchURL(c.url); got != c.want {
+			t.Errorf("MatchURL(%q) = %v, want %v", c.url, got, c.want)
 		}
-	}
-}
-
-// The shipped data exercises the exact-path and query fixes: the freepik
-// ".htm" rules and the voicemod rule carry no trailing "*", and the Play Store
-// rules carry a query.
-func TestVendoredExactAndQueryRules(t *testing.T) {
-	m := Default()
-	if m.Skipped != 0 {
-		t.Fatalf("the shipped list must parse with 0 skipped lines, got %d", m.Skipped)
-	}
-	const fp = "https://img.freepik.com/premium-photo/moon-background-with-astronaut-image-ai-generated-art_39726721.htm"
-	if !m.MatchURL(fp) {
-		t.Error("freepik exact-path rule must match itself")
-	}
-	// No negative for freepik: a list-wide freepik regex also covers these
-	// URLs, so a suffix stays blocked. The voicemod rule below has no overlap.
-	const vm = "https://tuna.voicemod.net/sound/1fdc3b37-441c-4a34-ae88-853bbbb947bb"
-	if !m.MatchURL(vm) {
-		t.Error("voicemod exact-path rule must match itself")
-	}
-	if m.MatchURL(vm + "-x") {
-		t.Error("voicemod exact-path rule must not match a surplus suffix")
-	}
-	// Upstream semantics: the rule requires a "/" after the id.
-	const play = "https://play.google.com/store/apps/details?id=ai.art.anime/"
-	if !m.MatchURL(play) {
-		t.Error("play.google.com query-bearing rule must match its query")
-	}
-	if m.MatchURL("https://play.google.com/store/apps/details?id=org.example.clean/") {
-		t.Error("play.google.com rule must not match a different id")
 	}
 }

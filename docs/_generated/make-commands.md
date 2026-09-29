@@ -11,7 +11,6 @@
 | `make test-cover` | Run tests with coverage |
 | `make test-js` | Install JS dev dependencies and run Node.js unit tests for client-side JS modules. |
 | `make test-a11y` | Build an ephemeral server and run Playwright axe-core a11y smoke tests. |
-| `make refresh-ai-blocklist` | Re-download the vendored AI-image blocklist (laylavish/uBlockOrigin-HUGE-AI-Blocklist, CC0-1.0) into internal/provider/aiblock/ai_blocklist.list and rewrite its provenance header with the upstream commit SHA and today's date. Maintainer-run; review the diff before committing. |
 | `make lint` | Run golangci-lint |
 | `make hadolint` | Lint Dockerfile for best practices |
 | `make vulncheck` | Scan for known vulnerabilities (govulncheck, pinned to the CI version) |

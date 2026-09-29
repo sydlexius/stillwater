@@ -28,6 +28,9 @@ reviews:
     - "!docs/site/src/reference/cli.md"
     - "!docs/site/src/reference/preferences.md"
     - "!docs/site/src/reference/settings-by-tab.md"
+    # Third-party test fixture: verbatim lines of the upstream AI blocklist
+    # (CC0 data, not our code). The production list is fetched at runtime.
+    - "!internal/provider/aiblock/testdata/**"
   profile: assertive
   request_changes_workflow: true
   high_level_summary: true

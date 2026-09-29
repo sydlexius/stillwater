@@ -1,8 +1,9 @@
 // Package aiblock hides web image search results hosted on sites from a
 // community-maintained list of AI-image sources (#2310).
 //
-// The list is laylavish's uBlockOrigin-HUGE-AI-Blocklist (CC0-1.0), vendored
-// in ai_blocklist.list in uBlacklist match-pattern format. Filtering happens
+// The list is laylavish's uBlockOrigin-HUGE-AI-Blocklist (CC0-1.0) in
+// uBlacklist match-pattern format. It is not vendored: a Store fetches it at
+// runtime, caches it on disk, and refreshes it (see store.go). Filtering happens
 // on the Stillwater side, after a search provider has returned its results, so
 // it never changes the request a provider sends and works for any web image
 // provider. It is best-effort: it drops results from listed sites, and AI
@@ -19,18 +20,12 @@
 package aiblock
 
 import (
-	_ "embed"
-	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
-
-//go:embed ai_blocklist.list
-var vendoredList string
 
 // Matcher holds a compiled blocklist. The zero value matches nothing.
 type Matcher struct {
@@ -182,6 +177,18 @@ func (m *Matcher) MatchURL(rawURL string) bool {
 	return false
 }
 
+// ruleCount is the number of compiled rules (host rules plus regexes).
+func (m *Matcher) ruleCount() int {
+	if m == nil {
+		return 0
+	}
+	n := len(m.regexes)
+	for _, rules := range m.hosts {
+		n += len(rules)
+	}
+	return n
+}
+
 // Filter returns the results whose URL is not blocked, and how many were
 // removed. ImageResult carries only the image URL (providers do not return a
 // source-page URL), so that is the field matched.
@@ -197,20 +204,12 @@ func (m *Matcher) Filter(in []provider.ImageResult) (kept []provider.ImageResult
 	return kept, removed
 }
 
-var (
-	defaultOnce    sync.Once
-	defaultMatcher *Matcher
-)
-
-// Default returns the matcher for the vendored list, compiled once on first
-// use; a server may call it at startup to surface parse problems early. The
-// skipped-line count is logged once.
+// Default returns the active matcher of the store installed with SetDefault.
+// With no store installed, or before the store has loaded a list, it returns
+// an empty matcher that blocks nothing; Store.Status says which.
 func Default() *Matcher {
-	defaultOnce.Do(func() {
-		defaultMatcher = Parse(vendoredList)
-		if defaultMatcher.Skipped > 0 {
-			slog.Warn("AI blocklist: skipped unparsable lines", "skipped", defaultMatcher.Skipped)
-		}
-	})
-	return defaultMatcher
+	if s := defaultStore.Load(); s != nil {
+		return s.Matcher()
+	}
+	return emptyMatcher
 }

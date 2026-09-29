@@ -1,0 +1,19 @@
+# Test fixture: a few real lines from laylavish/uBlockOrigin-HUGE-AI-Blocklist
+# (list_uBlacklist.txt, CC0-1.0), copied verbatim for the aiblock tests. Not
+# the production list: that is fetched at runtime (see store.go).
+*://*.artbreeder.com/*
+*://*.nightcafe.studio/*
+*://*.creator.nightcafe.studio/*
+*://*.play.google.com/store/apps/details?id=ai.art.anime/*
+*://*.freepik.com/premium-ai-image/*
+*://*.freepik.com/ai/*
+*://*.freepik.com/free-ai-image/*
+*://*.freepik.com/premium-photo/santa-christmas-snowman-with-christmas-tree-background_34806921/*
+*://*.freepik.com/premium-photo/circus-tent-with-balloons-sweets-blue-background-generative-ai_39088161.htm
+*://*.freepik.com/premium-photo/moon-background-with-astronaut-image-ai-generated-art_39726721.htm
+*://*.adobe.com/products/firefly/*
+*://*.adobe.com/*/products/firefly/*
+*://*.tuna.voicemod.net/sound/1fdc3b37-441c-4a34-ae88-853bbbb947bb
+/stock\.adobe\.com\/.*(generat(ed|(ive))-ai|ai-generated)/
+/freepik\.com\/.*(ai-generat(ed|or)|generative-ai)/
+/deviantart\.com\/.*(-generative-ai|ai-generat(ive|ed)|-ai-art)/i

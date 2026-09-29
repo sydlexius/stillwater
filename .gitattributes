@@ -70,3 +70,5 @@ docs/site/src/reference/providers.md linguist-generated=true
 docs/site/src/reference/cli.md linguist-generated=true
 docs/site/src/reference/preferences.md linguist-generated=true
 docs/site/src/reference/settings-by-tab.md linguist-generated=true
+# Third-party AI blocklist fixture (verbatim upstream CC0 data, not our code).
+internal/provider/aiblock/testdata/** linguist-generated=true
