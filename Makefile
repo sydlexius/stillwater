@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs docs-serve migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan audit bruno-ci
+.PHONY: refresh-ai-blocklist build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs docs-serve migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan audit bruno-ci
 
 # Use bash for all recipes so bash-only constructs (set -o pipefail) work even
 # where /bin/sh is dash (Debian/Ubuntu); plain sh lacks pipefail.
@@ -128,6 +128,29 @@ test-a11y: build
 	SW_PORT="$$SW_PORT" npx playwright test --config=playwright.config.js; \
 	echo "[test-a11y] done."
 
+## refresh-ai-blocklist: Re-download the vendored AI-image blocklist (laylavish/uBlockOrigin-HUGE-AI-Blocklist, CC0-1.0) into internal/provider/aiblock/ai_blocklist.list and rewrite its provenance header with the upstream commit SHA and today's date. Maintainer-run; review the diff before committing.
+refresh-ai-blocklist:
+	@set -euo pipefail; \
+	REPO=laylavish/uBlockOrigin-HUGE-AI-Blocklist; \
+	OUT=internal/provider/aiblock/ai_blocklist.list; \
+	TMP=$$(mktemp); trap 'rm -f "$$TMP"' EXIT; \
+	SHA=$$(curl -fsSL "https://api.github.com/repos/$$REPO/commits/main" | python3 -c 'import sys,json; print(json.load(sys.stdin)["sha"])'); \
+	curl -fsSL "https://raw.githubusercontent.com/$$REPO/$$SHA/list_uBlacklist.txt" | tr -d '\r' | grep -vxF '*://*.artbreeder/*' > "$$TMP"; \
+	test -s "$$TMP"; \
+	{ echo "# Vendored AI-image site blocklist (uBlacklist match-pattern format)."; \
+	  echo "#"; \
+	  echo "# Source:   https://github.com/$$REPO"; \
+	  echo "# File:     list_uBlacklist.txt"; \
+	  echo "# License:  CC0-1.0 (public domain dedication); redistributed below (CRLF line endings normalized to LF)."; \
+	  echo "# Fetched:  $$(date -u +%Y-%m-%d). Upstream commit: $$SHA"; \
+	  echo "# Refresh:  make refresh-ai-blocklist"; \
+	  echo "# Local amendment: the upstream line *://*.artbreeder/* (a typo with no TLD, redundant with *://*.artbreeder.com/*) is removed."; \
+	  echo "# Used by:  internal/provider/aiblock (Stillwater-side \"Filter AI images\")."; \
+	  echo "#"; \
+	  echo "# ---- upstream content follows ----"; \
+	  cat "$$TMP"; } > "$$OUT"; \
+	echo "wrote $$OUT from $$SHA"
+
 ## lint: Run golangci-lint
 lint:
 	golangci-lint run ./...
@@ -157,7 +180,7 @@ tailwind:
 ## generate: Run all code generation (templ + tailwind)
 generate: templ tailwind
 
-## generate-docs: Regenerate docs site content from code (provider matrix, env-var reference, CLI reference, rules catalogue, settings reference, doc anchors, envelope-versions, make-command reference, platform-profiles, preferences reference, CI reference). Each generator enforces coverage: a new code-defined key without a desc: tag or doc entry fails the build.
+## generate-docs: Regenerate docs site content from code (provider matrix, env-var reference, CLI reference, rules catalog, settings reference, doc anchors, envelope-versions, make-command reference, platform-profiles, preferences reference, CI reference). Each generator enforces coverage: a new code-defined key without a desc: tag or doc entry fails the build.
 generate-docs:
 	go run ./cmd/gen-provider-matrix
 	go run ./cmd/gen-env-reference
