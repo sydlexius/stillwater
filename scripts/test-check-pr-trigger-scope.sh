@@ -66,6 +66,14 @@ expect 0 "EXEMPT workflow may restrict the base" "$TMP/ex"
 fixture "$TMP/tgt"; put "$TMP/tgt" pr-labels "  pull_request_target:\n    branches: [main]\n"
 expect 0 "pull_request_target is out of scope" "$TMP/tgt"
 
+# GitHub also loads .yaml workflows; the scan must not be .yml-only.
+fixture "$TMP/yaml-bad"
+printf 'name: x\non:\n  pull_request:\n    branches: [main]\npermissions: {}\n' > "$TMP/yaml-bad/extra.yaml"
+expect 1 "rejects a .yaml workflow that restricts the base" "$TMP/yaml-bad"
+fixture "$TMP/yaml-ok"
+printf 'name: x\non:\n  pull_request:\n    types: [opened]\npermissions: {}\n' > "$TMP/yaml-ok/extra.yaml"
+expect 0 "accepts a .yaml workflow with no branch filter" "$TMP/yaml-ok"
+
 # Push filter and comments must not trip it.
 fixture "$TMP/ok"; put "$TMP/ok" security "$PUSH  pull_request:\n    # branches: [main] was removed (#3002)\n    types: [opened]\n"
 expect 0 "push filter and comments are ignored" "$TMP/ok"

@@ -7,7 +7,7 @@
 # reads the empty rollup as green, so an untested PR looks mergeable.
 #
 # WHAT IT CHECKS (default-deny, so a new workflow is covered automatically):
-#   1. EVERY workflow in the dir with a 2-space-indented `pull_request:` key
+#   1. EVERY workflow (*.yml and *.yaml, both load in Actions) in the dir with a 2-space-indented `pull_request:` key
 #      must carry no `branches:` / `branches-ignore:` under it (block form) and
 #      none on the key line (flow form `pull_request: {branches: [main]}`),
 #      unless the file is on EXEMPT below. `pull_request_target` is a different
@@ -34,7 +34,10 @@ for w in $MUST_TRIGGER; do
 done
 
 status=0
-for f in "$DIR"/*.yml; do
+# GitHub loads both .yml and .yaml; scanning only one would let the other escape.
+# An unmatched glob stays literal in bash, so skip non-files.
+for f in "$DIR"/*.yml "$DIR"/*.yaml; do
+  [ -f "$f" ] || continue
   w=$(basename "$f")
   if ! grep -qE '^  pull_request:' "$f"; then
     case " $MUST_TRIGGER " in
