@@ -248,7 +248,7 @@ func (r *Router) handleFilesystemBrowse(w http.ResponseWriter, req *http.Request
 	resolved := canonical
 
 	// Verify the target is a directory.
-	info, err := os.Stat(resolved)
+	info, err := os.Stat(resolved) //nolint:gosec // G703: resolved is the symlink-resolved canonical path, already confined to an allowed root above
 	if err != nil {
 		if os.IsNotExist(err) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "path not found"})
