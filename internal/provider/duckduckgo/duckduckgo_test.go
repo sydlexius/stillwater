@@ -40,7 +40,9 @@ func TestSearchImages(t *testing.T) {
 		case r.URL.Path == "/" && r.Method == http.MethodGet && r.URL.Query().Get("q") != "":
 			// Main search page with VQD token in script tag
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(`<html><script>vqd='4-12345_abc-DEF'</script></html>`))
+			// Real vqd tokens are digits/dashes only (e.g. "4-123456789");
+			// the tightened vqdRegex (#3273) no longer accepts letters here.
+			w.Write([]byte(`<html><script>vqd='4-123456789'</script></html>`))
 		case r.URL.Path == "/i.js":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(loadFixture(t, "search_radiohead_thumb.json"))
@@ -199,7 +201,12 @@ func TestVQDFallbackToHTML(t *testing.T) {
 			// Main page without VQD token
 			w.Write([]byte(`<html><body>no token here</body></html>`))
 		case r.URL.Path == "/html/" && r.Method == http.MethodPost:
-			// Legacy HTML endpoint with VQD
+			// Legacy HTML endpoint with VQD, in the unquoted digits-dash
+			// query-parameter style historically observed there. This
+			// fallback path uses vqdFallbackRegex (looser than the
+			// main-page-only vqdRegex) specifically so this unquoted form
+			// still matches -- see TestExtractVQDFromHTMLFallback for the
+			// dedicated coverage and vqdFallbackRegex's doc comment for why.
 			w.Write([]byte(`<html><script>vqd=98765&</script></html>`))
 		case r.URL.Path == "/i.js":
 			w.Header().Set("Content-Type", "application/json")
@@ -224,28 +231,55 @@ func TestVQDFallbackToHTML(t *testing.T) {
 	}
 }
 
+// TestVQDTokenFormats exercises the tightened vqdRegex (#3273), scoped to
+// the MAIN page (extractVQDFromBytes / getVQDFromMainPage): a live GET
+// during hostile review confirmed the real main page only emits the quoted
+// forms below. This does NOT apply to the /html/ fallback endpoint, which
+// was never live-verified the same way and uses the separate, looser
+// vqdFallbackRegex (see TestExtractVQDFromHTMLFallback).
 func TestVQDTokenFormats(t *testing.T) {
-	// Test that the regex matches various DDG VQD token formats
 	tests := []struct {
 		name  string
 		html  string
 		token string
 	}{
-		{"numeric with dash", `vqd=4-123456789`, "4-123456789"},
-		{"single quoted", `vqd='4-abc_DEF-123'`, "4-abc_DEF-123"},
-		{"double quoted", `vqd="4-abc_DEF-123"`, "4-abc_DEF-123"},
-		{"alphanumeric", `vqd=abc123_DEF`, "abc123_DEF"},
-		{"in script tag", `<script>vqd='token-42';</script>`, "token-42"},
+		{"single quoted with dash", `vqd='4-123456789'`, "4-123456789"},
+		{"double quoted with dash", `vqd="4-123456789"`, "4-123456789"},
+		{"single quoted no dash", `vqd='123456789'`, "123456789"},
+		{"in script tag", `<script>vqd='4-42';</script>`, "4-42"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			matches := vqdRegex.FindStringSubmatch(tt.html)
-			if len(matches) < 2 {
-				t.Fatalf("regex did not match: %s", tt.html)
+			token, err := extractVQDFromBytes([]byte(tt.html))
+			if err != nil {
+				t.Fatalf("extractVQDFromBytes(%q): %v", tt.html, err)
 			}
-			if matches[1] != tt.token {
-				t.Errorf("got token %q, want %q", matches[1], tt.token)
+			if token != tt.token {
+				t.Errorf("got token %q, want %q", token, tt.token)
+			}
+		})
+	}
+}
+
+// TestMainPageVQDRegexRejectsUnquoted proves the MAIN-PAGE tightening
+// (extractVQDFromBytes / vqdRegex) actually narrowed behavior: forms the
+// old shared [0-9a-zA-Z_-]+ regex accepted must now fail on that path. This
+// no longer claims anything about the /html/ fallback -- that path
+// deliberately accepts the unquoted form via vqdFallbackRegex instead (see
+// TestExtractVQDFromHTMLFallback), since only the main page's quoted-only
+// behavior was live-verified.
+func TestMainPageVQDRegexRejectsUnquoted(t *testing.T) {
+	rejected := []string{
+		`vqd=4-123456789`,  // unquoted query-parameter style (fallback-only now)
+		`vqd=abc123_DEF`,   // bare alphanumeric, no quotes
+		`vqd='abc123_DEF'`, // quoted but non-digit body
+	}
+	for _, html := range rejected {
+		html := html
+		t.Run(html, func(t *testing.T) {
+			if _, err := extractVQDFromBytes([]byte(html)); err == nil {
+				t.Errorf("extractVQDFromBytes(%q): expected error, got a match", html)
 			}
 		})
 	}

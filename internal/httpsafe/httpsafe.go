@@ -183,6 +183,28 @@ func SafeClient(timeout time.Duration) *http.Client {
 	return SafeClientWithAllowedHosts(timeout)
 }
 
+// ClientWithJar returns a shallow copy of client with jar attached as its
+// CookieJar. Transport, Timeout, and CheckRedirect are carried over
+// unchanged, so a caller that needs a fresh cookiejar.Jar per call (e.g. one
+// scoped to a single logical "session" rather than the package-lifetime
+// client) can get one without losing the SSRF guard on client.Transport.
+//
+// This exists so callers outside this package never need to write a raw
+// &http.Client{} composite literal themselves: TestNoRawHTTPClientConstruction
+// in no_raw_client_construction_test.go statically forbids that everywhere
+// except this package, specifically so every outbound HTTP path is
+// verifiably wired to SafeTransport. Constructing the copy here, instead of
+// at each call site, keeps that guarantee intact while still letting callers
+// vary the jar per call.
+func ClientWithJar(client *http.Client, jar http.CookieJar) *http.Client {
+	return &http.Client{
+		Transport:     client.Transport,
+		CheckRedirect: client.CheckRedirect,
+		Jar:           jar,
+		Timeout:       client.Timeout,
+	}
+}
+
 // SafeClientWithAllowedHosts is SafeClient with the trusted-host exemption of
 // SafeTransportWithAllowedHosts. See that function's SECURITY note: allowedHosts
 // must come only from trusted operator config, never request input. With no
