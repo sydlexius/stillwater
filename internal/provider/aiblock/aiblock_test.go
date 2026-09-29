@@ -15,6 +15,10 @@ const testList = `# comment
 /deviant\.example\/.*-ai-art/i
 *://*.MixedCase.example/*
 *://*.h.example/a/*/b*
+*://*.exact.example/photo.jpg
+*://*.exact.example/g/*/end
+*://*.q.example/store/details?id=com.x/*
+*://*.q.example/store/plain?id=com.y
 this line is malformed
 *://*.bad*host.com/*
 *://*.notld/*
@@ -49,6 +53,20 @@ func TestMatchHostSubdomainAndPath(t *testing.T) {
 		{"https://h.example/a/zz/b/c.jpg", true},                 // "*" inside a path
 		{"https://h.example/a/zz", false},                        // the tail after "*" must still match
 		{"https://h.example/q/a/zz/b", false},                    // and the glob is anchored at the start
+		{"https://exact.example/photo.jpg", true},                // exact path matches itself
+		{"https://cdn.exact.example/photo.jpg", true},            // ... on a subdomain too
+		{"https://exact.example/photo.jpg.backup", false},        // exact path: no surplus suffix
+		{"https://exact.example/photo.jpg?v=2", false},           // exact path: no appended query
+		{"https://exact.example/photo.jpg/", false},              // exact path: no appended slash
+		{"https://exact.example/g/mid/end", true},                // inner glob, end-anchored
+		{"https://exact.example/g/mid/end.bak", false},           // inner glob without trailing "*" is anchored
+		{"https://exact.example/g/mid/end?x=1", false},           // ... and the query counts as path
+		{"https://img.freepik.com/premium-ai-image/", true},      // trailing "*" keeps prefix behavior
+		{"https://q.example/store/details?id=com.x/a", true},     // query-bearing rule, matching query
+		{"https://q.example/store/details?id=com.z/a", false},    // same path, different query
+		{"https://q.example/store/details", false},               // path without the query
+		{"https://q.example/store/plain?id=com.y", true},         // exact rule that includes its query
+		{"https://q.example/store/plain?id=com.y&z=1", false},    // ... does not take extra query
 		{"not a url", false},
 		{"", false},
 	}
@@ -134,5 +152,36 @@ func TestVendoredListDoesNotBlockCleanHosts(t *testing.T) {
 		if m.MatchURL(u) {
 			t.Errorf("clean host wrongly blocked: %s", u)
 		}
+	}
+}
+
+// The shipped data exercises the exact-path and query fixes: the freepik
+// ".htm" rules and the voicemod rule carry no trailing "*", and the Play Store
+// rules carry a query.
+func TestVendoredExactAndQueryRules(t *testing.T) {
+	m := Default()
+	if m.Skipped != 0 {
+		t.Fatalf("the shipped list must parse with 0 skipped lines, got %d", m.Skipped)
+	}
+	const fp = "https://img.freepik.com/premium-photo/moon-background-with-astronaut-image-ai-generated-art_39726721.htm"
+	if !m.MatchURL(fp) {
+		t.Error("freepik exact-path rule must match itself")
+	}
+	// No negative for freepik: a list-wide freepik regex also covers these
+	// URLs, so a suffix stays blocked. The voicemod rule below has no overlap.
+	const vm = "https://tuna.voicemod.net/sound/1fdc3b37-441c-4a34-ae88-853bbbb947bb"
+	if !m.MatchURL(vm) {
+		t.Error("voicemod exact-path rule must match itself")
+	}
+	if m.MatchURL(vm + "-x") {
+		t.Error("voicemod exact-path rule must not match a surplus suffix")
+	}
+	// Upstream semantics: the rule requires a "/" after the id.
+	const play = "https://play.google.com/store/apps/details?id=ai.art.anime/"
+	if !m.MatchURL(play) {
+		t.Error("play.google.com query-bearing rule must match its query")
+	}
+	if m.MatchURL("https://play.google.com/store/apps/details?id=org.example.clean/") {
+		t.Error("play.google.com rule must not match a different id")
 	}
 }

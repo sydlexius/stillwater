@@ -13,6 +13,7 @@
 //	*://*.host/*        host and all its subdomains
 //	*://*.host/path*    same host match, plus a path-prefix match
 //	*://*.host/a/*/b*   a path with "*" wildcards inside it
+//	*://*.host/a.htm    no trailing "*": the path (and query) must match exactly
 //	/regex/, /regex/i   an RE2 regular expression matched against the full URL
 //	                    (only the "i" flag is understood)
 package aiblock
@@ -41,18 +42,26 @@ type Matcher struct {
 	Skipped int
 }
 
-// pathRule is one path condition on a host: a literal prefix, or, when the
-// pattern has a "*" inside it, an anchored regexp.
+// pathRule is one path condition on a host. Match-pattern paths are anchored
+// at both ends and "*" is the only wildcard, so a literal path with no
+// trailing "*" must match exactly (exact), a literal path with a trailing "*"
+// is a prefix (prefix), and a path with an inner "*" is a regexp (re) that is
+// end-anchored unless the pattern ended in "*". The candidate is the escaped
+// path plus "?query", because the pattern's path part covers the query too.
 type pathRule struct {
 	prefix string
+	exact  string
 	re     *regexp.Regexp
 }
 
-func (r pathRule) match(path string) bool {
-	if r.re != nil {
-		return r.re.MatchString(path)
+func (r pathRule) match(pathQuery string) bool {
+	switch {
+	case r.re != nil:
+		return r.re.MatchString(pathQuery)
+	case r.exact != "":
+		return pathQuery == r.exact
 	}
-	return strings.HasPrefix(path, r.prefix)
+	return strings.HasPrefix(pathQuery, r.prefix)
 }
 
 // Parse compiles a uBlacklist-format list. Malformed lines are skipped and
@@ -87,8 +96,9 @@ func Parse(list string) *Matcher {
 			m.Skipped++
 			continue
 		}
-		// A trailing "*" is the usual "any suffix" and is dropped; the rest is
-		// a literal prefix, or a glob if it still holds a "*".
+		// A trailing "*" is the usual "any suffix": it is dropped but
+		// remembered, because without one the path must match to its end.
+		open := strings.HasSuffix(path, "*")
 		path = strings.TrimSuffix(path, "*")
 		rule := pathRule{}
 		switch {
@@ -100,9 +110,15 @@ func Parse(list string) *Matcher {
 			}
 			// Built only from QuoteMeta'd literals and ".*", so it always
 			// compiles.
-			rule.re = regexp.MustCompile("^" + strings.Join(parts, ".*"))
-		default:
+			expr := "^" + strings.Join(parts, ".*")
+			if !open {
+				expr += "$"
+			}
+			rule.re = regexp.MustCompile(expr)
+		case open:
 			rule.prefix = "/" + strings.TrimPrefix(path, "/")
+		default:
+			rule.exact = "/" + strings.TrimPrefix(path, "/")
 		}
 		m.hosts[host] = append(m.hosts[host], rule)
 	}
@@ -140,9 +156,13 @@ func (m *Matcher) MatchURL(rawURL string) bool {
 	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 	// Walk the host and its parents: a rule for example.com covers
 	// img.example.com.
+	// Host rules see the escaped path plus query, the way a browser applies a
+	// match pattern to the serialized URL; this is the same RequestURI form the
+	// regex branch below uses, so both rule kinds agree on escaping.
+	pathQuery := u.RequestURI()
 	for h := host; h != ""; {
 		for _, rule := range m.hosts[h] {
-			if rule.match(u.Path) {
+			if rule.match(pathQuery) {
 				return true
 			}
 		}
