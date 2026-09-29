@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -484,5 +485,58 @@ func TestSafeTransport_DNSRebinding_DirectDialContext(t *testing.T) {
 	err2 := blockingDial(ctx, "tcp", "rebind-victim.test:12345")
 	if !errors.Is(err2, httpsafe.ErrPrivateAddress) {
 		t.Fatalf("second dial err = %v; want errors.Is(err, ErrPrivateAddress) (rebind to 10.0.0.1)", err2)
+	}
+}
+
+// TestClientWithJar_PreservesTransportAndTimeout verifies ClientWithJar
+// (added for #3273's per-search DuckDuckGo cookie jar) copies Transport and
+// Timeout from the source client and attaches the given jar, without
+// mutating the source client itself.
+func TestClientWithJar_PreservesTransportAndTimeout(t *testing.T) {
+	t.Parallel()
+	base := httpsafe.SafeClient(7 * time.Second)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+
+	withJar := httpsafe.ClientWithJar(base, jar)
+
+	if withJar.Transport != base.Transport {
+		t.Error("ClientWithJar must reuse the source client's Transport (the httpsafe SSRF guard lives there)")
+	}
+	if withJar.Timeout != base.Timeout {
+		t.Errorf("ClientWithJar Timeout = %v, want %v", withJar.Timeout, base.Timeout)
+	}
+	if withJar.Jar != jar {
+		t.Error("ClientWithJar did not attach the given jar")
+	}
+	if base.Jar != nil {
+		t.Error("ClientWithJar must not mutate the source client's Jar")
+	}
+}
+
+// TestClientWithJar_SSRFGuardStillApplies proves the copy ClientWithJar
+// returns still rejects a private-address target -- i.e. it genuinely shares
+// the guarded Transport rather than falling back to some default transport
+// when Transport happens to be nil-ish or the copy is constructed wrong.
+func TestClientWithJar_SSRFGuardStillApplies(t *testing.T) {
+	t.Parallel()
+	base := httpsafe.SafeClient(2 * time.Second)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	client := httpsafe.ClientWithJar(base, jar)
+
+	resp, err := client.Get("http://127.0.0.1:1/")
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("expected an error dialing loopback through the jar-attached client")
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("expected errors.Is(err, httpsafe.ErrPrivateAddress), got: %v", err)
 	}
 }
