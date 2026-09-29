@@ -159,8 +159,8 @@ func TestRequestShapeHeadersAndParams(t *testing.T) {
 			t.Errorf("i.js param %s = %q, want %q", k, got, want)
 		}
 	}
-	if imgReq.query.Get("vqd") == "" {
-		t.Error("i.js request missing vqd param")
+	if got := imgReq.query.Get("vqd"); got != "4-123456789" {
+		t.Errorf("i.js vqd = %q, want 4-123456789", got)
 	}
 	if got := imgReq.header.Get("Accept"); got != "application/json, text/plain, */*" {
 		t.Errorf("i.js Accept = %q, want %q", got, "application/json, text/plain, */*")
