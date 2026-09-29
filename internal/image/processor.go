@@ -153,15 +153,27 @@ func probeHeaderOnce(ctx context.Context, rawURL string, client *http.Client, ra
 	return &RemoteImageInfo{Width: w, Height: h, FileSize: size}, resp.StatusCode, nil
 }
 
-// contentRangeTotal extracts the total size from "bytes 0-99/12345". It
-// returns 0 for a missing/unknown ("*") or malformed value.
+// contentRangeTotal extracts the total size from a Content-Range value of the
+// form "bytes first-last/total" (RFC 9110). It returns 0 when the unit is not
+// bytes, the range is malformed or inverted (first > last), the total is
+// unknown ("*") or malformed, or the total does not exceed last.
 func contentRangeTotal(v string) int64 {
-	_, total, ok := strings.Cut(v, "/")
+	rest, ok := strings.CutPrefix(strings.TrimSpace(v), "bytes ")
 	if !ok {
 		return 0
 	}
-	n, err := strconv.ParseInt(strings.TrimSpace(total), 10, 64)
-	if err != nil || n < 0 {
+	rng, total, ok := strings.Cut(rest, "/")
+	if !ok {
+		return 0
+	}
+	firstS, lastS, ok := strings.Cut(rng, "-")
+	if !ok {
+		return 0
+	}
+	first, err1 := strconv.ParseInt(strings.TrimSpace(firstS), 10, 64)
+	last, err2 := strconv.ParseInt(strings.TrimSpace(lastS), 10, 64)
+	n, err3 := strconv.ParseInt(strings.TrimSpace(total), 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil || first < 0 || first > last || n <= last {
 		return 0
 	}
 	return n

@@ -1245,6 +1245,24 @@ func TestProbeRemoteImageHeaderWithClient(t *testing.T) {
 		t.Errorf("/partial-unknown = %+v, %v; want FileSize 0", info, err)
 	}
 
+	// contentRangeTotal must reject anything that is not a coherent RFC 9110 range.
+	for in, want := range map[string]int64{
+		"bytes 0-99/12345": 12345,
+		"bytes 0-99/*":     0,
+		"":                 0,
+		"items 0-99/12345": 0,
+		"bytes /12345":     0,
+		"bytes 0-99":       0,
+		"bytes 99-0/12345": 0,
+		"bytes 0-99/50":    0,
+		"bytes 0-99/abc":   0,
+		"foo/123":          0,
+	} {
+		if got := contentRangeTotal(in); got != want {
+			t.Errorf("contentRangeTotal(%q) = %d, want %d", in, got, want)
+		}
+	}
+
 	// 416 to the ranged request is retried once without Range.
 	if info, err := probe("/416"); err != nil || info.Width != 12 {
 		t.Errorf("/416 = %+v, %v; want the un-ranged retry to succeed", info, err)
