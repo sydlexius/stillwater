@@ -16,7 +16,9 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/httpsafe"
 )
@@ -1148,5 +1150,139 @@ func TestCrop_RejectsOversizedDeclaredDimensions(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), tooManyPixelsMsg) {
 		t.Errorf("error = %q, want it to mention %q (i.e. rejected by the pixel-count guard, not an incidental decode failure)", err.Error(), tooManyPixelsMsg)
+	}
+}
+
+func TestProbeRemoteImageHeaderWithClient(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 12, 7))); err != nil {
+		t.Fatal(err)
+	}
+	pngData := buf.Bytes()
+	var gotRange atomic.Value
+	var unrangedHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ok" {
+			gotRange.Store(r.Header.Get("Range"))
+		}
+		switch r.URL.Path {
+		case "/ok":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(pngData)
+		case "/html":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write(pngData)
+		case "/err500":
+			// Image content-type + valid body: only the status check rejects it.
+			w.Header().Set("Content-Type", "image/png")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write(pngData)
+		case "/partial":
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Content-Range", "bytes 0-99/54321")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(pngData)
+		case "/partial-unknown":
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Content-Range", "bytes 0-99/*")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(pngData)
+		case "/416":
+			if r.Header.Get("Range") != "" {
+				w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+				return
+			}
+			unrangedHits.Add(1)
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(pngData)
+		case "/always416":
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		case "/endless":
+			// Ignores Range; SOI then endless APP1 segments, so the decoder
+			// never finds a frame header and only the read cap ends the probe.
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write([]byte{0xFF, 0xD8})
+			seg := append([]byte{0xFF, 0xE1, 0xFF, 0xFF}, make([]byte, 65533)...)
+			for r.Context().Err() == nil {
+				if _, err := w.Write(seg); err != nil {
+					return
+				}
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	probe := func(p string) (*RemoteImageInfo, error) {
+		return ProbeRemoteImageHeaderWithClient(context.Background(), srv.URL+p, srv.Client())
+	}
+
+	info, err := probe("/ok")
+	if err != nil || info.Width != 12 || info.Height != 7 {
+		t.Fatalf("ok probe = %+v, %v", info, err)
+	}
+	if info.FileSize != int64(len(pngData)) {
+		t.Errorf("200 FileSize = %d, want Content-Length %d", info.FileSize, len(pngData))
+	}
+	if gotRange.Load() == "" {
+		t.Error("no Range header sent")
+	}
+	for _, p := range []string{"/html", "/missing", "/err500", "/always416"} {
+		if _, err := probe(p); err == nil {
+			t.Errorf("%s: want error", p)
+		}
+	}
+	if _, err := probe("/err500"); err == nil || !strings.Contains(err.Error(), "HTTP 500") {
+		t.Errorf("/err500 err = %v, want the status check to reject it", err)
+	}
+
+	// 206: kept, and FileSize is the TOTAL from Content-Range (never the range length).
+	if info, err := probe("/partial"); err != nil || info.FileSize != 54321 {
+		t.Errorf("/partial = %+v, %v; want FileSize 54321", info, err)
+	}
+	if info, err := probe("/partial-unknown"); err != nil || info.FileSize != 0 {
+		t.Errorf("/partial-unknown = %+v, %v; want FileSize 0", info, err)
+	}
+
+	// 416 to the ranged request is retried once without Range.
+	if info, err := probe("/416"); err != nil || info.Width != 12 {
+		t.Errorf("/416 = %+v, %v; want the un-ranged retry to succeed", info, err)
+	}
+	if unrangedHits.Load() != 1 {
+		t.Errorf("un-ranged retries = %d, want 1", unrangedHits.Load())
+	}
+
+	// Range-ignoring endless body: the read cap ends the probe quickly.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err = ProbeRemoteImageHeaderWithClient(ctx, srv.URL+"/endless", srv.Client())
+	if err == nil {
+		t.Error("/endless: want a decode error")
+	}
+	if e := time.Since(start); e > 2*time.Second {
+		t.Errorf("/endless took %v; the read cap should end it in well under a second", e)
+	}
+}
+
+// A valid image whose host sends the header and then stalls must be KEPT: the
+// probe decodes from the stream instead of waiting to buffer the whole range.
+func TestProbeRemoteImageHeaderWithClient_SlowDripKept(t *testing.T) {
+	t.Parallel()
+	data := makeJPEG(t, 64, 48)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(data[:len(data)-30]) // all headers, most of the scan; stalls before EOF
+		w.(http.Flusher).Flush()
+		<-r.Context().Done() // then stall until the client gives up
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	info, err := ProbeRemoteImageHeaderWithClient(ctx, srv.URL, srv.Client())
+	if err != nil || info.Width != 64 || info.Height != 48 {
+		t.Fatalf("slow host: info=%+v err=%v; want the image kept from its header alone", info, err)
 	}
 }
