@@ -87,6 +87,98 @@ func ProbeRemoteImageWithClient(ctx context.Context, rawURL string, client *http
 	return &RemoteImageInfo{Width: w, Height: h, FileSize: fileSize}, nil
 }
 
+// headerProbeLimit caps how many bytes ProbeRemoteImageHeaderWithClient reads.
+// Image dimensions live in the file header; 256 KiB comfortably covers JPEGs
+// with large EXIF/ICC segments while keeping a reachability probe far cheaper
+// than the 5 MiB full read ProbeRemoteImageWithClient allows.
+const headerProbeLimit = 256 << 10
+
+// ProbeRemoteImageHeaderWithClient is the lightweight sibling of
+// ProbeRemoteImageWithClient, used to cull broken web-search results (#1833).
+// It asks for only the leading bytes (Range request), rejects a non-2xx status
+// and an obviously non-image content-type before reading, and decodes the
+// dimensions straight from the response stream, so the read stops as soon as
+// the header parses (a slow host is not waited on for the rest of the file).
+// A server that ignores Range still costs at most headerProbeLimit bytes: the
+// stream is capped and the connection closed. A 416 answer to the ranged
+// request is retried once without Range.
+//
+// FileSize is the full file size when the server reports it: Content-Length on
+// a 200, the total from Content-Range on a 206. It is 0 when unknown (never the
+// length of the returned range).
+func ProbeRemoteImageHeaderWithClient(ctx context.Context, rawURL string, client *http.Client) (*RemoteImageInfo, error) {
+	info, status, err := probeHeaderOnce(ctx, rawURL, client, true)
+	if status == http.StatusRequestedRangeNotSatisfiable {
+		info, _, err = probeHeaderOnce(ctx, rawURL, client, false)
+	}
+	return info, err
+}
+
+// probeHeaderOnce performs one probe request. It returns the HTTP status (0 if
+// no response arrived) so the caller can decide on the 416 retry.
+func probeHeaderOnce(ctx context.Context, rawURL string, client *http.Client, ranged bool) (*RemoteImageInfo, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
+	if err != nil {
+		return nil, 0, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
+	if ranged {
+		req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", headerProbeLimit-1))
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("fetching image: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return nil, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if ct := strings.ToLower(resp.Header.Get("Content-Type")); strings.HasPrefix(ct, "text/") || strings.HasPrefix(ct, "application/json") {
+		return nil, resp.StatusCode, fmt.Errorf("not an image: content-type %q", ct)
+	}
+
+	w, h, err := GetDimensions(io.LimitReader(resp.Body, headerProbeLimit))
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("decoding dimensions: %w", err)
+	}
+
+	var size int64
+	if resp.StatusCode == http.StatusPartialContent {
+		size = contentRangeTotal(resp.Header.Get("Content-Range"))
+	} else if resp.ContentLength > 0 {
+		size = resp.ContentLength
+	}
+	return &RemoteImageInfo{Width: w, Height: h, FileSize: size}, resp.StatusCode, nil
+}
+
+// contentRangeTotal extracts the total size from a Content-Range value of the
+// form "bytes first-last/total" (RFC 9110). It returns 0 when the unit is not
+// bytes, the range is malformed or inverted (first > last), the total is
+// unknown ("*") or malformed, or the total does not exceed last.
+func contentRangeTotal(v string) int64 {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(v), "bytes ")
+	if !ok {
+		return 0
+	}
+	rng, total, ok := strings.Cut(rest, "/")
+	if !ok {
+		return 0
+	}
+	firstS, lastS, ok := strings.Cut(rng, "-")
+	if !ok {
+		return 0
+	}
+	first, err1 := strconv.ParseInt(strings.TrimSpace(firstS), 10, 64)
+	last, err2 := strconv.ParseInt(strings.TrimSpace(lastS), 10, 64)
+	n, err3 := strconv.ParseInt(strings.TrimSpace(total), 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil || first < 0 || first > last || n <= last {
+		return 0
+	}
+	return n
+}
+
 // Supported image format names.
 const (
 	FormatJPEG = "jpeg"
