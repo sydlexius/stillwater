@@ -6,14 +6,15 @@
 # reach main.
 #
 # Triggers:
-#   pull_request / push to main  -- path-filtered to relevant surfaces
+#   pull_request (any base) / push to main -- path-filtered to relevant surfaces
 #   workflow_dispatch            -- manual run at any time
 
 name: Bruno API Tests
 
 on:
   pull_request:
-    branches: [main]
+    # No `branches:` filter: a stacked PR (base is another feature branch) must
+    # run the same required checks (#3002). Guarded by check-pr-trigger-scope.sh.
   push:
     branches: [main]
   workflow_dispatch:
