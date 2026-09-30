@@ -135,7 +135,7 @@ jobs:
               - '.github/actions/setup-tailwind/**'
 
       # SHA verified against live tag via:
-      #   gh api repos/actions/setup-go/git/ref/tags/v6 --jq '.object.sha'
+      #   gh api repos/actions/setup-go/git/ref/tags/v7.0.0 --jq '.object.sha'
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.filter.outputs.relevant == 'true'
         with:
@@ -748,7 +748,7 @@ jobs:
       # ci.yml or the changed-packages local test step, so it runs here, in
       # the always-running required job.
       # SHA verified against live tag via:
-      #   gh api repos/actions/setup-go/git/ref/tags/v6 --jq '.object.sha'
+      #   gh api repos/actions/setup-go/git/ref/tags/v7.0.0 --jq '.object.sha'
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -831,7 +831,9 @@ jobs:
               - 'docs/hero/**'
               - 'tests/load/run.sh'
 
-      # SHA verified via: gh api repos/reviewdog/action-shellcheck/git/ref/tags/v1.32.0 --jq '.object.sha'
+      # SHA verified via (v1.34.0 is an annotated tag, so dereference the tag
+      # object to its commit):
+      #   gh api repos/reviewdog/action-shellcheck/git/tags/$(gh api repos/reviewdog/action-shellcheck/git/ref/tags/v1.34.0 --jq '.object.sha') --jq '.object.sha'
       - name: Run shellcheck (same-repo PR / push)
         if: steps.filter.outputs.scripts == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: reviewdog/action-shellcheck@0a90156c6e0553996a217f0a9e09be6b0f6bee4c # v1.34.0
