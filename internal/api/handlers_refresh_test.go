@@ -663,6 +663,64 @@ func TestExecuteRefreshAndPostHook_ResolvesBioViolation(t *testing.T) {
 	}
 }
 
+// TestExecuteRefreshCtx_MBSnapshotUsesMusicBrainzGenres pins the wiring at the
+// snapshot call site: the stored MB genres snapshot is MusicBrainz's own list,
+// not the merged Metadata.Genres, and only when MB is credited for genres.
+func TestExecuteRefreshCtx_MBSnapshotUsesMusicBrainzGenres(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		genresFrom provider.ProviderName
+		wantGenres string // "" = no genres snapshot
+	}{
+		{"MB credited: override recorded", provider.NameMusicBrainz, `["Rock"]`},
+		{"Last.fm credited: no genres snapshot", provider.NameLastFM, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r, artistSvc := testRouter(t)
+			ctx := context.Background()
+			a := &artist.Artist{
+				Name: "Snapshot Artist", SortName: "Snapshot Artist", Type: "person",
+				Path: "/music/Snapshot Artist", MusicBrainzID: "00000000-0000-0000-0000-000000000def",
+			}
+			if err := artistSvc.Create(ctx, a); err != nil {
+				t.Fatalf("creating artist: %v", err)
+			}
+			orch := provider.NewOrchestrator(nil, nil, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil)
+			orch.SetExecutor(&stubScraperExecutor{result: &provider.FetchResult{
+				Metadata: &provider.ArtistMetadata{Name: "Snapshot Artist", Genres: []string{"Rock", "Folk"}},
+				Sources: []provider.FieldSource{
+					{Field: "name", Provider: provider.NameMusicBrainz},
+					{Field: "genres", Provider: tc.genresFrom},
+				},
+				AttemptedFields:   []string{"genres"},
+				PopulatedFields:   []string{"genres"},
+				MusicBrainzGenres: []string{"Rock"},
+			}})
+			r.orchestrator = orch
+			if _, err := r.executeRefreshCtx(ctx, a); err != nil {
+				t.Fatalf("executeRefreshCtx: %v", err)
+			}
+			snaps, err := artistSvc.GetMBSnapshots(ctx, a.ID)
+			if err != nil {
+				t.Fatalf("GetMBSnapshots: %v", err)
+			}
+			if got := snaps["name"].MBValue; got != "Snapshot Artist" {
+				t.Errorf("name snapshot = %q, want unchanged by the genres override", got)
+			}
+			g, ok := snaps["genres"]
+			if tc.wantGenres == "" {
+				if ok {
+					t.Errorf("unexpected genres snapshot %q", g.MBValue)
+				}
+			} else if g.MBValue != tc.wantGenres {
+				t.Errorf("genres snapshot = %q, want %q", g.MBValue, tc.wantGenres)
+			}
+		})
+	}
+}
+
 // TestRunRulesAfterRefresh_InvokesPipeline verifies that runRulesAfterRefresh
 // calls the pipeline's RunForArtist method with the re-fetched artist.
 func TestRunRulesAfterRefresh_InvokesPipeline(t *testing.T) {

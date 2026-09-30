@@ -224,6 +224,42 @@ func TestExtractMBFieldValues_no_mb_sources(t *testing.T) {
 	}
 }
 
+func TestExtractMBFieldValuesFromResult_genres(t *testing.T) {
+	sources := []provider.FieldSource{{Field: "genres", Provider: provider.NameMusicBrainz}}
+	genresOf := func(snaps []artist.MBSnapshot) string {
+		for _, s := range snaps {
+			if s.Field == "genres" {
+				return s.MBValue
+			}
+		}
+		t.Fatal("no genres snapshot")
+		return ""
+	}
+	merged := &provider.ArtistMetadata{Genres: []string{"Rock", "Folk"}}
+
+	tests := []struct {
+		name     string
+		override []string
+		want     string
+	}{
+		{"nil override falls back to merged genres", nil, `["Folk","Rock"]`},
+		// Non-nil empty means MB supplied genres but the tag filter removed
+		// them all: the snapshot records [], not the merged union.
+		{"non-nil empty override records []", []string{}, `[]`},
+		{"populated override wins over the merged union", []string{"Rock"}, `["Rock"]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := genresOf(ExtractMBFieldValuesFromResult(&provider.FetchResult{
+				Metadata: merged, Sources: sources, MusicBrainzGenres: tt.override,
+			}))
+			if got != tt.want {
+				t.Errorf("genres = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValuesEqual(t *testing.T) {
 	tests := []struct {
 		name  string

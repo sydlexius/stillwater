@@ -640,7 +640,7 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 
 	// Capture MusicBrainz-sourced field values as snapshots for contribution diffs.
 	if result.Metadata != nil {
-		if snaps := musicbrainz.ExtractMBFieldValues(result.Metadata, result.Sources); len(snaps) > 0 {
+		if snaps := musicbrainz.ExtractMBFieldValuesFromResult(result); len(snaps) > 0 {
 			if err := r.artistService.UpsertMBSnapshots(writeCtx, a.ID, snaps); err != nil {
 				r.logger.Warn("failed to upsert MB snapshots",
 					"artist_id", a.ID,

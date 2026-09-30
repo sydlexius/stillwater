@@ -60,6 +60,9 @@ func ComputeDiffs(a *artist.Artist, mbSnapshots map[string]artist.MBSnapshot, me
 // ExtractMBFieldValues extracts field values from provider metadata for the
 // fields that MusicBrainz supplied (identified by checking sources). Returns
 // a list of MBSnapshot entries ready for upserting.
+//
+// Prefer ExtractMBFieldValuesFromResult when a FetchResult is available: this
+// form cannot see MusicBrainzGenres and snapshots Metadata.Genres as-is.
 func ExtractMBFieldValues(meta *provider.ArtistMetadata, sources []provider.FieldSource) []artist.MBSnapshot {
 	// Build a set of fields sourced from MusicBrainz.
 	mbFields := make(map[string]bool)
@@ -81,6 +84,23 @@ func ExtractMBFieldValues(meta *provider.ArtistMetadata, sources []provider.Fiel
 		})
 	}
 	return snapshots
+}
+
+// ExtractMBFieldValuesFromResult is ExtractMBFieldValues for a whole fetch
+// result. When result.MusicBrainzGenres is non-nil it supplies the genres
+// snapshot instead of Metadata.Genres, which may hold other providers' tags;
+// when nil it behaves exactly like ExtractMBFieldValues.
+func ExtractMBFieldValuesFromResult(result *provider.FetchResult) []artist.MBSnapshot {
+	snaps := ExtractMBFieldValues(result.Metadata, result.Sources)
+	if result.MusicBrainzGenres == nil {
+		return snaps
+	}
+	for i := range snaps {
+		if snaps[i].Field == "genres" {
+			snaps[i].MBValue = sortedJSON(result.MusicBrainzGenres)
+		}
+	}
+	return snaps
 }
 
 // artistFieldValue extracts a field value from an Artist struct as a string.
