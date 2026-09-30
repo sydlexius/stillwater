@@ -143,7 +143,9 @@ jobs:
         run: docker build -f build/docker/Dockerfile -t stillwater:scan .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        # Pinned to a master commit, not a tag: no tag ships the Trivy v0.74.0 default yet.
+        # Dependabot may move this to a newer upstream commit before a tag lands.
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # v0.36.0+master (Trivy v0.74.0 default)
         with:
           image-ref: stillwater:scan
           format: sarif
