@@ -255,7 +255,13 @@ func (s *Store) nextWait(err error, retry time.Duration) (wait, next time.Durati
 	if !errors.As(err, &fe) {
 		return s.opts.Interval, s.opts.RetryInitial
 	}
-	return min(retry, s.opts.RetryMax, s.opts.Interval), min(retry*2, s.opts.RetryMax)
+	// Saturate before doubling: retry*2 would overflow Duration for a huge
+	// RetryMax and go negative, which makes time.NewTimer fire immediately.
+	next = s.opts.RetryMax
+	if retry <= next/2 {
+		next = retry * 2
+	}
+	return min(retry, s.opts.RetryMax, s.opts.Interval), next
 }
 
 // loadCache adopts the cached list if there is a usable one.

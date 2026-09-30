@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -535,6 +536,10 @@ func TestNextWait(t *testing.T) {
 	big := newListServer(t, http.StatusOK, "#"+strings.Repeat("x", 1<<20)+"\n")
 	if err := big.store("", time.Hour).Refresh(context.Background()); err == nil || errors.As(err, new(fetchErr)) {
 		t.Errorf("oversize Refresh error = %v, want a non-fetchErr rejection", err)
+	}
+	huge := NewStore(Options{Interval: time.Hour, RetryInitial: math.MaxInt64 / 2, RetryMax: math.MaxInt64 - 1})
+	if _, next := huge.nextWait(fail, math.MaxInt64/2+1); next != math.MaxInt64-1 {
+		t.Errorf("doubling near MaxInt64 gave %v, want saturation at RetryMax", next)
 	}
 	short := NewStore(Options{Interval: 3 * time.Minute, RetryInitial: time.Minute, RetryMax: time.Hour})
 	if wait, _ = short.nextWait(fail, 16*time.Minute); wait != 3*time.Minute {
