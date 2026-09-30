@@ -1769,3 +1769,29 @@ func TestLoad_AIBlocklistURLEnv(t *testing.T) {
 		}
 	})
 }
+
+// The file path normalizes like the env path: a whitespace-only TOML
+// ai_blocklist_url disables the download, and a padded URL is trimmed.
+func TestLoad_AIBlocklistURLTOMLTrimmed(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_AI_BLOCKLIST_URL", "x") // registers the restore; then unset
+	if err := os.Unsetenv("SW_AI_BLOCKLIST_URL"); err != nil {
+		t.Fatal(err)
+	}
+	for body, want := range map[string]string{
+		"[image]\nai_blocklist_url = \"   \"\n":                                 "",
+		"[image]\nai_blocklist_url = \"  https://mirror.example.org/l.txt \"\n": "https://mirror.example.org/l.txt",
+	} {
+		path := filepath.Join(t.TempDir(), "config.toml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load(%q): %v", body, err)
+		}
+		if cfg.Image.AIBlocklistURL != want {
+			t.Errorf("TOML %q: AIBlocklistURL = %q, want %q", body, cfg.Image.AIBlocklistURL, want)
+		}
+	}
+}

@@ -438,6 +438,11 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("loading env: %w", err)
 	}
 
+	// Normalize once, after both overlays, so the file and env paths agree:
+	// a whitespace-only SW_AI_BLOCKLIST_URL or ai_blocklist_url disables the
+	// download exactly like an empty one.
+	cfg.Image.AIBlocklistURL = strings.TrimSpace(cfg.Image.AIBlocklistURL)
+
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
@@ -678,7 +683,7 @@ func (c *Config) loadFromEnv() error {
 	// blocklist download (the harness servers rely on this), while unset keeps
 	// the file/default value.
 	if v, ok := os.LookupEnv("SW_AI_BLOCKLIST_URL"); ok {
-		c.Image.AIBlocklistURL = strings.TrimSpace(v)
+		c.Image.AIBlocklistURL = v // trimmed in Load, with the file value
 	}
 
 	return nil

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -291,5 +292,53 @@ func TestStoreDisabledIsReported(t *testing.T) {
 	SetDefault(NewStore(Options{Disabled: true}))
 	if _, st := Snapshot(); !st.Disabled || st.Loaded {
 		t.Errorf("disabled store: Snapshot status = %+v, want Disabled and not loaded", st)
+	}
+}
+
+// Snapshot's contract (#2310 review F8): the matcher and status it returns
+// describe ONE list. Readers race a writer that installs fresh stores and
+// refreshes them; a loaded status must never pair with the empty matcher (or
+// an unloaded one with a real matcher), and a loaded status's rule count must
+// be the matcher's. Bounded to ~1s; a correct Snapshot never fails it.
+func TestSnapshotMatcherAndStatusAgree(t *testing.T) {
+	ls := newListServer(t, http.StatusOK, readSample(t))
+	t.Cleanup(func() { SetDefault(nil) })
+	var stop atomic.Bool
+	var bad, loaded, empty atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for !stop.Load() {
+				m, st := Snapshot()
+				if st.Loaded == (m == emptyMatcher) || (st.Loaded && m.ruleCount() != st.Rules) {
+					bad.Add(1)
+				}
+				if st.Loaded {
+					loaded.Add(1)
+				} else {
+					empty.Add(1)
+				}
+			}
+		}()
+	}
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+		s := ls.store("", time.Hour)
+		SetDefault(s)
+		if err := s.Refresh(context.Background()); err != nil {
+			stop.Store(true)
+			wg.Wait()
+			t.Fatal(err)
+		}
+	}
+	stop.Store(true)
+	wg.Wait()
+	if n := bad.Load(); n != 0 {
+		t.Fatalf("%d snapshots paired a matcher with a status describing a different list", n)
+	}
+	// Precondition: both states were actually observed, or the check proved nothing.
+	if loaded.Load() == 0 || empty.Load() == 0 {
+		t.Fatalf("readers saw loaded=%d empty=%d; need both", loaded.Load(), empty.Load())
 	}
 }

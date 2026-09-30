@@ -230,7 +230,8 @@ type Application struct {
 
 	// aiBlocklist is the runtime-fetched AI-image blocklist (#2310), built in
 	// wireProviders; aiBlocklistDone closes when its refresh loop exits and
-	// stays nil when the loop never started. See ai_blocklist.go.
+	// stays nil when the loop never started. See newAIBlocklist and
+	// startAIBlocklist.
 	aiBlocklist     *aiblock.Store
 	aiBlocklistDone <-chan struct{}
 
