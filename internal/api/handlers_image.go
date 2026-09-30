@@ -1017,6 +1017,7 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 	var (
 		allImages        []provider.ImageResult
 		attempted        int
+		ddgEnabled       bool
 		unavailableNames []provider.ProviderName
 		anyInjected      bool
 	)
@@ -1032,6 +1033,9 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 			continue
 		}
 		attempted++
+		if p.Name() == provider.NameDuckDuckGo {
+			ddgEnabled = true
+		}
 		images, err := p.SearchImages(req.Context(), a.Name, imageType)
 		if err != nil {
 			if req.Context().Err() != nil {
@@ -1100,7 +1104,8 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 	}
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages, sortBy, a.FanartExists, status, unavailableNames))
+		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages, sortBy, a.FanartExists, status, unavailableNames,
+			templates.WebSearchAIFilter{Show: ddgEnabled, Filtered: filterAI, ListLoaded: aiFilter.ListLoaded, Disabled: aiFilter.Disabled, ImageType: typeFilter}))
 		return
 	}
 

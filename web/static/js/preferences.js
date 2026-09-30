@@ -269,8 +269,18 @@
   }
 
   // Persist a single preference change to the server, update cache, and apply.
-  // Returns a Promise that resolves with the updated preference value.
+  // Returns a Promise that resolves with the updated preference value (the
+  // previous value on failure). Callers that must know whether the write
+  // succeeded use save() instead: comparing set()'s value to the requested one
+  // misreads a failure as success when the cache already held that value.
   function set(key, value) {
+    return save(key, value).then(function (r) { return r.value; });
+  }
+
+  // save is set() with an explicit outcome: it resolves {ok, value}, where ok is
+  // true only when the server accepted the write and value is what the client
+  // now holds (the server's normalized value, or the reverted previous value).
+  function save(key, value) {
     // Save previous value for rollback if the server rejects.
     var cached = readCache() || {};
     var previousValue = cached[key] || DEFAULTS[key];
@@ -305,7 +315,7 @@
           writeCache(cached);
           applySingle(key, previousValue);
           document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
-          return previousValue;
+          return { ok: false, value: previousValue };
         }
         return resp.json().then(function (data) {
           // The API may normalize the value; update cache with what the
@@ -315,10 +325,10 @@
             writeCache(cached);
             applySingle(key, data.value);
             document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
-            return data.value;
+            return { ok: true, value: data.value };
           }
           document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
-          return value;
+          return { ok: true, value: value };
         });
       })
       .catch(function (err) {
@@ -327,7 +337,7 @@
         writeCache(cached);
         applySingle(key, previousValue);
         document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
-        return previousValue;
+        return { ok: false, value: previousValue };
       });
   }
 
@@ -351,6 +361,7 @@
   window.swPreferences = {
     load: load,
     set: set,
+    save: save,
     applyAll: applyAll,
     // applySingle is the general-purpose apply-without-persist entry point: it
     // applies ONE preference to the DOM immediately without writing it to the

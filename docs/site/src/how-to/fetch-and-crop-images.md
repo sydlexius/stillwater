@@ -38,8 +38,9 @@ For cases where curated providers don't have what you need.
 
 1. Same as above, but choose **Web Search** from the **Actions** menu instead of Fetch.
 2. Stillwater queries the configured web search adapter (e.g., DuckDuckGo), then quickly checks each result's image on the site that hosts it. Results that are unreachable, too slow to respond (more than about 4 seconds), not an image, or in a format Stillwater can't use (such as GIF or SVG) are dropped. The whole check is capped at about 8 seconds; results it did not get to are kept. If every result is dropped you get an empty grid, not the unavailable message below.
-3. The result list shows thumbnails with source URLs.
-4. Pick a candidate, preview, crop, save.
+3. When DuckDuckGo is enabled, a **Filter AI images** switch appears above the results. It is on by default. After the search returns, Stillwater hides results hosted on sites listed in the community-maintained [HUGE AI Blocklist](https://github.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist). Stillwater downloads that list when it starts and again once a day, and keeps the last good copy so the filter works right after a restart. Until a copy has loaded, the panel says the list has not loaded yet and the results are unfiltered. This is best-effort: AI images hosted on other sites can still appear, and some non-AI images from a listed site may be hidden. Turning the switch off re-runs the search once without the filter. Your choice is saved to your account. To stop Stillwater downloading the list (for example on an offline install), set the `SW_AI_BLOCKLIST_URL` environment variable to an empty value; the switch then removes nothing, and the panel says AI image filtering is turned off on this server.
+4. The result list shows thumbnails with source URLs.
+5. Pick a candidate, preview, crop, save.
 
 Web image search runs only on demand -- never as part of an automatic refresh -- so a forgotten search adapter doesn't drive automated fetches.
 
