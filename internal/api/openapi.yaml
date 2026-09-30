@@ -6354,9 +6354,14 @@ paths:
       tags: [Platform State]
       summary: Pull artist metadata from platform
       description: >-
-        Fetches the artist's metadata from the specified platform connection
-        and overwrites local biography, genres, and date fields with any
-        non-empty values returned by the platform.
+        Fetches the artist's metadata from the specified platform connection.
+        Biography and date fields are overwritten with any non-empty values
+        returned by the platform. Genres returned by the platform are added to
+        the artist's existing genres (duplicates are merged canonically and by
+        metadata language). Tag Sources exclude patterns and the genre cap
+        apply to the combined list, so an existing genre that matches an
+        exclude pattern or falls past the cap is removed. If the platform
+        returns no genres, the artist's genres are left unchanged.
       operationId: pullMetadata
       parameters:
         - name: id
