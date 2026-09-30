@@ -240,3 +240,67 @@ func TestWebImageSearch_AIFilterJSONOutcome(t *testing.T) {
 		})
 	}
 }
+
+// The results panel renders the switch (checked = filtering) only when
+// DuckDuckGo is an enabled web search provider.
+func TestWebImageSearch_AIFilterToggleRendering(t *testing.T) {
+	installAIBlocklist(t, true)
+	r, svc := newImageHandlerTestServer(t)
+	a := setUpWebSearchTest(t, r, svc, aiFilterStub())
+
+	body := aiFilterSearch(t, r, a.ID, "u-toggle", true).Body.String()
+	if !strings.Contains(body, `id="sw-ai-filter-toggle"`) || !strings.Contains(body, `aria-checked="true"`) {
+		t.Error("DuckDuckGo enabled, default pref: the switch must render checked")
+	}
+	seedUserPref(t, r, "u-toggle", PrefFilterAIImages, "false")
+	if body := aiFilterSearch(t, r, a.ID, "u-toggle", true).Body.String(); !strings.Contains(body, `aria-checked="false"`) {
+		t.Error("pref false: the switch must render unchecked")
+	}
+
+	if err := r.providerSettings.SetWebSearchEnabled(context.Background(), provider.NameDuckDuckGo, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(aiFilterSearch(t, r, a.ID, "u-toggle", true).Body.String(), "sw-ai-filter-toggle") {
+		t.Error("the switch must not render when DuckDuckGo is not an enabled web search provider")
+	}
+}
+
+// Filter on but no list loaded: the panel says the results are unfiltered
+// instead of implying it filtered them. The notice is absent once a list has
+// loaded, and absent when the filter is off (nothing was promised).
+func TestWebImageSearch_AIFilterNotLoadedNotice(t *testing.T) {
+	const notice, offNotice = "data-sw-ai-filter-not-loaded", "data-sw-ai-filter-disabled"
+	for _, tc := range []struct {
+		name          string
+		loaded        bool
+		disabled      bool
+		prefOff       bool
+		wantNotice    bool
+		wantOffNotice bool
+	}{
+		{"filter on, list not loaded", false, false, false, true, false},
+		{"filter on, list loaded", true, false, false, false, false},
+		{"filter off, list not loaded", false, false, true, false, false},
+		{"filter on, download turned off", false, true, false, false, true},
+		{"filter off, download turned off", false, true, true, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			installAIBlocklistOpts(t, tc.loaded, tc.disabled)
+			r, svc := newImageHandlerTestServer(t)
+			a := setUpWebSearchTest(t, r, svc, aiFilterStub())
+			if tc.prefOff {
+				seedUserPref(t, r, "u-notice", PrefFilterAIImages, "false")
+			}
+			body := aiFilterSearch(t, r, a.ID, "u-notice", true).Body.String()
+			if got := strings.Contains(body, notice); got != tc.wantNotice {
+				t.Errorf("not-loaded notice present = %v, want %v", got, tc.wantNotice)
+			}
+			if got := strings.Contains(body, offNotice); got != tc.wantOffNotice {
+				t.Errorf("turned-off notice present = %v, want %v", got, tc.wantOffNotice)
+			}
+			if (tc.wantNotice || tc.wantOffNotice) && !strings.Contains(body, "nightcafe.studio") {
+				t.Error("not loaded: the results must be shown unfiltered")
+			}
+		})
+	}
+}

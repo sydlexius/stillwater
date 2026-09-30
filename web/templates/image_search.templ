@@ -1580,7 +1580,24 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 // naming the provider instead) -- only the latter tells the operator the
 // search itself failed rather than simply finding nothing.
 // unavailableProviders names the providers that errored (issue #3229).
-templ WebImageSearchResults(artistID string, images []provider.ImageResult, activeSort string, fanartExists bool, status string, unavailableProviders []provider.ProviderName) {
+templ WebImageSearchResults(artistID string, images []provider.ImageResult, activeSort string, fanartExists bool, status string, unavailableProviders []provider.ProviderName, aiFilter WebSearchAIFilter) {
+	// The filter toggle renders in EVERY state (results, empty, unavailable):
+	// an empty page is exactly when the operator needs to switch the filter off.
+	if aiFilter.Show {
+		@webSearchAIFilterToggle(artistID, aiFilter, activeSort)
+		// Filter on but no list: say so, rather than implying the results
+		// were filtered. "Turned off" (the operator disabled the download, so
+		// it will never load) is distinct from "not loaded yet".
+		if aiFilter.Filtered && aiFilter.Disabled {
+			<p class="text-xs text-amber-700 dark:text-amber-400 mb-3" data-sw-ai-filter-disabled role="status">
+				{ t(ctx, "image.filter_ai_images_disabled") }
+			</p>
+		} else if aiFilter.Filtered && !aiFilter.ListLoaded {
+			<p class="text-xs text-amber-700 dark:text-amber-400 mb-3" data-sw-ai-filter-not-loaded role="status">
+				{ t(ctx, "image.filter_ai_images_not_loaded") }
+			</p>
+		}
+	}
 	if status == "unavailable" {
 		<p class="text-sm text-amber-700 dark:text-amber-400 py-4" data-sw-websearch-unavailable role="status">
 			{ tf(ctx, "image.web_search_unavailable", webSearchProviderDisplayNames(unavailableProviders)) }
@@ -1598,6 +1615,110 @@ templ WebImageSearchResults(artistID string, images []provider.ImageResult, acti
 			}
 		</div>
 	}
+}
+
+// WebSearchAIFilter carries the per-user "Filter AI images" state (#2310) for
+// the web image search results panel. Show is true only when DuckDuckGo (the
+// one provider the filter applies to) is an enabled web search provider.
+// Filtered is the current preference value: true = AI images are excluded
+// (the default). ListLoaded is false until the runtime-fetched blocklist has
+// loaded; while false the filter removes nothing and the panel says so.
+// Disabled means the operator turned the download off, so no list will load.
+type WebSearchAIFilter struct {
+	Show       bool
+	Filtered   bool
+	ListLoaded bool
+	Disabled   bool
+	ImageType  string
+}
+
+// webSearchAIFilterToggleID is the DOM id of the filter switch (also the
+// handle the click script uses to find and disable it).
+const webSearchAIFilterToggleID = "sw-ai-filter-toggle"
+
+// webSearchURL is the endpoint the toggle re-runs after persisting the choice.
+func webSearchURL(artistID, imageType, sortBy string) string {
+	u := fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", artistID, imageType)
+	if sortBy != "" {
+		u += "&sort=" + sortBy
+	}
+	return u
+}
+
+// webSearchAIFilterToggle renders the "Filter AI images" switch above the web
+// search results. One click = one persisted preference write + ONE re-search
+// (a fresh DuckDuckGo request); see toggleAIImageFilter for the guards.
+templ webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort string) {
+	<div class="flex items-center justify-end gap-2 mb-3" data-sw-ai-filter>
+		<span id="sw-ai-filter-label" class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "image.filter_ai_images") }</span>
+		<button
+			id={ webSearchAIFilterToggleID }
+			type="button"
+			class={ ruleToggleBtnClasses(f.Filtered) }
+			role="switch"
+			aria-checked={ boolAttr(f.Filtered) }
+			aria-labelledby="sw-ai-filter-label"
+			data-sw-btn-on={ ruleToggleBtnClasses(true) }
+			data-sw-btn-off={ ruleToggleBtnClasses(false) }
+			data-sw-knob-on={ ruleToggleKnobClasses(true) }
+			data-sw-knob-off={ ruleToggleKnobClasses(false) }
+			onclick={ toggleAIImageFilter(webSearchAIFilterToggleID, webSearchURL(artistID, f.ImageType, activeSort)) }
+		>
+			<span class={ ruleToggleKnobClasses(f.Filtered) }></span>
+		</button>
+	</div>
+}
+
+// toggleAIImageFilter flips filter_ai_images, then re-runs the web search
+// exactly once. The new value is computed at click time from the switch's
+// current aria-checked (never baked in at render time). The switch is
+// disabled from click until the re-search settles, so a double click cannot
+// fire two searches. If the preference write fails there is no re-search and
+// the switch does not flip. If the write succeeds but the re-search fails, the
+// switch shows the SAVED value. Focus returns to the switch after the panel
+// re-renders (the swap replaces the button). Failures are logged loudly.
+script toggleAIImageFilter(btnID string, searchURL string) {
+	var btn = document.getElementById(btnID);
+	if (!btn || btn.disabled) { return; }
+	var target = btn.closest('#image-results, #web-search-results');
+	if (!target) {
+		console.error('toggleAIImageFilter: no results container found for the web search panel');
+		return;
+	}
+	if (!window.swPreferences || typeof window.swPreferences.save !== 'function' || typeof htmx === 'undefined') {
+		console.error('toggleAIImageFilter: swPreferences or htmx is not loaded');
+		return;
+	}
+	var next = btn.getAttribute('aria-checked') === 'true' ? 'false' : 'true';
+	var hadFocus = document.activeElement === btn;
+	btn.disabled = true;
+	function restoreFocus() {
+		var b = document.getElementById(btnID);
+		if (b && hadFocus) { b.focus(); }
+	}
+	// save() reports the outcome explicitly; never infer it by comparing the
+	// returned value to next, which a stale cached value can make look equal.
+	window.swPreferences.save('filter_ai_images', next).then(function (res) {
+		if (!res || !res.ok) {
+			console.error('toggleAIImageFilter: the preference was not saved; not re-running the search');
+			return;
+		}
+		// Show the saved value now, so a failed re-search still leaves the
+		// switch truthful.
+		var on = next === 'true';
+		btn.setAttribute('aria-checked', next);
+		btn.className = on ? btn.dataset.swBtnOn : btn.dataset.swBtnOff;
+		if (btn.firstElementChild) {
+			btn.firstElementChild.className = on ? btn.dataset.swKnobOn : btn.dataset.swKnobOff;
+		}
+		return htmx.ajax('GET', searchURL, { target: target, swap: 'innerHTML' });
+	}).catch(function (err) {
+		console.error('toggleAIImageFilter: re-running the web search failed', err);
+	}).then(function () {
+		var b = document.getElementById(btnID);
+		if (b) { b.disabled = false; }
+		restoreFocus();
+	});
 }
 
 // imageResolution returns a human-readable resolution string.
