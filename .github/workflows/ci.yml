@@ -711,6 +711,9 @@ jobs:
           # same var in the Makefile's test-a11y target -- see that target's
           # comment for the mirror-back pointer.
           SW_FORCE_PROVIDER_ERROR: duckduckgo
+          # Empty = no AI-image blocklist download (#2310); keep in sync with
+          # the Makefile's test-a11y target.
+          SW_AI_BLOCKLIST_URL: ""
         run: |
           ./stillwater > "${{ runner.temp }}/stillwater-a11y.log" 2>&1 &
           echo "pid=$!" >> "$GITHUB_OUTPUT"

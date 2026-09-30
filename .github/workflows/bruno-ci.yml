@@ -140,6 +140,9 @@ jobs:
           SW_LOG_FORMAT: text
           SW_LOG_LEVEL: warn
           SW_BACKUP_ENABLED: "false"
+          # Empty = no AI-image blocklist download (#2310), so this job never
+          # depends on GitHub raw being reachable.
+          SW_AI_BLOCKLIST_URL: ""
           GOCOVERDIR: ${{ runner.temp }}/bruno-coverage
         run: |
           ./stillwater > "${{ runner.temp }}/stillwater-ci.log" 2>&1 &

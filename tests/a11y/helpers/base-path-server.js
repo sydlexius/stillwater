@@ -119,6 +119,9 @@ export async function startBasePathServer(basePath) {
         SW_LOG_LEVEL: 'warn',
         SW_BACKUP_ENABLED: 'false',
         SW_MUSIC_PATH: musicDir,
+        // Empty = no AI-image blocklist download (#2310): a test server must
+        // never reach GitHub. Guarded by TestHarnessServersSkipAIBlocklist.
+        SW_AI_BLOCKLIST_URL: '',
       },
       stdio: ['ignore', logFd, logFd],
     });

@@ -186,7 +186,10 @@ SPF_LOG="$SW_RUN_DIR/spf-server.log"
 # container-oriented /config path which is read-only on host systems.
 # SW_CONFIG_PATH is intentionally unset so the scaffold step is skipped;
 # env-var defaults are sufficient for a smoke instance.
+# SW_AI_BLOCKLIST_URL="" turns off the AI-image blocklist download (#2310) so
+# the smoke instance makes no outbound fetch at all.
 SW_FORCE_PROVIDER_ERROR="$ALL_PROVIDERS" \
+  SW_AI_BLOCKLIST_URL="" \
   SW_DB_PATH="$_SPF_TMPDIR/stillwater.db" \
   SW_PORT="$SW_PORT" \
   "$SW_BINARY" >"$SPF_LOG" 2>&1 &
